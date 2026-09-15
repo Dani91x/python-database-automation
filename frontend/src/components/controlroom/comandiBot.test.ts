@@ -25,7 +25,7 @@ vi.mock('@/lib/mike', () => ({
 
 import {
     leggiChiave, scriviChiave, importiDi, creaComandi, ObiettivoOmegaIgnoto,
-    ParametriOmegaIgnoti, IMPORTI_DI,
+    ParametriOmegaIgnoti, ParametriNonLetti, IMPORTI_DI,
 } from './comandiBot';
 import { activateOmega, stopOmega, updateOmegaParams } from '@/lib/omega';
 import { activateSafe, stopSafe, updateSafeParams } from '@/lib/safeBot';
@@ -204,10 +204,16 @@ describe('cambiaImporto — MANDA I PARAMETRI INTERI, non solo quello cambiato',
         expect(mUpdOmega).toHaveBeenCalledWith({ params: { min_stake: 1.5, altro: 2 } });
     });
 
-    it('con parametri correnti SCONOSCIUTI non si azzera niente: si manda solo la chiave', async () => {
+    it('CON PARAMETRI NON LETTI NON SI SCRIVE AFFATTO', async () => {
+        // ⚠️ questo test prima si aspettava `updateMikeParams({stake: 4})` e
+        // lo chiamava «non si azzera niente». Era esattamente il contrario:
+        // le RPC fanno `coalesce(p_params, params)`, quindi quell'oggetto
+        // minuscolo SOSTITUISCE tutta la colonna. Su Safe si porterebbe via
+        // `strategy_modes` e `tennis_exit_approval`, cioe' le due cose che
+        // tengono i soldi veri sul solo tennis.
         const c = creaComandi(sorgente(null), vi.fn());
-        await c.cambiaImporto('mike', 'stake', 4);
-        expect(mUpdMike).toHaveBeenCalledWith({ stake: 4 });
+        await expect(c.cambiaImporto('mike', 'stake', 4)).rejects.toBeInstanceOf(ParametriNonLetti);
+        expect(mUpdMike).not.toHaveBeenCalled();
     });
 });
 
@@ -292,5 +298,55 @@ describe('avvio di Omega - i parametri non si perdono MAI', () => {
         // nessun oggetto parametri passato: la RPC fa coalesce(NULL, params)
         expect(mActSafe).toHaveBeenCalledWith('live');
         expect(mActMike).toHaveBeenCalledWith('live');
+    });
+});
+
+// ===========================================================================
+// REVIEW 14/09, CRITICO — SCRIVERE SENZA AVER LETTO CANCELLA.
+// ===========================================================================
+
+describe('parametri non letti: nessuna scrittura, su nessun bot', () => {
+    it('cambiare un importo e\u2019 rifiutato su tutti e tre', async () => {
+        const c = creaComandi(sorgente(null), vi.fn());
+        await expect(c.cambiaImporto('safe', 'stake.backSize', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
+        await expect(c.cambiaImporto('mike', 'stake', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
+        await expect(c.cambiaImporto('omega', 'min_stake', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mUpdMike).not.toHaveBeenCalled();
+        expect(mUpdOmega).not.toHaveBeenCalled();
+    });
+
+    it('parametri VUOTI valgono come non letti', async () => {
+        const c = creaComandi(sorgente({}), vi.fn());
+        await expect(c.cambiaImporto('safe', 'stake.backSize', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
+        expect(mUpdSafe).not.toHaveBeenCalled();
+    });
+
+    it('SAFE: con i parametri letti, strategy_modes e le uscite ARRIVANO al servizio', async () => {
+        const correnti = {
+            stake: { backSize: 3, laySize: 2 },
+            strategy_modes: { tennis: 'live', base: 'paper' },
+            tennis_exit_approval: true,
+            exits: { due_game: true },
+        };
+        const c = creaComandi(sorgente(correnti), vi.fn());
+        await c.cambiaImporto('safe', 'stake.backSize', 5);
+        const inviati = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect(inviati.strategy_modes).toEqual({ tennis: 'live', base: 'paper' });
+        expect(inviati.tennis_exit_approval).toBe(true);
+        expect(inviati.exits).toEqual({ due_game: true });
+        expect((inviati.stake as Record<string, number>).backSize).toBe(5);
+    });
+
+    it('MIKE: cambiare modalita\u2019 senza parametri letti non parte', async () => {
+        const c = creaComandi(sorgente(null), vi.fn());
+        await expect(c.cambiaModalita('mike', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
+        expect(mUpdMike).not.toHaveBeenCalled();
+    });
+
+    it('il messaggio spiega la conseguenza, non dice solo «errore»', async () => {
+        const c = creaComandi(sorgente(null), vi.fn());
+        await expect(c.cambiaImporto('safe', 'stake.backSize', 3))
+            .rejects.toThrow(/sostituirebbe TUTTI gli altri/i);
     });
 });

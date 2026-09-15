@@ -134,6 +134,33 @@ export class ParametriOmegaIgnoti extends Error {
 }
 
 /**
+ * ⚠️ REVIEW 14/09, CRITICO — SCRIVERE SENZA AVER LETTO CANCELLA.
+ *
+ * Tutte e tre le RPC di aggiornamento fanno `coalesce(p_params, params)`:
+ * conservano solo se ricevono NULL. Un oggetto — anche minuscolo — SOSTITUISCE
+ * l'intera colonna. E `scriviChiave(null, 'stake', 3)` produce `{stake: 3}`,
+ * che non è NULL.
+ *
+ * `correnti` è `null` ogni volta che la lettura di stato non è ancora tornata
+ * o è FALLITA (il 13/09 il DB ha risposto 503 per budget IO): la pagina resta
+ * interattiva e il campo importo invita a salvare proprio in quel momento.
+ *
+ * Su Safe si perderebbero `strategy_modes` e `tennis_exit_approval`, cioè le
+ * DUE COSE che oggi tengono i soldi veri sul solo tennis: il calcio
+ * erediterebbe la modalità del servizio e le chiusure smetterebbero di
+ * passare dall'approvazione. Quindi: se non abbiamo letto, non si scrive.
+ */
+export class ParametriNonLetti extends Error {
+    constructor(bot: Bot) {
+        super(`non ho ancora letto i parametri di ${bot}: salvare adesso `
+            + 'sostituirebbe TUTTI gli altri (modalità per strategia, uscite, '
+            + 'tetti di rischio) con i valori predefiniti. Attendi che lo stato '
+            + 'sia caricato, o ricarica la pagina.');
+        this.name = 'ParametriNonLetti';
+    }
+}
+
+/**
  * Costruisce i comandi. `dopo` viene chiamato a ogni cambiamento riuscito,
  * perché la pagina deve rileggere lo stato dal SERVIZIO invece di fidarsi di
  * quello che credeva di aver appena fatto.
@@ -167,7 +194,15 @@ export function creaComandi(sorgente: SorgenteParametri, dopo: () => void) {
         // modalità si cambia riattivandolo — che è esattamente quello che fa
         // la sua pagina, non una scorciatoia inventata qui.
         if (bot === 'omega') await updateOmegaParams({ mode: modalita });
-        else if (bot === 'mike') await updateMikeParams(sorgente.params('mike') as MikeParams, modalita);
+        else if (bot === 'mike') {
+            // `mike_update_params` riceve i parametri INTERI: se non li
+            // abbiamo letti, cambiare modalità gli porterebbe via tutto.
+            const correnti = sorgente.params('mike');
+            if (correnti == null || Object.keys(correnti).length === 0) {
+                throw new ParametriNonLetti('mike');
+            }
+            await updateMikeParams(correnti as MikeParams, modalita);
+        }
         else await activateSafe(modalita);
         dopo();
     };
@@ -176,6 +211,10 @@ export function creaComandi(sorgente: SorgenteParametri, dopo: () => void) {
         // si riparte SEMPRE dai parametri correnti: mandare la sola chiave
         // cambiata cancellerebbe tutto il resto.
         const correnti = sorgente.params(bot);
+        // ...e se non li abbiamo letti NON si scrive: vedi ParametriNonLetti.
+        if (correnti == null || Object.keys(correnti).length === 0) {
+            throw new ParametriNonLetti(bot);
+        }
         const nuovi = scriviChiave(correnti, chiave, importo);
         if (bot === 'safe') await updateSafeParams(nuovi as Partial<SafeBotParams>);
         else if (bot === 'mike') await updateMikeParams(nuovi as MikeParams);

@@ -146,3 +146,87 @@ describe('riepilogo — descrive QUELLO CHE SI VEDE, non tutto il resto', () => 
         expect(riepilogoChiuse(p).percentualeVinte).toBeNull();
     });
 });
+
+// ===========================================================================
+// REVIEW 14/09 — LE COPERTURE SI ATTACCANO ALLA RIGA GIUSTA.
+// Gli id vengono da TRE tabelle diverse: il #288 di Safe e il #288 di Omega
+// sono righe diverse.
+// ===========================================================================
+
+describe('collisione di id fra bot diversi', () => {
+    it('la copertura di Safe NON si attacca all’apertura di Omega con lo stesso id', () => {
+        const p = posizioniChiuse([
+            t({ id: 288, __bot: 'omega', pnl: 10, event_id: 'O1', event_name: 'Partita Omega' }),
+            t({ id: 900, __bot: 'safe', pnl: 1, event_id: 'S1', event_name: 'Partita Safe' }),
+            // copertura di SAFE che chiude il 288 DI SAFE (che non esiste qui)
+            t({ id: 901, __bot: 'safe', pnl: -0.5, closes_trade_id: 288, event_id: 'S1' }),
+        ]);
+        const omega = p.find((x) => x.bot === 'omega' && x.id === 288);
+        // l'apertura di Omega resta intatta: 10, non 9,50
+        expect(omega?.pnlGlobale).toBe(10);
+        expect(omega?.righe).toHaveLength(1);
+    });
+
+    it('una copertura si attacca alla SUA apertura, stesso bot', () => {
+        const p = posizioniChiuse([
+            t({ id: 288, __bot: 'safe', pnl: 0.33 }),
+            t({ id: 289, __bot: 'safe', pnl: -0.30, closes_trade_id: 288 }),
+            t({ id: 288, __bot: 'omega', pnl: 99, event_id: 'O1' }),
+        ]);
+        const safe = p.find((x) => x.bot === 'safe');
+        expect(safe?.pnlGlobale).toBe(0.03);
+        expect(p.find((x) => x.bot === 'omega')?.pnlGlobale).toBe(99);
+    });
+});
+
+describe('coperture orfane — i loro euro non spariscono', () => {
+    it('una copertura senza apertura nota diventa una posizione a sé', () => {
+        const p = posizioniChiuse([
+            t({ id: 500, __bot: 'safe', pnl: -0.30, closes_trade_id: 499 }),
+        ]);
+        expect(p).toHaveLength(1);
+        expect(p[0].pnlGlobale).toBe(-0.3);
+    });
+});
+
+describe('catene di chiusure A - B - C', () => {
+    it('il P&L della TERZA gamba entra nel conto', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, pnl: 10 }),
+            t({ id: 2, pnl: -4, closes_trade_id: 1 }),
+            t({ id: 3, pnl: -1, closes_trade_id: 2 }),   // copre la copertura
+        ]);
+        expect(p).toHaveLength(1);
+        expect(p[0].pnlGlobale).toBe(5);
+        expect(p[0].righe).toHaveLength(3);
+    });
+
+    it('un ciclo nei dati non manda in loop infinito', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, pnl: 1 }),
+            t({ id: 2, pnl: 1, closes_trade_id: 1 }),
+            t({ id: 3, pnl: 1, closes_trade_id: 2 }),
+        ]);
+        expect(p[0].righe.length).toBeLessThanOrEqual(3);
+    });
+});
+
+describe('una gamba ancora viva = posizione NON chiusa', () => {
+    it('apertura regolata ma copertura aperta: non compare fra le chiuse', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, status: 'won', pnl: 3 }),
+            t({ id: 2, status: 'open', pnl: null, closes_trade_id: 1 }),
+        ]);
+        // +3 sarebbe il profitto PIENO di una posizione che invece e' coperta
+        expect(p).toHaveLength(0);
+    });
+
+    it('quando anche la copertura si regola, la posizione compare col netto', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, status: 'won', pnl: 3 }),
+            t({ id: 2, status: 'lost', pnl: -2.7, closes_trade_id: 1 }),
+        ]);
+        expect(p).toHaveLength(1);
+        expect(p[0].pnlGlobale).toBe(0.3);
+    });
+});

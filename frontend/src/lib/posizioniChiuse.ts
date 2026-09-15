@@ -105,26 +105,85 @@ function numero(v: unknown): number | null {
  * ma non liquidata non è «chiusa», e metterla qui con un P&L parziale
  * direbbe una cosa che non è ancora vera.
  */
+/**
+ * La chiave di una riga: **bot + id**, mai l'id da solo.
+ *
+ * ⚠️ REVIEW 14/09, CRITICO — gli id vengono da TRE TABELLE DIVERSE
+ * (`omega_trades`, `safe_strategy_trades`, `mike_trades`), ognuna con la sua
+ * sequenza. Il trade #288 di Safe e il #288 di Omega sono righe diverse: con
+ * l'id nudo la copertura di uno si attaccava all'apertura dell'altro, e il
+ * P&L della posizione diventava la somma di due operazioni scollegate.
+ */
+function chiave(bot: Bot, id: unknown): string {
+    return `${bot}:${String(id)}`;
+}
+
 export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneChiusa[] {
-    const coperture = new Map<number, TradeChiudibile[]>();
+    // indice di TUTTE le righe, per riconoscere le coperture orfane
+    const perChiave = new Map<string, TradeChiudibile>();
+    for (const t of trades) {
+        if (isErrorRow(String(t.status ?? ''))) continue;
+        perChiave.set(chiave(t.__bot, t.id), t);
+    }
+
+    const coperture = new Map<string, TradeChiudibile[]>();
     const aperture: TradeChiudibile[] = [];
 
     for (const t of trades) {
         if (isErrorRow(String(t.status ?? ''))) continue;   // mai andata a mercato
         const chiude = numero(t.closes_trade_id);
-        if (chiude != null) {
-            const lista = coperture.get(chiude) ?? [];
-            lista.push(t);
-            coperture.set(chiude, lista);
-        } else {
+        if (chiude == null) { aperture.push(t); continue; }
+
+        const padre = chiave(t.__bot, chiude);
+        if (!perChiave.has(padre)) {
+            // COPERTURA ORFANA — il trade che chiudeva non è fra le righe
+            // lette (paginazione, giorno diverso, riga cancellata). I suoi
+            // euro sono comunque veri: si tratta come una posizione a sé,
+            // marcata, invece di sparire in silenzio. È la stessa difesa di
+            // `eventGroups.ts:88-91`.
             aperture.push(t);
+            continue;
         }
+        const lista = coperture.get(padre) ?? [];
+        lista.push(t);
+        coperture.set(padre, lista);
     }
+
+    /**
+     * Tutte le gambe di una posizione, seguendo la catena fino in fondo.
+     *
+     * Una copertura può essere a sua volta coperta (A ← B ← C: succede col
+     * place-and-trim e con una chiusura parziale richiusa). Fermarsi al primo
+     * livello lasciava fuori dal conto il P&L della terza gamba.
+     */
+    const gambeDi = (radice: TradeChiudibile): TradeChiudibile[] => {
+        const fuori: TradeChiudibile[] = [];
+        const daVisitare = [radice];
+        const visti = new Set<string>([chiave(radice.__bot, radice.id)]);
+        while (daVisitare.length) {
+            const nodo = daVisitare.shift() as TradeChiudibile;
+            for (const g of coperture.get(chiave(nodo.__bot, nodo.id)) ?? []) {
+                const k = chiave(g.__bot, g.id);
+                if (visti.has(k)) continue;      // difesa contro un ciclo nei dati
+                visti.add(k);
+                fuori.push(g);
+                daVisitare.push(g);
+            }
+        }
+        return fuori;
+    };
 
     const out: PosizioneChiusa[] = [];
     for (const a of aperture) {
         if (!isSettled(String(a.status ?? ''))) continue;   // non ancora conclusa
-        const gambe = coperture.get(a.id) ?? [];
+        const gambe = gambeDi(a);
+
+        // UNA GAMBA ANCORA VIVA = POSIZIONE NON CHIUSA. Sommare solo le righe
+        // regolate darebbe un P&L parziale mostrato come definitivo: su un
+        // green-up a metà è il numero dell'apertura da solo, cioè il profitto
+        // pieno di una posizione che invece è coperta.
+        if (gambe.some((g) => !isSettled(String(g.status ?? '')))) continue;
+
         const tutte = [a, ...gambe];
 
         // il P&L globale somma TUTTE le gambe regolate: su un green-up

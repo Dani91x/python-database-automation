@@ -326,8 +326,18 @@ function Importo({ campo, bot, occupato, salva }: {
     const [bozza, setBozza] = useState('');
     const scritto = Number(bozza.replace(',', '.'));
     const valido = Number.isFinite(scritto) && scritto >= 0.01;
-    const cambiato = bozza !== '' && valido
-        && (campo.valore == null || Math.abs(scritto - campo.valore) > 0.0001);
+    /**
+     * ⚠️ REVIEW 14/09 — QUI `campo.valore == null` ABILITAVA IL SALVATAGGIO.
+     *
+     * Era l'opposto del fail-closed: il pulsante «salva» compariva PROPRIO
+     * quando il valore corrente era sconosciuto, cioè quando la lettura dello
+     * stato non era tornata — ed è il caso in cui salvare sostituisce l'intero
+     * oggetto parametri sul database. Un valore assente deve BLOCCARE la
+     * scrittura, non invitarla.
+     */
+    const noto = campo.valore != null;
+    const cambiato = bozza !== '' && valido && noto
+        && Math.abs(scritto - (campo.valore as number)) > 0.0001;
     const id = `cr-importo-${bot}-${campo.chiave.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
     return (
@@ -354,6 +364,13 @@ function Importo({ campo, bot, occupato, salva }: {
                     data-testid={`${id}-salva`}
                     className="h-6 px-2 text-[10px]"
                 >salva</Button>
+            )}
+            {/* un campo che non si può salvare DICE PERCHÉ, invece di restare
+                muto: senza il valore corrente non sappiamo su cosa scriviamo. */}
+            {bozza !== '' && valido && !noto && (
+                <span className="text-[10px] text-orange-300" data-testid={`${id}-bloccato`}>
+                    valore corrente non letto: salvare lo sostituirebbe insieme a tutti gli altri
+                </span>
             )}
         </span>
     );

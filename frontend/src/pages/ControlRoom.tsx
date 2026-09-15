@@ -25,7 +25,7 @@ import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Radio, ShieldAlert, Target, Circle } from 'lucide-react';
+import { RefreshCw, Radio, ShieldAlert, Target, Circle, SlidersHorizontal } from 'lucide-react';
 import { PageShell } from '@/components/trading/PageShell';
 import { EmptyState } from '@/components/trading/EmptyState';
 import { DayBar } from '@/components/trading/DayBar';
@@ -209,22 +209,39 @@ export default function ControlRoom() {
 
     // i fogli parametri sono ESATTAMENTE quelli delle pagine dei bot: due
     // schede diverse per lo stesso servizio sarebbero due verita'.
-    const fogliParametri = useMemo(() => ({
-        safe: (
-            <BotParamsSheet
-                params={mergeBotParams(paramsDi('safe'))}
-                rawParams={paramsDi('safe')}
-                onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
-            />
-        ),
-        mike: (
-            <MikeParamsSheet
-                params={mergeMikeParams(paramsDi('mike'))}
-                busy={false}
-                onSave={async (p) => { await updateMikeParams(p); vm.ricarica(); }}
-            />
-        ),
-    }), [paramsDi, vm.ricarica]);
+    //
+    // ⚠️ REVIEW 14/09 — MONTATI SOLO SE I PARAMETRI SONO STATI LETTI.
+    //
+    // Con `rawParams` nullo, `BotParamsSheet` parte da `{}` e al salvataggio
+    // manda un oggetto di soli valori predefiniti; `safe_update_params` fa
+    // `coalesce(p_params, params)` e lo scrive AL POSTO DI TUTTO. Si
+    // perderebbero `strategy_modes` e `tennis_exit_approval`, che
+    // `mergeBotParams` non conosce nemmeno: cioe' le due cose che oggi
+    // tengono i soldi veri sul solo tennis.
+    //
+    // La pagina di Safe monta lo stesso componente dietro `if (bot.available)`
+    // (`SafeStrategy.tsx:1008`). Qui quel cancello mancava.
+    const fogliParametri = useMemo(() => {
+        const safeParams = paramsDi('safe');
+        const mibeParams = paramsDi('mike');
+        const letto = (p: Record<string, unknown> | null) => p != null && Object.keys(p).length > 0;
+        return {
+            safe: letto(safeParams) ? (
+                <BotParamsSheet
+                    params={mergeBotParams(safeParams)}
+                    rawParams={safeParams}
+                    onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
+                />
+            ) : <ParametriNonLetti bot="Safe" />,
+            mike: letto(mibeParams) ? (
+                <MikeParamsSheet
+                    params={mergeMikeParams(mibeParams)}
+                    busy={false}
+                    onSave={async (p) => { await updateMikeParams(p); vm.ricarica(); }}
+                />
+            ) : <ParametriNonLetti bot="Mike" />,
+        };
+    }, [paramsDi, vm.ricarica]);
 
     return (
         <PageShell
@@ -671,6 +688,21 @@ function Freni({ freni }: { freni: ReturnType<typeof useControlRoom>['freni'] })
                 {scattato ? 'SCATTATO' : noto ? fmtMoney(soglia) : 'assente'}
             </span>
         </div>
+    );
+}
+
+/** Il posto del foglio parametri quando lo stato del bot non e' stato letto.
+ *  Non un pulsante spento e muto: la ragione, scritta. Aprire quel foglio
+ *  adesso permetterebbe un salvataggio che sostituisce TUTTI i parametri. */
+function ParametriNonLetti({ bot }: { bot: string }) {
+    return (
+        <span className="text-[10px] text-orange-300/80 flex items-center gap-1"
+            data-testid="cr-parametri-non-letti"
+            title={`i parametri di ${bot} non sono ancora stati letti dal servizio: `
+                + 'aprire la scheda adesso permetterebbe di salvarli sostituendo '
+                + 'quelli veri con i valori predefiniti'}>
+            <SlidersHorizontal className="w-3 h-3" />parametri non letti
+        </span>
     );
 }
 
