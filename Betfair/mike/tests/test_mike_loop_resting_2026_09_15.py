@@ -201,3 +201,51 @@ def test_RIGHE_ILLEGGIBILI_NON_SI_PIAZZA(monkeypatch):
                            motivo=None, ev={"event_id": "E1"})
     assert piazzati == [], "ha piazzato un ordine reale senza poter leggere le righe"
     assert "place_saltato" in db.kinds()
+
+
+# ===========================================================================
+# 3. LA RADICE: la chiave con cui si ritrova l'ordine
+#
+# `omega_market.list_current_orders()` normalizza in snake_case e restituisce
+# `customer_order_ref`; Mike cercava `customerOrderRef`, che in quel
+# dizionario NON ESISTE. Il confronto falliva SEMPRE, per costruzione.
+# ===========================================================================
+
+def test_ritrova_l_ordine_con_la_chiave_VERA_di_list_current_orders():
+    """E' la forma che `omega_market` produce davvero."""
+    vivi = [{"bet_id": "999", "customer_order_ref": "under_green-0-2",
+             "size_matched": 0.0, "size_remaining": 5.07}]
+    db = DbFinto([{**riga_pending(), "signal_key": "under_green-0-2", "bet_id": None}])
+    trovato = S._ordine_di(vivi, gamba(ref="under_green-0-2"), db, "E1")
+    assert trovato is not None and trovato["bet_id"] == "999"
+
+
+def test_la_vecchia_chiave_camelCase_continua_a_funzionare():
+    """Difesa a due strade: se un giorno la normalizzazione cambia, non si
+    rompe in silenzio una ricerca da cui dipendono ordini reali."""
+    vivi = [{"bet_id": "1", "customerOrderRef": "under_green-0-2"}]
+    db = DbFinto([{**riga_pending(), "signal_key": "under_green-0-2", "bet_id": None}])
+    assert S._ordine_di(vivi, gamba(ref="under_green-0-2"), db, "E1") is not None
+
+
+def test_si_ritrova_per_BET_ID_anche_se_il_riferimento_non_torna():
+    """Il bet_id e' l'identificativo che Betfair stesso ci ha dato: e' la
+    strada piu' solida, e dal 15/09 sta sempre sulla riga."""
+    vivi = [{"bet_id": "442891672194", "customer_order_ref": "un-altro-ref"}]
+    db = DbFinto([{**riga_pending(), "signal_key": "under_green-0-2",
+                   "bet_id": "442891672194"}])
+    trovato = S._ordine_di(vivi, gamba(ref="under_green-0-2"), db, "E1")
+    assert trovato is not None, "non ritrovato nemmeno per bet_id"
+
+
+def test_ordine_davvero_assente_resta_assente():
+    """Il fix non deve trasformare un'assenza in una presenza: se l'ordine
+    non c'e', si continua a dire che non c'e'."""
+    vivi = [{"bet_id": "altro", "customer_order_ref": "over_cover-0-9"}]
+    db = DbFinto([{**riga_pending(), "signal_key": "under_green-0-2", "bet_id": "mio"}])
+    assert S._ordine_di(vivi, gamba(ref="under_green-0-2"), db, "E1") is None
+
+
+def test_nessun_ordine_vivo_nessuna_confusione():
+    db = DbFinto([{**riga_pending(), "signal_key": "under_green-0-2", "bet_id": "x"}])
+    assert S._ordine_di([], gamba(ref="under_green-0-2"), db, "E1") is None

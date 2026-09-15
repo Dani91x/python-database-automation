@@ -934,14 +934,52 @@ def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str) -> Non
                          "err": str(ex)[:160]}, event_id)
 
 
+def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
+               event_id: str) -> Optional[Dict[str, Any]]:
+    """Ritrova FRA GLI ORDINI VIVI quello di questa gamba.
+
+    ⚠️ 15/09 — QUI STAVA LA RADICE DEL LOOP, ed era una sola parola.
+
+    `omega_market.list_current_orders()` NORMALIZZA le chiavi in snake_case e
+    restituisce ``customer_order_ref``; qui si cercava ``customerOrderRef``,
+    che in quel dizionario NON ESISTE. Il confronto falliva sempre, per
+    costruzione: ogni ordine appoggiato risultava «mai piazzato», il motore ne
+    creava uno nuovo, e si ricominciava. Trentadue volte con soldi veri.
+
+    Adesso si cerca per DUE strade, e basta che una risponda:
+      1. il ``bet_id``, che dal 15/09 si scrive sempre sulla riga: e'
+         l'identificativo che Betfair stesso ci ha dato, il piu' solido;
+      2. il riferimento del cliente, accettando ENTRAMBE le grafie — cosi' un
+         cambio di normalizzazione a monte non puo' piu' rompere in silenzio
+         una ricerca da cui dipendono ordini reali.
+    """
+    ref = str(leg.ref)
+
+    # 1) per bet_id: l'identificativo di Betfair, se lo abbiamo sulla riga
+    riga = _trade_row_for_leg(db, event_id, leg)
+    bet_id = str((riga or {}).get("bet_id") or "").strip()
+    if bet_id:
+        for x in vivi:
+            if str(x.get("bet_id") or x.get("betId") or "").strip() == bet_id:
+                return x
+
+    # 2) per riferimento, in tutte e due le grafie
+    for x in vivi:
+        for chiave in ("customer_order_ref", "customerOrderRef"):
+            if str(x.get(chiave) or "") == ref:
+                return x
+    return None
+
+
 def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, Any],
                         params: Dict[str, Any], now_ts: float, ev: Dict[str, Any]) -> None:
     """Quanto si e' abbinato della lay appoggiata? Lo dice BETFAIR, non il prezzo.
 
     In paper la simulazione guarda il book e decide. Qui no: un ordine reale ha
     una CODA davanti, e l'unico modo di sapere se e' toccato a noi e' chiederlo.
-    Si riconosce l'ordine dal ``customerOrderRef``, che e' ``leg.ref`` e che
-    Betfair restituisce in ``listCurrentOrders``.
+    Si riconosce l'ordine con ``_ordine_di``: prima per ``bet_id``, poi per
+    riferimento del cliente. Vedi li' perche' la vecchia ricerca per sola
+    ``customerOrderRef`` falliva SEMPRE.
     """
     eid = str(ev["event_id"])
     try:
@@ -949,7 +987,7 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
     except Exception as ex:  # noqa: BLE001 — rete: si riprova al giro dopo, senza inventare
         logger.debug("[mike] list_current_orders KO: %s", str(ex)[:120])
         return
-    o = next((x for x in vivi if str(x.get("customerOrderRef") or "") == str(leg.ref)), None)
+    o = _ordine_di(vivi, leg, db, eid)
     if o is None:
         # Non e' piu' fra i vivi: o si e' abbinato del tutto, o e' stato
         # annullato, o non e' mai arrivato. Non si indovina fra tre casi che
