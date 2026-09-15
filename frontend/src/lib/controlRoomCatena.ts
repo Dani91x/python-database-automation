@@ -60,6 +60,17 @@ export interface EsecuzioneTrade {
     betfair_ms?: number | null;
     price_medio?: number | null;
     scorrimento_tick?: number | null;
+    /**
+     * Che strada ha preso l'ordine. Lo scrive il servizio (`execution.py`).
+     *
+     * ⚠️ REVIEW 15/09 — su `submin` (place-and-trim) l'intervallo misurato NON
+     * è un round-trip di Betfair: è una SEQUENZA NOSTRA — parcheggio del
+     * minimo a quota non abbinabile, riduzione, riprezzo e ritiro del residuo,
+     * cioè tre o quattro chiamate REST più la nostra logica. Chiamarlo
+     * «Betfair risponde» ed escluderlo dal totale nostro regalava alla nostra
+     * catena il pezzo più lungo che abbiamo.
+     */
+    percorso?: string | null;
 }
 
 /** Differenza in ms fra due istanti, `null` se uno dei due manca o se il
@@ -85,6 +96,7 @@ export function catenaOperazione(
 ): Salto[] {
     const t = tempi ?? {};
     const e = esecuzione ?? {};
+    const submin = String(e.percorso ?? '').toLowerCase() === 'submin';
     return [
         {
             // NON è una latenza: vedi `Salto.latenza`.
@@ -107,7 +119,14 @@ export function catenaOperazione(
             id: 'invio', nome: 'decisione → invio', ms: delta(t.t3_deciso_ms, e.t4_inviato),
             spiega: 'dalla decisione alla chiamata a Betfair', nostro: true, latenza: true,
         },
-        {
+        submin ? {
+            // place-and-trim: NON è un round-trip, è una sequenza nostra
+            id: 'betfair', nome: 'place-and-trim (3-4 chiamate)',
+            ms: typeof e.betfair_ms === 'number' ? Math.round(e.betfair_ms) : delta(e.t4_inviato, e.t5_risposta),
+            spiega: 'sequenza NOSTRA sotto-minimo: parcheggio, taglio, riprezzo e '
+                + 'ritiro del residuo — dentro ci sono anche i round-trip di Betfair',
+            nostro: true, latenza: true,
+        } : {
             id: 'betfair', nome: 'Betfair risponde',
             ms: typeof e.betfair_ms === 'number' ? Math.round(e.betfair_ms) : delta(e.t4_inviato, e.t5_risposta),
             spiega: 'l’unico tratto che non dipende da noi', nostro: false, latenza: true,

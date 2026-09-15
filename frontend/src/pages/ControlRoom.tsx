@@ -967,6 +967,7 @@ function NastroSegnali({ vm, filtroSport }: {
                         vivo={pv.vivo}
                         etaQuoteS={pv.etaQuoteS}
                         etaScannerS={vm.feedEtaS}
+                        bloccabileOra={pv.bloccabileOra}
                         slippagePct={vm.slippagePct}
                         onApprova={vm.approva}
                         onIgnora={vm.ignora}

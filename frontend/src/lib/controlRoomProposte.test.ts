@@ -32,11 +32,11 @@ describe('prezzoVivo — il prezzo viene dal FEED, non dalla proposta', () => {
     } as unknown as TennisScanPayload;
 
     it('chiusura LAY: prende il lato LAY, che è quello su cui si piazza', () => {
-        expect(prezzoVivo(tennis, '1.24', 11, 'lay')).toEqual({ prezzo: 1.32, abbinabile: 116.38 });
+        expect(prezzoVivo(tennis, '1.24', 11, 'lay')).toMatchObject({ prezzo: 1.32, abbinabile: 116.38 });
     });
 
     it('chiusura BACK: prende il lato BACK', () => {
-        expect(prezzoVivo(tennis, '1.24', 11, 'back')).toEqual({ prezzo: 1.28, abbinabile: 90 });
+        expect(prezzoVivo(tennis, '1.24', 11, 'back')).toMatchObject({ prezzo: 1.28, abbinabile: 90 });
     });
 
     it('sceglie la SELEZIONE giusta, non la prima che trova', () => {
@@ -44,7 +44,7 @@ describe('prezzoVivo — il prezzo viene dal FEED, non dalla proposta', () => {
     });
 
     it('selezione sconosciuta → null, MAI un ripiego inventato', () => {
-        expect(prezzoVivo(tennis, '1.24', 99, 'lay')).toEqual({ prezzo: null, abbinabile: null });
+        expect(prezzoVivo(tennis, '1.24', 99, 'lay')).toMatchObject({ prezzo: null, abbinabile: null });
     });
 
     it('senza feed, senza lato o senza selezione non si inventa niente', () => {
@@ -61,7 +61,7 @@ describe('prezzoVivo — il prezzo viene dal FEED, non dalla proposta', () => {
 
     it('prezzo presente ma size assente: il prezzo vale, l’abbinabile resta ignoto', () => {
         const senzaSize = { odds: { p1: { selection_id: 11, back: 1.28, lay: 1.32 } } } as unknown as TennisScanPayload;
-        expect(prezzoVivo(senzaSize, null, 11, 'lay')).toEqual({ prezzo: 1.32, abbinabile: null });
+        expect(prezzoVivo(senzaSize, null, 11, 'lay')).toMatchObject({ prezzo: 1.32, abbinabile: null });
     });
 });
 
@@ -247,5 +247,43 @@ describe('quote FERME non sono quote VECCHIE (critico)', () => {
     it('eta delle quote ignota resta un blocco anche con lo scanner vivo', () => {
         expect(motivoNonApprovabile({ ...base, etaQuoteS: null, etaScannerS: 1 }))
             .toMatch(/età delle quote sconosciuta/i);
+    });
+});
+
+// ===========================================================================
+// REVIEW 15/09 — MERCATO SOSPESO e l'ESITO DELLE RPC.
+// ===========================================================================
+
+describe('mercato sospeso: si dice PRIMA, non dopo il rifiuto del servizio', () => {
+    const ok = {
+        scost: scostamento({ prezzoDecisione: 1.30, prezzoCorrente: 1.30, lato: 'lay' as const }),
+        etaQuoteS: 2, etaMassimaS: 20, daChiudere: 2, abbinabileOra: 100,
+    };
+
+    it('SUSPENDED blocca, ed e il PRIMO controllo', () => {
+        expect(motivoNonApprovabile({ ...ok, statoMercato: 'SUSPENDED' }))
+            .toMatch(/mercato sospeso/i);
+        // vince anche su un prezzo assente, che altrimenti parlerebbe per primo
+        const senzaPrezzo = scostamento({ prezzoDecisione: 1.3, prezzoCorrente: null, lato: 'lay' });
+        expect(motivoNonApprovabile({ ...ok, scost: senzaPrezzo, statoMercato: 'SUSPENDED' }))
+            .toMatch(/mercato sospeso/i);
+    });
+
+    it('CLOSED blocca con parole sue', () => {
+        expect(motivoNonApprovabile({ ...ok, statoMercato: 'CLOSED' })).toMatch(/mercato chiuso/i);
+    });
+
+    it('mercato APERTO o stato IGNOTO non blocca niente', () => {
+        expect(motivoNonApprovabile({ ...ok, statoMercato: 'OPEN' })).toBeNull();
+        expect(motivoNonApprovabile({ ...ok, statoMercato: null })).toBeNull();
+        expect(motivoNonApprovabile(ok)).toBeNull();
+    });
+
+    it('prezzoVivo riporta lo stato del mercato dal feed', () => {
+        const sospeso = {
+            mo_status: 'SUSPENDED',
+            odds: { p1: { selection_id: 11, back: 1.28, lay: 1.32, back_size: 5, lay_size: 5 } },
+        } as unknown as TennisScanPayload;
+        expect(prezzoVivo(sospeso, null, 11, 'lay').statoMercato).toBe('SUSPENDED');
     });
 });

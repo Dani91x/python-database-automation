@@ -324,8 +324,9 @@ function propostaVista(over: Record<string, unknown> = {}, vivoOver: Record<stri
                 ...over,
             },
         },
-        vivo: { prezzo: 1.32, abbinabile: 116.38, ...vivoOver },
+        vivo: { prezzo: 1.32, abbinabile: 116.38, statoMercato: null, ...vivoOver },
         etaQuoteS: eta,
+        bloccabileOra: null,
     } as unknown as ReturnType<typeof useControlRoom>['proposte'][number];
 }
 
@@ -910,5 +911,28 @@ describe('la TESTATA non somma paper e live (critico della review)', () => {
         expect(s.getByTestId('cr-obiettivo').textContent).toContain('0,44');
         expect(s.getByTestId('cr-giornata').textContent).toContain('0,44');
         expect(s.getByTestId('cr-obiettivo').textContent).not.toContain('999');
+    });
+});
+
+// ========================================================================
+// REVIEW 15/09 — la scheda di chiusura dice il VERO sul numero che decide.
+// ========================================================================
+
+describe('«Chiudere adesso»: il numero vivo, o l’etichetta lo dichiara', () => {
+    it('col valore VIVO l’etichetta dice «adesso»', () => {
+        const pv = propostaVista();
+        (pv as unknown as { bloccabileOra: number }).bloccabileOra = 0.42;
+        mVm.mockReturnValue(vm({ proposte: [pv] }));
+        const scheda = mostra().getByTestId('cr-proposta');
+        expect(scheda.textContent).toMatch(/Chiudere adesso/);
+        expect(scheda.textContent).toMatch(/0,42/);
+    });
+
+    it('SENZA valore vivo l’etichetta dice che e’ quello della proposta', () => {
+        // prima si stampava il valore di ALLORA sotto la parola «adesso»
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({ locked_at_decision: -0.21 })] }));
+        const scheda = mostra().getByTestId('cr-proposta');
+        expect(scheda.textContent).toMatch(/Chiudere \(alla proposta\)/);
+        expect(scheda.textContent).not.toMatch(/Chiudere adesso/);
     });
 });

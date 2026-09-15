@@ -71,13 +71,22 @@ export interface PropostaChiusura {
 // -------------------------------------------------------------- prezzo vivo
 
 export interface PrezzoVivo {
+    /** stato del mercato dal feed (`SUSPENDED`, `CLOSED`, `OPEN`…); null = ignoto */
+    statoMercato?: string | null;
     /** prezzo corrente sul LATO con cui si chiude */
     prezzo: number | null;
     /** EUR abbinabili SUBITO a quel prezzo */
     abbinabile: number | null;
 }
 
-const VUOTO: PrezzoVivo = { prezzo: null, abbinabile: null };
+const VUOTO: PrezzoVivo = { prezzo: null, abbinabile: null, statoMercato: null };
+
+/** Lo stato del MATCH ODDS dal feed: `mo_status` e' il campo che lo scanner
+ *  scrive per entrambi gli sport. Ignoto -> null, mai «aperto» per comodita'. */
+function statoMercatoDi(payload: unknown): string | null {
+    const st = (payload as { mo_status?: unknown } | null)?.mo_status;
+    return typeof st === 'string' && st.trim() ? st.trim().toUpperCase() : null;
+}
 
 /** Estrae prezzo e importo abbinabile dal lato giusto di una coppia del feed.
  *  Chiudere con un LAY vuol dire **prendere il lay**: si guarda `lay`/`lay_size`. */
@@ -109,20 +118,23 @@ export function prezzoVivo(
     lato: 'back' | 'lay' | null | undefined,
 ): PrezzoVivo {
     if (!payload || !lato) return VUOTO;
+    const statoMercato = statoMercatoDi(payload);
 
     const blocco = scanBlockByMarketId(payload, marketId);
     const sel = blockSelection(blocco, { selectionId });
-    if (sel) return daCoppia(sel, lato);
+    if (sel) return { ...daCoppia(sel, lato), statoMercato };
 
     // tennis (e Match Odds del calcio): le quote stanno in `odds`, non nei blocchi
     const odds = (payload as TennisScanPayload).odds as
         | { p1?: ScanOddsPair | null; p2?: ScanOddsPair | null; home?: ScanOddsPair | null; draw?: ScanOddsPair | null; away?: ScanOddsPair | null }
         | null | undefined;
-    if (!odds || selectionId == null) return VUOTO;
+    if (!odds || selectionId == null) return { ...VUOTO, statoMercato };
     for (const o of [odds.p1, odds.p2, odds.home, odds.draw, odds.away]) {
-        if (o && Number(o.selection_id) === Number(selectionId)) return daCoppia(o, lato);
+        if (o && Number(o.selection_id) === Number(selectionId)) {
+            return { ...daCoppia(o, lato), statoMercato };
+        }
     }
-    return VUOTO;
+    return { ...VUOTO, statoMercato };
 }
 
 // ----------------------------------------------------------------- tolleranza
@@ -254,8 +266,22 @@ export function motivoNonApprovabile(args: {
      * scanner. Qui la si porta dove decide un ordine vero.
      */
     etaScannerS?: number | null;
+    /**
+     * Lo stato del mercato dal feed, se lo conosciamo: `SUSPENDED`, `CLOSED`…
+     *
+     * ⚠️ REVIEW 15/09 — su un mercato sospeso il servizio rifiuta comunque la
+     * chiusura, ma il pulsante restava acceso: il trader cliccava, aspettava,
+     * e si ritrovava un rifiuto. Meglio dirlo prima di farglielo scoprire.
+     */
+    statoMercato?: string | null;
 }): string | null {
-    const { scost, etaQuoteS, etaMassimaS, daChiudere, abbinabileOra, etaScannerS } = args;
+    const { scost, etaQuoteS, etaMassimaS, daChiudere, abbinabileOra, etaScannerS,
+        statoMercato } = args;
+
+    // PRIMO di tutto: se il mercato non accetta ordini, il resto non conta.
+    const m = String(statoMercato ?? '').toUpperCase();
+    if (m === 'SUSPENDED') return 'mercato sospeso: adesso Betfair non accetta ordini';
+    if (m === 'CLOSED') return 'mercato chiuso: non si può più operare';
 
     if (scost.delta == null) return 'prezzo corrente non disponibile: non si piazza al buio';
     if (etaQuoteS == null) return 'età delle quote sconosciuta: non si piazza su un prezzo di cui non sappiamo l’età';
@@ -300,17 +326,36 @@ export async function fetchProposte(limit = 50): Promise<PropostaChiusura[]> {
 
 /** APPROVA: `proposed → pending`. Da lì in poi il percorso è quello di sempre —
  *  nessuna seconda strada verso Betfair. */
+/**
+ * L'esito che le RPC di approvazione RITORNANO (non sollevano).
+ *
+ * ⚠️ REVIEW 15/09 — `safe_request_approve` non lancia quando la proposta non
+ * è più approvabile: ritorna `{ok:false, note:'…'}` con `error` a null. Il
+ * frontend scartava `data`, quindi la promise si risolveva e lo schermo si
+ * comportava come se l'ordine fosse partito. È il caso di due schede aperte,
+ * o del doppio clic: la migrazione lo prevede e scrive la spiegazione in
+ * italiano — che però non arrivava mai al trader.
+ */
+type EsitoRpc = { ok?: boolean; status?: string; note?: string } | null;
+
+function esigiOk(data: unknown, ripiego: string): void {
+    const r = data as EsitoRpc;
+    if (!r || r.ok !== true) throw new Error(r?.note?.trim() || ripiego);
+}
+
 export async function approvaProposta(id: number): Promise<void> {
-    const { error } = await supabase.rpc('safe_request_approve', { p_id: id });
+    const { data, error } = await supabase.rpc('safe_request_approve', { p_id: id });
     if (error) throw new Error(error.message);
+    esigiOk(data, 'la proposta non è più in attesa di approvazione');
 }
 
 /** IGNORA: `proposed → rejected`, con il motivo. Se la condizione di uscita
  *  regge ancora, al ciclo successivo il bot ne propone una nuova: «torna alla
  *  prossima occasione». */
 export async function ignoraProposta(id: number, motivo = 'ignorata dall’operatore'): Promise<void> {
-    const { error } = await supabase.rpc('safe_request_ignore', { p_id: id, p_reason: motivo });
+    const { data, error } = await supabase.rpc('safe_request_ignore', { p_id: id, p_reason: motivo });
     if (error) throw new Error(error.message);
+    esigiOk(data, 'la proposta non è più in attesa di una decisione');
 }
 
 /** Realtime sulla coda: una proposta nuova deve comparire senza aspettare il

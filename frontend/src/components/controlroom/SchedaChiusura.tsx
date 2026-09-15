@@ -37,6 +37,15 @@ export interface SchedaChiusuraProps {
     vivo: PrezzoVivo;
     /** età delle quote in secondi; null = non lo sappiamo (fail-closed) */
     etaQuoteS: number | null;
+    /**
+     * Quanto si blocca chiudendo ADESSO, al prezzo corrente.
+     *
+     * ⚠️ REVIEW 15/09 — qui si stampava `locked_at_decision`, cioè il valore
+     * di ALLORA sotto un'etichetta che dice «adesso», mentre la colonna delle
+     * posizioni della stessa pagina mostrava quello vivo. Due numeri diversi
+     * per la stessa posizione.
+     */
+    bloccabileOra?: number | null;
     /** da quanto lo SCANNER non scrive: distingue «prezzo fermo» (corrente)
      *  da «prezzo vecchio» (non lo stiamo guardando). Senza, un mercato poco
      *  scambiato spegneva APPROVA su un'uscita urgente in live. */
@@ -48,7 +57,8 @@ export interface SchedaChiusuraProps {
 }
 
 export function SchedaChiusura({
-    proposta, vivo, etaQuoteS, etaScannerS = null, slippagePct, onApprova, onIgnora,
+    proposta, vivo, etaQuoteS, etaScannerS = null, bloccabileOra = null,
+    slippagePct, onApprova, onIgnora,
 }: SchedaChiusuraProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
@@ -70,7 +80,12 @@ export function SchedaChiusura({
         scost, etaQuoteS, etaMassimaS: ETA_QUOTE_MAX_S,
         daChiudere, abbinabileOra: vivo.abbinabile,
         etaScannerS,
+        statoMercato: vivo.statoMercato ?? null,
     });
+    // il numero VIVO se c'e', altrimenti quello della decisione — e in quel
+    // caso l'etichetta lo dice, invece di spacciare una fotografia per presente.
+    const bloccato = bloccabileOra ?? p.locked_at_decision ?? null;
+    const bloccatoEVivo = bloccabileOra != null;
     const urgente = p.urgente === true;
 
     const azione = async (fn: (id: number) => Promise<void>) => {
@@ -133,16 +148,17 @@ export function SchedaChiusura({
 
             {/* ---- i numeri che decidono ---- */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
-                <Cella etichetta="Da chiudere" valore={fmtMoney(p.size)} />
+                <Cella etichetta="Da chiudere"
+                    valore={daChiudere == null ? DASH : fmtMoney(daChiudere)} />
                 <Cella
                     etichetta="Abbinabile ora"
                     valore={vivo.abbinabile == null ? DASH : fmtMoney(vivo.abbinabile)}
-                    tono={abbinabileSufficiente(p.size, vivo.abbinabile) ? 'buono' : 'cattivo'}
+                    tono={abbinabileSufficiente(daChiudere, vivo.abbinabile) ? 'buono' : 'cattivo'}
                 />
                 <Cella
-                    etichetta="Chiudere adesso"
-                    valore={p.locked_at_decision == null ? DASH : fmtMoney(p.locked_at_decision)}
-                    tono={(p.locked_at_decision ?? 0) >= 0 ? 'buono' : 'cattivo'}
+                    etichetta={bloccatoEVivo ? 'Chiudere adesso' : 'Chiudere (alla proposta)'}
+                    valore={bloccato == null ? DASH : fmtMoney(bloccato, { signed: true })}
+                    tono={bloccato == null ? undefined : bloccato >= 0 ? 'buono' : 'cattivo'}
                 />
                 <Cella
                     etichetta="Tenere"

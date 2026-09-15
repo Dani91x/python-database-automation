@@ -170,6 +170,16 @@ export interface PropostaVista {
     vivo: PrezzoVivo;
     /** età del prezzo su cui si piazzerebbe; null = non lo sappiamo */
     etaQuoteS: number | null;
+    /**
+     * Quanto si blocca chiudendo ADESSO, al prezzo corrente.
+     *
+     * ⚠️ REVIEW 15/09 — la scheda mostrava `locked_at_decision`, cioè il
+     * valore calcolato dal bot alla FOTOGRAFIA, sotto l'etichetta «Chiudere
+     * adesso». Nella colonna delle posizioni, nella stessa pagina, la stessa
+     * posizione mostrava il valore vivo: due numeri diversi per la stessa
+     * cosa. `null` = prezzo corrente o trade non disponibili, mai zero.
+     */
+    bloccabileOra: number | null;
 }
 
 // ------------------------------------------------------------------ il modello
@@ -637,33 +647,41 @@ export function useControlRoom(): ControlRoomVM {
         return posizioniChiuse(righe);
     }, [omegaTrades, safe?.trades, mike?.trades]);
 
+    /**
+     * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
+     * `null` quando il prezzo corrente non c'e': non si inventa.
+     *
+     * ⚠️ REVIEW 15/09 — questa funzione stava DENTRO il `useMemo` delle
+     * posizioni, quindi la scheda di chiusura non poteva usarla e stampava
+     * `locked_at_decision`, cioe' il valore calcolato dal bot alla FOTOGRAFIA,
+     * sotto un'etichetta che dice «adesso». Due numeri diversi per la stessa
+     * posizione nella stessa pagina. Ora e' una sola, e la usano entrambe.
+     */
+    const chiusuraViva = useCallback((t: {
+        side: string | null; price: number | null; size: number | null;
+        meta: Record<string, unknown> | null;
+        event_id: string; market_id?: string | null; selection_id?: number | null;
+    }): PosizioneAperta['chiusura'] => {
+        const { win, lose } = tradeExposureNow({
+            side: t.side, price: t.price, size: t.size, meta: t.meta ?? null,
+        });
+        const lato = hedgeSide(win, lose);
+        const riga = feedPerEvento.get(String(t.event_id));
+        const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+        // il prezzo del lato su cui si CHIUDE, non quello di ingresso
+        const vivo = prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, lato);
+        const prezzo = greenPrice(win, lose, lato === 'back' ? vivo.prezzo : null,
+                                  lato === 'lay' ? vivo.prezzo : null);
+        return {
+            lato,
+            prezzo,
+            abbinabile: vivo.abbinabile,
+                bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
+        };
+    }, [feedPerEvento]);
+
     const posizioni = useMemo<PosizioneAperta[]>(() => {
         const out: PosizioneAperta[] = [];
-
-        /** Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
-         *  `null` quando il prezzo corrente non c'e': non si inventa. */
-        const chiusuraViva = (t: {
-            side: string | null; price: number | null; size: number | null;
-            meta: Record<string, unknown> | null;
-            event_id: string; market_id?: string | null; selection_id?: number | null;
-        }): PosizioneAperta['chiusura'] => {
-            const { win, lose } = tradeExposureNow({
-                side: t.side, price: t.price, size: t.size, meta: t.meta ?? null,
-            });
-            const lato = hedgeSide(win, lose);
-            const riga = feedPerEvento.get(String(t.event_id));
-            const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
-            // il prezzo del lato su cui si CHIUDE, non quello di ingresso
-            const vivo = prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, lato);
-            const prezzo = greenPrice(win, lose, lato === 'back' ? vivo.prezzo : null,
-                                      lato === 'lay' ? vivo.prezzo : null);
-            return {
-                lato,
-                prezzo,
-                abbinabile: vivo.abbinabile,
-                bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
-            };
-        };
         for (const t of omegaTrades) {
             if (!aMercato(t)) continue;
             out.push({
@@ -707,8 +725,16 @@ export function useControlRoom(): ControlRoomVM {
         const etaQuoteS = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
             ? Math.max(0, Math.round((nowMs - odds) / 1000))
             : etaSecondi(riga?.updated_at ?? null, nowMs);
-        return { proposta: pr, vivo, etaQuoteS };
-    }), [proposte, feedPerEvento, nowMs]);
+        // IL VALORE VIVO, non quello della fotografia: e' lo stesso numero che
+        // la colonna delle posizioni mostra per la stessa posizione.
+        const t = (safe?.trades ?? []).find((x) => Number(x.id) === Number(p.trade_id));
+        const bloccabileOra = t ? (chiusuraViva({
+            side: t.side, price: t.price, size: t.size,
+            meta: (t.meta ?? null) as Record<string, unknown> | null,
+            event_id: t.event_id, market_id: t.market_id, selection_id: t.selection_id,
+        })?.bloccabile ?? null) : null;
+        return { proposta: pr, vivo, etaQuoteS, bloccabileOra };
+    }), [proposte, feedPerEvento, nowMs, safe?.trades, chiusuraViva]);
 
     const ricaricaProposte = useCallback(async () => {
         try { setProposte(await fetchProposte()); } catch { /* il giro riprova */ }
