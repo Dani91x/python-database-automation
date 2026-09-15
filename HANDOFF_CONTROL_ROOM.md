@@ -120,9 +120,7 @@ dipendono ordini veri.
    Nuovo tipo di attività `place_saltato`: quando il freno interviene lo si
    vede, invece di un silenzio identico a «non c'era niente da fare».
 
-### Due cose che l'incidente ha rivelato e che NON sono state cambiate
-
-Sono comportamenti **noti e voluti**: se li tocchi, stai alterando una strategia.
+### Due cose che l'incidente ha rivelato
 
 - **`mike_stop` non ferma gli ordini di uscita.** Fermare toglie le *aperture*
   (`_strip_openings`); coperture, green-up, cash-out e settlement continuano a
@@ -130,11 +128,58 @@ Sono comportamenti **noti e voluti**: se li tocchi, stai alterando una strategia
   **durante quel loop premere «FERMA» non lo avrebbe fermato**: il loop era su
   una gamba di uscita. Per fermarlo davvero sono stati **terminati i processi**.
   Se ti ritrovi in quella situazione: è quella la via, e va detto all'utente.
-- **Il tetto `max_open_matches` conta paper e live INSIEME.** `esposte` in
-  `_run_cycle` si costruisce su tutte le partite seguite senza filtro di
-  modalità (`service.py`, ~riga 1398). Con tetto a 1, **una vecchia posizione
-  paper rimasta viva impediva a Mike di aprire in live** — l'utente vedeva un
-  bot «che non fa niente» senza nessun motivo scritto da nessuna parte.
+  → **Il comportamento resta**, ma adesso i servizi lo **dichiarano**
+  (`stats.stop_ferma_solo_aperture`) e il pulsante lo scrive. Vedi §2C.
+- **Il tetto `max_open_matches` contava paper e live INSIEME.** `esposte` in
+  `_run_cycle` si costruiva su tutte le partite seguite senza filtro di
+  modalità. Con tetto a 1, **una vecchia posizione paper rimasta viva impediva
+  a Mike di aprire in live** — l'utente vedeva un bot «che non fa niente» senza
+  nessun motivo scritto da nessuna parte.
+  → **CORRETTO** (§2C). Non era una strategia da preservare: era la regola
+  «paper e live perfettamente distinti» violata dentro il conto che decide gli
+  ingressi.
+
+---
+
+## 2C. L'ALLINEAMENTO BACKEND ↔ CONTROL ROOM (15/09, `9143717`)
+
+> «Se correggi gli errori e non allinei anche il backend, come fa il trader a
+> capire?» — la Control Room è uno **specchio**: correggerla lasciando il
+> servizio com'era non corregge niente.
+
+Tre disallineamenti, tutti sul percorso per cui un trader capisce che cosa sta
+succedendo. **Nessuna strategia toccata**: nessuna soglia, nessun prezzo,
+nessuna dimensione. Cambia *chi conta chi*, e *che cosa viene detto*.
+
+**1. Il tetto delle partite di Mike sommava paper e live.**
+Ora vale DENTRO una modalità (`service.posti_occupati_per_modo`). Safe lo
+faceva già (`_ctx_di(mode_s)`); Omega non ha un tetto partite.
+
+**2. Un bot acceso che non apre adesso dice perché.**
+Il motivo esisteva solo nel registro degli scarti, che il trader non guarda: in
+Control Room c'era scritto «running» e basta, quindi un bot sano e un bot
+bloccato erano **indistinguibili**. Mike e Safe pubblicano `motivo_blocco`,
+`tetto_partite`, `partite_esposte`; il pannello li mostra sotto il bot
+(«acceso ma non apre: tetto partite raggiunto: 2 su 2 in live — 2/2»). Se il
+servizio non dichiara niente, **la pagina non inventa**.
+
+**3. La cadenza del battito la dichiara chi batte.**
+Nel frontend c'era una costante di 60 s: una **seconda verità**. I tre bot
+battono a passi diversi — **Safe ~2 s, Mike fino a 20, Omega fino a 60** — e il
+13/09 quei passi erano già stati allargati per far respirare il database senza
+che la pagina lo sapesse. Col metro unico, Safe risultava «vivo» per due minuti
+dopo essere morto. Ora i tre servizi pubblicano `cadenza_battito_s`; la
+costante resta solo come **ripiego** per un servizio che non dichiara, ed è la
+più lenta delle tre perché mandare a riavviare un bot sano è il danno peggiore.
+(In Omega `idle_cycle_s = 0` era trattato come «assente»: è invece una scelta
+legittima — «non rallentare a vuoto» — e scambiarla dichiarava 60 s al posto
+di 45.)
+
+**Regola che ne esce, e che vale per qualunque numero nuovo in Control Room:**
+
+> Se la pagina deve sapere qualcosa che il servizio decide, quel qualcosa lo
+> **pubblica il servizio**. Una costante nel frontend che duplica una scelta
+> del backend è una seconda verità, e prima o poi le due divergono in silenzio.
 
 ### La pulizia delle righe fantasma
 
@@ -431,16 +476,19 @@ allo stesso identico punto, ne uscivano trentadue.
    finché l'app non torna su. L'app la avvia **l'utente**: non chiuderla e non
    ricompilarla mai (è solo l'avviatore del `main.js` vivo).
 2. **Il frontend va ricostruito** perché la Control Room mostri il lavoro di
-   oggi: l'exe carica il bundle compilato, non i sorgenti.
+   oggi: l'exe carica il bundle compilato, non i sorgenti. **Ricostruito il
+   15/09 dopo `9143717`.**
 
 ---
 
 ## 9. Da fare (in ordine)
 
-1. **Riavviare l'app** (utente). Serve a due cose insieme: rimettere Mike sotto
-   sorveglianza, e far entrare in vigore `c4b6172` — finché il servizio gira col
-   codice vecchio, **la radice del loop è ancora lì**.
-2. **Ricostruire il frontend** per vedere le correzioni della Control Room.
+1. **Riavviare l'app** (utente). Serve a tre cose insieme: rimettere Mike sotto
+   sorveglianza, far entrare in vigore `c4b6172` — finché il servizio gira col
+   codice vecchio, **la radice del loop è ancora lì** — e attivare
+   l'allineamento di §2C, che è per metà nei servizi.
+2. ~~Ricostruire il frontend~~ — **fatto** il 15/09 dopo `9143717`
+   (`npm run build` in `frontend/`, bundle in `frontend/dist/`).
 3. **Rimisurare il tempo dal clic all'ordine** con `storia_operazioni.py`: la
    corsia preferenziale è pushata da ieri ma non è mai stata misurata in
    funzione. Atteso un crollo dai 4,2 s.
