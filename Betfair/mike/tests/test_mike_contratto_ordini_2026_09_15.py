@@ -59,19 +59,34 @@ def vivi(monkeypatch):
 
 
 def _gamba(**kw):
-    base = dict(ref="mike-t1", role="under_green", market=E.MARKET_OU35,
+    # il ref della GAMBA e' `{ruolo}-{ciclo}-{seq}`; il ref dell'ORDINE e'
+    # `mike-t<id di riga>`. Sono due cose diverse, e confonderle e' il difetto.
+    base = dict(ref="under_green-0-2", role="under_green", market=E.MARKET_OU35,
                 selection=E.SEL_UNDER, side="lay", price=1.43, size=5.07,
                 matched=0.0, status="pending")
     base.update(kw)
     return E.Leg(**base)
 
 
-class _DbSenzaRighe:
-    """Il DB non conosce nessun bet_id: costringe la ricerca a passare dal
-    riferimento del cliente, che e' la strada che falliva."""
+def _riga(**kw):
+    """La riga di `mike_trades` che accompagna la gamba. In produzione c'e'
+    SEMPRE: si scrive PRIMA di piazzare."""
+    base = {"id": 1, "signal_key": "under_green-0-2", "role": "under_green",
+            "cycle_no": 0, "side": "lay", "status": "pending", "bet_id": None,
+            "market_id": "1.234", "selection_id": 1222344, "meta": {}}
+    base.update(kw)
+    return base
 
-    def trades_for_event(self, _eid):
-        return []
+
+class _DbSenzaBetId:
+    """La riga c'e' ma non porta nessun bet_id: costringe la ricerca a passare
+    dal riferimento del cliente, che e' la strada che falliva."""
+
+    def __init__(self, righe=None):
+        self.righe = [_riga()] if righe is None else list(righe)
+
+    def trades_for_event(self, _eid, **_kw):
+        return list(self.righe)
 
     def log(self, *_a, **_k):
         pass
@@ -106,26 +121,44 @@ def test_ogni_campo_che_mike_sa_leggere_esiste_davvero(vivi):
 # 2. RITROVARE L'ORDINE — il difetto che ha prodotto 32 ordini veri
 # ===========================================================================
 def test_l_ordine_appoggiato_si_ritrova_dal_riferimento(vivi):
-    trovato = S._ordine_di(vivi(ref="mike-t1"), _gamba(), _DbSenzaRighe(), "E1")
+    trovato = S._ordine_di(vivi(ref="mike-t1"), _gamba(), _DbSenzaBetId(), "E1")
     assert trovato is not None, (
         "l'ordine c'e' ed e' suo: non ritrovarlo significa ripiazzarlo")
 
 
 def test_un_riferimento_diverso_non_e_il_nostro_ordine(vivi):
-    assert S._ordine_di(vivi(ref="mike-t999"), _gamba(), _DbSenzaRighe(), "E1") is None
+    assert S._ordine_di(vivi(ref="mike-t999"), _gamba(), _DbSenzaBetId(), "E1") is None
 
 
 def test_si_ritrova_anche_per_bet_id_quando_il_riferimento_non_combacia(vivi):
-    class _Db(_DbSenzaRighe):
-        def trades_for_event(self, _eid):
-            # la riga si lega alla gamba dal `signal_key`, che E' il ref
-            return [{"id": 1, "signal_key": "mike-t1", "role": "under_green",
-                     "cycle_no": 0, "side": "lay", "status": "pending",
-                     "bet_id": "777", "meta": {}}]
-
-    trovato = S._ordine_di(vivi(bet_id="777", ref="tutt-altro"), _gamba(),
-                           _Db(), "E1")
+    db = _DbSenzaBetId([_riga(bet_id="777")])
+    trovato = S._ordine_di(vivi(bet_id="777", ref="tutt-altro"), _gamba(), db, "E1")
     assert trovato is not None and trovato["bet_id"] == "777"
+
+
+def test_si_ritrova_ancora_col_REF_STORICO_della_gamba(vivi):
+    """Gli ordini gia' vivi a mercato il 15/09 portavano il ref della GAMBA
+    (`under_green-0-2`), non `mike-t<id>`. Vanno ancora riconosciuti."""
+    trovato = S._ordine_di(vivi(ref="under_green-0-2"), _gamba(),
+                           _DbSenzaBetId(), "E1")
+    assert trovato is not None
+
+
+def test_il_REF_STORICO_di_UN_ALTRO_MERCATO_non_e_il_nostro_ordine(vivi):
+    """LA GUARDIA: `seq` conta per partita, quindi `under_green-0-2` puo'
+    esistere su un ALTRO evento nello stesso momento — il 15/09 a mercato
+    c'erano `under_green-0-116` e `under_green-0-2` insieme. Prenderlo
+    significherebbe contabilizzare la posizione di un'altra partita."""
+    db = _DbSenzaBetId([_riga(market_id="1.999")])
+    assert S._ordine_di(vivi(ref="under_green-0-2"), _gamba(), db, "E1") is None
+
+
+def test_senza_riga_non_si_indovina(vivi):
+    """Senza riga non si conosce il mercato, e `leg.ref` da solo non basta a
+    dire che un ordine e' nostro. Non trovarlo costa un ciclo; trovarne uno
+    sbagliato costa soldi."""
+    assert S._ordine_di(vivi(ref="under_green-0-2"), _gamba(),
+                        _DbSenzaBetId([]), "E1") is None
 
 
 # ===========================================================================
@@ -139,10 +172,7 @@ def _segui(vivi_lista, leg):
 
     registro = []
 
-    class _Db(_DbSenzaRighe):
-        def trades_for_event(self, _eid):
-            return []
-
+    class _Db(_DbSenzaBetId):
         def log(self, kind, payload, *_a):
             registro.append((kind, payload))
 

@@ -141,6 +141,118 @@ dipendono ordini veri.
 
 ---
 
+## 2BIS. I TRE DIFETTI DEL POMERIGGIO DEL 15/09 — stessa radice, tre punti
+
+> Li ha trovati **l'utente**, guardando gli ordini veri su Betfair. La review a
+> 12 dimensioni della mattina non è mai entrata in `Betfair/mike/`.
+
+Alle 14:00 c'erano a mercato cinque ordini reali e il database ne raccontava una
+terza versione. La radice è la stessa della mattina, e va imparata una volta per
+tutte: **un identificativo o un campo scritto in un modo e letto in un altro**.
+Non dà errore. Dà `None`, che diventa `0.0`, che significa «non abbinato» /
+«mai piazzato». Silenzioso, e sul percorso dei soldi.
+
+### A. `res.ok` non veniva letto da nessuna parte
+
+`place_order_live` restituisce un `PlaceResult` con `ok`. In
+`_piazza_resting_live` quel campo **non era letto**: se Betfair rifiutava
+l'istruzione il codice proseguiva lo stesso, scriveva `place_resting` e lasciava
+la riga `pending`. Il bot credeva di avere una copertura che non esisteva.
+
+**Successo davvero:** Trinec v Mlada Boleslav, 13:43:33 — back reale da 5,00 €
+@2,14 rimasto **scoperto**, riga #4822 `pending` con `bet_id` NULL.
+
+→ Adesso l'esito si legge per primo. `ok=False` senza tracce significa una cosa
+sola (l'ordine non è a mercato): la gamba si annulla, la riga si chiude in
+`error` — così il motore può riproporre la copertura — e si scrive il nuovo kind
+**`place_rifiutato`**, dichiarato anche in UI. `ok=False` **con** un `bet_id` o
+un abbinamento è un racconto che non torna: non si sceglie da soli, si va in
+riconciliazione.
+
+### B. `getattr(res, "avg_price", None)` — un campo che non esiste
+
+Si chiama `avg_price_matched`. Tornava sempre `None` e il prezzo ricadeva su
+quello **chiesto**: un abbinamento immediato veniva contabilizzato al prezzo
+sbagliato, e da lì passano liability, P&L e cash-out.
+
+→ Adesso si legge `res.avg_price_matched`, per attributo diretto: se il campo
+cambia nome il codice si rompe **subito e rumorosamente**, invece di mentire.
+
+### C. La riconciliazione cercava un ref che Mike non aveva mai usato
+
+`_reconcile_unknown` passava sempre `ref=f"mike-t{id}"`, ma le gambe di
+**uscita** venivano piazzate con `customer_ref=leg.ref` (`under_green-0-2`). E
+`omega_engine._order_matches` è categorico: se l'ordine dichiara un ref, è suo
+**solo** se coincide — nessun ripiego, perché per una gamba di chiusura mercato
+e selezione vengono azzerati di proposito (confermerebbero la chiusura con
+l'ordine dell'apertura). Quindi:
+
+    ordine VIVO a mercato → non trovato né in `current` né in `cleared`
+      → passata `RECON_GRACE_S` → `action="free"` → riga in 'error'
+      → il freno `_gia_appoggiata` (che guarda le righe 'pending') non copre più
+      → al giro dopo il motore piazza un SECONDO green-up.
+
+È il loop della mattina, in un terzo punto. **Successo davvero:** riga #4820
+marcata «mai piazzata» mentre su Betfair l'ordine era vivo.
+
+→ Corretto in due mosse, non una:
+
+1. **Un solo schema di identificativo.** `_piazza_resting_live` era l'unico
+   punto di Mike che usasse un ref diverso: adesso usa `mike-t<id>` come tutti
+   gli altri percorsi (`X.place` lo faceva già). È la radice, e si toglie lì.
+2. **`_ordine_della_riga`, l'unico posto in cui Mike decide se un ordine è
+   suo**: `bet_id` → `mike-t<id>` → ref storico della gamba. Gli ordini trovati
+   vengono **normalizzati** e consegnati a `reconcile_decision` uno alla volta,
+   col ref che sta cercando: lei resta padrona della decisione, non si duplica
+   la logica. (Duplicarla è il modo in cui il difetto della mattina è rinato una
+   seconda volta dentro la funzione che lo aveva causato.)
+
+> ⚠️ **La via «minima» suggerita era una trappola.** Passare la lista
+> `[f"mike-t{id}", r["signal_key"]]` a `reconcile_decision` avrebbe introdotto
+> un bug nuovo: `_order_matches` confronta **solo il ref**, senza mercato, e il
+> ref della gamba vale `{ruolo}-{ciclo}-{seq}` con `seq` che conta **per
+> partita**. Alle 14:00 del 15/09 erano vivi insieme `under_green-0-116` e
+> `under_green-0-2` su due eventi diversi: una riga sarebbe stata confermata con
+> l'ordine di un'altra partita, prezzo e size compresi. Il ref storico si
+> accetta **solo a mercato e selezione concordi** — la guardia ha il suo test.
+
+### Safe e Omega: controllati, non hanno questi difetti
+
+- **A** — `execution.py:424`, `omega_service.py:1613` e `:3160` leggono già
+  `if not res.ok or res.size_matched <= 0`.
+- **B** — nessuno legge `avg_price` su un `PlaceResult`; `fill.avg_price` è un
+  `PaperFill`, un altro oggetto.
+- **C** — entrambi passano da `execution.place()` con `client_ref` costruito dal
+  prefisso di tabella (`safe-t<id>`, `omega-t<id>`), **aperture e chiusure**, e
+  riconciliano con lo stesso ref. Safe prova per di più `_reconcile_by_bet_id`
+  prima di tutto. Mike era l'unico con un percorso REST diretto, ed è per quello
+  che era l'unico fuori riga.
+
+### Perché nessun test li aveva presi (di nuovo)
+
+Gli stessi finti, la stessa lezione:
+
+- il doppio di `place_order_live` restituiva `SimpleNamespace(bet_id=…,
+  size_matched=…, **avg_price**=None)` — senza `ok`, e col nome sbagliato del
+  prezzo: **il finto rispondeva a domande a cui il vero non risponde**;
+- il doppio di `db.insert_trade` restituiva **la riga**, mentre il vero
+  restituisce l'**id** (`Optional[int]`);
+- gli ordini finti erano in **camelCase**, mentre `omega_market` normalizza in
+  snake_case.
+
+Adesso gli esiti si costruiscono con il **vero `PlaceResult`** e gli ordini con
+la grafia che il normalizzatore produce davvero. Un test
+(`test_PlaceResult_ha_davvero_i_campi_che_il_codice_legge`) mette per iscritto
+il contratto e verifica che `avg_price` **non esista**.
+
+**Verificato che i test prendano i difetti**: reintrodotti i tre difetti sul
+codice corretto, **8 dei 14 test nuovi diventano rossi**. Un test verde che non
+sa diventare rosso non è una difesa.
+
+File: `Betfair/mike/tests/test_mike_esito_e_riconciliazione_2026_09_15.py`.
+
+---
+
 ## 2C. L'ALLINEAMENTO BACKEND ↔ CONTROL ROOM (15/09, `9143717`)
 
 > «Se correggi gli errori e non allinei anche il backend, come fa il trader a

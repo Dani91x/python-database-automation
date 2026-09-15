@@ -1091,6 +1091,10 @@ export const MIKE_ACTIVITY_KINDS = [
     // 15/09: un piazzamento RIFIUTATO dal freno anti-duplicato. Deve essere
     // visibile: dice che il bot ha evitato di ripetere una gamba gia' in volo.
     'place_saltato',
+    // 15/09: Betfair ha RIFIUTATO l'ordine. Prima l'esito non veniva letto e il
+    // bot dava per fatta una copertura che non esisteva, lasciando scoperto un
+    // back reale: e' la notizia piu' importante che possa dare la pagina.
+    'place_rifiutato',
     'cancel', 'skip', 'no_fill', 'would_place', 'size_legalized', 'pre_cycle', 'cover',
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
@@ -1169,6 +1173,9 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'place_saltato':
             return `${role()} NON piazzata: una gamba con lo stesso ruolo è già in attesa`
                 + `${p.gia_in_volo ? ` (riga #${String(p.gia_in_volo)})` : ''}`;
+        case 'place_rifiutato':
+            return `${role()} RIFIUTATA da Betfair${p.order_status ? ` · ${String(p.order_status)}` : ''}`
+                + ` · ${money('size')} @ ${odds('price')} — la copertura NON è a mercato`;
         case 'fill_resting':
             return `${role()} appoggiata ABBINATA ${money('size')} @ ${odds('price')}${Number.isFinite(n('best_back')) ? ` · best back ${odds('best_back')}` : ''}`;
         case 'would_place':

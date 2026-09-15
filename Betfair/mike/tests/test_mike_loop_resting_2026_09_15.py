@@ -31,6 +31,23 @@ from types import SimpleNamespace
 
 from Betfair.mike import service as S
 from Betfair.mike import engine as E
+from Betfair.omega.omega_market import PlaceResult
+
+
+def esito(*, ok=True, bet_id="999", matched=0.0, prezzo=None,
+          stato="EXECUTABLE") -> PlaceResult:
+    """L'esito di un place, COSTRUITO CON LA CLASSE VERA.
+
+    ⚠️ 15/09 — qui i finti erano `SimpleNamespace(bet_id=…, size_matched=…,
+    avg_price=None)`: non avevano `ok` (che il codice infatti non leggeva) e
+    chiamavano `avg_price` un campo che sul vero `PlaceResult` si chiama
+    `avg_price_matched`. Il finto rispondeva a domande a cui il vero non
+    risponde, e i test CERTIFICAVANO due difetti reali.
+    Costruendolo con la classe vera, un campo inventato solleva subito e un
+    campo che sparisce rompe i test. E' il punto.
+    """
+    return PlaceResult(ok=ok, order_status=stato, bet_id=bet_id,
+                       size_matched=matched, avg_price_matched=prezzo, raw={})
 
 
 class DbFinto:
@@ -47,11 +64,13 @@ class DbFinto:
         return list(self.righe)
 
     # --- scrittura ---
+    # ⚠️ il vero `db.insert_trade` torna l'ID (`Optional[int]`), non la riga:
+    # un finto che torna un dizionario risponde a una domanda a cui il vero
+    # non risponde — ed e' la firma dei difetti del 15/09.
     def insert_trade(self, row, **_kw):
         self._id += 1
-        r = {**row, "id": self._id}
-        self.righe.append(r)
-        return r
+        self.righe.append({**row, "id": self._id})
+        return self._id
 
     def update_trade(self, trade_id, **campi):
         self.update_chiamate.append((trade_id, campi))
@@ -112,8 +131,7 @@ def test_NON_SI_PIAZZA_una_seconda_gamba_protettiva(monkeypatch):
     db = DbFinto([riga_pending()])
     piazzati = []
     market = SimpleNamespace(
-        place_order_live=lambda **kw: piazzati.append(kw) or SimpleNamespace(
-            bet_id="999", size_matched=0.0, avg_price=None))
+        place_order_live=lambda **kw: piazzati.append(kw) or esito(bet_id="999"))
     info = SimpleNamespace(event_id="E1", event_name="Beijing v Pohang",
                            market_id=lambda m: "1.1", selection_id=lambda m, s: 1,
                            selection_name=lambda m, s: "Under 3.5 Goals")
@@ -152,8 +170,7 @@ def test_il_bet_id_si_scrive_ANCHE_se_l_ordine_non_si_abbina():
     sul book e' il caso NORMALE, e senza il suo identificativo la
     riconciliazione lo dichiara «mai piazzato»."""
     db = DbFinto()
-    market = SimpleNamespace(place_order_live=lambda **kw: SimpleNamespace(
-        bet_id="442889708346", size_matched=0.0, avg_price=None))
+    market = SimpleNamespace(place_order_live=lambda **kw: esito(bet_id="442889708346"))
     info = SimpleNamespace(event_id="E1", event_name="x", market_id=lambda m: "1.1",
                            selection_id=lambda m, s: 1, selection_name=lambda m, s: "u")
 
@@ -168,8 +185,7 @@ def test_il_bet_id_si_scrive_ANCHE_se_l_ordine_non_si_abbina():
 
 def test_senza_bet_id_da_Betfair_lo_si_DICHIARA_invece_di_tacere():
     db = DbFinto()
-    market = SimpleNamespace(place_order_live=lambda **kw: SimpleNamespace(
-        bet_id=None, size_matched=0.0, avg_price=None))
+    market = SimpleNamespace(place_order_live=lambda **kw: esito(bet_id=None))
     info = SimpleNamespace(event_id="E1", event_name="x", market_id=lambda m: "1.1",
                            selection_id=lambda m, s: 1, selection_name=lambda m, s: "u")
 
@@ -191,8 +207,7 @@ def test_RIGHE_ILLEGGIBILI_NON_SI_PIAZZA(monkeypatch):
     db = DbRotto()
     piazzati = []
     market = SimpleNamespace(
-        place_order_live=lambda **kw: piazzati.append(kw) or SimpleNamespace(
-            bet_id="1", size_matched=0.0, avg_price=None))
+        place_order_live=lambda **kw: piazzati.append(kw) or esito(bet_id="1"))
     info = SimpleNamespace(event_id="E1", event_name="x", market_id=lambda m: "1.1",
                            selection_id=lambda m, s: 1, selection_name=lambda m, s: "u")
     g = gamba()

@@ -1066,6 +1066,11 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # nuovo a ogni ciclo. Un piazzamento rifiutato dal freno DEVE essere
         # visibile: dice che il bot ha evitato di ripetersi.
         "place_saltato",
+        # 15/09: Betfair ha RIFIUTATO la lay appoggiata (`ok=False`). Prima
+        # l'esito non veniva letto: il bot proseguiva, scriveva `place_resting`
+        # e credeva di avere una copertura che non esisteva, lasciando un back
+        # reale scoperto. Un rifiuto e' una notizia, non un dettaglio.
+        "place_rifiutato",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

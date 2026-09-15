@@ -865,17 +865,31 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         return
 
     try:
-        _insert_trade_row(db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo), eid)
+        trade_id = _insert_trade_row(
+            db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo), eid)
     except Exception as ex:  # noqa: BLE001 — riserva fallita: NESSUN ordine reale
         leg.status = "cancelled"
         db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, eid)
         return
+    # ⚠️ 15/09 — IL RIFERIMENTO DELL'ORDINE E' `mike-t<id>`, QUI COME OVUNQUE.
+    # Fino a oggi questa era l'UNICA gamba di Mike piazzata con un ref diverso
+    # (`leg.ref`, del tipo `under_green-0-2`) mentre la riconciliazione cercava
+    # `mike-t<id>`: l'ordine VIVO non veniva riconosciuto ne' fra i correnti ne'
+    # fra i regolati, passata la grazia la riga andava in 'error', e il freno
+    # anti-duplicato — che guarda le righe 'pending' — smetteva di coprire. Al
+    # giro dopo il motore piazzava un SECONDO green-up. Terzo ramo dello stesso
+    # loop, e la stessa radice: un identificativo scritto in un modo e letto in
+    # un altro.
+    # `leg.ref` non poteva fare da identificativo: vale `{ruolo}-{ciclo}-{seq}`
+    # con `seq` che conta PER PARTITA, quindi due partite diverse possono
+    # esibire lo stesso ref. Il `mike-t<id>` viene dall'id di riga: unico.
+    ref_ordine = f"mike-t{int(trade_id)}" if trade_id is not None else str(leg.ref)
     try:
         res = market.place_order_live(
             market_id=info.market_id(leg.market),
             selection_id=info.selection_id(leg.market, leg.selection),
             price=float(leg.price), size=float(leg.size), event_id=eid,
-            side="lay", customer_ref=leg.ref, fill_or_kill=False)
+            side="lay", customer_ref=ref_ordine, fill_or_kill=False)
     except Exception as ex:  # noqa: BLE001
         # Esito IGNOTO: l'ordine POTREBBE esistere. Non si annulla la riga e non
         # si rientra — si manda in riconciliazione, che e' l'unico modo onesto
@@ -886,13 +900,51 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         db.log("reconcile_pending", {"leg": leg.ref, "role": leg.role,
                                      "reason": "resting_place_unknown", "critical": True}, eid)
         return
+    # ⚠️ 15/09 — L'ESITO SI LEGGE, PRIMA DI TUTTO IL RESTO.
+    # `place_order_live` torna `ok=False` quando Betfair RIFIUTA l'istruzione
+    # (report o istruzione con status != SUCCESS). L'esito IGNOTO — timeout,
+    # nessun report — non arriva mai fin qui: viene sollevato e lo raccoglie il
+    # blocco sopra. Quindi `ok=False` significa una cosa sola, e precisa:
+    # l'ordine NON e' a mercato.
+    # Prima `ok` non veniva letto DA NESSUNA PARTE: su un rifiuto il codice
+    # proseguiva, scriveva `place_resting` e lasciava la riga 'pending'. Il bot
+    # credeva di avere una copertura che non esisteva e il back reale da 5 EUR
+    # restava scoperto — Trinec v Mlada Boleslav, 13:43:33 del 15/09.
+    bet_id = res.bet_id
+    matched = float(res.size_matched or 0.0)
+    if not res.ok:
+        if bet_id or matched > 0:
+            # Rifiuto DICHIARATO ma con tracce di un ordine (un identificativo,
+            # un abbinamento): i due racconti non tornano e non si sceglie da
+            # soli quale credere. Va in riconciliazione, che lo chiede a Betfair.
+            leg.status = E.STATUS_RECONCILE
+            logger.critical("[mike] %s: %s rifiutata MA con tracce (bet_id=%s matched=%.2f) "
+                            "-> riconciliazione", eid, leg.ref, bet_id, matched)
+            db.log("reconcile_pending", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                         "reason": "resting_rifiutata_con_tracce",
+                                         "bet_id": bet_id, "matched": round(matched, 2),
+                                         "order_status": res.order_status}, eid)
+            return
+        # Rifiuto pulito: nessun ordine esiste. La riga si CHIUDE subito, cosi'
+        # il motore puo' riproporre la copertura al giro dopo; una riga 'pending'
+        # eterna terrebbe alzato il freno anti-duplicato su una gamba mai nata.
+        leg.status = "cancelled"
+        logger.critical("[mike] %s: Betfair ha RIFIUTATO la lay appoggiata %s (%s): "
+                        "nessun ordine a mercato", eid, leg.ref, res.order_status)
+        db.log("place_rifiutato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                   "reason": "resting_rifiutata",
+                                   "order_status": res.order_status,
+                                   "price": leg.price, "size": leg.size,
+                                   "nota": "la copertura NON e' a mercato: la riga si chiude "
+                                           "e il motore la ripropone"}, eid)
+        _mark_trade_cancelled(db, eid, leg, "resting_rifiutata")
+        return
     # ⚠️ IL BET_ID SI SCRIVE SEMPRE (15/09), non solo quando l'ordine si abbina.
     # Un ordine appoggiato che resta sul book e' il caso NORMALE: senza il suo
     # identificativo la riconciliazione puo' cercarlo solo per
     # `customerOrderRef`, e se quella ricerca fallisce la riga risulta «mai
     # piazzata» mentre su Betfair l'ordine e' vivo. E' l'anello da cui e' partito
     # il loop del 15/09.
-    bet_id = getattr(res, "bet_id", None)
     if bet_id:
         try:
             r0 = _trade_row_for_leg(db, eid, leg)
@@ -906,12 +958,17 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
                          "nota": "Betfair non ha restituito un identificativo: la riga "
                                  "resta pending e la riconciliazione la risolve"}, eid)
 
-    matched = float(getattr(res, "size_matched", 0.0) or 0.0)
     if matched > 0:
         # puo' succedere: il book si e' mosso fra la decisione e il piazzamento.
         # E' un abbinamento VERO e va contabilizzato subito.
+        # ⚠️ 15/09 — IL PREZZO E' `avg_price_matched`. Qui si leggeva
+        # `avg_price`, un campo che su `PlaceResult` NON ESISTE: `getattr`
+        # tornava sempre `None` e il prezzo ricadeva su quello CHIESTO. Un
+        # abbinamento immediato veniva contabilizzato al prezzo sbagliato — e
+        # da li' passano liability, P&L e cash-out. Nessun errore, solo numeri
+        # falsi: la stessa firma degli altri due difetti.
         leg.matched = matched
-        leg.avg_price = float(getattr(res, "avg_price", None) or leg.price)
+        leg.avg_price = float(res.avg_price_matched or leg.price)
         if matched >= float(leg.size) - 1e-9:
             leg.status = "open"
         _aggiorna_riga_resting(db, eid, leg, "live_resting_immediato")
@@ -998,6 +1055,100 @@ def _num_ordine(o: Optional[Dict[str, Any]], campo: str, difetto: float = 0.0) -
         return difetto
 
 
+_ASSENTE = object()
+
+
+def ordine_normalizzato(o: Dict[str, Any]) -> Dict[str, Any]:
+    """Un ordine Betfair riscritto con le chiavi in snake_case, comunque arrivi.
+
+    Chi sta a valle — ``omega_engine._order_matches`` e le
+    ``reconcile_decision`` — legge ``size_matched``, ``size_remaining``,
+    ``avg_price_matched``, ``customer_order_ref`` e basta. Se l'ordine arriva
+    in camelCase quelle letture NON danno errore: danno `None`, che diventa
+    `0.0`, che significa «non abbinato». E' il difetto del 15/09, e quelle
+    funzioni non hanno modo di difendersene da sole.
+    Qui il dizionario si rende conforme UNA volta, passando dall'unica tabella
+    che conosce i nomi dei campi.
+    """
+    out = dict(o)
+    for campo in _ALIAS_ORDINE:
+        v = campo_ordine(o, campo, _ASSENTE)
+        if v is not _ASSENTE:
+            out[campo] = v
+    return out
+
+
+def ref_ordine_di_riga(r: Dict[str, Any]) -> str:
+    """Il ``customerOrderRef`` con cui Mike piazza l'ordine di questa riga.
+
+    UNO SOLO, e viene dall'id di riga: e' l'unico identificativo di Mike che
+    sia davvero unico. Lo usano il place delle aperture (``X.place``), il place
+    della lay appoggiata e la riconciliazione — dal 15/09 tutti e tre.
+    """
+    return f"mike-t{r.get('id')}"
+
+
+def _ordine_della_riga(ordini: Optional[List[Dict[str, Any]]],
+                       r: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """L'ordine Betfair che appartiene a questa riga di ``mike_trades``, o None.
+
+    Tre strade, dalla piu' solida alla piu' debole, e la piu' debole porta una
+    guardia:
+
+      1. il ``bet_id`` scritto sulla riga — l'identificativo che ci ha dato
+         Betfair, unico su tutto il conto: non puo' confondersi con niente;
+      2. ``mike-t<id>``, il ref di oggi: unico perche' viene dall'id di riga;
+      3. il ``signal_key`` della gamba (``under_green-0-2``) — il ref con cui
+         PRIMA del 15/09 venivano appoggiate le lay. Questo NON e' unico fra
+         partite: vale `{ruolo}-{ciclo}-{seq}` e `seq` conta per partita, quindi
+         due eventi diversi possono esibire lo stesso ref nello stesso momento.
+         Si accetta SOLO a mercato e selezione concordi.
+
+    La terza strada serve agli ordini gia' vivi a mercato al momento del fix e
+    a nessun altro: i nuovi nascono tutti con `mike-t<id>`.
+    """
+    if not ordini:
+        return None
+    norm = [ordine_normalizzato(o) for o in ordini if isinstance(o, dict)]
+
+    bet_id = str(r.get("bet_id") or "").strip()
+    if bet_id:
+        for o in norm:
+            if str(o.get("bet_id") or "").strip() == bet_id:
+                return o
+
+    mio = ref_ordine_di_riga(r)
+    for o in norm:
+        if str(o.get("customer_order_ref") or "") == mio:
+            return o
+
+    storico = str(r.get("signal_key") or "").strip()
+    if not storico or storico == mio:
+        return None
+    mid = r.get("market_id")
+    try:
+        sid = int(r["selection_id"]) if r.get("selection_id") is not None else None
+    except (TypeError, ValueError):
+        sid = None
+    for o in norm:
+        if str(o.get("customer_order_ref") or "") != storico:
+            continue
+        # LA GUARDIA, e non e' teorica: alle 14:00 del 15/09 c'erano a mercato
+        # `under_green-0-116` e `under_green-0-2` su due partite diverse. Senza
+        # questo confronto una riga verrebbe confermata con l'ordine di un ALTRO
+        # evento — prezzo e size di un'altra posizione, con soldi veri.
+        if mid is not None and str(o.get("market_id") or "") != str(mid):
+            continue
+        if sid is not None and o.get("selection_id") is not None:
+            try:
+                if int(o["selection_id"]) != sid:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        return o
+    return None
+
+
 def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
                event_id: str) -> Optional[Dict[str, Any]]:
     """Ritrova FRA GLI ORDINI VIVI quello di questa gamba.
@@ -1010,28 +1161,20 @@ def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
     costruzione: ogni ordine appoggiato risultava «mai piazzato», il motore ne
     creava uno nuovo, e si ricominciava. Trentadue volte con soldi veri.
 
-    Adesso si cerca per DUE strade, e basta che una risponda:
-      1. il ``bet_id``, che dal 15/09 si scrive sempre sulla riga: e'
-         l'identificativo che Betfair stesso ci ha dato, il piu' solido;
-      2. il riferimento del cliente, accettando ENTRAMBE le grafie — cosi' un
-         cambio di normalizzazione a monte non puo' piu' rompere in silenzio
-         una ricerca da cui dipendono ordini reali.
+    La ricerca sta tutta in ``_ordine_della_riga``, che e' l'UNICO posto in cui
+    Mike decide se un ordine Betfair e' suo: bet_id, poi ``mike-t<id>``, poi il
+    ref storico a mercato concorde. Qui non si duplica quella logica — e' il
+    modo in cui lo stesso difetto e' rinato una seconda volta.
+
+    Senza riga non si cerca per ref: ``leg.ref`` non e' unico fra partite e un
+    match sbagliato contabilizzerebbe l'abbinamento di un ALTRO evento. Non
+    trovare un ordine costa un ciclo di attesa; trovarne uno sbagliato costa
+    soldi. Nel dubbio si dice «non lo so».
     """
-    ref = str(leg.ref)
-
-    # 1) per bet_id: l'identificativo di Betfair, se lo abbiamo sulla riga
     riga = _trade_row_for_leg(db, event_id, leg)
-    bet_id = str((riga or {}).get("bet_id") or "").strip()
-    if bet_id:
-        for x in vivi:
-            if str(campo_ordine(x, "bet_id") or "").strip() == bet_id:
-                return x
-
-    # 2) per riferimento del cliente
-    for x in vivi:
-        if str(campo_ordine(x, "customer_order_ref") or "") == ref:
-            return x
-    return None
+    if riga is None:
+        return None
+    return _ordine_della_riga(vivi, riga)
 
 
 def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, Any],
@@ -1040,9 +1183,9 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
 
     In paper la simulazione guarda il book e decide. Qui no: un ordine reale ha
     una CODA davanti, e l'unico modo di sapere se e' toccato a noi e' chiederlo.
-    Si riconosce l'ordine con ``_ordine_di``: prima per ``bet_id``, poi per
-    riferimento del cliente. Vedi li' perche' la vecchia ricerca per sola
-    ``customerOrderRef`` falliva SEMPRE.
+    Si riconosce l'ordine con ``_ordine_di`` → ``_ordine_della_riga``: bet_id,
+    poi ``mike-t<id>``, poi il ref storico a mercato concorde. Vedi li' perche'
+    la vecchia ricerca per sola ``customerOrderRef`` falliva SEMPRE.
     """
     eid = str(ev["event_id"])
     try:
@@ -2553,9 +2696,24 @@ def _reconcile_unknown(db: Any, market: Any, event_id: str, ctx: E.MatchCtx, mod
 
     PAPER: nessun ordine e' mai partito verso Betfair (l'eccezione viene dal
     fill simulato) → la gamba si risolve subito come non abbinata.
-    LIVE: si interroga Betfair per ``customerOrderRef`` (``mike-t<id>``):
+    LIVE: si interroga Betfair. L'ordine si riconosce con ``_ordine_della_riga``
+    — bet_id, ``mike-t<id>``, ref storico a mercato concorde — e poi si decide:
     confermata (abbinata), liberata (mai esistita) o si resta in attesa. Senza
     accesso a ``listCurrentOrders`` si RESTA in riconciliazione: mai un'ipotesi.
+
+    ⚠️ 15/09 — QUI PASSAVA IL TERZO RAMO DEL LOOP. Si passava a
+    ``reconcile_decision`` sempre e solo ``ref=f"mike-t{id}"``, ma le gambe di
+    USCITA venivano piazzate con ``customer_ref=leg.ref`` (``under_green-0-2``).
+    E ``_order_matches`` e' categorico: se l'ordine dichiara un ref, e' suo
+    SOLO se coincide — nessun ripiego, perche' per una gamba di chiusura
+    mercato e selezione vengono azzerati di proposito (confermerebbero la
+    chiusura con l'ordine dell'apertura). Quindi un ordine VIVO a mercato non
+    veniva trovato ne' fra i correnti ne' fra i regolati, passata la grazia la
+    riga andava in 'error', il freno anti-duplicato non copriva piu' e al giro
+    dopo partiva un SECONDO green-up.
+    Dal 15/09 l'ordine lo identifica Mike, che sa cosa ha piazzato; a
+    ``reconcile_decision`` si consegna il solo ordine giusto, gia' normalizzato,
+    col ref che sta cercando. Resta lei a decidere: la decisione non si duplica.
     """
     pend = [l for l in ctx.legs if l.needs_reconcile]
     if not pend:
@@ -2579,7 +2737,19 @@ def _reconcile_unknown(db: Any, market: Any, event_id: str, ctx: E.MatchCtx, mod
         if mode == "paper":
             dec = {"action": "free"}
         else:
-            dec = X.reconcile_decision(r, current, cleared, now_iso, ref=f"mike-t{r['id']}")
+            o_cur = _ordine_della_riga(current, r)
+            o_clr = _ordine_della_riga(cleared, r)
+            ref_eff = ref_ordine_di_riga(r)
+            trovato = o_cur if o_cur is not None else o_clr
+            if trovato is not None:
+                # l'ordine e' gia' stato identificato qui sopra, in modo piu'
+                # forte di quanto possa fare `_order_matches` da sola: le si
+                # consegna col ref che sta cercando, cosi' lo riconosce e resta
+                # padrona della decisione (abbinato? residuo? grazia?).
+                ref_eff = str(campo_ordine(trovato, "customer_order_ref") or ref_eff)
+            cur_r = [{**o_cur, "customer_order_ref": ref_eff}] if o_cur is not None else []
+            clr_r = [{**o_clr, "customer_order_ref": ref_eff}] if o_clr is not None else []
+            dec = X.reconcile_decision(r, cur_r, clr_r, now_iso, ref=ref_eff)
         action = str(dec.get("action") or "keep")
         if action == "confirm":
             leg.matched = float(dec.get("size") or leg.size)
