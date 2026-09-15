@@ -643,6 +643,20 @@ export interface Realizzato {
     perSport: Record<Sport2, number | null>;
     /** quante righe regolate hanno prodotto questi numeri */
     righe: number;
+    /**
+     * Quante hanno chiuso in positivo e quante in negativo.
+     *
+     * ⚠️ REVIEW 15/09 — nella barra di giornata il P&L veniva dalle righe dei
+     * TRE bot e i contatori «operazioni / V / P» da `get_safe_daily`, che
+     * legge la sola tabella di Safe. Le operazioni di Omega e Mike non erano
+     * assenti: valevano ZERO dentro un totale presentato come quello della
+     * giornata. Contando qui, numeri e contatori nascono dalle stesse righe e
+     * non possono più divergere.
+     *
+     * Una riga a P&L esattamente zero non è né vinta né persa.
+     */
+    vinte: number;
+    perse: number;
 }
 
 function somma(a: number | null, b: number): number { return (a ?? 0) + b; }
@@ -664,13 +678,14 @@ export function realizzatoGiornata(righe: readonly RigaRealizzato[]): Realizzato
     const out: Realizzato = {
         totale: null, live: null, paper: null,
         perSport: { calcio: null, tennis: null, ignoto: null },
-        righe: 0,
+        righe: 0, vinte: 0, perse: 0,
     };
     for (const r of righe) {
         if (!isSettled(r.status) || isErrorRow(r.status)) continue;
         const v = r.pnl;
         if (typeof v !== 'number' || !Number.isFinite(v)) continue;
         out.righe += 1;
+        if (v > 0) out.vinte += 1; else if (v < 0) out.perse += 1;
         out.totale = somma(out.totale, v);
         const m = String(r.mode ?? '').toLowerCase();
         if (m === 'live') out.live = somma(out.live, v);
@@ -689,6 +704,18 @@ export function realizzatoGiornata(righe: readonly RigaRealizzato[]): Realizzato
 // ------------------------------------------------------------ totali di giornata
 
 export interface TotaliGiornata {
+    /**
+     * I soldi sono stati letti?
+     *
+     * ⚠️ REVIEW 15/09 — `liability` e i conteggi partivano da 0 e non c'era
+     * modo, guardando il risultato, di distinguere «nessuna posizione aperta»
+     * da «non ho letto i trade». La testata stampava «Esposizione 0,00 €» e
+     * «0 / 0» anche durante il caricamento o dopo una lettura fallita: sul
+     * numero più pericoloso della pagina, un'assenza travestita da sicurezza.
+     *
+     * Quando è `false` la pagina scrive «—», non uno zero.
+     */
+    letti: boolean;
     partite: number;
     /** partite IN GIOCO adesso (nome storico: non è la modalità) */
     live: number;
@@ -715,7 +742,11 @@ export interface TotaliGiornata {
  * sommava paper e live: l'esposizione dichiarata comprendeva denaro che non
  * esiste, e su un banco reale è il numero più pericoloso della pagina.
  */
-export function totaliGiornata(gruppi: readonly GruppoCampionato[]): TotaliGiornata {
+export function totaliGiornata(
+    gruppi: readonly GruppoCampionato[],
+    /** i trade dei tre bot sono stati letti almeno una volta? */
+    letti = true,
+): TotaliGiornata {
     let partite = 0, live = 0, pre = 0, conPosizione = 0, conPosizioneLive = 0;
     let liability = 0, liabilityPaper = 0;
     let net: number | null = null;
@@ -738,6 +769,7 @@ export function totaliGiornata(gruppi: readonly GruppoCampionato[]): TotaliGiorn
     }
     const r2 = (x: number | null) => (x == null ? null : Math.round(x * 100) / 100);
     return {
+        letti,
         partite, live, pre, conPosizione, conPosizioneLive,
         liability: Math.round(liability * 100) / 100,
         liabilityPaper: Math.round(liabilityPaper * 100) / 100,

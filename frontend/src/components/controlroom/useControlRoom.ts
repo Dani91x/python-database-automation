@@ -329,6 +329,14 @@ export function useControlRoom(): ControlRoomVM {
     const [safeOggiPaper, setSafeOggiPaper] = useState<DailyRow | null>(null);
     /** eventi di Omega: campionato, loghi e `fixture_id` che il feed non ha */
     const [eventiOmega, setEventiOmega] = useState<OmegaEvent[]>([]);
+    /**
+     * I trade dei tre bot sono arrivati almeno una volta?
+     *
+     * Serve a non spacciare per «0,00 €» un'esposizione che non abbiamo
+     * ancora letto. `prev ||`: una caduta successiva lascia in pagina
+     * l'ultimo dato buono, e quello resta letto.
+     */
+    const [soldiLetti, setSoldiLetti] = useState(false);
     /** partite che stanno REGISTRANDO adesso. Senza questo il pulsante REC
      *  ripartirebbe spento dopo un ricaricamento su una partita che registra:
      *  una spia che mente e peggio di una spia assente. */
@@ -377,6 +385,8 @@ export function useControlRoom(): ControlRoomVM {
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
+            setSoldiLetti((prev) => prev || (rOmegaT.status === 'fulfilled'
+                && rSafe.status === 'fulfilled' && rMike.status === 'fulfilled'));
             if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled') {
                 const attive = new Set<string>();
                 if (rMissioni.status === 'fulfilled') {
@@ -507,6 +517,39 @@ export function useControlRoom(): ControlRoomVM {
         return m;
     }, [eventiOmega]);
 
+    // ── IL REALIZZATO DI OGGI, da TUTTI E TRE i bot ──────────────────────────
+    // La barra leggeva `realized_today` di Omega: una vincita del tennis (Safe)
+    // non la muoveva. Qui si sommano le righe REGOLATE dei tre bot, tenendo
+    // separati soldi veri e simulati e dividendo per sport.
+    const realizzatoOggi = useMemo(() => {
+        const oggi = romeDay(new Date(nowMs));
+        const delGiorno = (placedAt: string | null | undefined) =>
+            !!placedAt && romeDay(new Date(placedAt)) === oggi;
+        const righe: RigaRealizzato[] = [];
+        for (const t of omegaTrades) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
+        }
+        for (const t of safe?.trades ?? []) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport });
+        }
+        for (const t of mike?.trades ?? []) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
+        }
+        // DUE conti separati sulle STESSE righe. `realizzatoGiornata` sa gia'
+        // dividere per modalita', ma il chiamante deve DECIDERE quale mostrare:
+        // un numero che somma le due e' un numero che non esiste.
+        const soloLive = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'live');
+        const soloPaper = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'paper');
+        return {
+            tutto: realizzatoGiornata(righe),
+            live: realizzatoGiornata(soloLive),
+            paper: realizzatoGiornata(soloPaper),
+        };
+    }, [omegaTrades, safe?.trades, mike?.trades, nowMs]);
+
+    // NOTA: questo blocco sta QUI, prima di `giornata`, perche' il target
+    // di ripiego di ogni partita si calcola sottraendo all'obiettivo il
+    // realizzato — e dev'essere quello con i SOLDI VERI.
     const giornata = useMemo(() => costruisciGiornata({
         righe: righeFeed.map((r) => ({
             event_id: r.event_id,
@@ -514,15 +557,20 @@ export function useControlRoom(): ControlRoomVM {
             payload: r.payload as PartitaFeedLike,
             updated_at: r.updated_at,
         })),
-        soldi, nowMs, obiettivo, realizzato, targetServizio, arricchimento,
+        soldi, nowMs, obiettivo, targetServizio, arricchimento,
+        // ⚠️ REVIEW 15/09 — QUI C'ERA `realizzato`, cioè il realized_today di
+        // Omega, che somma paper e live. `targetPartita` lo SOTTRAE a un
+        // obiettivo in denaro reale per calcolare il target di ripiego di ogni
+        // partita: una perdita simulata alzava il target di tutte le altre.
+        realizzato: realizzatoOggi.live.totale,
         // serve a distinguere «prezzo fermo» da «prezzo vecchio»: lo scanner
         // scrive solo quando qualcosa cambia, quindi l'eta' della riga NON dice
         // «da quanto non guardiamo».
         etaScannerS: etaSecondi(scanStatus?.updated_at, nowMs),
-    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio,
+    }), [righeFeed, soldi, nowMs, obiettivo, realizzatoOggi, targetServizio,
         scanStatus?.updated_at, arricchimento]);
 
-    const totali = useMemo(() => totaliGiornata(giornata), [giornata]);
+    const totali = useMemo(() => totaliGiornata(giornata, soldiLetti), [giornata, soldiLetti]);
 
     const copertura = useMemo(
         () => coperturaControllo(
@@ -743,36 +791,6 @@ export function useControlRoom(): ControlRoomVM {
         };
     }, [safe?.trades]);
 
-    // ── IL REALIZZATO DI OGGI, da TUTTI E TRE i bot ──────────────────────────
-    // La barra leggeva `realized_today` di Omega: una vincita del tennis (Safe)
-    // non la muoveva. Qui si sommano le righe REGOLATE dei tre bot, tenendo
-    // separati soldi veri e simulati e dividendo per sport.
-    const realizzatoOggi = useMemo(() => {
-        const oggi = romeDay(new Date(nowMs));
-        const delGiorno = (placedAt: string | null | undefined) =>
-            !!placedAt && romeDay(new Date(placedAt)) === oggi;
-        const righe: RigaRealizzato[] = [];
-        for (const t of omegaTrades) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
-        }
-        for (const t of safe?.trades ?? []) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport });
-        }
-        for (const t of mike?.trades ?? []) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
-        }
-        // DUE conti separati sulle STESSE righe. `realizzatoGiornata` sa gia'
-        // dividere per modalita', ma il chiamante deve DECIDERE quale mostrare:
-        // un numero che somma le due e' un numero che non esiste.
-        const soloLive = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'live');
-        const soloPaper = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'paper');
-        return {
-            tutto: realizzatoGiornata(righe),
-            live: realizzatoGiornata(soloLive),
-            paper: realizzatoGiornata(soloPaper),
-        };
-    }, [omegaTrades, safe?.trades, mike?.trades, nowMs]);
-
     // ── LA GIORNATA, dagli AGGREGATI dei tre servizi ─────────────────────────
     const giornataSoldi = useMemo(() => {
         const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -820,10 +838,17 @@ export function useControlRoom(): ControlRoomVM {
             perSport: safeOggi?.by_sport ?? null,
             /** per sport, in PROVA. Mai sommato al precedente. */
             perSportPaper: safeOggiPaper?.by_sport ?? null,
-            operazioni: n(safeOggi?.trades_placed),
-            vinte: n(safeOggi?.won),
-            perse: n(safeOggi?.lost),
-            operazioniPaper: n(safeOggiPaper?.trades_placed),
+            // ⚠️ REVIEW 15/09 — QUI C'ERANO I CONTATORI DI `get_safe_daily`,
+            // che legge la SOLA tabella di Safe, accanto a un realizzato
+            // calcolato sulle righe dei TRE bot. Le operazioni di Omega e Mike
+            // non erano assenti: valevano zero dentro un totale presentato
+            // come quello della giornata. Adesso numeri e contatori nascono
+            // dalle stesse righe e non possono divergere; `safeOggi` resta
+            // dov'è utile — la controprova (`discordanza`) e il per-sport.
+            operazioni: realizzatoOggi.live.righe,
+            vinte: realizzatoOggi.live.vinte,
+            perse: realizzatoOggi.live.perse,
+            operazioniPaper: realizzatoOggi.paper.righe || null,
         };
     }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
         realizzatoOggi]);

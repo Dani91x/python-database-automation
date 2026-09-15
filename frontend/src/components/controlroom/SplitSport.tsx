@@ -33,8 +33,17 @@ export interface SplitSportProps {
     selezionato: SportKey | null;
     /** clic sulla tessera: seleziona, o deseleziona se già selezionata */
     onSeleziona: (s: SportKey | null) => void;
-    /** aggregati per sport dal server; `null` = non ancora letti */
+    /** aggregati per sport dal server con i SOLDI VERI; `null` = non letti */
     perSport: Record<string, DailyBreakdown> | null;
+    /**
+     * Gli stessi aggregati IN PROVA.
+     *
+     * ⚠️ REVIEW 15/09 — la tessera del calcio scriveva «MODALITÀ PAPER» e
+     * sotto un P&L costruito escludendo tutte le righe paper: l'etichetta
+     * diceva una cosa e il numero un'altra. Il numero grande deve essere
+     * quello della modalità DICHIARATA. I due non si sommano mai.
+     */
+    perSportPaper?: Record<string, DailyBreakdown> | null;
     /** modalità con cui quello sport sta operando ADESSO (dal servizio) */
     modalita: Record<SportKey, 'paper' | 'live' | null>;
     /** posizioni aperte per sport, **divise per modalità**: «2 aperte» senza
@@ -44,7 +53,8 @@ export interface SplitSportProps {
 }
 
 export function SplitSport({
-    perSport, modalita, aperte, selezionato, onSeleziona, testId = 'cr-split-sport',
+    perSport, perSportPaper = null, modalita, aperte, selezionato, onSeleziona,
+    testId = 'cr-split-sport',
 }: SplitSportProps) {
     return (
         <div className="grid gap-2 sm:grid-cols-2" data-testid={testId}>
@@ -53,6 +63,7 @@ export function SplitSport({
                     key={k}
                     sport={k}
                     dato={perSport?.[k] ?? null}
+                    datoPaper={perSportPaper?.[k] ?? null}
                     modalita={modalita[k]}
                     aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
                     letto={perSport != null}
@@ -65,9 +76,10 @@ export function SplitSport({
     );
 }
 
-function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick }: {
+function Tessera({ sport, dato, datoPaper, modalita, aperte, letto, scelto, spento, onClick }: {
     sport: SportKey;
     dato: DailyBreakdown | null;
+    datoPaper: DailyBreakdown | null;
     modalita: 'paper' | 'live' | null;
     aperte: { live: number; paper: number };
     letto: boolean;
@@ -77,11 +89,16 @@ function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick
 }) {
     const s = SPORT[sport];
     const live = modalita === 'live';
+    // IL NUMERO GRANDE E' QUELLO DELLA MODALITA' DICHIARATA dalla tessera:
+    // «paper» sopra un P&L che esclude le righe paper era una contraddizione
+    // a due centimetri di distanza.
+    const mio = live ? dato : datoPaper;
+    const altro = live ? datoPaper : dato;
     // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
     // e' un trattino, la seconda uno zero legittimo.
-    const pnl = dato ? dato.pnl : null;
-    const esiti = dato ? dato.won + dato.lost : 0;
-    const winRate = dato && esiti > 0 ? dato.won / esiti : null;
+    const pnl = mio ? mio.pnl : null;
+    const esiti = mio ? mio.won + mio.lost : 0;
+    const winRate = mio && esiti > 0 ? mio.won / esiti : null;
 
     return (
         <Card
@@ -136,13 +153,20 @@ function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick
             <div className="text-[10.5px] text-white/45 mt-0.5 flex items-baseline gap-2 flex-wrap">
                 {!letto ? (
                     <span>giornata non ancora letta</span>
-                ) : !dato || dato.n === 0 ? (
-                    <span>nessuna operazione oggi</span>
+                ) : !mio || mio.n === 0 ? (
+                    <span>
+                        nessuna operazione {live ? 'con soldi veri' : 'in prova'} oggi
+                        {altro && altro.n > 0 && (
+                            <span className="text-white/25">
+                                {' '}· {altro.n} {live ? 'in prova' : 'con soldi veri'}
+                            </span>
+                        )}
+                    </span>
                 ) : (
                     <>
-                        <span><span className="font-mono text-white/70">{dato.n}</span> {dato.n === 1 ? 'operazione' : 'operazioni'}</span>
-                        <span className="text-emerald-400/80 font-mono">{dato.won} V</span>
-                        <span className="text-red-400/80 font-mono">{dato.lost} P</span>
+                        <span><span className="font-mono text-white/70">{mio.n}</span> {mio.n === 1 ? 'operazione' : 'operazioni'}</span>
+                        <span className="text-emerald-400/80 font-mono">{mio.won} V</span>
+                        <span className="text-red-400/80 font-mono">{mio.lost} P</span>
                         {winRate != null && (
                             <span title="vinte su vinte+perse">{fmtPct(winRate, 0)}</span>
                         )}

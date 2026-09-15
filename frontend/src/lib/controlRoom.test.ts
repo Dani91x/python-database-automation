@@ -406,6 +406,7 @@ describe('totaliGiornata', () => {
             soldi, nowMs: T0,
         });
         expect(totaliGiornata(g)).toEqual({
+            letti: true,
             partite: 2, live: 1, pre: 1,
             conPosizione: 1, conPosizioneLive: 1,
             liability: 40, liabilityPaper: 0,
@@ -521,5 +522,50 @@ describe('totali di giornata - esposizione e avanzamento sono soldi VERI', () =>
         });
         // 100 EUR vinti IN PROVA non devono muovere l'avanzamento di un pixel
         expect(g[0].partite[0].avanzamento).toBeNull();
+    });
+});
+
+// ===========================================================================
+// REVIEW 15/09 — CONTATORI E PERIMETRI.
+// ===========================================================================
+
+describe('realizzatoGiornata conta anche vinte e perse', () => {
+    it('le conta sulle STESSE righe da cui nasce il P&L', () => {
+        const r = realizzatoGiornata([
+            { status: 'won', pnl: 3, mode: 'live', sport: 'tennis' },
+            { status: 'lost', pnl: -1, mode: 'live', sport: 'tennis' },
+            { status: 'won', pnl: 2, mode: 'live', sport: 'calcio' },
+        ] as never);
+        expect(r.righe).toBe(3);
+        expect(r.vinte).toBe(2);
+        expect(r.perse).toBe(1);
+        expect(r.totale).toBe(4);
+    });
+
+    it('una riga a ZERO non e ne vinta ne persa', () => {
+        const r = realizzatoGiornata([{ status: 'won', pnl: 0, mode: 'live' }] as never);
+        expect(r.righe).toBe(1);
+        expect(r.vinte).toBe(0);
+        expect(r.perse).toBe(0);
+    });
+
+    it('le righe in errore non entrano in nessun contatore', () => {
+        const r = realizzatoGiornata([
+            { status: 'error', pnl: -99, mode: 'live' },
+            { status: 'won', pnl: 1, mode: 'live' },
+        ] as never);
+        expect(r.righe).toBe(1);
+        expect(r.vinte).toBe(1);
+    });
+});
+
+describe('totali NON LETTI: assenza dichiarata, non zero', () => {
+    it('con `letti` false il totale lo dice', () => {
+        const g = costruisciGiornata({
+            righe: [{ event_id: 'E1', payload: feed({ inplay: true }), updated_at: null }],
+            soldi: new Map(), nowMs: T0,
+        });
+        expect(totaliGiornata(g, false).letti).toBe(false);
+        expect(totaliGiornata(g).letti).toBe(true);   // difetto: letti
     });
 });

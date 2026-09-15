@@ -52,6 +52,7 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         caricamento: false, errore: null, nowMs: Date.parse('2026-09-14T15:00:00Z'),
         giornata: gruppo([partita()]),
         totali: {
+            letti: true,
             partite: 1, live: 1, pre: 0, conPosizione: 1, conPosizioneLive: 1,
             liability: 40, liabilityPaper: 0, netPnl: 12.5, netPnlPaper: null,
         },
@@ -553,6 +554,7 @@ function vmDueSport(over: Partial<ReturnType<typeof useControlRoom>> = {}) {
             { campionato: 'ATP', primoKoMs: tennis.koMs, partite: [tennis] },
         ],
         totali: {
+            letti: true,
             partite: 2, live: 2, pre: 0, conPosizione: 2, conPosizioneLive: 2,
             liability: 80, liabilityPaper: 0, netPnl: 25, netPnlPaper: null,
         },
@@ -688,6 +690,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
     it('L’ESPOSIZIONE in testata e’ quella VERA; la prova e’ una nota separata', () => {
         mVm.mockReturnValue(vm({
             totali: {
+                letti: true,
                 partite: 59, live: 14, pre: 45,
                 conPosizione: 14, conPosizioneLive: 2,
                 liability: 77.71, liabilityPaper: 315.97,

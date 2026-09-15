@@ -27,7 +27,7 @@
 // sorvegliato — riconciliazione, settlement e uscite continuano a girare
 // (`bot_service.py`: «SEMPRE, anche a bot fermo: mai posizioni nude»).
 // ============================================================================
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2 } from 'lucide-react';
@@ -102,17 +102,33 @@ export function PannelloBot({
     bots, importi, comandi, parametri, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<Bot | 'tutti' | null>(null);
+    /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
+     *  mancato, o il trader crede che sia tutto spento. */
+    const [nonFermati, setNonFermati] = useState<Bot[]>([]);
     const accesi = bots.filter((b) => b.inCorsa);
     const inLive = bots.filter((b) => b.inCorsa && b.modalita === 'live');
 
     const fermaTutti = async () => {
-        setInCorso('tutti');
+        setInCorso('tutti'); setNonFermati([]);
+        const falliti: Bot[] = [];
         try {
             // uno alla volta e in sequenza: se il terzo fallisce, i primi due
             // sono comunque fermi. In parallelo un errore lascerebbe uno stato
             // che nessuno sa leggere.
-            for (const b of accesi) await comandi.ferma(b.bot);
-        } finally { setInCorso(null); }
+            //
+            // ⚠️ REVIEW 15/09 — QUI NON C'ERA IL `catch`, e il ciclo si
+            // interrompeva al primo errore: i bot successivi non ricevevano
+            // nemmeno la chiamata. L'ordine è omega → safe → mike, quindi
+            // l'ultimo a essere fermato è anche quello che più spesso opera
+            // con soldi veri. Un freno d'emergenza che si arrende a metà non
+            // è un freno d'emergenza: ADESSO LI PROVA TUTTI.
+            for (const b of accesi) {
+                try { await comandi.ferma(b.bot); } catch { falliti.push(b.bot); }
+            }
+        } finally {
+            setInCorso(null);
+            setNonFermati(falliti);
+        }
     };
 
     return (
@@ -156,6 +172,17 @@ export function PannelloBot({
                 ))}
             </div>
 
+            {nonFermati.length > 0 && (
+                <div className="px-3 py-2 border-t border-red-500/40 bg-red-500/10 text-[11px] text-red-200"
+                    data-testid="cr-non-fermati">
+                    <strong className="text-red-300">
+                        {nonFermati.length === 1 ? 'Un bot NON si è fermato' : `${nonFermati.length} bot NON si sono fermati`}:
+                    </strong>{' '}
+                    {nonFermati.map((b) => BOT_LABEL[b]).join(', ')}. Gli altri sì.
+                    Riprova, o fermali dalla loro pagina: <strong>finché lo stato non cambia stanno ancora operando</strong>.
+                </div>
+            )}
+
             <div className="px-3 py-1.5 border-t border-white/10 text-[10px] text-white/35">
                 Fermare spegne le <strong className="text-white/50">aperture</strong>: le posizioni già a
                 mercato restano sorvegliate e le puoi chiudere da qui.
@@ -163,6 +190,18 @@ export function PannelloBot({
         </Card>
     );
 }
+
+/**
+ * Quanto deve restare inerte il pulsante di conferma dopo essere comparso.
+ *
+ * ⚠️ REVIEW 15/09 — la conferma nasce NELLO STESSO PUNTO del pulsante che la
+ * arma, ed è più larga: un doppio clic la colpisce con il secondo clic, e
+ * l'intera protezione «sono soldi veri» salta senza che l'operatore abbia
+ * letto niente. 400 ms sono più della finestra di un doppio clic (~250 ms) e
+ * meno di quanto serva a leggere la frase: la protezione torna a costare un
+ * gesto consapevole, non un viaggio.
+ */
+const ATTESA_CONFERMA_MS = 400;
 
 function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
     b: StatoBot;
@@ -172,16 +211,28 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
     bloccato: boolean;
     segnalaInCorso: (v: Bot | null) => void;
 }) {
-    const [armato, setArmato] = useState(false);
+    /** istante in cui la conferma è comparsa; null = non armato */
+    const [armatoDa, setArmatoDa] = useState<number | null>(null);
     const [mio, setMio] = useState(false);
+    /** ridisegna quando l'attesa anti-doppio-clic scade */
+    const [, setTic] = useState(0);
+    const armato = armatoDa != null;
+
+    useEffect(() => {
+        if (armatoDa == null) return;
+        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_MS + 20);
+        return () => window.clearTimeout(t);
+    }, [armatoDa]);
 
     const stato = b.stato ?? (b.inCorsa ? 'running' : 'stopped');
     const live = b.modalita === 'live';
     const occupato = bloccato || mio;
+    /** la conferma è ancora inerte? (finestra del doppio clic) */
+    const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
 
     const esegui = async (f: () => Promise<void>) => {
         setMio(true); segnalaInCorso(b.bot);
-        try { await f(); } finally { setMio(false); segnalaInCorso(null); setArmato(false); }
+        try { await f(); } finally { setMio(false); segnalaInCorso(null); setArmatoDa(null); }
     };
 
     return (
@@ -259,7 +310,8 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                             ) : armato ? (
                                 <Button
                                     type="button" size="sm"
-                                    disabled={occupato}
+                                    disabled={occupato || troppoPresto}
+                                    title={troppoPresto ? 'attendi un istante: sono soldi veri' : undefined}
                                     onClick={() => void esegui(() => comandi.cambiaModalita(b.bot, 'live'))}
                                     data-testid={`cr-conferma-live-${b.bot}`}
                                     className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
@@ -268,7 +320,7 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                                 <Button
                                     type="button" size="sm" variant="ghost"
                                     disabled={occupato}
-                                    onClick={() => setArmato(true)}
+                                    onClick={() => setArmatoDa(Date.now())}
                                     data-testid={`cr-a-live-${b.bot}`}
                                     className="h-6 px-2 text-[10px] text-red-300/80 hover:text-red-300"
                                 >passa a soldi veri</Button>
@@ -288,7 +340,8 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                         {armato ? (
                             <Button
                                 type="button" size="sm"
-                                disabled={occupato}
+                                disabled={occupato || troppoPresto}
+                                title={troppoPresto ? 'attendi un istante: sono ordini reali' : undefined}
                                 onClick={() => void esegui(() => comandi.avvia(b.bot, 'live'))}
                                 data-testid={`cr-conferma-avvio-live-${b.bot}`}
                                 className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
@@ -297,7 +350,7 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                             <Button
                                 type="button" size="sm" variant="outline"
                                 disabled={occupato}
-                                onClick={() => setArmato(true)}
+                                onClick={() => setArmatoDa(Date.now())}
                                 data-testid={`cr-avvia-live-${b.bot}`}
                                 className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
                             ><AlertTriangle className="w-3 h-3 mr-1" />avvia con soldi veri</Button>

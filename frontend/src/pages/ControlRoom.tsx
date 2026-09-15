@@ -263,7 +263,11 @@ export default function ControlRoom() {
                 paperText="Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live."
             />
 
-            {/* LA GIORNATA — la barra vera: obiettivo, contatori, liability,
+            {/* LA GIORNATA — la barra vera: obiettivo, contatori, liability.
+                ⚠️ REVIEW 15/09 — `live` riceve le POSIZIONI aperte con soldi
+                veri, non le partite in gioco: in tutta la piattaforma quella
+                etichetta significa «posizioni ancora vive, non regolate», e
+                Mike, Omega e Safe passano tutti quel conteggio.
                 role="progressbar". Il realizzato viene dagli AGGREGATI dei tre
                 servizi: prima leggeva solo Omega, e una vincita del tennis non
                 la muoveva di un pixel. */}
@@ -276,8 +280,8 @@ export default function ControlRoom() {
                 operations={vm.soldiGiornata.operazioni}
                 won={vm.soldiGiornata.vinte}
                 lost={vm.soldiGiornata.perse}
-                live={vm.totali.live}
-                openLiability={vm.totali.liability}
+                live={vm.totali.conPosizioneLive}
+                openLiability={vm.totali.letti ? vm.totali.liability : null}
                 note={vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
                 countsNote="Solo SOLDI VERI. Le operazioni in prova hanno una riga tutta loro qui sotto e non entrano mai in questo conto."
                 ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
@@ -317,6 +321,7 @@ export default function ControlRoom() {
                 l'altro in prova. Sommarli sarebbe una bugia. */}
             <SplitSport
                 perSport={vm.soldiGiornata.perSport}
+                perSportPaper={vm.soldiGiornata.perSportPaper}
                 modalita={modalitaPerSport(vm)}
                 aperte={apertePerSport(vm)}
                 selezionato={sport}
@@ -599,13 +604,21 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     responsabilità delle posizioni simulate: dichiarava un
                     rischio che non esisteva (393,68 € contro 77,71 € reali).
                     Su un banco vero è il numero più pericoloso della pagina. */}
-                <Dato etichetta="Esposizione" valore={fmtMoney(vm.totali.liability)}
-                    nota={vm.totali.liabilityPaper > 0
-                        ? `+ ${fmtMoney(vm.totali.liabilityPaper)} in prova, non sono soldi veri`
-                        : undefined} />
+                {/* ⚠️ REVIEW 15/09 — finché i trade non sono letti questi numeri
+                    NON sono zero: sono ignoti. Scrivere «0,00 €» sul numero
+                    più pericoloso della pagina, durante il caricamento o dopo
+                    una lettura fallita, è un'assenza travestita da sicurezza. */}
+                <Dato etichetta="Esposizione"
+                    valore={vm.totali.letti ? fmtMoney(vm.totali.liability) : DASH}
+                    nota={!vm.totali.letti ? 'posizioni non ancora lette'
+                        : vm.totali.liabilityPaper > 0
+                            ? `+ ${fmtMoney(vm.totali.liabilityPaper)} in prova, non sono soldi veri`
+                            : undefined} />
                 <Dato etichetta="Con posizione"
-                    valore={`${vm.totali.conPosizioneLive} / ${vm.totali.partite}`}
-                    nota={vm.totali.conPosizione > vm.totali.conPosizioneLive
+                    valore={vm.totali.letti
+                        ? `${vm.totali.conPosizioneLive} / ${vm.totali.partite}`
+                        : `${DASH} / ${vm.totali.partite}`}
+                    nota={vm.totali.letti && vm.totali.conPosizione > vm.totali.conPosizioneLive
                         ? `${vm.totali.conPosizione - vm.totali.conPosizioneLive} in prova`
                         : undefined} />
                 <Freni freni={vm.freni} />
