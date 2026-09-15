@@ -520,7 +520,26 @@ function Tratto({ etichetta, ms }: { etichetta: string; ms: number | null }) {
 
 function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive: boolean }) {
     const obiettivo = vm.obiettivo;
-    const fatto = vm.realizzato;
+    /**
+     * ⚠️ REVIEW 14/09 — QUI C'ERA `vm.realizzato`, e sommava paper e live.
+     *
+     * `vm.realizzato` è `realized_today` di Omega, che nasce da
+     * `omega_aggregates_sql()` SENZA filtro sulla modalità: somma in un numero
+     * solo le righe con soldi veri e quelle simulate. Venti pixel più sotto la
+     * DayBar mostrava `soldiGiornata.realizzato`, che è solo live — due
+     * «realizzato» diversi nella stessa schermata, contro lo stesso obiettivo,
+     * e quello in alto (sempre a schermo, `sticky`) conteneva denaro che non
+     * esiste.
+     *
+     * Adesso testata e DayBar leggono LO STESSO numero, quello certificato:
+     * `realizzatoOggi.live.totale`. Il paper resta visibile nella sua riga, che
+     * dichiara «non entra nell'obiettivo».
+     *
+     * NON si tocca `omega_aggregates_sql`: quel `realized_today` alimenta anche
+     * il target dinamico e le guardie giornaliere del servizio, quindi
+     * filtrarlo lato server cambierebbe la strategia.
+     */
+    const fatto = vm.soldiGiornata.realizzato;
     const resta = obiettivo != null && fatto != null ? obiettivo - fatto : null;
     const pct = obiettivo != null && obiettivo > 0 && fatto != null
         ? Math.max(0, Math.min(100, (fatto / obiettivo) * 100))

@@ -107,6 +107,33 @@ export class ObiettivoOmegaIgnoto extends Error {
 }
 
 /**
+ * ⚠️ REVIEW 14/09 — `omega_activate` NON e' come le altre due.
+ *
+ *   safe_activate  → params = coalesce(p_params, params)      conserva
+ *   mike_activate  → params = coalesce(p_params, params)      conserva
+ *   omega_activate → params = coalesce(p_params, '{}'::jsonb) SOVRASCRIVE SEMPRE
+ *
+ * `{}` non e' NULL: passarlo AZZERA la colonna. E i tetti di rischio di Omega
+ * nascono a ZERO, che nel suo codice significa TETTO SPENTO:
+ *   · `max_liability_per_match` → `apply_liability_cap`: `if not cap or cap <= 0: return size`
+ *   · `max_open_liability`      → `omega_service.py:1201`: controllo saltato
+ *   · `daily_loss_cap`          → `omega_service.py:963`: lo stop perdite non scatta MAI
+ *
+ * Avviare Omega con `{}` gli toglieva tutti e tre i freni, in live, in
+ * silenzio. Quindi: si riavvia con i parametri CORRENTI, e se non li
+ * conosciamo non si avvia affatto. Fail-closed: meglio un bot che non parte
+ * di un bot che parte senza freni.
+ */
+export class ParametriOmegaIgnoti extends Error {
+    constructor() {
+        super('non conosco i parametri di Omega: avviarlo adesso azzererebbe i suoi '
+            + 'tetti di rischio (perdita giornaliera, responsabilità aperta, per partita). '
+            + 'Apri la pagina di Omega, controlla i parametri, e riprova.');
+        this.name = 'ParametriOmegaIgnoti';
+    }
+}
+
+/**
  * Costruisce i comandi. `dopo` viene chiamato a ogni cambiamento riuscito,
  * perché la pagina deve rileggere lo stato dal SERVIZIO invece di fidarsi di
  * quello che credeva di aver appena fatto.
@@ -118,7 +145,12 @@ export function creaComandi(sorgente: SorgenteParametri, dopo: () => void) {
         else {
             const obiettivo = sorgente.obiettivoOmega();
             if (obiettivo == null) throw new ObiettivoOmegaIgnoto();
-            await activateOmega(modalita, obiettivo, {});
+            // i parametri CORRENTI, mai un oggetto vuoto: vedi ParametriOmegaIgnoti
+            const correnti = sorgente.params('omega');
+            if (correnti == null || Object.keys(correnti).length === 0) {
+                throw new ParametriOmegaIgnoti();
+            }
+            await activateOmega(modalita, obiettivo, correnti as Partial<OmegaParams>);
         }
         dopo();
     };

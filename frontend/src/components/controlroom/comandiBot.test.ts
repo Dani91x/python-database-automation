@@ -24,7 +24,8 @@ vi.mock('@/lib/mike', () => ({
 }));
 
 import {
-    leggiChiave, scriviChiave, importiDi, creaComandi, ObiettivoOmegaIgnoto, IMPORTI_DI,
+    leggiChiave, scriviChiave, importiDi, creaComandi, ObiettivoOmegaIgnoto,
+    ParametriOmegaIgnoti, IMPORTI_DI,
 } from './comandiBot';
 import { activateOmega, stopOmega, updateOmegaParams } from '@/lib/omega';
 import { activateSafe, stopSafe, updateSafeParams } from '@/lib/safeBot';
@@ -165,9 +166,13 @@ describe('avvia — la modalità è esplicita, mai indovinata', () => {
     });
 
     it('con l’obiettivo noto Omega parte con QUELLO, non con un default', async () => {
-        const c = creaComandi(sorgente({}, 250), vi.fn());
+        // ⚠️ questo test prima passava `{}` come parametri e si aspettava che
+        // Omega partisse lo stesso. Era il BUG: `omega_activate` sovrascrive
+        // sempre la colonna, e `{}` gli toglieva i tre tetti di rischio.
+        // Adesso serve un oggetto parametri vero — vedi la suite qui sotto.
+        const c = creaComandi(sorgente({ min_stake: 0.5 }, 250), vi.fn());
         await c.avvia('omega', 'paper');
-        expect(mActOmega).toHaveBeenCalledWith('paper', 250, {});
+        expect(mActOmega).toHaveBeenCalledWith('paper', 250, { min_stake: 0.5 });
     });
 });
 
@@ -220,5 +225,72 @@ describe('cambiaModalita — ogni servizio col suo meccanismo', () => {
         await c.cambiaModalita('safe', 'live');
         expect(mActSafe).toHaveBeenCalledWith('live');
         expect(mUpdSafe).not.toHaveBeenCalled();
+    });
+});
+
+// ===========================================================================
+// REVIEW 14/09, CRITICO — AVVIARE OMEGA NON DEVE AZZERARGLI I FRENI.
+//
+// Le tre RPC non si comportano allo stesso modo:
+//   safe_activate  -> params = coalesce(p_params, params)       conserva
+//   mike_activate  -> params = coalesce(p_params, params)       conserva
+//   omega_activate -> params = coalesce(p_params, '{}'::jsonb)  SOVRASCRIVE
+//
+// `{}` non e' NULL: passarlo azzera la colonna. E i tetti di Omega nascono a
+// ZERO, che nel suo codice significa TETTO SPENTO — `apply_liability_cap` non
+// taglia, il controllo sulla responsabilita' aperta salta, e lo stop perdite
+// giornaliero non scatta mai. Un bot in live senza nessuno dei tre freni.
+// ===========================================================================
+
+const PARAMI_VERI = {
+    daily_loss_cap: 30,
+    max_open_liability: 100,
+    max_liability_per_match: 20,
+    min_stake: 0.5,
+    greenup_risk_cap: 12,
+};
+
+describe('avvio di Omega - i parametri non si perdono MAI', () => {
+    it('avvia con i parametri CORRENTI, non con un oggetto vuoto', async () => {
+        const c = creaComandi(sorgente(PARAMI_VERI, 250), vi.fn());
+        await c.avvia('omega', 'live');
+        expect(mActOmega).toHaveBeenCalledWith('live', 250, PARAMI_VERI);
+        // il terzo argomento non deve MAI essere {}
+        expect(mActOmega.mock.calls[0][2]).not.toEqual({});
+    });
+
+    it('I TRE TETTI DI RISCHIO arrivano al servizio, non si azzerano', async () => {
+        const c = creaComandi(sorgente(PARAMI_VERI, 250), vi.fn());
+        await c.avvia('omega', 'live');
+        const inviati = mActOmega.mock.calls[0][2] as Record<string, number>;
+        expect(inviati.daily_loss_cap).toBe(30);
+        expect(inviati.max_open_liability).toBe(100);
+        expect(inviati.max_liability_per_match).toBe(20);
+    });
+
+    it('PARAMETRI IGNOTI: non parte affatto. Meglio fermo che senza freni', async () => {
+        const c = creaComandi(sorgente(null, 250), vi.fn());
+        await expect(c.avvia('omega', 'live')).rejects.toBeInstanceOf(ParametriOmegaIgnoti);
+        expect(mActOmega).not.toHaveBeenCalled();
+    });
+
+    it('parametri VUOTI valgono ignoti: `{}` azzererebbe la colonna', async () => {
+        const c = creaComandi(sorgente({}, 250), vi.fn());
+        await expect(c.avvia('omega', 'live')).rejects.toBeInstanceOf(ParametriOmegaIgnoti);
+        expect(mActOmega).not.toHaveBeenCalled();
+    });
+
+    it('il messaggio dice PERCHE non parte, invece di un errore muto', async () => {
+        const c = creaComandi(sorgente(null, 250), vi.fn());
+        await expect(c.avvia('omega', 'live')).rejects.toThrow(/tetti di rischio/i);
+    });
+
+    it('Safe e Mike NON hanno questo problema: la loro RPC conserva i parametri', async () => {
+        const c = creaComandi(sorgente(null), vi.fn());
+        await c.avvia('safe', 'live');
+        await c.avvia('mike', 'live');
+        // nessun oggetto parametri passato: la RPC fa coalesce(NULL, params)
+        expect(mActSafe).toHaveBeenCalledWith('live');
+        expect(mActMike).toHaveBeenCalledWith('live');
     });
 });

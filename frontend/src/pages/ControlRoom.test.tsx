@@ -874,3 +874,34 @@ describe('comando dei bot', () => {
         expect(mostra().getByTestId('cr-parametri-omega').textContent).toMatch(/dalla sua pagina/i);
     });
 });
+
+// ========================================================================
+// REVIEW 14/09 — i due critici confermati da 3 scettici su 3.
+// ========================================================================
+
+describe('la TESTATA non somma paper e live (critico della review)', () => {
+    it('la barra dell’obiettivo legge il realizzato LIVE, non quello misto di Omega', () => {
+        mVm.mockReturnValue(vm({
+            // `realizzato` e' `realized_today` di Omega: somma paper e live
+            realizzato: -5,
+            obiettivo: 20,
+            soldiGiornata: { ...vm().soldiGiornata, realizzato: 0.44, realizzatoPaper: -5.44 },
+        }));
+        const testata = mostra().getByTestId('cr-obiettivo');
+        expect(testata.textContent).toContain('0,44');
+        // il numero misto non deve comparire in testata
+        expect(testata.textContent).not.toContain('-5,00');
+        expect(testata.textContent).not.toContain('−5,00');
+    });
+
+    it('testata e barra di giornata dicono LO STESSO numero', () => {
+        mVm.mockReturnValue(vm({
+            realizzato: 999,   // la fonte vecchia, che non deve piu' contare
+            soldiGiornata: { ...vm().soldiGiornata, realizzato: 0.44 },
+        }));
+        const s = mostra();
+        expect(s.getByTestId('cr-obiettivo').textContent).toContain('0,44');
+        expect(s.getByTestId('cr-giornata').textContent).toContain('0,44');
+        expect(s.getByTestId('cr-obiettivo').textContent).not.toContain('999');
+    });
+});
