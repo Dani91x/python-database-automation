@@ -3617,3 +3617,87 @@ def test_prezzo_to_decisione_non_accorcia_la_catena():
                             inizio_ciclo)["tempi"]
     assert c["prezzo_to_decisione_ms"] >= (c["t2_letto_ms"] - t0), (
         "la catena dichiarata e' piu' corta del tempo gia' trascorso")
+
+
+# ===========================================================================
+# REVIEW 15/09, CRITICO — LA CORSIA VELOCE NON PUO' PRECEDERE LA VERITA'.
+#
+# `poll_flumine` e `reconcile_pending` sono le fasi che rendono VERO lo stato
+# di una riga. Con la corsia davanti a loro, agiva su righe stantie:
+#   · `cancel` cancellava una riserva il cui ordine era gia' a mercato;
+#   · `cashout` vedeva 'pending' una riga appena abbinata e rifiutava IN MODO
+#     TERMINALE con un motivo falso, buttando via l'approvazione del trader.
+# ===========================================================================
+
+def test_corsia_veloce_solo_cashout_mai_cancel():
+    """`cancel` NON e' in corsia preferenziale: la sua difesa si regge su
+    campi che scrivono le fasi di riconciliazione."""
+    assert S.CHIUSURE == ("cashout",)
+    assert "cancel" not in S.CHIUSURE
+
+
+def test_una_cancel_resta_pending_per_la_passata_completa(monkeypatch):
+    db = FakeDB()
+    _richiesta(db, "cancel", {"trade_id": 1})
+    n = S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                           params=S.resolve_params(None), now=S._now(),
+                           solo_chiusure=True)
+    assert n == 0
+    assert db.requests[-1]["status"] == "pending", "la cancel e' stata toccata dalla corsia"
+
+
+def test_la_passata_completa_esegue_comunque_la_cancel(monkeypatch):
+    db = FakeDB()
+    _richiesta(db, "cancel", {"trade_id": 1})
+    fatte = []
+    monkeypatch.setattr(S, "_request_cancel",
+                        lambda **kw: fatte.append(kw.get("payload")) or {"ok": True})
+    S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                       params=S.resolve_params(None), now=S._now(), risk_ctx={})
+    assert fatte == [{"trade_id": 1}]
+    assert db.requests[-1]["status"] == "done"
+
+
+def test_nel_ciclo_la_corsia_viene_dopo_la_riconciliazione():
+    """L'ordine delle fasi e' parte della correttezza, non uno stile.
+
+    Si legge il sorgente perche' e' l'unico modo di provare un ORDINE senza
+    far girare un ciclo intero contro Betfair."""
+    import inspect
+
+    src = inspect.getsource(S.run_once)
+    i_poll = src.index("poll_flumine(")
+    i_rec = src.index("reconcile_pending(")
+    i_corsia = src.index("solo_chiusure=True")
+    assert i_poll < i_corsia, "la corsia gira PRIMA della coda flumine"
+    assert i_rec < i_corsia, "la corsia gira PRIMA della riconciliazione"
+    # ...ma resta comunque davanti al settlement e al contesto di rischio,
+    # che sono le fasi lente da cui nascevano i 4,2 secondi.
+    assert i_corsia < src.index("build_risk_ctx(")
+    assert i_corsia < src.index("settle_open(")
+
+
+def test_sbirciata_fallita_non_accorcia_l_attesa(monkeypatch):
+    """Il DB in difficolta' non deve produrre OTTO VOLTE il carico.
+
+    Prima, una sbirciata fallita usciva dal sonno e faceva ripartire subito il
+    ciclo completo: da un ciclo ogni 2 s a uno ogni 250 ms, proprio mentre il
+    database era in ginocchio. E' il guasto del 13/09 riprodotto dalla sua
+    stessa difesa."""
+    def esplode(**k):
+        raise RuntimeError("503 PGRST002")
+
+    monkeypatch.setattr(S._real_db, "pending_requests", esplode)
+    dormito = []
+    t = {"v": 0.0}
+
+    def sleep(sec):
+        dormito.append(sec)
+        t["v"] += sec
+
+    monkeypatch.setattr(S.time, "sleep", sleep)
+    monkeypatch.setattr(S.time, "monotonic", lambda: t["v"])
+
+    assert S._attesa_interrompibile(2.0, aperte=1) is False
+    # deve aver dormito l'intervallo INTERO, non solo la prima fetta
+    assert abs(sum(dormito) - 2.0) < 1e-9, f"ha dormito solo {sum(dormito)}s invece di 2.0"

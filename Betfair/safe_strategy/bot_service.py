@@ -1153,11 +1153,18 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
     return max(0.0, (now - ts).total_seconds())
 
 
-#: I ``kind`` che CHIUDONO una posizione. Sono gli unici ammessi in corsia
-#: preferenziale: riducono l'esposizione, non hanno bisogno del contesto di
-#: rischio (i cap valgono sulle APERTURE) e sono quelli su cui il trader ha
-#: appena cliccato per bloccare un profitto o una perdita.
-CHIUSURE = ("cashout", "cancel")
+#: I ``kind`` ammessi in CORSIA PREFERENZIALE.
+#:
+#: Solo ``cashout``: e' l'unico su cui il trader ha appena cliccato per
+#: bloccare un profitto o una perdita, riduce l'esposizione e non ha bisogno
+#: del contesto di rischio (i cap valgono sulle APERTURE).
+#:
+#: ``cancel`` NON c'e' (review 15/09): annulla una RISERVA, cioe' una riga il
+#: cui ordine potrebbe essere gia' partito, e la sua difesa si regge su campi
+#: (``bet_id``, marker flumine) che scrivono le fasi di riconciliazione. Non
+#: e' urgente come una chiusura e sta benissimo nella passata completa, dove
+#: quelle fasi hanno gia' detto la verita' sulla riga.
+CHIUSURE = ("cashout",)
 
 
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
@@ -5324,24 +5331,41 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     # partita si parli. Costo: nessuna lettura in piu'.
     remember_event_names(rows)
 
-    # (a-0) CORSIA PREFERENZIALE DELLE CHIUSURE — cert. 14/09.
-    # Quando il trader clicca «chiudi», il prezzo che ha visto sulla scheda
-    # vive sul mercato, non sul nostro orologio: ogni decimo di secondo speso
-    # qui e' un decimo in cui quel prezzo puo' andarsene. Prima questa fase
-    # stava al punto (c), dopo coda flumine + riconciliazione + settlement +
-    # contesto di rischio + cecita' del feed + combo rotte: 4,2 secondi
-    # misurati sulla richiesta #10, tutti nostri e tutti invisibili.
-    # Le chiusure passano PRIMA. Le aperture restano al punto (c), dove hanno
-    # il contesto di rischio condiviso che serve ai cap.
-    n_req_veloci = process_requests(db=db, market=market, rows_by_event=rows_by_event,
-                                    params=params, now=now, risk_ctx=None,
-                                    control_mode=mode, degradato=control_degradato,
-                                    solo_chiusure=True)
-
     # (a) coda flumine — SEMPRE (anche a bot fermo: mai posizioni nude)
     n_polled = poll_flumine(db=db, params=params, now=now, market=market)
     # (a-bis) pending SENZA marker flumine (esito REST ignoto) → stato reale Betfair
     n_reconciled = reconcile_pending(market=market, db=db, now=now)
+
+    # (a-ter) CORSIA PREFERENZIALE DELLE CHIUSURE — cert. 14/09, corretta 15/09.
+    #
+    # Quando il trader clicca «chiudi», il prezzo che ha visto sulla scheda vive
+    # sul mercato, non sul nostro orologio: ogni decimo speso qui e' un decimo
+    # in cui quel prezzo puo' andarsene. Prima questa fase stava al punto (c),
+    # dopo settlement, contesto di rischio, cecita' del feed e combo rotte: 4,2
+    # secondi misurati sulla richiesta #10, tutti nostri e tutti invisibili.
+    #
+    # ⚠️ MA NON PUO' STARE PRIMA DI (a) E (a-bis), e la review l'ha trovato:
+    # `poll_flumine` e `reconcile_pending` sono esattamente le fasi che rendono
+    # VERO lo stato di una riga. Messa davanti a loro, questa corsia agiva su
+    # righe stantie, e su soldi veri:
+    #   · `cancel` cancellava una riserva il cui ordine era GIA' a mercato —
+    #     `_request_cancel` si difende guardando `bet_id`/`flumine_client_ref`,
+    #     ma quei campi li scrive proprio il poll che non era ancora girato:
+    #     la riga spariva dal database mentre l'ordine viveva su Betfair;
+    #   · `cashout` su una riga appena abbinata la vedeva ancora 'pending' e
+    #     rifiutava IN MODO TERMINALE con un motivo falso («riserva non ancora
+    #     abbinata»), buttando via l'approvazione del trader.
+    #
+    # Le due fasi che la precedono sono anche le piu' brevi quando non c'e'
+    # niente da riconciliare, che e' il caso normale. Il guadagno resta quasi
+    # intero; la correttezza torna piena.
+    #
+    # Le APERTURE restano al punto (c), dove hanno il contesto di rischio
+    # condiviso che serve ai cap.
+    n_req_veloci = process_requests(db=db, market=market, rows_by_event=rows_by_event,
+                                    params=params, now=now, risk_ctx=None,
+                                    control_mode=mode, degradato=control_degradato,
+                                    solo_chiusure=True)
     # (b) settlement — SEMPRE
     n_settled = settle_open(params=params, market=market, db=db, now=now,
                             rows_by_event=rows_by_event)
@@ -5481,9 +5505,19 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     # ``safe_strategy_control`` fallisse o fosse lenta, il trader vedrebbe
     # comunque i numeri di questo giro. La scrittura resta e resta obbligatoria:
     # il socket e' un'accelerazione, non una sostituzione.
-    # quante posizioni ci sono da chiudere: decide se l'attesa del prossimo
-    # ciclo va sorvegliata (vedi ``_attesa_interrompibile``)
-    _APERTE["n"] = int(stats.get("trades_open") or 0)
+    # Quante posizioni ci sono da chiudere: decide se l'attesa del prossimo
+    # ciclo va sorvegliata (vedi ``_attesa_interrompibile``).
+    #
+    # ⚠️ REVIEW 15/09 — QUI C'ERA `stats["trades_open"]`, che viene da
+    # ``aggregates(mode=mode)`` ed e' filtrato sulla MODALITA' DEL SERVIZIO.
+    # Con il servizio in paper e posizioni LIVE ancora aperte — la situazione
+    # del 14/09 dopo che la modalita' e' tornata a paper — quel numero valeva
+    # zero e la corsia veloce si spegneva proprio sui soldi veri: il clic del
+    # trader sull'unica posizione che rischia denaro aspettava il ciclo pieno.
+    # Si contano TUTTE le posizioni vive, in qualunque modalita'.
+    _aperte_tutte = risk_ctx.get("open_all") if isinstance(risk_ctx, dict) else None
+    _APERTE["n"] = (len(_aperte_tutte) if isinstance(_aperte_tutte, list)
+                    else int(stats.get("trades_open") or 0))
     _pubblica_stato(stats, now.isoformat())
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())
@@ -5666,7 +5700,17 @@ def _attesa_interrompibile(interval: float, aperte: int) -> bool:
         try:
             righe = _real_db.pending_requests(limit=1) or []
         except Exception as ex:  # noqa: BLE001 — sbirciare non deve mai fermare il bot
-            logger.debug("[safe.bot] sbirciata coda KO: %s", str(ex)[:120])
+            # ⚠️ REVIEW 15/09 — QUI C'ERA `return False`, e accorciava l'attesa.
+            # Uscire dal sonno fa ripartire SUBITO il ciclo completo: con il
+            # database in difficolta' (che e' la ragione per cui la sbirciata
+            # fallisce) si passava da un ciclo ogni 2 s a uno ogni 250 ms, cioe'
+            # otto volte il carico proprio mentre il DB e' in ginocchio. E' il
+            # guasto del 13/09 riprodotto dalla sua stessa difesa.
+            # Adesso si smette di sbirciare e si finisce di dormire.
+            logger.debug("[safe.bot] sbirciata coda KO, resto in attesa: %s", str(ex)[:120])
+            restante = scaduta - time.monotonic()
+            if restante > 0:
+                time.sleep(restante)
             return False
         if not righe:
             continue
