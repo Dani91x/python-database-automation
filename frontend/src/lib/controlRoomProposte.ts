@@ -196,18 +196,76 @@ export function abbinabileSufficiente(
 
 /** Perché questa proposta NON è approvabile adesso; `null` = si può approvare.
  *  L'ordine dei controlli è l'ordine in cui contano. */
+/**
+ * LO STAKE DELL'ORDINE DI CHIUSURA, che NON è la size di ingresso.
+ *
+ * ⚠️ REVIEW 15/09, CRITICO — il controllo di liquidità usava `payload.size`,
+ * cioè quanto si era PUNTATO all'apertura. Ma per chiudere per intero si
+ * piazza un importo diverso, e su una copertura a quota più bassa è più
+ * GRANDE: il controllo passava su una liquidità che non basta, e in live un
+ * ordine non abbinabile per intero viene annullato tutto.
+ *
+ * Formula del pieno green-up, identica nei due versi:
+ *
+ *     stake_chiusura = size_ingresso × prezzo_ingresso / prezzo_chiusura
+ *
+ * La commissione non entra: incide sul P&L, non sullo stake. Verificata sui
+ * trade veri del 14/09 — #287: 3,00 × 1,11 / 1,10 = 3,03, e la gamba #288
+ * piazzata da Betfair era esattamente 3,03; #290: 3,00 × 1,04 / 1,03 = 3,03,
+ * come la gamba #292.
+ *
+ * `null` quando manca un ingrediente: meglio nessun numero che uno inventato.
+ */
+export function stakeDiChiusura(
+    sizeIngresso: number | null | undefined,
+    prezzoIngresso: number | null | undefined,
+    prezzoChiusura: number | null | undefined,
+): number | null {
+    const s = typeof sizeIngresso === 'number' && Number.isFinite(sizeIngresso) && sizeIngresso > 0
+        ? sizeIngresso : null;
+    const pe = typeof prezzoIngresso === 'number' && Number.isFinite(prezzoIngresso) && prezzoIngresso > 1
+        ? prezzoIngresso : null;
+    const pc = typeof prezzoChiusura === 'number' && Number.isFinite(prezzoChiusura) && prezzoChiusura > 1
+        ? prezzoChiusura : null;
+    if (s == null || pe == null || pc == null) return null;
+    return Math.round((s * pe / pc) * 100) / 100;
+}
+
 export function motivoNonApprovabile(args: {
     scost: Scostamento;
     etaQuoteS: number | null;
     etaMassimaS: number;
     daChiudere: number | null | undefined;
     abbinabileOra: number | null | undefined;
+    /**
+     * Da quanto lo SCANNER non scrive nulla (secondi). `null` = non lo
+     * sappiamo, e allora si resta prudenti come prima.
+     *
+     * ⚠️ REVIEW 15/09, CRITICO — senza questo, il cancello chiamava «quote
+     * vecchie» un prezzo semplicemente FERMO. `odds_ts_ms` è l'istante
+     * dell'ultimo CAMBIO di prezzo, non «da quando non guardiamo»: su un
+     * mercato poco scambiato un prezzo immobile da 40 s è corrente e
+     * correttissimo. Il risultato era APPROVA spento su un'uscita URGENTE in
+     * live — cioè il caso in cui non approvare costa davvero.
+     *
+     * La distinzione è la stessa già usata dalle schede partita
+     * (`statoQuote` in `lib/controlRoom.ts`): «fermo» e «vecchio» sono due
+     * cose diverse, e si distinguono solo incrociando con la vitalità dello
+     * scanner. Qui la si porta dove decide un ordine vero.
+     */
+    etaScannerS?: number | null;
 }): string | null {
-    const { scost, etaQuoteS, etaMassimaS, daChiudere, abbinabileOra } = args;
+    const { scost, etaQuoteS, etaMassimaS, daChiudere, abbinabileOra, etaScannerS } = args;
 
     if (scost.delta == null) return 'prezzo corrente non disponibile: non si piazza al buio';
     if (etaQuoteS == null) return 'età delle quote sconosciuta: non si piazza su un prezzo di cui non sappiamo l’età';
-    if (etaQuoteS > etaMassimaS) return `quote vecchie di ${Math.round(etaQuoteS)} s: oltre il limite di ${etaMassimaS} s`;
+
+    // lo scanner sta guardando? Allora un prezzo fermo è il prezzo CORRENTE.
+    const scannerVivo = typeof etaScannerS === 'number'
+        && Number.isFinite(etaScannerS) && etaScannerS <= etaMassimaS;
+    if (etaQuoteS > etaMassimaS && !scannerVivo) {
+        return `quote vecchie di ${Math.round(etaQuoteS)} s: oltre il limite di ${etaMassimaS} s`;
+    }
     if (scost.fuoriTolleranza) return 'il prezzo si è mosso oltre la tolleranza dalla proposta';
     if (!abbinabileSufficiente(daChiudere, abbinabileOra)) {
         return 'il mercato non abbina abbastanza a questo prezzo: in live l’ordine verrebbe annullato per intero';

@@ -408,13 +408,15 @@ describe('uscite — la scheda che decide un ordine vero', () => {
 // ------------------------------------------------------------------- catena
 
 describe('catena dei tempi - da Betfair al pixel', () => {
+    // `latenza: false` sul primo: e' l'ETA' DEL PREZZO, non un ritardo — si
+    // mostra ma non entra in nessun totale (review 15/09).
     const salti = [
-        { id: 'feed', nome: 'Betfair al feed', ms: 120, spiega: '', nostro: true },
-        { id: 'lettura', nome: 'feed al bot', ms: 780, spiega: '', nostro: true },
-        { id: 'decisione', nome: 'bot alla decisione', ms: 50, spiega: '', nostro: true },
-        { id: 'invio', nome: 'decisione all invio', ms: 50, spiega: '', nostro: true },
-        { id: 'betfair', nome: 'Betfair risponde', ms: 180, spiega: '', nostro: false },
-        { id: 'fill', nome: 'risposta al fill', ms: 20, spiega: '', nostro: true },
+        { id: 'eta_prezzo', nome: 'prezzo gia fermo da', ms: 120, spiega: '', nostro: true, latenza: false },
+        { id: 'lettura', nome: 'feed al bot', ms: 780, spiega: '', nostro: true, latenza: true },
+        { id: 'decisione', nome: 'bot alla decisione', ms: 50, spiega: '', nostro: true, latenza: true },
+        { id: 'invio', nome: 'decisione all invio', ms: 50, spiega: '', nostro: true, latenza: true },
+        { id: 'betfair', nome: 'Betfair risponde', ms: 180, spiega: '', nostro: false, latenza: true },
+        { id: 'fill', nome: 'risposta al fill', ms: 20, spiega: '', nostro: true, latenza: true },
     ];
 
     it('mostra quanto e vecchio quello che il trader vede', () => {
@@ -441,8 +443,10 @@ describe('catena dei tempi - da Betfair al pixel', () => {
     it('separa il tempo NOSTRO da quello totale: Betfair non e colpa nostra', () => {
         mVm.mockReturnValue(vm({ ultimaCatena: { salti, trade: 285, evento: 'X v Y' } }));
         const el = mostra().getByTestId('cr-catena-operazione');
-        expect(el.textContent).toMatch(/1[.,]0 s/);
-        expect(el.textContent).toMatch(/1[.,]2 s/);
+        // 780+50+50+20 = 900 ms nostri; +180 di Betfair = 1,08 s totali.
+        // I 120 ms di «prezzo gia fermo» non entrano in nessuno dei due.
+        expect(el.textContent).toMatch(/900 ms/);
+        expect(el.textContent).toMatch(/1[.,]1 s/);
     });
 
     it('un salto non misurato e un trattino, mai zero', () => {

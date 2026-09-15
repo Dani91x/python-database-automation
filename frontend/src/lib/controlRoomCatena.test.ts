@@ -39,7 +39,7 @@ describe('catenaOperazione — sei salti, da Betfair al fill', () => {
     it('costruisce i sei salti con i numeri giusti', () => {
         const c = catenaOperazione(tempiOk, esecOk, T + 1200);
         expect(c.map((s) => [s.id, s.ms])).toEqual([
-            ['feed', 120],        // Betfair -> riga scritta
+            ['eta_prezzo', 120],  // da quanto il prezzo era fermo — NON una latenza
             ['lettura', 780],     // riga -> letta dal bot
             ['decisione', 50],    // in mano -> deciso
             ['invio', 50],        // deciso -> chiamata
@@ -71,8 +71,9 @@ describe('catenaOperazione — sei salti, da Betfair al fill', () => {
 });
 
 describe('totali — un totale parziale è peggio di nessun totale', () => {
-    it('somma i sei salti quando ci sono tutti', () => {
-        expect(totaleCatena(catenaOperazione(tempiOk, esecOk, T + 1200))).toBe(1200);
+    it('somma le LATENZE, non l’età del prezzo', () => {
+        // 1200 meno i 120 ms di «prezzo già fermo da», che non è un ritardo
+        expect(totaleCatena(catenaOperazione(tempiOk, esecOk, T + 1200))).toBe(1080);
     });
 
     it('BASTA UN SALTO MANCANTE e il totale è null: non si somma quello che si ha', () => {
@@ -81,7 +82,7 @@ describe('totali — un totale parziale è peggio di nessun totale', () => {
     });
 
     it('il totale NOSTRO esclude Betfair', () => {
-        expect(totaleNostro(catenaOperazione(tempiOk, esecOk, T + 1200))).toBe(1020);
+        expect(totaleNostro(catenaOperazione(tempiOk, esecOk, T + 1200))).toBe(900);
     });
 
     it('il totale nostro è null se manca un pezzo NOSTRO', () => {
@@ -93,9 +94,9 @@ describe('totali — un totale parziale è peggio di nessun totale', () => {
     it('il tempo di Betfair NON entra nel totale nostro, ed è la sua unica differenza', () => {
         const lento = catenaOperazione(tempiOk, { ...esecOk, betfair_ms: 5000 }, T + 1200);
         // il totale nostro non si muove anche se Betfair ci mette 5 secondi
-        expect(totaleNostro(lento)).toBe(1020);
+        expect(totaleNostro(lento)).toBe(900);
         // ma il totale complessivo sì
-        expect(totaleCatena(lento)).toBe(1020 + 5000);
+        expect(totaleCatena(lento)).toBe(900 + 5000);
     });
 });
 
@@ -106,8 +107,18 @@ describe('colloDiBottiglia — dove se ne va il tempo', () => {
     });
 
     it('ignora i salti non misurati invece di trattarli come zero', () => {
-        const c = catenaOperazione({ t0_quote_ms: T, t1_feed_ms: T + 40 }, null, null);
-        expect(colloDiBottiglia(c)?.id).toBe('feed');
+        const c = catenaOperazione(
+            { t0_quote_ms: T, t1_feed_ms: T, t2_letto_ms: T + 40 }, null, null);
+        expect(colloDiBottiglia(c)?.id).toBe('lettura');
+    });
+
+    it('L’ETÀ DEL PREZZO NON È UN COLLO DI BOTTIGLIA: non è tempo nostro', () => {
+        // prezzo fermo da 5 minuti su un mercato poco scambiato, e una lettura
+        // lenta da 800 ms: il colpevole è la lettura, non il mercato immobile.
+        const c = catenaOperazione(
+            { t0_quote_ms: T, t1_feed_ms: T + 300_000, t2_letto_ms: T + 300_800 },
+            null, null);
+        expect(colloDiBottiglia(c)?.id).toBe('lettura');
     });
 
     it('senza nessun salto misurato non inventa un colpevole', () => {
@@ -149,5 +160,41 @@ describe('fmtMs — si legge a colpo d’occhio', () => {
 
     it('zero vero si stampa: è un’informazione, non un’assenza', () => {
         expect(fmtMs(0)).toBe('0 ms');
+    });
+});
+
+// ===========================================================================
+// REVIEW 15/09 — IL PRIMO TRATTO NON È UNA LATENZA.
+//
+// `t0_quote_ms` è l'istante dell'ultimo CAMBIO di prezzo, non quello in cui
+// Betfair ce l'ha mandato. Contarlo come ritardo faceva sembrare lentissima
+// una pipeline che gira in millisecondi.
+// ===========================================================================
+
+describe('età del prezzo: si mostra, non si somma', () => {
+    it('il primo tratto è marcato come NON latenza', () => {
+        const c = catenaOperazione(tempiOk, esecOk, T + 1200);
+        expect(c[0].id).toBe('eta_prezzo');
+        expect(c[0].latenza).toBe(false);
+        expect(c.slice(1).every((s) => s.latenza)).toBe(true);
+    });
+
+    it('un prezzo fermo da CINQUE MINUTI non gonfia i totali', () => {
+        const fermo = {
+            t0_quote_ms: T, t1_feed_ms: T + 300_000,
+            t2_letto_ms: T + 300_100, t3_deciso_ms: T + 300_150,
+        };
+        const c = catenaOperazione(fermo, {
+            t4_inviato: T + 300_200, t5_risposta: T + 300_400, betfair_ms: 200,
+        }, T + 300_450);
+        // 100 + 50 + 50 + 200 + 50 = 450 ms, non cinque minuti
+        expect(totaleCatena(c)).toBe(450);
+        expect(totaleNostro(c)).toBe(250);
+    });
+
+    it('il numero dell’età resta comunque LEGGIBILE: è un’informazione utile', () => {
+        const c = catenaOperazione({ t0_quote_ms: T, t1_feed_ms: T + 300_000 }, null, null);
+        expect(c[0].ms).toBe(300_000);
+        expect(c[0].nome).toMatch(/fermo/i);
     });
 });

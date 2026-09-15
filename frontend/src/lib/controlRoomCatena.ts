@@ -30,6 +30,20 @@ export interface Salto {
     spiega: string;
     /** questo tratto dipende da noi o da Betfair? */
     nostro: boolean;
+    /**
+     * È davvero una LATENZA, cioè tempo speso a trasportare o decidere?
+     *
+     * ⚠️ REVIEW 15/09 — il primo tratto NON lo è. `t0_quote_ms` è l'istante
+     * dell'ultimo CAMBIO di prezzo (`service.py:503`), non l'istante in cui
+     * Betfair ce l'ha mandato: la differenza con `t1` dice da quanto quel
+     * prezzo era fermo quando lo scanner ha scritto la riga. Su un mercato
+     * poco scambiato vale minuti, e sommarla alla catena faceva sembrare
+     * lentissima una pipeline che gira in millisecondi.
+     *
+     * Si mostra — è un'informazione utile, dice su che prezzo si è deciso —
+     * ma non entra in nessun totale.
+     */
+    latenza: boolean;
 }
 
 /** Gli istanti che il servizio scrive sul `meta` di un trade. */
@@ -73,38 +87,47 @@ export function catenaOperazione(
     const e = esecuzione ?? {};
     return [
         {
-            id: 'feed', nome: 'Betfair → feed', ms: delta(t.t0_quote_ms, t.t1_feed_ms),
-            spiega: 'dal cambio di prezzo su Betfair alla riga scritta dallo scanner', nostro: true,
+            // NON è una latenza: vedi `Salto.latenza`.
+            id: 'eta_prezzo', nome: 'prezzo già fermo da', ms: delta(t.t0_quote_ms, t.t1_feed_ms),
+            spiega: 'da quanto quel prezzo non cambiava quando lo scanner ha scritto la riga — '
+                + 'non è un ritardo, è l’età del prezzo su cui si è deciso',
+            nostro: true, latenza: false,
         },
         {
             id: 'lettura', nome: 'feed → bot', ms: delta(t.t1_feed_ms, t.t2_letto_ms),
-            spiega: 'quanto la riga è rimasta sul database prima che il bot la leggesse', nostro: true,
+            spiega: 'quanto la riga è rimasta sul database prima che il bot la leggesse',
+            nostro: true, latenza: true,
         },
         {
             id: 'decisione', nome: 'bot → decisione', ms: delta(t.t2_letto_ms, t.t3_deciso_ms),
-            spiega: 'quanto ci ha messo il bot a decidere, avendo il dato in mano', nostro: true,
+            spiega: 'quanto ci ha messo il bot a decidere, avendo il dato in mano',
+            nostro: true, latenza: true,
         },
         {
             id: 'invio', nome: 'decisione → invio', ms: delta(t.t3_deciso_ms, e.t4_inviato),
-            spiega: 'dalla decisione alla chiamata a Betfair', nostro: true,
+            spiega: 'dalla decisione alla chiamata a Betfair', nostro: true, latenza: true,
         },
         {
             id: 'betfair', nome: 'Betfair risponde',
             ms: typeof e.betfair_ms === 'number' ? Math.round(e.betfair_ms) : delta(e.t4_inviato, e.t5_risposta),
-            spiega: 'l’unico tratto che non dipende da noi', nostro: false,
+            spiega: 'l’unico tratto che non dipende da noi', nostro: false, latenza: true,
         },
         {
             id: 'fill', nome: 'risposta → fill', ms: delta(e.t5_risposta, t6FillMs),
-            spiega: 'dalla risposta all’abbinamento confermato', nostro: true,
+            spiega: 'dalla risposta all’abbinamento confermato', nostro: true, latenza: true,
         },
     ];
 }
 
 /** Totale della catena: `null` se anche un solo salto manca — un totale
- *  parziale spacciato per totale è peggio di nessun totale. */
+ *  parziale spacciato per totale è peggio di nessun totale.
+ *
+ *  I tratti che NON sono latenze (l'età del prezzo) restano fuori: sommarli
+ *  farebbe sembrare lenta una pipeline che gira in millisecondi. */
 export function totaleCatena(salti: readonly Salto[]): number | null {
     let somma = 0;
     for (const s of salti) {
+        if (!s.latenza) continue;
         if (s.ms == null) return null;
         somma += s.ms;
     }
@@ -116,7 +139,7 @@ export function totaleCatena(salti: readonly Salto[]): number | null {
 export function totaleNostro(salti: readonly Salto[]): number | null {
     let somma = 0;
     for (const s of salti) {
-        if (!s.nostro) continue;
+        if (!s.nostro || !s.latenza) continue;
         if (s.ms == null) return null;
         somma += s.ms;
     }
@@ -128,6 +151,8 @@ export function totaleNostro(salti: readonly Salto[]): number | null {
 export function colloDiBottiglia(salti: readonly Salto[]): Salto | null {
     let peggio: Salto | null = null;
     for (const s of salti) {
+        // l'età del prezzo non è un collo di bottiglia: non è tempo nostro
+        if (!s.latenza) continue;
         if (s.ms == null) continue;
         if (peggio == null || s.ms > (peggio.ms as number)) peggio = s;
     }

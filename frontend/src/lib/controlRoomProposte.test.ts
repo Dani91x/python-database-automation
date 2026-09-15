@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     scostamento, abbinabileSufficiente, motivoNonApprovabile, ordinaProposte, prezzoVivo,
+    stakeDiChiusura,
     SLIPPAGE_PCT_DEFAULT, type PropostaChiusura,
 } from './controlRoomProposte';
 import type { TennisScanPayload } from './safeStrategyScan';
@@ -177,5 +178,74 @@ describe('ordinaProposte — le urgenti in cima, perché non approvarle costa', 
         const src = [prop(1), prop(2, { urgente: true })];
         ordinaProposte(src);
         expect(src.map((p) => p.id)).toEqual([1, 2]);
+    });
+});
+
+// ===========================================================================
+// REVIEW 15/09 — DUE CRITICI DEL CANCELLO DI APPROVAZIONE.
+// ===========================================================================
+
+describe('stakeDiChiusura — quanto si piazza DAVVERO per chiudere', () => {
+    it('verificato sui trade veri del 14/09', () => {
+        // #287: back 3,00 @ 1,11, chiuso lay @ 1,10 -> la gamba #288 piazzata
+        // da Betfair era 3,03
+        expect(stakeDiChiusura(3, 1.11, 1.10)).toBe(3.03);
+        // #290: back 3,00 @ 1,04, chiuso lay @ 1,03 -> gamba #292 = 3,03
+        expect(stakeDiChiusura(3, 1.04, 1.03)).toBe(3.03);
+    });
+
+    it('chiudere a quota PIU BASSA costa PIU della size di ingresso', () => {
+        const s = stakeDiChiusura(10, 3.0, 2.0) as number;
+        expect(s).toBe(15);
+        expect(s).toBeGreaterThan(10);   // il controllo con 10 sarebbe ottimista
+    });
+
+    it('chiudere a quota PIU ALTA costa meno', () => {
+        expect(stakeDiChiusura(10, 2.0, 4.0)).toBe(5);
+    });
+
+    it('ingrediente mancante o assurdo -> null, mai un numero inventato', () => {
+        expect(stakeDiChiusura(null, 1.1, 1.1)).toBeNull();
+        expect(stakeDiChiusura(3, null, 1.1)).toBeNull();
+        expect(stakeDiChiusura(3, 1.1, null)).toBeNull();
+        expect(stakeDiChiusura(3, 1.0, 1.1)).toBeNull();   // quota non valida
+        expect(stakeDiChiusura(0, 1.1, 1.1)).toBeNull();
+    });
+});
+
+describe('quote FERME non sono quote VECCHIE (critico)', () => {
+    const base = {
+        scost: { delta: 0, fuoriTolleranza: false } as never,
+        etaMassimaS: 20,
+        daChiudere: 3,
+        abbinabileOra: 500,
+    };
+
+    it('prezzo fermo da 40 s ma SCANNER VIVO: si approva', () => {
+        // e' il caso di un mercato poco scambiato: quel prezzo e' CORRENTE
+        expect(motivoNonApprovabile({ ...base, etaQuoteS: 40, etaScannerS: 2 })).toBeNull();
+    });
+
+    it('prezzo vecchio 40 s e SCANNER FERMO: NON si approva', () => {
+        const m = motivoNonApprovabile({ ...base, etaQuoteS: 40, etaScannerS: 60 });
+        expect(m).toMatch(/quote vecchie/i);
+    });
+
+    it('eta dello scanner IGNOTA: si resta prudenti come prima', () => {
+        expect(motivoNonApprovabile({ ...base, etaQuoteS: 40, etaScannerS: null }))
+            .toMatch(/quote vecchie/i);
+        expect(motivoNonApprovabile({ ...base, etaQuoteS: 40 })).toMatch(/quote vecchie/i);
+    });
+
+    it('lo scanner vivo NON scavalca gli altri blocchi: la liquidita resta un veto', () => {
+        const m = motivoNonApprovabile({
+            ...base, etaQuoteS: 40, etaScannerS: 2, daChiudere: 100, abbinabileOra: 1,
+        });
+        expect(m).toMatch(/non abbina abbastanza/i);
+    });
+
+    it('eta delle quote ignota resta un blocco anche con lo scanner vivo', () => {
+        expect(motivoNonApprovabile({ ...base, etaQuoteS: null, etaScannerS: 1 }))
+            .toMatch(/età delle quote sconosciuta/i);
     });
 });

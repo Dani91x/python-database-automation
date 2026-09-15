@@ -953,6 +953,7 @@ function NastroSegnali({ vm, filtroSport }: {
                         proposta={pv.proposta}
                         vivo={pv.vivo}
                         etaQuoteS={pv.etaQuoteS}
+                        etaScannerS={vm.feedEtaS}
                         slippagePct={vm.slippagePct}
                         onApprova={vm.approva}
                         onIgnora={vm.ignora}

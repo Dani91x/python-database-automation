@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, fmtAge, DASH } from '@/lib/format';
 import { safeExitKindLabel, safeReasonLabel } from '@/components/safestrategy/safeActivity';
 import {
-    scostamento, motivoNonApprovabile, abbinabileSufficiente,
+    scostamento, motivoNonApprovabile, abbinabileSufficiente, stakeDiChiusura,
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
 
@@ -37,6 +37,10 @@ export interface SchedaChiusuraProps {
     vivo: PrezzoVivo;
     /** età delle quote in secondi; null = non lo sappiamo (fail-closed) */
     etaQuoteS: number | null;
+    /** da quanto lo SCANNER non scrive: distingue «prezzo fermo» (corrente)
+     *  da «prezzo vecchio» (non lo stiamo guardando). Senza, un mercato poco
+     *  scambiato spegneva APPROVA su un'uscita urgente in live. */
+    etaScannerS?: number | null;
     slippagePct: number;
     /** in LIVE serve la doppia conferma: sono soldi veri */
     onApprova: (id: number) => Promise<void>;
@@ -44,7 +48,7 @@ export interface SchedaChiusuraProps {
 }
 
 export function SchedaChiusura({
-    proposta, vivo, etaQuoteS, slippagePct, onApprova, onIgnora,
+    proposta, vivo, etaQuoteS, etaScannerS = null, slippagePct, onApprova, onIgnora,
 }: SchedaChiusuraProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
@@ -57,9 +61,15 @@ export function SchedaChiusura({
         prezzoCorrente: vivo.prezzo,
         lato, slippagePct,
     });
+    // QUANTO SI PIAZZA DAVVERO per chiudere: non la size di ingresso.
+    // Su una copertura a quota più bassa è più GRANDE, e il controllo di
+    // liquidità con il numero sbagliato lasciava passare un ordine che in
+    // live viene annullato per intero.
+    const daChiudere = stakeDiChiusura(p.size, p.entry_price, vivo.prezzo) ?? p.size ?? null;
     const blocco = motivoNonApprovabile({
         scost, etaQuoteS, etaMassimaS: ETA_QUOTE_MAX_S,
-        daChiudere: p.size, abbinabileOra: vivo.abbinabile,
+        daChiudere, abbinabileOra: vivo.abbinabile,
+        etaScannerS,
     });
     const urgente = p.urgente === true;
 
