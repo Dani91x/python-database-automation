@@ -30,10 +30,14 @@ export interface SchedaPreMatchProps {
     /** quanto manca al fischio, in secondi; null = orario ignoto */
     mancaS: number | null;
     registra?: boolean | null;
+    /** il registratore di questo sport e' vivo? Senza, REC mentirebbe. */
+    registratoreVivo?: boolean | null;
     onRegistrazione?: (eventId: string, attiva: boolean) => void;
 }
 
-export function SchedaPreMatch({ p, scheda, mancaS, registra, onRegistrazione }: SchedaPreMatchProps) {
+export function SchedaPreMatch({
+    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione,
+}: SchedaPreMatchProps) {
     const [casa, ospite] = dividiNomi(p.nome);
     const imminente = mancaS != null && mancaS <= 15 * 60;
 
@@ -67,7 +71,8 @@ export function SchedaPreMatch({ p, scheda, mancaS, registra, onRegistrazione }:
             </div>
 
             <div className="mt-1.5">
-                <AzioniPartita p={p} scheda={scheda} registra={registra} onRegistrazione={onRegistrazione} />
+                <AzioniPartita p={p} scheda={scheda} registra={registra}
+                    registratoreVivo={registratoreVivo} onRegistrazione={onRegistrazione} />
             </div>
         </div>
     );

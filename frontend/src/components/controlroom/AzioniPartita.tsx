@@ -36,13 +36,25 @@ export interface AzioniPartitaProps {
     scheda: string;
     /** questa partita sta già registrando? `null` = non lo sappiamo */
     registra?: boolean | null;
+    /**
+     * Il REGISTRATORE di questo sport è vivo?
+     *
+     * ⚠️ REVIEW 15/09 — il pulsante diventava REC rosso appena la RPC
+     * rispondeva OK, cioè appena il FLAG era scritto sul database. Ma la
+     * registrazione la fa il PROCESSO, non il flag: `live_follow.record` lo
+     * legge il runner calcio, `tennis_live_follow.record` quello tennis.
+     * Runner fermo = spia rossa e zero registrazione.
+     * `null` = non lo sappiamo, e allora si dice «flag acceso» senza
+     * promettere che stia registrando.
+     */
+    registratoreVivo?: boolean | null;
     /** avvisa la pagina che lo stato della registrazione è cambiato */
     onRegistrazione?: (eventId: string, attiva: boolean) => void;
     compatto?: boolean;
 }
 
 export function AzioniPartita({
-    p, scheda, registra = null, onRegistrazione, compatto = true,
+    p, scheda, registra = null, registratoreVivo = null, onRegistrazione, compatto = true,
 }: AzioniPartitaProps) {
     const navigate = useNavigate();
     const [inCorso, setInCorso] = useState(false);
@@ -67,14 +79,48 @@ export function AzioniPartita({
         navigate(`/dashboard?fixture=${fixtureId}&from=control-room`);
     };
 
-    const apriTrading = () => {
-        segnaPunto();
-        if (tennis && p.marketId) {
-            navigate(`/tennis/terminal?event=${encodeURIComponent(p.event_id)}`
-                + `&market=${encodeURIComponent(p.marketId)}&name=Match%20Odds&from=control-room`);
-        } else {
+    /**
+     * TRADING — porta al terminale di quella partita.
+     *
+     * ⚠️ REVIEW 15/09, due difetti nello stesso gesto:
+     *
+     *  1. Sul CALCIO navigava senza creare il seguito. `/segui-live` non lo
+     *     crea: arma un'attesa e mostra «Richiesta registrata» con lo
+     *     spinner, senza timeout né via d'uscita — una promessa che nessuno
+     *     mantiene. Il repo sa già fare la cosa giusta (`MissionPanel`
+     *     registra e SOLO DOPO naviga), e `omega_mission_follow` è
+     *     idempotente, quindi su una partita già seguita non cambia niente.
+     *  2. Sul TENNIS non passava `p1`/`p2`, e il terminale scriveva
+     *     «Giocatore 1» e «Giocatore 2» — nell'intestazione, nel titolo,
+     *     sulle due colonne della ladder e sul popout degli ordini. Un nome
+     *     ignoto stampato come un nome finto. I nomi ce li abbiamo.
+     */
+    const apriTrading = async () => {
+        setInCorso(true); setErrore(null);
+        try {
+            const [g1, g2] = dividiNomi(p.nome);
+            if (tennis && p.marketId) {
+                const q = new URLSearchParams({
+                    event: p.event_id, market: p.marketId,
+                    name: 'Match Odds', from: 'control-room',
+                });
+                if (g1 && g2) { q.set('p1', g1); q.set('p2', g2); }
+                segnaPunto();
+                navigate(`/tennis/terminal?${q.toString()}`);
+                return;
+            }
+            // calcio: prima il seguito, poi si naviga. Se fallisce si resta qui
+            // e lo si dice, invece di mandare il trader su una schermata che
+            // aspetta per sempre.
+            if (p.koMs == null) {
+                throw new Error('manca l’orario di inizio: il seguito non si può creare');
+            }
+            await followMission(p.event_id, g1 || p.nome, g2, new Date(p.koMs).toISOString());
+            segnaPunto();
             navigate(`/segui-live?event=${encodeURIComponent(p.event_id)}&from=control-room`);
-        }
+        } catch (e) {
+            setErrore(e instanceof Error ? e.message : String(e));
+        } finally { setInCorso(false); }
     };
 
     /** SEGUI LIVE = registra l'intero evento. Due strade, una per sport. */
@@ -123,7 +169,8 @@ export function AzioniPartita({
 
             <Button
                 type="button" size="sm" variant="outline"
-                onClick={apriTrading}
+                disabled={inCorso}
+                onClick={() => void apriTrading()}
                 data-testid="cr-trading"
                 title="apri il terminale di trading su questa partita"
                 className={`${dim} uppercase tracking-wider`}
@@ -136,17 +183,35 @@ export function AzioniPartita({
                 onClick={() => void cambiaRegistrazione()}
                 data-testid="cr-segui-live"
                 title={attiva
-                    ? 'sta registrando l’intero evento: clicca per fermare'
-                    : 'registra l’intero evento; a fine gara finisce nel Match Replay'}
+                    ? (registratoreVivo === false
+                        ? 'flag acceso ma il registratore di questo sport è SPENTO: non sta registrando niente'
+                        : registratoreVivo === true
+                            ? 'sta registrando l’intero evento: clicca per fermare'
+                            : 'flag acceso; non sappiamo se il registratore stia ascoltando')
+                    : tennis
+                        ? 'registra l’intero evento per i laboratori tennis'
+                        : 'registra l’intero evento; a fine gara finisce nel Match Replay'}
                 className={`${dim} uppercase tracking-wider ${
-                    attiva ? 'bg-red-600/80 hover:bg-red-600 text-white' : ''
+                    attiva
+                        ? registratoreVivo === false
+                            ? 'bg-orange-600/70 hover:bg-orange-600 text-white'
+                            : 'bg-red-600/80 hover:bg-red-600 text-white'
+                        : ''
                 }`}
             >
                 {inCorso
                     ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <><CircleDot className={`w-3 h-3 mr-1 ${attiva ? 'animate-pulse' : ''}`} />
-                        {attiva ? 'REC' : 'Segui live'}</>}
+                    : <><CircleDot className={`w-3 h-3 mr-1 ${attiva && registratoreVivo !== false ? 'animate-pulse' : ''}`} />
+                        {attiva ? (registratoreVivo === false ? 'REC?' : 'REC') : 'Segui live'}</>}
             </Button>
+
+            {/* un flag acceso senza nessuno che ascolti NON è una registrazione */}
+            {attiva && registratoreVivo === false && (
+                <span className="text-[10px] text-orange-300" data-testid="cr-rec-senza-registratore">
+                    registratore {tennis ? 'tennis' : 'calcio'} spento: il flag è acceso ma
+                    <strong> non sta registrando</strong>
+                </span>
+            )}
 
             {errore && (
                 <span className="text-[10px] text-orange-300" data-testid="cr-azioni-errore">

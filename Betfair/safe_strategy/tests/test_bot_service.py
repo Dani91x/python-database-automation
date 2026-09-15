@@ -3704,3 +3704,19 @@ def test_sbirciata_fallita_non_accorcia_l_attesa(monkeypatch):
     assert S._attesa_interrompibile(2.0, aperte=1) is False
     # deve aver dormito l'intervallo INTERO, non solo la prima fetta
     assert abs(sum(dormito) - 2.0) < 1e-9, f"ha dormito solo {sum(dormito)}s invece di 2.0"
+
+
+def test_cashout_su_una_RISERVA_non_si_rifiuta_ma_si_ATTENDE():
+    """REVIEW 15/09 — una riga 'pending' non e' per forza «non abbinata»: puo'
+    essere appena stata abbinata e non ancora riconciliata. Chiudere la
+    richiesta come rifiutata buttava via l'approvazione del trader con un
+    motivo che poteva essere falso."""
+    assert S._request_state({"attendi": "riserva non ancora risolta"}) == "pending"
+    # e gli altri esiti non cambiano
+    assert S._request_state({"rejected": "stato hedged"}) == "rejected"
+    assert S._request_state({"ok": True}) == "done"
+
+
+def test_solo_attendi_riporta_la_richiesta_in_coda():
+    """Un rifiuto vero resta un rifiuto: il nuovo esito non annacqua gli altri."""
+    assert S._request_state({"rejected": "x", "attendi": None}) == "rejected"

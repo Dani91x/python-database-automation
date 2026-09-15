@@ -1264,7 +1264,15 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
 def _request_state(res: dict[str, Any]) -> str:
     """Stato con cui si CHIUDE la richiesta della UI (M-21): 'done' eseguita,
     'rejected' rifiutata dal servizio (non un guasto: la UI mostra il perché),
-    'error' guasto."""
+    'error' guasto.
+
+    ⚠️ 15/09 — `attendi` e' l'unico esito che NON chiude la richiesta: la
+    riporta in coda perche' la condizione si risolve da sola al giro dopo
+    (tipicamente una riserva ancora da riconciliare). Chiuderla come rifiuto
+    buttava via l'approvazione del trader con un motivo che poteva essere
+    falso."""
+    if res.get("attendi"):
+        return "pending"
     if res.get("rejected"):
         return "rejected"
     return "error" if res.get("error") else "done"
@@ -1496,9 +1504,21 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
     # 'hedged' o una riserva 'pending' finivano in 'error' generico
     # "trade_non_aperto:<stato>" senza spiegazione per l'utente).
     status = str(trade.get("status") or "")
+    if status == "pending":
+        # ⚠️ REVIEW 15/09 — QUESTO RIFIUTO ERA TERMINALE, e con un motivo che
+        # poteva essere FALSO. Una riga 'pending' non e' per forza «non
+        # abbinata»: puo' essere appena stata abbinata e non ancora
+        # riconciliata. Chiudere la richiesta come 'rejected' buttava via
+        # l'approvazione del trader, che doveva accorgersene e ricliccare.
+        #
+        # Una riserva si risolve da sola al giro dopo: la richiesta RESTA in
+        # attesa e ci riprova, invece di morire. Se e' davvero vecchia ci
+        # pensa il controllo di scadenza gia' in testa a `process_requests`.
+        return {"attendi": "riserva non ancora risolta", "trade_id": int(tid),
+                "message": "in attesa: l'ordine di apertura non e' ancora "
+                           "risolto, la chiusura parte appena lo e'"}
     if status != "open":
-        why = {"pending": "riserva non ancora abbinata: si chiude solo una posizione aperta",
-               "hedged": "posizione gia' coperta per intero: nulla da chiudere",
+        why = {"hedged": "posizione gia' coperta per intero: nulla da chiudere",
                }.get(status, f"la riga non e' una posizione aperta (stato {status})")
         return {"rejected": f"stato {status}", "trade_id": int(tid),
                 "message": f"rifiutato: {why}"}

@@ -24,8 +24,34 @@ import { useState } from 'react';
 import { ChevronRight, Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
+import { pnlClass } from '@/lib/tradeStatus';
 import { BOT_LABEL, type Bot, type PartitaGiornata, type StatoQuote } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+
+/**
+ * Le chiavi del database NON si mostrano al trader.
+ *
+ * ⚠️ REVIEW 15/09 — `ht_cs` e `ft_cs` finivano a schermo come «HT_CS» e
+ * «FT_CS» perché la stringa veniva solo messa in maiuscolo. Sono nomi di
+ * colonne, non parole: qui vivono le loro traduzioni, e quello che non è
+ * tradotto si mostra com'è (minuscolo, non urlato).
+ */
+const STRATEGIA_LABEL: Record<string, string> = {
+    ht_cs: 'risultato esatto 1° tempo',
+    ft_cs: 'risultato esatto finale',
+    base: 'base',
+    esatto: 'risultato esatto',
+    punta: 'punta',
+    tennis: 'tennis',
+    under_entry: 'ingresso Under 3.5',
+    over_cover: 'copertura Over 4.5',
+    under_green: 'green-up Under',
+    ko_green: 'green-up al fischio',
+};
+
+function etichettaStrategia(k: string): string {
+    return STRATEGIA_LABEL[k.toLowerCase()] ?? k.toLowerCase().replace(/_/g, ' ');
+}
 
 const BOT_SIGLA: Record<Bot, string> = { omega: 'Ω', safe: 'S', mike: 'M' };
 const BOT_CLS: Record<Bot, string> = {
@@ -56,9 +82,13 @@ export interface SchedaPartitaProps {
     scheda?: string;
     /** questa partita sta registrando? */
     registra?: boolean | null;
+    /** il registratore di questo sport e' vivo? Senza, REC mentirebbe. */
+    registratoreVivo?: boolean | null;
 }
 
-export function SchedaPartita({ p, operazioni, scheda = 'live', registra = null }: SchedaPartitaProps) {
+export function SchedaPartita({
+    p, operazioni, scheda = 'live', registra = null, registratoreVivo = null,
+}: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
 
     const soldi = p.soldi;
@@ -95,7 +125,8 @@ export function SchedaPartita({ p, operazioni, scheda = 'live', registra = null 
                 {/* la STESSA riga di pulsanti di ogni altra scheda: video,
                     statistiche, trading, segui live — e ognuno si segna il
                     punto di ritorno prima di portare il trader altrove. */}
-                <AzioniPartita p={p} scheda={scheda} registra={registra} />
+                <AzioniPartita p={p} scheda={scheda} registra={registra}
+                    registratoreVivo={registratoreVivo} />
                 {p.stato === 'live' && (
                     <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
                         data-testid="cr-latenza"
@@ -117,9 +148,8 @@ export function SchedaPartita({ p, operazioni, scheda = 'live', registra = null 
                         {p.target?.fonte === 'ripiego' && <span className="text-white/30" title="calcolato dalla pagina: il servizio non lo pubblica"> *</span>}
                     </span>
                     <span className="flex items-baseline gap-2">
-                        <span className={`font-mono text-[14px] font-bold tabular-nums ${
-                            net == null ? 'text-white/35' : net >= 0 ? 'text-emerald-400' : 'text-red-400'
-                        }`} data-testid="cr-pnl-partita">{net == null ? DASH : fmtMoney(net)}</span>
+                        <span className={`font-mono text-[14px] font-bold tabular-nums ${pnlClass(net)}`}
+                            data-testid="cr-pnl-partita">{net == null ? DASH : fmtMoney(net)}</span>
                         {manca != null && manca > 0 && net != null && (
                             <span className="text-[10px] text-white/40">manca {fmtMoney(manca)}</span>
                         )}
@@ -197,13 +227,23 @@ export function SchedaPartita({ p, operazioni, scheda = 'live', registra = null 
                                 <span className="text-white/75 truncate max-w-[9rem]">{o.selezione ?? DASH}</span>
                                 <span className="font-mono text-white/60">{fmtOdds(o.prezzo)}</span>
                                 <span className="font-mono text-white/45">{fmtMoney(o.size)}</span>
-                                {o.quale && <span className="text-[9px] text-white/30 uppercase">{o.quale}</span>}
+                                {o.quale && (
+                                    <span className="text-[9px] text-white/30 uppercase"
+                                        title="la regola che ha prodotto questa operazione">
+                                        {etichettaStrategia(o.quale)}
+                                    </span>
+                                )}
                                 {o.modalita === 'live'
                                     ? <span className="text-[9px] px-1 rounded bg-orange-500/20 text-orange-300">live</span>
                                     : <span className="text-[9px] px-1 rounded bg-white/8 text-white/35">paper</span>}
-                                <span className={`ml-auto font-mono font-semibold ${
-                                    o.pnl == null ? 'text-white/30' : o.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'
-                                }`}>{o.pnl == null ? DASH : fmtMoney(o.pnl)}</span>
+                                {/* ⚠️ REVIEW 15/09 — il colore era rifatto a mano:
+                                    `>= 0` dipingeva di VERDE anche lo zero, e un
+                                    valore assente restava in grassetto come se
+                                    fosse un numero. `pnlClass` è la regola unica
+                                    del design system. */}
+                                <span className={`ml-auto font-mono font-semibold ${pnlClass(o.pnl)}`}>
+                                    {o.pnl == null ? DASH : fmtMoney(o.pnl, { signed: true })}
+                                </span>
                                 <span className="text-[9px] text-white/25 font-mono">{fmtTime(o.at)}</span>
                             </div>
                         ))}

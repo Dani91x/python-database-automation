@@ -45,6 +45,7 @@ const STATO_TESTO: Record<string, string> = {
     stopped: 'fermo',
     idle: 'fermo',
     error: 'in errore',
+    ignoto: 'stato non letto',
 };
 
 const STATO_CLS: Record<string, string> = {
@@ -53,6 +54,7 @@ const STATO_CLS: Record<string, string> = {
     stopped: 'text-white/40',
     idle: 'text-white/40',
     error: 'text-red-400',
+    ignoto: 'text-orange-400',
 };
 
 /**
@@ -224,7 +226,14 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
         return () => window.clearTimeout(t);
     }, [armatoDa]);
 
-    const stato = b.stato ?? (b.inCorsa ? 'running' : 'stopped');
+    /**
+     * ⚠️ REVIEW 15/09 — QUI C'ERA un ripiego su 'stopped' quando lo stato non
+     * era stato letto: il pannello scriveva «fermo» su un bot di cui non
+     * sapeva niente, e offriva di AVVIARLO. Uno stato ignoto non è uno stato
+     * spento.
+     */
+    const statoNoto = b.stato != null || b.inCorsa;
+    const stato = b.stato ?? (b.inCorsa ? 'running' : 'ignoto');
     const live = b.modalita === 'live';
     const occupato = bloccato || mio;
     /** la conferma è ancora inerte? (finestra del doppio clic) */
@@ -287,7 +296,20 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
             )}
 
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                {b.inCorsa ? (
+                {!statoNoto ? (
+                    <span className="text-[10px] text-orange-300" data-testid={`cr-stato-ignoto-${b.bot}`}>
+                        stato non letto: non si comanda un bot di cui non sappiamo che cosa sta facendo
+                    </span>
+                ) : stato === 'stopping' ? (
+                    // ⚠️ REVIEW 15/09 — qui si nascondeva FERMA e si offriva
+                    // AVVIA. Ma il servizio, al ciclo dopo, porta 'stopping' a
+                    // 'stopped': un avvio dato in quella finestra viene
+                    // cancellato dal servizio stesso, e il trader crede di aver
+                    // riacceso un bot che invece si sta spegnendo.
+                    <span className="text-[10px] text-amber-300" data-testid={`cr-in-arresto-${b.bot}`}>
+                        si sta fermando: attendi che abbia finito prima di riavviarlo
+                    </span>
+                ) : b.inCorsa ? (
                     <>
                         <Button
                             type="button" size="sm" variant="outline"
@@ -361,6 +383,18 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                 {armato && (
                     <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${b.bot}`}>
                         Da qui in poi {BOT_LABEL[b.bot]} manda ordini reali su Betfair.
+                    </span>
+                )}
+
+                {/* ⚠️ REVIEW 15/09 — mentre un comando è in volo TUTTI i
+                    pulsanti di TUTTI i bot si spengono, compreso «ferma» su un
+                    bot in live. Il `title` da solo non basta: `buttonVariants`
+                    ha `disabled:pointer-events-none`, quindi su un bottone
+                    spento il tooltip non si apre nemmeno. Serve una riga
+                    VISIBILE. */}
+                {bloccato && !mio && (
+                    <span className="text-[10px] text-white/40" data-testid={`cr-attesa-${b.bot}`}>
+                        un altro comando è in corso: i pulsanti tornano appena finisce
                     </span>
                 )}
             </div>

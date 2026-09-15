@@ -151,6 +151,23 @@ export default function ControlRoom() {
         }
         return [pre, live];
     }, [giornata]);
+    /**
+     * I due registratori sono vivi?
+     *
+     * ⚠️ REVIEW 15/09 — REC diventava rosso appena il FLAG era scritto sul
+     * database, ma la registrazione la fa il PROCESSO. Runner fermo = spia
+     * rossa e zero registrazione. Il dato c'era gia' in pagina.
+     *
+     * Il runner e' UNO per sport: `vm.runner` e' quello che la pagina legge
+     * gia' per la riga «Runner» della testata. Quando non lo sappiamo vale
+     * `null`, e la scheda dice «flag acceso» senza promettere altro.
+     */
+    const registratori = useMemo(() => {
+        // runner non letto = NON LO SAPPIAMO, mai «spento» e mai «vivo»
+        const vivo = vm.runner == null ? null : runnerPhase(vm.runner) !== 'off';
+        return { calcio: vivo, tennis: vivo };
+    }, [vm.runner]);
+
     const contaChiuse = useMemo(
         () => vm.chiuse.filter((c) => (sport == null || c.sport === sport) && c.modo === 'live').length,
         [vm.chiuse, sport],
@@ -283,7 +300,7 @@ export default function ControlRoom() {
                 live={vm.totali.conPosizioneLive}
                 openLiability={vm.totali.letti ? vm.totali.liability : null}
                 note={vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
-                countsNote="Solo SOLDI VERI. Le operazioni in prova hanno una riga tutta loro qui sotto e non entrano mai in questo conto."
+                countsNote="Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot. «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato."
                 ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
             />
 
@@ -377,7 +394,8 @@ export default function ControlRoom() {
                         <ElencoPartite
                             gruppi={giornata} stato="pre" scheda={scheda}
                             caricamento={vm.caricamento} nowMs={vm.nowMs}
-                            registrazioni={vm.registrazioni} operazioni={vm.operazioni}
+                            registrazioni={vm.registrazioni} registratori={registratori}
+                            operazioni={vm.operazioni}
                         />
                     </TabsContent>
 
@@ -385,7 +403,8 @@ export default function ControlRoom() {
                         <ElencoPartite
                             gruppi={giornata} stato="live" scheda={scheda}
                             caricamento={vm.caricamento} nowMs={vm.nowMs}
-                            registrazioni={vm.registrazioni} operazioni={vm.operazioni}
+                            registrazioni={vm.registrazioni} registratori={registratori}
+                            operazioni={vm.operazioni}
                             copertura={vm.copertura}
                         />
                     </TabsContent>
@@ -799,7 +818,7 @@ function Scheda({ valore, conta, children, testId, evidenzia = false }: {
  * mantenere due volte le stesse regole di raggruppamento.
  */
 function ElencoPartite({
-    gruppi, stato, scheda, caricamento, nowMs, registrazioni, operazioni, copertura,
+    gruppi, stato, scheda, caricamento, nowMs, registrazioni, registratori, operazioni, copertura,
 }: {
     gruppi: GruppoCampionato[];
     stato: 'pre' | 'live';
@@ -807,6 +826,8 @@ function ElencoPartite({
     caricamento: boolean;
     nowMs: number;
     registrazioni: Set<string>;
+    /** il registratore di ciascuno sport e' vivo? Senza, REC mentirebbe. */
+    registratori: { calcio: boolean | null; tennis: boolean | null };
     operazioni: ReturnType<typeof useControlRoom>['operazioni'];
     copertura?: ReturnType<typeof useControlRoom>['copertura'];
 }) {
@@ -840,7 +861,7 @@ function ElencoPartite({
             {copertura && copertura.totale > 0 && copertura.senzaDato > 0 && (
                 <div className="px-3 py-2 border-b border-white/10 text-[11px] text-secondary" data-testid="cr-copertura">
                     controllo del gioco: dato presente su {copertura.conDato} partite in gioco su {copertura.totale}
-                    {copertura.pct != null && <> ({copertura.pct}%)</>}. Dove manca, quella condizione
+                    {copertura.pct != null && <> ({Math.round(copertura.pct)}%)</>}. Dove manca, quella condizione
                     non ha potuto girare.
                 </div>
             )}
@@ -874,12 +895,14 @@ function ElencoPartite({
                                     key={p.event_id} p={p} scheda={scheda}
                                     mancaS={p.koMs == null ? null : Math.max(0, Math.round((p.koMs - nowMs) / 1000))}
                                     registra={registrazioni.has(p.event_id)}
+                                    registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
                                 />
                             ) : (
                                 <SchedaPartita
                                     key={p.event_id} p={p} scheda={scheda}
                                     operazioni={operazioni.get(p.event_id) ?? []}
                                     registra={registrazioni.has(p.event_id)}
+                                    registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
                                 />
                             ))}
                         </div>

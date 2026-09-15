@@ -16,9 +16,9 @@
 //     verità, e due verità sotto gli occhi del trader divergono sempre.
 //  4. **Un'età assente è «non lo so», non zero.**
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    fetchScanRows, subscribeScanRows, fetchScanStatus,
+    fetchScanRows, subscribeScanRows, fetchScanStatus, subscribeScanStatus,
     type ScanRow, type ScanStatusRow, type CalcioScanPayload,
 } from '@/lib/safeStrategyScan';
 import {
@@ -34,10 +34,12 @@ import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import { fetchMissions } from '@/lib/omegaMissions';
 import { fetchTennisFollows } from '@/lib/tennis';
+import { fetchLiveFollows } from '@/lib/live';
 import { posizioniChiuse, type PosizioneChiusa, type TradeChiudibile } from '@/lib/posizioniChiuse';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
-    etaSecondi, freschezza, realizzatoGiornata, arricchimentoDa, type ArricchimentoPartita,
+    etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
+    type ArricchimentoPartita,
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
@@ -347,6 +349,9 @@ export function useControlRoom(): ControlRoomVM {
      * l'ultimo dato buono, e quello resta letto.
      */
     const [soldiLetti, setSoldiLetti] = useState(false);
+    /** numero del giro di ricarica in corso: una risposta vecchia non
+     *  sovrascrive una piu' nuova (review 15/09) */
+    const giroCorrente = useRef(0);
     /** partite che stanno REGISTRANDO adesso. Senza questo il pulsante REC
      *  ripartirebbe spento dopo un ricaricamento su una partita che registra:
      *  una spia che mente e peggio di una spia assente. */
@@ -368,6 +373,12 @@ export function useControlRoom(): ControlRoomVM {
     // ---------------------------------------------------------------- lettura
     const ricarica = useCallback(() => {
         let vivo = true;
+        // ⚠️ REVIEW 15/09 — due giri possono sovrapporsi (la ricarica manuale
+        // mentre quella periodica e' in volo): vince l'ULTIMO a rispondere,
+        // che non e' per forza il piu' recente. Il contatore fa sì che una
+        // risposta vecchia non sovrascriva una nuova.
+        giroCorrente.current += 1;
+        const mioGiro = giroCorrente.current;
         Promise.allSettled([
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
@@ -380,10 +391,16 @@ export function useControlRoom(): ControlRoomVM {
             fetchOmegaEvents(),
             fetchMissions(),
             fetchTennisFollows(),
+            // ⚠️ REVIEW 15/09 — `get_omega_missions` elenca solo le partite CON
+            // missione Omega, ma il pulsante registra QUALSIASI partita del
+            // feed: una partita senza missione spariva da `registrazioni` al
+            // primo ricaricamento, la spia REC si spegneva e la registrazione
+            // non si poteva piu' fermare. `get_live_follows` le ha tutte.
+            fetchLiveFollows(),
         ]).then((r) => {
-            if (!vivo) return;
+            if (!vivo || mioGiro !== giroCorrente.current) return;
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
-                rDaily, rDailyPaper, rEventi, rMissioni, rFollowT] = r;
+                rDaily, rDailyPaper, rEventi, rMissioni, rFollowT, rFollowC] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -397,11 +414,19 @@ export function useControlRoom(): ControlRoomVM {
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
             setSoldiLetti((prev) => prev || (rOmegaT.status === 'fulfilled'
                 && rSafe.status === 'fulfilled' && rMike.status === 'fulfilled'));
-            if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled') {
+            if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled'
+                || rFollowC.status === 'fulfilled') {
                 const attive = new Set<string>();
                 if (rMissioni.status === 'fulfilled') {
                     for (const m of rMissioni.value?.missions ?? []) {
                         if (m?.recording === true && m.event_id) attive.add(String(m.event_id));
+                    }
+                }
+                if (rFollowC.status === 'fulfilled') {
+                    for (const f of rFollowC.value ?? []) {
+                        if ((f as { record?: boolean }).record === true && f.event_id) {
+                            attive.add(String(f.event_id));
+                        }
                     }
                 }
                 if (rFollowT.status === 'fulfilled') {
@@ -416,7 +441,8 @@ export function useControlRoom(): ControlRoomVM {
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
                 .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)',
-                        'campionati e loghi', 'registrazioni calcio', 'registrazioni tennis'][i] : null))
+                        'campionati e loghi', 'missioni', 'registrazioni tennis',
+                        'registrazioni calcio'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -430,6 +456,13 @@ export function useControlRoom(): ControlRoomVM {
         const t = window.setInterval(ricarica, RICARICA_MS);
         return () => { stop(); window.clearInterval(t); };
     }, [ricarica]);
+
+    // ⚠️ REVIEW 15/09 — LO STATO DELLO SCANNER IN REALTIME.
+    // Si scrive ogni 10 s ma si leggeva solo ogni 30: meta' del tempo il feed
+    // risultava «vecchio», e con esso le quote FERME diventavano «vecchie» —
+    // che e' la distinzione su cui si decide se una chiusura e' approvabile.
+    // La sottoscrizione esisteva gia' e non la usava nessuno.
+    useEffect(() => subscribeScanStatus((r) => { if (r) setScanStatus(r); }), []);
 
     // ------------------------------------------------- feed partite in realtime
     useEffect(() => subscribeScanRows((ev) => {
@@ -608,7 +641,12 @@ export function useControlRoom(): ControlRoomVM {
                 bot, modalita, inCorsa, battitoAt,
                 canale: canali[bot],
                 etaPushS: eta,
-                freschezzaPush: freschezza(eta),
+                // ⚠️ REVIEW 15/09 — il battito si giudica con la cadenza del
+                // CICLO, non con le soglie delle quote; e se il canale locale
+                // (che e' opzionale) non ha mai parlato si ripiega sul
+                // `heartbeat_at` del database, che c'e' sempre. Prima un bot
+                // vivissimo senza WebSocket risultava muto.
+                freschezzaPush: freschezzaBattito(eta ?? etaSecondi(battitoAt, nowMs)),
                 varianti: bot === 'safe' ? varianti : null,
                 modiStrategia: bot === 'safe' ? modi : null,
                 stato, params, obiettivoGiorno,
@@ -765,7 +803,14 @@ export function useControlRoom(): ControlRoomVM {
                 bot, id: t.id,
                 selezione: t.selection_name ?? t.runner_name ?? null,
                 lato: latoDi(t.side), prezzo: t.price ?? null, size: t.size ?? null,
-                stato: t.status, pnl: typeof t.pnl === 'number' ? t.pnl : null,
+                stato: t.status,
+                // ⚠️ REVIEW 15/09 — un'operazione NON ANCORA REGOLATA ha
+                // `pnl = 0` sulla riga, e la scheda lo mostrava come «0,00 €»
+                // in verde: uno zero che sembra un pareggio, mentre il
+                // risultato non esiste ancora. Prima della regolazione il P&L
+                // e' IGNOTO, e si scrive «—».
+                pnl: isSettled(String(t.status ?? '')) && typeof t.pnl === 'number'
+                    ? t.pnl : null,
                 modalita: modalitaDi(t.mode), at: t.placed_at,
                 quale: t.strategy ?? t.phase ?? t.role ?? null,
             };
@@ -847,7 +892,13 @@ export function useControlRoom(): ControlRoomVM {
         // CONTROPROVA sul tennis: il server (`get_safe_daily` con p_mode=live)
         // e il conto fatto qui sulle righe devono dire la stessa cosa. Se non
         // la dicono NON si sceglie il piu' bello: lo si DICHIARA.
-        const serverLive = n(safeOggi?.pnl_realized);
+        // ⚠️ REVIEW 15/09 — QUI SI CONFRONTAVANO DUE PERIMETRI DIVERSI: il
+        // `pnl_realized` del server è di TUTTI gli sport di Safe, il nostro era
+        // il solo tennis. Con il calcio che opera, l'allarme si sarebbe acceso
+        // per una differenza che non è un errore. Si confronta tennis con
+        // tennis, usando il `by_sport` che il server MANDA GIÀ.
+        const serverLive = n((safeOggi?.by_sport as Record<string, { pnl?: number }> | null)
+            ?.tennis?.pnl);
         const nostroSafeLive = realizzatoOggi.live.perSport.tennis;
         const discordanza = (serverLive != null && nostroSafeLive != null
             && Math.abs(serverLive - nostroSafeLive) > 0.01)

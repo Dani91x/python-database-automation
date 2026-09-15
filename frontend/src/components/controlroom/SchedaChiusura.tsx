@@ -146,6 +146,15 @@ export function SchedaChiusura({
                 </span>
             </div>
 
+            {/* TORNA DOPO UN RIFIUTO: si dice COSA è cambiato, o sembra
+                insistenza invece che una situazione nuova. */}
+            {p.riproposta_perche && (
+                <div className="px-2.5 py-1.5 border-t border-secondary/30 bg-secondary/10 text-[11px] text-secondary"
+                    data-testid="cr-riproposta">
+                    <strong>Torna dopo il tuo rifiuto:</strong> {p.riproposta_perche}
+                </div>
+            )}
+
             {/* ---- i numeri che decidono ---- */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
                 <Cella etichetta="Da chiudere"

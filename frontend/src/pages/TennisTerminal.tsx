@@ -121,7 +121,8 @@ export default function TennisTerminal() {
         return (
             <div className="min-h-screen bg-background relative">
                 <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
-                <TennisNav sectionLabel="TERMINAL" onBack={indietro} />
+                <TennisNav sectionLabel="TERMINAL" onBack={indietro}
+                    backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
                 <main className="container mx-auto px-6 py-20 relative z-10 text-center">
                     <p className="text-muted-foreground">
                         Nessun match selezionato. Torna alle{' '}
@@ -143,7 +144,8 @@ export default function TennisTerminal() {
 
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-20" />
 
-            <TennisNav sectionLabel="TERMINAL" onBack={indietro} />
+            <TennisNav sectionLabel="TERMINAL" onBack={indietro}
+                backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
 
             {/* Header match compatto */}
             <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-16 z-40">

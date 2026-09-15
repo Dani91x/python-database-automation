@@ -64,6 +64,32 @@ export type Freschezza = 'fresca' | 'lenta' | 'vecchia' | 'ignota';
  * valore deve trattare `'ignota'` come `'vecchia'` per ogni decisione che
  * riguarda soldi.
  */
+/**
+ * La freschezza del BATTITO di un bot, che NON e' l'eta' di una quota.
+ *
+ * ⚠️ REVIEW 15/09 — `freschezza()` usa le soglie delle QUOTE (5 s / 20 s),
+ * giuste per un prezzo. Ma il battito di un bot ha la cadenza del suo CICLO:
+ * Omega a riposo pubblica ogni 60 s, Mike idem. Con le soglie dei prezzi il
+ * pallino restava «muto» due terzi del tempo, e l'utente ha visto Mike
+ * «spento» mentre stava operando.
+ *
+ * `cadenzaS` = il passo dichiarato dal bot. Si concede il doppio del passo
+ * prima di chiamarlo lento, il triplo prima di chiamarlo vecchio: un ciclo
+ * saltato non e' un bot morto.
+ */
+export const CADENZA_SERVIZIO_S = 60;
+
+export function freschezzaBattito(
+    etaS: number | null | undefined, cadenzaS?: number | null,
+): Freschezza {
+    if (typeof etaS !== 'number' || !Number.isFinite(etaS) || etaS < 0) return 'ignota';
+    const passo = typeof cadenzaS === 'number' && Number.isFinite(cadenzaS) && cadenzaS > 0
+        ? cadenzaS : CADENZA_SERVIZIO_S;
+    if (etaS <= passo * 2) return 'fresca';
+    if (etaS <= passo * 3) return 'lenta';
+    return 'vecchia';
+}
+
 export function freschezza(etaS: number | null | undefined): Freschezza {
     if (etaS == null || !Number.isFinite(etaS)) return 'ignota';
     if (etaS < 0) return 'ignota';

@@ -57,6 +57,17 @@ export interface PropostaPayload {
     odds_ts_ms?: number | null;
     decided_at?: string | null;
     proposed_at?: string | null;
+    /**
+     * Valorizzato SOLO quando questa chiusura si ripresenta dopo che l'utente
+     * l'aveva ignorata: dice COSA è cambiato (testo già in italiano, scritto
+     * da `bot_service._cambiamento_sostanziale`).
+     *
+     * ⚠️ REVIEW 15/09 — il servizio lo scrive con un commento esplicito («la
+     * pagina deve dirlo, o sembra insistenza invece che una situazione
+     * nuova») e la scheda non lo mostrava: una riproposizione era graficamente
+     * identica alla prima proposta.
+     */
+    riproposta_perche?: string | null;
 }
 
 export interface PropostaChiusura {
