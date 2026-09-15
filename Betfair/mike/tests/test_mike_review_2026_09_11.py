@@ -16,7 +16,7 @@ from Betfair.mike import engine as E
 from Betfair.mike import service as S
 from Betfair.mike.tests.test_mike_audit_2026_09_11 import (asdict, fill, live_event, over_leg,
                                                            under_leg)
-from Betfair.mike.tests.test_mike_feed import payload, row
+from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
 from Betfair.mike.tests.test_mike_service import FakeDB, FakeMarket, legs, run, state
 from Betfair.safe_strategy import db as SDB
 from Betfair.safe_strategy import scanner as SC
@@ -107,7 +107,7 @@ def test_c2_cashout_pre_ko_con_resting_chiude_in_due_cicli():
     entry = under_leg(role="under_entry")
     entry.placed_at = NOW.timestamp() - 120
     db.events["E1"] = live_event([asdict(entry), asdict(resting)], state_="PRE_OPEN",
-                                 ctx={}, ko=NOW + timedelta(hours=2))
+                                 ctx={}, ko=KO_IN_FINESTRA)
     db.trades = [{"id": 1, "event_id": "E1", "signal_key": "under_entry-1-1", "status": "open",
                   "pnl": 0, "meta": {}},
                  {"id": 2, "event_id": "E1", "signal_key": "under_green-1-2", "status": "pending",
@@ -150,7 +150,7 @@ def test_c2_engine_non_riappoggia_la_green_durante_il_flatten():
 # ===========================================================================
 def test_c3_no_reentry_blocca_l_ingresso_nell_engine():
     ctx = E.MatchCtx(state="WATCH", cycle_no=1, no_reentry=True)
-    snap = E.Snapshot(now=NOW.timestamp(), ko_at=NOW.timestamp() + 7200, inplay=False,
+    snap = E.Snapshot(now=NOW.timestamp(), ko_at=NOW.timestamp() + 1800, inplay=False,
                       books={(E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.50, back_size=99.0,
                                                                   best_lay=1.52, lay_size=99.0)})
     d = E.decide(ctx, snap, C.merge_params({"stake": 10}))
@@ -178,7 +178,7 @@ def test_c3_dopo_il_cashout_pre_ko_il_bot_non_rientra_dopo_il_cooldown():
     entry = under_leg(role="under_entry")
     entry.placed_at = NOW.timestamp() - 120
     db.events["E1"] = live_event([asdict(entry)], state_="PRE_OPEN", ctx={},
-                                 ko=NOW + timedelta(hours=2))
+                                 ko=KO_IN_FINESTRA)
     db.trades = [{"id": 1, "event_id": "E1", "signal_key": "under_entry-1-1", "status": "open",
                   "pnl": 0, "meta": {}}]
     db.requests = [{"id": 1, "kind": "cashout", "payload": {"event_id": "E1"}, "status": "pending"}]
@@ -337,7 +337,7 @@ def test_h2_righe_illeggibili_non_cancellano_una_gamba_pending():
                   price=1.5, size=10.0, ref="under_entry-1-1", status="pending",
                   placed_at=NOW.timestamp() - 600)
     db.events["E1"] = live_event([asdict(stale)], state_="PRE_ENTRY_PENDING", ctx={},
-                                 ko=NOW + timedelta(hours=2))
+                                 ko=KO_IN_FINESTRA)
     db.trades_for_event = _boom
     run(db, mk, NOW, [row(payload())])
     got = legs(db)[0]
@@ -510,7 +510,7 @@ def test_h8_riconciliazione_throttlata():
                     price=1.5, size=10.0, ref="under_entry-1-1", status=E.STATUS_RECONCILE,
                     placed_at=NOW.timestamp() - 30)
     db.events["E1"] = live_event([asdict(unknown)], state_="PRE_ENTRY_PENDING", ctx={},
-                                 mode="live", ko=NOW + timedelta(hours=2))
+                                 mode="live", ko=KO_IN_FINESTRA)
     db.trades = [{"id": 1, "event_id": "E1", "signal_key": "under_entry-1-1", "status": "pending",
                   "market_id": "1.35", "selection_id": 1222344, "side": "back", "price": 1.5,
                   "size": 10.0, "placed_at": NOW.isoformat(),
@@ -712,7 +712,7 @@ def test_l3_la_chiusura_manuale_usa_i_parametri_effettivi():
     entry = under_leg(role="under_entry")
     entry.placed_at = NOW.timestamp() - 120
     db.events["E1"] = live_event([asdict(entry)], state_="PRE_OPEN", ctx={}, mode="live",
-                                 ko=NOW + timedelta(hours=2))
+                                 ko=KO_IN_FINESTRA)
     db.requests = [{"id": 1, "kind": "cashout", "payload": {"event_id": "E1"}, "status": "pending"}]
     orig = S._request_flatten
 

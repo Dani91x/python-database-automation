@@ -13,6 +13,20 @@ from Betfair.stream.trading.greenup import compute_greenup
 KO = 1_800_000_000.0          # epoch fittizio del calcio d'inizio
 H = 3600.0
 
+# Un istante DENTRO la finestra di ingresso pre-match.
+#
+# ⚠️ 15/09 — qui c'erano `KO - 2 * H` e `KO - 1.5 * H`, scritti quando la
+# finestra valeva 3 ore. Portata a 1 ora (ordine dell'utente, per validare prima
+# la fase pre-match) quei due istanti sono finiti FUORI, e ventidue test hanno
+# cominciato a leggere «WATCH» dove si aspettavano un ingresso — senza che
+# nessuno di loro parlasse di finestre. Mezz'ora sta dentro qualunque finestra
+# ragionevole. Chi vuole un istante FUORI lo scrive esplicito (`KO - 5 * H` in
+# `test_watch_before_window_does_nothing`), ed e' giusto cosi': la distanza dal
+# KO dev'essere una scelta del test, non l'eredita' muta di una configurazione
+# di mesi prima.
+DENTRO_FINESTRA = KO - 0.5 * H
+
+
 
 def params(**over):
     p = C.merge_params(None)
@@ -210,7 +224,7 @@ def test_watch_before_window_does_nothing():
 
 def test_watch_entry_places_back_under():
     ctx = E.MatchCtx()
-    s = snap(KO - 2 * H, u35=book(1.50, bs=50.0))
+    s = snap(DENTRO_FINESTRA, u35=book(1.50, bs=50.0))
     d = E.decide(ctx, s, params())
     assert d.state == "PRE_ENTRY_PENDING"
     assert len(d.actions) == 1
@@ -229,7 +243,7 @@ def test_watch_entry_places_back_under():
     (1.50, 100.0, 1.60, "spread"),        # 1.50 -> 1.60 = 10 tick
 ])
 def test_watch_entry_guards(bb, bs, bl, reason):
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(bb, bs=bs, bl=bl)), params())
+    d = E.decide(E.MatchCtx(), snap(DENTRO_FINESTRA, u35=book(bb, bs=bs, bl=bl)), params())
     assert d.state == "WATCH" and d.actions == []
     assert reason in d.reason
 
@@ -241,23 +255,23 @@ def test_watch_no_entry_when_feed_stale_or_disabled():
     # valutare anche se la riga e' ferma da un minuto (lo scanner scrive solo
     # cio' che cambia: quel prezzo E' il prezzo corrente); attraversare lo spread
     # su un prezzo che non sappiamo se qualcuno sta ancora guardando, no.
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50), order_fresh=False), params())
+    d = E.decide(E.MatchCtx(), snap(DENTRO_FINESTRA, u35=book(1.50), order_fresh=False), params())
     assert d.actions == [] and "feed" in d.reason
     # e il contrario: riga che si puo' guardare ma non ordinare -> niente ingresso
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50),
+    d = E.decide(E.MatchCtx(), snap(DENTRO_FINESTRA, u35=book(1.50),
                                     feed_fresh=True, order_fresh=False), params())
     assert d.actions == []
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50)), params(pre_enabled=False))
+    d = E.decide(E.MatchCtx(), snap(DENTRO_FINESTRA, u35=book(1.50)), params(pre_enabled=False))
     assert d.actions == []
 
 
 def test_entry_fill_places_resting_green():
     p = params(pre_exit_mode="resting", stake=20.0)
     ctx = E.MatchCtx()
-    s0 = snap(KO - 2 * H, u35=book(1.50))
+    s0 = snap(DENTRO_FINESTRA, u35=book(1.50))
     E.apply_decision(ctx, E.decide(ctx, s0, p), s0.now)
     fill(ctx.legs[0])
-    s1 = snap(KO - 2 * H + 5, u35=book(1.50))
+    s1 = snap(DENTRO_FINESTRA + 5, u35=book(1.50))
     d = E.decide(ctx, s1, p)
     assert d.state == "PRE_OPEN"
     assert len(d.actions) == 1
@@ -272,9 +286,9 @@ def test_entry_fill_places_resting_green():
 
 def test_entry_ttl_cancels_unmatched():
     ctx = E.MatchCtx()
-    s0 = snap(KO - 2 * H, u35=book(1.50))
+    s0 = snap(DENTRO_FINESTRA, u35=book(1.50))
     E.apply_decision(ctx, E.decide(ctx, s0, params()), s0.now)
-    s1 = snap(KO - 2 * H + 61, u35=book(1.52))
+    s1 = snap(DENTRO_FINESTRA + 61, u35=book(1.52))
     d = E.decide(ctx, s1, params())
     assert d.state == "WATCH"
     assert d.actions[0].kind == "cancel" and d.actions[0].ref == ctx.legs[0].ref
@@ -284,10 +298,10 @@ def _open_prematch(mode="resting"):
     """Ctx con entry 20@1.50 fillata e (in resting) green 1.48 appoggiata."""
     p = params(pre_exit_mode=mode, stake=20.0)
     ctx = E.MatchCtx()
-    s0 = snap(KO - 2 * H, u35=book(1.50))
+    s0 = snap(DENTRO_FINESTRA, u35=book(1.50))
     E.apply_decision(ctx, E.decide(ctx, s0, p), s0.now)
     fill(ctx.legs[0])
-    s1 = snap(KO - 2 * H + 5, u35=book(1.50))
+    s1 = snap(DENTRO_FINESTRA + 5, u35=book(1.50))
     E.apply_decision(ctx, E.decide(ctx, s1, p), s1.now)
     return ctx, p
 
@@ -295,7 +309,7 @@ def _open_prematch(mode="resting"):
 def test_resting_green_fill_completes_cycle():
     ctx, p = _open_prematch()
     fill(ctx.legs[1])
-    s = snap(KO - 1.5 * H, u35=book(1.46))
+    s = snap(DENTRO_FINESTRA, u35=book(1.46))
     d = E.decide(ctx, s, p)
     assert d.state == "WATCH" and d.actions == []
     E.apply_decision(ctx, d, s.now)
@@ -313,9 +327,9 @@ def test_resting_green_fill_completes_cycle():
 def test_taker_mode_closes_when_two_ticks_available():
     ctx, p = _open_prematch("taker")
     assert len(ctx.legs) == 1                       # nessuna resting
-    d = E.decide(ctx, snap(KO - 1.5 * H, u35=book(1.47, bl=1.49)), p)
+    d = E.decide(ctx, snap(DENTRO_FINESTRA, u35=book(1.47, bl=1.49)), p)
     assert d.actions == []                           # 1.49 > target 1.48
-    d = E.decide(ctx, snap(KO - 1.5 * H, u35=book(1.47, bl=1.48)), p)
+    d = E.decide(ctx, snap(DENTRO_FINESTRA, u35=book(1.47, bl=1.48)), p)
     assert d.state == "PRE_GREEN_PENDING"
     assert d.actions[0].side == "lay" and d.actions[0].price == pytest.approx(1.48)
 
@@ -642,7 +656,7 @@ def test_archived_cycles_do_not_inflate_open_capital():
     """CRITICAL #2: dopo N cicli chiusi in green, S/invested contano SOLO il ciclo vivo."""
     ctx, p = _open_prematch("resting")          # ciclo 0: entry 20@1.50 + green resting
     fill(ctx.legs[1])
-    s = snap(KO - 1.5 * H, u35=book(1.46))
+    s = snap(DENTRO_FINESTRA, u35=book(1.46))
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)   # ciclo chiuso -> archiviato
     assert all(l.archived for l in ctx.legs)
     assert E.invested(ctx.legs) == 0.0
@@ -662,7 +676,7 @@ def test_archived_cycles_do_not_inflate_open_capital():
 def test_liability_cap_blocks_entry_cover_and_reentry():
     p = params(max_liability_per_match=25.0, stake=20.0)
     # ingresso ok (20 <= 25)
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50, bs=50.0)), p)
+    d = E.decide(E.MatchCtx(), snap(DENTRO_FINESTRA, u35=book(1.50, bs=50.0)), p)
     assert d.state == "PRE_ENTRY_PENDING"
     # copertura clampata al residuo (25 - 20 = 5)
     ctx, _ = _live_uncovered()
@@ -699,10 +713,10 @@ def test_closing_attempts_exhausted_is_reported():
 def test_partial_entry_fill_sizes_green_on_matched_only():
     p = params(pre_exit_mode="resting", stake=10.0)
     ctx = E.MatchCtx()
-    s0 = snap(KO - 2 * H, u35=book(1.50))
+    s0 = snap(DENTRO_FINESTRA, u35=book(1.50))
     E.apply_decision(ctx, E.decide(ctx, s0, p), s0.now)
     fill(ctx.legs[0], size=6.0)                       # 6 su 10 abbinati, residuo ritirato
-    d = E.decide(ctx, snap(KO - 2 * H + 5, u35=book(1.50)), p)
+    d = E.decide(ctx, snap(DENTRO_FINESTRA + 5, u35=book(1.50)), p)
     g = d.actions[0]
     assert g.role == "under_green" and g.price == pytest.approx(1.48)
     assert g.size == pytest.approx(round(6 * 1.5 / 1.48, 2), abs=0.01)     # 6.08, NON 10.14
@@ -717,7 +731,7 @@ def test_partial_resting_green_never_closes_cycle_and_reposts_residual():
     green = ctx.legs[1]
     # 4 € su 10.14 abbinati, poi ordine ritirato (es. dall'utente): NON e' un ciclo chiuso
     green.matched = 4.0; green.avg_price = 1.48; green.status = "open"
-    s = snap(KO - 1.5 * H, u35=book(1.50))
+    s = snap(DENTRO_FINESTRA, u35=book(1.50))
     d = E.decide(ctx, s, p)
     assert d.state == "PRE_OPEN"
     assert d.actions and d.actions[0].role == "under_green" and d.actions[0].side == "lay"

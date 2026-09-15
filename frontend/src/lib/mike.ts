@@ -482,7 +482,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
 ];
 
 export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
-    stake: 10, commission_pct: 5, entry_hours_before_ko: 3,
+    // 15/09 — finestra pre-match portata da 3 h a 1 h su ordine dell'utente,
+    // per validare prima la fase pre-match. Deve restare identica al default di
+    // `Betfair/mike/config.py`: il test di contratto li confronta.
+    stake: 10, commission_pct: 5, entry_hours_before_ko: 1,
     competition_filter: '', decide_min_interval_ms: 500, feed_max_age_s: 45,
     scanner_alive_max_s: 75, book_seen_max_s: 90, order_max_age_s: 20, order_scanner_max_s: 30,
     live_resting_enabled: true,

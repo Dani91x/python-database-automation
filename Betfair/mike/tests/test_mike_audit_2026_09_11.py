@@ -19,7 +19,7 @@ from Betfair.mike import db as MDB
 from Betfair.mike import engine as E
 from Betfair.mike import feed as F
 from Betfair.mike import service as S
-from Betfair.mike.tests.test_mike_feed import blk, payload, row
+from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, blk, payload, row
 from Betfair.mike.tests.test_mike_service import FakeDB, FakeMarket, legs, run, state
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import scanner as SC
@@ -306,7 +306,7 @@ def test_h1_cashout_manuale_pre_ko_blocca_il_rientro_fino_a_riprendi():
     db = FakeDB(params={"stake": 10})
     mk = FakeMarket()
     db.events["E1"] = live_event([asdict(under_leg(role="under_entry"))], state_="PRE_OPEN",
-                                 ctx={}, ko=NOW + timedelta(hours=2))
+                                 ctx={}, ko=KO_IN_FINESTRA)
     db.trades = [{"id": 1, "event_id": "E1", "signal_key": "under_entry-1-1", "status": "open", "pnl": 0}]
     db.requests = [{"id": 1, "kind": "cashout", "payload": {"event_id": "E1"}, "status": "pending"}]
     run(db, mk, NOW, [row(payload())])
@@ -417,7 +417,7 @@ def test_h3_gamba_resting_gia_esistente_non_si_riempie_in_live():
     resting = E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
                     price=1.48, size=10.14, ref="under_green-1-2", status="pending")
     db.events["E1"] = live_event([asdict(under_leg()), asdict(resting)], state_="PRE_OPEN",
-                                 mode="live", ko=NOW + timedelta(hours=2))
+                                 mode="live", ko=KO_IN_FINESTRA)
     # Mercato che scambia SOTTO il prezzo della lay: in PAPER si riempirebbe.
     # In LIVE no, e la ragione è cambiata ma l'invariante è la stessa: adesso
     # l'ordine appoggiato in live si piazza davvero, ma l'abbinamento si LEGGE
@@ -863,7 +863,7 @@ def test_m7_nessun_fill_resting_con_feed_stantio():
     resting = E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
                     price=1.48, size=10.14, ref="under_green-1-2", status="pending")
     db.events["E1"] = live_event([asdict(under_leg(role="under_entry")), asdict(resting)],
-                                 state_="PRE_OPEN", ko=NOW + timedelta(hours=2))
+                                 state_="PRE_OPEN", ko=KO_IN_FINESTRA)
     old = NOW - timedelta(minutes=10)
     run(db, mk, NOW, [row(payload(u35=(1.40, 1.42, 30.0, 25.0)), updated=old)])
     got = [l for l in legs(db) if l["ref"] == "under_green-1-2"][0]

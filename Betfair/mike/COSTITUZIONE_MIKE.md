@@ -62,7 +62,7 @@ gol perdono entrambi. Tutto il bot è costruito attorno a questa casella.
 
 | Dato | Fonte | Note |
 |---|---|---|
-| Quote back/lay, size, stato mercato, in-play, betDelay | **feed unico** `safe_strategy_scan` (scanner della Safe Strategy) | ramo pre-KO O/U acceso con env `SAFE_PRE_KO_OU_HOURS=3`: pubblica le linee 3.5 e 4.5 già 3 ore prima del KO. Una SELECT per ciclo |
+| Quote back/lay, size, stato mercato, in-play, betDelay | **feed unico** `safe_strategy_scan` (scanner della Safe Strategy) | ramo pre-KO O/U acceso con env `SAFE_PRE_KO_OU_HOURS=1`: pubblica le linee 3.5 e 4.5 già 1 ora prima del KO (era 3 h fino al 15/09). Una SELECT per ciclo |
 | Minuto, punteggio, espulsioni, intervallo, corner/cartellini | stesso feed (`score_raw`, `timeline`) | ritardo punteggi 2-3 s: ricordarlo |
 | λ Dixon-Coles per squadra, ρ, calibrati | `fixture_predictions` via ponte evento→fixture (`live_follow`) | letture DB, zero Betfair |
 | Hazard di gol nei 3' successivi | Atlante hazard (theta, 54.009 partite) | JSON caricato una volta |
@@ -326,7 +326,7 @@ per l'ingresso.
 |---|---|---|
 | stake | 10,0 (0,50–500) | importo LIBERO per gamba (anche 1,23 €): sotto-minimo via place-and-trim |
 | commission_pct | 5 | commissione Betfair |
-| entry_hours_before_ko | 3 | finestra pre-match (deve combaciare con `SAFE_PRE_KO_OU_HOURS`) |
+| entry_hours_before_ko | **1** | finestra pre-match (deve combaciare con `SAFE_PRE_KO_OU_HOURS`). Portata da 3 a 1 il 15/09 su ordine dell'utente, per validare prima la fase pre-match |
 | competition_filter | "" | CSV di competizioni ammesse (vuoto = tutte) |
 | feed_max_age_s | 15 | età massima della riga del feed |
 | decide_min_interval_ms | 500 | intervallo minimo fra due decisioni |
@@ -414,7 +414,7 @@ per l'ingresso.
 | skip_log_interval_s | 300 | dedup dei log ripetitivi per partita (skip, no fill, linee assenti, riconciliazione) |
 
 Variabili d'ambiente (pattern `os.getenv(X, "").strip() or default`, mai `??`): `MIKE_LOCK_PORT`
-(47319), `MIKE_USE_FLUMINE_QUEUE` (0), `SAFE_PRE_KO_OU_HOURS` (3, letta sia dallo scanner sia da
+(47319), `MIKE_USE_FLUMINE_QUEUE` (0), `SAFE_PRE_KO_OU_HOURS` (1, letta sia dallo scanner sia da
 Mike per il controllo di coerenza M8). L'Atlante hazard non ha una env propria di Mike: arriva da
 `Betfair/stream/scalper/theta_bot.load_hazard_atlas` via `mike/dossier.load_atlas`
 (nota: `MIKE_ATLAS_PATH`, citata dalle versioni precedenti di questo documento, **non esiste**).
@@ -675,7 +675,7 @@ PAPER/LIVE **non è un parametro**: si cambia solo dal toggle in alto, con confe
     REPLACE` di quelle a 8/4 argomenti con `'mike_trades'` in whitelist, clamp a 400 giorni,
     `hedged_closed`/`commission_paid` corrette, predicato `is_placed` allineato ai KPI,
     `get_mike_daily`/`get_mike_day_trades` con tutti gli argomenti e `p_day_by='placed'`.
-- Env: `SAFE_PRE_KO_OU_HOURS=3` nel `.env` (lo scanner pubblica le linee pre-match).
+- Env: `SAFE_PRE_KO_OU_HOURS=1` nel `.env` (lo scanner pubblica le linee pre-match).
 - L'exe è l'avviatore del `main.js` vivo: dopo una modifica al codice si RIAVVIA l'app (mai
   ricompilare). Il servizio `mike-service` parte con l'app sotto watchdog; il bot lavora solo
   dopo "Avvia" in `/mike` (stato `running` in `mike_control`).

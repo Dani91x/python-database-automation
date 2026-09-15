@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from Betfair.mike import service as S
-from Betfair.mike.tests.test_mike_feed import payload, row
+from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)
 
@@ -172,7 +172,7 @@ def test_last_entry_cancels_resting_green_in_loss():
     run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
     assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
     # 9 minuti al KO, posizione in perdita (lay 1.55): la resting viene ritirata, si tiene
-    ko = NOW + timedelta(hours=2)
+    ko = KO_IN_FINESTRA
     run(db, mk, ko - timedelta(minutes=9), [row(payload(u35=(1.54, 1.55, 30.0, 25.0)))])
     assert state(db) == "HOLD"
     assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "cancelled"
@@ -400,7 +400,7 @@ def test_row_missing_at_kickoff_is_not_a_settlement():
     run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
     st_before = state(db)
     # riga assente per 2 minuti dopo il KO: nessun cambio di stato
-    ko = NOW + timedelta(hours=2)
+    ko = KO_IN_FINESTRA
     for s in (5, 60, 120):
         run(db, mk, ko + timedelta(seconds=s), [])
         assert state(db) == st_before, s

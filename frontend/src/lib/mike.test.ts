@@ -40,7 +40,10 @@ describe('mike params', () => {
     });
     it('defaults match the backend plan', () => {
         expect(MIKE_PARAM_DEFAULTS.stake).toBe(10);
-        expect(MIKE_PARAM_DEFAULTS.entry_hours_before_ko).toBe(3);
+        // 15/09 — finestra pre-match portata da 3 h a 1 h su ordine dell'utente,
+        // per validare prima la fase pre-match. Deve restare identica al default
+        // di `Betfair/mike/config.py`.
+        expect(MIKE_PARAM_DEFAULTS.entry_hours_before_ko).toBe(1);
         expect(MIKE_PARAM_DEFAULTS.cashout_profit_pct).toBe(5);
         expect(MIKE_PARAM_DEFAULTS.ht_loss_pct).toBe(25);
         expect(MIKE_PARAM_DEFAULTS.pre_exit_mode).toBe('resting');

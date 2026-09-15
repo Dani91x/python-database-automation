@@ -15,6 +15,20 @@ from Betfair.mike import engine as E
 
 KO = 1_800_000_000.0
 H = 3600.0
+
+# Un istante DENTRO la finestra di ingresso pre-match.
+#
+# ⚠️ 15/09 — qui c'erano `KO - 2 * H` e `KO - 1.5 * H`, scritti quando la
+# finestra valeva 3 ore. Portata a 1 ora (ordine dell'utente, per validare prima
+# la fase pre-match) quei due istanti sono finiti FUORI, e ventidue test hanno
+# cominciato a leggere «WATCH» dove si aspettavano un ingresso — senza che
+# nessuno di loro parlasse di finestre. Mezz'ora sta dentro qualunque finestra
+# ragionevole. Chi vuole un istante FUORI lo scrive esplicito (`KO - 5 * H` in
+# `test_watch_before_window_does_nothing`), ed e' giusto cosi': la distanza dal
+# KO dev'essere una scelta del test, non l'eredita' muta di una configurazione
+# di mesi prima.
+DENTRO_FINESTRA = KO - 0.5 * H
+
 COMM = 0.05
 
 
@@ -241,7 +255,7 @@ def test_prezzo_non_valido_non_produce_ordini_ne_eccezioni(prezzo):
     assert not [a for a in d2.actions if a.kind == "place"]
 
     ctx3 = E.MatchCtx()
-    s3 = snap(KO - 2 * H, books={(E.MARKET_OU35, E.SEL_UNDER): bad})
+    s3 = snap(DENTRO_FINESTRA, books={(E.MARKET_OU35, E.SEL_UNDER): bad})
     d3 = E.decide(ctx3, s3, p)
     assert d3.state == "WATCH" and d3.actions == []
 
@@ -349,7 +363,7 @@ def test_chiusura_ciclo_annulla_gli_ordini_ancora_vivi():
                           side="back", price=1.49, size=20.0, status="pending",
                           ref="residuo", placed_at=KO - 3 * H))
     p = params()
-    s = snap(KO - 2 * H, books={(E.MARKET_OU35, E.SEL_UNDER): book(1.46)})
+    s = snap(DENTRO_FINESTRA, books={(E.MARKET_OU35, E.SEL_UNDER): book(1.46)})
     d = E.decide(ctx, s, p)
     assert d.state == "WATCH"
     assert [(a.kind, a.ref) for a in d.actions] == [("cancel", "residuo")]
@@ -625,7 +639,7 @@ def test_i_testi_dei_reason_numerano_i_cicli_da_uno_come_la_ui():
         return {(E.MARKET_OU35, E.SEL_UNDER): book(bb)}
 
     ctx = E.MatchCtx()
-    t = KO - 2 * H
+    t = DENTRO_FINESTRA
     for atteso in (1, 2, 3):
         cycle_no_apertura = ctx.cycle_no
         d = E.decide(ctx, snap(t, books=books(1.50)), p)
@@ -661,7 +675,7 @@ def test_cycle_label_e_il_riferimento_delle_gambe():
     # il ref (signal_key sul DB) NON cambia: resta sul cycle_no 0-based
     ctx = E.MatchCtx(state="WATCH", cycle_no=0)
     p = params(stake=20.0)
-    s = snap(KO - 2 * H, books={(E.MARKET_OU35, E.SEL_UNDER): book(1.50)})
+    s = snap(DENTRO_FINESTRA, books={(E.MARKET_OU35, E.SEL_UNDER): book(1.50)})
     nuove = E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
     assert nuove[0].ref.startswith("under_entry-0-")
     assert nuove[0].cycle_no == 0

@@ -76,7 +76,13 @@ PARAM_SPEC: dict[str, Spec] = {
     # ---- generale ----
     "stake": (10.0, float, 0.50, 500.0, None),   # importo LIBERO (es. 1.23): sotto-minimo via place-and-trim
     "commission_pct": (5.0, float, 0.0, 20.0, None),
-    "entry_hours_before_ko": (3.0, float, 0.25, 12.0, None),
+    # 15/09 — PORTATA DA 3 h A 1 h SU ORDINE DELL'UTENTE, per validare prima il
+    # funzionamento pre-match: meno partite in finestra, piu' presto si vede se
+    # la fase si comporta. DEVE combaciare con l'env ``SAFE_PRE_KO_OU_HOURS``
+    # (il ramo dello scanner che pubblica le linee O/U): oltre quell'ora le
+    # linee non sono nel feed e Mike non vedrebbe nessuna candidata. Il
+    # controllo e' in `service._config_warn`.
+    "entry_hours_before_ko": (1.0, float, 0.25, 12.0, None),
     "competition_filter": ("", str, None, None, None),
     "decide_min_interval_ms": (500, int, 100, 5000, None),
     # MISURA 13/09/2026 ore 21:37, 57 righe di calcio nel feed: la piu' fresca

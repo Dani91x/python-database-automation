@@ -19,10 +19,23 @@ def blk(line, market_id, sels, status="OPEN", inplay=False, bet_delay=0):
                            for sid, name, bb, bl, bs, ls in sels]}
 
 
+# KO di serie dei fixture: DENTRO la finestra di ingresso, qualunque essa sia.
+#
+# ⚠️ 15/09 — qui c'era `NOW + 2 h`, scelto quando la finestra valeva 3 ore. Il
+# giorno in cui la finestra e' scesa a 1 ora (ordine dell'utente, per validare
+# prima la fase pre-match) quel valore e' finito FUORI, e quaranta test hanno
+# smesso di vedere una sola candidata — senza che nessuno di loro parlasse di
+# finestre. Mezz'ora sta dentro qualunque finestra ragionevole; un test che
+# vuole una partita LONTANA passa `ko=` esplicito, ed e' giusto cosi': la
+# distanza dal KO dev'essere una scelta del test, non l'eredita' muta di una
+# configurazione di mesi prima.
+KO_IN_FINESTRA = NOW + timedelta(minutes=30)
+
+
 def payload(ko=None, inplay=False, minute=None, sh=None, sa=None, status="OPEN", bet_delay=0,
             u35=(1.50, 1.52, 30.0, 25.0), o45=(6.0, 6.4, 12.0, 9.0), u45=(1.18, 1.19, 50.0, 40.0),
             match_status=None):
-    ko = ko or (NOW + timedelta(hours=2))
+    ko = ko or KO_IN_FINESTRA
     p = {
         "event_name": "Roma v Lazio", "home": "Roma", "away": "Lazio", "competition": "Serie A",
         "open_date": ko.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "inplay": inplay, "mo_market_id": "1.MO",
@@ -51,7 +64,7 @@ def test_event_info_resolves_by_name():
     assert info.selection_id("OU35", "UNDER") == 1222344
     assert info.selection_id("OU45", "OVER") == 1222346
     assert info.selection_id("OU45", "UNDER") == 1222347
-    assert info.ko_at == (NOW + timedelta(hours=2)).timestamp()
+    assert info.ko_at == (KO_IN_FINESTRA).timestamp()
     assert info.selection_name("OU45", "OVER") == "Over 4.5 Goals"
 
 

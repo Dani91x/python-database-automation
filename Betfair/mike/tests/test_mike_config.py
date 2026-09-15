@@ -23,7 +23,9 @@ def test_every_spec_default_is_inside_bounds():
 def test_defaults_match_plan():
     d = C.DEFAULTS
     assert d["stake"] == 10.0
-    assert d["entry_hours_before_ko"] == 3.0
+    # 15/09 — portata da 3 h a 1 h su ordine dell'utente, per validare prima la
+    # fase pre-match. Deve combaciare con l'env SAFE_PRE_KO_OU_HOURS.
+    assert d["entry_hours_before_ko"] == 1.0
     assert d["pre_green_ticks"] == 2
     assert d["cover_profit_factor"] == 1.2
     assert d["cashout_profit_pct"] == 5.0

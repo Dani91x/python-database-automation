@@ -934,6 +934,70 @@ def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str) -> Non
                          "err": str(ex)[:160]}, event_id)
 
 
+# ===========================================================================
+# I CAMPI DI UN ORDINE BETFAIR — UN SOLO POSTO CHE NE CONOSCE I NOMI
+# ===========================================================================
+# ⚠️ 15/09 — QUI E' NATO IL LOOP DEI 32 ORDINI VERI, ed e' rinato una seconda
+# volta dentro la funzione che lo aveva causato.
+#
+# `omega_market.list_current_orders()` / `list_cleared_orders()` NORMALIZZANO le
+# chiavi in snake_case (``size_matched``, ``customer_order_ref``…). Chi legge
+# ``sizeMatched`` da quei dizionari non prende un errore: prende `None`, che
+# diventa `0.0`, che significa «non abbinato niente». Un confronto falso per
+# costruzione, silenzioso, sul percorso dei soldi:
+#
+#   * in `_ordine_di` valeva «questo ordine non l'ho mai piazzato» → e il
+#     motore ne piazzava un altro, trentadue volte;
+#   * in `_segui_resting_live` valeva «la lay appoggiata non si e' abbinata» →
+#     e un green-up gia' eseguito a mercato restava `pending` nel database.
+#
+# Da qui in avanti i nomi dei campi stanno SOLO in questa tabella, e si
+# accettano ENTRAMBE le grafie: cosi' un cambio di normalizzazione a monte non
+# puo' piu' rompere in silenzio una lettura da cui dipendono ordini veri.
+# Il contratto e' verificato da `tests/test_mike_contratto_ordini_2026_09_15.py`,
+# che fa passare una risposta Betfair grezza dal normalizzatore VERO.
+_ALIAS_ORDINE: Dict[str, tuple] = {
+    "bet_id": ("bet_id", "betId"),
+    "customer_order_ref": ("customer_order_ref", "customerOrderRef"),
+    "size_matched": ("size_matched", "sizeMatched"),
+    "avg_price_matched": ("avg_price_matched", "averagePriceMatched"),
+    "size_remaining": ("size_remaining", "sizeRemaining"),
+    "size_settled": ("size_settled", "sizeSettled"),
+    "market_id": ("market_id", "marketId"),
+    "selection_id": ("selection_id", "selectionId"),
+    "status": ("status",),
+    "side": ("side",),
+}
+
+
+def campo_ordine(o: Optional[Dict[str, Any]], campo: str,
+                 difetto: Any = None) -> Any:
+    """Un campo di un ordine Betfair, comunque sia scritto.
+
+    Vale `None` solo se il campo MANCA DAVVERO: un valore presente ma nullo
+    (``None``) resta `None` e non diventa il difetto, perche' «non lo so» e
+    «zero» non sono la stessa cosa — su un prezzo medio abbinato quella
+    differenza sono soldi.
+    """
+    if not isinstance(o, dict):
+        return difetto
+    for nome in _ALIAS_ORDINE.get(campo, (campo,)):
+        if nome in o:
+            return o[nome]
+    return difetto
+
+
+def _num_ordine(o: Optional[Dict[str, Any]], campo: str, difetto: float = 0.0) -> float:
+    """Come `campo_ordine`, ma il risultato e' un numero utilizzabile."""
+    v = campo_ordine(o, campo)
+    if v is None:
+        return difetto
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return difetto
+
+
 def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
                event_id: str) -> Optional[Dict[str, Any]]:
     """Ritrova FRA GLI ORDINI VIVI quello di questa gamba.
@@ -960,14 +1024,13 @@ def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
     bet_id = str((riga or {}).get("bet_id") or "").strip()
     if bet_id:
         for x in vivi:
-            if str(x.get("bet_id") or x.get("betId") or "").strip() == bet_id:
+            if str(campo_ordine(x, "bet_id") or "").strip() == bet_id:
                 return x
 
-    # 2) per riferimento, in tutte e due le grafie
+    # 2) per riferimento del cliente
     for x in vivi:
-        for chiave in ("customer_order_ref", "customerOrderRef"):
-            if str(x.get(chiave) or "") == ref:
-                return x
+        if str(campo_ordine(x, "customer_order_ref") or "") == ref:
+            return x
     return None
 
 
@@ -997,11 +1060,19 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
                        {"leg": leg.ref, "role": leg.role,
                         "reason": "resting_uscito_dagli_ordini_vivi", "critical": True}, eid)
         return
-    matched = float(o.get("sizeMatched") or 0.0)
+    # ⚠️ 15/09 — QUI C'ERA `o.get("sizeMatched")`, ed era lo STESSO difetto che
+    # aveva appena causato il loop dei 32 ordini, rinato nella stessa funzione.
+    # Il dizionario espone `size_matched`: `sizeMatched` non esiste, quindi
+    # `matched` valeva SEMPRE 0.0 e questa funzione — il cui unico compito e'
+    # accorgersi che la lay appoggiata si e' abbinata — non se ne accorgeva mai.
+    # Si e' visto dal vivo: la riga #4817 era `pending` nel database mentre su
+    # Betfair l'ordine era EXECUTION_COMPLETE.
+    matched = _num_ordine(o, "size_matched", 0.0)
     if matched <= float(leg.matched) + 1e-9:
         return                      # nessun progresso: si aspetta, come in paper
     leg.matched = matched
-    leg.avg_price = float(o.get("averagePriceMatched") or leg.price)
+    prezzo = campo_ordine(o, "avg_price_matched")
+    leg.avg_price = float(prezzo) if prezzo else float(leg.price)
     if matched >= float(leg.size) - 1e-9:
         leg.status = "open"         # abbinata del tutto
     _aggiorna_riga_resting(db, eid, leg, "live_resting")

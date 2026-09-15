@@ -17,7 +17,7 @@ from Betfair.mike import config as C
 from Betfair.mike import engine as E
 from Betfair.mike import service as S
 from Betfair.mike.tests.test_mike_audit_2026_09_11 import asdict, fill, live_event, over_leg, under_leg
-from Betfair.mike.tests.test_mike_feed import payload, row
+from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
 from Betfair.mike.tests.test_mike_service import FakeDB, FakeMarket, run, state
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)
@@ -304,7 +304,7 @@ def test_riga_ricostruita_usa_la_liability_dell_abbinato():
                   price=1.48, size=10.14, ref="under_green-1-2", cycle_no=1,
                   status="open", matched=5.0, avg_price=1.48, closes_ref="under_entry-1-1")
     db.events["E1"] = live_event([asdict(entry), asdict(green)], state_="PRE_OPEN",
-                                 ctx={"selections": _SELS}, ko=NOW + timedelta(hours=2))
+                                 ctx={"selections": _SELS}, ko=KO_IN_FINESTRA)
     db.trades = []
     run(db, mk, NOW, [row(payload())])
     rebuilt = {t["signal_key"]: t for t in db.trades}
