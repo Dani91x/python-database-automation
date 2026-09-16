@@ -389,27 +389,110 @@ def _db_manuale():
                  "status": "open", "origin": "auto", "liability": 50.0, "meta": {}}])
 
 
+# Dal 16/09 (patch R6) le stats portano DUE numeri: `open_liability` sono i
+# TOTALI DI PAGINA (100 EUR dell'utente + 50 del bot = 150) e
+# `open_liability_bot` e' quello con cui il bot DECIDE (50).
+_SANE = {"open_liability": 150.0, "open_liability_bot": 50.0}
+
+
 def test_e3_scatta_se_la_liability_manuale_entra_nei_numeri_del_bot():
     db = _db_manuale()
     rotto = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=db,
-                         stats={"open_liability": 150.0})
+                         stats={"open_liability": 150.0, "open_liability_bot": 150.0})
     assert "E3" in _scatta("E3", rotto)
     sano = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=db,
-                        stats={"open_liability": 50.0})
+                        stats=dict(_SANE))
     assert "E3" not in _scatta("E3", sano)
+
+
+def test_e3_scatta_se_le_stats_non_dicono_su_che_cosa_il_bot_ha_deciso():
+    """Il contratto vuole ENTRAMBI i numeri: senza `open_liability_bot` nessuno
+    puo' sapere se il bot ha deciso sui suoi soldi o su quelli dell'utente."""
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db_manuale(),
+                     stats={"open_liability": 150.0})
+    assert "E3" in _scatta("E3", m)
+
+
+def test_e3_scatta_se_la_pagina_nasconde_al_trader_la_sua_liability():
+    """L'altro modo di sbagliare: filtrare le manuali ANCHE dai totali di
+    pagina. Il trader ha 100 EUR esposti e la pagina gliene mostra 50."""
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db_manuale(),
+                     stats={"open_liability": 50.0, "open_liability_bot": 50.0})
+    assert "E3" in _scatta("E3", m)
 
 
 def test_e3_scatta_se_il_bot_decide_su_una_riga_manuale():
     db = _db_manuale()
     m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=db,
-                     stats={"open_liability": 50.0},
+                     stats=dict(_SANE),
                      attivita=[("greenup", {"trade_id": 1}, None)])
     assert "E3" in _scatta("E3", m)
     # il SETTLEMENT su una riga manuale e' dovuto (I3): non e' una violazione
     ok = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=db,
-                      stats={"open_liability": 50.0},
+                      stats=dict(_SANE),
                       attivita=[("settle", {"trade_id": 1}, None)])
     assert "E3" not in _scatta("E3", ok)
+
+
+# --- E5: chiusura fatta dall'UTENTE FUORI DALL'APP (R9, 16/09 sera) -------
+def _db_chiusa_fuori():
+    return _db([{"id": 1, "market_id": "1.2", "selection_id": 13, "side": "lay",
+                 "status": "open", "origin": "auto", "liability": 100.0,
+                 "meta": {"chiuso_dall_utente": {"dove": "fuori dall'app"}}}])
+
+
+def test_e5_scatta_se_il_bot_non_se_ne_accorge():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db(),
+                     chiuso_fuori_app=True, giri_da_fuori_app=9,
+                     esito_giro={"placed": 0, "greenup": 0})
+    assert "E5" in _scatta("E5", m)
+
+
+def test_e5_da_qualche_giro_di_tempo_per_accorgersene():
+    """La posizione di conto si rilegge alla sua cadenza: accusare il bot al
+    primo giro sarebbe accusare il controllo, non il bot."""
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db(),
+                     chiuso_fuori_app=True, giri_da_fuori_app=1,
+                     esito_giro={"placed": 0, "greenup": 0})
+    assert "E5" not in _scatta("E5", m)
+
+
+def test_e5_scatta_se_apre_dopo_la_chiusura_dell_utente():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(),
+                     db=_db_chiusa_fuori(), chiuso_fuori_app=True,
+                     giri_da_fuori_app=2, esito_giro={"placed": 1, "greenup": 0})
+    assert "E5" in _scatta("E5", m)
+
+
+def test_e5_scatta_se_copre_una_posizione_che_non_esiste_piu():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(),
+                     db=_db_chiusa_fuori(), chiuso_fuori_app=True,
+                     giri_da_fuori_app=2, esito_giro={"placed": 0, "greenup": 1})
+    assert "E5" in _scatta("E5", m)
+
+
+def test_e5_e_verde_quando_il_bot_lo_sa_e_sta_fermo():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(),
+                     db=_db_chiusa_fuori(), chiuso_fuori_app=True,
+                     giri_da_fuori_app=50, esito_giro={"placed": 0, "greenup": 0})
+    assert "E5" not in _scatta("E5", m)
+
+
+def test_e5_non_accusa_il_bot_per_un_PLACE_DI_PRIMA():
+    """Il falso positivo del controllo (difetto 16 del catalogo): `m.attivita`
+    e' CUMULATIVA, e dentro c'e' il `place` che ha APERTO la posizione, mezz'ora
+    prima che l'utente la chiudesse. E5 deve guardare i contatori DEL GIRO."""
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(),
+                     db=_db_chiusa_fuori(), chiuso_fuori_app=True,
+                     giri_da_fuori_app=30, esito_giro={"placed": 0, "greenup": 0},
+                     attivita=[("place", {"trade_id": 1}, None)])
+    assert "E5" not in _scatta("E5", m)
+
+
+def test_e5_non_ha_un_caso_finche_l_utente_non_ha_chiuso():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db(),
+                     esito_giro={"placed": 1, "greenup": 1})
+    assert "E5" not in _scatta("E5", m)
 
 
 # --- E4: dopo il cash-out globale il bot non fa piu' niente ---------------

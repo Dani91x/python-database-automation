@@ -440,6 +440,33 @@ class DbMemoriaOmega(DbMemoria):
         riga = self.eventi.get(str(event_id))
         return dict(riga) if riga else None
 
+    # --- lo STATO DELL'EVENTO deciso dall'UTENTE (R8, migrazione
+    #     omega_chiuso_dall_utente_2026-09-16: colonna `stato_utente`).
+    #     Qui si comporta come la colonna APPLICATA: il banco certifica il
+    #     software, non la pigrizia di chi non ha ancora applicato la migrazione
+    #     (che il servizio dichiara comunque, con `schema_warn`).
+    def event_user_state(self, event_id: str) -> Optional[Dict[str, Any]]:
+        st = (self.eventi.get(str(event_id)) or {}).get("stato_utente")
+        return dict(st) if isinstance(st, dict) else None
+
+    def set_event_user_state(self, event_id: str,
+                             stato: Optional[Dict[str, Any]]) -> bool:
+        riga = self.eventi.setdefault(str(event_id), {"event_id": str(event_id)})
+        riga["stato_utente"] = dict(stato) if isinstance(stato, dict) else None
+        riga["updated_at"] = self._adesso()
+        return True
+
+    def user_closed_event_ids(self, since_iso: Optional[str] = None) -> set:
+        fuori = set()
+        for eid, riga in self.eventi.items():
+            st = (riga or {}).get("stato_utente")
+            if isinstance(st, dict) and st.get("chiuso_dall_utente"):
+                fuori.add(str(eid))
+        return fuori
+
+    def resume_event(self, event_id: str) -> bool:
+        return self.set_event_user_state(event_id, None)
+
     def save_event_model(self, event_id: str, model: Dict[str, Any]) -> bool:
         riga = self.eventi.get(str(event_id))
         if riga is None:
@@ -530,11 +557,21 @@ class DbMemoriaOmega(DbMemoria):
         """La STESSA funzione pura del fallback di produzione
         (`omega_db.aggregates` -> `omega_engine.aggregate_trades`): niente
         aritmetica scritta qui dentro."""
+        return self.aggregates_coppia(day_start)[0]
+
+    def aggregates_coppia(self, day_start: Any = None) -> Any:
+        """`(totali di pagina, numeri con cui il bot decide)` — la stessa
+        coppia che torna `omega_db.aggregates_coppia` in produzione, con le
+        stesse chiavi (R6, 16/09). Il finto NON deve saper fare meno del vero:
+        se qui tornasse un dizionario solo, il servizio userebbe la via
+        degradata e il banco certificherebbe una strada che in produzione non
+        si percorre."""
         campi = ("id", "event_id", "status", "pnl", "liability", "bet_id",
                  "placed_at", "settled_at", "meta", "mode", "closes_trade_id",
-                 "size", "price", "commission", "phase", "side")
+                 "size", "price", "commission", "phase", "side", "origin")
         righe = [{k: r.get(k) for k in campi} for r in self.trades]
-        return E.aggregate_trades(righe, day_start)
+        return (E.aggregate_trades(righe, day_start),
+                E.aggregate_trades(righe, day_start, solo_auto=True))
 
     def upsert_daily_goal(self, day: str, goal: float) -> bool:
         self.obiettivi[str(day)] = float(goal)
@@ -905,6 +942,15 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # l'utente chiude a mano TUTTE le gambe della partita: dal giro dopo il bot
     # se ne accorge e non fa piu' niente su quella partita
     "cashout-globale": dict(_APRE),
+    # L'UTENTE CHIUDE LA POSIZIONE **FUORI DALL'APP** (R9, ordine dell'utente
+    # 16/09 sera). Nel banco: un ordine piazzato con un ref SUO (client diverso,
+    # niente `customerStrategyRef` del bot), che passa dallo stesso
+    # `market.place_order` e dallo stesso matching. Il bot non lo vede fra i
+    # propri ordini — come su Betfair — e deve accorgersene rileggendo la
+    # POSIZIONE DI CONTO. `conto_every_s` a zero: la lettura a ogni giro, cosi'
+    # lo scenario non aspetta due minuti di tempo di mercato per provare una
+    # cosa che in produzione ha la sua cadenza dichiarata.
+    "chiuso-fuori-app": dict(_APRE, conto_every_s=0.0),
 }
 
 SCENARI_DESCRITTI: Dict[str, str] = {
@@ -934,6 +980,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     "cashout-globale": "l'utente chiude a mano TUTTE le gambe della partita "
                        "(una richiesta `cashout` per gamba, come fa la UI): dal "
                        "giro dopo il bot non deve fare piu' niente li' (E4)",
+    "chiuso-fuori-app": "l'utente chiude la posizione DIRETTAMENTE SU BETFAIR "
+                        "(ordine con un ref suo, fuori dall'app): il bot lo "
+                        "scopre dalla POSIZIONE DI CONTO e smette di gestire "
+                        "quella partita (E5, reperto R9)",
 }
 
 QUANTI_GUASTI = 2
@@ -975,6 +1025,7 @@ def _crea_strategia():
                      goal: float = omega_config.DEFAULT_DAILY_GOAL,
                      ferma_su_posizione: bool = False,
                      lay_manuale: bool = False, cashout_globale: bool = False,
+                     chiude_fuori_app: bool = False,
                      ogni_ms: int = 0, riavvia: bool = False, **kw: Any) -> None:
             self.event_id = str(event_id)
             self.params = dict(params)
@@ -996,6 +1047,13 @@ def _crea_strategia():
             self.scenario_cashout = bool(cashout_globale)
             self.cashout_chiesto: Optional[str] = None
             self.cashout_fatto = False
+            # R9 — l'utente chiude la posizione FUORI dall'app
+            self.scenario_fuori_app = bool(chiude_fuori_app)
+            self.fuori_app_chiesto: Optional[str] = None
+            self.fuori_app_fatto = False
+            self.fuori_app_giro: Optional[int] = None
+            self.fuori_app_dettaglio: Dict[str, Any] = {}
+            self.fuori_app_ordini: List[Any] = []
             self._req_id = 0
             self.mercati: Dict[str, Any] = {}
             self.db = DbMemoriaOmega({
@@ -1093,6 +1151,14 @@ def _crea_strategia():
                     self.db.log("replay_cashout_globale",
                                 {"gambe": [int(r["id"]) for r in aperte],
                                  "quando": self.cashout_chiesto})
+            # 2-sexies) L'UTENTE CHIUDE LA POSIZIONE **FUORI DALL'APP**: un
+            #    ordine SUO su Betfair, con un ref che non e' del bot. Non e' un
+            #    finto: passa da `market.place_order` e dallo stesso matching di
+            #    flumine (`MercatoFlumine.place_order_utente`). Il bot non lo
+            #    vede fra i propri ordini — come su Betfair — e deve scoprirlo
+            #    rileggendo la POSIZIONE DI CONTO.
+            if self.scenario_fuori_app and not self.fuori_app_fatto:
+                self._chiudi_fuori_app()
             # 3) IL SERVIZIO INTERO — `run_once`, non un pezzo
             prima_attivita = len(self.db.attivita)
             try:
@@ -1148,6 +1214,9 @@ def _crea_strategia():
                 feed_eta=self.feed.eta_riga(self.event_id),
                 status_control=str(self.db.control.get("status") or ""),
                 cashout_globale=self.cashout_fatto,
+                chiuso_fuori_app=self.fuori_app_fatto,
+                giri_da_fuori_app=(None if self.fuori_app_giro is None
+                                   else self.giri - self.fuori_app_giro),
                 posizioni_aperte=len([r for r in self.db.trades
                                       if str(r.get("status")) in ("open", "hedged")]),
                 righe_ordine=self.mercato.list_current_orders()
@@ -1157,6 +1226,89 @@ def _crea_strategia():
         def _osserva(self, m: CERT.Momento) -> None:
             self.referto.violazioni.extend(CERT.verifica(m, self.referto.sollecitati))
             CERT.osserva(self.referto.andamento, m)
+
+        def _chiudi_fuori_app(self) -> None:
+            """L'UTENTE CHIUDE LA POSIZIONE DEL BOT DIRETTAMENTE SU BETFAIR.
+
+            Nessuna riga scritta a mano nel database, nessun fill inventato: si
+            piazza un ordine VERO su flumine con un `customer_ref` dell'utente
+            (`utente-fuori-app-N`), lato opposto alla gamba del bot e stessa
+            size. Per il bot quell'ordine NON esiste
+            (`list_current_orders` filtra per `customerStrategyRef`), esattamente
+            come su Betfair; esiste invece nella POSIZIONE DI CONTO.
+
+            Il prezzo: si chiede il migliore disponibile in quel momento (per un
+            back, il fondo della banda) cosi' che l'ordine si abbini subito come
+            farebbe un utente che clicca "chiudi". Se la liquidita' non basta
+            l'abbinamento e' PARZIALE e lo scenario NON dichiara la chiusura:
+            una posizione ridotta a meta' non e' una posizione chiusa, e il
+            controllo E5 non deve essere sollecitato a vuoto.
+            """
+            self._verifica_fuori_app()
+            if self.fuori_app_fatto or len(self.fuori_app_ordini) >= 40:
+                return
+            aperte = [r for r in self.db.trades
+                      if str(r.get("status")) == "open"
+                      and not r.get("closes_trade_id")
+                      and str(r.get("origin") or "auto") != "manual"]
+            if not aperte:
+                return
+            riga = aperte[0]
+            market_id = str(riga.get("market_id") or "")
+            sid = int(riga.get("selection_id") or 0)
+            size = round(float(riga.get("size") or 0.0), 2)
+            residuo = round(size - self._abbinato_fuori_app(), 2)
+            if not market_id or residuo <= 0.01:
+                return
+            lato = "back" if str(riga.get("side") or "lay").lower() == "lay" else "lay"
+            book = self.mercato.read_book(market_id)
+            prezzo = None
+            for r in ((book or {}).get("runners") or []):
+                if int(r.get("selection_id") or -1) == sid:
+                    prezzo = r.get("back_price") if lato == "back" else r.get("lay_price")
+                    break
+            if prezzo is None:
+                return                 # nessuna controparte: si riprova al giro dopo
+            self._req_id += 1
+            ref = f"utente-fuori-app-{self._req_id}"
+            self.fuori_app_chiesto = self.banco.adesso().isoformat()
+            ordine = self.mercato.place_order_utente(
+                market_id=market_id, selection_id=sid, price=float(prezzo),
+                size=residuo, side=lato, customer_ref=ref)
+            if ordine is None:
+                return
+            self.fuori_app_ordini.append(ordine)
+            self.fuori_app_dettaglio = {
+                "ref": ref, "market_id": market_id, "selection_id": sid,
+                "side": lato, "price": float(prezzo), "size": size,
+                "chiesto_ora": residuo, "tentativi": len(self.fuori_app_ordini),
+                "trade_id": int(riga.get("id") or 0),
+                "quando": self.fuori_app_chiesto,
+            }
+            self.db.log("replay_chiuso_fuori_app", dict(self.fuori_app_dettaglio))
+            self._verifica_fuori_app()
+
+        def _abbinato_fuori_app(self) -> float:
+            tot = 0.0
+            for o in self.fuori_app_ordini:
+                sim = getattr(o, "simulated", None)
+                tot += float(getattr(sim, "size_matched", 0.0) or 0.0)
+            return tot
+
+        def _verifica_fuori_app(self) -> None:
+            """La posizione del bot e' CHIUSA del tutto? Solo allora E5 ha un
+            caso da giudicare: un fill a meta' e' una posizione RIDOTTA, non
+            chiusa (e il bot deve continuare a proteggere il resto)."""
+            if self.fuori_app_fatto or not self.fuori_app_ordini:
+                return
+            voluta = float(self.fuori_app_dettaglio.get("size") or 0.0)
+            abbinato = self._abbinato_fuori_app()
+            self.fuori_app_dettaglio["size_matched"] = round(abbinato, 2)
+            if voluta > 0 and abbinato + 0.01 >= voluta:
+                self.fuori_app_fatto = True
+                self.fuori_app_giro = self.giri
+                self.db.log("replay_chiuso_fuori_app_abbinato",
+                            dict(self.fuori_app_dettaglio))
 
         def _scrivi_lay_manuale(self) -> bool:
             """L'operazione dell'UTENTE sulla partita, scritta come la scrive il
@@ -1423,6 +1575,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       goal: float = omega_config.DEFAULT_DAILY_GOAL,
                       ferma_su_posizione: bool = False,
                       lay_manuale: bool = False, cashout_globale: bool = False,
+                      chiude_fuori_app: bool = False,
                       ogni_ms: int = 0, invecchia_s: float = 0.0,
                       guasti: int = 0, riavvia: bool = False) -> CERT.Referto:
     """Fa rivivere a Omega una partita registrata e ritorna il referto."""
@@ -1459,6 +1612,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         catalogo=catalogo, feed=feed, punteggi=punteggi, nome_evento=nome_evento,
         status=status, goal=float(goal), ferma_su_posizione=ferma_su_posizione,
         lay_manuale=lay_manuale, cashout_globale=cashout_globale,
+        chiude_fuori_app=chiude_fuori_app,
         ogni_ms=ogni_ms, riavvia=riavvia,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: qui il rischio lo governa Omega coi
@@ -1631,6 +1785,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         goal=goal, ferma_su_posizione=(scenario == "bot-fermo"),
         lay_manuale=(scenario == "manuale-e-bot"),
         cashout_globale=(scenario == "cashout-globale"),
+        chiude_fuori_app=(scenario == "chiuso-fuori-app"),
         ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
         guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
         riavvia=(scenario == "riavvio"))

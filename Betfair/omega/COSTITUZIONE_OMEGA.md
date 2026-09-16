@@ -603,9 +603,30 @@ sotto la probabilità implicita.
 
 ## 12. GREEN-UP AUTOMATICO — la scommessa diventa un trade (2026-09-10)
 
-**Decisione dell'utente (09/09 sera).** Omega non lascia MAI una gamba "a sé stessa":
-ogni lay aperto (automatico o manuale, paper o live allo stesso modo) viene **chiuso a
-mercato** — gamba back opposta sulla stessa selezione via lo strato condiviso
+> ⚠️ **MODIFICATO DALL'ORDINE DELL'UTENTE DEL 16/09/2026 (h18).** Testuale:
+> *«il bot gestisce le SUE operazioni e ignora le mie manuali»*, e *«se chiudo io — anche
+> fuori dall'app, direttamente su Betfair — il bot deve saperlo e NON gestire posizioni che
+> non esistono più»*. Il green-up automatico quindi **NON decide più su tre categorie di
+> righe** (`omega_service._greenup_candidates`):
+> 1. le righe **MANUALI** dell'utente (`omega_trades.origin='manual'`): erano incluse dalla
+>    formula «automatico o manuale» scritta qui sotto il 09/09 — da oggi non più;
+> 2. le righe la cui **partita l'utente ha chiuso** (stato `omega_events.stato_utente`,
+>    scritto dal cash-out nell'app e dalla sorveglianza del conto; si toglie solo col gesto
+>    esplicito «Riprendi», RPC `omega_evento_riprendi`);
+> 3. le righe la cui **posizione non esiste più sul conto** perché l'ha chiusa l'utente su
+>    Betfair (`meta.chiuso_dall_utente`, scritto da `sorveglia_posizione_di_conto` alla
+>    cadenza `conto_every_s`): coprirle sarebbe un **back con soldi veri** su una posizione
+>    che non c'è più.
+>
+> Quello che NON cambia: **settlement e riconciliazione girano su tutte le righe**, manuali
+> comprese (I3, «Betfair è la verità»); e su un **residuo** ancora aperto il bot continua a
+> proteggere (fermare la copertura di un residuo sarebbe il contrario della protezione).
+> Chiudere **una gamba di due** non spegne l'altra: viene dichiarato nell'attività
+> `chiusura_parziale_utente`, e l'altra gamba resta gestita dal bot.
+
+**Decisione dell'utente (09/09 sera; punto 1 superato il 16/09, vedi il riquadro sopra).**
+Omega non lascia MAI una gamba "a sé stessa": ogni lay aperto (~~automatico o manuale~~
+**automatico**, paper o live allo stesso modo) viene **chiuso a mercato** — gamba back opposta sulla stessa selezione via lo strato condiviso
 `safe_strategy.execution.close_trade` (lo stesso del cash-out manuale: riga di chiusura
 con `closes_trade_id`, apertura `hedged` a residuo nullo, settlement nettizzato in
 coppia) — appena il rischio diventa reale. Vince spesso poco, **perde poco** invece

@@ -335,8 +335,50 @@ def paper_fill(
 # ---------------------------------------------------------------------------
 # Settlement (§6, I3): P&L dal risultato del mercato.
 # ---------------------------------------------------------------------------
-def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> dict:
+def posizione_manuale(rows: list[dict]) -> set:
+    """Gli ``id`` delle righe che appartengono a una POSIZIONE DELL'UTENTE.
+
+    ORDINE DELL'UTENTE, 16/09 h18: «il bot gestisce le SUE operazioni e ignora
+    le mie manuali». Per sapere di chi è una riga non basta ``origin``:
+
+    * un'APERTURA è dell'utente se ``origin='manual'``;
+    * una CHIUSURA (``closes_trade_id``) è dell'utente solo se lo è l'apertura
+      che chiude. Un cash-out fatto a mano su una gamba DEL BOT porta
+      ``origin='manual'`` ma il suo P&L è il risultato di una posizione del bot:
+      toglierlo dai numeri con cui il bot decide renderebbe CIECO il cap di
+      perdita giornaliero proprio sulle perdite davvero incassate.
+
+    Una chiusura la cui apertura non è nell'insieme di righe (finestra di lettura
+    che taglia il genitore) resta attribuita a chi dice il suo ``origin``: è il
+    lato prudente (la si conta come dell'utente solo se l'utente l'ha scritta).
+    """
+    origine: dict = {}
+    for r in rows:
+        if r.get("id") is not None:
+            origine[r["id"]] = str(r.get("origin") or "auto")
+    fuori: set = set()
+    for r in rows:
+        if r.get("id") is None:
+            continue
+        padre = r.get("closes_trade_id")
+        mia = origine.get(padre) if padre is not None and padre in origine \
+            else str(r.get("origin") or "auto")
+        if mia == "manual":
+            fuori.add(r["id"])
+    return fuori
+
+
+def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None,
+                     *, solo_auto: bool = False) -> dict:
     """Aggrega le righe ``omega_trades`` → totali. PURA e testabile (money-critical).
+
+    ``solo_auto=True`` (default INVARIATO: False) esclude le POSIZIONI
+    DELL'UTENTE (``posizione_manuale``). Sono i numeri con cui il BOT DECIDE —
+    target di gamba, ``stop_on_goal``, ``daily_loss_cap``, ``max_open_liability``,
+    ``max_events`` — dopo l'ordine dell'utente del 16/09 h18 (reperto R6: il
+    16/09 il bot vedeva 70 EUR «suoi» contro 0 delle sue gambe). I TOTALI DI
+    PAGINA restano completi: quello che il trader legge in cima alla pagina è
+    tutto quello che c'è sul conto, comprese le sue operazioni.
 
     'won/lost/void' → realizzato; 'open' → liability aperta; 'pending' CON ``bet_id``
     → ordine reale già a mercato: conta nell'esposizione aperta (I8). Anche il
@@ -355,6 +397,9 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     SEMPRE totale: il rischio vivo non ha giorno. Senza ``day_start`` i campi
     _today coincidono col cumulato (fallback).
     """
+    if solo_auto:
+        fuori = posizione_manuale(rows)
+        rows = [r for r in rows if r.get("id") not in fuori]
     realized = 0.0
     open_liab = 0.0
     settled = 0

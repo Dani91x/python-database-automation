@@ -181,6 +181,14 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # resta reattiva e si smette di leggere active_missions + un
     # trades_for_event per missione a ogni giro quando il poll e' aggressivo.
     "missions_every_s": (5.0, float, 0.0, 120.0),
+    # LA POSIZIONE DI CONTO (16/09, R9): ogni quanti secondi si rilegge su
+    # Betfair, PER MERCATO, se la posizione del bot esiste ancora — cioe' se
+    # l'utente non l'ha chiusa fuori dall'app. Sono DUE chiamate REST per
+    # mercato (ordini correnti + regolati, senza filtro di strategia): a 120 s
+    # una chiusura fatta a mano si scopre entro due minuti, e nel frattempo la
+    # protezione non fa danni (il green-up chiede comunque prezzi freschi).
+    # Zero = a ogni giro (piu' reattivo, molto piu' caro: si usa nei test).
+    "conto_every_s": (120.0, float, 0.0, 3600.0),
     # Rinfresco della cache eventi (una chiamata REST Betfair + una replace):
     # era una costante nel codice, ora e' un parametro come tutti gli altri.
     "events_refresh_s": (1800.0, float, 0.0, 86400.0),

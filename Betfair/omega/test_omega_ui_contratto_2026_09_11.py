@@ -123,9 +123,16 @@ def _ui_field_bounds() -> dict[str, tuple[float | None, float | None]]:
 # dalla pagina, e appena il pannello la dichiara i controlli su default e clamp
 # tornano a valere da soli. Il 13/09 ci sono passati i nove parametri del respiro
 # del database (§20), scritti nel servizio prima che esistesse il loro pannello.
-# ADESSO E' VUOTA, ed e' il suo stato giusto: una chiave che il servizio onora e
-# che il trader non puo' toccare e' un parametro che di fatto non esiste.
-_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset()
+# 16/09 SERA — UNA chiave rientra qui, e si dice perche'. ``conto_every_s`` e' la
+# cadenza con cui il servizio rilegge la POSIZIONE DI CONTO su Betfair per
+# accorgersi che l'utente ha chiuso una posizione FUORI dall'app (R9). Il
+# delegato che l'ha scritta aveva il divieto esplicito di toccare il frontend
+# (il pannello e' di un'altra mano, nello stesso giorno): la voce va aggiunta a
+# ``OMEGA_PARAM_GROUPS`` / ``OMEGA_PARAM_DEFAULTS`` in
+# ``frontend/src/lib/omega.ts`` — gruppo "§20 respiro del database", numero,
+# unita' secondi, default 120, minimo 0, massimo 3600 — e questa riga sparisce.
+# Finche' e' qui il servizio onora comunque il valore, coi suoi default.
+_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset({"conto_every_s"})
 
 
 class TestWhitelistParametri:
@@ -247,6 +254,19 @@ def _ui_kind_mappati() -> set[str]:
     return keys
 
 
+# 16/09 SERA — il debito si riapre per UN SOLO kind, e con la data.
+# `chiuso_dall_utente` e' il momento in cui il servizio scopre che la posizione
+# non esiste piu' sul conto (l'ha chiusa l'utente, nell'app o su Betfair) e
+# smette di gestire quella partita: e' l'attivita' piu' importante nata
+# dall'ordine dell'utente del 16/09 sera. Il delegato che l'ha scritta aveva il
+# divieto esplicito di toccare il frontend. Da aggiungere a
+# `OMEGA_ACTIVITY_EXTRA` (omega.ts) e/o `ACTIVITY_BASE` (tradeStatus.ts):
+#     chiuso_dall_utente: { label: 'CHIUSA DALL''UTENTE', cls: A_WARN, critical: true }
+# e questa riga sparisce. Tutto il resto di quel lavoro usa etichette che
+# ESISTONO GIA' (`skip`, `diagnosi`, `error`, `schema_warn`): questo e' l'unico
+# concetto per cui una etichetta sbagliata sarebbe peggio del debito.
+_KIND_IN_ATTESA_DI_UI: frozenset[str] = frozenset({"chiuso_dall_utente"})
+
 # C.12b (16/09) — il DEBITO E' CHIUSO: `_KIND_IN_ATTESA_DI_UI` non esiste piu'.
 # `place_rifiutato`, `place_parziale`, `cancel_richiesto` e `cancel_esito`
 # hanno la loro etichetta italiana (`OMEGA_ACTIVITY_EXTRA` in omega.ts e
@@ -270,7 +290,7 @@ class TestAttivitaDelServizio:
             assert atteso in kinds, f"kind noto non estratto: {atteso}"
 
     def test_ogni_kind_loggato_e_mappato_in_italiano(self) -> None:
-        mancanti = sorted(_kind_loggati() - _ui_kind_mappati())
+        mancanti = sorted(_kind_loggati() - _ui_kind_mappati() - _KIND_IN_ATTESA_DI_UI)
         assert not mancanti, (
             "kind scritti dal servizio e SENZA etichetta italiana esplicita "
             f"(cadono nel fallback): {mancanti}"

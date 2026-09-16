@@ -467,6 +467,26 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito O1 — Omega: chiusure dell'utente, stato evento, numeri solo del bot — CERTIFICATO (16/09 sera)
+
+R9: `sorveglia_posizione_di_conto:2756` dentro `settle_open` (zero letture DB in più), cadenza
+`conto_every_s` **120 s** per (mercato, selezione), riconoscimento per ref derivati
+(`candidate_customer_refs`) + `bet_id`; verdetti gambe_non_ritrovate / ridotta_dall_utente /
+chiuso_dall_utente; P&L solo dal settlement vero; rete caduta → `error/posizione_di_conto_non_letta`.
+Porta condivisa `posizione_di_conto(market_id, selection_id)` in `omega_market.py:1280` e nel
+banco `:858`. R8: migrazione **scritta, non applicata** `omega_chiuso_dall_utente_2026-09-16.sql`
+(`omega_events.stato_utente`, RPC `omega_evento_riprendi`, `omega_eventi_chiusi_dall_utente`,
+aggregati con blocco `auto`); scritto da `_dopo_il_cashout:3909` (con attesa del bet delay:
+difetto trovato e chiuso) e letto in `scan_and_place_legs:971` e `_greenup_candidates:4165`;
+una gamba di due → `resta_aperto_del_bot` dichiarato. R6/R7: `aggregate_trades(solo_auto=)`,
+`aggregates_coppia` in una lettura, `run_once` decide sui numeri del bot e mostra i totali;
+green-up salta manuali e chiusi; Costituzione §12 aggiornata con data. 38+7+3 test, 11/11
+falsificazioni rosse (E5 aveva un falso positivo, corretto). Replay 4 scenari 0 violazioni;
+`manuale-e-bot` prima KO 466 → OK 0. Verifica del coordinatore: 150 verdi; falsificazione
+propria (partite chiuse non più saltate) → 2 rossi. In corso: annullamento degli ordini vivi del
+bot su partita chiusa (allineamento a Mike) e porta unica per Safe. UI (C.12c): `conto_every_s`,
+etichetta `chiuso_dall_utente`, «Riprendi», liability conto vs bot.
+
 ### Esito S1 — Safe: cash-out globale, chiusura fuori app, cap solo automatico — CERTIFICATO (16/09 sera)
 
 Marcatore `meta.chiuso_dall_utente` sulle righe (sopravvive al riavvio), indice per evento come

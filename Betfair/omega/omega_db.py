@@ -318,13 +318,29 @@ def replace_events(events: list[dict[str, Any]]) -> None:
             legacy = [{k: v for k, v in r.items() if k not in _EVENT_ENRICH_COLS} for r in events]
             _sb().table("omega_events").upsert(legacy, on_conflict="event_id").execute()
     ids = [str(r.get("event_id")) for r in events if r.get("event_id")]
-    q = _sb().table("omega_events").delete()
-    if ids:
-        # PostgREST: not_.in_ vuole la lista fra parentesi
-        q = q.not_.in_("event_id", ids)
-    else:
-        q = q.neq("event_id", "")  # lista vuota → svuota tutta la cache
-    q.execute()
+
+    def _purga(con_marker: bool) -> None:
+        q = _sb().table("omega_events").delete()
+        if ids:
+            # PostgREST: not_.in_ vuole la lista fra parentesi
+            q = q.not_.in_("event_id", ids)
+        else:
+            q = q.neq("event_id", "")  # lista vuota → svuota tutta la cache
+        if con_marker:
+            # 16/09 (R8): un evento che l'utente ha CHIUSO non si cancella dalla
+            # cache. Sparire dalla lista di oggi per un giro (Betfair che non lo
+            # elenca, mercato appena sospeso) cancellerebbe il marker, e al
+            # rinfresco dopo il bot ricomincerebbe a gestire una partita chiusa.
+            q = q.is_(STATO_UTENTE_COL, "null")
+        q.execute()
+
+    try:
+        _purga(True)
+    except Exception as ex:  # noqa: BLE001 - colonna assente (migrazione non applicata)
+        logger.warning("[omega] purga cache eventi senza riguardo per stato_utente "
+                       "(%s): applicare migrations/omega_chiuso_dall_utente_2026-09-16.sql",
+                       str(ex)[:120])
+        _purga(False)
 
 
 def update_event_markets(event_id: str, markets: list[dict[str, Any]]) -> None:
@@ -342,6 +358,102 @@ def upsert_market_snapshot(snapshot: dict[str, Any]) -> None:
 def get_event(event_id: str) -> Optional[dict[str, Any]]:
     rows = _sb().table("omega_events").select("*").eq("event_id", event_id).limit(1).execute().data or []
     return rows[0] if rows else None
+
+
+# ---------------------------------------------------------------------------
+# «CHIUSO DALL'UTENTE» — lo STATO DELL'EVENTO (16/09, reperto R8)
+#
+# Fino al 16/09 questo stato non esisteva: dopo un cash-out dell'utente il bot
+# smetteva di aprire su quella partita solo per EFFETTO COLLATERALE (la riga di
+# chiusura nasce con ``origin='manual'`` -> l'evento finiva in
+# ``manual_event_ids`` -> §8 lo escludeva, per tre giorni, senza che nessuno lo
+# avesse mai dichiarato; e chiudere UNA gamba di due escludeva anche l'altra).
+# Ora lo stato e' ESPLICITO, scritto su ``omega_events.stato_utente`` (JSONB,
+# migrazione ``omega_chiuso_dall_utente_2026-09-16.sql``), e si azzera SOLO con
+# un gesto esplicito («Riprendi», RPC ``omega_evento_riprendi``).
+#
+# Tutto best-effort verso la MIGRAZIONE NON APPLICATA: colonna assente ->
+# lettura vuota e scrittura fallita DICHIARATA (mai un crash, mai un silenzio).
+# ---------------------------------------------------------------------------
+STATO_UTENTE_COL = "stato_utente"
+# la colonna manca finche' la migrazione non e' applicata: lo si dice UNA volta
+# per processo, non a ogni respiro (un warning ogni 30 s per giorni e' rumore
+# che nasconde i warning veri)
+_AVVISO_STATO_UTENTE = False
+
+
+def _avvisa_una_volta(ex: Exception) -> None:
+    global _AVVISO_STATO_UTENTE
+    if _AVVISO_STATO_UTENTE:
+        return
+    _AVVISO_STATO_UTENTE = True
+    logger.warning("[omega] omega_events.stato_utente non leggibile (%s): applicare "
+                   "migrations/omega_chiuso_dall_utente_2026-09-16.sql. Finche' non "
+                   "e' applicata lo stato «chiuso dall'utente» vive solo in memoria "
+                   "e si perde al riavvio.", str(ex)[:160])
+
+
+def event_user_state(event_id: str) -> Optional[dict[str, Any]]:
+    """Lo stato «dell'utente» di UN evento, o None (anche se la colonna manca)."""
+    try:
+        rows = (_sb().table("omega_events").select(f"event_id,{STATO_UTENTE_COL}")
+                .eq("event_id", str(event_id)).limit(1).execute().data or [])
+    except Exception as ex:  # noqa: BLE001 - colonna assente (migrazione)
+        _avvisa_una_volta(ex)
+        return None
+    if not rows:
+        return None
+    st = rows[0].get(STATO_UTENTE_COL)
+    return st if isinstance(st, dict) else None
+
+
+def set_event_user_state(event_id: str, stato: Optional[dict[str, Any]]) -> bool:
+    """Scrive (o azzera con ``None``) lo stato dell'evento. False se non e' andata.
+
+    Il chiamante DEVE guardare il valore di ritorno: un marker non scritto vuol
+    dire che al giro dopo il bot ricomincerebbe a gestire una partita che
+    l'utente ha chiuso.
+    """
+    try:
+        (_sb().table("omega_events").update({STATO_UTENTE_COL: stato})
+         .eq("event_id", str(event_id)).execute())
+        return True
+    except Exception as ex:  # noqa: BLE001
+        logger.critical("[omega] stato_utente NON scritto su %s (%s): applicare "
+                        "migrations/omega_chiuso_dall_utente_2026-09-16.sql",
+                        event_id, str(ex)[:160])
+        return False
+
+
+def user_closed_event_ids(since_iso: Optional[str] = None) -> set[str]:
+    """Gli eventi che l'utente ha CHIUSO (a mano nell'app o fuori, su Betfair).
+
+    ``since_iso`` non filtra il marker (che non ha data propria nel WHERE): la
+    finestra la fa il chiamante sul contenuto, se gli serve. Senza colonna
+    torna l'insieme vuoto: il bot si comporta come prima della patch, e il
+    warning lo dice.
+    """
+    try:
+        rows = (_sb().table("omega_events").select(f"event_id,{STATO_UTENTE_COL}")
+                .not_.is_(STATO_UTENTE_COL, "null").execute().data or [])
+    except Exception as ex:  # noqa: BLE001
+        _avvisa_una_volta(ex)
+        return set()
+    out: set[str] = set()
+    for r in rows:
+        st = r.get(STATO_UTENTE_COL)
+        if isinstance(st, dict) and st.get("chiuso_dall_utente") and r.get("event_id"):
+            out.add(str(r["event_id"]))
+    return out
+
+
+def resume_event(event_id: str) -> bool:
+    """IL GESTO ESPLICITO: «Riprendi». Toglie il marker e basta.
+
+    In produzione lo chiama la UI con la RPC ``omega_evento_riprendi`` (che
+    controlla il proprietario); questa e' la stessa cosa dal servizio.
+    """
+    return set_event_user_state(event_id, None)
 
 
 def read_live_now(event_id: str) -> Optional[dict[str, Any]]:
@@ -481,7 +593,10 @@ def update_mission(event_id: str, **fields: Any) -> None:
 def trades_for_event(event_id: str) -> list[dict[str, Any]]:
     res = (
         _sb().table("omega_trades")
-        .select("id,phase,status,pnl,liability,bet_id,side,size,price,mode")
+        # ``origin`` + ``closes_trade_id`` (16/09, R8): per sapere se dopo un
+        # cash-out resta ancora qualcosa DEL BOT aperto su questa partita
+        # servono il proprietario della riga e il legame apertura/chiusura.
+        .select("id,phase,status,pnl,liability,bet_id,side,size,price,mode,origin,closes_trade_id")
         .eq("event_id", str(event_id))
         .execute()
     )
@@ -529,6 +644,32 @@ def market_frequency(league_id: int, market: str, selection: str) -> Optional[di
 
 
 def aggregates(day_start=None) -> dict[str, float]:
+    """I TOTALI DI PAGINA (tutto, anche le operazioni manuali dell'utente).
+
+    Firma e semantica INVARIATE: chi vuole anche i numeri con cui il bot decide
+    usa ``aggregates_coppia`` (una sola lettura per entrambi).
+    """
+    return aggregates_coppia(day_start)[0]
+
+
+def aggregates_coppia(day_start=None) -> "tuple[dict[str, float], dict[str, float]]":
+    """``(totali_di_pagina, numeri_con_cui_il_bot_decide)`` in UNA lettura.
+
+    ORDINE DELL'UTENTE, 16/09 h18 (reperto R6): il bot deve decidere sui SUOI
+    numeri — le operazioni manuali dell'utente non muovono target di gamba,
+    stop giornaliero, cap di perdita e cap di esposizione. La pagina invece
+    mostra TUTTO: quello che il trader legge in cima e' tutto cio' che c'e'.
+
+    UNA lettura sola, non due: la RPC (migrazione
+    ``omega_chiuso_dall_utente_2026-09-16.sql``) porta il blocco ``auto``
+    dentro lo stesso payload; senza quella migrazione il percorso legacy legge
+    le righe una volta e calcola tutti e due gli aggregati in casa. In nessuno
+    dei due casi il database viene scandito due volte per giro (§18).
+    """
+    return _aggregati(day_start)
+
+
+def _aggregati(day_start=None) -> "tuple[dict[str, float], dict[str, float]]":
     """Somma realizzato (won/lost/void settled) e liability aperta.
 
     ``day_start`` (datetime UTC, vedi ``omega_engine.day_start_utc``) aggiunge i
@@ -546,22 +687,74 @@ def aggregates(day_start=None) -> dict[str, float]:
     # VELOCE (§14): i numeri li calcola il DB in UNA query (RPC get_omega_aggregates,
     # migrazione omega_daily_v2) — nessuna lettura di tutta la tabella ogni ciclo.
     # Fallback al percorso legacy solo se la RPC non esiste ancora.
+    da_rpc: Optional[dict[str, Any]] = None   # totali gia' avuti dalla RPC vecchia
     if day_start is not None:
         try:
             res = _sb().rpc("get_omega_aggregates", {}).execute()
             data = getattr(res, "data", None)
             if isinstance(data, dict) and "realized_today" in data:
+                # blocco ``auto`` = i numeri del SOLO bot (migrazione
+                # omega_chiuso_dall_utente_2026-09-16). Se la RPC e' quella
+                # vecchia il blocco non c'e' e si ricade sul percorso legacy,
+                # che li calcola in casa: mai decidere con dentro le manuali
+                # senza dirlo.
+                blocco = data.get("auto")
+                if isinstance(blocco, dict) and "realized_today" in blocco:
+                    completi = {k: (float(v) if _is_money_key(k) else int(v))
+                                for k, v in data.items()
+                                if v is not None and k != "auto"}
+                    solo_bot = {k: (float(v) if _is_money_key(k) else int(v))
+                                for k, v in blocco.items() if v is not None}
+                    return completi, solo_bot
                 # i campi in EURO restano float (AUDIT 11/09: locked_pnl_open e
                 # reconciling_liability sono importi — con int() si perdevano i
                 # centesimi e un −0,80 bloccato diventava 0)
                 # (§17 review: anche ``locked_pnl_open_today``; regola per NOME, così
                 # una chiave nuova in euro non torna mai intera per sbaglio)
-                return {k: (float(v) if _is_money_key(k) else int(v))
-                        for k, v in data.items() if v is not None}
+                completi = {k: (float(v) if _is_money_key(k) else int(v))
+                            for k, v in data.items() if v is not None and k != "auto"}
+                # RPC VECCHIA (migrazione non ancora applicata). Prima di pagare
+                # una scansione intera si chiede al database la sola cosa che
+                # cambia la risposta: ESISTE una riga manuale che possa muovere
+                # questi numeri? (di oggi, o ancora esposta). Se non c'e' — il
+                # caso normale — i numeri del bot SONO quelli di pagina, senza
+                # una lettura in piu' (§18, respiro del database).
+                if not _esistono_manuali_che_contano(day_start):
+                    return completi, dict(completi)
+                logger.debug("[omega.db] get_omega_aggregates senza blocco 'auto' "
+                             "(migrazione omega_chiuso_dall_utente non applicata) "
+                             "e ci sono operazioni manuali: aggregati in casa")
+                da_rpc = completi
         except Exception as ex:  # noqa: BLE001 - RPC assente (migrazione) o DB KO → legacy
             logger.debug("[omega.db] get_omega_aggregates KO → legacy: %s", str(ex)[:120])
-    # LEGACY, PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa farebbe
-    # attribuire il P&L delle chiusure al giorno sbagliato (review 11/09 MED-2)
+    try:
+        rows = _righe_per_aggregati()
+    except Exception as ex:  # noqa: BLE001
+        if da_rpc is not None:
+            # DEGRADO DICHIARATO: la RPC vecchia ci ha dato i totali, ma le righe
+            # non si leggono e quindi i numeri DEL BOT non si sanno separare.
+            # Si torna al comportamento di prima del 16/09 (il bot decide con
+            # dentro anche le manuali) e LO SI DICE forte: mai in silenzio.
+            logger.critical("[omega.db] righe non lette (%s): il bot decide sui "
+                            "numeri di PAGINA, con dentro le operazioni manuali "
+                            "(R6 degradato). Applicare "
+                            "migrations/omega_chiuso_dall_utente_2026-09-16.sql",
+                            str(ex)[:160])
+            return da_rpc, dict(da_rpc)
+        raise
+    from Betfair.omega import omega_engine as E
+
+    # logica PURA e testata (§I8: pending+bet_id contano). UNA lettura, due conti.
+    return (E.aggregate_trades(rows, day_start),
+            E.aggregate_trades(rows, day_start, solo_auto=True))
+
+
+def _righe_per_aggregati() -> list[dict[str, Any]]:
+    """Le righe di ``omega_trades`` per il calcolo in casa degli aggregati.
+
+    LEGACY, PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa
+    farebbe attribuire il P&L delle chiusure al giorno sbagliato (review 11/09
+    MED-2)."""
     rows: list[dict[str, Any]] = []
     page = 1000
     start = 0
@@ -571,17 +764,40 @@ def aggregates(day_start=None) -> dict[str, float]:
             # ``event_id`` OBBLIGATORIO (cert. 12/09): senza, aggregate_trades
             # contava UN solo evento ("None") -> events_today/live_now sbagliati e
             # il cap max_events (partite distinte) non applicato quando la RPC manca
-            .select("id,event_id,status,pnl,liability,bet_id,placed_at,settled_at,meta,mode,closes_trade_id")
+            # ``origin`` (16/09, R6): senza, i numeri con cui il bot decide
+            # conterrebbero le operazioni dell'utente (misurato: 70 EUR «del
+            # bot» contro 0 delle sue gambe)
+            .select("id,event_id,status,pnl,liability,bet_id,placed_at,settled_at,meta,mode,closes_trade_id,origin")
             .order("id").range(start, start + page - 1)
             .execute().data or []
         )
         rows.extend(chunk)
         if len(chunk) < page:
-            break
+            return rows
         start += page
-    from Betfair.omega import omega_engine as E
 
-    return E.aggregate_trades(rows, day_start)  # logica PURA e testata (§I8: pending+bet_id contano)
+
+def _esistono_manuali_che_contano(day_start=None) -> bool:
+    """C'e' almeno UNA riga manuale capace di muovere i numeri di oggi?
+
+    Sono solo due i casi: una riga manuale PIAZZATA OGGI (entra nel realizzato e
+    nei conteggi della giornata) o una ancora ESPOSTA (entra nella liability
+    aperta, di qualunque giorno sia). Le manuali vecchie e regolate pesano solo
+    sul cumulato storico, che non e' una decisione. E' una select per chiave
+    con ``limit(1)``: costa quanto niente e risparmia la scansione intera.
+
+    Prudente: se la lettura fallisce si risponde SI' (si paga la scansione e si
+    decide sui numeri giusti), mai NO.
+    """
+    try:
+        q = _sb().table("omega_trades").select("id").eq("origin", "manual")
+        if day_start is not None:
+            giorno = day_start.isoformat() if hasattr(day_start, "isoformat") else str(day_start)
+            q = q.or_(f"placed_at.gte.{giorno},status.in.(open,hedged,pending)")
+        return bool((q.limit(1).execute().data or []))
+    except Exception as ex:  # noqa: BLE001 - nel dubbio si fa il conto per bene
+        logger.debug("[omega.db] sonda manuali KO (%s): si calcola comunque", str(ex)[:120])
+        return True
 
 
 # ---------------------------------------------------------------------------

@@ -125,6 +125,13 @@ class Momento:
     posizioni_aperte: int = 0
     # l'utente ha gia' chiuso a mano TUTTE le gambe di questa partita
     cashout_globale: bool = False
+    # 16/09 (R9): l'utente ha chiuso la posizione FUORI dall'app, con un ordine
+    # suo su Betfair (nel banco: un ref diverso, stesso matching). Vero dal giro
+    # in cui quell'ordine si e' ABBINATO; `giri_da_fuori_app` conta i giri
+    # passati da allora — il bot ha diritto a qualche giro (la posizione di
+    # conto si rilegge alla cadenza `conto_every_s`), non a tutta la partita.
+    chiuso_fuori_app: bool = False
+    giri_da_fuori_app: Optional[int] = None
 
     # ------------------------------------------------------------ comodita'
     @property
@@ -733,18 +740,36 @@ def _e3(m: Momento) -> Optional[str]:
     liab_manuale = sum(float(r.get("liability") or 0.0) for r in manuali
                        if str(r.get("status")) in esposti and not r.get("closes_trade_id"))
     st = m.stats or {}
-    aperta = _num(st.get("open_liability"))
-    if aperta is not None and liab_manuale > 0.0:
+    # DAL 16/09 SONO DUE NUMERI, e devono essere DUE (patch R6):
+    #   `open_liability`      = i TOTALI DI PAGINA: tutto quello che c'e' sul
+    #                           conto, operazioni dell'utente comprese;
+    #   `open_liability_bot`  = quello con cui il BOT DECIDE.
+    # Il controllo morde da tutte e due le parti: il bot non deve vedere le
+    # manuali, e la pagina non deve NASCONDERLE (un trader che non vede la
+    # propria liability e' l'altro modo di sbagliare).
+    aperta_pagina = _num(st.get("open_liability"))
+    aperta_bot = _num(st.get("open_liability_bot"))
+    if liab_manuale > 0.0:
         auto = sum(float(r.get("liability") or 0.0) for r in m.db.trades
                    if not _e_manuale(r) and str(r.get("status")) in esposti
                    and not r.get("closes_trade_id"))
-        if abs(aperta - auto) > 0.011:
+        if aperta_bot is None:
             reperti.append(
-                f"la liability aperta con cui il bot decide e' {aperta:.2f} ma "
+                "le stats non dichiarano `open_liability_bot`: non si puo' sapere "
+                "su quale liability il bot abbia deciso (patch R6 assente)")
+        elif abs(aperta_bot - auto) > 0.011:
+            reperti.append(
+                f"la liability aperta con cui il bot decide e' {aperta_bot:.2f} ma "
                 f"quella delle SUE gambe e' {auto:.2f}: dentro ci sono "
                 f"{liab_manuale:.2f} EUR di operazioni MANUALI. Target, cap e "
                 f"stop giornaliero si muovono per colpa di ordini che il bot non "
-                f"ha fatto (`omega_engine.aggregate_trades:338` non filtra `origin`)")
+                f"ha fatto (`omega_engine.aggregate_trades:338`, `solo_auto`)")
+        if aperta_pagina is not None and abs(aperta_pagina - (auto + liab_manuale)) > 0.011:
+            reperti.append(
+                f"i totali di PAGINA dicono {aperta_pagina:.2f} ma sul conto ci "
+                f"sono {auto + liab_manuale:.2f} EUR ({liab_manuale:.2f} di "
+                f"operazioni manuali): la pagina nasconde al trader la sua "
+                f"stessa esposizione")
     ids = {int(r.get("id") or 0) for r in manuali}
     decisi = sorted({k for k, p, _e in (m.attivita or [])
                      if k in KIND_DECISIONE_BOT
@@ -786,6 +811,62 @@ def _e4(m: Momento) -> Optional[str]:
             if "VIVO" in o or "pending" in o]
     if vivi:
         return f"dopo il cash-out globale restano lay del bot a mercato: {vivi}"
+    return None
+
+
+# quanti giri concediamo al bot per ACCORGERSI di una chiusura fatta fuori
+# dall'app. La lettura della posizione di conto ha la sua cadenza
+# (`conto_every_s`): con la cadenza a zero (lo scenario la mette a zero) un giro
+# basterebbe, ma il primo giro dopo l'abbinamento puo' cadere prima che il
+# blotter lo registri. Tre e' generoso e resta severo.
+GIRI_PER_ACCORGERSI = 3
+
+
+@_controllo("E5", "una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo "
+                  "su Betfair) il bot la VEDE, e da li' in poi non gestisce piu' "
+                  "una posizione che non esiste (ordine dell'utente 16/09 sera)",
+            quando=lambda m: m.tipo == "giro" and bool(m.chiuso_fuori_app))
+def _e5(m: Momento) -> Optional[str]:
+    """Il difetto che questo controllo cerca e' quello pericoloso (R9): il bot
+    legge solo i PROPRI ordini, quindi non vede la back che l'utente ha piazzato
+    dal sito per chiudere; continua a vedere la propria lay abbinata e, al primo
+    trigger, ci mette sopra un green-up — un BACK CON SOLDI VERI su una
+    posizione che non c'e' piu'.
+
+    Due cose, in ordine:
+      1. ACCORGERSENE. Entro `GIRI_PER_ACCORGERSI` giri deve esserci l'attivita'
+         `chiuso_dall_utente`, oppure il marcatore sulla riga
+         (`meta.chiuso_dall_utente`): senza, il bot sta gestendo al buio.
+      2. NON FARCI PIU' NIENTE. Dal momento in cui lo sa: nessuna decisione
+         dell'automatico (`KIND_DECISIONE_BOT`) su quelle righe, nessuna nuova
+         gamba sulla partita.
+    """
+    righe = list(m.db.trades if m.db is not None else [])
+    marcate = [r for r in righe if (r.get("meta") or {}).get("chiuso_dall_utente")]
+    detto = any(k == "chiuso_dall_utente" for k, _p, _e in (m.attivita or []))
+    sa = bool(marcate or detto)
+    giri = m.giri_da_fuori_app
+    if not sa:
+        if giri is not None and giri > GIRI_PER_ACCORGERSI:
+            return (f"sono passati {giri} giri da quando l'utente ha chiuso la "
+                    f"posizione su Betfair e il bot non se n'e' ancora accorto: "
+                    f"sta sorvegliando (e potrebbe coprire) una posizione che non "
+                    f"esiste piu'")
+        return None
+    # ⚠️ SOLO I CONTATORI DI QUESTO GIRO (`esito_giro`), mai la lista delle
+    # attivita': quella e' CUMULATIVA, e il `place` che ha aperto la posizione
+    # sta li' dentro da prima della chiusura. Accusare il bot per un ordine
+    # piazzato mezz'ora prima e' il difetto 16 del catalogo — lo stato
+    # persistente letto come corrente — e questo controllo ci era cascato.
+    esito = m.esito_giro or {}
+    if int(esito.get("placed") or 0):
+        return (f"{esito.get('placed')} nuove gambe su una partita che l'utente "
+                f"ha chiuso fuori dall'app")
+    if int(esito.get("greenup") or 0) and marcate:
+        return (f"{esito.get('greenup')} chiusure automatiche dopo che l'utente "
+                f"aveva gia' chiuso la posizione fuori dall'app: un back con "
+                f"soldi veri su una posizione che non esiste "
+                f"(righe {sorted(int(r.get('id') or 0) for r in marcate)})")
     return None
 
 

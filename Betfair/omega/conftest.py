@@ -37,6 +37,10 @@ _CHIAVI_CADENZA = (
     "events_refresh_s",
     "idle_stats_s",
     "idle_cycle_s",
+    # 16/09 (R9): ogni quanto si rilegge la POSIZIONE DI CONTO su Betfair. E'
+    # una cadenza come le altre, e nei test vale zero: chi vuole provarla la
+    # accende apposta (test_omega_chiuso_dall_utente_2026_09_16).
+    "conto_every_s",
 )
 
 
