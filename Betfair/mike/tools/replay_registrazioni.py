@@ -749,6 +749,16 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                     + (f" | {motore.senza_futuro} piazzamenti senza book futuro "
                        f"(registrazione finita): valutati sull'ultimo noto"
                        if motore.senza_futuro else ""))
+    # L'ASSUNZIONE DELLE LETTURE, dichiarata insieme a quanto pesa: se il bot
+    # legge poco, 120 ms per lettura non spostano niente; se legge molto, il
+    # referto lo fa vedere invece di nasconderlo.
+    out.note.append(
+        f"chiamate di LETTURA a Betfair: {strategia.mercato.letture} "
+        f"({strategia.mercato.letture / max(1, out.decisioni):.2f} per giro) | "
+        f"latenza ASSUNTA {BANCO.LATENZA_LETTURA_S * 1000:.0f} ms per chiamata "
+        f"(non misurata: `storia_operazioni.py` ha solo la catena del "
+        f"piazzamento) -> {motore.tempo_letture:.1f} s di tempo di mercato "
+        f"consumati, {motore.book_letture} book passati")
     out.note.append(f"righe di scan scritte dallo SCANNER VERO: {banco.righe_scritte}"
                     + (f" | giri senza riga nel feed: {strategia.righe_assenti}"
                        if strategia.righe_assenti else ""))

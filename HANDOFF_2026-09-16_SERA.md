@@ -20,12 +20,14 @@
 - Suite alla sera: backend ≈ 3600 verdi (varia mentre i delegati scrivono), frontend 2503,
   `tsc` 13 errori preesistenti (non regredire). Comando: `python -m pytest Betfair/ -q -p no:cacheprovider`.
 
-## 2. Task che erano ATTIVE al momento dell'handoff (da riprendere o verificare)
+## 2. Task che erano attive — TUTTE CHIUSE E CERTIFICATE (sera 16/09). Suite finale: **3908 verdi**, frontend 2503, tsc 13. Nessuna task aperta: si riparte dal §7.
 
 Per ciascuna: cosa era stato chiesto, cosa risulta già nel working tree, come verificare se è
 finita, e il brief da ri-emettere a un delegato Opus 5 se non lo è.
 
-### 2.1 Cache Poisson in `Betfair/omega/omega_model.py` (velocità del replay, 2,3×→5×)
+### 2.1 Cache Poisson — FATTA e certificata (checkpoint `Betfair/stream/backtest/CHECKPOINT_PERF_2026-09-16.md`, 13 test, sha identica; oggi guadagno ~0 perché il percorso caldo di Mike è cambiato: replay 35760084 base da 1028 a 56 s CPU). Latenza letture 120 ms assunta e dichiarata. Manca: prima/dopo con sha della latenza (20 min), cadenza a fine giro nei replay Omega/tennis (una riga per file).
+
+### 2.1-bis (storico) Cache Poisson — cosa era stato chiesto
 - Chiesto: memoizzazione PURA (`lru_cache` su `_poisson_grid`, eventualmente `_full_match_1x2`/
   `residual_grid` se pure), chiave = argomenti già arrotondati (nessun arrotondamento nuovo),
   cache limitata, risultati immutabili (verificare i chiamanti), firma invariata; test «cache e

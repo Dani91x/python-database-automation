@@ -182,7 +182,7 @@ import os
 from bisect import bisect_right
 from collections import deque
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import (TYPE_CHECKING, Any, Callable, Deque, Dict, List, Optional,
                     Sequence, Tuple)
 
@@ -476,6 +476,10 @@ class MercatoFlumine:
         # guasti da provocare apposta: {"place_exception": N} solleva sui
         # prossimi N piazzamenti, per far nascere gli stati di riconciliazione
         self.guasti: Dict[str, int] = {}
+        # quante LETTURE ha fatto il bot (ognuna costa `LATENZA_LETTURA_S` di
+        # tempo di mercato): il referto lo dichiara, perche' l'assunzione pesa
+        # in proporzione a questo numero
+        self.letture: int = 0
 
     # ------------------------------------------------------------- place
     def place_order_live(self, *, market_id: str, selection_id: int, price: float,
@@ -747,10 +751,20 @@ class MercatoFlumine:
             "average_price_matched": getattr(sim, "average_price_matched", None) or None,
         }
 
+    def _costa_una_lettura(self) -> None:
+        """Una lettura NON e' gratis: costa il suo giro di rete, e in produzione
+        quel tempo ritarda tutto cio' che il bot fa dopo. Vedi
+        `LATENZA_LETTURA_S`: valore ASSUNTO, non misurato."""
+        self.letture += 1
+        if self.motore is not None and LATENZA_LETTURA_S > 0:
+            self.motore.consuma_tempo(LATENZA_LETTURA_S)
+
     def list_current_orders(self, strategy_ref: Optional[str] = None) -> List[Dict[str, Any]]:
+        self._costa_una_lettura()
         return [self._riga(ref, o) for ref, o in self.ordini.items() if self._vivo(o)]
 
     def list_cleared_orders(self, *_a: Any, **_k: Any) -> List[Dict[str, Any]]:
+        self._costa_una_lettura()
         return [self._riga(ref, o) for ref, o in self.ordini.items() if not self._vivo(o)]
 
     # ------------------------------------------------- traccia forense
@@ -810,6 +824,7 @@ class MercatoFlumine:
     def read_book(self, market_id: str, *_a: Any, **_k: Any) -> Optional[Dict[str, Any]]:
         # il book a mercato chiuso serve al regolamento: nel replay lo stato
         # finale arriva dalla registrazione stessa (`process_closed_market`).
+        self._costa_una_lettura()
         return None
 
 
@@ -986,6 +1001,20 @@ ATTESA_ESATTA = True
 # fa girare il bot piu' spesso di quanto giri davvero): serve alla misura
 # prima/dopo e alla falsificazione.
 CADENZA_DOPO_LE_CHIAMATE = True
+
+# LATENZA DELLE CHIAMATE DI LETTURA — ASSUNTA, NON MISURATA (16/09/2026).
+# `list_current_orders`, `list_cleared_orders` e `read_book` sono REST sincrone
+# come il piazzamento, ma Betfair NON le trattiene per il bet delay: costano
+# solo il giro di rete. Nel banco costavano ZERO tempo di mercato, cioe' il bot
+# rileggeva gli ordini "gratis" — e in produzione non e' gratis.
+# NON ABBIAMO UNA MISURA NOSTRA: `storia_operazioni.py` espone la catena del
+# solo PIAZZAMENTO (`t4_inviato -> t5_risposta`). Su decisione del 16/09 si
+# assume **120 ms per chiamata**, cioe' la stessa `config.place_latency` che
+# flumine usa gia' ed e' gia' dentro ogni numero certificato. E' un'ASSUNZIONE:
+# va detta nel referto (il banco stampa anche quante letture fa il bot per giro,
+# cosi' si vede quanto pesa) e va sostituita appena esiste una misura vera.
+# 0.0 la spegne (com'era prima): serve alla falsificazione e al confronto.
+LATENZA_LETTURA_S = 0.120
 
 
 class GeneratoreLibri:
@@ -1174,6 +1203,10 @@ class MotoreReplay:
         # piazzamenti per cui non esisteva nessun book futuro (registrazione
         # finita): eseguiti sull'ultimo book noto, e dichiarati
         self.senza_futuro: int = 0
+        # tempo (e book) consumati dalle chiamate di LETTURA: l'assunzione dei
+        # 120 ms si dichiara insieme a quanto ha pesato
+        self.tempo_letture: float = 0.0
+        self.book_letture: int = 0
 
     # ------------------------------------------------------------- flumine
     def _a_flumine(self, market_book: Any):
@@ -1398,6 +1431,31 @@ class MotoreReplay:
                 # e mentre il bot aspetta Betfair lui continua a pubblicare
                 self.su_book(mb)
         self.pompati += passati
+        return passati
+
+    def consuma_tempo(self, secondi: float) -> int:
+        """Fa scorrere `secondi` di TEMPO DI MERCATO senza far girare il bot.
+
+        E' quello che succede a ogni chiamata REST che non sia un piazzamento:
+        il bot e' fermo sulla rete, i book continuano ad arrivare, lo SCANNER
+        (in produzione e' un altro processo) continua a pubblicare. Torna quanti
+        book sono passati. Se la registrazione finisce si smette e basta: non si
+        inventa futuro.
+        """
+        if secondi <= 0 or self._ora_mercato is None:
+            return 0
+        scadenza = self._ora_mercato + timedelta(seconds=float(secondi))
+        passati = 0
+        while self._ora_mercato < scadenza:
+            mb = self._prossimo()
+            if mb is None:
+                break
+            passati += 1
+            mercato, _nuovo = self._a_flumine(mb)
+            if mercato is not None and self.su_book is not None:
+                self.su_book(mb)
+        self.tempo_letture += float(secondi)
+        self.book_letture += passati
         return passati
 
     def _esegui_adesso(self, pacchi: Sequence[Any]) -> None:

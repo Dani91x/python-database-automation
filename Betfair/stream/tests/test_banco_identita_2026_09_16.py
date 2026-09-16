@@ -472,3 +472,61 @@ def test_lattesa_dura_quanto_il_bet_delay_e_non_quanto_il_mercato_e_liquido():
     assert esatta < lasca, (
         f"l'attesa esatta deve consumare MENO book di quella che aspetta il "
         f"prossimo book del mercato: {esatta} vs {lasca}")
+
+
+# ---------------------------------------------------------------------------
+# 6) LE LETTURE NON SONO GRATIS (latenza ASSUNTA, non misurata)
+# ---------------------------------------------------------------------------
+class BotCheLegge:
+    """Legge gli ordini a ogni giro, come fa un bot vero prima di decidere."""
+
+    def __init__(self, quante: int) -> None:
+        self.quante = int(quante)
+        self.mercato = None
+        self.giri = 0
+
+    def __call__(self, *, db, market, now, row, banco, strategia):
+        self.mercato = market
+        self.giri += 1
+        for _ in range(self.quante):
+            market.list_current_orders()
+
+
+@pytest.mark.cert
+def test_una_lettura_costa_tempo_di_mercato():
+    """In produzione `listCurrentOrders` e' una REST sincrona: il bot e' fermo
+    sulla rete mentre i book continuano ad arrivare. Nel banco costava ZERO, e
+    zero non e' il tempo vero. Il valore (120 ms) e' ASSUNTO — non misurato —
+    ed e' dichiarato nel referto insieme a quante letture il bot fa per giro."""
+    _serve_registrazione()
+
+    def corsa(quante, latenza):
+        vecchia = B.LATENZA_LETTURA_S
+        B.LATENZA_LETTURA_S = latenza
+        try:
+            bot = BotCheLegge(quante)
+            esito = B.replay_evento(event_id=EVENTO, cartella=_cartella(),
+                                    servizio=bot, sport="calcio")
+            return bot.mercato.letture, esito.giri, esito.tick
+        finally:
+            B.LATENZA_LETTURA_S = vecchia
+
+    letture, giri, tick_con = corsa(3, 0.120)
+    assert letture == giri * 3 > 0, "le letture non sono state contate"
+    _l0, _g0, tick_senza = corsa(3, 0.0)
+    # con la latenza accesa il tempo di mercato scorre durante le letture: il
+    # bot vede MENO giri utili, quindi il conteggio dei tick cambia
+    assert tick_con != tick_senza, (
+        f"la latenza di lettura non sposta niente ({tick_con} vs {tick_senza}): "
+        f"il controllo non sa accorgersi dell'assunzione")
+
+
+@pytest.mark.cert
+def test_la_latenza_di_lettura_e_dichiarata_e_governabile():
+    """Un'assunzione che non si puo' spegnere ne' cambiare non e' un'assunzione:
+    e' un numero cablato. 0.0 deve riportare il banco a com'era."""
+    assert B.LATENZA_LETTURA_S == 0.120
+    import flumine.config as fconf
+    assert B.LATENZA_LETTURA_S == fconf.place_latency, (
+        "la latenza assunta deve essere la stessa gia' certificata di flumine, "
+        "non un numero nuovo inventato qui")
