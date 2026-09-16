@@ -436,6 +436,20 @@ export const ACTIVITY_BASE: Record<string, ActivityMeta> = {
     place_deferred: { label: 'ORDINE (betDelay)', cls: INFO },
     place_saltato: { label: 'DUPLICATO EVITATO', cls: WARN },
     place_rifiutato: { label: 'RIFIUTATO DA BETFAIR', cls: BAD },
+    place_parziale: { label: 'ABBINATO IN PARTE', cls: WARN, critical: true },
+    // ----------------------------------------------------------------------
+    // C.12b (16/09) — i kind della CONSAPEVOLEZZA DELL'ORDINE. Il backend del
+    // 16/09 ha cominciato a scrivere il parziale con i suoi numeri e l'esito
+    // REALE degli annullamenti su Betfair; finche' non avevano un'etichetta
+    // stavano elencati come debito in due test Python (`KIND_IN_ATTESA_DI_UI`).
+    // ----------------------------------------------------------------------
+    // «parziale z su x, residuo r vivo»: la nota coi numeri la scrive il
+    // servizio (soglia e arrotondamenti sono suoi, qui non si ricalcola nulla).
+    // un annullamento CHIESTO a Betfair: fino al 16/09 gli «annulla» dei tre
+    // bot REST erano contabili e l'ordine restava vivo sul book.
+    cancel_richiesto: { label: 'ANNULLO CHIESTO A BETFAIR', cls: WARN },
+    // ...e com'e' andata davvero. Non confermato = la riga NON e' annullata.
+    cancel_esito: { label: 'ANNULLO: ESITO DA BETFAIR', cls: WARN },
     would_place: { label: 'ORDINE (dry)', cls: MUTED },
     cancel: { label: 'ANNULLO', cls: WARN },
     no_fill: { label: 'NON ABBINATO', cls: WARN },
@@ -622,6 +636,23 @@ export function activityLineGeneric(payload: Record<string, unknown> | null | un
     if (Number.isFinite(size) && Number.isFinite(price)) parts.push(`${fmtMoney(size)} @ ${fmtOdds(price)}`);
     else if (Number.isFinite(size)) parts.push(fmtMoney(size));
     else if (Number.isFinite(price)) parts.push(fmtOdds(price));
+    // C.12b — CHIESTO / ABBINATO / RESIDUO quando il servizio li pubblica
+    // (place_parziale, place_resting, fill_resting, cancel_esito): sono i tre
+    // numeri della domanda dell'utente del 16/09, e finivano nel JSON nudo.
+    const chiesto = Number(p.size_requested);
+    const abbinato = Number(p.size_matched);
+    const residuo = Number(p.size_remaining);
+    const medio = Number(p.avg_price_matched);
+    if (Number.isFinite(chiesto)) parts.push(`chiesti ${fmtMoney(chiesto)}`);
+    if (Number.isFinite(abbinato)) {
+        parts.push(`abbinati ${fmtMoney(abbinato)}${Number.isFinite(medio) ? ` @ ${fmtOdds(medio)}` : ''}`);
+    }
+    if (Number.isFinite(residuo)) parts.push(`residuo ${fmtMoney(residuo)}`);
+    // il CODICE di Betfair in chiaro: INSUFFICIENT_FUNDS e INVALID_PROFIT_RATIO
+    // non sono la stessa cosa, e fino al 16/09 erano entrambi «non abbinato»
+    const codice = p.error_code != null && String(p.error_code).trim() !== ''
+        ? String(p.error_code).trim() : null;
+    if (codice) parts.push(`codice Betfair ${codice}`);
     const pnl = Number(p.pnl ?? p.locked ?? p.locked_pnl);
     if (Number.isFinite(pnl)) parts.push(fmtMoney(pnl, { signed: true }));
     const reason = p.reason ?? p.err ?? p.error ?? p.note ?? p.msg ?? p.message ?? null;

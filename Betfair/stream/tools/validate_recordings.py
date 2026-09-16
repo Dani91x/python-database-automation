@@ -67,6 +67,18 @@ LATE_START_TOLERANCE_S: float = 120.0
 # fine attesa minima (minuti dal kickoff) sotto cui, senza CLOSED, e' "troncata"
 TRUNCATED_BEFORE_MIN: float = 95.0
 
+# SPORT: `eventTypeId` di Betfair, che sta nella `marketDefinition` del raw.
+# 1 = calcio, 2 = tennis. Non si passa da fuori: si LEGGE dal file, cosi' una
+# registrazione non puo' essere validata con la finestra dello sport sbagliato
+# per una svista di chi chiama.
+EVENT_TYPE_CALCIO = "1"
+EVENT_TYPE_TENNIS = "2"
+SPORT_CALCIO = "calcio"
+SPORT_TENNIS = "tennis"
+# tolleranza (minuti) fra la durata della registrazione e quella che il sidecar
+# dei punteggi dichiara: sotto, la registrazione e' piu' corta della partita
+TOLLERANZA_SIDECAR_MIN: float = 5.0
+
 VERDICT_COMPLETE = "COMPLETE"
 VERDICT_PARTIAL = "PARTIAL"
 VERDICT_EMPTY = "EMPTY"
@@ -89,6 +101,8 @@ class RawScan:
     # (supplementari inclusi) — fix 17/07 "validatore cieco oltre KO+115'".
     main_closed_pt: Optional[int] = None
     first_inplay_pt: Optional[int] = None
+    # `eventTypeId` della prima marketDefinition: decide QUALE FINESTRA usare
+    event_type_id: str = ""
     gaps: List[Tuple[int, int]] = field(default_factory=list)  # [(pt_prima, pt_dopo)]
 
 
@@ -112,6 +126,19 @@ class RecordingReport:
     gap_in_window_min: float = 0.0
     closed_seen: bool = False
     has_scores: bool = False
+    # QUALE sidecar dei punteggi e' stato trovato ("" = nessuno). Il calcio
+    # scrive `<id>.scores.jsonl`, il tennis `<id>.score.jsonl` (senza la "s"):
+    # dirlo e' meta' della correzione, perche' un verdetto che non nomina il
+    # file che ha letto non e' verificabile.
+    scores_name: str = ""
+    # SPORT letto dal raw e FINESTRA ATTESA usata per la copertura: due
+    # registrazioni con la stessa percentuale ma finestre diverse non dicono la
+    # stessa cosa, quindi il verdetto deve dichiarare quale ha usato.
+    sport: str = ""
+    finestra: str = ""
+    # durata della partita secondo il sidecar dei punteggi (controllo di
+    # plausibilita' del tennis): None = sidecar assente o illeggibile
+    durata_sidecar_min: Optional[float] = None
     sessions: List[Dict[str, Any]] = field(default_factory=list)  # da .recmeta.jsonl
 
     def to_dict(self) -> Dict[str, Any]:
@@ -131,6 +158,10 @@ class RecordingReport:
             "gap_in_window_min": self.gap_in_window_min,
             "closed_seen": self.closed_seen,
             "has_scores": self.has_scores,
+            "scores_name": self.scores_name,
+            "sport": self.sport,
+            "finestra": self.finestra,
+            "durata_sidecar_min": self.durata_sidecar_min,
             "n_sessions": len(self.sessions),
         }
 
@@ -200,6 +231,8 @@ def scan_raw(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
                 md = change.get("marketDefinition") if isinstance(change, dict) else None
                 if not isinstance(md, dict):
                     continue
+                if not scan.event_type_id and md.get("eventTypeId") is not None:
+                    scan.event_type_id = str(md.get("eventTypeId"))
                 start_ms = _parse_start_ms(md)
                 if start_ms is not None and (scan.kickoff_ms is None or start_ms < scan.kickoff_ms):
                     scan.kickoff_ms = start_ms
@@ -217,34 +250,110 @@ def _overlap_ms(a0: int, a1: int, b0: int, b1: int) -> int:
     return max(0, min(a1, b1) - max(a0, b0))
 
 
+def sport_di(scan: RawScan) -> str:
+    """Lo sport della registrazione, dal raw. Default: calcio (retro-compat)."""
+    return SPORT_TENNIS if str(scan.event_type_id or "") == EVENT_TYPE_TENNIS         else SPORT_CALCIO
+
+
+def durata_sidecar_min(path: Optional[str]) -> Optional[float]:
+    """Durata della partita secondo il SIDECAR dei punteggi, in minuti.
+
+    E' il controllo di plausibilita' della finestra del tennis: il raw dice
+    quanto ha registrato, il sidecar dice quanto e' durata la partita. Se la
+    registrazione e' piu' corta, la finestra «dal primo book al CLOSED» sta
+    misurando un pezzo di partita e lo deve dichiarare, altrimenti una
+    registrazione che comincia al terzo set risulterebbe coperta al 100 %.
+
+    Legge i due formati veri: calcio `{"ts_ms":…}`, tennis `{"t": <epoch s>}`.
+    None = sidecar assente, vuoto o illeggibile (nessun controllo possibile)."""
+    if not path or not os.path.isfile(path):
+        return None
+    primo = ultimo = None
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for riga in fh:
+            riga = riga.strip()
+            if not riga:
+                continue
+            try:
+                rec = json.loads(riga)
+            except ValueError:
+                continue
+            if not isinstance(rec, dict):
+                continue
+            ts = rec.get("ts_ms")
+            if ts is None and rec.get("t") is not None:
+                try:
+                    ts = float(rec["t"]) * 1000.0
+                except (TypeError, ValueError):
+                    ts = None
+            if ts is None:
+                continue
+            ts = float(ts)
+            primo = ts if primo is None else min(primo, ts)
+            ultimo = ts if ultimo is None else max(ultimo, ts)
+    if primo is None or ultimo is None or ultimo <= primo:
+        return None
+    return round((ultimo - primo) / 60_000.0, 1)
+
+
 def classify(
     scan: RawScan,
     *,
     min_coverage_pct: float = DEFAULT_MIN_COVERAGE_PCT,
     match_window_min: float = MATCH_WINDOW_MIN,
     sessions: Optional[List[Dict[str, Any]]] = None,
-) -> Tuple[str, Optional[float], List[str], List[Tuple[int, int]]]:
+    sport: Optional[str] = None,
+    durata_partita_min: Optional[float] = None,
+) -> Tuple[str, Optional[float], List[str], List[Tuple[int, int]], str]:
     """PURA: (verdetto, copertura %, motivi, gap in-finestra) da una RawScan.
+
+    Torna anche la FINESTRA usata, in chiaro: due registrazioni con la stessa
+    percentuale ma finestre diverse non dicono la stessa cosa.
+
+    LA FINESTRA DIPENDE DALLO SPORT (16/09).
+      * CALCIO — invariata: [kickoff, kickoff + ``match_window_min``], estesa
+        al CLOSED del mercato principale o all'ultima attivita'.
+      * TENNIS — una partita di tennis NON ha una durata attesa (3 set possono
+        durare 50 minuti o 3 ore e mezza: misurato su queste registrazioni, da
+        61 a 235 minuti). Misurarla su una finestra di 115 minuti e' misurarla
+        con il metro di un altro sport: una partita lunga risultava scoperta
+        nella parte finale, una corta senza CLOSED al massimo al 50 %. La
+        finestra attesa e' quindi **[primo book, CLOSED del mercato]**, e
+        l'ultimo book quando il CLOSED non c'e'.
+        Il prezzo di quella scelta e' che l'INIZIO TARDIVO non si vede piu' da
+        solo (chi comincia al terzo set coprirebbe il 100 % di cio' che ha
+        registrato): lo dice il CONTROLLO DI PLAUSIBILITA'
+        ``durata_partita_min`` (dal sidecar set/game). Registrazione piu' corta
+        della partita = motivo esplicito e MAI ``COMPLETE``.
 
     ``sessions`` (opzionale, fix 17/07 terza review): i marker del sidecar
     ``.recmeta.jsonl`` (open/close/resubscribe). Non cambiano il verdetto ma
     ARRICCHISCONO i motivi: un buco che coincide con un marker è spiegato
     (restart del recorder/resubscribe F3), non un mistero forense."""
+    sport = str(sport or sport_di(scan))
     if scan.n_lines == 0 or scan.first_pt is None or scan.last_pt is None:
-        return VERDICT_EMPTY, 0.0, ["nessuna riga mcm utile nel raw"], []
+        return VERDICT_EMPTY, 0.0, ["nessuna riga mcm utile nel raw"], [], ""
 
     kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
-    if kickoff is None:
+    if kickoff is None and sport != SPORT_TENNIS:
         return (
             VERDICT_UNKNOWN,
             None,
             ["kickoff non determinabile (nessuna marketDefinition con openDate/marketTime)"],
             [],
+            "",
         )
+
+    reasons: List[str] = []
+    if sport == SPORT_TENNIS:
+        return _classify_tennis(scan, min_coverage_pct=min_coverage_pct,
+                                sessions=sessions,
+                                durata_partita_min=durata_partita_min,
+                                kickoff=kickoff)
 
     win_a = int(kickoff)
     win_b = int(kickoff + match_window_min * 60_000)
-    reasons: List[str] = []
+    finestra = f"calcio: ko + {match_window_min:.0f}m"
 
     # FINE REALE (fix 17/07, "validatore cieco oltre KO+115'"):
     #  * CLOSED di un mercato principale nel raw → la fine vera è NOTA e la
@@ -256,12 +365,14 @@ def classify(
     end_confirmed = scan.main_closed_pt is not None and scan.main_closed_pt > win_a
     if end_confirmed:
         win_b = max(int(scan.main_closed_pt), win_a + 60_000)  # type: ignore[arg-type]
+        finestra = "calcio: ko -> CLOSED del mercato principale"
     elif scan.last_pt > win_b:
         reasons.append(
             f"attività oltre ko+{match_window_min:.0f}m senza CLOSED "
             f"(finestra estesa a ko+{(scan.last_pt - win_a) / 60_000.0:.0f}m)"
         )
         win_b = int(scan.last_pt)
+        finestra = "calcio: ko -> ultima attivita' (nessun CLOSED)"
 
     gaps_in_window = [
         (a, b) for a, b in scan.gaps if _overlap_ms(a, b, win_a, win_b) > 0
@@ -316,7 +427,77 @@ def classify(
             )
         if verdict == VERDICT_COMPLETE:
             verdict = VERDICT_PARTIAL
-    return verdict, round(coverage, 1), reasons, gaps_in_window
+    return verdict, round(coverage, 1), reasons, gaps_in_window, finestra
+
+
+def _classify_tennis(
+    scan: RawScan,
+    *,
+    min_coverage_pct: float,
+    sessions: Optional[List[Dict[str, Any]]],
+    durata_partita_min: Optional[float],
+    kickoff: Optional[int],
+) -> Tuple[str, Optional[float], List[str], List[Tuple[int, int]], str]:
+    """La finestra del TENNIS: dal primo book al CLOSED (o all'ultimo book).
+
+    Il verdetto resta severo dove deve: senza CLOSED la fine e' IGNOTA e non si
+    dichiara COMPLETE (stessa regola del calcio), e se il sidecar dice che la
+    partita e' durata piu' di quanto si e' registrato, la registrazione e'
+    parziale anche se dentro la sua finestra non ha buchi.
+    """
+    reasons: List[str] = []
+    win_a = int(scan.first_pt)          # type: ignore[arg-type]
+    fine_nota = scan.main_closed_pt is not None and scan.main_closed_pt > win_a
+    if fine_nota:
+        win_b = int(scan.main_closed_pt)        # type: ignore[arg-type]
+        finestra = "tennis: primo book -> CLOSED del mercato"
+    else:
+        win_b = int(scan.last_pt)                # type: ignore[arg-type]
+        finestra = "tennis: primo book -> ultimo book (nessun CLOSED)"
+    if win_b <= win_a:
+        return VERDICT_EMPTY, 0.0, ["registrazione di durata nulla"], [], finestra
+
+    gaps_in_window = [(a, b) for a, b in scan.gaps if _overlap_ms(a, b, win_a, win_b) > 0]
+    gap_ms = sum(_overlap_ms(a, b, win_a, win_b) for a, b in gaps_in_window)
+    coverage = max(0.0, min(100.0, 100.0 * (win_b - win_a - gap_ms) / (win_b - win_a)))
+    registrati_min = (win_b - win_a) / 60_000.0
+    reasons.append(f"finestra tennis: {registrati_min:.0f}m registrati")
+    if kickoff is not None and scan.first_pt - kickoff > LATE_START_TOLERANCE_S * 1000:
+        reasons.append(
+            f"registrazione iniziata +{(scan.first_pt - kickoff) / 60_000.0:.0f}m "
+            f"dopo l'orario del mercato")
+    if gaps_in_window:
+        reasons.append(
+            f"{len(gaps_in_window)} buchi interni in-finestra ({gap_ms / 60_000.0:.1f}m persi)")
+        marker_ts = [int(x["ts_ms"]) for x in (sessions or [])
+                     if isinstance(x, dict) and isinstance(x.get("ts_ms"), (int, float))
+                     and str(x.get("kind")) in ("open", "resubscribe")]
+        if marker_ts:
+            spiegati = sum(1 for a, b in gaps_in_window
+                           if any(a - 30_000 <= t <= b + 30_000 for t in marker_ts))
+            if spiegati:
+                reasons.append(f"{spiegati} buchi spiegati da restart/resubscribe "
+                               f"del recorder (marker recmeta)")
+
+    verdict = VERDICT_COMPLETE if coverage >= min_coverage_pct else VERDICT_PARTIAL
+    # CONTROLLO DI PLAUSIBILITA': quanto e' durata la partita secondo il
+    # sidecar (set/game) contro quanto si e' registrato. E' cio' che impedisce a
+    # una registrazione cominciata al terzo set di dichiararsi coperta al 100 %.
+    if durata_partita_min is not None:
+        mancano = durata_partita_min - registrati_min
+        if mancano > TOLLERANZA_SIDECAR_MIN:
+            reasons.append(
+                f"registrazione piu' CORTA della partita: il sidecar dei punteggi "
+                f"copre {durata_partita_min:.0f}m, il raw {registrati_min:.0f}m "
+                f"(mancano {mancano:.0f}m)")
+            verdict = VERDICT_PARTIAL
+    else:
+        reasons.append("nessun sidecar dei punteggi: la durata della partita non e' "
+                       "verificabile (finestra non falsificabile)")
+    if not fine_nota:
+        reasons.append("fine NON confermata: nessun mercato CLOSED nel raw")
+        verdict = VERDICT_PARTIAL
+    return verdict, round(coverage, 1), reasons, gaps_in_window, finestra
 
 
 def _load_recmeta(path: str) -> List[Dict[str, Any]]:
@@ -341,6 +522,31 @@ def _load_recmeta(path: str) -> List[Dict[str, Any]]:
     return out
 
 
+# NOMI DEL SIDECAR DEI PUNTEGGI, nell'ordine in cui si cercano.
+# 16/09 - il validatore cercava SOLO `<id>.scores.jsonl`, che e' il nome del
+# CALCIO (`Betfair/stream/runner.py`). Il recorder del TENNIS
+# (`Betfair/stream/tennis_live/tennis_recorder.py`) scrive `<id>.score.jsonl`,
+# al singolare: su OGNI registrazione tennis il verdetto usciva con `scores=NO`
+# anche con centinaia di record dentro - un falso negativo sistematico, ed e' il
+# difetto 32 del catalogo («sidecar cercato con il nome sbagliato»). Misurato su
+# 35790650: 207 record nel sidecar, `has_scores` False.
+SIDECAR_PUNTEGGI = ("scores.jsonl", "score.jsonl")
+
+
+def _sidecar_punteggi(ev_dir: str, event_id: str) -> Tuple[Optional[str], str]:
+    """(percorso, nome) del sidecar dei punteggi trovato; (None, "") se manca.
+
+    Si prova prima il nome del calcio e poi quello del tennis, e il NOME
+    trovato torna al chiamante e finisce nel referto: «l'ho letto» e «l'ho
+    cercato con il nome giusto» sono due fatti diversi, e finora il referto
+    diceva il primo senza aver fatto il secondo."""
+    for suffisso in SIDECAR_PUNTEGGI:
+        percorso = os.path.join(ev_dir, f"{event_id}.{suffisso}")
+        if os.path.isfile(percorso):
+            return percorso, f"{event_id}.{suffisso}"
+    return None, ""
+
+
 def validate_event(
     data_dir: str,
     event_id: str,
@@ -350,9 +556,9 @@ def validate_event(
     """Valida la registrazione di UN evento (raw + sidecar scores/recmeta)."""
     ev_dir = os.path.join(data_dir, str(event_id))
     raw_path = os.path.join(ev_dir, f"{event_id}.raw.jsonl")
-    scores_path = os.path.join(ev_dir, f"{event_id}.scores.jsonl")
     recmeta_path = os.path.join(ev_dir, f"{event_id}.recmeta.jsonl")
-    has_scores = os.path.isfile(scores_path)
+    scores_path, scores_name = _sidecar_punteggi(ev_dir, event_id)
+    has_scores = scores_path is not None
     sessions = _load_recmeta(recmeta_path)
 
     if not os.path.isfile(raw_path):
@@ -363,15 +569,24 @@ def validate_event(
             coverage_pct=0.0,
             reasons=["file raw mancante"],
             has_scores=has_scores,
+            scores_name=scores_name,
             sessions=sessions,
         )
 
     scan = scan_raw(raw_path)
-    verdict, coverage, reasons, gaps_in_window = classify(
-        scan, min_coverage_pct=min_coverage_pct, sessions=sessions
+    sport = sport_di(scan)
+    # la DURATA VERA della partita dal sidecar: e' il controllo di plausibilita'
+    # della finestra del tennis (vedi `classify`)
+    durata = durata_sidecar_min(scores_path)
+    verdict, coverage, reasons, gaps_in_window, finestra = classify(
+        scan, min_coverage_pct=min_coverage_pct, sessions=sessions,
+        sport=sport, durata_partita_min=durata,
     )
     kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
     report = RecordingReport(
+        sport=sport,
+        finestra=finestra,
+        durata_sidecar_min=durata,
         event_id=str(event_id),
         raw_path=raw_path,
         verdict=verdict,
@@ -384,6 +599,7 @@ def validate_event(
         kickoff_ms=kickoff,
         closed_seen=scan.closed_seen,
         has_scores=has_scores,
+        scores_name=scores_name,
         sessions=sessions,
         gaps_in_window=gaps_in_window,
         gap_in_window_min=round(
@@ -411,9 +627,8 @@ def iter_event_ids(data_dir: str) -> List[str]:
         ev_dir = os.path.join(data_dir, name)
         if not os.path.isdir(ev_dir):
             continue
-        if os.path.isfile(os.path.join(ev_dir, f"{name}.raw.jsonl")) or os.path.isfile(
-            os.path.join(ev_dir, f"{name}.scores.jsonl")
-        ):
+        if (os.path.isfile(os.path.join(ev_dir, f"{name}.raw.jsonl"))
+                or _sidecar_punteggi(ev_dir, name)[0] is not None):
             out.append(name)
     return out
 
@@ -541,14 +756,19 @@ def validate_raw_file(
             coverage_pct=0.0, reasons=["file raw mancante"],
         )
     scan = scan_raw(raw_path)
-    verdict, coverage, reasons, gaps_in_window = classify(
+    base = raw_path[:-len(".raw.jsonl")] if raw_path.endswith(".raw.jsonl") else raw_path
+    sport = sport_di(scan)
+    durata = durata_sidecar_min(
+        next((c for c in (f"{base}.{suf}" for suf in SIDECAR_PUNTEGGI)
+              if os.path.isfile(c)), None))
+    verdict, coverage, reasons, gaps_in_window, finestra = classify(
         scan, min_coverage_pct=min_coverage_pct,
-        sessions=_load_recmeta(
-            raw_path[:-len(".raw.jsonl")] + ".recmeta.jsonl"
-            if raw_path.endswith(".raw.jsonl") else raw_path + ".recmeta.jsonl"),
+        sessions=_load_recmeta(base + ".recmeta.jsonl"),
+        sport=sport, durata_partita_min=durata,
     )
     kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
     report = RecordingReport(
+        sport=sport, finestra=finestra, durata_sidecar_min=durata,
         event_id=event_id, raw_path=raw_path, verdict=verdict,
         coverage_pct=coverage, reasons=reasons, n_lines=scan.n_lines,
         size_bytes=os.path.getsize(raw_path), first_pt=scan.first_pt,
@@ -639,8 +859,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"{r.event_id:>12}  {r.verdict:<8} cov={cov}%  "
             f"ko={_fmt_ts(r.kickoff_ms)}  primo={_fmt_ts(r.first_pt)}  "
             f"ultimo={_fmt_ts(r.last_pt)}  righe={r.n_lines}  "
-            f"scores={'si' if r.has_scores else 'NO'}"
+            f"scores={r.scores_name if r.has_scores else 'NO'}"
         )
+        # LA FINESTRA SI DICHIARA: due registrazioni con la stessa percentuale
+        # ma finestre diverse non dicono la stessa cosa.
+        if r.finestra:
+            print(f"{'':>14}finestra: {r.finestra}"
+                  + (f" | partita dal sidecar: {r.durata_sidecar_min:.0f}m"
+                     if r.durata_sidecar_min is not None else ""))
         for reason in r.reasons:
             print(f"{'':>14}- {reason}")
     print(

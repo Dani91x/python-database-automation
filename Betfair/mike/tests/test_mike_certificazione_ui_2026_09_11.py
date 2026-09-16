@@ -207,11 +207,19 @@ def test_contratto_parametri_i_rimossi_non_tornano_in_ui():
 # ===========================================================================
 # 1. CONTRATTO DATI — attivita', stati, ruoli, esiti
 # ===========================================================================
+# C.12b (16/09) — il DEBITO E' CHIUSO: `KIND_IN_ATTESA_DI_UI` non esiste piu'.
+# `cancel_richiesto` e `cancel_esito` hanno la loro etichetta italiana in
+# `frontend/src/lib/mike.ts` (MIKE_ACTIVITY_KINDS + MIKE_ACTIVITY_EXTRA) e la
+# loro riga di testo in `mikeActivityLine`. Il contratto torna a mordere su
+# TUTTI i kind, senza eccezioni elencate.
+
+
 def test_contratto_ogni_kind_di_attivita_del_backend_e_dichiarato_in_ui():
     """Il test FALLISCE se il backend aggiunge un kind senza dichiararlo."""
     declared = set(ts_string_list("MIKE_ACTIVITY_KINDS"))
     found = backend_activity_kinds()
-    assert found - declared == set(), f"kind scritti dal servizio e MUTI in UI: {sorted(found - declared)}"
+    muti = found - declared
+    assert muti == set(), f"kind scritti dal servizio e MUTI in UI: {sorted(muti)}"
     assert declared - found == set(), f"kind dichiarati in UI e mai scritti: {sorted(declared - found)}"
 
 
@@ -444,7 +452,11 @@ def test_pulsante_cash_out_arma_la_chiusura_e_torna_ok():
     assert "cashout_net" in res and res["complete"] is True
     assert events["E1"]["ctx"]["flatten_pending"] is True
     # l'ordine appoggiato e' stato ANNULLATO prima di chiudere (H1)
-    assert ("cancel", {"leg": "under_green-1-2", "role": "under_green", "by": "utente"}, "E1") in db.activity
+    # (C.12a: il payload porta anche l'``esito`` dell'annullamento su Betfair —
+    #  'cancelled' se confermato, 'pending_reconcile' se Betfair non conferma)
+    cancelli = [pl for k, pl, e in db.activity if k == "cancel" and e == "E1"]
+    assert any(pl.get("leg") == "under_green-1-2" and pl.get("role") == "under_green"
+               and pl.get("by") == "utente" for pl in cancelli), cancelli
 
 
 def test_pulsante_flatten_usa_lo_stesso_handler_con_etichetta_propria():

@@ -425,17 +425,44 @@ def test_h19_settlement_non_chiama_betfair_se_il_feed_dice_mercato_aperto():
 # ===========================================================================
 # H-20 - COMBO tutto-o-niente anche DOPO il fill
 # ===========================================================================
-def test_h20_combo_gamba_non_abbinabile_in_paper_ferma_tutto_prima_della_riserva():
-    db = FakeDB(status="running")
-    row = _combo_feed_row()
-    n = S._auto_trade_combos(db=db, market=FakeMarket(), payload=row["payload"],
-                             event_id="1.1", combos=[_combo(avail2=0.0)],
-                             params=S.resolve_params({}), mode="paper", now=NOW,
-                             rows_by_event={"1.1": row})
-    assert n == 0
-    assert [t for t in db.trades if t.get("status") == "open"] == []
-    assert [p for p in _kinds(db, "skip")
-            if p.get("reason") == "combo_gamba_non_abbinabile"]
+def test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live():
+    """L4, 16/09 — DECISIONE DELL'UTENTE (piano §5.4: «guardia combo: uniformare»).
+
+    Fino a stamattina ``_leg_matchable`` girava SOLO in paper: sullo STESSO
+    segnale il paper saltava la combinazione (skip ``combo_gamba_non_abbinabile``)
+    e il live la piazzava e poi la svolgeva. Due comportamenti diversi = il
+    paper non e' lo specchio del live (catalogo §7 punto 14).
+
+    Qui si confrontano le due modalita' CAMPO PER CAMPO sullo stesso ingresso,
+    come ``test_paper_e_live_accodano_lo_STESSO_ordine``: la sola differenza
+    ammessa e' la modalita' stessa (e il ``bet_id``, che solo il live ha)."""
+    def gira(mode):
+        db = FakeDB(status="running", mode=mode)
+        row = _combo_feed_row()
+        params = S.resolve_params({"strategy_modes": {"model": mode}})
+        n = S._auto_trade_combos(db=db, market=FakeMarket(), payload=row["payload"],
+                                 event_id="1.1", combos=[_combo(avail2=0.0)],
+                                 params=params, mode=mode, now=NOW,
+                                 rows_by_event={"1.1": row})
+        return n, db
+
+    n_pap, db_pap = gira("paper")
+    n_liv, db_liv = gira("live")
+    # la guardia solo-paper non esiste piu': nessuno dei due la scrive
+    for db in (db_pap, db_liv):
+        assert [p for p in _kinds(db, "skip")
+                if p.get("reason") == "combo_gamba_non_abbinabile"] == []
+    assert n_pap == n_liv, "stessa decisione sullo stesso ingresso"
+    assert len(db_pap.trades) == len(db_liv.trades) == 2
+    campi = ("event_id", "market_id", "market_type", "selection_id", "side",
+             "price", "size", "liability", "signal_key", "strategy", "origin",
+             "status")
+    for a, b in zip(db_pap.trades, db_liv.trades):
+        for k in campi:
+            assert a.get(k) == b.get(k), f"{k}: paper={a.get(k)!r} live={b.get(k)!r}"
+    # ...e le uniche differenze sono quelle ammesse
+    assert [t["mode"] for t in db_pap.trades] == ["paper", "paper"]
+    assert [t["mode"] for t in db_liv.trades] == ["live", "live"]
 
 
 def _combo_feed_row():
@@ -1063,8 +1090,20 @@ def test_h16_catalogo_dei_kind_di_attivita():
         "place", "place_pending", "place_retry", "place_exhausted",
         "place_exception", "skip", "risk_block", "confirm_failed",
         "flumine_enqueue",
+        # 16/09 (C.12a): il RIFIUTO di Betfair col suo CODICE (stesso kind di
+        # Mike, cosi' la UI ne traduce uno solo) e il PARZIALE detto per nome
+        # («parziale z su x, residuo r vivo»). Prima INSUFFICIENT_FUNDS e
+        # INVALID_PROFIT_RATIO arrivavano come un `ok=False` indistinguibile e
+        # un place-and-trim rifiutato lasciava la riga 'pending' IN VERIFICA su
+        # un ordine che non esiste.
+        "place_rifiutato", "place_parziale",
         # riconciliazione
         "reconcile_error", "reconciled_open", "reconciled_free", "reconciled_error",
+        # 16/09 (C.12a): l'ANNULLAMENTO VERO prima di dichiarare terminale una
+        # riga live (stessi due kind di Omega e Mike, cosi' la UI ne traduce
+        # uno solo). Fino a stamattina gli «annulla» dei tre bot REST erano
+        # CONTABILI: la riga moriva e l'ordine restava vivo su Betfair.
+        "cancel_richiesto", "cancel_esito",
         # uscite e cash out
         "exit", "exit_hold", "exit_wait", "exit_retry", "exit_failed",
         "cashout", "cashout_error", "cancel", "cancel_rejected",

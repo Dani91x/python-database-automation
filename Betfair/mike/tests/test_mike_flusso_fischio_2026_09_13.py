@@ -35,6 +35,7 @@ import pytest
 
 from Betfair.mike import config as C
 from Betfair.mike import engine as E
+from test_mike_engine import conferma_annulli
 
 KO = 1_800_000_000.0
 COMM = 0.05
@@ -143,9 +144,15 @@ def test_l_uscita_si_riallinea_se_la_posizione_cambia():
     ctx.legs.append(fill(extra))
     s = snap(KO + 20, u35=book(1.55, inplay=True), minute=0, goals=0)
     d = E.decide(ctx, s, p)
-    kinds = [a.kind for a in d.actions]
-    assert kinds == ["cancel", "place"]
-    assert d.actions[1].price == pytest.approx(1.53)     # 2 tick sotto la media 1.55
+    # 16/09 (ordine dell'utente): «non devono mai esserci 2 lay a mercato».
+    # La vecchia uscita si ANNULLA e basta; la nuova si appoggia al giro dopo,
+    # quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s, p)
+    assert [a.kind for a in d.actions] == ["place"]
+    assert d.actions[0].price == pytest.approx(1.53)     # 2 tick sotto la media 1.55
 
 
 def test_uscita_disattivata_va_dritta_alla_copertura():
@@ -684,30 +691,41 @@ def test_in_live_l_uscita_appoggiata_e_LA_STESSA_del_paper():
     from Betfair.mike import service as S
     gamba = E.Leg(role="ko_green", market=E.MARKET_OU35, selection=E.SEL_UNDER,
                   side="lay", price=1.48, size=10.14, ref="k1")
+    # ⚠️ 16/09 (ordine dell'utente, §15.6): `ko_green` e' appoggiata in OGNI
+    # modalita' — `pre_exit_mode` non la governa piu'. Restano governate dal
+    # parametro le altre due lay di green.
     assert S._is_resting_leg(gamba, params(pre_exit_mode="resting")) is True
-    assert S._is_resting_leg(gamba, params(pre_exit_mode="taker")) is False
+    assert S._is_resting_leg(gamba, params(pre_exit_mode="taker")) is True
+    altra = E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                  side="lay", price=1.48, size=10.14, ref="g1")
+    assert S._is_resting_leg(altra, params(pre_exit_mode="taker")) is False
     # la modalità della partita NON dirotta più l'uscita: live == paper
     assert S._live_exit_override(params(), "live")["pre_exit_mode"] == "resting"
     # ma la valvola, spenta di proposito, riporta al comportamento di prima
+    # (per `under_green`: l'uscita al fischio resta appoggiata comunque)
     spenta = dict(params(), live_resting_enabled=False)
     assert S._live_exit_override(spenta, "live")["pre_exit_mode"] == "taker"
+    assert S._is_resting_leg(gamba, S._live_exit_override(spenta, "live")) is True
 
 
-def test_in_live_l_ordine_si_ripresenta_a_ritmo_non_a_ogni_giro():
-    """180 secondi a mezzo secondo farebbero 360 righe di attivita' per partita:
-    e' la zavorra che ha prodotto lo statement timeout. Si ritenta a ritmo."""
-    ctx, p = posizione_portata_in_gioco(10.0, 1.50), params(pre_exit_mode="taker")
-    d = al_fischio(ctx, p)
+def test_l_ordine_non_si_ripresenta_piu_a_ritmo():
+    """⚠️ 16/09 — SOSTITUISCE `test_in_live_l_ordine_si_ripresenta_a_ritmo...`.
+
+    Ordine dell'utente: «mettiamola appoggiata allora, cosi' risparmiamo una
+    marea di chiamate». La ri-presentazione ogni `ko_green_retry_s` era il modo
+    di simulare un ordine appoggiato sul percorso taker, e costava 25-32
+    chiamate REST per una sola uscita. Adesso la lay e' appoggiata in ogni
+    modalita': se la gamba precedente e' morta davvero se ne appoggia UNA nuova
+    SUBITO, senza aspettare nessun ritmo."""
+    ctx, p = posizione_portata_in_gioco(10.0, 1.50), params(pre_exit_mode="taker",
+                                                            ko_green_retry_s=60)
+    al_fischio(ctx, p)
     uscita = [l for l in ctx.legs if l.role == "ko_green"][-1]
-    uscita.status = "cancelled"        # in live: prezzo non ancora disponibile
-    # subito dopo non si ritenta
+    uscita.status = "cancelled"        # morta (rifiuto, o LAPSE alla sospensione)
     d1 = E.decide(ctx, snap(KO + 3, u35=book(1.50, inplay=True), minute=0, goals=0), p)
-    assert [a for a in d1.actions if a.kind == "place"] == []
-    assert d1.state == "LIVE_KO_GREEN"
-    # passato l'intervallo si', e sempre allo stesso prezzo
-    d2 = E.decide(ctx, snap(KO + 10, u35=book(1.50, inplay=True), minute=0, goals=0), p)
-    place = [a for a in d2.actions if a.kind == "place"]
+    place = [a for a in d1.actions if a.kind == "place"]
     assert len(place) == 1 and place[0].price == pytest.approx(1.48)
+    assert d1.state == "LIVE_KO_GREEN"
 
 
 def test_mai_due_lay_vive_sull_under_3_5():

@@ -1069,7 +1069,7 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     rosso (runner giù/appeso). Best-effort: un DB momentaneamente KO non deve
     mai far cadere il runner (il prossimo battito riallinea)."""
     try:
-        db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
+        db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
     except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
         logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
     # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
@@ -1465,6 +1465,86 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
     return client, False
 
 
+class PaperCompanionClient(clients.BetfairClient):
+    """Client PAPER che affianca quello REALE dentro lo STESSO runner LIVE (F0, 16/09).
+
+    Perche' esiste: flumine ammette piu' client nello stesso framework
+    (``baseflumine.add_client``) e instrada l'esecuzione dal client dell'ordine
+    (``market.place_order(..., client=...)`` -> ``client.execution``), quindi un solo
+    processo puo' servire le righe 'live' (client reale) e quelle 'paper' (questo).
+    Due vincoli imposti da flumine e da Betfair, entrambi rispettati qui:
+
+      * ``Clients.add_client`` RIFIUTA due client con lo stesso ``username`` sullo
+        stesso venue: la sessione betfairlightweight e' CONDIVISA con il client reale
+        (stesso account), quindi l'username viene distinto col suffisso ``#paper``.
+        E' un'etichetta interna a flumine, non viaggia verso Betfair.
+      * la sessione e' UNA e la possiede il client reale: ``login``/``logout``/
+        ``keep_alive``/``update_account_details`` qui sono NO-OP, altrimenti i worker
+        nativi di flumine (``keep_alive``, ``poll_account_balance``) farebbero il
+        DOPPIO delle chiamate a Betfair sullo stesso account (regola del feed unico)
+        e un logout del companion chiuderebbe la sessione sotto il client reale.
+
+    I soldi veri restano separati PER COSTRUZIONE: ``paper_trade=True`` manda questo
+    client sulla ``SimulatedExecution`` di flumine, che non contatta mai l'Exchange.
+    """
+
+    @property
+    def username(self) -> str:  # type: ignore[override]
+        return f"{clients.BetfairClient.username.fget(self)}#paper"
+
+    def login(self):  # noqa: D401 - sessione gia' aperta dal client proprietario
+        return None
+
+    def logout(self):  # noqa: D401 - mai chiudere la sessione del client reale
+        return None
+
+    def keep_alive(self):  # noqa: D401 - keepAlive lo fa il client proprietario
+        return True
+
+    def update_account_details(self) -> None:  # noqa: D401 - saldo: una sola lettura
+        return None
+
+
+def build_paper_companion_client(api_client: Any) -> "PaperCompanionClient":
+    """Client SIMULATO da affiancare a quello reale in un runner LIVE (F0).
+
+    Stessi parametri del client PAPER di ``build_order_client`` (order_stream=True ->
+    SimulatedOrderStream, ``min_bet_validation=False``, ``transaction_limit``), cosi'
+    che una riga paper si comporti esattamente come nel runner PAPER. La latenza
+    simulata del fill (``flumine_config.place_latency``) e' impostata anche qui:
+    senza, il paper dentro un runner LIVE sarebbe piu' veloce del paper puro.
+    """
+    if PAPER_SIMULATED_LATENCY_MS and PAPER_SIMULATED_LATENCY_MS > 0:
+        flumine_config.place_latency = float(PAPER_SIMULATED_LATENCY_MS) / 1000.0
+    return PaperCompanionClient(
+        api_client,
+        order_stream=True,
+        order_stream_conflate_ms=ORDER_STREAM_CONFLATE_MS or None,
+        paper_trade=True,
+        min_bet_validation=False,
+        transaction_limit=LIVE_TRANSACTION_LIMIT,
+    )
+
+
+def heartbeat_mode() -> str:
+    """Valore da scrivere in ``betfair_live_heartbeat.mode``: le modalita' che il
+    runner SERVE, non solo quella in cui gira (F0).
+
+    Un runner LIVE serve anche le righe 'paper' (client simulato affiancato), e chi
+    legge il battito (gate dei bot) deve poterlo sapere. La tabella ha una sola
+    colonna ``mode`` TEXT e nessun campo JSON (``migrations/betfair_live_account_heartbeat.sql:53``),
+    quindi le modalita' servite si dichiarano NELLA STESSA colonna, separate da '+':
+    ``LIVE+PAPER``. Compatibilita' garantita nei due sensi:
+      * una riga VECCHIA ``mode='LIVE'`` dichiara solo LIVE -> il gate paper resta
+        CHIUSO (era il comportamento prima di F0, e deve restare tale);
+      * ``mode='PAPER'`` (runner paper) resta identico a prima.
+    Migrazione da fare (elencata, NON scritta qui): una riga di heartbeat per
+    runner/modalita', o una colonna ``modes JSONB`` su ``betfair_live_heartbeat``.
+    """
+    mode = live_order_mode().strip().upper()
+    return "LIVE+PAPER" if mode == "LIVE" else mode
+
+
 def _announce_order_mode(mode: str, orders_enabled: bool) -> None:
     """Logga in modo EVIDENTE la modalità ordini e (se attiva) la annuncia in live_alerts.
 
@@ -1612,7 +1692,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     if (_now_i - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
                         session._idle_hb_ts = _now_i
                         try:
-                            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
+                            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
                         except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
                             logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
                     time.sleep(IDLE_FOLLOW_POLL_SEC)
@@ -1679,6 +1759,21 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # OFF (default) = order_stream=False, identico ad oggi → nessuna regressione.
             client, orders_enabled = build_order_client(api_client, LIVE_ORDER_MODE)
             framework = Flumine(client=client)
+            # F0 (16/09) - UN SOLO processo serve paper E live. In LIVE si affianca al
+            # client reale un client SIMULATO: flumine instrada per ORDINE
+            # (market.place_order(..., client=...) -> client.execution), quindi le due
+            # modalita' convivono senza mai toccarsi. Se il runner NON e' in LIVE il
+            # client reale NON viene costruito affatto: la separazione dei soldi veri
+            # e' FISICA, non una convenzione (vedi live_order_worker._client_for_mode).
+            paper_companion = None
+            if LIVE_ORDER_MODE.strip().upper() == "LIVE":
+                paper_companion = build_paper_companion_client(api_client)
+                framework.add_client(paper_companion)
+                logger.info(
+                    "[runner] F0: client PAPER affiancato al client REALE (%s) - "
+                    "le righe 'paper' della coda NON toccano mai l'Exchange",
+                    paper_companion.username,
+                )
             framework.add_strategy(recorder)
             # Live trading (PAPER/LIVE): strategia specchio + worker coda ordini. In OFF
             # NON vengono registrati → comportamento storico invariato. Ri-registrati ad
@@ -1698,6 +1793,22 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     market_filter=streaming_market_filter(market_ids=market_ids),
                     session=session, mode=LIVE_ORDER_MODE.lower())
                 framework.add_strategy(live_strategy)
+                # F0: una strategy PER MODALITA'. In flumine il blotter e' per-strategia
+                # (blotter.strategy_orders / get_exposures(strategy, ...)), quindi due
+                # istanze separate tengono esposizioni, specchio DB (betfair_live_orders /
+                # _positions, che portano la ``mode`` della strategy) e settled di paper e
+                # live SEPARATI dentro lo stesso processo. ``name`` DIVERSO obbligatorio:
+                # flumine indicizza le strategie per name_hash (Strategies.hashes) e due
+                # nomi uguali si sovrascriverebbero nel recupero ordini dallo stream.
+                # Stesso market_filter -> flumine RIUSA lo stream esistente
+                # (Streams.add_stream): zero connessioni e zero mercati in piu'.
+                strategies_by_mode = {LIVE_ORDER_MODE.lower(): live_strategy}
+                if paper_companion is not None:
+                    paper_strategy = LiveTradingStrategy(
+                        market_filter=streaming_market_filter(market_ids=market_ids),
+                        session=session, mode="paper", name="LiveTradingStrategyPaper")
+                    framework.add_strategy(paper_strategy)
+                    strategies_by_mode["paper"] = paper_strategy
                 # Controlli NATIVI flumine (Fase 6, #11): guardia esposizione per selezione +
                 # rate-limit ordini/min, letti da betfair_live_settings (opt-in, NULL = off).
                 # Sono l'ultima barriera money-critical DENTRO flumine, oltre a quelle del worker.
@@ -1708,9 +1819,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 framework.add_trading_control(LiveEventExposureControl)
                 # interval FLOAT: BackgroundWorker lo passa a time.sleep → int() troncava i poll
                 # sub-secondo (0.5→0→1). Usiamo il float direttamente (or 1.0 = guardia anti-zero).
+                # F0: al worker della coda va la MAPPA modalita'->strategy (sceglie per
+                # riga); gli altri worker (risk/xhedge/daily stop/reconcile) restano sulla
+                # strategy della modalita' del processo, come prima.
                 framework.add_worker(BackgroundWorker(
                     framework, function=live_order_worker, interval=LIVE_ORDER_QUEUE_POLL_SEC or 1.0,
-                    func_kwargs={"session": session, "strategy": live_strategy},
+                    func_kwargs={"session": session, "strategy": strategies_by_mode},
                     name="live_order_worker"))
                 # Risk engine (Fase 3): monitora le regole armate (offset/stop-loss/take-profit/
                 # trailing) e ACCODA le chiusure nella STESSA coda ordini (path audited/mirror).

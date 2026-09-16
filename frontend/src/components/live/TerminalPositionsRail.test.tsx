@@ -73,12 +73,46 @@ describe('TerminalPositionsRail', () => {
     });
 
     it('un ordine matched è in sola lettura (nessun bottone cancel)', async () => {
+        // C.12b — un ordine ABBINATO ha SEMPRE un prezzo medio: il finto deve
+        // parlare come il vero (prima il fixture diceva `average_price_matched: 0`
+        // su 5,00 € abbinati, che su Betfair non esiste).
         (fetchLiveOrders as any).mockResolvedValue([
-            ORD({ id: 11, bet_id: 'B11', size_matched: 5, size_remaining: 0, status: 'EXECUTION_COMPLETE' }),
+            ORD({
+                id: 11, bet_id: 'B11', size_matched: 5, size_remaining: 0,
+                average_price_matched: 2.48, status: 'EXECUTION_COMPLETE',
+            }),
         ]);
         render(<TerminalPositionsRail marketId="1.1" mode="paper" selections={SELS} />);
-        expect(await screen.findByText(/✓ 5.00@/)).toBeInTheDocument();
+        // formato del design system: denaro italiano con l'euro, quota con la virgola
+        expect(await screen.findByText(/✓ 5,00 €@2,48/)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /annulla ordine/i })).not.toBeInTheDocument();
+    });
+
+    // ⚠️ C.12b — reperto n. 5 della MATRICE: qui il prezzo CHIESTO sostituiva
+    // in silenzio il prezzo medio assente, e un residuo ignoto diventava «0.00».
+    it('prezzo medio ASSENTE → «—», mai il prezzo chiesto al suo posto', async () => {
+        (fetchLiveOrders as any).mockResolvedValue([
+            ORD({
+                id: 12, bet_id: 'B12', size_matched: 5, size_remaining: 0,
+                // 0 e' cio' che Betfair scrive quando il prezzo medio NON ESISTE
+                average_price_matched: 0, price: 2.5, status: 'EXECUTION_COMPLETE',
+            }),
+        ]);
+        render(<TerminalPositionsRail marketId="1.1" mode="paper" selections={SELS} />);
+        const cella = await screen.findByTitle(/prezzo MEDIO dichiarato da Betfair/);
+        expect(cella.textContent).toContain('—');
+        expect(cella.textContent).not.toContain('2,50');   // il prezzo CHIESTO
+        expect(cella.textContent).not.toContain('0,00');   // ne' uno zero finto
+    });
+
+    it('il residuo sul book usa i formatter unici (denaro e quota italiani)', async () => {
+        (fetchLiveOrders as any).mockResolvedValue([
+            ORD({ id: 13, bet_id: 'B13', size_matched: 0, size_remaining: 5, price: 2.5 }),
+        ]);
+        render(<TerminalPositionsRail marketId="1.1" mode="paper" selections={SELS} />);
+        const cella = await screen.findByTitle(/residuo ANCORA VIVO sul book/);
+        // prima era `5.00@2.5` (formato inglese, costruito con toFixed)
+        expect(cella.textContent).toContain('5,00 €@2,50');
     });
 
     it('poll fallito → banner "dati NON aggiornati" (mai numeri stantii come freschi)', async () => {

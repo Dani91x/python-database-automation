@@ -22,7 +22,6 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import flumine.config
 from flumine import FlumineSimulation, clients
-from flumine.markets.middleware import SimulatedMiddleware
 
 from .tennis_flb_bot import TennisFLBStrategy
 
@@ -55,7 +54,13 @@ def backtest_one(raw_path: str, kind: str, params: Dict[str, Any]) -> Tuple[floa
         except (TypeError, ValueError):
             pass
         fw = FlumineSimulation(client=client)
-        fw.add_market_middleware(SimulatedMiddleware())
+        # UN SOLO SimulatedMiddleware: lo monta gia' `BaseFlumine.add_client`
+        # quando il client e' simulato (`flumine/baseflumine.py:89-94`), e
+        # `add_market_middleware` NON de-duplica nella 2.13.11. Il secondo
+        # faceva consumare DUE VOLTE la coda degli ordini appoggiati:
+        # misurato +134% di riempimento passivo (85,72 -> 200,34 EUR).
+        # L'unico punto da cui si monta e'
+        # `Betfair/stream/backtest/banco_comune.assicura_middleware_simulato`.
         strat = _make_strategy(kind, raw_path, params)
         fw.add_strategy(strat)
         fw.run()

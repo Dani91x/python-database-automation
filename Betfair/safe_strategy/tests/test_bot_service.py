@@ -2840,7 +2840,10 @@ def test_combo_tutte_le_gambe_o_nessuna():
     assert all(t["strategy"] == "model" and t["meta"]["kind"] == "combo" and t["size"] == 5.0
                and t["status"] == "open" for t in db.trades)
     assert db.opportunities[-1][0]["payload"]["kinds"]["combo"] == 1
-    # una gamba non abbinabile in paper (liquidita' 1 < stake): nessuna gamba piazzata
+    # L4 (16/09, decisione dell'utente): la liquidita' dichiarata
+    # dall'OPPORTUNITA' non e' piu' una guardia che gira solo in paper. La
+    # combinazione si piazza in tutte e due le modalita' e l'abbinamento lo
+    # decide il motore di simulazione sul libro del FEED (in live: Betfair).
     S._SKIP_LOG_STATE.clear()
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
@@ -2849,8 +2852,8 @@ def test_combo_tutte_le_gambe_o_nessuna():
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
              opps_state={"last_ts": 0.0, "hashes": {}},
              extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
-    assert r["opportunities"]["traded"] == 0 and db.trades == []
-    assert _skips(db, "combo_gamba_non_abbinabile")
+    assert r["opportunities"]["traded"] == 1 and len(db.trades) == 2
+    assert not _skips(db, "combo_gamba_non_abbinabile")
     # proporzioni di dutching rispettate: 0.7/0.3 su 2 gambe da 5 medi -> 7 e 3
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
@@ -3286,9 +3289,23 @@ def test_il_cancelletto_non_puo_essere_aggirato_dal_residuo():
 # inerte» — un valore che conta ed e' invisibile.
 # ---------------------------------------------------------------------------
 def test_lo_stake_delle_strategie_e_fra_i_valori_effettivi():
+    """B.5 (16/09) — la pagina deve poter dire con che stake opera OGNI
+    strategia, non solo ogni lato.
+
+    Prima questo test pretendeva ``{laySize, backSize}`` ed e' rimasto vero:
+    quelle due chiavi ci sono ancora e valgono ancora per chi non ha un importo
+    suo. In piu' arriva ``per_strategia``, che nasce vuota (nessun importo
+    cambia da solo) e che la UI mostra al posto del valore per lato appena c'e'.
+    """
     from Betfair.safe_strategy import engine as EN
     pe = S.params_effective(S.resolve_params({"stake": {"backSize": 3.0}}, engine_mod=EN))
-    assert pe["stake"] == {"laySize": 2.0, "backSize": 3.0}
+    assert pe["stake"] == {"laySize": 2.0, "backSize": 3.0, "per_strategia": {}}
+
+    conPunta = S.params_effective(S.resolve_params(
+        {"stake": {"backSize": 3.0, "per_strategia": {"punta": 11.0}}}, engine_mod=EN))
+    assert conPunta["stake"]["per_strategia"] == {"punta": 11.0}
+    # e il tennis, che condivideva `backSize` con la punta, non si muove
+    assert conPunta["stake"]["backSize"] == 3.0
 
 
 def test_uno_stake_scritto_male_NON_arriva_alla_pagina_come_se_fosse_in_uso():

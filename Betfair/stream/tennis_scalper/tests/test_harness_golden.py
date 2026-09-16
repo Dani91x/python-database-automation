@@ -15,7 +15,6 @@ import os
 import flumine.config
 import pytest
 from flumine import FlumineSimulation, clients
-from flumine.markets.middleware import SimulatedMiddleware
 
 from ..tennis_lab import TennisLabStrategy
 
@@ -143,7 +142,13 @@ def _run(path, params):
         except (TypeError, ValueError):
             pass
         fw = FlumineSimulation(client=c)
-        fw.add_market_middleware(SimulatedMiddleware())
+        # UN SOLO SimulatedMiddleware: lo monta gia' `BaseFlumine.add_client`
+        # quando il client e' simulato (`flumine/baseflumine.py:89-94`), e
+        # `add_market_middleware` NON de-duplica nella 2.13.11. Il secondo
+        # faceva consumare DUE VOLTE la coda degli ordini appoggiati:
+        # misurato +134% di riempimento passivo (85,72 -> 200,34 EUR).
+        # L'unico punto da cui si monta e'
+        # `Betfair/stream/backtest/banco_comune.assicura_middleware_simulato`.
         s = TennisLabStrategy(market_filter={"markets": [path]},
                               lab_params={**params, "dry_run": False},
                               max_selection_exposure=1e6, max_order_exposure=1e6,

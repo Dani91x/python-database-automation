@@ -46,6 +46,15 @@ export const SAFE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     confirm_failed: { label: 'CONFERMA ORDINE FALLITA', cls: BAD, critical: true },
     flumine_enqueue: { label: 'ORDINE IN CODA (flumine)', cls: INFO },
 
+    // ---- consapevolezza dell'ordine (C.12b, 16/09)
+    // Il place-and-trim rifiutato da Betfair lasciava una riga «IN VERIFICA» su
+    // un ordine che NON ESISTE, e un abbinamento parziale non aveva nessuna
+    // riga: due buchi chiusi dal servizio il 16/09 e muti in pagina fino a ora.
+    place_rifiutato: { label: 'RIFIUTATO DA BETFAIR', cls: BAD, critical: true },
+    place_parziale: { label: 'ABBINATO IN PARTE', cls: WARN, critical: true },
+    cancel_richiesto: { label: 'ANNULLO CHIESTO A BETFAIR', cls: WARN },
+    cancel_esito: { label: 'ANNULLO: ESITO DA BETFAIR', cls: WARN, critical: true },
+
     // ---- non entrato
     skip: { label: 'NON ENTRATO', cls: MUTED },
     risk_block: { label: 'BLOCCATO DAL RISCHIO', cls: WARN, critical: true },
@@ -359,6 +368,26 @@ export function safeActivityLine(payload: Record<string, unknown> | null | undef
     if (Number.isFinite(size) && Number.isFinite(price)) parts.push(`${fmtMoney(size)} @ ${fmtOdds(price)}`);
     else if (Number.isFinite(size)) parts.push(fmtMoney(size));
     else if (Number.isFinite(price)) parts.push(fmtOdds(price));
+    // C.12b — CHIESTO / ABBINATO / RESIDUO e il CODICE del rifiuto. Sono le
+    // chiavi che `execution.place` e `bot_service._racconta_il_vero` scrivono
+    // su `place_parziale`, `place_rifiutato` e `cancel_esito`: senza leggerle
+    // «parziale 2,00 su 5,00, residuo 3,00 vivo» restava solo nel log del bot.
+    const chiesto = Number(p.size_requested);
+    const abbinato = Number(p.size_matched);
+    const residuo = Number(p.size_remaining);
+    const medio = Number(p.avg_price_matched);
+    if (Number.isFinite(chiesto)) parts.push(`chiesti ${fmtMoney(chiesto)}`);
+    if (Number.isFinite(abbinato)) {
+        parts.push(`abbinati ${fmtMoney(abbinato)}${Number.isFinite(medio) ? ` @ ${fmtOdds(medio)}` : ''}`);
+    }
+    if (Number.isFinite(residuo)) parts.push(`residuo vivo ${fmtMoney(residuo)}`);
+    const codice = txt(p.error_code);
+    if (codice) parts.push(`codice Betfair ${codice}`);
+    if (typeof p.confermato === 'boolean') {
+        parts.push(p.confermato
+            ? 'annullo CONFERMATO da Betfair'
+            : 'annullo NON confermato: la riga resta in verifica');
+    }
     const pnl = Number(p.pnl ?? p.locked_pnl ?? p.position_pnl);
     if (Number.isFinite(pnl)) parts.push(fmtMoney(pnl, { signed: true }));
     const liab = Number(p.liability);

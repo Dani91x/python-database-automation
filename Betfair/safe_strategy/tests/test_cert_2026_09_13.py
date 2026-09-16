@@ -1167,3 +1167,84 @@ def test_un_giro_finito_male_viene_comunque_misurato():
         pass
     c.chiudi_giro(_t.monotonic())
     assert c.riassunto()["giri"] == 1, "il giro storto deve contare"
+
+
+# ---------------------------------------------------------------------------
+# 12. B.5 (16/09) - LO STAKE PER STRATEGIA, E LA PARITA' TS<->PYTHON
+#     `stake.backSize` valeva insieme per TENNIS e PUNTA: cambiarlo per una lo
+#     cambiava all'altra, in silenzio. Adesso c'e' una chiave per NOME, e il
+#     motore la legge per strategia invece che per LATO. La mappa nasce VUOTA,
+#     quindi nessun importo cambia da solo.
+#
+#     La sezione `stake` esiste in DUE posti: `engine.DEFAULT_PARAMS['stake']`
+#     (il motore) e `SAFE_BOT_DEFAULTS.stake` in `frontend/src/lib/safeBot.ts`
+#     (la pagina). Se divergono, la pagina mostra un importo con cui il bot non
+#     sta operando - ed e' esattamente il difetto che B.5 doveva chiudere.
+# ---------------------------------------------------------------------------
+_TS_SAFEBOT = (Path(__file__).resolve().parents[3]
+               / "frontend" / "src" / "lib" / "safeBot.ts")
+
+
+def _ts_stake_defaults() -> dict:
+    """La sezione ``stake`` di ``SAFE_BOT_DEFAULTS``, dal sorgente TS."""
+    src = _TS_SAFEBOT.read_text(encoding="utf-8")
+    inizio = src.index("SAFE_BOT_DEFAULTS")
+    inizio = src.index("stake: {", inizio)
+    inizio = src.index("{", inizio)
+    livello, fine = 0, None
+    for i in range(inizio, len(src)):
+        if src[i] == "{":
+            livello += 1
+        elif src[i] == "}":
+            livello -= 1
+            if livello == 0:
+                fine = i + 1
+                break
+    assert fine is not None, "letterale stake non chiuso"
+    blocco = src[inizio:fine]
+    blocco = re.sub(r"//[^\n]*", "", blocco)
+    blocco = re.sub(r"(\w+)\s*:", r"'\1':", blocco)
+    blocco = re.sub(r",(\s*[}\]])", r"\1", blocco)
+    return ast.literal_eval(blocco)
+
+
+def test_parita_default_dello_stake_fra_i_due_motori():
+    ts, py = _ts_stake_defaults(), EN.DEFAULT_PARAMS["stake"]
+    assert set(ts) == set(py), "le chiavi dello stake non coincidono"
+    for k in sorted(ts):
+        assert float(ts[k]) == float(py[k]) if isinstance(py[k], (int, float)) \
+            else ts[k] == py[k], f"stake.{k}: TS={ts[k]!r} PY={py[k]!r}"
+    # la mappa per strategia NASCE VUOTA in tutti e due: e' la retrocompatibilita'
+    assert ts["per_strategia"] == {} and py["per_strategia"] == {}
+
+
+def _segnale_con(variant: str, side: str, params: dict):
+    """Un segnale del motore vero, passando da ``_to_signal``: e' li' che lo
+    stake entra nella riga che poi diventa un ordine."""
+    cand = EN._Candidate(
+        key="k", sport=EN.SPORT_CALCIO, variant=variant, sub_id=None,
+        event_id="1.1", event_name="A v B", headline="h", side=side,
+        entry_odds=2.0, entry_size=50.0, market_type="MATCH_ODDS",
+        market_id="1.1", selection_id=1, selection_name="A",
+        minute=60, score="0-0", context_at_trigger="", checks=(),
+    )
+    eng = EN.SafeEngine(params)
+    return eng._to_signal(EN._Active(cand=cand, triggered_at=0.0, status="active", expired_at=None))
+
+
+def test_lo_stake_del_segnale_viene_dalla_chiave_della_STRATEGIA():
+    """Con `punta` a 11 e `backSize` a 7: la punta esce a 11, il tennis a 7.
+    Prima uscivano tutti e due a 7, perche' la chiave era la stessa."""
+    par = {"stake": {"backSize": 7, "laySize": 4, "per_strategia": {"punta": 11}}}
+    assert _segnale_con("punta", "BACK", par).size == 11.0
+    assert _segnale_con("tennis", "BACK", par).size == 7.0
+    assert _segnale_con("base", "LAY", par).size == 4.0
+
+
+def test_senza_la_chiave_per_strategia_lo_stake_e_quello_di_prima():
+    """La retrocompatibilita' DICHIARATA: una configurazione salvata prima di
+    B.5 si comporta esattamente come si comportava."""
+    par = {"stake": {"backSize": 7, "laySize": 4}}
+    assert _segnale_con("punta", "BACK", par).size == 7.0
+    assert _segnale_con("tennis", "BACK", par).size == 7.0
+    assert _segnale_con("esatto", "LAY", par).size == 4.0

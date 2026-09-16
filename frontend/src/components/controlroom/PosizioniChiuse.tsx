@@ -23,6 +23,7 @@ import { ChevronRight, ChevronDown } from 'lucide-react';
 import { EmptyState } from '@/components/trading/EmptyState';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
+import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { BOT_LABEL, type Bot, type Modo } from '@/lib/controlRoom';
 import {
     filtraChiuse, riepilogoChiuse, type PosizioneChiusa, type Esito,
@@ -186,6 +187,11 @@ export function PosizioniChiuse({ chiuse, sport, testId = 'cr-chiuse' }: Posizio
                                         <span className="text-white/70 truncate max-w-[9rem]">{riga.selezione ?? DASH}</span>
                                         <span className="font-mono text-white/55">{fmtOdds(riga.prezzo)}</span>
                                         <span className="font-mono text-white/40">{fmtMoney(riga.size)}</span>
+                                        {/* C.12b (16/09) — chiesto / abbinato / residuo: la
+                                            Control Room non mostrava ne' l'abbinato ne' il
+                                            residuo, e `size` da sola dopo la conferma e'
+                                            l'abbinato, non quello che era stato chiesto. */}
+                                        <StatoOrdineCompatto riga={riga.ordine} testId="cr-chiusa-stato-ordine" />
                                         {riga.quale && <span className="text-[9px] text-white/25 uppercase">{riga.quale}</span>}
                                         <span className={`ml-auto font-mono ${pnlClass(riga.pnl)}`}>
                                             {riga.pnl == null ? DASH : fmtMoney(riga.pnl, { signed: true })}

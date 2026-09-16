@@ -794,9 +794,12 @@ function botFermo(over: Record<string, unknown> = {}) {
 describe('comando dei bot', () => {
     it('mostra lo stato ESATTO del servizio: «sta fermandosi» non e’ «fermo»', () => {
         mVm.mockReturnValue(vm({
-            bots: [botFermo({ bot: 'safe', inCorsa: true, stato: 'stopping' })] as never,
+            bots: [botFermo({
+                bot: 'safe', inCorsa: true, stato: 'stopping',
+                varianti: ['base', 'esatto', 'punta', 'tennis'],
+            })] as never,
         }));
-        expect(mostra().getByTestId('cr-bot-stato-safe').textContent).toMatch(/sta fermandosi/i);
+        expect(mostra().getByTestId('cr-bot-stato-safe-base').textContent).toMatch(/sta fermandosi/i);
     });
 
     it('FERMA TUTTI e’ spento se non c’e’ niente da fermare', () => {
@@ -815,34 +818,41 @@ describe('comando dei bot', () => {
         mVm.mockReturnValue(vm({ bots: [botFermo()] as never }));
         const s = mostra();
         // al primo clic non parte niente: compare la conferma
-        fireEvent.click(s.getByTestId('cr-avvia-live-safe'));
-        expect(s.getByTestId('cr-conferma-avvio-live-safe').textContent).toMatch(/ordini reali/i);
-        expect(s.getByTestId('cr-avviso-live-safe').textContent).toMatch(/ordini reali su Betfair/i);
+        fireEvent.click(s.getByTestId('cr-avvia-live-safe-base'));
+        expect(s.getByTestId('cr-conferma-avvio-live-safe-base').textContent).toMatch(/ordini reali/i);
+        expect(s.getByTestId('cr-avviso-live-safe-base').textContent).toMatch(/ordini reali su Betfair/i);
     });
 
     it('avviare IN PROVA non chiede nessuna conferma: non ci sono soldi in gioco', () => {
         mVm.mockReturnValue(vm({ bots: [botFermo()] as never }));
         const s = mostra();
-        expect(s.getByTestId('cr-avvia-paper-safe')).toBeTruthy();
-        expect(s.queryByTestId('cr-avviso-live-safe')).toBeNull();
+        expect(s.getByTestId('cr-avvia-paper-safe-base')).toBeTruthy();
+        expect(s.queryByTestId('cr-avviso-live-safe-base')).toBeNull();
     });
 
     it('anche PASSARE a soldi veri a bot acceso vuole la seconda conferma', () => {
         mVm.mockReturnValue(vm({
-            bots: [botFermo({ inCorsa: true, stato: 'running', modalita: 'paper' })] as never,
+            bots: [botFermo({
+                inCorsa: true, stato: 'running', modalita: 'paper',
+                varianti: ['base', 'esatto', 'punta', 'tennis'],
+            })] as never,
         }));
         const s = mostra();
-        fireEvent.click(s.getByTestId('cr-a-live-safe'));
-        expect(s.getByTestId('cr-conferma-live-safe').textContent).toMatch(/sono soldi veri/i);
+        fireEvent.click(s.getByTestId('cr-a-live-safe-base'));
+        expect(s.getByTestId('cr-conferma-live-safe-base').textContent).toMatch(/sono soldi veri/i);
     });
 
     it('tornare in prova NON chiede conferma: si toglie rischio, non si aggiunge', () => {
         mVm.mockReturnValue(vm({
-            bots: [botFermo({ inCorsa: true, stato: 'running', modalita: 'live' })] as never,
+            bots: [botFermo({
+                inCorsa: true, stato: 'running', modalita: 'live',
+                varianti: ['base', 'esatto', 'punta', 'tennis'],
+                modiStrategia: { base: 'live' },
+            })] as never,
         }));
         const s = mostra();
-        expect(s.getByTestId('cr-a-paper-safe')).toBeTruthy();
-        expect(s.queryByTestId('cr-conferma-live-safe')).toBeNull();
+        expect(s.getByTestId('cr-a-paper-safe-base')).toBeTruthy();
+        expect(s.queryByTestId('cr-conferma-live-safe-base')).toBeNull();
     });
 
     it('QUANTI BOT usano soldi veri si vede in cima al pannello', () => {
@@ -860,12 +870,16 @@ describe('comando dei bot', () => {
             bots: [botFermo({ params: { stake: { backSize: 3, laySize: 2 } } })] as never,
         }));
         const s = mostra();
-        const campo = s.getByTestId('cr-importo-safe-stake-backSize') as HTMLInputElement;
+        // B.5 — la PUNTA ha una chiave sua; finche' non e' scritta si mostra
+        // quella per lato (`backSize`), e la riga lo dichiara.
+        const campo = s.getByTestId('cr-importo-safe-punta-stake-per-strategia-punta') as HTMLInputElement;
         expect(campo.placeholder).toBe('3');
+        expect(s.getByTestId('cr-importo-safe-punta-stake-per-strategia-punta-ereditato').textContent)
+            .toMatch(/per lato/i);
         // finche' non cambia niente, nessun pulsante «salva»
-        expect(s.queryByTestId('cr-importo-safe-stake-backSize-salva')).toBeNull();
+        expect(s.queryByTestId('cr-importo-safe-punta-stake-per-strategia-punta-salva')).toBeNull();
         fireEvent.change(campo, { target: { value: '5' } });
-        expect(s.getByTestId('cr-importo-safe-stake-backSize-salva')).toBeTruthy();
+        expect(s.getByTestId('cr-importo-safe-punta-stake-per-strategia-punta-salva')).toBeTruthy();
     });
 
     it('l’importo di Omega dichiara che e’ un MINIMO, non l’importo di lavoro', () => {
@@ -971,7 +985,8 @@ describe('scheda tennis: una plancia sola, e quella giusta', () => {
         mVm.mockReturnValue(vmConSafe());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        expect(s.queryByTestId('cr-bot-riga-safe')).not.toBeNull();
+        expect(s.queryByTestId('cr-bot-riga-safe-tennis')).not.toBeNull();
+        expect(s.queryByTestId('cr-bot-riga-safe-base')).toBeNull();
         expect(s.queryByTestId('cr-bot-riga-omega')).toBeNull();
         expect(s.queryByTestId('cr-bot-riga-mike')).toBeNull();
         expect(s.getByTestId('cr-pannello-bot-titolo').textContent).toMatch(/Bot del tennis/i);
@@ -981,7 +996,7 @@ describe('scheda tennis: una plancia sola, e quella giusta', () => {
         mVm.mockReturnValue(vmConSafe());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        expect(s.getByTestId('cr-bot-riga-safe').textContent).toMatch(/TENNIS/i);
+        expect(s.getByTestId('cr-bot-riga-safe-tennis').textContent).toMatch(/TENNIS/i);
     });
 
     it('dice PRIMA del clic che parte solo il tennis, a 3,00 €', () => {
@@ -1007,8 +1022,8 @@ describe('scheda tennis: una plancia sola, e quella giusta', () => {
         mVm.mockReturnValue(vmConSafe());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        expect(s.queryByTestId('cr-importo-safe-stake-backSize')).not.toBeNull();
-        expect(s.queryByTestId('cr-importo-safe-stake-laySize')).toBeNull();
+        expect(s.queryByTestId('cr-importo-safe-tennis-stake-per-strategia-tennis')).not.toBeNull();
+        expect(s.queryByTestId('cr-importo-safe-base-stake-per-strategia-base')).toBeNull();
     });
 
     it('tolto il filtro tornano tutti: la plancia non resta ristretta per sbaglio', () => {
@@ -1046,13 +1061,13 @@ describe('scheda tennis: la conferma «soldi veri» non cambia significato sotto
         mVm.mockReturnValue(vmSafeFermo());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        fireEvent.click(s.getByTestId('cr-avvia-live-safe'));
-        expect(s.queryByTestId('cr-conferma-avvio-live-safe')).not.toBeNull();
+        fireEvent.click(s.getByTestId('cr-avvia-live-safe-tennis'));
+        expect(s.queryByTestId('cr-conferma-avvio-live-safe-tennis')).not.toBeNull();
 
-        // via il filtro: i pulsanti tornano a voler dire «il servizio com'è»
+        // via il filtro: i pulsanti tornano a voler dire «questa strategia»
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        expect(s.queryByTestId('cr-conferma-avvio-live-safe')).toBeNull();
-        expect(s.queryByTestId('cr-avvia-live-safe')).not.toBeNull();
+        expect(s.queryByTestId('cr-conferma-avvio-live-safe-tennis')).toBeNull();
+        expect(s.queryByTestId('cr-avvia-live-safe-tennis')).not.toBeNull();
     });
 
     it('il freno d’emergenza resta su TUTTI i bot, anche quelli nascosti dal filtro', () => {

@@ -259,6 +259,29 @@ class MatchCtx:
     # La copertura e' stata ORDINATA dal flusso (finestra di uscita scaduta, gol
     # precoce): l'attesa "intelligente" di ``cover_timing`` non si applica piu'.
     cover_forced: bool = False
+    # ⚠️ 16/09 — I RIFIUTI DEL MERCATO, RICORDATI. Un ordine che non e' mai nato
+    # (prezzo non piu' disponibile, rifiuto dichiarato di Betfair, freno
+    # anti-duplicato) e' un ESITO, e finora moriva dentro ``execute_place``: la
+    # gamba diventava 'cancelled', indistinguibile da una annullata dal motore,
+    # e al giro dopo il motore rifaceva la STESSA identica domanda. Sulla
+    # registrazione 35674515 in `taker` sono 531 riproposizioni di fila di
+    # ``reentry_green`` lay 10,11 @ 1,75 contro 3 ordini davvero piazzati.
+    # Chiave: ruolo|ciclo|mercato|selezione|lato|finale (poche, e con il ciclo
+    # dentro si spurgano da sole). Valore: prezzo, size e motivo dell'ULTIMA
+    # richiesta rifiutata — se la prossima e' diversa e' una domanda NUOVA e si
+    # fa, se e' identica non si rifa.
+    rifiuti: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # ⚠️ ORDINE DELL'UTENTE 16/09 — LA MEMORIA DELLA SOSPENSIONE.
+    # La lay di uscita al fischio e' APPOGGIATA: resta sul book, e Betfair la
+    # CANCELLA (LAPSE) a ogni sospensione del mercato — un gol precoce basta.
+    # Qui il servizio scrive che c'e' stata una sospensione con quella gamba
+    # viva, e alla riapertura che l'ordine e' stato RILETTO da Betfair:
+    #   {"ts": quando ha sospeso, "refs": [gambe vive allora],
+    #    "letto": True/False, "letto_ts": quando, "esiti": {ref: esito}}
+    # Finche' ``letto`` e' False nessuno puo' dire che quell'ordine e' vivo.
+    # Persistito (``service._CTX_FIELDS``): un riavvio in mezzo alla
+    # sospensione non deve far dimenticare che c'e' una rilettura da fare.
+    riapertura: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -477,6 +500,19 @@ def stato_mercato(bk: Optional["Book"]) -> str:
 def operabile(bk: Optional["Book"]) -> bool:
     """Si puo' mandare un ordine ADESSO? Solo a mercato aperto, mai nel dubbio."""
     return stato_mercato(bk) == STATO_APERTO
+
+
+def appoggiabile_in_gioco(bk: Optional["Book"]) -> bool:
+    """Si puo' APPOGGIARE un ordine che deve restare sul book, adesso?
+
+    ⚠️ ORDINE DELL'UTENTE 16/09 — serve una condizione in piu' di ``operabile``.
+    Al fischio d'inizio Betfair SOSPENDE il mercato per il passaggio in gioco e
+    CANCELLA (LAPSE) tutto cio' che non e' abbinato. Un ordine appoggiato nella
+    finestra fra l'apertura pre-match e il passaggio in gioco quindi muore
+    subito, e il bot crederebbe di avere un'uscita a mercato che non c'e' piu'.
+    Si appoggia SOLO a mercato APERTO **e** gia' IN GIOCO: prima si aspetta.
+    """
+    return operabile(bk) and bool(getattr(bk, "inplay", False))
 
 
 def riaprira(bk: Optional["Book"]) -> bool:
@@ -1383,6 +1419,78 @@ def _place(role: str, market: str, selection: str, side: str, price: float, size
                   persistence=persistence, final=final, note=note)
 
 
+def chiave_richiesta(role: Optional[str], cycle_no: int, market: Optional[str],
+                     selection: Optional[str], side: Optional[str], final: bool) -> str:
+    """Quale GAMBA della strategia e' questa: ruolo, ciclo, mercato, selezione,
+    lato, finale. Non il prezzo: il prezzo dice quale DOMANDA, non quale gamba."""
+    return f"{role}|{int(cycle_no or 0)}|{market}|{selection}|{side}|{int(bool(final))}"
+
+
+def registra_rifiuto(ctx: MatchCtx, leg: Leg, motivo: str) -> None:
+    """Il mercato ha detto NO a questa richiesta, e il ctx se lo ricorda.
+
+    ⚠️ 16/09 — E' LA META' MANCANTE DEL DIALOGO fra lo stato della gamba (ctx),
+    la riga di ``mike_trades`` e l'ordine a mercato. Lo chiama CHI ESEGUE
+    (``service.execute_place``) e SOLO quando nessun ordine e' nato e la
+    risposta e' definitiva. Su un esito IGNOTO non si chiama mai: li' comanda la
+    riconciliazione (§4.11).
+
+    Si tiene solo l'ULTIMA richiesta rifiutata per gamba: due o tre chiavi per
+    partita, con il ciclo dentro, che si spurgano quando il ciclo si archivia.
+    """
+    ctx.rifiuti[chiave_richiesta(leg.role, leg.cycle_no, leg.market, leg.selection,
+                                 leg.side, leg.final)] = {
+        "price": round(float(leg.price), 4),
+        "size": round(float(leg.size), 2),
+        "motivo": str(motivo)[:120],
+        "ref": str(leg.ref),
+    }
+
+
+def tentativo_gia_rifiutato(ctx: MatchCtx, a: Action) -> Optional[Dict[str, Any]]:
+    """La STESSA IDENTICA richiesta, gia' fatta e gia' rifiutata dal mercato.
+
+    ⚠️ 16/09 — LA DOMANDA CHE IL MOTORE NON SI FACEVA. Il ramo fratello
+    ``_decide_ko_green`` se la fa gia' da sempre — guarda la gamba precedente,
+    vede che non e' entrata e aspetta ``ko_green_retry_s`` — e infatti sulla
+    registrazione 35674515 in `taker` fa 27 tentativi. I due rami che la domanda
+    NON se la facevano (``PRE_OPEN`` e ``REENTRY_OPEN``) ne facevano 531,
+    identici: stesso ruolo, stesso ciclo, stesso prezzo, stessa size.
+
+    Che cosa confronta, e perche' proprio questo:
+      * ruolo, ciclo, mercato, selezione, lato, finale → e' la stessa GAMBA
+        della strategia, non un'altra;
+      * prezzo e size (gia' arrotondati da ``_place``) → e' la stessa DOMANDA.
+        Se la posizione cambia (fill parziale) la size cambia, se il book si
+        muove il prezzo cambia: quella e' una domanda NUOVA e si fa. Solo la
+        domanda identica, gia' rifiutata, non si rifa.
+
+    Non cambia nessuna regola di strategia: prezzi, soglie, quando si esce e
+    quante gambe la spec prevede restano quelli. La Costituzione prevede UNA
+    uscita appoggiata per ciclo (§3 Fase 1) e UNA lay di re-ingresso che resta
+    sul book fino a fine gara (§3 Fase 6): il motore finalmente lo rispetta.
+    """
+    if a.kind != "place":
+        return None
+    r = ctx.rifiuti.get(chiave_richiesta(a.role, ctx.cycle_no, a.market, a.selection,
+                                         a.side, a.final))
+    if not isinstance(r, dict):
+        return None
+    if abs(float(r.get("price") or 0.0) - float(a.price or 0.0)) > 1e-9:
+        return None
+    if abs(float(r.get("size") or 0.0) - float(a.size or 0.0)) > 0.005:
+        return None
+    return r
+
+
+def motivo_del_rifiuto(a: Action, r: Dict[str, Any]) -> str:
+    """Il motivo, scritto per la UI e per il referto: un ordine che NON parte
+    deve dire perche', altrimenti «nessuna azione» e «non ci ho provato» si
+    confondono."""
+    return (f"gia' rifiutata a mercato ({r.get('motivo')}): {a.side} "
+            f"{float(a.size or 0.0):.2f} @ {a.price} non si ripropone identica")
+
+
 def _under_position(ctx: MatchCtx) -> Tuple[float, Optional[float]]:
     return position(ctx.legs, MARKET_OU35, SEL_UNDER, UNDER_ROLES)
 
@@ -1593,6 +1701,78 @@ def _strip_openings(d: Decision, why: str, stato_ora: Optional[str] = None) -> D
                     telemetry=dict(d.telemetry))
 
 
+def lay_in_volo(ctx: MatchCtx, market: Optional[str], selection: Optional[str],
+                escludi: Optional[str] = None) -> Optional[Leg]:
+    """La lay che POTREBBE essere a mercato adesso su questa selezione, o None.
+
+    «In volo» comprende l'esito IGNOTO (``pending_reconcile``): una gamba che
+    il bot non sa dov'e' puo' essere viva su Betfair esattamente come una
+    'pending' (§4.11).
+    """
+    for l in ctx.legs:
+        if l.side != "lay" or not (l.is_live or l.needs_reconcile):
+            continue
+        if l.market != market or l.selection != selection:
+            continue
+        if escludi is not None and l.ref == escludi:
+            continue
+        return l
+    return None
+
+
+def _una_sola_lay(ctx: MatchCtx, d: Decision) -> Decision:
+    """⚠️ ORDINE DELL'UTENTE 16/09 h16:15, testuale:
+    «NON DEVONO MAI ESSERCI 2 LAY A MERCATO, SE SI ABBINANO SIAMO SCOPERTI!!!»
+
+    Ed e' letteralmente vero: la posizione di Mike e' un BACK Under 3.5, e ogni
+    lay serve a chiuderlo. Due lay abbinate lo ribaltano in un NETTO LAY, cioe'
+    una posizione allo scoperto che nessuna regola della Costituzione prevede.
+
+    Il difetto che questa guardia toglie: diversi rami SOSTITUIVANO una lay viva
+    emettendo `cancel` + `place` nella STESSA decisione (uscita al fischio,
+    riprezzo della green taker, riprezzo del re-ingresso, chiusure). Il cancel
+    parte prima del place, ma partire non e' essere confermati: se Betfair non
+    conferma l'annullamento (`_mark_trade_cancelled` -> `pending_reconcile`) la
+    vecchia lay resta viva e la nuova si aggiunge. Trovato dal replay sulla
+    registrazione 35777617 (`J2: nuova 'ko_green' mentre 'ko_green-0-3' e'
+    ancora viva, abbinato 8,15/10,14`).
+
+    La regola, in un posto solo e per OGNI ramo presente e futuro: finche' su
+    quella selezione c'e' una lay VIVA o IN VOLO, una nuova lay non si emette.
+    L'annullamento SI' (parte in questo giro); la nuova lay arriva al giro
+    successivo, quando la vecchia non e' piu' viva — cioe' solo dopo che
+    l'annullamento e' stato CONFERMATO da Betfair — e allora e' dimensionata
+    sulla posizione REALE, perche' ``exposure``/``under_liability`` contano
+    l'abbinato della vecchia. Se l'annullamento e' ignoto o fallito la gamba
+    resta `pending_reconcile`, qui non passa nessuna lay nuova e la
+    riconciliazione ritenta.
+
+    Non cambia nessun prezzo, nessuna soglia e nessun numero di gambe: la
+    Costituzione prevede UNA lay per volta (§3 Fase 1, §15.7) e questa la fa
+    rispettare anche quando l'annullamento non e' istantaneo.
+    """
+    nuove = [a for a in d.actions if a.kind == "place" and str(a.side) == "lay"]
+    if not nuove:
+        return d
+    fermate = [(a, lay_in_volo(ctx, a.market, a.selection)) for a in nuove]
+    fermate = [(a, g) for a, g in fermate if g is not None]
+    if not fermate:
+        return d
+    tolte = {id(a) for a, _ in fermate}
+    kept = [a for a in d.actions if id(a) not in tolte]
+    a0, g0 = fermate[0]
+    come = "a esito ignoto" if g0.needs_reconcile else "ancora viva"
+    perche = (f"lay '{a0.role}' rimandata: '{g0.ref}' e' {come} sulla stessa "
+              f"selezione (mai due lay a mercato)")
+    # se non resta NESSUN ordine da piazzare lo stato non avanza: e' la stessa
+    # regola di ``_strip_openings`` (difetto 3 della cert. 13/09), e serve
+    # perche' il ramo deve poter riprovare identico al giro dopo.
+    stato = d.state if any(a.kind == "place" for a in kept) else ctx.state
+    return Decision(state=stato, actions=kept, reason=f"{d.reason} ({perche})",
+                    updates=dict(d.updates) if stato == d.state else {},
+                    telemetry=dict(d.telemetry))
+
+
 def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     """Chiusura MANUALE in corso (C2): prima si annullano gli ordini vivi, poi si
     chiude la posizione netta delle selezioni ancora VIVE, poi si chiude il ciclo.
@@ -1645,17 +1825,39 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
         stato_finale = "FLAT" if snap.inplay else "WATCH"
         return Decision(stato_finale, [], "chiusura manuale: resta una posizione gia' decisa, "
                                           "si porta al regolamento",
-                        updates={"flatten_pending": False, "no_reentry": not snap.inplay,
+                        updates={"flatten_pending": False, "no_reentry": True,
                                  "reentry_allowed": False, "reentry_done": True,
-                                 "attempts": 0})
+                                 "attempts": 0},
+                        telemetry={"chiuso_dall_utente": {
+                            "dove": "in gioco" if snap.inplay else "pre-match",
+                            "minuto": snap.minute, "stato": stato_finale,
+                            "residuo": "una selezione con esito gia' deciso resta a "
+                                       "mercato e va al regolamento"}})
+    # ⚠️ ORDINE DELL'UTENTE 16/09 h18:20, testuale: «il bot gestisce le sue
+    # operazioni; UNICO CASO e' quando io chiudo manualmente TUTTE le operazioni
+    # (cash-out globale della partita): al successivo controllo lo capisce e NON
+    # FA ALTRO.»
+    # Da qui in avanti ``no_reentry`` si accende ANCHE in gioco (prima solo
+    # pre-match): ``decide`` lo legge e spegne ingressi, ultimo ingresso e
+    # re-ingresso per il resto della partita. Non e' un tetto nuovo sulla
+    # strategia — e' sapere che a mercato non c'e' piu' niente di nostro perche'
+    # l'ha chiuso l'utente. Si riaccende SOLO con "Riprendi" dalla UI
+    # (``service.process_requests`` -> ``resume_event``). Le CHIUSURE restano
+    # sempre permesse: se un residuo si abbina, si gestisce.
     if snap.inplay:
         return Decision("FLAT", [], "chiusura manuale completata",
                         updates={"flatten_pending": False, "reentry_allowed": False,
-                                 "reentry_done": True, "_archive_legs": True})
+                                 "reentry_done": True, "no_reentry": True,
+                                 "_archive_legs": True},
+                        telemetry={"chiuso_dall_utente": {
+                            "dove": "in gioco", "minuto": snap.minute, "stato": "FLAT"}})
     return Decision("WATCH", [], "chiusura manuale completata (pre-match)",
                     updates={"flatten_pending": False, "no_reentry": True,
+                             "reentry_allowed": False, "reentry_done": True,
                              "cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now,
-                             "attempts": 0, "_archive_legs": True})
+                             "attempts": 0, "_archive_legs": True},
+                    telemetry={"chiuso_dall_utente": {
+                        "dove": "pre-match", "minuto": snap.minute, "stato": "WATCH"}})
 
 
 def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
@@ -1678,7 +1880,9 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     if has_unknown_orders(ctx):
         # H8 — ordine a esito ignoto: via le APERTURE, restano le riduzioni di rischio
         d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura", ctx.state)
-    return d
+    # ORDINE DELL'UTENTE 16/09 h16:15 — «non devono mai esserci 2 lay a mercato».
+    # Ultima parola, su OGNI ramo: vedi ``_una_sola_lay``.
+    return _una_sola_lay(ctx, d)
 
 
 def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
@@ -1887,8 +2091,11 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                 plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
                                        best_lay_price=None, fraction=1.0, target_price=target)
                 if plan.actionable:
-                    return Decision("PRE_OPEN",
-                                    [_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)],
+                    prop = _place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)
+                    rifiutata = tentativo_gia_rifiutato(ctx, prop)
+                    if rifiutata is not None:
+                        return Decision("PRE_OPEN", [], motivo_del_rifiuto(prop, rifiutata))
+                    return Decision("PRE_OPEN", [prop],
                                     "green resting appoggiata (residuo)" if green is not None else "green resting appoggiata")
             return Decision("PRE_OPEN", [], "posizione aperta, green resting sul book")
         # taker
@@ -1897,9 +2104,15 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
-                return Decision("PRE_GREEN_PENDING",
-                                [_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)],
-                                "green taker: 2 tick disponibili")
+                # ⚠️ 16/09 — il ramo taker riemetteva la stessa uscita a ogni ciclo,
+                # senza contatore ne' freno (C.10). Ora la domanda gia' rifiutata
+                # non si rifa identica: se il book si muove il prezzo cambia, ed
+                # e' una domanda nuova.
+                prop = _place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)
+                rifiutata = tentativo_gia_rifiutato(ctx, prop)
+                if rifiutata is not None:
+                    return Decision("PRE_OPEN", [], motivo_del_rifiuto(prop, rifiutata))
+                return Decision("PRE_GREEN_PENDING", [prop], "green taker: 2 tick disponibili")
         return Decision("PRE_OPEN", [], "posizione aperta, in attesa dei 2 tick")
 
     if st == "PRE_GREEN_PENDING":
@@ -2077,7 +2290,13 @@ def finestra_uscita_scaduta(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
     # dichiarava scaduta l'uscita al fischio per un tempo in cui non poteva
     # piazzare niente, e ripiegava sulla copertura invece di uscire in green.
     # Rinunciare mentre non si poteva operare non e' una decisione: e' un caso.
-    if not operabile(snap.book(MARKET_OU35, SEL_UNDER)):
+    #
+    # ⚠️ 16/09 — e con l'uscita APPOGGIATA la condizione e' quella piu' stretta:
+    # non basta che il mercato sia aperto, deve essere gia' IN GIOCO (vedi
+    # ``appoggiabile_in_gioco``). Fra la riapertura e il passaggio in gioco il
+    # bot non puo' appoggiare niente: se la finestra scorresse li', scadrebbe
+    # per un tempo in cui non poteva fare la sola cosa che le compete.
+    if not appoggiabile_in_gioco(snap.book(MARKET_OU35, SEL_UNDER)):
         return False
     return float(snap.now) - float(ctx.live_since) >= float(params["ko_green_window_s"])
 
@@ -2166,8 +2385,18 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
     # vedeva nessuno e l'ordine partiva anche a mercato SOSPESO (visto otto
     # volte su quattro partite registrate, sempre al fischio d'inizio).
     # Sospeso non e' chiuso: si ASPETTA la riapertura, non si rinuncia.
+    #
+    # ⚠️ ORDINE DELL'UTENTE 16/09 — E NON BASTA PIU' "APERTO".
+    # L'uscita al fischio e' una lay APPOGGIATA in ogni modalita': deve restare
+    # sul book. Betfair cancella (LAPSE) gli ordini non abbinati quando il
+    # mercato passa in gioco, quindi appoggiarla a mercato aperto ma NON ancora
+    # in-play significa vederla morire nello stesso istante. Si aspetta.
     bk_uscita = snap.book(MARKET_OU35, SEL_UNDER)
-    if not operabile(bk_uscita):
+    if not appoggiabile_in_gioco(bk_uscita):
+        if operabile(bk_uscita):
+            return Decision("LIVE_KO_GREEN", acts,
+                            "mercato aperto ma non ancora in gioco: aspetto il "
+                            "passaggio in-play per appoggiare l'uscita", updates=base)
         if riaprira(bk_uscita):
             return Decision("LIVE_KO_GREEN", acts,
                             "mercato %s: aspetto la riapertura per uscire"
@@ -2186,9 +2415,24 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
     # ribalterebbe la posizione (da back netto a lay netto). Se una lay di un
     # altro ruolo e' ancora viva (il resting del pre-match in attesa che
     # l'annullamento sia confermato) si aspetta il giro dopo.
-    altre_lay = [l for l in ctx.legs
-                 if l.is_live and l.side == "lay" and l.market == MARKET_OU35
-                 and l.selection == SEL_UNDER and l.role != "ko_green"]
+    # ⚠️ 16/09 — «IN VOLO» COMPRENDE L'ESITO IGNOTO (§4.11, controlli J2 e J4).
+    # Una gamba `pending_reconcile` puo' essere VIVA su Betfair esattamente
+    # come una 'pending': il bot semplicemente non lo sa ancora. Finche' non lo
+    # sa non se ne appoggia un'altra — il replay del banco corretto su 35674515
+    # mostra proprio questo, «nuova ko_green mentre ko_green-0-3 e' a esito
+    # IGNOTO». Prima il ritmo di ri-presentazione lo copriva per caso (e male);
+    # adesso e' una regola scritta, e l'unica risposta a un dubbio e' aspettare
+    # la riconciliazione.
+    in_volo = [l for l in ctx.legs
+               if (l.is_live or l.needs_reconcile) and l.side == "lay"
+               and l.market == MARKET_OU35 and l.selection == SEL_UNDER]
+    ignote = [l for l in in_volo if l.needs_reconcile]
+    if ignote:
+        return Decision("LIVE_KO_GREEN", acts,
+                        "uscita '%s' a esito ignoto: aspetto la riconciliazione, "
+                        "mai una gamba nuova su un dubbio" % ignote[0].ref,
+                        updates=base)
+    altre_lay = [l for l in in_volo if l.role != "ko_green"]
     if altre_lay:
         return Decision("LIVE_KO_GREEN", acts, "attendo l'annullamento della lay precedente",
                         updates=base)
@@ -2201,16 +2445,29 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         # la posizione e' cambiata (fill del residuo PERSIST): il prezzo di uscita
         # si ricalcola sulla NUOVA media, altrimenti si chiuderebbe al prezzo sbagliato
         _annulla(vivo)
-    if uscita is not None and not uscita.is_live and float(uscita.matched) <= 0 and \
-            snap.now - float(uscita.placed_at) < float(params.get("ko_green_retry_s", 5)):
-        # il tentativo precedente non e' entrato (in live il prezzo non c'era
-        # ancora): si ritenta, ma non a ogni giro del servizio -- 180 secondi a
-        # mezzo secondo farebbero 360 righe di attivita' per partita, ed e'
-        # esattamente la zavorra che il 13/09 ha causato lo statement timeout
-        return Decision("LIVE_KO_GREEN", acts, "uscita: ritento fra poco", updates=base)
-    acts.append(_place("ko_green", MARKET_OU35, SEL_UNDER, plan.side, plan.price, plan.size,
-                       note="uscita al fischio: %d tick sotto %.2f"
-                            % (int(params["ko_green_ticks"]), Pe)))
+    # ⚠️ ORDINE DELL'UTENTE 16/09 — QUI C'ERA LA RI-PRESENTAZIONE OGNI
+    # ``ko_green_retry_s``, E NON DEVE PIU' ESISTERE.
+    # Serviva al percorso taker: l'ordine non restava sul book, quindi lo si
+    # rifaceva a ritmo. Sulla registrazione 35674515 erano 25-32 chiamate REST
+    # per UNA uscita. Adesso la lay e' appoggiata in ogni modalita': se e' viva
+    # si vede sopra (``vivo``) e non si tocca; se non e' viva e non ha abbinato
+    # niente vuol dire che e' morta davvero (rifiuto, o LAPSE alla sospensione,
+    # riletto da ``service`` alla riapertura) e se ne appoggia UNA nuova subito.
+    # Il parametro resta nella scheda ma non governa piu' questo ramo.
+    #
+    # Il freno che prendeva il posto del ritmo e' quello degli altri rami
+    # (§ C.1): la STESSA identica domanda gia' rifiutata dal mercato non si
+    # rifa. Se il book si muove o la posizione cambia, prezzo o size cambiano
+    # ed e' una domanda NUOVA, che si fa. Senza questo, tolto il ritmo, un
+    # rifiuto ripetuto diventerebbe una riproposizione a ogni giro.
+    prop = _place("ko_green", MARKET_OU35, SEL_UNDER, plan.side, plan.price, plan.size,
+                  note="uscita al fischio: %d tick sotto %.2f"
+                       % (int(params["ko_green_ticks"]), Pe))
+    rifiutata = tentativo_gia_rifiutato(ctx, prop)
+    if rifiutata is not None:
+        return Decision("LIVE_KO_GREEN", acts, motivo_del_rifiuto(prop, rifiutata),
+                        updates=base)
+    acts.append(prop)
     resta = max(0.0, round(float(params["ko_green_window_s"])
                            - (snap.now - float(ctx.live_since or snap.now)), 1))
     tele = {"ko_green": {"esito": "appoggiata", "prezzo": plan.price, "size": plan.size,
@@ -2801,9 +3058,15 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
                                    best_lay_price=None, fraction=1.0, target_price=target)
             if plan.actionable:
-                return Decision("REENTRY_OPEN",
-                                [_place("reentry_green", MARKET_OU45, SEL_UNDER, "lay", plan.price, plan.size)],
-                                "green re-ingresso appoggiata")
+                # ⚠️ 16/09 — QUI NASCEVANO LE 531 RIPROPOSIZIONI (35674515, dal 19'
+                # al 38', `reentry_green` lay 10,11 @ 1,75 identica a ogni giro).
+                # La Fase 6 della Costituzione prevede UNA lay appoggiata che
+                # resta sul book fino a fine gara: non un ordine al secondo.
+                prop = _place("reentry_green", MARKET_OU45, SEL_UNDER, "lay", plan.price, plan.size)
+                rifiutata = tentativo_gia_rifiutato(ctx, prop)
+                if rifiutata is not None:
+                    return Decision("REENTRY_OPEN", [], motivo_del_rifiuto(prop, rifiutata))
+                return Decision("REENTRY_OPEN", [prop], "green re-ingresso appoggiata")
     return Decision("REENTRY_OPEN", [], "re-ingresso aperto, green sul book")
 
 
@@ -2860,6 +3123,13 @@ def apply_decision(ctx: MatchCtx, d: Decision, now: float) -> List[Leg]:
                 # fill non pesa su nessun calcolo.
                 continue
             leg.archived = True
+        # i rifiuti dei cicli chiusi non servono piu': la chiave porta il ciclo,
+        # quindi restano solo quelli del ciclo corrente e dei successivi. Senza
+        # questo spurgo il dizionario crescerebbe con i cicli pre-match (fino a
+        # ``pre_max_cycles``), e finirebbe tutto nella riga di ``mike_events``.
+        ciclo_ora = str(int(ctx.cycle_no))
+        ctx.rifiuti = {k: v for k, v in ctx.rifiuti.items()
+                       if k.split("|")[1:2] == [ciclo_ora]}
     ctx.state = d.state
     new: List[Leg] = []
     for a in d.actions:

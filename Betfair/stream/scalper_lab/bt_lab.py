@@ -30,7 +30,6 @@ os.chdir(REPO)
 
 import flumine.config  # noqa: E402
 from flumine import FlumineSimulation, clients  # noqa: E402
-from flumine.markets.middleware import SimulatedMiddleware  # noqa: E402
 
 # Usa la COPIA nel lab (l'originale scalper/scalper_bot.py resta intatto).
 from Betfair.stream.scalper_lab.scalper_bot_base import ScalperStrategy  # noqa: E402
@@ -88,7 +87,13 @@ def run_event(event_id: str, params: Dict[str, Any], inplay: bool) -> Dict[str, 
             except (TypeError, ValueError):
                 pass
             fw = FlumineSimulation(client=client)
-            fw.add_market_middleware(SimulatedMiddleware())
+            # UN SOLO SimulatedMiddleware: lo monta gia' `BaseFlumine.add_client`
+            # quando il client e' simulato (`flumine/baseflumine.py:89-94`), e
+            # `add_market_middleware` NON de-duplica nella 2.13.11. Il secondo
+            # faceva consumare DUE VOLTE la coda degli ordini appoggiati:
+            # misurato +134% di riempimento passivo (85,72 -> 200,34 EUR).
+            # L'unico punto da cui si monta e'
+            # `Betfair/stream/backtest/banco_comune.assicura_middleware_simulato`.
             strat = ScalperStrategy(
                 market_filter={"markets": [raw]},
                 scalper_params=p,

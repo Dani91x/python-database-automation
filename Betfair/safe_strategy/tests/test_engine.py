@@ -218,9 +218,47 @@ def test_merge_params_scores_filtra_malformati_e_lista_vuota_torna_default():
 
 
 def test_merge_params_stake_default_e_override():
-    assert eng.merge_params(None)["stake"] == {"laySize": 2.0, "backSize": 2.0}
+    """B.5 (16/09) — la sezione ``stake`` ha adesso una TERZA chiave,
+    ``per_strategia``, che nasce VUOTA.
+
+    Prima questo test fissava ``{laySize, backSize}`` esatti: lo stake si
+    sceglieva dal LATO, quindi ``backSize`` valeva insieme per TENNIS e PUNTA.
+    Adesso fissa la stessa cosa PIU' il fatto che la mappa per strategia parte
+    vuota — cioe' che nessun importo cambia da solo: con la mappa vuota il
+    motore legge esattamente le chiavi di prima.
+    """
+    assert eng.merge_params(None)["stake"] == {
+        "laySize": 2.0, "backSize": 2.0, "per_strategia": {},
+    }
     assert eng.merge_params({"stake": {"laySize": 25}})["stake"]["laySize"] == 25
     assert eng.merge_params({"backSize": 10})["stake"]["backSize"] == 10
+
+
+def test_merge_params_stake_per_strategia_ripulita():
+    """La mappa per strategia accetta SOLO le quattro varianti del manuale, con
+    un numero finito e positivo. Quello che non si capisce cade, e una chiave
+    caduta significa "usa quella per lato": non spegne niente."""
+    st = eng.merge_params({"stake": {"per_strategia": {
+        "punta": 11, "base": 0, "esatto": "tre", "tennis": -1, "ignota": 5,
+    }}})["stake"]
+    assert st["per_strategia"] == {"punta": 11.0}
+
+
+def test_stake_di_strategia_legge_per_NOME_e_ripiega_sul_LATO():
+    """Il cuore di B.5: ``stake.backSize`` non puo' piu' valere insieme per
+    TENNIS e PUNTA. Con la chiave della punta scritta, la punta usa la sua e il
+    tennis continua con quella per lato — senza che nessun numero sia cambiato.
+    """
+    p = eng.merge_params({"stake": {"backSize": 7, "laySize": 4,
+                                    "per_strategia": {"punta": 11}}})
+    assert eng.stake_di_strategia(p, "punta", "back") == 11.0
+    assert eng.stake_di_strategia(p, "tennis", "back") == 7.0
+    assert eng.stake_di_strategia(p, "base", "lay") == 4.0
+    # senza la chiave per strategia si torna esattamente al comportamento di prima
+    senza = eng.merge_params({"stake": {"backSize": 7, "laySize": 4}})
+    assert eng.stake_di_strategia(senza, "punta", "back") == 7.0
+    assert eng.stake_di_strategia(senza, "tennis", "back") == 7.0
+    assert eng.stake_di_strategia(senza, "esatto", "lay") == 4.0
 
 
 # ------------------------------------------------------------ stateFromChecks

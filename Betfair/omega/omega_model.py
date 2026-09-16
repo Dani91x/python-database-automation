@@ -28,6 +28,7 @@ servizio (vedi ``omega_service._prematch_lambdas``).
 """
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -38,6 +39,28 @@ from Betfair.omega import omega_engine as E
 DEFAULT_TOTAL_GOALS = 2.6
 # ρ Dixon-Coles di default (stesso del motore Poisson) se la lega non è calibrata
 DEFAULT_RHO = -0.13
+
+# ---------------------------------------------------------------------------
+# MEMOIZZAZIONE PURA (16/09/2026) — nessun numero cambia
+# ---------------------------------------------------------------------------
+# Misura sul replay `certifica mike 35760084 --scenari base`: `_poisson_grid`
+# veniva chiamata **6.779.932 volte per 1.586 argomenti distinti** in una sola
+# partita, perche' `lambdas_from_pre_ko` rifa a ogni giro del bot la stessa
+# doppia bisezione (30 x 40 griglie) su un `pre_ko` CONGELATO. Il profilo
+# diceva: 83,6 % del tempo del replay li' dentro.
+#
+# Le tre funzioni memoizzate qui sotto sono PURE: il risultato dipende solo
+# dagli argomenti (piu' le costanti di modulo `MAX_GOALS_GRID`, `_GH5`,
+# `DEFAULT_RHO`, assegnate una volta sola e mai riassegnate in tutto il repo —
+# verificato), non c'e' stato, non c'e' orologio, non c'e' rete.
+# Le due che restituiscono una GRIGLIA (un `dict`, mutabile) ne consegnano una
+# COPIA: un chiamante che la modificasse corromperebbe tutte le chiamate
+# successive. `_full_match_1x2` torna una tupla, che e' gia' immutabile.
+#
+# TETTO: 1.586 argomenti distinti misurati, ~16 KB per griglia (misurato:
+# +25 MB di picco per 1.586 griglie). 4.096 da 2,6 volte di margine e tiene il
+# tetto di memoria sotto i ~65 MB per processo.
+CACHE_GRIGLIE = 4096
 # nel primo tempo si segna meno che nel secondo (~45% dei gol): scala dei λ
 # residui quando l'orizzonte è l'intervallo
 FIRST_HALF_INTENSITY = 0.90
@@ -119,7 +142,10 @@ def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOT
     return split_lambdas_1x2(probs[0], probs[2], total, rho)
 
 
+@functools.lru_cache(maxsize=CACHE_GRIGLIE)
 def _full_match_1x2(lh: float, la: float, rho: float) -> Tuple[float, float, float]:
+    """MEMOIZZATA (pura, 16/09): misurata 2,3x sul replay, nessun numero cambia.
+    Il risultato e' una tupla, quindi immutabile: si puo' consegnare cosi'."""
     g = residual_grid(lh, la, rho, MAX_GOALS_GRID, dixon_coles=True)
     ph = sum(p for (h, a), p in g.items() if h > a)
     pa = sum(p for (h, a), p in g.items() if a > h)
@@ -251,6 +277,15 @@ DEFAULT_LAMBDA_CV = 0.30   # incertezza relativa su λ (review I2: riproduce la 
 
 
 def _poisson_grid(lh: float, la: float, rho: float, max_goals: int, dixon_coles: bool) -> Dict[Tuple[int, int], float]:
+    """MEMOIZZATA (pura, 16/09): misurata 2,3x sul replay, nessun numero cambia.
+    Si consegna una COPIA: la griglia e' un `dict` e un chiamante che la
+    modificasse corromperebbe tutte le chiamate successive."""
+    return dict(_poisson_grid_memo(lh, la, rho, max_goals, dixon_coles))
+
+
+@functools.lru_cache(maxsize=CACHE_GRIGLIE)
+def _poisson_grid_memo(lh: float, la: float, rho: float, max_goals: int,
+                       dixon_coles: bool) -> Dict[Tuple[int, int], float]:
     grid: Dict[Tuple[int, int], float] = {}
     for h in range(max_goals + 1):
         ph = math.exp(-lh) * lh ** h / math.factorial(h)
@@ -264,13 +299,25 @@ def _poisson_grid(lh: float, la: float, rho: float, max_goals: int, dixon_coles:
 
 def residual_grid(lh: float, la: float, rho: float, max_goals: int, *, dixon_coles: bool,
                   cv: float = 0.0) -> Dict[Tuple[int, int], float]:
-    """Distribuzione dei GOL RESIDUI (h, a), normalizzata sulla griglia troncata.
+    """MEMOIZZATA (pura, 16/09): misurata 2,3x sul replay, nessun numero cambia.
+    Si consegna una COPIA (la griglia e' un `dict` mutabile). Firma invariata:
+    `dixon_coles` e `cv` restano parole chiave per chi chiama, e diventano
+    posizionali solo verso il corpo memoizzato.
+
+    Distribuzione dei GOL RESIDUI (h, a), normalizzata sulla griglia troncata.
     La correzione Dixon-Coles ha senso solo sulle celle basse di una partita che
     parte da 0-0: applicata solo se ``dixon_coles`` (punteggio corrente 0-0).
     ``cv`` > 0 = INCERTEZZA su λ (review I2): λ·θ con θ log-normale di media 1 e
     coefficiente di variazione ``cv``, θ COMUNE ai due lati (quadratura di
     Gauss-Hermite a 5 nodi). La coda risultante è quella di una binomiale
     negativa: più grassa, in modo dipendente dalla cella, senza fattori inventati."""
+    return dict(_residual_grid_memo(lh, la, rho, max_goals, bool(dixon_coles),
+                                    float(cv or 0.0)))
+
+
+@functools.lru_cache(maxsize=CACHE_GRIGLIE)
+def _residual_grid_memo(lh: float, la: float, rho: float, max_goals: int,
+                        dixon_coles: bool, cv: float) -> Dict[Tuple[int, int], float]:
     if cv and cv > 0:
         sigma = math.sqrt(math.log(1.0 + float(cv) ** 2))
         grid: Dict[Tuple[int, int], float] = {}

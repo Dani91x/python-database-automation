@@ -114,7 +114,7 @@ def test_a_mercato_CHIUSO_l_uscita_al_fischio_NON_si_aspetta():
 def test_a_mercato_APERTO_l_uscita_parte_come_sempre():
     """La correzione non deve spegnere il comportamento normale."""
     ctx = _ctx_al_fischio()
-    d = E.decide(ctx, snap(KO + 10.0, u35=book(1.45, status="OPEN"),
+    d = E.decide(ctx, snap(KO + 10.0, u35=book(1.45, status="OPEN", inplay=True),
                            inplay=True, minute=1, goals=0), params())
 
     piazzati = [a for a in d.actions if a.kind == "place"]
@@ -145,7 +145,7 @@ def test_la_finestra_scade_regolarmente_a_mercato_aperto():
     ctx = _ctx_al_fischio(now=KO)
 
     assert E.finestra_uscita_scaduta(
-        ctx, snap(oltre, u35=book(1.45, status="OPEN"), inplay=True), p) is True
+        ctx, snap(oltre, u35=book(1.45, status="OPEN", inplay=True), inplay=True), p) is True
 
 
 def test_dentro_la_finestra_non_scade_comunque():
@@ -154,7 +154,7 @@ def test_dentro_la_finestra_non_scade_comunque():
     ctx = _ctx_al_fischio(now=KO)
 
     assert E.finestra_uscita_scaduta(
-        ctx, snap(dentro, u35=book(1.45, status="OPEN"), inplay=True), p) is False
+        ctx, snap(dentro, u35=book(1.45, status="OPEN", inplay=True), inplay=True), p) is False
 
 
 # ===========================================================================

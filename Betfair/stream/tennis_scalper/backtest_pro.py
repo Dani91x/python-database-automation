@@ -21,7 +21,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import flumine.config
 from flumine import FlumineSimulation, clients
-from flumine.markets.middleware import SimulatedMiddleware
 from betfairlightweight import filters
 
 from ..auth import build_client
@@ -119,7 +118,13 @@ def run(raw: str, score: str, event_id: str, market_id: str,
         except (TypeError, ValueError):
             pass
         framework = FlumineSimulation(client=client)
-        framework.add_market_middleware(SimulatedMiddleware())
+        # UN SOLO SimulatedMiddleware: lo monta gia' `BaseFlumine.add_client`
+        # quando il client e' simulato (`flumine/baseflumine.py:89-94`), e
+        # `add_market_middleware` NON de-duplica nella 2.13.11. Il secondo
+        # faceva consumare DUE VOLTE la coda degli ordini appoggiati:
+        # misurato +134% di riempimento passivo (85,72 -> 200,34 EUR).
+        # L'unico punto da cui si monta e'
+        # `Betfair/stream/backtest/banco_comune.assicura_middleware_simulato`.
         strat = BacktestProStrategy(
             market_filter={"markets": [raw]}, pro_params=p,
             name_to_sel=name_to_sel, event_sink=_sink,

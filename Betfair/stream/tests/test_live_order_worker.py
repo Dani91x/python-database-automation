@@ -282,8 +282,10 @@ def test_place_creates_order_under_registered_strategy():
 
 
 def test_cross_mode_row_marked_error_not_left_pending():
-    """fix(b): un runner PAPER NON piazza una richiesta 'live', ma la marca 'error'
-    (messaggio chiaro) invece di lasciarla 'pending' all'infinito."""
+    """F0 (16/09): un runner PAPER non ha NESSUN client reale, quindi una richiesta
+    'live' non viene eseguita e finisce 'error' col motivo ``live_client_assente``
+    (prima il motivo era "mode non servibile"; la garanzia e' la stessa: nessun
+    ordine piazzato, nessuna riga lasciata 'pending' all'infinito)."""
     sb = _FakeSupabase([_row(1, mode="live")])
     market = _FakeMarket("1.1")
     fl = _FakeFlumine({"1.1": market})
@@ -291,10 +293,10 @@ def test_cross_mode_row_marked_error_not_left_pending():
     n = wk._process_once(sb, fl, strategy=_STRAT)
 
     assert n == 1
-    assert market.calls == []  # nessun ordine piazzato dal runner della mode opposta
+    assert market.calls == []  # nessun ordine piazzato: il client reale non esiste
     row = _by_id(sb, 1)
     assert row["status"] == "error"
-    assert "non servibile" in (row["error"] or "")
+    assert wk.ERR_LIVE_CLIENT_ASSENTE in (row["error"] or "")
     assert "live" in (row["error"] or "")
 
 

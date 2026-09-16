@@ -10,6 +10,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime } from '@/lib/format';
 import { sideMeta, T, type ActivityMeta } from '@/lib/tradeStatus';
+import type { RigaOrdine } from '@/lib/statoOrdine';
 
 export type MikeStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type MikeMode = 'paper' | 'live';
@@ -72,6 +73,41 @@ export interface MikeLeg {
     archived: boolean;
     /** ref della gamba che questa chiude (chiusure/green) */
     closes_ref?: string | null;
+}
+
+/**
+ * C.12b (16/09) — una GAMBA di Mike letta come un ordine qualsiasi.
+ *
+ * Mike era l'unico bot che gia' distingueva chiesto/abbinato/prezzo medio, ma
+ * lo faceva con nomi suoi (`size`, `matched`, `avg_price`) e con tre pezzi di
+ * JSX propri. L'adattatore porta quei numeri sul contratto CONDIVISO di
+ * `lib/statoOrdine`, cosi' Omega, Safe, Mike e la Control Room dicono la stessa
+ * cosa con le stesse parole e nessuno rifa' la vista a modo suo.
+ *
+ * Il RESIDUO passa dalla nota, non dalla colonna: in Mike e' DEDOTTO
+ * (`size - matched`, service.py:1279-1288) e non letto da `sizeRemaining` di
+ * Betfair. La UI lo marca con l'asterisco invece di spacciarlo per un fatto
+ * dell'exchange (reperto n. 15 della MATRICE).
+ */
+export function rigaOrdineDaGamba(l: MikeLeg): RigaOrdine {
+    const chiesto = Number(l.size);
+    const abbinato = Number(l.matched || 0);
+    const residuo = Number.isFinite(chiesto) && Number.isFinite(abbinato)
+        ? Math.max(0, Math.round((chiesto - abbinato) * 100) / 100)
+        : null;
+    const ignoto = l.status === 'pending_reconcile';
+    return {
+        status: ignoto ? 'pending' : l.status,
+        side: l.side,
+        price: l.price,
+        size_requested: Number.isFinite(chiesto) ? chiesto : null,
+        size_matched: Number.isFinite(abbinato) ? abbinato : null,
+        avg_price_matched: l.avg_price,
+        meta: {
+            ...(residuo != null ? { size_remaining: residuo } : {}),
+            ...(ignoto ? { reconciling: true } : {}),
+        },
+    };
 }
 
 export interface MikeBook {
@@ -410,7 +446,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'ko_green_enabled', label: 'Uscita al fischio attiva', kind: 'bool', hint: 'la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta', group: 'fischio' },
     { key: 'ko_green_ticks', label: 'Uscita a (+tick dall’ingresso)', kind: 'number', step: 1, min: 1, max: 10, hint: 'lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio', group: 'fischio' },
     { key: 'ko_green_window_s', label: 'Finestra dell’uscita (s dal fischio)', kind: 'number', step: 30, min: 0, max: 900, hint: 'scaduta senza abbinamento: ordine annullato e copertura piena sull’Over 4.5', group: 'fischio' },
-    { key: 'ko_green_retry_s', label: 'Uscita: ritenta ogni (s)', kind: 'number', step: 1, min: 1, max: 60, hint: 'vale solo in live, dove l’ordine appoggiato non esiste: il limite viene ri-presentato al mercato a questo ritmo', group: 'fischio' },
+    // 16/09 (ordine dell’utente): l’uscita al fischio è APPOGGIATA in ogni
+    // modalità, quindi non si ri-presenta più e questo parametro non ha alcun
+    // effetto. Resta in pagina perché il valore è salvato sul DB, ma lo dichiara.
+    { key: 'ko_green_retry_s', label: 'Uscita: ritenta ogni (s)', kind: 'number', step: 1, min: 1, max: 60, hint: 'SENZA EFFETTO dal 16/09: l’uscita al fischio è una lay appoggiata sul book in paper e in live, non viene più ri-presentata a ritmo', group: 'fischio' },
     { key: 'second_entry_enabled', label: 'Seconda puntata dopo un gol precoce', kind: 'bool', hint: 'solo se il gol arriva dentro la finestra, ancora scoperti e non usciti', group: 'fischio' },
     { key: 'second_entry_stake_pct', label: 'Seconda puntata: % dello stake', kind: 'number', step: 5, min: 0, max: 200, hint: '50 = metà dello stake iniziale, al miglior prezzo disponibile: alza la quota media', group: 'fischio' },
     { key: 'early_goal_cover_delay_s', label: 'Prima tranche dopo (s dal gol)', kind: 'number', step: 15, min: 0, max: 900, hint: 'tempo lasciato al mercato per riprezzare prima di comprare la prima parte di copertura', group: 'fischio' },
@@ -1095,6 +1134,21 @@ export const MIKE_ACTIVITY_KINDS = [
     // bot dava per fatta una copertura che non esisteva, lasciando scoperto un
     // back reale: e' la notizia piu' importante che possa dare la pagina.
     'place_rifiutato',
+    // 16/09 (C.12b): l'ANNULLAMENTO vero su Betfair. Fino al 15/09 gli «annulla»
+    // di Mike erano contabili — la riga risultava annullata mentre l'ordine
+    // restava VIVO sul book e poteva abbinarsi minuti dopo. Adesso il servizio
+    // CHIEDE l'annullo e ne rilegge l'esito: sono due righe distinte perche'
+    // «chiesto» e «confermato» non sono la stessa notizia.
+    'cancel_richiesto', 'cancel_esito',
+    // 16/09 (ordine dell’utente): l’uscita al fischio è una lay APPOGGIATA, e
+    // Betfair fa SCADERE (LAPSE) gli ordini non abbinati a ogni sospensione del
+    // mercato — un gol al 2' basta. Queste tre righe sono la consapevolezza del
+    // bot: il mercato si è sospeso con un ordine sul book, l’ordine è stato
+    // riletto da Betfair alla riapertura, e che fine aveva fatto.
+    'mercato_sospeso', 'rilettura_alla_riapertura', 'ordine_scaduto_alla_sospensione',
+    // 16/09 h18:20 (ordine dell’utente): cash-out globale fatto dall’utente.
+    // Da quel momento il bot non apre più niente su quella partita.
+    'chiuso_dall_utente',
     'cancel', 'skip', 'no_fill', 'would_place', 'size_legalized', 'pre_cycle', 'cover',
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
@@ -1122,6 +1176,14 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     place_pending: { label: 'ORDINE IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     place_resting: { label: 'ORDINE APPOGGIATO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     fill_resting: { label: 'APPOGGIATA ABBINATA', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
+    // C.12b — l'annullo su Betfair, in due tempi: chiesto e poi riletto.
+    cancel_richiesto: { label: 'ANNULLO CHIESTO A BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    cancel_esito: { label: 'ANNULLO: ESITO DA BETFAIR', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+    // 16/09 — la sospensione del mercato e cosa ne è stato dell'ordine appoggiato.
+    mercato_sospeso: { label: 'MERCATO SOSPESO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+    rilettura_alla_riapertura: { label: 'ORDINE RILETTO ALLA RIAPERTURA', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    ordine_scaduto_alla_sospensione: { label: 'ORDINE SCADUTO NELLA SOSPENSIONE', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    chiuso_dall_utente: { label: 'CHIUSO DALL’UTENTE', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40', critical: true },
     size_legalized: { label: 'IMPORTO LEGALIZZATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
     loss_exit_deciso: { label: 'USCITA IN PERDITA DECISA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_gambe_non_piazzate: { label: 'GAMBE MAI PIAZZATE', cls: 'bg-white/5 text-slate-300 border-white/10' },
@@ -1173,11 +1235,65 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'place_saltato':
             return `${role()} NON piazzata: una gamba con lo stesso ruolo è già in attesa`
                 + `${p.gia_in_volo ? ` (riga #${String(p.gia_in_volo)})` : ''}`;
-        case 'place_rifiutato':
-            return `${role()} RIFIUTATA da Betfair${p.order_status ? ` · ${String(p.order_status)}` : ''}`
+        case 'place_rifiutato': {
+            // C.12b — il CODICE di Betfair in chiaro: INSUFFICIENT_FUNDS e
+            // INVALID_PROFIT_RATIO vogliono due reazioni diverse, e fino al
+            // 16/09 erano lo stesso 'non abbinato' muto.
+            const codice = p.error_code != null && String(p.error_code).trim() !== ''
+                ? ` · codice Betfair ${String(p.error_code).trim()}` : '';
+            return `${role()} RIFIUTATA da Betfair${p.order_status ? ` · ${String(p.order_status)}` : ''}${codice}`
                 + ` · ${money('size')} @ ${odds('price')} — la copertura NON è a mercato`;
-        case 'fill_resting':
-            return `${role()} appoggiata ABBINATA ${money('size')} @ ${odds('price')}${Number.isFinite(n('best_back')) ? ` · best back ${odds('best_back')}` : ''}`;
+        }
+        case 'fill_resting': {
+            // se il servizio pubblica chiesto e residuo si dice il PARZIALE coi
+            // suoi numeri, invece di un 'abbinata' che sembra un fill intero
+            const chiesto = Number.isFinite(n('size_requested')) ? ` su ${money('size_requested')} chiesti` : '';
+            const residuo = Number.isFinite(n('size_remaining')) ? ` · residuo vivo ${money('size_remaining')}` : '';
+            const quanto = Number.isFinite(n('matched')) ? money('matched') : money('size');
+            return `${role()} appoggiata ABBINATA ${quanto}${chiesto} @ ${odds('price')}${residuo}`
+                + `${Number.isFinite(n('best_back')) ? ` · best back ${odds('best_back')}` : ''}`;
+        }
+        // 16/09 — la lay appoggiata e la sospensione del mercato.
+        case 'chiuso_dall_utente':
+            return `hai chiuso TUTTE le operazioni della partita`
+                + `${p.dove ? ` (${String(p.dove)}${p.minuto == null ? '' : ` · ${String(p.minuto)}'`})` : ''}`
+                + ` · da qui il bot non apre più niente: riattivalo con «Riprendi»`;
+        case 'mercato_sospeso':
+            return `mercato ${p.stato ? String(p.stato) : 'sospeso'} con una lay appoggiata sul book:`
+                + ` Betfair può averla fatta scadere, alla riapertura si rilegge`;
+        case 'rilettura_alla_riapertura': {
+            const esito = String(p.esito ?? '');
+            const testo = esito === 'vivo' ? 'è ANCORA VIVO sul book'
+                : esito === 'abbinato' ? 'si era ABBINATO durante la sospensione'
+                    : esito === 'parziale' ? 'era abbinato solo in parte: il residuo è scaduto'
+                        : esito === 'scaduto' ? 'era SCADUTO (LAPSE): non c’era più'
+                            : 'ha esito IGNOTO: va in verifica';
+            const numeri = Number.isFinite(n('size_matched'))
+                ? ` · abbinato ${money('size_matched')} su ${money('size_requested')}` : '';
+            return `${role()} riletto da Betfair alla riapertura: ${testo}${numeri}`;
+        }
+        case 'ordine_scaduto_alla_sospensione': {
+            const scaduto = Number.isFinite(n('size_lapsed')) && n('size_lapsed') > 0
+                ? ` · scaduti ${money('size_lapsed')}` : '';
+            const abbinato = Number.isFinite(n('size_matched')) && n('size_matched') > 0
+                ? ` · abbinati prima di scadere ${money('size_matched')}` : ' · niente abbinato';
+            return `${role()} appoggiata SCADUTA nella sospensione del mercato`
+                + `${abbinato}${scaduto} — non è un errore del bot: Betfair cancella gli ordini non abbinati`;
+        }
+        case 'cancel_richiesto':
+            return `${role()} · ANNULLO chiesto a Betfair${p.bet_id ? ` (ordine ${String(p.bet_id)})` : ''}`
+                + `${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
+        case 'cancel_esito': {
+            // «non confermato» non vuol dire annullato: la riga resta in verifica
+            const esito = p.confermato === true
+                ? 'ANNULLATO su Betfair'
+                : 'annullo NON confermato: la riga resta in verifica';
+            const annullati = Number.isFinite(n('size_cancelled')) ? ` · annullati ${money('size_cancelled')}` : '';
+            const abbinati = Number.isFinite(n('size_matched')) ? ` · abbinati nel frattempo ${money('size_matched')}` : '';
+            const codice = p.error_code != null && String(p.error_code).trim() !== ''
+                ? ` · codice Betfair ${String(p.error_code).trim()}` : '';
+            return `${role()} · ${esito}${annullati}${abbinati}${codice}`;
+        }
         case 'would_place':
             return `(dry) ${role()} ${side()} ${money('size')} @ ${odds('price')}`;
         case 'cancel':

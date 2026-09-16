@@ -279,10 +279,24 @@ describe('parametri bot', () => {
         expect(mergeBotParams({ variants: [] }).variants).toEqual(SAFE_BOT_DEFAULTS.variants);
     });
 
+    // B.5 (16/09) — la sezione `stake` ha una TERZA chiave, `per_strategia`,
+    // che nasce VUOTA: prima questo test fissava le sole due chiavi per LATO,
+    // e `backSize` valeva insieme per TENNIS e PUNTA. Adesso fissa anche che la
+    // mappa per strategia parte vuota, cioe' che nessun importo cambia da solo.
     it('lo stake di default e annidato in `stake` (contratto motore)', () => {
-        expect(SAFE_BOT_DEFAULTS.stake).toEqual({ laySize: 2, backSize: 2 });
-        expect(mergeBotParams({ stake: { laySize: 8 } }).stake).toEqual({ laySize: 8, backSize: 2 });
+        expect(SAFE_BOT_DEFAULTS.stake).toEqual({ laySize: 2, backSize: 2, per_strategia: {} });
+        expect(mergeBotParams({ stake: { laySize: 8 } }).stake)
+            .toEqual({ laySize: 8, backSize: 2, per_strategia: {} });
         expect(mergeBotParams({ stake: 'boom' }).stake).toEqual(SAFE_BOT_DEFAULTS.stake);
+    });
+
+    it('lo stake PER STRATEGIA si ripulisce come nel servizio', () => {
+        // stesse regole di `engine._stake_per_strategia`: solo le quattro
+        // varianti del manuale, solo numeri finiti e positivi.
+        expect(mergeBotParams({ stake: { per_strategia: {
+            punta: 11, base: 0, esatto: 'tre', tennis: -1, ignota: 5,
+        } } }).stake.per_strategia).toEqual({ punta: 11 });
+        expect(mergeBotParams({ stake: { per_strategia: 'boom' } }).stake.per_strategia).toEqual({});
     });
 });
 

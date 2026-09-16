@@ -34,13 +34,14 @@ import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtPctPoints, fmtTime } from '@/lib/
 // grassetto, stessa dimensione), non piu' una copia locale per sezione.
 import { sideMeta, pnlClass, T } from '@/lib/tradeStatus';
 import { MikeCashOutButton } from '@/components/mike/MikeCashOutButton';
+import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import {
     activeLegs, awaitingKickoff, bookOrders, cashoutBarPct, cycleNumber, eventFlags, feedFreshness,
     etaQuoteS, hasModel,
     legSelectionLabel, legStatusLabel,
     lineLabel, marketLabel, marketStatusMeta, phaseMeta, pnlByTotalCells, positionRows, requestOutcome,
-    roleLabel, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
+    roleLabel, rigaOrdineDaGamba, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
     MIKE_TERMINAL_STATES, type MikeBook, type MikeCashoutSmart, type MikeEvent, type MikeLossExit,
     type MikeParams, type MikeRequest, type MikeRequestKind, type PositionRow,
 } from '@/lib/mike';
@@ -928,18 +929,20 @@ function MikeMatchCardBase({
                             // una BACK quando il best lay scende
                             const ref = l.side === 'lay' ? (book?.best_back ?? null) : (book?.best_lay ?? null);
                             const dist = ref != null && price > 0 ? ticksBetween(ref, price) : null;
-                            const rest = Math.max(0, Number(l.size) - Number(l.matched || 0));
                             return (
                                 <div key={l.ref} className="flex items-center gap-2 flex-wrap text-slate-300" data-testid="mike-order-row">
                                     <Badge variant="outline" className={`text-[9px] ${sideMeta(l.side).cls}`}>{sideMeta(l.side).label}</Badge>
                                     <span>{roleLabel(l.role)} <span className="text-slate-500">({legSelectionLabel(l)})</span></span>
-                                    <span className="tabular-nums text-white/90">{fmtMoney(rest)} @ {fmtOdds(price)}</span>
+                                    {/* C.12b (16/09) — chiesto / abbinato col prezzo MEDIO /
+                                        residuo: gli stessi tre numeri, con le stesse parole,
+                                        che ora vedono anche Omega, Safe e la Control Room.
+                                        Prima qui c'erano tre pezzi di JSX solo di Mike. */}
+                                    <StatoOrdineCompatto riga={rigaOrdineDaGamba(l)} className="text-[11px] text-slate-300" testId="mike-stato-ordine" />
                                     <span className="text-slate-500">
                                         {legStatusLabel(l)}
                                         {l.persistence === 'PERSIST'
                                             ? <span title="PERSIST: l’ordine resta valido anche dopo il calcio d’inizio"> · resta valido in gioco</span>
                                             : ''}
-                                        {Number(l.matched) > 0 ? ` · abbinati ${fmtMoney(Number(l.matched))}` : ''}
                                     </span>
                                     <span className={`tabular-nums ${dist === null ? 'text-slate-500' : dist === 0 ? 'text-emerald-300' : 'text-amber-200/80'}`}>
                                         {dist === null ? 'distanza dal best: —' : dist === 0 ? 'al best' : `${Math.abs(dist)} tick ${dist > 0 ? 'sopra' : 'sotto'} il best`}

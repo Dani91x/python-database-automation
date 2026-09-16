@@ -32,6 +32,7 @@ import { BotHeader } from '@/components/trading/BotHeader';
 import { Badge } from '@/components/ui/badge';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
 import { ModeToggle } from '@/components/trading/ModeToggle';
+import { creaInterruttori } from '@/lib/interruttori';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { LiveConfirmDialog } from '@/components/trading/LiveConfirmDialog';
 import { StatTile, KpiRow, toneOf } from '@/components/trading/StatTile';
@@ -356,10 +357,19 @@ export default function Omega() {
         } finally { setBusy(false); }
     }
 
+    /**
+     * ⚠️ 16/09 — il cambio di modalita' passa dal comando CONDIVISO, lo stesso
+     * che usa la Control Room: `omega_update_params(p_mode)`, che NON tocca
+     * `status`. Mai `omega_activate`, che accenderebbe il bot.
+     */
     async function applyMode(next: OmegaMode) {
         setBusy(true);
         try {
-            await updateOmegaParams({ mode: next });
+            await creaInterruttori({
+                params: () => serverParams.current,
+                servizio: () => ({ inCorsa: running, modalita: mode }),
+                obiettivoOmega: () => goalInput,
+            }, () => {}).cambiaModalita('omega', next);
             toast[next === 'live' ? 'error' : 'success'](
                 next === 'live' ? `🔴 ${T.modeLive} — soldi veri` : '🟢 Modalità PAPER (simulazione)',
             );

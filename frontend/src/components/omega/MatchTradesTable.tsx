@@ -41,6 +41,11 @@ import {
 // zero neutro, assente grigio tenue. Prima Omega aveva la sua copia locale.
 import { statusMeta, pnlClass, T } from '@/lib/tradeStatus';
 import { liveScoreLabel } from '@/lib/useScanLiveFeed';
+// C.12b — lo stato dell'ORDINE (chiesto/abbinato/residuo/prezzo medio/
+// ultimo aggiornamento da Betfair) e' lo stesso componente delle altre
+// sezioni: una sola regola, una sola forma, nessuna copia locale.
+import { StatoOrdineRiga } from '@/components/trading/StatoOrdine';
+import { statoOrdine } from '@/lib/statoOrdine';
 import { csSelection, htSelection, type CalcioScanPayload } from '@/lib/safeStrategyScan';
 import {
     groupTradesByMatch, romeDayOf, type MatchGroup, type MatchLeg, type MatchTradeLike, type LegKind,
@@ -81,6 +86,14 @@ export interface StatusInput {
     exitProfit?: boolean | null;
     /** copertura letta da meta.hedge */
     hedge?: HedgeInfo | null;
+    /**
+     * C.12b — ordine solo APPOGGIATO sul book, non ancora abbinato.
+     * `RESTING_META` esisteva dal 12/09 ma questa tabella non la passava MAI:
+     * una lay appoggiata compariva come «APERTO» (azzurro), identica a una
+     * posizione davvero abbinata, e il rischio sembrava coperto quando non lo
+     * era per niente.
+     */
+    resting?: boolean;
 }
 
 /**
@@ -99,9 +112,11 @@ export function legStatusBadge(a: StatusInput): { label: string; cls: string } {
     // stato BASE dalla mappa CONDIVISA (lib/tradeStatus): una sola parola e un
     // solo colore per stato in tutte e tre le sezioni, nessuna mappa duplicata.
     // La precedenza esito certo > terminale > riconciliazione la decide lì.
-    const base = statusMeta(a.status, { reconciling: a.reconciling, terminal: a.terminal });
+    const base = statusMeta(a.status, {
+        reconciling: a.reconciling, terminal: a.terminal, resting: a.resting,
+    });
     if (a.status !== 'hedged' && a.status !== 'pending' && a.status !== 'open') return base;
-    if (a.reconciling || a.terminal) return base;
+    if (a.reconciling || a.terminal || a.resting) return base;
     if (a.status === 'hedged') {
         // Contratto 11/09 (seconda passata): 'greenup' lo scrive il servizio
         // SOLO per una chiusura INTEGRALE con bloccato ≥ 0. Una chiusura in
@@ -249,9 +264,11 @@ function LegCell<T extends MatchTradeLike>({
     const exit = tradeExit({ meta: t.meta ?? null, closes: leg.closes.map((c) => ({ meta: c.meta ?? null })) as never });
     const hedge = hedgeInfo(t.meta);
     const exitProfit = typeof meta.exit_profit === 'boolean' ? meta.exit_profit : null;
+    // C.12b — lo stato dell'ORDINE secondo Betfair (colonne nuove, poi le note)
+    const ordine = statoOrdine(t);
     const b = legStatusBadge({
         status: t.status, reconciling: leg.reconciling, terminal: leg.terminal,
-        exitKind: exit?.kind, exitProfit, hedge,
+        exitKind: exit?.kind, exitProfit, hedge, resting: ordine.esito === 'appoggiato',
     });
     const gBadge = greenupBadge(t.meta);
     const gInfo = greenupInfo(t.meta);
@@ -339,6 +356,13 @@ function LegCell<T extends MatchTradeLike>({
                         </span>
                     )}
                 </div>
+                {/* riga 1-bis: LO STATO DELL'ORDINE (C.12b, 16/09).
+                    «ordine x a prezzo y: abbinato? in che quantita'? tutto o
+                    parziale?» — chiesto, abbinato col prezzo MEDIO, residuo
+                    ancora vivo sul book e da quanto non abbiamo notizie da
+                    Betfair. Prima qui c'era un solo `size` (che dopo la
+                    conferma e' l'abbinato) e nessun prezzo medio. */}
+                <StatoOrdineRiga riga={t} nowMs={nowMs} testId="omega-stato-ordine" />
                 {/* riga 2 (solo posizioni vive): quota LIVE, freschezza, chiusura ora */}
                 {leg.live && liveView && (
                     <div className="text-[11px] tabular-nums flex flex-wrap gap-x-2 items-center" data-testid="omega-leg-live">

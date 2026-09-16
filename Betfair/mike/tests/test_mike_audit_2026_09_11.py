@@ -1071,6 +1071,26 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # e credeva di avere una copertura che non esisteva, lasciando un back
         # reale scoperto. Un rifiuto e' una notizia, non un dettaglio.
         "place_rifiutato",
+        # 16/09 (C.12a): L'ANNULLAMENTO ARRIVA DAVVERO A BETFAIR.
+        # Fino al 16/09 tutti i «cancel» di Mike erano CONTABILI: cambiavano lo
+        # stato della riga mentre su Betfair l'ordine restava vivo e si abbinava
+        # piu' tardi, senza che nessuno lo contabilizzasse. Adesso si chiede
+        # l'annullamento (`cancel_richiesto`) e si RILEGGE l'esito
+        # (`cancel_esito`): se Betfair non conferma, la riga non diventa mai
+        # 'annullata' — resta in riconciliazione.
+        "cancel_richiesto", "cancel_esito",
+        # 16/09 (ordine dell'utente): l'uscita al fischio e' una lay APPOGGIATA,
+        # e Betfair fa SCADERE (LAPSE) gli ordini non abbinati a ogni sospensione
+        # del mercato — un gol al 2' basta. Queste tre righe sono la
+        # consapevolezza del bot: il mercato si e' sospeso con un ordine sul
+        # book, l'ordine e' stato riletto da Betfair alla riapertura, e che fine
+        # aveva fatto. Senza, la scadenza sarebbe muta (Costituzione §15.6).
+        "mercato_sospeso", "rilettura_alla_riapertura",
+        "ordine_scaduto_alla_sospensione",
+        # 16/09 h18:20 (ordine dell'utente): l'utente ha chiuso a mano TUTTE le
+        # operazioni della partita. Da quel momento il bot non apre piu' niente
+        # li' sopra, e la pagina deve dire perche'.
+        "chiuso_dall_utente",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

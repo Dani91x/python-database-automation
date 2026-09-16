@@ -111,7 +111,13 @@ export interface SafeParamsEffective {
      *  BASE ed ESATTO (che bancano). NON e' `risk.model_stake`, che e' di un
      *  altro motore (le opportunita' di modello). Un valore scritto male
      *  ripiega in silenzio su 2,00 EUR: questo campo mostra quello VERO. */
-    stake?: { laySize?: number; backSize?: number } | null;
+    stake?: {
+        laySize?: number; backSize?: number;
+        /** B.5 (16/09) — stake per NOME di strategia. Nasce vuota: una chiave
+         *  assente vuol dire "usa quella per lato", come sempre. Il motore la
+         *  legge con `engine.stake_di_strategia`. */
+        per_strategia?: Record<string, number>;
+    } | null;
 }
 
 /** CERT. 14/09 — strategie che stanno operando a SOLDI VERI adesso.
@@ -515,10 +521,18 @@ export interface SafeBotParams extends SafeStrategyParams {
     risk: SafeRiskParams;
     /** stake di default usato dal motore e proposto dalla UI sui segnali */
     stake: {
-        /** € da bancare sui segnali LAY */
+        /** € da bancare sui segnali LAY (BASE ed ESATTO, se non hanno il loro) */
         laySize: number;
-        /** € da puntare sui segnali BACK */
+        /** € da puntare sui segnali BACK (PUNTA e TENNIS, se non hanno il loro) */
         backSize: number;
+        /**
+         * B.5 (16/09) — STAKE PER STRATEGIA. `backSize` valeva insieme per
+         * TENNIS e PUNTA: cambiarlo per una lo cambiava all'altra, in silenzio.
+         * Questa mappa e' per NOME. Nasce VUOTA, e una chiave assente vuol dire
+         * "usa quella per lato" — quindi nessun importo cambia da solo.
+         * Specchio di `engine.DEFAULT_PARAMS['stake']['per_strategia']`.
+         */
+        per_strategia: Record<string, number>;
     };
 }
 
@@ -569,10 +583,26 @@ export const SAFE_BOT_DEFAULTS: SafeBotParams = {
     auto_trade_combos: false,
     auto_trade_tennis: false,
     risk: { ...SAFE_RISK_DEFAULTS },
-    stake: { laySize: 2, backSize: 2 },
+    stake: { laySize: 2, backSize: 2, per_strategia: {} },
 };
 
 const ALL_VARIANTS: VariantId[] = ['base', 'esatto', 'punta', 'tennis'];
+
+/**
+ * La mappa stake-per-strategia ripulita, con le STESSE regole del servizio
+ * (`engine._stake_per_strategia`): solo le quattro varianti del manuale, solo
+ * numeri finiti e positivi. Quello che non si capisce cade, e una chiave
+ * caduta vuol dire "usa quella per lato" — non spegne niente.
+ */
+function stakePerStrategia(raw: unknown): Record<string, number> {
+    if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: Record<string, number> = {};
+    for (const v of ALL_VARIANTS) {
+        const n = (raw as Record<string, unknown>)[v];
+        if (typeof n === 'number' && Number.isFinite(n) && n > 0) out[v] = n;
+    }
+    return out;
+}
 
 function num(v: unknown, fallback: number): number {
     return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -620,6 +650,7 @@ export function mergeBotParams(raw: unknown): SafeBotParams {
         stake: {
             laySize: num((r.stake as Record<string, unknown> | undefined)?.laySize, SAFE_BOT_DEFAULTS.stake.laySize),
             backSize: num((r.stake as Record<string, unknown> | undefined)?.backSize, SAFE_BOT_DEFAULTS.stake.backSize),
+            per_strategia: stakePerStrategia((r.stake as Record<string, unknown> | undefined)?.per_strategia),
         },
     };
 }

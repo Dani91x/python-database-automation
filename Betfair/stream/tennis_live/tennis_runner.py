@@ -42,6 +42,7 @@ from flumine import Flumine, clients
 from flumine import config as flumine_config
 from flumine.worker import BackgroundWorker
 
+from .. import avvio_app as _aa
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
@@ -1266,9 +1267,16 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
                     or getattr(strat, "_tennis_disabled", False):
                 continue
             try:
+                # ⚠️ ``stats_timbrate``: l'APP_BOOT_ID vive dentro ``stats``, che
+                # qui si riscrive per intero. Senza il timbro l'id sparirebbe al
+                # primo battito e il riavvio successivo del runner (watchdog,
+                # ricambio pianificato) scambierebbe per «avvio nuovo» un bot
+                # che l'utente aveva appena armato, disarmandolo.
                 tennis_db.set_tennis_bot_status(
                     event_id, bot_key, "running",
-                    stats=getattr(strat, "stats", None), heartbeat=True,
+                    stats=_aa.stats_timbrate(getattr(strat, "stats", None),
+                                             _aa.boot_id_ambiente()),
+                    heartbeat=True,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.debug("[tennis-runner] heartbeat %s/%s KO: %s", event_id, bot_key, e)
@@ -1456,6 +1464,16 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
     trading = build_client(login=True)
     session = TennisLiveSession(trading)
     session.context_api_client = trading  # per board_worker (REST leggero)
+    # FASE A (16/09) — all'avvio NUOVO dell'app nessun bot tennis resta armato:
+    # gli stati requested/arming/armed/running sono persistiti per evento e il
+    # runner li ri-arma da solo. Un riavvio dal watchdog (stesso APP_BOOT_ID)
+    # non tocca niente. Va PRIMA della pulizia orfani, che guarda solo gli
+    # heartbeat vecchi e una riga 'requested' fresca non la vede nemmeno.
+    from .tennis_bot_service import ferma_bot_al_nuovo_avvio as _ferma_al_boot
+    try:
+        _ferma_al_boot()
+    except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio del runner
+        logger.warning("[tennis-runner] controllo d'avvio bot KO (ignorato): %s", e)
     _cleanup_orphan_bot_controls()  # mai bot 'running' fantasma dopo un riavvio
     # A7 — canale LOCALE desktop (bind SOLO 127.0.0.1); best-effort come il calcio.
     from .. import local_channel as _lc

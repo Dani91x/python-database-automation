@@ -18,8 +18,28 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
+const crypto = require('crypto');
 
 const UI_PORT = 47330;
+
+// ---------------------------------------------------------------------------
+// APP_BOOT_ID — L'IMPRONTA DI QUESTO AVVIO DELL'APP (FASE A, 16/09).
+//
+// «I bot li accendo solo io, in paper e in live. All'avvio dell'app nessun bot
+// opera.» Ogni servizio rilegge la propria riga di controllo dal database: se
+// ieri era rimasto 'running', oggi riparte da solo — anche in LIVE.
+//
+// Questo id nasce UNA volta per avvio dell'app e viaggia nell'ambiente di tutti
+// i processi lanciati da qui. Il watchdog lancia il figlio SENZA passare `env`
+// (`Betfair/stream/watchdog.py`: `popen(cmd, cwd=...)`), quindi il figlio
+// eredita questo stesso ambiente: un riavvio dopo un crash porta lo STESSO id e
+// NON spegne un bot che l'utente aveva acceso. Un avvio nuovo dell'app porta un
+// id nuovo, e i servizi si fermano da soli (vedi Betfair/stream/avvio_app.py).
+//
+// Si genera qui e non nei servizi perche' qui c'e' UN processo solo: e' l'unico
+// punto in cui «l'app si e' avviata» succede una volta sola.
+// ---------------------------------------------------------------------------
+const APP_BOOT_ID = `${Date.now().toString(36)}-${crypto.randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // RADICE REPO — fix avvio da exe PACCHETTIZZATO: __dirname punta dentro app.asar
@@ -176,6 +196,10 @@ function spawnRunner(label, args) {
     // env passthrough + velocità canale locale (poll coda 0.15s, publish ladder 0.3s).
     const env = {
         ...process.env,
+        // IMPRONTA DELL'AVVIO: la leggono i servizi bot per capire se stanno
+        // ripartendo dopo un crash (stesso id → il bot acceso resta acceso) o
+        // se l'app e' stata riaperta (id nuovo → nessun bot opera).
+        APP_BOOT_ID,
         LIVE_ORDER_QUEUE_POLL_SEC: '0.15',
         LIVE_LADDER_PUBLISH_SEC: '0.3',
         TENNIS_LADDER_PUBLISH_SEC: '0.3',
@@ -226,6 +250,9 @@ function spawnRunner(label, args) {
 }
 
 function startRunners() {
+    // l'impronta di questo avvio finisce nei log: senza, un bot fermato
+    // all'avvio non sarebbe riconducibile a nessun evento visibile.
+    console.log(`[desktop] APP_BOOT_ID di questo avvio: ${APP_BOOT_ID}`);
     // niente doppio avvio: il lock porta dei runner protegge già; il watchdog esce
     // da solo se un'altra istanza è attiva.
     spawnRunner('runner-calcio', ['-m', 'Betfair.stream.watchdog']);

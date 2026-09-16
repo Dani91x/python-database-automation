@@ -158,6 +158,12 @@ class FlumineSubminOps:
     strategy: Any
     max_stake: Optional[float] = None
     customer_strategy_ref: Optional[str] = None
+    # F0 (16/09): client flumine della MODALITA' DELLA RIGA che ha chiesto il
+    # place-and-trim (simulato per 'paper', reale per 'live'). ``None`` = non
+    # specificato -> vale il client di default del framework (uso storico).
+    # I 3 passi (park / trim / reprice) DEVONO stare sullo stesso client, altrimenti
+    # flumine rifiuta cancel/replace (``Transaction``: order.client != transaction client).
+    client: Any = None
 
     def place(
         self,
@@ -188,10 +194,12 @@ class FlumineSubminOps:
         # Fix CRITICAL-1: place/cancel/replace flumine ritornano **False** se un trading
         # control rifiuta (ordine VIOLATION, MAI inviato a Betfair). Ignorarlo lascerebbe la
         # sequenza submin ad attendere un ordine INESISTENTE ('processing' per sempre).
+        extra = {"client": self.client} if self.client is not None else {}
         if self.customer_strategy_ref is not None:
-            ok = market.place_order(built.order, customer_strategy_ref=self.customer_strategy_ref)
+            ok = market.place_order(
+                built.order, customer_strategy_ref=self.customer_strategy_ref, **extra)
         else:
-            ok = market.place_order(built.order)
+            ok = market.place_order(built.order, **extra)
         if ok is False:
             raise ValueError(f"submin place RIFIUTATO — {_violation_reason(built.order)}")
         return built.order

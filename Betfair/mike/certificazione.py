@@ -100,6 +100,20 @@ def _vive(ctx: E.MatchCtx) -> List[E.Leg]:
     return [l for l in ctx.legs if l.is_live]
 
 
+def _in_volo(ctx: E.MatchCtx) -> List[E.Leg]:
+    """Le gambe che POSSONO essere a mercato adesso.
+
+    ⚠️ 16/09 — i controlli J1 e J2 guardavano solo ``is_live``, cioe' solo le
+    gambe che il bot SA vive. Una gamba a esito IGNOTO (``pending_reconcile``)
+    puo' essere viva su Betfair esattamente come una 'pending' — la Costituzione
+    §4.11 lo dice a chiare lettere («conta SEMPRE nel rischio, peggior caso:
+    abbinata per intero») — e il difetto 4 del catalogo del 15/09 e' proprio
+    questo: un ordine vivo dichiarato mai piazzato, e un secondo green-up.
+    Con la definizione vecchia quel caso i controlli non lo vedevano.
+    """
+    return [l for l in ctx.legs if l.is_live or l.needs_reconcile]
+
+
 def _book(snap: E.Snapshot, mercato: str, selezione: str) -> Optional[E.Book]:
     return (snap.books or {}).get((mercato, selezione))
 
@@ -440,32 +454,33 @@ def _h2(ctx, snap, d, params):
 # ===========================================================================
 # J. GLI ORDINI IN VOLO — i cinque difetti del 15/09
 # ===========================================================================
-@_controllo("J1", "mai due gambe VIVE con lo stesso ruolo, ciclo e lato "
+@_controllo("J1", "mai due gambe IN VOLO con lo stesso ruolo, ciclo e lato "
                   "(freno anti-duplicato, 15/09)",
-            quando=lambda ctx, snap, d, p: bool(_vive(ctx)))
+            quando=lambda ctx, snap, d, p: bool(_in_volo(ctx)))
 def _j1(ctx, snap, d, params):
     visti: Dict[tuple, str] = {}
-    for l in _vive(ctx):
+    for l in _in_volo(ctx):
         k = (l.role, int(l.cycle_no or 0), l.side, l.market, l.selection)
         if k in visti:
-            return (f"due gambe vive identiche: '{visti[k]}' e '{l.ref}' "
+            return (f"due gambe in volo identiche: '{visti[k]}' e '{l.ref}' "
                     f"({l.role} ciclo {l.cycle_no} {l.side})")
         visti[k] = l.ref
     return None
 
 
-@_controllo("J2", "non si piazza una gamba di chiusura se ce n'e' gia' una viva "
+@_controllo("J2", "non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO "
                   "con lo stesso ruolo e ciclo (15/09)",
             quando=lambda ctx, snap, d, p: any(a.role in E.CLOSING_ROLES for a in _piazzamenti(d)))
 def _j2(ctx, snap, d, params):
     for a in _piazzamenti(d):
         if a.role not in E.CLOSING_ROLES:
             continue
-        gia = next((l for l in _vive(ctx)
+        gia = next((l for l in _in_volo(ctx)
                     if l.role == a.role and int(l.cycle_no or 0) == int(ctx.cycle_no or 0)
                     and l.side == a.side and l.market == a.market), None)
         if gia is not None:
-            return (f"nuova '{a.role}' mentre '{gia.ref}' e' ancora viva "
+            stato = "a esito IGNOTO" if gia.needs_reconcile else "ancora viva"
+            return (f"nuova '{a.role}' mentre '{gia.ref}' e' {stato} "
                     f"(abbinato {gia.matched}/{gia.size})")
     return None
 
@@ -483,17 +498,124 @@ def _j3(ctx, snap, d, params):
     return None
 
 
-@_controllo("J4", "una gamba a esito IGNOTO non viene mai data per annullata "
-                  "(§4.11)",
-            quando=lambda ctx, snap, d, p: any(a.kind == 'cancel' for a in d.actions))
+@_controllo("J4", "una gamba a esito IGNOTO non viene mai data per annullata, ne' "
+                  "sostituita da una nuova (§4.11)",
+            quando=lambda ctx, snap, d, p: (any(a.kind == 'cancel' for a in d.actions)
+                                            or any(l.needs_reconcile for l in ctx.legs)))
 def _j4(ctx, snap, d, params):
+    """⚠️ 16/09 — il controllo guardava SOLO l'azione `cancel`, e cosi' non
+    poteva vedere il difetto 4 del 15/09, che non annullava niente: piazzava una
+    gamba NUOVA al posto di quella a esito ignoto (un ordine vivo su Betfair
+    dichiarato «mai piazzato», e un secondo green-up con soldi veri). Dare per
+    morta una gamba ignota RIFACENDOLA e' la stessa violazione, in un'altra
+    forma. E senza questa meta' il controllo non aveva quasi mai un caso."""
     for a in d.actions:
         if a.kind != "cancel":
             continue
         g = next((l for l in ctx.legs if l.ref == getattr(a, "ref", None)), None)
         if g is not None and g.needs_reconcile:
             return f"cancel su '{g.ref}', che e' a esito ignoto"
+    for a in _piazzamenti(d):
+        g = next((l for l in ctx.legs
+                  if l.needs_reconcile and l.role == a.role and l.side == a.side
+                  and l.market == a.market and l.selection == a.selection
+                  and int(l.cycle_no or 0) == int(ctx.cycle_no or 0)), None)
+        if g is not None:
+            return (f"nuova '{a.role}' al posto di '{g.ref}', che e' a esito ignoto "
+                    f"(potrebbe essere viva su Betfair)")
     return None
+
+
+@_controllo("J5", "MAI due lay VIVE o IN VOLO sullo stesso mercato/selezione: se si "
+                  "abbinano entrambe la posizione si ribalta e resta SCOPERTA "
+                  "(ordine dell'utente 16/09 h16:15)",
+            quando=lambda ctx, snap, d, p: any(
+                l.side == 'lay' and (l.is_live or l.needs_reconcile) for l in ctx.legs))
+def _j5(ctx, snap, d, params):
+    """⚠️ «Non devono mai esserci 2 lay a mercato, se si abbinano siamo
+    scoperti!!!» — parole dell'utente, 16/09 h16:15.
+
+    E' letteralmente vero: la posizione di Mike e' un BACK Under 3.5 e ogni lay
+    serve a chiuderlo. Due lay abbinate lo ribaltano in un netto LAY, cioe' una
+    posizione allo scoperto che nessuna regola prevede.
+
+    Il controllo e' SEVERO di proposito e guarda due cose:
+      1. lo STATO: due lay in volo (vive o a esito ignoto) sulla stessa
+         selezione, anche per un solo giro;
+      2. la DECISIONE: una lay nuova proposta dove ce n'e' gia' una in volo —
+         e vale ANCHE se la stessa decisione la annulla. Un annullamento
+         emesso non e' un annullamento confermato: finche' Betfair non ha
+         risposto quella lay puo' abbinarsi.
+    """
+    visti = {}
+    for l in ctx.legs:
+        if l.side != "lay" or not (l.is_live or l.needs_reconcile):
+            continue
+        k = (l.market, l.selection)
+        if k in visti:
+            return (f"due lay in volo su {k[0]}|{k[1]}: '{visti[k]}' e '{l.ref}' "
+                    f"(se abbinano entrambe la posizione resta SCOPERTA)")
+        visti[k] = l.ref
+    for a in _piazzamenti(d):
+        if str(a.side) != "lay":
+            continue
+        k = (a.market, a.selection)
+        if k in visti:
+            annullata = any(getattr(x, "kind", "") == "cancel"
+                            and getattr(x, "ref", None) == visti[k] for x in d.actions)
+            come = ("annullata nello STESSO giro: l'annullamento emesso non e' "
+                    "un annullamento confermato" if annullata else "ancora in volo")
+            return (f"nuova lay '{a.role}' su {k[0]}|{k[1]} mentre '{visti[k]}' e' {come}")
+    return None
+
+
+@_controllo("R2", "dopo un cash-out globale dell'utente il bot NON apre piu' niente su "
+                  "quella partita: la gestisce l'utente (ordine 16/09 h18:20)",
+            quando=lambda ctx, snap, d, p: bool(ctx.no_reentry
+                                                and str(ctx.close_reason or "") == "manual"
+                                                and not ctx.flatten_pending))
+def _r2(ctx, snap, d, params):
+    """⚠️ «Il bot gestisce le sue operazioni; UNICO CASO e' quando io chiudo
+    manualmente TUTTE le operazioni (cash-out globale della partita): al
+    successivo controllo lo capisce e NON FA ALTRO» — utente, 16/09 h18:20.
+
+    ``quando`` prende i giri SUCCESSIVI alla chiusura manuale: ``no_reentry``
+    acceso, ``close_reason='manual'``, chiusura non piu' in corso.
+    Si vietano le APERTURE, non le chiusure: se un residuo si abbina il bot deve
+    poterlo gestire (niente che protegge puo' impedire di chiudere).
+    """
+    aperture = _aperture(d)
+    if aperture:
+        ruoli = ", ".join(sorted({str(a.role) for a in aperture}))
+        return (f"l'utente ha chiuso tutto a mano e il bot riapre: {ruoli} "
+                f"(stato {ctx.state})")
+    return None
+
+
+# ===========================================================================
+# R. LA SOSPENSIONE (ordine dell'utente, 16/09 — Costituzione §15.6)
+# ===========================================================================
+@_controllo("R1", "dopo una sospensione con la lay appoggiata VIVA, alla riapertura "
+                  "l'ordine si RILEGGE da Betfair prima di decidere (§15.6)",
+            quando=lambda ctx, snap, d, p: bool((ctx.riapertura or {}).get("refs")))
+def _r1(ctx, snap, d, params):
+    """⚠️ La lay di uscita al fischio e' appoggiata: Betfair la fa SCADERE
+    (LAPSE) a ogni sospensione del mercato, e un gol al 2' basta. Se il bot
+    ricomincia a decidere a mercato riaperto senza aver riletto quell'ordine,
+    sta dando per vivo qualcosa che potrebbe non esistere piu': non ha ne'
+    l'uscita ne' la copertura, ed e' il punto peggiore in cui stare.
+    Il servizio annota la sospensione in ``ctx.riapertura`` e mette
+    ``letto=True`` solo quando Betfair ha risposto davvero (anche «non lo so»:
+    li' la gamba va in riconciliazione). Finche' e' False, e il mercato e' di
+    nuovo operabile, questo controllo e' rosso.
+    """
+    r = ctx.riapertura or {}
+    if r.get("letto"):
+        return None
+    if not E.operabile(_book(snap, E.MARKET_OU35, E.SEL_UNDER)):
+        return None                    # ancora sospeso: non c'e' niente da rileggere
+    return (f"mercato riaperto e le gambe {r.get('refs')} non sono state rilette da "
+            f"Betfair (sospeso a {r.get('ts')}): il bot le sta dando per vive")
 
 
 # ===========================================================================
@@ -563,6 +685,14 @@ class Andamento:
     azione_piu_ripetuta: Optional[tuple] = None
     # gambe viste per ref: serve a contare quante ne nascono per ruolo/ciclo
     refs_per_ruolo_ciclo: Dict[tuple, int] = field(default_factory=dict)
+    # ⚠️ 16/09 — il massimo PER RUOLO, non solo quello assoluto. Con il solo
+    # massimo assoluto un ruolo che si ripresenta per regola (`ko_green`, §15.6)
+    # copre tutti gli altri: su 35760084 in `taker` le 31 ripresentazioni di
+    # `ko_green` avrebbero nascosto qualunque altra riproposizione sotto quella
+    # soglia. Un controllo che vede una cosa sola non e' un controllo.
+    ripetizioni_correnti: Dict[str, int] = field(default_factory=dict)
+    max_per_ruolo: Dict[str, int] = field(default_factory=dict)
+    azione_piu_ripetuta_per_ruolo: Dict[str, tuple] = field(default_factory=dict)
 
 
 def osserva(and_: Andamento, ctx: E.MatchCtx, d: E.Decision) -> None:
@@ -582,7 +712,35 @@ def osserva(and_: Andamento, ctx: E.MatchCtx, d: E.Decision) -> None:
         if and_.ripetizioni > and_.max_ripetizioni:
             and_.max_ripetizioni = and_.ripetizioni
             and_.azione_piu_ripetuta = firma
+        # lo stesso conteggio, ma tenuto PER RUOLO
+        ruolo = str(a.role)
+        precedente = and_.azione_piu_ripetuta_per_ruolo.get(ruolo)
+        if precedente == firma:
+            and_.ripetizioni_correnti[ruolo] = and_.ripetizioni_correnti.get(ruolo, 0) + 1
+        else:
+            and_.ripetizioni_correnti[ruolo] = 1
+            and_.azione_piu_ripetuta_per_ruolo[ruolo] = firma
+        if and_.ripetizioni_correnti[ruolo] > and_.max_per_ruolo.get(ruolo, 0):
+            and_.max_per_ruolo[ruolo] = and_.ripetizioni_correnti[ruolo]
 
+
+# I RITMI DI RIPRESENTAZIONE CHE LA SPEC DICHIARA. Non sono riproposizioni: sono
+# una regola scritta. §15.6 della Costituzione: «in live l'ordine di uscita viene
+# RI-PRESENTATO al mercato ogni `ko_green_retry_s` secondi e si abbina appena il
+# prezzo c'e' — l'equivalente pratico di un ordine appoggiato». Il conteggio
+# resta nel referto (niente si nasconde), ma il verdetto deve dire QUALE regola
+# lo prevede, altrimenti accusa il bot di rispettare la propria spec — che e'
+# esattamente il falso positivo contro cui mette in guardia §6.7 del processo.
+# ⚠️ ORDINE DELL'UTENTE 16/09 — LA TABELLA E' VUOTA, E DEVE RESTARLO.
+# Fino a stamattina conteneva `ko_green`: §15.6 prescriveva la ri-presentazione
+# ogni `ko_green_retry_s` sul percorso taker, e il verdetto la dichiarava
+# prevista invece di accusarla. Adesso l'uscita al fischio e' una lay APPOGGIATA
+# in ogni modalita': non si ri-presenta piu', e se ricompare una serie di
+# `ko_green` identici quella NON e' una regola rispettata, e' una VIOLAZIONE —
+# P1 deve dirlo, e P3 deve tornare a contarla nella divergenza fra proposto e
+# piazzato. La tabella resta perche' il meccanismo serve al primo ritmo che
+# verra' dichiarato davvero; oggi nessun ruolo ne ha uno.
+RITMI_DICHIARATI: Dict[str, str] = {}
 
 # soglie: sopra queste il comportamento non e' piu' spiegabile come «riprova»
 RIPETIZIONI_SOSPETTE = 20          # la stessa identica azione, di fila
@@ -594,16 +752,28 @@ def difetti_di_progettazione(and_: Andamento, *, ordini_piazzati: int,
     """Il verdetto sul COMPORTAMENTO, a fine partita."""
     out: List[Violazione] = []
 
-    if and_.max_ripetizioni >= RIPETIZIONI_SOSPETTE:
-        r = and_.azione_piu_ripetuta
-        out.append(Violazione(
-            "P1", "il motore non deve riproporre all'infinito la stessa identica azione",
-            f"{r[0]} {r[3]} {r[5]} @ {r[4]} riproposta {and_.max_ripetizioni} volte di "
-            f"fila. Senza un freno a valle sarebbero altrettanti ordini VERI: e' la "
-            f"forma esatta del loop del 15/09."))
+    for ruolo, quante in sorted(and_.max_per_ruolo.items(), key=lambda x: -x[1]):
+        if quante < RIPETIZIONI_SOSPETTE:
+            continue
+        r = and_.azione_piu_ripetuta_per_ruolo.get(ruolo) or (ruolo, "", "", "", 0, 0)
+        regola = RITMI_DICHIARATI.get(ruolo)
+        if regola:
+            out.append(Violazione(
+                "P1-DICHIARATA", "ripetizione PREVISTA dalla spec: si conta, non si accusa",
+                f"{ruolo} {r[3]} {r[5]} @ {r[4]} ripresentata {quante} volte di fila. "
+                f"La regola che lo prevede e' {regola}. Da portare all'utente se il "
+                f"numero sorprende: il bot sta facendo quello che c'e' scritto."))
+        else:
+            out.append(Violazione(
+                "P1", "il motore non deve riproporre all'infinito la stessa identica azione",
+                f"{ruolo} {r[3]} {r[5]} @ {r[4]} riproposta {quante} volte di fila. "
+                f"Senza un freno a valle sarebbero altrettanti ordini VERI: e' la "
+                f"forma esatta del loop del 15/09."))
 
     for (ruolo, ciclo, lato), n in sorted(and_.refs_per_ruolo_ciclo.items(),
                                           key=lambda x: -x[1]):
+        if ruolo in RITMI_DICHIARATI:
+            continue
         if n >= PROPOSTE_PER_CICLO_SOSPETTE:
             out.append(Violazione(
                 "P2", "un ciclo non genera decine di gambe dello stesso ruolo",

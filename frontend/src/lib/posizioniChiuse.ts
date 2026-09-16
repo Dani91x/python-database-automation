@@ -19,6 +19,7 @@
 import { isSettled, isErrorRow } from '@/lib/eventGroups';
 import type { Bot, Modo } from '@/lib/controlRoom';
 import { modoDi } from '@/lib/controlRoom';
+import type { RigaOrdine } from '@/lib/statoOrdine';
 
 export type Esito = 'vinta' | 'persa' | 'pari';
 
@@ -37,6 +38,12 @@ export interface RigaChiusa {
     /** è la gamba di copertura di un'altra riga? */
     chiusura: boolean;
     quale: string | null;
+    /**
+     * C.12b (16/09) — i campi grezzi dell'ORDINE (chiesto/abbinato/residuo/
+     * prezzo medio/ultimo aggiornamento da Betfair). Si passano cosi' come
+     * arrivano dalla RPC: a leggerli e' `lib/statoOrdine`, uno per tutti i bot.
+     */
+    ordine: RigaOrdine;
 }
 
 export interface PosizioneChiusa {
@@ -73,6 +80,15 @@ export interface TradeChiudibile {
     settled_at?: string | null;
     closes_trade_id?: number | null;
     strategy?: string | null;
+    // C.12b — colonne della migrazione `trades_consapevolezza_ordine_2026-09-16`
+    // (assenti finche' non e' applicata) e il `meta`, che porta le stesse cose
+    // sotto forma di nota. La pagina deve reggere con e senza.
+    size_requested?: number | null;
+    size_matched?: number | null;
+    size_remaining?: number | null;
+    avg_price_matched?: number | null;
+    betfair_updated_at?: string | null;
+    meta?: Record<string, unknown> | null;
     __bot: Bot;
 }
 
@@ -205,6 +221,16 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
                 at: testo(r.settled_at) ?? testo(r.placed_at) ?? '',
                 chiusura: numero(r.closes_trade_id) != null,
                 quale: testo(r.strategy),
+                ordine: {
+                    status: String(r.status ?? ''), side: r.side ?? null,
+                    price: numero(r.price), size: numero(r.size),
+                    size_requested: numero(r.size_requested),
+                    size_matched: numero(r.size_matched),
+                    size_remaining: numero(r.size_remaining),
+                    avg_price_matched: numero(r.avg_price_matched),
+                    betfair_updated_at: testo(r.betfair_updated_at),
+                    meta: r.meta ?? null,
+                },
             }))
             .sort((x, y) => x.at.localeCompare(y.at));
 

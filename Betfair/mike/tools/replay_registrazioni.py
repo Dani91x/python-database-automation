@@ -20,12 +20,26 @@ DA DOVE VIENE OGNI PEZZO — non si e' inventato niente:
   * la qualita' : `Betfair/stream/tools/validate_recordings.py` dice quali
                   registrazioni sono COMPLETE. Una registrazione monca fa
                   mentire qualsiasi verdetto, quindi il referto la dichiara;
+  * la riga     : **LO SCANNER VERO**. Dal 16/09 il payload di
+                  `safe_strategy_scan` NON si scrive piu' a mano qui dentro: i
+                  MarketBook di flumine entrano in
+                  `safe_strategy.service.Scanner._apply_market_book` (la stessa
+                  funzione con cui lo scanner applica i book dello stream) e la
+                  riga la produce `Scanner.build_rows`, che e' la funzione che
+                  scrive davvero la tabella. Il banco comune
+                  (`Betfair/stream/backtest/banco_comune.py`) tiene la tabella
+                  in memoria col suo write-on-change e il suo throttle, e Mike
+                  ci legge sopra come farebbe dal DB. Il payload scritto a mano
+                  resta solo come STRUMENTO DI CONFRONTO (`--diff`);
   * la lettura  : il payload passa dal `feed.py` VERO di Mike
                   (`event_info` + `snapshot_from_row`). **Questo e' il punto.**
                   Costruire lo `Snapshot` a mano qui dentro avrebbe voluto dire
                   scrivere l'ennesimo finto che parla una lingua diversa dal
                   vero — la causa di tutti e cinque i difetti del 15/09. Cosi'
                   invece si certifica anche il feed;
+  * i punteggi  : il sidecar `<id>.scores.jsonl` porta il RECORD IPS GREZZO, che
+                  entra da `Scanner.apply_score_state`, cioe' dalla stessa
+                  funzione che usa `poll_scores` in produzione;
   * le decisioni: `engine.decide` e `engine.apply_decision`, che sono pure.
 
   * gli ordini : si piazzano DAVVERO, con `market.place_order(...)`, e chi
@@ -53,9 +67,6 @@ ASCII-only nel codice; i commenti sono in italiano.
 """
 from __future__ import annotations
 
-import argparse
-import io
-import json
 import logging
 import os
 import sys
@@ -66,9 +77,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import certificazione as CERT
 from .. import config as C
 from .. import engine as E
-from .. import feed as F
 from .. import service as S
-from .banco import DbMemoria, MercatoFlumine
+from ...stream.backtest import banco_comune as BANCO
+from ...stream.backtest.banco_comune import (
+    DbMemoria, MercatoFlumine, MotoreReplay, ScannerReplay,
+    assicura_middleware_simulato, carica_punteggi, cliente_simulato,
+    nomi_dal_punteggio, simulazione_flumine,
+)
 # i lettori di un livello del ladder ESISTONO GIA': flumine in simulazione
 # espone `available_to_back` come dict {'price','size'}, betfairlightweight
 # live come oggetto `.price/.size`, il raw come `[price, size]`. Leggerli con
@@ -104,7 +119,25 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     "bot-fermo": {"pre_enabled": False, "reentry_enabled": False},
     # seconda puntata spenta: l'altro ramo del gol precoce (§15.3)
     "senza-seconda-puntata": {"second_entry_enabled": False},
+    # GOL PRECOCE (16/09, §15.6): NON tocca un solo parametro — e' `base`, e
+    # deve restarlo. Quello che cambia e' la REGISTRAZIONE su cui va lanciato:
+    # una partita con un gol nei primissimi minuti (35777617 = 2', 36006953 =
+    # 4', 35760084 = 7'). E' l'unico modo di far accadere davvero la catena che
+    # l'utente ha ordinato di gestire: il mercato si sospende per il gol,
+    # Betfair fa SCADERE (LAPSE) la lay di uscita appoggiata, e alla riapertura
+    # il bot deve RILEGGERE l'ordine invece di darlo per vivo (controllo R1).
+    # Su una registrazione senza gol precoce quella catena non capita mai, e un
+    # controllo che non ha un caso non e' una garanzia.
+    "gol-precoce": {},
+    # CASH-OUT GLOBALE DELL'UTENTE (16/09 h18:20): NON tocca un parametro. Quello
+    # che cambia e' che a meta' partita arriva una richiesta VERA di `cashout`
+    # dalla UI (`service.process_requests`), come se l'utente avesse premuto il
+    # tasto. Da quel momento il bot non deve aprire piu' niente su quella
+    # partita (controllo R2). Senza provocarla, quella regola non ha mai un caso.
+    "cashout-globale": {},
 }
+SCENARIO_GOL_PRECOCE = "gol-precoce"
+SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 
 # scenario speciale: non tocca i parametri ma INVECCHIA la riga del feed, per
 # far scattare la regola «feed stantio: nessun ingresso, chiusure permesse».
@@ -120,6 +153,55 @@ SCENARIO_FEED_STANTIO = "feed-stantio"
 SCENARIO_ESITI_IGNOTI = "esiti-ignoti"
 QUANTI_GUASTI = 3
 
+# scenario speciale: LO STESSO GUASTO, SUL PERCORSO TAKER. Serve a sollecitare
+# J1 e J4, che sul `taker` puro non hanno MAI un caso da giudicare: li' ogni
+# piazzamento si risolve dentro lo stesso giro (fill o rifiuto), quindi al
+# momento della decisione non c'e' mai una gamba in volo e non parte mai un
+# `cancel`. Con gli esiti IGNOTI la gamba resta invece `pending_reconcile` per
+# piu' giri, ed e' esattamente la condizione che i due controlli difendono:
+# «mai due gambe in volo identiche» e «una gamba a esito ignoto non si da' mai
+# per annullata, ne' si rifa». Non tocca la partita ne' i prezzi: sono gli
+# stessi parametri del `taker` piu' lo stesso guasto di `esiti-ignoti`.
+SCENARIO_TAKER_IGNOTI = "taker-esiti-ignoti"
+
+# scenario speciale: RIAVVIO A META' PARTITA (copertura §6.3). Con una posizione
+# aperta si butta via tutto cio' che vive nel PROCESSO (le cache di modulo di
+# `mike/service.py`) e si riparte: lo stato della partita deve essere ritrovato
+# dal database, come succede quando l'app si riavvia o il watchdog rilancia il
+# servizio. E' il difetto 19 del catalogo (`pre_ko` che viveva solo in RAM:
+# base e punta spente per ore), riprodotto apposta invece che aspettato.
+SCENARIO_RIAVVIO = "riavvio"
+
+
+def _riavvia_processo() -> List[str]:
+    """Butta via le cache di PROCESSO di `mike/service.py`, come un riavvio.
+
+    Non tocca il database in memoria: quello e' il DB, e in produzione
+    sopravvive. Torna l'elenco di cio' che e' stato azzerato, che finisce nel
+    referto: un riavvio che non si sa che cosa ha buttato non prova niente.
+    """
+    azzerati: List[str] = []
+    for nome in dir(S):
+        if not nome.startswith("_") or nome.startswith("__"):
+            continue
+        valore = getattr(S, nome, None)
+        if isinstance(valore, dict) and valore:
+            valore.clear()
+            azzerati.append(nome)
+        elif hasattr(valore, "clear") and not isinstance(valore, (str, bytes, type)):
+            try:
+                valore.clear()
+                azzerati.append(nome)
+            except Exception:  # noqa: BLE001 - non tutto cio' che ha clear() e' una cache
+                pass
+    if getattr(S, "_ULTIMI_PARAMS", None) is not None:
+        S._ULTIMI_PARAMS = None
+        azzerati.append("_ULTIMI_PARAMS")
+    if getattr(S, "_EVENTI_LETTI_A", 0.0):
+        S._EVENTI_LETTI_A = 0.0
+        azzerati.append("_EVENTI_LETTI_A")
+    return sorted(azzerati)
+
 # le due linee che interessano a Mike, coi nomi di mercato Betfair
 _LINEE = {"OVER_UNDER_35": 3.5, "OVER_UNDER_45": 4.5}
 
@@ -129,10 +211,16 @@ def _iso(ms: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# da MarketBook flumine al payload che Mike legge davvero
+# IL PAYLOAD SCRITTO A MANO — adesso serve SOLO al confronto
 # ---------------------------------------------------------------------------
+# Fino al 15/09 la riga di scan la costruivano queste due funzioni. Era un finto
+# che poteva parlare una lingua diversa dal vero, ed e' esattamente la famiglia
+# di difetti che ci e' costata cinque incidenti. Dal 16/09 la riga la produce lo
+# SCANNER VERO (`Scanner.build_rows`) e queste restano solo come TERMINE DI
+# PARAGONE: `--diff` confronta campo per campo cio' che scriverebbero loro con
+# cio' che lo scanner scrive davvero, su un campione di tick.
 def blocco_ou(market_book: Any, linea: float, pt_ms: int) -> Optional[Dict[str, Any]]:
-    """Un blocco ``ou`` del feed unico, ricavato da un MarketBook flumine.
+    """Un blocco ``ou`` del feed unico, ricavato a mano da un MarketBook flumine.
 
     E' la forma che `feed.ou_blocks`/`feed._book_for` si aspettano:
     ``{line, market_id, status, inplay, bet_delay, seen_ms, selections:[...]}``
@@ -188,7 +276,7 @@ def payload_evento(event_id: str, blocchi: Dict[str, Dict[str, Any]],
                    ko_iso: Optional[str], nome: str,
                    minuto: Optional[int], gol_casa: int, gol_fuori: int,
                    inplay: bool) -> Dict[str, Any]:
-    """Il payload del feed unico per questo istante, come lo scriverebbe lo scanner."""
+    """Il payload come lo scriveva QUESTO FILE. Solo per il confronto `--diff`."""
     return {
         "event_name": nome,
         "open_date": ko_iso,
@@ -200,37 +288,93 @@ def payload_evento(event_id: str, blocchi: Dict[str, Dict[str, Any]],
     }
 
 
+def _ou_per_linea(payload: Dict[str, Any]) -> Dict[float, Dict[str, Any]]:
+    out: Dict[float, Dict[str, Any]] = {}
+    for b in payload.get("ou") or []:
+        if isinstance(b, dict) and b.get("line") is not None:
+            out[float(b["line"])] = b
+    return out
+
+
+def confronta_payload(a_mano: Dict[str, Any], vero: Dict[str, Any]) -> List[str]:
+    """Differenze CAMPO PER CAMPO fra il payload scritto a mano e quello che lo
+    scanner vero produce. Ogni riga e' un reperto, non un dettaglio."""
+    diff: List[str] = []
+    for campo in ("event_name", "open_date", "inplay", "minute",
+                  "score_home", "score_away"):
+        a, b = a_mano.get(campo), vero.get(campo)
+        if a != b:
+            diff.append(f"payload.{campo}: a_mano={a!r} scanner={b!r}")
+    ma, mv = _ou_per_linea(a_mano), _ou_per_linea(vero)
+    if set(ma) != set(mv):
+        diff.append(f"ou.linee: a_mano={sorted(ma)} scanner={sorted(mv)}")
+    for linea in sorted(set(ma) & set(mv)):
+        ba, bv = ma[linea], mv[linea]
+        for campo in ("market_id", "status", "inplay", "bet_delay", "seen_ms",
+                      "total_matched"):
+            if ba.get(campo) != bv.get(campo):
+                diff.append(f"ou[{linea}].{campo}: a_mano={ba.get(campo)!r} "
+                            f"scanner={bv.get(campo)!r}")
+        solo_vero = sorted(set(bv) - set(ba))
+        solo_mano = sorted(set(ba) - set(bv))
+        if solo_vero:
+            diff.append(f"ou[{linea}]: chiavi SOLO nello scanner: {solo_vero}")
+        if solo_mano:
+            diff.append(f"ou[{linea}]: chiavi SOLO a mano: {solo_mano}")
+        sa = {int(x["selection_id"]): x for x in (ba.get("selections") or [])
+              if x.get("selection_id") is not None}
+        sv = {int(x["selection_id"]): x for x in (bv.get("selections") or [])
+              if x.get("selection_id") is not None}
+        if set(sa) != set(sv):
+            diff.append(f"ou[{linea}].selections: a_mano={sorted(sa)} scanner={sorted(sv)}")
+        for sid in sorted(set(sa) & set(sv)):
+            for campo in ("name", "back", "lay", "back_size", "lay_size"):
+                if sa[sid].get(campo) != sv[sid].get(campo):
+                    diff.append(f"ou[{linea}].sel[{sid}].{campo}: "
+                                f"a_mano={sa[sid].get(campo)!r} scanner={sv[sid].get(campo)!r}")
+    solo_vero = sorted(set(vero) - set(a_mano))
+    if solo_vero:
+        diff.append(f"payload: chiavi SOLO nello scanner: {solo_vero}")
+    return diff
+
+
 # ---------------------------------------------------------------------------
 # la strategia flumine: raccoglie i book, fa decidere Mike, certifica
 # ---------------------------------------------------------------------------
 def _crea_strategia():
     from flumine import BaseStrategy
-    from flumine.order.ordertype import LimitOrder
-    from flumine.order.trade import Trade
 
     class MikeCert(BaseStrategy):
-        """Ad ogni tick del replay costruisce il payload, chiama il feed VERO di
-        Mike, fa decidere il motore e verifica le regole."""
+        """A ogni tick del replay alimenta lo SCANNER VERO coi book di flumine,
+        prende la riga che lo scanner scrive, la da' al servizio vero di Mike e
+        verifica le regole."""
 
         def __init__(self, *, event_id: str, params: Dict[str, Any],
-                     scores: List[Tuple[int, Optional[int], int, int]],
-                     ogni_ms: int = 1000, **kw: Any) -> None:
+                     banco: ScannerReplay,
+                     punteggi: List[Tuple[int, Dict[str, Any]]],
+                     ogni_ms: int = 1000, campioni_diff: int = 0, **kw: Any) -> None:
             self.event_id = str(event_id)
             self.params = params
-            self._scores = sorted(scores or [], key=lambda x: x[0])
-            self._score_ts = [s[0] for s in self._scores]
+            self.banco = banco
+            self._punteggi = list(punteggi or [])
+            self._ts_punteggi = [t for t, _ in self._punteggi]
+            self._i_punteggi = 0
             self.ogni_ms = int(ogni_ms)
             self.invecchia_s = float(kw.pop("invecchia_s", 0.0) or 0.0)
+            # RIAVVIO A META' PARTITA (§6.3): al primo giro con una posizione
+            # aperta si azzerano le cache di processo del servizio.
+            self.riavvia = bool(kw.pop("riavvia", False))
+            self.riavvio_fatto: Optional[List[str]] = None
+            # CASH-OUT GLOBALE DELL'UTENTE (16/09 h18:20): al primo giro con una
+            # posizione aperta si manda la richiesta VERA, quella che scrive la
+            # UI, allo STESSO `service.process_requests` della produzione.
+            self.cashout_utente = bool(kw.pop("cashout_utente", False))
+            self.cashout_fatto: Optional[Dict[str, Any]] = None
 
-            self.blocchi: Dict[str, Dict[str, Any]] = {}
             # i mercati flumine, per market_id: servono per piazzare davvero
             self.mercati: Dict[str, Any] = {}
-            # l'ordine flumine di ogni gamba: leg.ref -> BetfairOrder
-            self.ordini: Dict[str, Any] = {}
-            self.senza_ordine: List[str] = []
             self.ko_iso: Optional[str] = None
             self.nome: str = ""
-            self.ctx = E.MatchCtx()
             # IL BANCO: database in memoria e mercato flumine. Da qui in poi il
             # giro lo fa `service._run_event`, cioe' il bot INTERO — cervello
             # e mani. Le gambe non le tiene piu' questo file: stanno nel `ctx`
@@ -240,7 +384,12 @@ def _crea_strategia():
             self.referto = CERT.Referto(event_id=str(event_id))
             self._ultimo_ms: int = 0
             self._stati: List[str] = []
-            self._info: Optional[F.EventInfo] = None
+            # confronto payload-a-mano vs payload-scanner (solo con --diff)
+            self.campioni_diff = int(campioni_diff)
+            self._blocchi_a_mano: Dict[str, Dict[str, Any]] = {}
+            self.diff_visti: List[str] = []
+            self.diff_campionati: int = 0
+            self.righe_assenti: int = 0
             super().__init__(**kw)
 
         # ---------------------------------------------------------- flumine
@@ -248,27 +397,32 @@ def _crea_strategia():
             return True
 
         def process_market_book(self, market, market_book) -> None:
-            md = getattr(market_book, "market_definition", None)
-            mtype = str(getattr(md, "market_type", None)
-                        or getattr(market, "market_type", None) or "")
+            mtype = self.banco.registra_mercato(market_book)
+            if not mtype:
+                return
+            self.mercati[str(market_book.market_id)] = market
+            pt = getattr(market_book, "publish_time", None)
+            # "adesso" per lo scanner E' il publish time del tick, e NON TORNA
+            # INDIETRO: i book non arrivano in ordine di tempo (vedi
+            # `MotoreReplay`). Da qui in poi il tempo del replay e' questo.
+            pt_ms = (int(self.banco.imposta_ora(pt.timestamp()) * 1000)
+                     if pt is not None else 0)
+            self.banco.applica_book(market_book)
             linea = _LINEE.get(mtype)
             if linea is None:
-                return                     # Mike guarda solo O/U 3.5 e 4.5
-            pt = getattr(market_book, "publish_time", None)
-            pt_ms = int(pt.timestamp() * 1000) if pt is not None else 0
-            blk = blocco_ou(market_book, linea, pt_ms)
-            if blk is None:
+                # gli altri mercati servono allo scanner (MATCH_ODDS per il
+                # catalogo e il pre-KO, le altre linee per il payload), ma il
+                # CONTEGGIO DEI TICK resta quello delle due linee di Mike: e'
+                # il numero con cui si confrontano i referti precedenti
                 return
-            self.blocchi[mtype] = blk
-            self.mercati[str(market_book.market_id)] = market
-            # il banco ha bisogno del book CORRENTE per dare l'esito immediato
-            # del place, come fa Betfair via REST
-            self.mercato.book[str(market_book.market_id)] = market_book
             if self.ko_iso is None:
+                md = getattr(market_book, "market_definition", None)
                 mt = getattr(md, "market_time", None) or getattr(md, "open_date", None)
                 if mt is not None:
                     self.ko_iso = mt.isoformat() if hasattr(mt, "isoformat") else str(mt)
                 self.nome = str(getattr(md, "event_name", None) or self.event_id)
+            if self.campioni_diff:
+                self._blocchi_a_mano[mtype] = blocco_ou(market_book, linea, pt_ms)
             self.referto.tick += 1
             # Mike gira ogni 1-2 secondi: nel replay si decide alla stessa
             # cadenza, non ad ogni singolo messaggio dello stream.
@@ -276,45 +430,72 @@ def _crea_strategia():
                 return
             self._ultimo_ms = pt_ms
             self._un_giro(pt_ms)
+            # LA CADENZA RIPARTE DA QUANDO IL GIRO E' FINITO, non da quando
+            # e' cominciato. In produzione le chiamate bloccanti (un
+            # piazzamento in gioco: `place_latency + betDelay`) consumano tempo
+            # VERO, e il ciclo successivo parte dopo: un giro lungo ritarda il
+            # giro dopo. Segnando l'inizio, il replay farebbe girare il bot piu'
+            # spesso di quanto giri davvero.
+            if BANCO.CADENZA_DOPO_LE_CHIAMATE:
+                self._ultimo_ms = max(self._ultimo_ms, int(self.banco.ora * 1000))
 
         # ------------------------------------------------------------ Mike
         def _un_giro(self, pt_ms: int) -> None:
-            if len(self.blocchi) < 1 or not self.ko_iso:
-                return
-            # ⚠️ `seen_ms` = «qualcuno sta ancora GUARDANDO questo mercato»
-            # (`feed.blocco_osservato`), NON «il prezzo e' cambiato». Nel replay
-            # stiamo guardando tutte e due le linee di continuo: il book di una
-            # linea che non manda tick e' fermo, non morto — write-on-change.
-            # Mettendo `seen_ms` all'ultimo tick DI QUEL mercato, la linea piu'
-            # lenta risultava non osservata e Mike vedeva «book assente» per
-            # tutta la finestra utile. E' un difetto del banco di prova, non del
-            # bot: qui si allinea al momento del giro.
-            for b in self.blocchi.values():
-                b["seen_ms"] = int(pt_ms)
-            gc, gf, minuto = self._score_at(pt_ms)
-            inplay = any(bool(b.get("inplay")) for b in self.blocchi.values())
-            payload = payload_evento(self.event_id, self.blocchi, self.ko_iso,
-                                     self.nome, minuto, gc, gf, inplay)
-            # `invecchia_s` > 0: la riga del feed si dichiara vecchia di tot
-            # secondi. Non cambia NESSUN prezzo: cambia solo da quanto tempo
-            # non arriva, che e' cio' che la regola del feed stantio misura.
-            row = {"payload": payload,
-                   "updated_at": _iso(pt_ms - int(self.invecchia_s * 1000))}
-            now = pt_ms / 1000.0
+            # 1) i punteggi fino a questo istante, dal record IPS grezzo e dal
+            #    parser vero (`Scanner.apply_score_state`)
+            i = bisect_right(self._ts_punteggi, int(pt_ms))
+            while self._i_punteggi < i:
+                self.banco.applica_punteggio(self.event_id,
+                                             self._punteggi[self._i_punteggi][1])
+                self._i_punteggi += 1
+            # 2) "questa partita la segue Mike": in produzione lo scanner lo
+            #    legge da `mike_events` (stati non terminali) e da li' decide se
+            #    tenere vive le due linee anche quando sono gia' decise. Qui la
+            #    verita' e' nel banco, e viene dichiarata allo scanner con la
+            #    stessa forma (lista di event_id).
+            stato_ev = str((self.db.events.get(self.event_id) or {}).get("state") or "")
+            self.banco.scan._mike_followed_ids = (
+                [self.event_id] if stato_ev and stato_ev not in E.TERMINAL_STATES else [])
+            # 2-bis) RIAVVIO A META' PARTITA, con soldi dentro: le cache di
+            #    processo spariscono, il database resta. Se lo stato non si
+            #    ritrova da li', il bot dimentica una posizione aperta — ed e'
+            #    esattamente quello che e' successo al `pre_ko` il 13/09.
+            if self.riavvia and self.riavvio_fatto is None and any(
+                    str(r.get("status")) in ("open", "pending") for r in self.db.trades):
+                self.riavvio_fatto = _riavvia_processo()
+                self.db.log("replay_riavvio", {"azzerati": self.riavvio_fatto},
+                            self.event_id)
+            # 3) LA RIGA LA SCRIVE LO SCANNER VERO
+            self.banco.pubblica()
+            row = self.banco.riga(self.event_id)
+            if row is None:
+                # riga assente dal feed: NON si salta il giro. E' esattamente il
+                # caso che `_run_event` deve saper gestire (row_missing_since,
+                # settlement per riga sparita), e senza passarci non lo si
+                # certifica mai.
+                self.righe_assenti += 1
+            elif self.invecchia_s > 0:
+                # `invecchia_s` > 0: la riga si dichiara vecchia di tot secondi.
+                # Non cambia NESSUN prezzo: cambia solo da quanto tempo non
+                # arriva. Perche' il feed risulti STANTIO devono essere vecchi
+                # TUTTI E DUE — la riga e lo scanner — e lo scanner lo si
+                # invecchia col `scanner_age` passato al servizio.
+                row = dict(row, updated_at=_iso(pt_ms - int(self.invecchia_s * 1000)))
+            if row is not None and self.campioni_diff and self.diff_campionati < self.campioni_diff:
+                blocchi = {k: v for k, v in self._blocchi_a_mano.items() if v}
+                if len(blocchi) == len(_LINEE):
+                    self.diff_campionati += 1
+                    gc = int(row["payload"].get("score_home") or 0)
+                    gf = int(row["payload"].get("score_away") or 0)
+                    a_mano = payload_evento(
+                        self.event_id, blocchi, self.ko_iso, self.nome,
+                        row["payload"].get("minute"), gc, gf,
+                        bool(row["payload"].get("inplay")))
+                    for riga in confronta_payload(a_mano, row["payload"]):
+                        if riga not in self.diff_visti:
+                            self.diff_visti.append(riga)
 
-            info = F.event_info(self.event_id, payload)
-            if not info.complete:
-                return                     # senza entrambe le linee Mike non opera
-            self._info = info
-            snap = F.snapshot_from_row(row, info, now=now, params=self.params,
-                                       # con la riga vecchia MA lo scanner vivo il
-                                       # feed resta fresco (write-on-change): per
-                                       # provocare lo stantio invecchiano entrambi
-                                       scanner_age_s=self.invecchia_s or 0.0)
-            if snap is None:
-                return
-
-            # ── IL BOT INTERO, non solo il motore ────────────────────────
+            # -- IL BOT INTERO, non solo il motore --------------------------
             # `service._run_event` fa il giro vero: snapshot -> decide ->
             # ESEGUE gli ordini -> riconcilia -> scrive le righe. E' il
             # percorso in cui il 15/09 si sono rotte cinque cose, e senza
@@ -324,105 +505,56 @@ def _crea_strategia():
             # dentro: si intercetta li', cosi' si vede ogni decisione con il
             # `ctx` e lo `snap` veri costruiti dal servizio.
             ev = self.db.events.get(self.event_id) or {
-                "event_id": self.event_id, "event_name": self.nome,
+                "event_id": self.event_id,
+                "event_name": ((row or {}).get("payload") or {}).get("event_name") or self.nome,
                 "state": "WATCH", "mode": "live", "ctx": {},
             }
             self.db.upsert_event(ev)
-            self.db.scan_rows = [dict(row, event_id=self.event_id, sport="calcio")]
+            self.db.scan_rows = [row] if row is not None else []
+            now = pt_ms / 1000.0
             try:
                 azioni, _settled = S._run_event(
                     db=self.db, market=self.mercato, ev=self.db.events[self.event_id],
-                    row=dict(row, event_id=self.event_id),
-                    params=self.params, mode="live",
+                    row=row, params=self.params, mode="live",
                     now=datetime.fromtimestamp(now, tz=timezone.utc),
-                    scanner_age=0.0, atlas=None, dry=False)
-            except Exception as ex:  # noqa: BLE001 — un'eccezione del servizio E' un referto
+                    # lo scanner e' vecchio quanto la riga: e' l'altra meta'
+                    # della regola del feed stantio
+                    scanner_age=self.invecchia_s, atlas=None, dry=False)
+            except Exception as ex:  # noqa: BLE001 - un'eccezione del servizio E' un referto
                 self.referto.violazioni.append(CERT.Violazione(
                     "SERVIZIO", "il giro del servizio non deve mai sollevare",
                     f"{type(ex).__name__}: {ex}",
-                    str(self.db.events[self.event_id].get("state") or ""),
-                    snap.minute, snap.goals))
+                    str(self.db.events[self.event_id].get("state") or "")))
                 return
+            # -- CASH-OUT GLOBALE DELL'UTENTE (16/09 h18:20) ----------------
+            # Non si finge: si manda la richiesta VERA, quella che scrive la UI,
+            # allo STESSO `service.process_requests` che la esegue in produzione.
+            # Da qui in poi il bot non deve aprire piu' niente sulla partita (R2).
+            if self.cashout_utente and self.cashout_fatto is None and any(
+                    str(r.get("status")) == "open" for r in self.db.trades):
+                try:
+                    esito = S.process_requests(
+                        db=self.db, market=self.mercato,
+                        events={self.event_id: self.db.events[self.event_id]},
+                        rows_by_event={self.event_id: row} if row is not None else {},
+                        params=self.params, now=datetime.fromtimestamp(now, tz=timezone.utc),
+                        dry=False, scanner_age=self.invecchia_s, eff=self.params,
+                        reqs=[{"id": 1, "kind": "cashout",
+                               "payload": {"event_id": self.event_id}}])
+                    self.cashout_fatto = {"richieste": int(esito or 0), "ms": int(pt_ms)}
+                    self.db.log("replay_cashout_utente", dict(self.cashout_fatto),
+                                self.event_id)
+                except Exception as ex:  # noqa: BLE001 - e' un referto, non un crash
+                    self.referto.violazioni.append(CERT.Violazione(
+                        "SERVIZIO", "il cash-out manuale non deve mai sollevare",
+                        f"{type(ex).__name__}: {ex}",
+                        str(self.db.events[self.event_id].get("state") or "")))
+                    self.cashout_fatto = {"errore": str(ex)[:120]}
+
             self.referto.azioni += int(azioni or 0)
             stato = str(self.db.events[self.event_id].get("state") or "")
             if stato and stato not in self._stati:
                 self._stati.append(stato)
-            return
-
-            if self.ctx.state not in self._stati:
-                self._stati.append(self.ctx.state)
-
-        # ------------------------------------------------- ordini VERI flumine
-        def _piazza(self, leg: E.Leg, info: F.EventInfo) -> None:
-            """Una gamba di Mike diventa un ordine flumine vero.
-
-            Il `customer_order_ref` e' quello di Mike (`mike-t<n>`): e' la chiave
-            con cui il bot ritrova i suoi ordini, ed e' la stessa che il 15/09
-            ha prodotto il loop quando veniva scritta in un modo e letta in un
-            altro. Qui la si mette sull'ordine vero e la si rilegge da li'.
-            """
-            mid = info.market_id(leg.market)
-            sid = info.selection_id(leg.market, leg.selection)
-            mercato = self.mercati.get(str(mid)) if mid else None
-            if mercato is None or sid is None:
-                self.senza_ordine.append(leg.ref)
-                return
-            try:
-                trade = Trade(market_id=str(mid), selection_id=int(sid),
-                              handicap=0.0, strategy=self)
-                ordine = trade.create_order(
-                    side="BACK" if leg.side == "back" else "LAY",
-                    order_type=LimitOrder(price=float(leg.price),
-                                          size=round(float(leg.size), 2),
-                                          persistence_type=str(leg.persistence or "LAPSE")),
-                )
-                # `customer_order_ref` in flumine e' derivato e in sola lettura
-                # (`name_hash + sep + id`): e' gia' unico per ordine ed e' quello
-                # che Betfair riceverebbe. Il legame gamba<->ordine lo tiene la
-                # mappa `self.ordini`, ed e' proprio quel legame che il 15/09
-                # si era rotto in produzione.
-                mercato.place_order(ordine)
-            except Exception as ex:  # noqa: BLE001 — un place rifiutato E' un referto
-                self.referto.violazioni.append(CERT.Violazione(
-                    "ORDINE", "ogni gamba deve poter diventare un ordine reale",
-                    f"{leg.ref}: {type(ex).__name__}: {ex}", self.ctx.state))
-                self.senza_ordine.append(leg.ref)
-                return
-            self.ordini[leg.ref] = ordine
-
-        def _rileggi_ordini(self) -> None:
-            """Lo stato delle gambe viene DAGLI ORDINI, come in produzione.
-
-            `size_matched` / `average_price_matched` / `status` li calcola il
-            matching di flumine sulla coda vera; qui si ricopiano sulla gamba
-            con la stessa semantica del contratto di `Leg`: 'pending' finche'
-            l'ordine e' vivo, 'open' quando non lo e' piu' con qualcosa
-            abbinato, 'cancelled' se non ha mai preso niente.
-            """
-            for leg in self.ctx.legs:
-                ordine = self.ordini.get(leg.ref)
-                if ordine is None or leg.archived:
-                    continue
-                sim = getattr(ordine, "simulated", None)
-                abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
-                prezzo = getattr(sim, "average_price_matched", None)
-                leg.matched = round(abbinato, 2)
-                if prezzo:
-                    leg.avg_price = float(prezzo)
-                stato = str(getattr(ordine, "status", "") or "")
-                vivo = stato in ("Pending", "Executable", "EXECUTABLE")
-                if leg.status in ("pending", "pending_reconcile"):
-                    if not vivo:
-                        leg.status = "open" if leg.matched > 0 else "cancelled"
-
-        def _score_at(self, pt_ms: int) -> Tuple[int, int, Optional[int]]:
-            if not self._scores:
-                return 0, 0, None
-            i = bisect_right(self._score_ts, int(pt_ms)) - 1
-            if i < 0:
-                return 0, 0, None
-            _, minuto, gc, gf = self._scores[i]
-            return int(gc), int(gf), (int(minuto) if minuto is not None else None)
 
         def chiudi(self) -> CERT.Referto:
             self.referto.stati_visti = list(self._stati)
@@ -434,18 +566,24 @@ def _crea_strategia():
 # ---------------------------------------------------------------------------
 # un evento
 # ---------------------------------------------------------------------------
-def certifica_evento(event_id: str, *, data_dir: str,
-                     params: Optional[Dict[str, Any]] = None,
-                     ogni_ms: int = 1000,
-                     invecchia_s: float = 0.0,
-                     guasti: int = 0) -> CERT.Referto:
-    """Fa rivivere a Mike una partita registrata e ritorna il referto."""
-    import flumine.config
-    flumine.config.simulated = True
-    from flumine import FlumineSimulation, clients
-    from flumine.markets.middleware import SimulatedMiddleware
+def certifica_evento(*a: Any, **kw: Any) -> CERT.Referto:
+    """Guscio: accende la simulazione di flumine e la RIMETTE A POSTO alla fine
+    (i flag di `flumine.config` sono di PROCESSO: lasciarli accesi fa mentire
+    tutto cio' che gira dopo nello stesso processo)."""
+    with simulazione_flumine():
+        return _certifica_evento(*a, **kw)
 
-    from ...stream.backtest.run_backtest import _load_scores
+
+def _certifica_evento(event_id: str, *, data_dir: str,
+                      params: Optional[Dict[str, Any]] = None,
+                      ogni_ms: int = 1000,
+                      invecchia_s: float = 0.0,
+                      guasti: int = 0,
+                      campioni_diff: int = 0,
+                      riavvia: bool = False,
+                      cashout_utente: bool = False) -> CERT.Referto:
+    """Fa rivivere a Mike una partita registrata e ritorna il referto."""
+    from flumine import FlumineSimulation
 
     par = dict(params or C.merge_params(None))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
@@ -455,10 +593,20 @@ def certifica_evento(event_id: str, *, data_dir: str,
         return ref
 
     try:
-        scores = _load_scores(data_dir, str(event_id))
-    except Exception as ex:  # noqa: BLE001 — senza punteggio si replica lo stesso
-        scores = []
+        # il RECORD IPS GREZZO del sidecar, non un riassunto: e' cio' che
+        # `Scanner.apply_score_state` sa leggere
+        punteggi = carica_punteggi(data_dir, str(event_id), "calcio")
+    except Exception as ex:  # noqa: BLE001 - senza punteggio si replica lo stesso
+        punteggi = []
         ref.note.append(f"punteggi non letti ({type(ex).__name__}): minuti e gol assenti")
+
+    # IL BANCO COMUNE: lo scanner VERO, con il suo orologio agganciato al
+    # publish time del tick. `SAFE_PRE_KO_OU_HOURS` in produzione accende il
+    # ramo pre-KO delle due linee di Mike: qui lo si dichiara, altrimenti prima
+    # del fischio le linee non entrerebbero MAI nel feed e Mike non aprirebbe.
+    banco = ScannerReplay(sport="calcio",
+                          pre_ko_ou_hours=max(6.0, float(par.get("entry_hours_before_ko") or 0.0)))
+    banco.dichiara_nomi(*nomi_dal_punteggio(punteggi))
 
     Strategia = _crea_strategia()
 
@@ -490,8 +638,10 @@ def certifica_evento(event_id: str, *, data_dir: str,
     # (1 trade vivo per selezione, 10 EUR per ordine) vorrebbe dire certificare
     # i limiti di flumine invece di quelli del bot: gli ordini verrebbero
     # rifiutati da fuori e il referto direbbe che Mike non fa niente.
-    strategia = Strategia(event_id=str(event_id), params=par, scores=scores,
-                          ogni_ms=ogni_ms, invecchia_s=invecchia_s,
+    strategia = Strategia(event_id=str(event_id), params=par, banco=banco,
+                          punteggi=punteggi, ogni_ms=ogni_ms,
+                          invecchia_s=invecchia_s, campioni_diff=campioni_diff,
+                          riavvia=riavvia, cashout_utente=cashout_utente,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
@@ -500,12 +650,30 @@ def certifica_evento(event_id: str, *, data_dir: str,
         # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
         strategia.mercato.guasti["place_exception"] = int(guasti)
     referti_vivi.append(strategia.referto)
-    quadro = FlumineSimulation(client=clients.SimulatedClient())
-    quadro.add_market_middleware(SimulatedMiddleware())
+    # i tetti di flumine aperti anche sul CLIENT (min bet size/payout GBP):
+    # il minimo che conta e' quello del bot, non quello di flumine
+    quadro = FlumineSimulation(client=cliente_simulato())
+    assicura_middleware_simulato(quadro)
     quadro.add_strategy(strategia)
+
+    def _scanner_durante_attesa(mb: Any) -> None:
+        # Mike e' bloccato sulla REST mentre Betfair trattiene l'ordine; lo
+        # SCANNER no: in produzione e' un altro processo e continua a ricevere
+        # i book. Qui riceve gli stessi book, senza far girare il bot.
+        pt = getattr(mb, "publish_time", None)
+        if pt is not None:
+            banco.imposta_ora(pt.timestamp())
+        if banco.registra_mercato(mb):
+            banco.applica_book(mb)
+
+    # IL MOTORE: il ciclo di flumine, ma con l'ATTESA del bet delay. Un ordine
+    # piazzato a t si abbina sul book di t + place_latency + betDelay, come fa
+    # Betfair, non su quello di t.
+    motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
+    strategia.mercato.motore = motore
     E.decide = decide_sorvegliata          # type: ignore[assignment]
     try:
-        quadro.run()
+        motore.esegui(strategia)
     finally:
         E.decide = decide_vero             # type: ignore[assignment]
 
@@ -513,6 +681,13 @@ def certifica_evento(event_id: str, *, data_dir: str,
     if strategia.db.mancanti:
         out.note.append("metodi di database chiamati dal servizio e assenti dal banco: "
                         f"{sorted(strategia.db.mancanti)}")
+    if strategia.db.senza_dato:
+        # NON ESERCITABILE, con la causa: il metodo c'e' e risponde col tipo
+        # vero, ma il DATO che in produzione arriva da una tabella/RPC non e'
+        # nella registrazione. PROCESSO_STANDARD_BOT §6.8 lo vuole scritto.
+        out.note.append("[NON ESERCITABILE] dati di produzione assenti dalla "
+                        "registrazione: "
+                        + " | ".join(f"{n}: {c}" for n, c in strategia.db.senza_dato))
     if strategia.mercato.rifiutati:
         out.note.append(f"ordini rifiutati: {len(strategia.mercato.rifiutati)} "
                         f"(es. {strategia.mercato.rifiutati[0].get('err')})")
@@ -537,162 +712,150 @@ def certifica_evento(event_id: str, *, data_dir: str,
     out.violazioni.extend(CERT.difetti_di_progettazione(
         out.andamento, ordini_piazzati=out.ordini_piazzati,
         righe_scritte=out.righe_scritte))
-    if not scores:
-        out.note.append("senza sidecar `.scores.jsonl`: minuto e gol sono 0-0/None, "
+    if not punteggi:
+        out.note.append("senza sidecar `.scores.jsonl`: minuto e gol non arrivano mai, "
                         "quindi le regole che dipendono dal punteggio non sono state "
                         "messe alla prova")
+    if strategia.riavvio_fatto is not None:
+        out.note.append("RIAVVIO a meta' partita: azzerate le cache di processo "
+                        + ", ".join(strategia.riavvio_fatto[:8]))
+    elif strategia.riavvia:
+        out.note.append("scenario riavvio: nessuna posizione aperta da ritrovare, "
+                        "il riavvio non e' mai scattato")
+    if strategia.cashout_utente:
+        quante = int(out.sollecitati.get("R2") or 0)
+        if strategia.cashout_fatto is None:
+            out.note.append("scenario cashout-globale: nessuna posizione aperta, la "
+                            "richiesta dell'utente non e' mai partita")
+        else:
+            out.note.append(
+                f"scenario cashout-globale: richiesta `cashout` VERA mandata dall'utente "
+                f"({strategia.cashout_fatto}); il controllo R2 «dopo un cash-out globale "
+                f"il bot non apre piu' niente» e' stato sollecitato {quante} volte")
+    fill = strategia.mercato.riepilogo_fill()
+    conto = strategia.mercato.pnl(C.commission_rate(par))
+    out.note.append(f"fill: {fill['fill']} abbinamenti su {fill['ordini_con_fill']} ordini "
+                    f"per {fill['abbinato']} EUR (prezzi {fill['prezzi']})")
+    out.note.append(f"P&L del replay: lordo {conto['lordo']:+.2f} | commissione "
+                    f"{conto['commissione']:.2f} ({conto['aliquota'] * 100:.1f}%) | "
+                    f"NETTO {conto['netto']:+.2f} EUR (non e' il metro della "
+                    f"certificazione: il metro e' la condotta)")
+    out.note.append(f"bet delay: {motore.pompati} book passati mentre i piazzamenti "
+                    f"aspettavano Betfair | book arrivati in ritardo (orologio fermo): "
+                    f"{motore.book_in_ritardo} | ordini appoggiati uccisi dal "
+                    f"passaggio in gioco (LAPSE): {motore.lapse_al_fischio} | "
+                    f"uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): "
+                    f"{motore.lapse_alla_sospensione}"
+                    + (f" | {motore.senza_futuro} piazzamenti senza book futuro "
+                       f"(registrazione finita): valutati sull'ultimo noto"
+                       if motore.senza_futuro else ""))
+    out.note.append(f"righe di scan scritte dallo SCANNER VERO: {banco.righe_scritte}"
+                    + (f" | giri senza riga nel feed: {strategia.righe_assenti}"
+                       if strategia.righe_assenti else ""))
+    if strategia.diff_visti:
+        out.note.append(f"DIFF payload a mano vs scanner ({strategia.diff_campionati} "
+                        f"campioni): " + " ; ".join(strategia.diff_visti[:12]))
     return out
 
 
 # ---------------------------------------------------------------------------
-# tutte
+# GLI SCENARI E IL COMANDO — il referto vive nel punto d'ingresso unico
 # ---------------------------------------------------------------------------
-def eventi_disponibili(data_dir: str) -> List[str]:
-    out: List[str] = []
-    if not os.path.isdir(data_dir):
-        return out
-    for nome in sorted(os.listdir(data_dir)):
-        if nome.startswith("_"):
-            continue                       # `_synth_*`: registrazioni sintetiche
-        if os.path.exists(os.path.join(data_dir, nome, f"{nome}.raw.jsonl")):
-            out.append(nome)
-    return out
+# `Betfair/stream/backtest/certifica.py` produce il referto per TUTTI i bot
+# leggendo il REGISTRO (`registro_bot.py`): qui restano solo i pezzi
+# SPECIFICI di Mike, cioe' la strategia flumine e la mappa degli scenari.
+# Non esistono due implementazioni del referto.
+SCENARI_DESCRITTI: Dict[str, str] = {
+    "base": "come gira in produzione",
+    "taker": "uscita pre-match a mercato invece che appoggiata (§3 Fase 1)",
+    "cap-stretto": "tetto di rischio stretto: fa parlare il clamp del motore (§4.9)",
+    "bot-fermo": "bot fermo / stop giornaliero: nessuna apertura, chiusure vive (§5)",
+    "senza-seconda-puntata": "seconda puntata spenta: l'altro ramo del gol precoce (§15.3)",
+    SCENARIO_FEED_STANTIO: "riga E scanner vecchi: nessun ingresso, chiusure permesse (§5)",
+    SCENARIO_ESITI_IGNOTI: "i primi piazzamenti a esito IGNOTO: gambe pending_reconcile (§4.11)",
+    SCENARIO_TAKER_IGNOTI: "taker + esiti IGNOTI: e' l'unico modo di sollecitare J1 e J4 "
+                           "sul percorso taker, dove ogni piazzamento si risolve nel giro",
+    SCENARIO_RIAVVIO: "riavvio a meta' partita con posizione aperta: lo stato si ritrova dal DB",
+    SCENARIO_GOL_PRECOCE: "gol nei primi minuti (registrazioni 35777617=2', 36006953=4', "
+                          "35760084=7'): il mercato sospende, Betfair fa scadere la lay di "
+                          "uscita appoggiata e alla riapertura il bot deve RILEGGERLA (§15.6, R1)",
+    SCENARIO_CASHOUT_GLOBALE: "l'utente chiude a mano TUTTE le operazioni della partita "
+                              "(richiesta `cashout` vera dalla UI): da li' in poi il bot non "
+                              "apre piu' niente (§15.7-bis, R2)",
+}
 
 
-def _complete(data_dir: str, eventi: List[str]) -> Dict[str, str]:
-    """Verdetto di `validate_recordings` per ogni evento: una registrazione
-    monca fa mentire il replay, e il referto lo deve dichiarare."""
-    try:
-        from ...stream.tools.validate_recordings import validate_all
-        esiti = validate_all(eventi, data_dir=data_dir)
-    except Exception as ex:  # noqa: BLE001 — il verdetto e' un di piu', non un gate
-        logger.debug("validate_recordings non disponibile: %s", ex)
-        return {}
-    out: Dict[str, str] = {}
-    for e in esiti or []:
-        if isinstance(e, dict):
-            out[str(e.get("event_id"))] = str(e.get("verdict") or e.get("status") or "?")
-    return out
+def cadenza_ms(params: Dict[str, Any]) -> int:
+    """OGNI QUANTO GIRA MIKE, letto dai SUOI parametri di produzione.
+
+    In `service.main` il passo del ciclo e'
+    ``max(1.0, decide_min_interval_ms/1000*2)`` (`Betfair/mike/service.py:3381`),
+    e sale a ``idle_cycle_s`` quando non si muove niente. Il replay usa il passo
+    PIENO: e' quello con cui il bot gira quando la partita e' viva, cioe' quando
+    prende le decisioni che si vogliono certificare. Cablare qui un numero
+    farebbe vedere al bot piu' (o meno) di quello che vedrebbe.
+    """
+    return int(max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2.0) * 1000)
+
+
+def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
+                       ogni_ms: int = 0, campioni_diff: int = 0) -> CERT.Referto:
+    """ADATTATORE PER IL BANCO — dal NOME dello scenario ai parametri di Mike.
+
+    E' la funzione che il REGISTRO dei bot
+    (`Betfair/stream/backtest/registro_bot.py`) chiama per certificare Mike:
+    firma identica per tutti i bot, cosi' il comando
+    `python -m Betfair.stream.backtest.certifica <bot>` e' uno solo.
+    """
+    par = dict(C.merge_params(None))
+    par.update(SCENARI.get(scenario, {}))
+    if scenario == SCENARIO_TAKER_IGNOTI:
+        par.update(SCENARI["taker"])
+    # il feed stantio si ottiene invecchiando la riga, non toccando i prezzi;
+    # perche' il feed risulti STANTIO devono essere vecchi TUTTI E DUE: la riga
+    # (`feed_max_age_s`) e lo scanner (`scanner_alive_max_s`). Con lo scanner
+    # vivo una riga ferma e' legittima — e' write-on-change, vuol dire che i
+    # prezzi non sono cambiati.
+    vecchio = (max(float(par.get("feed_max_age_s") or 15.0),
+                   float(par.get("scanner_alive_max_s") or 75.0)) * 3.0
+               if scenario == SCENARIO_FEED_STANTIO else 0.0)
+    ref = certifica_evento(
+        event_id, data_dir=data_dir, params=par,
+        # 0 = la cadenza del SERVIZIO, non una cablata nel banco
+        ogni_ms=int(ogni_ms) or cadenza_ms(par),
+        invecchia_s=vecchio,
+        guasti=(QUANTI_GUASTI if scenario in (SCENARIO_ESITI_IGNOTI,
+                                              SCENARIO_TAKER_IGNOTI) else 0),
+        campioni_diff=campioni_diff,
+        riavvia=(scenario == SCENARIO_RIAVVIO),
+        cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE))
+    if scenario == SCENARIO_GOL_PRECOCE:
+        # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
+        # "zero violazioni" su una registrazione senza gol precoce non dice
+        # niente su §15.6: dice solo che non c'e' stato niente da giudicare.
+        quante = int(ref.sollecitati.get("R1") or 0)
+        ref.note.append(
+            "scenario gol-precoce (§15.6): il controllo R1 «alla riapertura "
+            f"l'ordine appoggiato e' stato riletto» e' stato sollecitato {quante} volte"
+            + ("" if quante else " — su questa registrazione la sospensione con una "
+                                "lay appoggiata viva NON e' mai capitata: serve una "
+                                "partita con gol nei primi minuti (35777617)"))
+    return ref
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Mike sulle registrazioni vere")
-    p.add_argument("eventi", nargs="*", help="event_id (vuoto = tutti)")
-    p.add_argument("--data-dir", default=None)
-    p.add_argument("--ogni-ms", type=int, default=1000,
-                   help="cadenza di decisione, come il ciclo reale (default 1000)")
-    p.add_argument("--complete", action="store_true",
-                   help="solo le registrazioni giudicate COMPLETE")
-    p.add_argument("--json", dest="come_json", action="store_true")
-    p.add_argument("--scenari", default="base",
-                   help="elenco separato da virgole, oppure 'tutti': "
-                        + ", ".join(list(SCENARI) + [SCENARIO_FEED_STANTIO,
-                                                     SCENARIO_ESITI_IGNOTI]))
-    p.add_argument("--diario", default=None,
-                   help="file in cui scrivere il referto DOPO OGNI partita: senza, "
-                        "un run lungo resta cieco fino alla fine")
-    a = p.parse_args(argv)
+    """CHIAMANTE SOTTILE del punto d'ingresso unico.
 
-    logging.basicConfig(level=logging.WARNING)
-    from ...stream.config_stream import DATA_DIR
-    data_dir = a.data_dir or DATA_DIR
-    eventi = a.eventi or eventi_disponibili(data_dir)
-    verdetti = _complete(data_dir, eventi)
-    if a.complete and verdetti:
-        eventi = [e for e in eventi if verdetti.get(e) == "COMPLETE"]
+    Il referto, la copertura dei controlli, il diario e il filtro delle
+    registrazioni COMPLETE vivono in `Betfair/stream/backtest/certifica.py` e
+    valgono per TUTTI i bot: qui non se ne tiene una seconda copia. Il comando
+    storico continua a funzionare ed equivale a
+    `python -m Betfair.stream.backtest.certifica mike ...`.
+    """
+    from ...stream.backtest.certifica import main as certifica_main
 
-    print(f"REGISTRAZIONI: {len(eventi)} | controlli attivi: {len(CERT.elenco_controlli())}")
-    sollecitati_tot: Dict[str, int] = {}
-    print()
-    scelti = (list(SCENARI) + [SCENARIO_FEED_STANTIO, SCENARIO_ESITI_IGNOTI]
-              if a.scenari.strip().lower() == "tutti"
-              else [x.strip() for x in a.scenari.split(",") if x.strip()])
-    for sc in scelti:
-        if sc not in SCENARI and sc not in (SCENARIO_FEED_STANTIO,
-                                            SCENARIO_ESITI_IGNOTI):
-            print(f"scenario sconosciuto: {sc}")
-            return 2
-    coppie = [(ev, sc) for sc in scelti for ev in eventi]
-    if len(scelti) > 1:
-        print(f"SCENARI: {', '.join(scelti)}")
-        print()
-
-    referti: List[CERT.Referto] = []
-    for ev, sc in coppie:
-        par = dict(C.merge_params(None))
-        par.update(SCENARI.get(sc, {}))
-        # il feed stantio si ottiene invecchiando la riga, non toccando i prezzi
-        # perche' il feed risulti STANTIO devono essere vecchi TUTTI E DUE: la
-        # riga (`feed_max_age_s`) e lo scanner (`scanner_alive_max_s`). Con lo
-        # scanner vivo una riga ferma e' legittima — e' write-on-change, vuol
-        # dire che i prezzi non sono cambiati.
-        vecchio = (max(float(par.get("feed_max_age_s") or 15.0),
-                       float(par.get("scanner_alive_max_s") or 75.0)) * 3.0
-                   if sc == SCENARIO_FEED_STANTIO else 0.0)
-        try:
-            r = certifica_evento(ev, data_dir=data_dir, ogni_ms=a.ogni_ms,
-                                 params=par, invecchia_s=vecchio,
-                                 guasti=(QUANTI_GUASTI
-                                         if sc == SCENARIO_ESITI_IGNOTI else 0))
-        except Exception as ex:  # noqa: BLE001
-            r = CERT.Referto(event_id=ev)
-            r.note.append(f"replay fallito: {type(ex).__name__}: {ex}")
-        if len(scelti) > 1:
-            r.event_id = f"{ev} [{sc}]"
-        referti.append(r)
-        for cod, n in r.sollecitati.items():
-            sollecitati_tot[cod] = sollecitati_tot.get(cod, 0) + n
-        if a.diario:
-            # si scrive SUBITO, partita per partita: un run da ore che non
-            # dice niente finche' non finisce non e' osservabile, e un lavoro
-            # non osservabile non si sa nemmeno se sta andando bene.
-            with io.open(a.diario, "a", encoding="utf-8") as f:
-                f.write(f"{'OK' if r.pulita else 'KO'} {ev} tick={r.tick} "
-                        f"decisioni={r.decisioni} azioni={r.azioni} "
-                        f"ordini={r.ordini_piazzati} stati={','.join(r.stati_visti)}" + chr(10))
-                for v in r.violazioni[:6]:
-                    f.write(f"    {v.codice}: {v.dettaglio}" + chr(10))
-                f.flush()
-        segno = "OK " if r.pulita else "KO "
-        print(f"{segno} {r.event_id}  tick={r.tick:>6} decisioni={r.decisioni:>5} "
-              f"azioni={r.azioni:>4} stati={','.join(r.stati_visti) or '-'} "
-              f"[{verdetti.get(ev, '?')}]")
-        for nota in r.note:
-            print(f"      nota: {nota}")
-        for motivo, n in sorted(r.motivi.items(), key=lambda x: -x[1])[:6]:
-            print(f"      motivo x{n}: {motivo}")
-        for cod, n in sorted(r.per_codice().items()):
-            esempio = next(v for v in r.violazioni if v.codice == cod)
-            print(f"      {cod} x{n}: {esempio.regola}")
-            print(f"           es. {esempio.dettaglio}")
-
-    print()
-    tot = sum(len(r.violazioni) for r in referti)
-    pulite = sum(1 for r in referti if r.pulita and r.decisioni > 0)
-    mute = sum(1 for r in referti if r.decisioni == 0)
-    print(f"ESITO: {pulite} partite senza violazioni, "
-          f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
-    print(f"       {tot} violazioni totali")
-    print()
-    print("COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:")
-    for cod, reg in CERT.elenco_controlli():
-        n = sollecitati_tot.get(cod, 0)
-        segno = "  " if n else "??"
-        print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
-    mai = CERT.mai_sollecitati(sollecitati_tot)
-    if mai:
-        print()
-        print(f"?? MAI SOLLECITATI: {len(mai)} controlli su {len(CERT.elenco_controlli())}. "
-              f"Su questi il referto NON dice «sano», dice «non lo so»:")
-        for cod, reg in mai:
-            print(f"     {cod}: {reg}")
-    if a.come_json:
-        print(json.dumps([{
-            "event_id": r.event_id, "tick": r.tick, "decisioni": r.decisioni,
-            "azioni": r.azioni, "stati": r.stati_visti, "note": r.note,
-            "violazioni": [v.__dict__ for v in r.violazioni],
-        } for r in referti], indent=1, default=str))
-    return 0 if tot == 0 else 1
+    return certifica_main(["mike"] + list(argv if argv is not None
+                                          else sys.argv[1:]))
 
 
 if __name__ == "__main__":

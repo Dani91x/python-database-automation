@@ -38,6 +38,17 @@ export interface PropostaPayload {
     entry_side?: 'back' | 'lay' | null;
     entry_price?: number | null;
     size?: number | null;
+    /**
+     * C.12b (16/09) — la POSIZIONE che si sta per chiudere, come la vede
+     * Betfair. Oggi il servizio NON le pubblica in `safe_strategy_proposed`
+     * (reperto dichiarato): finche' non lo fa la scheda scrive «—», che non
+     * e' uno zero. Se un giorno le pubblica, la scheda le mostra da sola.
+     */
+    size_requested?: number | null;
+    size_matched?: number | null;
+    size_remaining?: number | null;
+    avg_price_matched?: number | null;
+    betfair_updated_at?: string | null;
     /** FOTOGRAFIA al momento della decisione: NON è il prezzo su cui si piazza */
     price_at_decision?: number | null;
     size_available_at_decision?: number | null;

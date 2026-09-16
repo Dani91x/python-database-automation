@@ -1,290 +1,83 @@
 // ============================================================================
-// comandiBot.ts — I COMANDI DEI TRE BOT, in un posto solo.
+// comandiBot.ts — I COMANDI DELLA CONTROL ROOM.
 //
-// «Devo poter fermare uno o tutti i bot come e quando voglio» e «attivare e
-// modificare i parametri di ciascun bot (live o paper) e gli importi con cui
-// devono operare» (utente, 14/09).
+// ⚠️ 16/09 — QUI NON C'E' PIU' NESSUNA IMPLEMENTAZIONE.
 //
-// PERCHÉ UN FILE A PARTE, e non dentro il componente: qui c'è la parte che
-// tocca i SOLDI VERI, ed è l'unica di questa pagina che può accendere un bot
-// in live. Deve stare dove si può collaudare senza montare React.
+// I comandi che accendono, spengono e riconfigurano i bot vivono in
+// `@/lib/interruttori`, perche' le PAGINE DEI SINGOLI BOT devono poter fare
+// gli stessi gesti con lo stesso codice: «devo poter attivare e spegnere
+// tutto dalla UI, sia paper che live, sia dalle singole schede che dalla
+// Control Room» (utente, 16/09). Due implementazioni dello stesso
+// interruttore sono due verita', e divergono sempre.
 //
-// TRE COSE CHE NON SI FANNO QUI:
-//  1. **Non si inventa un parametro.** Ogni chiave scritta è una chiave che il
-//     servizio legge davvero: `stake.backSize` e `stake.laySize` per Safe,
-//     `stake` per Mike, `min_stake` per Omega. Un nome sbagliato non dà
-//     errore: si salva, non ha effetto, e il trader crede di aver cambiato
-//     l'importo mentre il bot continua col vecchio.
-//  2. **Non si perde quello che non si tocca.** `X_update_params` riceve
-//     l'oggetto intero, quindi si parte SEMPRE dai parametri correnti e si
-//     cambia una chiave sola. Mandare `{stake: 3}` e basta azzererebbe tutto
-//     il resto.
-//  3. **Non si indovina la modalità.** Avviare vuole un `mode` esplicito.
+// Quello che resta qui e' l'unica cosa che e' davvero DELLA CONTROL ROOM: la
+// scheda tennis, dove «avvia» ha un significato in piu' che l'utente ha
+// chiesto per nome il 15/09 — «deve partire solo lui, come ieri, a 3 euro».
+// Anche quello, pero', passa dalle funzioni condivise: e' un caso particolare
+// del modello per strategia (tennis acceso, le altre tre spente), non un
+// percorso a parte.
 // ============================================================================
-import { activateOmega, stopOmega, updateOmegaParams, type OmegaParams } from '@/lib/omega';
-import { activateSafe, stopSafe, updateSafeParams, type SafeBotParams } from '@/lib/safeBot';
-import { activateMike, stopMike, updateMikeParams, type MikeParams } from '@/lib/mike';
-import type { Bot } from '@/lib/controlRoom';
-import type { CampoImporto, Modalita } from '@/components/controlroom/PannelloBot';
-import { paramsSoloTennis } from '@/components/controlroom/soloTennis';
+import {
+    creaInterruttori, interruttoreDi,
+    type ComandiInterruttori, type InterruttoreId, type Modalita,
+    type SorgenteInterruttori,
+} from '@/lib/interruttori';
+import {
+    accensioniSoloTennis, extraSoloTennis,
+} from '@/components/controlroom/soloTennis';
 
-/** Le chiavi d'importo che ciascun servizio legge DAVVERO, con le sue parole. */
-export const IMPORTI_DI: Record<Bot, readonly { chiave: string; etichetta: string; nota?: string }[]> = {
-    // Safe ne ha due: chi punta usa backSize, chi banca usa laySize
-    // (`safeBot.ts`: «backSize entra su TENNIS e PUNTA, laySize su BASE ed ESATTO»).
-    safe: [
-        { chiave: 'stake.backSize', etichetta: 'punta' },
-        { chiave: 'stake.laySize', etichetta: 'banca' },
-    ],
-    mike: [
-        { chiave: 'stake', etichetta: 'stake Under 3.5' },
-    ],
-    // ⚠️ `min_stake` è un MINIMO, non l'importo di lavoro: Omega dimensiona
-    // dall'obiettivo di giornata. Chiamarlo «importo» sarebbe falso.
-    omega: [
-        {
-            chiave: 'min_stake', etichetta: 'stake minimo',
-            nota: 'è un minimo, non l’importo di lavoro: Omega dimensiona dall’obiettivo',
-        },
-    ],
-};
-
-/** Legge una chiave anche annidata ('stake.backSize') senza esplodere. */
-export function leggiChiave(params: Record<string, unknown> | null | undefined, chiave: string): number | null {
-    let nodo: unknown = params ?? null;
-    for (const passo of chiave.split('.')) {
-        if (nodo == null || typeof nodo !== 'object') return null;
-        nodo = (nodo as Record<string, unknown>)[passo];
-    }
-    return typeof nodo === 'number' && Number.isFinite(nodo) ? nodo : null;
-}
+export {
+    INTERRUTTORI, interruttoriDiSport, interruttoreDi, statoInterruttore,
+    importoDi, importiInterruttori, leggiChiave, scriviChiave,
+    paramsAccensioni, accensioniCorrenti, modalitaServizio, nessunaAccesa,
+    creaInterruttori,
+    ObiettivoOmegaIgnoto, ParametriOmegaIgnoti, ParametriNonLetti,
+} from '@/lib/interruttori';
+export type {
+    Interruttore, InterruttoreId, Modalita, SportBot, StrategiaSafe,
+    Accensioni, CampoImporto, ComandiInterruttori, SorgenteInterruttori,
+    StatoServizio, StatoInterruttore,
+} from '@/lib/interruttori';
 
 /**
- * Scrive una chiave anche annidata, **senza toccare il resto**.
- * Ritorna una copia: i parametri correnti non si mutano mai sul posto, o due
- * salvataggi in fila partirebbero da uno stato già sporcato dal primo.
+ * I comandi della Control Room. `sport` cambia UNA cosa sola, e la cambia in
+ * modo dichiarato: nella scheda tennis accendere `safe-tennis` (o portarlo a
+ * soldi veri) vuol dire «accendi il tennis e spegni il resto», con lo stake a
+ * 3,00 € e le entrate automatiche accese.
+ *
+ * PERCHE' NON UN FLAG DENTRO `creaInterruttori`: qui cambia il SIGNIFICATO del
+ * pulsante, non un dettaglio. Due significati nello stesso nome, distinti da
+ * un flag, si confondono alla prima lettura distratta — e questo e' il punto
+ * della pagina dove confondersi costa denaro. Il pannello lo scrive PRIMA del
+ * clic (`differenzeSoloTennis`).
  */
-export function scriviChiave(
-    params: Record<string, unknown> | null | undefined,
-    chiave: string, valore: number,
-): Record<string, unknown> {
-    const radice: Record<string, unknown> = { ...(params ?? {}) };
-    const passi = chiave.split('.');
-    let nodo = radice;
-    for (let i = 0; i < passi.length - 1; i += 1) {
-        const k = passi[i];
-        const dentro = nodo[k];
-        nodo[k] = (dentro != null && typeof dentro === 'object') ? { ...(dentro as object) } : {};
-        nodo = nodo[k] as Record<string, unknown>;
-    }
-    nodo[passi[passi.length - 1]] = valore;
-    return radice;
-}
+export function creaComandiControlRoom(
+    sorgente: SorgenteInterruttori, dopo: () => void, sport?: string | null,
+): ComandiInterruttori {
+    const base = creaInterruttori(sorgente, dopo);
+    if (sport !== 'tennis') return base;
 
-/** Gli importi di un bot, pronti per il pannello. */
-export function importiDi(bot: Bot, params: Record<string, unknown> | null): CampoImporto[] {
-    return IMPORTI_DI[bot].map((c) => ({ ...c, valore: leggiChiave(params, c.chiave) }));
-}
-
-export interface SorgenteParametri {
-    /** i parametri correnti di quel bot, dalla riga di control */
-    params: (bot: Bot) => Record<string, unknown> | null;
-    /** solo Omega: l'obiettivo del giorno vive fuori da `params` e
-     *  `omega_activate` lo pretende */
-    obiettivoOmega: () => number | null;
-}
-
-/**
- * L'obiettivo con cui riaccendere Omega quando non ne conosciamo uno.
- * NON è un default di comodo: `omega_activate` richiede un numero, e passare
- * 0 spegnerebbe di fatto il dimensionamento. Se non sappiamo l'obiettivo
- * corrente, meglio rifiutarsi che indovinarlo.
- */
-export class ObiettivoOmegaIgnoto extends Error {
-    constructor() {
-        super('non conosco l’obiettivo di giornata di Omega: aprilo dalla sua pagina e riprova');
-        this.name = 'ObiettivoOmegaIgnoto';
-    }
-}
-
-/**
- * ⚠️ REVIEW 14/09 — `omega_activate` NON e' come le altre due.
- *
- *   safe_activate  → params = coalesce(p_params, params)      conserva
- *   mike_activate  → params = coalesce(p_params, params)      conserva
- *   omega_activate → params = coalesce(p_params, '{}'::jsonb) SOVRASCRIVE SEMPRE
- *
- * `{}` non e' NULL: passarlo AZZERA la colonna. E i tetti di rischio di Omega
- * nascono a ZERO, che nel suo codice significa TETTO SPENTO:
- *   · `max_liability_per_match` → `apply_liability_cap`: `if not cap or cap <= 0: return size`
- *   · `max_open_liability`      → `omega_service.py:1201`: controllo saltato
- *   · `daily_loss_cap`          → `omega_service.py:963`: lo stop perdite non scatta MAI
- *
- * Avviare Omega con `{}` gli toglieva tutti e tre i freni, in live, in
- * silenzio. Quindi: si riavvia con i parametri CORRENTI, e se non li
- * conosciamo non si avvia affatto. Fail-closed: meglio un bot che non parte
- * di un bot che parte senza freni.
- */
-export class ParametriOmegaIgnoti extends Error {
-    constructor() {
-        super('non conosco i parametri di Omega: avviarlo adesso azzererebbe i suoi '
-            + 'tetti di rischio (perdita giornaliera, responsabilità aperta, per partita). '
-            + 'Apri la pagina di Omega, controlla i parametri, e riprova.');
-        this.name = 'ParametriOmegaIgnoti';
-    }
-}
-
-/**
- * ⚠️ REVIEW 14/09, CRITICO — SCRIVERE SENZA AVER LETTO CANCELLA.
- *
- * Tutte e tre le RPC di aggiornamento fanno `coalesce(p_params, params)`:
- * conservano solo se ricevono NULL. Un oggetto — anche minuscolo — SOSTITUISCE
- * l'intera colonna. E `scriviChiave(null, 'stake', 3)` produce `{stake: 3}`,
- * che non è NULL.
- *
- * `correnti` è `null` ogni volta che la lettura di stato non è ancora tornata
- * o è FALLITA (il 13/09 il DB ha risposto 503 per budget IO): la pagina resta
- * interattiva e il campo importo invita a salvare proprio in quel momento.
- *
- * Su Safe si perderebbero `strategy_modes` e `tennis_exit_approval`, cioè le
- * DUE COSE che oggi tengono i soldi veri sul solo tennis: il calcio
- * erediterebbe la modalità del servizio e le chiusure smetterebbero di
- * passare dall'approvazione. Quindi: se non abbiamo letto, non si scrive.
- */
-export class ParametriNonLetti extends Error {
-    constructor(bot: Bot) {
-        super(`non ho ancora letto i parametri di ${bot}: salvare adesso `
-            + 'sostituirebbe TUTTI gli altri (modalità per strategia, uscite, '
-            + 'tetti di rischio) con i valori predefiniti. Attendi che lo stato '
-            + 'sia caricato, o ricarica la pagina.');
-        this.name = 'ParametriNonLetti';
-    }
-}
-
-/**
- * Costruisce i comandi. `dopo` viene chiamato a ogni cambiamento riuscito,
- * perché la pagina deve rileggere lo stato dal SERVIZIO invece di fidarsi di
- * quello che credeva di aver appena fatto.
- */
-export function creaComandi(sorgente: SorgenteParametri, dopo: () => void) {
-    const avvia = async (bot: Bot, modalita: Modalita) => {
-        if (bot === 'safe') await activateSafe(modalita);
-        else if (bot === 'mike') await activateMike(modalita);
-        else {
-            const obiettivo = sorgente.obiettivoOmega();
-            if (obiettivo == null) throw new ObiettivoOmegaIgnoto();
-            // i parametri CORRENTI, mai un oggetto vuoto: vedi ParametriOmegaIgnoti
-            const correnti = sorgente.params('omega');
-            if (correnti == null || Object.keys(correnti).length === 0) {
-                throw new ParametriOmegaIgnoti();
-            }
-            await activateOmega(modalita, obiettivo, correnti as Partial<OmegaParams>);
-        }
-        dopo();
-    };
-
-    const ferma = async (bot: Bot) => {
-        if (bot === 'safe') await stopSafe();
-        else if (bot === 'mike') await stopMike();
-        else await stopOmega();
-        dopo();
-    };
-
-    const cambiaModalita = async (bot: Bot, modalita: Modalita) => {
-        // `update_params` di Omega e Mike accetta il mode; Safe no, e la sua
-        // modalità si cambia riattivandolo — che è esattamente quello che fa
-        // la sua pagina, non una scorciatoia inventata qui.
-        if (bot === 'omega') await updateOmegaParams({ mode: modalita });
-        else if (bot === 'mike') {
-            // `mike_update_params` riceve i parametri INTERI: se non li
-            // abbiamo letti, cambiare modalità gli porterebbe via tutto.
-            const correnti = sorgente.params('mike');
-            if (correnti == null || Object.keys(correnti).length === 0) {
-                throw new ParametriNonLetti('mike');
-            }
-            await updateMikeParams(correnti as MikeParams, modalita);
-        }
-        else await activateSafe(modalita);
-        dopo();
-    };
-
-    const cambiaImporto = async (bot: Bot, chiave: string, importo: number) => {
-        // si riparte SEMPRE dai parametri correnti: mandare la sola chiave
-        // cambiata cancellerebbe tutto il resto.
-        const correnti = sorgente.params(bot);
-        // ...e se non li abbiamo letti NON si scrive: vedi ParametriNonLetti.
-        if (correnti == null || Object.keys(correnti).length === 0) {
-            throw new ParametriNonLetti(bot);
-        }
-        const nuovi = scriviChiave(correnti, chiave, importo);
-        if (bot === 'safe') await updateSafeParams(nuovi as Partial<SafeBotParams>);
-        else if (bot === 'mike') await updateMikeParams(nuovi as MikeParams);
-        else await updateOmegaParams({ params: nuovi as Partial<OmegaParams> });
-        dopo();
-    };
-
-    return { avvia, ferma, cambiaModalita, cambiaImporto };
-}
-
-// ============================================================================
-// LA SCHEDA TENNIS — «deve partire solo lui, come ieri, a 3 euro»
-// ============================================================================
-
-/**
- * I comandi **della scheda tennis**. Sono gli stessi di sopra tranne che per
- * i due gesti che possono far uscire denaro: `avvia` e `cambiaModalita` su
- * Safe passano da `paramsSoloTennis`, cioè accendono il tennis e lasciano
- * TUTTE le altre strategie in prova.
- *
- * PERCHÉ NON UN PARAMETRO IN PIÙ DENTRO `creaComandi`: qui cambia il
- * SIGNIFICATO del pulsante, non un dettaglio. «Avvia in live» dalla pagina
- * intera vuol dire «accendi il servizio così com'è»; dalla scheda tennis vuol
- * dire «accendi il tennis e SPEGNI il resto». Due significati nello stesso
- * nome, distinti da un flag, si confondono alla prima lettura distratta — e
- * questo è il punto della pagina dove confondersi costa denaro.
- *
- * Mike e Omega restano com'erano: dalla scheda tennis non compaiono nemmeno,
- * e se qualcuno li chiamasse lo farebbero con i comandi normali.
- */
-export function creaComandiTennis(sorgente: SorgenteParametri, dopo: () => void) {
-    const base = creaComandi(sorgente, dopo);
-
-    /** accende Safe col tennis nella modalità scelta e il resto in prova */
-    const accendiSoloTennis = async (modalita: Modalita) => {
-        const correnti = sorgente.params('safe');
-        // ...e se non li abbiamo letti NON si scrive: vedi ParametriNonLetti.
-        // Qui vale doppio: senza i parametri correnti non sapremmo nemmeno
-        // quali strategie stiamo spegnendo.
-        if (correnti == null || Object.keys(correnti).length === 0) {
-            throw new ParametriNonLetti('safe');
-        }
-        await activateSafe(modalita, paramsSoloTennis(correnti, modalita) as Partial<SafeBotParams>);
-        dopo();
-    };
+    /** `puoAccendere`: solo il gesto di ACCENSIONE puo' portare il servizio da
+     *  fermo a in corsa. Un cambio di modalita' non accende mai niente. */
+    const soloTennis = (modalita: Modalita, puoAccendere: boolean) =>
+        base.scriviAccensioni(accensioniSoloTennis(modalita), {
+            altre: 'prova', extra: extraSoloTennis, puoAccendere,
+        });
 
     return {
         ...base,
-        avvia: async (bot: Bot, modalita: Modalita) => {
-            if (bot !== 'safe') return base.avvia(bot, modalita);
-            await accendiSoloTennis(modalita);
+        accendi: async (id: InterruttoreId, modalita: Modalita) => {
+            if (interruttoreDi(id).strategia !== 'tennis') return base.accendi(id, modalita);
+            await soloTennis(modalita, true);
         },
-        cambiaModalita: async (bot: Bot, modalita: Modalita) => {
-            if (bot !== 'safe') return base.cambiaModalita(bot, modalita);
-            // la modalità di Safe si cambia riattivandolo (è così anche nella
-            // sua pagina): riattivarlo qui vuol dire riattivare SOLO il tennis.
-            if (modalita === 'live') return accendiSoloTennis('live');
-
+        cambiaModalita: async (id: InterruttoreId, modalita: Modalita) => {
+            if (interruttoreDi(id).strategia !== 'tennis') return base.cambiaModalita(id, modalita);
             // ⚠️ REVIEW 15/09 — «PASSA A PROVA» NON CONFIGURA NIENTE.
-            // È un gesto di de-escalation: portava con sé lo stake a 3 e
-            // ACCENDEVA le entrate automatiche, che l'operatore può avere
-            // spento apposta. In prova il `mode` del servizio è già un tetto
-            // su tutto: basta riattivarlo com'è.
-            const correnti = sorgente.params('safe');
-            if (correnti == null || Object.keys(correnti).length === 0) {
-                throw new ParametriNonLetti('safe');
-            }
-            await activateSafe('paper', correnti as Partial<SafeBotParams>);
-            dopo();
+            // E' un gesto di de-escalation: portava con se' lo stake a 3 e
+            // ACCENDEVA le entrate automatiche, che l'operatore puo' avere
+            // spento apposta. Si cambia solo la modalita' del tennis.
+            if (modalita === 'live') return soloTennis('live', false);
+            await base.cambiaModalita(id, 'paper');
         },
     };
 }

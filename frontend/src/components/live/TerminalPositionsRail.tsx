@@ -20,10 +20,19 @@ import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand,
     type LiveOrderMode, type LiveOrderRow, type LivePositionRow,
 } from '@/lib/liveOrders';
+// C.12b — i formatter UNICI: «—» per il dato assente, mai «0,00»
+import { fmtMoney, fmtOdds } from '@/lib/format';
 
 type PanelMode = 'off' | LiveOrderMode;
 
 const POLL_MS = 4000;
+
+/**
+ * C.12b — una QUOTA vale almeno 1,01. Betfair scrive `averagePriceMatched = 0`
+ * quando il prezzo medio NON ESISTE: mostrarlo come «0,00» sotto l'etichetta
+ * «prezzo medio» e' un numero falso. Assente → «—».
+ */
+const prezzoMedio = (v: number | null | undefined) => (v != null && v > 1 ? v : null);
 
 const money = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
 const tone = (v: number) => (v > 0.004 ? 'text-emerald-300' : v < -0.004 ? 'text-rose-300' : 'text-white/60');
@@ -199,8 +208,13 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
                                 <span className="flex-1 truncate text-white/85" title={nameOf(o.selection_id)}>
                                     {nameOf(o.selection_id)}
                                 </span>
-                                <span className="font-mono tabular-nums text-white/80">
-                                    {(o.size_remaining ?? 0).toFixed(2)}@{o.price ?? '—'}
+                                {/* ⚠️ C.12b (16/09) — qui c'era `(o.size_remaining ?? 0).toFixed(2)`:
+                                    un residuo IGNOTO veniva mostrato come «0.00», cioe' come
+                                    un ordine gia' tutto abbinato, su un ordine che sta ancora
+                                    sul book. Assente → «—» (lib/format.ts:44-54). */}
+                                <span className="font-mono tabular-nums text-white/80"
+                                    title="residuo ANCORA VIVO sul book @ prezzo chiesto">
+                                    {fmtMoney(o.size_remaining)}@{fmtOdds(o.price)}
                                 </span>
                                 <button
                                     type="button"
@@ -226,8 +240,12 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
                                 <span className="flex-1 truncate text-white/70" title={nameOf(o.selection_id)}>
                                     {nameOf(o.selection_id)}
                                 </span>
-                                <span className="font-mono tabular-nums text-white/60" title="size abbinata @ prezzo medio">
-                                    ✓ {o.size_matched.toFixed(2)}@{o.average_price_matched || o.price || '—'}
+                                {/* ⚠️ C.12b (16/09) — qui `average_price_matched || price`
+                                    sostituiva IN SILENZIO il prezzo medio assente col prezzo
+                                    CHIESTO: due numeri diversi sotto la stessa etichetta.
+                                    Il prezzo medio, se non c'e', e' «—». */}
+                                <span className="font-mono tabular-nums text-white/60" title="size abbinata @ prezzo MEDIO dichiarato da Betfair (mai il prezzo chiesto al suo posto)">
+                                    ✓ {fmtMoney(o.size_matched)}@{fmtOdds(prezzoMedio(o.average_price_matched))}
                                 </span>
                             </div>
                         ))}

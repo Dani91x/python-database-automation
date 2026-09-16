@@ -247,6 +247,14 @@ def _ui_kind_mappati() -> set[str]:
     return keys
 
 
+# C.12b (16/09) — il DEBITO E' CHIUSO: `_KIND_IN_ATTESA_DI_UI` non esiste piu'.
+# `place_rifiutato`, `place_parziale`, `cancel_richiesto` e `cancel_esito`
+# hanno la loro etichetta italiana (`OMEGA_ACTIVITY_EXTRA` in omega.ts e
+# `ACTIVITY_BASE` in tradeStatus.ts) e i loro numeri nella riga di testo
+# (`activityLine`: chiesto / abbinato / residuo / codice di Betfair).
+# Il contratto torna a mordere su TUTTI i kind, senza eccezioni elencate.
+
+
 class TestAttivitaDelServizio:
     """M-01/L-05 — ogni passo che il servizio scrive deve avere una etichetta
     ITALIANA sua, non la traduzione automatica del fallback."""

@@ -188,9 +188,18 @@ class SportState:
 
 
 class Scanner:
-    def __init__(self, api_client: Any, dry: bool, use_stream: bool = False) -> None:
+    def __init__(self, api_client: Any, dry: bool, use_stream: bool = False,
+                 orologio: Optional[Any] = None) -> None:
         self.client = api_client
         self.dry = dry
+        # OROLOGIO INIETTABILE — esiste SOLO per il banco di prova (replay sulle
+        # registrazioni), dove "adesso" e' il publish time del tick e non l'ora
+        # del PC: con l'orologio del PC una registrazione di giugno risulterebbe
+        # vecchia di mesi e ogni riga nascerebbe gia' stantia.
+        # None (produzione) = time.time()/time.monotonic()/scanner.now_iso(),
+        # cioe' esattamente il comportamento di prima. Deve restituire EPOCH
+        # SECONDI (float), la stessa unita' di time.time().
+        self.orologio = orologio
         self.sports = {name: SportState() for name in _SPORTS}
         # stato runtime per evento (inplay, quote, punteggio, pre_ko, cs, …)
         self.events: Dict[str, Dict[str, Any]] = {}
@@ -258,6 +267,23 @@ class Scanner:
         # LISTA, non insieme: l'ordine (soldi a rischio decrescente) e' un dato
         self._mike_followed_ids: List[str] = []
         self._mike_followed_ts: float = -1e9
+
+    # --------------------------------------------------------------- orologio
+    # Tre letture dell'ora, tutte incanalate qui: senza orologio iniettato
+    # rispondono esattamente come prima (time.time / time.monotonic / now_iso).
+    def _ora(self) -> float:
+        """Epoch secondi ("quando e' successo": ts_ms, seen_ms, odds_ts_ms)."""
+        return time.time() if self.orologio is None else float(self.orologio())
+
+    def _ora_mono(self) -> float:
+        """Orologio MONOTONO (solo differenze: throttle di pubblicazione)."""
+        return time.monotonic() if self.orologio is None else float(self.orologio())
+
+    def _ora_iso(self) -> str:
+        """``updated_at`` della riga di scan e ``captured_at`` del pre-KO."""
+        if self.orologio is None:
+            return scanner.now_iso()
+        return datetime.fromtimestamp(float(self.orologio()), tz=timezone.utc).isoformat()
 
     # ------------------------------------------------------------- catalogo MO
     def refresh_catalogue(self, sport: str) -> None:
@@ -501,11 +527,16 @@ class Scanner:
         # ts dell'ULTIMO CAMBIO delle quote 1X2 (non dell'ultimo poll): il motore
         # opportunità penalizza i prezzi fermi, il write-on-change resta pulito
         if ev.get("odds") != odds:
-            ev["odds_ts_ms"] = int(time.time() * 1000)
+            ev["odds_ts_ms"] = int(self._ora() * 1000)
         ev["odds"] = odds
         # riferimento pre-KO: aggiorna pre-KO, congela al primo in-play
         ev["pre_ko"] = scanner.freeze_pre_ko(
             ev.get("pre_ko"), ev["inplay"], odds if sport == "calcio" else None,
+            # in PRODUZIONE si passa None e `freeze_pre_ko` chiama `now_iso()`
+            # solo quando il riferimento lo costruisce davvero: questo e' il
+            # percorso caldo dello stream (migliaia di book al minuto) e non ci
+            # si aggiunge una formattazione di data per ogni book.
+            adesso_iso=(None if self.orologio is None else self._ora_iso()),
         )
 
     def _apply_cs_book(self, meta: Dict[str, Any], book: Any) -> None:
@@ -575,7 +606,7 @@ class Scanner:
             isinstance(prev, dict) and prev_ts is not None
             and {k: v for k, v in prev.items() if k not in _OPP_MARKER_KEYS} == blk
         )
-        ora_ms = int(time.time() * 1000)
+        ora_ms = int(self._ora() * 1000)
         blk["ts_ms"] = int(prev_ts) if unchanged else ora_ms
         # CERT. 13/09 — ULTIMA OSSERVAZIONE, distinta dall'ultimo CAMBIO.
         # ``ts_ms`` dice quando il prezzo si e' mosso l'ultima volta; da solo non
@@ -679,36 +710,51 @@ class Scanner:
                     raw_by_event[eid] = state  # stato assente = punteggio precedente resta
             time.sleep(_IPS_REQ_DELAY)
         for eid, rec in raw_by_event.items():
-            ev = self.events.get(eid)
-            if ev is None:
-                continue
-            # FEED UNICO (audit 09/09): lo stato IPS grezzo va nel payload, così i
-            # runner calcio/tennis lo parsano coi loro parser di sempre invece di
-            # rifare per ogni evento la stessa chiamata (scores/scan_feed.py).
-            upd: Dict[str, Any] = {"score_raw": scanner.strip_volatile_state(rec)}
-            if ev.get("sport") == "calcio":
-                snap = parse_score_dict(eid, rec)
-                upd.update(minute=snap.minute, score_home=snap.score_home,
-                           score_away=snap.score_away, red_home=snap.red_home,
-                           red_away=snap.red_away)
-            else:
-                ts = parse_tennis_scores([rec], eid)
-                if ts is not None:
-                    upd["sets"] = (
-                        {"p1": ts.sets_home, "p2": ts.sets_away}
-                        if ts.sets_home is not None and ts.sets_away is not None
-                        else None
-                    )
-                    upd["games"] = (
-                        {"p1": ts.games_home, "p2": ts.games_away}
-                        if ts.games_home is not None and ts.games_away is not None
-                        else None
-                    )
-            # UN solo update (atomico sotto il GIL): il tick, che pubblica da un
-            # altro thread, vede sempre punteggio e stato grezzo COERENTI, mai
-            # un gol a metà (score_home nuovo con score_away vecchio)
-            ev.update(upd)
+            self.apply_score_state(eid, rec)
         self.scores_ts = time.monotonic()
+
+    def apply_score_state(self, eid: str, rec: Dict[str, Any]) -> bool:
+        """Lo STATO IPS GREZZO di un evento entra nello stato-evento.
+
+        Corpo estratto da ``poll_scores`` senza cambiarne una riga: da qui
+        passano sia il poll IPS di produzione sia il banco di prova, che rilegge
+        lo stesso identico record dal sidecar della registrazione
+        (``<id>.scores.jsonl`` calcio / ``<id>.score.jsonl`` tennis). Un finto
+        che ricostruisse "minute/score_home/..." a mano parlerebbe una lingua
+        diversa dal vero: qui non c'e' nessun finto, c'e' la funzione vera.
+        Torna False se l'evento non esiste ancora (stato assente = nessun
+        punteggio, mai un evento inventato).
+        """
+        ev = self.events.get(eid)
+        if ev is None:
+            return False
+        # FEED UNICO (audit 09/09): lo stato IPS grezzo va nel payload, così i
+        # runner calcio/tennis lo parsano coi loro parser di sempre invece di
+        # rifare per ogni evento la stessa chiamata (scores/scan_feed.py).
+        upd: Dict[str, Any] = {"score_raw": scanner.strip_volatile_state(rec)}
+        if ev.get("sport") == "calcio":
+            snap = parse_score_dict(eid, rec)
+            upd.update(minute=snap.minute, score_home=snap.score_home,
+                       score_away=snap.score_away, red_home=snap.red_home,
+                       red_away=snap.red_away)
+        else:
+            ts = parse_tennis_scores([rec], eid)
+            if ts is not None:
+                upd["sets"] = (
+                    {"p1": ts.sets_home, "p2": ts.sets_away}
+                    if ts.sets_home is not None and ts.sets_away is not None
+                    else None
+                )
+                upd["games"] = (
+                    {"p1": ts.games_home, "p2": ts.games_away}
+                    if ts.games_home is not None and ts.games_away is not None
+                    else None
+                )
+        # UN solo update (atomico sotto il GIL): il tick, che pubblica da un
+        # altro thread, vede sempre punteggio e stato grezzo COERENTI, mai
+        # un gol a metà (score_home nuovo con score_away vecchio)
+        ev.update(upd)
+        return True
 
     # ------------------------------------------------------------- timeline IPS
     def poll_timelines(self) -> None:
@@ -1102,7 +1148,7 @@ class Scanner:
                 # (gol, minuto, rosso, in-play, stato mercato, set/game) passa SUBITO:
                 # la realtà mostrata deve coincidere con quella di Betfair.
                 crit = scanner.critical_signature(sport, payload)
-                mono = time.monotonic()
+                mono = self._ora_mono()
                 if (
                     self.written_crit.get(eid) == crit
                     and mono - self.last_pub_mono.get(eid, 0.0) < _PUBLISH_MIN_INTERVAL_SEC
@@ -1123,7 +1169,7 @@ class Scanner:
                     "event_id": eid,
                     "sport": sport,
                     "payload": payload,
-                    "updated_at": scanner.now_iso(),
+                    "updated_at": self._ora_iso(),
                 })
         return rows, wanted
 

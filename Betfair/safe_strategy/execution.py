@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from Betfair.omega import omega_engine as E
+from Betfair.omega.omega_market import PlaceRifiutato
 from Betfair.stream.trading.greenup import GreenupPlan, compute_greenup
 
 logger = logging.getLogger("safe.execution")
@@ -161,10 +162,32 @@ class PlaceOutcome:
     # peggiore del segnale" resta un sospetto invece che un numero.
     # Ha un default: nessun chiamante esistente deve cambiare.
     esecuzione: Optional[dict[str, Any]] = None
+    # --- C.12a: CONSAPEVOLEZZA DELL'ORDINE -----------------------------------
+    # ``size`` e' l'ABBINATO (viene sovrascritto alla conferma): senza questi
+    # campi il CHIESTO si perdeva e il residuo non esisteva come numero. Tutti
+    # con default: nessun chiamante o test esistente cambia.
+    size_requested: Optional[float] = None
+    size_remaining: Optional[float] = None
+    avg_price_matched: Optional[float] = None
+    # codice di Betfair sul rifiuto (INVALID_PROFIT_RATIO, INSUFFICIENT_FUNDS,
+    # BET_TAKEN_OR_LAPSED...): finora ``ok=False`` li appiattiva tutti in uno.
+    error_code: Optional[str] = None
+    betfair_updated_at: Optional[str] = None
 
     @property
     def ok(self) -> bool:
         return self.status in ("open", "pending")
+
+    @property
+    def consapevolezza(self) -> dict[str, Any]:
+        """I campi da scrivere sulle colonne nuove della riga di trade."""
+        return {
+            "size_requested": self.size_requested,
+            "size_matched": (round(float(self.size), 2) if self.status == "open" else None),
+            "size_remaining": self.size_remaining,
+            "avg_price_matched": self.avg_price_matched,
+            "betfair_updated_at": self.betfair_updated_at,
+        }
 
 
 def livelli_attraversati(ladder: Any, size: float, limit_price: Optional[float],
@@ -229,6 +252,102 @@ def scorrimento(prezzo_chiesto: Optional[float], prezzo_medio: Optional[float],
     # peggioramento e' verso il BASSO, per un LAY verso l'alto: si gira il segno
     # cosi' che "positivo = ho pagato di piu'" valga per entrambi i lati.
     return -passi if side == "back" else passi
+
+
+# ---------------------------------------------------------------------------
+# C.12a — CONSAPEVOLEZZA DELL'ORDINE: colonne nuove e annullamento VERO
+# ---------------------------------------------------------------------------
+# Le tre tabelle dei bot (omega_trades, safe_strategy_trades, mike_trades) non
+# hanno mai avuto una colonna per il CHIESTO, per il RESIDUO, per il PREZZO
+# MEDIO e per l'ULTIMO AGGIORNAMENTO DA BETFAIR: alla conferma ``size`` e
+# ``price`` venivano sovrascritti con l'abbinato e il chiesto spariva. La
+# migrazione ``trades_consapevolezza_ordine_2026-09-16.sql`` le aggiunge; qui
+# si scrive SE esistono, perche' una migrazione non ancora applicata non deve
+# poter rompere un bot che sta operando (stessa regola di
+# ``stream/runner.py:777-790`` per ``live_follow.record``).
+COLONNE_CONSAPEVOLEZZA = ("size_requested", "size_matched", "size_remaining",
+                          "avg_price_matched", "betfair_updated_at")
+
+_MARCATORI_SCHEMA = ("42703", "pgrst204", "does not exist", "unknown column",
+                     "schema cache", "could not find")
+
+
+def _errore_di_colonna(ex: Exception) -> bool:
+    """True solo se l'errore dice che una delle colonne NUOVE non esiste.
+
+    Un timeout o un errore di rete NON e' un errore di schema (C5, come
+    ``mike/service._is_missing_column_error``): declassarlo qui significherebbe
+    riscrivere la riga senza accorgersi che il database e' muto.
+    """
+    msg = str(ex).lower()
+    if not any(m in msg for m in _MARCATORI_SCHEMA):
+        return False
+    return any(c in msg for c in COLONNE_CONSAPEVOLEZZA)
+
+
+def _colonne_attive(db) -> bool:
+    """Rilevamento UNA volta per oggetto ``db`` (poi resta in memoria)."""
+    return not bool(getattr(db, "_colonne_consapevolezza_assenti", False))
+
+
+def _segna_colonne_assenti(db) -> None:
+    try:
+        db._colonne_consapevolezza_assenti = True
+    except Exception:  # noqa: BLE001 — un fake con __slots__ non deve rompere
+        pass
+    logger.warning("[exec] colonne di consapevolezza dell'ordine ASSENTI "
+                   "(migrazione trades_consapevolezza_ordine_2026-09-16.sql non "
+                   "applicata): chiesto/residuo/prezzo medio restano solo nel meta.")
+
+
+def aggiorna_trade(db, trade_id: Optional[int], *, campi: dict[str, Any],
+                   consapevolezza: Optional[dict[str, Any]] = None) -> None:
+    """``db.update_trade`` con i campi di sempre PIU' le colonne nuove, se ci sono.
+
+    Se la migrazione non e' applicata l'aggiornamento viene rifatto SENZA le
+    colonne nuove: un UPDATE per id con valori fissi e' idempotente, quindi
+    ripeterlo non puo' duplicare nulla.
+    """
+    if trade_id is None or not campi and not consapevolezza:
+        return
+    utili = {k: v for k, v in (consapevolezza or {}).items() if v is not None}
+    if not utili or not _colonne_attive(db):
+        db.update_trade(int(trade_id), **campi)
+        return
+    try:
+        db.update_trade(int(trade_id), **{**campi, **utili})
+    except Exception as ex:  # noqa: BLE001
+        if not _errore_di_colonna(ex):
+            raise
+        _segna_colonne_assenti(db)
+        db.update_trade(int(trade_id), **campi)
+
+
+def annulla_su_betfair(market, *, bet_id: Optional[str], market_id: Optional[str],
+                       size_reduction: Optional[float] = None) -> Optional[Any]:
+    """Chiede a Betfair di ANNULLARE l'ordine. ``None`` = esito IGNOTO.
+
+    ⚠️ Fino al 16/09 nessuno dei tre bot REST annullava davvero: gli «annulla»
+    erano contabili (stato della riga nel database) e l'ordine restava VIVO su
+    Betfair. Questo e' il punto unico da cui passano tutti e tre.
+
+    Ritorna il ``CancelResult`` di ``omega_market.cancel_order_live``, oppure
+    ``None`` quando non si puo' sapere com'e' andata (mercato senza la funzione,
+    bet_id assente, rete caduta). ``None`` NON e' un successo: chi chiama non
+    deve dichiarare la riga annullata, deve andare in riconciliazione.
+    """
+    if not bet_id:
+        return None
+    fn = getattr(market, "cancel_order_live", None) if market is not None else None
+    if not callable(fn):
+        logger.warning("[exec] annullo impossibile su bet %s: il mercato non espone "
+                       "cancel_order_live", bet_id)
+        return None
+    try:
+        return fn(str(bet_id), str(market_id or ""), size_reduction)
+    except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI dichiarare annullato
+        logger.critical("[exec] ANNULLO a esito IGNOTO su bet %s: %s", bet_id, str(ex)[:160])
+        return None
 
 
 def place(
@@ -378,7 +497,17 @@ def place(
                 "scorrimento_tick": scorrimento(price, fill.avg_price, side),
                 "livelli": livelli_attraversati(ladder, size, price, side),
                 "percorso": "paper",
-            })
+                "size_richiesta": size,
+                "size_abbinata": round(float(fill.matched_size), 2),
+                "size_residua": 0.0,
+            },
+            # C.12a — paper = specchio del live anche qui: il paper uccide il
+            # parziale (FOK), quindi abbinato = chiesto e residuo 0. Che i tre
+            # numeri ci siano ANCHE in paper e' cio' che permette di confrontare
+            # riga per riga i due percorsi.
+            size_requested=size,
+            size_remaining=0.0,
+            avg_price_matched=(float(fill.avg_price) if fill.avg_price else None))
 
     # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
     # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
@@ -417,16 +546,70 @@ def place(
                 market_id=str(market_id), selection_id=int(selection_id), price=price,
                 size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
             )
+    except PlaceRifiutato as ex:
+        # ⚠️ C.12a — RIFIUTO CERTO, non esito ignoto.
+        # Il place-and-trim solleva sia quando Betfair RIFIUTA (parcheggio
+        # respinto, riprezzo respinto col residuo ritirato) sia quando l'esito e'
+        # davvero ignoto. Prima cadevano nello stesso ``except`` e la riga
+        # restava 'pending' IN VERIFICA su un ordine che NON ESISTE: il segnale
+        # restava bloccato dall'indice unico e la liability veniva contata piena.
+        # Un rifiuto certo e' una riga 'error', col codice di Betfair scritto.
+        codice = getattr(ex, "error_code", None)
+        _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
+                                     "price": price, "size": size,
+                                     "error_code": codice, "critical": True,
+                                     "percorso": "submin" if sotto_minimo else "rest",
+                                     "reason": str(ex)[:160],
+                                     "nota": "Betfair ha rifiutato: nessun ordine a mercato"})
+        return PlaceOutcome("error", None, 0.0, None,
+                            f"live_rifiutato:{codice or 'senza_codice'}",
+                            size_requested=size, size_remaining=0.0, error_code=codice)
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     t5 = _ora_ms()
     # rifiuto PROVATO dall'exchange (risposta ricevuta, nessun fill): 'error' legittimo
     if not res.ok or res.size_matched <= 0:
-        return PlaceOutcome("error", None, 0.0, None,
-                            f"live_not_matched:{res.order_status}")
+        # ⚠️ C.12a — IL CODICE DI BETFAIR SI LEGGE E SI SCRIVE.
+        # Finora ``ok=False`` appiattiva INSUFFICIENT_FUNDS, INVALID_PROFIT_RATIO
+        # e BET_TAKEN_OR_LAPSED in un unico "non abbinato": il bot ritentava
+        # identico fino a esaurire il budget invece di sapere PERCHE'. Il codice
+        # non cambia nessuna decisione (la strategia non si tocca): si scrive,
+        # cosi' il trader e il prossimo ciclo lo vedono.
+        codice = getattr(res, "error_code", None)
+        _log(db, "place_rifiutato", {"trade_id": tid, "mode": mode, "side": side,
+                                     "price": price, "size": size,
+                                     "error_code": codice,
+                                     "order_status": res.order_status,
+                                     "critical": True,
+                                     "percorso": "submin" if sotto_minimo else "rest"})
+        nota = f"live_not_matched:{res.order_status}"
+        if codice:
+            nota += f":{codice}"
+        return PlaceOutcome("error", None, 0.0, None, nota,
+                            size_requested=getattr(res, "size_requested", None) or size,
+                            size_remaining=getattr(res, "size_remaining", None),
+                            error_code=codice,
+                            betfair_updated_at=getattr(res, "betfair_updated_at", None))
     medio = float(res.avg_price_matched or price)
+    abbinato = round(float(res.size_matched), 2)
+    chiesto = float(getattr(res, "size_requested", None) or size)
+    residuo = getattr(res, "size_remaining", None)
+    if residuo is None:
+        residuo = round(max(0.0, chiesto - abbinato), 2)
+    if abbinato + 0.005 < chiesto:
+        # PARZIALE: la strategia non cambia (la posizione e' quella abbinata, ed
+        # e' gia' cosi' che si dimensiona la copertura), ma DEVE essere detto —
+        # «parziale z su x, residuo r vivo» — altrimenti resta scritto solo nel
+        # log di omega_market e la riga racconta un ordine intero.
+        _log(db, "place_parziale", {"trade_id": tid, "mode": mode, "side": side,
+                                    "size_requested": chiesto, "size_matched": abbinato,
+                                    "size_remaining": round(float(residuo), 2),
+                                    "avg_price_matched": medio, "critical": True,
+                                    "nota": (f"parziale {abbinato:.2f} su {chiesto:.2f}, "
+                                             f"residuo {float(residuo):.2f} "
+                                             + ("vivo" if float(residuo) > 0 else "annullato"))})
     return PlaceOutcome(
-        "open", medio, round(float(res.size_matched), 2), res.bet_id,
+        "open", medio, abbinato, res.bet_id,
         f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}",
         esecuzione={
             "t4_inviato": t4, "t5_risposta": t5,
@@ -441,7 +624,15 @@ def place(
             # fill reale, ed e' etichettata come previsione, non come fatto.
             "livelli_previsti": livelli_attraversati(ladder, size, price, side),
             "percorso": "submin" if sotto_minimo else "rest",
-        })
+            # C.12a — chiesto e residuo anche nella catena dei tempi
+            "size_richiesta": chiesto,
+            "size_abbinata": abbinato,
+            "size_residua": round(float(residuo), 2),
+        },
+        size_requested=chiesto,
+        size_remaining=round(float(residuo), 2),
+        avg_price_matched=(float(res.avg_price_matched) if res.avg_price_matched else None),
+        betfair_updated_at=getattr(res, "betfair_updated_at", None))
 
 
 def _reconciling(db, trade_id: Optional[int], *, meta: dict[str, Any], mode: str,
@@ -1131,11 +1322,14 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                             settled_at=now.isoformat(),
                             meta={**(reserve.get("meta") or {}), "cashout": True,
                                   "reason": out.fill_note, "error_final": True,
+                                  # C.12a — il codice di Betfair resta scritto
+                                  "error_code": out.error_code,
                                   "closes_trade_id": trade.get("id")})
         except Exception:  # noqa: BLE001
             pass
         _log(db, "cashout_error", {"trade_id": trade.get("id"),
                                    "closing_trade_id": closing_id,
+                                   "error_code": out.error_code,
                                    "reason": out.fill_note})
         return {"error": "chiusura_non_eseguita", "detail": out.fill_note,
                 "closing_trade_id": closing_id}
@@ -1145,7 +1339,11 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     if out.status == "open":
         closing_row.update({"status": "open", "price": out.price, "size": out.size})
         try:
-            db.update_trade(closing_id, status="open", price=out.price, size=out.size,
+            # C.12a — ``aggiorna_trade`` aggiunge chiesto/abbinato/residuo/prezzo
+            # medio sulle colonne nuove SE esistono; senza migrazione applicata
+            # si comporta esattamente come prima.
+            aggiorna_trade(db, closing_id, consapevolezza=out.consapevolezza, campi=dict(
+                            status="open", price=out.price, size=out.size,
                             liability=liability_of(side, out.size, out.price or 0.0),
                             bet_id=out.bet_id,
                             meta={**(reserve.get("meta") or {}), "cashout": True,
@@ -1162,7 +1360,7 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                                   # t6: il fill e' confermato ADESSO (percorso
                                   # sincrono). Sul percorso a coda arriva dopo,
                                   # e lo scrive chi riconcilia.
-                                  "t6_fill": _ora_ms()})
+                                  "t6_fill": _ora_ms()}))
         except Exception as ex:  # noqa: BLE001 — ordine eseguito, riga non confermata
             logger.critical("[safe.exec] conferma chiusura FALLITA (trade %s, mode %s): %s",
                             closing_id, mode, str(ex)[:160])
@@ -1363,7 +1561,15 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
         settle_row(db, trade, "void", 0.0, now, position=pos)
         _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
                                      "position_pnl": 0.0, "position_result": "void",
-                                     "legs": [c.get("id") for c in legs]})
+                                     "legs": [c.get("id") for c in legs],
+                                     # C.12a — il void detto per nome: lo dichiara
+                                     # Betfair (``market_status_void``) o lo abbiamo
+                                     # dedotto da CLOSED senza vincitore?
+                                     "market_status": getattr(snap, "status", None),
+                                     "void_reason": (getattr(snap, "void_reason", None)
+                                                     or ("nessun_vincitore"
+                                                         if snap.winner_selection_id is None
+                                                         else None))})
         return True
     won = int(snap.winner_selection_id) == int(trade["selection_id"])
     if legs:

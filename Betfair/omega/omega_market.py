@@ -108,6 +108,16 @@ class MarketSnapshot:
     closed: bool
     winner_selection_id: Optional[int]
     voided: bool
+    # C.12a — PERCHE' e' void, detto per nome. Il void di Omega/Safe e' sempre
+    # stato DEDOTTO (CLOSED + tutti i runner terminali + nessun WINNER) e non e'
+    # mai stato confrontato con lo ``status`` che Betfair dichiara
+    # (``VOID``/``VOIDED``), che invece Mike guarda (``service.py:692-711``).
+    # Qui il comportamento NON cambia — ``voided`` resta quello che era — ma il
+    # motivo smette di essere implicito: ``market_status_void`` quando lo dice
+    # Betfair, ``closed_senza_winner`` quando lo abbiamo dedotto noi. La
+    # divergenza fra i due e' un reperto per l'utente, non una correzione da
+    # fare di iniziativa (le regole di regolamento sono strategia).
+    void_reason: Optional[str] = None
 
 
 def _parse_iso(s: Optional[str]) -> Optional[datetime]:
@@ -323,7 +333,24 @@ def _snapshot_from_book(market: CorrectScoreMarket, b: dict) -> MarketSnapshot:
         closed=closed,
         winner_selection_id=winner,
         voided=voided,
+        void_reason=void_reason(status, voided),
     )
+
+
+_STATI_VOID = ("VOID", "VOIDED")
+
+
+def void_reason(market_status: Optional[str], voided: bool) -> Optional[str]:
+    """Il nome del motivo per cui il mercato risulta annullato (C.12a).
+
+    ``market_status_void`` = lo dichiara Betfair con lo ``status`` del mercato;
+    ``closed_senza_winner`` = lo abbiamo DEDOTTO (chiuso, runner tutti terminali,
+    nessun vincitore). PURA: non cambia nessuna decisione, da' solo un nome a
+    una deduzione che finora era anonima.
+    """
+    if str(market_status or "").upper() in _STATI_VOID:
+        return "market_status_void"
+    return "closed_senza_winner" if voided else None
 
 
 def read_markets(markets: list) -> dict:
@@ -508,6 +535,27 @@ def read_book(market_id: str, runner_names: dict[int, str]) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 # Piazzamento LAY reale (LIVE) — soldi veri
 # ---------------------------------------------------------------------------
+class PlaceRifiutato(RuntimeError):
+    """Rifiuto CERTO di Betfair: nessun ordine e' (piu') vivo a mercato.
+
+    C.12a — serve a distinguere il rifiuto dall'esito IGNOTO. Il place-and-trim
+    solleva per entrambi i casi: un rifiuto al parcheggio significa che NESSUN
+    ordine e' stato creato, mentre un taglio non confermato significa che un
+    ordine POTREBBE essere ancora vivo. Chi legge l'eccezione non puo'
+    indovinare quale dei due sia, e il chiamante (``execution.place``) lasciava
+    la riga 'pending' IN VERIFICA su un ordine che non esiste: il segnale
+    restava bloccato e la liability contata piena. Con questa eccezione il
+    rifiuto certo diventa una riga 'error' col codice di Betfair, e l'esito
+    ignoto resta l'unico caso che va in riconciliazione.
+    """
+
+    def __init__(self, messaggio: str, *, error_code: Optional[str] = None,
+                 order_status: Optional[str] = None) -> None:
+        super().__init__(messaggio)
+        self.error_code = error_code
+        self.order_status = order_status
+
+
 @dataclass(frozen=True)
 class PlaceResult:
     ok: bool
@@ -515,6 +563,57 @@ class PlaceResult:
     bet_id: Optional[str]
     size_matched: float
     avg_price_matched: Optional[float]
+    raw: dict = field(default_factory=dict)
+    # --- C.12a: CONSAPEVOLEZZA DELL'ORDINE -----------------------------------
+    # Prima di oggi il chiamante sapeva solo QUANTO si era abbinato: la size
+    # CHIESTA spariva (nessuno la conservava sul percorso REST) e il residuo non
+    # esisteva come numero. "Ordine x a prezzo y: quanto e' stato abbinato?" non
+    # aveva risposta senza rileggere Betfair. Questi campi hanno tutti un
+    # default: nessun chiamante o test esistente cambia.
+    #
+    # ATTENZIONE alla fonte: ``PlaceInstructionReport`` di Betfair NON contiene
+    # ``sizeRemaining`` (lo porta solo ``listCurrentOrders``, vedi
+    # ``betfairlightweight/resources/bettingresources.py:664-711`` per
+    # ``CurrentOrder`` contro ``:981-1011`` per ``PlaceOrderInstructionReports``).
+    # Qui ``size_remaining`` e' quindi il residuo AL MOMENTO DELLA RISPOSTA,
+    # calcolato dai due numeri che il report da' davvero: con FILL_OR_KILL vale
+    # sempre 0 (Betfair ha ucciso il non abbinato), senza FOK vale
+    # chiesto - abbinato. Il residuo di DOPO lo dice solo la riconciliazione.
+    size_requested: Optional[float] = None
+    price_requested: Optional[float] = None
+    size_remaining: Optional[float] = None
+    error_code: Optional[str] = None
+    size_cancelled: Optional[float] = None
+    size_lapsed: Optional[float] = None
+    size_voided: Optional[float] = None
+    # istante dichiarato da BETFAIR (``placedDate``), non l'ora di questo
+    # processo: e' il "quando l'ho saputo" che le tre tabelle non hanno mai avuto.
+    betfair_updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CancelResult:
+    """Esito di ``cancel_order_live``, riletto da Betfair.
+
+    ``ok`` = Betfair ha CONFERMATO l'annullamento (``status='SUCCESS'`` sul
+    report e sull'istruzione). ``riletto`` = lo stato dell'ordine dopo
+    l'annullamento e' stato davvero riletto: se e' False l'abbinato
+    nell'intervallo fra la decisione e l'annullamento resta IGNOTO e il
+    chiamante deve andare in riconciliazione, mai dichiarare la riga annullata.
+    """
+
+    ok: bool
+    status: Optional[str]
+    bet_id: Optional[str]
+    size_cancelled: float
+    error_code: Optional[str] = None
+    riletto: bool = False
+    size_matched: Optional[float] = None
+    avg_price_matched: Optional[float] = None
+    size_remaining: Optional[float] = None
+    # istante dichiarato da Betfair sull'ordine riletto (matchedDate, o in sua
+    # assenza placedDate): il "quando l'ho saputo" che accompagna l'abbinato.
+    betfair_updated_at: Optional[str] = None
     raw: dict = field(default_factory=dict)
 
 
@@ -585,13 +684,28 @@ def place_order_live(
                            f"ref={customer_ref}")
     order_status = ir.get("orderStatus")
     ok = report.get("status") == "SUCCESS" and ir.get("status") == "SUCCESS"
+    chiesto = round(size_f, 2)
+    abbinato = float(ir.get("sizeMatched") or 0.0)
     return PlaceResult(
         ok=bool(ok),
         order_status=order_status,
         bet_id=ir.get("betId"),
-        size_matched=float(ir.get("sizeMatched") or 0.0),
+        size_matched=abbinato,
         avg_price_matched=ir.get("averagePriceMatched"),
         raw=report if isinstance(report, dict) else {},
+        # C.12a — la size CHIESTA non si perde piu': era l'unico numero che il
+        # chiamante non poteva piu' recuperare dopo la conferma (``size`` viene
+        # sovrascritta con l'abbinato).
+        size_requested=chiesto,
+        price_requested=price_tick,
+        # con FOK Betfair uccide il non abbinato: residuo 0 per definizione.
+        # Senza FOK l'ordine resta sul book: residuo = chiesto - abbinato.
+        size_remaining=(0.0 if fill_or_kill else round(max(0.0, chiesto - abbinato), 2)),
+        # ``errorCode`` sta sull'istruzione (o sul report): finora era sepolto in
+        # ``raw`` e nessuno lo leggeva, quindi INSUFFICIENT_FUNDS e
+        # INVALID_PROFIT_RATIO erano indistinguibili da un ``ok=False`` generico.
+        error_code=ir.get("errorCode") or report.get("errorCode"),
+        betfair_updated_at=ir.get("placedDate"),
     )
 
 
@@ -642,8 +756,14 @@ def _submin_cancel(market_id: str, bet_id: str, size_reduction: Optional[float])
     ) or {}
 
 
-def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = False) -> None:
-    """Ritira il residuo di un ordine.
+def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = False) -> bool:
+    """Ritira il residuo di un ordine. Ritorna True se il ritiro e' RIUSCITO.
+
+    C.12a — il valore di ritorno non c'era e serviva: chi propaga un errore deve
+    poter dire se l'ordine e' certamente morto (ritiro riuscito -> rifiuto
+    CERTO, riga 'error') oppure se potrebbe essere ancora vivo (ritiro fallito
+    -> esito IGNOTO, riconciliazione). Prima i due casi erano indistinguibili e
+    finivano entrambi in 'pending'.
 
     ``obbligatorio=False`` (default): best-effort. Si usa quando si sta gia'
     propagando un errore — il chiamante fallira' comunque e la gamba finira' in
@@ -656,9 +776,10 @@ def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = F
     contabilizzera': posizione doppia con soldi veri (code review 13/09).
     """
     if not bet_id:
-        return
+        return True
     try:
         _submin_cancel(market_id, bet_id, None)
+        return True
     except Exception as ex:  # noqa: BLE001
         logger.critical("[submin] RITIRO FALLITO bet %s su %s: %s — controllare a mano",
                         bet_id, market_id, str(ex)[:160])
@@ -667,6 +788,7 @@ def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = F
                 "place-and-trim: riprezzo riuscito ma ritiro del residuo FALLITO "
                 "(bet %s su %s): l'ordine puo' essere ancora VIVO, si riconcilia. %s"
                 % (bet_id, market_id, str(ex)[:120])) from ex
+        return False
 
 
 def place_submin_live(
@@ -738,8 +860,13 @@ def place_submin_live(
     if not report or report.get("status") == "TIMEOUT" or ir.get("status") == "TIMEOUT":
         raise RuntimeError(f"place-and-trim: esito IGNOTO al parcheggio ref={ref}")
     if report.get("status") != "SUCCESS" or ir.get("status") != "SUCCESS":
-        raise RuntimeError(f"place-and-trim: parcheggio rifiutato "
-                           f"({ir.get('errorCode') or report.get('errorCode')})")
+        # RIFIUTO CERTO: il parcheggio e' il PRIMO passo, nessun ordine e' stato
+        # creato. Prima era una RuntimeError come tutte le altre e il chiamante
+        # lasciava la riga 'pending' IN VERIFICA su un ordine inesistente.
+        codice = ir.get("errorCode") or report.get("errorCode")
+        raise PlaceRifiutato(f"place-and-trim: parcheggio rifiutato ({codice})",
+                             error_code=str(codice) if codice else None,
+                             order_status=ir.get("orderStatus"))
     bet_id = ir.get("betId")
     if not bet_id:
         raise RuntimeError("place-and-trim: parcheggio senza betId")
@@ -765,9 +892,17 @@ def place_submin_live(
             abs(tagliato - riduzione) > 0.005:
         # money-critical: senza il taglio CONFERMATO da Betfair non si riprezza,
         # altrimenti la size piena del parcheggio finirebbe alla quota reale
-        _submin_ritira(market_id, bet_id)
-        raise RuntimeError(f"place-and-trim: taglio non confermato "
-                           f"(chiesti {riduzione:.2f}, tagliati {tagliato:.2f}) — ritirato")
+        ritirato = _submin_ritira(market_id, bet_id)
+        codice = cir.get("errorCode") or canc.get("errorCode")
+        msg = (f"place-and-trim: taglio non confermato "
+               f"(chiesti {riduzione:.2f}, tagliati {tagliato:.2f})")
+        if ritirato:
+            # il parcheggio e' stato ritirato: nessun ordine vivo, rifiuto CERTO.
+            raise PlaceRifiutato(msg + " — ritirato",
+                                 error_code=str(codice) if codice else "TRIM_NON_CONFERMATO")
+        # ritiro fallito: l'ordine di parcheggio PUO' essere ancora vivo (a una
+        # quota non abbinabile, ma vivo) -> esito IGNOTO, si riconcilia.
+        raise RuntimeError(msg + " — RITIRO FALLITO, ordine forse vivo")
 
     # -- step 3: riprezzo alla quota reale ---------------------------------------
     try:
@@ -784,9 +919,15 @@ def place_submin_live(
     rreps = rep.get("instructionReports") or []
     rir = rreps[0] if rreps else {}
     if rep.get("status") != "SUCCESS" or rir.get("status") != "SUCCESS":
-        _submin_ritira(market_id, bet_id)
-        raise RuntimeError(f"place-and-trim: riprezzo rifiutato "
-                           f"({rir.get('errorCode') or rep.get('errorCode')}) — ritirato")
+        ritirato = _submin_ritira(market_id, bet_id)
+        codice = rir.get("errorCode") or rep.get("errorCode")
+        msg = f"place-and-trim: riprezzo rifiutato ({codice})"
+        if ritirato:
+            # e' il caso reale di INVALID_PROFIT_RATIO sul riprezzo: l'ordine
+            # non esiste piu', la riga si chiude in 'error' COL CODICE.
+            raise PlaceRifiutato(msg + " — ritirato",
+                                 error_code=str(codice) if codice else None)
+        raise RuntimeError(msg + " — RITIRO FALLITO, ordine forse vivo")
     pir = rir.get("placeInstructionReport") or {}
     nuovo_bet = pir.get("betId") or bet_id
     matched = round(float(pir.get("sizeMatched") or 0.0), 2)
@@ -803,7 +944,11 @@ def place_submin_live(
                         side_l, selection_id, target, target_tick)
             return PlaceResult(ok=False, order_status="LAPSED", bet_id=nuovo_bet,
                                size_matched=0.0, avg_price_matched=None,
-                               raw=rep if isinstance(rep, dict) else {})
+                               raw=rep if isinstance(rep, dict) else {},
+                               size_requested=target, price_requested=target_tick,
+                               size_remaining=0.0, size_cancelled=target,
+                               error_code=None,
+                               betfair_updated_at=pir.get("placedDate"))
         logger.info("[submin] %s %s abbinati %.2f di %.2f EUR @ %.2f, residuo ritirato",
                     side_l, selection_id, matched, target, target_tick)
 
@@ -816,7 +961,107 @@ def place_submin_live(
         size_matched=matched,
         avg_price_matched=pir.get("averagePriceMatched") or (target_tick if matched > 0 else None),
         raw=rep if isinstance(rep, dict) else {},
+        # C.12a — il place-and-trim e' l'UNICO percorso live dove un parziale con
+        # ``ok=True`` e' normale (``_submin_ritira`` toglie il residuo): chiesto,
+        # abbinato e ritirato devono arrivare al chiamante, altrimenti "abbinati
+        # 0,80 dei 2,00 chiesti" resta scritto solo nel log.
+        size_requested=target,
+        price_requested=target_tick,
+        size_remaining=(0.0 if fill_or_kill else round(max(0.0, target - matched), 2)),
+        size_cancelled=(round(max(0.0, target - matched), 2) if fill_or_kill else None),
+        error_code=None,
+        betfair_updated_at=pir.get("placedDate"),
     )
+
+def cancel_order_live(bet_id: str, market_id: str,
+                      size_reduction: Optional[float] = None) -> CancelResult:
+    """ANNULLA DAVVERO un ordine su Betfair (``cancelOrders``), e rilegge l'esito.
+
+    ⚠️ C.12a — QUESTA FUNZIONE NON ESISTEVA, ed e' il reperto numero 1 della
+    matrice della consapevolezza (16/09). Nessuno dei tre bot che passano dal
+    REST (Omega, Safe, Mike) sapeva annullare un ordine: i loro «annulla» erano
+    CONTABILI — cambiavano lo stato della riga nel database e basta. Lo scenario
+    che ne usciva, con soldi veri: una lay da 5 EUR @2,14 appoggiata, il bot
+    decide «annulla» e scrive ``cancelled``, su Betfair l'ordine e' VIVO e
+    quattro minuti dopo si abbina. Nessuno lo contabilizza, il motore nel
+    frattempo rientra: posizione doppia.
+
+    ``size_reduction=None`` annulla TUTTO il residuo; un valore annulla solo
+    quella parte (annullo parziale, come ``market.cancel_order(size_reduction=)``
+    dei bot dentro flumine).
+
+    L'esito si RILEGGE, non si suppone: Betfair conferma con ``sizeCancelled``
+    (``CancelOrderInstructionReports``,
+    ``betfairlightweight/resources/bettingresources.py:1049-1071``) e subito
+    dopo si chiede lo stato dell'ordine (``order_state_by_bet_id``) perche' fra
+    la decisione del bot e l'arrivo dell'annullamento l'ordine PUO' essersi
+    abbinato, in tutto o in parte: quella parte e' una posizione reale e non va
+    mai dimenticata. Se la rilettura fallisce, ``riletto=False``: il chiamante
+    deve andare in riconciliazione, non dichiarare la riga annullata.
+
+    NON solleva su rifiuto (``ok=False`` col ``error_code``, p.es.
+    ``BET_TAKEN_OR_LAPSED`` quando l'ordine e' gia' stato preso): solleva solo
+    se la rete cade — li' l'esito e' IGNOTO e il chiamante non deve decidere.
+    """
+    bid = str(bet_id)
+    if not bid:
+        raise ValueError("cancel_order_live senza bet_id")
+    instr: dict = {"betId": bid}
+    if size_reduction is not None:
+        try:
+            rid = round(float(size_reduction), 2)
+        except (TypeError, ValueError):
+            raise ValueError(f"size_reduction non numerica: {size_reduction!r}") from None
+        if not math.isfinite(rid) or rid <= 0:
+            raise ValueError(f"size_reduction non valida: {size_reduction!r}")
+        instr["sizeReduction"] = rid
+    # MAI ritentata su errore generico (``call_mutating``): un annullamento
+    # ritentato al buio non fa danni quanto un place, ma un timeout puo'
+    # nascondere un annullamento gia' avvenuto e il conteggio di sizeCancelled
+    # tornerebbe sbagliato.
+    report = call_mutating(
+        lambda c: c.betting_rpc(
+            method="SportsAPING/v1.0/cancelOrders",
+            params={"marketId": str(market_id), "instructions": [instr]},
+        )
+    ) or {}
+    reports = report.get("instructionReports") or []
+    cir = reports[0] if reports else {}
+    stato = report.get("status")
+    if not report or stato == "TIMEOUT" or cir.get("status") == "TIMEOUT":
+        # esito IGNOTO: l'ordine puo' essere annullato o no. Si solleva, come fa
+        # ``place_order_live``: chi chiama va in riconciliazione.
+        raise RuntimeError(f"cancelOrders esito IGNOTO ({stato or 'no_report'}) bet={bid}")
+    ok = stato == "SUCCESS" and cir.get("status") == "SUCCESS"
+    codice = cir.get("errorCode") or report.get("errorCode")
+    tagliato = float(cir.get("sizeCancelled") or 0.0)
+    # rilettura: quanto si e' abbinato nel frattempo?
+    riletto, matched, medio, residuo = False, None, None, None
+    quando: Optional[str] = None
+    try:
+        stato_ordine = order_state_by_bet_id(bid)
+        riletto = True
+        if stato_ordine.get("found"):
+            matched = float(stato_ordine.get("size_matched") or 0.0)
+            medio = stato_ordine.get("avg_price_matched")
+            residuo = float(stato_ordine.get("size_remaining") or 0.0)
+            quando = stato_ordine.get("matched_date") or stato_ordine.get("placed_date")
+        else:
+            # Betfair non lo conosce in nessuna lista: mai abbinato.
+            matched, medio, residuo = 0.0, None, 0.0
+    except Exception as ex:  # noqa: BLE001 — rete KO: l'abbinato resta IGNOTO
+        logger.warning("[omega] cancel bet %s: rilettura KO (%s) — esito abbinamento IGNOTO",
+                       bid, str(ex)[:120])
+    if not ok:
+        logger.warning("[omega] cancelOrders NON confermato bet=%s codice=%s", bid, codice)
+    return CancelResult(
+        ok=bool(ok), status=cir.get("status") or stato, bet_id=bid,
+        size_cancelled=tagliato, error_code=str(codice) if codice else None,
+        riletto=riletto, size_matched=matched, avg_price_matched=medio,
+        size_remaining=residuo, betfair_updated_at=quando,
+        raw=report if isinstance(report, dict) else {},
+    )
+
 
 def place_lay_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
@@ -840,9 +1085,20 @@ def order_state_by_bet_id(bet_id: str) -> dict:
     ``omega-*`` né la strategy 'omega' — l'unica chiave certa è il betId).
 
     Ritorna ``{"found": True, "size_matched", "avg_price_matched",
-    "size_remaining"}`` oppure ``{"found": False}`` se Betfair non lo conosce
-    in nessuna lista. SOLLEVA su errori di rete (il chiamante NON deve mai
-    decidere al buio su soldi veri: riprova al ciclo dopo).
+    "size_remaining", "matched_date", "placed_date"}`` oppure
+    ``{"found": False}`` se Betfair non lo conosce in nessuna lista. SOLLEVA su
+    errori di rete (il chiamante NON deve mai decidere al buio su soldi veri:
+    riprova al ciclo dopo).
+
+    C.12a — ``matched_date``/``placed_date`` in snake_case, come li produce
+    ``list_current_orders``. Servono perche' questa e' la SOLA strada quando
+    l'ordine non compare nella lista del giro (riconciliazione per bet_id del
+    percorso flumine): senza, ``betfair_updated_at`` resterebbe vuoto proprio
+    nei casi in cui il trader ha piu' bisogno di sapere DA QUANDO quel numero
+    e' fermo. Nomi grezzi: ``matchedDate``/``placedDate`` su ``CurrentOrder``
+    (``betfairlightweight/resources/bettingresources.py:664-711``),
+    ``lastMatchedDate``/``placedDate``/``settledDate`` su ``ClearedOrder``
+    (``:790-840``).
     """
     bid = str(bet_id)
     resp = call(lambda c: c.betting_rpc(
@@ -857,6 +1113,8 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                 "size_matched": float(o.get("sizeMatched") or 0.0),
                 "avg_price_matched": o.get("averagePriceMatched"),
                 "size_remaining": float(o.get("sizeRemaining") or 0.0),
+                "matched_date": o.get("matchedDate"),
+                "placed_date": o.get("placedDate"),
             }
     # SETTLED prima (porta i € matchati); poi gli stati "senza fill": un FOK
     # ucciso finisce in CANCELLED/LAPSED con sizeSettled=0.
@@ -872,6 +1130,11 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                     "size_matched": float(o.get("sizeSettled") or 0.0),
                     "avg_price_matched": o.get("priceMatched"),
                     "size_remaining": 0.0,
+                    # su un ordine REGOLATO l'ultimo abbinamento si chiama
+                    # ``lastMatchedDate``: stessa cosa, nome diverso.
+                    "matched_date": o.get("lastMatchedDate"),
+                    "placed_date": o.get("placedDate"),
+                    "settled_date": o.get("settledDate"),
                 }
     return {"found": False}
 
@@ -892,6 +1155,27 @@ def list_current_orders(strategy_ref: str = CUSTOMER_STRATEGY_REF) -> list[dict]
             "avg_price_matched": o.get("averagePriceMatched"),
             "size_remaining": float(o.get("sizeRemaining") or 0.0),
             "customer_order_ref": o.get("customerOrderRef"),
+            # --- C.12a: il resto di cio' che Betfair dice gia' ----------------
+            # ``CurrentOrder`` porta questi campi da sempre
+            # (``betfairlightweight/resources/bettingresources.py:664-711``) e
+            # noi ne buttavamo via meta': senza ``sizeCancelled/Lapsed/Voided``
+            # un ordine morto per LAPSE e uno annullato dal bot sono
+            # indistinguibili, e senza ``matchedDate`` nessuno sa se "abbinato
+            # 5,00" e' di due secondi o di nove minuti fa.
+            # Le chiavi di sopra NON cambiano (le legge ``_order_matches`` e
+            # tutta la riconciliazione): queste si aggiungono.
+            "size_cancelled": float(o.get("sizeCancelled") or 0.0),
+            "size_lapsed": float(o.get("sizeLapsed") or 0.0),
+            "size_voided": float(o.get("sizeVoided") or 0.0),
+            "matched_date": o.get("matchedDate"),
+            "placed_date": o.get("placedDate"),
+            "price_requested": (o.get("priceSize") or {}).get("price"),
+            "size_requested": (o.get("priceSize") or {}).get("size"),
+            # stessa cosa di ``avg_price_matched``, con la grafia per esteso di
+            # Betfair: un consumatore che cerca l'una o l'altra trova sempre.
+            # (15/09: una grafia scritta in un modo e letta in un altro e' costata
+            # 32 ordini reali — qui si accettano entrambe per costruzione.)
+            "average_price_matched": o.get("averagePriceMatched"),
         })
     return out
 

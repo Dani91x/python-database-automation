@@ -44,7 +44,10 @@ const AREE = [
     'components/controlroom',
 ];
 /** file singoli del guscio condiviso (fondamenta pure) */
-const LIB = ['lib/format.ts', 'lib/tradeStatus.ts', 'lib/toasts.ts'];
+// 16/09 (C.12b): `lib/statoOrdine.ts` entra nel perimetro. E' il posto unico
+// dove si decide chiesto/abbinato/residuo/stato di UN ordine per tutti i bot:
+// una regola condivisa che nessuno controlla torna a divergere in un mese.
+const LIB = ['lib/format.ts', 'lib/tradeStatus.ts', 'lib/toasts.ts', 'lib/statoOrdine.ts'];
 
 function sorgenti(): { path: string; text: string }[] {
     const out: { path: string; text: string }[] = [];

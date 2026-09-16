@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     paramsSoloTennis, differenzeSoloTennis, altreInLiveAdesso, STAKE_TENNIS, STRATEGIE_SAFE,
+    stakeTennisEffettivo, accensioniSoloTennis,
 } from './soloTennis';
 
 /** i parametri come stanno sul servizio, con dentro anche roba che nessun tipo
@@ -54,16 +55,26 @@ describe('paramsSoloTennis — in live ci va SOLO il tennis', () => {
     });
 });
 
-describe('paramsSoloTennis — lo stake è 3,00 € e non si discute', () => {
-    it('backSize forzato a 3, laySize (che è del calcio) intatto', () => {
+describe('paramsSoloTennis — lo stake e’ 3,00 € e non si discute', () => {
+    // ⚠️ B.5, 16/09 — lo stake del tennis si scrive sulla chiave SUA.
+    // Prima andava su `stake.backSize`, che pero’ valeva anche per la PUNTA:
+    // portare il tennis a 3 portava a 3 anche la punta, in silenzio.
+    it('si scrive su `stake.per_strategia.tennis`; backSize e laySize restano intatti', () => {
         const p = paramsSoloTennis(CORRENTI, 'live');
-        expect(p.stake).toEqual({ backSize: STAKE_TENNIS, laySize: 2 });
+        expect(p.stake).toEqual({
+            backSize: 5, laySize: 2, per_strategia: { tennis: STAKE_TENNIS },
+        });
         expect(STAKE_TENNIS).toBe(3);
     });
 
     it('anche se il servizio non dichiara nessuno stake', () => {
         const p = paramsSoloTennis({ variants: ['tennis'] }, 'live');
-        expect((p.stake as Record<string, number>).backSize).toBe(3);
+        expect(stakeTennisEffettivo(p)).toBe(3);
+    });
+
+    it('lo stake della PUNTA non si muove: erano la stessa chiave, adesso no', () => {
+        const p = paramsSoloTennis(CORRENTI, 'live');
+        expect((p.stake as Record<string, unknown>).backSize).toBe(5);
     });
 });
 
@@ -72,28 +83,19 @@ describe('paramsSoloTennis — il bot deve poter ENTRARE davvero', () => {
         expect(paramsSoloTennis(CORRENTI, 'live').auto_trade_tennis).toBe(true);
     });
 
-    it('il tennis viene abilitato ad aprire se mancava', () => {
-        const p = paramsSoloTennis({ variants: ['base'] }, 'live');
-        expect(p.variants).toEqual(['base', 'tennis']);
+    // ⚠️ 16/09 — `variants` adesso dice CHI E’ ACCESO, e ogni strategia
+    // ha il suo interruttore: «parte solo lui» quindi SPEGNE le altre tre. Il
+    // danno del 15/09 (base/esatto/punta spente per sempre, anche in prova) non
+    // e’ piu’ irreversibile: si riaccendono dalla scheda calcio.
+    it('«solo il tennis» scrive `variants: [tennis]`, sempre e in modo esplicito', () => {
+        expect(paramsSoloTennis({ variants: ['base'] }, 'live').variants).toEqual(['tennis']);
+        expect(paramsSoloTennis({ stake: { backSize: 3 } }, 'live').variants).toEqual(['tennis']);
+        expect(paramsSoloTennis({ variants: [] }, 'live').variants).toEqual(['tennis']);
+        expect(paramsSoloTennis(CORRENTI, 'live').variants).toEqual(['tennis']);
     });
 
-    // ⚠️ REVIEW 15/09, GRAVE — scrivere `['tennis']` su una colonna che non
-    // aveva `variants` spegneva base, esatto e punta PER SEMPRE, anche in
-    // prova: il default lo mette il servizio in lettura, non il database.
-    it('se il servizio non dichiara `variants` NON si scrive niente', () => {
-        expect('variants' in paramsSoloTennis({ stake: { backSize: 3 } }, 'live')).toBe(false);
-        // un valore illeggibile si lascia PASSARE com'è: non lo si sostituisce
-        // con `['tennis']`, che il servizio accetterebbe come lista valida
-        expect(paramsSoloTennis({ variants: 'rotto' }, 'live').variants).toBe('rotto');
-    });
-
-    it('una lista vuota si lascia com’e’: e’ il servizio a metterci il default', () => {
-        expect(paramsSoloTennis({ variants: [] }, 'live').variants).toEqual([]);
-    });
-
-    it('le varianti del calcio NON si tolgono: fermarle non è stato chiesto', () => {
-        expect(paramsSoloTennis(CORRENTI, 'live').variants)
-            .toEqual(['base', 'esatto', 'punta', 'tennis']);
+    it('un `variants` illeggibile viene SOSTITUITO: non si eredita una lista rotta', () => {
+        expect(paramsSoloTennis({ variants: 'rotto' }, 'live').variants).toEqual(['tennis']);
     });
 });
 
@@ -129,6 +131,11 @@ describe('differenzeSoloTennis — si dice PRIMA del clic', () => {
         expect(differenzeSoloTennis(gia, 'paper')).toEqual([]);
     });
 
+    it('DICE quali strategie spegne: «solo lui» adesso e’ letterale', () => {
+        expect(differenzeSoloTennis(CORRENTI, 'paper').join(' · '))
+            .toMatch(/base, esatto, punta → spente/);
+    });
+
     it('parametri non letti: nessuna promessa', () => {
         expect(differenzeSoloTennis(null, 'live')).toEqual([]);
         expect(differenzeSoloTennis({}, 'live')).toEqual([]);
@@ -148,5 +155,14 @@ describe('altreInLiveAdesso — il calcio che opera davvero non si nasconde', ()
     it('servizio in prova = nessuna, il mode è un TETTO', () => {
         expect(altreInLiveAdesso('paper', { base: 'live' })).toEqual([]);
         expect(altreInLiveAdesso(null, { base: 'live' })).toEqual([]);
+    });
+});
+
+describe('accensioniSoloTennis — e’ un caso particolare del modello, non un percorso a parte', () => {
+    it('il tennis nella modalita’ scelta, le altre tre spente', () => {
+        expect(accensioniSoloTennis('live'))
+            .toEqual({ base: null, esatto: null, punta: null, tennis: 'live' });
+        expect(accensioniSoloTennis('paper'))
+            .toEqual({ base: null, esatto: null, punta: null, tennis: 'paper' });
     });
 });

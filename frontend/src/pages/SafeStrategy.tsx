@@ -68,6 +68,11 @@ import {
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
 import type { ActiveSignal, Sport } from '@/lib/safeStrategy';
+import { PannelloBot } from '@/components/controlroom/PannelloBot';
+import { righeInterruttori, type StatoBotPlancia } from '@/components/controlroom/righeBot';
+import {
+    creaInterruttori, importiInterruttori, interruttoriDiSport,
+} from '@/lib/interruttori';
 import {
     fetchScanStatus,
     type CalcioScanPayload, type ScanMediaFlags, type ScanStatusRow, type TennisScanPayload,
@@ -604,6 +609,52 @@ export default function SafeStrategy() {
     const mode: SafeMode = bot.mode;
     const modeTag = mode.toUpperCase();
 
+    // ── GLI INTERRUTTORI DELLE STRATEGIE, con i comandi CONDIVISI ───────────
+    // La riga di control e' la stessa che legge la Control Room; qui si
+    // traduce nella forma che la plancia vuole, senza dedurre niente.
+    const statoSafe = useMemo<StatoBotPlancia>(() => ({
+        bot: 'safe',
+        inCorsa: running,
+        modalita: mode,
+        varianti: (bot.paramsEffective?.variants ?? bot.control?.params?.variants ?? null) as string[] | null,
+        modiStrategia: (bot.paramsEffective?.strategy_modes
+            ?? bot.control?.params?.strategy_modes ?? null) as Record<string, 'paper' | 'live'> | null,
+        stato: bot.control?.status ?? null,
+        etaPushS: null,
+        motivoBlocco: null, tettoPartite: null, partiteEsposte: null,
+        stopFermaSoloAperture: (bot.control?.stats as Record<string, unknown> | undefined)
+            ?.stop_ferma_solo_aperture === true,
+        fermatoAllAvvioAt: typeof (bot.control?.stats as Record<string, unknown> | undefined)
+            ?.fermato_all_avvio_at === 'string'
+            ? String((bot.control?.stats as Record<string, unknown>).fermato_all_avvio_at) : null,
+    }), [running, mode, bot.paramsEffective, bot.control]);
+    const righeStrategie = useMemo(
+        () => righeInterruttori([statoSafe], null).filter((r) => r.bot === 'safe'),
+        [statoSafe],
+    );
+    const paramsSafe = useCallback(
+        () => (bot.control?.params ?? null) as Record<string, unknown> | null,
+        [bot.control],
+    );
+    const importiStrategie = useMemo(
+        () => importiInterruttori(
+            interruttoriDiSport(null).filter((i) => i.bot === 'safe'), paramsSafe,
+        ),
+        [paramsSafe],
+    );
+    const comandiStrategie = useMemo(
+        () => creaInterruttori({
+            params: paramsSafe,
+            servizio: () => ({
+                inCorsa: statoSafe.inCorsa, modalita: statoSafe.modalita,
+                varianti: statoSafe.varianti, modiStrategia: statoSafe.modiStrategia,
+            }),
+            // Omega non si comanda da questa pagina: l'obiettivo non serve
+            obiettivoOmega: () => null,
+        }, () => { void bot.reload(); }),
+        [paramsSafe, statoSafe, bot],
+    );
+
     // ---- azioni
     function onToggleMode(next: SafeMode) {
         if (next === 'live') setLiveConfirmOpen(true);
@@ -1088,6 +1139,28 @@ export default function SafeStrategy() {
                             </>
                         )}
                     </div>
+                )}
+
+                {/* GLI INTERRUTTORI DELLE QUATTRO STRATEGIE — 16/09.
+                    «Devo poter attivare e spegnere tutto dalla UI, sia paper
+                    che live, sia dalle singole schede sia dalla Control Room»
+                    (utente). Sono ESATTAMENTE gli stessi comandi della Control
+                    Room (`lib/interruttori.ts`) e lo stesso pannello: due
+                    implementazioni dello stesso interruttore sarebbero due
+                    verita', e lo stesso gesto manderebbe due payload diversi. */}
+                {bot.available && (
+                    <PannelloBot
+                        righe={righeStrategie} importi={importiStrategie}
+                        comandi={comandiStrategie}
+                        titolo="Strategie di Safe"
+                        ambito="safe"
+                        serviziAccesi={running ? [{ bot: 'safe', modalita: mode }] : []}
+                        testId="safe-interruttori"
+                        nota={<>Ogni strategia si accende, si spegne e sceglie la sua
+                            modalita&apos; da sola. <strong className="text-white/80">Spegnere
+                            l&apos;ultima accesa ferma il servizio</strong>: una lista di
+                            varianti vuota, per il servizio, vuol dire «tutte e quattro».</>}
+                    />
                 )}
 
                 {/* CERT. 14/09 — COME ESCE DAVVERO L'ORDINE.

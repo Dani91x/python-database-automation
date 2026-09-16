@@ -36,6 +36,7 @@ import { fetchMissions } from '@/lib/omegaMissions';
 import { fetchTennisFollows } from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
 import { posizioniChiuse, type PosizioneChiusa, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import type { RigaOrdine } from '@/lib/statoOrdine';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
@@ -127,6 +128,18 @@ export interface StatoBot {
      * una cosa che non fa.
      */
     stopFermaSoloAperture: boolean;
+    /**
+     * Quando questo bot è stato FERMATO ALL'AVVIO DELL'APP, dichiarato dal
+     * servizio (`stats.fermato_all_avvio_at`). null = non è successo.
+     *
+     * «I bot li accendo solo io, in paper e in live. All'avvio dell'app nessun
+     * bot opera.» Il servizio, al primo giro dopo un `APP_BOOT_ID` nuovo, si
+     * porta a stopped/paper e scrive qui l'istante: senza, il trader vedrebbe
+     * un bot spento senza sapere che a spegnerlo è stata la riapertura
+     * dell'app, e lo crederebbe rotto. La pagina non lo deduce: se il servizio
+     * non lo dichiara, non c'è.
+     */
+    fermatoAllAvvioAt: string | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -148,6 +161,12 @@ export interface OperazionePartita {
     at: string;
     /** strategia/gamba che l'ha prodotta, per capire QUALE regola ha operato */
     quale: string | null;
+    /**
+     * C.12b (16/09) — i campi grezzi dell'ORDINE. La Control Room mostrava
+     * un solo `size` e nessun prezzo medio: alla domanda «abbinato tutto o in
+     * parte?» non sapeva rispondere. A leggerli e' `lib/statoOrdine`.
+     */
+    ordine: RigaOrdine;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -686,6 +705,7 @@ export function useControlRoom(): ControlRoomVM {
                 tettoPartite: numero(stats?.tetto_partite),
                 partiteEsposte: numero(stats?.partite_esposte),
                 stopFermaSoloAperture: stats?.stop_ferma_solo_aperture === true,
+                fermatoAllAvvioAt: testo(stats?.fermato_all_avvio_at),
             };
         };
         const testo = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -835,6 +855,11 @@ export function useControlRoom(): ControlRoomVM {
             side?: string | null; price?: number | null; size?: number | null; status: string;
             pnl?: number | null; mode?: string | null; placed_at: string;
             strategy?: string | null; phase?: string | null; role?: string | null;
+            // C.12b — colonne della migrazione del 16/09 (assenti finche' non
+            // e' applicata) e `meta`, che porta le stesse cose come nota
+            size_requested?: number | null; size_matched?: number | null;
+            size_remaining?: number | null; avg_price_matched?: number | null;
+            betfair_updated_at?: string | null; meta?: Record<string, unknown> | null;
         }) => {
             if (isErrorRow(t.status)) return;           // non e' un'operazione
             const k = String(t.event_id);
@@ -852,6 +877,16 @@ export function useControlRoom(): ControlRoomVM {
                     ? t.pnl : null,
                 modalita: modalitaDi(t.mode), at: t.placed_at,
                 quale: t.strategy ?? t.phase ?? t.role ?? null,
+                ordine: {
+                    status: t.status, side: t.side ?? null,
+                    price: t.price ?? null, size: t.size ?? null,
+                    size_requested: t.size_requested ?? null,
+                    size_matched: t.size_matched ?? null,
+                    size_remaining: t.size_remaining ?? null,
+                    avg_price_matched: t.avg_price_matched ?? null,
+                    betfair_updated_at: t.betfair_updated_at ?? null,
+                    meta: t.meta ?? null,
+                },
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);

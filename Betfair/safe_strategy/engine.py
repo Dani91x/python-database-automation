@@ -23,9 +23,10 @@ chiamate (tracker di stabilita' e segnali attivi). Input = le righe
 ``safe_strategy_scan`` prodotte da ``service.build_rows``.
 
 Differenze DICHIARATE rispetto al TS (nessuna e' un cambio di semantica):
-  * ``DEFAULT_PARAMS`` ha una sezione IN PIU', ``stake`` (laySize/backSize):
-    serve a ``Signal.size``, lo stake operativo che il TS non ha (la UI non
-    piazza ordini). Le 4 sezioni base/esatto/punta/tennis sono identiche al TS.
+  * ``DEFAULT_PARAMS`` ha una sezione IN PIU', ``stake``
+    (laySize/backSize/per_strategia): serve a ``Signal.size``, lo stake
+    operativo che il TS non ha (la UI non piazza ordini). Le 4 sezioni
+    base/esatto/punta/tennis sono identiche al TS.
   * ``Signal`` porta anche market_id / selection_id / market_type: chi opera
     server-side deve poter piazzare l'ordine senza rileggere il catalogo.
 
@@ -238,7 +239,17 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     },
     # EXTRA rispetto al TS: stake operativo dei segnali (il motore web non
     # piazza ordini, il server si). Minimo Betfair = 2 EUR.
-    "stake": {"laySize": 2.0, "backSize": 2.0},
+    #
+    # B.5 (16/09) — STAKE PER STRATEGIA. Fino a oggi lo stake si sceglieva dal
+    # LATO dell'ordine: ``backSize`` valeva insieme per TENNIS e PUNTA (che
+    # puntano) e ``laySize`` per BASE ed ESATTO (che bancano). Due strategie
+    # diverse condividevano quindi lo stesso importo, e cambiarlo per una lo
+    # cambiava all'altra senza che nessuno lo vedesse.
+    # ``per_strategia`` e' la chiave per NOME di strategia. Nasce VUOTA: una
+    # chiave assente vuol dire "usa quella per lato, come sempre", quindi una
+    # configurazione vecchia si comporta esattamente come prima.
+    # NON cambia nessun default numerico: e' solo DA QUALE CHIAVE si legge.
+    "stake": {"laySize": 2.0, "backSize": 2.0, "per_strategia": {}},
 }
 
 VARIANT_META: Dict[str, Dict[str, str]] = {
@@ -345,8 +356,51 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             # accettato sia annidato in "stake" sia al livello superiore
             "laySize": _num(st.get("laySize"), _num(p.get("laySize"), d["stake"]["laySize"])),
             "backSize": _num(st.get("backSize"), _num(p.get("backSize"), d["stake"]["backSize"])),
+            "per_strategia": _stake_per_strategia(st.get("per_strategia")),
         },
     }
+
+
+def _stake_per_strategia(raw: Any) -> Dict[str, float]:
+    """Mappa PARZIALE ``variante -> stake``, ripulita.
+
+    Si scarta tutto quello che non si capisce: chiave che non e' una delle
+    quattro varianti del manuale, valore non numerico o <= 0. Una chiave caduta
+    non spegne niente: significa "usa lo stake per LATO", cioe' il
+    comportamento di sempre. Mappa vuota = nessuna personalizzazione.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, float] = {}
+    for nome in VARIANT_META:
+        v = raw.get(nome)
+        if is_finite_number(v) and float(v) > 0:
+            out[nome] = float(v)
+    return out
+
+
+def stake_di_strategia(params: Dict[str, Any], variant: Any, side: Any) -> float:
+    """Lo stake con cui entra ``variant``, dal PIU' specifico al piu' generico.
+
+    1. ``stake.per_strategia[variant]`` — l'importo di QUELLA strategia;
+    2. ``stake.laySize`` / ``stake.backSize`` — l'importo per LATO, come prima
+       di B.5, per chi non ha ancora una chiave sua.
+
+    Il passo 2 non e' un ripiego di comodo: e' la retrocompatibilita'
+    dichiarata. Un parametro salvato settimane fa non deve cambiare importo da
+    solo perche' il codice ha imparato una chiave nuova.
+    """
+    st = params.get("stake") if isinstance(params, dict) else None
+    st = st if isinstance(st, dict) else {}
+    per = st.get("per_strategia")
+    if isinstance(per, dict):
+        v = per.get(str(variant))
+        if is_finite_number(v) and float(v) > 0:
+            return float(v)
+    per_lato = st.get("laySize" if str(side).lower() == "lay" else "backSize")
+    if is_finite_number(per_lato):
+        return float(per_lato)
+    return float(DEFAULT_PARAMS["stake"]["laySize" if str(side).lower() == "lay" else "backSize"])
 
 
 # ----------------------------------------------------------------- tipi motore
@@ -1698,7 +1752,9 @@ class SafeEngine:
     def _to_signal(self, s: _Active) -> Signal:
         c = s.cand
         side = (c.side or "").lower()
-        stake = self._params["stake"]["laySize" if side == "lay" else "backSize"]
+        # B.5 — lo stake si sceglie per STRATEGIA, non piu' per LATO: chi non ha
+        # una chiave sua ricade sul lato, esattamente come prima.
+        stake = stake_di_strategia(self._params, c.variant, side)
         return Signal(
             key=c.key,
             event_id=c.event_id,

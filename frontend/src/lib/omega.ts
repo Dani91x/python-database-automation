@@ -348,6 +348,14 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     model_lambda_live: { label: 'MODELLO: λ DA O/U LIVE', cls: A_MUTED },
     mission_error: { label: 'MISSIONE IN ERRORE', cls: A_BAD, critical: true },
     mission_scores_error: { label: 'MISSIONE: PUNTEGGI NON LETTI', cls: A_BAD, critical: true },
+    // ---- consapevolezza dell'ordine (C.12b, 16/09)
+    // Fino al 15/09 un rifiuto di Betfair arrivava come «non abbinato» generico
+    // e un ordine abbinato a meta' non aveva nessuna riga sua: erano i due buchi
+    // che il servizio ha chiuso il 16/09 e che restavano MUTI in pagina.
+    place_rifiutato: { label: 'RIFIUTATO DA BETFAIR', cls: A_BAD, critical: true },
+    place_parziale: { label: 'ABBINATO IN PARTE', cls: A_WARN, critical: true },
+    cancel_richiesto: { label: 'ANNULLO CHIESTO A BETFAIR', cls: A_WARN },
+    cancel_esito: { label: 'ANNULLO: ESITO DA BETFAIR', cls: A_WARN },
     // ---- ciclo
     error: { label: 'ERRORE', cls: A_BAD, critical: true },
     stop: { label: 'STOP', cls: A_PLAIN },
@@ -485,6 +493,24 @@ export function activityLine(row: OmegaActivityRow, eventName?: string | null): 
     if (Number.isFinite(liab) && !Number.isFinite(locked) && !Number.isFinite(size)) parts.push(`liability ${fmtMoney(liab)}`);
     const residual = Number(p.residual);
     if (Number.isFinite(residual) && residual > 0) parts.push(`residuo ${fmtMoney(residual)}`);
+    // C.12b — CHIESTO / ABBINATO / RESIDUO dell'ordine e CODICE del rifiuto.
+    // `place_parziale`, `place_rifiutato`, `cancel_esito` li scrivono con questi
+    // nomi (omega_service.py:1189,1662,2354): senza leggerli la riga raccontava
+    // un ordine intero anche quando ne era stata abbinata meta'.
+    const chiesto = Number(p.size_requested);
+    const abbinato = Number(p.size_matched);
+    const residuoOrdine = Number(p.size_remaining);
+    const medio = Number(p.avg_price_matched);
+    if (Number.isFinite(chiesto)) parts.push(`chiesti ${fmtMoney(chiesto)}`);
+    if (Number.isFinite(abbinato)) {
+        parts.push(`abbinati ${fmtMoney(abbinato)}${Number.isFinite(medio) ? ` @ ${fmtOdds(medio)}` : ''}`);
+    }
+    if (Number.isFinite(residuoOrdine)) parts.push(`residuo vivo ${fmtMoney(residuoOrdine)}`);
+    const codice = typeof p.error_code === 'string' && p.error_code.trim() ? p.error_code.trim() : null;
+    if (codice) parts.push(`codice Betfair ${codice}`);
+    if (typeof p.confermato === 'boolean') {
+        parts.push(p.confermato ? 'annullo CONFERMATO da Betfair' : 'annullo NON confermato: la riga resta in verifica');
+    }
     // motivo: exit_reason (italiano dal servizio) → reason (chiave) → wait → err
     const rawReason = p.exit_reason ?? p.reason ?? p.wait ?? p.err ?? null;
     const reasonText = omegaReasonText(rawReason);

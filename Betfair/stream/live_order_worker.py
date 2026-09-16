@@ -103,6 +103,151 @@ def _live_order_mode() -> str:
     return os.getenv("LIVE_ORDER_MODE", "OFF").strip().upper()
 
 
+# ---------------------------------------------------------------------------
+# F0 (16/09) - INSTRADAMENTO PER RIGA: paper e live nello STESSO processo.
+#
+# Prima di F0 il worker leggeva SOLO le righe della modalita' del processo
+# (``LIVE_ORDER_MODE``) e marcava 'error' quelle dell'altra (``_fail_cross_mode``):
+# con ``.env LIVE_ORDER_MODE=LIVE`` un ordine PAPER accodato da un bot veniva
+# ucciso. Adesso le righe di entrambe le modalita' sono servite dallo stesso
+# processo e OGNI ordine viene eseguito dal client scelto dal ``mode`` DELLA RIGA.
+#
+# La separazione dei soldi veri e' PER COSTRUZIONE, su due livelli:
+#   1) il client REALE non viene nemmeno costruito se il processo non e' in LIVE
+#      (``runner.build_order_client``): in un runner PAPER non esiste oggetto in
+#      grado di mandare un ordine a Betfair;
+#   2) dentro un runner LIVE una riga 'paper' esige un client ESPLICITO con
+#      ``paper_trade=True`` (mai il default, che li' e' il client reale) e una
+#      riga 'live' esige il client reale: se manca, la riga va in 'error' con
+#      motivo ``live_client_assente`` / ``paper_client_assente`` e NON si esegue.
+# flumine instrada l'esecuzione dal client dell'order package
+# (``baseflumine.process_order_package`` -> ``client.execution``) e decide
+# ``order.simulated`` per ordine (``simulation/simulatedorder.__bool__``):
+# passare il client giusto e' quindi l'intera separazione, non una convenzione.
+# ---------------------------------------------------------------------------
+# Motivi di rifiuto (contratto letto da chi accoda: non cambiarli in silenzio).
+ERR_LIVE_CLIENT_ASSENTE = "live_client_assente"
+ERR_PAPER_CLIENT_ASSENTE = "paper_client_assente"
+
+
+def _servable_modes(proc_mode: Optional[str] = None) -> Tuple[str, ...]:
+    """Modalita' della coda che QUESTO processo puo' eseguire.
+
+    processo LIVE  -> ('live', 'paper')  [client reale + client simulato]
+    processo PAPER -> ('paper',)         [nessun client reale nel processo]
+    OFF / ignoto   -> ()                 [worker inerte]
+    """
+    mode = str(proc_mode or _live_order_mode()).strip().upper()
+    if mode == "LIVE":
+        return ("live", "paper")
+    if mode == "PAPER":
+        return ("paper",)
+    return ()
+
+
+def _is_paper_client(client: Any) -> bool:
+    """True se il client ESEGUE in simulazione (``paper_trade=True``) oppure e' un
+    client di venue SIMULATED (replay): in nessuno dei due casi tocca soldi veri."""
+    try:
+        if bool(getattr(client, "paper_trade", False)):
+            return True
+        venue = getattr(client, "VENUE", None)
+        name = getattr(venue, "name", None) or str(venue or "")
+        return str(name).upper().endswith("SIMULATED")
+    except Exception:  # noqa: BLE001 - oggetto inatteso: NON e' un client paper
+        return False
+
+
+def _iter_clients(flumine: Any) -> Optional[List[Any]]:
+    """Client registrati nel framework, oppure ``None`` se il framework non li
+    espone (mock dei test / uso legacy): il chiamante decide se puo' ripiegare
+    sul client di default."""
+    clients = getattr(flumine, "clients", None)
+    if clients is None:
+        return None
+    try:
+        return list(clients)
+    except Exception:  # noqa: BLE001 - registro inatteso: trattato come assente
+        return None
+
+
+def _client_for_mode(flumine: Any, row_mode: str, proc_mode: Optional[str] = None) -> Any:
+    """Client che DEVE eseguire la riga, scelto dal ``mode`` DELLA RIGA.
+
+    Ritorna ``None`` quando non c'e' niente da specificare (framework senza
+    registro client: vale il default di flumine, che in quel processo E' il
+    client di quella modalita' - comportamento storico invariato).
+    Solleva ``ValueError`` (-> riga 'error', nessuna esecuzione) quando il client
+    della modalita' richiesta non esiste: MAI un fill simulato spacciato per
+    live, MAI un ordine reale nato da una riga paper.
+    """
+    row_m = str(row_mode or "").strip().lower()
+    if row_m not in ("paper", "live"):
+        raise ValueError(f"mode di riga sconosciuta: {row_mode!r}")
+    proc = str(proc_mode or _live_order_mode()).strip().upper()
+    if row_m not in _servable_modes(proc):
+        motivo = ERR_LIVE_CLIENT_ASSENTE if row_m == "live" else ERR_PAPER_CLIENT_ASSENTE
+        raise ValueError(
+            f"{motivo}: il runner gira in modalita' {proc} e non ha nessun client "
+            f"per le righe '{row_m}' - riga NON eseguita (fail-closed)"
+        )
+    want_paper = row_m == "paper"
+    clients = _iter_clients(flumine)
+    if clients:
+        for c in clients:
+            if _is_paper_client(c) is want_paper:
+                return c
+    if want_paper and proc == "LIVE":
+        # Nel runner LIVE il client di default e' quello REALE: senza un client
+        # simulato ESPLICITO la riga paper non si esegue (mai soldi veri da paper).
+        raise ValueError(
+            f"{ERR_PAPER_CLIENT_ASSENTE}: nessun client simulato (paper_trade=True) "
+            f"registrato nel runner LIVE - riga NON eseguita (fail-closed)"
+        )
+    if not want_paper and clients:
+        raise ValueError(
+            f"{ERR_LIVE_CLIENT_ASSENTE}: nessun client reale registrato nel framework "
+            f"- riga NON eseguita (fail-closed)"
+        )
+    return None
+
+
+def _assert_order_mode(order: Any, row_mode: str, what: str) -> None:
+    """Un cancel/replace non puo' MAI attraversare la modalita': una riga 'paper'
+    non tocca un ordine REALE e viceversa.
+
+    L'appartenenza si legge dal client dell'ordine (``order.client``, assegnato da
+    flumine in ``Transaction.place_order``). Se il client non e' noto (ordine
+    ricostruito da mock/blotter senza client) non si blocca: e' il comportamento
+    storico e non c'e' nulla da confrontare."""
+    client = getattr(order, "client", None)
+    if client is None:
+        return
+    ordine_paper = _is_paper_client(client)
+    riga_paper = str(row_mode or "").strip().lower() == "paper"
+    if ordine_paper is not riga_paper:
+        raise ValueError(
+            f"{what}: la riga e' '{row_mode}' ma l'ordine e' "
+            f"{'simulato' if ordine_paper else 'REALE'} - rifiutato (mai cross-mode)"
+        )
+
+
+def _strategy_for_mode(strategy: Any, row_mode: str) -> Any:
+    """Istanza ``LiveTradingStrategy`` sotto cui creare gli ordini della riga.
+
+    Il runner LIVE registra DUE strategie (una per modalita') e passa al worker la
+    mappa ``{'live': ..., 'paper': ...}``: in flumine il blotter e' PER STRATEGIA,
+    quindi esposizioni, specchio DB e settled di paper e live non si mescolano.
+    Un singolo oggetto (runner PAPER, test) vale per tutte le modalita'."""
+    if isinstance(strategy, dict):
+        s = strategy.get(str(row_mode or "").strip().lower())
+        if s is None:
+            raise ValueError(
+                f"strategy_assente per la modalita' '{row_mode}': riga NON eseguita")
+        return s
+    return strategy
+
+
 def _jurisdiction() -> str:
     val = _cfg_attr("BETFAIR_JURISDICTION")
     if val is None:
@@ -872,15 +1017,23 @@ def _violation_msg(order: Any) -> str:
     return str(msg) if msg else "rifiutato dai trading control flumine (violation)"
 
 
-def _place_or_raise(market: Any, order: Any, what: str) -> None:
+def _place_or_raise(market: Any, order: Any, what: str, client: Any = None) -> None:
     # Il confine del contratto ``post_place:`` è "place_order è tornato senza
     # sollevare": SOLO il rifiuto esplicito dei trading control (ritorno False,
     # ordine mai inviato) è provabilmente pre-place. Un'eccezione sollevata
     # DENTRO place_order è AMBIGUA (l'ordine può essere già nel blotter/in
     # dispatch a seconda degli internals flumine): va marcata post_place: così
     # chi legge l'esito (omega) non libera mai una riserva potenzialmente viva.
+    # F0: ``client`` = client della MODALITA' DELLA RIGA (vedi _client_for_mode).
+    # flumine instrada l'esecuzione dal client dell'order package
+    # (baseflumine.process_order_package -> client.execution) e decide
+    # order.simulated per ordine: questo kwarg E' la separazione paper/live.
+    # ``None`` = niente da specificare (framework senza registro client: vale il
+    # default di flumine, comportamento storico invariato).
+    extra = {"client": client} if client is not None else {}
     try:
-        ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+        ok = market.place_order(
+            order, customer_strategy_ref=CUSTOMER_STRATEGY_REF, **extra)
     except Exception as ex:  # noqa: BLE001 - ambiguo per contratto, mai pre-place
         raise RuntimeError(
             f"post_place:{type(ex).__name__}: {str(ex)[:200]}") from ex
@@ -933,6 +1086,7 @@ def _place_sub_minimum(
     cust_ref: str,
     what: str,
     max_stake: Optional[float] = None,
+    client: Any = None,
     ops: Any = None,
     find_order: Any = None,
     sleep: Any = None,
@@ -965,6 +1119,9 @@ def _place_sub_minimum(
                 strategy=strategy,
                 max_stake=max_stake,
                 customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+                # F0: anche i 3 passi del place-and-trim vanno al client della
+                # MODALITA' DELLA RIGA, mai al default del processo.
+                client=client,
             )
         )
     if find_order is None:
@@ -1022,7 +1179,8 @@ def _place_sub_minimum(
 # ---------------------------------------------------------------------------
 # Azioni place / cancel / replace
 # ---------------------------------------------------------------------------
-def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+              *, client: Any = None) -> None:
     from .live_order_build import build_order
 
     rid = request_row["id"]
@@ -1071,7 +1229,7 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     # dei control NATIVI (LiveRateControl/LiveExposureControl), che girano SINCRONI dentro
     # market.place_order (Transaction._validate_controls): un rifiuto fa tornare False e
     # _place_or_raise lo trasforma in errore esplicito sulla riga coda (violation_msg).
-    _place_or_raise(market, built.order, "place")
+    _place_or_raise(market, built.order, "place", client=client)
     # Da qui in poi l'ordine è STATO DISPATCHATO (in live: ordine reale in volo):
     # un fallimento successivo (registro TTL, result, _write_done) NON può finire
     # sulla riga coda come un normale errore di validazione — chi legge l'esito
@@ -1196,7 +1354,13 @@ def _sweep_fok_ttls(flumine: Any) -> None:
     _FOK_TTLS[:] = keep
 
 
-def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -> None:
+def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
+               *, client: Any = None) -> None:  # noqa: ARG001
+    # NB: ``client`` e' accettato per uniformita' del dispatch ma NON si passa a
+    # flumine: cancel e replace usano il client DELL'ORDINE
+    # (``Market.cancel_order`` -> ``transaction(client=order.client)``), che e' gia'
+    # quello giusto per costruzione. La guardia ``_assert_order_mode`` verifica che
+    # l'ordine appartenga davvero alla modalita' della riga.
     rid = request_row["id"]
     cust_ref = _cust_ref(rid)
     bet_id = str(request_row.get("bet_id") or "")
@@ -1205,6 +1369,7 @@ def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) ->
     order = _find_order_by_bet_id(flumine, request_row.get("market_id"), bet_id)
     if order is None:
         raise ValueError(f"ordine bet_id {bet_id} non trovato nel blotter")
+    _assert_order_mode(order, mode, "cancel")
     market = _resolve_market(flumine, _val(order, "market_id") or request_row.get("market_id"))
     size_reduction = _f(request_row.get("size_reduction"))
     _cancel_or_raise(market, order, size_reduction, "cancel")
@@ -1215,7 +1380,9 @@ def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) ->
     _write_done(sb, rid, result)
 
 
-def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -> None:
+def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
+                *, client: Any = None) -> None:  # noqa: ARG001
+    # ``client`` non si passa: il replace usa il client dell'ORDINE (vedi _do_cancel).
     from .live_order_build import round_to_tick
 
     rid = request_row["id"]
@@ -1227,6 +1394,7 @@ def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -
     order = _find_order_by_bet_id(flumine, request_row.get("market_id"), bet_id)
     if order is None:
         raise ValueError(f"ordine bet_id {bet_id} non trovato nel blotter")
+    _assert_order_mode(order, mode, "replace")
     market = _resolve_market(flumine, _val(order, "market_id") or request_row.get("market_id"))
     new_price = round_to_tick(new_price_raw)
     # CODE-MED-1: per un LAY ri-valida il cap PRIMA del replace. La liability = size*(price-1)
@@ -1691,6 +1859,7 @@ def _place_closing_leg(
     mode: str,
     params: Any,
     max_stake: Optional[float] = None,
+    client: Any = None,
 ) -> Optional[Any]:
     """Piazza una gamba di CHIUSURA (greenup / cash-out). Ritorna lo SubminState se si e'
     dovuti passare dal place-and-trim, altrimenti None.
@@ -1705,7 +1874,7 @@ def _place_closing_leg(
     rifiuto provabile e viene ri-propagata: l'ordine potrebbe essere gia' in volo.
     """
     try:
-        _place_or_raise(market, order, what)
+        _place_or_raise(market, order, what, client=client)
         return None
     except ValueError as ex:
         if not (
@@ -1728,12 +1897,13 @@ def _place_closing_leg(
             flumine, market, market_id=market_id, strategy=strategy,
             selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
             price=float(price), size=float(size), cust_ref=cust_ref, what=what,
-            max_stake=max_stake,
+            max_stake=max_stake, client=client,
         )
         return state
 
 
-def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+                *, client: Any = None) -> None:
     """Green-up / cash-out: chiude (totale o frazione) l'esposizione MATCHED di una selezione.
 
     Legge le esposizioni FRESCHE da flumine + il best price opposto dal book, calcola l'UNICO
@@ -1881,7 +2051,7 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
         side=str(plan.side), price=float(built.price), size=float(built.size),
         cust_ref=cust_ref, what="greenup", mode=mode, params=params,
-        max_stake=_effective_cap(request_row),
+        max_stake=_effective_cap(request_row), client=client,
     )
     # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``built.order`` (che i
     # control avevano rifiutato): niente snapshot da un ordine VIOLATION nello specchio.
@@ -1918,7 +2088,8 @@ def _leg_ref(rid: int, suffix: str) -> str:
     return (_cust_ref(rid) + suffix)[:32]
 
 
-def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+              *, client: Any = None) -> None:
     """Dutching: ripartisce uno stake totale su N selezioni (profitto uguale) e PIAZZA ogni gamba.
 
     La MATEMATICA è server-side (trading/dutching, autoritativa): il frontend manda solo
@@ -2030,7 +2201,8 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     placed_orders = []
     for i, (leg, built) in enumerate(zip(live_legs, built_legs)):
         try:
-            _place_or_raise(market, built.order, f"dutch gamba {i + 1}/{len(built_legs)}")
+            _place_or_raise(market, built.order, f"dutch gamba {i + 1}/{len(built_legs)}",
+                            client=client)
         except Exception as ex:
             # Rifiuto a runtime (control/mercato) a metà piazzamento: le gambe precedenti
             # sono a mercato e il dutching è SBILANCIATO. Rollback best-effort: cancel di
@@ -2163,7 +2335,7 @@ def _flatten_entries(
 def _flatten_market(
     flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int,
     equal: bool = False, params: Any = None, mode: str = "paper",
-    amount: Optional[float] = None, skipped: Optional[list] = None,
+    amount: Optional[float] = None, skipped: Optional[list] = None, client: Any = None,
 ) -> "tuple[list, int, list, int]":
     """Flatten (green-up) di ogni selezione del mercato con esposizione ≠ 0. Ritorna
     (gambe_chiuse, prossimo_indice, gambe_rifiutate, unmatched_annullati). Ogni gamba ha
@@ -2226,7 +2398,7 @@ def _flatten_market(
                     flumine, market, order=built.order, strategy=strategy, market_id=market_id,
                     selection_id=sel, handicap=hcap, side=side, price=float(built.price),
                     size=float(built.size), cust_ref=ref,
-                    what=f"cashout sel {sel}", mode=mode, params=params,
+                    what=f"cashout sel {sel}", mode=mode, params=params, client=client,
                 )
             else:
                 # APERTURA (runner piatto nel pareggio): niente sotto-minimo, niente
@@ -2257,7 +2429,8 @@ def _flatten_market(
                     max_stake=_effective_cap({"params": params}),
                     customer_order_ref=ref, reduces_liability=False,
                 )
-                _place_or_raise(market, built.order, f"cashout apertura sel {sel}")
+                _place_or_raise(market, built.order, f"cashout apertura sel {sel}",
+                                client=client)
         except Exception as ex:  # noqa: BLE001 - continua a chiudere le ALTRE selezioni
             logger.exception("[live-order] cashout: gamba selezione %s rifiutata", sel)
             failed.append({"market_id": market_id, "selection_id": sel, "error": str(ex)[:160]})
@@ -2318,7 +2491,8 @@ def _cashout_equal(request_row: Dict[str, Any]) -> bool:
     return _param_bool(request_row.get("params") or {}, "equal", False)
 
 
-def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+                    *, client: Any = None) -> None:
     """Cash-out di UN SOLO MERCATO (cashout_all): flatten di ogni selezione del mercato indicato.
     ``params.fraction`` ∈ (0,1] per un cash-out parziale."""
     if strategy is None:
@@ -2332,6 +2506,7 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     closed, _, failed, cancelled = _flatten_market(
         flumine, market, strategy, fraction, rid, 0, equal=equal,
         params=request_row.get("params"), mode=mode, amount=amount, skipped=skipped,
+        client=client,
     )
     if failed:
         # MAI un 'done ok=True' con selezioni rimaste aperte: errore ESPLICITO (il greenup è
@@ -2356,7 +2531,8 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     _write_done(sb, rid, result)
 
 
-def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+                      *, client: Any = None) -> None:
     """Cash-out dell'INTERO EVENTO (cashout_event): flatten di TUTTI i mercati che condividono
     l'event_id — chiusura globale multi-mercato (benchmark Betting Toolkit). L'event_id è preso
     da ``params.event_id`` o, in fallback, dal ``market.event_id`` del market_id passato.
@@ -2387,7 +2563,7 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
             continue
         legs, idx, failed, cancelled = _flatten_market(
             flumine, m, strategy, fraction, rid, idx, equal=equal, params=params, mode=mode,
-            amount=amount, skipped=skipped,
+            amount=amount, skipped=skipped, client=client,
         )
         closed.extend(legs)
         failed_all.extend(failed)
@@ -2489,7 +2665,8 @@ def _submin_result(
     return res
 
 
-def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+                  *, client: Any = None) -> None:
     """Step iniziale (INIT→PLACED) di una sequenza submin. La riga resta 'processing'
     finché terminale; lo SubminState è persistito in result.submin_state."""
     from .trading.submin import FlumineSubminOps, SubminStep, advance_submin, start_submin
@@ -2536,6 +2713,7 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
             strategy=strategy,
             max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
             customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+            client=client,                                  # F0: client della mode DELLA RIGA
         )
     )
     new_state = advance_submin(
@@ -2560,7 +2738,8 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
         raise
 
 
-def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
+                        *, client: Any = None) -> None:
     """Avanza di UNO step una sequenza submin già in corso (riga 'processing')."""
     from .trading.submin import FlumineSubminOps, SubminStep, advance_submin
 
@@ -2597,6 +2776,7 @@ def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode
         strategy=strategy,
         max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
         customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+        client=client,                                  # F0: client della mode DELLA RIGA
     )
     # allow_place=False: questo è il percorso di SOLA-RIPRESA. Lo step1 (place) avviene
     # UNA volta sola in _start_submin; qui non si deve MAI piazzare. Se lo stato è INIT
@@ -2840,16 +3020,29 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -
         try:
             if req.method == "snapshot":
                 mid = str(req.params.get("market_id") or "")
-                ch.respond(req, True, _local_snapshot(flumine, strategy, mid, mode_l))
+                # snapshot = vista della modalita' del PROCESSO (quella della board
+                # desktop): la strategy e' quella della sua modalita' (F0).
+                ch.respond(req, True, _local_snapshot(
+                    flumine, _strategy_for_mode(strategy, mode_l), mid, mode_l))
                 continue
             cmd = req.params
             action = str(cmd.get("action") or "")
             if action not in _LOCAL_ACTIONS:
                 ch.respond(req, False, error=f"azione non supportata dal canale locale: {action}")
                 continue
-            if str(cmd.get("mode") or "") != mode_l:
+            # F0: il canale locale segue la STESSA regola della coda DB - decide il
+            # ``mode`` DELLA RICHIESTA, non quello del processo. Una modalita' che
+            # questo processo non sa servire (es. 'live' su un runner PAPER, dove il
+            # client reale non esiste) viene RIFIUTATA col motivo, mai eseguita.
+            req_mode = str(cmd.get("mode") or "").strip().lower()
+            servibili = _servable_modes(mode_l)
+            if req_mode not in servibili:
+                motivo = (ERR_LIVE_CLIENT_ASSENTE if req_mode == "live"
+                          else ERR_PAPER_CLIENT_ASSENTE if req_mode == "paper"
+                          else "mode sconosciuta")
                 ch.respond(req, False,
-                           error=f"mode richiesta '{cmd.get('mode')}' diversa dal runner '{mode_l}'")
+                           error=f"{motivo}: mode richiesta '{cmd.get('mode')}' non servibile "
+                                 f"da questo runner (serve {'/'.join(servibili) or 'nessuna'})")
                 continue
             # kill-switch RI-LETTO PER-COMANDO: stessa semantica del path DB
             # (aperture bloccate, chiusure sempre permesse).
@@ -2868,26 +3061,26 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -
             row: Dict[str, Any] = {k: cmd.get(k) for k in _LOCAL_ROW_KEYS}
             row["id"] = rid
             row["action"] = action
-            row["mode"] = mode_l
+            row["mode"] = req_mode
             lsb = _LocalSb(sb)
             try:
-                _dispatch(lsb, flumine, row, mode_l, strategy)
+                _dispatch(lsb, flumine, row, req_mode, strategy)
             except Exception as ex:  # noqa: BLE001 - errore del comando, worker vivo
                 try:
-                    _write_error(lsb, rid, row, mode_l, ex)  # cattura esito + audit reale
+                    _write_error(lsb, rid, row, req_mode, ex)  # cattura esito + audit reale
                 except Exception:  # noqa: BLE001
                     pass
                 ch.respond(req, False, lsb.captured.get("result"), error=str(ex))
                 _local_dedup_put(client_ref, False, lsb.captured.get("result"))
-                _record_local_request(sb, row, lsb.captured, mode_l)
+                _record_local_request(sb, row, lsb.captured, req_mode)
                 continue
             # esito catturato da _write_done → risposta IMMEDIATA al client
-            result = lsb.captured.get("result") or {"ok": True, "action": action, "mode": mode_l}
+            result = lsb.captured.get("result") or {"ok": True, "action": action, "mode": req_mode}
             ch.respond(req, True, result)
             _local_dedup_put(client_ref, True, result)
-            db_id = _record_local_request(sb, row, lsb.captured, mode_l)
+            db_id = _record_local_request(sb, row, lsb.captured, req_mode)
             # journal E37 col rid REALE della riga registrata (contesto al click)
-            _journal_done(sb, flumine, {**row, "id": db_id or rid}, mode_l)
+            _journal_done(sb, flumine, {**row, "id": db_id or rid}, req_mode)
         except Exception as ex:  # noqa: BLE001 - mai far cadere il worker per un comando locale
             logger.exception("[local] comando locale KO")
             try:
@@ -2901,30 +3094,43 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -
 # Dispatch + ciclo
 # ---------------------------------------------------------------------------
 def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Esegue UNA riga. ``mode`` e' la modalita' DELLA RIGA, mai quella del processo.
+
+    F0 - UNICO punto di instradamento: qui si scelgono il client (chi esegue) e la
+    strategy (sotto chi vive l'ordine nel blotter) in base a ``mode``. Se il client
+    della modalita' non esiste, ``_client_for_mode`` solleva PRIMA che qualunque
+    ordine venga costruito o piazzato: la riga finisce in 'error' col motivo
+    (``live_client_assente`` / ``paper_client_assente``) e NULLA viene eseguito.
+    """
     action = str(request_row.get("action") or "")
+    client = _client_for_mode(flumine, mode)
+    strat = _strategy_for_mode(strategy, mode)
     if action == "place":
-        _do_place(sb, flumine, request_row, mode, strategy)
+        _do_place(sb, flumine, request_row, mode, strat, client=client)
     elif action == "cancel":
-        _do_cancel(sb, flumine, request_row, mode)
+        _do_cancel(sb, flumine, request_row, mode, client=client)
     elif action == "replace":
-        _do_replace(sb, flumine, request_row, mode)
+        _do_replace(sb, flumine, request_row, mode, client=client)
     elif action == "place_submin":
-        _start_submin(sb, flumine, request_row, mode, strategy)
+        _start_submin(sb, flumine, request_row, mode, strat, client=client)
     elif action == "greenup":
-        _do_greenup(sb, flumine, request_row, mode, strategy)
+        _do_greenup(sb, flumine, request_row, mode, strat, client=client)
     elif action == "dutch":
-        _do_dutch(sb, flumine, request_row, mode, strategy)
+        _do_dutch(sb, flumine, request_row, mode, strat, client=client)
     elif action == "cashout_all":
-        _do_cashout_all(sb, flumine, request_row, mode, strategy)
+        _do_cashout_all(sb, flumine, request_row, mode, strat, client=client)
     elif action == "cashout_event":
-        _do_cashout_event(sb, flumine, request_row, mode, strategy)
+        _do_cashout_event(sb, flumine, request_row, mode, strat, client=client)
     else:
         raise ValueError(f"action sconosciuta: {action!r}")
 
 
 def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> int:
     """Fa avanzare le sequenze submin in corso (UNICA eccezione al non-riprocessare
-    'processing'). Best-effort per riga: un errore non blocca le altre né il runner."""
+    'processing'). Best-effort per riga: un errore non blocca le altre ne il runner.
+
+    ``mode_l`` e' la modalita' DELLE RIGHE da far avanzare: il chiamante la invoca
+    una volta per ogni modalita' servibile dal processo (F0)."""
     try:
         rows = (
             sb.table(_TABLE)
@@ -2954,7 +3160,10 @@ def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any)
             break
         rid = r.get("id")
         try:
-            _advance_submin_row(sb, flumine, r, mode_l, strategy)
+            _advance_submin_row(
+                sb, flumine, r, mode_l, _strategy_for_mode(strategy, mode_l),
+                client=_client_for_mode(flumine, mode_l),
+            )
         except Exception as ex:  # noqa: BLE001 - scrivi error, non cadere
             logger.exception("[live-order] avanzamento submin %s fallito", rid)
             try:
@@ -2965,59 +3174,32 @@ def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any)
     return handled
 
 
-def _fail_cross_mode(sb: Any, mode_l: str) -> int:
-    """Marca 'error' le righe pending il cui ``mode`` NON è servibile da questo runner.
+def _fail_cross_mode(sb: Any, mode_l: str) -> int:  # noqa: ARG001
+    """INERTE dal 16/09 (F0). Conservata perche' chi legge i log e la storia del
+    file deve poter trovare qui il motivo del cambiamento.
 
-    Il runner gira in UNA sola mode (``LIVE_ORDER_MODE`` = PAPER|LIVE) e processa solo le
-    righe di quella mode. Senza questo passo, una riga della mode opposta (es. enqueue 'live'
-    mentre gira un runner 'paper': misconfigurazione o residuo) resterebbe 'pending' all'INFINITO,
-    senza esito e senza diagnosi per il frontend.
+    Fino al 15/09 questa funzione marcava **'error' tutte le righe pending della
+    modalita' opposta** a quella del processo, sull'assunzione "un runner serve una
+    sola modalita'". Con ``.env LIVE_ORDER_MODE=LIVE`` quell'assunzione UCCIDEVA
+    ogni ordine PAPER accodato dai bot, e teneva chiuso per sempre il gate paper.
 
-    Assunzione di deployment: un SOLO runner attivo per coda (non un runner paper E uno live
-    in parallelo sulla STESSA coda). Sotto questa assunzione marcare error è corretto e sicuro;
-    il claim atomico pending→processing garantisce comunque che la transizione avvenga UNA volta.
-    Best-effort: qualunque errore qui non blocca il ciclo né il runner.
+    Adesso il processo serve le righe di ENTRAMBE le modalita' (``_servable_modes``)
+    e ogni riga e' eseguita dal client della SUA modalita' (``_client_for_mode``).
+    Una riga non servibile non resta comunque appesa: viene presa dal ciclo normale
+    e chiusa in 'error' col motivo esplicito (``live_client_assente``), che e'
+    esattamente la diagnosi che questa funzione forniva - ma senza uccidere le
+    righe legittime dell'altra modalita'. Ritorna sempre 0 e non tocca il DB.
     """
-    try:
-        rows = (
-            sb.table(_TABLE)
-            .select("*")
-            .eq("status", "pending")
-            .neq("mode", mode_l)
-            .order("id")
-            .limit(_batch())
-            .execute()
-            .data
-            or []
-        )
-    except Exception as ex:  # noqa: BLE001 - lettura coda KO: non cadere
-        logger.warning("[live-order] lettura righe cross-mode KO: %s", str(ex)[:160])
-        return 0
-
-    handled = 0
-    for r in rows:
-        rid = r.get("id")
-        # claim atomico: se un altro l'ha già preso (o non è più pending), salta.
-        if not _claim(sb, rid):
-            continue
-        row_mode = str(r.get("mode") or "?")
-        msg = (
-            f"mode '{row_mode}' non servibile dal runner in modalità '{mode_l}' "
-            f"(LIVE_ORDER_MODE={mode_l.upper()}): richiesta rifiutata, non lasciata appesa"
-        )
-        try:
-            _write_error(sb, rid, r, mode_l, msg)
-        except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
-            logger.exception("[live-order] scrittura error cross-mode %s fallita", rid)
-        handled += 1
-    return handled
+    return 0
 
 
 def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = None) -> int:
     """UN passo del worker. Ritorna quante righe ha gestito. Mai solleva (best-effort).
 
-    ``strategy`` è l'istanza LiveTradingStrategy registrata nel framework: gli ordini
-    piazzati sono creati sotto di essa (vedi build_order) così che lo specchio si popoli.
+    ``strategy`` e la LiveTradingStrategy registrata nel framework - o, dal 16/09 (F0),
+    la MAPPA ``{'live': ..., 'paper': ...}`` quando il processo serve entrambe le
+    modalita: gli ordini di ogni riga sono creati sotto la strategy della SUA modalita
+    (blotter flumine per-strategia -> esposizioni e specchio mai mescolati).
     """
     mode = _live_order_mode()
     if mode not in ("PAPER", "LIVE"):
@@ -3054,17 +3236,22 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     mode_l = mode.lower()
     handled = handled_local
 
+    # F0: le modalita' che QUESTO processo puo' eseguire (LIVE -> live+paper).
+    servibili = _servable_modes(mode)
+
     # 1) sequenze submin in corso (place_submin) → avanza di uno step (APERTURE: mai col freno)
     if not kill_cycle:
-        handled += _advance_inflight_submins(sb, flumine, mode_l, strategy)
+        for _m in servibili:
+            handled += _advance_inflight_submins(sb, flumine, _m, strategy)
 
-    # 2) nuove richieste pending della stessa mode → claim atomico + dispatch
+    # 2) nuove richieste pending - di ENTRAMBE le modalita' (F0): il filtro per
+    # ``mode`` NON si fa piu' qui (uccideva le righe paper con LIVE_ORDER_MODE=LIVE),
+    # lo fa _dispatch scegliendo il client della modalita' DELLA RIGA.
     try:
         rows = (
             sb.table(_TABLE)
             .select("*")
             .eq("status", "pending")
-            .eq("mode", mode_l)
             .order("id")
             .limit(_batch())
             .execute()
@@ -3088,39 +3275,44 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
             rid_k = r.get("id")
             if _claim(sb, rid_k):
                 try:
-                    _write_error(sb, rid_k, r, mode_l, ValueError(
+                    _write_error(sb, rid_k, r, str(r.get("mode") or mode_l).lower(), ValueError(
                         "kill-switch ATTIVO: apertura RIFIUTATA — riprovare a freno spento"))
                 except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
                     logger.exception("[live-order] esito kill per riga %s non scritto", rid_k)
             handled += 1
             continue
         rid = r.get("id")
+        # F0: la modalita' e' quella DELLA RIGA (mai quella del processo). Una riga
+        # con mode ignota, o non servibile qui, finisce in 'error' col motivo - mai
+        # eseguita "a occhio" sul client sbagliato.
+        row_mode = str(r.get("mode") or "").strip().lower()
         # claim: se un altro l'ha già preso (o non è più pending), salta.
         if not _claim(sb, rid):
             continue
         try:
-            _dispatch(sb, flumine, r, mode_l, strategy)
+            _dispatch(sb, flumine, r, row_mode, strategy)
         except Exception as ex:  # noqa: BLE001 - errore della riga, worker vivo
             logger.exception("[live-order] richiesta %s fallita", rid)
             try:
-                _write_error(sb, rid, r, mode_l, ex)
+                _write_error(sb, rid, r, row_mode or mode_l, ex)
             except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
                 pass
         else:
             # E37 — trade journal AUTOMATICO: contesto al momento dell'esecuzione
             # (minuto/score, book, segnali attivi). SOLO dopo un dispatch riuscito;
             # MAI bloccante per l'ordine (best-effort dentro _journal_done).
-            _journal_done(sb, flumine, r, mode_l)
+            _journal_done(sb, flumine, r, row_mode or mode_l)
         handled += 1
 
     # 3) A4 — follow-through dei cash-out MANUALI: verifica fill degli hedge,
     # re-hedge bounded, alert CRITICAL se resta scoperto. È un'azione di
     # CHIUSURA: gira anche col kill-switch tirato (come i cancel FoK).
     if not _throttled("manual_ft", _FT_POLL_SEC):
-        handled += _check_manual_followthrough(sb, flumine, mode_l)
+        for _m in servibili:
+            handled += _check_manual_followthrough(sb, flumine, _m)
 
-    # 4) righe pending della mode OPPOSTA → error (mai lasciate appese all'infinito)
-    handled += _fail_cross_mode(sb, mode_l)
+    # 4) F0: NIENTE piu' strage cross-mode. Le righe dell'altra modalita' sono
+    # servite al punto (2) oppure chiuse in 'error' con il motivo esplicito.
     return handled
 
 

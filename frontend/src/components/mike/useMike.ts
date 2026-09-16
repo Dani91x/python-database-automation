@@ -22,6 +22,7 @@ import {
     type MikeParams, type MikeRequest, type MikeRequestKind, type MikeTrade,
 } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
+import { creaInterruttori } from '@/lib/interruttori';
 
 /** stati in cui una partita non cambia piu': una scheda spinta in uno di questi
  *  e non piu' restituita dal database e' una card fantasma, e va potata. */
@@ -203,11 +204,30 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
 
     const start = useCallback(async () => { await wrap(() => activateMike(desiredMode)); }, [wrap, desiredMode]);
     const stop = useCallback(async () => { await wrap(() => stopMike()); }, [wrap]);
+    /**
+     * ⚠️ 16/09 — UN CAMBIO DI MODALITA' NON ACCENDE MAI NIENTE.
+     *
+     * Qui si chiamava `activateMike(next)`: `mike_activate` porta `status` a
+     * 'running', quindi cambiare modalita' era anche un modo di ACCENDERE il
+     * bot — e i bot li accende l'utente, con il gesto di accensione. Adesso si
+     * passa dal comando CONDIVISO (`lib/interruttori.ts`), lo stesso che usa la
+     * Control Room, che scrive con `mike_update_params(p_params, p_mode)`: il
+     * `status` non lo tocca proprio.
+     */
     const setMode = useCallback(async (next: MikeMode) => {
         setDesiredMode(next);
         setLiveConfirmed(next === 'live');
-        if (running && control?.mode !== next) await wrap(() => activateMike(next));
-    }, [wrap, running, control?.mode]);
+        if (running && control?.mode !== next) {
+            await wrap(async () => {
+                await creaInterruttori({
+                    params: () => (control?.params ?? null) as Record<string, unknown> | null,
+                    servizio: () => ({ inCorsa: running, modalita: control?.mode ?? null }),
+                    obiettivoOmega: () => null,
+                }, () => {}).cambiaModalita('mike', next);
+                return null;
+            });
+        }
+    }, [wrap, running, control]);
     const saveParams = useCallback(async (p: MikeParams) => { await wrap(() => updateMikeParams(p)); }, [wrap]);
     const request = useCallback(async (kind: MikeRequestKind, eventId: string) => {
         const key = `${kind}:${eventId}`;

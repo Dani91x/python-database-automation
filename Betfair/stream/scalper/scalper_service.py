@@ -26,6 +26,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from .. import avvio_app as AA
+
 logger = logging.getLogger(__name__)
 
 KILL_FILE = "STOP_SCALPER"
@@ -55,6 +57,83 @@ class Db:
         fields["updated_at"] = _now_iso()
         self.sb.table("scalper_control").update(fields) \
             .eq("event_id", event_id).execute()
+
+    def activity(self, event_id: str, kind: str, payload: Dict[str, Any]) -> None:
+        """Append su ``scalper_activity`` (best-effort: il log non ferma niente)."""
+        self.sb.table("scalper_activity").insert(
+            {"event_id": event_id, "kind": kind, "payload": payload}).execute()
+
+
+def _viva(row: Dict[str, Any]) -> bool:
+    """True se dietro questa riga c'e' ancora una sessione che respira.
+
+    Una sessione figlia SOPRAVVIVE al supervisore (``Popen``, nessun kill in
+    cascata): se il suo heartbeat e' fresco sta operando davvero e non la si
+    tocca da qui — e' esattamente la ragione per cui ``_stopping_zombie``
+    esiste. Heartbeat assente o fermo da oltre ``ORPHAN_HEARTBEAT_S`` = nessuno
+    dietro.
+    """
+    age = _hb_age_s(row)
+    return age is not None and age <= ORPHAN_HEARTBEAT_S
+
+
+def ferma_sessioni_al_nuovo_avvio(db: Any, boot_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """FASE A — all'avvio NUOVO dell'app nessuna sessione scalper riparte da sola.
+
+    ``scalper_control`` persiste lo stato PER PARTITA: il supervisore, appena
+    avviato, trova le righe 'requested' di ieri e ne spawna una sessione a testa
+    (``status == "requested" and not alive`` nel loop qui sotto). Qui ogni riga
+    attiva che non porta l'``APP_BOOT_ID`` di questo avvio — e dietro cui non
+    respira piu' nessuno — viene portata a 'stopped' con un'attivita'
+    ``avvio_app_bot_fermato``. I ``params``, lo stake e la modalita' della riga
+    NON si toccano: si scrive solo lo stato.
+
+    Le righe di QUESTO avvio e quelle con un heartbeat fresco restano come sono.
+    """
+    boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    try:
+        righe = db.controls()
+    except Exception:  # noqa: BLE001 — mai bloccare l'avvio per una select
+        logger.exception("[scalper-svc] controllo d'avvio: lettura KO")
+        return []
+    fermate: List[Dict[str, Any]] = []
+    ora = _now_iso()
+    for r in AA.righe_da_fermare(righe, boot):
+        ev = str(r.get("event_id") or "")
+        if not ev:
+            continue
+        if _viva(r):
+            logger.warning("[scalper-svc] %s: sessione ancora viva (heartbeat fresco), "
+                           "non la fermo dall'avvio: fermala dalla sua pagina.", ev)
+            continue
+        payload = {
+            "bot": "scalper", "event_id": ev, "boot_id": boot,
+            "boot_id_precedente": AA.boot_id_salvato(r.get("stats")),
+            "status_precedente": str(r.get("status") or ""),
+            "mode_precedente": r.get("mode"), "dry_run_precedente": r.get("dry_run"),
+            "azzerato": True,
+            "motivo": ("APP_BOOT_ID assente nell'ambiente: trattato come avvio nuovo"
+                       if not boot else "avvio nuovo dell'app"),
+            "effetto": "le sessioni le arma l'utente: la riga torna a 'stopped'.",
+            "ts": ora,
+        }
+        try:
+            db.set_control(ev, status="stopped", stopped_at=ora,
+                           stats=AA.stats_timbrate(r.get("stats"), boot, ora),
+                           error=("fermata all'avvio dell'app: l'attivazione e' un "
+                                  "gesto dell'utente — riarma se serve"))
+        except Exception:  # noqa: BLE001 — una riga rotta non ferma le altre
+            logger.exception("[scalper-svc] stop d'avvio %s KO", ev)
+            continue
+        fermate.append(payload)
+        try:
+            db.activity(ev, AA.KIND_ATTIVITA, payload)
+        except Exception:  # noqa: BLE001 — il log non ferma mai niente
+            logger.warning("[scalper-svc] attivita' d'avvio %s non scritta", ev)
+    if fermate:
+        logger.warning("[scalper-svc] avvio dell'app: %d sessioni scalper fermate (%s)",
+                       len(fermate), ", ".join(f["event_id"] for f in fermate[:6]))
+    return fermate
 
 
 def _spawn(event_id: str) -> subprocess.Popen:
@@ -108,6 +187,9 @@ def main() -> None:
     children: Dict[str, subprocess.Popen] = {}
     logger.info("[scalper-svc] supervisore avviato (un processo per partita). "
                 "Kill-switch: file %s", KILL_FILE)
+    # FASE A (16/09) — PRIMA del primo giro di poll: se l'app e' stata riaperta,
+    # le righe 'requested' di ieri NON devono diventare sessioni nuove.
+    ferma_sessioni_al_nuovo_avvio(db)
 
     # ---- habitat scan periodico (thread, best-effort) ----
     def _habitat_loop() -> None:

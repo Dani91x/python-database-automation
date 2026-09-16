@@ -8,7 +8,13 @@ API flumine usata (verificata su flumine 2.13.11 / betfairlightweight 2.23.2):
     from flumine.markets.middleware import SimulatedMiddleware
 
     framework = FlumineSimulation(client=clients.SimulatedClient())
-    framework.add_market_middleware(SimulatedMiddleware())
+    # UN SOLO SimulatedMiddleware: lo monta gia' `BaseFlumine.add_client`
+    # quando il client e' simulato (`flumine/baseflumine.py:89-94`), e
+    # `add_market_middleware` NON de-duplica nella 2.13.11. Il secondo
+    # faceva consumare DUE VOLTE la coda degli ordini appoggiati:
+    # misurato +134% di riempimento passivo (85,72 -> 200,34 EUR).
+    # L'unico punto da cui si monta e'
+    # `Betfair/stream/backtest/banco_comune.assicura_middleware_simulato`.
     strategy = SimStrategy(..., market_filter={"markets": [raw_file_path]})
     framework.add_strategy(strategy)
     framework.run()
@@ -32,9 +38,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import flumine.config
 from flumine import FlumineSimulation, clients
-from flumine.markets.middleware import SimulatedMiddleware
 
 from ..config_stream import DATA_DIR
+from .banco_comune import assicura_middleware_simulato, orologio_monotono
 from .sim_strategy import SimStrategy
 
 logger = logging.getLogger(__name__)
@@ -397,7 +403,13 @@ def _run_one_event(
         except (TypeError, ValueError):
             pass
         framework = FlumineSimulation(client=client)
-        framework.add_market_middleware(SimulatedMiddleware())
+        # UN SOLO SimulatedMiddleware, montato dall'unico punto del repo che lo
+        # fa: `BaseFlumine.add_client` lo monta gia' da se' quando il client e'
+        # simulato (`flumine/baseflumine.py:89-94`) e `add_market_middleware`
+        # NON de-duplica nella 2.13.11. Il secondo faceva consumare DUE VOLTE la
+        # coda degli ordini appoggiati: misurato +134% di riempimento passivo
+        # (85,72 -> 200,34 EUR sulla stessa lay).
+        assicura_middleware_simulato(framework)
 
         strategy = SimStrategy(
             params=params,
@@ -411,7 +423,12 @@ def _run_one_event(
             max_live_trade_count=int(1e9),
         )
         framework.add_strategy(strategy)
-        framework.run()
+        # L'OROLOGIO SIMULATO NON TORNA INDIETRO (misura del 16/09: il 47,3%
+        # dei book arriva con un publish time piu' vecchio del precedente,
+        # fino a 182 s). Senza questa guardia `elapsed_seconds` va negativo e
+        # i controlli di flumine rifiutano ordini legittimi.
+        with orologio_monotono():
+            framework.run()
     finally:
         flumine.config.simulated = _prev["simulated"]
         flumine.config.simulation_available_prices = _prev["simulation_available_prices"]

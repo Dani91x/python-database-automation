@@ -1,14 +1,21 @@
 // ============================================================================
-// PannelloBot.tsx — LA PLANCIA DI COMANDO DEI TRE BOT.
+// PannelloBot.tsx — LA PLANCIA DI COMANDO: UN INTERRUTTORE PER OGNI BOT.
 //
-// «Voglio massimo controllo dalla control room e devo poter fermare uno o
-// tutti i bot come e quando voglio» (utente, 14/09).
+// «Voglio poter attivare OGNI SINGOLO BOT direttamente dalla Control Room» e
+// «devo poter attivare e spegnere tutto dalla UI, sia paper che live, in
+// maniera facile e diretta» (utente, 16/09).
 //
-// COSA FA, e niente di più: usa i comandi che i tre servizi ESPONGONO GIÀ
-// (`X_activate`, `X_stop`, `X_update_params`) e i fogli parametri che
-// esistono già (`BotParamsSheet` di Safe, `MikeParamsSheet` di Mike). Qui
-// non nasce nessun parametro nuovo e nessuna semantica nuova: sarebbe una
-// seconda verità accanto a quella delle pagine dei bot.
+// COSA FA, e niente di più: usa i comandi condivisi di `@/lib/interruttori`,
+// che sono gli stessi che usano le pagine dei singoli bot, e monta i fogli
+// parametri che esistono già (`BotParamsSheet` di Safe, `MikeParamsSheet` di
+// Mike). Qui non nasce nessun parametro nuovo e nessuna semantica nuova.
+//
+// UNA RIGA = UN INTERRUTTORE, NON UN PROCESSO. Safe è un servizio solo ma
+// porta dentro quattro strategie: base, esatto, punta (calcio) e tennis.
+// Ognuna ha la sua riga, il suo acceso/spento e la sua modalità, perché è così
+// che l'utente le comanda. Lo stato di ciascuna si legge da dove il servizio
+// lo scrive già (`params.variants` + `params.strategy_modes`), mai da un flag
+// inventato qui.
 //
 // LE TRE REGOLE DI SICUREZZA
 //
@@ -17,8 +24,8 @@
 //     posizione aperta. Il secondo pulsante compare dove stava il primo, così
 //     il dito non si sposta: la protezione costa un clic, non un viaggio.
 //  2. **FERMA TUTTI non chiede niente.** Un freno d'emergenza con una finestra
-//     di conferma davanti non è un freno d'emergenza. Fermare è sempre
-//     reversibile e non chiude nessuna posizione: spegne le APERTURE.
+//     di conferma davanti non è un freno d'emergenza. Ferma i SERVIZI, non le
+//     singole strategie: è il gesto più grosso che c'è.
 //  3. **Quello che il pulsante ha fatto si vede.** Lo stato mostrato è quello
 //     che RISPONDE il servizio, non quello che speravamo: `stopping` si
 //     scrive «sta fermandosi», non «fermo».
@@ -33,9 +40,11 @@ import { Button } from '@/components/ui/button';
 import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'lucide-react';
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
-import type { StatoBot } from '@/components/controlroom/useControlRoom';
+import type {
+    CampoImporto, InterruttoreId, Modalita, ComandiInterruttori,
+} from '@/lib/interruttori';
 
-export type Modalita = 'paper' | 'live';
+export type { CampoImporto, Modalita } from '@/lib/interruttori';
 
 /** Le parole dello stato del servizio. Ogni stato che i servizi scrivono ha
  *  una frase sua: «sta fermandosi» e «fermo» non sono la stessa cosa. */
@@ -58,95 +67,87 @@ const STATO_CLS: Record<string, string> = {
 };
 
 /**
- * UN IMPORTO di un bot. Non ce n'è uno solo, e fingere di sì sarebbe falso:
- * Safe ne ha DUE (`stake.backSize` per chi punta, `stake.laySize` per chi
- * banca), Mike ne ha uno (`stake`, «Under 3.5»), e quello di Omega
- * (`min_stake`) è un MINIMO — Omega dimensiona dall'obiettivo, quindi
- * chiamarlo «l'importo con cui opera» sarebbe una terza bugia.
+ * Una riga della plancia: UN interruttore, con tutto quello che il servizio
+ * dichiara su di lui. La pagina non deduce niente: se un campo non c'è, la
+ * riga lo dice invece di inventarlo.
  */
-export interface CampoImporto {
-    /** chiave vera nei parametri del servizio, es. 'stake.backSize' */
-    chiave: string;
-    /** come lo chiama IL BOT, non come lo chiamerei io */
+export interface RigaInterruttore {
+    id: InterruttoreId;
+    bot: Bot;
+    /** come si chiama davanti al trader in questo contesto */
     etichetta: string;
-    valore: number | null;
-    /** quando il numero non significa «opera con tanto» */
-    nota?: string;
-}
-
-export interface ComandiBot {
-    /** accende il bot nella modalità scelta */
-    avvia: (bot: Bot, modalita: Modalita) => Promise<void>;
-    /** spegne le APERTURE. Non chiude niente. */
-    ferma: (bot: Bot) => Promise<void>;
-    /** cambia modalità a bot già acceso */
-    cambiaModalita: (bot: Bot, modalita: Modalita) => Promise<void>;
-    /** cambia UN importo, per chiave (es. 'stake.backSize') */
-    cambiaImporto: (bot: Bot, chiave: string, importo: number) => Promise<void>;
+    /** sta aprendo? Per Safe: servizio in corsa E strategia in `variants` */
+    acceso: boolean;
+    /** con che soldi. `null` = il servizio non la dichiara */
+    modalita: Modalita | null;
+    /** sappiamo davvero che cosa sta facendo? no = non si comanda */
+    statoNoto: boolean;
+    /** la parola da mostrare: running / stopping / stopped / error / ignoto */
+    stato: string;
+    /** età dell'ultimo messaggio dal canale locale del bot */
+    etaPushS: number | null;
+    /** perché non apre, DICHIARATO dal servizio */
+    motivoBlocco: string | null;
+    tettoPartite: number | null;
+    partiteEsposte: number | null;
+    stopFermaSoloAperture: boolean;
+    fermatoAllAvvioAt: string | null;
+    /** true sulla PRIMA riga di ciascun bot: lì va il foglio parametri, che è
+     *  del servizio e non della singola strategia */
+    primaDelBot: boolean;
 }
 
 export interface PannelloBotProps {
-    bots: StatoBot[];
-    /** gli importi di ciascun bot, con i nomi del bot */
-    importi: Record<Bot, CampoImporto[]>;
+    righe: RigaInterruttore[];
+    /** gli importi di ciascun interruttore, con le chiavi vere del servizio */
+    importi: Partial<Record<InterruttoreId, CampoImporto[]>>;
     /**
-     * Il foglio parametri di ciascun bot. Arriva dalla pagina come nodo gia'
+     * Il foglio parametri di ciascun BOT. Arriva dalla pagina come nodo gia'
      * montato — sono gli STESSI componenti delle pagine dei bot
      * (`BotParamsSheet`, `MikeParamsSheet`), non una copia: due schede
-     * parametri per lo stesso servizio sarebbero due verita'.
+     * parametri per lo stesso servizio sarebbero due verita'. Compare una
+     * volta sola per bot, sulla sua prima riga.
      */
     parametri?: Partial<Record<Bot, ReactNode>>;
-    comandi: ComandiBot;
+    comandi: ComandiInterruttori;
     /** il titolo della plancia: cambia quando la plancia e' ristretta a uno
      *  sport («Bot del tennis»), perche' «Comando dei bot» al plurale davanti
      *  a una riga sola e' una promessa che la pagina non sta mantenendo. */
     titolo?: string;
-    /** una riga sotto la testata: che cosa fara' DAVVERO il pulsante avvia.
-     *  Quando la plancia e' ristretta al tennis, «avvia» non vuol dire
-     *  «accendi il servizio»: vuol dire «accendi il tennis e lascia tutto il
-     *  resto in prova». Si dice PRIMA del clic. */
+    /** una riga sotto la testata: che cosa fara' DAVVERO il pulsante avvia. */
     nota?: ReactNode;
-    /** come chiamare un bot in questo contesto: nella scheda tennis il bot
-     *  Safe si chiama «Tennis», che e' il nome con cui il trader lo comanda. */
-    etichette?: Partial<Record<Bot, string>>;
     /**
      * ⚠️ REVIEW 15/09, CRITICO — L'AMBITO IN CUI SI STA COMANDANDO.
      *
      * Entra nella `key` delle righe, e serve a UNA cosa sola: quando il
      * significato dei pulsanti cambia (dalla scheda tennis «avvia in live»
-     * vuol dire «solo il tennis», dalla pagina intera vuol dire «il servizio
-     * com'e'»), la riga viene RIMONTATA e la conferma rossa gia' armata si
-     * disarma.
-     *
-     * Senza, la sequenza era: armo «confermi? ordini reali» nella scheda
-     * tennis, cambio scheda, il pulsante rosso resta li' identico ma adesso
-     * esegue l'avvio NON ristretto — e il calcio parte a soldi veri da un
-     * gesto armato sotto la promessa «solo tennis».
+     * vuol dire «solo il tennis», dalla pagina intera vuol dire «accendi
+     * questa strategia»), la riga viene RIMONTATA e la conferma rossa gia'
+     * armata si disarma.
      */
     ambito?: string;
     /**
-     * TUTTI i bot, anche quelli non mostrati. «Ferma tutti» e' un freno
-     * d'emergenza: deve fermare tutto quello che c'e', non quello che il
-     * filtro sta facendo vedere. Assente = `bots`.
+     * TUTTI i servizi in corsa, anche quelli non mostrati. «Ferma tutti» e' un
+     * freno d'emergenza: deve fermare tutto quello che c'e', non quello che il
+     * filtro sta facendo vedere. Sono BOT, non strategie.
      */
-    tutti?: StatoBot[];
+    serviziAccesi?: { bot: Bot; modalita: Modalita | null }[];
     testId?: string;
 }
 
 export function PannelloBot({
-    bots, importi, comandi, parametri, titolo = 'Comando dei bot', nota,
-    etichette, ambito = 'tutti', tutti, testId = 'cr-pannello-bot',
+    righe, importi, comandi, parametri, titolo = 'Comando dei bot', nota,
+    ambito = 'tutti', serviziAccesi, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
-    const [inCorso, setInCorso] = useState<Bot | 'tutti' | null>(null);
+    const [inCorso, setInCorso] = useState<InterruttoreId | 'tutti' | null>(null);
     /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
      *  mancato, o il trader crede che sia tutto spento. */
     const [nonFermati, setNonFermati] = useState<Bot[]>([]);
-    // ⚠️ REVIEW 15/09 — il freno d'emergenza guarda TUTTI i bot, non quelli
-    // che il filtro mostra: nella scheda tennis «ferma tutti» avrebbe lasciato
-    // correre Mike e Omega, e il badge rosso non li avrebbe nemmeno contati.
-    const censiti = tutti ?? bots;
-    const accesi = censiti.filter((b) => b.inCorsa);
-    const inLive = censiti.filter((b) => b.inCorsa && b.modalita === 'live');
+    // ⚠️ REVIEW 15/09 — il freno d'emergenza guarda TUTTI i servizi, non
+    // quelli che il filtro mostra: nella scheda tennis «ferma tutti» avrebbe
+    // lasciato correre Mike e Omega.
+    const accesi = serviziAccesi ?? [];
+    const inLive = accesi.filter((b) => b.modalita === 'live');
 
     const fermaTutti = async () => {
         setInCorso('tutti'); setNonFermati([]);
@@ -158,12 +159,10 @@ export function PannelloBot({
             //
             // ⚠️ REVIEW 15/09 — QUI NON C'ERA IL `catch`, e il ciclo si
             // interrompeva al primo errore: i bot successivi non ricevevano
-            // nemmeno la chiamata. L'ordine è omega → safe → mike, quindi
-            // l'ultimo a essere fermato è anche quello che più spesso opera
-            // con soldi veri. Un freno d'emergenza che si arrende a metà non
-            // è un freno d'emergenza: ADESSO LI PROVA TUTTI.
+            // nemmeno la chiamata. Un freno d'emergenza che si arrende a metà
+            // non è un freno d'emergenza: ADESSO LI PROVA TUTTI.
             for (const b of accesi) {
-                try { await comandi.ferma(b.bot); } catch { falliti.push(b.bot); }
+                try { await comandi.fermaBot(b.bot); } catch { falliti.push(b.bot); }
             }
         } finally {
             setInCorso(null);
@@ -200,7 +199,7 @@ export function PannelloBot({
                 </div>
             </div>
 
-            {nota && bots.length > 0 && (
+            {nota && righe.length > 0 && (
                 <div className="px-3 py-1.5 border-b border-white/10 bg-white/[0.02] text-[10.5px] text-white/55"
                     data-testid={`${testId}-nota`}>
                     {nota}
@@ -208,16 +207,16 @@ export function PannelloBot({
             )}
 
             <div className="divide-y divide-white/8">
-                {bots.length === 0 ? (
+                {righe.length === 0 ? (
                     <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
                         Nessun bot da comandare qui.
                     </div>
-                ) : bots.map((b) => (
+                ) : righe.map((r) => (
                     <RigaBot
-                        key={`${ambito}:${b.bot}`} b={b}
-                        etichetta={etichette?.[b.bot] ?? BOT_LABEL[b.bot]}
-                        importi={importi[b.bot] ?? []}
-                        parametri={parametri?.[b.bot] ?? null}
+                        key={`${ambito}:${r.id}`} r={r}
+                        importi={importi[r.id] ?? []}
+                        parametri={r.primaDelBot ? (parametri?.[r.bot] ?? null) : null}
+                        mostraParametri={r.primaDelBot}
                         comandi={comandi}
                         bloccato={inCorso != null}
                         segnalaInCorso={setInCorso}
@@ -231,7 +230,7 @@ export function PannelloBot({
                     <strong className="text-red-300">
                         {nonFermati.length === 1 ? 'Un bot NON si è fermato' : `${nonFermati.length} bot NON si sono fermati`}:
                     </strong>{' '}
-                    {nonFermati.map((b) => etichette?.[b] ?? BOT_LABEL[b]).join(', ')}. Gli altri sì.
+                    {nonFermati.map((b) => BOT_LABEL[b]).join(', ')}. Gli altri sì.
                     Riprova, o fermali dalla loro pagina: <strong>finché lo stato non cambia stanno ancora operando</strong>.
                 </div>
             )}
@@ -251,20 +250,18 @@ export function PannelloBot({
  * arma, ed è più larga: un doppio clic la colpisce con il secondo clic, e
  * l'intera protezione «sono soldi veri» salta senza che l'operatore abbia
  * letto niente. 400 ms sono più della finestra di un doppio clic (~250 ms) e
- * meno di quanto serva a leggere la frase: la protezione torna a costare un
- * gesto consapevole, non un viaggio.
+ * meno di quanto serva a leggere la frase.
  */
 const ATTESA_CONFERMA_MS = 400;
 
-function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaInCorso }: {
-    b: StatoBot;
-    /** come si chiama il bot QUI: nella scheda tennis, «Tennis» */
-    etichetta: string;
+function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, segnalaInCorso }: {
+    r: RigaInterruttore;
     importi: CampoImporto[];
     parametri: ReactNode;
-    comandi: ComandiBot;
+    mostraParametri: boolean;
+    comandi: ComandiInterruttori;
     bloccato: boolean;
-    segnalaInCorso: (v: Bot | null) => void;
+    segnalaInCorso: (v: InterruttoreId | null) => void;
 }) {
     /** istante in cui la conferma è comparsa; null = non armato */
     const [armatoDa, setArmatoDa] = useState<number | null>(null);
@@ -279,76 +276,84 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
         return () => window.clearTimeout(t);
     }, [armatoDa]);
 
-    /**
-     * ⚠️ REVIEW 15/09 — QUI C'ERA un ripiego su 'stopped' quando lo stato non
-     * era stato letto: il pannello scriveva «fermo» su un bot di cui non
-     * sapeva niente, e offriva di AVVIARLO. Uno stato ignoto non è uno stato
-     * spento.
-     */
-    const statoNoto = b.stato != null || b.inCorsa;
-    const stato = b.stato ?? (b.inCorsa ? 'running' : 'ignoto');
-    const live = b.modalita === 'live';
+    const live = r.modalita === 'live';
     const occupato = bloccato || mio;
     /** la conferma è ancora inerte? (finestra del doppio clic) */
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
 
     const esegui = async (f: () => Promise<void>) => {
-        setMio(true); segnalaInCorso(b.bot);
+        setMio(true); segnalaInCorso(r.id);
         try { await f(); } finally { setMio(false); segnalaInCorso(null); setArmatoDa(null); }
     };
 
     return (
-        <div className="px-3 py-2" data-testid={`cr-bot-riga-${b.bot}`}>
+        <div className="px-3 py-2" data-testid={`cr-bot-riga-${r.id}`}>
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-16 shrink-0">{etichetta}</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">{r.etichetta}</span>
 
-                <span className={`text-[11px] ${STATO_CLS[stato] ?? 'text-white/40'}`}
-                    data-testid={`cr-bot-stato-${b.bot}`}>
-                    {STATO_TESTO[stato] ?? stato}
+                <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'}`}
+                    data-testid={`cr-bot-stato-${r.id}`}>
+                    {STATO_TESTO[r.stato] ?? r.stato}
                 </span>
 
-                {b.modalita == null ? (
+                {r.modalita == null ? (
                     <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300"
                         title="il servizio non dichiara la modalità">modalità n/d</span>
                 ) : (
                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                         live ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/45'
-                    }`} data-testid={`cr-bot-modalita-${b.bot}`}>
+                    }`} data-testid={`cr-bot-modalita-${r.id}`}>
                         {live ? 'soldi veri' : 'prova'}
                     </span>
                 )}
 
                 <span className="text-[10px] text-white/30 font-mono"
                     title="da quanto è arrivato l'ultimo messaggio dal canale di questo bot">
-                    {b.etaPushS == null ? DASH : fmtAge(b.etaPushS)}
+                    {r.etaPushS == null ? DASH : fmtAge(r.etaPushS)}
                 </span>
 
-                <span className="ml-auto flex items-center gap-1"
-                    data-testid={`cr-parametri-${b.bot}`}>
-                    {parametri ?? (
-                        <span className="text-[10px] text-white/25 flex items-center gap-1"
-                            title="questo bot non espone una scheda parametri: si modifica dalla sua pagina">
-                            <SlidersHorizontal className="w-3 h-3" />dalla sua pagina
-                        </span>
-                    )}
-                </span>
+                {mostraParametri && (
+                    <span className="ml-auto flex items-center gap-1"
+                        data-testid={`cr-parametri-${r.bot}`}>
+                        {parametri ?? (
+                            <span className="text-[10px] text-white/25 flex items-center gap-1"
+                                title="questo bot non espone una scheda parametri: si modifica dalla sua pagina">
+                                <SlidersHorizontal className="w-3 h-3" />dalla sua pagina
+                            </span>
+                        )}
+                    </span>
+                )}
             </div>
 
             {/* PERCHÉ NON STA APRENDO — dichiarato dal servizio, non dedotto
                 qui. ⚠️ 15/09: il trader ha visto Mike «fermo» mentre era
-                perfettamente vivo; il tetto delle partite era pieno (e quel
-                tetto sommava paper e live). Un bot acceso che non apre e non
-                dice perché è indistinguibile da un bot rotto. */}
-            {b.inCorsa && b.motivoBlocco && (
+                perfettamente vivo; il tetto delle partite era pieno. Un bot
+                acceso che non apre e non dice perché è indistinguibile da un
+                bot rotto. */}
+            {r.acceso && r.motivoBlocco && (
                 <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
-                    data-testid={`cr-motivo-blocco-${b.bot}`}>
+                    data-testid={`cr-motivo-blocco-${r.id}`}>
                     <Ban className="w-3 h-3 shrink-0" />
-                    <span>acceso ma non apre: <strong>{b.motivoBlocco}</strong></span>
-                    {b.tettoPartite != null && b.partiteEsposte != null && (
+                    <span>acceso ma non apre: <strong>{r.motivoBlocco}</strong></span>
+                    {r.tettoPartite != null && r.partiteEsposte != null && (
                         <span className="text-white/35 font-mono">
-                            {b.partiteEsposte}/{b.tettoPartite}
+                            {r.partiteEsposte}/{r.tettoPartite}
                         </span>
                     )}
+                </div>
+            )}
+
+            {/* FERMATO ALL'AVVIO DELL'APP — lo dichiara il SERVIZIO
+                (`stats.fermato_all_avvio_at`), la pagina non lo deduce.
+                «I bot li accendo solo io»: alla riapertura dell'app ogni bot
+                torna fermo e in prova. Sparisce da sola quando viene riacceso. */}
+            {!r.acceso && r.fermatoAllAvvioAt && (
+                <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
+                    data-testid={`cr-fermato-avvio-${r.id}`}>
+                    <Power className="w-3 h-3 shrink-0" />
+                    <span>
+                        fermato all'avvio dell'app: <strong>attivazione manuale richiesta</strong>
+                    </span>
                 </div>
             )}
 
@@ -358,62 +363,59 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                 <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                     {importi.map((c) => (
                         <Importo
-                            key={c.chiave} campo={c} bot={b.bot}
+                            key={c.chiave} campo={c} id={r.id}
                             occupato={occupato}
-                            salva={(v) => esegui(() => comandi.cambiaImporto(b.bot, c.chiave, v))}
+                            salva={(v) => esegui(() => comandi.cambiaImporto(r.id, c.chiave, v))}
                         />
                     ))}
                 </div>
             )}
 
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                {!statoNoto ? (
-                    <span className="text-[10px] text-orange-300" data-testid={`cr-stato-ignoto-${b.bot}`}>
+                {!r.statoNoto ? (
+                    <span className="text-[10px] text-orange-300" data-testid={`cr-stato-ignoto-${r.id}`}>
                         stato non letto: non si comanda un bot di cui non sappiamo che cosa sta facendo
                     </span>
-                ) : stato === 'stopping' ? (
+                ) : r.stato === 'stopping' ? (
                     // ⚠️ REVIEW 15/09 — qui si nascondeva FERMA e si offriva
                     // AVVIA. Ma il servizio, al ciclo dopo, porta 'stopping' a
                     // 'stopped': un avvio dato in quella finestra viene
-                    // cancellato dal servizio stesso, e il trader crede di aver
-                    // riacceso un bot che invece si sta spegnendo.
-                    <span className="text-[10px] text-amber-300" data-testid={`cr-in-arresto-${b.bot}`}>
+                    // cancellato dal servizio stesso.
+                    <span className="text-[10px] text-amber-300" data-testid={`cr-in-arresto-${r.id}`}>
                         si sta fermando: attendi che abbia finito prima di riavviarlo
                     </span>
-                ) : b.inCorsa ? (
+                ) : r.acceso ? (
                     <>
                         <Button
                             type="button" size="sm" variant="outline"
                             disabled={occupato}
-                            onClick={() => void esegui(() => comandi.ferma(b.bot))}
-                            data-testid={`cr-ferma-${b.bot}`}
+                            onClick={() => void esegui(() => comandi.spegni(r.id))}
+                            data-testid={`cr-ferma-${r.id}`}
                             // ⚠️ 15/09 — FERMA toglie le APERTURE, non le
                             // uscite: coperture, green-up, cash-out e
                             // settlement continuano, ed è giusto (una posizione
                             // aperta non si abbandona). Ma il pulsante deve
-                            // dirlo: durante il loop del 15/09 premerlo non
-                            // avrebbe fermato niente, perché il loop era su una
-                            // gamba di uscita. Lo dichiara il servizio.
-                            title={b.stopFermaSoloAperture
+                            // dirlo. Lo dichiara il servizio.
+                            title={r.stopFermaSoloAperture
                                 ? 'ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano'
                                 : 'ferma il bot'}
                             className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
                         >{mio ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Square className="w-3 h-3 mr-1" />ferma</>}</Button>
 
-                        {b.stopFermaSoloAperture && (
+                        {r.stopFermaSoloAperture && (
                             <span className="text-[9px] text-white/30"
-                                data-testid={`cr-cosa-ferma-${b.bot}`}>
+                                data-testid={`cr-cosa-ferma-${r.id}`}>
                                 ferma le aperture, non le uscite
                             </span>
                         )}
 
-                        {b.modalita != null && (
+                        {r.modalita != null && (
                             live ? (
                                 <Button
                                     type="button" size="sm" variant="ghost"
                                     disabled={occupato}
-                                    onClick={() => void esegui(() => comandi.cambiaModalita(b.bot, 'paper'))}
-                                    data-testid={`cr-a-paper-${b.bot}`}
+                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'paper'))}
+                                    data-testid={`cr-a-paper-${r.id}`}
                                     className="h-6 px-2 text-[10px]"
                                     title="torna a operare in prova: nessun ordine reale"
                                 >passa a prova</Button>
@@ -422,8 +424,8 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                                     type="button" size="sm"
                                     disabled={occupato || troppoPresto}
                                     title={troppoPresto ? 'attendi un istante: sono soldi veri' : undefined}
-                                    onClick={() => void esegui(() => comandi.cambiaModalita(b.bot, 'live'))}
-                                    data-testid={`cr-conferma-live-${b.bot}`}
+                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'live'))}
+                                    data-testid={`cr-conferma-live-${r.id}`}
                                     className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
                                 >confermi? sono soldi veri</Button>
                             ) : (
@@ -431,7 +433,7 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                                     type="button" size="sm" variant="ghost"
                                     disabled={occupato}
                                     onClick={() => setArmatoDa(Date.now())}
-                                    data-testid={`cr-a-live-${b.bot}`}
+                                    data-testid={`cr-a-live-${r.id}`}
                                     className="h-6 px-2 text-[10px] text-red-300/80 hover:text-red-300"
                                 >passa a soldi veri</Button>
                             )
@@ -442,8 +444,8 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                         <Button
                             type="button" size="sm" variant="outline"
                             disabled={occupato}
-                            onClick={() => void esegui(() => comandi.avvia(b.bot, 'paper'))}
-                            data-testid={`cr-avvia-paper-${b.bot}`}
+                            onClick={() => void esegui(() => comandi.accendi(r.id, 'paper'))}
+                            data-testid={`cr-avvia-paper-${r.id}`}
                             className="h-6 px-2 text-[10px] uppercase tracking-wider"
                         ><Power className="w-3 h-3 mr-1" />avvia in prova</Button>
 
@@ -452,8 +454,8 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                                 type="button" size="sm"
                                 disabled={occupato || troppoPresto}
                                 title={troppoPresto ? 'attendi un istante: sono ordini reali' : undefined}
-                                onClick={() => void esegui(() => comandi.avvia(b.bot, 'live'))}
-                                data-testid={`cr-conferma-avvio-live-${b.bot}`}
+                                onClick={() => void esegui(() => comandi.accendi(r.id, 'live'))}
+                                data-testid={`cr-conferma-avvio-live-${r.id}`}
                                 className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
                             >confermi? ordini reali su Betfair</Button>
                         ) : (
@@ -461,7 +463,7 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                                 type="button" size="sm" variant="outline"
                                 disabled={occupato}
                                 onClick={() => setArmatoDa(Date.now())}
-                                data-testid={`cr-avvia-live-${b.bot}`}
+                                data-testid={`cr-avvia-live-${r.id}`}
                                 className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
                             ><AlertTriangle className="w-3 h-3 mr-1" />avvia con soldi veri</Button>
                         )}
@@ -469,19 +471,18 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
                 )}
 
                 {armato && (
-                    <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${b.bot}`}>
-                        Da qui in poi {etichetta} manda ordini reali su Betfair.
+                    <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${r.id}`}>
+                        Da qui in poi {r.etichetta} manda ordini reali su Betfair.
                     </span>
                 )}
 
                 {/* ⚠️ REVIEW 15/09 — mentre un comando è in volo TUTTI i
-                    pulsanti di TUTTI i bot si spengono, compreso «ferma» su un
-                    bot in live. Il `title` da solo non basta: `buttonVariants`
-                    ha `disabled:pointer-events-none`, quindi su un bottone
-                    spento il tooltip non si apre nemmeno. Serve una riga
-                    VISIBILE. */}
+                    pulsanti si spengono, compreso «ferma» su un bot in live.
+                    Il `title` da solo non basta: `buttonVariants` ha
+                    `disabled:pointer-events-none`, quindi su un bottone spento
+                    il tooltip non si apre nemmeno. Serve una riga VISIBILE. */}
                 {bloccato && !mio && (
-                    <span className="text-[10px] text-white/40" data-testid={`cr-attesa-${b.bot}`}>
+                    <span className="text-[10px] text-white/40" data-testid={`cr-attesa-${r.id}`}>
                         un altro comando è in corso: i pulsanti tornano appena finisce
                     </span>
                 )}
@@ -492,9 +493,9 @@ function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaI
 
 /** Un campo importo: si scrive, si conferma. Non si salva a ogni tasto — un
  *  carattere di troppo non deve diventare un ordine da 30 €. */
-function Importo({ campo, bot, occupato, salva }: {
+function Importo({ campo, id, occupato, salva }: {
     campo: CampoImporto;
-    bot: Bot;
+    id: InterruttoreId;
     occupato: boolean;
     salva: (v: number) => Promise<void>;
 }) {
@@ -507,43 +508,51 @@ function Importo({ campo, bot, occupato, salva }: {
      * Era l'opposto del fail-closed: il pulsante «salva» compariva PROPRIO
      * quando il valore corrente era sconosciuto, cioè quando la lettura dello
      * stato non era tornata — ed è il caso in cui salvare sostituisce l'intero
-     * oggetto parametri sul database. Un valore assente deve BLOCCARE la
-     * scrittura, non invitarla.
+     * oggetto parametri sul database.
      */
     const noto = campo.valore != null;
     const cambiato = bozza !== '' && valido && noto
         && Math.abs(scritto - (campo.valore as number)) > 0.0001;
-    const id = `cr-importo-${bot}-${campo.chiave.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const idCampo = `cr-importo-${id}-${campo.chiave.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
     return (
         <span className="flex items-center gap-1.5">
-            <label className="text-[10px] text-white/40" htmlFor={id} title={campo.nota}>
-                {campo.etichetta}{campo.nota ? <span className="text-white/25"> *</span> : null}
+            <label className="text-[10px] text-white/40" htmlFor={idCampo}
+                title={campo.nota ?? campo.ereditato}>
+                {campo.etichetta}{(campo.nota || campo.ereditato) ? <span className="text-white/25"> *</span> : null}
             </label>
             <input
-                id={id} type="number" step="0.01" min="0.01"
+                id={idCampo} type="number" step="0.01" min="0.01"
                 placeholder={campo.valore == null ? '—' : String(campo.valore)}
                 value={bozza} disabled={occupato}
                 onChange={(e) => setBozza(e.target.value)}
-                data-testid={id}
+                data-testid={idCampo}
                 className="w-16 px-1.5 py-0.5 rounded border border-white/15 bg-white/5 font-mono text-right text-[11px] text-white/90"
                 title={campo.valore == null
                     ? 'il servizio non dichiara questo importo'
                     : `adesso vale ${fmtMoney(campo.valore)}${campo.nota ? ` — ${campo.nota}` : ''}`}
             />
+            {/* L'IMPORTO EREDITATO SI DICHIARA: finché questa strategia non ha
+                una chiave sua, il motore usa quella per LATO — e quella la
+                condivide con un'altra strategia. Salvare qui la separa. */}
+            {campo.ereditato && (
+                <span className="text-[9px] text-amber-300/80" data-testid={`${idCampo}-ereditato`}>
+                    {campo.ereditato}
+                </span>
+            )}
             {cambiato && (
                 <Button
                     type="button" size="sm" variant="outline"
                     disabled={occupato}
                     onClick={() => void salva(scritto).then(() => setBozza(''))}
-                    data-testid={`${id}-salva`}
+                    data-testid={`${idCampo}-salva`}
                     className="h-6 px-2 text-[10px]"
                 >salva</Button>
             )}
             {/* un campo che non si può salvare DICE PERCHÉ, invece di restare
                 muto: senza il valore corrente non sappiamo su cosa scriviamo. */}
             {bozza !== '' && valido && !noto && (
-                <span className="text-[10px] text-orange-300" data-testid={`${id}-bloccato`}>
+                <span className="text-[10px] text-orange-300" data-testid={`${idCampo}-bloccato`}>
                     valore corrente non letto: salvare lo sostituirebbe insieme a tutti gli altri
                 </span>
             )}

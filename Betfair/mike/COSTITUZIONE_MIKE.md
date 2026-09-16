@@ -321,6 +321,23 @@ il throttle della riconciliazione degli ordini a esito ignoto), `skip_log_interv
 sono governati da `close_retry_s` / `close_max_attempts` per le chiusure e da `pre_entry_ttl_s`
 per l'ingresso.
 
+**Un rifiuto del mercato è un esito, e il motore se lo ricorda (16/09).** Quando un ordine
+**non nasce** — prezzo non più disponibile al momento del piazzamento, rifiuto dichiarato di
+Betfair (FOK ucciso, `error_code`), freno anti-duplicato del 15/09 — chi esegue lo scrive nel
+`ctx` (`engine.registra_rifiuto` → `ctx.rifiuti`, persistito in `mike_events.ctx`) e il motore
+**non ripropone la stessa identica richiesta**: stesso ruolo, stesso ciclo, stesso mercato,
+stessa selezione, stesso lato, stesso prezzo, stessa size (`engine.tentativo_gia_rifiutato`).
+Se il prezzo o la size cambiano — il book si è mosso, la posizione si è mossa — è una richiesta
+**nuova** e si fa; a ciclo nuovo si riparte puliti. La spec **tace** sul caso «uscita taker
+rifiutata»: la scelta è **fail-closed, una proposta per gamba**, dichiarata qui.
+Non è un tetto nuovo sulla strategia: la Fase 1 prevede **una** green per ciclo e la Fase 6
+**una** lay di re-ingresso che resta sul book; questo fa rispettare quei numeri.
+**Aggiornamento 16/09 (§15.6)**: `_decide_ko_green` **non ha più** il suo `ko_green_retry_s`.
+Su ordine dell'utente l'uscita al fischio è una lay appoggiata in ogni modalità, quindi non si
+ri-presenta mai: al suo posto quel ramo usa lo **stesso** freno degli altri
+(`tentativo_gia_rifiutato`), perché senza ritmo e senza freno un rifiuto ripetuto diventerebbe
+una riproposizione a ogni giro. Il parametro resta in whitelist ma nessun ramo lo legge.
+
 **Generale**
 | chiave | default | significato |
 |---|---|---|
@@ -1253,17 +1270,164 @@ Unica eccezione, ed è una scelta esplicita dell'utente: se dalla UI si spengono
 esatti** (`exact_sizes = false`), gli ordini tornano legalizzati al minimo .it e la divisione
 in tranche si ferma quando ciascuna metà non ci arriva da sola.
 
-### 15.6 Nota sul percorso LIVE
+### 15.6 L'uscita al fischio è una lay APPOGGIATA (in ogni modalità)
 
-In live la lay **appoggiata** non esiste su nessun percorso di Mike (nota H3 in
-`service._live_exit_override`: niente fill simulati su soldi veri). L'ordine di uscita
-quindi non è marcato «resting» in live: viene **ri-presentato al mercato** ogni
-`ko_green_retry_s` secondi e si abbina appena il prezzo c'è — l'equivalente pratico di un
-ordine appoggiato. Il ritmo esiste perché 180 secondi a mezzo secondo produrrebbero 360
-righe di attività per partita, che è esattamente la zavorra da cui è arrivato lo
-`statement timeout` del 13/09.
+> ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 h13: `ko_green` appoggiata
+>
+> *«Mettiamola appoggiata allora, così risparmiamo una marea di chiamate; attenzione però:
+> quella gamba, se il mercato si sospende per qualsiasi motivo, Betfair cancella
+> quell'ordine; il bot deve saperlo e appena riapre il mercato verificare cosa è successo
+> (gol estremamente precoci).»*
+>
+> **Modifica di STRATEGIA ordinata dall'utente** — l'unica ammessa (§0 del piano di
+> certificazione, decisione 9). Il **prezzo** di green (`ko_green_ticks` tick sotto il
+> nostro prezzo d'ingresso) e la **finestra** (`ko_green_window_s`) **non cambiano**.
+>
+> **Motivo, misurato**: fino al 16/09 `ko_green` seguiva `pre_exit_mode`, e sul percorso
+> `taker` l'ordine veniva **ri-presentato** ogni `ko_green_retry_s`. Sulla registrazione
+> 35674515 sono **25-32 chiamate REST per una sola uscita**. Da adesso è **una**.
+
+**Com'è adesso.** `ko_green` è una lay **appoggiata** sul book in **paper e in live**, e
+`pre_exit_mode` **non la governa più** (`service._is_resting_leg`: il ruolo `ko_green`
+ritorna sempre `True`; `under_green` e `reentry_green` restano governati dal parametro).
+Il percorso è quello che esisteva già per `under_green`, senza duplicarlo:
+`_piazza_resting_live` (`place_order_live(fill_or_kill=False)`, riga di riserva scritta
+**prima** dell'ordine, `bet_id` sempre salvato, freno `_gia_appoggiata`) e
+`_segui_resting_live` (gli abbinamenti li dice Betfair, non il prezzo).
+La ri-presentazione ogni `ko_green_retry_s` **non esiste più**: il parametro resta (è
+salvato sul DB e nella UI) ma **nessun ramo lo legge**, e la scheda parametri lo dichiara.
+Se una serie di `ko_green` identici ricompare nel replay **è una violazione**, non una
+regola: `certificazione.RITMI_DICHIARATI` è stata svuotata apposta, quindi P1 e P3 tornano
+ad accusarla.
+
+**Si appoggia solo a mercato APERTO e IN GIOCO.** Al fischio Betfair sospende il mercato
+per il passaggio in gioco e **cancella (LAPSE) tutti gli ordini non abbinati**: un ordine
+appoggiato prima della riapertura in gioco morirebbe nello stesso istante.
+`engine.appoggiabile_in_gioco` = `operabile(bk) and bk.inplay`; finché non è vero il bot
+**aspetta** (`stato_mercato` / `riaprira`: sospeso non è chiuso, l'ignoto si aspetta).
+Per la stessa ragione la finestra `ko_green_window_s` **non scorre** quando non si può
+appoggiare (`finestra_uscita_scaduta`): rinunciare mentre non si poteva operare non è una
+decisione, è un caso.
+
+**Consapevolezza alla riapertura — le quattro reazioni.** A ogni sospensione con la lay
+appoggiata viva il `ctx` se lo ricorda (`MatchCtx.riapertura`, persistito: un riavvio in
+mezzo non deve far dimenticare la rilettura). Alla riapertura (SUSPENDED → OPEN) il bot
+**rilegge l'ordine da Betfair** — prima `list_current_orders` per `bet_id`/`mike-t<id>`,
+poi `order_state_by_bet_id` (che guarda anche i regolati LAPSED/CANCELLED) — e legge
+`size_matched`, `size_remaining`, `size_lapsed`, `size_cancelled`, `status`:
+
+| | Che cosa dice Betfair | Cosa fa il bot |
+|---|---|---|
+| **(a) vivo** | residuo > 0 e non EXECUTION_COMPLETE | resta com'è, `_segui_resting_live` continua a seguirlo, **nessuna gamba nuova** |
+| **(b) scaduto** | residuo 0, abbinato 0 | attività **`ordine_scaduto_alla_sospensione`** con i numeri, gamba chiusa **come tale** (non è un errore del bot e non è «mai piazzata»); poi decide il motore: finestra ancora aperta e condizioni valide → **si ri-appoggia UNA nuova gamba**; finestra scaduta → **copertura** (§3 Fase 3) |
+| **(c) abbinato** | abbinato ≥ chiesto | è una **posizione**: si contabilizza subito, il ciclo prosegue |
+| **(d) abbinato in parte** | 0 < abbinato < chiesto, residuo 0 | la parte abbinata è **posizione** (prezzo medio vero); il residuo è scaduto e si dichiara con i numeri, come in (b), **per la sola parte residua** |
+
+**MAI dare per vivo un ordine senza rilettura.** Se Betfair non risponde (rete) la
+rilettura **non è avvenuta**: si riprova al giro dopo e nessuno può dire che quell'ordine
+è vivo. Se risponde «non lo conosco» o manca il `bet_id` l'esito è **IGNOTO** → la gamba
+va in `pending_reconcile` (§4.11), **mai una gamba nuova su un dubbio**.
+Il controllo **R1** della certificazione (`certificazione.py`, sollecitato solo quando
+c'è stata una sospensione con una gamba appoggiata viva) è rosso se il bot torna a
+decidere a mercato riaperto senza aver riletto l'ordine.
+
+Attività nuove, dichiarate alla UI (`frontend/src/lib/mike.ts`): `mercato_sospeso`,
+`rilettura_alla_riapertura`, `ordine_scaduto_alla_sospensione`.
+
+**Vincolo del database, dichiarato**: `mike_trades.status` ammette solo
+`pending|open|hedged|won|lost|void|error` (nessuna migrazione è stata fatta). Una gamba
+scaduta **senza** abbinato resta quindi `error` sulla riga, come ogni altra gamba ritirata;
+il motivo per esteso sta in `meta.reason = 'lapsed_alla_sospensione'`, in
+`meta.phase = 'lapsed'` e nell'attività. Con abbinato > 0 la riga è `open` con l'abbinato e
+il prezzo medio veri.
 
 ### 15.7 Guardie money-critical introdotte
+
+> ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 h16:15: MAI DUE LAY A MERCATO
+>
+> *«Non devono mai esserci 2 lay a mercato, se si abbinano siamo scoperti!!!»*
+>
+> È letteralmente vero: la posizione di Mike è un **BACK** Under 3.5 e ogni lay serve a
+> chiuderlo. Due lay abbinate lo ribaltano in un **netto LAY**, cioè una posizione allo
+> scoperto che nessuna regola prevede.
+>
+> **Il difetto, trovato dal replay** (35777617, scenario `gol-precoce`):
+> `J2: nuova 'ko_green' mentre 'ko_green-0-3' è ancora viva (abbinato 8,15/10,14)`.
+> Diversi rami **sostituivano** una lay viva emettendo `cancel` + `place` nella **stessa
+> decisione**. Il cancel parte per primo, ma **partire non è essere confermati**: se
+> Betfair non conferma (`_mark_trade_cancelled` → `pending_reconcile`) la vecchia lay resta
+> viva e la nuova si aggiunge.
+>
+> **La regola, in un posto solo e per OGNI ramo presente e futuro**
+> (`engine._una_sola_lay`, applicata da `decide()` come ultima parola, esattamente come
+> `_strip_openings`): finché su quella selezione c'è una lay **VIVA o IN VOLO** (in volo =
+> anche `pending_reconcile`, §4.11), **una lay nuova non si emette**.
+> * l'**annullamento sì**, e parte in questo giro;
+> * la lay nuova arriva al **giro successivo**, e solo se la vecchia non è più viva — cioè
+>   solo dopo che l'annullamento è stato **CONFERMATO** da Betfair (`cancel_esito`
+>   confermato, residuo 0);
+> * allora è dimensionata sulla **posizione REALE**: la parte già abbinata della vecchia
+>   **resta posizione** (`exposure`/`under_liability` la contano) e la nuova copre **solo
+>   ciò che resta scoperto**;
+> * se l'annullamento è **ignoto o fallito** la gamba resta `pending_reconcile`, **nessuna
+>   lay nuova**, e la riconciliazione ritenta.
+>
+> Se non resta nessun ordine da piazzare **lo stato non avanza** (stessa regola del
+> difetto 3 della cert. 13/09): il ramo deve poter riprovare identico al giro dopo.
+> Rami toccati: uscita al fischio, riprezzo della green taker, ultimo ingresso, riprezzo
+> del re-ingresso, chiusure (`_close_actions`). Prezzi, soglie e numero di gambe **non
+> cambiano**: la Costituzione prevede UNA lay per volta (§3 Fase 1) e questa la fa
+> rispettare anche quando l'annullamento non è istantaneo.
+>
+> **Il controllo che lo difende è uno solo ed è severo**: **J5** in `certificazione.py`
+> — «mai due lay VIVE o IN VOLO sullo stesso mercato/selezione», sollecitato a ogni
+> decisione con una lay in volo. Guarda lo **stato** (due lay insieme, anche per un solo
+> giro) **e** la **decisione** (una lay nuova dove ce n'è già una, *anche* se lo stesso
+> giro la annulla).
+>
+> **Non coperto da questa regola**: `over_cover` sull'Over 4.5 si riprezza ancora con
+> `cancel` + `place` nello stesso giro, ma sono due **BACK** — due back abbinati sono
+> sovracopertura, non una posizione scoperta. Dichiarato, non toccato.
+
+> ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 h18:20: SE CHIUDO TUTTO IO, IL BOT SI FERMA
+>
+> *«Il bot gestisce le sue operazioni; UNICO CASO è quando io chiudo manualmente TUTTE le
+> operazioni (cash-out globale della partita): al successivo controllo lo capisce e NON FA
+> ALTRO.»*
+>
+> **Com'era**: dopo un cash-out manuale **pre-KO** il bot accendeva `no_reentry` e non
+> rientrava più; **in gioco** no — il divieto era solo *implicito* (`reentry_done=True`
+> blocca il re-ingresso, e basta). Funzionava, ma non era **detto**: nessuno stato diceva
+> «questa partita l'ha chiusa l'utente», e niente lo difendeva.
+>
+> **Com'è adesso** (`engine._decide_flatten`): quando la chiusura manuale si completa
+> `no_reentry` si accende **anche in gioco**, insieme a `reentry_allowed=False` e
+> `reentry_done=True`. `decide()` legge `no_reentry` e spegne `pre_enabled`,
+> `reentry_enabled` e `last_entry_persist` per il resto della partita. Si riaccende **solo**
+> con **«Riprendi»** dalla UI (`service.process_requests` → `resume_event`). È una
+> correzione di **consapevolezza**, non di strategia: nessuna soglia, nessun prezzo,
+> nessuna gamba cambia — il bot smette di proporre operazioni su una partita che non è più
+> sua. Attività **`chiuso_dall_utente`** (telemetria dell'engine → `mike_activity`, con
+> etichetta italiana in `frontend/src/lib/mike.ts`).
+>
+> **Le CHIUSURE restano sempre permesse**: se un residuo si abbina, il bot deve poterlo
+> chiudere (niente che protegge può impedire di chiudere). La partita **non** diventa
+> terminale: resta FLAT (o WATCH pre-KO) e arriva a `SETTLED` col mercato chiuso, altrimenti
+> il P&L di quella partita non verrebbe mai contabilizzato.
+>
+> **Controllo R2** (`certificazione.py`), sollecitato dai giri **successivi** alla chiusura
+> (`no_reentry` + `close_reason='manual'` + chiusura non più in corso): il bot non deve
+> emettere nessuna **apertura**. Scenario `cashout-globale` nel replay: la richiesta
+> `cashout` **vera** passa da `service.process_requests`, come dalla UI.
+>
+> **⚠️ LIMITE DICHIARATO — il cash-out fatto FUORI dal bot.** Se l'utente chiude la
+> posizione **direttamente su Betfair** (una sua lay, non un ordine di Mike), Mike **non se
+> ne accorge**: `omega_market.list_current_orders` filtra per `customerStrategyRef` e quella
+> lay non è sua, quindi continua a vedere il proprio back abbinato e a gestirlo. Se invece
+> l'utente **annulla ordini di Mike** su Betfair, quello sì viene visto: l'ordine sparisce
+> dai correnti → `pending_reconcile` → riconciliazione. Accorgersi della prima situazione
+> richiederebbe leggere la posizione **di conto** sul mercato (una chiamata Betfair nuova):
+> non è stato fatto, va portato all'utente.
 
 * **mai due lay vive sull'Under 3.5**: se la lay del ciclo pre-match non è ancora annullata
   per davvero, l'ordine di uscita aspetta. Un doppio abbinamento ribalterebbe la posizione
@@ -1284,7 +1448,7 @@ righe di attività per partita, che è esattamente la zavorra da cui è arrivato
 | `ko_green_enabled` | `true` | off = si copre e basta, nessun tentativo di uscita |
 | `ko_green_ticks` | 2 | tick sotto il nostro ingresso |
 | `ko_green_window_s` | 180 | durata della finestra, dal fischio |
-| `ko_green_retry_s` | 5 | ritmo di ri-presentazione (solo live) |
+| `ko_green_retry_s` | 5 | **SENZA EFFETTO dal 16/09** (§15.6): l'uscita è appoggiata in ogni modalità e non si ri-presenta più. La chiave resta perché il valore è salvato sul DB e nella UI, ma nessun ramo la legge |
 | `second_entry_enabled` | `true` | seconda puntata dopo un gol precoce |
 | `second_entry_stake_pct` | 50 | % dello stake iniziale |
 | `early_goal_cover_delay_s` | 120 | prima tranche, dal gol |
@@ -1790,6 +1954,35 @@ apre deliberatamente.**
 È il rilievo più serio emerso il 14/09, e cambia il senso di tutta la colonna
 `paper` per il ciclo pre-match.
 
+> 🔄 **ALLINEAMENTO AL CODICE, 16/09** (solo testo: nessuna regola cambiata).
+> Il paragrafo qui sotto fotografa il **14/09 mattina** e non descrive più il
+> codice. Che cosa dice il codice **oggi**:
+> - `_live_exit_override` sta in **`service.py:847`** (non `:736`) e **non
+>   dirotta più nulla per difetto**: dal 14/09 l'uscita appoggiata in live è
+>   cablata davvero (`_piazza_resting_live`, `service.py:985`, con
+>   `place_order_live(fill_or_kill=False)`, e `_segui_resting_live`,
+>   `service.py:1370`, che ne rilegge l'esito dal book ordini di Betfair). Il
+>   dirottamento a `taker` scatta **solo** se la valvola `live_resting_enabled`
+>   (default `true`, `config.py:137`) viene spenta dalla UI.
+> - Con `live_resting_enabled` acceso, live e paper piazzano **lo stesso
+>   ordine**: stessa selezione, stesso lato, stesso prezzo, stessa size. Il
+>   divario paper/live descritto qui sotto vale quindi per la valvola SPENTA,
+>   non più per difetto.
+> - `pre_exit_mode` è un parametro **del ciclo pre-match** (§6, gruppo
+>   Pre-match), ma `service._is_resting_leg` (`service.py:938`) lo usa per
+>   decidere *resting o taker* anche su `ko_green` (Fase 2) e `reentry_green`
+>   (Fase 6). **Difformità dichiarata, non corretta**: correggerla cambierebbe
+>   il tipo di ordine mandato a mercato, cioè la strategia. Consegnata
+>   all'utente il 16/09.
+> - Con `pre_exit_mode='taker'` la lay di Fase 6 (che la spec vuole
+>   *appoggiata*, «lay non abbinata → resta sul book fino a fine gara») viene
+>   eseguita a mercato a un prezzo che il book non offre: il mercato la
+>   rifiuta. Fino al 16/09 il motore la **riproponeva identica a ogni giro**
+>   (531 volte sulla registrazione 35674515). Ora il rifiuto torna nel `ctx`
+>   (`ctx.rifiuti`, `engine.registra_rifiuto` / `engine.tentativo_gia_rifiutato`)
+>   e la stessa identica richiesta non si rifà: **una proposta per gamba**,
+>   fail-closed. Se il prezzo o la size cambiano è una richiesta nuova e si fa.
+
 `_live_exit_override` (`service.py:736`) forza **`pre_exit_mode='taker'` su
 qualunque partita in modalità live**, perché l'uscita appoggiata — la lay
 *resting* a −2 tick — **non è cablata su nessun percorso**: né REST (servirebbe
@@ -1820,6 +2013,14 @@ la ragione per cui la tabella serve.
 contava 39, il 14/09 mattina 28, a mezzogiorno 29 — fra le prime due misure ci
 sono state dieci ore di app spenta. La tabella fotografa un periodo, non una
 verità permanente: va rifatta dopo ogni giornata di gioco.
+
+> 🔄 **ALLINEAMENTO AL CODICE, 16/09** (solo testo). `_resting_filled` sta in
+> **`service.py:1434`** (non `:783`) e dal 14/09 vale **solo in paper**: in live
+> l'abbinamento della lay appoggiata non si simula più, si **legge** dal book
+> ordini di Betfair (`_segui_resting_live`, `service.py:1370`). Il rilievo qui
+> sotto resta valido per il **paper**, ed è la ragione della Fase C.8 del piano
+> («paper via flumine»): finché il paper non passa dal matching di flumine con
+> la coda vera, promette un tasso di abbinamento che il mercato non dà.
 
 **Il fill simulato della lay appoggiata è OTTIMISTA.** `_resting_filled`
 (`service.py:783`) dichiara la gamba abbinata appena il mercato *tocca* il

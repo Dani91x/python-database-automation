@@ -39,6 +39,9 @@ import {
     type FeedFreshness, type SafeMode, type SafeRequest, type SafeTrade, type SafeTradeStatus, type TradeBook,
 } from '@/lib/safeBot';
 import { safeMarketLabel, safeReasonLabel } from './safeActivity';
+// C.12b — stato dell'ORDINE condiviso con Omega, Mike e la Control Room
+import { StatoOrdineRiga, StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
+import { statoOrdine } from '@/lib/statoOrdine';
 import { OPP_KIND_META } from './OpportunityGroup';
 import { sideBadgeClass } from './variantStyles';
 
@@ -221,7 +224,10 @@ export function safeRowStatus(
                 title: `copertura PARZIALE: restano ${fmtMoney(hedge?.remainingLiability ?? hedge?.residualSize)} da chiudere`,
             };
         }
-        const m = statusMeta(t.status);
+        // C.12b — un ordine solo APPOGGIATO sul book NON e' una posizione
+        // aperta: non copre niente e il rischio e' ancora tutto scoperto.
+        // `RESTING_META` esisteva dal 12/09 ma qui non veniva passata mai.
+        const m = statusMeta(t.status, { resting: statoOrdine(t).esito === 'appoggiato' });
         return { label: m.label, cls: m.cls, edge: t.status === 'open' ? 'border-l-sky-500/50' : 'border-l-amber-500/50' };
     }
     const m = statusMeta(t.status);
@@ -324,14 +330,17 @@ export interface SafeTradesTableProps {
     currentMode?: SafeMode;
     /** testo dello stato vuoto (la pagina distingue "oggi" da "tutte") */
     emptyText?: string;
+    /** istante corrente (ms): eta' dell'ultima notizia da Betfair. Test: fisso. */
+    nowMs?: number;
 }
 
 const COLS = 16;
 
 export function SafeTradesTable({
     trades, commissionPct, liveFeed, isCashOutPending, freshnessOf, onCashOut, onCancel,
-    requests = [], emptyText, currentMode,
+    requests = [], emptyText, currentMode, nowMs,
 }: SafeTradesTableProps) {
+    const now = nowMs ?? Date.now();
     const groups = groupClosingLegs(trades);
     // oltre 200 righe caricate una chiusura può perdere la sua apertura: va
     // detto, non mascherato (audit L-04)
@@ -689,6 +698,23 @@ export function SafeTradesTable({
                                     ) : <span className="text-slate-600">{DASH}</span>}
                                 </td>
                             </tr>
+                            {/* C.12b (16/09) — LO STATO DELL'ORDINE, sotto la riga.
+                                Prima Safe mostrava UN solo `size` (che dopo la
+                                conferma e' l'ABBINATO) e nessun prezzo medio: alla
+                                domanda «abbinato tutto o in parte?» la tabella non
+                                sapeva rispondere. Qui ci sono chiesto, abbinato col
+                                prezzo medio, residuo vivo sul book e da quanto non
+                                arrivano notizie da Betfair. */}
+                            <tr
+                                className={`border-l-2 ${st.edge} ${otherMode ? 'opacity-60' : ''}`}
+                                data-testid="safe-stato-ordine-row"
+                                data-trade={t.id}
+                            >
+                                <td className="px-3 pb-2" />
+                                <td colSpan={COLS - 1} className="px-3 pb-2">
+                                    <StatoOrdineRiga riga={t} nowMs={now} testId="safe-stato-ordine" />
+                                </td>
+                            </tr>
                             {closes.map((c, ci) => {
                                 const cb = statusMeta(c.status);
                                 // "parziale": dalla chiusura (size_capped_from) o dall'apertura (residuo > 0)
@@ -702,6 +728,9 @@ export function SafeTradesTable({
                                             {' · '}
                                             <Badge variant="outline" className={`px-1 py-0 text-[10px] font-heading font-bold mr-1 ${sideBadgeClass(c.side === 'back' ? 'BACK' : 'LAY')}`}>{c.side.toUpperCase()}</Badge>{' '}
                                             <span className="tabular-nums">{fmtMoney(c.size)} @{fmtOdds(c.price)}</span>
+                                            {/* C.12b — anche una gamba di CHIUSURA e' un ordine:
+                                                chiesto/abbinato/residuo, in forma compatta. */}
+                                            <StatoOrdineCompatto riga={c} className="ml-1.5" testId="safe-chiusura-stato-ordine" />
                                             {/* anche la gamba di chiusura dichiara la sua modalità:
                                                 è un ordine a sé, con soldi veri o simulati */}
                                             <ModeBadge mode={c.mode} compact className="ml-1 align-middle" testId="safe-closing-mode" dimmed={otherMode} />

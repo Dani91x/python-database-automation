@@ -27,6 +27,7 @@ import threading
 import time
 from typing import Any, Dict, List
 
+from .. import avvio_app as AA
 from ..single_instance import acquire_single_instance_lock
 from . import tennis_db
 
@@ -37,6 +38,76 @@ ENSURE_POLL_SEC = 15.0
 # Backoff quando il runner torna senza streammare nulla (nessun follow/mercato): evita un
 # loop stretto di re-login Betfair (build_client(login=True) ad ogni giro → TOO_MANY_REQUESTS).
 IDLE_BACKOFF_SEC = float(os.getenv("TENNIS_BOT_SVC_IDLE_BACKOFF_SEC", "30.0"))
+
+
+#: guardia di PROCESSO del controllo d'avvio (vedi ``Betfair/stream/avvio_app.py``)
+_GUARDIA_AVVIO = AA.Guardia("tennis")
+
+
+def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
+                             db: Any = tennis_db) -> List[Dict[str, Any]]:
+    """FASE A — all'avvio NUOVO dell'app nessun bot tennis resta armato.
+
+    Gli stati ``requested``/``arming``/``armed``/``running`` di
+    ``tennis_bot_control`` sono PERSISTITI per evento: alla riapertura dell'app
+    il ponte crea di nuovo il follow e il runner ri-arma il bot da solo. La
+    pulizia degli orfani non basta — tocca solo le righe con heartbeat vecchio
+    di 10 minuti, e una riga ``requested`` fresca non la guarda nemmeno.
+
+    Qui ogni riga ATTIVA che non porta l'``APP_BOOT_ID`` di questo avvio viene
+    portata a ``stopped`` con un'attivita' ``avvio_app_bot_fermato``. Le righe
+    di QUESTO avvio (bot armato dall'utente poco fa, runner riavviato dal
+    watchdog) non si toccano. I ``params`` e lo ``stake`` della riga restano
+    identici: si scrive solo lo stato.
+
+    Ritorna l'elenco delle righe fermate (dizionari {event_id, bot_key, ...}).
+    """
+    boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    try:
+        righe = db.list_tennis_bot_controls(statuses=list(_ACTIVE_STATUSES))
+    except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio per una select
+        logger.warning("[tennis-bot-svc] controllo d'avvio: lettura KO (%s): "
+                       "riprovo al giro dopo.", str(e)[:160])
+        return []
+    fermate: List[Dict[str, Any]] = []
+    ora = tennis_db._now_iso()
+    for r in AA.righe_da_fermare(righe, boot):
+        ev, bot_key = str(r.get("event_id") or ""), str(r.get("bot_key") or "")
+        if not ev or not bot_key:
+            continue
+        payload = {
+            "bot": f"tennis:{bot_key}", "boot_id": boot,
+            "boot_id_precedente": AA.boot_id_salvato(r.get("stats")),
+            "status_precedente": str(r.get("status") or ""),
+            "dry_run_precedente": r.get("dry_run"),
+            "azzerato": True,
+            "motivo": ("APP_BOOT_ID assente nell'ambiente: trattato come avvio nuovo"
+                       if not boot else "avvio nuovo dell'app"),
+            "effetto": "i bot li arma l'utente: la riga torna a 'stopped'.",
+            "ts": ora,
+        }
+        try:
+            db.set_tennis_bot_status(
+                ev, bot_key, "stopped", stopped=True,
+                stats=AA.stats_timbrate(r.get("stats"), boot, ora),
+                error=("fermato all'avvio dell'app: l'armamento e' un gesto "
+                       "dell'utente — riarma se serve"),
+            )
+        except Exception as e:  # noqa: BLE001 — una riga rotta non ferma le altre
+            logger.warning("[tennis-bot-svc] stop d'avvio %s/%s KO: %s", ev, bot_key, str(e)[:160])
+            continue
+        fermate.append({"event_id": ev, "bot_key": bot_key, **payload})
+        try:
+            db.write_tennis_bot_activity(ev, bot_key, AA.KIND_ATTIVITA, payload)
+        except Exception as e:  # noqa: BLE001 — il log non ferma mai niente
+            logger.warning("[tennis-bot-svc] attivita' d'avvio %s/%s KO: %s",
+                           ev, bot_key, str(e)[:160])
+    _GUARDIA_AVVIO.boot_id = boot
+    _GUARDIA_AVVIO.fatto = True
+    if fermate:
+        logger.warning("[tennis-bot-svc] avvio dell'app: %d bot tennis fermati (%s)",
+                       len(fermate), ", ".join(f"{f['bot_key']}@{f['event_id']}" for f in fermate[:6]))
+    return fermate
 
 
 def _followed_event_ids() -> set:
@@ -119,6 +190,9 @@ def run() -> None:
     """
     from .tennis_runner import setup_and_run
 
+    # FASE A — PRIMA di creare i follow: un bot armato ieri non deve tornare
+    # sullo stream solo perche' l'app e' stata riaperta.
+    ferma_bot_al_nuovo_avvio()
     ensure_follows_for_bots()
     lock_port = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
     try:
@@ -162,6 +236,9 @@ def _main() -> None:
         # vuoto. Qui solo il ponte follow, nessun hosting, nessun login Betfair.
         logger.info("[tennis-bot-svc] modalità ponte: ensure-follows ogni %.0fs, nessun hosting.",
                     ENSURE_POLL_SEC)
+        # FASE A — anche il ponte lo fa, e per primo: e' lui che rimette sullo
+        # stream gli eventi dei bot ancora attivi.
+        ferma_bot_al_nuovo_avvio()
         stop = threading.Event()
         try:
             _ensure_loop(stop)

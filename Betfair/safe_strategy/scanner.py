@@ -345,9 +345,14 @@ def freeze_pre_ko(
     prev: Optional[Dict[str, Any]],
     inplay: bool,
     odds: Optional[Dict[str, Any]],
+    adesso_iso: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Riferimento 1X2 pre-KO: si AGGIORNA solo prima del kickoff (closing line),
     si CONGELA per sempre al primo tick in-play. Mai quote in-play nel riferimento.
+
+    ``adesso_iso`` esiste SOLO per il banco di prova (replay su registrazioni),
+    dove "adesso" e' il publish time del tick e non l'orologio del PC. Assente =
+    ``now_iso()``, cioe' esattamente il comportamento di produzione.
     """
     if inplay:
         return prev
@@ -360,7 +365,7 @@ def freeze_pre_ko(
         if not isinstance(back, (int, float)):
             return prev  # riferimento solo se il 1X2 è completo
         triple[side] = float(back)
-    return {**triple, "captured_at": now_iso()}
+    return {**triple, "captured_at": adesso_iso or now_iso()}
 
 
 def books_period_calcio(any_inplay: bool, any_hot: bool) -> float:

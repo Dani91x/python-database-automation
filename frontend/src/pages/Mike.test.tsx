@@ -570,18 +570,29 @@ describe('Mike page — Avvia, Ferma, modalità, parametri', () => {
         expect(mStop).not.toHaveBeenCalled();
     });
 
-    it('il passaggio a LIVE chiede CONFERMA e solo dopo attiva il bot a soldi veri', async () => {
+    // ⚠️ 16/09 — QUESTO TEST FISSAVA IL COMPORTAMENTO VECCHIO.
+    // Prima pretendeva `mike_activate('live')`: ma `mike_activate` porta
+    // `status` a 'running', quindi il gesto «passa a soldi veri» poteva anche
+    // ACCENDERE un bot fermo — e i bot li accende l'utente, con il gesto di
+    // accensione. Adesso il cambio di modalita' passa dal comando condiviso
+    // (`lib/interruttori.ts`), che scrive con `mike_update_params(p_params,
+    // p_mode)`: il `status` non lo tocca proprio. La doppia conferma resta.
+    it('il passaggio a LIVE chiede CONFERMA e solo dopo porta il bot a soldi veri', async () => {
         mState.mockResolvedValue(state());
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toHaveTextContent('BOT IN CORSA'));
         await userEvent.click(within(screen.getByTestId('mode-toggle')).getByText(/LIVE/));
         const dialog = await screen.findByTestId('live-confirm');
-        // nessuna attivazione finché non si conferma
+        // niente si muove finché non si conferma
+        expect(mSaveParams).not.toHaveBeenCalled();
         expect(mActivate).not.toHaveBeenCalled();
         expect(dialog).toHaveTextContent('denaro reale');
         expect(dialog).toHaveTextContent('esattamente 4 gol');
         await userEvent.click(screen.getByTestId('live-confirm-ok'));
-        await waitFor(() => expect(mActivate).toHaveBeenCalledWith('live'));
+        await waitFor(() => expect(mSaveParams).toHaveBeenCalledTimes(1));
+        // i parametri INTERI + il mode, e NESSUNA accensione
+        expect(mSaveParams.mock.calls[0][1]).toBe('live');
+        expect(mActivate).not.toHaveBeenCalled();
     });
 
     it('Salva parametri manda l’oggetto intero a mike_update_params', async () => {

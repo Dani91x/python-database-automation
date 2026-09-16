@@ -71,6 +71,25 @@ def fill(leg, size=None, price=None):
     return leg
 
 
+def conferma_annulli(ctx, d):
+    """BETFAIR HA CONFERMATO gli annullamenti di questa decisione.
+
+    ⚠️ 16/09 (ordine dell'utente: «non devono mai esserci 2 lay a mercato, se si
+    abbinano siamo scoperti»). Da oggi un ramo che sostituisce una lay emette
+    SOLO l'annullamento; la lay nuova arriva al giro dopo, e solo se la vecchia
+    non e' piu' viva. E' quello che fa `service._mark_trade_cancelled` quando
+    `cancel_esito` torna confermato: la parte gia' abbinata resta POSIZIONE
+    ('open'), il resto e' annullato. Senza questo passaggio, nei test, la lay
+    nuova non si vede mai — ed e' giusto cosi'."""
+    for a in d.actions:
+        if a.kind != "cancel":
+            continue
+        for l in ctx.legs:
+            if l.ref == a.ref and l.is_live:
+                l.status = "open" if l.matched > 0 else "cancelled"
+    return ctx
+
+
 # ---------------------------------------------------------------------------
 # Matematica pura
 # ---------------------------------------------------------------------------
@@ -338,10 +357,15 @@ def test_last_entry_in_profit_greens_then_places_persist():
     ctx, p = _open_prematch()
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
     d = E.decide(ctx, s, p)
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s, p)
     assert d.state == "PRE_GREEN_PENDING"
-    kinds = [a.kind for a in d.actions]
-    assert kinds == ["cancel", "place"]              # cancella resting, chiude taker
-    assert d.actions[1].price == 1.45 and d.actions[1].final is True
+    assert [a.kind for a in d.actions] == ["place"]   # chiude taker, da sola
+    assert d.actions[0].price == 1.45 and d.actions[0].final is True
     E.apply_decision(ctx, d, s.now)
     green = [l for l in ctx.legs if l.status == "pending"][-1]
     fill(green)
@@ -372,6 +396,11 @@ def test_last_entry_persist_disabled_goes_idle_live():
     ctx, p = _open_prematch()
     p["last_entry_persist"] = False
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    d0 = E.decide(ctx, s, p)
+    E.apply_decision(ctx, d0, s.now)
+    conferma_annulli(ctx, d0)
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
     fill([l for l in ctx.legs if l.status == "pending"][-1])
     d = E.decide(ctx, snap(KO - 8 * 60, u35=book(1.44)), p)
@@ -381,6 +410,11 @@ def test_last_entry_persist_disabled_goes_idle_live():
 def test_unmatched_persist_cancelled_after_ko_grace():
     ctx, p = _open_prematch()
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    d0 = E.decide(ctx, s, p)
+    E.apply_decision(ctx, d0, s.now)
+    conferma_annulli(ctx, d0)
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
     fill([l for l in ctx.legs if l.status == "pending"][-1])
     s2 = snap(KO - 8 * 60, u35=book(1.44))
@@ -525,10 +559,15 @@ def test_closing_retry_replaces_unmatched_leg():
     s2 = snap(s.now + 11, u35=book(1.30, bl=1.32, inplay=True), o45=book(12.0, bl=13.0, inplay=True),
               inplay=True, minute=31, goals=0)
     d = E.decide(ctx, s2, p)
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s2.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s2, p)
     assert d.state == "LIVE_CLOSING"
-    kinds = [a.kind for a in d.actions]
-    assert kinds == ["cancel", "place"]
-    assert d.actions[1].role == pend[1].role
+    assert [a.kind for a in d.actions] == ["place"]
+    assert d.actions[0].role == pend[1].role
 
 
 def test_reentry_after_profit_close():
@@ -583,13 +622,19 @@ def test_reentry_open_closes_at_market_after_limit_minute():
     ctx.legs.append(E.Leg(role="reentry_green", market=E.MARKET_OU45, selection=E.SEL_UNDER,
                           side="lay", price=1.58, size=20.25, ref="g1"))
     s = snap(KO + 81 * 60, u45=book(1.70, bl=1.72, inplay=True), inplay=True, minute=81, goals=1)
-    d = E.decide(ctx, s, p)
-    assert d.state == "REENTRY_GREEN_PENDING"
-    assert [a.kind for a in d.actions] == ["cancel", "place"]
-    assert d.actions[1].price == 1.72
     # default: la lay a +2 tick resta sul book fino a fine gara, nessuna chiusura all'80'
     d0 = E.decide(ctx, s, params())
     assert d0.state == "REENTRY_OPEN" and d0.actions == []
+    d = E.decide(ctx, s, p)
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s, p)
+    assert d.state == "REENTRY_GREEN_PENDING"
+    assert [a.kind for a in d.actions] == ["place"]
+    assert d.actions[0].price == 1.72
 
 
 # ---------------------------------------------------------------------------
@@ -644,8 +689,14 @@ def test_closing_retry_includes_partially_matched_leg():
     s2 = snap(s.now + 11, u35=book(1.30, bl=1.32, inplay=True), o45=book(12.0, bl=13.0, inplay=True),
               inplay=True, minute=31, goals=0)
     d = E.decide(ctx, s2, p)
-    assert [a.kind for a in d.actions] == ["cancel", "place"]
-    new = d.actions[1]
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s2.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s2, p)
+    assert [a.kind for a in d.actions] == ["place"]
+    new = d.actions[0]
     # residuo: W/L dopo la meta' gia' abbinata -> lay size ~ (10 - matched*(1.31-1)) ...
     w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
     assert new.size == pytest.approx(round((w - l) / 1.32, 2), abs=0.02)
@@ -752,11 +803,17 @@ def test_last_entry_with_partial_green_uses_net_exposure():
     green.matched = 5.0; green.avg_price = 1.48; green.status = "pending"    # meta' abbinata, ancora viva
     s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
     d = E.decide(ctx, s, p)
+    # 16/09 (ordine dell'utente): la lay viva si ANNULLA e basta; la nuova
+    # arriva al giro dopo, quando l'annullamento e' CONFERMATO da Betfair.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    E.apply_decision(ctx, d, s.now)
+    conferma_annulli(ctx, d)
+    d = E.decide(ctx, s, p)
     assert d.state == "PRE_GREEN_PENDING"
-    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    assert [a.kind for a in d.actions] == ["place"]
     w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
-    assert d.actions[1].size == pytest.approx(round((w - l) / 1.45, 2), abs=0.01)
-    assert d.actions[1].size < 20.0                     # solo il residuo (stake 20, 5 gia' coperti)
+    assert d.actions[0].size == pytest.approx(round((w - l) / 1.45, 2), abs=0.01)
+    assert d.actions[0].size < 20.0                     # solo il residuo (stake 20, 5 gia' coperti)
 
 
 def test_partial_cover_reprice_uses_exact_residual():

@@ -10,12 +10,15 @@ import { CheckCircle2, Loader2, Clock, AlertCircle, CircleDashed, CircleDot, Ref
 import {
     fetchBetfairOrders, placedOrderState, type PlacedOrder, type PlacedOrderState,
 } from '@/lib/betfair';
+import { fmtMoney, fmtOdds, DASH } from '@/lib/format';
 
 const FAST_MS = 3000;   // poll mentre ci sono ordini in corso
 const SLOW_MS = 15000;  // poll quando tutti gli ordini sono conclusi
 
-const fmtOdds = (n: number | null | undefined) => (n == null ? '—' : Number(n).toFixed(2));
-const fmtEur = (n: number | null | undefined) => (n == null ? '—' : `€${Number(n).toFixed(2)}`);
+// C.12b (16/09) — i formatter UNICI del design system.
+// Prima erano due copie locali con `toFixed`: formato inglese («€5.00») e,
+// peggio, nessuna difesa contro il dato ASSENTE. `fmtMoney(null)` rende «—»,
+// mai «0,00 €»: un dato che non c'e' non e' uno zero (lib/format.ts:44-54).
 
 // Link diretto al mercato specifico sull'Exchange .it (l'utente opera su Betfair Italia):
 // così da ogni ordine si va su Betfair a controllare quel preciso mercato.
@@ -35,7 +38,10 @@ function OrderRow({ o }: { o: PlacedOrder }) {
     const st = placedOrderState(o);
     const meta = STATE_META[st];
     const res = o.result;
-    const matched = res?.size_matched ?? 0;
+    // ⚠️ C.12b — qui c'era `?? 0`: un ordine con l'esito non ancora scritto
+    // compariva come «abbinato €0.00», cioe' come un ordine NON abbinato.
+    // Assente e zero sono due cose diverse: `null` → «—».
+    const matched = res?.size_matched ?? null;
     const avg = res?.average_price_matched ?? null;
     const betId = res?.bet_id ?? null;
     const marketId = res?.market_id ?? null;   // per il link diretto al mercato Betfair
@@ -53,7 +59,7 @@ function OrderRow({ o }: { o: PlacedOrder }) {
                     <span className="text-white/60"> · {o.selection}</span>
                     <span className={`ml-1.5 font-semibold ${sideCls}`}>{sideLabel}</span>
                     <span className="text-white/40"> @ {fmtOdds(o.price)}</span>
-                    <span className="text-white/40"> · {fmtEur(o.size)}</span>
+                    <span className="text-white/40"> · {fmtMoney(o.size)}</span>
                 </div>
                 <div className="mt-0.5 text-[10px] text-muted-foreground/80 font-mono">
                     {st === 'error'
@@ -61,7 +67,7 @@ function OrderRow({ o }: { o: PlacedOrder }) {
                         : (st === 'queued' || st === 'sending')
                             ? <span>in attesa dal worker locale…</span>
                             : <>
-                                abbinato {fmtEur(matched)}{avg ? ` @ ${fmtOdds(avg)}` : ''}
+                                abbinato {fmtMoney(matched)}{avg != null ? ` @ ${fmtOdds(avg)}` : ` @ ${DASH}`}
                                 {betId ? <span className="text-white/40"> · betId {betId}</span> : null}
                             </>}
                 </div>

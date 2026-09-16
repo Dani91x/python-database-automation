@@ -149,10 +149,13 @@ PARAM_SPEC: dict[str, Spec] = {
     "ko_green_enabled": (True, bool, None, None, None),
     "ko_green_ticks": (2, int, 1, 10, None),
     "ko_green_window_s": (180, int, 0, 900, None),
-    # In LIVE la lay appoggiata non esiste (vedi service._live_exit_override): il
-    # limite viene ri-presentato al mercato a intervalli e si abbina appena il
-    # prezzo c'e'. Questo e' l'intervallo. In paper non ha effetto: la lay resta
-    # sul book e non va mai ri-piazzata.
+    # ⚠️ ORDINE DELL'UTENTE 16/09 — QUESTO PARAMETRO NON HA PIU' EFFETTO.
+    # L'uscita al fischio e' una lay APPOGGIATA in OGNI modalita' (paper e
+    # live): resta sul book e non si ri-presenta piu' a ritmo. Governava la
+    # ri-presentazione del percorso taker, che non esiste piu' (25-32 chiamate
+    # REST per una sola uscita). La chiave resta — spegnerla vorrebbe dire
+    # rompere i parametri gia' salvati sul DB e nella UI — ma nessun ramo la
+    # legge: la scheda parametri lo DICHIARA invece di farlo credere.
     "ko_green_retry_s": (5, int, 1, 60, None),
     # Gol PRECOCE (dentro la finestra, ancora scoperti e non usciti): si annulla
     # l'uscita e si entra una SECONDA volta sull'Under 3.5 al miglior prezzo —

@@ -181,7 +181,13 @@ class TestModalitaDellaPartita:
         lay = E.Leg(role="ko_green", market=E.MARKET_OU35, selection=E.SEL_UNDER,
                     side="lay", price=1.48, size=10.14, ref="k1")
         assert S._is_resting_leg(lay, {"pre_exit_mode": "resting"}) is True
-        assert S._is_resting_leg(lay, {"pre_exit_mode": "taker"}) is False
+        # ⚠️ 16/09 (ordine dell'utente, §15.6): l'uscita al fischio e' appoggiata
+        # in OGNI modalita'. Il parametro governa le altre due lay di green.
+        assert S._is_resting_leg(lay, {"pre_exit_mode": "taker"}) is True
+        altra = E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                      side="lay", price=1.48, size=10.14, ref="g1")
+        assert S._is_resting_leg(altra, {"pre_exit_mode": "resting"}) is True
+        assert S._is_resting_leg(altra, {"pre_exit_mode": "taker"}) is False
 
 
 # ---------------------------------------------------------------------------

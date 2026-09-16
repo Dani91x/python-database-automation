@@ -43,15 +43,20 @@ import {
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
-import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
+import {
+    useControlRoom,
+    type StatoBot, type PosizioneAperta, type Modalita,
+} from '@/components/controlroom/useControlRoom';
+import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
 import {
-    STAKE_TENNIS, CHIAVE_STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+    STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
 import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
 import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
-import { creaComandi, creaComandiTennis, importiDi } from '@/components/controlroom/comandiBot';
+import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
+import { interruttoriDiSport, importiInterruttori } from '@/lib/interruttori';
 import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { mergeBotParams, updateSafeParams } from '@/lib/safeBot';
@@ -200,18 +205,28 @@ export default function ControlRoom() {
         (b: Bot) => vm.bots.find((x) => x.bot === b)?.params ?? null,
         [vm.bots],
     );
+    const servizioDi = useCallback(
+        (b: Bot) => {
+            const s = vm.bots.find((x) => x.bot === b);
+            return s == null ? null : {
+                inCorsa: s.inCorsa, modalita: s.modalita,
+                varianti: s.varianti, modiStrategia: s.modiStrategia,
+            };
+        },
+        [vm.bots],
+    );
     const [erroreComando, setErroreComando] = useState<string | null>(null);
     const comandi = useMemo(() => {
         // ⚠️ NELLA SCHEDA TENNIS «AVVIA» VUOL DIRE UN'ALTRA COSA.
         // Safe è un servizio solo e porta dentro sia il tennis sia le tre
-        // strategie del calcio: accenderlo «com'è» dalla scheda del tennis
-        // accenderebbe anche il calcio. Da qui parte SOLO il tennis, a 3,00 €,
-        // e tutto il resto resta in prova (`creaComandiTennis`).
-        const fabbrica = sport === 'tennis' ? creaComandiTennis : creaComandi;
-        const base = fabbrica({
+        // strategie del calcio: da qui parte SOLO il tennis, a 3,00 €, e tutto
+        // il resto resta in prova. Lo decide `creaComandiControlRoom`, che usa
+        // le STESSE funzioni condivise delle pagine dei bot.
+        const base = creaComandiControlRoom({
             params: paramsDi,
+            servizio: servizioDi,
             obiettivoOmega: () => vm.bots.find((x) => x.bot === 'omega')?.obiettivoGiorno ?? vm.obiettivo,
-        }, vm.ricarica);
+        }, vm.ricarica, sport);
         // un comando che fallisce in silenzio e' peggio di un comando assente:
         // il trader crede di aver fermato un bot che sta ancora operando.
         const avvolgi = <A extends unknown[]>(f: (...a: A) => Promise<void>) => async (...a: A) => {
@@ -222,22 +237,20 @@ export default function ControlRoom() {
             }
         };
         return {
-            avvia: avvolgi(base.avvia), ferma: avvolgi(base.ferma),
+            accendi: avvolgi(base.accendi), spegni: avvolgi(base.spegni),
             cambiaModalita: avvolgi(base.cambiaModalita), cambiaImporto: avvolgi(base.cambiaImporto),
+            fermaBot: avvolgi(base.fermaBot), scriviAccensioni: base.scriviAccensioni,
+            cambiaModalitaServizio: avvolgi(base.cambiaModalitaServizio),
         };
-    }, [paramsDi, sport, vm.bots, vm.obiettivo, vm.ricarica]);
+    }, [paramsDi, servizioDi, sport, vm.bots, vm.obiettivo, vm.ricarica]);
 
-    const importi = useMemo(() => ({
-        omega: importiDi('omega', paramsDi('omega')),
-        // nella scheda tennis resta il SOLO importo che muove il tennis:
-        // `laySize` è di chi banca, cioè del calcio (base ed esatto).
-        safe: sport === 'tennis'
-            ? importiDi('safe', paramsDi('safe'))
-                .filter((c) => c.chiave === CHIAVE_STAKE_TENNIS)
-                .map((c) => ({ ...c, etichetta: 'stake tennis' }))
-            : importiDi('safe', paramsDi('safe')),
-        mike: importiDi('mike', paramsDi('mike')),
-    }), [paramsDi, sport]);
+    // Gli importi: UNO per interruttore, con la chiave che il servizio legge
+    // davvero. Se la strategia non ha ancora una chiave sua si mostra quella
+    // per LATO e la riga lo DICHIARA (`importoDi`).
+    const importi = useMemo(
+        () => importiInterruttori(interruttoriDiSport(sport), paramsDi),
+        [paramsDi, sport],
+    );
 
     // ── LA PLANCIA, RISTRETTA ALLO SPORT SCELTO ──────────────────────────────
     // «Nella scheda tennis voglio vedere SOLO il bot di tennis» (utente,
@@ -246,9 +259,14 @@ export default function ControlRoom() {
     // niente da dire. Senza filtro sarebbe l'operatore a doversi ricordare
     // quale delle tre righe riguarda la partita che sta guardando.
     const soloTennis = sport === 'tennis';
-    const botVisibili = useMemo(
-        () => (soloTennis ? vm.bots.filter((b) => b.bot === 'safe') : vm.bots),
-        [vm.bots, soloTennis],
+    const righeBot = useMemo(
+        () => righeInterruttori(vm.bots, sport, soloTennis ? { 'safe-tennis': 'Tennis' } : undefined),
+        [vm.bots, sport, soloTennis],
+    );
+    /** i SERVIZI accesi, per il freno d'emergenza: sono bot, non strategie */
+    const serviziAccesi = useMemo(
+        () => vm.bots.filter((b) => b.inCorsa).map((b) => ({ bot: b.bot, modalita: b.modalita })),
+        [vm.bots],
     );
     /**
      * Che cosa cambia l'avvio dalla scheda tennis, detto PRIMA del clic.
@@ -400,11 +418,10 @@ export default function ControlRoom() {
             />
 
             <PannelloBot
-                bots={botVisibili} importi={importi} parametri={fogliParametri} comandi={comandi}
+                righe={righeBot} importi={importi} parametri={fogliParametri} comandi={comandi}
                 titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
-                etichette={soloTennis ? { safe: 'Tennis' } : undefined}
                 ambito={sport ?? 'tutti'}
-                tutti={vm.bots}
+                serviziAccesi={serviziAccesi}
                 nota={soloTennis ? (
                     <>
                         {/* al FUTURO, perché è quello che il pulsante farà: al

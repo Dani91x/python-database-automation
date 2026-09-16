@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 import time
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_model as M
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
+from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
 from Betfair.stream.scores import scan_feed as _scan_feed
 from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
@@ -202,6 +204,11 @@ _CACHE_INSIEMI: dict[str, _Cache] = {}
 _FASE_ESEGUITA_A: dict[str, float] = {}
 # missioni attive viste dall'ultimo giro (ritmo adattivo: l'utente sta guardando)
 _ULTIME_MISSIONI_ATTIVE: int = 0
+# FASE A (16/09) — all'avvio dell'app nessun bot opera: la guardia confronta
+# l'``APP_BOOT_ID`` di questo processo con quello salvato in ``omega_control.stats``.
+# Vive per PROCESSO e si accende in ``main()``: un ``run_once`` chiamato da un
+# test o da un banco di replay non e' un avvio dell'app e non cambia niente.
+_GUARDIA_AVVIO = AA.Guardia("omega")
 
 
 def _mono() -> float:
@@ -1174,6 +1181,14 @@ def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], n
         db.delete_trade(trade_id)
     except Exception as ex:  # noqa: BLE001 — se non si cancella resta 'pending': lo libera reconcile
         logger.warning("[omega] delete riserva %s KO: %s", trade_id, str(ex)[:120])
+    # C.12a — se Betfair ha dato un CODICE, si scrive col kind dedicato
+    # ``place_rifiutato`` (lo stesso di Mike, cosi' la UI ne ha uno solo da
+    # tradurre): INSUFFICIENT_FUNDS e INVALID_PROFIT_RATIO erano indistinguibili
+    # da un 'live_not_matched' generico, e il bot ritentava identico.
+    if (extra or {}).get("error_code"):
+        db.log("place_rifiutato", {"event_id": event_id, "trade_id": trade_id,
+                                   "reason": reason, "leg": leg, "critical": True,
+                                   **(extra or {})})
     db.log("skip", {"event_id": event_id, "trade_id": trade_id, "reason": reason,
                     # 'max_attempts' è la chiave che legge activityLine della UI
                     "attempt": attempt, "max": LEG_RETRY_MAX,
@@ -1424,14 +1439,28 @@ def _confirm_open_trade(
     'pending': si ritenta, e in caso di fallimento totale si logga CRITICAL con il
     bet_id (recuperabile a video) + traccia in omega_activity per riconciliazione.
     """
+    from Betfair.safe_strategy import execution as X   # import pigro, come altrove qui
+
     last_err: Optional[Exception] = None
     for attempt, pause in enumerate((0.0, 0.5, 2.0)):
         if pause:
             time.sleep(pause)            # backoff: un blip di rete non deve bruciare i 3 tentativi
         try:
-            db.update_trade(trade_id, status="open", price=price, size=size,
-                            liability=liability, bet_id=bet_id,
-                            meta={**(extra_meta or {}), **dict(meta or {})})
+            # C.12a — la conferma porta anche CHIESTO / ABBINATO / RESIDUO /
+            # PREZZO MEDIO / istante di Betfair sulle colonne nuove, se la
+            # migrazione e' applicata. ``price`` e ``size`` restano quello che
+            # sono sempre stati (l'abbinato): niente cambia per chi li legge,
+            # ma il chiesto non si perde piu'.
+            fuso = {**(extra_meta or {}), **dict(meta or {})}
+            X.aggiorna_trade(
+                db, trade_id,
+                campi={"status": "open", "price": price, "size": size,
+                       "liability": liability, "bet_id": bet_id, "meta": fuso},
+                consapevolezza={"size_requested": fuso.get("requested_size"),
+                                "size_matched": size,
+                                "size_remaining": fuso.get("size_remaining"),
+                                "avg_price_matched": price,
+                                "betfair_updated_at": fuso.get("betfair_updated_at")})
             return
         except Exception as ex:  # noqa: BLE001
             last_err = ex
@@ -1612,15 +1641,32 @@ def _place_one(
             return 1   # prudente: gamba occupata finché la riconciliazione non libera la riga
         if not res.ok or res.size_matched <= 0:
             # esito CERTO (report Betfair): nessun ordine vivo → riserva via, gamba ritentabile
+            # C.12a — col CODICE di Betfair, non solo con l'order_status.
             _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "live_not_matched",
-                                 {"order_status": res.order_status},
+                                 {"order_status": res.order_status,
+                                  "error_code": getattr(res, "error_code", None),
+                                  "size_requested": getattr(res, "size_requested", None) or size},
                                  base_meta={**keep_meta, "requested_size": req_size})
             return 0
         final_price = float(res.avg_price_matched or price)
         final_size = res.size_matched
         meta = {"order_status": res.order_status,
-                "requested_size": requested_size if requested_size is not None else size}
+                "requested_size": requested_size if requested_size is not None else size,
+                # C.12a — chiesto, residuo e istante di Betfair anche nel meta:
+                # cosi' esistono pure quando la migrazione non e' ancora applicata.
+                "size_remaining": getattr(res, "size_remaining", None),
+                "betfair_updated_at": getattr(res, "betfair_updated_at", None)}
         bet_id = res.bet_id
+        chiesto_live = float(getattr(res, "size_requested", None) or size)
+        if float(final_size) + 0.005 < chiesto_live:
+            db.log("place_parziale", {
+                "event_id": ev.event_id, "trade_id": trade_id, "critical": True,
+                "size_requested": chiesto_live, "size_matched": round(float(final_size), 2),
+                "size_remaining": getattr(res, "size_remaining", None),
+                "avg_price_matched": final_price,
+                "nota": (f"parziale {float(final_size):.2f} su {chiesto_live:.2f}, "
+                         f"residuo {float(getattr(res, 'size_remaining', 0.0) or 0.0):.2f} "
+                         f"{'vivo' if float(getattr(res, 'size_remaining', 0.0) or 0.0) > 0 else 'annullato'}")})
 
     # 3) CONFERMA → 'open' (robusta: un ordine LIVE non deve mai restare non tracciato)
     _confirm_open_trade(db, trade_id, extra_meta=keep_meta, event_id=ev.event_id, price=final_price, size=final_size,
@@ -1669,6 +1715,26 @@ _FLUMINE_TERMINAL = frozenset(
 _ENQUEUE_UNKNOWN = -1
 
 
+def _hb_serve(hb_mode: Any, richiesta: str) -> bool:
+    """Il runner che ha scritto questo battito SERVE la modalita' richiesta?
+
+    F0 (16/09): un runner LIVE serve anche le righe 'paper' (client simulato
+    affiancato) e lo dichiara scrivendo piu' modalita' nella stessa colonna
+    ``betfair_live_heartbeat.mode``, separate da '+' (es. ``LIVE+PAPER``) -
+    la tabella ha una sola colonna ``mode`` TEXT e nessun campo JSON, la
+    migrazione a una riga per runner/modalita' e' elencata ma non fatta.
+
+    COMPATIBILE ALL'INDIETRO: una riga VECCHIA ``mode='LIVE'`` dichiara solo
+    LIVE, quindi il gate PAPER resta CHIUSO (com'era prima di F0). Solo una
+    riga che dichiara esplicitamente entrambe apre entrambi i gate.
+    FAIL-CLOSED: valore assente/illeggibile -> False."""
+    try:
+        dichiarate = {t for t in re.split(r"[^A-Z]+", str(hb_mode or "").upper()) if t}
+    except Exception:  # noqa: BLE001 - valore inatteso: nessuna modalita' dichiarata
+        return False
+    return str(richiesta).upper() in dichiarate
+
+
 def _flumine_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
                   now: datetime) -> tuple[bool, str]:
     """Gate UNIFICATO paper/live per l'esecuzione via coda flumine (§6-bis).
@@ -1706,7 +1772,7 @@ def _flumine_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
         if str(st or "").upper() != "STREAMING":
             return False, f"follow_{str(st or 'assente').lower()}"
         hb = hb_fn() or {}
-        if str(hb.get("mode") or "").upper() != hb_required:
+        if not _hb_serve(hb.get("mode"), hb_required):
             return False, f"runner_mode_non_{hb_required.lower()}"
         ts = _parse_iso_dt(hb.get("ts"))
         if ts is None or (now - ts).total_seconds() > RUNNER_HB_MAX_AGE_S:
@@ -2145,6 +2211,17 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
                 return _flumine_no_fill_error(tr, db=db, reason="live_rest_no_fill", now=now)
             # bet_id noto ma Betfair non lo conosce in NESSUNA lista → mai
             # matchato (ordine ucciso/void): riserva a 'error', mai un doppio.
+            # ⚠️ C.12a — MA PRIMA SI PROVA AD AMMAZZARLO DAVVERO. Qui la riga
+            # stava per diventare terminale CON un ``bet_id`` e SENZA che
+            # nessuno avesse mai chiesto a Betfair di annullare quell'ordine:
+            # esattamente la cella 6 della matrice («annullato dal bot»), dove
+            # l'annullo era solo contabile. Si chiede il cancel e si rilegge; se
+            # l'ordine risulta vivo — o se l'esito non si riesce a leggere — la
+            # riga NON si chiude e si riprova al ciclo dopo. QUANDO scatta la
+            # deadline non cambia: e' gia' scattata, siamo dentro il suo ramo.
+            if _ordine_ancora_vivo(market, tr, db=db, now=now, bet_id=str(bet_id),
+                                   ignoto_e_vivo=True):
+                return 0
             return _flumine_no_fill_error(tr, db=db, reason="live_rest_not_found", now=now)
         # REST non disponibile/KO: si riprova al ciclo dopo (mai al buio)
     else:
@@ -2254,6 +2331,57 @@ poll_flumine_paper = poll_flumine_pending
 # ---------------------------------------------------------------------------
 # Fase SETTLEMENT (regola i trade aperti — §6, I3)
 # ---------------------------------------------------------------------------
+def _ordine_ancora_vivo(market, tr: dict[str, Any], *, db, now: datetime,
+                        bet_id: Optional[str] = None,
+                        ignoto_e_vivo: bool = False) -> bool:
+    """L'ordine di questa riga e' ancora VIVO su Betfair? (C.12a)
+
+    Si usa nell'ultimo istante prima di dichiarare terminale una riga LIVE:
+    senza ``bet_id`` non c'e' niente da annullare e la risposta e' No (il
+    comportamento storico resta identico). Con un ``bet_id`` si chiede
+    l'ANNULLAMENTO e si rilegge l'esito: ``True`` solo se Betfair dichiara un
+    residuo ancora vivo — e in quel caso la riga NON va chiusa.
+
+    ``bet_id`` esplicito: sul percorso a coda l'identificativo non sta sulla
+    riga ma arriva dallo specchio o dalla richiesta.
+
+    ``ignoto_e_vivo=True``: un esito che non si riesce a leggere (rete caduta,
+    mercato senza annullamento) vale VIVO. Si usa dove la riga sta per diventare
+    terminale con un ordine reale di cui non sappiamo nulla: li' «non lo so» e
+    «non esiste» non sono la stessa cosa, e si aspetta il ciclo dopo.
+    """
+    from Betfair.safe_strategy import execution as X
+
+    bet_id = str(bet_id or tr.get("bet_id") or "").strip()
+    if not bet_id:
+        return False
+    db.log("cancel_richiesto", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                               "bet_id": bet_id, "critical": True,
+                               "reason": "prima_di_dichiarare_terminale"})
+    ann = X.annulla_su_betfair(market, bet_id=bet_id, market_id=tr.get("market_id"))
+    residuo = float(getattr(ann, "size_remaining", 0.0) or 0.0) if ann is not None else 0.0
+    ignoto = ann is None or not getattr(ann, "riletto", False)
+    vivo = bool((ignoto and ignoto_e_vivo) or (not ignoto and residuo > 0))
+    db.log("cancel_esito", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                            "bet_id": bet_id, "critical": True,
+                            "confermato": bool(ann is not None and getattr(ann, "ok", False)),
+                            "size_cancelled": (getattr(ann, "size_cancelled", None) if ann else None),
+                            "size_matched": (getattr(ann, "size_matched", None) if ann else None),
+                            "size_remaining": (residuo if ann is not None else None),
+                            "error_code": (getattr(ann, "error_code", None) if ann else None),
+                            "esito_ignoto": ignoto,
+                            "nota": ("esito dell'annullamento IGNOTO: la riga resta in verifica"
+                                     if (ignoto and vivo) else
+                                     "ordine ANCORA VIVO: la riga resta in verifica"
+                                     if vivo else "nessun residuo vivo")})
+    if vivo:
+        logger.critical("[omega] trade %s: ordine %s %s: NON lo dichiaro terminale",
+                        tr.get("id"), bet_id,
+                        "con esito di annullamento IGNOTO" if ignoto
+                        else "ANCORA VIVO su Betfair (residuo %.2f)" % residuo)
+    return vivo
+
+
 def reconcile_pending(*, market, db, now: datetime) -> int:
     """Riallinea i trade 'pending' ORFANI con la realtà (I3). Ritorna n. riconciliati.
 
@@ -2344,6 +2472,17 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 db.log("reconciled_free", {"trade_id": tr["id"], "event_id": tr["event_id"]})
                 n += 1
             elif act == "error":
+                # ⚠️ C.12a — PRIMA DI DICHIARARLA MORTA, SI PROVA AD AMMAZZARLA.
+                # Qui si sta per marcare TERMINALE una riga LIVE il cui ordine
+                # Betfair non elenca piu' ne' fra i correnti ne' fra i regolati.
+                # Se la riga porta un ``bet_id`` pero' quell'ordine E' ESISTITO:
+                # si chiede l'annullamento e si RILEGGE. Se la rilettura dice
+                # che e' ancora vivo (residuo > 0), la riga NON diventa 'error'
+                # — resta pending, che e' l'unico modo onesto di trattare un
+                # ordine vivo. Fail-closed: mai «annullato» su un ordine che
+                # puo' abbinarsi cinque minuti dopo.
+                if _ordine_ancora_vivo(market, tr, db=db, now=now):
+                    continue
                 # AUDIT 11/09 (M-14 + M-05): il meta si AGGIORNA, non si sovrascrive
                 # (prima si perdevano model/runners/requested_size: audit del trade
                 # e risultati reali) e la riga diventa TERMINALE (mai "in corso per
@@ -2499,6 +2638,11 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
             db.log("settle", {
                 "trade_id": tr["id"], "event_id": tr["event_id"], "status": status,
                 "pnl": round(pnl, 2), "runner": tr.get("runner_name"),
+                # C.12a — il void smette di essere una deduzione anonima: si
+                # dice PERCHE' (``market_status_void`` se lo dichiara Betfair,
+                # ``closed_senza_winner`` se lo abbiamo dedotto noi).
+                "market_status": snap.status,
+                "void_reason": (getattr(snap, "void_reason", None) if snap.voided else None),
             })
             _stamp_market_result(db, tr, snap.winner_selection_id)
             settled += 1
@@ -4765,9 +4909,39 @@ def _degraded_heartbeat(db, control: dict[str, Any], now: datetime, reason: str)
     try:
         stats = {**_idle_stats(db, control, now), "bot_running": True,
                  "degraded": reason, "last_cycle": now.isoformat()}
-        db.set_control(heartbeat_at=now.isoformat(), stats=stats)
+        db.set_control(heartbeat_at=now.isoformat(), stats=_GUARDIA_AVVIO.timbra(stats))
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega] heartbeat degradato KO (%s): %s", reason, str(ex)[:120])
+
+
+def ferma_al_nuovo_avvio(db=_real_db, now: Optional[datetime] = None) -> Optional[dict[str, Any]]:
+    """FASE A — se questo processo viene da un AVVIO NUOVO dell'app, Omega si
+    ferma: ``status='stopped'``, ``mode='paper'``, attivita' ``avvio_app_bot_fermato``.
+
+    ⚠️ NON passa da ``omega_activate``: quella RPC riscrive i ``params`` con
+    ``coalesce(p_params,'{}')`` e azzererebbe la configurazione. Qui si usa
+    ``set_control``, che tocca solo le colonne passate — e le sole passate sono
+    stato, modalita' e ``stats``. Nessun parametro di strategia viene sfiorato.
+
+    Riavvio dal watchdog (stesso ``APP_BOOT_ID``) → non tocca niente.
+    """
+    now = now or _now()
+    try:
+        control = db.read_control()
+    except Exception as ex:  # noqa: BLE001 — si riprova al giro dopo, intanto non si apre
+        logger.warning("[omega] controllo d'avvio: read_control KO: %s", str(ex)[:160])
+        return None
+    if control is None:
+        _GUARDIA_AVVIO.fatto = True
+        return None
+    try:
+        return AA.ferma_al_nuovo_avvio(_GUARDIA_AVVIO, control=control,
+                                       set_control=db.set_control, log=db.log,
+                                       now_iso=now.isoformat())
+    except Exception as ex:  # noqa: BLE001
+        logger.critical("[omega] controllo d'avvio NON riuscito (%s): "
+                        "nessuna apertura finche' non riesce.", str(ex)[:160])
+        return None
 
 
 def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None,
@@ -4778,6 +4952,12 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         return {"skipped": "no_control"}
 
     status = control.get("status")
+    # FASE A — finche' il controllo d'avvio non si e' concluso (database muto in
+    # avvio) Omega non apre: non sapere da quale avvio si viene e' il caso in cui
+    # si sta fermi. Le fasi di protezione qui sotto girano comunque, come a bot
+    # fermo. Lo stato 'stopping' resta intatto: deve poter arrivare a 'stopped'.
+    if _GUARDIA_AVVIO.blocca_aperture and status == "running":
+        status = "stopped"
     params = omega_config.resolve_params(control.get("params"))
     # §18 — le cadenze del giro valgono anche per le funzioni in fondo alla
     # catena che ``params`` non lo ricevono (il feed e' letto da dieci posti
@@ -4872,7 +5052,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     if status == "stopping":
         db.set_control(status="stopped", stopped_at=now.isoformat(),
-                       stats=_idle_stats(db, control, now))   # cambio di stato: sempre
+                       stats=_GUARDIA_AVVIO.timbra(_idle_stats(db, control, now)))   # cambio di stato: sempre
         _IDLE_STATS_AT["status"] = "stopped"
         db.log("stop", {})
         return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup,
@@ -4885,7 +5065,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         try:
             if _idle_stats_due(status, now):
                 db.set_control(heartbeat_at=now.isoformat(),
-                               stats=_idle_stats(db, control, now))
+                               stats=_GUARDIA_AVVIO.timbra(_idle_stats(db, control, now)))
             else:
                 db.set_control(heartbeat_at=now.isoformat())
         except Exception:  # noqa: BLE001
@@ -5094,7 +5274,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     # e' un'accelerazione, non una sostituzione.
     _pubblica_stato(stats, now.isoformat())
     try:
-        db.set_control(stats=stats, heartbeat_at=now.isoformat())
+        # ``timbra``: l'APP_BOOT_ID vive dentro ``stats``, che qui si riscrive
+        # per intero (vedi Betfair/stream/avvio_app.py).
+        db.set_control(stats=_GUARDIA_AVVIO.timbra(stats), heartbeat_at=now.isoformat())
     except Exception as ex:  # noqa: BLE001 — L-06: il ciclo è comunque andato a buon fine
         logger.warning("[omega] set_control stats KO: %s", str(ex)[:120])
     return {"placed": n_placed, "settled": n_settled, "events": len(events),
@@ -5206,12 +5388,21 @@ def main() -> None:
         return
     logger.info("[omega] servizio avviato")
     _avvia_canale()
+    # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Omega si
+    # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
+    # riesce, ``run_once`` non apre niente (le protezioni girano).
+    _GUARDIA_AVVIO.attiva = True
+    ferma_al_nuovo_avvio()
     score_lookup = _build_score_lookup()
     last_keepalive = float("-inf")  # primo ciclo: keepAlive subito (scalda la sessione)
     try:
         while True:
             interval = 20
             try:
+                # controllo d'avvio non concluso (DB muto): si riprova a ogni
+                # giro, e fino ad allora nessuna apertura.
+                if _GUARDIA_AVVIO.blocca_aperture:
+                    ferma_al_nuovo_avvio()
                 last_keepalive = _maybe_keepalive(
                     _real_market, last_keepalive, now_ts=time.monotonic())
                 # §18 — ``run_once`` rilegge ``omega_control`` da sola: leggerlo

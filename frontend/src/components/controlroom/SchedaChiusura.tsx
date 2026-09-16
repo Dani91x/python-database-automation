@@ -21,6 +21,7 @@ import { useState } from 'react';
 import { Loader2, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, fmtAge, DASH } from '@/lib/format';
+import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { safeExitKindLabel, safeReasonLabel } from '@/components/safestrategy/safeActivity';
 import {
     scostamento, motivoNonApprovabile, abbinabileSufficiente, stakeDiChiusura,
@@ -129,6 +130,22 @@ export function SchedaChiusura({
                     {lato === 'lay' ? 'Banca' : 'Punta'}
                 </span>
                 <span className="text-[13px] font-semibold">{p.selection_name ?? DASH}</span>
+                {/* C.12b (16/09) — la POSIZIONE che si sta chiudendo: chiesto,
+                    abbinato, residuo. Il servizio non pubblica ancora abbinato e
+                    residuo dentro la proposta: li' la scheda scrive «—», che non
+                    e' uno zero, invece di far credere che sia tutto abbinato. */}
+                <StatoOrdineCompatto
+                    riga={{
+                        status: 'open', side: p.entry_side ?? null,
+                        price: p.entry_price ?? null, size: p.size ?? null,
+                        size_requested: p.size_requested ?? null,
+                        size_matched: p.size_matched ?? null,
+                        size_remaining: p.size_remaining ?? null,
+                        avg_price_matched: p.avg_price_matched ?? null,
+                        betfair_updated_at: p.betfair_updated_at ?? null,
+                    }}
+                    testId="cr-proposta-stato-ordine"
+                />
                 <span className="ml-auto text-right">
                     <span className="font-mono text-lg font-bold tabular-nums" data-testid="cr-prezzo-vivo">
                         {fmtOdds(vivo.prezzo)}

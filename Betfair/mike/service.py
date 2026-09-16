@@ -27,6 +27,7 @@ from datetime import timezone
 from typing import Any, Dict, List, Optional
 
 from Betfair.safe_strategy import execution as X
+from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
 
 from . import config as C
@@ -56,6 +57,11 @@ _STALE_REQUEST_MIN = 10           # richieste 'processing' piu' vecchie = crash:
 _STRATEGY_REF = C.CUSTOMER_STRATEGY_REF
 _LAST_HEARTBEAT: Dict[str, float] = {}
 _CONFIG_WARNED: Dict[str, str] = {}
+# FASE A (16/09) — all'avvio dell'app nessun bot opera: la guardia confronta
+# l'``APP_BOOT_ID`` di questo processo con quello salvato in ``mike_control.stats``.
+# Vive per PROCESSO: si accende in ``main()``, cosi' un ``run_once`` chiamato da
+# un test o da un banco di replay non e' un avvio dell'app e non cambia niente.
+_GUARDIA_AVVIO = AA.Guardia("mike")
 
 ACTIVE_STATES = tuple(s for s in E.STATES if s not in E.TERMINAL_STATES)
 
@@ -149,6 +155,27 @@ class _RealMarket:
         return omega_market.place_submin_live(**kw)
 
     @staticmethod
+    def cancel_order_live(bet_id: str, market_id: str,
+                          size_reduction: Optional[float] = None) -> Any:
+        """ANNULLA DAVVERO l'ordine su Betfair (C.12a).
+
+        ⚠️ Fino al 16/09 questa strada NON ESISTEVA: ``_RealMarket`` non
+        esponeva nessun annullamento e tutti i «cancel» di Mike
+        (``_request_cancel``, ``_request_flatten``, l'azione ``cancel``
+        dell'engine, il TTL delle pending stantie) cambiavano SOLO lo stato
+        della riga nel database. L'ordine restava VIVO su Betfair: il trader
+        leggeva «annullato», quattro minuti dopo l'ordine si abbinava, nessuno
+        lo contabilizzava e il motore nel frattempo rientrava — posizione
+        doppia con soldi veri. QUANDO annullare non cambia (e' strategia):
+        cambia che l'annullamento ARRIVA a Betfair.
+        """
+        from Betfair.omega import omega_market
+
+        _pretendi_live_abilitato("cancel_order_live")
+        _RealMarket._bind_strategy_ref(omega_market)
+        return omega_market.cancel_order_live(str(bet_id), str(market_id), size_reduction)
+
+    @staticmethod
     def list_current_orders() -> List[dict]:
         """Ordini VIVI marchiati 'mike' (riconciliazione C3)."""
         from Betfair.omega import omega_market
@@ -189,7 +216,15 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # perderebbe i timer e ricomincerebbe da capo (o resterebbe
                # scoperto in attesa di un'attesa che non finisce mai).
                "live_since", "ko_goals", "early_goal_at", "second_entry_done",
-               "cover_stage", "cover_stage1_at", "cover_forced")
+               "cover_stage", "cover_stage1_at", "cover_forced",
+               # 16/09 — i rifiuti del mercato gia' incassati (difetto 19 del
+               # catalogo: uno stato che vive solo in RAM si perde al riavvio, e
+               # qui il riavvio farebbe ricominciare la riproposizione da capo).
+               "rifiuti",
+               # ORDINE DELL'UTENTE 16/09 — la memoria della sospensione con una
+               # lay appoggiata viva: se il processo riparte in mezzo, la
+               # rilettura alla riapertura non deve andare persa.
+               "riapertura")
 
 
 # ===========================================================================
@@ -476,7 +511,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                   mode: str, params: Dict[str, Any], now: datetime, dry: bool,
                   minute: Optional[int] = None, score: Optional[str] = None,
                   feed_fresh: bool = True, closes_trade_id: Optional[int] = None,
-                  close_reason: Optional[str] = None) -> str:
+                  close_reason: Optional[str] = None,
+                  ctx: Optional[E.MatchCtx] = None) -> str:
     """Piazza la gamba (reserve-first). Ritorna 'open' | 'cancelled' | 'pending'.
 
     Regola prezzo TAKER: il fill avviene al prezzo richiesto solo se ANCORA
@@ -510,6 +546,7 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         doppia = _gia_appoggiata(db, info.event_id, leg)
         if doppia is not None:
             leg.status = "cancelled"
+            _rifiutata(ctx, leg, "gamba di chiusura gia' in volo")
             db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
                                      "reason": "gamba_di_chiusura_gia_in_volo",
                                      "gia_in_volo": doppia.get("id"),
@@ -537,6 +574,13 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         ok_price = avail_price is not None and avail_price <= leg.price + 1e-9
     if not ok_price:
         leg.status = "cancelled"
+        # ⚠️ 16/09 — IL MERCATO HA GIA' RISPOSTO NO A QUESTA DOMANDA.
+        # Qui non nasce nessun ordine (la riga di riserva viene dopo), quindi il
+        # freno anti-duplicato — che guarda le righe 'pending' di `mike_trades` —
+        # non ha niente da trovare: il motore rifaceva la stessa identica
+        # richiesta a ogni giro. Scriverlo sulla gamba e' l'unico modo che il
+        # motore ha di saperlo (`engine.tentativo_gia_rifiutato`).
+        _rifiutata(ctx, leg, f"prezzo non disponibile ({avail_price})")
         # CERT. 12/09 — mancavano ``role`` e ``size``: in UI la riga diceva
         # "— lay non abbinato" senza dire QUALE gamba (ingresso, green, copertura,
         # chiusura) e per quanto. Osservati 58 casi in un giorno, tutti muti.
@@ -611,13 +655,22 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         leg.avg_price = float(out.price or leg.price)
         leg.status = "open"
         try:
-            db.update_trade(int(trade_id), status="open", price=out.price, size=out.size,
-                            liability=X.liability_of(leg.side, out.size, out.price or 0.0),
-                            bet_id=out.bet_id, meta={**row["meta"], "phase": "open", "fill": out.fill_note})
+            # C.12a — la conferma porta anche il CHIESTO e il RESIDUO: ``size``
+            # viene sovrascritta con l'abbinato, e senza le colonne nuove il
+            # numero che il bot aveva chiesto sparirebbe per sempre.
+            X.aggiorna_trade(
+                db, int(trade_id),
+                campi={"status": "open", "price": out.price, "size": out.size,
+                       "liability": X.liability_of(leg.side, out.size, out.price or 0.0),
+                       "bet_id": out.bet_id,
+                       "meta": {**row["meta"], "phase": "open", "fill": out.fill_note}},
+                consapevolezza=out.consapevolezza)
         except Exception as ex:  # noqa: BLE001
             logger.critical("[mike] conferma DB FALLITA (trade %s): %s", trade_id, str(ex)[:160])
         db.log("place", {"leg": leg.ref, "trade_id": trade_id, "role": leg.role, "side": leg.side,
-                         "price": out.price, "size": out.size, "mode": mode, "note": out.fill_note},
+                         "price": out.price, "size": out.size, "mode": mode, "note": out.fill_note,
+                         "size_requested": out.size_requested,
+                         "size_remaining": out.size_remaining},
                info.event_id)
         return "open"
     if out.status == "pending":
@@ -635,11 +688,27 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         db.log("place_pending", {"leg": leg.ref, "trade_id": trade_id, "note": out.fill_note}, info.event_id)
         return "pending"
     leg.status = "cancelled"
+    # 16/09 — rifiuto DICHIARATO di Betfair (FOK ucciso, codice d'errore,
+    # istruzione non accettata): nessun ordine e' a mercato e la risposta e'
+    # gia' arrivata. La stessa richiesta identica non si rifa (fail-closed: la
+    # Costituzione non dice «riprova» per questo caso, §3 Fase 1 e Fase 6
+    # descrivono UNA uscita appoggiata per ciclo).
+    _rifiutata(ctx, leg, f"rifiutata da Betfair ({out.error_code or out.fill_note})")
     try:
         db.update_trade(int(trade_id), status="error", meta={**row["meta"], "reason": out.fill_note})
     except Exception:  # noqa: BLE001
         pass
-    db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note}, info.event_id)
+    # C.12a — se Betfair ha dato un CODICE, si scrive col kind dedicato (lo
+    # stesso ``place_rifiutato`` gia' in uso per la lay appoggiata): un rifiuto
+    # per INSUFFICIENT_FUNDS e uno per INVALID_PROFIT_RATIO non sono la stessa
+    # cosa, e finora erano entrambi uno ``skip`` muto.
+    if out.error_code:
+        db.log("place_rifiutato", {"leg": leg.ref, "trade_id": trade_id, "role": leg.role,
+                                   "side": leg.side, "price": leg.price, "size": leg.size,
+                                   "error_code": out.error_code, "critical": True,
+                                   "reason": out.fill_note}, info.event_id)
+    db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
+                    "error_code": out.error_code}, info.event_id)
     return "cancelled"
 
 
@@ -802,6 +871,10 @@ def _live_exit_override(params: Dict[str, Any], mode: str) -> Dict[str, Any]:
     # Resta la valvola ``live_resting_enabled``: spenta, si torna al
     # dirottamento di prima. Serve a poter tornare indietro dalla UI senza
     # toccare il codice, non a cambiare strategia.
+    # ⚠️ 16/09 — questa valvola NON tocca piu' ``ko_green``: per ordine
+    # dell'utente l'uscita al fischio e' appoggiata in ogni modalita' e
+    # ``_is_resting_leg`` non guarda piu' ``pre_exit_mode`` per quel ruolo.
+    # Qui resta cio' che governa ``under_green`` e ``reentry_green``.
     if (str(mode) == "live" and str(params.get("pre_exit_mode")) == "resting"
             and not bool(params.get("live_resting_enabled", True))):
         return dict(params, pre_exit_mode="taker")
@@ -844,10 +917,49 @@ def _log_throttled(db: Any, extra: Dict[str, Any], params: Dict[str, Any], now_t
     return True
 
 
+def _rifiutata(ctx: Optional[E.MatchCtx], leg: E.Leg, motivo: str) -> None:
+    """Scrive NEL CTX che il mercato ha rifiutato questa richiesta.
+
+    ⚠️ 16/09 — E' la meta' mancante del dialogo `ctx` <-> riga <-> mercato.
+    Fino a ieri un rifiuto finiva solo in `mike_activity` (`no_fill`, `skip`,
+    `place_rifiutato`): la gamba diventava 'cancelled', indistinguibile da una
+    annullata dal motore, e il motore rifaceva la stessa domanda al giro dopo.
+    Sulla registrazione 35674515 in `taker` sono 531 riproposizioni identiche
+    di `reentry_green` (lay 10,11 @ 1,75) contro 3 ordini davvero piazzati.
+
+    Si scrive SOLO dove nessun ordine e' nato e la risposta e' definitiva
+    (prezzo non disponibile, rifiuto dichiarato di Betfair, freno
+    anti-duplicato). MAI su un esito IGNOTO — li' comanda la riconciliazione
+    (§4.11) — e mai in `dry` (li' non si e' nemmeno chiesto niente al mercato).
+
+    Non cambia nessuna regola di strategia: prezzi, soglie, quando si esce e
+    quante gambe prevede la spec restano quelli. Cambia solo che il motore SA.
+
+    ``ctx`` puo' mancare solo nei test che chiamano ``execute_place`` da solo:
+    li' non c'e' nessun motore da frenare, e il rifiuto resta nelle attivita'.
+    """
+    if ctx is None:
+        return
+    E.registra_rifiuto(ctx, leg, motivo)
+
+
 def _is_resting_leg(leg: E.Leg, params: Dict[str, Any]) -> bool:
-    """Lay di green-up appoggiata sul book (take-profit): NON e' un ordine taker."""
-    return (leg.side == "lay" and leg.role in ("under_green", "ko_green", "reentry_green")
-            and str(params.get("pre_exit_mode")) == "resting" and not leg.final)
+    """Lay di green-up appoggiata sul book (take-profit): NON e' un ordine taker.
+
+    ⚠️ ORDINE DELL'UTENTE 16/09 — ``ko_green`` E' APPOGGIATA IN OGNI MODALITA'.
+    «Mettiamola appoggiata allora, cosi' risparmiamo una marea di chiamate»:
+    fino a ieri l'uscita al fischio seguiva ``pre_exit_mode`` e in `taker`
+    veniva RI-PRESENTATA ogni ``ko_green_retry_s``, cioe' 25-32 chiamate REST
+    per una sola uscita (misurato sulla registrazione 35674515). Adesso quel
+    ruolo non consulta piu' il parametro: la lay si appoggia e si aspetta.
+    ``under_green`` e ``reentry_green`` restano governate da ``pre_exit_mode``.
+    """
+    if leg.final or leg.side != "lay":
+        return False
+    if leg.role == "ko_green":
+        return True
+    return (leg.role in ("under_green", "reentry_green")
+            and str(params.get("pre_exit_mode")) == "resting")
 
 
 def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
@@ -894,7 +1006,7 @@ def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
-                         ev: Dict[str, Any]) -> None:
+                         ev: Dict[str, Any], ctx: Optional[E.MatchCtx] = None) -> None:
     """Piazza in LIVE la lay appoggiata e la lascia sul book.
 
     Nessuna differenza di STRATEGIA rispetto al paper: stessa selezione, stesso
@@ -994,10 +1106,16 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         db.log("place_rifiutato", {"leg": leg.ref, "role": leg.role, "critical": True,
                                    "reason": "resting_rifiutata",
                                    "order_status": res.order_status,
+                                   # C.12a — il CODICE di Betfair, non solo lo stato
+                                   "error_code": getattr(res, "error_code", None),
                                    "price": leg.price, "size": leg.size,
                                    "nota": "la copertura NON e' a mercato: la riga si chiude "
                                            "e il motore la ripropone"}, eid)
         _mark_trade_cancelled(db, eid, leg, "resting_rifiutata")
+        # 16/09 — IL MOTORE DEVE SAPERLO. Nessun ordine e' nato e la risposta e'
+        # definitiva: senza questo, tolto il ritmo di ri-presentazione di
+        # ``ko_green``, la stessa lay rifiutata verrebbe riproposta a ogni giro.
+        _rifiutata(ctx, leg, f"resting rifiutata ({res.order_status})")
         return
     # ⚠️ IL BET_ID SI SCRIVE SEMPRE (15/09), non solo quando l'ordine si abbina.
     # Un ordine appoggiato che resta sul book e' il caso NORMALE: senza il suo
@@ -1031,21 +1149,50 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         leg.avg_price = float(res.avg_price_matched or leg.price)
         if matched >= float(leg.size) - 1e-9:
             leg.status = "open"
-        _aggiorna_riga_resting(db, eid, leg, "live_resting_immediato")
+        _aggiorna_riga_resting(db, eid, leg, "live_resting_immediato",
+                               residuo=getattr(res, "size_remaining", None),
+                               aggiornato_al=getattr(res, "betfair_updated_at", None))
+    residuo_iniziale = getattr(res, "size_remaining", None)
+    if residuo_iniziale is None:
+        residuo_iniziale = round(max(0.0, float(leg.size) - matched), 2)
     db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
                              "size": leg.size, "matched": round(matched, 2),
-                             "live": True}, eid)
+                             "live": True,
+                             # C.12a — chiesto e residuo detti per nome
+                             "size_requested": round(float(leg.size), 2),
+                             "size_remaining": round(float(residuo_iniziale), 2),
+                             "nota": (f"parziale {matched:.2f} su {float(leg.size):.2f}, "
+                                      f"residuo {float(residuo_iniziale):.2f} vivo"
+                                      if 0 < matched < float(leg.size) - 1e-9 else None)}, eid)
 
 
-def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str) -> None:
-    """Porta l'abbinamento sulla riga di ``mike_trades``. Stessa strada del paper."""
+def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str,
+                          residuo: Optional[float] = None,
+                          aggiornato_al: Optional[str] = None) -> None:
+    """Porta l'abbinamento sulla riga di ``mike_trades``. Stessa strada del paper.
+
+    C.12a — porta anche CHIESTO, RESIDUO, PREZZO MEDIO e l'istante dell'ultima
+    notizia da Betfair sulle colonne nuove (se la migrazione e' applicata):
+    ``size`` da sola racconta l'abbinato e fa sparire il chiesto.
+    Il ``residuo`` arriva da ``sizeRemaining`` di Betfair quando c'e'; solo in
+    sua assenza si ripiega sulla differenza chiesto-abbinato, ed e' una stima.
+    """
     r = _trade_row_for_leg(db, event_id, leg)
     if r is None:
         return
+    if residuo is None:
+        residuo = round(max(0.0, float(leg.size) - float(leg.matched)), 2)
     try:
-        db.update_trade(int(r["id"]), status=("open" if leg.status == "open" else "pending"),
-                        price=leg.avg_price or leg.price, size=leg.matched,
-                        meta={**(r.get("meta") or {}), "phase": "open", "fill": come})
+        X.aggiorna_trade(
+            db, int(r["id"]),
+            campi={"status": ("open" if leg.status == "open" else "pending"),
+                   "price": leg.avg_price or leg.price, "size": leg.matched,
+                   "meta": {**(r.get("meta") or {}), "phase": "open", "fill": come}},
+            consapevolezza={"size_requested": round(float(leg.size), 2),
+                            "size_matched": round(float(leg.matched), 2),
+                            "size_remaining": round(float(residuo), 2),
+                            "avg_price_matched": leg.avg_price,
+                            "betfair_updated_at": aggiornato_al})
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"leg": leg.ref, "reason": "fill_update_failed",
                          "err": str(ex)[:160]}, event_id)
@@ -1080,6 +1227,14 @@ _ALIAS_ORDINE: Dict[str, tuple] = {
     "avg_price_matched": ("avg_price_matched", "averagePriceMatched"),
     "size_remaining": ("size_remaining", "sizeRemaining"),
     "size_settled": ("size_settled", "sizeSettled"),
+    # C.12a — il resto di cio' che Betfair dice sull'ordine. `size_cancelled`
+    # distingue «l'ho annullato io» da «e' scaduto» (`size_lapsed`), e
+    # `matched_date` e' il «quando l'ho saputo» che mancava ovunque.
+    "size_cancelled": ("size_cancelled", "sizeCancelled"),
+    "size_lapsed": ("size_lapsed", "sizeLapsed"),
+    "size_voided": ("size_voided", "sizeVoided"),
+    "matched_date": ("matched_date", "matchedDate"),
+    "placed_date": ("placed_date", "placedDate"),
     "market_id": ("market_id", "marketId"),
     "selection_id": ("selection_id", "selectionId"),
     "status": ("status",),
@@ -1271,6 +1426,17 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
     # Si e' visto dal vivo: la riga #4817 era `pending` nel database mentre su
     # Betfair l'ordine era EXECUTION_COMPLETE.
     matched = _num_ordine(o, "size_matched", 0.0)
+    # ⚠️ C.12a — IL RESIDUO LO DICE BETFAIR, non una sottrazione.
+    # Fino al 16/09 il residuo vivo era DEDOTTO da ``leg.size - leg.matched``:
+    # se un fill arriva fra due letture, o se Betfair riduce l'ordine, quel
+    # numero e' un'ipotesi. ``sizeRemaining`` c'e' nella risposta di
+    # ``listCurrentOrders`` da sempre e ``omega_market`` lo normalizzava gia' in
+    # ``size_remaining``: nessuno in Mike lo leggeva. Se manca (ordine che non
+    # lo espone) si ripiega sulla differenza, dichiarandolo.
+    residuo_betfair = campo_ordine(o, "size_remaining")
+    residuo = (round(float(residuo_betfair), 2) if residuo_betfair is not None
+               else round(max(0.0, float(leg.size) - matched), 2))
+    aggiornato_al = campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date")
     if matched <= float(leg.matched) + 1e-9:
         return                      # nessun progresso: si aspetta, come in paper
     leg.matched = matched
@@ -1278,9 +1444,275 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
     leg.avg_price = float(prezzo) if prezzo else float(leg.price)
     if matched >= float(leg.size) - 1e-9:
         leg.status = "open"         # abbinata del tutto
-    _aggiorna_riga_resting(db, eid, leg, "live_resting")
+    _aggiorna_riga_resting(db, eid, leg, "live_resting", residuo=residuo,
+                           aggiornato_al=(str(aggiornato_al) if aggiornato_al else None))
     db.log("fill_resting", {"leg": leg.ref, "role": leg.role, "matched": round(matched, 2),
-                            "price": leg.avg_price, "live": True}, eid)
+                            "price": leg.avg_price, "live": True,
+                            "size_requested": round(float(leg.size), 2),
+                            "size_remaining": residuo,
+                            "nota": (f"parziale {matched:.2f} su {float(leg.size):.2f}, "
+                                     f"residuo {residuo:.2f} vivo"
+                                     if leg.status != "open" else
+                                     f"abbinata tutta ({matched:.2f})")}, eid)
+
+
+# ===========================================================================
+# LA SOSPENSIONE UCCIDE GLI ORDINI APPOGGIATI (ordine dell'utente, 16/09)
+# ===========================================================================
+# «Attenzione pero': quella gamba, se il mercato si sospende per qualsiasi
+# motivo, Betfair cancella quell'ordine; il bot deve saperlo e appena riapre il
+# mercato verificare cosa e' successo (gol estremamente precoci)».
+#
+# Un ordine LIMIT non abbinato ha ``persistenceType=LAPSE``: alla sospensione
+# del mercato Betfair lo fa SCADERE. Un gol al 2' basta. Da fuori non si vede
+# niente — nessun errore, nessuna notifica — e il bot resterebbe convinto di
+# avere un'uscita sul book per tutta la finestra, per poi scoprire al momento
+# di annullarla che non esiste piu'. Nel frattempo non ha ne' l'uscita ne' la
+# copertura: e' il peggior punto in cui stare.
+#
+# Da qui in avanti: a ogni sospensione con una gamba appoggiata VIVA il ctx se
+# lo ricorda (``ctx.riapertura``), e alla riapertura l'ordine si RILEGGE da
+# Betfair per ``bet_id``. Le reazioni possibili sono quattro e sono tutte
+# dichiarate — vivo, scaduto, abbinato, abbinato in parte — piu' l'ignoto, che
+# non e' una reazione ma una riconciliazione (§4.11).
+_ESITO_VIVO = "vivo"
+_ESITO_SCADUTO = "scaduto"
+_ESITO_ABBINATO = "abbinato"
+_ESITO_PARZIALE = "parziale"
+_ESITO_IGNOTO = "ignoto"
+
+
+def _gambe_appoggiate_vive(ctx: E.MatchCtx, params: Dict[str, Any]) -> List[E.Leg]:
+    """Le lay APPOGGIATE che in questo momento sono (per il bot) sul book."""
+    return [l for l in ctx.legs if l.is_live and _is_resting_leg(l, params)]
+
+
+def _classifica_ordine(leg: E.Leg, o: Dict[str, Any]) -> tuple:
+    """Dall'ordine come lo racconta Betfair all'esito, con i numeri.
+
+    Nessuna deduzione: ``size_matched``, ``size_remaining``, ``size_lapsed`` e
+    ``size_cancelled`` vengono dalla risposta (``omega_market`` li normalizza
+    gia' cosi', C.12a). Il residuo NON si calcola per differenza quando Betfair
+    lo dice: una sottrazione e' un'ipotesi, e qui le ipotesi sono soldi.
+    """
+    abbinato = _num_ordine(o, "size_matched", 0.0)
+    residuo_betfair = campo_ordine(o, "size_remaining")
+    residuo = (float(residuo_betfair) if residuo_betfair is not None
+               else max(0.0, float(leg.size) - abbinato))
+    scaduto = _num_ordine(o, "size_lapsed", 0.0)
+    annullato = _num_ordine(o, "size_cancelled", 0.0)
+    stato = str(campo_ordine(o, "status", "") or "").upper()
+    numeri = {"size_requested": round(float(leg.size), 2),
+              "size_matched": round(abbinato, 2),
+              "size_remaining": round(residuo, 2),
+              "size_lapsed": round(scaduto, 2),
+              "size_cancelled": round(annullato, 2),
+              "order_status": stato or None,
+              "avg_price_matched": campo_ordine(o, "avg_price_matched"),
+              "betfair_updated_at": campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date")}
+    if residuo > 0.009 and stato != "EXECUTION_COMPLETE":
+        return (_ESITO_VIVO, numeri)
+    if abbinato >= float(leg.size) - 0.009:
+        return (_ESITO_ABBINATO, numeri)
+    if abbinato > 0.009:
+        return (_ESITO_PARZIALE, numeri)
+    return (_ESITO_SCADUTO, numeri)
+
+
+def _rileggi_ordine_appoggiato(*, db: Any, market: Any, leg: E.Leg, ev: Dict[str, Any],
+                               cache: Optional[Dict[str, List[Dict[str, Any]]]] = None):
+    """RILEGGE da Betfair l'ordine di questa gamba. ``None`` = non si e' potuto.
+
+    Due strade, nell'ordine: gli ordini CORRENTI (dove sta un ordine ancora
+    vivo, con ``size_lapsed``/``size_cancelled``) e, se li' non c'e' piu',
+    ``order_state_by_bet_id`` — l'unica chiave certa quando l'ordine e' uscito
+    dalla lista dei correnti (`omega_market:1082`, guarda anche i regolati
+    LAPSED/CANCELLED). ``None`` significa «non lo so ancora»: si riprova al
+    giro dopo, e fino ad allora NESSUNO puo' dire che quell'ordine e' vivo.
+    """
+    eid = str(ev["event_id"])
+    riga = _trade_row_for_leg(db, eid, leg, cache)
+    if riga is None:
+        return (_ESITO_IGNOTO, {"reason": "riga_assente"})
+    try:
+        vivi = market.list_current_orders() or []
+    except Exception as ex:  # noqa: BLE001 — rete: si riprova, non si inventa
+        logger.warning("[mike] %s: rilettura alla riapertura KO (correnti): %s",
+                       eid, str(ex)[:120])
+        return None
+    o = _ordine_della_riga(vivi, riga)
+    if o is not None:
+        return _classifica_ordine(leg, o)
+    bet_id = str(riga.get("bet_id") or "").strip()
+    fn = getattr(market, "order_state_by_bet_id", None)
+    if not bet_id or not callable(fn):
+        # senza identificativo non si puo' chiedere niente a Betfair: e' ignoto,
+        # e l'ignoto si riconcilia (§4.11), non si indovina.
+        return (_ESITO_IGNOTO, {"reason": "senza_bet_id" if not bet_id else "mercato_senza_lettura"})
+    try:
+        st = fn(bet_id) or {}
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[mike] %s: rilettura alla riapertura KO (bet %s): %s",
+                       eid, bet_id, str(ex)[:120])
+        return None
+    if not st.get("found"):
+        return (_ESITO_IGNOTO, {"reason": "betfair_non_lo_conosce", "bet_id": bet_id})
+    esito, numeri = _classifica_ordine(leg, dict(st))
+    numeri["bet_id"] = bet_id
+    return (esito, numeri)
+
+
+def _chiudi_gamba_scaduta(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, Any]) -> None:
+    """La gamba e' morta alla sospensione: si chiude PER QUELLO CHE E'.
+
+    Non e' un errore del bot e non e' «mai piazzata»: l'ordine e' esistito, e
+    quanto ha abbinato prima di scadere resta una POSIZIONE. Si scrive
+    l'abbinato vero, il residuo a zero, e il motivo per esteso nel ``meta``.
+    (Il vincolo di ``mike_trades.status`` ammette solo
+    pending|open|hedged|won|lost|void|error: una riga senza abbinato resta
+    'error' come ogni altra gamba ritirata — nessuna migrazione, e il motivo
+    sta nel ``meta`` e nell'attivita'.)
+    """
+    abbinato = float(numeri.get("size_matched") or 0.0)
+    prezzo = numeri.get("avg_price_matched")
+    leg.matched = abbinato
+    if abbinato > 0:
+        leg.avg_price = float(prezzo) if prezzo else float(leg.price)
+    leg.status = "open" if abbinato > 0 else "cancelled"
+    r = _trade_row_for_leg(db, event_id, leg)
+    if r is None:
+        return
+    meta = dict(r.get("meta") or {})
+    meta.update({"phase": "lapsed", "reason": "lapsed_alla_sospensione"})
+    campi: Dict[str, Any] = {"meta": meta}
+    if abbinato > 0:
+        campi.update({"status": "open", "size": round(abbinato, 2), "price": leg.fill_price})
+    else:
+        campi["status"] = "error"
+    try:
+        X.aggiorna_trade(db, int(r["id"]), campi=campi,
+                         consapevolezza={"size_requested": round(float(leg.size), 2),
+                                         "size_matched": round(abbinato, 2),
+                                         "size_remaining": 0.0,
+                                         "avg_price_matched": leg.avg_price if abbinato > 0 else None,
+                                         "betfair_updated_at": numeri.get("betfair_updated_at")})
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"leg": leg.ref, "reason": "lapsed_update_failed",
+                         "err": str(ex)[:160]}, event_id)
+
+
+def _applica_esito_riapertura(*, db: Any, event_id: str, leg: E.Leg, esito: str,
+                              numeri: Dict[str, Any]) -> None:
+    """LE QUATTRO REAZIONI, una per una. Chi decide dopo e' il motore.
+
+    (a) vivo      -> la gamba resta com'e': ``_segui_resting_live`` continua a
+                     seguirne gli abbinamenti, niente gamba nuova;
+    (b) scaduto   -> attivita' ``ordine_scaduto_alla_sospensione`` con i numeri
+                     e gamba chiusa; il motore, al giro dopo, ri-appoggia se la
+                     finestra e' ancora aperta oppure passa alla copertura
+                     (`engine._decide_ko_green`: freno anti-duplicato e
+                     ``finestra_uscita_scaduta`` decidono, non questa funzione);
+    (c) abbinato  -> e' una POSIZIONE: si contabilizza subito, il ciclo prosegue;
+    (d) parziale  -> la parte abbinata e' posizione, il residuo e' scaduto: si
+                     dichiara con i numeri e la gamba si chiude come in (b),
+                     per la sola parte residua.
+    ignoto        -> ``pending_reconcile`` (§4.11), MAI una gamba nuova.
+    """
+    comune = {"leg": leg.ref, "role": leg.role, "esito": esito, **numeri}
+    if esito == _ESITO_VIVO:
+        db.log("rilettura_alla_riapertura",
+               {**comune, "nota": "l'ordine appoggiato e' ancora vivo sul book: "
+                                  "nessuna gamba nuova"}, event_id)
+        return
+    if esito == _ESITO_ABBINATO:
+        leg.matched = float(numeri.get("size_matched") or leg.size)
+        prezzo = numeri.get("avg_price_matched")
+        leg.avg_price = float(prezzo) if prezzo else float(leg.price)
+        leg.status = "open"
+        _aggiorna_riga_resting(db, event_id, leg, "riapertura_abbinata", residuo=0.0,
+                               aggiornato_al=(str(numeri.get("betfair_updated_at"))
+                                              if numeri.get("betfair_updated_at") else None))
+        db.log("rilettura_alla_riapertura",
+               {**comune, "nota": "abbinato durante la sospensione: e' una posizione, "
+                                  "il ciclo prosegue"}, event_id)
+        return
+    if esito == _ESITO_IGNOTO:
+        leg.status = E.STATUS_RECONCILE
+        logger.critical("[mike] %s: esito IGNOTO alla riapertura su %s -> riconciliazione",
+                        event_id, leg.ref)
+        db.log("rilettura_alla_riapertura",
+               {**comune, "critical": True,
+                "nota": "Betfair non ha detto che fine ha fatto: riconciliazione, "
+                        "mai una gamba nuova su un dubbio"}, event_id)
+        db.log("reconcile_pending", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                     "reason": "riapertura_esito_ignoto"}, event_id)
+        return
+    # (b) e (d): l'ordine e' morto alla sospensione, in tutto o nel residuo
+    db.log("rilettura_alla_riapertura", {**comune}, event_id)
+    db.log("ordine_scaduto_alla_sospensione",
+           {**comune, "critical": True,
+            "nota": ("Betfair ha fatto SCADERE (LAPSE) l'ordine appoggiato quando il "
+                     "mercato si e' sospeso"
+                     + (": la parte abbinata resta una posizione, il residuo non c'e' piu'"
+                        if esito == _ESITO_PARZIALE else
+                        ": non era abbinato niente, la gamba si chiude"))}, event_id)
+    _chiudi_gamba_scaduta(db, event_id, leg, numeri)
+
+
+def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Snapshot,
+                           params: Dict[str, Any], mode: str, now_ts: float,
+                           ev: Dict[str, Any],
+                           cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> None:
+    """Ricorda le sospensioni e, alla riapertura, RILEGGE gli ordini appoggiati.
+
+    Gira PRIMA della decisione: il motore deve vedere gambe che dicono la
+    verita', non gambe date per vive per abitudine.
+    """
+    bk = snap.book(E.MARKET_OU35, E.SEL_UNDER)
+    stato = E.stato_mercato(bk)
+
+    if stato in (E.STATO_SOSPESO, E.STATO_IGNOTO):
+        vive = _gambe_appoggiate_vive(ctx, params)
+        if not vive:
+            return
+        refs = sorted(l.ref for l in vive)
+        gia = ctx.riapertura or {}
+        if gia and not gia.get("letto") and sorted(gia.get("refs") or []) == refs:
+            return                       # stessa sospensione, gia' annotata
+        ctx.riapertura = {"ts": now_ts, "refs": refs, "letto": False, "esiti": {}}
+        db.log("mercato_sospeso", {"stato": stato, "refs": refs, "critical": True,
+                                   "nota": "mercato sospeso con una lay appoggiata viva: "
+                                           "Betfair puo' averla fatta scadere, alla "
+                                           "riapertura si rilegge"}, str(ev["event_id"]))
+        return
+
+    if stato != E.STATO_APERTO:
+        return                            # chiuso: non c'e' piu' niente da appoggiare
+    r = ctx.riapertura
+    if not r or r.get("letto"):
+        return
+
+    eid = str(ev["event_id"])
+    esiti: Dict[str, Any] = dict(r.get("esiti") or {})
+    for ref in list(r.get("refs") or []):
+        leg = next((l for l in ctx.legs if l.ref == ref), None)
+        if leg is None or not leg.is_live:
+            esiti[ref] = "gamba_non_piu_viva"
+            continue
+        if str(mode) == "paper":
+            # in paper non esiste nessun ordine su Betfair da far scadere: la
+            # simulazione lo tiene sul book. Lo si DICHIARA, non lo si finge.
+            esiti[ref] = "paper"
+            continue
+        letto = _rileggi_ordine_appoggiato(db=db, market=market, leg=leg, ev=ev, cache=cache)
+        if letto is None:
+            # non si e' potuto leggere: si riprova al giro dopo. ``letto`` resta
+            # False, quindi il controllo R1 della certificazione lo vede.
+            return
+        esito, numeri = letto
+        esiti[ref] = esito
+        _applica_esito_riapertura(db=db, event_id=eid, leg=leg, esito=esito, numeri=numeri)
+    ctx.riapertura = {**r, "letto": True, "letto_ts": now_ts, "esiti": esiti}
 
 
 def _resting_filled(leg: E.Leg, book: Optional[E.Book]) -> bool:
@@ -1340,7 +1772,7 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
                 res = _request_flatten(db, market, ev, rows_by_event.get(eid), eff, now, dry,
                                        scanner_age=scanner_age, kind=kind)
             elif kind == "cancel":
-                res = _request_cancel(db, ev, events, eid)
+                res = _request_cancel(db, ev, events, eid, market)
             elif kind == "skip_event":
                 ctx = _ctx_from_row(ev, db)
                 if E.open_selections(ctx.legs) or any(l.is_live or l.needs_reconcile for l in ctx.legs):
@@ -1391,20 +1823,33 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
 
 
 def _request_cancel(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[str, Any]],
-                    eid: str) -> Dict[str, Any]:
+                    eid: str, market: Any = None) -> Dict[str, Any]:
     """Annulla gli ordini VIVI (resting) della partita, senza toccare la posizione.
-    Una gamba in riconciliazione NON viene mai cancellata (C3)."""
+    Una gamba in riconciliazione NON viene mai cancellata (C3).
+
+    C.12a — ``_mark_trade_cancelled`` manda l'annullamento a BETFAIR e decide lo
+    stato della gamba: annullato davvero, oppure in riconciliazione se Betfair
+    non lo conferma. Il messaggio dice quanti ne ha annullati DAVVERO."""
     ctx = _ctx_from_row(ev, db)
     live = [l for l in ctx.legs if l.is_live]
     if not live:
         return _result("niente_da_chiudere", "Nessun ordine vivo da annullare.")
+    annullati, in_verifica = 0, 0
     for leg in live:
-        leg.status = "open" if leg.matched > 0 else "cancelled"
-        _mark_trade_cancelled(db, eid, leg, "cancelled_by_user")
-        db.log("cancel", {"leg": leg.ref, "role": leg.role, "by": "utente"}, eid)
+        esito = _mark_trade_cancelled(db, eid, leg, "cancelled_by_user", market=market)
+        if esito == E.STATUS_RECONCILE:
+            in_verifica += 1
+        else:
+            annullati += 1
+        db.log("cancel", {"leg": leg.ref, "role": leg.role, "by": "utente",
+                          "esito": esito}, eid)
     events[eid] = _row_from_ctx(ev, ctx, dict(ev.get("ctx") or {}))
     db.upsert_event(events[eid])
-    return _result("ok", f"Annullati {len(live)} ordini sul book.", ok=True, cancelled=len(live))
+    msg = f"Annullati {annullati} ordini sul book."
+    if in_verifica:
+        msg += (f" ATTENZIONE: {in_verifica} annullamenti non confermati da Betfair, "
+                f"in verifica (l'ordine potrebbe essere ancora vivo).")
+    return _result("ok", msg, ok=True, cancelled=annullati, in_verifica=in_verifica)
 
 
 def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[str, Any]],
@@ -1462,12 +1907,17 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
     # 1) annullo immediato degli ordini vivi (la gamba a esito IGNOTO non si
     #    tocca mai: C3)
     cancelled = 0
+    in_verifica = 0
     for leg in live:
-        leg.status = "open" if leg.matched > 0 else "cancelled"
         extra["deferred"] = [x for x in (extra.get("deferred") or []) if x.get("ref") != leg.ref]
-        _mark_trade_cancelled(db, eid, leg, "cancelled_manual")
-        db.log("cancel", {"leg": leg.ref, "role": leg.role, "by": "utente"}, eid)
-        cancelled += 1
+        # C.12a — l'annullamento ARRIVA a Betfair prima che la riga lo dichiari.
+        esito = _mark_trade_cancelled(db, eid, leg, "cancelled_manual", market=market)
+        db.log("cancel", {"leg": leg.ref, "role": leg.role, "by": "utente",
+                          "esito": esito}, eid)
+        if esito == E.STATUS_RECONCILE:
+            in_verifica += 1
+        else:
+            cancelled += 1
     # 2) la chiusura la guida l'engine (stesso ciclo): mai un doppio percorso
     ctx.flatten_pending = True
     ctx.close_reason = "manual"
@@ -1480,13 +1930,48 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
     parts = []
     if cancelled:
         parts.append(f"annullati {cancelled} ordini sul book")
+    if in_verifica:
+        parts.append(f"{in_verifica} annullamenti NON confermati da Betfair (in verifica)")
     parts.append(f"chiusura in corso (netto stimato {cv.net:.2f} EUR)")
     msg = f"{label}: " + ", ".join(parts) + "."
-    if reconciling:
+    if reconciling or in_verifica:
         msg += " ATTENZIONE: un ordine e' in riconciliazione, l'esposizione reale potrebbe differire."
     return _result("ok", msg, ok=True, cancelled=cancelled, phase="armed",
+                   in_verifica=in_verifica,
                    cashout_net=cv.net, complete=cv.complete,
-                   warning="reconcile" if reconciling else None)
+                   warning="reconcile" if (reconciling or in_verifica) else None)
+
+
+def ferma_al_nuovo_avvio(db: Any = _real_db, now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """FASE A — se questo processo viene da un AVVIO NUOVO dell'app, Mike si
+    ferma: ``status='stopped'``, ``mode='paper'``, attivita' ``avvio_app_bot_fermato``.
+
+    I ``params`` (soglie, stake, tetti) NON si toccano: qui si scrive solo lo
+    stato e la modalita'. Un riavvio dal watchdog (stesso ``APP_BOOT_ID``) non
+    tocca niente: il bot che l'utente ha acceso non muore a ogni crash.
+
+    Ritorna il riepilogo di cio' che e' stato azzerato, ``None`` se non c'era
+    niente da fare o se il controllo non si e' potuto concludere (in quel caso
+    la guardia resta «non fatta» e il ciclo non apre: si riprova al giro dopo).
+    """
+    now = now or _now()
+    try:
+        control = db.read_control()
+    except Exception as ex:  # noqa: BLE001 — si riprova al giro dopo, intanto non si apre
+        logger.warning("[mike] controllo d'avvio: read_control KO: %s", str(ex)[:160])
+        return None
+    if control is None:
+        # nessuna riga di controllo: non c'e' niente che possa operare.
+        _GUARDIA_AVVIO.fatto = True
+        return None
+    try:
+        return AA.ferma_al_nuovo_avvio(_GUARDIA_AVVIO, control=control,
+                                       set_control=db.set_control, log=db.log,
+                                       now_iso=now.isoformat())
+    except Exception as ex:  # noqa: BLE001
+        logger.critical("[mike] controllo d'avvio NON riuscito (%s): "
+                        "nessuna apertura finche' non riesce.", str(ex)[:160])
+        return None
 
 
 def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[datetime] = None,
@@ -1508,7 +1993,10 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     params = C.merge_params(control.get("params"))
     global _ULTIMI_PARAMS
     _ULTIMI_PARAMS = params
-    running = status == "running"
+    # FASE A — finche' il controllo d'avvio non si e' concluso (database muto
+    # in avvio) il bot NON apre: non sapere da quale avvio si viene e' il caso
+    # in cui si sta fermi. Le protezioni qui sotto girano comunque.
+    running = status == "running" and not _GUARDIA_AVVIO.blocca_aperture
     eff = _params_for(params, running, mode)
     _config_warn(db, params)
 
@@ -1823,7 +2311,11 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         _LAST_HEARTBEAT["sig"] = _signature(beat)
         _LAST_HEARTBEAT["ts"] = now_ts
         try:
-            db.set_control(stats=stats, heartbeat_at=now.isoformat())
+            # ⚠️ ``timbra``: l'``APP_BOOT_ID`` vive dentro ``stats``, che qui si
+            # riscrive per INTERO. Senza il timbro l'id sparirebbe al primo
+            # battito e il crash successivo verrebbe scambiato per un avvio
+            # nuovo, spegnendo il bot che l'utente aveva appena acceso.
+            db.set_control(stats=_GUARDIA_AVVIO.timbra(stats), heartbeat_at=now.isoformat())
         except Exception as ex:  # noqa: BLE001
             logger.warning("[mike] set_control KO: %s", str(ex)[:160])
     return {"status": status, "fretta": c_e_fretta,
@@ -2273,6 +2765,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                            {"reason": "linee assenti dal feed", "selections": missing,
                             "state": ctx.state, "critical": True}, ev["event_id"])
 
+    # -- SOSPENSIONE E RIAPERTURA (ordine dell'utente, 16/09) ---------------------
+    # PRIMA della decisione, sempre: a mercato riaperto dopo una sospensione le
+    # lay appoggiate possono essere state fatte scadere da Betfair, e il motore
+    # non deve mai decidere su una gamba data per viva senza averla riletta.
+    _sorveglia_sospensione(db=db, market=market, ctx=ctx, snap=snap, params=params,
+                           mode=mode, now_ts=now_ts, ev=ev, cache=cache)
+
     # -- gambe pending stantie (esito mai arrivato) --------------------------------
     # C3 — un ordine il cui esito e' IGNOTO (execution._reconciling →
     # meta.reason='place_exception_reconciling') NON viene MAI dato per "non
@@ -2290,8 +2789,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                {"leg": leg.ref, "reason": "pending_unknown_outcome",
                                 "critical": True}, ev["event_id"])
                 continue
-            leg.status = "open" if leg.matched > 0 else "cancelled"
-            _mark_trade_cancelled(db, ev["event_id"], leg, "pending_stale", cache)
+            # C.12a — la gamba stantia con un ordine LIVE viene annullata DAVVERO
+            # su Betfair prima di essere dichiarata ritirata; se Betfair non
+            # conferma, `_mark_trade_cancelled` la lascia in riconciliazione.
+            _mark_trade_cancelled(db, ev["event_id"], leg, "pending_stale", cache, market=market)
 
     # -- C3/H8: gambe a esito IGNOTO -----------------------------------------------
     # Si tenta la riconciliazione con un THROTTLE (2 chiamate REST per evento:
@@ -2377,7 +2878,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         execute_place(db=db, market=market, info=info, leg=leg, book=book,
                       mode=mode, params=params, now=now, dry=dry, minute=snap.minute,
                       score=score_str, feed_fresh=snap.feed_fresh,
-                      close_reason=ctx.close_reason, closes_trade_id=closes_id(leg))
+                      close_reason=ctx.close_reason, closes_trade_id=closes_id(leg),
+                      ctx=ctx)
         n_actions += 1
     extra["deferred"] = still
 
@@ -2402,10 +2904,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         if a.kind == "cancel":
             leg = next((l for l in ctx.legs if l.ref == a.ref), None)
             if leg is not None and leg.is_live:
-                leg.status = "open" if leg.matched > 0 else "cancelled"
                 extra["deferred"] = [x for x in extra["deferred"] if x["ref"] != leg.ref]
-                _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine", cache)
-                db.log("cancel", {"leg": leg.ref, "role": leg.role}, ev["event_id"])
+                # C.12a — l'engine decide QUANDO annullare (strategia, invariata):
+                # qui l'annullamento arriva finalmente a Betfair.
+                esito = _mark_trade_cancelled(db, ev["event_id"], leg, "cancelled_by_engine",
+                                              cache, market=market)
+                db.log("cancel", {"leg": leg.ref, "role": leg.role, "esito": esito},
+                       ev["event_id"])
                 n_actions += 1
     new_legs = E.apply_decision(ctx, d, now_ts)
     for leg in new_legs:
@@ -2425,7 +2930,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 # l'unica differenza che ci deve essere.
                 _piazza_resting_live(db=db, market=market, info=info, leg=leg, mode=mode,
                                      params=params, minuto=snap.minute, score=score_str,
-                                     chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev)
+                                     chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev,
+                                     ctx=ctx)
             else:
                 try:
                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,
@@ -2446,7 +2952,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             execute_place(db=db, market=market, info=info, leg=leg, book=book, mode=mode, params=params,
                           now=now, dry=dry, minute=snap.minute, score=score_str,
                           feed_fresh=snap.feed_fresh, close_reason=ctx.close_reason,
-                          closes_trade_id=closes_id(leg))
+                          closes_trade_id=closes_id(leg), ctx=ctx)
         n_actions += 1
     if d.telemetry:
         for k, v in d.telemetry.items():
@@ -2455,6 +2961,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             # Loggarlo da qui avrebbe prodotto un kind non dichiarato alla UI
             # (badge grigio in inglese) e un regolamento senza righe aggiornate.
             if k in ("pre_cycle", "cover", "cover_wait", "cashout", "close_retries_exhausted",
+                     # 16/09 h18:20, ordine dell'utente: il cash-out globale
+                     # dell'utente e' una NOTIZIA, non un dettaglio di stato —
+                     # da qui in poi il bot non apre piu' niente su quella
+                     # partita, e in pagina si deve vedere perche'.
+                     "chiuso_dall_utente",
                      "loss_exit", "loss_exit_deciso"):
                 if k == "cashout":
                     extra["last_cashout"] = v
@@ -2847,21 +3358,93 @@ def _reconcile_unknown(db: Any, market: Any, event_id: str, ctx: E.MatchCtx, mod
 
 
 def _mark_trade_cancelled(db: Any, event_id: str, leg: E.Leg, reason: str,
-                          cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> None:
-    """Allinea la riga mike_trades a una gamba ritirata (review F1 #4): mai 'pending' per sempre."""
+                          cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                          market: Any = None) -> str:
+    """Annulla l'ordine su BETFAIR e poi allinea la riga mike_trades.
+
+    Ritorna lo stato in cui la gamba deve restare: ``'open'`` (c'e' un abbinato
+    da difendere), ``'cancelled'`` (annullamento CONFERMATO da Betfair, o
+    nessun ordine reale da annullare) oppure ``E.STATUS_RECONCILE``.
+
+    ⚠️ C.12a — PRIMA SI ANNULLA, POI SI SCRIVE. Fino al 16/09 questa funzione
+    faceva solo la seconda meta': cambiava lo stato della riga mentre l'ordine
+    restava vivo su Betfair. Adesso, se la riga e' LIVE e ha un ``bet_id``, si
+    chiama ``cancel_order_live`` e si RILEGGE l'esito:
+
+      * annullamento confermato e nulla abbinato nel frattempo -> 'cancelled';
+      * annullamento confermato ma abbinato NEL FRATTEMPO -> quella parte e' una
+        posizione reale: la riga resta 'open' con l'abbinato e il prezzo medio
+        VERI, mai dimenticata;
+      * annullamento NON confermato (rifiutato, o esito ignoto) -> FAIL-CLOSED:
+        la riga NON diventa 'cancelled', resta in riconciliazione, che e'
+        l'unico modo onesto di dire «non so se quell'ordine e' ancora vivo».
+
+    QUANDO annullare non si tocca: lo decidono l'utente e l'engine, come prima.
+    """
     r = _trade_row_for_leg(db, event_id, leg, cache)
+    esito_base = "open" if leg.matched > 0 else "cancelled"
     if not r or str(r.get("status")) not in ("pending",):
-        return
+        leg.status = esito_base
+        return esito_base
+    bet_id = r.get("bet_id")
+    e_live = str(r.get("mode") or "") == "live"
+    quando_betfair: Optional[str] = None
+    if e_live and bet_id:
+        db.log("cancel_richiesto", {"leg": leg.ref, "role": leg.role, "reason": reason,
+                                    "bet_id": str(bet_id), "trade_id": r.get("id"),
+                                    "critical": True}, event_id)
+        ann = X.annulla_su_betfair(market, bet_id=str(bet_id),
+                                   market_id=r.get("market_id"))
+        confermato = bool(ann is not None and getattr(ann, "ok", False)
+                          and getattr(ann, "riletto", False))
+        db.log("cancel_esito", {
+            "leg": leg.ref, "role": leg.role, "bet_id": str(bet_id),
+            "trade_id": r.get("id"), "confermato": confermato, "critical": True,
+            "size_cancelled": (getattr(ann, "size_cancelled", None) if ann else None),
+            "size_matched": (getattr(ann, "size_matched", None) if ann else None),
+            "error_code": (getattr(ann, "error_code", None) if ann else None),
+            "nota": ("annullato su Betfair" if confermato else
+                     "annullamento NON confermato: la riga resta in riconciliazione"),
+        }, event_id)
+        if not confermato:
+            # FAIL-CLOSED: nessuna riga 'cancelled' su un ordine che potrebbe
+            # essere vivo. Lo risolve `_reconcile_unknown` contro Betfair.
+            leg.status = E.STATUS_RECONCILE
+            logger.critical("[mike] %s: annullo NON confermato su %s (bet %s) -> "
+                            "riconciliazione", event_id, leg.ref, bet_id)
+            return E.STATUS_RECONCILE
+        # abbinato NEL FRATTEMPO: la parte abbinata e' una posizione, non si perde
+        quando_betfair = getattr(ann, "betfair_updated_at", None)
+        abbinato = float(getattr(ann, "size_matched", 0.0) or 0.0)
+        if abbinato > float(leg.matched) + 1e-9:
+            leg.matched = abbinato
+            prezzo = getattr(ann, "avg_price_matched", None)
+            leg.avg_price = float(prezzo) if prezzo else float(leg.price)
+            db.log("fill_resting", {"leg": leg.ref, "role": leg.role,
+                                    "matched": round(abbinato, 2), "price": leg.avg_price,
+                                    "live": True, "critical": True,
+                                    "nota": "abbinato durante l'annullamento: la posizione "
+                                            "resta e va gestita"}, event_id)
+            esito_base = "open"
+    leg.status = esito_base
     try:
         meta = dict(r.get("meta") or {})
         meta.update({"phase": "cancelled", "reason": reason})
         if leg.matched > 0:
-            db.update_trade(int(r["id"]), status="open", size=round(leg.matched, 2),
-                            price=leg.fill_price, meta=meta)
+            X.aggiorna_trade(db, int(r["id"]),
+                             campi={"status": "open", "size": round(leg.matched, 2),
+                                    "price": leg.fill_price, "meta": meta},
+                             consapevolezza={"size_matched": round(leg.matched, 2),
+                                             "size_remaining": 0.0,
+                                             "avg_price_matched": leg.avg_price,
+                                             "betfair_updated_at": quando_betfair})
         else:
-            db.update_trade(int(r["id"]), status="error", meta=meta)
+            X.aggiorna_trade(db, int(r["id"]),
+                             campi={"status": "error", "meta": meta},
+                             consapevolezza={"size_matched": 0.0, "size_remaining": 0.0})
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike] mark cancelled %s KO: %s", leg.ref, str(ex)[:120])
+    return esito_base
 
 
 _SETTLE_ROWS_MAX_TRIES = 5
@@ -3314,11 +3897,20 @@ def main() -> None:
     # esattamente come prima: il canale e' un'accelerazione, non una dipendenza.
     if not args.once:
         _avvia_canale()
+    # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Mike si
+    # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
+    # riesce, ``run_once`` non apre niente (le protezioni girano).
+    _GUARDIA_AVVIO.attiva = True
+    ferma_al_nuovo_avvio()
     atlas = D.load_atlas()
     try:
         while True:
             interval = 2.0
             try:
+                # controllo d'avvio non concluso (DB muto): si riprova a ogni
+                # giro, e fino ad allora nessuna apertura.
+                if _GUARDIA_AVVIO.blocca_aperture:
+                    ferma_al_nuovo_avvio()
                 # ``run_once`` rilegge il control da sola: leggerlo anche qui
                 # voleva dire due query al secondo per lo stesso dato. I
                 # parametri del giro PRECEDENTE bastano a decidere quanto

@@ -25,6 +25,7 @@ import { ChevronRight, Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
+import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { BOT_LABEL, type Bot, type PartitaGiornata, type StatoQuote } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
@@ -227,6 +228,10 @@ export function SchedaPartita({
                                 <span className="text-white/75 truncate max-w-[9rem]">{o.selezione ?? DASH}</span>
                                 <span className="font-mono text-white/60">{fmtOdds(o.prezzo)}</span>
                                 <span className="font-mono text-white/45">{fmtMoney(o.size)}</span>
+                                {/* C.12b (16/09) — chiesto / abbinato / residuo, compatti.
+                                    La plancia mostrava SOLO `size`, che dopo la conferma e'
+                                    l'abbinato: «tutto o parziale?» non era leggibile. */}
+                                <StatoOrdineCompatto riga={o.ordine} testId="cr-stato-ordine" />
                                 {o.quale && (
                                     <span className="text-[9px] text-white/30 uppercase"
                                         title="la regola che ha prodotto questa operazione">

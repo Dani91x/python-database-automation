@@ -1,9 +1,14 @@
 // ============================================================================
-// comandiBot.test.ts — i comandi che possono accendere un bot su soldi veri.
+// comandiBot.test.ts — LA CONTROL ROOM E LA PAGINA DEL BOT DEVONO MANDARE LA
+// STESSA RIGA.
 //
-// Qui non si collauda una formula: si impedisce che un salvataggio
-// dell'importo porti via tutti gli altri parametri del bot, e che «avvia» in
-// live parta con un obiettivo inventato.
+// Il difetto che questi test impediscono: due implementazioni dello stesso
+// interruttore. Fino al 15/09 la scheda tennis aveva un percorso suo
+// (`creaComandiTennis`) accanto a quello generale, e «avvia» voleva dire due
+// cose diverse a seconda di dove si trovava il dito. Adesso c'e' un solo
+// motore di comandi (`@/lib/interruttori`), e qui si certifica che l'unica
+// differenza rimasta — il gesto «solo tennis», chiesto dall'utente per nome il
+// 15/09 — sia proprio quella e nient'altro.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -23,402 +28,169 @@ vi.mock('@/lib/mike', () => ({
     updateMikeParams: vi.fn(async () => ({})),
 }));
 
+import { creaComandiControlRoom } from './comandiBot';
 import {
-    leggiChiave, scriviChiave, importiDi, creaComandi, ObiettivoOmegaIgnoto,
-    ParametriOmegaIgnoti, ParametriNonLetti, IMPORTI_DI, creaComandiTennis,
-} from './comandiBot';
-import { activateOmega, stopOmega, updateOmegaParams } from '@/lib/omega';
-import { activateSafe, stopSafe, updateSafeParams } from '@/lib/safeBot';
-import { activateMike, stopMike, updateMikeParams } from '@/lib/mike';
+    creaInterruttori, BotFermoNonCambiaModalita,
+    type SorgenteInterruttori, type Bot,
+} from '@/lib/interruttori';
+import { STAKE_TENNIS } from './soloTennis';
+import { activateSafe, updateSafeParams } from '@/lib/safeBot';
+import { activateMike, updateMikeParams } from '@/lib/mike';
 
-const mActOmega = vi.mocked(activateOmega);
-const mStopOmega = vi.mocked(stopOmega);
-const mUpdOmega = vi.mocked(updateOmegaParams);
 const mActSafe = vi.mocked(activateSafe);
-const mStopSafe = vi.mocked(stopSafe);
 const mUpdSafe = vi.mocked(updateSafeParams);
 const mActMike = vi.mocked(activateMike);
-const mStopMike = vi.mocked(stopMike);
 const mUpdMike = vi.mocked(updateMikeParams);
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-// ------------------------------------------------------------- chiavi annidate
-
-describe('leggiChiave — legge anche dentro, e non esplode mai', () => {
-    it('legge una chiave annidata', () => {
-        expect(leggiChiave({ stake: { backSize: 3 } }, 'stake.backSize')).toBe(3);
-    });
-
-    it('chiave assente, parametri assenti, valore non numerico → null', () => {
-        expect(leggiChiave({ stake: {} }, 'stake.backSize')).toBeNull();
-        expect(leggiChiave(null, 'stake.backSize')).toBeNull();
-        expect(leggiChiave({ stake: 'tre' }, 'stake.backSize')).toBeNull();
-        expect(leggiChiave({ stake: { backSize: 'tre' } }, 'stake.backSize')).toBeNull();
-    });
-
-    it('zero è un valore, non un’assenza', () => {
-        expect(leggiChiave({ min_stake: 0 }, 'min_stake')).toBe(0);
-    });
-});
-
-describe('scriviChiave — CAMBIA UNA COSA E NON PORTA VIA IL RESTO', () => {
-    it('conserva ogni altra chiave, anche quelle che nessun tipo conosce', () => {
-        const prima = {
-            stake: { backSize: 3, laySize: 2 },
-            exits: { qualcosa: true },
-            chiave_che_nessuno_conosce: 42,
-        };
-        const dopo = scriviChiave(prima, 'stake.backSize', 5);
-        expect(dopo).toEqual({
-            stake: { backSize: 5, laySize: 2 },
-            exits: { qualcosa: true },
-            chiave_che_nessuno_conosce: 42,
-        });
-    });
-
-    it('NON muta l’oggetto di partenza: due salvataggi in fila devono partire puliti', () => {
-        const prima = { stake: { backSize: 3 } };
-        const dopo = scriviChiave(prima, 'stake.backSize', 9);
-        expect(prima.stake.backSize).toBe(3);
-        expect(dopo).not.toBe(prima);
-        expect((dopo.stake as Record<string, number>)).not.toBe(prima.stake);
-    });
-
-    it('crea il ramo mancante invece di fallire', () => {
-        expect(scriviChiave({}, 'stake.backSize', 3)).toEqual({ stake: { backSize: 3 } });
-        expect(scriviChiave(null, 'min_stake', 1)).toEqual({ min_stake: 1 });
-    });
-
-    it('se il ramo esiste ma non è un oggetto lo sostituisce, non esplode', () => {
-        expect(scriviChiave({ stake: 7 }, 'stake.backSize', 3)).toEqual({ stake: { backSize: 3 } });
-    });
-});
-
-// ------------------------------------------------------------------- importi
-
-describe('importiDi — le chiavi sono quelle che i servizi leggono davvero', () => {
-    it('Safe ha DUE importi: chi punta e chi banca', () => {
-        const c = importiDi('safe', { stake: { backSize: 3, laySize: 2 } });
-        expect(c.map((x) => [x.chiave, x.valore])).toEqual([
-            ['stake.backSize', 3], ['stake.laySize', 2],
-        ]);
-    });
-
-    it('lo stake minimo di Omega porta scritto che è un MINIMO', () => {
-        const c = importiDi('omega', { min_stake: 0.5 });
-        expect(c[0].chiave).toBe('min_stake');
-        expect(c[0].valore).toBe(0.5);
-        expect(c[0].nota).toMatch(/minimo/i);
-    });
-
-    it('un importo che il servizio non dichiara vale null, non 0', () => {
-        expect(importiDi('mike', {})[0].valore).toBeNull();
-        expect(importiDi('mike', null)[0].valore).toBeNull();
-    });
-
-    it('nessun bot dichiara chiavi che non siano le sue', () => {
-        expect(IMPORTI_DI.mike.map((x) => x.chiave)).toEqual(['stake']);
-        expect(IMPORTI_DI.omega.map((x) => x.chiave)).toEqual(['min_stake']);
-    });
-});
-
-// -------------------------------------------------------------------- comandi
-
-const sorgente = (params: Record<string, unknown> | null, obiettivo: number | null = 100) => ({
-    params: () => params,
-    obiettivoOmega: () => obiettivo,
-});
-
-describe('ferma — ogni bot col suo comando, e la pagina rilegge', () => {
-    it('chiama lo stop giusto per ciascuno e avvisa che qualcosa è cambiato', async () => {
-        const dopo = vi.fn();
-        const c = creaComandi(sorgente({}), dopo);
-        await c.ferma('safe'); await c.ferma('mike'); await c.ferma('omega');
-        expect(mStopSafe).toHaveBeenCalledTimes(1);
-        expect(mStopMike).toHaveBeenCalledTimes(1);
-        expect(mStopOmega).toHaveBeenCalledTimes(1);
-        expect(dopo).toHaveBeenCalledTimes(3);
-    });
-
-    it('se lo stop fallisce NON si dichiara che è cambiato qualcosa', async () => {
-        mStopSafe.mockRejectedValueOnce(new Error('rete giù'));
-        const dopo = vi.fn();
-        const c = creaComandi(sorgente({}), dopo);
-        await expect(c.ferma('safe')).rejects.toThrow('rete giù');
-        expect(dopo).not.toHaveBeenCalled();
-    });
-});
-
-describe('avvia — la modalità è esplicita, mai indovinata', () => {
-    it('avvia Safe e Mike nella modalità chiesta', async () => {
-        const c = creaComandi(sorgente({}), vi.fn());
-        await c.avvia('safe', 'live');
-        await c.avvia('mike', 'paper');
-        expect(mActSafe).toHaveBeenCalledWith('live');
-        expect(mActMike).toHaveBeenCalledWith('paper');
-    });
-
-    it('OMEGA SENZA OBIETTIVO NOTO NON PARTE: meglio rifiutare che inventare', async () => {
-        const c = creaComandi(sorgente({}, null), vi.fn());
-        await expect(c.avvia('omega', 'live')).rejects.toBeInstanceOf(ObiettivoOmegaIgnoto);
-        expect(mActOmega).not.toHaveBeenCalled();
-    });
-
-    it('con l’obiettivo noto Omega parte con QUELLO, non con un default', async () => {
-        // ⚠️ questo test prima passava `{}` come parametri e si aspettava che
-        // Omega partisse lo stesso. Era il BUG: `omega_activate` sovrascrive
-        // sempre la colonna, e `{}` gli toglieva i tre tetti di rischio.
-        // Adesso serve un oggetto parametri vero — vedi la suite qui sotto.
-        const c = creaComandi(sorgente({ min_stake: 0.5 }, 250), vi.fn());
-        await c.avvia('omega', 'paper');
-        expect(mActOmega).toHaveBeenCalledWith('paper', 250, { min_stake: 0.5 });
-    });
-});
-
-describe('cambiaImporto — MANDA I PARAMETRI INTERI, non solo quello cambiato', () => {
-    it('Safe: cambia backSize e conserva laySize, exits e le chiavi ignote', async () => {
-        const correnti = {
-            stake: { backSize: 3, laySize: 2 },
-            exits: { due_game: true },
-            roba_mia: 'x',
-        };
-        const c = creaComandi(sorgente(correnti), vi.fn());
-        await c.cambiaImporto('safe', 'stake.backSize', 7);
-        expect(mUpdSafe).toHaveBeenCalledWith({
-            stake: { backSize: 7, laySize: 2 },
-            exits: { due_game: true },
-            roba_mia: 'x',
-        });
-    });
-
-    it('Mike: stessa regola, l’oggetto intero', async () => {
-        const c = creaComandi(sorgente({ stake: 10, altro: 1 }), vi.fn());
-        await c.cambiaImporto('mike', 'stake', 4);
-        expect(mUpdMike).toHaveBeenCalledWith({ stake: 4, altro: 1 });
-    });
-
-    it('Omega: i parametri viaggiano sotto `params`, come vuole la sua RPC', async () => {
-        const c = creaComandi(sorgente({ min_stake: 0.5, altro: 2 }), vi.fn());
-        await c.cambiaImporto('omega', 'min_stake', 1.5);
-        expect(mUpdOmega).toHaveBeenCalledWith({ params: { min_stake: 1.5, altro: 2 } });
-    });
-
-    it('CON PARAMETRI NON LETTI NON SI SCRIVE AFFATTO', async () => {
-        // ⚠️ questo test prima si aspettava `updateMikeParams({stake: 4})` e
-        // lo chiamava «non si azzera niente». Era esattamente il contrario:
-        // le RPC fanno `coalesce(p_params, params)`, quindi quell'oggetto
-        // minuscolo SOSTITUISCE tutta la colonna. Su Safe si porterebbe via
-        // `strategy_modes` e `tennis_exit_approval`, cioe' le due cose che
-        // tengono i soldi veri sul solo tennis.
-        const c = creaComandi(sorgente(null), vi.fn());
-        await expect(c.cambiaImporto('mike', 'stake', 4)).rejects.toBeInstanceOf(ParametriNonLetti);
-        expect(mUpdMike).not.toHaveBeenCalled();
-    });
-});
-
-describe('cambiaModalita — ogni servizio col suo meccanismo', () => {
-    it('Omega e Mike la cambiano con update_params', async () => {
-        const c = creaComandi(sorgente({ stake: 10 }), vi.fn());
-        await c.cambiaModalita('omega', 'live');
-        expect(mUpdOmega).toHaveBeenCalledWith({ mode: 'live' });
-        await c.cambiaModalita('mike', 'paper');
-        expect(mUpdMike).toHaveBeenCalledWith({ stake: 10 }, 'paper');
-    });
-
-    it('SAFE si riattiva: la sua RPC di update non accetta il mode', async () => {
-        const c = creaComandi(sorgente({}), vi.fn());
-        await c.cambiaModalita('safe', 'live');
-        expect(mActSafe).toHaveBeenCalledWith('live');
-        expect(mUpdSafe).not.toHaveBeenCalled();
-    });
-});
-
-// ===========================================================================
-// REVIEW 14/09, CRITICO — AVVIARE OMEGA NON DEVE AZZERARGLI I FRENI.
-//
-// Le tre RPC non si comportano allo stesso modo:
-//   safe_activate  -> params = coalesce(p_params, params)       conserva
-//   mike_activate  -> params = coalesce(p_params, params)       conserva
-//   omega_activate -> params = coalesce(p_params, '{}'::jsonb)  SOVRASCRIVE
-//
-// `{}` non e' NULL: passarlo azzera la colonna. E i tetti di Omega nascono a
-// ZERO, che nel suo codice significa TETTO SPENTO — `apply_liability_cap` non
-// taglia, il controllo sulla responsabilita' aperta salta, e lo stop perdite
-// giornaliero non scatta mai. Un bot in live senza nessuno dei tre freni.
-// ===========================================================================
-
-const PARAMI_VERI = {
-    daily_loss_cap: 30,
-    max_open_liability: 100,
-    max_liability_per_match: 20,
-    min_stake: 0.5,
-    greenup_risk_cap: 12,
+/** la riga di control com'e' oggi: tennis in live, calcio in prova */
+const CORRENTI: Record<string, unknown> = {
+    variants: ['base', 'esatto', 'punta', 'tennis'],
+    strategy_modes: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'live' },
+    stake: { laySize: 2, backSize: 5 },
+    auto_trade_tennis: false,
+    tennis_exit_approval: true,
 };
 
-describe('avvio di Omega - i parametri non si perdono MAI', () => {
-    it('avvia con i parametri CORRENTI, non con un oggetto vuoto', async () => {
-        const c = creaComandi(sorgente(PARAMI_VERI, 250), vi.fn());
-        await c.avvia('omega', 'live');
-        expect(mActOmega).toHaveBeenCalledWith('live', 250, PARAMI_VERI);
-        // il terzo argomento non deve MAI essere {}
-        expect(mActOmega.mock.calls[0][2]).not.toEqual({});
-    });
-
-    it('I TRE TETTI DI RISCHIO arrivano al servizio, non si azzerano', async () => {
-        const c = creaComandi(sorgente(PARAMI_VERI, 250), vi.fn());
-        await c.avvia('omega', 'live');
-        const inviati = mActOmega.mock.calls[0][2] as Record<string, number>;
-        expect(inviati.daily_loss_cap).toBe(30);
-        expect(inviati.max_open_liability).toBe(100);
-        expect(inviati.max_liability_per_match).toBe(20);
-    });
-
-    it('PARAMETRI IGNOTI: non parte affatto. Meglio fermo che senza freni', async () => {
-        const c = creaComandi(sorgente(null, 250), vi.fn());
-        await expect(c.avvia('omega', 'live')).rejects.toBeInstanceOf(ParametriOmegaIgnoti);
-        expect(mActOmega).not.toHaveBeenCalled();
-    });
-
-    it('parametri VUOTI valgono ignoti: `{}` azzererebbe la colonna', async () => {
-        const c = creaComandi(sorgente({}, 250), vi.fn());
-        await expect(c.avvia('omega', 'live')).rejects.toBeInstanceOf(ParametriOmegaIgnoti);
-        expect(mActOmega).not.toHaveBeenCalled();
-    });
-
-    it('il messaggio dice PERCHE non parte, invece di un errore muto', async () => {
-        const c = creaComandi(sorgente(null, 250), vi.fn());
-        await expect(c.avvia('omega', 'live')).rejects.toThrow(/tetti di rischio/i);
-    });
-
-    it('Safe e Mike NON hanno questo problema: la loro RPC conserva i parametri', async () => {
-        const c = creaComandi(sorgente(null), vi.fn());
-        await c.avvia('safe', 'live');
-        await c.avvia('mike', 'live');
-        // nessun oggetto parametri passato: la RPC fa coalesce(NULL, params)
-        expect(mActSafe).toHaveBeenCalledWith('live');
-        expect(mActMike).toHaveBeenCalledWith('live');
-    });
-});
-
-// ===========================================================================
-// REVIEW 14/09, CRITICO — SCRIVERE SENZA AVER LETTO CANCELLA.
-// ===========================================================================
-
-describe('parametri non letti: nessuna scrittura, su nessun bot', () => {
-    it('cambiare un importo e\u2019 rifiutato su tutti e tre', async () => {
-        const c = creaComandi(sorgente(null), vi.fn());
-        await expect(c.cambiaImporto('safe', 'stake.backSize', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
-        await expect(c.cambiaImporto('mike', 'stake', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
-        await expect(c.cambiaImporto('omega', 'min_stake', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
-        expect(mUpdSafe).not.toHaveBeenCalled();
-        expect(mUpdMike).not.toHaveBeenCalled();
-        expect(mUpdOmega).not.toHaveBeenCalled();
-    });
-
-    it('parametri VUOTI valgono come non letti', async () => {
-        const c = creaComandi(sorgente({}), vi.fn());
-        await expect(c.cambiaImporto('safe', 'stake.backSize', 3)).rejects.toBeInstanceOf(ParametriNonLetti);
-        expect(mUpdSafe).not.toHaveBeenCalled();
-    });
-
-    it('SAFE: con i parametri letti, strategy_modes e le uscite ARRIVANO al servizio', async () => {
-        const correnti = {
-            stake: { backSize: 3, laySize: 2 },
-            strategy_modes: { tennis: 'live', base: 'paper' },
-            tennis_exit_approval: true,
-            exits: { due_game: true },
-        };
-        const c = creaComandi(sorgente(correnti), vi.fn());
-        await c.cambiaImporto('safe', 'stake.backSize', 5);
-        const inviati = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
-        expect(inviati.strategy_modes).toEqual({ tennis: 'live', base: 'paper' });
-        expect(inviati.tennis_exit_approval).toBe(true);
-        expect(inviati.exits).toEqual({ due_game: true });
-        expect((inviati.stake as Record<string, number>).backSize).toBe(5);
-    });
-
-    it('MIKE: cambiare modalita\u2019 senza parametri letti non parte', async () => {
-        const c = creaComandi(sorgente(null), vi.fn());
-        await expect(c.cambiaModalita('mike', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
-        expect(mUpdMike).not.toHaveBeenCalled();
-    });
-
-    it('il messaggio spiega la conseguenza, non dice solo «errore»', async () => {
-        const c = creaComandi(sorgente(null), vi.fn());
-        await expect(c.cambiaImporto('safe', 'stake.backSize', 3))
-            .rejects.toThrow(/sostituirebbe TUTTI gli altri/i);
-    });
-});
-
-// ===========================================================================
-// LA SCHEDA TENNIS — «deve partire solo lui, come ieri, a 3 euro» (15/09)
-// ===========================================================================
-
-describe('creaComandiTennis — da qui parte SOLO il tennis', () => {
-    const CORRENTI = {
-        stake: { backSize: 5, laySize: 2 },
-        strategy_modes: { tennis: 'paper', base: 'live' },
-        variants: ['base', 'tennis'],
-        auto_trade_tennis: false,
-        daily_loss_stop: -50,
+function sorgente(): SorgenteInterruttori {
+    return {
+        params: (b: Bot) => (b === 'safe' ? CORRENTI : { stake: 10 }),
+        servizio: (b: Bot) => (b === 'safe'
+            ? {
+                inCorsa: true, modalita: 'live',
+                varianti: ['base', 'esatto', 'punta', 'tennis'],
+                modiStrategia: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'live' },
+            }
+            : { inCorsa: false, modalita: null }),
+        obiettivoOmega: () => 250,
     };
+}
 
-    it('AVVIA in live: tennis live, tutto il resto in prova, stake 3', async () => {
-        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
-        await c.avvia('safe', 'live');
-        const [modo, inviati] = mActSafe.mock.calls[0] as [string, Record<string, unknown>];
-        expect(modo).toBe('live');
-        const modi = inviati.strategy_modes as Record<string, string>;
-        expect(modi.tennis).toBe('live');
-        expect(modi.base).toBe('paper');
-        expect((inviati.stake as Record<string, number>).backSize).toBe(3);
-        expect(inviati.auto_trade_tennis).toBe(true);
-        expect(inviati.daily_loss_stop).toBe(-50);
+describe('la pagina del bot e la Control Room producono LO STESSO payload', () => {
+    it('accendere «base» in prova: stessa RPC, stessi campi', async () => {
+        // quello che fa la PAGINA di Safe (comandi condivisi, nessuna scheda)
+        await creaInterruttori(sorgente(), vi.fn()).accendi('safe-base', 'paper');
+        const daPagina = mUpdSafe.mock.calls[0][0];
+        vi.clearAllMocks();
+
+        // quello che fa la CONTROL ROOM nella scheda calcio
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'calcio').accendi('safe-base', 'paper');
+        const daControlRoom = mUpdSafe.mock.calls[0][0];
+
+        expect(daControlRoom).toEqual(daPagina);
     });
 
-    it('PASSA A SOLDI VERI fa la stessa cosa: non accende il calcio di rimbalzo', async () => {
-        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
-        await c.cambiaModalita('safe', 'live');
-        const inviati = mActSafe.mock.calls[0][1] as Record<string, unknown>;
-        expect((inviati.strategy_modes as Record<string, string>).base).toBe('paper');
+    it('spegnere «punta»: stessa RPC, stessi campi', async () => {
+        await creaInterruttori(sorgente(), vi.fn()).spegni('safe-punta');
+        const daPagina = mUpdSafe.mock.calls[0][0];
+        vi.clearAllMocks();
+        await creaComandiControlRoom(sorgente(), vi.fn(), null).spegni('safe-punta');
+        expect(mUpdSafe.mock.calls[0][0]).toEqual(daPagina);
     });
 
-    it('senza i parametri letti NON parte: non sapremmo che cosa stiamo spegnendo', async () => {
-        const c = creaComandiTennis(sorgente(null), vi.fn());
-        await expect(c.avvia('safe', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
-        await expect(c.cambiaModalita('safe', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
+    it('anche il cambio di importo passa dalla stessa funzione', async () => {
+        await creaInterruttori(sorgente(), vi.fn())
+            .cambiaImporto('safe-tennis', 'stake.per_strategia.tennis', 4);
+        const daPagina = mUpdSafe.mock.calls[0][0];
+        vi.clearAllMocks();
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'tennis')
+            .cambiaImporto('safe-tennis', 'stake.per_strategia.tennis', 4);
+        expect(mUpdSafe.mock.calls[0][0]).toEqual(daPagina);
+    });
+});
+
+describe('la scheda tennis: l UNICA differenza, e dichiarata', () => {
+    it('da li «avvia» accende il tennis e SPEGNE le altre tre', async () => {
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'tennis').accendi('safe-tennis', 'live');
+        // il servizio e' gia' armato in live per il tennis: non si riattiva, si
+        // riscrivono i parametri (niente `started_at` azzerato a meta' giornata)
+        expect(mUpdSafe).toHaveBeenCalledTimes(1);
+        expect(mActSafe).not.toHaveBeenCalled();
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect(p.variants).toEqual(['tennis']);
+        expect(p.strategy_modes).toEqual({
+            base: 'paper', esatto: 'paper', punta: 'paper',
+            tennis: 'live', model: 'paper', manual: 'paper',
+        });
+        // le tre cose che quel gesto AGGIUNGE, chieste dall'utente il 15/09
+        expect((p.stake as Record<string, unknown>).per_strategia)
+            .toEqual({ tennis: STAKE_TENNIS });
+        expect(p.auto_trade_tennis).toBe(true);
+        // e non porta via niente
+        expect(p.tennis_exit_approval).toBe(true);
+    });
+
+    it('fuori dalla scheda tennis lo stesso gesto tocca SOLO il tennis', async () => {
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'calcio').accendi('safe-tennis', 'live');
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect(p.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
+        expect(p.auto_trade_tennis).toBe(false);   // non si configura niente
+    });
+
+    it('«passa a prova» non riconfigura niente: e una de-escalation', async () => {
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'tennis')
+            .cambiaModalita('safe-tennis', 'paper');
+        // era l'ULTIMA strategia in live: il servizio torna in prova, e questo
+        // si puo' fare solo riarmandolo (`safe_activate('paper')`)
+        expect(mActSafe).toHaveBeenCalledTimes(1);
+        expect(mActSafe.mock.calls[0][0]).toBe('paper');
+        const p = mActSafe.mock.calls[0][1] as Record<string, unknown>;
+        // il tennis torna in prova, ma le entrate automatiche e lo stake
+        // restano come l'operatore li ha lasciati
+        expect((p.strategy_modes as Record<string, string>).tennis).toBe('paper');
+        expect(p.auto_trade_tennis).toBe(false);
+        expect(p.stake).toEqual({ laySize: 2, backSize: 5 });
+    });
+
+    it('Mike e Omega dalla scheda tennis passano dai comandi normali', async () => {
+        await creaComandiControlRoom(sorgente(), vi.fn(), 'tennis').accendi('mike', 'paper');
+        expect(mActMike).toHaveBeenCalledWith('paper');
         expect(mActSafe).not.toHaveBeenCalled();
     });
+});
 
-    // ⚠️ REVIEW 15/09 — «passa a prova» è una DE-ESCALATION: portava con sé
-    // lo stake a 3 e ACCENDEVA le entrate automatiche.
-    it('PASSA A PROVA non riconfigura niente: riattiva Safe com’e’', async () => {
-        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
-        await c.cambiaModalita('safe', 'paper');
-        const [modo, inviati] = mActSafe.mock.calls[0] as [string, Record<string, unknown>];
-        expect(modo).toBe('paper');
-        expect(inviati.auto_trade_tennis).toBe(false);
-        expect((inviati.stake as Record<string, number>).backSize).toBe(5);
+// ===========================================================================
+// IL GESTO «CAMBIA MODALITA'» SU UN BOT FERMO — stesso esito dalle due strade,
+// e in nessuna delle due c'e' un'accensione.
+// ===========================================================================
+
+/** tutto fermo: e' il caso in cui `X_activate` accenderebbe il bot */
+function sorgenteTuttoFermo(): SorgenteInterruttori {
+    return {
+        params: (b: Bot) => (b === 'safe' ? CORRENTI : { stake: 10 }),
+        servizio: () => ({ inCorsa: false, modalita: null, varianti: null, modiStrategia: null }),
+        obiettivoOmega: () => 250,
+    };
+}
+
+describe('cambia modalita su un bot FERMO: nessuna accensione, da nessuna parte', () => {
+    it('Mike: pagina e Control Room mandano LO STESSO payload, e non e un avvio', async () => {
+        await creaInterruttori(sorgenteTuttoFermo(), vi.fn()).cambiaModalita('mike', 'live');
+        const daPagina = mUpdMike.mock.calls[0];
+        vi.clearAllMocks();
+        await creaComandiControlRoom(sorgenteTuttoFermo(), vi.fn(), 'calcio').cambiaModalita('mike', 'live');
+        expect(mUpdMike.mock.calls[0]).toEqual(daPagina);
+        expect(mActMike).not.toHaveBeenCalled();
     });
 
-    it('FERMA resta quello normale: spegne Safe e basta', async () => {
-        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
-        await c.ferma('safe');
-        expect(mStopSafe).toHaveBeenCalled();
+    it('Safe: tutte e due le strade si RIFIUTANO, e nessuna chiama `safe_activate`', async () => {
+        await expect(creaInterruttori(sorgenteTuttoFermo(), vi.fn()).cambiaModalita('safe-base', 'live'))
+            .rejects.toBeInstanceOf(BotFermoNonCambiaModalita);
+        await expect(creaComandiControlRoom(sorgenteTuttoFermo(), vi.fn(), 'calcio')
+            .cambiaModalita('safe-base', 'live')).rejects.toBeInstanceOf(BotFermoNonCambiaModalita);
+        expect(mActSafe).not.toHaveBeenCalled();
+        expect(mUpdSafe).not.toHaveBeenCalled();
     });
 
-    it('la pagina rilegge lo stato dopo un avvio riuscito', async () => {
-        const dopo = vi.fn();
-        const c = creaComandiTennis(sorgente(CORRENTI), dopo);
-        await c.avvia('safe', 'paper');
-        expect(dopo).toHaveBeenCalled();
-    });
-
-    it('Mike, se mai chiamato, passa dai comandi normali', async () => {
-        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
-        await c.avvia('mike', 'paper');
-        expect(mActMike).toHaveBeenCalledWith('paper');
+    it('anche il gesto «solo tennis» della scheda tennis non accende a modalita', async () => {
+        // `accendi` puo` far partire il servizio (e` il suo mestiere)...
+        await creaComandiControlRoom(sorgenteTuttoFermo(), vi.fn(), 'tennis').accendi('safe-tennis', 'live');
+        expect(mActSafe).toHaveBeenCalledTimes(1);
+        vi.clearAllMocks();
+        // ...«passa a soldi veri» no.
+        await expect(creaComandiControlRoom(sorgenteTuttoFermo(), vi.fn(), 'tennis')
+            .cambiaModalita('safe-tennis', 'live')).rejects.toBeInstanceOf(BotFermoNonCambiaModalita);
         expect(mActSafe).not.toHaveBeenCalled();
     });
 });

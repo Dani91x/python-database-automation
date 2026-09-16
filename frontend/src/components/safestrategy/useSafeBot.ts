@@ -20,6 +20,7 @@ import {
     type SafeRequest, type SafeTrade,
 } from '@/lib/safeBot';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
+import { creaInterruttori } from '@/lib/interruttori';
 
 const POLL_MS = 15_000;
 /** Finestra minima fra due ricariche scatenate dal REALTIME (>= 1 s, come
@@ -307,15 +308,30 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
         await wrap(() => activateSafe(desiredMode));
     }, [wrap, desiredMode, liveConfirmed]);
     const stop = useCallback(async () => { await wrap(() => stopSafe()); }, [wrap]);
+    /**
+     * La modalita' del SERVIZIO (il TETTO sulle quattro strategie).
+     *
+     * ⚠️ 16/09 — passa dal comando CONDIVISO, lo stesso della Control Room, che
+     * si RIFIUTA di scrivere su un servizio fermo: `safe_activate` porta
+     * `status` a 'running', e un cambio di modalita' non deve mai accendere
+     * niente. A bot fermo non c'e' nulla da riscrivere sul DB: la modalita'
+     * viaggia col gesto di accensione. A bot in corsa GIA' nella modalita'
+     * richiesta (conferma di un LIVE ereditato) non si ri-arma nulla.
+     */
     const setMode = useCallback(async (next: SafeMode) => {
         setDesiredMode(next);
         setLiveConfirmed(next === 'live');
-        // a bot fermo non c'e' nulla da riscrivere sul DB: la modalita viaggia
-        // con safe_activate al prossimo avvio (nessuna RPC "solo modalita").
-        // A bot in corsa GIA' nella modalita' richiesta (conferma di un LIVE
-        // ereditato) non si ri-arma nulla: e' solo la conferma locale.
-        if (running && control?.mode !== next) await wrap(() => activateSafe(next));
-    }, [wrap, running, control?.mode]);
+        if (running && control?.mode !== next) {
+            await wrap(async () => {
+                await creaInterruttori({
+                    params: () => (control?.params ?? null) as Record<string, unknown> | null,
+                    servizio: () => ({ inCorsa: running, modalita: control?.mode ?? null }),
+                    obiettivoOmega: () => null,
+                }, () => {}).cambiaModalitaServizio('safe', next);
+                return null;
+            });
+        }
+    }, [wrap, running, control]);
     const saveParams = useCallback(async (p: Partial<SafeBotParams>) => {
         await wrap(() => updateSafeParams(p));
     }, [wrap]);
