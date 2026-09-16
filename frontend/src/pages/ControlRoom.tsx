@@ -42,7 +42,9 @@ import {
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
+import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
+import { SchedaChiusuraOmega } from '@/components/controlroom/SchedaChiusuraOmega';
 import {
     useControlRoom,
     type StatoBot, type PosizioneAperta, type Modalita,
@@ -520,6 +522,14 @@ export default function ControlRoom() {
                             registrazioni={vm.registrazioni} registratori={registratori}
                             operazioni={vm.operazioni}
                             copertura={vm.copertura}
+                            safe={{
+                                // la modalita' la DICHIARA il servizio: non
+                                // dichiarata NON vale «paper» (fail-closed).
+                                modalita: vm.bots.find((b) => b.bot === 'safe')?.modalita ?? null,
+                                statoChiusura: vm.statoChiusura,
+                                onCashOut: vm.cashOutEvento,
+                                onRiprendi: vm.riprendiEvento,
+                            }}
                         />
                     </TabsContent>
 
@@ -933,6 +943,7 @@ function Scheda({ valore, conta, children, testId, evidenzia = false }: {
  */
 function ElencoPartite({
     gruppi, stato, scheda, caricamento, nowMs, registrazioni, registratori, operazioni, copertura,
+    safe,
 }: {
     gruppi: GruppoCampionato[];
     stato: 'pre' | 'live';
@@ -944,6 +955,13 @@ function ElencoPartite({
     registratori: { calcio: boolean | null; tennis: boolean | null };
     operazioni: ReturnType<typeof useControlRoom>['operazioni'];
     copertura?: ReturnType<typeof useControlRoom>['copertura'];
+    /** i due gesti dell'utente sulla partita: cash out globale e «Riprendi» */
+    safe?: {
+        modalita: 'paper' | 'live' | null;
+        statoChiusura: (eventId: string) => StatoChiusuraEvento;
+        onCashOut: (eventId: string) => Promise<void>;
+        onRiprendi: (eventId: string) => Promise<void>;
+    };
 }) {
     const filtrati = useMemo(() => {
         const out: GruppoCampionato[] = [];
@@ -1017,6 +1035,12 @@ function ElencoPartite({
                                     operazioni={operazioni.get(p.event_id) ?? []}
                                     registra={registrazioni.has(p.event_id)}
                                     registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
+                                    safe={safe ? {
+                                        modalita: safe.modalita,
+                                        chiusa: safe.statoChiusura(p.event_id),
+                                        onCashOut: safe.onCashOut,
+                                        onRiprendi: safe.onRiprendi,
+                                    } : undefined}
                                 />
                             ))}
                         </div>
@@ -1049,7 +1073,7 @@ function NastroSegnali({ vm, filtroSport }: {
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
                 <span className="text-[11px] uppercase tracking-wider text-white/60">Uscite — decidi tu</span>
                 <span className="text-[11px] text-white/40">
-                    {vm.proposte.length} in attesa
+                    {vm.proposte.length + vm.proposteOmega.length} in attesa
                     {urgenti > 0 && <span className="text-orange-300 font-semibold"> · {urgenti} urgenti</span>}
                 </span>
             </div>
@@ -1089,7 +1113,27 @@ function NastroSegnali({ vm, filtroSport }: {
             </div>
 
             <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2.5">
-                {vm.proposte.length === 0 && (
+                {/* OMEGA — in v3 nessuna chiusura parte da sola: il servizio
+                    PROPONE e decide l'utente (ordine del 16/09). Se la
+                    migrazione non e' applicata la RPC non esiste: si dice
+                    perche' l'elenco e' vuoto, invece di un nastro muto. */}
+                {vm.erroreProposteOmega && (
+                    <div className="rounded border border-orange-500/30 bg-orange-500/10 px-2.5 py-1.5 text-[11px] text-orange-200"
+                        data-testid="cr-proposte-omega-errore">
+                        <strong className="text-orange-300">Proposte di uscita di Omega non leggibili:</strong>{' '}
+                        {vm.erroreProposteOmega}. Finché non si legge, qui non compare nessuna uscita di Omega —
+                        e non vuol dire che non ce ne siano.
+                    </div>
+                )}
+                {vm.proposteOmega.map((pr) => (
+                    <SchedaChiusuraOmega
+                        key={`omega-${pr.id}`}
+                        proposta={pr}
+                        onApprova={vm.approvaOmega}
+                        onIgnora={vm.ignoraOmega}
+                    />
+                ))}
+                {vm.proposte.length === 0 && vm.proposteOmega.length === 0 && (
                     <EmptyState>
                         <span className="font-semibold block mb-1">Nessuna uscita da decidere</span>
                         Il bot apre da solo. Quando matura un&apos;uscita non la esegue: la propone qui, con il prezzo

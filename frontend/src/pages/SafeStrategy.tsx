@@ -33,7 +33,9 @@ import { OpportunityGroup, filterOpps, OPP_KIND_META, type OppKindFilter } from 
 import { RiskPanel } from '@/components/safestrategy/RiskPanel';
 import { SafeTradesTable, safeCloseNowTotal } from '@/components/safestrategy/SafeTradesTable';
 import { EventPnlTable } from '@/components/trading/EventPnlTable';
-import { groupTradesIntoCicli } from '@/lib/eventGroups';
+import { groupTradesIntoCicli, isErrorRow, isSettled } from '@/lib/eventGroups';
+import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
+import { eventiChiusiDalleRighe, type StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { useSafeBot } from '@/components/safestrategy/useSafeBot';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import type { VariantId } from '@/lib/safeStrategy';
@@ -64,6 +66,7 @@ import {
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
     liveStrategies, fetchRunnerState, executionRoute, runnerPhase, type RunnerState,
+    cashOutEvento, riprendiEventoSafe,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
@@ -781,6 +784,27 @@ export default function SafeStrategy() {
         if (id != null) toast.success('Annullo in coda', { description: trade.event_name ?? trade.event_id });
     }
 
+    // ── «SE CHIUDO IO, IL BOT DEVE SAPERLO» (ordine dell'utente, 16/09) ──
+    // Lo stato lo scrive il SERVIZIO nel `meta` delle righe: qui si legge.
+    const chiusureSafe = useMemo(() => eventiChiusiDalleRighe(bot.trades), [bot.trades]);
+    const statoChiusuraSafe = useCallback((eventId: string): StatoChiusuraEvento => {
+        const m = chiusureSafe.get(String(eventId ?? ''));
+        return m ? { chiusa: true, fonte: 'righe', marcatore: m }
+            : { chiusa: false, fonte: null, marcatore: null };
+    }, [chiusureSafe]);
+
+    const cashOutPartita = useCallback(async (eventId: string) => {
+        await cashOutEvento(eventId);
+        toast.success('Cash out globale della partita in coda', { description: eventId });
+        await bot.reload();
+    }, [bot]);
+
+    const riprendiPartita = useCallback(async (eventId: string) => {
+        await riprendiEventoSafe(eventId);
+        toast.success('Partita riportata in carico al bot', { description: eventId });
+        await bot.reload();
+    }, [bot]);
+
     async function cashOut(trade: SafeTrade, args: { amount?: number; fraction?: number }) {
         // la chiusura usa la modalita' del TRADE: un trade live va confermato
         if (trade.mode === 'live' && !bot.liveConfirmed) {
@@ -1001,6 +1025,20 @@ export default function SafeStrategy() {
                     nota={<>Una riga per PARTITA col netto delle sue operazioni, commissione già tolta. Clicca per aprire le posizioni, le quote, gli stati e i bottoni di {T.cashOut}.</>}
                     vuoto={emptyText}
                     renderDettaglio={(e) => (
+                        <div className="space-y-2">
+                            {/* 16/09 — «SE CHIUDO IO IL BOT DEVE SAPERLO». Il
+                                gesto sta sulla SCHEDA DELLA PARTITA, qui come
+                                in Control Room: e' un gesto per partita, non
+                                per riga (quello e' il cash out di riga). */}
+                            <CashOutPartita
+                                eventId={e.event_id}
+                                modalita={mode}
+                                posizioniVive={e.cicli.filter(
+                                    (g) => !isSettled(g.open.status) && !isErrorRow(g.open.status)).length}
+                                stato={statoChiusuraSafe(e.event_id)}
+                                onCashOut={cashOutPartita}
+                                onRiprendi={riprendiPartita}
+                            />
                         <SafeTradesTable
                             trades={e.cicli.flatMap((g) => [g.open, ...g.closes])}
                             // modalità ATTIVA sul servizio: le righe di un'altra
@@ -1015,6 +1053,7 @@ export default function SafeStrategy() {
                             onCancel={cancelReserve}
                             emptyText={emptyText}
                         />
+                        </div>
                     )}
                 />
             </div>

@@ -91,3 +91,51 @@ describe('RiskPanel — una sola liability, una sola definizione', () => {
         expect(explain).toHaveTextContent(/Liability aperta/);
     });
 });
+
+// ---------------------------------------------------------------------------
+// 16/09 — DUE NUMERI: il CONTO e quello su cui il bot DECIDE.
+// Misurati 32,80 EUR di responsabilita' MANUALE dentro i cap del bot: un numero
+// solo non sapeva raccontarlo. E assente non e' zero.
+//
+// FALSIFICAZIONE (verificata: rosso):
+//   · far ripiegare `daily_liability_bot` su `daily_liability` quando manca;
+//   · calcolare la percentuale della barra sul totale invece che sul bot.
+// ---------------------------------------------------------------------------
+describe('RiskPanel — il conto e il bot, mai un numero solo', () => {
+    it('mostra i due numeri e la differenza, che sono le operazioni manuali', () => {
+        render(<RiskPanel
+            risk={{ daily_liability: 132.8, daily_liability_bot: 100, daily_cap: 500, cap_solo_automatico: true }}
+            opps={null} />);
+        expect(screen.getByTestId('risk-liability')).toHaveTextContent('132,80 €');
+        expect(screen.getByTestId('risk-liability-bot')).toHaveTextContent('100,00 €');
+        expect(screen.getByTestId('risk-liability-manuale')).toHaveTextContent('32,80 €');
+    });
+
+    it('il servizio DICHIARA se i cap contano solo l automatico: la pagina non lo deduce', () => {
+        render(<RiskPanel risk={{ daily_liability: 100, daily_liability_bot: 100, cap_solo_automatico: true }} opps={null} />);
+        expect(screen.getByTestId('risk-cap-scope')).toHaveTextContent(/SOLO le posizioni automatiche/);
+    });
+
+    it('senza la dichiarazione si dice che i cap ripiegano sui numeri completi', () => {
+        render(<RiskPanel risk={{ daily_liability: 100, daily_cap: 500 }} opps={null} />);
+        expect(screen.getByTestId('risk-cap-scope')).toHaveTextContent(/numeri COMPLETI/);
+    });
+
+    it('numero del bot ASSENTE = «—», mai zero (non vuol dire «non ho rischiato niente»)', () => {
+        render(<RiskPanel risk={{ daily_liability: 100, daily_cap: 500 }} opps={null} />);
+        expect(screen.getByTestId('risk-liability-bot')).toHaveTextContent('—');
+        expect(screen.queryByTestId('risk-liability-manuale')).toBeNull();
+    });
+
+    it('nessuna differenza da dichiarare quando i due numeri coincidono', () => {
+        render(<RiskPanel risk={{ daily_liability: 100, daily_liability_bot: 100, daily_cap: 500 }} opps={null} />);
+        expect(screen.queryByTestId('risk-liability-manuale')).toBeNull();
+    });
+
+    it('la BARRA misura il numero del BOT: le tue manuali non la spingono verso il cap', () => {
+        render(<RiskPanel
+            risk={{ daily_liability: 500, daily_liability_bot: 250, daily_cap: 500 }}
+            opps={null} />);
+        expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
+    });
+});

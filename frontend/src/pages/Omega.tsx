@@ -36,6 +36,7 @@ import { creaInterruttori } from '@/lib/interruttori';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { LiveConfirmDialog } from '@/components/trading/LiveConfirmDialog';
 import { StatTile, KpiRow, toneOf } from '@/components/trading/StatTile';
+import { PartiteChiuseDallUtente } from '@/components/omega/PartiteChiuseDallUtente';
 import { DayBar } from '@/components/trading/DayBar';
 import { LoadingState, SectionCard } from '@/components/trading/EmptyState';
 import { ActivityFeed, type ActivityRow } from '@/components/trading/ActivityFeed';
@@ -396,6 +397,16 @@ export default function Omega() {
     const goal = Number(goalToday ?? control?.daily_goal ?? stats.goal ?? goalInput ?? 250);
     const operatingDay = romeDay();
     const openLiability = Number(agg?.open_liability ?? stats.open_liability ?? 0);
+    // R6 (16/09) — DUE NUMERI AFFIANCATI, mai uno solo: `open_liability` e' il
+    // CONTO (bot + operazioni manuali del trader), `open_liability_bot` e'
+    // quello su cui il bot DECIDE (target di gamba, stop_on_goal,
+    // daily_loss_cap, max_open_liability). Il 16/09 sul banco il bot vedeva
+    // 70 EUR «suoi» che erano di una lay manuale. La differenza sei tu.
+    // Assente non e' zero: se il servizio non lo pubblica si scrive «—».
+    const openLiabilityBot = stats.open_liability_bot == null
+        ? null : Number(stats.open_liability_bot);
+    const liabilityManuale = openLiabilityBot == null
+        ? null : Math.round((openLiability - openLiabilityBot) * 100) / 100;
     const matchesTraded = Number(agg?.matches_traded ?? stats.matches_traded ?? 0);
     const legsToday = agg?.legs_today ?? stats.legs_today ?? null;
     const eventsToday = agg?.events_today ?? stats.events_today ?? null;
@@ -578,15 +589,32 @@ export default function Omega() {
                         Qui restano SOLO i numeri che la barra non ha: quanto
                         rischio è vivo, quanto è già bloccato, quanto è a esito
                         ignoto e a quanto si punta per operazione. */}
+                    {/* R8 (16/09) — le partite che l'utente ha chiuso, con il
+                        gesto per riportarle in carico al bot. Senza, lo stato si
+                        toglieva solo da SQL. */}
+                    <PartiteChiuseDallUtente onRipreso={reload} />
+
                     <KpiRow tiles={4}>
                         <StatTile
                             label={T.openLiability}
                             value={fmtMoney(openLiability)}
                             tone="danger"
                             icon={<ShieldAlert className="w-3.5 h-3.5" />}
-                            sub={reconcilingLiab > 0
-                                ? `rischio vivo adesso · di cui ${fmtMoney(reconcilingLiab)} in verifica su Betfair`
-                                : 'rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0)'}
+                            sub={(
+                                <>
+                                    {reconcilingLiab > 0
+                                        ? `rischio vivo adesso · di cui ${fmtMoney(reconcilingLiab)} in verifica su Betfair`
+                                        : 'rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0)'}
+                                    <span className="block" data-testid="omega-liability-bot"
+                                        title="il bot decide su QUESTO numero: le operazioni che apri a mano non muovono piu’ i suoi cap (R6, 16/09)">
+                                        su cui decide il bot{' '}
+                                        <span className="font-mono">{fmtMoney(openLiabilityBot)}</span>
+                                        {liabilityManuale != null && liabilityManuale > 0 && (
+                                            <> · {fmtMoney(liabilityManuale)} sono tue, fuori dai suoi cap</>
+                                        )}
+                                    </span>
+                                </>
+                            )}
                             testId="omega-kpi-liability"
                         />
                         <StatTile

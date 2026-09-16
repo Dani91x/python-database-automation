@@ -13,6 +13,7 @@
 // system (traduzione parola per parola), mai la chiave inglese nuda.
 // ============================================================================
 import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
+import { comeLabel } from '@/lib/chiusuraUtente';
 import { activityMeta, type ActivityMeta } from '@/lib/tradeStatus';
 
 const NEUTRAL = 'bg-white/5 text-slate-300 border-white/10';
@@ -76,6 +77,14 @@ export const SAFE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     cashout_error: { label: 'CASH OUT FALLITO', cls: BAD, critical: true },
     cancel: { label: 'ORDINE ANNULLATO', cls: WARN },
     cancel_rejected: { label: 'ANNULLO RIFIUTATO', cls: BAD, critical: true },
+
+    // ---- l'UTENTE ha chiuso (16/09 sera, ordine dell'utente)
+    // «se chiudo io il bot deve saperlo e non fare altro». Sono i tre kind che
+    // il servizio scrive quando la partita esce dalle sue mani: da lì in poi non
+    // apre, non copre, non esce e non piazza gambe di combo su quella partita.
+    chiuso_dall_utente: { label: 'CHIUSA DA TE: il bot non fa altro', cls: WARN, critical: true },
+    posizione_di_conto: { label: 'POSIZIONE SUL CONTO BETFAIR', cls: INFO, critical: true },
+    riprendi_evento: { label: 'PARTITA RIPRESA IN CARICO DAL BOT', cls: GOOD },
 
     // ---- regolamento
     settle: { label: 'GAMBA REGOLATA', cls: NEUTRAL },
@@ -156,6 +165,17 @@ const REASON_IT: Record<string, string> = {
         'il mercato non ha liquidità sufficiente a reggere il minimo della combinazione',
     pre_ko_assente:
         'riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita',
+    // 16/09 sera — LA PARTITA L'HAI CHIUSA TU. Il servizio lo scrive come
+    // motivo di ogni salto su quella partita (`bot_service.py:2953/4282/5018`):
+    // senza questa riga il trader leggerebbe «partita_chiusa_dall_utente» e
+    // crederebbe a un guasto invece che a una conseguenza di un suo gesto.
+    partita_chiusa_dall_utente:
+        'partita chiusa da te: il bot non apre, non copre e non esce piu’ qui. '
+        + 'Si riparte solo col tuo «Riprendi»',
+    settlement_da_posizione_di_conto:
+        'P&L preso dal regolamento vero degli ordini del conto, non dedotto',
+    posizione_di_conto_non_letta:
+        'posizione sul conto Betfair non leggibile: non si conclude nulla e si riprova',
     variante_non_abilitata: 'strategia non abilitata nei parametri del bot',
     esatto_lato_gia_aperto: 'altro lato “Altro risultato” già aperto su questa partita',
     modalita_non_corrispondente:
@@ -266,6 +286,25 @@ const EXIT_REASON_IT: Record<string, string> = {
     cashout_quasi_gratis: 'posizione ormai vinta: cash out quasi gratis, liability liberata',
 };
 const MINUTE_REASON_RE = /^minuto_(\d+)/;
+
+/**
+ * 16/09 — i tre VERDETTI della lettura della posizione sul conto Betfair
+ * (`bot_service._sorveglia_posizione_di_conto`). Sono i codici che il servizio
+ * scrive in `payload.verdetto`: uno solo dei tre spegne il bot sulla partita,
+ * gli altri due dichiarano e basta. Confonderli farebbe credere spento un bot
+ * che sta ancora proteggendo una posizione.
+ */
+const VERDETTO_CONTO_IT: Record<string, string> = {
+    chiusa_dall_utente: 'la posizione non c’e’ piu’ sul conto: l’hai chiusa tu',
+    ridotta_dall_utente: 'hai ridotto la posizione: il bot continua a proteggere quel che resta',
+    gambe_non_ritrovate: 'le gambe del bot non si ritrovano sul conto: si va in riconciliazione, non si spegne niente',
+};
+
+export function safeVerdettoContoLabel(v: string | null | undefined): string | null {
+    const k = v != null ? String(v).trim().toLowerCase() : '';
+    if (!k) return null;
+    return VERDETTO_CONTO_IT[k] ?? k.replace(/_/g, ' ');
+}
 
 /** `meta.exit_kind` (vocabolario chiuso di `exits.EXIT_KINDS`) → italiano. */
 const EXIT_KIND_IT: Record<string, string> = {
@@ -394,6 +433,17 @@ export function safeActivityLine(payload: Record<string, unknown> | null | undef
     if (Number.isFinite(liab) && liab > 0) parts.push(`liability ${fmtMoney(liab)}`);
     const exitKind = safeExitKindLabel(txt(p.exit_kind));
     if (exitKind) parts.push(`uscita: ${exitKind}`);
+    // 16/09 — il VERDETTO della lettura di conto e il COME della chiusura
+    // dell'utente: senza, `posizione_di_conto` e `chiuso_dall_utente` erano due
+    // badge senza contenuto (si vedeva CHE era successo, non COSA).
+    const verdetto = safeVerdettoContoLabel(txt(p.verdetto));
+    if (verdetto) parts.push(verdetto);
+    const come = comeLabel(txt(p.come));
+    if (come) parts.push(come);
+    const marcate = Number(p.righe_marcate);
+    if (Number.isFinite(marcate)) parts.push(`${marcate} righe marcate`);
+    const ripulite = Number(p.righe_ripulite);
+    if (Number.isFinite(ripulite)) parts.push(`${ripulite} righe riportate al bot`);
     // `exit_reason` è GIÀ la frase italiana scritta da exits.reason_text; `reason`
     // è il codice tecnico della stessa uscita. Prima vinceva il codice tecnico e
     // il trader leggeva "lato_bancato_segna" invece della spiegazione.

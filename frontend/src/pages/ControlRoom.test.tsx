@@ -87,6 +87,13 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         operazioni: new Map(),
         proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
         approva: vi.fn(), ignora: vi.fn(), chiudi: vi.fn(),
+        // 16/09 — il FINTO parla come il VERO: le chiavi nuove del modello di
+        // vista ci sono tutte, con lo stesso tipo. Un finto piu' povero del
+        // vero fa passare una pagina che dal vivo esplode (memoria 15/09).
+        statoChiusura: () => ({ chiusa: false, fonte: null, marcatore: null }),
+        cashOutEvento: vi.fn(), riprendiEvento: vi.fn(), eventiChiusiOmega: [],
+        proposteOmega: [], erroreProposteOmega: null,
+        approvaOmega: vi.fn(), ignoraOmega: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
         ricarica: vi.fn(),
         ...over,
@@ -1092,5 +1099,123 @@ describe('scheda tennis: la conferma «soldi veri» non cambia significato sotto
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
         expect(s.getByTestId('cr-tennis-altre-live').textContent).toMatch(/base/);
+    });
+});
+
+// ===========================================================================
+// 16/09 — «SE CHIUDO IO, IL BOT DEVE SAPERLO» e le PROPOSTE DI OMEGA.
+//
+// Due ordini dell'utente della stessa sera, montati sulla stessa pagina:
+//   · il cash out globale della partita, con il badge che lo dichiara;
+//   · le uscite di Omega che diventano proposte da approvare.
+//
+// FALSIFICAZIONE (verificata: i test diventano rossi):
+//   · togliere il montaggio di `CashOutPartita` dalla scheda partita;
+//   · non passare `statoChiusura` alla scheda (badge sempre spento);
+//   · mostrare l'elenco Omega vuoto senza dichiarare l'errore della RPC.
+// ===========================================================================
+/** una riga di SAFE ancora a mercato su E1: e' quello che il cash out globale
+ *  chiuderebbe. Le chiavi sono quelle vere di `OperazionePartita`. */
+function opsSafeVive() {
+    return new Map([['E1', [{
+        bot: 'safe' as const, id: 4821, selezione: 'Under 3.5', lato: 'back' as const,
+        prezzo: 1.38, size: 3, stato: 'open', pnl: null, modalita: 'paper' as const,
+        at: '2026-09-14T14:40:00Z', quale: 'tennis',
+        ordine: {
+            status: 'open', side: 'back', price: 1.38, size: 3,
+            size_requested: 3, size_matched: 3, size_remaining: 0,
+            avg_price_matched: 1.38, betfair_updated_at: null, meta: null,
+        },
+    }]]]) as ReturnType<typeof useControlRoom>['operazioni'];
+}
+
+describe('la partita si chiude TUTTA, e il bot lo sa', () => {
+    it('la scheda della partita live porta il gesto, con l’event_id giusto', async () => {
+        mVm.mockReturnValue(vm({ operazioni: opsSafeVive() }));
+        const s = mostra();
+        await apri(s, 'live');
+        const g = s.getByTestId('cr-cashout-partita');
+        expect(g.getAttribute('data-event-id')).toBe('E1');
+        expect(g.getAttribute('data-chiusa')).toBe('0');
+        expect(s.getByTestId('cr-cashout-partita-avvia')).toBeTruthy();
+    });
+
+    it('quando il servizio la dichiara chiusa: badge acceso e «Riprendi» al posto del cash out', async () => {
+        mVm.mockReturnValue(vm({
+            statoChiusura: () => ({
+                chiusa: true, fonte: 'righe',
+                marcatore: { quando: '2026-09-14T14:30:00Z', come: 'cashout_event', dettaglio: {} },
+            }),
+        }));
+        const s = mostra();
+        await apri(s, 'live');
+        expect(s.getByTestId('cr-badge-chiusa-da-te')).toBeTruthy();
+        expect(s.queryByTestId('cr-cashout-partita-avvia')).toBeNull();
+        expect(s.getByTestId('cr-riprendi-partita')).toBeTruthy();
+    });
+
+    it('senza posizioni vive del bot il gesto e SPENTO, e dice perche', async () => {
+        mVm.mockReturnValue(vm());        // `operazioni` vuota: nessuna riga di Safe
+        const s = mostra();
+        await apri(s, 'live');
+        expect((s.getByTestId('cr-cashout-partita-avvia') as HTMLButtonElement).disabled).toBe(true);
+        expect(s.getByTestId('cr-cashout-partita-bloccato').textContent)
+            .toMatch(/nessuna posizione viva/);
+    });
+
+    it('il gesto chiama il servizio con l’event_id della partita', async () => {
+        const cashOutEvento = vi.fn().mockResolvedValue(undefined);
+        mVm.mockReturnValue(vm({ cashOutEvento, operazioni: opsSafeVive() }));
+        const s = mostra();
+        await apri(s, 'live');
+        fireEvent.click(s.getByTestId('cr-cashout-partita-avvia'));
+        // Safe e in paper nel modello finto: un clic solo basta
+        await vi.waitFor(() => expect(cashOutEvento).toHaveBeenCalledWith('E1'));
+    });
+});
+
+describe('le uscite di OMEGA arrivano nel nastro come proposte', () => {
+    const propostaOmega = {
+        id: 77, kind: 'cashout', created_at: '2026-09-14T14:50:00Z', updated_at: null,
+        payload: {
+            trade_id: 4821, event_id: 'E1', event_name: 'Milan – Inter',
+            selection_name: '0 - 2', side: 'back' as const, entry_side: 'lay' as const,
+            entry_price: 65, size: 1, price_at_decision: 31,
+            motivo_codice: 'blocca_il_profitto', profitto_bloccabile: 0.94,
+            back_price: 31, back_size: 2.1, ev_tenere: 0.42, p_evento: 0.0123,
+            meglio_aspettare: false, minute: 58, score: '1-0', mode: 'paper' as const,
+            decided_at: '2026-09-14T14:50:00Z', proposed_at: '2026-09-14T14:50:30Z',
+        },
+    };
+
+    it('la scheda di Omega compare nel nastro e dice di chi e', () => {
+        mVm.mockReturnValue(vm({ proposteOmega: [propostaOmega] }));
+        const s = mostra();
+        const card = s.getByTestId('cr-proposta-omega');
+        expect(card.textContent).toMatch(/Omega/);
+        expect(card.getAttribute('data-approvabile')).toBe('1');
+    });
+
+    it('il conteggio in testata somma le proposte dei due bot', () => {
+        mVm.mockReturnValue(vm({ proposteOmega: [propostaOmega] }));
+        const s = mostra();
+        expect(within(s.getByTestId('cr-nastro')).getByText(/1 in attesa/)).toBeTruthy();
+    });
+
+    it('con una proposta di Omega il nastro NON dice «nessuna uscita da decidere»', () => {
+        mVm.mockReturnValue(vm({ proposteOmega: [propostaOmega] }));
+        const s = mostra();
+        expect(s.getByTestId('cr-nastro').textContent).not.toMatch(/Nessuna uscita da decidere/);
+    });
+
+    it('migrazione non applicata: si DICHIARA perche l’elenco e vuoto', () => {
+        mVm.mockReturnValue(vm({
+            proposteOmega: [],
+            erroreProposteOmega: 'function public.get_omega_proposte() does not exist',
+        }));
+        const s = mostra();
+        const box = s.getByTestId('cr-proposte-omega-errore');
+        expect(box.textContent).toMatch(/does not exist/);
+        expect(box.textContent).toMatch(/non vuol dire che non ce ne siano/);
     });
 });

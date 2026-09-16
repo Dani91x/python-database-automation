@@ -23,7 +23,10 @@
 import { useState } from 'react';
 import { ChevronRight, Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
+import { isErrorRow, isSettled } from '@/lib/eventGroups';
+import { comeLabel, marcatoreRiga, type StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { pnlClass } from '@/lib/tradeStatus';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { BOT_LABEL, type Bot, type PartitaGiornata, type StatoQuote } from '@/lib/controlRoom';
@@ -85,12 +88,30 @@ export interface SchedaPartitaProps {
     registra?: boolean | null;
     /** il registratore di questo sport e' vivo? Senza, REC mentirebbe. */
     registratoreVivo?: boolean | null;
+    /**
+     * 16/09 — IL GESTO «cash out globale della partita» + «Riprendi», che
+     * parlano col servizio SAFE. Assente = non si monta (una scheda che non ha
+     * un servizio dietro non deve mostrare un pulsante che non fa niente).
+     * Lo stato «chiusa da te» lo DICHIARA il servizio: qui si legge e basta.
+     */
+    safe?: {
+        modalita: 'paper' | 'live' | null;
+        chiusa: StatoChiusuraEvento;
+        onCashOut: (eventId: string) => Promise<void>;
+        onRiprendi: (eventId: string) => Promise<void>;
+    };
 }
 
 export function SchedaPartita({
-    p, operazioni, scheda = 'live', registra = null, registratoreVivo = null,
+    p, operazioni, scheda = 'live', registra = null, registratoreVivo = null, safe,
 }: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
+
+    // posizioni del bot SAFE ancora a mercato su questa partita: sono quelle
+    // che un cash-out globale chiuderebbe. Regolate ed `error` non contano.
+    const viveSafe = operazioni.filter(
+        (o) => o.bot === 'safe' && !isSettled(o.stato) && !isErrorRow(o.stato),
+    ).length;
 
     const soldi = p.soldi;
     // IL NUMERO GRANDE E' QUELLO DEI SOLDI VERI. Il paper esiste, si vede, ma
@@ -140,6 +161,21 @@ export function SchedaPartita({
                     </span>
                 )}
             </div>
+
+            {/* ── il gesto dell'utente: chiudo io TUTTA la partita, o la riprendo ── */}
+            {safe && (
+                <div className="px-2.5 pt-1.5">
+                    <CashOutPartita
+                        eventId={p.event_id}
+                        modalita={safe.modalita}
+                        posizioniVive={viveSafe}
+                        stato={safe.chiusa}
+                        onCashOut={safe.onCashOut}
+                        onRiprendi={safe.onRiprendi}
+                        compatto
+                    />
+                </div>
+            )}
 
             {/* ── riga 2: il METRO — target, fatto, quanto manca ── */}
             <div className="px-2.5 pt-2">
@@ -241,6 +277,9 @@ export function SchedaPartita({
                                 {o.modalita === 'live'
                                     ? <span className="text-[9px] px-1 rounded bg-orange-500/20 text-orange-300">live</span>
                                     : <span className="text-[9px] px-1 rounded bg-white/8 text-white/35">paper</span>}
+                                {/* 16/09 — la RIGA porta il marcatore scritto dal
+                                    servizio: questa posizione l'hai chiusa TU. */}
+                                <MarcatoreRiga meta={o.ordine.meta ?? null} />
                                 {/* ⚠️ REVIEW 15/09 — il colore era rifatto a mano:
                                     `>= 0` dipingeva di VERDE anche lo zero, e un
                                     valore assente restava in grassetto come se
@@ -256,6 +295,21 @@ export function SchedaPartita({
                 </div>
             )}
         </div>
+    );
+}
+
+/** Il badge «chiusa da te» di UNA riga: lo accende il marcatore che il
+ *  servizio ha scritto nel `meta`, mai una deduzione della pagina. */
+function MarcatoreRiga({ meta }: { meta: Record<string, unknown> | null }) {
+    const m = marcatoreRiga({ meta });
+    if (!m) return null;
+    return (
+        <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300"
+            data-testid="cr-riga-chiusa-da-te"
+            title={[comeLabel(m.come) ?? 'chiusa da te',
+                m.quando ? `alle ${fmtTime(m.quando)}` : 'istante non dichiarato'].join(' · ')}>
+            chiusa da te
+        </span>
     );
 }
 

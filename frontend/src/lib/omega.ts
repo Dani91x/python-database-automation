@@ -45,6 +45,23 @@ export interface OmegaStats {
     lost_today?: number;
     /** L-03: false = fotografia a bot FERMO (eventi/target azzerati, soldi freschi) */
     bot_running?: boolean;
+    /**
+     * R6 (16/09) — la liability su cui il BOT decide davvero: `open_liability`
+     * è il CONTO (bot + operazioni manuali del trader), questa è solo sua. Il
+     * 16/09 sul banco il bot vedeva 70 € di liability «sua» che erano di una
+     * lay manuale dell'utente, e su quei 70 € si muovevano target di gamba,
+     * stop_on_goal, daily_loss_cap e max_open_liability. Le due grandezze
+     * restano affiancate apposta: la differenza sei tu.
+     */
+    open_liability_bot?: number;
+    realized_today_bot?: number;
+    events_today_bot?: number;
+    /**
+     * R8 (16/09) — le partite che il servizio dichiara CHIUSE DALL'UTENTE: su
+     * quelle non apre, non copre e non fa green-up. Lo stato si toglie solo col
+     * gesto «Riprendi» (`omega_evento_riprendi`).
+     */
+    eventi_chiusi_dall_utente?: string[];
 }
 
 export interface OmegaControl {
@@ -251,6 +268,44 @@ export interface OmegaParams {
     idle_stats_s: number;
     /** ritmo del ciclo quando non c'è niente che si muove */
     idle_cycle_s: number;
+    /**
+     * R9 (16/09) — ogni quanti secondi, PER MERCATO, si rilegge su Betfair se
+     * la posizione del bot esiste ancora: cioè se l'hai chiusa tu fuori
+     * dall'app. Sono due chiamate REST per mercato. 0 = a ogni giro (molto più
+     * caro: si usa nei test).
+     */
+    conto_every_s: number;
+
+    // ---- OMEGA V3 (16/09 sera) — IN OMBRA finché non lo ordina l'utente ----
+    // `strategy_version` resta 2: il motore v3 (`omega_v3.py`) gira solo nel
+    // replay, sullo stesso book, per confrontarlo col v2. I quindici parametri
+    // sotto esistono già nella whitelist del servizio (`omega_config._SPEC`):
+    // la pagina li MOSTRA coi default del servizio, non ne inventa.
+    /** 2 = motore v2 di produzione (default) · 3 = motore v3 */
+    strategy_version: number;
+    /** v3: «INGRESSO STANDARD: 1 euro in LAY». La size non viene più dall'obiettivo. */
+    v3_stake_eur: number;
+    /** modello di probabilità: ha vinto il banco `gamma_poisson` (16/09) */
+    v3_modello: string;
+    /** margine minimo: P_nostra ≤ p_implicita / k. Pavimento a 2 (k misurato) */
+    v3_k_minimo: number;
+    /** casi minimi perché la tabella storica abbia diritto di veto */
+    v3_empirical_min_n: number;
+    v3_ht_entry_min: number;
+    v3_ht_entry_max: number;
+    v3_ft_entry_min: number;
+    v3_ft_entry_max: number;
+    v3_max_liability_per_leg: number;
+    v3_max_liability_per_match: number;
+    v3_max_open_liability: number;
+    v3_daily_loss_cap: number;
+    v3_min_lay_liquidity: number;
+    /** gol AGGIUNTIVI minimi fra punteggio corrente e risultato bancato */
+    v3_distanza_minima_gol: number;
+    /** P massima ammessa per una selezione bancata (punti %) */
+    v3_p_max_pct: number;
+    /** fusione col mercato (pool logaritmico): 'auto' | 'off' */
+    v3_fusione_mercato: string;
 }
 
 /** P del modello di un trade Omega (meta.model.{p_model_raw,calibrated}) */
@@ -288,6 +343,12 @@ const A_PLAIN = 'bg-white/5 text-slate-300 border-white/10';
 const A_MUTED = 'bg-white/5 text-slate-400 border-white/10';
 
 export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
+    // ---- L'UTENTE HA CHIUSO (16/09 sera, R8/R9)
+    // E' il momento in cui il servizio scopre che la posizione non esiste piu'
+    // sul conto — l'hai chiusa tu, nell'app o direttamente su Betfair — e
+    // smette di gestire quella partita. Si torna indietro solo col «Riprendi».
+    chiuso_dall_utente: { label: 'CHIUSA DA TE: il bot non fa altro', cls: A_WARN, critical: true },
+    evento_ripreso: { label: 'PARTITA RIPRESA IN CARICO DAL BOT', cls: A_GOOD },
     // ---- ingressi
     place: { label: 'PIAZZATO', cls: A_INFO },
     skip: { label: 'SALTATA', cls: A_MUTED },
@@ -828,6 +889,27 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     events_refresh_s: 1800,
     idle_stats_s: 60,
     idle_cycle_s: 60,
+    conto_every_s: 120,
+    // OMEGA V3 — gli STESSI default del servizio (omega_config._SPEC): un
+    // default della UI diverso riscriverebbe il valore vivo con un «Salva»
+    // fatto per cambiare altro (H-07).
+    strategy_version: 2,
+    v3_stake_eur: 1,
+    v3_modello: 'gamma_poisson',
+    v3_k_minimo: 2,
+    v3_empirical_min_n: 200,
+    v3_ht_entry_min: 25,
+    v3_ht_entry_max: 44,
+    v3_ft_entry_min: 55,
+    v3_ft_entry_max: 85,
+    v3_max_liability_per_leg: 120,
+    v3_max_liability_per_match: 240,
+    v3_max_open_liability: 2000,
+    v3_daily_loss_cap: 400,
+    v3_min_lay_liquidity: 1,
+    v3_distanza_minima_gol: 1,
+    v3_p_max_pct: 2,
+    v3_fusione_mercato: 'auto',
     price_min: 20,
     price_max: 120,
     entry_minute_min: 30,
@@ -1021,6 +1103,39 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'events_refresh_s', label: 'Rinfresco della lista eventi (s)', type: 'number', step: 300, min: 0, max: 86400 },
             { key: 'idle_stats_s', label: 'Statistiche a bot fermo (s)', type: 'number', step: 10, min: 0, max: 600 },
             { key: 'idle_cycle_s', label: 'Ritmo del ciclo a vuoto (s)', type: 'number', step: 10, min: 0, max: 600, hint: 'usato solo quando non c’è NIENTE aperto, nessuna missione e nessuna partita in finestra' },
+            { key: 'conto_every_s', label: 'Posizione sul conto Betfair (s)', type: 'number', step: 10, min: 0, max: 3600, hint: 'ogni quanto, PER MERCATO, si rilegge su Betfair se la posizione del bot esiste ancora: è così che il bot si accorge che l’hai chiusa tu fuori dall’app. Sono due chiamate REST per mercato. 0 = a ogni giro' },
+        ],
+    },
+    {
+        label: 'Motore v3 — IN OMBRA, non decide nulla',
+        note: 'Il motore v3 (lay da 1 €, margine k misurato sulla probabilità fusa, NESSUNA chiusura automatica: le uscite diventano proposte) gira solo nel replay, sullo stesso book del v2, per confrontarli. Finché « Versione della strategia » resta 2 questi campi non toccano un solo ordine vero: lo switch a 3 lo ordina l’utente, non la pagina.',
+        fields: [
+            { key: 'strategy_version', label: 'Versione della strategia (2 = v2 in produzione, 3 = v3)', type: 'number', step: 1, min: 2, max: 3, hint: 'default del servizio: 2. Portarlo a 3 cambia il motore che decide gli ingressi' },
+            { key: 'v3_stake_eur', label: 'v3: ingresso in LAY (€)', type: 'number', step: 0.5, min: 0.01, max: 100, hint: 'ordine dell’utente: 1 €. In v3 la size NON viene più dall’obiettivo di giornata' },
+            { key: 'v3_modello', label: 'v3: modello di probabilità', type: 'select', hint: 'ha vinto il banco dei modelli del 16/09 (log-loss 1,93221 su 1,07 M transizioni)', options: [
+                { value: 'gamma_poisson', label: 'gamma_poisson (bayesiano coniugato) — vincitore del banco' },
+                { value: 'poisson', label: 'poisson' },
+                { value: 'dixon_coles', label: 'dixon_coles' },
+                { value: 'dixon_robinson', label: 'dixon_robinson' },
+                { value: 'bivariato', label: 'bivariato (λ3 comune)' },
+            ] },
+            { key: 'v3_fusione_mercato', label: 'v3: fusione col mercato', type: 'select', hint: 'pool logaritmico in logit, pesi misurati per fascia', options: [
+                { value: 'auto', label: 'auto (fonde modello e mercato)' },
+                { value: 'off', label: 'off (solo modello)' },
+            ] },
+            { key: 'v3_k_minimo', label: 'v3: margine minimo k', type: 'number', step: 0.5, min: 1, max: 20, hint: 'P nostra ≤ P implicita / k. Il pavimento non scende sotto 2: al prezzo di lay davvero disponibile il bias del mercato NON è dimostrato' },
+            { key: 'v3_p_max_pct', label: 'v3: P MAX della selezione (punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'tetto duro, oltre al margine k' },
+            { key: 'v3_distanza_minima_gol', label: 'v3: distanza minima dal punteggio (gol)', type: 'number', step: 1, min: 1, max: 5, hint: '1 = mai il risultato corrente; 2 = nemmeno a un gol' },
+            { key: 'v3_empirical_min_n', label: 'v3: casi minimi per il veto empirico', type: 'number', step: 50, min: 0, max: 1000000 },
+            { key: 'v3_ht_entry_min', label: 'v3 gamba 1T: minuto MIN', type: 'number', step: 1, min: 0, max: 45 },
+            { key: 'v3_ht_entry_max', label: 'v3 gamba 1T: minuto MAX', type: 'number', step: 1, min: 0, max: 45 },
+            { key: 'v3_ft_entry_min', label: 'v3 gamba 2T: minuto MIN', type: 'number', step: 1, min: 45, max: 130 },
+            { key: 'v3_ft_entry_max', label: 'v3 gamba 2T: minuto MAX', type: 'number', step: 1, min: 45, max: 130 },
+            { key: 'v3_min_lay_liquidity', label: 'v3: liquidità lay MIN (€)', type: 'number', step: 0.5, min: 0, max: 100000, hint: 'con 1 € di lay la controparte che serve è 1 €, non 5' },
+            { key: 'v3_max_liability_per_leg', label: 'v3: cap liability per gamba (€)', type: 'number', step: 10, min: 0, max: 1000000, hint: 'in v3 i cap NON sono zero: 0 = OFF' },
+            { key: 'v3_max_liability_per_match', label: 'v3: cap liability per partita (€)', type: 'number', step: 10, min: 0, max: 1000000, hint: '0 = OFF' },
+            { key: 'v3_max_open_liability', label: 'v3: cap liability aperta (€)', type: 'number', step: 100, min: 0, max: 10000000, hint: '0 = OFF' },
+            { key: 'v3_daily_loss_cap', label: 'v3: stop-loss giornaliero (€)', type: 'number', step: 25, min: 0, max: 1000000, hint: '0 = OFF' },
         ],
     },
 ];
@@ -1127,6 +1242,50 @@ export function subscribeOmega(onChange: () => void): () => void {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'omega_activity' }, onChange)
         .subscribe();
     return () => { void supabase.removeChannel(channel); };
+}
+
+// --------------------------------- «SE CHIUDO IO, IL BOT DEVE SAPERLO» (R8)
+//
+// Migrazione `migrations/omega_chiuso_dall_utente_2026-09-16.sql`. Finché non è
+// applicata queste due RPC NON ESISTONO: Supabase risponde con un errore, che
+// la pagina mostra invece di nasconderlo — e lo stato dell'evento vive solo in
+// RAM nel servizio (che lo dichiara con `schema_warn`).
+
+export interface OmegaEventoChiuso {
+    event_id: string;
+    name: string | null;
+    /** quello che il servizio ha scritto: non si interpreta, si mostra */
+    stato_utente: Record<string, unknown> | null;
+}
+
+/** L'elenco delle partite che l'utente ha chiuso (`omega_eventi_chiusi_dall_utente`). */
+export async function fetchOmegaEventiChiusi(): Promise<OmegaEventoChiuso[]> {
+    const { data, error } = await supabase.rpc('omega_eventi_chiusi_dall_utente');
+    if (error) throw new Error(error.message);
+    const rows = Array.isArray(data) ? data : [];
+    return rows.map((r) => {
+        const o = (r ?? {}) as Record<string, unknown>;
+        return {
+            event_id: String(o.event_id ?? ''),
+            name: o.name == null ? null : String(o.name),
+            stato_utente: (o.stato_utente ?? null) as Record<string, unknown> | null,
+        };
+    }).filter((r) => r.event_id !== '');
+}
+
+/**
+ * RIPRENDI: la partita torna in carico al bot.
+ *
+ * È l'UNICO modo di togliere lo stato: non scade col tempo, non si spegne a
+ * fine partita, non si azzera al rinfresco della cache eventi. Il gesto è
+ * dell'utente, e resta scritto (`omega_activity`/`evento_ripreso`).
+ */
+export async function omegaEventoRiprendi(eventId: string): Promise<Record<string, unknown>> {
+    const eid = String(eventId ?? '').trim();
+    if (!eid) throw new Error('riprendi: manca l’identificativo della partita, la richiesta non parte');
+    const { data, error } = await supabase.rpc('omega_evento_riprendi', { p_event_id: eid });
+    if (error) throw new Error(error.message);
+    return (data ?? {}) as Record<string, unknown>;
 }
 
 // ------------------------------------------------------------ MODALITÀ MANUALE

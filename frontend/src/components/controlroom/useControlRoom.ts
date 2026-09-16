@@ -27,8 +27,16 @@ import {
 } from '@/lib/omega';
 import {
     fetchSafeState, fetchRunnerState, requestSafe, tradeExposureNow,
+    cashOutEvento as cashOutEventoSafe, riprendiEventoSafe,
     type SafeState, type SafeRiskStats, type RunnerState,
 } from '@/lib/safeBot';
+import {
+    eventiChiusiDalleRighe, type StatoChiusuraEvento,
+} from '@/lib/chiusuraUtente';
+import {
+    fetchProposteOmega, subscribeProposteOmega, approvaPropostaOmega,
+    ignoraPropostaOmega, ordinaProposteOmega, type PropostaUscitaOmega,
+} from '@/lib/omegaProposte';
 import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
 import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
@@ -358,6 +366,29 @@ export interface ControlRoomVM {
      *  lui stesso. */
     chiudi: (tradeId: number) => Promise<void>;
 
+    /**
+     * «SE CHIUDO IO, IL BOT DEVE SAPERLO» (ordine dell'utente, 16/09 sera).
+     * `statoChiusura` dice se una partita e' marcata «chiusa da te» e da che
+     * cosa lo sappiamo; i due gesti accodano `cashout_event` e
+     * `riprendi_evento` sulla coda richieste di sempre.
+     */
+    statoChiusura: (eventId: string) => StatoChiusuraEvento;
+    cashOutEvento: (eventId: string) => Promise<void>;
+    riprendiEvento: (eventId: string) => Promise<void>;
+    /** event_id che OMEGA dichiara chiusi dall'utente (`stats`) */
+    eventiChiusiOmega: string[];
+
+    /**
+     * LE PROPOSTE DI USCITA DI OMEGA (16/09). In v3 nessuna chiusura parte da
+     * sola: il servizio scrive una riga `proposed` e aspetta. `erroreProposteOmega`
+     * dice PERCHE' l'elenco e' vuoto quando lo e' per un guasto (tipicamente:
+     * migrazione `omega_proposte_uscita_2026-09-16.sql` non applicata).
+     */
+    proposteOmega: PropostaUscitaOmega[];
+    erroreProposteOmega: string | null;
+    approvaOmega: (id: number) => Promise<void>;
+    ignoraOmega: (id: number) => Promise<void>;
+
     /** sorgente del feed: fra `stream` e `rest` c'è un ordine di grandezza */
     feedSorgente: string | null;
     feedEtaS: number | null;
@@ -374,6 +405,11 @@ export function useControlRoom(): ControlRoomVM {
     const [safe, setSafe] = useState<SafeState | null>(null);
     const [runner, setRunner] = useState<RunnerState | null>(null);
     const [proposte, setProposte] = useState<PropostaChiusura[]>([]);
+    /** le proposte di uscita di OMEGA (migrazione `omega_proposte_uscita`):
+     *  finche' non e' applicata la RPC non esiste e l'elenco resta vuoto,
+     *  con il motivo dichiarato in `erroreProposteOmega`. */
+    const [proposteOmega, setProposteOmega] = useState<PropostaUscitaOmega[]>([]);
+    const [erroreProposteOmega, setErroreProposteOmega] = useState<string | null>(null);
     /** istante dell'ultima lettura completa dal database: serve a dire al
      *  trader quanto è vecchio quello che vede, non quanto è vecchio il feed. */
     const [lettoAlle, setLettoAlle] = useState<number | null>(null);
@@ -554,6 +590,23 @@ export function useControlRoom(): ControlRoomVM {
     useEffect(() => subscribeProposte(() => {
         fetchProposte().then(setProposte).catch(() => { /* il giro di ricarica riprova */ });
     }), []);
+
+    // ------------------------------------------ proposte di OMEGA in realtime
+    // Stessa regola della Safe: una proposta che comparisse 30 s dopo sarebbe
+    // inutile. La prima lettura fallisce finche' la migrazione non e' applicata
+    // (la RPC non esiste): il motivo si DICHIARA, non si nasconde.
+    useEffect(() => {
+        const leggi = () => {
+            fetchProposteOmega()
+                .then((r) => { setProposteOmega(r); setErroreProposteOmega(null); })
+                .catch((e: unknown) => {
+                    setProposteOmega([]);
+                    setErroreProposteOmega(e instanceof Error ? e.message : String(e));
+                });
+        };
+        leggi();
+        return subscribeProposteOmega(leggi);
+    }, []);
 
     // --------------------------------------------------------------- orologio
     useEffect(() => {
@@ -847,6 +900,26 @@ export function useControlRoom(): ControlRoomVM {
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
+    const ricaricaProposteOmega = useCallback(async () => {
+        try {
+            setProposteOmega(await fetchProposteOmega());
+            setErroreProposteOmega(null);
+        } catch (e) {
+            setProposteOmega([]);
+            setErroreProposteOmega(e instanceof Error ? e.message : String(e));
+        }
+    }, []);
+
+    const approvaOmega = useCallback(async (id: number) => {
+        await approvaPropostaOmega(id);
+        await ricaricaProposteOmega();
+    }, [ricaricaProposteOmega]);
+
+    const ignoraOmega = useCallback(async (id: number) => {
+        await ignoraPropostaOmega(id);
+        await ricaricaProposteOmega();
+    }, [ricaricaProposteOmega]);
+
     // ── OPERAZIONI PER PARTITA ───────────────────────────────────────────────
     const operazioni = useMemo(() => {
         const m = new Map<string, OperazionePartita[]>();
@@ -903,6 +976,38 @@ export function useControlRoom(): ControlRoomVM {
         await requestSafe('cashout', { trade_id: tradeId, fraction: 1 });
         await ricaricaProposte();
     }, [ricaricaProposte]);
+
+    // ── «SE CHIUDO IO, IL BOT DEVE SAPERLO» (16/09) ─────────────────────────
+    // Lo stato lo DICHIARA il servizio: Safe scrivendo `meta.chiuso_dall_utente`
+    // sulle righe (sopravvive al riavvio), Omega pubblicando l'elenco degli
+    // eventi in `stats.eventi_chiusi_dall_utente`. La pagina non lo deduce mai
+    // da «non ci sono piu' righe vive», che vuol dire un'altra cosa.
+    const eventiChiusiOmega = useMemo<string[]>(() => {
+        const raw = (omega?.control?.stats as { eventi_chiusi_dall_utente?: unknown } | null | undefined)
+            ?.eventi_chiusi_dall_utente;
+        return Array.isArray(raw) ? raw.map((x) => String(x)).filter((x) => x.trim() !== '') : [];
+    }, [omega?.control?.stats]);
+
+    const chiusuraSafe = useMemo(
+        () => eventiChiusiDalleRighe(safe?.trades ?? []),
+        [safe?.trades],
+    );
+
+    const statoChiusura = useCallback((eventId: string): StatoChiusuraEvento => {
+        const m = chiusuraSafe.get(String(eventId ?? ''));
+        if (m) return { chiusa: true, fonte: 'righe', marcatore: m };
+        return { chiusa: false, fonte: null, marcatore: null };
+    }, [chiusuraSafe]);
+
+    const cashOutEvento = useCallback(async (eventId: string) => {
+        await cashOutEventoSafe(eventId);
+        ricarica();
+    }, [ricarica]);
+
+    const riprendiEvento = useCallback(async (eventId: string) => {
+        await riprendiEventoSafe(eventId);
+        ricarica();
+    }, [ricarica]);
 
     // ── LA CATENA ────────────────────────────────────────────────────────────
     const schermo = useMemo(() => {
@@ -1023,6 +1128,9 @@ export function useControlRoom(): ControlRoomVM {
         operazioni,
         proposte: proposteVista,
         slippagePct, setSlippagePct, approva, ignora, chiudi,
+        statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
+        proposteOmega: ordinaProposteOmega(proposteOmega), erroreProposteOmega,
+        approvaOmega, ignoraOmega,
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),

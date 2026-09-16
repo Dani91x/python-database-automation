@@ -13,6 +13,7 @@
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 import { fmtMoney, fmtOdds } from '@/lib/format';
+import { payloadCashoutEvento, payloadRiprendiEvento } from '@/lib/chiusuraUtente';
 import { DEFAULT_PARAMS, mergeParams, type SafeStrategyParams, type VariantId } from '@/lib/safeStrategy';
 import {
     blockSelection, csSelection, htSelection, isUsableBlock, scanBlockByMarketId,
@@ -55,8 +56,24 @@ export interface SafeStats {
 
 /** stato del RISCHIO pubblicato dal servizio in control.stats.risk */
 export interface SafeRiskStats {
-    /** liability impegnata nella giornata operativa (€) */
+    /** liability impegnata nella giornata operativa (€) — CONTO: bot + manuali */
     daily_liability?: number;
+    /**
+     * 16/09 — la stessa liability contata sulle SOLE posizioni del bot: e' su
+     * QUESTA che i cap decidono (`bot_service.py:6647`). Se le due cifre
+     * divergono, la differenza sono le operazioni fatte a mano dal trader:
+     * misurati 32,80 € di responsabilita' manuale finiti dentro i cap del bot.
+     * Assente = il servizio non la pubblica, e allora si scrive «—», non zero.
+     */
+    daily_liability_bot?: number;
+    /** realizzato di oggi sulle sole posizioni del bot (€) */
+    realized_today_bot?: number;
+    /**
+     * true = il servizio sta contando nei cap SOLO le posizioni automatiche
+     * (la RPC `get_safe_aggregates` torna le chiavi `_auto`). false = ripiega
+     * sui numeri completi, che sono piu' alti, cioe' piu' prudenti.
+     */
+    cap_solo_automatico?: boolean;
     /** cap giornaliero di liability (€) */
     daily_cap?: number;
     /** liability delle riserve in verifica su Betfair (€) */
@@ -258,7 +275,17 @@ export interface SafeState {
     operating_day?: string | null;
 }
 
-export type SafeRequestKind = 'place' | 'cashout' | 'cancel';
+/**
+ * I kind della coda `safe_strategy_requests`.
+ *
+ * 16/09 — `cashout_event` (CASH OUT GLOBALE della partita) e `riprendi_evento`
+ * arrivano con `migrations/safe_cash_out_globale_e_cap_automatico_2026-09-16.sql`:
+ * finche' quella migrazione non e' applicata il CHECK della tabella ammette
+ * solo i primi tre e la RPC `safe_request` RIFIUTA gli altri due con
+ * «kind non valido». L'errore si mostra, non si nasconde.
+ */
+export type SafeRequestKind = 'place' | 'cashout' | 'cancel'
+    | 'cashout_event' | 'riprendi_evento';
 /** 'rejected' = il servizio ha RIFIUTATO la richiesta con un motivo leggibile
  *  (in riconciliazione, ordine già a mercato, mercato sospeso, feed non fresco) */
 export type SafeRequestStatus = 'pending' | 'processing' | 'done' | 'error' | 'rejected';
@@ -1063,6 +1090,26 @@ export async function requestSafe(
     });
     if (error) throw new Error(error.message);
     return data as unknown as number;
+}
+
+/**
+ * CASH OUT GLOBALE DELLA PARTITA (16/09).
+ *
+ * Accoda `cashout_event` con il SOLO `event_id`: quali righe chiudere lo
+ * decide il servizio leggendo le sue tabelle, non il browser. Da quel momento
+ * la partita e' marcata «chiusa dall'utente» e il bot non apre, non copre, non
+ * esce e non piazza gambe di combo su di essa (`bot_service.segna_chiuso_dall_utente`).
+ *
+ * Nessuna seconda strada verso Betfair: e' la coda di sempre.
+ */
+export async function cashOutEvento(eventId: string): Promise<number> {
+    return requestSafe('cashout_event', payloadCashoutEvento(eventId));
+}
+
+/** RIPRENDI: la partita torna in carico al bot. E' l'UNICO modo di spegnere il
+ *  marcatore — niente scadenze, niente deduzioni automatiche. */
+export async function riprendiEventoSafe(eventId: string): Promise<number> {
+    return requestSafe('riprendi_evento', payloadRiprendiEvento(eventId));
 }
 
 /** Ultime richieste (feedback pending/done/error sui bottoni "Investi"). */

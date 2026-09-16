@@ -123,3 +123,55 @@ provarli in live»** (migrazioni applicate, push, riavvio app, Fase A dal vivo, 
 verificata, cancel reale mai provato contro Betfair: prima operazione con stake minimo e
 referto forense). 5. Paper via flumine (relay F1 → driver → gate → parità) per Omega e Safe
 calcio. 6. Scalper/sniper/tennis bot sul banco. 7. Fase D carico DB. 8. Massivi su tutti i bot.
+
+## 8. CHIUSURA DELLA SERATA (16/09 notte) — stato finale e procedura per DOMANI 17/09
+
+### 8.1 Tutto consegnato e certificato dal coordinatore (dopo il §3)
+Mike sei ordini (sintetiche, mai sovracopertura, famiglia K, chiusura fuori app, pool isolata) ·
+Safe S1 (cash-out globale, chiusura fuori app, cap solo automatico) · Safe S2 (selezione
+aggiuntiva ESATTO, sintetiche BASE/PUNTA/tennis, tennis completo) · Safe K (famiglia K, 5 difetti)
+· Omega O1/O1-bis (chiusure dell'utente, stato evento, numeri del bot, annullo ordini vivi, porta
+unica conto) · Omega V3 (k misurato, banco dei modelli, motore v3 in ombra, proposte di uscita,
+famiglia K) · C.12c UI (cash out globale, Riprendi, badge, etichette, rischio a due numeri,
+proposte Omega, parametri v3). Suite finale: vedi ultimo commit (`git log -1`).
+
+### 8.2 MIGRAZIONI DA APPLICARE PRIMA DELL'AVVIO (utente, in quest'ordine; tutte idempotenti)
+1. `migrations/omega_activate_conserva_params_2026-09-16.sql` — **necessaria** (la RPC azzerava i cap).
+2. `migrations/trades_consapevolezza_ordine_2026-09-16.sql` — colonne chiesto/abbinato/residuo/
+   prezzo medio/aggiornato da Betfair sulle tre tabelle trade (la UI le mostra).
+3. `migrations/safe_cash_out_globale_e_cap_automatico_2026-09-16.sql` — **necessaria** per il
+   bottone «Cash out globale» e «Riprendi» di Safe (CHECK di `kind` + RPC `safe_request`).
+4. `migrations/omega_chiuso_dall_utente_2026-09-16.sql` — stato evento + «Riprendi» + aggregati `auto`.
+5. `migrations/omega_proposte_uscita_2026-09-16.sql` — proposte di uscita di Omega (v3).
+6. `migrations/safe_strategy_stake_per_strategia_2026-09-16.sql` — facoltativa (stake per strategia).
+Dopo le migrazioni: riavvio dell'app (utente). Frontend già ricostruito (`npm run build`).
+
+### 8.3 PROCEDURA DI DOMANI (con il coordinatore che guarda gli ordini su Betfair)
+1. Avvio app → in Control Room ogni bot deve comparire FERMO con «fermato all'avvio dell'app»
+   (Fase A dal vivo: se un bot risulta acceso, NON procedere).
+2. Verificare i sei interruttori (paper/live, doppia conferma), i bottoni «Cash out globale» e
+   «Riprendi», e che i numeri di rischio mostrino conto e bot separati.
+3. **Mike LIVE**: stake 5 €, tetto partite 1, `pre_exit_mode` resting; prima operazione seguita
+   ordine per ordine su Betfair con `storia_operazioni`-like (referto forense); primo annullamento
+   reale e prima lettura di conto reale MAI provati contro Betfair: guardarli.
+4. **Safe tennis LIVE**: 3 € per segnale, uscite approvate a mano; verificare il cash-out globale
+   dal vivo su una partita di prova con stake minimo.
+5. **Safe calcio PAPER** (provvisorio, fill locali): base/esatto/punta accese; osservare i «motivi».
+   Decisioni utente pendenti: soglie della selezione aggiuntiva (0,12 / 1,37, nasce spenta), bande
+   BASE/PUNTA (BASE ~1 partita su 8, PUNTA mai nel corpus).
+6. **Omega PAPER**: proposta del coordinatore = v3 in OMBRA (valuta, registra candidati e
+   proposte, non piazza) e v2 spento perché apre a margine 1,00 (EV zero). Da costruire:
+   ingresso passivo dentro lo spread (k al tocco ≤ 1 in ogni fascia), raccordo v3 in
+   `omega_service.py`, cadenza a fine giro nei replay Omega/tennis.
+7. Dopo i live: paper via flumine (relay F1) per Omega e Safe calcio; scalper/sniper/tennis bot
+   sul banco; Fase D carico DB; massivi su tutti i bot.
+
+### 8.4 Limiti dichiarati che restano (non nascosti)
+Mike: A2 ⊘ provato; re-ingresso e lapse alla sospensione coperti da sintetiche/dati (sì);
+chiusura fuori app con lay dell'utente coperta dalla posizione di conto (mai provata contro
+Betfair vero). Safe: T10 (turno tennis: dato assente), L2 (FOK), PUNTA senza dati reali, (c)
+tennis ⊘ (bet delay più corto del passo fra book). Omega: v3 apre 0 gambe sulle registrazioni
+(mercato senza margine 2×), A12/G2 mai sollecitati, J3/J6 reperti per `omega_service`.
+Banco: place-and-trim/minimo .it, multi-evento, `CHECK` nel DbMemoria, latenza letture assunta
+120 ms. Registrazioni sintetiche `_live_raw/_synth_*` sono gitignorate: si rigenerano con
+`Betfair/safe_strategy/tools/synth_safe.py` e `Betfair/mike/tools/synth_mike.py`.

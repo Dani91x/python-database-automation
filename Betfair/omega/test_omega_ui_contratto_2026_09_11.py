@@ -144,8 +144,13 @@ def _ui_field_bounds() -> dict[str, tuple[float | None, float | None]]:
 # `select` (valori in ``omega_config.V3_MODELLI_AMMESSI`` e 'auto'/'off').
 # L'esenzione si spegne da sola: appena il pannello dichiara una chiave, i
 # controlli su default e clamp tornano a valere su di essa.
-_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset({"conto_every_s"}) | frozenset(
-    k for k in C._SPEC if k.startswith("v3_")) | {"strategy_version"}
+# C.12c (16/09 notte) — IL DEBITO E' CHIUSO: `_IN_ATTESA_DI_PANNELLO` non
+# esiste piu'. `conto_every_s` sta nel gruppo «Respiro del database»,
+# `strategy_version` e i quindici parametri `v3_*` nel gruppo «Motore v3 — IN
+# OMBRA, non decide nulla» (`OMEGA_PARAM_GROUPS` in frontend/src/lib/omega.ts),
+# coi default e i limiti del servizio. Il contratto torna a mordere su TUTTA la
+# whitelist, senza eccezioni elencate: se domani il servizio aggiunge un
+# parametro e nessuno gli fa una UI, questi test diventano rossi.
 
 
 class TestWhitelistParametri:
@@ -155,7 +160,7 @@ class TestWhitelistParametri:
     def test_ogni_chiave_della_whitelist_ha_una_ui_e_viceversa(self) -> None:
         spec = set(C._SPEC)
         ui = set(_ui_param_keys())
-        mancanti = (spec - ui) - _IN_ATTESA_DI_PANNELLO
+        mancanti = spec - ui
         assert not mancanti, f"chiavi del servizio SENZA UI (M-10): {sorted(mancanti)}"
         assert not ui - spec, f"campi della UI che il servizio IGNORA: {sorted(ui - spec)}"
 
@@ -176,8 +181,6 @@ class TestWhitelistParametri:
         # una pagina sbagliata.
         for key, spec in C._SPEC.items():
             want = spec[0]
-            if key not in ui and key in _IN_ATTESA_DI_PANNELLO:
-                continue      # §18: campo non ancora nel pannello (vedi sopra)
             assert key in ui, f"default mancante nella UI: {key}"
             got = ui[key]
             if isinstance(want, bool):
@@ -198,8 +201,6 @@ class TestWhitelistParametri:
         for key, (_default, cast, lo, hi) in C._SPEC.items():
             if cast is bool or cast is str:
                 continue
-            if key not in bounds and key in _IN_ATTESA_DI_PANNELLO:
-                continue      # §18: campo non ancora nel pannello (vedi sopra)
             assert key in bounds, f"chiave numerica senza campo number nella UI: {key}"
             ui_lo, ui_hi = bounds[key]
             if lo is not None and (ui_lo is None or abs(ui_lo - float(lo)) > 1e-9):
@@ -219,6 +220,10 @@ class TestWhitelistParametri:
             "greenup_mode": {"auto", "off"},
             "model_calibration": {"auto", "off"},
             "model_empirical": {"veto", "off"},
+            # C.12c (16/09) — i due `select` di V3: un valore che `_coerce`
+            # rifiuta riporterebbe il parametro al default senza dirlo.
+            "v3_modello": set(C.V3_MODELLI_AMMESSI),
+            "v3_fusione_mercato": {"auto", "off"},
         }
         for key, want in ammessi.items():
             m = re.search(r"\{\s*key:\s*'" + key + r"'.*?options:\s*\[(.*?)\]\s*\}", block, re.S)
@@ -267,18 +272,10 @@ def _ui_kind_mappati() -> set[str]:
     return keys
 
 
-# 16/09 SERA — il debito si riapre per UN SOLO kind, e con la data.
-# `chiuso_dall_utente` e' il momento in cui il servizio scopre che la posizione
-# non esiste piu' sul conto (l'ha chiusa l'utente, nell'app o su Betfair) e
-# smette di gestire quella partita: e' l'attivita' piu' importante nata
-# dall'ordine dell'utente del 16/09 sera. Il delegato che l'ha scritta aveva il
-# divieto esplicito di toccare il frontend. Da aggiungere a
-# `OMEGA_ACTIVITY_EXTRA` (omega.ts) e/o `ACTIVITY_BASE` (tradeStatus.ts):
-#     chiuso_dall_utente: { label: 'CHIUSA DALL''UTENTE', cls: A_WARN, critical: true }
-# e questa riga sparisce. Tutto il resto di quel lavoro usa etichette che
-# ESISTONO GIA' (`skip`, `diagnosi`, `error`, `schema_warn`): questo e' l'unico
-# concetto per cui una etichetta sbagliata sarebbe peggio del debito.
-_KIND_IN_ATTESA_DI_UI: frozenset[str] = frozenset({"chiuso_dall_utente"})
+# C.12c (16/09 notte) — IL DEBITO E' CHIUSO anche qui: `chiuso_dall_utente` ha
+# la sua etichetta italiana in `OMEGA_ACTIVITY_EXTRA` («CHIUSA DA TE: il bot non
+# fa altro», critical) insieme a `evento_ripreso`. `_KIND_IN_ATTESA_DI_UI` non
+# esiste piu': il contratto morde su TUTTI i kind, senza eccezioni elencate.
 
 # C.12b (16/09) — il DEBITO E' CHIUSO: `_KIND_IN_ATTESA_DI_UI` non esiste piu'.
 # `place_rifiutato`, `place_parziale`, `cancel_richiesto` e `cancel_esito`
@@ -303,7 +300,7 @@ class TestAttivitaDelServizio:
             assert atteso in kinds, f"kind noto non estratto: {atteso}"
 
     def test_ogni_kind_loggato_e_mappato_in_italiano(self) -> None:
-        mancanti = sorted(_kind_loggati() - _ui_kind_mappati() - _KIND_IN_ATTESA_DI_UI)
+        mancanti = sorted(_kind_loggati() - _ui_kind_mappati())
         assert not mancanti, (
             "kind scritti dal servizio e SENZA etichetta italiana esplicita "
             f"(cadono nel fallback): {mancanti}"

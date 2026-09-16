@@ -62,6 +62,15 @@ export function RiskPanel({
         return Number.isFinite(n) ? n : null;
     };
     const used: number | null = num(risk?.daily_liability ?? dayLiability);
+    // 16/09 — DUE NUMERI, MAI UNO SOLO. `daily_liability` e' il CONTO (bot +
+    // operazioni manuali del trader); `daily_liability_bot` e' quello su cui i
+    // cap del bot decidono davvero (bot_service.py:6647). Il 16/09 sono stati
+    // misurati 32,80 EUR di responsabilita' MANUALE dentro i cap del bot: un
+    // numero solo non sapeva raccontarlo. Assente si scrive «—», non zero.
+    const usedBot: number | null = num(risk?.daily_liability_bot);
+    const capSoloAutomatico = risk?.cap_solo_automatico === true;
+    const differenzaManuale = used != null && usedBot != null
+        ? Math.round((used - usedBot) * 100) / 100 : null;
     const cap: number | null = num(risk?.daily_cap ?? paramDailyCap);
     // il servizio legge lo stop in valore assoluto: 50 e −50 sono −50 €
     const lossStop = normalizeLossStop(risk?.daily_loss_stop ?? paramLossStop ?? null);
@@ -69,7 +78,11 @@ export function RiskPanel({
     // la barra esiste solo se ENTRAMBI i numeri esistono: una percentuale
     // calcolata su un dato assente sarebbe un altro zero inventato.
     const hasCap = cap != null && cap > 0;
-    const pctUsed = hasCap && used != null ? Math.max(0, Math.min(100, (used / cap) * 100)) : 0;
+    // la barra misura il numero su cui il CAP decide: quando il servizio
+    // pubblica quello del bot e' quello, altrimenti si ripiega sul totale
+    // (piu' alto = piu' prudente) e la riga sotto lo dichiara.
+    const perIlCap = usedBot ?? used;
+    const pctUsed = hasCap && perIlCap != null ? Math.max(0, Math.min(100, (perIlCap / cap) * 100)) : 0;
     const barTone = stopActive || pctUsed >= 90 ? 'bg-red-500' : pctUsed >= 70 ? 'bg-amber-400' : 'bg-emerald-500';
     // M-21: se il servizio non pubblica i conteggi si usano quelli della UI —
     // gli STESSI che contano i tab, così i due numeri non divergono mai
@@ -108,7 +121,25 @@ export function RiskPanel({
                     {fmtMoney(used)}
                 </span>
                 <span className="text-[11px] text-slate-500">impegnato oggi / cap {hasCap ? fmtMoney(cap) : '—'}</span>
-                {hasCap && used != null && <span className="ml-auto text-[11px] text-slate-400">{fmtPctPoints(pctUsed, 0)}</span>}
+                {hasCap && perIlCap != null && <span className="ml-auto text-[11px] text-slate-400">{fmtPctPoints(pctUsed, 0)}</span>}
+            </div>
+            <div className="mt-0.5 flex items-baseline gap-1.5 text-[11px]" data-testid="risk-liability-bot-row">
+                <span className="text-slate-500">su cui decide il bot</span>
+                <span className="font-mono tabular-nums text-white/80" data-testid="risk-liability-bot">
+                    {fmtMoney(usedBot)}
+                </span>
+                {differenzaManuale != null && differenzaManuale > 0 && (
+                    <span className="text-slate-500" data-testid="risk-liability-manuale"
+                        title="la differenza fra il conto e il bot sono le operazioni che hai aperto a mano: non muovono i cap del bot">
+                        · {fmtMoney(differenzaManuale)} sono tue, fuori dai cap
+                    </span>
+                )}
+            </div>
+            <div className="text-[10px] text-slate-500" data-testid="risk-cap-scope"
+                title="cap_solo_automatico: lo dichiara il servizio, la pagina non lo deduce">
+                {capSoloAutomatico
+                    ? 'i cap contano SOLO le posizioni automatiche del bot'
+                    : 'i cap ripiegano sui numeri COMPLETI (bot + manuali): più alti, cioè più prudenti'}
             </div>
             <div className="text-[10px] text-slate-500" data-testid="risk-explain">
                 somma delle liability PIAZZATE oggi (anche su posizioni già chiuse): è la base dei cap.
