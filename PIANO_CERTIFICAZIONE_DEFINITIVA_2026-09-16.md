@@ -545,6 +545,27 @@ Registro: `safe_base/esatto/punta` collegati dal coordinatore al replay C.3.
 **Ingressi e uscite delle tre strategie non esercitabili sulla partita di riferimento → serve
 il massivo (o una partita nelle bande).**
 
+### Esito C.3-bis — Safe calcio: seconda partita, manuali, cash-out (16/09 h20:30, verificato: 120 test verdi)
+
+Corpus scansionato con le funzioni vere: **14 registrazioni su 39 hanno il `pre_ko` incompleto**
+(BASE e PUNTA impossibili lì: difetto 19 come dato); BASE candidate: **35797769** (COMPLETE
+95,4 %, fav 1,64 / dog 5,4) e 35768297; **PUNTA: nessuna partita nel corpus** (dog 4-8 con
+favorita avanti 2-0/3-1/3-0 dal 66' non esiste); ESATTO 13 candidate. **35797769 = seconda
+partita di riferimento calcio per Safe**: 3 ordini veri, ESATTO 335 segnali (lay «Altro
+risultato» 32,0 → back 34,0), BASE 0 (la favorita live non entra mai in 1,20-1,34), 335
+violazioni **tutte E10** (selezione aggiuntiva non implementata, già nota); «non lo so» 25 → 19
+su 58; ciclo di ritentativo dopo un `place_rifiutato` esercitato. T12 ristretto al bot (tace su
+due manuali). **T13 verde**: gambe del bot identiche con una riga manuale viva sulla stessa
+selezione; tre barriere indipendenti impediscono al bot di toccarla. **Reperto**: i CAP non
+filtrano `origin` (`open_trades:130`, `aggregate_rows:348` → `build_risk_ctx:3886`): 32,80 € di
+responsabilità manuale dentro i cap del bot → utente. **T14 VIOLATO ×282**: Safe non ha un
+cash-out globale (`cashout_event/all` vivono nella coda del runner e non toccano le sue
+tabelle); con una `cashout` per riga il bot **aggiunge una gamba automatica da 0,04 € sulla
+posizione già chiusa** e continua le uscite; nessuno stato «chiuso dall'utente». Patch
+proposta: kind `cashout_event` in `process_requests:1466` + marcatore per evento letto in
+`scan_and_place:4140` e `_exit_candidates:1999`. **Da correggere prima di un live di Safe calcio**
+(il tennis usa lo stesso servizio: verificare). Reperto banco: `save_event_model` assente.
+
 ### Esito C.4-ter — validatore per sport e terna tennis (16/09 h20, verificato dal coordinatore: 80 test verdi)
 
 `validate_recordings.py`: sport letto dal raw (`eventTypeId`), finestra tennis

@@ -50,7 +50,9 @@ finita, e il brief da ri-emettere a un delegato Opus 5 se non lo è.
   `python -m Betfair.mike.tools.replay_registrazioni 35777617 --scenari gol-precoce` deve dare J2 = 0.
 - Già certificato prima di questa task: ko_green appoggiata (Esito C.1-bis nel piano).
 
-### 2.3 Safe calcio — partita nelle bande, manuali ignorate, cash-out globale (`Betfair/safe_strategy/`)
+### 2.3 Safe calcio — FATTA e certificata (Esito C.3-bis nel piano). Reperti: T14 violato (gamba automatica dopo il cash-out dell'utente, nessun cash-out globale in Safe), cap con le manuali, PUNTA senza partite nel corpus, 14 registrazioni con pre_ko incompleto.
+
+### 2.3-bis (storico) Safe calcio — cosa era stato chiesto
 - Chiesto: (a) scansione di `_live_raw/*` (escluse `_synth_*`) con le funzioni vere per trovare
   partite con favorita 1,40-1,80 e sfavorita 4-8 (BASE), sfavorita 4-8 con entrata 1,03-1,10
   (PUNTA), punteggi 3-1/3-0 (ESATTO); classifica e replay `base` sulla migliore → seconda
@@ -73,7 +75,7 @@ validatore per sport) · E.1 audit test · C.8 progetto paper-via-flumine (C3 sc
 inventario flumine. Registro: **6 bot certificabili su 11** (`certifica --elenco`).
 
 ## 4. Partite di riferimento (ordine utente: niente massivi finché il setup non è finito)
-Calcio `35760084` (COMPLETE; Mike opera; Omega/Safe non entrano per le bande) · gol precoce
+Calcio `35760084` (COMPLETE; Mike opera; Omega/Safe non entrano per le bande) · Safe calcio `35797769` (COMPLETE, ESATTO 335 segnali) · gol precoce
 `35777617` · Mike 535× `35674515` · Tennis: `35792939` ingresso (COMPLETE) · `35795560` uscite
 in perdita/obbligatoria · `35790650` uscite in profitto. Comando unico:
 `python -m Betfair.stream.backtest.certifica <bot> <event_id> --scenari tutti --worker 3`.
