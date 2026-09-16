@@ -136,6 +136,26 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # variante: l'utente chiude solo META' della posizione. Il bot lo DICHIARA
     # e continua a proteggere il resto (non e' un cash-out).
     "chiusura-fuori-app-ridotta": {},
+    # RIFIUTO DICHIARATO DI BETFAIR (`ok=False`) sul lato che Safe usa per
+    # APRIRE (lay). Non tocca un parametro: i primi N piazzamenti tornano con
+    # un report NEGATIVO, come quando Betfair rifiuta l'istruzione (prezzo non
+    # piu' valido, profit ratio fuori banda, fondi). E' l'unico modo di mettere
+    # alla prova il difetto 2 del catalogo del 15/09 - «`res.ok` mai letto» -
+    # che sulle registrazioni non capita mai, perche' nel replay nessun ordine
+    # viene rifiutato.
+    "rifiuti-betfair": {},
+    # TIMEOUT DOPO CHE BETFAIR HA ACCETTATO (difetto 4 del 15/09). Non tocca un
+    # parametro: una volta sola, a ordine gia' piazzato e abbinato su flumine, la
+    # RIGA viene riportata nello stato in cui la lascia `execution._reconciling`
+    # (`pending`, senza bet_id, `reason='place_exception_reconciling'`) - cioe'
+    # quello che succede quando la REST va in timeout DOPO che l'exchange ha
+    # preso l'ordine. L'ordine a mercato resta quello VERO. Da li' l'unica strada
+    # per ritrovarlo e' il ref con cui e' stato CHIESTO: se la riconciliazione ne
+    # usa un altro, la riga viene dichiarata mai piazzata e i soldi restano a
+    # mercato senza padrone (controllo K7). E' l'unico modo di dare un caso a
+    # quel difetto: lo scenario `esiti-ignoti` solleva PRIMA del piazzamento,
+    # quindi li' un ordine da ritrovare non esiste proprio.
+    "timeout-dopo-accettazione": {},
 }
 
 SCENARIO_BOT_FERMO = "bot-fermo"
@@ -150,6 +170,15 @@ SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 SCENARIO_SELEZIONE = "selezione-aggiuntiva"
 SCENARIO_FUORI_APP = "chiusura-fuori-app"
 SCENARIO_FUORI_APP_RIDOTTA = "chiusura-fuori-app-ridotta"
+SCENARIO_RIFIUTI = "rifiuti-betfair"
+SCENARIO_TIMEOUT_ACCETTATO = "timeout-dopo-accettazione"
+# UN solo rifiuto, e non tre come per Mike. Sulle registrazioni della Safe i
+# piazzamenti di una partita sono pochissimi (tre su 35797769): rifiutarli tutti
+# vuol dire una partita senza NESSUN ordine a mercato, e allora K1/K3/K4/K5
+# restano senza caso e l'unica cosa che lo scenario dimostra e' che il bot sa
+# dire «error». Con uno solo si ha il rifiuto (K2 ha il suo caso) E il resto
+# della partita resta quella vera, ordini compresi.
+QUANTI_RIFIUTI = 1
 QUANTI_GUASTI = 3
 # ogni quanti giri, dopo l'apertura, il trader chiede la chiusura (cash out):
 # 60 giri x 2 s = due minuti di tempo di MERCATO.
@@ -195,6 +224,13 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                 "(`ridotta_dall_utente`) e continua a proteggere "
                                 "il resto — una copertura parziale non e' un "
                                 "cash-out",
+    SCENARIO_RIFIUTI: "Betfair RIFIUTA (`ok=False`) i primi piazzamenti sul lato "
+                      "LAY, quello con cui Safe APRE: la riga non deve mai restare "
+                      "viva su un ordine che non esiste (difetto 2 del 15/09)",
+    SCENARIO_TIMEOUT_ACCETTATO: "timeout della REST DOPO che Betfair ha accettato: "
+                                "la riga torna in riconciliazione senza bet_id e "
+                                "l'ordine vero resta a mercato. Si ritrova solo col "
+                                "ref con cui e' stato CHIESTO (difetto 4 del 15/09)",
     SCENARIO_SELEZIONE: "la «selezione aggiuntiva» della SPEC §2 ACCESA "
                         "(`esatto.requireSelection`): il filtro scontri diretti "
                         "+ difesa avversaria gira davvero e il controllo E10 ha "
@@ -679,7 +715,35 @@ _CACHE_VUOTE = ("_OPTIONAL_MODS", "_CONSAPEVOLEZZA_SCRITTA", "_MARKET_MISSING",
                 "_EXIT_WAIT_AT", "_FEED_BLIND_LOG", "_DATO_MANCANTE_LOG",
                 "_PLACE_ATTEMPTS", "_SKIP_LOG_STATE", "_EVENT_NAMES",
                 "_PENDING_CICLO", "_AGG_ULTIMO_BUONO", "_AGG_LOG_TS",
-                "_LAST_CONTROL")
+                "_LAST_CONTROL",
+                # ⚠️ 16/09 SERA - LE DUE CHE MANCAVANO, ed erano le due che
+                # rompevano la pool (catalogo §7 punto 37). Sono ENTRAMBE
+                # indicizzate per market_id / event_id: dentro `--scenari tutti`
+                # gli scenari girano sulla STESSA partita, uno dopo l'altro nello
+                # stesso figlio, quindi la chiave e' identica e il valore del
+                # primo scenario SOPRAVVIVE nel secondo.
+                #  * `_CONTO_LETTO_A` = l'istante dell'ultima lettura della
+                #    POSIZIONE DI CONTO per mercato (respiro di 30 s): ereditato,
+                #    lo scenario `chiusura-fuori-app` non legge il conto per i
+                #    primi 30 s di partita e T14/S4 restano a zero;
+                #  * `_EVENTI_CHIUSI` = gli eventi gia' dichiarati chiusi:
+                #    ereditato, il secondo scenario nasce con la partita gia'
+                #    «chiusa» e il bot non fa niente.
+                "_CONTO_LETTO_A", "_EVENTI_CHIUSI")
+
+# le cache di processo che NON vivono in `bot_service`: sono di altri moduli
+# dello stesso servizio e un replay le eredita esattamente allo stesso modo.
+# `modulo -> nomi`: l'elenco resta ESPLICITO (difetto 37 del catalogo: un
+# azzeramento con `dir()` svuota anche cio' che non deve).
+_CACHE_ALTRI_MODULI = {
+    "Betfair.safe_strategy.bot_db": ("_AGG_RPC",),
+    "Betfair.safe_strategy.selezione": ("_HINT_CACHE",),
+}
+# DICHIARATO E NON AZZERATO: `selezione._ATLAS` e `selezione._INDICE_NOMI` sono
+# l'atlante letto DAL DISCO una volta per processo. E' sola lettura e identico
+# per tutti gli scenari: non puo' far dire a un replay una cosa diversa da
+# quella che direbbe da solo, e ricaricarlo a ogni scenario costerebbe la
+# lettura del file per niente.
 _CACHE_CON_CHIAVI = {
     "_REST_STATE": {"last": {}, "cycle_ts": 0.0, "used": 0},
     "_SCANNER_TS_CACHE": {"cycle_ts": None, "value": None},
@@ -787,6 +851,8 @@ def _riavvia_processo() -> List[str]:
     sopravvive. E' il difetto 19 del catalogo (`pre_ko` che viveva solo in RAM:
     base e punta spente per ore) riprodotto apposta invece che aspettato.
     """
+    import importlib
+
     azzerati: List[str] = []
     for nome in _CACHE_VUOTE:
         v = getattr(BS, nome, None)
@@ -800,6 +866,24 @@ def _riavvia_processo() -> List[str]:
             v.update({k: (dict(x) if isinstance(x, dict) else x)
                       for k, x in iniziale.items()})
             azzerati.append(nome)
+    # le cache degli ALTRI moduli dello stesso servizio
+    for modulo, nomi in _CACHE_ALTRI_MODULI.items():
+        try:
+            mod = importlib.import_module(modulo)
+        except ImportError:                 # modulo opzionale: si dichiara e basta
+            continue
+        for nome in nomi:
+            v = getattr(mod, nome, None)
+            if isinstance(v, dict) and v:
+                v.clear()
+                azzerati.append(f"{modulo.rsplit('.', 1)[-1]}.{nome}")
+    # LA GUARDIA D'AVVIO non e' un dizionario ma e' stato di PROCESSO identico:
+    # ereditata, il secondo replay crede di essere gia' partito e non riapplica
+    # il freno delle aperture al primo giro (difetto 22 del catalogo).
+    guardia = getattr(BS, "_GUARDIA_AVVIO", None)
+    if guardia is not None and hasattr(guardia, "azzera"):
+        guardia.azzera()
+        azzerati.append("_GUARDIA_AVVIO")
     return sorted(azzerati)
 
 
@@ -837,6 +921,9 @@ def _crea_strategia():
             # CASH-OUT GLOBALE dell'utente: si chiude tutto e si dichiara
             # l'istante, cosi' il controllo T14 sa da quando giudicare.
             self.cashout_globale = bool(kw.pop("cashout_globale", False))
+            # TIMEOUT della REST DOPO l'accettazione di Betfair (difetto 4)
+            self.timeout_accettato = bool(kw.pop("timeout_accettato", False))
+            self.timeout_fatto: Optional[Dict[str, Any]] = None
             # CHIUSURA FUORI DALL'APP: "intera" | "ridotta" | None
             self.fuori_app: Optional[str] = kw.pop("fuori_app", None)
             self.fuori_app_fatta: Optional[Dict[str, Any]] = None
@@ -971,6 +1058,13 @@ def _crea_strategia():
             #    `place` vorrebbe dire leggere la RISERVA e accusare il bot di
             #    non aver scritto quello che sta per scrivere.
             self._certifica_ordini()
+            # 4-bis) I CONTROLLI K: LA MEMORIA DEL BOT CONTRO IL MERCATO.
+            #    Si fanno QUI, dopo il giro del servizio, perche' solo qui
+            #    esistono insieme le righe scritte dal bot e gli ORDINI VERI di
+            #    flumine. I controlli B/E/P/T/J guardano la decisione; questi
+            #    guardano il rapporto fra cio' che il bot crede e cio' che c'e'
+            #    a mercato - ed e' li' che vivevano i cinque difetti del 15/09.
+            self._verifica_consapevolezza()
             # 5) i controlli TRASVERSALI, a fine giro
             ciclo = CERT.Ciclo(db=self.db, market=self.mercato, params=self.params,
                                mode=self.mode, now_ts=pt_ms / 1000.0,
@@ -986,6 +1080,41 @@ def _crea_strategia():
             stato = f"{self.db.control.get('status')}/{self.db.control.get('mode')}"
             if stato not in self.referto.stati_visti:
                 self.referto.stati_visti.append(stato)
+            # 6) IL TIMEOUT DOPO L'ACCETTAZIONE, in CODA al giro: cosi' al giro
+            #    successivo la riconciliazione lavora PRIMA che i controlli K
+            #    guardino, ed e' il suo ESITO che si giudica - non il mezzo giro
+            #    in cui la riga e' volutamente in riconciliazione.
+            if self.timeout_accettato and self.timeout_fatto is None:
+                self._forse_timeout_dopo_accettazione()
+
+        def _forse_timeout_dopo_accettazione(self) -> None:
+            """La REST va in timeout DOPO che Betfair ha preso l'ordine.
+
+            Non si finge nessun ordine: quello a mercato e' il piazzamento VERO
+            che il bot ha appena fatto su flumine. Si riporta la RIGA nello
+            stato in cui la lascia `execution._reconciling` - 'pending', senza
+            bet_id, `reason='place_exception_reconciling'` - che e' esattamente
+            cio' che il servizio scrive quando la risposta non arriva. Da quel
+            momento l'unica chiave per ritrovare l'ordine e' il ref con cui e'
+            stato CHIESTO (`safe-t<id>`): e' il difetto 4 del 15/09, e senza
+            questo gesto non ha MAI un caso, perche' lo scenario `esiti-ignoti`
+            solleva PRIMA del piazzamento e un ordine da ritrovare non c'e'.
+            """
+            for r in self.db.trades:
+                if str(r.get("status")) != "open" or not r.get("bet_id"):
+                    continue
+                meta = dict(r.get("meta") or {})
+                meta.pop("fill", None)
+                meta.update({"phase": "reserved",
+                             "reason": "place_exception_reconciling",
+                             "err": "timeout provocato DOPO l'accettazione"})
+                self.timeout_fatto = {"trade_id": int(r["id"]),
+                                      "bet_id": str(r.get("bet_id")),
+                                      "size": r.get("size"), "price": r.get("price")}
+                self.db.update_trade(int(r["id"]), status="pending", bet_id=None,
+                                     meta=meta)
+                self.db.log("replay_timeout_dopo_accettazione", self.timeout_fatto)
+                return
 
         def _forse_chiudi_tutto(self, adesso: float) -> None:
             """L'utente chiude a mano TUTTE le operazioni della partita.
@@ -1061,6 +1190,15 @@ def _crea_strategia():
             # copertura parziale non e' un cash-out e il bot deve continuare)
             if ordine is not None and self.fuori_app == "intera":
                 self.chiuso_dall_utente[self.event_id] = float(adesso)
+
+        def _verifica_consapevolezza(self) -> None:
+            """I controlli K su questo giro: righe del database contro ordini veri."""
+            ordini = {ref: self.mercato._riga(ref, o)
+                      for ref, o in self.mercato.ordini.items()}
+            rifiutati = {str(r.get("ref") or "") for r in self.mercato.rifiutati}
+            self.referto.violazioni.extend(CERT.verifica_consapevolezza(
+                list(self.db.trades), ordini, rifiutati,
+                self.referto.sollecitati, self.referto.sollecitati_per_strategia))
 
         def _certifica_ordini(self) -> None:
             """I controlli sugli ordini partiti in questo giro."""
@@ -1175,6 +1313,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       ogni_ms: int = 2000,
                       invecchia_s: float = 0.0,
                       guasti: int = 0,
+                      rifiuti: int = 0,
+                      timeout_accettato: bool = False,
                       riavvia: bool = False,
                       ordine_manuale: bool = False,
                       doppia_lay: bool = False,
@@ -1186,6 +1326,15 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       scenario: str = "base") -> CERT.Referto:
     """Fa rivivere a Safe calcio una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
+
+    # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
+    # coppie evento x scenario girano nello STESSO processo figlio, una dopo
+    # l'altra: senza questo azzeramento il secondo replay eredita i throttle del
+    # primo (e la partita e' la stessa, quindi le chiavi coincidono) e certifica
+    # una cosa diversa da quella che certifica da solo. E' il punto 37 del
+    # catalogo §7. Si azzera all'INIZIO, non solo alla fine: un replay che
+    # esplode a meta' lascerebbe le cache sporche al successivo.
+    _pulisci_cache_di_processo()
 
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))
@@ -1210,7 +1359,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         invecchia_s=invecchia_s, riavvia=riavvia, mode=mode, status=status,
         ordine_manuale=ordine_manuale, doppia_lay=doppia_lay,
         manuale_sul_bot=manuale_sul_bot, cashout_globale=cashout_globale,
-        fuori_app=fuori_app,
+        timeout_accettato=timeout_accettato, fuori_app=fuori_app,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: il rischio lo governa la Safe coi suoi
         # parametri (`max_liability_per_trade`, `max_open_trades`, i cap di
@@ -1219,6 +1368,14 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         max_trade_count=int(1e9), max_live_trade_count=int(1e9))
     if guasti > 0:
         strategia.mercato.guasti["place_exception"] = int(guasti)
+    if rifiuti > 0:
+        # i primi N piazzamenti tornano `ok=False`: e' il RIFIUTO dichiarato di
+        # Betfair (risposta ricevuta, nessun ordine a mercato), non un errore di
+        # rete (quello e' `place_exception`).
+        strategia.mercato.guasti["place_rifiuto"] = int(rifiuti)
+        # SUL LATO LAY: e' con la lay che le tre strategie della SPEC APRONO, ed
+        # e' il ramo in cui il 15/09 `res.ok` non veniva letto.
+        strategia.mercato.rifiuta_lato = "lay"
 
     # ---------------------------------------------------------------- i ganci
     # I controlli si agganciano alle funzioni VERE: cosi' si vede ogni
@@ -1510,6 +1667,19 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             "bot poteva riaprire al cambiare del punteggio — non vale piu': "
             "qui si verifica che dal giro dopo non apra, non copra e non esca "
             "(controllo T14).")
+    if getattr(strategia, "timeout_fatto", None):
+        out.note.append(
+            "[SCENARIO] TIMEOUT della REST dopo l'accettazione di Betfair sulla riga "
+            f"#{strategia.timeout_fatto.get('trade_id')} (bet "
+            f"{strategia.timeout_fatto.get('bet_id')}): la riga e' tornata in "
+            "riconciliazione senza bet_id e l'ordine vero e' rimasto a mercato. "
+            "Si ritrova SOLO col ref con cui e' stato chiesto (difetto 4 del 15/09, "
+            "controlli K3/K7)")
+    if strategia.mercato.rifiutati:
+        out.note.append(
+            f"[SCENARIO] ordini RIFIUTATI da Betfair: {len(strategia.mercato.rifiutati)} "
+            f"(es. {strategia.mercato.rifiutati[0].get('err')}) - e' la condizione che "
+            f"mette alla prova il difetto 2 del 15/09 (`res.ok` mai letto), K2")
     if scenario == SCENARIO_PAPER:
         out.note.append("[DIVERGENZA, REPERTO] percorso PAPER legacy: il fill lo "
                         "fa `bot_service._paper_ladder` + `omega_engine.paper_fill` "
@@ -1557,6 +1727,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         ogni_ms=int(ogni_ms) or cadenza_ms(risolti),
         invecchia_s=vecchio,
         guasti=(QUANTI_GUASTI if scenario == SCENARIO_ESITI_IGNOTI else 0),
+        rifiuti=(QUANTI_RIFIUTI if scenario == SCENARIO_RIFIUTI else 0),
+        timeout_accettato=(scenario == SCENARIO_TIMEOUT_ACCETTATO),
         riavvia=(scenario == SCENARIO_RIAVVIO),
         ordine_manuale=(scenario in SCENARI_CON_ORDINE_MANUALE),
         doppia_lay=(scenario == SCENARIO_DUE_LAY),

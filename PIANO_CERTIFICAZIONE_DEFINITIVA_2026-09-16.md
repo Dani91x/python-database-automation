@@ -467,6 +467,25 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito SAFE K — famiglia K, pool isolata, 5 difetti — CERTIFICATO dal coordinatore (16/09 notte)
+
+`certificazione_k.py` condiviso (calcio+tennis): K1 abbinato/prezzo medio, K2 rifiutato → mai
+viva, K3 ref piazzato = riletto (entrambe le grafie + `_netto_su_selezione`), K4 open senza
+ordine, K5 residuo, K6 `closes_trade_id` colonna e meta, **K7** ogni ordine abbinato ha una riga
+viva. Scenari `rifiuti-betfair` (lato d'apertura) e `timeout-dopo-accettazione`; sintetiche
+`_synth_safe_prezzo_migliore` e `_synth_safe_tennis_prezzo_migliore`. **Tabella**: (a) → K3, (b)
+→ K2/K4/K5+J2/T2, (c) → K1 (calcio), ⊘ tennis, (d) → K7 (servì lo scenario nuovo: prima restava
+verde), (e) → K6. Pool: mancavano `_CONTO_LETTO_A` e `_EVENTI_CHIUSI` nell'elenco (chiavi che
+coincidono fra scenari sulla stessa partita) + `_AGG_RPC`, `_HINT_CACHE`, `_GUARDIA_AVVIO`; il
+tennis aveva una seconda copia sbagliata dell'elenco → un solo elenco; copertura in pool
+identica a quella da solo (T14 ×918, S4 ×406). Replay: calcio 16 referti 0 violazioni (K ×23.403);
+tennis terna 45 referti 0 violazioni (mai sollecitati 2/34: T10, L2). Suite safe+stream 2490.
+Verifica del coordinatore: 1033 verdi Safe; falsificazione propria (`res.ok` ignorato) → 6 rossi.
+**Reperto di fedeltà del banco (⊘ c-tennis)**: sul percorso `replay_evento` flumine decide il
+fill AL PIAZZAMENTO contro il book appena letto (il bet delay conta i book ma non sposta il libro
+dell'abbinamento): chiesto 1,10 abbinato 1,10 mentre il book a +5 s offriva 1,12 → da allineare
+alla regola del tempo già applicata al percorso di Mike (`attendi_esecuzione`).
+
 ### Esito OMEGA V3 — motore predittivo, k misurato, famiglia K — CERTIFICATO dal coordinatore (16/09 notte)
 
 **k misurato** (`tools/misura_k.py`, `K_MISURATO_2026-09-16.md`; 58.234 quote pre-match CS+HT ×

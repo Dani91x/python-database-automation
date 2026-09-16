@@ -44,6 +44,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from . import certificazione_k as K
 from . import engine as E
 from . import exits as XE
 
@@ -1667,13 +1668,54 @@ def verifica(oss: Osservazione, sollecitati: Optional[Dict[str, int]] = None,
     return out
 
 
+# ===========================================================================
+# K. LA CONSAPEVOLEZZA DELL'ORDINE, CONTRO IL MERCATO (16/09 sera)
+#
+# ⚠️ I controlli B/E/P/T/J qui sopra guardano la DECISIONE (valutazione, ordine
+# chiesto, uscita, ciclo). I cinque difetti del 15/09 non stanno li': stanno nel
+# rapporto fra cio' che le righe di `safe_strategy_trades` dicono e cio' che il
+# banco dice degli ordini. La famiglia K guarda QUEL rapporto e vive nel modulo
+# condiviso `certificazione_k.py`, identico per calcio e tennis (e' lo stesso
+# `bot_service` e lo stesso `execution.place`). Qui si espone soltanto, perche'
+# entri nella stessa copertura degli altri: un controllo che non si conta non
+# esiste.
+# ===========================================================================
+VOCE_K = "PROCESSO §7.36"
+
+
+def verifica_consapevolezza(righe: List[Dict[str, Any]],
+                            ordini: Optional[Dict[str, Any]] = None,
+                            rifiutati: Optional[Any] = None,
+                            sollecitati: Optional[Dict[str, int]] = None,
+                            per_strategia: Optional[Dict[str, Dict[str, int]]] = None
+                            ) -> List[Violazione]:
+    """I controlli K su UN giro, nella forma di `Violazione` del calcio.
+
+    Il chiamante e' il replay (`tools/replay_registrazioni.py`), subito DOPO il
+    giro del servizio: li' ci sono insieme le righe del database e gli ORDINI
+    VERI di flumine.
+    """
+    prima = dict(sollecitati or {})
+    esiti = K.verifica_consapevolezza(righe, ordini, rifiutati, sollecitati)
+    if per_strategia is not None and sollecitati is not None:
+        quadro = per_strategia.setdefault("trasversale", {})
+        for codice, _r in K.REGISTRO:
+            delta = int(sollecitati.get(codice, 0)) - int(prima.get(codice, 0))
+            if delta:
+                quadro[codice] = quadro.get(codice, 0) + delta
+    return [Violazione(c, r, d, "trasversale") for c, r, d in esiti]
+
+
 def elenco_controlli() -> List[Tuple[str, str]]:
     """(codice, regola) di tutto cio' che questa certificazione sa verificare.
 
     E' il contratto che `Betfair/stream/backtest/certifica.py` legge per
     stampare la copertura: una riga per controllo, la voce della SPEC in testa.
+    Comprende la famiglia K, che non guarda una decisione ma il rapporto fra la
+    memoria del bot e il mercato.
     """
-    return [(c, f"[{v}] {r}") for c, v, r, _t, _fn, _q in _REGISTRO]
+    return ([(c, f"[{v}] {r}") for c, v, r, _t, _fn, _q in _REGISTRO]
+            + [(c, f"[{VOCE_K}] {r}") for c, r in K.REGISTRO])
 
 
 def voci_spec() -> List[Tuple[str, str, str, str]]:
@@ -1683,9 +1725,10 @@ def voci_spec() -> List[Tuple[str, str, str, str]]:
     P = punta, T/J = trasversali.
     """
     fam = {"B": "base", "E": "esatto", "P": "punta", "T": "trasversale",
-           "J": "trasversale"}
-    return [(c, fam.get(c[0], "trasversale"), v, r)
-            for c, v, r, _t, _fn, _q in _REGISTRO]
+           "J": "trasversale", "K": "trasversale"}
+    return ([(c, fam.get(c[0], "trasversale"), v, r)
+             for c, v, r, _t, _fn, _q in _REGISTRO]
+            + [(c, "trasversale", VOCE_K, r) for c, r in K.REGISTRO])
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
@@ -1695,8 +1738,10 @@ def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
     lo so». Vanno letti come lavoro da fare — uno scenario da provocare — non
     come una garanzia.
     """
-    return [(c, f"[{v}] {r}") for c, v, r, _t, _fn, _q in _REGISTRO
-            if not sollecitati.get(c)]
+    return ([(c, f"[{v}] {r}") for c, v, r, _t, _fn, _q in _REGISTRO
+             if not sollecitati.get(c)]
+            + [(c, f"[{VOCE_K}] {r}") for c, r in K.REGISTRO
+               if not sollecitati.get(c)])
 
 
 # ===========================================================================

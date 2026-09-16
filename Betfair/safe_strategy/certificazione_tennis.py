@@ -38,6 +38,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # stesso. `engine.DEFAULT_PARAMS['tennis']` e `exits.DEFAULT_EXIT_PARAMS` sono
 # le stesse strutture che il bot fonde con i parametri dell'utente.
 from . import bot_service as BS
+from . import certificazione_k as K
 from . import engine as E
 from . import execution as X
 from . import exits as XE
@@ -998,15 +999,38 @@ def verifica(oss: Osservazione,
     return out
 
 
+# ===========================================================================
+# K. LA CONSAPEVOLEZZA DELL'ORDINE, CONTRO IL MERCATO (16/09 sera)
+#
+# ⚠️ I controlli T/J/L qui sopra guardano la DECISIONE del giro. I cinque
+# difetti del 15/09 non stanno li': stanno nel rapporto fra cio' che le righe di
+# `safe_strategy_trades` dicono e cio' che il banco dice degli ordini. La
+# famiglia K guarda QUEL rapporto e vive nel modulo condiviso
+# `certificazione_k.py`, lo stesso che usa il calcio: il servizio e'
+# `bot_service` per tutti e due e il piazzamento e' `execution.place` per tutti
+# e due, quindi una seconda copia sarebbe solo una copia che diverge.
+# ===========================================================================
+def verifica_consapevolezza(righe: List[Dict[str, Any]],
+                            ordini: Optional[Dict[str, Any]] = None,
+                            rifiutati: Optional[Any] = None,
+                            sollecitati: Optional[Dict[str, int]] = None,
+                            quando: str = "") -> List[Violazione]:
+    """I controlli K su UN giro, nella forma di `Violazione` del tennis."""
+    esiti = K.verifica_consapevolezza(righe, ordini, rifiutati, sollecitati)
+    return [Violazione(c, r, d, quando) for c, r, d in esiti]
+
+
 def elenco_controlli() -> List[Tuple[str, str]]:
-    """(codice, regola) di tutto cio' che questa certificazione sa verificare."""
-    return [(c, r) for c, r, _fn, _q in _REGISTRO]
+    """(codice, regola) di tutto cio' che questa certificazione sa verificare.
+
+    Comprende la famiglia K: un controllo che non si conta non esiste."""
+    return [(c, r) for c, r, _fn, _q in _REGISTRO] + list(K.REGISTRO)
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
     """I controlli che non hanno MAI avuto un caso da giudicare: non dicono «il
     bot e' sano», dicono «non lo so»."""
-    return [(c, r) for c, r, _fn, _q in _REGISTRO if not sollecitati.get(c)]
+    return [(c, r) for c, r in elenco_controlli() if not sollecitati.get(c)]
 
 
 # cause dichiarate per i controlli che su questo banco NON possono avere un

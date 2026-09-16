@@ -364,6 +364,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                  "le uscite e il settlement continuano",
     "feed-stantio": "riga E battito dello scanner vecchi: nessun ingresso",
     "esiti-ignoti": "i primi piazzamenti sollevano: nasce la riconciliazione",
+    "rifiuti-betfair": "Betfair RIFIUTA (`ok=False`) i primi piazzamenti sul lato "
+                       "BACK, quello con cui il tennis APRE: la riga non deve mai "
+                       "restare viva su un ordine che non esiste (difetto 2 del "
+                       "15/09, controllo K2)",
     "uscita-ignota": "il guasto colpisce la CHIUSURA, non l'apertura: resta una LAY "
                      "in volo a esito ignoto e si guarda se ne nasce una seconda "
                      "(regola di piattaforma: mai due lay sulla stessa selezione)",
@@ -380,6 +384,7 @@ SCENARI_DESCRITTI: Dict[str, str] = {
 }
 
 QUANTI_GUASTI = 3
+QUANTI_RIFIUTI = 3
 
 
 @contextmanager
@@ -407,31 +412,32 @@ def _freni_live_dichiarati(attivo: bool):
 
 
 def _pulisci_processo() -> List[str]:
-    """Butta via le cache di PROCESSO di `bot_service`, come un riavvio.
+    """Butta via le cache di PROCESSO del servizio, come un riavvio.
+
+    ⚠️ 16/09 SERA - QUI C'ERA UNA SECONDA COPIA DELL'ELENCO, piu' corta di
+    quella del calcio (mancavano `_CONTO_LETTO_A` e `_EVENTI_CHIUSI`) e per di
+    piu' SBAGLIATA: svuotava con `.clear()` anche `_APERTE`, `_BLOCCO`,
+    `_LETTURA_FEED` e `_SCANNER_TS_CACHE`, che hanno CHIAVI FISSE lette senza
+    `.get` (`_APERTE["n"]`) - un `KeyError` al primo giro, cioe' un guasto del
+    banco scambiato per un difetto del bot. Il servizio e' lo STESSO
+    (`bot_service`) per calcio e tennis: l'elenco e' uno solo, esplicito, e vive
+    in `replay_registrazioni` (difetto 37 del catalogo: due elenchi che
+    divergono sono peggio di nessun elenco).
 
     Non tocca il database in memoria: quello e' il DB, e in produzione
-    sopravvive. Torna l'elenco di cio' che e' stato azzerato — un riavvio che
+    sopravvive. Torna l'elenco di cio' che e' stato azzerato - un riavvio che
     non si sa che cosa ha buttato non prova niente (difetto 19 del catalogo:
-    `pre_ko` viveva solo in RAM)."""
-    azzerati: List[str] = []
-    for nome in ("_PLACE_ATTEMPTS", "_OPPS_STATE", "_LAST_CONTROL", "_BLOCCO",
-                 "_PENDING_CICLO", "_SCANNER_TS_CACHE", "_AGG_ULTIMO_BUONO",
-                 "_AGG_LOG_TS", "_EVENT_NAMES", "_APERTE", "_LETTURA_FEED"):
-        valore = getattr(BS, nome, None)
-        if isinstance(valore, dict) and valore:
-            valore.clear()
-            azzerati.append(nome)
-    BS._PLACE_SEED["ts"] = 0.0
-    azzerati.append("_PLACE_SEED")
-    return sorted(set(azzerati))
+    `pre_ko` viveva solo in RAM).
+    """
+    from .replay_registrazioni import _riavvia_processo
+
+    return _riavvia_processo()
 
 
 def _azzera_stato_di_processo() -> None:
     """Prima di OGNI replay: le cache di modulo sono di processo e due scenari
     nello stesso interprete non devono potersi sporcare a vicenda."""
-    _pulisci_processo()
-    BS._GUARDIA_AVVIO.azzera()
-    BS._CICLO_IN_ERRORE["value"] = False
+    _pulisci_processo()      # comprende `_GUARDIA_AVVIO` e le chiavi fisse
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +493,7 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     # ordini, approvazione e riconciliazione non hanno un caso da giudicare
     inietta = scenario in ("posizione-iniettata", "approvata-subito", "mai-approvata",
                            "bot-fermo", "riavvio", "esiti-ignoti",
-                           "paper-iniettata", "uscita-ignota",
+                           "paper-iniettata", "uscita-ignota", "rifiuti-betfair",
                            "chiusura-fuori-app", "chiusura-fuori-app-ridotta")
     firma = _Stato(ref=ref, scenario=scenario, competizione=comp, inietta=inietta,
                    approva=(scenario == "approvata-subito"),
@@ -506,6 +512,7 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
                          if scenario == "feed-stantio" else 0.0)
     firma.guasti = QUANTI_GUASTI if scenario in ("esiti-ignoti",
                                                   "uscita-ignota") else 0
+    firma.rifiuti = QUANTI_RIFIUTI if scenario == "rifiuti-betfair" else 0
     firma.guasti_sull_uscita = (scenario == "uscita-ignota")
     firma.fuori_app = ("intera" if scenario == "chiusura-fuori-app" else
                        ("ridotta" if scenario == "chiusura-fuori-app-ridotta"
@@ -670,6 +677,10 @@ class _Stato:
         self.invecchia_s = 0.0
         self.guasti = 0
         self._guasti_messi = False
+        # RIFIUTO DICHIARATO di Betfair (`ok=False`) sul lato con cui il tennis
+        # APRE: e' l'unico modo di avere un caso per K2 (difetto 2 del 15/09).
+        self.rifiuti = 0
+        self._rifiuti_messi = False
         # `uscita-ignota`: il guasto si arma solo QUANDO c'e' una posizione
         # aperta, cosi' colpisce la gamba di CHIUSURA e non l'apertura
         self.guasti_sull_uscita = False
@@ -715,6 +726,13 @@ class _Stato:
         if self.guasti and not self._guasti_messi and not self.guasti_sull_uscita:
             market.guasti["place_exception"] = int(self.guasti)
             self._guasti_messi = True
+        if self.rifiuti and not self._rifiuti_messi:
+            # i primi N piazzamenti tornano `ok=False`: risposta RICEVUTA,
+            # nessun ordine a mercato. Sul lato BACK, che e' quello con cui il
+            # tennis apre (`_apri_dichiarata` -> `execution.place`).
+            market.guasti["place_rifiuto"] = int(self.rifiuti)
+            market.rifiuta_lato = "back"
+            self._rifiuti_messi = True
         # DICHIARAZIONE 1: la competizione, che il raw non ha e il catalogo si'.
         # Si scrive nel CATALOGO dello scanner (dove la metterebbe
         # `refresh_catalogue`), non nella riga: da li' in poi e' `build_rows`
@@ -813,6 +831,16 @@ class _Stato:
                             params=params, xp=xp, ctx=ctx, valutazione=valutazione,
                             prima=prima_trades, n_att=n_att, errore=errore)
         self.ref.violazioni.extend(CERT.verifica(oss, self.ref.sollecitati))
+        # I CONTROLLI K: LA MEMORIA DEL BOT CONTRO IL MERCATO. Qui, dopo il giro
+        # del servizio, esistono insieme le righe scritte dal bot e gli ORDINI
+        # VERI di flumine; i controlli T/J/L guardano la decisione, questi
+        # guardano il rapporto fra cio' che il bot crede e cio' che c'e' a
+        # mercato - ed e' li' che vivevano i cinque difetti del 15/09.
+        self.ref.violazioni.extend(CERT.verifica_consapevolezza(
+            list(db.trades),
+            {ref: market._riga(ref, o) for ref, o in market.ordini.items()},
+            [str(x.get("ref") or "") for x in market.rifiutati],
+            self.ref.sollecitati, oss.quando))
         CERT.osserva(self.ref.andamento, oss)
         if valutazione is not None:
             self.motivi[self._motivo(valutazione)] += 1
