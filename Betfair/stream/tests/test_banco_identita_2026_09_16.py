@@ -530,3 +530,172 @@ def test_la_latenza_di_lettura_e_dichiarata_e_governabile():
     assert B.LATENZA_LETTURA_S == fconf.place_latency, (
         "la latenza assunta deve essere la stessa gia' certificata di flumine, "
         "non un numero nuovo inventato qui")
+
+
+# ---------------------------------------------------------------------------
+# 7) SU QUALE BOOK SI ABBINA: l'ultimo NOTO entro t + place_latency + betDelay
+# ---------------------------------------------------------------------------
+# UN SOLO PUNTO DI VERITA': `MotoreReplay.attendi_esecuzione` fa scorrere il
+# tempo di mercato fino alla scadenza, e l'esecuzione usa `market.market_book`,
+# cioe' l'ULTIMO book di quel mercato arrivato ENTRO quella scadenza. Vale per
+# ogni percorso del banco che piazzi, `replay_evento` compreso: il motore e'
+# uno solo.
+#
+# PERCHE' NON QUELLO DOPO. Betfair abbina sul mercato com'e' a t+delay. Di quel
+# mercato noi abbiamo istantanee: la migliore approssimazione dello stato a
+# t+delay e' l'ultima istantanea arrivata ENTRO t+delay. Usare la prima
+# istantanea SUCCESSIVA vorrebbe dire mostrare al replay prezzi che a t+delay
+# non erano ancora accaduti — guardare nel futuro, e rendere il banco ottimista
+# (difetto 13 del catalogo §7).
+#
+# Lo garantisce l'ORDINE dentro `_a_flumine`, ereditato da
+# `FlumineSimulation._process_market_books`: `_check_pending_packages` viene
+# PRIMA di `market(market_book)`. Quando arriva il book che fa scattare la
+# scadenza, l'ordine si abbina su quello di prima. Invertire le due righe
+# farebbe abbinare su un book del futuro.
+def _definizione_vera(bet_delay):
+    """Il `marketDefinition` di una registrazione VERA del repo, col solo
+    `betDelay` cambiato. Scriverlo a mano vorrebbe dire scrivere un finto che
+    parla una lingua diversa dal vero — il difetto 27 del catalogo §7."""
+    import copy
+    import json
+    import os
+
+    from Betfair.stream.config_stream import DATA_DIR
+
+    sorgente = os.path.join(DATA_DIR, "_synth_safe_tennis_prezzo_migliore",
+                            "_synth_safe_tennis_prezzo_migliore.raw.jsonl")
+    if not os.path.isfile(sorgente):
+        pytest.skip(f"registrazione di riferimento assente: {sorgente}")
+    with open(sorgente, encoding="utf-8") as fh:
+        prima = json.loads(fh.readline())
+    md = copy.deepcopy(prima["mc"][0]["marketDefinition"])
+    md["betDelay"] = int(bet_delay)
+    md["eventId"] = "1"
+    md["runners"] = [{"status": "ACTIVE", "sortPriority": 1, "id": 111},
+                     {"status": "ACTIVE", "sortPriority": 2, "id": 222}]
+    return md
+
+
+def _registrazione_a_passo(cartella, bet_delay, passo_s, quanti):
+    """Una registrazione minima: un mercato, un runner, il miglior BACK che sale
+    di un tick a ogni book. Serve a far cadere la scadenza DENTRO l'intervallo
+    fra due book: sulle registrazioni vere del corpus non capita mai (betDelay
+    3 s, book ogni 5 s), quindi li' la regola non si puo' mettere alla prova."""
+    import json
+    import os
+
+    dove = os.path.join(str(cartella), "1")
+    os.makedirs(dove, exist_ok=True)
+    t0 = 1789495200000
+    righe = []
+    for i in range(quanti):
+        prezzo = round(1.50 + i * 0.10, 2)
+        mc = {"id": "1.999", "rc": [{"id": 111,
+                                     "atb": [[prezzo, 500.0]],
+                                     "atl": [[round(prezzo + 0.02, 2), 500.0]],
+                                     "trd": [[prezzo, 900.0]]}]}
+        if i == 0:
+            # IL FINTO PARLA COME IL VERO: il `marketDefinition` non si inventa
+            # (a flumine ne mancherebbero 15 campi obbligatori), si prende da
+            # una registrazione del repo e si cambia il solo `betDelay`.
+            mc["marketDefinition"] = _definizione_vera(bet_delay)
+            mc["rc"].append({"id": 222, "atb": [[3.0, 500.0]], "atl": [[3.1, 500.0]]})
+        righe.append(json.dumps({"op": "mcm", "pt": t0 + i * passo_s * 1000,
+                                 "mc": [mc]}))
+    with open(os.path.join(dove, "1.raw.jsonl"), "w", encoding="ascii") as fh:
+        fh.write(chr(10).join(righe) + chr(10))
+    return str(cartella)
+
+
+class BotUnTaker:
+    """Piazza UN taker a un giro noto e registra che cosa aveva letto."""
+
+    def __init__(self, giro):
+        self.giro_piazza = int(giro)
+        self.g = 0
+        self.mercato = None
+        self.esito = None
+        self.letto = None
+
+    def __call__(self, *, db, market, now, row, banco, strategia):
+        self.mercato = market
+        self.g += 1
+        m = strategia.mercati.get("1.999")
+        if m is None or getattr(m, "market_book", None) is None:
+            return
+        if self.g != self.giro_piazza:
+            return
+        runner = m.market_book.runners[0]
+        self.letto = B._livelli_di_produzione(runner.ex.available_to_back)[0].price
+        res = market.place_order_live(
+            market_id="1.999", selection_id=111, price=1.01, size=5.0,
+            event_id="1", side="back", customer_ref="taker", fill_or_kill=True)
+        self.esito = (res.size_matched, res.avg_price_matched)
+
+
+def _corsa_taker(cartella, bet_delay, passo_s, giro):
+    dove = _registrazione_a_passo(cartella, bet_delay, passo_s, 40)
+    bot = BotUnTaker(giro)
+    B.replay_evento(event_id="1", cartella=dove, servizio=bot, sport="calcio",
+                    ogni_ms=1)
+    return bot
+
+
+@pytest.mark.cert
+def test_il_fill_usa_lultimo_book_entro_la_scadenza(tmp_path):
+    """betDelay 12 s, book ogni 5 s: la scadenza (t + 0,12 + 12) cade dopo DUE
+    book e prima del terzo. Il fill deve usare il secondo, non il terzo."""
+    bot = _corsa_taker(tmp_path / "a", bet_delay=12, passo_s=5, giro=3)
+    assert bot.esito is not None and bot.esito[0] == 5.0
+    atteso = round(bot.letto + 0.20, 2)     # due tick da 0,10 = i due book
+    futuro = round(bot.letto + 0.30, 2)     # il terzo book, oltre la scadenza
+    assert bot.esito[1] == atteso, (
+        f"abbinato a {bot.esito[1]}: atteso {atteso}, l'ultimo book ENTRO la "
+        f"scadenza. {futuro} sarebbe il book DOPO, cioe' futuro")
+
+
+@pytest.mark.cert
+def test_il_bet_delay_sposta_davvero_il_book_dellabbinamento(tmp_path):
+    """Con lo stesso dato, un bet delay piu' lungo deve far abbinare piu' avanti.
+    Se il fill non si spostasse, il bet delay sarebbe decorativo: e' l'accusa da
+    verificare, e questo test la mette alla prova."""
+    corto = _corsa_taker(tmp_path / "corto", bet_delay=1, passo_s=5, giro=3)
+    lungo = _corsa_taker(tmp_path / "lungo", bet_delay=12, passo_s=5, giro=3)
+    assert corto.letto == lungo.letto, "i due giri non partono dallo stesso book"
+    assert corto.esito[1] == corto.letto, (
+        f"con betDelay 1 s la scadenza cade prima del book successivo: il fill "
+        f"resta sul book letto ({corto.letto}), invece e' {corto.esito[1]}")
+    assert lungo.esito[1] > corto.esito[1], (
+        f"il bet delay NON sposta il book dell'abbinamento: {corto.esito[1]} "
+        f"con 1 s e {lungo.esito[1]} con 12 s")
+
+
+@pytest.mark.cert
+def test_falsificazione_il_book_del_futuro_cambia_il_fill(tmp_path):
+    """IL DIFETTO CHE LA REGOLA IMPEDISCE: applicare al mercato il book che fa
+    scattare la scadenza PRIMA di eseguire i pacchetti in attesa. L'ordine si
+    abbinerebbe su un prezzo che a t+delay non era ancora accaduto. Se
+    invertire quelle due righe non cambiasse il fill, i due test sopra non
+    starebbero certificando niente."""
+    vera = B.MotoreReplay._a_flumine
+
+    def invertito(self, market_book):
+        mercato = self.quadro.markets.markets.get(market_book.market_id)
+        if mercato is not None:
+            mercato(market_book)        # il futuro entra PRIMA dell'esecuzione
+        return vera(self, market_book)
+
+    sano = _corsa_taker(tmp_path / "sano", bet_delay=12, passo_s=5, giro=3)
+    B.MotoreReplay._a_flumine = invertito
+    try:
+        bucato = _corsa_taker(tmp_path / "bucato", bet_delay=12, passo_s=5, giro=3)
+    finally:
+        B.MotoreReplay._a_flumine = vera
+    assert sano.letto == bucato.letto, "i due giri non partono dallo stesso book"
+    assert bucato.esito[1] != sano.esito[1], (
+        f"col book del futuro gia' applicato il fill non cambia "
+        f"({sano.esito[1]}): il controllo non sa vedere uno sguardo in avanti")
+    assert bucato.esito[1] > sano.esito[1], (
+        f"lo sguardo in avanti deve dare un prezzo MIGLIORE: "
+        f"{sano.esito[1]} -> {bucato.esito[1]}")

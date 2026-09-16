@@ -175,3 +175,48 @@ referto, `DbMemoria.ht_ft_rows`, `_lapse_alla_sospensione`, regola del tempo
 falsificazioni, diagnosi del tennis 35795560 (i tre scenari **non condividono
 l'ingresso**: `safe-t1` chiede 1,08 in `base` e 1,58 negli altri due, dove e'
 **identico** — non e' un difetto dell'orologio).
+
+---
+
+## 7. REPERTO «il fill non si sposta col bet delay» (Safe K) — VERIFICATO E RESPINTO
+
+**Non e' un difetto, e non ho cambiato niente.** Misurato su
+`_synth_safe_tennis_prezzo_migliore` (betDelay **3 s**, book ogni **5 s**,
+miglior BACK che sale di un tick per book): piazzando a t=+20 s il bot legge
+1,10 e abbina 1,10; il book dei +25 s offre 1,12. La scadenza vera e' pero'
+**t + place_latency + betDelay = +23,12 s**, e a quell'istante l'ultima
+istantanea nota del mercato e' quella dei +20 s. Abbinare sui +25 s
+significherebbe usare prezzi che a +23,12 s **non erano ancora accaduti**:
+sguardo nel futuro, cioe' il difetto 13 del catalogo §7 in forma nuova. Su quel
+corpus il bet delay non puo' spostare il libro, perche' e' **piu' corto del
+passo fra due book**.
+
+Che il bet delay sposti davvero il libro quando ha lo spazio per farlo e'
+adesso dimostrato: `test_il_bet_delay_sposta_davvero_il_book_dellabbinamento`
+costruisce una registrazione con betDelay **12 s** e book ogni 5 s (il
+`marketDefinition` e' preso da una registrazione vera, non inventato: a flumine
+ne mancherebbero 15 campi) e verifica che con 1 s si abbina sul book letto e
+con 12 s su uno due book piu' avanti.
+
+Il punto di verita' e' uno solo ed e' gia' condiviso da tutti i percorsi del
+banco (`replay_evento` compreso): `MotoreReplay.attendi_esecuzione` porta
+l'orologio alla scadenza, e l'esecuzione usa `market.market_book`, cioe'
+l'ultimo book di quel mercato arrivato **entro** la scadenza. Lo garantisce
+l'ordine dentro `_a_flumine` (`_check_pending_packages` **prima** di
+`market(market_book)`), ereditato da `FlumineSimulation._process_market_books`.
+
+Test nuovi in `test_banco_identita_2026_09_16.py` (**42 verdi** nei due file del
+banco): `test_il_fill_usa_lultimo_book_entro_la_scadenza`,
+`test_il_bet_delay_sposta_davvero_il_book_dellabbinamento`, e la
+**falsificazione** `test_falsificazione_il_book_del_futuro_cambia_il_fill`
+(si applica al mercato il book che fa scattare la scadenza PRIMA di eseguire:
+il fill peggiora di prezzo, cioe' migliora indebitamente -> rosso). La prima
+falsificazione che avevo scritto era un no-op (consumava un book dalla stessa
+coda, sequenza identica): l'ho rifatta sul difetto vero.
+
+Certificazioni rilanciate, **nessuna differenza attesa e nessuna trovata**:
+`certifica safe_tennis 35792939 --scenari base,approvata-subito --worker 3` ->
+2 partite, **0 violazioni**, fill `base` 1 x 2,00 EUR a 1,02 e
+`approvata-subito` 2 x 4,04 EUR a 1,03/1,05, **K1 sollecitato 669 volte**;
+`certifica omega 35760084 --scenari apertura --worker 3` -> **0 violazioni**,
+1 fill da 5,26 EUR a 300,0.

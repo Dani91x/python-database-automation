@@ -483,8 +483,12 @@ tennis terna 45 referti 0 violazioni (mai sollecitati 2/34: T10, L2). Suite safe
 Verifica del coordinatore: 1033 verdi Safe; falsificazione propria (`res.ok` ignorato) → 6 rossi.
 **Reperto di fedeltà del banco (⊘ c-tennis)**: sul percorso `replay_evento` flumine decide il
 fill AL PIAZZAMENTO contro il book appena letto (il bet delay conta i book ma non sposta il libro
-dell'abbinamento): chiesto 1,10 abbinato 1,10 mentre il book a +5 s offriva 1,12 → da allineare
-alla regola del tempo già applicata al percorso di Mike (`attendi_esecuzione`).
+dell'abbinamento): chiesto 1,10 abbinato 1,10 mentre il book a +5 s offriva 1,12 → **RESPINTO dal banco con misura**: a t+place_latency+betDelay (=+23,12 s) l'ultima istantanea nota è
+quella dei +20 s; abbinare sui +25 s sarebbe uno sguardo nel futuro (difetto 13). Il punto di verità è
+unico (`attendi_esecuzione` + esecuzione sull'ultimo book entro la scadenza, ordine
+`_check_pending_packages` prima di `market(market_book)`), ora difeso da 3 test (con registrazione a
+betDelay 12 s che sposta davvero il book di due passi). Decisione del coordinatore: si tiene l'ultima
+istantanea nota, mai la successiva.
 
 ### Esito OMEGA V3 — motore predittivo, k misurato, famiglia K — CERTIFICATO dal coordinatore (16/09 notte)
 
