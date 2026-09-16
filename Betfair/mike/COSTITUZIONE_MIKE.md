@@ -1385,9 +1385,10 @@ il prezzo medio veri.
 > giro) **e** la **decisione** (una lay nuova dove ce n'è già una, *anche* se lo stesso
 > giro la annulla).
 >
-> **Non coperto da questa regola**: `over_cover` sull'Over 4.5 si riprezza ancora con
-> `cancel` + `place` nello stesso giro, ma sono due **BACK** — due back abbinati sono
-> sovracopertura, non una posizione scoperta. Dichiarato, non toccato.
+> **`over_cover` — CORRETTO IL 16/09 SERA**: fino alle 18:20 si riprezzava ancora con
+> `cancel` + `place` nello stesso giro. Era dichiarato e non toccato perché due back
+> abbinati non lasciano una posizione scoperta; l'utente ha poi ordinato di correggerlo
+> lo stesso (**MAI SOVRACOPERTURA**, vedi §15.7-ter).
 
 > ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 h18:20: SE CHIUDO TUTTO IO, IL BOT SI FERMA
 >
@@ -1420,14 +1421,9 @@ il prezzo medio veri.
 > emettere nessuna **apertura**. Scenario `cashout-globale` nel replay: la richiesta
 > `cashout` **vera** passa da `service.process_requests`, come dalla UI.
 >
-> **⚠️ LIMITE DICHIARATO — il cash-out fatto FUORI dal bot.** Se l'utente chiude la
-> posizione **direttamente su Betfair** (una sua lay, non un ordine di Mike), Mike **non se
-> ne accorge**: `omega_market.list_current_orders` filtra per `customerStrategyRef` e quella
-> lay non è sua, quindi continua a vedere il proprio back abbinato e a gestirlo. Se invece
-> l'utente **annulla ordini di Mike** su Betfair, quello sì viene visto: l'ordine sparisce
-> dai correnti → `pending_reconcile` → riconciliazione. Accorgersi della prima situazione
-> richiederebbe leggere la posizione **di conto** sul mercato (una chiamata Betfair nuova):
-> non è stato fatto, va portato all'utente.
+> **Il cash-out fatto FUORI dal bot — RISOLTO IL 16/09 SERA**: fino alle 19:00 Mike non se
+> ne accorgeva (`omega_market.list_current_orders` filtra per `customerStrategyRef` e la lay
+> dell'utente non è sua). Adesso legge la **posizione di conto** sul mercato: §15.7-ter.
 
 * **mai due lay vive sull'Under 3.5**: se la lay del ciclo pre-match non è ancora annullata
   per davvero, l'ordine di uscita aspetta. Un doppio abbinamento ribalterebbe la posizione
@@ -1440,6 +1436,104 @@ il prezzo medio veri.
   in attesa di un'attesa che non finisce mai;
 * **la copertura ordinata dal flusso non ripassa dall'attesa "intelligente"** di
   `cover_timing`: finestra scaduta e gol precoce sono decisioni già prese.
+
+### 15.7-ter Due ordini dell'utente del 16/09/2026, sera
+
+> **Nota sul settimo ordine del 16/09 sera** (proposte di green-up / cash-out in gioco da
+> approvare in Control Room): **ANNULLATO dall'utente lo stesso giorno** — «Mike deve
+> lavorare come progettato». Le uscite di Mike restano **automatiche** esattamente come
+> descritte in §3 Fasi 1, 4, 5 e 6. Se un domani si riaprisse, il modello è
+> `safe_strategy/bot_service.py::_proponi_chiusura` più `migrations/
+> safe_strategy_proposed_2026-09-14.sql`: nulla di tutto ciò è stato scritto per Mike.
+
+> ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 sera: **MAI SOVRACOPERTURA**
+>
+> La copertura è un **BACK** sull'Over 4.5. Due back di copertura abbinati non lasciano una
+> posizione scoperta — quello lo fa la doppia lay (§15.7) — ma comprano Over che non serve:
+> si paga **due volte** una protezione che serve una volta sola, e con 0-3 gol la perdita
+> cresce di tutto il secondo premio.
+>
+> **Com'era**: `_decide_cover_pending` (`engine.py`) riprezzava la copertura con `cancel` +
+> `place` nella **stessa decisione**, esattamente come facevano le lay prima di J5.
+> Partire non è essere confermati: se Betfair non conferma l'annullamento la vecchia
+> copertura resta viva e la nuova si aggiunge.
+>
+> **Com'è adesso** — la stessa regola delle lay, in un posto solo e per ogni ramo presente e
+> futuro: **`engine._mai_sovracopertura`**, ultima parola di `decide()` subito dopo
+> `_una_sola_lay`. Finché su quella selezione c'è una copertura **VIVA o IN VOLO**
+> (in volo = anche `pending_reconcile`, §4.11) una copertura nuova **non si emette**:
+> * l'**annullamento sì**, e parte in questo giro;
+> * la copertura nuova arriva al **giro successivo**, e solo ad annullamento **CONFERMATO**;
+> * è dimensionata sulla **copertura REALE già abbinata**: `cover_matched_value` conta
+>   TUTTE le gambe abbinate del mercato Over/Under 4.5 — anche quella appena annullata con
+>   fill parziale — quindi non si ricompra Over già comprato;
+> * se non resta nessun ordine da piazzare **lo stato non avanza**.
+>
+> **Conseguenza, corretta insieme**: una copertura annullata con un fill **parziale** non è
+> né viva né piena. Prima cadeva in fondo a `_decide_cover_pending` e lo stato restava
+> `LIVE_COVER_PENDING` «attesa fill copertura» per sempre — il residuo non veniva mai
+> ricomprato. Non si vedeva perché la gamba nuova prendeva subito il posto della vecchia.
+> Adesso si torna a `LIVE_UNCOVERED` («copertura non completata: ridimensiono sulla
+> copertura reale già abbinata») e il residuo si ricompra al prezzo del momento.
+>
+> **Controllo J6** (`certificazione.py`), severo e in tre parti: lo **stato** (due coperture
+> in volo insieme), la **decisione** (una copertura nuova dove ce n'è già una, *anche* se lo
+> stesso giro la annulla) e la **quantità** (la somma di ciò che è in volo più il proposto
+> non supera il residuo previsto più il margine legale `cover_max_overshoot_pct`).
+
+> ### 🔴 ORDINE DELL'UTENTE — 16/09/2026 sera: **SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP**
+>
+> *«Se chiudo io il bot deve saperlo, e non deve gestire posizioni che non esistono più.»*
+> Vale per **tutti i bot**, presenti e futuri.
+>
+> **Com'era**: Mike leggeva solo gli ordini col **suo** `customerStrategyRef`. Una lay che
+> l'utente piazza dal sito Betfair (o da un'altra app, o da un altro bot) per chiudere la
+> posizione non ha quel ref: Mike non la vedeva e continuava a coprire, a fare green-up e a
+> rientrare su una posizione che sul conto non era più esposta.
+>
+> **Com'è adesso** — la verità è la **POSIZIONE DI CONTO** sul mercato:
+> * `omega_market.list_current_orders_account(market_ids)` e
+>   `list_cleared_orders_account(market_ids)` — `listCurrentOrders`/`listClearedOrders` con i
+>   soli `marketIds`, **senza** filtro di strategia; `market_profit_and_loss(market_ids)`
+>   (`listMarketProfitAndLoss`) come controprova. Esposte a Mike da
+>   `service._RealMarket.list_account_orders` / `list_account_cleared_orders` /
+>   `market_profit_and_loss`;
+> * `service._sorveglia_posizione_di_conto`, chiamata in `_run_event` **prima della
+>   decisione**, insieme alla sorveglianza della sospensione.
+>
+> **CADENZA DICHIARATA: `reconcile_every_s` (default 30 s per partita)**, la stessa del
+> respiro del database (§17) — **mai a ogni giro**. Due letture REST per mercato per volta,
+> solo in **LIVE** (in paper non esiste nessun conto da leggere: si dichiara e si esce) e
+> solo con una **posizione aperta** da difendere.
+>
+> **Mike riconosce LA SUA posizione dentro quella di conto**, perché sulla stessa partita
+> l'utente può avere anche operazioni sue: si somma il netto `back − lay` dell'**abbinato**
+> per selezione, una volta **per i soli ref di Mike** (il ref della gamba *e* `mike-t<id>`:
+> sono due grafie, entrambe vere) e una volta per **tutti**. Tre verdetti, conservativi:
+> 1. le gambe di Mike **non si ritrovano** sul conto → è **riconciliazione**, non una
+>    chiusura dell'utente: si dichiara (`posizione_di_conto`) e non si spegne niente;
+> 2. si ritrovano ma il netto di conto **non contiene più** la sua posizione →
+>    **`chiuso_dall_utente`**;
+> 3. la contiene solo **in parte** → si dichiara e basta: il bot continua a proteggere quello
+>    che resta (una copertura parziale dell'utente non autorizza il bot a smettere).
+>
+> **Che cosa succede allora**: attività `chiuso_dall_utente` (critica), gli ordini ancora
+> **vivi** di Mike vengono **annullati davvero** su Betfair (se si abbinassero aprirebbero
+> una posizione nuova su una partita che non è più sua: annullare riduce il rischio, ed è
+> sempre permesso) e si accende **`ctx.chiuso_dall_utente`** (persistito in
+> `service._CTX_FIELDS`: un riavvio non deve far ricominciare). Da lì `decide()` **non emette
+> più nessuna azione** su quella partita — né aperture né chiusure: non c'è più niente da
+> chiudere. È la differenza con il cash-out *dalla UI* (§15.7, R2), dove le chiusure restano
+> permesse perché un residuo può ancora abbinarsi.
+>
+> **Il P&L resta contabilizzato**: la partita **non** diventa terminale. A mercato CLOSED il
+> ramo di regolamento passa comunque e il risultato vero delle gambe davvero abbinate viene
+> scritto.
+>
+> **Controllo R3** e scenario **`chiuso-fuori-app`** nel replay: ordini VERI su flumine con
+> un ref che non è di Mike (`utente-suo-back`, `utente-chiusura`), invisibili alla lista
+> filtrata per strategia e presenti nella posizione di conto. Su 35760084: `chiuso_dall_utente`
+> x1, **R3 sollecitato 5.837 volte, zero violazioni**.
 
 ### 15.8 Parametri nuovi (gruppo «Dal fischio d'inizio» nella UI)
 
@@ -1620,6 +1714,19 @@ una per una — in paper si provocano senza conseguenze, ed è lì che vanno pro
    finché è fermo la coda non è una via di riserva.
 5. **`MIKE_LIVE_ENABLED` va acceso a mano** quando si decide davvero di operare. Se il bot
    è in modalità live e l'interruttore è spento, la pagina lo dice con un banner.
+6. **🔴 I CONTROLLI DEL REPLAY NON VEDEVANO I CINQUE DIFETTI DEL 15/09 (16/09 sera).**
+   Reintrodotti uno a uno sul codice di oggi, il replay su 35760084 (`base`, `taker`,
+   `esiti-ignoti`) **non diventava rosso** e il referto era identico cifra per cifra — le
+   impronte del codice nel referto provano che il difetto era davvero applicato. Causa:
+   i controlli A-J guardano la **decisione** del motore; quei difetti stanno nel rapporto
+   fra ciò che il bot **crede** delle sue gambe e ciò che il **mercato** dice dei suoi
+   ordini, e nessun controllo guardava quel rapporto. Rimedio: famiglia **K**
+   (`certificazione.verifica_consapevolezza`, chiamata dal replay dopo ogni giro del
+   servizio) e scenario **`rifiuti-betfair`**. **Resta aperto**: il difetto 5
+   (`closes_trade_id` nel meta) non è catturabile dal banco perché il suo effetto vive
+   nel place-and-trim, che nel banco non esiste (`place_submin_live` è
+   `place_order_live`) — è il ⊘ «place-and-trim / minimo .it» già dichiarato. Lo cattura
+   un test (`test_mike_loop_chiusure_2026_09_15.py::test_la_chiusura_si_dichiara_a_chi_esegue`).
 
 ---
 

@@ -139,6 +139,29 @@ SCENARI: Dict[str, Dict[str, Any]] = {
 SCENARIO_GOL_PRECOCE = "gol-precoce"
 SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 
+# CHIUSURA FATTA DALL'UTENTE **FUORI DALL'APP** (ordine 16/09 sera). Non tocca
+# un parametro: quello che cambia e' che a meta' partita compaiono sul mercato
+# ordini che NON sono del bot — una posizione dell'utente e poi la lay con cui
+# l'utente chiude TUTTO. Sono ordini VERI su flumine, con un ref che non e' di
+# Mike: nella lista filtrata per strategia (quella che il bot legge) non ci
+# sono, nella POSIZIONE DI CONTO sul mercato si'. Da quel momento il bot deve
+# accorgersi che la sua posizione non e' piu' sul conto e non fare piu' niente
+# su quella partita (controllo R3).
+SCENARIO_CHIUSO_FUORI_APP = "chiuso-fuori-app"
+
+# RIFIUTO DICHIARATO DI BETFAIR (`ok=False`). Non tocca un parametro: i primi N
+# piazzamenti tornano con un report NEGATIVO, come quando Betfair rifiuta
+# l'istruzione (prezzo non piu' valido, profit ratio fuori banda, fondi). E'
+# l'unico modo di mettere alla prova il difetto 2 del catalogo del 15/09 —
+# «`res.ok` mai letto» — che sulle registrazioni non capita mai perche' nel
+# replay nessun ordine viene rifiutato.
+SCENARIO_RIFIUTI = "rifiuti-betfair"
+QUANTI_RIFIUTI = 3
+# quanto l'utente ha di SUO sulla stessa selezione, prima di chiudere tutto:
+# serve a provare che Mike riconosce LA SUA posizione dentro quella di conto e
+# non da' per sua ogni cosa che vede.
+UTENTE_SUO_BACK = 3.0
+
 # scenario speciale: non tocca i parametri ma INVECCHIA la riga del feed, per
 # far scattare la regola «feed stantio: nessun ingresso, chiusure permesse».
 SCENARIO_FEED_STANTIO = "feed-stantio"
@@ -179,28 +202,16 @@ def _riavvia_processo() -> List[str]:
     Non tocca il database in memoria: quello e' il DB, e in produzione
     sopravvive. Torna l'elenco di cio' che e' stato azzerato, che finisce nel
     referto: un riavvio che non si sa che cosa ha buttato non prova niente.
+
+    ⚠️ 16/09 SERA — prima questa funzione girava su `dir(S)` e svuotava OGNI
+    dizionario di modulo: fra quelli c'e' `_ALIAS_ORDINE`, la tabella con cui
+    Mike legge le chiavi camelCase di Betfair. Azzerarla vuol dire
+    reintrodurre il difetto 1 del 15/09 dentro lo scenario che dovrebbe
+    certificare il riavvio. Adesso l'elenco e' ESPLICITO e vive nel servizio
+    (`service.azzera_cache_di_processo`), accanto alle cache che dichiara.
     """
-    azzerati: List[str] = []
-    for nome in dir(S):
-        if not nome.startswith("_") or nome.startswith("__"):
-            continue
-        valore = getattr(S, nome, None)
-        if isinstance(valore, dict) and valore:
-            valore.clear()
-            azzerati.append(nome)
-        elif hasattr(valore, "clear") and not isinstance(valore, (str, bytes, type)):
-            try:
-                valore.clear()
-                azzerati.append(nome)
-            except Exception:  # noqa: BLE001 - non tutto cio' che ha clear() e' una cache
-                pass
-    if getattr(S, "_ULTIMI_PARAMS", None) is not None:
-        S._ULTIMI_PARAMS = None
-        azzerati.append("_ULTIMI_PARAMS")
-    if getattr(S, "_EVENTI_LETTI_A", 0.0):
-        S._EVENTI_LETTI_A = 0.0
-        azzerati.append("_EVENTI_LETTI_A")
-    return sorted(azzerati)
+    return S.azzera_cache_di_processo()
+
 
 # le due linee che interessano a Mike, coi nomi di mercato Betfair
 _LINEE = {"OVER_UNDER_35": 3.5, "OVER_UNDER_45": 4.5}
@@ -370,6 +381,19 @@ def _crea_strategia():
             # UI, allo STESSO `service.process_requests` della produzione.
             self.cashout_utente = bool(kw.pop("cashout_utente", False))
             self.cashout_fatto: Optional[Dict[str, Any]] = None
+            # CHIUSURA DELL'UTENTE FUORI DALL'APP (16/09 sera): ordini VERI su
+            # flumine con un ref che non e' del bot.
+            self.chiuso_fuori_app = bool(kw.pop("chiuso_fuori_app", False))
+            self.chiusura_utente: Optional[Dict[str, Any]] = None
+            # A2 — I GIRI DEL SERVIZIO SU UNA PARTITA GIA' TERMINALE.
+            # Il controllo A2 («da uno stato terminale non esce nessuna azione»)
+            # non puo' avere un caso attraverso il servizio: `_run_event` esce
+            # PRIMA di chiamare `decide` quando lo stato e' terminale. E' una
+            # garanzia piu' forte del controllo, ma va MISURATA, non assunta:
+            # qui si contano i giri fatti su una partita terminale e le azioni
+            # che ne sono uscite (devono essere zero).
+            self.giri_terminali: int = 0
+            self.azioni_dopo_terminale: int = 0
 
             # i mercati flumine, per market_id: servono per piazzare davvero
             self.mercati: Dict[str, Any] = {}
@@ -509,9 +533,27 @@ def _crea_strategia():
                 "event_name": ((row or {}).get("payload") or {}).get("event_name") or self.nome,
                 "state": "WATCH", "mode": "live", "ctx": {},
             }
+            # I MERCATI SULLA RIGA DELL'EVENTO, come in produzione.
+            # In produzione la riga la crea `service.run_once` quando arma la
+            # partita, e ci scrive `markets = {tipo: {"market_id": ...}}` dal
+            # `feed.event_info` (`service.py:2366`). Il replay costruiva la riga
+            # a mano e quel campo NON c'era: tutto cio' che in `_run_event`
+            # dipende da `ev["markets"]` — la lettura REST di regolamento e,
+            # dal 16/09 sera, la POSIZIONE DI CONTO — non veniva mai esercitato.
+            # E' un buco del banco, non del bot: qui si chiude, con la stessa
+            # funzione di produzione.
+            if row is not None and not ev.get("markets"):
+                try:
+                    _info = S.F.event_info(self.event_id, row.get("payload") or {})
+                    mkts = {m: {"market_id": _info.market_id(m)} for m in _info.markets}
+                    if mkts:
+                        ev["markets"] = mkts
+                except Exception:  # noqa: BLE001 - senza catalogo si prosegue
+                    pass
             self.db.upsert_event(ev)
             self.db.scan_rows = [row] if row is not None else []
             now = pt_ms / 1000.0
+            terminale = str(self.db.events[self.event_id].get("state") or "") in E.TERMINAL_STATES
             try:
                 azioni, _settled = S._run_event(
                     db=self.db, market=self.mercato, ev=self.db.events[self.event_id],
@@ -551,10 +593,97 @@ def _crea_strategia():
                         str(self.db.events[self.event_id].get("state") or "")))
                     self.cashout_fatto = {"errore": str(ex)[:120]}
 
+            # -- CHIUSURA FATTA DALL'UTENTE FUORI DALL'APP (16/09 sera) ----
+            # Non si finge niente: si piazzano su flumine DUE ordini veri che
+            # non sono del bot (ref 'utente-*', invisibili alla lista filtrata
+            # per strategia che Mike legge, presenti nella posizione di conto):
+            #   1. una posizione dell'utente sulla STESSA selezione — cosi' la
+            #      posizione di conto contiene anche roba sua, e si prova che
+            #      Mike riconosce la propria e non si prende il resto;
+            #   2. la lay con cui l'utente chiude TUTTO (la sua piu' quella del
+            #      bot).
+            if self.chiuso_fuori_app and self.chiusura_utente is None:
+                self._chiudi_come_utente(pt_ms)
+
+            # -- I CONTROLLI K: LA MEMORIA DEL BOT CONTRO IL MERCATO -------
+            # Si fanno QUI, dopo il giro del servizio, perche' solo qui
+            # esistono insieme le gambe (nel ctx dell'evento) e gli ORDINI VERI
+            # di flumine. I controlli A-J guardano la decisione; questi guardano
+            # il rapporto fra cio' che il bot crede e cio' che c'e' a mercato —
+            # ed e' li' che vivevano tutti e cinque i difetti del 15/09.
+            self._verifica_consapevolezza()
+
+            if terminale:
+                self.giri_terminali += 1
+                self.azioni_dopo_terminale += int(azioni or 0)
             self.referto.azioni += int(azioni or 0)
             stato = str(self.db.events[self.event_id].get("state") or "")
             if stato and stato not in self._stati:
                 self._stati.append(stato)
+
+        def _verifica_consapevolezza(self) -> None:
+            ev = self.db.events.get(self.event_id)
+            if not ev:
+                return
+            ctx = S._ctx_from_row(ev, self.db)
+            ordini = {ref: self.mercato._riga(ref, o)
+                      for ref, o in self.mercato.ordini.items()}
+            rifiutati = {str(r.get("ref") or "") for r in self.mercato.rifiutati}
+            self.referto.violazioni.extend(CERT.verifica_consapevolezza(
+                ctx, ordini, rifiutati,
+                self.db.trades_for_event(self.event_id), self.referto.sollecitati))
+
+        def _chiudi_come_utente(self, pt_ms: int) -> None:
+            """L'utente chiude la posizione di Mike da FUORI: ordini veri, ref suo."""
+            ev = self.db.events.get(self.event_id) or {}
+            mkts = ev.get("markets") or {}
+            sels = ((ev.get("ctx") or {}).get("selections") or {})
+            market_id = str((mkts.get(E.MARKET_OU35) or {}).get("market_id") or "")
+            sel = sels.get(f"{E.MARKET_OU35}|{E.SEL_UNDER}")
+            if not market_id or sel is None:
+                return
+            # quanto Mike ha ABBINATO adesso sull'Under 3.5 (netto back-lay):
+            # e' la posizione che l'utente sta chiudendo
+            netto = 0.0
+            for r in self.db.trades:
+                if str(r.get("status")) != "open":
+                    continue
+                if str(r.get("market_id") or "") != market_id:
+                    continue
+                try:
+                    if int(r.get("selection_id") or 0) != int(sel):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                size = float(r.get("size") or 0.0)
+                netto += size if str(r.get("side")) == "back" else -size
+            if netto <= 0.01:
+                return
+            # 1) la posizione SUA (stessa selezione, stesso lato): la posizione
+            #    di conto la conterra' insieme a quella di Mike
+            # un BACK si abbina accettando QUALUNQUE quota disponibile: prezzo
+            # minimo. (Una lay fa il contrario: prezzo massimo.)
+            suo = self.mercato.place_order_utente(
+                market_id=market_id, selection_id=int(sel), price=1.01,
+                size=UTENTE_SUO_BACK, side="back", customer_ref="utente-suo-back")
+            suo_abbinato = (float(getattr(getattr(suo, "simulated", None), "size_matched", 0.0) or 0.0)
+                            if suo is not None else 0.0)
+            # 2) la lay con cui chiude TUTTO (la sua piu' quella del bot).
+            #    Prezzo altissimo = si accetta qualunque quota disponibile:
+            #    e' il modo in cui un ordine a mercato si abbina davvero.
+            chiusura = self.mercato.place_order_utente(
+                market_id=market_id, selection_id=int(sel), price=1000.0,
+                size=round(netto + suo_abbinato, 2), side="lay",
+                customer_ref="utente-chiusura")
+            abb = (float(getattr(getattr(chiusura, "simulated", None), "size_matched", 0.0) or 0.0)
+                   if chiusura is not None else 0.0)
+            self.chiusura_utente = {"ms": int(pt_ms), "market_id": market_id,
+                                    "selection_id": int(sel),
+                                    "posizione_del_bot": round(netto, 2),
+                                    "back_dell_utente": round(suo_abbinato, 2),
+                                    "lay_di_chiusura_abbinata": round(abb, 2)}
+            self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
+                        self.event_id)
 
         def chiudi(self) -> CERT.Referto:
             self.referto.stati_visti = list(self._stati)
@@ -579,12 +708,21 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       ogni_ms: int = 1000,
                       invecchia_s: float = 0.0,
                       guasti: int = 0,
+                      rifiuti: int = 0,
                       campioni_diff: int = 0,
                       riavvia: bool = False,
-                      cashout_utente: bool = False) -> CERT.Referto:
+                      cashout_utente: bool = False,
+                      chiuso_fuori_app: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
+    # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
+    # coppie evento x scenario girano nello STESSO processo figlio, una dopo
+    # l'altra: senza questo azzeramento il secondo replay eredita i throttle del
+    # primo e certifica una cosa diversa da quella che certifica da solo.
+    # Misurato il 16/09 sera: `chiuso-fuori-app` dentro `--scenari tutti
+    # --worker 3` non leggeva mai la posizione di conto e dava R1/R3 a zero.
+    S.azzera_cache_di_processo()
     par = dict(params or C.merge_params(None))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))
@@ -642,9 +780,17 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           punteggi=punteggi, ogni_ms=ogni_ms,
                           invecchia_s=invecchia_s, campioni_diff=campioni_diff,
                           riavvia=riavvia, cashout_utente=cashout_utente,
+                          chiuso_fuori_app=chiuso_fuori_app,
                           market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
+    if rifiuti > 0:
+        # i primi N piazzamenti tornano `ok=False`: e' il RIFIUTO dichiarato di
+        # Betfair, non un errore di rete (quello e' `place_exception`)
+        strategia.mercato.guasti["place_rifiuto"] = int(rifiuti)
+        # sul LATO LAY: e' li' che vivono le uscite appoggiate, cioe' il ramo
+        # (`_piazza_resting_live`) in cui il 15/09 `res.ok` non veniva letto
+        strategia.mercato.rifiuta_lato = "lay"
     if guasti > 0:
         # i primi N piazzamenti falliranno con esito IGNOTO: e' cosi' che
         # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
@@ -699,7 +845,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     from collections import Counter
     kinds = Counter(strategia.db.kinds())
     out.note.append("attivita' del servizio: "
-                    + ", ".join(f"{k} x{n}" for k, n in kinds.most_common(8)))
+                    + ", ".join(f"{k} x{n}" for k, n in kinds.most_common(20)))
     stati_righe = Counter(str(r.get("status")) for r in strategia.db.trades)
     out.note.append(f"righe per stato: {dict(stati_righe)}")
     motivi_err = Counter(str((p or {}).get("reason") or (p or {}).get("note") or "")[:60]
@@ -732,6 +878,41 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 f"scenario cashout-globale: richiesta `cashout` VERA mandata dall'utente "
                 f"({strategia.cashout_fatto}); il controllo R2 «dopo un cash-out globale "
                 f"il bot non apre piu' niente» e' stato sollecitato {quante} volte")
+    if strategia.chiuso_fuori_app:
+        quante = int(out.sollecitati.get("R3") or 0)
+        if strategia.chiusura_utente is None:
+            out.note.append("scenario chiuso-fuori-app: nessuna posizione aperta del bot, "
+                            "l'utente non ha avuto niente da chiudere")
+        else:
+            out.note.append(
+                f"scenario chiuso-fuori-app: ordini VERI dell'utente su flumine con un ref "
+                f"non di Mike ({strategia.chiusura_utente}); il controllo R3 «se ha chiuso "
+                f"l'utente il bot non fa piu' niente» e' stato sollecitato {quante} volte")
+    # LE QUATTRO REAZIONI ALLA RIAPERTURA, contate una per una (§15.6, R1).
+    # «Quante volte R1 ha avuto un caso» non basta: dice che la catena gira, non
+    # QUALE dei quattro rami e' stato esercitato. Il ramo (b) «scaduto alla
+    # sospensione» e' quello che il 16/09 non era mai capitato sui dati reali.
+    esiti_riapertura = Counter()
+    for k, p_, _e in strategia.db.attivita:
+        if k == "rilettura_alla_riapertura":
+            esiti_riapertura[str((p_ or {}).get("esito") or "?")] += 1
+    scaduti = sum(1 for k, _p, _e in strategia.db.attivita
+                  if k == "ordine_scaduto_alla_sospensione")
+    out.note.append(
+        "riapertura dopo una sospensione (§15.6): riletture "
+        + (", ".join(f"{k} x{n}" for k, n in sorted(esiti_riapertura.items())) or "nessuna")
+        + f" | ordini dichiarati SCADUTI alla sospensione (ramo b): {scaduti}")
+    if strategia.giri_terminali:
+        out.note.append(
+            f"stato TERMINALE: {strategia.giri_terminali} giri del servizio su una partita "
+            f"gia' chiusa, azioni prodotte {strategia.azioni_dopo_terminale} (devono essere 0). "
+            f"Il controllo A2 resta a zero casi per COSTRUZIONE: `service._run_event` esce "
+            f"prima di chiamare `decide` su uno stato terminale, quindi A2 e' la SECONDA "
+            f"linea di difesa e la si mette alla prova togliendo quel return "
+            f"(falsificazione dichiarata nel checkpoint), non con una registrazione")
+    else:
+        out.note.append("stato TERMINALE: la partita non ci e' mai arrivata in questo "
+                        "scenario, quindi A2 non ha avuto nemmeno un giro da guardare")
     fill = strategia.mercato.riepilogo_fill()
     conto = strategia.mercato.pnl(C.commission_rate(par))
     out.note.append(f"fill: {fill['fill']} abbinamenti su {fill['ordini_con_fill']} ordini "
@@ -792,6 +973,13 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_CASHOUT_GLOBALE: "l'utente chiude a mano TUTTE le operazioni della partita "
                               "(richiesta `cashout` vera dalla UI): da li' in poi il bot non "
                               "apre piu' niente (§15.7-bis, R2)",
+    SCENARIO_CHIUSO_FUORI_APP: "l'utente chiude la posizione FUORI dall'app (ordini veri su "
+                               "flumine con un ref che non e' di Mike, piu' una posizione sua "
+                               "sulla stessa selezione): il bot lo scopre dalla POSIZIONE DI "
+                               "CONTO e non gestisce piu' quella partita (§15.7-ter, R3)",
+    SCENARIO_RIFIUTI: "Betfair RIFIUTA i primi piazzamenti (`ok=False`): l'esito si legge "
+                      "e nessuna gamba rifiutata diventa una posizione (difetto 2 del "
+                      "catalogo del 15/09)",
 }
 
 
@@ -836,9 +1024,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         invecchia_s=vecchio,
         guasti=(QUANTI_GUASTI if scenario in (SCENARIO_ESITI_IGNOTI,
                                               SCENARIO_TAKER_IGNOTI) else 0),
+        rifiuti=(QUANTI_RIFIUTI if scenario == SCENARIO_RIFIUTI else 0),
         campioni_diff=campioni_diff,
         riavvia=(scenario == SCENARIO_RIAVVIO),
-        cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE))
+        cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),
+        chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

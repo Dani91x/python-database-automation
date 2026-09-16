@@ -530,8 +530,16 @@ def test_il_riprezzo_della_prima_tranche_resta_sulla_frazione():
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
     gamba = [l for l in ctx.legs if l.role == "over_cover"][-1]
     assert gamba.status == "pending"
-    d = E.decide(ctx, snap(KO + 240 + float(p["close_retry_s"]) + 1,
-                           u35=book(1.95, inplay=True), o45=book(4.0), minute=5, goals=1), p)
+    s2 = snap(KO + 240 + float(p["close_retry_s"]) + 1,
+              u35=book(1.95, inplay=True), o45=book(4.0), minute=5, goals=1)
+    d = E.decide(ctx, s2, p)
+    # ORDINE DELL'UTENTE 16/09 SERA — MAI SOVRACOPERTURA: in questo giro esce
+    # SOLO l'annullamento; la tranche nuova al giro dopo, ad annullamento
+    # CONFERMATO, dimensionata sulla copertura reale.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    gamba.status = "cancelled"
+    E.apply_decision(ctx, E.decide(ctx, s2, p), s2.now)
+    d = E.decide(ctx, s2, p)
     place = [a for a in d.actions if a.kind == "place"]
     assert place and place[0].size == pytest.approx(9.0 / (3.0 * 0.95), abs=0.02)
 

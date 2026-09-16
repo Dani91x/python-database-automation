@@ -129,18 +129,25 @@ def test_riprezzo_copertura_conta_tutte_le_coperture_gia_abbinate():
     s = snap(KO + 21 * 60, books={(E.MARKET_OU45, E.SEL_OVER): book(5.0, bs=50, inplay=True)},
              inplay=True, minute=21, goals=0)
     d = E.decide(ctx, s, p)
-    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    # ORDINE DELL'UTENTE 16/09 SERA — MAI SOVRACOPERTURA: prima SOLO
+    # l'annullamento; la copertura nuova arriva al giro dopo, quando
+    # l'annullamento e' CONFERMATO.
+    assert [a.kind for a in d.actions] == ["cancel"]
+    ctx.legs[-1].status = "cancelled"          # Betfair ha confermato l'annullo
+    E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
+    d = E.decide(ctx, s, p)
+    place = [a for a in d.actions if a.kind == "place"]
     gia = E.cover_matched_value(ctx.legs, COMM)
     atteso = E.cover_residual(20.0, 5.0, COMM, 1.2, gia)
-    assert d.actions[1].size == pytest.approx(round(atteso, 2))
+    assert place and place[0].size == pytest.approx(round(atteso, 2))
     # e il residuo della SOLA ultima gamba sarebbe stato molto piu' grande
     sbagliato = E.cover_size_residual(20.0, 5.0, COMM, 1.2, matched=1.5, matched_price=6.0)
-    assert d.actions[1].size < round(sbagliato, 2) - 0.5
+    assert place[0].size < round(sbagliato, 2) - 0.5
 
     # invariante: chiuse tutte e tre le coperture il netto con 5+ gol e' +20% di 20
     finali = [ctx.legs[0], ctx.legs[1],
               leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 6.0, 1.5, ref="c2m"),
-              leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 5.0, d.actions[1].size, ref="c3")]
+              leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 5.0, place[0].size, ref="c3")]
     assert E.net_pnl_by_total(finali, COMM)[5] == pytest.approx(4.0, abs=0.02)
 
 

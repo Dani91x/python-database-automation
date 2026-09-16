@@ -362,6 +362,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     if qualita:
         print("qualita' delle registrazioni: "
               + ", ".join(f"{k} x{n}" for k, n in sorted(qualita.items())))
+    # LE REGISTRAZIONI SINTETICHE SI DICHIARANO, SEMPRE E IN TESTA.
+    # `eventi_disponibili` le tiene fuori dalla scelta automatica, ma chi le
+    # nomina a mano deve leggere nel referto che quella partita NON e' mai
+    # esistita: serve solo a far parlare un controllo che sui dati veri tace, e
+    # non conta in nessun conteggio di partite reali (PROCESSO_STANDARD_BOT
+    # §6.1: «le sintetiche mai contate come reali»).
+    sintetiche = [e for e in eventi if str(e).startswith("_synth")]
+    if sintetiche:
+        print(f"!! REGISTRAZIONI SINTETICHE ({len(sintetiche)}): "
+              + ", ".join(sintetiche))
+        print("   NON SONO PARTITE REALI. Sono stream costruiti nel formato nativo "
+              "Betfair per provocare una condizione che le registrazioni vere non "
+              "contengono; il verdetto vale per la CONDOTTA del bot su quella "
+              "condizione, non come prova su dati di mercato reali.")
     if len(scelti) > 1:
         print(f"SCENARI: {', '.join(scelti)}")
         # LA REGOLA DEL TEMPO, dichiarata dove serve: qui si confrontano scenari.

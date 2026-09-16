@@ -190,6 +190,33 @@ class _RealMarket:
         _RealMarket._bind_strategy_ref(omega_market)
         return list(omega_market.list_cleared_orders(strategy_ref=_STRATEGY_REF) or [])
 
+    # ------------------------------------------- LA POSIZIONE DI CONTO
+    # ORDINE DELL'UTENTE 16/09 SERA - "se chiudo io il bot deve saperlo, anche
+    # fuori dall'app". Le due letture qui sotto NON filtrano per
+    # ``customerStrategyRef``: tornano cio' che c'e' sul CONTO su quel mercato,
+    # ordini dell'utente compresi. Sono chiamate REST IN PIU', quindi le fa solo
+    # ``_sorveglia_posizione_di_conto`` e alla cadenza del respiro del database
+    # (``reconcile_every_s``, default 30 s per partita), mai a ogni giro (16.17).
+    @staticmethod
+    def list_account_orders(market_id: str) -> List[dict]:
+        from Betfair.omega import omega_market
+
+        return list(omega_market.list_current_orders_account([str(market_id)]) or [])
+
+    @staticmethod
+    def list_account_cleared_orders(market_id: str) -> List[dict]:
+        from Betfair.omega import omega_market
+
+        return list(omega_market.list_cleared_orders_account([str(market_id)]) or [])
+
+    @staticmethod
+    def market_profit_and_loss(market_id: str) -> Dict[str, Any]:
+        """Controprova sintetica della posizione di conto (``listMarketProfitAndLoss``).
+        Non decide niente: serve al referto e alla diagnosi."""
+        from Betfair.omega import omega_market
+
+        return dict(omega_market.market_profit_and_loss([str(market_id)]) or {})
+
 
 _real_market = _RealMarket()
 
@@ -224,7 +251,11 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # ORDINE DELL'UTENTE 16/09 — la memoria della sospensione con una
                # lay appoggiata viva: se il processo riparte in mezzo, la
                # rilettura alla riapertura non deve andare persa.
-               "riapertura")
+               "riapertura",
+               # ORDINE DELL'UTENTE 16/09 SERA — la partita chiusa dall'utente
+               # FUORI dall'app: un riavvio non deve far ricominciare Mike a
+               # gestire una posizione che non c'e' piu'.
+               "chiuso_dall_utente")
 
 
 # ===========================================================================
@@ -1393,7 +1424,8 @@ def _ordine_di(vivi: List[Dict[str, Any]], leg: E.Leg, db: Any,
 
 
 def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, Any],
-                        params: Dict[str, Any], now_ts: float, ev: Dict[str, Any]) -> None:
+                        params: Dict[str, Any], now_ts: float, ev: Dict[str, Any],
+                        rilettura_in_corso: bool = False) -> None:
     """Quanto si e' abbinato della lay appoggiata? Lo dice BETFAIR, non il prezzo.
 
     In paper la simulazione guarda il book e decide. Qui no: un ordine reale ha
@@ -1410,6 +1442,27 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
         return
     o = _ordine_di(vivi, leg, db, eid)
     if o is None:
+        if rilettura_in_corso:
+            # ⚠️ 16/09 SERA — C'E' UNA SOSPENSIONE IN CORSO E UNA RILETTURA GIA'
+            # ANNOTATA: questa funzione NON deve dire la sua. Betfair fa scadere
+            # (LAPSE) le lay appoggiate alla sospensione, quindi l'ordine sparisce
+            # dai correnti per un MOTIVO NOTO e dichiarato (§15.6); a leggerlo e'
+            # `_sorveglia_sospensione` alla riapertura, che sa distinguere i
+            # quattro esiti (vivo / scaduto / abbinato / parziale). Se qui la
+            # gamba venisse messa in `pending_reconcile`, alla riapertura non
+            # sarebbe piu' viva e la rilettura chiuderebbe con
+            # «gamba_non_piu_viva»: il ramo (b) «scaduto alla sospensione» non
+            # verrebbe MAI esercitato — ed e' esattamente quello che il replay
+            # ha misurato il 16/09 (riletture 0 su una registrazione con un
+            # LAPSE alla sospensione). Consapevolezza, non strategia: cambia chi
+            # legge l'esito, non che cosa il bot fa.
+            _log_throttled(db, extra, params, now_ts, "resting_in_sospensione",
+                           {"leg": leg.ref, "role": leg.role,
+                            "reason": "sospensione_in_corso_rilettura_alla_riapertura",
+                            "nota": "l'ordine appoggiato non e' piu' fra i correnti mentre "
+                                    "il mercato e' sospeso: l'esito lo dice Betfair alla "
+                                    "riapertura, non si indovina adesso"}, eid)
+            return
         # Non e' piu' fra i vivi: o si e' abbinato del tutto, o e' stato
         # annullato, o non e' mai arrivato. Non si indovina fra tre casi che
         # hanno conseguenze opposte: riconciliazione.
@@ -1657,6 +1710,257 @@ def _applica_esito_riapertura(*, db: Any, event_id: str, leg: E.Leg, esito: str,
                         if esito == _ESITO_PARZIALE else
                         ": non era abbinato niente, la gamba si chiude"))}, event_id)
     _chiudi_gamba_scaduta(db, event_id, leg, numeri)
+
+
+# ===========================================================================
+# LA POSIZIONE DI CONTO - "SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI
+# DALL'APP" (ordine dell'utente, 16/09/2026 sera)
+# ===========================================================================
+# Mike legge i SUOI ordini per ``customerStrategyRef``: una lay che l'utente
+# piazza dal sito Betfair (o da un'altra app) per chiudere la posizione NON ha
+# quel ref, quindi Mike non la vede e continua a gestire un back che, sul conto,
+# non e' piu' esposto. Coperture, green-up e re-ingressi su una posizione
+# inesistente: e' lo stesso reperto gia' aperto su Omega (R9).
+#
+# La verita' e' la POSIZIONE DI CONTO sul mercato: ``listCurrentOrders`` e
+# ``listClearedOrders`` con i soli ``marketIds`` (nessun filtro di strategia).
+# Ci sono dentro ANCHE le altre operazioni dell'utente sulla stessa partita:
+# Mike deve riconoscere LA SUA dentro quella di conto (per riferimento e size),
+# non dare per suo tutto quello che vede.
+#
+# CADENZA DICHIARATA: ``reconcile_every_s`` (default 30 s per partita), la
+# stessa del respiro del database; MAI a ogni giro. Due letture REST per
+# mercato per volta, e solo con una posizione aperta da difendere.
+_CONTO_LETTO_A: Dict[str, float] = {}
+
+
+# ---------------------------------------------------------------------------
+# LE CACHE DI PROCESSO, IN UN ELENCO SOLO
+# ---------------------------------------------------------------------------
+# ⚠️ 16/09 SERA — un difetto del BANCO, trovato col referto alla mano. Il replay
+# con la pool (`--worker 3`) esegue piu' coppie evento x scenario NELLO STESSO
+# processo figlio, una dopo l'altra: le cache di modulo del servizio
+# sopravvivono da uno scenario al successivo e lo scenario dopo parte con i
+# throttle gia' «consumati» dell'altro. Misurato: nello scenario
+# `chiuso-fuori-app` dentro `--scenari tutti --worker 3` la lettura della
+# POSIZIONE DI CONTO non e' mai partita (throttle ereditato da uno scenario
+# precedente) e il controllo R3 risultava sollecitato ZERO volte, mentre lo
+# stesso scenario da solo lo sollecita 5.837 volte. In produzione questo non
+# accade (un processo, un ciclo continuo): e' il banco che deve ripartire
+# pulito a ogni replay.
+#
+# L'elenco e' ESPLICITO e non generato da `dir()`: `_ALIAS_ORDINE` e' un
+# dizionario di modulo come gli altri, ma svuotarlo toglierebbe al bot la
+# capacita' di leggere le chiavi camelCase di Betfair — cioe' proprio il
+# difetto 1 del 15/09, reintrodotto da un azzeramento troppo allegro.
+_CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
+                      "_CACHE_EVENTI", "_RICONCILIATO_A", "_SCRITTO_A",
+                      "_MALFORMED_LOGGED", "_LAST_AGG", "_CONTO_LETTO_A")
+
+
+def azzera_cache_di_processo() -> List[str]:
+    """Riporta il MODULO allo stato di un processo appena avviato.
+
+    La usa il banco all'inizio di ogni replay (e lo scenario `riavvio` a meta'
+    partita). Non tocca il database: quello, in produzione, sopravvive.
+    Torna l'elenco di cio' che ha azzerato — un riavvio che non si sa che cosa
+    ha buttato non prova niente.
+    """
+    global _ULTIMI_PARAMS, _EVENTI_LETTI_A
+
+    azzerati: List[str] = []
+    for nome in _CACHE_DI_PROCESSO:
+        valore = globals().get(nome)
+        if isinstance(valore, dict):
+            valore.clear()
+            azzerati.append(nome)
+    if _ULTIMI_PARAMS is not None:
+        _ULTIMI_PARAMS = None
+        azzerati.append("_ULTIMI_PARAMS")
+    if _EVENTI_LETTI_A:
+        _EVENTI_LETTI_A = 0.0
+        azzerati.append("_EVENTI_LETTI_A")
+    return azzerati
+
+# tolleranza sotto la quale una differenza di posizione e' rumore di
+# arrotondamento e non una chiusura (Betfair lavora al centesimo)
+_CONTO_EPS = 0.05
+
+
+def _netto_su_selezione(righe: List[Dict[str, Any]], market_id: str, selection_id: int,
+                        solo_refs: Optional[set] = None) -> float:
+    """BACK meno LAY dell'ABBINATO su (mercato, selezione), in euro di size.
+
+    ``solo_refs`` = conta solo gli ordini con quel ``customer_order_ref``: e' il
+    modo in cui Mike riconosce LA SUA parte dentro la posizione di conto.
+    Nessun campo dedotto: ``size_matched`` e' quello che Betfair dichiara (le
+    righe regolate lo portano con la stessa grafia, vedi
+    ``omega_market._riga_regolata``).
+    """
+    netto = 0.0
+    for o in righe or []:
+        if str(o.get("market_id") or "") != str(market_id):
+            continue
+        try:
+            if int(o.get("selection_id") or 0) != int(selection_id):
+                continue
+        except (TypeError, ValueError):
+            continue
+        if solo_refs is not None and str(o.get("customer_order_ref") or "") not in solo_refs:
+            continue
+        size = float(campo_ordine(o, "size_matched") or 0.0)
+        if size <= 0:
+            continue
+        netto += size if str(o.get("side") or "").lower() == "back" else -size
+    return round(netto, 2)
+
+
+def _posizione_attesa(ctx: E.MatchCtx, mercato: str, selezione: str) -> float:
+    """Quanto Mike CREDE di avere su (mercato, selezione): BACK meno LAY
+    dell'abbinato delle sue gambe non archiviate."""
+    netto = 0.0
+    for l in ctx.legs:
+        if l.archived or l.market != mercato or l.selection != selezione:
+            continue
+        m = float(l.matched or 0.0)
+        if m <= 0:
+            continue
+        netto += m if l.side == "back" else -m
+    return round(netto, 2)
+
+
+def _refs_di_mike(ctx: E.MatchCtx, mercato: str, selezione: str,
+                  db: Any, event_id: str,
+                  cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> set:
+    """I riferimenti con cui Mike ha piazzato su (mercato, selezione).
+
+    Sono due grafie, entrambe vere: il ref della gamba (``under_entry-0-1``,
+    usato dalle uscite) e ``mike-t<id>`` (usato dalle aperture). Le si prendono
+    tutte e due - cercarne una sola e' il difetto 4 del 15/09.
+    """
+    refs = set()
+    for l in ctx.legs:
+        if l.archived or l.market != mercato or l.selection != selezione:
+            continue
+        refs.add(str(l.ref))
+        r = _trade_row_for_leg(db, event_id, l, cache)
+        if r is not None:
+            rif = ref_ordine_di_riga(r)
+            if rif:
+                refs.add(str(rif))
+    return refs
+
+
+def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
+                                  ev: Dict[str, Any], extra: Dict[str, Any],
+                                  params: Dict[str, Any], mode: str, now_ts: float,
+                                  cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> bool:
+    """La posizione di CONTO contiene ancora quella di Mike? (True = l'ha chiusa
+    l'utente, ed e' la prima volta che lo si scopre).
+
+    In PAPER non esiste nessun conto da leggere: si dichiara e si esce. In LIVE
+    si legge alla cadenza di ``reconcile_every_s``. Il verdetto e' conservativo:
+    * se le gambe di Mike NON si ritrovano sul conto (per ref e size), il caso
+      e' una riconciliazione, non una chiusura dell'utente: si dichiara e basta;
+    * se si ritrovano ma il NETTO di conto non contiene piu' la sua posizione,
+      la posizione e' stata chiusa da qualcun altro: ``chiuso_dall_utente``;
+    * se la contiene solo in parte, lo si DICE e non si fa nulla (una copertura
+      parziale dell'utente non autorizza il bot a smettere di proteggere).
+    """
+    if str(mode) == "paper":
+        return False
+    if ctx.chiuso_dall_utente:
+        return False
+    ogni = float(params.get("reconcile_every_s") or 0.0)
+    eid = str(ev["event_id"])
+    if now_ts - float(_CONTO_LETTO_A.get(eid) or 0.0) < ogni:
+        return False
+    aperte = E.open_selections(ctx.legs)
+    if not aperte:
+        return False
+    _CONTO_LETTO_A[eid] = now_ts
+    leggi_vivi = getattr(market, "list_account_orders", None)
+    leggi_morti = getattr(market, "list_account_cleared_orders", None)
+    if not callable(leggi_vivi) or not callable(leggi_morti):
+        _log_throttled(db, extra, params, now_ts, "posizione_di_conto_non_letta",
+                       {"reason": "il mercato non espone la posizione di conto",
+                        "nota": "senza questa lettura una chiusura fatta FUORI "
+                                "dall'app resta invisibile"}, eid)
+        return False
+    mkts = ev.get("markets") or {}
+    selezioni = dict(extra.get("selections") or {})
+    per_mercato: Dict[str, List[Dict[str, Any]]] = {}
+    chiuse: List[Dict[str, Any]] = []
+    parziali: List[Dict[str, Any]] = []
+    for (mercato, selezione) in sorted(aperte):
+        atteso = _posizione_attesa(ctx, mercato, selezione)
+        if abs(atteso) <= _CONTO_EPS:
+            continue
+        market_id = str((mkts.get(mercato) or {}).get("market_id") or "")
+        sel = selezioni.get(f"{mercato}|{selezione}")
+        if not market_id or sel is None:
+            continue
+        if market_id not in per_mercato:
+            try:
+                per_mercato[market_id] = (list(leggi_vivi(market_id) or [])
+                                          + list(leggi_morti(market_id) or []))
+            except Exception as ex:  # noqa: BLE001 - rete: si riprova, non si inventa
+                logger.warning("[mike] %s: posizione di conto non letta su %s: %s",
+                               eid, market_id, str(ex)[:120])
+                _CONTO_LETTO_A[eid] = 0.0
+                return False
+        righe = per_mercato[market_id]
+        refs = _refs_di_mike(ctx, mercato, selezione, db, eid, cache)
+        mio = _netto_su_selezione(righe, market_id, int(sel), solo_refs=refs)
+        conto = _netto_su_selezione(righe, market_id, int(sel))
+        dettaglio = {"mercato": mercato, "selezione": selezione, "market_id": market_id,
+                     "selection_id": int(sel), "atteso": atteso, "mio_sul_conto": mio,
+                     "netto_di_conto": conto, "altrui": round(conto - mio, 2)}
+        if abs(mio) + _CONTO_EPS < abs(atteso):
+            # le SUE gambe non si ritrovano: e' un problema di riconciliazione,
+            # non una chiusura dell'utente. Non si spegne niente su un dubbio.
+            db.log("posizione_di_conto", {**dettaglio, "verdetto": "gambe_non_ritrovate",
+                                          "critical": True,
+                                          "nota": "gli ordini di Mike non si ritrovano sul "
+                                                  "conto: e' riconciliazione, non una "
+                                                  "chiusura dell'utente"}, eid)
+            continue
+        # quanto della posizione di Mike SOPRAVVIVE dentro il netto di conto
+        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
+                else max(atteso, min(0.0, conto)))
+        if abs(vivo) <= _CONTO_EPS:
+            chiuse.append({**dettaglio, "verdetto": "chiusa_dall_utente"})
+        elif abs(vivo) + _CONTO_EPS < abs(atteso):
+            parziali.append({**dettaglio, "verdetto": "ridotta_dall_utente",
+                             "ancora_viva": round(vivo, 2)})
+    for d in parziali:
+        db.log("posizione_di_conto", {**d, "critical": True,
+                                      "nota": "il conto contiene solo in PARTE la posizione "
+                                              "di Mike: si dichiara, il bot continua a "
+                                              "proteggere quello che resta"}, eid)
+    if not chiuse:
+        return False
+    db.log("chiuso_dall_utente",
+           {"dove": "fuori dall'app", "selezioni": chiuse, "critical": True,
+            "nota": "la posizione di CONTO sul mercato non contiene piu' la posizione di "
+                    "Mike: l'ha chiusa l'utente con un ordine suo. Da qui in poi Mike non "
+                    "gestisce piu' questa partita (niente coperture, green-up, "
+                    "re-ingressi); il P&L lo contabilizza il regolamento vero."}, eid)
+    logger.critical("[mike] %s: posizione chiusa DALL'UTENTE fuori dall'app -> "
+                    "il bot non gestisce piu' questa partita", eid)
+    # le gambe ancora VIVE (ordini appoggiati) vanno tolte dal mercato: se si
+    # abbinassero aprirebbero una posizione nuova su una partita che non e' piu'
+    # del bot. Annullare RIDUCE il rischio: e' sempre permesso.
+    for leg in list(ctx.legs):
+        if leg.is_live:
+            _mark_trade_cancelled(db, eid, leg, "chiuso_dall_utente_fuori_app",
+                                  cache, market=market)
+    ctx.chiuso_dall_utente = True
+    ctx.no_reentry = True
+    ctx.reentry_allowed = False
+    ctx.reentry_done = True
+    ctx.flatten_pending = False
+    return True
 
 
 def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Snapshot,
@@ -2772,6 +3076,14 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     _sorveglia_sospensione(db=db, market=market, ctx=ctx, snap=snap, params=params,
                            mode=mode, now_ts=now_ts, ev=ev, cache=cache)
 
+    # -- LA POSIZIONE DI CONTO (ordine dell'utente, 16/09 sera) -------------------
+    # «SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP». Anche questa
+    # PRIMA della decisione: se la posizione non e' piu' sua, il motore non deve
+    # coprirla, chiuderla o rientrarci. Cadenza `reconcile_every_s` (default
+    # 30 s), mai a ogni giro: sono due letture REST in piu' per mercato.
+    _sorveglia_posizione_di_conto(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                                  params=params, mode=mode, now_ts=now_ts, cache=cache)
+
     # -- gambe pending stantie (esito mai arrivato) --------------------------------
     # C3 — un ordine il cui esito e' IGNOTO (execution._reconciling →
     # meta.reason='place_exception_reconciling') NON viene MAI dato per "non
@@ -2822,7 +3134,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 # che nessuno contabilizza diventa una posizione doppia con
                 # soldi veri quando piu' tardi si abbina da solo.
                 _segui_resting_live(db=db, market=market, leg=leg, extra=extra,
-                                    params=params, now_ts=now_ts, ev=ev)
+                                    params=params, now_ts=now_ts, ev=ev,
+                                    rilettura_in_corso=bool(
+                                        ctx.riapertura and not ctx.riapertura.get("letto")))
                 continue
             book = snap.book(leg.market, leg.selection)
             if not snap.order_fresh:

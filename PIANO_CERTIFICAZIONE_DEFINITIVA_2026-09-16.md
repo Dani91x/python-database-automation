@@ -467,6 +467,35 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito MIKE — sei ordini — CERTIFICATO dal coordinatore (16/09 sera)
+
+Punto 7 annullato e ripristinato (diff vuoto, grep pulito). **Non regressione**: baseline
+rimisurata sul banco di oggi (cache Poisson + latenza letture cambiano i tempi): base 15/13,
+taker 13/12, 35674515 J2/J4 → identici dopo. 1) B2/F1/F2 già sollecitati con la pool; **A2 ⊘ con
+causa provata** (`_run_event:2515` esce prima di `decide` su stato terminale; tolto il return →
+A2 ×3642 verde). 2) Re-ingresso: sintetica `_synth_mike_reingresso` (`tools/synth_mike.py`,
+marketDefinition copiati dal raw vero, IPS di fonte betfair) → H1/H2 ×1 verdi. 3) Ramo «scaduto
+alla sospensione» ora su DATI REALI (tre buchi del banco/servizio chiusi: `order_state_by_bet_id`
+mancava nel banco; riga evento senza `markets`; `_segui_resting_live` dichiarava «uscito» durante
+la sospensione) → `ordine_scaduto_alla_sospensione` ×1, R1 verde. 4) **Mai sovracopertura**:
+`_mai_sovracopertura` + `copertura_in_volo` in coda a `decide`, ripiazzo sul reale abbinato;
+corretto anche il residuo di copertura parziale bloccato per sempre in `LIVE_COVER_PENDING`;
+controllo J6 a 3 parti; Costituzione §15.7-ter. 5) **Falsificazione dei 5 difetti: REPERTO
+GRAVE** — al primo giro nessuno dei cinque faceva rosso nel replay (i controlli A-J guardano la
+decisione). Rimedio: famiglia **K** (`verifica_consapevolezza` dopo ogni giro) + scenario
+`rifiuti-betfair` + sintetica `_synth_mike_prezzo_migliore` → (a) K3 ×20.632 KO, (b) K2 ×56 KO,
+(c) K1 ×2.265 KO, (d) P1 loop 54 azioni KO, (e) ⊘ (vive nel place-and-trim, assente nel banco).
+Secondo difetto del banco: la pool non azzerava le cache fra scenari (R3 ×0 vs ×5837) → azzeramento
+esplicito; `_riavvia_processo` svuotava `_ALIAS_ORDINE`. 6) Chiusura fuori app: letture di conto
+in `omega_market` (`*_account`, `market_profit_and_loss`), `_sorveglia_posizione_di_conto` prima
+della decisione, **30 s per partita**, verdetto a 3 esiti, `ctx.chiuso_dall_utente` persistito,
+ordini vivi annullati, partita non terminale; controllo R3 + scenario `chiuso-fuori-app` (ordini
+veri dell'utente, anche con un back suo) ×5837 verde. Finale: **13 scenari, 33 controlli, 0
+violazioni**, mai sollecitati solo A2 (⊘ provato); suite 4152 verdi; `-m cert` 19. Verifica del
+coordinatore: 731 verdi Mike; falsificazione propria (difetto a reintrodotto) → 1 rosso in suite.
+**Conseguenze**: famiglia K e pool isolata vanno su Omega e Safe (i loro referti in pool di oggi
+possono essere sotto-sollecitati); catalogo §7 +36/+37.
+
 ### Esito S2 — Safe: selezione aggiuntiva ESATTO, sintetiche BASE/PUNTA, tennis completo — CERTIFICATO (16/09 sera)
 
 A. «Selezione aggiuntiva» (SPEC §2: scontri diretti senza troppi 2-2/3-3, difesa avversaria solida)

@@ -834,9 +834,20 @@ def test_partial_cover_reprice_uses_exact_residual():
     s2 = snap(s.now + 11, u35=book(1.35, inplay=True), o45=book(6.0, bs=50, inplay=True),
               inplay=True, minute=21, goals=0)
     d = E.decide(ctx, s2, p)
-    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    # ORDINE DELL'UTENTE 16/09 SERA — MAI SOVRACOPERTURA: in QUESTO giro esce
+    # SOLO l'annullamento (un annullamento emesso non e' un annullamento
+    # confermato, e due back di copertura insieme comprano Over due volte).
+    assert [a.kind for a in d.actions] == ["cancel"]
+    # l'annullamento CONFERMATO da Betfair: la gamba non e' piu' viva, e al giro
+    # dopo la copertura si ridimensiona sulla copertura REALE gia' abbinata
+    cover.status = "cancelled"
+    d = E.decide(ctx, s2, p)
+    assert d.state == "LIVE_UNCOVERED"
+    E.apply_decision(ctx, d, s2.now)
+    d = E.decide(ctx, s2, p)
+    place = [a for a in d.actions if a.kind == "place"]
     resid = E.cover_size_residual(20, 6.0, 0.05, 1.2, matched=1.0, matched_price=8.0)
-    assert d.actions[1].size == pytest.approx(round(resid, 2))
+    assert place and place[0].size == pytest.approx(round(resid, 2))
     # verifica del target: con 5+ gol il netto e' esattamente +20% dello stake Under
     net_if_over = 1.0 * 7 * 0.95 + resid * 5 * 0.95 - 20
     assert net_if_over == pytest.approx(4.0, abs=1e-6)

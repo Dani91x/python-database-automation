@@ -282,6 +282,22 @@ class MatchCtx:
     # Persistito (``service._CTX_FIELDS``): un riavvio in mezzo alla
     # sospensione non deve far dimenticare che c'e' una rilettura da fare.
     riapertura: Optional[Dict[str, Any]] = None
+    # ⚠️ ORDINE DELL'UTENTE 16/09 SERA — «SE CHIUDO IO, IL BOT DEVE SAPERLO,
+    # ANCHE FUORI DALL'APP». L'utente puo' chiudere la posizione DIRETTAMENTE su
+    # Betfair (una sua lay dal sito, un'altra app, un altro bot): quell'ordine
+    # non porta il ``customerStrategyRef`` di Mike, quindi non compare fra i
+    # «suoi» ordini e fino al 16/09 Mike continuava a vedere il proprio back
+    # abbinato e a gestirlo — coperture, green-up e re-ingressi su una
+    # posizione che non esiste piu'. Il servizio legge la POSIZIONE DI CONTO sul
+    # mercato (``service._sorveglia_posizione_di_conto``, senza filtro di
+    # strategia) e, quando quella posizione non contiene piu' la sua, accende
+    # questo interruttore. Da li' in poi Mike NON FA PIU' NIENTE su quella
+    # partita: niente aperture e niente chiusure — non c'e' piu' niente da
+    # chiudere. Il regolamento pero' avviene lo stesso (il P&L delle gambe
+    # davvero abbinate e' reale e va contabilizzato), quindi la partita NON
+    # diventa terminale: arriva a SETTLED col mercato chiuso.
+    # Persistito (``service._CTX_FIELDS``). Controllo R3.
+    chiuso_dall_utente: bool = False
 
 
 @dataclass(frozen=True)
@@ -1773,6 +1789,75 @@ def _una_sola_lay(ctx: MatchCtx, d: Decision) -> Decision:
                     telemetry=dict(d.telemetry))
 
 
+def copertura_in_volo(ctx: MatchCtx, market: Optional[str], selection: Optional[str],
+                      escludi: Optional[str] = None) -> Optional[Leg]:
+    """La copertura che POTREBBE essere a mercato adesso su questa selezione.
+
+    «In volo» comprende l'esito IGNOTO (``pending_reconcile``): §4.11, una gamba
+    che il bot non sa dov'e' puo' essere viva su Betfair.
+    """
+    for l in ctx.legs:
+        if l.role != "over_cover" or not (l.is_live or l.needs_reconcile):
+            continue
+        if l.market != market or l.selection != selection:
+            continue
+        if escludi is not None and l.ref == escludi:
+            continue
+        return l
+    return None
+
+
+def _mai_sovracopertura(ctx: MatchCtx, d: Decision) -> Decision:
+    """⚠️ ORDINE DELL'UTENTE 16/09 SERA: **MAI SOVRACOPERTURA**.
+
+    La copertura e' un BACK sull'Over 4.5. Due back di copertura abbinati non
+    lasciano una posizione scoperta — quello lo fa la doppia lay (§15.7, J5) —
+    ma comprano Over che non serve: si paga due volte una protezione che serve
+    una volta sola, e la perdita con 0-3 gol cresce di tutto il secondo premio.
+
+    Il difetto, uguale a quello che J5 ha tolto alle lay:
+    ``_decide_cover_pending`` riprezzava la copertura con ``cancel`` + ``place``
+    nella STESSA decisione. Il cancel parte per primo, ma **partire non e'
+    essere confermati**: se Betfair non conferma l'annullamento
+    (``_mark_trade_cancelled`` -> ``pending_reconcile``) la vecchia copertura
+    resta viva e la nuova si aggiunge.
+
+    La regola, identica a quella delle lay e in un posto solo: finche' su
+    quella selezione c'e' una copertura VIVA o IN VOLO, una copertura nuova non
+    si emette. L'annullamento si', e parte in questo giro; la copertura nuova
+    arriva al giro dopo, quando la vecchia non e' piu' viva — cioe' solo dopo
+    che l'annullamento e' stato CONFERMATO — e allora e' dimensionata sulla
+    copertura REALE gia' abbinata (``cover_matched_value`` conta TUTTE le gambe
+    abbinate del mercato Over/Under 4.5, anche quelle gia' annullate con fill
+    parziale, quindi il residuo non ricompra Over gia' comprato).
+
+    Se non resta nessun ordine da piazzare lo stato NON avanza (stessa regola di
+    ``_strip_openings`` e di ``_una_sola_lay``): il ramo deve poter riprovare
+    identico al giro dopo.
+
+    Non cambia nessun prezzo, nessuna soglia, nessuna tranche: la Costituzione
+    prevede UNA copertura per volta (§3 Fase 3, le due tranche sono in SEQUENZA,
+    non insieme). Controllo J6.
+    """
+    nuove = [a for a in d.actions if a.kind == "place" and a.role == "over_cover"]
+    if not nuove:
+        return d
+    fermate = [(a, copertura_in_volo(ctx, a.market, a.selection)) for a in nuove]
+    fermate = [(a, g) for a, g in fermate if g is not None]
+    if not fermate:
+        return d
+    tolte = {id(a) for a, _ in fermate}
+    kept = [a for a in d.actions if id(a) not in tolte]
+    a0, g0 = fermate[0]
+    come = "a esito ignoto" if g0.needs_reconcile else "ancora viva"
+    perche = (f"copertura rimandata: '{g0.ref}' e' {come} sulla stessa selezione "
+              f"(mai sovracopertura)")
+    stato = d.state if any(a.kind == "place" for a in kept) else ctx.state
+    return Decision(state=stato, actions=kept, reason=f"{d.reason} ({perche})",
+                    updates=dict(d.updates) if stato == d.state else {},
+                    telemetry=dict(d.telemetry))
+
+
 def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     """Chiusura MANUALE in corso (C2): prima si annullano gli ordini vivi, poi si
     chiude la posizione netta delle selezioni ancora VIVE, poi si chiude il ciclo.
@@ -1867,6 +1952,14 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
 
     # mercato chiuso: il regolamento ha sempre la precedenza su tutto
     if snap.market_status != "CLOSED" and st != "SETTLING":
+        # ⚠️ ORDINE DELL'UTENTE 16/09 SERA — la posizione l'ha chiusa l'utente
+        # FUORI dall'app: non si gestisce cio' che non esiste piu'. Nessuna
+        # azione, ne' di apertura ne' di chiusura (non c'e' niente da chiudere);
+        # lo stato NON avanza e non diventa terminale, cosi' al mercato chiuso
+        # il regolamento contabilizza il P&L vero delle gambe abbinate.
+        if ctx.chiuso_dall_utente:
+            return Decision(st, [], "chiuso dall'utente fuori dall'app: "
+                                    "la posizione non e' piu' del bot")
         # C2 — chiusura manuale in corso: nessuna riappoggiata, nessuna apertura
         if ctx.flatten_pending:
             return _decide_flatten(ctx, snap, params)
@@ -1882,7 +1975,11 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
         d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura", ctx.state)
     # ORDINE DELL'UTENTE 16/09 h16:15 — «non devono mai esserci 2 lay a mercato».
     # Ultima parola, su OGNI ramo: vedi ``_una_sola_lay``.
-    return _una_sola_lay(ctx, d)
+    d = _una_sola_lay(ctx, d)
+    # ORDINE DELL'UTENTE 16/09 sera — «MAI SOVRACOPERTURA». Stessa regola, sul
+    # BACK di copertura: vedi ``_mai_sovracopertura``.
+    return _mai_sovracopertura(ctx, d)
+
 
 
 def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
@@ -2732,8 +2829,22 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     leg = _last(ctx, "over_cover")
     if leg is None:
         return Decision("LIVE_UNCOVERED", [], "gamba copertura assente")
-    if not leg.is_live and leg.matched <= 0:
-        return Decision("LIVE_UNCOVERED", [], "copertura non abbinata: ritento",
+    if not leg.is_live and not leg.filled:
+        # ⚠️ ORDINE DELL'UTENTE 16/09 SERA — «annulla, conferma, poi ripiazza al
+        # giro dopo dimensionando sulla copertura REALE gia' abbinata».
+        # Prima qui si guardava solo ``leg.matched <= 0``: una copertura
+        # annullata con un fill PARZIALE non era ne' viva ne' piena, cadeva fino
+        # in fondo e lo stato restava LIVE_COVER_PENDING «attesa fill copertura»
+        # per sempre — il residuo non veniva mai ricomprato. Non si vedeva
+        # perche' il riprezzo emetteva `cancel` + `place` nello stesso giro e la
+        # gamba nuova prendeva subito il posto della vecchia; con la guardia
+        # ``_mai_sovracopertura`` la gamba nuova arriva al giro DOPO, e questo
+        # ramo diventa la strada normale. Si torna a LIVE_UNCOVERED: li' la
+        # copertura si ridimensiona su ``cover_matched_value``, che conta TUTTE
+        # le gambe gia' abbinate del mercato Over/Under 4.5 — anche questa —
+        # quindi non si ricompra Over gia' comprato.
+        return Decision("LIVE_UNCOVERED", [], "copertura non completata: ridimensiono "
+                                              "sulla copertura reale gia' abbinata",
                         updates={"attempts": ctx.attempts + 1})
     if leg.filled and not leg.is_live:
         upd: Dict[str, Any] = {"attempts": 0, "cover_forced": False}

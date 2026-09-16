@@ -485,6 +485,13 @@ class MercatoFlumine:
         # guasti da provocare apposta: {"place_exception": N} solleva sui
         # prossimi N piazzamenti, per far nascere gli stati di riconciliazione
         self.guasti: Dict[str, int] = {}
+        # SU QUALE LATO cade il rifiuto provocato (None = il primo che capita).
+        # Serve a colpire il ramo giusto: le aperture di Mike sono BACK e
+        # passano da `execution.place`, le uscite appoggiate sono LAY e passano
+        # da `_piazza_resting_live` — che e' dove il 15/09 `res.ok` non veniva
+        # letto. Rifiutare "i primi tre ordini" colpirebbe solo le aperture e
+        # il difetto 2 resterebbe senza un caso.
+        self.rifiuta_lato: Optional[str] = None
         # quante LETTURE ha fatto il bot (ognuna costa `LATENZA_LETTURA_S` di
         # tempo di mercato): il referto lo dichiara, perche' l'assunzione pesa
         # in proporzione a questo numero
@@ -503,7 +510,9 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
-        if self.guasti.get("place_rifiuto", 0) > 0:
+        if (self.guasti.get("place_rifiuto", 0) > 0
+                and (self.rifiuta_lato is None
+                     or str(side).lower() == str(self.rifiuta_lato).lower())):
             # IL RIFIUTO DICHIARATO DI BETFAIR (`ok=False`): l'istruzione torna
             # con un report negativo e NESSUN ordine esiste. E' il difetto 2 del
             # catalogo del 15/09 («`res.ok` mai letto: un rifiuto trattato come

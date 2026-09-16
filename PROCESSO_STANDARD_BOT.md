@@ -248,9 +248,22 @@ Difetti di piattaforma:
 34. Fase di protezione che gira **dopo** la riconciliazione o che viene frenata.
 35. Un test verde mai visto diventare rosso (`b1285a0` spinto con 4 rossi).
 
+Difetti dei controlli di certificazione (16/09 sera, trovati falsificando Mike):
+36. **I controlli che guardano solo la DECISIONE non vedono i difetti di consapevolezza**: i 5
+    difetti del 15/09 reintrodotti uno per uno lasciavano il replay verde e il referto identico
+    cifra per cifra. Serve sempre una famiglia di controlli **K** che confronta, dopo ogni giro,
+    ciò che il bot CREDE di ogni gamba (stato, abbinato, prezzo medio, ref) con ciò che il
+    MERCATO/banco dice degli ordini (`verifica_consapevolezza`), più scenari che provocano
+    rifiuti di Betfair e abbinamenti a prezzo migliore. Un controllo che dipende dalla
+    confessione del bot (attività scritte dal bot) non certifica.
+37. **La pool di processi non isolava i replay**: cache di modulo sopravvissute fra scenari nello
+    stesso figlio → controlli sotto-sollecitati (R3 ×0 dentro `--scenari tutti`, ×5837 da solo).
+    Ogni replay parte con le cache di processo azzerate da un elenco ESPLICITO; un `_riavvia`
+    che svuota «tutto» con `dir()` reintroduce difetti (svuotava `_ALIAS_ORDINE`).
+
 **Definizione di fatto, per un bot:** referto §6.8 completo, tutti i controlli sollecitati
 almeno una volta o dichiarati ⊘ con causa, falsificazione con i punti 1-17 del catalogo
-(quelli applicabili) tutti rossi, parità paper/live verde, stati e fasi tutti visti o
+(quelli applicabili) tutti rossi **a livello di replay** (famiglia K), non solo di test unitario, parità paper/live verde, stati e fasi tutti visti o
 elencati, e la firma di chi ha rieseguito il replay di persona.
 
 Piano operativo in corso: `PIANO_CERTIFICAZIONE_DEFINITIVA_2026-09-16.md`.

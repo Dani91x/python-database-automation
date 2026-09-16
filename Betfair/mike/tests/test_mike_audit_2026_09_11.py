@@ -1091,6 +1091,18 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # operazioni della partita. Da quel momento il bot non apre piu' niente
         # li' sopra, e la pagina deve dire perche'.
         "chiuso_dall_utente",
+        # 16/09 sera (ordine dell'utente): «se chiudo io il bot deve saperlo,
+        # anche FUORI dall'app». Il bot legge la POSIZIONE DI CONTO sul mercato
+        # (senza filtro di strategia) e dice che cosa ci ha visto: la sua
+        # posizione c'e' ancora, l'ha ridotta l'utente, oppure le sue gambe non
+        # si ritrovano (che e' riconciliazione, non una chiusura). Se il
+        # mercato non espone quella lettura lo dichiara, invece di tacere.
+        "posizione_di_conto", "posizione_di_conto_non_letta",
+        # 16/09 sera: l'ordine appoggiato non e' piu' fra i correnti MENTRE il
+        # mercato e' sospeso. Non e' «uscito dagli ordini vivi» (che e'
+        # riconciliazione): e' la scadenza che Betfair applica alla sospensione,
+        # e la si legge alla riapertura (§15.6, ramo b).
+        "resting_in_sospensione",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

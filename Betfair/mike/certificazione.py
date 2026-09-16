@@ -569,6 +569,99 @@ def _j5(ctx, snap, d, params):
     return None
 
 
+@_controllo("J6", "MAI SOVRACOPERTURA: mai due back di copertura VIVI o IN VOLO "
+                  "sull'Over 4.5, e la somma di cio' che e' in volo non supera la "
+                  "copertura prevista (ordine dell'utente 16/09 sera)",
+            quando=lambda ctx, snap, d, p: (
+                any(l.role == 'over_cover' and (l.is_live or l.needs_reconcile) for l in ctx.legs)
+                or any(a.role == 'over_cover' for a in _piazzamenti(d))))
+def _j6(ctx, snap, d, params):
+    """MAI SOVRACOPERTURA - ordine dell'utente, 16/09 sera.
+
+    La copertura e' un BACK sull'Over 4.5: due back abbinati non lasciano una
+    posizione scoperta (quello lo fa la doppia lay, J5), ma comprano Over che
+    non serve - soldi spesi due volte per proteggere una volta sola. Fino al
+    16/09 ``_decide_cover_pending`` riprezzava la copertura con ``cancel`` +
+    ``place`` nello STESSO giro, esattamente come facevano le lay prima di J5:
+    l'annullamento emesso non e' un annullamento confermato, quindi le due
+    tranche potevano stare a mercato insieme.
+
+    Il controllo guarda tre cose:
+      1. lo STATO: due ``over_cover`` in volo (vivi o a esito ignoto) insieme;
+      2. la DECISIONE: un ``over_cover`` nuovo dove ce n'e' gia' uno in volo,
+         ANCHE se lo stesso giro lo annulla;
+      3. la QUANTITA': la somma di cio' che e' gia' in volo piu' cio' che si sta
+         proponendo non deve superare la copertura ancora PREVISTA (il residuo
+         calcolato dalle stesse funzioni del motore sulla copertura gia'
+         ABBINATA). Il margine ammesso e' l'arrotondamento legale dichiarato
+         (``cover_max_overshoot_pct``) piu' un centesimo.
+    """
+    in_volo = [l for l in ctx.legs
+               if l.role == "over_cover" and (l.is_live or l.needs_reconcile)]
+    if len(in_volo) > 1:
+        return (f"due coperture in volo insieme: {[l.ref for l in in_volo]} "
+                f"(sommate comprano Over gia' comprato)")
+    nuove = [a for a in _piazzamenti(d) if a.role == "over_cover"]
+    if nuove and in_volo:
+        g0 = in_volo[0]
+        annullata = any(getattr(x, "kind", "") == "cancel"
+                        and getattr(x, "ref", None) == g0.ref for x in d.actions)
+        come = ("annullata nello STESSO giro: l'annullamento emesso non e' un "
+                "annullamento confermato" if annullata else
+                ("a esito ignoto" if g0.needs_reconcile else "ancora viva"))
+        return (f"nuova copertura mentre '{g0.ref}' e' {come} "
+                f"(abbinato {g0.matched}/{g0.size})")
+    if not nuove:
+        return None
+    # 3. la quantita': quanto Over si sta comprando in tutto contro quanto ne
+    #    serve ancora. Se manca un prezzo non si giudica (controllo conservativo).
+    bk = _book(snap, E.MARKET_OU45, E.SEL_OVER)
+    prezzo = getattr(bk, "best_back", None) if bk is not None else None
+    if not prezzo or float(prezzo) <= 1.0:
+        return None
+    try:
+        c = float(params["commission_pct"]) / 100.0
+        liab = E.under_liability(ctx.legs)
+        gia = E.cover_matched_value(ctx.legs, c)
+        residuo = E.cover_residual(liab, float(prezzo), c,
+                                   float(params["cover_profit_factor"]), gia)
+    except Exception:  # noqa: BLE001 - senza numeri non si accusa
+        return None
+    if residuo <= 0:
+        chiesto = round(sum(float(a.size or 0.0) for a in nuove), 2)
+        return (f"copertura {chiesto} proposta quando il residuo previsto e' 0 "
+                f"(liability {liab}, gia' coperto {round(gia, 2)})")
+    in_volo_size = sum(max(0.0, float(l.size or 0.0) - float(l.matched or 0.0))
+                       for l in in_volo)
+    chiesto = sum(float(a.size or 0.0) for a in nuove) + in_volo_size
+    margine = 1.0 + max(0.0, float(params.get("cover_max_overshoot_pct") or 0.0)) / 100.0
+    if chiesto > residuo * margine + 0.01:
+        return (f"sovracopertura: {round(chiesto, 2)} Over in volo+proposti contro un "
+                f"residuo previsto di {round(residuo, 2)} (margine legale "
+                f"{params.get('cover_max_overshoot_pct')}%)")
+    return None
+
+
+@_controllo("R3", "se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non "
+                  "emette PIU' NESSUNA azione su quella partita "
+                  "(ordine dell'utente 16/09 sera)",
+            quando=lambda ctx, snap, d, p: bool(getattr(ctx, 'chiuso_dall_utente', False)))
+def _r3(ctx, snap, d, params):
+    """«SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP» - utente, 16/09 sera.
+
+    Diverso da R2 (cash-out dalla UI, dove le CHIUSURE restano permesse perche'
+    un residuo puo' ancora abbinarsi): qui la posizione non esiste piu' sul
+    conto, quindi non c'e' niente da coprire, da chiudere o in cui rientrare.
+    Nessuna azione, di nessun tipo. Il regolamento non passa da ``decide``
+    finche' il mercato non chiude, quindi il P&L vero resta contabilizzato.
+    """
+    if d.actions:
+        ruoli = ", ".join(sorted({f"{a.kind}:{a.role}" for a in d.actions}))
+        return (f"la posizione l'ha chiusa l'utente fuori dall'app e il bot agisce "
+                f"ancora: {ruoli} (stato {ctx.state})")
+    return None
+
+
 @_controllo("R2", "dopo un cash-out globale dell'utente il bot NON apre piu' niente su "
                   "quella partita: la gestisce l'utente (ordine 16/09 h18:20)",
             quando=lambda ctx, snap, d, p: bool(ctx.no_reentry
@@ -619,6 +712,174 @@ def _r1(ctx, snap, d, params):
 
 
 # ===========================================================================
+# K. LA CONSAPEVOLEZZA DELL'ORDINE, CONTRO IL MERCATO (16/09 sera)
+#
+# ⚠️ PERCHE' QUESTA FAMIGLIA ESISTE. Il 16/09 sera la falsificazione
+# indipendente dei cinque difetti del 15/09 ha dato un risultato che va scritto
+# a chiare lettere: REINTRODOTTI UNO A UNO SUL CODICE DI OGGI, IL REPLAY SU
+# 35760084 (base, taker, esiti-ignoti) NON DIVENTAVA ROSSO — il referto era
+# perfino IDENTICO cifra per cifra. I controlli A-J guardano la DECISIONE del
+# motore (ctx, snap, azioni): i cinque difetti non stanno li', stanno nel
+# rapporto fra cio' che il bot CREDE delle sue gambe e cio' che il MERCATO dice
+# dei suoi ordini. Nessun controllo guardava quel rapporto.
+#
+# Questi controlli lo guardano. Non ricevono `Decision`: ricevono le GAMBE, gli
+# ORDINI VERI del banco (chiave = il `customer_ref` che il bot ha CHIESTO al
+# piazzamento, valore = la riga normalizzata come la produce `omega_market`) e
+# i ref che il mercato ha RIFIUTATO. Vivono nello stesso registro e nella
+# stessa copertura degli altri: un controllo che non si conta non esiste.
+# ===========================================================================
+_REGISTRO_BANCO: List[Tuple[str, str]] = []
+_FUNZIONI_BANCO: Dict[str, Callable] = {}
+
+
+def _controllo_banco(codice: str, regola: str):
+    def _reg(fn):
+        _REGISTRO_BANCO.append((codice, regola))
+        _FUNZIONI_BANCO[codice] = fn
+        return fn
+    return _reg
+
+
+def _refs_possibili(leg: E.Leg, righe: Optional[List[Dict[str, Any]]] = None) -> set:
+    """Le grafie con cui QUESTA gamba puo' essere stata piazzata.
+
+    Sono due, entrambe vere: il ref della gamba (``under_green-0-2``) e
+    ``mike-t<id>`` dalla riga di ``mike_trades``. Cercarne una sola e' il
+    difetto 4 del 15/09 — e il 16/09 sera ha fatto mancare un caso a K2.
+    """
+    refs = {str(leg.ref)}
+    for r in righe or []:
+        if str((r.get("meta") or {}).get("leg_ref") or r.get("signal_key") or "") == str(leg.ref):
+            refs.add(f"mike-t{r.get('id')}")
+    return refs
+
+
+def _ordine_di_gamba(ordini: Dict[str, Any], leg: E.Leg,
+                     righe: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """L'ordine del banco che appartiene a questa gamba, cercato come lo
+    cercherebbe Betfair: per il ref che il bot ha CHIESTO al piazzamento.
+
+    Le grafie possibili sono due, entrambe vere: il ref della gamba
+    (``under_green-0-2``, usato dalle uscite) e ``mike-t<id>`` (usato dalle
+    aperture). Qui si prendono tutte e due — cercarne una sola e' il difetto 4
+    del 15/09.
+    """
+    o = ordini.get(str(leg.ref))
+    if o is not None:
+        return o
+    for r in righe or []:
+        if str((r.get("meta") or {}).get("leg_ref") or r.get("signal_key") or "") == str(leg.ref):
+            o = ordini.get(f"mike-t{r.get('id')}")
+            if o is not None:
+                return o
+    return None
+
+
+@_controllo_banco("K1", "cio' che il bot CREDE di una gamba coincide con cio' che il "
+                        "MERCATO dice del suo ordine (abbinato e prezzo medio)")
+def _k1(ctx, ordini, rifiutati, righe):
+    for leg in ctx.legs:
+        if leg.needs_reconcile:
+            continue                       # esito ignoto: il dubbio e' dichiarato
+        o = _ordine_di_gamba(ordini, leg, righe)
+        if o is None:
+            continue
+        if str(o.get("status") or "") == "EXECUTABLE":
+            continue                       # ancora vivo: il bot legge alla SUA cadenza
+        abbinato = float(o.get("size_matched") or 0.0)
+        if abs(float(leg.matched or 0.0) - abbinato) > 0.011:
+            return (f"'{leg.ref}': il bot crede {leg.matched} abbinato, il mercato dice "
+                    f"{round(abbinato, 2)} (ordine {o.get('status')})")
+        if abbinato > 0.009:
+            medio = o.get("avg_price_matched") or o.get("average_price_matched")
+            if medio and abs(float(leg.avg_price or 0.0) - float(medio)) > 0.011:
+                return (f"'{leg.ref}': prezzo medio {leg.avg_price} contro "
+                        f"{medio} dichiarato dal mercato (e' il difetto 3 del 15/09: "
+                        f"`avg_price` al posto di `avg_price_matched`)")
+    return None
+
+
+@_controllo_banco("K2", "una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva "
+                        "(difetto 2 del 15/09: `res.ok` mai letto)")
+def _k2(ctx, ordini, rifiutati, righe):
+    if not rifiutati:
+        return None
+    for leg in ctx.legs:
+        if not (leg.is_live or leg.needs_reconcile):
+            continue
+        if not (_refs_possibili(leg, righe) & rifiutati):
+            continue
+        if _ordine_di_gamba(ordini, leg, righe) is None:
+            stato = "a esito ignoto" if leg.needs_reconcile else "viva"
+            return (f"'{leg.ref}': Betfair ha RIFIUTATO l'ordine e nessun ordine esiste a "
+                    f"mercato, ma la gamba e' ancora {stato}")
+    return None
+
+
+@_controllo_banco("K3", "il riferimento con cui il bot ha piazzato si RILEGGE con la "
+                        "stessa grafia (difetto 1 del 15/09: `customerOrderRef` vs "
+                        "`customer_order_ref`)")
+def _k3(ctx, ordini, rifiutati, righe):
+    from . import service as S
+
+    for ref, o in (ordini or {}).items():
+        letto = S.campo_ordine(o, "customer_order_ref")
+        if letto is None:
+            return (f"l'ordine '{ref}' esiste a mercato ma il suo riferimento non si "
+                    f"rilegge: `campo_ordine(..., 'customer_order_ref')` torna None "
+                    f"(chiavi presenti: {sorted(o)[:6]})")
+        if str(letto) != str(ref):
+            return f"l'ordine '{ref}' si rilegge col riferimento '{letto}'"
+    return None
+
+
+@_controllo_banco("K4", "ogni gamba di CHIUSURA dichiara la riga di apertura che chiude "
+                        "(difetto 5 del 15/09: `closes_trade_id` non passato)")
+def _k4(ctx, ordini, rifiutati, righe):
+    for r in righe or []:
+        if str(r.get("role") or "") not in E.CLOSING_ROLES:
+            continue
+        if str(r.get("role")) == "manual_close":
+            continue                       # la chiusura manuale non chiude UNA riga
+        meta = r.get("meta") or {}
+        if r.get("closes_trade_id") is None and meta.get("closes_trade_id_pending") is None \
+                and meta.get("closes_ref") is None:
+            return (f"riga #{r.get('id')} '{r.get('role')}' e' una chiusura e non dice "
+                    f"quale apertura chiude")
+    return None
+
+
+def verifica_consapevolezza(ctx: E.MatchCtx, ordini: Dict[str, Any],
+                            rifiutati: Optional[set] = None,
+                            righe: Optional[List[Dict[str, Any]]] = None,
+                            sollecitati: Optional[Dict[str, int]] = None) -> List[Violazione]:
+    """I controlli K su UN giro: si confronta la memoria del bot col mercato.
+
+    Il chiamante e' il replay (`Betfair/mike/tools/replay_registrazioni.py`),
+    subito DOPO il giro del servizio: li' ci sono sia le gambe sia gli ordini
+    veri di flumine. `ordini` e' {ref chiesto: riga normalizzata}.
+    """
+    out: List[Violazione] = []
+    if not ctx.legs and not ordini:
+        return out
+    rif = set(rifiutati or ())
+    for codice, regola in _REGISTRO_BANCO:
+        if sollecitati is not None:
+            sollecitati[codice] = sollecitati.get(codice, 0) + 1
+        try:
+            det = _FUNZIONI_BANCO[codice](ctx, ordini or {}, rif, righe or [])
+        except Exception as ex:  # noqa: BLE001
+            out.append(Violazione(f"{codice}-ERRORE", regola,
+                                  f"il controllo e' esploso: {type(ex).__name__}: {ex}",
+                                  ctx.state))
+            continue
+        if det:
+            out.append(Violazione(codice, regola, det, ctx.state))
+    return out
+
+
+# ===========================================================================
 # il giro completo
 # ===========================================================================
 def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
@@ -649,8 +910,13 @@ def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
 
 
 def elenco_controlli() -> List[Tuple[str, str]]:
-    """(codice, regola) di tutto cio' che questa certificazione sa verificare."""
-    return [(c, r) for c, r, _fn, _q in _REGISTRO]
+    """(codice, regola) di tutto cio' che questa certificazione sa verificare.
+
+    Comprende i controlli K, che non guardano una decisione ma il rapporto fra
+    la memoria del bot e il mercato: se non fossero in questo elenco non
+    comparirebbero nella copertura, e un controllo che non si conta non esiste.
+    """
+    return [(c, r) for c, r, _fn, _q in _REGISTRO] + list(_REGISTRO_BANCO)
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
@@ -660,7 +926,7 @@ def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
     lo so». Vanno letti come lavoro da fare — uno scenario da provocare — non
     come una garanzia.
     """
-    return [(c, r) for c, r, _fn, _q in _REGISTRO if not sollecitati.get(c)]
+    return [(c, r) for c, r in elenco_controlli() if not sollecitati.get(c)]
 
 
 # ===========================================================================
