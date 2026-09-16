@@ -1106,6 +1106,262 @@ def _settlement_needs_rest(trade: dict[str, Any], row: Optional[dict],
     return True
 
 
+# ===========================================================================
+# LA POSIZIONE DI CONTO — «se chiudo io il bot deve saperlo, ANCHE FUORI
+# DALL'APP» (ordine dell'utente, 16/09 sera).
+#
+# Il bot legge i SUOI ordini filtrando per ``customerStrategyRef``: una lay che
+# l'utente piazza dal sito Betfair per chiudere la posizione NON compare in
+# quella lista. Il bot continua a vedere il proprio back abbinato e a gestirlo:
+# e' il reperto R9 di Omega e il limite dichiarato di Mike.
+# La posizione VERA e' quella del CONTO sul mercato: ``listCurrentOrders`` e
+# ``listClearedOrders`` con i soli ``marketIds``, SENZA filtro di strategia
+# (``omega_market.list_current_orders_account`` / ``list_cleared_orders_account``,
+# gia' esistenti: non se ne creano di nuove). Nel banco le espone
+# ``MercatoFlumine.list_account_orders`` / ``list_account_cleared_orders``
+# (`stream/backtest/banco_comune.py`), che le legge dal blotter di flumine.
+#
+# CADENZA DICHIARATA: sono DUE chiamate REST in piu' per mercato, quindi si
+# fanno al respiro del database — ``CONTO_EVERY_S`` = 30 s per MERCATO, solo in
+# LIVE, solo se ci sono posizioni vive, e solo dentro il budget REST del ciclo.
+# MAI a ogni giro: il ciclo di Safe e' di ~2 s.
+# ===========================================================================
+CONTO_EVERY_S = 30.0          # respiro del DB: una lettura di conto ogni 30 s/mercato
+CONTO_MERCATI_PER_CICLO = 2   # e non piu' di 2 mercati per ciclo (4 chiamate REST)
+_CONTO_EPS = 0.05             # sotto 5 centesimi non si decide niente
+_CONTO_LETTO_A: dict[str, float] = {}
+
+
+def _refs_di_safe(trade: dict[str, Any], closings: Optional[list[dict]] = None) -> set:
+    """I ``customer_order_ref`` con cui Safe ha piazzato questa posizione.
+
+    Il ref lo costruisce ``execution``: ``safe-t{trade_id}`` (vedi
+    ``X.close_trade`` -> ``client_ref=f"{table_prefix}-t{closing_id}"``). Le
+    gambe di CHIUSURA hanno il loro, e vanno contate: fanno parte della
+    posizione del bot tanto quanto l'apertura."""
+    refs = {f"safe-t{int(trade['id'])}"}
+    for c in closings or []:
+        try:
+            refs.add(f"safe-t{int(c['id'])}")
+        except (TypeError, ValueError, KeyError):
+            continue
+    return refs
+
+
+def _abbinato_di(o: dict[str, Any]) -> float:
+    """``size_matched`` di un ordine, con TUTTE le grafie che la produzione
+    normalizza (difetto 1 del catalogo: una chiave scritta in un modo e letta
+    in un altro e' costata 32 ordini reali)."""
+    for k in ("size_matched", "size_settled", "sizeMatched"):
+        v = o.get(k)
+        if v is not None:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+    return 0.0
+
+
+def _netto_su_selezione(righe: list[dict[str, Any]], market_id: str, selection_id: int,
+                        solo_refs: Optional[set] = None) -> float:
+    """BACK meno LAY dell'ABBINATO su (mercato, selezione), in euro di size.
+
+    ``solo_refs`` = conta solo gli ordini con quel ``customer_order_ref``: e' il
+    modo in cui il bot riconosce LA SUA parte dentro la posizione di conto.
+    L'utente puo' avere ANCHE altre operazioni sue sulla stessa selezione: senza
+    questa distinzione si direbbe «tutto chiuso» o «tutto mio», e sono le due
+    conclusioni sbagliate."""
+    netto = 0.0
+    for o in righe or []:
+        if not isinstance(o, dict):
+            continue
+        if str(o.get("market_id") or "") != str(market_id):
+            continue
+        try:
+            if int(o.get("selection_id") or 0) != int(selection_id):
+                continue
+        except (TypeError, ValueError):
+            continue
+        if solo_refs is not None and str(o.get("customer_order_ref") or "") not in solo_refs:
+            continue
+        size = _abbinato_di(o)
+        if size <= 0:
+            continue
+        netto += size if str(o.get("side") or "").lower() == "back" else -size
+    return round(netto, 2)
+
+
+def _posizione_attesa_safe(trade: dict[str, Any], closings: list[dict]) -> float:
+    """Quanto Safe CREDE di avere su (mercato, selezione): l'abbinato
+    dell'apertura meno quello delle sue gambe di chiusura, col segno del lato."""
+    def _segno(r: dict[str, Any]) -> float:
+        m = max(0.0, _f(r.get("size"), 0.0))
+        return m if str(r.get("side") or "").lower() == "back" else -m
+
+    netto = _segno(trade)
+    for c in closings or []:
+        if str(c.get("status") or "") in ("error", "pending"):
+            continue
+        netto += _segno(c)
+    return round(netto, 2)
+
+
+def _conto_e_dovuto(market_id: str, now_ts: float) -> bool:
+    """Cadenza del respiro: True se su questo mercato la lettura di conto e'
+    dovuta ORA (mai piu' di una ogni ``CONTO_EVERY_S``)."""
+    last = _CONTO_LETTO_A.get(str(market_id))
+    return last is None or now_ts - float(last) >= CONTO_EVERY_S
+
+
+def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
+                                  closings: dict[int, list[dict]], now: datetime,
+                                  params: dict[str, Any]) -> int:
+    """La posizione di CONTO contiene ancora quella di Safe? (torna il numero di
+    posizioni che risultano chiuse DALL'UTENTE fuori dall'app).
+
+    Il verdetto e' conservativo, come quello di Mike:
+    * se le gambe di Safe NON si ritrovano sul conto (per ref e size), il caso
+      e' una RICONCILIAZIONE, non una chiusura: si dichiara e non si spegne
+      niente;
+    * se si ritrovano ma il netto di conto non contiene piu' la sua posizione,
+      la posizione l'ha chiusa qualcun altro: ``chiuso_dall_utente`` (fuori app);
+    * se la contiene solo in PARTE, lo si DICE e basta: una copertura parziale
+      dell'utente non autorizza il bot a smettere di proteggere il resto.
+    In PAPER non esiste nessun conto da leggere: si esce subito.
+    """
+    leggi_vivi = getattr(market, "list_account_orders", None)
+    leggi_morti = getattr(market, "list_account_cleared_orders", None)
+    if not callable(leggi_vivi) or not callable(leggi_morti):
+        return 0
+    now_ts = now.timestamp()
+    per_mercato: dict[str, list[dict[str, Any]]] = {}
+    chiuse = 0
+    for tr in parents or []:
+        if str(tr.get("mode") or "live").lower() != "live":
+            continue                      # il paper non ha un conto da guardare
+        if not e_del_bot(tr):
+            continue                      # le manuali sono dell'utente: si ignorano
+        if str(tr.get("status") or "") != "open":
+            continue
+        if marcatore_utente(tr) or evento_chiuso_dall_utente(tr.get("event_id")):
+            continue                      # gia' saputo
+        market_id = str(tr.get("market_id") or "")
+        try:
+            sel = int(tr.get("selection_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not market_id or not sel:
+            continue
+        mie = closings.get(int(tr["id"]), [])
+        atteso = _posizione_attesa_safe(tr, mie)
+        if abs(atteso) <= _CONTO_EPS:
+            continue
+        if market_id not in per_mercato:
+            if not _conto_e_dovuto(market_id, now_ts):
+                continue
+            if len(per_mercato) >= CONTO_MERCATI_PER_CICLO:
+                continue              # tetto del ciclo: si riprende al giro dopo
+            try:
+                per_mercato[market_id] = (list(leggi_vivi(market_id) or [])
+                                          + list(leggi_morti(market_id) or []))
+                _CONTO_LETTO_A[market_id] = now_ts
+            except Exception as ex:  # noqa: BLE001 — rete: si riprova, non si inventa
+                logger.warning("[safe.bot] posizione di conto non letta su %s: %s",
+                               market_id, str(ex)[:120])
+                continue
+        righe = per_mercato[market_id]
+        refs = _refs_di_safe(tr, mie)
+        mio = _netto_su_selezione(righe, market_id, sel, solo_refs=refs)
+        conto = _netto_su_selezione(righe, market_id, sel)
+        dettaglio = {"event_id": str(tr.get("event_id") or ""), "trade_id": tr.get("id"),
+                     "market_id": market_id, "selection_id": sel, "atteso": atteso,
+                     "mio_sul_conto": mio, "netto_di_conto": conto,
+                     "altrui": round(conto - mio, 2)}
+        if abs(mio) + _CONTO_EPS < abs(atteso):
+            _log(db, "posizione_di_conto", {**dettaglio, "verdetto": "gambe_non_ritrovate",
+                                            "critical": True,
+                                            "nota": "gli ordini del bot non si ritrovano "
+                                                    "sul conto: e' riconciliazione, non "
+                                                    "una chiusura dell'utente"})
+            continue
+        # quanto della posizione del bot SOPRAVVIVE dentro il netto di conto
+        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
+                else max(atteso, min(0.0, conto)))
+        if abs(vivo) > _CONTO_EPS:
+            if abs(vivo) + _CONTO_EPS < abs(atteso):
+                _log(db, "posizione_di_conto",
+                     {**dettaglio, "verdetto": "ridotta_dall_utente", "critical": True,
+                      "ancora_viva": round(vivo, 2),
+                      "nota": "il conto contiene solo in PARTE la posizione del bot: "
+                              "si dichiara, il bot continua a proteggere il resto"})
+            continue
+        _log(db, "posizione_di_conto", {**dettaglio, "verdetto": "chiusa_dall_utente",
+                                        "critical": True,
+                                        "nota": "la posizione di CONTO non contiene piu' "
+                                                "quella del bot: l'ha chiusa l'utente "
+                                                "con un ordine suo, fuori dall'app"})
+        _stato_da_settlement_reale(db, tr, righe, refs, params, now)
+        eid = str(tr.get("event_id") or "")
+        segna_chiuso_dall_utente(db, event_id=eid, righe=_tutte_le_righe(db, eid),
+                                 come="fuori_app", now=now,
+                                 dettaglio={k: dettaglio[k] for k in
+                                            ("trade_id", "market_id", "selection_id",
+                                             "atteso", "netto_di_conto", "altrui")})
+        chiuse += 1
+    return chiuse
+
+
+def _stato_da_settlement_reale(db, trade: dict[str, Any], righe: list[dict[str, Any]],
+                               refs: set, params: dict[str, Any], now: datetime) -> None:
+    """Porta la riga a uno stato COERENTE COL P&L DEL SETTLEMENT VERO.
+
+    L'unica fonte ammessa e' Betfair: ``profit``/``bet_outcome`` degli ordini
+    REGOLATI del conto che portano i NOSTRI ref. Se il mercato non e' ancora
+    regolato quei campi non ci sono: allora **non si inventa niente** — la riga
+    resta viva ma marcata (il bot non la gestisce piu') e la chiudera'
+    ``settle_open`` quando il mercato chiude davvero. Dedurre un P&L da una
+    posizione sparita e' esattamente il difetto che ha prodotto i green-up su
+    coperture inesistenti."""
+    profitto = 0.0
+    visto = False
+    for o in righe or []:
+        if not isinstance(o, dict):
+            continue
+        if str(o.get("customer_order_ref") or "") not in refs:
+            continue
+        esito = str(o.get("bet_outcome") or "").upper()
+        if esito not in ("WON", "LOST"):
+            continue
+        visto = True
+        try:
+            profitto += float(o.get("profit") or 0.0)
+        except (TypeError, ValueError):
+            continue
+    if not visto:
+        _log(db, "posizione_di_conto", {
+            "trade_id": trade.get("id"), "event_id": trade.get("event_id"),
+            "verdetto": "chiusa_dall_utente_non_ancora_regolata",
+            "nota": "la posizione non c'e' piu' ma il mercato non e' regolato: la "
+                    "riga resta viva e MARCATA (il bot non la gestisce), il P&L lo "
+                    "scrive il settlement vero"})
+        return
+    comm = _commission_rate(trade.get("commission"),
+                            float(params.get("commission_pct", 5.0)) / 100.0)
+    netto = round(profitto * (1.0 - comm), 2) if profitto > 0 else round(profitto, 2)
+    try:
+        meta = {**(trade.get("meta") or {}), "settlement": "posizione_di_conto",
+                "profit_lordo_conto": round(profitto, 2)}
+        X.aggiorna_trade(db, int(trade["id"]),
+                         campi={"status": "won" if netto >= 0 else "lost",
+                                "pnl": netto, "meta": meta,
+                                "settled_at": now.isoformat()})
+        trade["status"] = "won" if netto >= 0 else "lost"
+        trade["pnl"] = netto
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "settle_error", {"trade_id": trade.get("id"), "err": str(ex)[:160],
+                                  "reason": "settlement_da_posizione_di_conto"})
+
+
 def settle_open(*, params: dict[str, Any], market, db, now: datetime,
                 rows_by_event: Optional[dict[str, dict]] = None) -> int:
     try:
@@ -1131,6 +1387,14 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             _log(db, "error", {"reason": "closing_trades_failed", "err": str(ex)[:160]})
             return 0
     sync_hedges(db, parents, closings, now)
+    # ⚠️ 16/09 — LA CHIUSURA FATTA FUORI DALL'APP. Prima di regolare qualunque
+    # cosa si guarda se le posizioni del bot ESISTONO ANCORA sul conto: se
+    # l'utente le ha chiuse con un ordine suo direttamente su Betfair, qui lo si
+    # scopre. Sta dentro il settlement perche' e' esattamente la stessa domanda
+    # («questa posizione c'e' ancora?») e perche' e' il posto in cui si hanno
+    # gia' in mano aperture e gambe di chiusura. Cadenza: CONTO_EVERY_S.
+    _sorveglia_posizione_di_conto(db=db, market=market, parents=parents,
+                                  closings=closings, now=now, params=params)
     fallback_commission = float(params.get("commission_pct", 5.0)) / 100.0
     settled = 0
     # H-19 (12/09): UNA ``listMarketBook`` per ciclo per TUTTI i mercati da
@@ -1374,6 +1638,223 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
     return max(0.0, (now - ts).total_seconds())
 
 
+# ===========================================================================
+# «SE CHIUDO IO, IL BOT DEVE SAPERLO E NON DEVE GESTIRE POSIZIONI CHE NON
+#  ESISTONO PIU'» — ordine dell'utente, 16/09 sera. Vale per Safe CALCIO e
+#  TENNIS (stesso servizio) e per ogni bot presente e futuro.
+#
+# Tre modi in cui l'utente chiude:
+#   1. `cashout` per singola riga (bottone della scheda): chiude QUELLA riga;
+#   2. `cashout_event` (cash-out globale della partita): chiude TUTTE le righe
+#      vive del bot su quell'evento;
+#   3. FUORI DALL'APP: una lay/back sua direttamente su Betfair. Li' non passa
+#      nessuna richiesta: lo si scopre solo leggendo la POSIZIONE DI CONTO
+#      (`_sorveglia_posizione_di_conto`).
+#
+# In tutti e tre i casi si scrive lo STESSO marcatore, e in un posto che
+# sopravvive al riavvio del servizio: `meta.chiuso_dall_utente` sulle RIGHE.
+# Non e' un capriccio di forma — il difetto 19 del catalogo (`pre_ko` in RAM)
+# e' costato base e punta spente per ore. `meta` e' una colonna JSONB che
+# esiste gia' su `safe_strategy_trades`: nessuna migrazione per il marcatore.
+#
+# L'indice per EVENTO (`_EVENTI_CHIUSI`) e' solo una CACHE di quelle righe,
+# ricostruita a ogni ciclo da `run_once`: se il processo riparte, la prima
+# lettura di `open_trades()` la ripopola.
+# ===========================================================================
+
+#: chiave del marcatore dentro `meta` (riga) — valore:
+#: {"quando": iso, "come": "cashout"|"cashout_event"|"fuori_app", "dettaglio": ...}
+CHIUSO_DALL_UTENTE_KEY = "chiuso_dall_utente"
+
+#: {event_id: marcatore} — CACHE delle righe, mai la fonte di verita'.
+_EVENTI_CHIUSI: dict[str, dict[str, Any]] = {}
+
+
+def marcatore_utente(trade: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Il marcatore «chiuso dall'utente» di UNA riga, o None."""
+    m = (trade or {}).get("meta")
+    if not isinstance(m, dict):
+        return None
+    v = m.get(CHIUSO_DALL_UTENTE_KEY)
+    return v if isinstance(v, dict) else None
+
+
+def evento_chiuso_dall_utente(event_id: Any) -> Optional[dict[str, Any]]:
+    """Il marcatore di EVENTO, o None. Da qui passano tutte le fasi che
+    potrebbero far nascere una gamba nuova."""
+    return _EVENTI_CHIUSI.get(str(event_id or "")) or None
+
+
+def indicizza_chiusure_utente(rows: Optional[list[dict[str, Any]]], *,
+                              ricostruisci: bool = False) -> dict[str, dict]:
+    """Rinfresca l'indice per evento dalle RIGHE del database.
+
+    ``ricostruisci=True`` (una volta per ciclo, da ``build_risk_ctx``, che ha
+    appena letto TUTTE le posizioni vive): l'indice diventa esattamente quello
+    che dicono le righe. E' la scelta giusta perche' la fonte di verita' sono
+    le righe, non la memoria del processo: un indice appiccicoso terrebbe
+    spenta una partita anche dopo un «Riprendi» fatto da un'altra sessione.
+    LIMITE DICHIARATO: se TUTTE le righe di una partita vengono REGOLATE (il
+    mercato si chiude) il marcatore sparisce con loro — a mercato chiuso non si
+    apre piu' niente, quindi non cambia nulla in pratica, ma va detto.
+
+    Senza il flag si AGGIUNGE soltanto: lo usano i percorsi che vedono una
+    parte delle righe e non possono decidere per quelle che non hanno letto."""
+    visti: dict[str, dict] = {}
+    for t in rows or []:
+        if not isinstance(t, dict):
+            continue
+        mk = marcatore_utente(t)
+        if not mk:
+            continue
+        eid = str(t.get("event_id") or "")
+        if eid:
+            visti.setdefault(eid, dict(mk))
+    if ricostruisci:
+        _EVENTI_CHIUSI.clear()
+        _EVENTI_CHIUSI.update(visti)
+    else:
+        for eid, mk in visti.items():
+            _EVENTI_CHIUSI.setdefault(eid, mk)
+    return _EVENTI_CHIUSI
+
+
+def _marca_righe(db, righe: list[dict[str, Any]], marcatore: dict[str, Any]) -> int:
+    """Scrive `meta.chiuso_dall_utente` su ogni riga indicata. Idempotente:
+    una riga gia' marcata non viene riscritta (respiro del DB, 13/09)."""
+    n = 0
+    for tr in righe or []:
+        try:
+            tid = int(tr.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if marcatore_utente(tr):
+            continue
+        try:
+            cur = db.get_trade(tid) or tr
+            if marcatore_utente(cur):
+                continue
+            meta = {**(cur.get("meta") or {}), CHIUSO_DALL_UTENTE_KEY: dict(marcatore)}
+            db.update_trade(tid, meta=meta)
+            tr["meta"] = meta
+            n += 1
+        except Exception as ex:  # noqa: BLE001 — una riga rotta non ferma le altre
+            logger.warning("[safe.bot] marcatore chiuso_dall_utente su %s KO: %s",
+                           tr.get("id"), str(ex)[:120])
+    return n
+
+
+def segna_chiuso_dall_utente(db, *, event_id: Any, righe: list[dict[str, Any]],
+                             come: str, now: datetime,
+                             dettaglio: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Accende il marcatore su UNA PARTITA: righe + indice + attivita'.
+
+    ``come``: 'cashout' (l'ultima riga viva chiusa a mano), 'cashout_event'
+    (cash-out globale esplicito), 'fuori_app' (scoperto sulla posizione di
+    conto). Da questo istante, su quella partita, il bot NON FA ALTRO."""
+    eid = str(event_id or "")
+    marcatore = {"quando": now.isoformat(), "come": str(come),
+                 "event_id": eid, **(dettaglio or {})}
+    marcate = _marca_righe(db, righe, marcatore)
+    gia = eid in _EVENTI_CHIUSI
+    if eid:
+        _EVENTI_CHIUSI.setdefault(eid, marcatore)
+    if not gia:
+        _log(db, "chiuso_dall_utente", {
+            "event_id": eid, "come": str(come), "critical": True,
+            "righe_marcate": marcate, **(dettaglio or {}),
+            "effetto": "su questa partita il bot non apre, non copre, non esce e "
+                       "non piazza gambe di combo: le posizioni non ci sono piu'. "
+                       "Si riparte solo con «Riprendi» dell'utente."})
+        logger.critical("[safe.bot] %s: partita CHIUSA DALL'UTENTE (%s) -> il bot "
+                        "non gestisce piu' nulla su di essa", eid, come)
+    return dict(_EVENTI_CHIUSI.get(eid) or marcatore)
+
+
+def riprendi_evento(db, *, event_id: Any, righe: list[dict[str, Any]],
+                    now: datetime) -> int:
+    """GESTO ESPLICITO DELL'UTENTE: la partita torna in carico al bot.
+
+    E' l'unico modo di spegnere il marcatore (come il «Riprendi» di Mike):
+    niente scadenze, niente deduzioni automatiche. Torna il numero di righe
+    ripulite."""
+    eid = str(event_id or "")
+    _EVENTI_CHIUSI.pop(eid, None)
+    n = 0
+    for tr in righe or []:
+        if not isinstance(tr, dict) or str(tr.get("event_id") or "") != eid:
+            continue
+        if not marcatore_utente(tr):
+            continue
+        try:
+            tid = int(tr.get("id"))
+            cur = db.get_trade(tid) or tr
+            meta = {k: v for k, v in (cur.get("meta") or {}).items()
+                    if k != CHIUSO_DALL_UTENTE_KEY}
+            db.update_trade(tid, meta=meta)
+            tr["meta"] = meta
+            n += 1
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[safe.bot] riprendi %s riga %s KO: %s", eid,
+                           tr.get("id"), str(ex)[:120])
+    _log(db, "riprendi_evento", {"event_id": eid, "righe_ripulite": n,
+                                 "nota": "l'utente ha riportato la partita in carico "
+                                         "al bot dopo una chiusura sua"})
+    return n
+
+
+def e_del_bot(row: Optional[dict[str, Any]]) -> bool:
+    """True se la riga e' del BOT (non un'operazione manuale del trader).
+
+    ``safe_strategy_trades.origin`` e' ``NOT NULL DEFAULT 'auto'``: una riga
+    senza origine e' AUTOMATICA per costruzione del database. In dubbio la si
+    conta come del bot — cosi' entra nei cap invece di sfuggirvi (difetto 21
+    del catalogo: mai uno zero al posto di un dato assente)."""
+    return str((row or {}).get("origin") or "auto").lower() != "manual"
+
+
+def _righe_vive_del_bot(righe: list[dict[str, Any]], event_id: Any) -> list[dict[str, Any]]:
+    """Righe AUTOMATICHE ancora vive del bot su quella partita (aperture, non
+    gambe di chiusura, non gia' marcate)."""
+    eid = str(event_id or "")
+    out = []
+    for t in righe or []:
+        if not isinstance(t, dict) or str(t.get("event_id") or "") != eid:
+            continue
+        if t.get("closes_trade_id") or not e_del_bot(t):
+            continue
+        if str(t.get("status") or "") not in ("open", "pending"):
+            continue
+        if marcatore_utente(t):
+            continue
+        out.append(t)
+    return out
+
+
+def _tutte_le_righe(db, event_id: Any) -> list[dict[str, Any]]:
+    """Tutte le righe della partita (ogni stato, gambe di chiusura comprese).
+    Serve a marcare: una riserva 'pending' non sta in ``open_trades``."""
+    eid = str(event_id or "")
+    # la query per partita quando c'e' (``bot_db.trades_for_event``, paginata:
+    # ``list_trades`` non lo e' e oltre 1000 righe ne perderebbe in silenzio).
+    per_evento = getattr(db, "trades_for_event", None)
+    if callable(per_evento):
+        try:
+            return [t for t in (per_evento(eid) or []) if isinstance(t, dict)]
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[safe.bot] trades_for_event %s KO: %s", eid, str(ex)[:120])
+    try:
+        righe = db.list_trades() or []
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] list_trades per %s KO: %s", eid, str(ex)[:120])
+        try:
+            righe = db.open_trades() or []
+        except Exception:  # noqa: BLE001
+            return []
+    return [t for t in righe if isinstance(t, dict)
+            and str(t.get("event_id") or "") == eid]
+
+
 #: I ``kind`` ammessi in CORSIA PREFERENZIALE.
 #:
 #: Solo ``cashout``: e' l'unico su cui il trader ha appena cliccato per
@@ -1385,7 +1866,9 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
 #: (``bet_id``, marker flumine) che scrivono le fasi di riconciliazione. Non
 #: e' urgente come una chiusura e sta benissimo nella passata completa, dove
 #: quelle fasi hanno gia' detto la verita' sulla riga.
-CHIUSURE = ("cashout",)
+#: ``cashout_event`` (CASH-OUT GLOBALE della partita, 16/09) sta qui con lo
+#: stesso diritto del cash-out per riga: e' lo stesso clic, moltiplicato.
+CHIUSURE = ("cashout", "cashout_event")
 
 
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
@@ -1466,6 +1949,12 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
             elif kind == "cashout":
                 res = _request_cashout(db=db, market=market, rows_by_event=rows_by_event,
                                        payload=payload, params=params, now=now)
+            elif kind == "cashout_event":
+                res = _request_cashout_event(db=db, market=market,
+                                             rows_by_event=rows_by_event,
+                                             payload=payload, params=params, now=now)
+            elif kind == "riprendi_evento":
+                res = _request_riprendi_evento(db=db, payload=payload, now=now)
             elif kind == "cancel":
                 res = _request_cancel(db=db, payload=payload, now=now)
             else:
@@ -1707,7 +2196,12 @@ def _trade_by_idempotency_key(db, key: str,
 
 
 def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
-                     now: datetime) -> dict:
+                     now: datetime, come: str = "cashout") -> dict:
+    """Cash-out MANUALE di UNA riga. ``come`` dice con quale gesto l'utente
+    l'ha chiesto ('cashout' dalla scheda, 'cashout_event' quando questa
+    chiusura fa parte del cash-out globale della partita): finisce tale e quale
+    nel marcatore, cosi' l'attivita' racconta il gesto vero e non una
+    ricostruzione."""
     tid = payload.get("trade_id")
     if tid is None:
         return {"error": "trade_id_mancante"}
@@ -1811,9 +2305,190 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         # M-06: anche sull'APERTURA, così un parziale resta riconoscibile e la
         # UI sa che il residuo e' ancora chiudibile.
         _stamp_exit_on_parent(db, trade, "manual", "Cash out manuale dalla dashboard")
+        # ⚠️ 16/09 — LA RIGA E' ORFANA DA QUI IN POI.
+        # Questa riga l'ha chiusa l'UTENTE. Il bot non deve piu' aggiungerci
+        # niente: T14 e' stato violato ×282 proprio cosi' — dopo il cash-out del
+        # trader il servizio ha appiccicato una gamba automatica da 0,04 EUR
+        # sul residuo e ha continuato a far girare la macchina delle uscite.
+        # Il marcatore sta nel `meta` della riga: sopravvive al riavvio, e
+        # `_exit_candidates` lo legge prima di ogni altra cosa.
+        # ⚠️ NON OGNI `cashout` E' UNA CHIUSURA DELL'UTENTE.
+        # Il cancelletto di approvazione del TENNIS manda una richiesta
+        # `cashout` identica a quella del bottone «Cash out», ma quella
+        # chiusura l'ha DECISA IL BOT: l'utente ha solo dato l'ok. La si
+        # riconosce dal payload, che porta `exit_kind` (il codice della regola
+        # di uscita, scritto da `_proponi_chiusura`). Marcarla come chiusura
+        # dell'utente spegnerebbe il bot su una partita che sta gestendo lui —
+        # e il replay `approvata-subito` del tennis lo ha mostrato subito.
         res.setdefault("message", "cash out eseguito"
                        + (" (quote dal book Betfair)" if source == "rest" else ""))
+        if _uscita_del_bot_approvata(payload):
+            return res
+        _marca_righe(db, [trade], {"quando": now.isoformat(), "come": str(come),
+                                   "event_id": str(trade.get("event_id") or ""),
+                                   "trade_id": int(tid)})
+        # ...e se era l'ULTIMA posizione viva del bot su questa partita, allora
+        # quello che l'utente ha appena fatto E' un cash-out globale, anche se
+        # l'ha fatto una riga alla volta. «Al controllo successivo lo capisce e
+        # NON FA ALTRO» (ordine del 16/09 h18:20): il marcatore e' di partita.
+        eid = str(trade.get("event_id") or "")
+        if eid and e_del_bot(trade):
+            righe = _tutte_le_righe(db, eid)
+            if not _righe_vive_del_bot(righe, eid):
+                segna_chiuso_dall_utente(
+                    db, event_id=eid, righe=righe, come=str(come), now=now,
+                    dettaglio={"ultima_riga": int(tid),
+                               "nota": "l'utente ha chiuso a mano l'ultima posizione "
+                                       "viva del bot su questa partita: e' un "
+                                       "cash-out globale fatto una riga alla volta"})
+                res["evento_chiuso_dall_utente"] = True
     return res
+
+
+def _request_cashout_event(*, db, market, rows_by_event, payload: dict, params: dict,
+                           now: datetime) -> dict:
+    """CASH-OUT GLOBALE DI PARTITA: chiude TUTTE le righe vive del bot su un
+    evento e dichiara la partita «chiusa dall'utente».
+
+    ⚠️ 16/09 — PRIMA DI OGGI SAFE NON CE L'AVEVA. `cashout_event`/`cashout_all`
+    vivevano nella coda del runner (`frontend/src/lib/liveOrders.ts` ->
+    `live_order_worker`) e NON passavano dalle tabelle di Safe: chiudendo da li'
+    `safe_strategy_trades` restava 'open' e il bot continuava a credere di avere
+    la posizione. Qui il percorso e' quello VERO, riga per riga:
+      · posizione 'open'  -> `execution.close_trade` (l'ordine opposto a mercato);
+      · riserva 'pending' -> `execution.annulla_su_betfair` (il cancel REALE su
+        Betfair, non contabile) e poi RILETTURA per bet_id: se l'esito e' ignoto
+        la riga resta in riconciliazione, che e' l'unica risposta onesta.
+    Alla fine, e in ogni caso (anche se qualcosa non si e' chiuso), si accende
+    il marcatore di partita: l'utente ha detto «ho chiuso», e da li' in poi il
+    bot non fa altro. Quel che non si e' chiuso lo dice il referto, non lo
+    nasconde il silenzio.
+    """
+    event_id = str(payload.get("event_id") or "")
+    if not event_id:
+        return {"error": "event_id_mancante"}
+    righe = _tutte_le_righe(db, event_id)
+    if not righe:
+        return {"rejected": "nessuna riga su questa partita", "event_id": event_id,
+                "message": "rifiutato: il bot non ha operazioni su questa partita"}
+    chiuse: list[int] = []
+    annullate: list[int] = []
+    non_chiuse: list[dict[str, Any]] = []
+    for tr in list(righe):
+        tid = tr.get("id")
+        stato = str(tr.get("status") or "")
+        if tr.get("closes_trade_id") or stato not in ("open", "pending"):
+            continue
+        if stato == "pending":
+            esito = _annulla_riserva(db=db, market=market, trade=tr, now=now)
+            (annullate if esito.get("ok") else non_chiuse).append(
+                int(tid) if esito.get("ok") else {"trade_id": tid, **esito})
+            continue
+        res = _request_cashout(db=db, market=market, rows_by_event=rows_by_event,
+                               payload={"trade_id": int(tid), "fraction": 1.0},
+                               params=params, now=now, come="cashout_event")
+        if res.get("ok"):
+            chiuse.append(int(tid))
+        else:
+            non_chiuse.append({"trade_id": tid,
+                               "motivo": res.get("rejected") or res.get("error")
+                               or res.get("attendi") or "sconosciuto"})
+    righe = _tutte_le_righe(db, event_id)
+    segna_chiuso_dall_utente(
+        db, event_id=event_id, righe=righe, come="cashout_event", now=now,
+        dettaglio={"chiuse": len(chiuse), "riserve_annullate": len(annullate),
+                   "non_chiuse": len(non_chiuse)})
+    messaggio = (f"cash out globale: {len(chiuse)} posizioni chiuse, "
+                 f"{len(annullate)} riserve annullate")
+    if non_chiuse:
+        messaggio += f", {len(non_chiuse)} NON chiuse (vedi dettaglio)"
+    return {"ok": True, "event_id": event_id, "chiuse": chiuse,
+            "riserve_annullate": annullate, "non_chiuse": non_chiuse,
+            "chiuso_dall_utente": True, "message": messaggio}
+
+
+def _annulla_riserva(db, *, market, trade: dict[str, Any], now: datetime) -> dict:
+    """Annulla su Betfair una riserva ancora in volo e RILEGGE l'esito.
+
+    Non dichiara mai «annullato» per fiducia: `annulla_su_betfair` torna None
+    quando l'esito e' ignoto, e in quel caso la riga va in riconciliazione
+    (difetto 7 del catalogo: un ordine appoggiato che non si ritrova al giro
+    dopo). Il cancel vero e' quello di `execution`, lo stesso dei tre bot."""
+    tid = int(trade.get("id"))
+    bet_id = trade.get("bet_id")
+    if not bet_id:
+        # nessun ordine a mercato che si sappia: la risolve `reconcile_pending`
+        # contro Betfair al giro dopo. Non si cancella la riga qui.
+        _log(db, "cancel_richiesto", {"trade_id": tid, "event_id": trade.get("event_id"),
+                                      "origin": "manual", "esito": "senza_bet_id",
+                                      "nota": "riserva senza bet_id: la risolve la "
+                                              "riconciliazione contro Betfair"})
+        return {"ok": False, "motivo": "riserva senza bet_id"}
+    _log(db, "cancel_richiesto", {"trade_id": tid, "event_id": trade.get("event_id"),
+                                  "origin": "manual", "bet_id": str(bet_id)})
+    X.annulla_su_betfair(market, bet_id=str(bet_id),
+                         market_id=str(trade.get("market_id") or ""))
+    try:
+        esito = _reconcile_by_bet_id(market, trade)
+    except Exception as ex:  # noqa: BLE001 — rete KO: esito IGNOTO, mai dedotto
+        logger.warning("[safe.bot] rilettura dopo cancel %s KO: %s", tid, str(ex)[:120])
+        esito = None
+    # la rilettura torna la DECISIONE piu' lo stato grezzo di Betfair: i numeri
+    # si leggono da `betfair`, non si deducono dall'azione (difetto 3 del
+    # catalogo: campo inesistente letto con un default).
+    stato = (esito or {}).get("betfair") if isinstance(esito, dict) else None
+    if not isinstance(stato, dict):
+        _log(db, "cancel_esito", {"trade_id": tid, "event_id": trade.get("event_id"),
+                                  "esito": "ignoto", "critical": True,
+                                  "nota": "cancel a esito IGNOTO: la riga resta in "
+                                          "riconciliazione, mai dichiarata annullata"})
+        return {"ok": False, "motivo": "esito del cancel ignoto"}
+    residuo = _f(stato.get("size_remaining"), 0.0)
+    abbinato = _f(stato.get("size_matched"), 0.0)
+    _log(db, "cancel_esito", {"trade_id": tid, "event_id": trade.get("event_id"),
+                              "esito": "letto", "size_matched": abbinato,
+                              "size_remaining": residuo})
+    if residuo > 0.009:
+        return {"ok": False, "motivo": f"residuo ancora vivo: {residuo}"}
+    if abbinato > 0.009:
+        # abbinata mentre la si annullava: NON e' una riserva morta, e' una
+        # posizione. La porta a 'open' la riconciliazione, che sa farlo.
+        return {"ok": False, "motivo": f"abbinata prima del cancel: {abbinato}"}
+    return {"ok": True}
+
+
+def _request_riprendi_evento(*, db, payload: dict, now: datetime) -> dict:
+    """«RIPRENDI»: l'utente riporta in carico al bot una partita che aveva
+    chiuso lui. E' l'UNICO modo di spegnere il marcatore (come Mike)."""
+    event_id = str(payload.get("event_id") or "")
+    if not event_id:
+        return {"error": "event_id_mancante"}
+    if evento_chiuso_dall_utente(event_id) is None:
+        return {"rejected": "partita non chiusa dall'utente", "event_id": event_id,
+                "message": "rifiutato: questa partita non risulta chiusa da te"}
+    n = riprendi_evento(db, event_id=event_id, righe=_tutte_le_righe(db, event_id),
+                        now=now)
+    return {"ok": True, "event_id": event_id, "righe_ripulite": n,
+            "message": f"partita riportata in carico al bot ({n} righe ripulite)"}
+
+
+def _uscita_del_bot_approvata(payload: dict[str, Any]) -> bool:
+    """La richiesta `cashout` e' l'APPROVAZIONE di un'uscita decisa dal BOT?
+
+    Il cancelletto del tennis manda una richiesta identica a quella del bottone
+    «Cash out» della scheda, ma quella chiusura l'ha decisa il bot e l'utente
+    ha solo firmato: NON e' una chiusura sua, e trattarla come tale spegnerebbe
+    il bot su una partita che sta gestendo lui.
+    Si riconosce da tre segni, e ne basta uno:
+      · ``approved_at`` — lo aggiunge la RPC ``safe_request_approve``
+        (`migrations/safe_strategy_proposed_2026-09-14.sql`) e SOLO le proposte
+        passano di li';
+      · ``exit_kind`` — il codice della regola d'uscita, scritto da
+        ``_proponi_chiusura`` nel payload della proposta;
+      · ``approvata_da`` — la firma del trader come la scrive il replay.
+    Un «Cash out» premuto sulla scheda non ne ha nessuno."""
+    return bool(payload.get("approved_at") or payload.get("exit_kind")
+                or payload.get("approvata_da"))
 
 
 def _book_prices(*, market, trade: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -2011,6 +2686,16 @@ def _exit_candidates(open_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if str(t.get("status")) != "open" or t.get("closes_trade_id"):
             continue
         if str(t.get("origin") or "") != "auto":
+            continue
+        # ⚠️ ORDINE DELL'UTENTE 16/09 — «NON DEVE GESTIRE POSIZIONI CHE NON
+        # ESISTONO PIU'». Due modi per non esserci piu':
+        #   · la RIGA e' stata chiusa dall'utente (cash-out suo su di essa):
+        #     e' ORFANA, il bot non ci attacca gambe figlie;
+        #   · la PARTITA e' stata chiusa dall'utente (cash-out globale, o una
+        #     chiusura fatta fuori dall'app e scoperta sulla posizione di conto).
+        # Senza questo filtro il servizio continuava a girare la macchina delle
+        # uscite su una posizione finita: 282 `exit_hold` misurati su 35797769.
+        if marcatore_utente(t) or evento_chiuso_dall_utente(t.get("event_id")):
             continue
         if str(t.get("strategy") or "") not in XE.EXIT_STRATEGIES + XE.MODEL_STRATEGIES:
             continue
@@ -2249,6 +2934,18 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
     for leg in legs:
         prices = prices_by_id.get(int(leg.get("id") or 0))
         if not prices:
+            continue
+        # ⚠️ 16/09 — una gamba di chiusura AUTOMATICA e' una gamba figlia: su
+        # una partita che l'utente ha chiuso, o su una riga che ha chiuso lui,
+        # non deve nascere. `_execute` non copre questa strada
+        # (`X.close_trade` piazza per conto suo), quindi la guardia va ripetuta
+        # qui: e' l'unico altro punto in cui il bot fa nascere una gamba.
+        if marcatore_utente(leg) or evento_chiuso_dall_utente(leg.get("event_id")):
+            _log(db, "skip", {"event_id": str(leg.get("event_id") or ""),
+                              "trade_id": leg.get("id"),
+                              "reason": "partita_chiusa_dall_utente",
+                              "nota": "gamba di combo NON chiusa dal bot: la "
+                                      "posizione l'ha gia' chiusa l'utente"})
             continue
         extra = {"sport": leg.get("sport") or "calcio",
                  "strategy": leg.get("strategy") or "model",
@@ -3562,9 +4259,27 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
       • fill PAPER sul libro del feed (``_paper_ladder``): prezzo abbinabile e
         liquidita' reali, mai "al prezzo richiesto qualunque sia il mercato".
         Senza prezzi del feed (``feed_prices`` None) in paper non si simula
-        nulla: errore ``paper_prezzi_non_disponibili``."""
+        nulla: errore ``paper_prezzi_non_disponibili``.
+
+    ⚠️ 16/09 — E LA GUARDIA DELLA PARTITA CHIUSA DALL'UTENTE. Questa funzione e'
+    il collo di bottiglia di OGNI piazzamento del bot (segnali, opportunita',
+    anomalie, gambe di combo, gambe di chiusura automatiche): metterla qui vuol
+    dire che nessun percorso, nemmeno uno scritto domani, puo' far nascere una
+    gamba su una partita che l'utente ha gia' chiuso. Le richieste MANUALI
+    (``origin != 'auto'``) passano: sono le SUE, e resta libero di operare."""
     side = str(row["side"])
     mode = str(row["mode"])
+    if e_del_bot(row):
+        mk = evento_chiuso_dall_utente(row.get("event_id"))
+        if mk:
+            motivo = "partita_chiusa_dall_utente"
+            _place_fail(db, trade_id, row, motivo, now, params)
+            _log(db, "skip", {"event_id": str(row.get("event_id") or ""),
+                              "trade_id": int(trade_id), "reason": motivo,
+                              "come": mk.get("come"), "quando": mk.get("quando"),
+                              "nota": "l'utente ha chiuso questa partita: il bot non "
+                                      "piazza piu' nulla finche' non preme «Riprendi»"})
+            return X.PlaceOutcome("error", None, 0.0, None, motivo)
     try:
         size = float(row["size"])
     except (TypeError, ValueError):
@@ -3862,7 +4577,8 @@ _AGG_LOG_TS: dict[str, float] = {}
 def _risk_ctx_cieco(db, open_: list, ex: Exception,
                     open_all: Optional[list] = None,
                     mode: Optional[str] = None,
-                    now_ts: Optional[float] = None) -> dict[str, Any]:
+                    now_ts: Optional[float] = None,
+                    open_tutte: Optional[list] = None) -> dict[str, Any]:
     """Contesto di rischio NON UTILIZZABILE: si conoscono le posizioni vive ma
     non i numeri della giornata. ``unavailable`` blocca i NUOVI ingressi (le
     uscite e il settlement continuano: mai lasciare una posizione nuda)."""
@@ -3879,8 +4595,29 @@ def _risk_ctx_cieco(db, open_: list, ex: Exception,
                            "effetto": "nuovi ingressi sospesi: senza i numeri della "
                                       "giornata i cap di rischio non sono verificabili"})
     return {"open": open_, "open_all": open_all if open_all is not None else open_,
+            "open_tutte": open_tutte if open_tutte is not None else open_,
             "realized_today": 0.0, "day_liability": 0.0,
             "day_liability_model": 0.0, "agg": {}, "unavailable": True}
+
+
+def _numeri_di_rischio(agg: dict[str, Any]) -> dict[str, Any]:
+    """I numeri su cui i cap DECIDONO: quelli dell'AUTOMATICO.
+
+    ``aggregate_rows`` pubblica due serie di numeri sugli stessi trade: quella
+    completa (totali di pagina, che devono restare completi: il trader vuole
+    vedere anche le sue operazioni) e quella con il suffisso ``_auto``, che
+    conta solo ``origin='auto'``. I cap del bot leggono la seconda. Se una
+    lettura vecchia non porta i campi ``_auto`` si ricade sui completi: piu'
+    ALTI, quindi piu' prudenti — mai il contrario."""
+    def _v(nome: str) -> float:
+        v = agg.get(f"{nome}_auto")
+        if v is None:
+            v = agg.get(nome, 0.0)
+        return float(v or 0.0)
+
+    return {"realized_today": _v("realized_today"),
+            "day_liability": _v("day_liability"),
+            "day_liability_model": _v("day_liability_model")}
 
 
 def build_risk_ctx(db, now: datetime, params: dict[str, Any],
@@ -3908,12 +4645,29 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         # protegge SEMPRE, qualunque sia la modalita' del servizio.
         tutte = db.open_trades() or []
         open_all = [t for t in tutte if not t.get("closes_trade_id")]
+        # una volta per ciclo, dalle righe appena lette: l'indice degli eventi
+        # chiusi dall'utente e' una CACHE di `meta.chiuso_dall_utente`, mai una
+        # memoria che vive per conto suo (difetto 19 del catalogo).
+        indicizza_chiusure_utente(open_all, ricostruisci=True)
         m = str(mode).lower() if mode else None
-        open_ = ([t for t in open_all if str(t.get("mode") or "live").lower() == m]
-                 if m else list(open_all))
+        open_tutte = ([t for t in open_all if str(t.get("mode") or "live").lower() == m]
+                      if m else list(open_all))
+        # ⚠️ ORDINE DELL'UTENTE 16/09 — I CAP DEL BOT CONTANO SOLO IL BOT.
+        # «il bot gestisce le SUE operazioni e ignora le mie manuali»: fino a
+        # ieri ``open_trades`` non filtrava l'origine, quindi le righe che il
+        # trader apriva a mano dalla scheda entravano in ``max_open_trades``,
+        # nel cap di responsabilita' per evento e negli aggregati di giornata
+        # DEL BOT (misurati 32,80 EUR di responsabilita' manuale dentro i cap).
+        # DUE liste, e servono tutte e due:
+        #   · ``open``      = solo AUTOMATICO -> e' quella che DECIDE;
+        #   · ``open_tutte``= tutto -> numeri di pagina e cap MORBIDO del
+        #                     manuale (un «Investi» resta frenato dalla
+        #                     esposizione totale, com'e' sempre stato).
+        open_ = [t for t in open_tutte if e_del_bot(t)]
     except Exception as ex:  # noqa: BLE001
         _log(db, "error", {"reason": "open_count_failed", "err": str(ex)[:160]})
-        return {"open": [], "open_all": [], "realized_today": 0.0, "day_liability": 0.0,
+        return {"open": [], "open_all": [], "open_tutte": [], "realized_today": 0.0,
+                "day_liability": 0.0,
                 "day_liability_model": 0.0, "agg": {}, "unavailable": True}
     try:
         agg = dict(db.aggregates(mode=mode) or {})
@@ -3921,7 +4675,8 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         try:
             agg = dict(db.aggregates() or {})
         except Exception as ex:      # noqa: BLE001
-            return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp())
+            return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp(),
+                                   open_tutte)
     except Exception as ex:  # noqa: BLE001
         # Prima di bloccare: se abbiamo una lettura buona recentissima la si
         # riusa. I numeri possono solo essere piu' BASSI del vero (le riserve
@@ -3929,11 +4684,9 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         recente = _agg_recente(mode, now.timestamp())
         if recente is not None:
             agg = dict(recente)
-            return {"open": open_, "open_all": open_all,
+            return {**_numeri_di_rischio(agg), "open": open_, "open_all": open_all,
+                    "open_tutte": open_tutte,
                     "pending_esatto": _pending_esatto(db, now.timestamp()),
-                    "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
-                    "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
-                    "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
                     "agg": agg, "agg_stantio": True}
         # CERT. 13/09 — FAIL-CLOSED anche qui. Prima si proseguiva con ``agg={}``
         # e succedeva questo, in silenzio: ``realized_today`` = 0 -> il fermo
@@ -3943,15 +4696,14 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         # falliva (e oggi il DB va in timeout di continuo) il bot perdeva tutte
         # le sue barriere di rischio proprio mentre era in difficolta'.
         # Il docstring dichiarava gia' "letture KO -> fail-closed": ora e' vero.
-        return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp())
+        return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp(),
+                               open_tutte)
     if agg:
         _AGG_ULTIMO_BUONO[str(mode or "*")] = (now.timestamp(), dict(agg))
         _AGG_LOG_TS.pop(str(mode or "*"), None)
-    return {"open": open_, "open_all": open_all,
+    return {**_numeri_di_rischio(agg), "open": open_, "open_all": open_all,
+            "open_tutte": open_tutte,
             "pending_esatto": _pending_esatto(db, now.timestamp()),
-            "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
-            "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
-            "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
             "agg": agg}
 
 
@@ -3963,7 +4715,12 @@ def _risk_gate(db, now: datetime, params: dict[str, Any], ctx: dict[str, Any],
     if ctx.get("unavailable"):
         reason: Optional[str] = "stato_rischio_non_leggibile"
     else:
-        ok, reason = RK.check(ctx.get("open") or [], candidate, ctx.get("realized_today"),
+        # ``soft`` = richiesta MANUALE della UI: la si frena sull'esposizione
+        # TOTALE (com'e' sempre stato: e' una protezione per il trader, non un
+        # cap del bot). L'AUTOMATICO invece vede solo se stesso.
+        aperte = ((ctx.get("open_tutte") if ctx.get("open_tutte") is not None
+                   else ctx.get("open")) if soft else ctx.get("open")) or []
+        ok, reason = RK.check(aperte, candidate, ctx.get("realized_today"),
                               params, day_liability=ctx.get("day_liability"),
                               day_liability_model=ctx.get("day_liability_model"), soft=soft)
         if ok:
@@ -3980,8 +4737,15 @@ def _risk_gate(db, now: datetime, params: dict[str, Any], ctx: dict[str, Any],
 
 
 def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
-    """Riserva riuscita: la posizione conta SUBITO nel contesto del ciclo."""
+    """Riserva riuscita: la posizione conta SUBITO nel contesto del ciclo.
+
+    ⚠️ 16/09 — solo se e' del BOT. Una riserva MANUALE entra nei numeri di
+    pagina (``open_tutte``) ma non nei cap del bot: e' l'operazione dell'utente,
+    e il bot la ignora (ordine del 16/09 h18)."""
     if not isinstance(ctx, dict):
+        return
+    ctx.setdefault("open_tutte", []).append(row)
+    if not e_del_bot(row):
         return
     ctx.setdefault("open", []).append(row)
     liab = max(0.0, _f(row.get("liability"), 0.0))
@@ -4233,6 +4997,20 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "strategy": variant,
                                         "reason": "variante_non_abilitata"})
+            continue
+        # ⚠️ ORDINE DELL'UTENTE 16/09 h18:20 — PARTITA CHIUSA DALL'UTENTE.
+        # Il controllo sta QUI, PRIMA della riserva: non basta impedire
+        # l'ordine, non deve nascere nemmeno la riga 'pending' (una riserva
+        # occupa l'idempotenza del segnale e conta nell'esposizione).
+        # Vale per tutte e tre le strade in cui l'utente puo' aver chiuso:
+        # cash-out globale, ultima riga chiusa a mano, chiusura fuori dall'app.
+        mk_chiuso = evento_chiuso_dall_utente(event_id)
+        if mk_chiuso:
+            _log_skip(db, now, params, {"event_id": str(event_id),
+                                        "signal_key": str(key), "strategy": variant,
+                                        "reason": "partita_chiusa_dall_utente",
+                                        "come": mk_chiuso.get("come"),
+                                        "quando": mk_chiuso.get("quando")})
             continue
         # da qui in poi la MODALITA' e' quella della variante, non del servizio
         mode_s = _modalita_di(variant)
@@ -5821,6 +6599,9 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     rp = RK.risk_params(params)
     counts = dict((opps_state if opps_state is not None else _OPPS_STATE).get("counts") or {})
     # C-01: TUTTI i numeri della giornata vengono dagli stessi aggregati, con la
+    # i numeri dei CAP (solo le posizioni del bot): stessa funzione che usa
+    # ``build_risk_ctx``, cosi' la pagina e le decisioni non possono divergere.
+    _rischio_bot = _numeri_di_rischio(agg or {})
     # GIORNATA = giorno di PIAZZAMENTO (Europe/Rome). Un numero solo per giorno.
     stats = {
         "events_total": len(rows),
@@ -5849,10 +6630,20 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         # che non fa.
         "stop_ferma_solo_aperture": True,
         "last_cycle": now.isoformat(),
+        # DUE SERIE DI NUMERI, DICHIARATE (16/09):
+        #   · senza suffisso = TUTTO cio' che c'e' in giornata (bot + manuali
+        #     del trader): sono i totali che la pagina mostra;
+        #   · con ``_bot`` = solo le posizioni del bot, ed e' su queste che i
+        #     cap decidono (``_numeri_di_rischio``). Se le due cifre divergono,
+        #     la differenza sono le operazioni dell'utente.
         "risk": {"daily_liability": round(float(agg.get("day_liability", 0.0) or 0.0), 2),
+                 "daily_liability_bot": round(float(_rischio_bot.get("day_liability") or 0.0), 2),
                  "daily_cap": float(rp.get("daily_liability_cap") or 0.0),
                  "reconciling_liability": round(float(agg.get("reconciling_liability", 0.0) or 0.0), 2),
-                 "loss_stop_active": RK.loss_stop_active(agg.get("realized_today", 0.0), params),
+                 "realized_today_bot": round(float(_rischio_bot.get("realized_today") or 0.0), 2),
+                 "loss_stop_active": RK.loss_stop_active(
+                     _rischio_bot.get("realized_today", 0.0), params),
+                 "cap_solo_automatico": bool("day_liability_auto" in (agg or {})),
                  "daily_loss_stop": float(rp.get("daily_loss_stop") or 0.0)},
         "opps": {"model": int(counts.get("model", 0)), "anomaly": int(counts.get("anomaly", 0)),
                  "combo": int(counts.get("combo", 0)), "tennis": int(counts.get("tennis", 0))},

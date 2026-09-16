@@ -61,6 +61,7 @@ from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 from . import db as scan_db
 from . import pressure as _pressure
 from . import scanner
+from . import selezione as _selezione
 from .stream import MarketStreamPool
 
 logger = logging.getLogger("safe_strategy")
@@ -1118,6 +1119,17 @@ class Scanner:
                     # Deriva solo da campi gia' nella firma (minute, score_raw,
                     # timeline): non aggiunge una sola riscrittura.
                     payload["pressure_index"] = _pressure.pressure_index(payload)
+                    # SPEC §2 «Selezione aggiuntiva» (ordine dell'utente
+                    # 16/09): i due numeri storici della voce — scontri
+                    # diretti finiti 2-2/3-3 e gol subiti per partita —
+                    # calcolati QUI una volta sola dall'atlante gia' in casa
+                    # (`hazard_atlas_v2`, lo stesso di `omega_advisor`), per
+                    # la stessa ragione di `pressure_index`: il motore del
+                    # bot e quello della pagina devono leggere LO STESSO
+                    # numero. Nessuna lettura DB, nessuna chiamata di rete:
+                    # solo un file locale, letto una volta per processo e
+                    # messo in cache per coppia di nomi. None = dato assente.
+                    payload["selection_hint"] = _selezione.hint(home, away)
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
                     payload = {

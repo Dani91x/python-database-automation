@@ -467,6 +467,27 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito S1 — Safe: cash-out globale, chiusura fuori app, cap solo automatico — CERTIFICATO (16/09 sera)
+
+Marcatore `meta.chiuso_dall_utente` sulle righe (sopravvive al riavvio), indice per evento come
+cache; kind `cashout_event` (`bot_service.py:1952` → `_request_cashout_event:2348`, riserve
+annullate e rilette) e `riprendi_evento:2460`; letto prima della riserva in `scan_and_place:5011`,
+`_exit_candidates:2674`, `_execute:4275`, `_close_combo_siblings:2946`; `cashout` per riga marca la
+riga (orfana → niente figlie) e la partita se era l'ultima. L'uscita approvata del tennis
+riconosciuta da `approved_at`/`exit_kind` (`_uscita_del_bot_approvata:2475`). **Chiusura fuori
+app**: `_sorveglia_posizione_di_conto:1216` da `settle_open`, **30 s per mercato, max 2 mercati
+per ciclo**, solo live e righe automatiche; riuso di `list_current_orders_account`/
+`list_cleared_orders_account`/`market_profit_and_loss` (aggiunte dal delegato Mike) e del banco;
+verdetti `gambe_non_ritrovate`/`ridotta_dall_utente`/`chiusa_dall_utente` con P&L dal settlement
+reale, mai inventato. **Cap solo sull'automatico** (`build_risk_ctx:4623`, `bot_db.aggregate_rows`
+a due serie). Migrazione **indispensabile** `safe_cash_out_globale_e_cap_automatico_2026-09-16.sql`
+(CHECK di `kind` + RPC `safe_request`). 28 test, 12 falsificazioni rosse. Replay: `cashout-globale`
+T14 ×282 → 0 (2 ordini, uscite valutate 0); tennis `approvata-subito` identico. Verifica del
+coordinatore: 28 verdi; falsificazione propria (marcatore mai riconosciuto) → 9 rossi. UI da fare
+(C.12c): bottoni «cash out globale partita» e «Riprendi», etichette, badge «chiusa da te», due
+numeri di rischio. Seguiti girati a S2: scenario `chiusura-fuori-app`, payload del replay tennis
+allineato alla RPC vera, note obsolete, nome del bot nel replay calcio.
+
 ### Esito C.2 — OMEGA sul banco — CERTIFICATO dal coordinatore per la copertura raggiunta (16/09 h18)
 
 `omega/tools/replay_registrazioni.py` (1562) + `omega/certificazione.py` (32 controlli) + 94 test.

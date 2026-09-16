@@ -174,6 +174,61 @@ iniziata ad app spenta) lo stato resta n/d — ma adesso **lo si legge a schermo
 scarto `pre_ko_assente` nell'attività, invece di non vedere niente.
 Dettaglio in `CERTIFICAZIONE_2026-09-13.md` §0.
 
+### 2.1 «Selezione aggiuntiva» del RISULTATO ESATTO — MODIFICA ORDINATA DALL'UTENTE (16/09/2026)
+
+> **Chi l'ha ordinata**: l'utente, la sera del 16/09, per chiudere la voce ⊗ del
+> `RISCONTRO_CALCIO_2026-09-14.md` (riga 158) e la violazione E10 del replay
+> (335 casi su `35797769`). È l'unica regola di strategia toccata quel giorno.
+
+La SPEC (`SPEC_STRATEGIA_S.md` §2, ultima riga della tabella) dice, per intero:
+
+    | Selezione aggiuntiva | scontri diretti senza troppi 2-2/3-3, difesa avversaria solida |
+
+Non era implementata: il paniere delle partite era quindi **più largo di quello del
+manuale**. Dal 16/09 esiste, con questa lettura **dichiarata** (la SPEC non quantifica
+né «troppi» né «solida»; le due letture alternative — soglie fisse a occhio, oppure
+«filtro qualitativo non automatizzabile» — sono scritte nel referto e scartate):
+
+| voce della SPEC | numero | da dove viene |
+|---|---|---|
+| «senza troppi 2-2/3-3» | quota di scontri diretti finiti 2-2 o 3-3 **≤ 0,12** | 2-2/3-3 sono il **6,04 %** dei 47.460 incontri dell'atlante (4.838 coppie): «troppi» = il doppio della norma |
+| «difesa avversaria solida» | gol subiti per partita **≤ 1,37** | l'atlante misura 2,7403 gol per partita, cioè **1,37 per lato**: «solida» = non peggio della media |
+
+Regole di questo filtro, tutte money-critical:
+
+1. **«Avversaria» è la squadra OPPOSTA a quella bancata.** Si banca «Altro risultato
+   Casa/Ospite», cioè si scommette che quella squadra **non** segnerà ancora: la difesa
+   che deve reggere è quella dell'altra. Invertire i due lati renderebbe il filtro una
+   moneta, e il controllo E10 rifà il conto apposta per accorgersene.
+2. **Nasce SPENTO** (`esatto.requireSelection = false`), esattamente come
+   `requireControl` e per la stessa ragione: la copertura del dato non è misurata.
+   Sulle 39 registrazioni del corpus **una sola coppia** (Udinese-Venezia) ha gli
+   scontri diretti nell'atlante. Spento non aggiunge nessun check e non cambia una
+   virgola del comportamento; acceso, su una partita senza dato, il check vale
+   «n/d» e **la variante non entra** (è la regola di tutto il motore: nessun segnale
+   su un dato che non c'è).
+3. **Il dato lo calcola lo SCANNER, una volta sola**, e viaggia nella riga
+   (`payload.selection_hint`), come `pressure_index`: il motore del bot e quello della
+   pagina leggono lo stesso numero, altrimenti la pagina mostrerebbe un segnale che il
+   bot non prende. Fonte: `Betfair/omega/data/hazard_atlas_v2.json`, lo stesso atlante
+   che usa già `omega_advisor` (nessuna risorsa nuova, nessuna lettura DB, nessuna
+   chiamata di rete). Abbinamento **per nome squadra**, limite dichiarato: lo scanner
+   non ha il `fixture_id`; un nome che non si trova è dato assente, mai un abbinamento
+   forzato.
+4. Le due soglie sono **parametri** (`h2hBigDrawRateMax`, `oppConcededMax`) e i numeri
+   **non sono nella SPEC**: sono la lettura dichiarata qui sopra. Cambiarli è
+   dell'utente, non del codice.
+
+Dove: `safe_strategy/selezione.py` (il dato) · `engine.selection_check` +
+`evaluate_esatto` (la regola) · `service.build_rows` (la pubblicazione) ·
+`frontend/src/lib/safeStrategy.ts::selectionCheck` (il gemello della pagina) ·
+`certificazione.py` controllo **E10** · test
+`tests/test_selezione_esatto_2026_09_16.py` (17, falsificati: lati invertiti → 4 rossi;
+dato assente trattato come verdetto → 1 rosso) · scenario di replay
+`selezione-aggiuntiva`.
+
+---
+
 ---
 
 ## 3. Le 4 strategie — USCITE (`exits.py` + `bot_service.process_exits`)

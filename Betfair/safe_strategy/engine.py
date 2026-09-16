@@ -207,6 +207,24 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "entryMin": 30,
         "entryMax": 70,
         "scoreConfirmSec": 30,
+        # ORDINE DELL'UTENTE 16/09 — SPEC §2 riga «Selezione aggiuntiva»:
+        # «scontri diretti senza troppi 2-2/3-3, difesa avversaria solida».
+        # Il filtro nasce SPENTO, come `requireControl` (stessa riga di
+        # tabella della SPEC, stessa ragione): la copertura del dato non e'
+        # misurata — sulle 39 registrazioni del corpus UNA sola coppia e'
+        # nell'atlante. Acceso, un dato assente vale "n/d" e nessun segnale,
+        # che e' la regola di tutto il modulo. I due numeri qui sotto NON
+        # sono nella SPEC (che dice "troppi" e "solida" senza quantificarli):
+        # sono la lettura dichiarata, misurata sullo stesso atlante.
+        "requireSelection": False,
+        # "senza TROPPI 2-2/3-3": quota di scontri diretti finiti 2-2 o 3-3.
+        # Misura sull'atlante (4.838 coppie, 47.460 incontri): 2-2/3-3 sono il
+        # 6,04% degli incontri. "Troppi" = il DOPPIO della norma -> 0,12.
+        "h2hBigDrawRateMax": 0.12,
+        # "difesa avversaria SOLIDA": gol subiti per partita dalla squadra che
+        # deve fermare la bancata. Misura sull'atlante: 2,7403 gol per partita
+        # -> 1,37 per lato. "Solida" = non peggio della media.
+        "oppConcededMax": 1.37,
     },
     "punta": {
         "requireControl": False,
@@ -327,6 +345,11 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "entryMin": _num(e.get("entryMin"), d["esatto"]["entryMin"]),
             "entryMax": _num(e.get("entryMax"), d["esatto"]["entryMax"]),
             "scoreConfirmSec": _num(e.get("scoreConfirmSec"), d["esatto"]["scoreConfirmSec"]),
+            "requireSelection": _bool(e.get("requireSelection"), d["esatto"]["requireSelection"]),
+            "h2hBigDrawRateMax": _num(
+                e.get("h2hBigDrawRateMax"), d["esatto"]["h2hBigDrawRateMax"]
+            ),
+            "oppConcededMax": _num(e.get("oppConcededMax"), d["esatto"]["oppConcededMax"]),
         },
         "punta": {
             "minuteMin": _num(u.get("minuteMin"), d["punta"]["minuteMin"]),
@@ -494,6 +517,11 @@ class FootballMatchCtx:
     any_other_away_selection_id: Optional[int] = None
     competition: Optional[str] = None
     event_name: Optional[str] = None
+    # SPEC §2 «Selezione aggiuntiva» (16/09): i due numeri storici della voce
+    # — scontri diretti e gol subiti — calcolati UNA volta sola dallo scanner
+    # (`selezione.hint`) e pubblicati nella riga, come `pressure_index`.
+    # None = dato assente, e non diventa mai uno zero.
+    selection_hint: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -651,6 +679,13 @@ def build_football_ctx_from_scan(
         # solo non e' una rete, e' una DIVERGENZA. Su una riga vecchia, senza il
         # campo, i due motori devono dire la stessa cosa: "dato assente".
         pressure_index=_num(p.get("pressure_index"), None),
+        # stessa disciplina di `pressure_index`: il blocco lo scrive lo
+        # SCANNER (`service.build_rows` -> `selezione.hint`), qui si LEGGE e
+        # basta. Riga vecchia senza il campo = "dato assente" per entrambi i
+        # motori, mai un ricalcolo locale che li farebbe divergere.
+        selection_hint=(
+            p.get("selection_hint") if isinstance(p.get("selection_hint"), dict) else None
+        ),
     )
 
 
@@ -778,6 +813,37 @@ def control_check(idx: Optional[float], lato: Optional[str], *, deve_avere: bool
     ok = proprio >= soglia if deve_avere else proprio <= soglia
     verso = "preme" if proprio > 0 else ("subisce" if proprio < 0 else "equilibrio")
     return ConditionCheck("control", etichetta, f"{verso} ({_to_fixed(proprio, 2)})", ok)
+
+
+def selection_check(hint: Optional[Dict[str, Any]], lato_bancato: Optional[str], *,
+                    rate_max: float, conceded_max: float) -> ConditionCheck:
+    """SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppi
+    2-2/3-3 e difesa AVVERSARIA solida.
+
+    «Avversaria» e' la difesa della squadra OPPOSTA a quella bancata: la
+    bancata e' quella che non deve segnare ancora (si banca «Altro risultato
+    Casa/Ospite»), quindi la difesa che deve reggere e' quella dell'altra.
+    Invertire i due lati renderebbe il filtro una moneta.
+
+    Dato assente -> ``ok=None``: nessun segnale su un dato che non c'e'
+    (stessa regola di ``control_check`` e del resto del modulo).
+    """
+    etichetta = (f"Scontri diretti con max {js_num(round(rate_max * 100))}% di 2-2/3-3 "
+                 f"e difesa avversaria entro {fmt_odds(conceded_max)} gol subiti")
+    if not isinstance(hint, dict) or lato_bancato not in ("home", "away"):
+        return ConditionCheck("h2hDifesa", etichetta, "n/d", None)
+    incontri = num_or_none(hint.get("h2h_meetings"))
+    alti = num_or_none(hint.get("h2h_big_draws"))
+    subiti_da = (hint.get("conceded") or {}) if isinstance(hint.get("conceded"), dict) else {}
+    avversaria = "away" if lato_bancato == "home" else "home"
+    subiti = num_or_none(subiti_da.get(avversaria))
+    if incontri is None or incontri <= 0 or alti is None or subiti is None:
+        return ConditionCheck("h2hDifesa", etichetta, "n/d", None)
+    quota = float(alti) / float(incontri)
+    valore = (f"{js_num(int(alti))}/{js_num(int(incontri))} 2-2{MIDDOT}3-3 {MIDDOT} "
+              f"difesa {fmt_odds(subiti)}")
+    return ConditionCheck("h2hDifesa", etichetta, valore,
+                          quota <= rate_max and float(subiti) <= conceded_max)
 
 
 def minute_check(check_id: str, minute: Optional[int], from_minute: Any) -> ConditionCheck:
@@ -959,6 +1025,14 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     if params.get("requireControl"):
         checks.append(control_check(ctx.pressure_index, side,
                                     deve_avere=False, soglia=params["controlMin"]))
+    # SPEC §2 «Selezione aggiuntiva» (ordine dell'utente 16/09): e' un filtro
+    # di SELEZIONE DELLA PARTITA, non di momento, e come `requireControl` si
+    # accende dai parametri. Spento: nessun check, nessun cambiamento.
+    if params.get("requireSelection"):
+        checks.append(selection_check(
+            ctx.selection_hint, side,
+            rate_max=params["h2hBigDrawRateMax"],
+            conceded_max=params["oppConcededMax"]))
 
     goals_label = f"{side_label} con max {js_num(params['maxGoalsLaySide'])} gol"
     if sh is None or sa is None:

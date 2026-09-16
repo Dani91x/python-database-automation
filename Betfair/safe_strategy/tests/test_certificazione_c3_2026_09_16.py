@@ -284,11 +284,24 @@ def test_e5_quota_di_entrata_fuori_banda_scatta() -> None:
     assert "E5" in codici(v)
 
 
-def test_e10_selezione_aggiuntiva_assente_e_un_reperto() -> None:
-    """⊗ DA PROVOCARE: la voce della SPEC non e' implementata. Il referto la
-    nomina a ogni segnale invece di lasciarla senza nessuno che la guardi."""
+def test_e10_selezione_aggiuntiva_spenta_non_ha_casi() -> None:
+    """16/09: la voce della SPEC ORA E' IMPLEMENTATA (`requireSelection`), ma
+    nasce spenta. Spenta, E10 non e' «sano»: non ha nessun caso, come B10 ed
+    E6 con `requireControl` spento."""
     v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away")
-    assert "E10" in codici(v)
+    assert "E10" not in codici(v)
+    assert not solo(v, "E10")
+
+
+def test_e10_accesa_senza_il_check_scatta() -> None:
+    """Il difetto che E10 nasce per prendere: il parametro e' acceso e nessun
+    check guarda la voce della SPEC."""
+    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away")
+    par = dict(v.par)
+    par["requireSelection"] = True
+    v2 = CERT.Valutazione(strategia="esatto", ctx=v.ctx, ev=v.ev, par=par,
+                          params=v.params)
+    assert "E10" in codici(v2)
 
 
 def test_e7_due_lati_altro_risultato_vivi_scattano() -> None:
@@ -738,6 +751,62 @@ def test_t12_residuo_vivo_piu_seconda_lay_scatta() -> None:
     c = ciclo(_Database([lay(1, "open", bet_id="b7"), lay(2, "pending")]),
               _Mercato([ordine_vivo]))
     assert "T12" in codici(c)
+
+
+def _back(id_: int, stato: str = "hedged", sid: int = 12, mid: str = "1.1",
+          origin: str = "auto") -> Dict[str, Any]:
+    return {"id": id_, "side": "back", "status": stato, "market_id": mid,
+            "selection_id": sid, "bet_id": f"b{id_}", "strategy": "punta",
+            "event_id": "1", "mode": "live", "origin": origin}
+
+
+def test_t12_due_chiusure_abbinate_di_due_back_diversi_tacciono() -> None:
+    """16/09, trovato dalle SINTETICHE della PUNTA: la PUNTA punta e chiude
+    BANCANDO la stessa selezione. Due operazioni consecutive lasciano due
+    righe lay `open`, ognuna appaiata al SUO back: posizione piatta, non
+    scoperta. Accusarle era un falso positivo del controllo (T12 x159)."""
+    db = _Database([
+        _back(1), dict(lay(2, "open", bet_id="c2"), closes_trade_id=1,
+                       strategy="punta"),
+        _back(3), dict(lay(4, "open", bet_id="c4"), closes_trade_id=3,
+                       strategy="punta"),
+    ])
+    c = ciclo(db, _Mercato())
+    assert "T12" not in codici(c)
+    # e il motivo e' esattamente quello: nessuna delle due conta come lay viva
+    assert CERT._lay_in_volo(c) == {}
+
+
+def test_t12_due_lay_di_APERTURA_abbinate_scattano_lo_stesso() -> None:
+    """La regola dell'utente resta intera: due lay di APERTURA abbinate sulla
+    stessa selezione sono responsabilita' doppia, e il controllo le prende."""
+    c = ciclo(_Database([lay(1, "open", bet_id="a1"), lay(2, "open", bet_id="a2")]),
+              _Mercato())
+    assert "T12" in codici(c)
+
+
+def test_t12_chiusura_su_UNALTRA_selezione_conta_lo_stesso() -> None:
+    """L'eccezione vale solo se il back chiuso e' sulla STESSA selezione: una
+    lay che «chiude» un back di un altro runner e' responsabilita' vera."""
+    db = _Database([
+        dict(_back(1), selection_id=99),
+        dict(lay(2, "open", bet_id="c2"), closes_trade_id=1),
+        lay(3, "open", bet_id="a3"),
+    ])
+    assert "T12" in codici(ciclo(db, _Mercato()))
+
+
+def test_t12_chiusura_con_RESIDUO_ancora_a_mercato_conta() -> None:
+    """Una chiusura non ancora abbinata del tutto e' ancora a mercato: puo'
+    abbinarsi insieme all'altra lay, e il controllo la deve vedere."""
+    ordine_vivo = riga_ordine(bet_id="c2", status="EXECUTABLE",
+                              size_remaining=1.0, size_matched=1.0,
+                              side="lay", selection_id=12, market_id="1.1")
+    db = _Database([
+        _back(1), dict(lay(2, "open", bet_id="c2"), closes_trade_id=1),
+        lay(3, "pending"),
+    ])
+    assert "T12" in codici(ciclo(db, _Mercato([ordine_vivo])))
 
 
 def test_t12_sostituzione_cancel_piu_place_nello_stesso_giro_e_un_reperto() -> None:

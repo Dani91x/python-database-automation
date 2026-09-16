@@ -313,9 +313,23 @@ def test_t7_approvazione_e_una_voce_dichiarata_non_una_violazione():
 
 
 def test_t8_dichiarata_misura_la_perdita_fuori_banda():
-    t = _trade(status="settled", size=2.0, pnl=-1.2)
-    cod, sol = _codici(_osserva(ctx=_ctx(), trades=[t]))
-    assert sol.get("T8-DICHIARATA") == 1 and "T8-DICHIARATA" in cod
+    # 16/09: gli stati TERMINALI che il bot scrive sono won/lost/void
+    # (`bot_db.py:468,494`). Con `settled` — che il bot non scrive in nessun
+    # punto — il controllo non aveva MAI un caso: e' il difetto trovato dal
+    # replay del 16/09 e questo test lo fissa.
+    for stato in ("lost", "void"):
+        t = _trade(status=stato, size=2.0, pnl=-1.2)
+        _cod, sol = _codici(_osserva(ctx=_ctx(), trades=[t]))
+        assert sol.get("T8-DICHIARATA") == 1, stato
+    assert "T8-DICHIARATA" not in _codici(
+        _osserva(ctx=_ctx(), trades=[_trade(status="settled", size=2.0, pnl=-1.2)]))[0]
+    # una perdita pari allo stake e' NORMALE con lo stake fisso (eccezione
+    # dell'utente del 14/09): il controllo tace...
+    t = _trade(status="lost", size=2.0, pnl=-2.0, side="back")
+    assert "T8-DICHIARATA" not in _codici(_osserva(ctx=_ctx(), trades=[t]))[0]
+    # ...e parla solo sull'impossibile: un back che perde PIU' dello stake
+    t = _trade(status="lost", size=2.0, pnl=-3.0, side="back")
+    assert "T8-DICHIARATA" in _codici(_osserva(ctx=_ctx(), trades=[t]))[0]
     t_ok = _trade(status="settled", size=2.0, pnl=-0.21)   # -10,5%: dentro 5-25%
     assert "T8-DICHIARATA" not in _codici(_osserva(ctx=_ctx(), trades=[t_ok]))[0]
 
@@ -752,7 +766,9 @@ def test_cert_replay_uscita_approvata_chiude_al_prezzo_del_segnale():
     assert ref.pulita, [str(v) for v in ref.violazioni]
     assert ref.sollecitati.get("T9", 0) >= 1, "nessuna chiusura da misurare"
     assert ref.sollecitati.get("C1", 0) >= 1
-    assert "hedged" in ref.stati_visti
+    # 16/09: con il settlement abilitato (`giri_dopo_il_fischio`) la riga non
+    # resta 'hedged': arriva allo stato TERMINALE vero del bot.
+    assert set(ref.stati_visti) & {"won", "lost", "hedged"}, ref.stati_visti
 
 
 @pytest.mark.cert
@@ -763,3 +779,55 @@ def test_cert_replay_senza_firma_la_chiusura_resta_ferma():
                               competizione=RT.COMPETIZIONE_DICHIARATA)
     assert ref.pulita, [str(v) for v in ref.violazioni]
     assert "hedged" not in ref.stati_visti, "senza firma non si chiude niente"
+
+
+# ---------------------------------------------------------------------------
+# 16/09 — IL SETTLEMENT DEL TENNIS ESISTE (e prima non esisteva)
+# ---------------------------------------------------------------------------
+# Due cause in fila lo impedivano: `MercatoFlumine` senza `read_market` e —
+# misurato — il mercato CHIUSO che flumine consegna a `process_closed_market`,
+# che il ponte del banco non inoltra: l'ULTIMO giro del servizio avveniva
+# sempre a mercato OPEN. Senza settlement nessuna riga arriva a uno stato
+# terminale e T8 non ha mai un caso.
+_SINTETICA = "_synth_safe_tennis"
+
+
+def _cartella_sintetica() -> str:
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))), "_live_raw")
+
+
+def _sintetica_presente() -> bool:
+    return os.path.isfile(os.path.join(_cartella_sintetica(), _SINTETICA,
+                                       f"{_SINTETICA}.raw.jsonl"))
+
+
+@pytest.mark.cert
+@pytest.mark.skipif(not _sintetica_presente(),
+                    reason="registrazione sintetica assente: "
+                           "python -m Betfair.safe_strategy.tools.synth_safe --tennis")
+def test_cert_la_sintetica_arriva_al_SETTLEMENT_e_sveglia_t6_e_t8():
+    """Registrazione SINTETICA (dichiarata): ingresso a 1,02, crollo, mercato
+    CHIUSO con il WINNER dall'altra parte. Deve arrivare a uno stato TERMINALE
+    vero del bot (won/lost) e svegliare T6 e T8, che sulla terna reale erano
+    due ⊘."""
+    ref = RT.certifica_evento(_SINTETICA, data_dir=_cartella_sintetica(),
+                              scenario="base",
+                              competizione=RT.COMPETIZIONE_DICHIARATA)
+    assert ref.pulita, [str(v) for v in ref.violazioni]
+    assert set(ref.stati_visti) >= {"won", "lost"}, ref.stati_visti
+    assert ref.sollecitati.get("T6", 0) >= 1, "ingresso a 1,02 non riconosciuto"
+    assert ref.sollecitati.get("T8-DICHIARATA", 0) >= 1, "nessuna riga regolata"
+
+
+def test_i_giri_dopo_il_fischio_leggono_l_esito_dal_raw_registrato():
+    """L'esito finale NON e' inventato: viene dall'ultimo `marketDefinition`
+    della registrazione, che porta i WINNER/LOSER veri."""
+    raw = os.path.join(_cartella_sintetica(), _SINTETICA, f"{_SINTETICA}.raw.jsonl")
+    if not os.path.isfile(raw):
+        pytest.skip("registrazione sintetica assente")
+    finali = RT.esito_finale_dal_raw(raw)
+    assert finali, "nessuna definizione di mercato letta"
+    chiusi = [d for d in finali.values() if d["status"] == "CLOSED"]
+    assert chiusi, "la registrazione non arriva a CLOSED"
+    assert "WINNER" in set(chiusi[0]["runners"].values())

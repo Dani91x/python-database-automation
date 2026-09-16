@@ -761,18 +761,54 @@ def _e9(u: Uscita) -> Optional[str]:
 
 @_controllo("E10", "SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi "
                    "2-2/3-3, difesa avversaria solida",
-            "il filtro di selezione delle partite della SPEC deve esistere",
-            Valutazione, quando=_segnale("esatto"))
+            "con requireSelection acceso il check esiste, guarda la difesa "
+            "dell'AVVERSARIA (non della bancata) e boccia chi sfora",
+            Valutazione,
+            quando=lambda o: (isinstance(o, Valutazione) and o.strategia == "esatto"
+                              and bool(o.par.get("requireSelection"))))
 def _e10(v: Valutazione) -> Optional[str]:
-    # ⊗ DA PROVOCARE, non ⊘: manca il CODICE, non il dato (RISCONTRO_CALCIO §2).
-    # Il controllo esiste perche' il referto lo nomini a ogni segnale, invece di
-    # lasciare la voce della SPEC senza nessuno che la guardi.
-    for cid in v.check:
-        if "h2h" in cid.lower() or "storic" in cid.lower() or "difes" in cid.lower():
-            return None
-    return ("nessun check di «selezione aggiuntiva» (scontri diretti / difesa "
-            "solida): la voce della SPEC non e' implementata (reperto, non "
-            "correzione: allarga il paniere, non sbaglia un ordine)")
+    """La voce della SPEC implementata il 16/09 su ordine dell'utente.
+
+    Il controllo NON ricalcola chiamando la funzione del motore (sarebbe una
+    tautologia): rifa' il conto a mano dai numeri della riga di scan e
+    pretende lo stesso verdetto. Cosi' un'inversione dei due lati — la difesa
+    della squadra BANCATA al posto di quella avversaria — diventa rossa.
+    Spento il parametro, il controllo non ha casi e il referto dice «non lo
+    so» con la causa (stessa disciplina di B10 ed E6).
+    """
+    ck = v.check.get("h2hDifesa")
+    if ck is None:
+        return ("requireSelection acceso ma il check «selezione aggiuntiva» "
+                "non esiste nella valutazione")
+    hint = getattr(v.ctx, "selection_hint", None)
+    lato = str(v.ev.sub_id or "")
+    if lato not in ("home", "away"):
+        return None
+    incontri = _num((hint or {}).get("h2h_meetings")) if isinstance(hint, dict) else None
+    alti = _num((hint or {}).get("h2h_big_draws")) if isinstance(hint, dict) else None
+    subiti_da = (hint or {}).get("conceded") if isinstance(hint, dict) else None
+    avversaria = "away" if lato == "home" else "home"
+    subiti = _num(subiti_da.get(avversaria)) if isinstance(subiti_da, dict) else None
+    completo = (incontri is not None and incontri > 0
+                and alti is not None and subiti is not None)
+    if not completo:
+        if ck.ok is not None:
+            return (f"dato della selezione aggiuntiva incompleto (incontri={incontri}, "
+                    f"2-2/3-3={alti}, difesa {avversaria}={subiti}) ma il check "
+                    f"vale {ck.ok}: un dato assente non e' un verdetto")
+        return None
+    rate_max = _num(v.par.get("h2hBigDrawRateMax"))
+    conceded_max = _num(v.par.get("oppConcededMax"))
+    if rate_max is None or conceded_max is None:
+        return "soglie della selezione aggiuntiva assenti dai parametri"
+    atteso = (float(alti) / float(incontri) <= rate_max) and (float(subiti) <= conceded_max)
+    if bool(ck.ok) is not atteso:
+        return (f"verdetto {ck.ok} ma dai numeri ({int(alti)}/{int(incontri)} 2-2/3-3, "
+                f"difesa {avversaria} {subiti}) ci si aspetta {atteso}: "
+                f"soglie {rate_max} / {conceded_max}")
+    if v.segnale and ck.ok is not True:
+        return f"segnale con la selezione aggiuntiva non superata (check={ck.ok})"
+    return None
 
 
 # ===========================================================================
@@ -1192,6 +1228,34 @@ def _riga_del_ref(c: "Ciclo", ref: Any) -> Optional[Dict[str, Any]]:
 # Vale ANCHE per un solo giro, e ANCHE quando la seconda nasce per sostituire la
 # prima: finche' il `cancel` non e' stato riletto da Betfair, le lay a mercato
 # sono due.
+def _e_chiusura_appaiata(c: "Ciclo", tr: Dict[str, Any]) -> bool:
+    """La lay `tr` CHIUDE un back del bot sulla stessa selezione?
+
+    Vero solo se: ha `closes_trade_id` in COLONNA, il padre esiste, e' un BACK
+    del bot, ed e' sullo STESSO mercato e sulla STESSA selezione. In quel caso
+    la responsabilita' della lay e' compensata dal back che chiude: la
+    posizione e' piatta. Qualunque dubbio (padre assente, altra selezione,
+    altro lato) -> False, cioe' la lay CONTA: il controllo resta severo.
+    """
+    padre_id = tr.get("closes_trade_id")
+    if padre_id is None:
+        return False
+    try:
+        padre_id = int(padre_id)
+    except (TypeError, ValueError):
+        return False
+    for padre in getattr(c.db, "trades", []) or []:
+        if int(padre.get("id") or 0) != padre_id:
+            continue
+        return bool(
+            str(padre.get("side") or "").lower() == "back"
+            and _e_del_bot(padre)
+            and str(padre.get("market_id")) == str(tr.get("market_id"))
+            and str(padre.get("selection_id")) == str(tr.get("selection_id"))
+        )
+    return False
+
+
 def _lay_in_volo(c: "Ciclo") -> Dict[Tuple[str, int], List[str]]:
     """(mercato, selezione) -> le lay che POSSONO ancora abbinarsi adesso.
 
@@ -1250,6 +1314,21 @@ def _lay_in_volo(c: "Ciclo") -> Dict[Tuple[str, int], List[str]]:
             # ancora a mercato vorrebbe dire dichiarare sano proprio il caso
             # che la regola vuole impedire — e con il FOK, che abbina o uccide
             # nello stesso giro, sarebbe l'unico caso che capita davvero.
+            #
+            # ECCEZIONE, 16/09 (trovata dalle registrazioni sintetiche della
+            # PUNTA): una lay di CHIUSURA gia' abbinata non e' responsabilita'
+            # viva. La PUNTA e il tennis PUNTANO e chiudono BANCANDO la STESSA
+            # selezione: due operazioni consecutive nella stessa partita
+            # lasciano due righe lay `open`, ognuna appaiata al SUO back sulla
+            # stessa selezione e per la stessa size — posizione piatta, non
+            # scoperta. Contarle faceva scattare T12 x159 su una condotta
+            # corretta: falso positivo del CONTROLLO, non difetto del bot
+            # (PROCESSO §6.7). E' la stessa lettura che il gemello del tennis
+            # (`certificazione_tennis._lay_in_volo`) aveva gia' scritto per la
+            # chiusura del residuo. Resta contata la chiusura con RESIDUO VIVO:
+            # quella e' ancora a mercato e puo' abbinarsi.
+            if _e_chiusura_appaiata(c, tr) and bid not in vivi_per_bet:
+                continue
             come = (f"riga {tr.get('id')} con residuo vivo" if bid in vivi_per_bet
                     else f"riga {tr.get('id')} ABBINATA (responsabilita' viva)")
             _aggiungi(tr.get("market_id"), tr.get("selection_id"),

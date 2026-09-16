@@ -22,3 +22,24 @@ def freni_live_aperti(monkeypatch):
     monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
     monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
     yield
+
+
+@pytest.fixture(autouse=True)
+def indice_eventi_chiusi_pulito():
+    """Ogni test parte come un servizio APPENA AVVIATO.
+
+    ``bot_service._EVENTI_CHIUSI`` e' la cache di processo del marcatore
+    «partita chiusa dall'utente» (la fonte di verita' sono le righe:
+    ``meta.chiuso_dall_utente``). In produzione la RICOSTRUISCE
+    ``build_risk_ctx`` a ogni ciclo dalle posizioni vive appena lette; in un
+    test che chiama una singola funzione quel ciclo non gira, e la cache si
+    porterebbe dietro la partita chiusa dal test precedente. Lo stesso vale per
+    ``_CONTO_LETTO_A`` (cadenza della lettura di conto).
+    """
+    from Betfair.safe_strategy import bot_service as _S
+
+    _S._EVENTI_CHIUSI.clear()
+    _S._CONTO_LETTO_A.clear()
+    yield
+    _S._EVENTI_CHIUSI.clear()
+    _S._CONTO_LETTO_A.clear()

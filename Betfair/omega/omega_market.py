@@ -1139,45 +1139,99 @@ def order_state_by_bet_id(bet_id: str) -> dict:
     return {"found": False}
 
 
+def _riga_corrente(o: dict) -> dict:
+    """UN ordine corrente, normalizzato. Estratta il 16/09 sera perche' la
+    stessa normalizzazione serve anche alla POSIZIONE DI CONTO
+    (``list_current_orders_account``): due copie della stessa lettura sono il
+    difetto 1 del catalogo in attesa di succedere."""
+    sid = o.get("selectionId")
+    return {
+        "bet_id": o.get("betId"),
+        "market_id": str(o["marketId"]) if o.get("marketId") else None,
+        "selection_id": int(sid) if sid is not None else None,
+        "side": str(o.get("side", "")).lower(),
+        "status": o.get("status"),
+        "size_matched": float(o.get("sizeMatched") or 0.0),
+        "avg_price_matched": o.get("averagePriceMatched"),
+        "size_remaining": float(o.get("sizeRemaining") or 0.0),
+        "customer_order_ref": o.get("customerOrderRef"),
+        # --- C.12a: il resto di cio' che Betfair dice gia' ----------------
+        # ``CurrentOrder`` porta questi campi da sempre
+        # (``betfairlightweight/resources/bettingresources.py:664-711``) e
+        # noi ne buttavamo via meta': senza ``sizeCancelled/Lapsed/Voided``
+        # un ordine morto per LAPSE e uno annullato dal bot sono
+        # indistinguibili, e senza ``matchedDate`` nessuno sa se "abbinato
+        # 5,00" e' di due secondi o di nove minuti fa.
+        # Le chiavi di sopra NON cambiano (le legge ``_order_matches`` e
+        # tutta la riconciliazione): queste si aggiungono.
+        "size_cancelled": float(o.get("sizeCancelled") or 0.0),
+        "size_lapsed": float(o.get("sizeLapsed") or 0.0),
+        "size_voided": float(o.get("sizeVoided") or 0.0),
+        "matched_date": o.get("matchedDate"),
+        "placed_date": o.get("placedDate"),
+        "price_requested": (o.get("priceSize") or {}).get("price"),
+        "size_requested": (o.get("priceSize") or {}).get("size"),
+        # stessa cosa di ``avg_price_matched``, con la grafia per esteso di
+        # Betfair: un consumatore che cerca l'una o l'altra trova sempre.
+        # (15/09: una grafia scritta in un modo e letta in un altro e' costata
+        # 32 ordini reali — qui si accettano entrambe per costruzione.)
+        "average_price_matched": o.get("averagePriceMatched"),
+    }
+
+
 def list_current_orders(strategy_ref: str = CUSTOMER_STRATEGY_REF) -> list[dict]:
-    """Ordini Omega APERTI/matchati (normalizzati) per la riconciliazione."""
+    """Ordini APERTI/matchati DELLA STRATEGIA (normalizzati) per la riconciliazione."""
     resp = call(lambda c: c.list_current_orders(customer_strategy_refs=[strategy_ref])) or {}
-    out: list[dict] = []
-    for o in resp.get("currentOrders", []) or []:
-        sid = o.get("selectionId")
-        out.append({
-            "bet_id": o.get("betId"),
-            "market_id": str(o["marketId"]) if o.get("marketId") else None,
-            "selection_id": int(sid) if sid is not None else None,
-            "side": str(o.get("side", "")).lower(),
-            "status": o.get("status"),
-            "size_matched": float(o.get("sizeMatched") or 0.0),
-            "avg_price_matched": o.get("averagePriceMatched"),
-            "size_remaining": float(o.get("sizeRemaining") or 0.0),
-            "customer_order_ref": o.get("customerOrderRef"),
-            # --- C.12a: il resto di cio' che Betfair dice gia' ----------------
-            # ``CurrentOrder`` porta questi campi da sempre
-            # (``betfairlightweight/resources/bettingresources.py:664-711``) e
-            # noi ne buttavamo via meta': senza ``sizeCancelled/Lapsed/Voided``
-            # un ordine morto per LAPSE e uno annullato dal bot sono
-            # indistinguibili, e senza ``matchedDate`` nessuno sa se "abbinato
-            # 5,00" e' di due secondi o di nove minuti fa.
-            # Le chiavi di sopra NON cambiano (le legge ``_order_matches`` e
-            # tutta la riconciliazione): queste si aggiungono.
-            "size_cancelled": float(o.get("sizeCancelled") or 0.0),
-            "size_lapsed": float(o.get("sizeLapsed") or 0.0),
-            "size_voided": float(o.get("sizeVoided") or 0.0),
-            "matched_date": o.get("matchedDate"),
-            "placed_date": o.get("placedDate"),
-            "price_requested": (o.get("priceSize") or {}).get("price"),
-            "size_requested": (o.get("priceSize") or {}).get("size"),
-            # stessa cosa di ``avg_price_matched``, con la grafia per esteso di
-            # Betfair: un consumatore che cerca l'una o l'altra trova sempre.
-            # (15/09: una grafia scritta in un modo e letta in un altro e' costata
-            # 32 ordini reali — qui si accettano entrambe per costruzione.)
-            "average_price_matched": o.get("averagePriceMatched"),
-        })
+    return [_riga_corrente(o) for o in (resp.get("currentOrders", []) or [])]
+
+
+def list_current_orders_account(market_ids: list, selection_ids: Optional[list] = None) -> list[dict]:
+    """LA POSIZIONE DI CONTO, meta' viva: ordini VIVI su questi mercati di
+    CHIUNQUE — **senza** filtro di strategia.
+
+    ⚠️ ORDINE DELL'UTENTE, 16/09 sera: «se chiudo io il bot deve saperlo, anche
+    fuori dall'app». Un bot che legge solo i propri ordini
+    (``customerStrategyRef``) non vede la lay che l'utente ha piazzato dal sito
+    Betfair per chiudere la posizione: continua a vedere il proprio back
+    abbinato e a gestirlo. La posizione VERA e' quella del CONTO sul mercato, e
+    la si ottiene chiedendo ``listCurrentOrders`` con i soli ``marketIds``
+    (``betfairlightweight.endpoints.betting.list_current_orders``: i parametri
+    sono indipendenti, ``customer_strategy_refs`` si puo' semplicemente
+    omettere). ``selection_ids`` non esiste come filtro dell'API: si filtra qui.
+
+    E' una chiamata REST IN PIU': chi la usa la fa alla cadenza del respiro del
+    database, mai a ogni giro (§17 della Costituzione di Mike).
+    """
+    resp = call(lambda c: c.list_current_orders(market_ids=list(market_ids))) or {}
+    volute = {int(x) for x in (selection_ids or [])}
+    out = [_riga_corrente(o) for o in (resp.get("currentOrders", []) or [])]
+    if volute:
+        out = [r for r in out if r.get("selection_id") in volute]
     return out
+
+
+def _riga_regolata(o: dict) -> dict:
+    """UN ordine regolato, normalizzato (vedi ``_riga_corrente``).
+
+    ``size_matched`` c'e' ANCHE con la grafia dei correnti: chi somma una
+    posizione di conto legge le due liste insieme e non deve conoscere due
+    nomi per la stessa cosa (difetto 1 del catalogo del 15/09)."""
+    sid = o.get("selectionId")
+    regolato = float(o.get("sizeSettled") or 0.0)
+    return {
+        "bet_id": o.get("betId"),
+        "market_id": str(o["marketId"]) if o.get("marketId") else None,
+        "selection_id": int(sid) if sid is not None else None,
+        "side": str(o.get("side", "")).lower(),
+        "size_settled": regolato,
+        "size_matched": regolato,
+        "size_remaining": 0.0,
+        "price": o.get("priceMatched") or o.get("priceRequested"),
+        "avg_price_matched": o.get("priceMatched"),
+        "profit": float(o.get("profit") or 0.0),
+        "bet_outcome": o.get("betOutcome"),
+        "customer_order_ref": o.get("customerOrderRef"),
+    }
 
 
 def list_cleared_orders(
@@ -1185,9 +1239,10 @@ def list_cleared_orders(
     market_ids: Optional[list] = None,
     lookback_hours: int = 72,
 ) -> list[dict]:
-    """Ordini Omega REGOLATI (normalizzati). Finestra temporale (default 72h) +
-    stati SETTLED **e** VOIDED (un ordine parzialmente matchato su un mercato
-    annullato non è SETTLED): così un ordine reale non sfugge alla riconciliazione.
+    """Ordini REGOLATI DELLA STRATEGIA (normalizzati). Finestra temporale
+    (default 72h) + stati SETTLED **e** VOIDED (un ordine parzialmente matchato
+    su un mercato annullato non è SETTLED): così un ordine reale non sfugge
+    alla riconciliazione.
     """
     settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
@@ -1200,17 +1255,87 @@ def list_cleared_orders(
                 market_ids=market_ids, settled_from=settled_from,
             )
         ) or {}
-        for o in resp.get("clearedOrders", []) or []:
-            sid = o.get("selectionId")
-            out.append({
-                "bet_id": o.get("betId"),
-                "market_id": str(o["marketId"]) if o.get("marketId") else None,
-                "selection_id": int(sid) if sid is not None else None,
-                "side": str(o.get("side", "")).lower(),
-                "size_settled": float(o.get("sizeSettled") or 0.0),
-                "price": o.get("priceMatched") or o.get("priceRequested"),
-                "profit": float(o.get("profit") or 0.0),
-                "bet_outcome": o.get("betOutcome"),
-                "customer_order_ref": o.get("customerOrderRef"),
-            })
+        out.extend(_riga_regolata(o) for o in (resp.get("clearedOrders", []) or []))
+    return out
+
+
+def list_cleared_orders_account(market_ids: list, lookback_hours: int = 72) -> list[dict]:
+    """LA POSIZIONE DI CONTO, meta' regolata: ordini REGOLATI su questi mercati
+    di CHIUNQUE — **senza** filtro di strategia (vedi
+    ``list_current_orders_account``)."""
+    settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    out: list[dict] = []
+    for status in ("SETTLED", "VOIDED"):
+        resp = call(
+            lambda c, s=status: c.list_cleared_orders(
+                bet_status=s, market_ids=list(market_ids), settled_from=settled_from,
+            )
+        ) or {}
+        out.extend(_riga_regolata(o) for o in (resp.get("clearedOrders", []) or []))
+    return out
+
+
+def posizione_di_conto(market_id: str, selection_id: Optional[int] = None) -> list[dict]:
+    """LA POSIZIONE DI CONTO su un mercato (e, se dato, su UNA selezione):
+    ordini VIVI **piu'** REGOLATI di CHIUNQUE, **senza filtro di strategia**.
+
+    ⚠️ ORDINE DELL'UTENTE, 16/09 sera: «se chiudo io, anche fuori dall'app,
+    direttamente su Betfair, il bot deve saperlo e NON gestire posizioni che non
+    esistono piu'». Un bot che legge solo i propri ordini
+    (``customerStrategyRef``) non vede la back che l'utente ha piazzato dal sito
+    per chiudere: continua a vedere la propria lay abbinata e a coprirla — un
+    green-up su una posizione che non c'e' piu' e' un back con soldi veri.
+
+    UNA funzione sola, con questo nome e questa firma, condivisa da Omega e
+    dalla Safe Strategy (accordo fra delegati del 16/09) e rispecchiata dal
+    banco di replay (``Betfair/stream/backtest/banco_comune.py``: stesso nome,
+    stessa firma, stesse chiavi — un finto che parla una lingua diversa dal vero
+    e' il difetto 27 del catalogo).
+
+    Ritorna le righe normalizzate di ``_riga_corrente`` (vive) e ``_riga_regolata``
+    (morte): chiavi comuni ``bet_id, market_id, selection_id, side, size_matched,
+    size_remaining, avg_price_matched, customer_order_ref``. Le vive portano in
+    piu' ``status`` (EXECUTABLE/…); le regolate ``size_settled``, ``profit``,
+    ``bet_outcome``.
+
+    COSTA DUE CHIAMATE REST: chi la usa la fa alla CADENZA DICHIARATA del
+    respiro (Omega: ``conto_every_s``, default 120 s), mai a ogni giro.
+    SOLLEVA su errore di rete: chi decide su soldi veri non decide al buio.
+    """
+    sel = [int(selection_id)] if selection_id is not None else None
+    righe = list(list_current_orders_account([str(market_id)], sel))
+    for r in list_cleared_orders_account([str(market_id)]):
+        if sel is not None and r.get("selection_id") not in sel:
+            continue
+        righe.append(r)
+    return righe
+
+
+def market_profit_and_loss(market_ids: list) -> dict:
+    """``listMarketProfitAndLoss``: il P&L che Betfair calcola sul CONTO per
+    ogni selezione del mercato, comprese le scommesse dell'utente.
+
+    Torna ``{market_id: {selection_id: ifWin}}``. E' la terza lettura possibile
+    della posizione di conto (la piu' sintetica) e serve come CONTROPROVA: la
+    posizione la si ricostruisce dagli ordini, questa dice se il conto la vede
+    allo stesso modo. ``includeSettledBets`` acceso, ``netOfCommission`` spento
+    (il lordo: la commissione la applica gia' il bot con la sua aliquota).
+    """
+    resp = call(lambda c: c.list_market_profit_and_loss(
+        market_ids=list(market_ids), include_settled_bets=True,
+        net_of_commission=False)) or []
+    out: dict = {}
+    for m in resp or []:
+        mid = str(m.get("marketId") or "")
+        if not mid:
+            continue
+        per_sel: dict = {}
+        for r in m.get("profitAndLosses") or []:
+            sid = r.get("selectionId")
+            if sid is None:
+                continue
+            per_sel[int(sid)] = float(r.get("ifWin") or 0.0)
+        out[mid] = per_sel
     return out

@@ -1114,6 +1114,13 @@ def test_h16_catalogo_dei_kind_di_attivita():
         "settle_orphan_closing", "market_missing",
         # feed
         "feed_blind", "feed_back",
+        # 16/09 sera: L'UTENTE HA CHIUSO. `chiuso_dall_utente` = da qui in poi
+        # il bot non fa altro su quella partita (cash-out globale, ultima riga
+        # chiusa a mano, oppure chiusura fatta FUORI dall'app e scoperta sulla
+        # posizione di conto); `posizione_di_conto` = il verdetto della lettura
+        # del conto sul mercato; `riprendi_evento` = il gesto con cui l'utente
+        # riporta la partita in carico al bot.
+        "chiuso_dall_utente", "posizione_di_conto", "riprendi_evento",
     }
     import re as _re
     from pathlib import Path

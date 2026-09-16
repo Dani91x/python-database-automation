@@ -445,28 +445,46 @@ def _t7_appr(oss: Osservazione) -> Optional[str]:
     return None
 
 
+# Gli stati TERMINALI che il bot scrive davvero dopo il settlement
+# (`bot_db.py:468,494`): 'won', 'lost', 'void'. Fino al 16/09 questo file
+# cercava uno stato 'settled' che il bot non scrive in nessun punto: T8 non
+# poteva avere un caso NEMMENO con il settlement funzionante — un controllo che
+# non sa diventare rosso non certifica (PROCESSO §7).
+STATI_REGOLATI = ("won", "lost", "void")
+
+
 @_controllo("T8-DICHIARATA",
             "SPEC §3 tennis: «perdite dal 5% fino al 25% del capitale» — voce "
             "DESCRITTIVA, non comparabile a stake fisso (eccezione utente 14/09)",
             quando=lambda o: any(
-                _e_tennis(t) and str(t.get("status") or "") == "settled"
+                _e_tennis(t) and str(t.get("status") or "") in STATI_REGOLATI
                 and (_num(t.get("pnl")) or 0.0) < 0
                 for t in o.trades))
 def _t8(oss: Osservazione) -> Optional[str]:
+    """La banda 5-25% della SPEC e' DESCRITTIVA (eccezione dell'utente del
+    14/09): con uno stake fisso una posizione che va a settlement perdente
+    perde il 100% dello stake, e dirlo a ogni riga renderebbe ROSSA per sempre
+    ogni certificazione del tennis su una scelta che l'utente ha gia' preso.
+    Quello che qui si difende e' l'invariante che resta vero comunque: **un
+    BACK non puo' perdere piu' dello stake**. Se il settlement scrive una
+    perdita maggiore, e' il conto a essere sbagliato, ed e' money-critical
+    (16/09: prima di questa riscrittura il controllo cercava uno stato
+    `settled` che il bot non scrive, quindi non aveva MAI un caso)."""
     fuori: List[str] = []
     for t in oss.trades:
-        if not _e_tennis(t) or str(t.get("status") or "") != "settled":
+        if not _e_tennis(t) or str(t.get("status") or "") not in STATI_REGOLATI:
             continue
         pnl = _num(t.get("pnl"))
         stake = _num(t.get("size"))
         if pnl is None or stake is None or stake <= 0 or pnl >= 0:
             continue
         perc = abs(pnl) / stake * 100.0
-        if perc < 5.0 or perc > 25.0:
-            fuori.append(f"trade {t.get('id')}: {perc:.1f}% dello stake")
+        if str(t.get("side") or "").lower() == "back" and perc > 100.0 + 1e-6:
+            fuori.append(f"trade {t.get('id')}: {perc:.1f}% dello stake "
+                         f"(pnl {pnl}, stake {stake})")
     if fuori:
-        return ("DICHIARATA (RISCONTRO_TENNIS, eccezione stake fisso): perdita "
-                "fuori dalla banda 5-25% — " + " | ".join(fuori))
+        return ("un BACK ha perso PIU' dello stake: impossibile, il conto del "
+                "settlement e' sbagliato — " + " | ".join(fuori))
     return None
 
 

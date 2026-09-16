@@ -73,7 +73,7 @@ import os
 import sys
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import bot_db as BOTDB
@@ -509,8 +509,120 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
                               servizio=servizio, sport="tennis",
                               ogni_ms=int(ogni_ms) or cadenza_ms(par_control),
                               pre_ko_ou_hours=0.0, db=db)
+        giri_dopo_il_fischio(firma, raw)
     firma.chiudi(esito)
     return ref
+
+
+def esito_finale_dal_raw(raw: str) -> Dict[str, Dict[str, Any]]:
+    """L'ULTIMO `marketDefinition` di ogni mercato della registrazione.
+
+    A mercato chiuso porta gli esiti veri (WINNER/LOSER) ed è l'unico posto
+    dove stanno: lo si legge dal file, non lo si inventa. Stessa tecnica già
+    usata dal replay calcio per i nomi del Correct Score.
+    """
+    import json
+
+    out: Dict[str, Dict[str, Any]] = {}
+    try:
+        with open(raw, encoding="utf-8") as fh:
+            for riga in fh:
+                try:
+                    msg = json.loads(riga)
+                except ValueError:
+                    continue
+                for mc in msg.get("mc") or []:
+                    md = mc.get("marketDefinition")
+                    if not md:
+                        continue
+                    out[str(mc.get("id") or "")] = {
+                        "status": str(md.get("status") or "OPEN").upper(),
+                        "inplay": bool(md.get("inPlay")),
+                        "runners": {int(r["id"]): str(r.get("status") or "").upper()
+                                    for r in (md.get("runners") or [])
+                                    if r.get("id") is not None},
+                    }
+    except OSError as ex:  # noqa: BLE001
+        logger.warning("[safe.tennis] esito finale non letto: %s", ex)
+    return out
+
+
+def giri_dopo_il_fischio(firma: Any, raw: str, quanti: int = 3) -> int:
+    """Fa girare il servizio ANCORA, a mercato CHIUSO, per il SETTLEMENT.
+
+    PERCHE' SERVE, misurato il 16/09: flumine consegna un mercato chiuso a
+    `process_closed_market`, non a `process_market_book`, e il ponte del banco
+    comune inoltra solo il secondo. Risultato: l'ultimo giro del servizio
+    avviene con il mercato ancora OPEN e il bot non vede MAI la chiusura —
+    per questo T8 (che vuole una riga `settled`) non aveva mai un caso. Non
+    è «manca una partita che arrivi a CLOSED»: nemmeno una che ci arriva
+    basterebbe.
+
+    Qui si fa quello che fa già il replay di Omega («3 giri dopo il fischio
+    per il settlement da WINNER»): l'esito finale si legge dal
+    `marketDefinition` REGISTRATO (`esito_finale_dal_raw`), si mette nelle
+    definizioni del mercato — le stesse che `registra_definizione` riempirebbe
+    — e si chiama il servizio VERO altre `quanti` volte. Nessun fill, nessun
+    P&L scritto a mano: il settlement lo fa `bot_service`.
+    """
+    if firma.mercato is None or firma.db is None or firma.ultimo_now is None:
+        return 0
+    if not hasattr(firma.mercato, "definizioni"):
+        return 0
+    finali = esito_finale_dal_raw(raw)
+    chiusi = {mid: d for mid, d in finali.items()
+              if str(d.get("status")) in ("CLOSED", "SETTLED", "VOID", "VOIDED")}
+    if not chiusi:
+        return 0
+    firma.mercato.definizioni.update(chiusi)
+    fatti = 0
+    for i in range(int(quanti)):
+        adesso = firma.ultimo_now + timedelta(seconds=2 * (i + 1))
+        try:
+            firma.giro(db=firma.db, market=firma.mercato, now=adesso, row=None,
+                       banco=firma.banco, strategia=firma.strategia)
+        except Exception as ex:  # noqa: BLE001 - un giro che esplode E' un referto
+            firma.ref.note.append(f"giro di settlement fallito: "
+                                  f"{type(ex).__name__}: {ex}")
+            break
+        fatti += 1
+    firma.giri_di_chiusura = fatti
+    return fatti
+
+
+def abilita_settlement(mercato: Any, strategia: Any) -> bool:
+    """Dà al mercato del banco le LETTURE che gli mancano, senza toccarlo.
+
+    LIMITE 8 del banco: `MercatoFlumine` piazza e annulla ma non espone
+    `read_market`/`read_markets`, quindi `bot_service` non può leggere l'esito
+    del mercato CHIUSO e il SETTLEMENT non avviene mai — ed è la ragione per
+    cui il controllo T8 non ha mai avuto un caso sul tennis (⊘ dichiarato il
+    16/09), non la mancanza di una partita che arrivi a CLOSED.
+
+    Qui NON si scrive un mercato nuovo e non si tocca il banco comune (è di
+    un'altra sessione): si riusa `MercatoSafe`, già scritto e già certificato
+    per il calcio (C.3), appoggiando i suoi due metodi all'oggetto esistente.
+    Il contenuto non è inventato: viene dal `marketDefinition` della
+    registrazione, che a mercato chiuso porta i WINNER/LOSER veri.
+    Torna True se il settlement è stato abilitato adesso.
+    """
+    import types
+
+    from .replay_registrazioni import MercatoSafe
+
+    acceso = False
+    if not hasattr(mercato, "read_market"):
+        mercato.definizioni = {}
+        mercato.read_market = types.MethodType(MercatoSafe.read_market, mercato)
+        mercato.read_markets = types.MethodType(MercatoSafe.read_markets, mercato)
+        mercato.registra_definizione = types.MethodType(
+            MercatoSafe.registra_definizione, mercato)
+        acceso = True
+    for mkt in (getattr(strategia, "mercati", None) or {}).values():
+        mb = getattr(mkt, "market_book", None)
+        if mb is not None:
+            mercato.registra_definizione(mb)
+    return acceso
 
 
 def cadenza_ms(params: Dict[str, Any]) -> int:
@@ -566,10 +678,21 @@ class _Stato:
         self.proposte_viste: set = set()
         self.motivi: Counter = Counter()
         self.mercato = None
+        self.settlement_abilitato = False
+        self.banco = None
+        self.strategia = None
+        self.ultimo_now = None
+        self.giri_di_chiusura = 0
 
     # ------------------------------------------------------------- un giro
     def giro(self, *, db, market, now, row, banco, strategia) -> None:
         self.mercato = market
+        self.banco = banco
+        self.strategia = strategia
+        self.ultimo_now = now
+        # le letture del mercato CHIUSO (settlement): vedi `abilita_settlement`
+        self.settlement_abilitato = (abilita_settlement(market, strategia)
+                                     or self.settlement_abilitato)
         self._ora = now.timestamp()
         self.ref.tick += 1
         if self.guasti and not self._guasti_messi and not self.guasti_sull_uscita:
@@ -911,6 +1034,22 @@ class _Stato:
                             "del banco comune) -> si ripiega sul feed, e i "
                             "controlli che dipendono dal REGOLAMENTO (T8) non "
                             "hanno un caso")
+            if self.giri_di_chiusura:
+                note.append(f"[DICHIARATO] {self.giri_di_chiusura} giri del "
+                            f"servizio DOPO il fischio, a mercato CHIUSO, per il "
+                            f"settlement (come il replay di Omega): flumine "
+                            f"consegna il mercato chiuso a `process_closed_market` "
+                            f"e il ponte del banco inoltra solo "
+                            f"`process_market_book`, quindi senza questi giri il "
+                            f"bot non vedrebbe MAI la chiusura. L'esito viene dal "
+                            f"`marketDefinition` registrato.")
+            if self.settlement_abilitato:
+                note.append("[DICHIARATO] settlement dal mercato CHIUSO abilitato "
+                            "dal replay: `read_market`/`read_markets` di "
+                            "`MercatoSafe` (gli stessi del calcio, C.3) appoggiati "
+                            "al mercato del banco, contenuto dal `marketDefinition` "
+                            "registrato. Senza, T8 non avrebbe mai un caso "
+                            "(limite 8 del banco comune)")
             fill = self.mercato.riepilogo_fill()
             note.append(f"fill: {fill['fill']} abbinamenti su {fill['ordini_con_fill']} "
                         f"ordini per {fill['abbinato']} EUR (prezzi {fill['prezzi']})")

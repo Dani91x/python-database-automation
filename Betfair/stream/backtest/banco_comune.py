@@ -472,6 +472,15 @@ class MercatoFlumine:
         self.motore = motore
         # customer_ref -> ordine flumine
         self.ordini: Dict[str, Any] = {}
+        # GLI ORDINI DELL'UTENTE, quelli che il bot NON ha piazzato. Stanno in
+        # un cassetto a parte per la stessa ragione per cui in produzione stanno
+        # fuori: ``omega_market.list_current_orders`` filtra per
+        # ``customerStrategyRef``, quindi un ordine piazzato dall'utente (dal
+        # sito, da un'altra app, da un altro bot) NON compare nella lista che il
+        # bot legge. Compare invece nella POSIZIONE DI CONTO sul mercato, che e'
+        # senza filtro: ed e' esattamente la differenza che il 16/09 ha reso
+        # cieco Mike davanti a una chiusura fatta fuori dall'app.
+        self.ordini_utente: Dict[str, Any] = {}
         self.rifiutati: List[Dict[str, Any]] = []
         # guasti da provocare apposta: {"place_exception": N} solleva sui
         # prossimi N piazzamenti, per far nascere gli stati di riconciliazione
@@ -494,6 +503,20 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
+        if self.guasti.get("place_rifiuto", 0) > 0:
+            # IL RIFIUTO DICHIARATO DI BETFAIR (`ok=False`): l'istruzione torna
+            # con un report negativo e NESSUN ordine esiste. E' il difetto 2 del
+            # catalogo del 15/09 («`res.ok` mai letto: un rifiuto trattato come
+            # copertura esistente»), e senza provocarlo il replay non ha MAI un
+            # caso in cui `ok` valga False — quindi non puo' accorgersi se
+            # qualcuno smettesse di leggerlo. Le parole sono quelle di Betfair.
+            self.guasti["place_rifiuto"] -= 1
+            self.rifiutati.append({"ref": str(customer_ref or ""),
+                                   "err": "INVALID_ODDS (rifiuto provocato)"})
+            return PlaceResult(ok=False, order_status="EXPIRED", bet_id=None,
+                               size_matched=0.0, avg_price_matched=None,
+                               raw={"motivo": "rifiuto provocato: INVALID_ODDS",
+                                    "error_code": "INVALID_ODDS"})
 
         mercato = self.s.mercati.get(str(market_id))
         if mercato is None:
@@ -655,7 +678,7 @@ class MercatoFlumine:
         return self._esito_cancel(bet_id, ordine, prima, ok=None, errore=None)
 
     def _per_bet_id(self, bet_id: Any) -> Optional[Any]:
-        for o in self.ordini.values():
+        for o in list(self.ordini.values()) + list(self.ordini_utente.values()):
             if str(getattr(o, "bet_id", None) or getattr(o, "id", "")) == str(bet_id):
                 return o
         return None
@@ -766,6 +789,118 @@ class MercatoFlumine:
     def list_cleared_orders(self, *_a: Any, **_k: Any) -> List[Dict[str, Any]]:
         self._costa_una_lettura()
         return [self._riga(ref, o) for ref, o in self.ordini.items() if not self._vivo(o)]
+
+    def order_state_by_bet_id(self, bet_id: str) -> Dict[str, Any]:
+        """Lo stato di UN ordine per betId, con le stesse chiavi della produzione.
+
+        ⚠️ 16/09 SERA — QUESTO METODO MANCAVA, ed e' il motivo per cui il ramo
+        (b) della riapertura («l'ordine appoggiato e' SCADUTO alla sospensione»)
+        non e' MAI capitato sulle registrazioni vere. Quando Betfair fa scadere
+        una lay appoggiata, quell'ordine esce dai CORRENTI: il servizio
+        (``service._rileggi_ordine_appoggiato``) cerca allora
+        ``market.order_state_by_bet_id`` — che in produzione esiste
+        (``omega_market:1082``, guarda anche i regolati LAPSED/CANCELLED) e qui
+        no. Senza, il servizio tornava «ignoto/mercato_senza_lettura» e la
+        gamba finiva in riconciliazione invece che dichiarata SCADUTA: il banco
+        raccontava una cosa che Betfair non avrebbe mai raccontato.
+
+        Le chiavi sono quelle di ``omega_market.order_state_by_bet_id``
+        (snake_case), nemmeno una in piu': un finto che parla una lingua
+        diversa dal vero e' il difetto 27 del catalogo.
+        """
+        self._costa_una_lettura()
+        ordine = self._per_bet_id(bet_id)
+        if ordine is None:
+            return {"found": False}
+        sim = getattr(ordine, "simulated", None)
+        return {
+            "found": True,
+            "size_matched": float(getattr(sim, "size_matched", 0.0) or 0.0),
+            "avg_price_matched": getattr(sim, "average_price_matched", None) or None,
+            "size_remaining": float(getattr(ordine, "size_remaining", 0.0) or 0.0),
+            # la produzione non torna ne' ``size_lapsed`` ne' ``size_cancelled``
+            # su questa strada (listCurrentOrders per betId e i regolati non li
+            # portano): non si aggiungono qui, o il banco sarebbe piu' generoso
+            # del vero.
+            "matched_date": None,
+            "placed_date": None,
+        }
+
+    # ------------------------------------------- LA POSIZIONE DI CONTO
+    # «SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP» (ordine
+    # dell'utente, 16/09 sera). Il bot legge i SUOI ordini per
+    # ``customerStrategyRef``; la posizione di CONTO sul mercato la si legge
+    # SENZA filtro di strategia (``listCurrentOrders``/``listClearedOrders``
+    # con i soli ``marketIds``). Qui il banco espone la stessa cosa dal
+    # blotter di flumine: gli ordini del bot PIU' quelli dell'utente.
+    def _righe_conto(self, quali: str, market_id: Optional[str]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for cassetto in (self.ordini, self.ordini_utente):
+            for ref, o in cassetto.items():
+                vivo = self._vivo(o)
+                if (quali == "vivi") != vivo:
+                    continue
+                if market_id and str(getattr(o, "market_id", "")) != str(market_id):
+                    continue
+                out.append(self._riga(ref, o))
+        return out
+
+    def list_account_orders(self, market_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Ordini VIVI sul mercato, di CHIUNQUE (bot e utente)."""
+        self._costa_una_lettura()
+        return self._righe_conto("vivi", market_id)
+
+    def list_account_cleared_orders(self, market_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Ordini non piu' vivi sul mercato, di CHIUNQUE (bot e utente)."""
+        self._costa_una_lettura()
+        return self._righe_conto("morti", market_id)
+
+    def posizione_di_conto(self, market_id: str,
+                           selection_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """LA POSIZIONE DI CONTO: vivi + morti, di CHIUNQUE, su questo mercato
+        (e su UNA selezione se data).
+
+        STESSO NOME, STESSA FIRMA, STESSE CHIAVI della produzione
+        (``omega_market.posizione_di_conto``): e' la funzione che i bot chiamano
+        per accorgersi di una chiusura fatta dall'utente FUORI dall'app. Qui
+        costa due letture come li' (``_costa_una_lettura`` per lista), cosi' il
+        tempo che ruba al giro e' quello vero.
+        """
+        righe = self.list_account_orders(market_id) + self.list_account_cleared_orders(market_id)
+        if selection_id is None:
+            return righe
+        sid = int(selection_id)
+        return [r for r in righe if int(r.get("selection_id") or -1) == sid]
+
+    def place_order_utente(self, *, market_id: str, selection_id: int, price: float,
+                           size: float, side: str = "lay",
+                           customer_ref: str = "utente-1") -> Optional[Any]:
+        """UN ORDINE DELL'UTENTE, piazzato DAVVERO su flumine con un ref suo.
+
+        Non e' un finto: passa dallo stesso ``market.place_order`` e dallo
+        stesso matching del bot. L'unica differenza e' che il suo ref non e'
+        del bot, quindi il bot non lo vede fra i propri ordini — come su
+        Betfair. Torna l'ordine, o None se il mercato non e' nel replay.
+        """
+        from flumine.order.ordertype import LimitOrder
+        from flumine.order.trade import Trade
+
+        mercato = self.s.mercati.get(str(market_id))
+        if mercato is None:
+            return None
+        trade = Trade(market_id=str(market_id), selection_id=int(selection_id),
+                      handicap=0.0, strategy=self.s)
+        ordine = trade.create_order(
+            side="BACK" if str(side).lower() == "back" else "LAY",
+            order_type=LimitOrder(price=float(price), size=round(float(size), 2),
+                                  persistence_type="LAPSE"),
+        )
+        ordine.notes["bot_ref"] = str(customer_ref)[:32]
+        if mercato.place_order(ordine) is False:
+            return None
+        self.ordini_utente[str(customer_ref)[:32]] = ordine
+        self._attendi_betfair(mercato)
+        return ordine
 
     # ------------------------------------------------- traccia forense
     def fills(self) -> Dict[str, List[List[Any]]]:

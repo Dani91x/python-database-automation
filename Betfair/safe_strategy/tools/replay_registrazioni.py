@@ -122,6 +122,12 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # VERO del servizio (una richiesta `cashout` per ogni riga viva, che e'
     # cio' che la UI accoda). Da li' in poi il bot «lo capisce e non fa altro».
     "cashout-globale": {},
+    # SELEZIONE AGGIUNTIVA della SPEC §2 ACCESA (ordine dell'utente 16/09):
+    # cambia SOLO un parametro, come tutti gli altri scenari. Serve a far
+    # girare davvero il filtro «scontri diretti senza troppi 2-2/3-3, difesa
+    # avversaria solida» e a far avere un caso al controllo E10, che con il
+    # parametro spento (default) non ne ha nessuno.
+    "selezione-aggiuntiva": {"esatto": {"requireSelection": True}},
 }
 
 SCENARIO_BOT_FERMO = "bot-fermo"
@@ -133,6 +139,7 @@ SCENARIO_ORDINI = "ordini-manuali"
 SCENARIO_DUE_LAY = "due-lay"
 SCENARIO_MANUALE_E_BOT = "manuale-e-bot"
 SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
+SCENARIO_SELEZIONE = "selezione-aggiuntiva"
 QUANTI_GUASTI = 3
 # ogni quanti giri, dopo l'apertura, il trader chiede la chiusura (cash out):
 # 60 giri x 2 s = due minuti di tempo di MERCATO.
@@ -169,6 +176,11 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                               "partita (una `cashout` per riga viva, percorso "
                               "vero del servizio): dal giro dopo il bot non deve "
                               "aprire ne' gestire altro (T14)",
+    SCENARIO_SELEZIONE: "la «selezione aggiuntiva» della SPEC §2 ACCESA "
+                        "(`esatto.requireSelection`): il filtro scontri diretti "
+                        "+ difesa avversaria gira davvero e il controllo E10 ha "
+                        "i suoi casi. Con i dati storici assenti il verdetto e' "
+                        "n/d e la variante NON entra: e' la regola del motore",
 }
 
 

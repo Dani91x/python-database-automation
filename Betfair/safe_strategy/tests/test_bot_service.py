@@ -3652,7 +3652,10 @@ def test_prezzo_to_decisione_non_accorcia_la_catena():
 def test_corsia_veloce_solo_cashout_mai_cancel():
     """`cancel` NON e' in corsia preferenziale: la sua difesa si regge su
     campi che scrivono le fasi di riconciliazione."""
-    assert S.CHIUSURE == ("cashout",)
+    # 16/09: il CASH-OUT GLOBALE di partita entra in corsia con lo stesso
+    # diritto del cash-out per riga (e' lo stesso clic, moltiplicato).
+    assert set(S.CHIUSURE) == {"cashout", "cashout_event"}
+    assert "cancel" not in S.CHIUSURE
     assert "cancel" not in S.CHIUSURE
 
 

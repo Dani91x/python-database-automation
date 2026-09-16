@@ -144,6 +144,21 @@ def open_trades(mode: Optional[str] = None) -> list[dict[str, Any]]:
     return q.order("placed_at", desc=False).execute().data or []
 
 
+def trades_for_event(event_id: str) -> list[dict[str, Any]]:
+    """TUTTE le righe di UNA partita, ogni stato, gambe di chiusura comprese.
+
+    Serve al cash-out globale e al «Riprendi»: quelli ragionano per PARTITA e
+    devono vedere anche le riserve 'pending' (che ``open_trades`` non torna) e
+    le righe gia' regolate (che portano il marcatore). E' una query per
+    ``event_id``, non la tabella intera: ``list_trades()`` non e' paginata e
+    oltre 1000 righe ne perderebbe in silenzio — cioe' il cash-out globale
+    lascerebbe fuori proprio le posizioni che deve chiudere."""
+    return _fetch_all(lambda: (
+        _sb().table("safe_strategy_trades").select("*")
+        .eq("event_id", str(event_id)).order("id", desc=False)
+    ))
+
+
 def closing_trades_for(trade_ids: list[int]) -> list[dict[str, Any]]:
     """Righe di CHIUSURA (cash-out) delle aperture indicate."""
     if not trade_ids:
@@ -232,6 +247,13 @@ _AGG_KEYS = ("realized_total", "realized_today", "open_liability", "open_count",
              "reconciling_liability", "day_liability", "day_liability_model",
              "day_trades", "legs_today", "events_today", "won_today", "lost_today")
 
+#: i numeri su cui i CAP DEL BOT decidono: gli stessi, contati sulle sole
+#: posizioni del bot (16/09). La RPC li porta solo con la migrazione
+#: ``safe_strategy_cap_solo_automatico_2026-09-16.sql``: finche' non e'
+#: applicata, la scansione Python li calcola comunque e il servizio ripiega
+#: sui completi (piu' alti, quindi piu' prudenti).
+_AGG_KEYS_AUTO = tuple(f"{k}_auto" for k in _AGG_KEYS)
+
 
 def aggregates(now: Optional[datetime] = None,
                mode: Optional[str] = None) -> dict[str, float]:
@@ -258,7 +280,11 @@ def aggregates(now: Optional[datetime] = None,
             data = getattr(res, "data", None)
             if isinstance(data, dict) and "open_liability" in data:
                 _AGG_RPC["ko_ts"] = 0.0
-                return {k: data.get(k, 0) for k in _AGG_KEYS}
+                out = {k: data.get(k, 0) for k in _AGG_KEYS}
+                # i numeri "solo bot" solo se la RPC li porta davvero: mai un
+                # campo inventato a zero, che spegnerebbe i cap in silenzio
+                out.update({k: data[k] for k in _AGG_KEYS_AUTO if k in data})
+                return out
             logger.info("[safe.db] get_safe_aggregates risposta inattesa (%s): "
                         "scansione Python", type(data).__name__)
         except Exception as ex:  # noqa: BLE001 — migrazione non applicata / RPC KO
@@ -272,7 +298,7 @@ def aggregates(now: Optional[datetime] = None,
         q = (
             _sb().table("safe_strategy_trades")
             .select("id,event_id,status,pnl,liability,settled_at,placed_at,strategy,"
-                    "bet_id,meta,closes_trade_id,mode")
+                    "bet_id,meta,closes_trade_id,mode,origin")
         )
         if m:
             q = q.eq("mode", m)
@@ -280,6 +306,14 @@ def aggregates(now: Optional[datetime] = None,
 
     rows = _fetch_all(_q)
     return aggregate_rows(rows, day_start=_risk.operating_day_start(now))
+
+
+def open_trades_auto(mode: Optional[str] = None) -> list[dict[str, Any]]:
+    """Le posizioni vive DEL BOT (``origin='auto'``): quelle su cui i cap
+    contano. Le manuali del trader restano in ``open_trades`` per i numeri di
+    pagina e per la protezione, ma non entrano nei tetti del bot."""
+    return [t for t in open_trades(mode)
+            if str(t.get("origin") or "auto").lower() != "manual"]
 
 
 def _is_reconciling_row(r: dict[str, Any]) -> bool:
@@ -345,8 +379,57 @@ def recent_activity(limit: int = 60) -> list[dict[str, Any]]:
         return []
 
 
+def righe_del_bot(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Le righe che appartengono alle POSIZIONI DEL BOT: le aperture
+    ``origin='auto'`` e TUTTE le loro gambe di chiusura, qualunque sia
+    l'origine della chiusura.
+
+    ⚠️ ORDINE DELL'UTENTE 16/09 h18 — «il bot gestisce le SUE operazioni e
+    ignora le mie manuali». I cap del bot devono contare il bot: fino a ieri
+    ``aggregate_rows`` non guardava ``origin`` e le righe che il trader apriva
+    a mano dalla scheda entravano nella responsabilita' di giornata e nei cap
+    (misurati 32,80 EUR di responsabilita' manuale dentro i cap del bot).
+    La gamba di chiusura MANUALE di una posizione AUTOMATICA resta dentro: e'
+    il cash-out che il trader ha fatto SULLA posizione del bot, e il suo P&L e'
+    P&L del bot. Escluderla darebbe un realizzato falso."""
+    # ``origin`` e' NOT NULL DEFAULT 'auto' nel database: una riga senza origine
+    # e' del bot per costruzione, e in dubbio la si CONTA nei cap.
+    auto_ids = {r.get("id") for r in rows or []
+                if not r.get("closes_trade_id")
+                and str(r.get("origin") or "auto").lower() != "manual"
+                and r.get("id") is not None}
+    out: list[dict[str, Any]] = []
+    for r in rows or []:
+        pid = r.get("closes_trade_id")
+        if pid is None:
+            if str(r.get("origin") or "auto").lower() != "manual":
+                out.append(r)
+            continue
+        if pid in auto_ids:
+            out.append(r)
+    return out
+
+
 def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = None,
                    mode: Optional[str] = None) -> dict[str, float]:
+    """I numeri della Safe, in DUE serie sugli stessi trade.
+
+    · chiavi SENZA suffisso = TUTTO (bot + operazioni manuali del trader): sono
+      i totali di pagina, e restano completi — il trader vuole vedere anche le
+      sue;
+    · chiavi con suffisso ``_auto`` = SOLO le posizioni del bot
+      (``righe_del_bot``): sono quelle su cui i CAP decidono.
+    Due serie dichiarate, mai una sola mescolata: e' la stessa lezione della
+    separazione paper/live del 13/09."""
+    completi = _aggrega(rows, day_start, mode)
+    _m = _norm_mode(mode)
+    righe = [r for r in (rows or []) if row_mode(r) == _m] if _m else list(rows or [])
+    solo_bot = _aggrega(righe_del_bot(righe), day_start, None)
+    return {**completi, **{f"{k}_auto": v for k, v in solo_bot.items()}}
+
+
+def _aggrega(rows: list[dict[str, Any]], day_start: Optional[datetime] = None,
+             mode: Optional[str] = None) -> dict[str, float]:
     """Aggregazione PURA (testabile) delle righe trade.
 
     GIORNATA OPERATIVA = giorno di PIAZZAMENTO della POSIZIONE (C-01/H-03):
