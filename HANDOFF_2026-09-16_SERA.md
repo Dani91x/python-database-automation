@@ -94,8 +94,15 @@ chiuso · velocità senza perdere dati.
   righe manuali (§12 vs ordine h18); R8 nessuno stato «chiuso dall'utente» (migrazione).
 - Omega: cap tutti a zero nel DB; lay a 300 con 5,26 € = 1.572 € di liability; il banco mostra un
   giorno con una partita sola (serve multi-evento per certificare Omega).
-- Safe calcio: E10 «selezione aggiuntiva» di ESATTO non implementata; ingressi non esercitabili
-  sulla 35760084 (bande).
+- **Safe (calcio E tennis, stesso `bot_service`) — T14 VIOLATO**: dopo il cash-out dell'utente
+  (una `cashout` per riga) il bot aggiunge una gamba automatica sulla posizione chiusa e continua
+  le uscite; Safe non ha un cash-out globale né uno stato «chiuso dall'utente». Patch: kind
+  `cashout_event` in `process_requests:1466` + marcatore per evento letto in `scan_and_place:4140`
+  e `_exit_candidates:1999`. **Da correggere e ricertificare (anche sul tennis) PRIMA del live di
+  Safe tennis.** Inoltre i cap del bot contano le righe manuali (`open_trades:130`,
+  `aggregate_rows:348`).
+- Safe calcio: E10 «selezione aggiuntiva» di ESATTO non implementata; PUNTA senza partite nel
+  corpus; BASE non entra sulle due di riferimento (quota live favorita fuori 1,20-1,34).
 - Mike: re-ingresso mai esercitato dalle registrazioni (H1/H2 «non lo so»); ramo «scaduto alla
   sospensione» mai capitato sui dati reali (R1 «non lo so»).
 - Banco ⊘ ancora aperti: `run_once` per Mike (stop giornaliero/tetto), parità paper/live nel
