@@ -699,3 +699,78 @@ def test_R2_non_e_sollecitato_senza_cashout_dell_utente():
     CERT.verifica(ctx2, snap(KO + 1200.0), E.Decision(state="FLAT", actions=[], reason=""),
                   PAR, sollecitati=sollecitati)
     assert sollecitati.get("R2") == 1
+
+
+# ===========================================================================
+# 10. LA GUARDIA «MAI DUE LAY», PRESA DA SOLA
+# ===========================================================================
+# ⚠️ Il buco che ha trovato il coordinatore: sostituendo in `engine.lay_in_volo`
+# `not (l.is_live or l.needs_reconcile)` con `not l.is_live` i 97 test restavano
+# VERDI. Il caso «lay a esito IGNOTO» non era difeso da nessun test DIRETTO:
+# `_decide_ko_green` ha un suo freno sulle gambe ignote (`:2333`) che scatta
+# prima, quindi `_una_sola_lay` su quel ramo non veniva mai esercitata.
+# Qui la guardia si prova da sola, sulle due forme di «in volo».
+def _lay_nuova(role: str = "under_close") -> E.Action:
+    return E.Action(kind="place", role=role, market=E.MARKET_OU35,
+                    selection=E.SEL_UNDER, side="lay", price=1.47, size=5.0)
+
+
+@pytest.mark.parametrize("stato,perche", [
+    ("pending", "ancora viva"),
+    (E.STATUS_RECONCILE, "a esito ignoto"),
+])
+def test_lay_in_volo_vede_sia_la_VIVA_sia_la_IGNOTA(stato, perche):
+    """«In volo» sono DUE cose: una gamba a esito ignoto puo' essere viva su
+    Betfair esattamente come una 'pending' (§4.11) — il bot non lo sa, e basta."""
+    lay = gamba_uscita(status=stato)
+    ctx = ctx_in_uscita(gambe=[lay])
+    trovata = E.lay_in_volo(ctx, E.MARKET_OU35, E.SEL_UNDER)
+    assert trovata is not None and trovata.ref == lay.ref, perche
+    # ...e non si confonde con un'altra selezione, ne' con una gamba morta
+    assert E.lay_in_volo(ctx, E.MARKET_OU45, E.SEL_OVER) is None
+    assert E.lay_in_volo(ctx, E.MARKET_OU35, E.SEL_UNDER, escludi=lay.ref) is None
+
+
+@pytest.mark.parametrize("stato", ["pending", E.STATUS_RECONCILE])
+def test_una_sola_lay_toglie_la_nuova_e_NON_fa_avanzare_lo_stato(stato):
+    """La lay nuova si toglie e lo stato resta quello di adesso: il ramo deve
+    poter riprovare identico al giro dopo (stessa regola di `_strip_openings`)."""
+    lay = gamba_uscita(status=stato)
+    ctx = ctx_in_uscita(gambe=[lay])
+    d = E.Decision(state="LIVE_CLOSING", actions=[_lay_nuova()], reason="chiudo")
+    fuori = E._una_sola_lay(ctx, d)
+    assert [a for a in fuori.actions if a.kind == "place"] == []
+    assert fuori.state == ctx.state == "LIVE_KO_GREEN"
+    assert "mai due lay a mercato" in fuori.reason
+    assert ("a esito ignoto" if stato == E.STATUS_RECONCILE else "ancora viva") in fuori.reason
+
+
+@pytest.mark.parametrize("stato", ["pending", E.STATUS_RECONCILE])
+def test_una_sola_lay_lascia_passare_l_ANNULLAMENTO(stato):
+    """L'annullamento parte comunque: e' l'unico modo di arrivare alla lay nuova."""
+    lay = gamba_uscita(status=stato)
+    ctx = ctx_in_uscita(gambe=[lay])
+    annulla = E.Action(kind="cancel", ref=lay.ref, role=lay.role, market=lay.market,
+                       selection=lay.selection)
+    d = E.Decision(state="LIVE_CLOSING", actions=[annulla, _lay_nuova()], reason="riprezzo")
+    fuori = E._una_sola_lay(ctx, d)
+    assert [a.kind for a in fuori.actions] == ["cancel"]
+
+
+def test_una_sola_lay_non_tocca_i_BACK_ne_le_altre_selezioni():
+    """La regola e' sulle LAY della STESSA selezione: due back sono
+    sovracopertura, non una posizione scoperta, e l'Over 4.5 e' un altro posto."""
+    ctx = ctx_in_uscita(gambe=[gamba_uscita(status=E.STATUS_RECONCILE)])
+    altrove = E.Action(kind="place", role="over_cover", market=E.MARKET_OU45,
+                       selection=E.SEL_OVER, side="back", price=8.0, size=2.0)
+    back_qui = E.Action(kind="place", role="under_entry", market=E.MARKET_OU35,
+                        selection=E.SEL_UNDER, side="back", price=1.50, size=10.0)
+    d = E.Decision(state="LIVE_COVER_PENDING", actions=[altrove, back_qui], reason="copro")
+    assert E._una_sola_lay(ctx, d) is d
+
+
+def test_una_sola_lay_lascia_passare_la_lay_quando_non_ce_n_e_nessuna_in_volo():
+    morta = gamba_uscita(status="cancelled")
+    ctx = ctx_in_uscita(gambe=[morta])
+    d = E.Decision(state="LIVE_CLOSING", actions=[_lay_nuova()], reason="chiudo")
+    assert E._una_sola_lay(ctx, d) is d

@@ -127,7 +127,24 @@ Aggiornati alla regola nuova (prima codificavano quella vecchia):
 | `_decide_flatten` che non accende `no_reentry`/`reentry_done` | **1 rosso** |
 | `decide()` che ignora `ctx.no_reentry` (sul REPLAY) | **NON rosso** — vedi sotto |
 
-⚠️ L'ultima e' inconcludente **per progetto**: `no_reentry` e' difeso in TRE punti
+**Buco chiuso dopo la falsificazione del coordinatore (16/09, sera)**
+Il coordinatore ha mutato `engine.lay_in_volo` (`not (l.is_live or l.needs_reconcile)` ->
+`not l.is_live`: una lay a esito IGNOTO non conta piu' come in volo) e i **97 test restavano
+VERDI**. Causa: `_decide_ko_green` ha un freno suo sulle gambe ignote (`engine.py:2333`) che
+scatta **prima**, quindi su quel ramo `_una_sola_lay` non veniva mai esercitata e nessun test
+provava la guardia **da sola**.
+Aggiunta la sezione 10 di `test_mike_ko_green_appoggiata_2026_09_16.py` (**7 test**, tutti
+parametrizzati su `pending` **e** `pending_reconcile`): `lay_in_volo` vede entrambe le forme di
+«in volo» (e non confonde altra selezione / gamba morta / `escludi`); `_una_sola_lay` toglie la
+lay nuova e **non fa avanzare lo stato**; lascia passare **l'annullamento**; non tocca i BACK ne'
+le altre selezioni; lascia passare la lay quando non c'e' nessuna in volo.
+**Verifica**: con la mutazione del coordinatore -> **3 ROSSI**
+(`test_lay_in_volo_vede_sia_la_VIVA_sia_la_IGNOTA[pending_reconcile]`,
+`test_una_sola_lay_toglie_la_nuova_e_NON_fa_avanzare_lo_stato[pending_reconcile]`,
+`test_una_sola_lay_lascia_passare_l_ANNULLAMENTO[pending_reconcile]`); col codice attuale
+**tutti verdi**. File nuovo a **48 test**; `Betfair/` **3906 verdi**.
+
+⚠️ L'ultima falsificazione della tabella e' inconcludente **per progetto**: `no_reentry` e' difeso in TRE punti
 (`engine.py:1875` in `decide`, `:1950` in `_decide_prematch` — motivo «rientro disabilitato
 (chiusura manuale): premi Riprendi» — e `:2967` in `_decide_flat`). Patchandone uno solo il
 replay da' un referto IDENTICO. La falsificazione che conta e' quella alla sorgente

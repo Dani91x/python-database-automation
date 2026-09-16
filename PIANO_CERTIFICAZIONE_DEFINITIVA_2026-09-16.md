@@ -577,8 +577,11 @@ sul reale; ignoto/fallito → `pending_reconcile`. Copre ogni ramo presente e fu
 `chiuso_dall_utente`, chiusure permesse, partita non terminale (P&L contabilizzato); controllo R2.
 Replay: 35777617 gol-precoce **J2/J5 → 0** (azioni 6→9, arriva a LIVE_CLOSING); 35760084 base
 identico; `cashout-globale` OK (R2 ×5835, ordini solo prima del cash-out). Suite `Betfair/` 3898
-verdi. Verifica del coordinatore: 665 verdi; falsificazione propria (una lay a esito ignoto non
-conta come in volo) → rossi. **Limite da portare all'utente**: se chiude la posizione **fuori dal
+verdi. Verifica del coordinatore: 665 verdi; **falsificazione propria NON catturata**: togliendo
+`needs_reconcile` da `lay_in_volo` (una lay a esito ignoto non conta più come in volo) 97 test
+restavano verdi (`_decide_ko_green` ha un freno suo che scatta prima) → **chiuso**: 7 test
+nuovi sulla guardia da sola (parametrizzati su `pending` e `pending_reconcile`); la stessa
+mutazione rifatta dal coordinatore → 3 rossi; suite 3906 verdi. **Limite da portare all'utente**: se chiude la posizione **fuori dal
 bot** con una sua lay su Betfair, Mike non se ne accorge (`list_current_orders` filtra per
 `customerStrategyRef`) e continua a gestire il back; servirebbe leggere la posizione di conto
 (chiamata Betfair nuova, non fatta). Costituzione §15.7 con due riquadri datati.
