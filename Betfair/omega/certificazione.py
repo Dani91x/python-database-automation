@@ -133,6 +133,25 @@ class Momento:
     chiuso_fuori_app: bool = False
     giri_da_fuori_app: Optional[int] = None
 
+    # --- V3 (16/09 sera): il motore nuovo, dietro `strategy_version` ---
+    # QUALE MOTORE ha prodotto questo momento. Serve perche' nello scenario `v3`
+    # del replay i due motori guardano lo STESSO book e scrivono due momenti
+    # distinti: senza questo campo i controlli del v2 giudicherebbero le
+    # decisioni del v3 (e viceversa) usando un vocabolario di motivi che non e'
+    # il loro. E' un difetto che il primo replay ha trovato davvero: A1 accusava
+    # V3 di un motivo "non dichiarato" ('fuori_finestra') che e' dichiaratissimo
+    # — solo, in V3.
+    motore: str = "v2"                   # 'v2' | 'v3'
+    cand: Any = None                     # omega_v3.CandidatoV3 scelto (o None)
+    scartati: Optional[List[Tuple[str, str]]] = None   # (nome, perche') degli scarti
+    proposta: Any = None                 # omega_v3.PropostaUscita
+    trade_id: Any = None
+    decided_at: Optional[str] = None     # istante della DECISIONE (non si rinfresca)
+    proposed_at: Optional[str] = None    # ultimo aggiornamento della proposta
+    # quello che si sapeva delle proposte vive PRIMA di questo momento:
+    # trade_id -> {decided_at, proposed_at, profitto}
+    proposte_viste: Optional[Dict[str, Dict[str, Any]]] = None
+
     # ------------------------------------------------------------ comodita'
     @property
     def punteggio(self) -> Optional[str]:
@@ -234,7 +253,8 @@ def _distanza(nome: Optional[str], state: Any) -> Optional[int]:
 # ===========================================================================
 @_controllo("A1", "una gamba che non parte lascia SEMPRE scritto il perche' "
                   "(§14.2: due gambe sempre, il 10/09 la 2T non parti' mai)",
-            quando=lambda m: m.tipo == "selezione" and m.sel is None)
+            quando=lambda m: m.tipo == "selezione" and m.sel is None
+            and m.motore != "v3")
 def _a1(m: Momento) -> Optional[str]:
     motivo = str(m.motivo or "").strip()
     if not motivo:
@@ -1109,6 +1129,217 @@ def _f2(m: Momento) -> Optional[str]:
 
 
 # ===========================================================================
+# V3 (16/09 sera) — LE REGOLE DEL MOTORE NUOVO (`omega_v3.py`).
+#
+# Valgono SOLO con `strategy_version >= 3`: con il default 2 questi controlli non
+# vengono nemmeno sollecitati, e il referto lo dice («mai sollecitato» = non lo
+# so, non «sano»). Sono i sette che il progetto V3 chiede al §5.2, piu' i due
+# sull'uscita che l'ordine dell'utente del 16/09 sera ha reso necessari.
+# ===========================================================================
+def _v3_on(m: Momento) -> bool:
+    """V3 e' acceso nei parametri (vale per i controlli sulla CONFIGURAZIONE)."""
+    return int((m.params or {}).get("strategy_version") or 2) >= 3
+
+
+def _v3_suo(m: Momento) -> bool:
+    """Questo momento e' stato prodotto DAL motore V3 (vale per i controlli sulle
+    sue DECISIONI). Un momento del v2 non si giudica col metro del v3."""
+    return _v3_on(m) and str(m.motore) == "v3"
+
+
+# i motivi con cui V3 puo' NON entrare. Uno fuori da questo elenco vuol dire che
+# una gamba e' saltata per una ragione che nessuno ha scritto: e' il buco che
+# «due gambe su ogni partita» vieta.
+MOTIVI_V3 = frozenset({
+    "fuori_finestra", "nessun_candidato", "no_model_lambdas", "no_market",
+    "no_live_state", "market_not_open", "market_suspended", "market_closed",
+    "market_inactive", "gamba_gia_fatta", "cap_partita", "cap_aperto",
+    "cap_perdita_giornaliera", "insufficient_liquidity",
+})
+
+
+@_controllo("A8", "V3: su ogni partita seguita o c'e' la gamba, o c'e' un motivo "
+                  "DICHIARATO (progetto V3 §5.2; estende A1)",
+            quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is None)
+def _a8(m: Momento) -> Optional[str]:
+    motivo = str(m.motivo or "").strip()
+    if not motivo:
+        return f"gamba '{m.leg}' saltata SENZA motivo dichiarato (V3)"
+    if motivo not in MOTIVI_V3:
+        return (f"gamba '{m.leg}' saltata con un motivo non dichiarato: '{motivo}' "
+                f"(dichiarati: {sorted(MOTIVI_V3)})")
+    # se c'erano runner, deve esserci anche l'elenco di CHI e' stato scartato e
+    # perche': «nessun candidato» senza la lista non e' una spiegazione
+    if motivo == "nessun_candidato" and m.snapshot is not None:
+        runners = list(getattr(m.snapshot, "runners", ()) or ())
+        if runners and not (m.scartati or ()):
+            return (f"gamba '{m.leg}': {len(runners)} runner sul book e nessuno "
+                    f"scarto motivato — non si sa perche' non si e' entrati")
+    return None
+
+
+@_controllo("A9", "V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper "
+                  "come in live (ordine dell'utente 16/09)",
+            quando=lambda m: _v3_suo(m) and m.tipo in ("sizing", "ordine")
+            and (m.size is not None or (m.richiesta or {}).get("size") is not None))
+def _a9(m: Momento) -> Optional[str]:
+    voluto = _num((m.params or {}).get("v3_stake_eur"))
+    if voluto is None:
+        return None
+    size = _num(m.size if m.size is not None else (m.richiesta or {}).get("size"))
+    if size is None:
+        return None
+    if abs(float(size) - float(voluto)) > 0.005:
+        return (f"lay da {size} EUR con lo stake fisso a {voluto} EUR "
+                f"(gamba {m.leg}, modo {m.mode})")
+    return None
+
+
+@_controllo("A10", "V3: margine k — `P_nostra * k <= p_implicita`, con k misurato "
+                   "per secchio (K_MISURATO_2026-09-16.md; estende A3)",
+            quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is not None)
+def _a10(m: Momento) -> Optional[str]:
+    c = m.cand
+    p_nostra = _num(getattr(c, "p_nostra", None))
+    p_imp = _num(getattr(c, "p_implicita", None))
+    k = _num(getattr(c, "k_usato", None))
+    if p_nostra is None or p_imp is None or k is None:
+        return "candidato V3 senza i numeri del margine (p_nostra / p_implicita / k)"
+    minimo = _num((m.params or {}).get("v3_k_minimo")) or 2.0
+    if k + 1e-9 < minimo:
+        return f"k usato {k:g} sotto il pavimento {minimo:g} su '{getattr(c, 'name', '?')}'"
+    if p_nostra * k > p_imp + 1e-12:
+        return (f"'{getattr(c, 'name', '?')}' a quota {getattr(c, 'price', '?')}: "
+                f"P_nostra {p_nostra * 100:.4f}% x k {k:g} = {p_nostra * k * 100:.4f}% "
+                f"oltre la p_implicita {p_imp * 100:.4f}% — margine non rispettato")
+    return None
+
+
+@_controllo("A11", "V3: mai il risultato CORRENTE ne' uno raggiungibile senza "
+                   "margine (progetto V3 §5.2; estende A2)",
+            quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is not None)
+def _a11(m: Momento) -> Optional[str]:
+    c = m.cand
+    d = _distanza(getattr(c, "name", None), m.state)
+    minimo = int((m.params or {}).get("v3_distanza_minima_gol") or 1)
+    if d is not None:
+        if d == 0:
+            return (f"banca il PUNTEGGIO CORRENTE '{getattr(c, 'name', '?')}': "
+                    f"e' il difetto del v1, -93,87 EUR il 09/09")
+        if d < minimo:
+            return (f"banca '{getattr(c, 'name', '?')}' a {d} gol dal punteggio "
+                    f"corrente, col minimo a {minimo}")
+    tetto = _num((m.params or {}).get("v3_p_max_pct"))
+    p_nostra = _num(getattr(c, "p_nostra", None))
+    if tetto is not None and p_nostra is not None and p_nostra > tetto / 100.0 + 1e-9:
+        return (f"P_nostra {p_nostra * 100:.3f}% sopra il tetto duro {tetto:.2f}% "
+                f"su '{getattr(c, 'name', '?')}'")
+    return None
+
+
+@_controllo("A12", "V3: dove il dato storico parla (n >= `v3_empirical_min_n`) la sua "
+                   "P e' OBBLIGATORIA — P_nostra = max(modello, storico)",
+            quando=lambda m: _v3_suo(m) and m.tipo == "selezione" and m.cand is not None
+            and _num(getattr(m.cand, "p_empirica", None)) is not None)
+def _a12(m: Momento) -> Optional[str]:
+    c = m.cand
+    emp = _num(getattr(c, "p_empirica", None))
+    n = getattr(c, "n_empirico", None)
+    fusa = _num(getattr(c, "p_fusa", None))
+    p_nostra = _num(getattr(c, "p_nostra", None))
+    minimo = int((m.params or {}).get("v3_empirical_min_n") or 0)
+    if n is not None and int(n) < minimo:
+        return (f"usata una P storica con n={n} sotto il minimo {minimo} "
+                f"su '{getattr(c, 'name', '?')}': il dato non ha diritto di parola")
+    if p_nostra is None or fusa is None or emp is None:
+        return None
+    atteso = max(fusa, emp)
+    if abs(p_nostra - atteso) > 1e-9:
+        return (f"P_nostra {p_nostra * 100:.4f}% diversa da max(modello "
+                f"{fusa * 100:.4f}%, storico {emp * 100:.4f}%): il veto di coda "
+                f"non e' stato applicato")
+    return None
+
+
+@_controllo("C5", "V3: nessuna gamba oltre `v3_max_liability_per_leg` (progetto V3 §4.5)",
+            quando=lambda m: _v3_suo(m) and m.tipo in ("sizing", "ordine")
+            and (_num((m.params or {}).get("v3_max_liability_per_leg")) or 0.0) > 0.0)
+def _c5(m: Momento) -> Optional[str]:
+    cap = float((m.params or {}).get("v3_max_liability_per_leg"))
+    r = m.richiesta or {}
+    size = _num(m.size if m.size is not None else r.get("size"))
+    prezzo = _num(m.price if m.price is not None else r.get("price"))
+    if size is None or prezzo is None:
+        return None
+    liab = E.liability_from_lay(size, prezzo)
+    if liab > cap + 0.011:
+        return (f"gamba da {size} @ {prezzo} = liability {liab:.2f} col tetto di "
+                f"GAMBA a {cap:.2f}")
+    return None
+
+
+@_controllo("G1", "V3: NESSUNA chiusura automatica — l'uscita e' una proposta che "
+                  "approva l'utente (ordine del 16/09; memoria 12/09)",
+            quando=lambda m: _v3_on(m) and m.tipo in ("uscita", "ordine", "giro"))
+def _g1(m: Momento) -> Optional[str]:
+    # (a) il green-up automatico non deve nemmeno essere ACCESO NEI PARAMETRI.
+    # Si guardano i parametri GREZZI, non `E.greenup_automatico_attivo`: quella
+    # funzione risponde gia' «no» per costruzione quando V3 e' attivo, quindi
+    # usarla qui sarebbe un controllo che non puo' diventare rosso — e un
+    # controllo cosi' non certifica niente (falsificato: il test lo dimostra).
+    p = m.params or {}
+    if bool(p.get("greenup_enabled", True)) and \
+            str(p.get("greenup_mode") or "auto") == "auto":
+        return ("`greenup_mode='auto'` con strategy_version >= 3: qualcuno ha "
+                "scavalcato la whitelist (`omega_config.resolve_params` lo porta a "
+                "'off'). In V3 non esiste una chiusura che parte da sola")
+    if E.greenup_automatico_attivo(p):
+        return ("il green-up AUTOMATICO risulta attivo con strategy_version >= 3: "
+                "in V3 non esiste una chiusura che parte da sola")
+    # (b) nessuna decisione di uscita puo' essere diversa da «tieni»
+    if m.tipo == "uscita" and str(m.azione or "").lower() not in ("", "hold", "propose",
+                                                                 "proposta"):
+        return (f"decisione di uscita '{m.azione}' in V3: l'unica uscita ammessa e' "
+                f"la PROPOSTA (perche': {m.perche})")
+    # (c) nessun ordine di chiusura (back sulla stessa selezione) puo' partire
+    if m.tipo == "ordine":
+        r = m.richiesta or {}
+        if str(r.get("side") or "").lower() == "back" and not r.get("approvata_dall_utente"):
+            return (f"ordine di BACK (= chiusura) partito senza approvazione "
+                    f"dell'utente: ref {r.get('customer_ref')}")
+    return None
+
+
+@_controllo("G2", "V3: la proposta viva porta i numeri della decisione e si "
+                  "AGGIORNA senza perdere l'istante della decisione",
+            quando=lambda m: _v3_suo(m) and m.tipo == "proposta" and m.proposta is not None)
+def _g2(m: Momento) -> Optional[str]:
+    p = m.proposta
+    for campo in ("profitto_bloccabile", "ev_tenere", "back_price", "back_size",
+                  "p_evento", "motivo_codice"):
+        if getattr(p, campo, None) is None:
+            return f"proposta senza '{campo}': la Control Room non puo' mostrare i numeri"
+    if not getattr(p, "proponi", False):
+        return None
+    if _num(getattr(p, "profitto_bloccabile", None)) is None or \
+            float(getattr(p, "profitto_bloccabile")) <= 0:
+        return "proposta di chiusura con profitto bloccabile non positivo"
+    # `decided_at` non si rinfresca (altrimenti la latenza misurata e' sempre
+    # zero e il numero dice il contrario del vero — cert. Safe 14/09)
+    prima = (m.proposte_viste or {}).get(str(m.trade_id))
+    if prima and prima.get("decided_at") and m.decided_at and \
+            str(prima["decided_at"]) != str(m.decided_at):
+        return (f"la proposta del trade {m.trade_id} ha cambiato `decided_at` "
+                f"({prima['decided_at']} -> {m.decided_at}): la latenza misurata "
+                f"sarebbe sempre ~zero")
+    if prima and m.proposed_at and prima.get("proposed_at") == m.proposed_at \
+            and prima.get("profitto") != _num(getattr(p, "profitto_bloccabile", None)):
+        return (f"il profitto bloccabile del trade {m.trade_id} e' cambiato senza "
+                f"che la proposta venisse riscritta: la pagina mostra un numero vecchio")
+    return None
+
+
+# ===========================================================================
 # il giro completo
 # ===========================================================================
 def verifica(m: Momento, sollecitati: Optional[Dict[str, int]] = None) -> List[Violazione]:
@@ -1137,8 +1368,15 @@ def verifica(m: Momento, sollecitati: Optional[Dict[str, int]] = None) -> List[V
 
 
 def elenco_controlli() -> List[Tuple[str, str]]:
-    """(codice, regola) di tutto cio' che questa certificazione sa verificare."""
-    return [(c, r) for c, r, _fn, _q in _REGISTRO]
+    """(codice, regola) di tutto cio' che questa certificazione sa verificare —
+    i controlli sul MOMENTO (A-G) e quelli sulla CONSAPEVOLEZZA (K).
+
+    La famiglia K vive in un registro separato perche' non guarda un momento ma
+    un giro intero; se restasse fuori da qui, il referto non la conterebbe fra i
+    controlli e un K mai sollecitato passerebbe per inesistente invece che per
+    «non lo so» — che e' esattamente il buco che questa funzione serve a chiudere."""
+    return ([(c, r) for c, r, _fn, _q in _REGISTRO]
+            + [(c, r) for c, r in _REGISTRO_BANCO])
 
 
 def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
@@ -1148,7 +1386,7 @@ def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
     so». Vanno letti come lavoro da fare — uno scenario da provocare — non come
     una garanzia.
     """
-    return [(c, r) for c, r, _fn, _q in _REGISTRO if not sollecitati.get(c)]
+    return [(c, r) for c, r in elenco_controlli() if not sollecitati.get(c)]
 
 
 # ===========================================================================
@@ -1261,3 +1499,229 @@ class Referto:
         for v in self.violazioni:
             out[v.codice] = out.get(v.codice, 0) + 1
         return out
+
+
+# ===========================================================================
+# K. LA CONSAPEVOLEZZA — cio' che il bot CREDE contro cio' che il MERCATO dice
+#
+# Reperto portato da Mike (catalogo §7, punti 36-37 di `PROCESSO_STANDARD_BOT.md`):
+# i controlli che guardano solo la DECISIONE non vedono i cinque difetti del
+# 15/09, perche' quei difetti non stanno nella decisione — stanno nel giro dopo,
+# quando il bot rilegge l'ordine e non si riconosce. La famiglia K guarda
+# esattamente li': DOPO ogni giro si mettono a confronto le righe di
+# `omega_trades` con gli ordini veri del banco.
+#
+# Modello: `Betfair/mike/certificazione.py:779-853`. Le regole sono le stesse
+# perche' i difetti sono gli stessi; cambiano i nomi delle cose (Omega ha righe
+# `omega_trades` con `bet_id`, `size`, `price`, `meta`, non le `Leg` di Mike).
+# ===========================================================================
+_REGISTRO_BANCO: List[Tuple[str, str]] = []
+_FUNZIONI_BANCO: Dict[str, Callable] = {}
+
+
+def _controllo_banco(codice: str, regola: str):
+    def _reg(fn):
+        _REGISTRO_BANCO.append((codice, regola))
+        _FUNZIONI_BANCO[codice] = fn
+        return fn
+    return _reg
+
+
+def _refs_di_riga(r: Dict[str, Any]) -> set:
+    """Le grafie con cui QUESTA riga puo' essere stata piazzata: il ref per
+    gamba (`omega-t<id>`) e quelli che il meta ha registrato. Cercarne una sola
+    e' come il difetto 1 del 15/09, ma dal lato di chi controlla."""
+    fuori = set()
+    try:
+        fuori.update(str(x) for x in E.candidate_customer_refs(r) if x)
+    except Exception:  # noqa: BLE001
+        pass
+    meta = r.get("meta") or {}
+    for chiave in ("customer_ref", "flumine_client_ref", "close_ref"):
+        v = meta.get(chiave)
+        if v:
+            fuori.add(str(v))
+    return fuori
+
+
+def _ordine_di_riga(ordini: Dict[str, Any], r: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for ref in _refs_di_riga(r):
+        o = (ordini or {}).get(ref)
+        if o is not None:
+            return o
+    bet = r.get("bet_id")
+    if bet:
+        for o in (ordini or {}).values():
+            if str(o.get("bet_id") or "") == str(bet):
+                return o
+    return None
+
+
+def _e_viva(r: Dict[str, Any]) -> bool:
+    return str(r.get("status") or "") in ("open", "pending", "placed")
+
+
+# stati in cui la riga DICHIARA di non essere una posizione: li' la colonna
+# `size` e' la size CHIESTA, non un abbinamento in cui il bot crede. Accusarla
+# vorrebbe dire accusare il bot di aver detto il contrario di quello che ha detto.
+# Falso positivo trovato dal banco il 16/09 (scenario `cashout-globale` sulla
+# sintetica: 119 violazioni su una riga di chiusura gia' marcata 'error' dopo un
+# `place_rifiutato`).
+_STATI_NON_POSIZIONE = ("error", "rejected", "cancelled", "voided", "skipped")
+
+
+@_controllo_banco("K1", "cio' che il bot CREDE di una gamba coincide con cio' che il "
+                        "MERCATO dice del suo ordine (abbinato e prezzo medio)")
+def _k1(righe, ordini, rifiutati):
+    for r in righe or ():
+        meta = r.get("meta") or {}
+        if meta.get("reconciling"):
+            continue                       # esito ignoto: il dubbio e' dichiarato
+        if str(r.get("status") or "") in _STATI_NON_POSIZIONE:
+            continue                       # il bot ha gia' dichiarato il fallimento
+        o = _ordine_di_riga(ordini, r)
+        if o is None:
+            continue
+        if str(o.get("status") or "") == "EXECUTABLE":
+            continue                       # ancora vivo: il bot legge alla SUA cadenza
+        abbinato = float(o.get("size_matched") or 0.0)
+        creduto = float(r.get("size") or 0.0)
+        if abs(creduto - abbinato) > 0.011:
+            return (f"riga #{r.get('id')}: il bot crede {creduto} abbinato, il mercato "
+                    f"dice {round(abbinato, 2)} (ordine {o.get('status')})")
+        if abbinato > 0.009:
+            medio = o.get("avg_price_matched") or o.get("average_price_matched")
+            if medio and abs(float(r.get("price") or 0.0) - float(medio)) > 0.011:
+                return (f"riga #{r.get('id')}: prezzo {r.get('price')} contro "
+                        f"{medio} dichiarato dal mercato — e' il difetto 3 del 15/09 "
+                        f"(`avg_price` al posto di `avg_price_matched`)")
+    return None
+
+
+@_controllo_banco("K2", "una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva "
+                        "(difetto 2 del 15/09: `res.ok` mai letto)")
+def _k2(righe, ordini, rifiutati):
+    if not rifiutati:
+        return None
+    for r in righe or ():
+        meta = r.get("meta") or {}
+        if not (_e_viva(r) or meta.get("reconciling")):
+            continue
+        if not (_refs_di_riga(r) & set(rifiutati)):
+            continue
+        if _ordine_di_riga(ordini, r) is None:
+            stato = "a esito ignoto" if meta.get("reconciling") else "viva"
+            return (f"riga #{r.get('id')}: Betfair ha RIFIUTATO l'ordine e nessun ordine "
+                    f"esiste a mercato, ma la riga e' ancora {stato} "
+                    f"(status='{r.get('status')}')")
+    return None
+
+
+@_controllo_banco("K3", "il riferimento con cui il bot ha piazzato si RILEGGE con la "
+                        "stessa grafia (difetto 1 del 15/09: `customerOrderRef` vs "
+                        "`customer_order_ref`)")
+def _k3(righe, ordini, rifiutati):
+    for ref, o in (ordini or {}).items():
+        letto = o.get("customer_order_ref")
+        if letto is None:
+            return (f"l'ordine '{ref}' esiste a mercato ma il suo riferimento non si "
+                    f"rilegge: la chiave `customer_order_ref` non c'e' "
+                    f"(chiavi presenti: {sorted(o)[:8]})")
+        if str(letto) != str(ref):
+            return f"l'ordine '{ref}' si rilegge col riferimento '{letto}'"
+    return None
+
+
+@_controllo_banco("K4", "ogni gamba di CHIUSURA dichiara la riga di apertura che chiude "
+                        "(difetto 5 del 15/09: `closes_trade_id` nella COLONNA, non "
+                        "solo nel meta)")
+def _k4(righe, ordini, rifiutati):
+    for r in righe or ():
+        if str(r.get("side") or "").lower() != "back":
+            continue                       # solo le righe di chiusura vere
+        meta = r.get("meta") or {}
+        if r.get("closes_trade_id") is None:
+            dove = ("nel meta" if meta.get("closes_trade_id") is not None
+                    else "da nessuna parte")
+            return (f"riga #{r.get('id')} e' una chiusura (back) e `closes_trade_id` "
+                    f"sta {dove}, non nella COLONNA")
+    return None
+
+
+@_controllo_banco("K5", "una riga APERTA che dichiara un `bet_id` ha sempre quel "
+                        "l'ordine a mercato (nessuna posizione fantasma)")
+def _k5(righe, ordini, rifiutati):
+    for r in righe or ():
+        meta = r.get("meta") or {}
+        if str(r.get("status") or "") != "open" or meta.get("reconciling"):
+            continue
+        # SI ACCUSA SOLO CHI DICHIARA UN `bet_id`. Falso positivo trovato dal
+        # banco il 16/09: nello scenario `paper` il fill viene da
+        # `omega_engine.paper_fill` (uno snapshot, non un ordine), quindi la riga
+        # e' aperta senza `bet_id` e a mercato non c'e' niente — ed e' giusto
+        # cosi', e' la divergenza P4 dichiarata. Accusare li' voleva dire
+        # accusare il bot di una cosa che il BANCO ha deciso: 242 violazioni
+        # false in un giro. Una riga aperta SENZA bet_id in live e' un problema
+        # diverso, e lo guarda la famiglia della riconciliazione (F1/F2).
+        if not r.get("bet_id"):
+            continue
+        if _ordine_di_riga(ordini, r) is None:
+            return (f"riga #{r.get('id')} risulta APERTA (bet_id {r.get('bet_id')}) ma a "
+                    f"mercato non esiste nessun ordine con i suoi riferimenti "
+                    f"{sorted(_refs_di_riga(r))[:3]}")
+    return None
+
+
+@_controllo_banco("K6", "il RESIDUO non abbinato e' dichiarato: una riga aperta con "
+                        "meno del chiesto lo dice (C.10/C.12a)")
+def _k6(righe, ordini, rifiutati):
+    for r in righe or ():
+        meta = r.get("meta") or {}
+        chiesto = meta.get("requested_size")
+        if chiesto is None:
+            continue
+        try:
+            manca = float(chiesto) - float(r.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if manca <= 0.011:
+            continue
+        if meta.get("size_remaining") is None and not meta.get("parziale"):
+            return (f"riga #{r.get('id')}: chiesti {chiesto}, abbinati {r.get('size')} "
+                    f"e il residuo {round(manca, 2)} non e' dichiarato da nessuna parte")
+    return None
+
+
+def verifica_consapevolezza(righe: Optional[List[Dict[str, Any]]],
+                            ordini: Optional[Dict[str, Any]],
+                            rifiutati: Optional[set] = None,
+                            sollecitati: Optional[Dict[str, int]] = None,
+                            stato: str = "giro") -> List[Violazione]:
+    """I controlli K su UN giro: la memoria del bot contro il mercato.
+
+    Il chiamante e' il replay, subito DOPO il giro del servizio: li' ci sono sia
+    le righe di `omega_trades` sia gli ordini veri di flumine. `ordini` e'
+    {ref chiesto: riga normalizzata da `MercatoFlumine._riga`}.
+    """
+    out: List[Violazione] = []
+    if not righe and not ordini:
+        return out
+    rif = set(rifiutati or ())
+    for codice, regola in _REGISTRO_BANCO:
+        if sollecitati is not None:
+            sollecitati[codice] = sollecitati.get(codice, 0) + 1
+        try:
+            det = _FUNZIONI_BANCO[codice](righe or [], ordini or {}, rif)
+        except Exception as ex:  # noqa: BLE001
+            out.append(Violazione(f"{codice}-ERRORE", regola,
+                                  f"il controllo e' esploso: {type(ex).__name__}: {ex}",
+                                  stato))
+            continue
+        if det:
+            out.append(Violazione(codice, regola, det, stato))
+    return out
+
+
+def elenco_controlli_banco() -> List[Tuple[str, str]]:
+    """(codice, regola) dei controlli di CONSAPEVOLEZZA (famiglia K)."""
+    return list(_REGISTRO_BANCO)

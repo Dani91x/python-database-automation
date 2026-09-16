@@ -467,6 +467,39 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito OMEGA V3 — motore predittivo, k misurato, famiglia K — CERTIFICATO dal coordinatore (16/09 notte)
+
+**k misurato** (`tools/misura_k.py`, `K_MISURATO_2026-09-16.md`; 58.234 quote pre-match CS+HT ×
+1.859/1.645 partite, bootstrap a grappolo): **al prezzo di lay disponibile k ≤ 1 in ogni fascia**
+(CS 0,21…0,98; HT simile): nessuna fascia è operabile «al tocco». Con la probabilità devigata il
+bias favourite-longshot c'è (k_equo 1,53 CS, 1,39 HT) ma **lo spread se lo mangia** → serve
+edge di modello **o ingresso passivo dentro lo spread** (lay appoggiata al nostro prezzo equo),
+che Omega oggi non sa fare. `k_soglia = max(2, k_prudente)`.
+**Banco dei modelli** (1,07 M transizioni, 548 stati n≥200, due split out-of-sample): vince il
+**Gamma-Poisson bayesiano** (log-loss 1,93221; coda 4,918) su Dixon-Robinson, bivariato (λ3=0:
+non giustificato), v2 di produzione (1,93904), Dixon-Coles, Poisson; calibrazione della coda: v2
+sottostima 1,31×, Gamma-Poisson sovrastima 1,15× (lato prudente per chi banca); **fusione con il
+mercato** (pool logaritmico, Satopaa 2014) pesi per fascia salvati in `data/parametri_vincenti`.
+**Codice**: `omega_v3.py` (puro: intensità residue, griglia per 5 modelli con fonti, fusione,
+probabilità di ogni selezione e aggregati, candidato con margine, finestra, profitto bloccabile,
+traiettoria e proposta di uscita), `omega_config.py:210` `strategy_version` (default 2, v2
+intoccato) + 15 parametri, `omega_engine.py:1102-1184` percorso v3; **green-up automatico
+spento in v3, uscite = proposte** (migrazione `omega_proposte_uscita_2026-09-16.sql` scritta, non
+applicata). 41 test (esempi dell'utente verificati: 0-0 al 40' P(0-0 HT)=82 % non candidato;
+0-1 al 38' «Any Unquoted» a 65 → margine 2,3×, candidato, EV +0,945); controlli A8-A12, C5, G1,
+G2 (22 test); scenario `v3` in ombra sullo stesso book. **Replay**: 35760084 e 35797769 → 0
+violazioni, **gambe v3 0/0** perché il miglior margine offerto è 0,78×/0,85× contro 2×; il v2
+aveva aperto a **margine 1,00× (EV zero)**: oggi si apre senza margine e nessuno lo misurava.
+**Addendum K**: K1-K6 ×1.466 verdi, scenario `rifiuti-betfair`, sintetica
+`_synth_omega_prezzo_migliore` (partita in più in `synth_safe.py`, lay chiesto 110 abbinato 100),
+cache azzerate (E5 ×108 uguale da solo e in pool), 5 difetti → K3/K2/K1/K5/K4 (18 test; md5 non
+applicato perché `omega_service.py` era di O1: da rifare), due falsi positivi dei controlli
+corretti. Batteria: 39 partite-scenario su 42 pulite, 0 accuse a v3. Verifica del coordinatore:
+877 verdi Omega; falsificazione propria (confronto del margine invertito) → 7 rossi.
+**Reperti per O1**: J3 ×2 (ref `omega-t1` non riconducibile con `customer_ref_for`), J6 ×1
+(parziale senza `place_parziale`). **Manca**: raccordo v3 in `omega_service.py`, ingresso
+passivo, UI proposte/parametri, migrazione, A12/G2 mai sollecitati.
+
 ### Esito MIKE — sei ordini — CERTIFICATO dal coordinatore (16/09 sera)
 
 Punto 7 annullato e ripristinato (diff vuoto, grep pulito). **Non regressione**: baseline

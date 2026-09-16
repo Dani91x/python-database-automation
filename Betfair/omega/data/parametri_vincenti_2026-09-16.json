@@ -6,5 +6,28 @@
  "profilo_c2": 0.00727,
  "quota_casa": 0.56391,
  "rho": -0.02893,
- "modello": "gamma_poisson"
+ "modello": "gamma_poisson",
+ "peso_per_fascia": [
+  [
+   0.01,
+   1.0
+  ],
+  [
+   0.02,
+   0.65
+  ],
+  [
+   0.05,
+   0.85
+  ],
+  [
+   0.1,
+   0.9
+  ],
+  [
+   1.01,
+   0.6
+  ]
+ ],
+ "peso_modello": 1.0
 }

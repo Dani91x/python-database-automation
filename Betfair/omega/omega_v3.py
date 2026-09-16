@@ -536,7 +536,7 @@ class CandidatoV3:
     scartati: Tuple[Tuple[str, str], ...] = ()      # (nome, perche')
 
 
-def candidato(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[str, float],
+def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[str, float],
               k_tab: Optional[Dict[Tuple[str, str], float]] = None,
               secchio_di: Optional[Callable[[float], str]] = None,
               p_empirica: Optional[Callable[[str], Optional[Tuple[float, int]]]] = None,
@@ -614,7 +614,11 @@ def candidato(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[st
             k = max(float(k_default), float(k_tab.get((periodo, etichetta), k_default)))
         soglia = p_imp / max(1e-9, k)
         if p_nostra > soglia:
-            scartati.append((nome, f"margine_insufficiente(k={k:g})"))
+            # il margine VERO va scritto, non solo il fatto che manca: e' il
+            # numero che dice QUANTO si e' lontani, e quindi se il progetto e' a
+            # un soffio o su un altro pianeta.
+            avuto = p_imp / max(1e-12, p_nostra)
+            scartati.append((nome, f"margine {avuto:.2f}x, ne serve {k:g}x"))
             continue
         if cap_liability_gamba and cap_liability_gamba > 0:
             if liability(size, float(prezzo)) > float(cap_liability_gamba) + 1e-9:
@@ -640,8 +644,26 @@ def candidato(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[st
             migliore = cand
 
     if migliore is None:
-        return None
-    return replace(migliore, scartati=tuple(scartati))
+        return None, tuple(scartati)
+    return replace(migliore, scartati=tuple(scartati)), tuple(scartati)
+
+
+def valuta_runner(**kw) -> Tuple[Optional[CandidatoV3], Tuple[Tuple[str, str], ...]]:
+    """(candidato | None, motivo di scarto di OGNI runner che non ha passato).
+
+    Esiste perche' il candidato da solo, quando non c'e', non dice PERCHE' — e
+    quel «perche'» e' precisamente cio' che la certificazione (A8) pretende e
+    che l'utente deve poter leggere. Il primo replay del 16/09 ha trovato il
+    buco: 155 momenti in cui V3 non entrava e l'unica spiegazione disponibile
+    era «nessun_candidato», che non spiega niente."""
+    return _seleziona(**kw)
+
+
+def candidato(**kw) -> Optional[CandidatoV3]:
+    """La selezione da bancare, o None. I motivi degli scarti restano su
+    `CandidatoV3.scartati` quando c'e' un vincitore; quando non c'e', si usa
+    `valuta_runner` per averli lo stesso."""
+    return _seleziona(**kw)[0]
 
 
 # --------------------------------------------------------------------------

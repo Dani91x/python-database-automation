@@ -113,7 +113,9 @@ class Partita:
                  prezzi: Dict[Tuple[int, int], Dict[str, Tuple[float, float]]],
                  pre_ko: Dict[str, Tuple[float, float]],
                  durata_min: int = 95,
-                 nota: str = "") -> None:
+                 nota: str = "",
+                 cs_runners: Optional[Sequence[Tuple[int, int]]] = None,
+                 cs_prezzi: Optional[Any] = None) -> None:
         self.nome = nome
         self.home = home
         self.away = away
@@ -123,6 +125,14 @@ class Partita:
         self.pre_ko = pre_ko
         self.durata_min = int(durata_min)
         self.nota = nota
+        # ---- estensione per OMEGA (16/09 sera) ----
+        # Omega banca il RISULTATO ESATTO, quindi ha bisogno di piu' celle di
+        # quelle che servono alla Safe (che sui CS guarda solo gli aggregati) e
+        # di un prezzo che si MUOVE nel tempo (per far esistere il caso «abbinato
+        # a un prezzo migliore di quello chiesto», controllo K1). Due campi
+        # facoltativi: chi non li passa ha esattamente il comportamento di prima.
+        self.cs_runners = list(cs_runners) if cs_runners else None
+        self.cs_prezzi = cs_prezzi          # (sort, minuto) -> (back, lay) | None
 
     # ------------------------------------------------------------- stato
     def punteggio(self, minuto: float) -> Tuple[int, int]:
@@ -231,6 +241,173 @@ PARTITE["_synth_safe_punta"] = Partita(
 
 
 # ---------------------------------------------------------------------------
+# 5) SAFE BASE - ABBINAMENTO A UN PREZZO MIGLIORE DI QUELLO CHIESTO
+#    (controllo K1, difetto 3 del 15/09: `avg_price` al posto di
+#    `avg_price_matched`).
+#
+# PERCHE' SERVE. Ne' sulle 39 registrazioni vere ne' sulle altre sintetiche quel
+# caso capita mai: il libro sta fermo per i cinque secondi del bet delay, quindi
+# il prezzo CHIESTO e quello ABBINATO coincidono sempre e i due campi sono
+# indistinguibili. Finche' coincidono, K1 non ha modo di accorgersi se qualcuno
+# rimettesse `avg_price` (che non esiste) al posto di `avg_price_matched`: e' il
+# caso che va COSTRUITO (PROCESSO_STANDARD_BOT §6.7).
+#
+# COME. La partita e' quella della BASE (1-0 al 30', ingresso al 55'), con UNA
+# differenza: dal 55' il LAY DELLA SFAVORITA - che e' il prezzo a cui la BASE
+# BANCA (B9: «nessun limite», l'argomento e' chiuso dall'utente) - CALA di un
+# gradino vero ogni quattro secondi. Safe legge il book, chiede la lay al prezzo
+# che ha visto, e mentre Betfair trattiene l'ordine per i cinque secondi del bet
+# delay il prezzo migliora: l'abbinamento avviene piu' in basso di quanto
+# chiesto, che per chi BANCA e' meglio (meno responsabilita' a parita' di
+# incasso).
+#
+# CHE COSA NON SI TOCCA: il filtro d'ingresso della SPEC e' il BACK LIVE della
+# FAVORITA (controllo B8), e quello resta fermo a 1,28, dentro la banda
+# 1,20-1,34. La deriva sta tutta sul lato BANCATO, dove la SPEC non mette
+# limiti, e la lay non scende mai sotto il back della stessa selezione: il libro
+# non si incrocia mai.
+# ---------------------------------------------------------------------------
+# la scala Betfair VERA fra 10 e 20: passo 0,50. Un gradino ogni quattro
+# secondi, per quattro gradini - sedici secondi di deriva, piu' che abbastanza
+# perche' l'ingresso al 55' ci caschi dentro. Il back della sfavorita a 1-0 e'
+# 12,00 (`_quote_base_standard`), quindi la lay non lo tocca mai.
+DERIVA_BANCA = [14.5, 14.0, 13.5, 13.0]
+
+
+class PartitaConDeriva(Partita):
+    """Una `Partita` in cui il LAY di un lato SI MUOVE nel tempo.
+
+    Non e' un formato nuovo e non tocca niente di cio' che c'era: e' la stessa
+    partita, con `quote()` che per una finestra di minuti restituisce un lay
+    che scende. Tutto il resto (stream, punteggi, sospensioni, chiusura del
+    mercato) e' identico, perche' e' lo stesso codice.
+    """
+
+    def __init__(self, *a: Any, deriva_lato: str = "home",
+                 deriva_da: float = 0.0, deriva_a: float = 0.0,
+                 deriva: Sequence[float] = (), **kw: Any) -> None:
+        super().__init__(*a, **kw)
+        self.deriva_lato = str(deriva_lato)
+        self.deriva_da = float(deriva_da)
+        self.deriva_a = float(deriva_a)
+        self.deriva = list(deriva)
+
+    def quote(self, minuto: float) -> Dict[str, Tuple[float, float]]:
+        q = dict(super().quote(minuto))
+        if not self.deriva or not (self.deriva_da <= minuto < self.deriva_a):
+            return q
+        passi = int((float(minuto) - self.deriva_da) * 15.0)     # uno ogni 4 s
+        lay = self.deriva[min(passi, len(self.deriva) - 1)]
+        back, _vecchio = q[self.deriva_lato]
+        # il libro non si incrocia MAI: il lay non scende sotto il back
+        q[self.deriva_lato] = (back, max(lay, back))
+        return q
+
+
+PARTITE["_synth_safe_prezzo_migliore"] = PartitaConDeriva(
+    "_synth_safe_prezzo_migliore", "Iota Synth FC", "Kappa Synth FC",
+    gol=[(30, "home")],
+    rossi=[],
+    prezzi=_quote_base_standard(),
+    pre_ko={"home": (1.64, 1.66), "draw": (3.9, 4.0), "away": (5.4, 5.6)},
+    durata_min=95,
+    deriva_lato="away", deriva_da=55.0, deriva_a=62.0, deriva=DERIVA_BANCA,
+    nota="BASE: 1-0 al 30', ingresso al 55' mentre la LAY della SFAVORITA (il "
+         "prezzo a cui la BASE banca) cala di un gradino ogni 4 s. L'ordine si "
+         "abbina a un prezzo MIGLIORE di quello chiesto (K1, difetto 3 del "
+         "15/09); uscita a TEMPO all'80' (B14)")
+
+
+# ---------------------------------------------------------------------------
+# 5) OMEGA — abbinamento a un prezzo MIGLIORE di quello chiesto (K1, difetto 3
+#    del 15/09: `avg_price` al posto di `avg_price_matched`).
+#
+# PERCHE' SERVE. Sulle 42 registrazioni vere quel caso non capita mai: Omega
+# chiede FOK al best disponibile e si abbina a quello. Finche' non capita, il
+# controllo K1 non ha un caso e il referto non dice «sano», dice «non lo so»
+# (PROCESSO_STANDARD_BOT §6.7). Qui la condizione si COSTRUISCE.
+#
+# COME. Il Risultato Esatto porta i gusci fino al 3-3 (Omega ha bisogno di celle
+# davvero rare: con i soli sei runner della Safe, da 0-0 al 55' non esiste
+# nessuna cella a due gol di distanza che sia anche abbastanza improbabile).
+# Il prezzo del "3 - 3" CALA di un tick ogni mezzo minuto dopo il 50': Omega
+# legge il book, chiede il lay al prezzo che ha visto, e nel bet delay il prezzo
+# migliora. Da quel momento cio' che il bot contabilizza dev'essere il prezzo
+# ABBINATO, non quello CHIESTO.
+#
+# Il "3 - 3" NON esce (la partita finisce 1-0): la gamba va a settlement vinta,
+# cosi' si esercita anche la commissione una volta sola (F1).
+# ---------------------------------------------------------------------------
+# i gusci del Risultato Esatto fino al 3-3: `selectionId` -> `sortPriority`.
+# I nomi NON stanno nello stream (Betfair non li manda): li ricava la formula
+# dei gusci di `Betfair/omega/tools/replay_registrazioni.nome_scoreline`, che
+# e' la stessa che il replay usa sulle registrazioni vere.
+CS_RUNNERS_OMEGA: List[Tuple[int, int]] = [(sid, sid) for sid in range(1, 17)] + [
+    (9063254, 17), (9063255, 18), (9063256, 19)]
+SID_TRE_TRE = 13            # "3 - 3" (guscio 3, posizione 3)
+# la scala Betfair vera scendendo da 110: sopra 100 il passo e' 10, fra 50 e
+# 100 e' 5. Nessun prezzo inventato, nessun mezzo tick.
+_DERIVA_TRE_TRE = [110.0, 100.0, 95.0, 90.0, 85.0, 80.0, 75.0, 70.0, 65.0, 60.0]
+
+
+def _cs_prezzi_omega(sort: int, minuto: float) -> Optional[Tuple[float, float]]:
+    """Il libro del Risultato Esatto, minuto per minuto.
+
+    Le celle vicine al punteggio stanno basse, quelle lontane alte: e' come e'
+    fatto un mercato vero. L'unica cosa costruita e' la DERIVA del "3 - 3" dopo
+    il 50': -1 tick ogni mezzo minuto, cioe' il prezzo che migliora mentre
+    l'ordine e' trattenuto dal bet delay.
+    """
+    if sort >= 17:                       # gli aggregati «Any Unquoted»
+        return (34.0, 36.0)
+    # PRIMA DEL 56' il guscio 3 sta SOTTO la banda di quota di Omega
+    # (`price_min` 20): cosi' nessuno dei due motori entra troppo presto, e la
+    # finestra 2T di V3 (55'-85') e quella del v2 (50'-80') guardano lo STESSO
+    # libro. Non e' una comodita': se il v2 aprisse al 50' smetterebbe di
+    # interrogare il book, e il motore in ombra vedrebbe un istante solo.
+    if sort >= 10 and minuto < 56:
+        return (14.0, 15.0)
+    if sort == SID_TRE_TRE:
+        if minuto < 56:
+            return (14.0, 15.0)
+        # LA DERIVA. Un gradino della scala Betfair VERA ogni 4 secondi (due
+        # book: `TICK_LIVE_S` = 2 s), dal 56'. Il bet delay in gioco e' 5 s
+        # (`BET_DELAY_LIVE`), quindi fra il book che Omega LEGGE e il momento in
+        # cui Betfair abbina passa almeno un gradino: l'ordine si abbina a un
+        # prezzo MIGLIORE di quello chiesto. Non e' un prezzo inventato: sono
+        # tick validi (sopra 100 il passo e' 10, fra 50 e 100 e' 5).
+        passi = int(max(0.0, minuto - 56.0) * 15)      # uno ogni 4 s
+        if passi < len(_DERIVA_TRE_TRE):
+            lay = _DERIVA_TRE_TRE[passi]
+        else:
+            lay = _DERIVA_TRE_TRE[-1]
+        return (round(lay - 5.0, 2), lay)
+    if sort <= 4:                        # 0-0, 1-0, 1-1, 0-1
+        return (7.0, 7.4)
+    if sort <= 9:                        # il guscio 2
+        return (16.0, 17.0)
+    return (70.0, 75.0)                  # il resto del guscio 3
+
+
+PARTITE["_synth_omega_prezzo_migliore"] = Partita(
+    "_synth_omega_prezzo_migliore", "Omega Synth FC", "Kappa Synth FC",
+    gol=[(12, "home")],
+    rossi=[],
+    prezzi={
+        (0, 0): {"home": (1.80, 1.82), "draw": (3.6, 3.7), "away": (4.8, 5.0)},
+        (1, 0): {"home": (1.40, 1.42), "draw": (4.6, 4.8), "away": (9.0, 9.6)},
+    },
+    pre_ko={"home": (1.80, 1.82), "draw": (3.6, 3.7), "away": (4.8, 5.0)},
+    cs_runners=CS_RUNNERS_OMEGA,
+    cs_prezzi=_cs_prezzi_omega,
+    durata_min=95,
+    nota="OMEGA: gol al 12', poi 1-0 fino alla fine. Il '3 - 3' si laya a 110 e "
+         "CALA dal 56' mentre l'ordine e' nel bet delay: l'abbinamento avviene a un "
+         "prezzo MIGLIORE del chiesto (K1, difetto 3 del 15/09). La gamba va a "
+         "settlement VINTA (il 3-3 non esce), quindi esercita anche F1.")
+
+
+# ---------------------------------------------------------------------------
 # lo STREAM nativo
 # ---------------------------------------------------------------------------
 def _ladder(prezzo: float, *, lato: str, size: float = 5000.0) -> List[List[float]]:
@@ -302,8 +479,14 @@ def _prezzo_cs(sid: int, sort: int, h: int, a: int) -> Tuple[float, float]:
 def _rc_cs(p: Partita, minuto: float) -> List[Dict[str, Any]]:
     h, a = p.punteggio(minuto)
     out = []
-    for sid, sort in CS_RUNNERS:
-        back, lay = _prezzo_cs(sid, sort, h, a)
+    for sid, sort in (p.cs_runners or CS_RUNNERS):
+        if p.cs_prezzi is not None:
+            prezzi = p.cs_prezzi(sort, minuto)
+            if prezzi is None:
+                continue
+            back, lay = prezzi
+        else:
+            back, lay = _prezzo_cs(sid, sort, h, a)
         out.append({
             "id": sid,
             "atb": _delta(MK_CS, sid, "atb", _ladder(back, lato="atb", size=900.0)),
@@ -375,7 +558,7 @@ def scrivi_raw(p: Partita, path: str) -> int:
     righe: List[str] = []
     mercati = (
         (MK_MO, "MATCH_ODDS", _RUNNERS_MO, _rc_mo),
-        (MK_CS, "CORRECT_SCORE", CS_RUNNERS, _rc_cs),
+        (MK_CS, "CORRECT_SCORE", (p.cs_runners or CS_RUNNERS), _rc_cs),
         (MK_OU25, "OVER_UNDER_25", _RUNNERS_OU,
          lambda pa, m: _rc_ou(2.5, pa, m, MK_OU25)),
         (MK_OU35, "OVER_UNDER_35", _RUNNERS_OU,
@@ -444,16 +627,15 @@ def scrivi_raw(p: Partita, path: str) -> int:
     vincitori_mo = {R_HOME: "LOSER", R_AWAY: "LOSER", R_DRAW: "LOSER"}
     vincitori_mo[{"home": R_HOME, "away": R_AWAY, "draw": R_DRAW}[vinc]] = "WINNER"
     h, a = p.punteggio(p.durata_min + 10)
-    esatto = {sid: "ACTIVE" for sid, _s in CS_RUNNERS}
-    for sid, sort in CS_RUNNERS:
-        esatto[sid] = "LOSER"
+    runner_cs = list(p.cs_runners or CS_RUNNERS)
+    esatto = {sid: "LOSER" for sid, _s in runner_cs}
     # il punteggio finale: se e' fra i quotati vince quello, altrimenti vince
     # «Altro risultato Casa/Ospite» (che e' esattamente cio' che la variante
     # ESATTO banca)
     from . import validate_opportunity as VO
 
     quotato = None
-    for sid, _sort in CS_RUNNERS:
+    for sid, _sort in runner_cs:
         if VO._SCORE_IDS.get(sid) == (h, a):
             quotato = sid
     if quotato is not None:
@@ -471,7 +653,7 @@ def scrivi_raw(p: Partita, path: str) -> int:
             inplay=False, status="CLOSED", bet_delay=BET_DELAY_LIVE,
             vincitori=vincitori_mo)},
         {"id": MK_CS, "marketDefinition": _mdef(
-            p, market_id=MK_CS, market_type="CORRECT_SCORE", runners=CS_RUNNERS,
+            p, market_id=MK_CS, market_type="CORRECT_SCORE", runners=runner_cs,
             inplay=False, status="CLOSED", bet_delay=BET_DELAY_LIVE,
             vincitori=esatto)},
     ]
@@ -622,6 +804,39 @@ TENNIS: Dict[str, PartitaTennis] = {
         durata_s=2700, vincitore="p2",
         nota="ingresso a 1,02 (T6) -> crollo (obbligo di uscita, T7) -> il "
              "mercato CHIUDE con il WINNER dall'altra parte (settlement, T8)"),
+    # ABBINAMENTO A UN PREZZO MIGLIORE DI QUELLO CHIESTO, lato TENNIS (K1).
+    # Il tennis APRE in BACK: per chi punta, «meglio» vuol dire una quota PIU'
+    # ALTA. Qui il back di p1 sale di due tick VERI (0,01 sotto 2,00) a ogni
+    # book, cioe' ogni 5 s.
+    #
+    # ⚠️ REPERTO MISURATO IL 16/09 SERA, e va detto perche' questa partita NON
+    # mantiene la promessa: su questo percorso del banco
+    # (`banco_comune.replay_evento`, quello del tennis) flumine decide il fill AL
+    # MOMENTO DEL PIAZZAMENTO, contro lo stesso `market_book` che il bot ha
+    # appena letto - il bet delay conta i book (`book attesi`) ma non sposta il
+    # libro su cui l'ordine si abbina. Misurato: ordine chiesto a 1,10 e
+    # abbinato a 1,10 sul book dei 20 s, mentre quello dei 25 s offriva gia'
+    # 1,12. Sul percorso del calcio (`replay_registrazioni`) la stessa cosa
+    # riesce, perche' li' la riga dello scanner e' write-on-change e RESTA
+    # INDIETRO rispetto al book corrente. Quindi il caso «prezzo migliore» sul
+    # tennis resta ⊘: la causa e' nel banco, non nel bot, e `execution.place`
+    # (dove vive il difetto 3 del 15/09) e' lo STESSO identico codice del
+    # calcio, dove il caso c'e' ed e' rosso.
+    "_synth_safe_tennis_prezzo_migliore": PartitaTennis(
+        "_synth_safe_tennis_prezzo_migliore",
+        tappe=([(sec, 1, 0, sec // 60, 0,
+                 round(1.02 + 0.02 * (sec // TICK_TENNIS_S), 2),
+                 round(1.03 + 0.02 * (sec // TICK_TENNIS_S), 2))
+                for sec in range(0, 300, TICK_TENNIS_S)]
+               + [(300, 1, 1, 0, 0, 3.20, 3.30),
+                  (600, 1, 1, 0, 4, 12.0, 13.0),
+                  (900, 1, 2, 0, 0, 40.0, 44.0)]),
+        durata_s=1200, vincitore="p2",
+        nota="ingresso dichiarato a 1,02 con il back che SALE di due tick a ogni "
+             "book. Su questo banco il fill avviene sullo STESSO book letto dal "
+             "bot, quindi il «prezzo migliore» sul tennis resta ⊘ (vedi il "
+             "commento qui sopra); la partita resta utile perche' esercita "
+             "K1/K3/K4/K7 e il settlement col WINNER dall'altra parte (T8)"),
 }
 
 

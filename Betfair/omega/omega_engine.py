@@ -1124,12 +1124,14 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
                  k_tab: Optional[dict] = None,
                  p_empirica: Optional[Callable[[str], Optional[tuple]]] = None,
                  p_mercato: Optional[Callable[[str], Optional[float]]] = None):
-    """Il candidato V3 per una gamba, o None con i motivi.
+    """(candidato V3 per la gamba | None, motivi di scarto di ogni runner).
 
     `runners`: `ScoreRunner` (gli stessi del v2). `periodo`: 'ht' | 'ft'.
-    Ritorna l'oggetto `omega_v3.CandidatoV3` — che porta con se' i numeri della
-    decisione (P nostra, P implicita, k usato, margine, EV, liability, motivo) —
-    oppure None. Il chiamante lo trasforma in `Selection` con `selezione_da_v3`.
+    Il candidato e' un `omega_v3.CandidatoV3` e porta con se' i numeri della
+    decisione (P nostra, P implicita, k usato, margine, EV, liability, motivo);
+    il chiamante lo trasforma in `Selection` con `selezione_da_v3`. I MOTIVI
+    tornano SEMPRE, anche quando non si entra: «nessun candidato» senza dire
+    quale runner e' stato scartato e perche' non e' una spiegazione (A8).
     """
     from Betfair.omega import omega_v3 as V3
     from Betfair.omega import omega_config as C
@@ -1138,7 +1140,7 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
     if not V3.in_finestra(periodo, minuto,
                           minuto_min=cfg[f"{periodo}_entry_min"],
                           minuto_max=cfg[f"{periodo}_entry_max"]):
-        return None
+        return None, (("", "fuori_finestra"),)
 
     p = parametri_modello or V3.Parametri(modello=cfg["modello"])
     if p.modello != cfg["modello"]:
@@ -1149,7 +1151,7 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
                                            punteggio=(int(punteggio[0]), int(punteggio[1])),
                                            nomi=nomi, p=p, lambdas=lambdas)
     if not probabilita:
-        return None
+        return None, (("", "nessuna_probabilita_calcolabile"),)
     # FUSIONE COL MERCATO (candidato 6 del banco): il book sa cose che noi non
     # sappiamo. Peso stimato per fascia; senza prezzo di mercato resta il modello.
     if cfg["fusione"] and p_mercato is not None:
@@ -1167,7 +1169,7 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
               for r in runners]
 
     from Betfair.omega.tools import misura_k as K
-    return V3.candidato(
+    return V3.valuta_runner(
         periodo=periodo, runners=elenco, probabilita=probabilita,
         k_tab=k_tab, secchio_di=K.secchio_di,
         p_empirica=p_empirica, n_min_empirico=cfg["empirical_min_n"],
