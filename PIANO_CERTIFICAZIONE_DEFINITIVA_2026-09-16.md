@@ -566,6 +566,23 @@ proposta: kind `cashout_event` in `process_requests:1466` + marcatore per evento
 `scan_and_place:4140` e `_exit_candidates:1999`. **Da correggere prima di un live di Safe calcio**
 (il tennis usa lo stesso servizio: verificare). Reperto banco: `save_event_model` assente.
 
+### Esito C.1-ter — Mike: mai due lay + cash-out globale — CERTIFICATO dal coordinatore (16/09 h21)
+
+Guardia unica `engine._una_sola_lay:1704` (ultima parola di `decide`, applicata `:1885`) +
+`lay_in_volo:1686` (viva **o** `needs_reconcile`): con una lay in volo sulla selezione nessuna
+lay nuova; annullamento subito, la nuova al giro dopo solo a vecchia non più viva, dimensionata
+sul reale; ignoto/fallito → `pending_reconcile`. Copre ogni ramo presente e futuro; `over_cover`
+(due BACK) escluso e dichiarato. Controllo J5 (stato e decisione). Cash-out globale via bot
+(`_request_flatten:1855` → `_decide_flatten:1774`): `no_reentry=True` anche in gioco, attività
+`chiuso_dall_utente`, chiusure permesse, partita non terminale (P&L contabilizzato); controllo R2.
+Replay: 35777617 gol-precoce **J2/J5 → 0** (azioni 6→9, arriva a LIVE_CLOSING); 35760084 base
+identico; `cashout-globale` OK (R2 ×5835, ordini solo prima del cash-out). Suite `Betfair/` 3898
+verdi. Verifica del coordinatore: 665 verdi; falsificazione propria (una lay a esito ignoto non
+conta come in volo) → rossi. **Limite da portare all'utente**: se chiude la posizione **fuori dal
+bot** con una sua lay su Betfair, Mike non se ne accorge (`list_current_orders` filtra per
+`customerStrategyRef`) e continua a gestire il back; servirebbe leggere la posizione di conto
+(chiamata Betfair nuova, non fatta). Costituzione §15.7 con due riquadri datati.
+
 ### Esito C.4-ter — validatore per sport e terna tennis (16/09 h20, verificato dal coordinatore: 80 test verdi)
 
 `validate_recordings.py`: sport letto dal raw (`eventTypeId`), finestra tennis

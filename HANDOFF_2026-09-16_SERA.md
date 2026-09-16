@@ -37,7 +37,9 @@ finita, e il brief da ri-emettere a un delegato Opus 5 se non lo è.
   «poisson» nel nome; `scratchpad` della sessione non è più disponibile: rifare le misure.
 - Se manca: ri-emettere il brief sopra (delegato «C.0-perf»).
 
-### 2.2 Mike — regola «mai due lay a mercato» + cash-out globale (`Betfair/mike/engine.py`, `service.py`)
+### 2.2 Mike — FATTA e certificata (Esito C.1-ter nel piano; checkpoint `Betfair/mike/CHECKPOINT_2026-09-16.md`). Limite: cash-out fatto FUORI dal bot con una lay dell'utente non viene visto (serve la posizione di conto).
+
+### 2.2-bis (storico) Mike — cosa era stato chiesto
 - Chiesto (ordine utente): in ogni ramo che sostituisce una lay (`engine.py` blocco
   `vivo`/`_annulla(vivo)` ~:2341, ko_green, under_green, reentry_green, `altre_lay`): in quel
   giro SOLO `cancel`; la nuova lay al giro dopo SOLO se `_mark_trade_cancelled` ha confermato da
