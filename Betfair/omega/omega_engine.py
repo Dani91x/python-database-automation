@@ -1084,3 +1084,105 @@ def result_key_for_trade(trade: dict) -> Optional[str]:
     if phase in ("ft_cs", None):
         return "result_ft"
     return None
+
+
+# ---------------------------------------------------------------------------
+# OMEGA V3 (16/09 sera) — il percorso di selezione nuovo, DIETRO UN PARAMETRO.
+#
+# `strategy_version` resta 2 finche' non lo cambia l'utente: questo blocco non
+# tocca una virgola del motore v2. Serve perche' il replay possa far girare i
+# DUE motori sulla STESSA partita e mettere i numeri a confronto.
+#
+# Qui non c'e' matematica: sta tutta in `omega_v3.py` (puro, con il suo banco e
+# i suoi 41 test). Questo e' solo il raccordo: prende il book come lo vede il
+# servizio, chiede il candidato a V3, applica i cap e restituisce una
+# `Selection` uguale a quella del v2, cosi' che il resto della catena (sizing,
+# place, paper fill, settlement) non debba sapere quale motore ha scelto.
+# ---------------------------------------------------------------------------
+def greenup_automatico_attivo(params: dict) -> bool:
+    """G1 — in V3 non esiste una chiusura automatica: l'uscita e' una PROPOSTA
+    che l'utente approva dalla Control Room. Qui si risponde una volta sola, e
+    la certificazione interroga questa funzione, non venti `if` sparsi."""
+    if int((params or {}).get("strategy_version") or 2) >= 3:
+        return False
+    return bool((params or {}).get("greenup_enabled", True)) and \
+        str((params or {}).get("greenup_mode") or "auto") == "auto"
+
+
+def cap_di_gamba_v3(size: float, price: float, cap: float) -> float:
+    """C5 — il cap sulla liability della GAMBA. Riusa `apply_liability_cap`
+    (invariato): con stake 1 EUR la size non si riduce mai a meta', o si entra
+    interi o non si entra, quindi chi chiama deve trattare un taglio come uno
+    SKIP e non come un ingresso piu' piccolo."""
+    return apply_liability_cap(size, price, cap)
+
+
+def seleziona_v3(runners: list, *, periodo: str, minuto: float,
+                 punteggio: tuple, params: dict,
+                 lambdas: Optional[tuple] = None,
+                 parametri_modello: Optional[Any] = None,
+                 k_tab: Optional[dict] = None,
+                 p_empirica: Optional[Callable[[str], Optional[tuple]]] = None,
+                 p_mercato: Optional[Callable[[str], Optional[float]]] = None):
+    """Il candidato V3 per una gamba, o None con i motivi.
+
+    `runners`: `ScoreRunner` (gli stessi del v2). `periodo`: 'ht' | 'ft'.
+    Ritorna l'oggetto `omega_v3.CandidatoV3` — che porta con se' i numeri della
+    decisione (P nostra, P implicita, k usato, margine, EV, liability, motivo) —
+    oppure None. Il chiamante lo trasforma in `Selection` con `selezione_da_v3`.
+    """
+    from Betfair.omega import omega_v3 as V3
+    from Betfair.omega import omega_config as C
+
+    cfg = C.parametri_v3(params or {})
+    if not V3.in_finestra(periodo, minuto,
+                          minuto_min=cfg[f"{periodo}_entry_min"],
+                          minuto_max=cfg[f"{periodo}_entry_max"]):
+        return None
+
+    p = parametri_modello or V3.Parametri(modello=cfg["modello"])
+    if p.modello != cfg["modello"]:
+        p = p.con(modello=cfg["modello"])
+
+    nomi = [str(getattr(r, "name", "") or "") for r in runners]
+    probabilita = V3.probabilita_selezioni(periodo=periodo, minuto=float(minuto),
+                                           punteggio=(int(punteggio[0]), int(punteggio[1])),
+                                           nomi=nomi, p=p, lambdas=lambdas)
+    if not probabilita:
+        return None
+    # FUSIONE COL MERCATO (candidato 6 del banco): il book sa cose che noi non
+    # sappiamo. Peso stimato per fascia; senza prezzo di mercato resta il modello.
+    if cfg["fusione"] and p_mercato is not None:
+        fuse = {}
+        for nome, pm in probabilita.items():
+            fuse[nome] = V3.fondi_col_mercato(pm, p_mercato(nome), p)
+        probabilita = fuse
+
+    elenco = [V3.RunnerV3(selection_id=int(getattr(r, "selection_id", 0)),
+                          name=str(getattr(r, "name", "") or ""),
+                          lay_price=getattr(r, "lay_price", None),
+                          lay_size=float(getattr(r, "lay_size", 0.0) or 0.0),
+                          back_price=getattr(r, "back_price", None),
+                          back_size=float(getattr(r, "back_size", 0.0) or 0.0))
+              for r in runners]
+
+    from Betfair.omega.tools import misura_k as K
+    return V3.candidato(
+        periodo=periodo, runners=elenco, probabilita=probabilita,
+        k_tab=k_tab, secchio_di=K.secchio_di,
+        p_empirica=p_empirica, n_min_empirico=cfg["empirical_min_n"],
+        commissione=cfg["commissione"], size=cfg["stake"],
+        min_liquidita=cfg["min_lay_liquidity"],
+        distanza_minima_gol=cfg["distanza_minima_gol"],
+        punteggio=(int(punteggio[0]), int(punteggio[1])),
+        p_max=cfg["p_max"], cap_liability_gamba=cfg["max_liability_per_leg"],
+        k_default=cfg["k_minimo"])
+
+
+def selezione_da_v3(cand) -> Optional[Selection]:
+    """Il candidato V3 nella stessa forma che il resto della catena gia' conosce."""
+    if cand is None:
+        return None
+    return Selection(selection_id=int(cand.selection_id), name=str(cand.name),
+                     price=round_to_tick(float(cand.price)),
+                     lay_size_available=float(getattr(cand, "lay_size_available", 0.0) or 0.0))

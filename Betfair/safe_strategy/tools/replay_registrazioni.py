@@ -128,6 +128,14 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # avversaria solida» e a far avere un caso al controllo E10, che con il
     # parametro spento (default) non ne ha nessuno.
     "selezione-aggiuntiva": {"esatto": {"requireSelection": True}},
+    # L'UTENTE CHIUDE FUORI DALL'APP (ordine del 16/09 sera, consegna S1): con
+    # una posizione del bot aperta, il trader piazza un ordine SUO su Betfair
+    # che la chiude. Il bot non lo vede fra i propri ordini (ref diverso): deve
+    # accorgersene dalla POSIZIONE DI CONTO e non fare altro.
+    "chiusura-fuori-app": {},
+    # variante: l'utente chiude solo META' della posizione. Il bot lo DICHIARA
+    # e continua a proteggere il resto (non e' un cash-out).
+    "chiusura-fuori-app-ridotta": {},
 }
 
 SCENARIO_BOT_FERMO = "bot-fermo"
@@ -140,6 +148,8 @@ SCENARIO_DUE_LAY = "due-lay"
 SCENARIO_MANUALE_E_BOT = "manuale-e-bot"
 SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 SCENARIO_SELEZIONE = "selezione-aggiuntiva"
+SCENARIO_FUORI_APP = "chiusura-fuori-app"
+SCENARIO_FUORI_APP_RIDOTTA = "chiusura-fuori-app-ridotta"
 QUANTI_GUASTI = 3
 # ogni quanti giri, dopo l'apertura, il trader chiede la chiusura (cash out):
 # 60 giri x 2 s = due minuti di tempo di MERCATO.
@@ -176,6 +186,15 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                               "partita (una `cashout` per riga viva, percorso "
                               "vero del servizio): dal giro dopo il bot non deve "
                               "aprire ne' gestire altro (T14)",
+    SCENARIO_FUORI_APP: "il trader chiude la posizione del bot con un ordine SUO "
+                        "su Betfair, FUORI dall'app (ref non del bot): il bot deve "
+                        "accorgersene dalla posizione di CONTO, scrivere "
+                        "`chiuso_dall_utente` e non fare altro (T14)",
+    SCENARIO_FUORI_APP_RIDOTTA: "come sopra ma il trader chiude solo META' della "
+                                "posizione: il bot lo DICHIARA "
+                                "(`ridotta_dall_utente`) e continua a proteggere "
+                                "il resto — una copertura parziale non e' un "
+                                "cash-out",
     SCENARIO_SELEZIONE: "la «selezione aggiuntiva» della SPEC §2 ACCESA "
                         "(`esatto.requireSelection`): il filtro scontri diretti "
                         "+ difesa avversaria gira davvero e il controllo E10 ha "
@@ -818,6 +837,9 @@ def _crea_strategia():
             # CASH-OUT GLOBALE dell'utente: si chiude tutto e si dichiara
             # l'istante, cosi' il controllo T14 sa da quando giudicare.
             self.cashout_globale = bool(kw.pop("cashout_globale", False))
+            # CHIUSURA FUORI DALL'APP: "intera" | "ridotta" | None
+            self.fuori_app: Optional[str] = kw.pop("fuori_app", None)
+            self.fuori_app_fatta: Optional[Dict[str, Any]] = None
             self.chiuso_dall_utente: Dict[str, float] = {}
             self.richiesta_fatta = False
             self.cashout_chiesto = False
@@ -915,6 +937,9 @@ def _crea_strategia():
             # 2-quater) IL CASH-OUT GLOBALE: l'utente chiude TUTTO
             if self.cashout_globale and not self.chiuso_dall_utente:
                 self._forse_chiudi_tutto(pt_ms / 1000.0)
+            # 2-quinquies) L'UTENTE CHIUDE FUORI DALL'APP, su Betfair
+            if self.fuori_app and self.fuori_app_fatta is None:
+                self._forse_chiudi_fuori_app(pt_ms / 1000.0)
             # 3) IL CICLO INTERO del servizio
             self.aperture_nel_giro = 0
             self._attivita_a_inizio_giro = len(self.db.attivita)
@@ -988,6 +1013,54 @@ def _crea_strategia():
                 self.db.log("replay_cashout_globale", {"kind": "cashout",
                                                        "payload": corpo})
             self.chiuso_dall_utente[self.event_id] = float(adesso)
+
+        def _forse_chiudi_fuori_app(self, adesso: float) -> None:
+            """Il trader chiude la posizione del bot con un ordine SUO.
+
+            Non e' un finto: l'ordine passa da
+            `banco_comune.MercatoFlumine.place_order_utente`, cioe' dallo stesso
+            `market.place_order` e dallo stesso matching del bot; l'unica
+            differenza e' il `customer_order_ref`, che non e' del bot — come su
+            Betfair, dove il bot filtra i propri ordini per
+            `customerStrategyRef` e quindi NON vede questo.
+
+            Prezzo: un limite che attraversa di sicuro (1,01 per un BACK, 1000
+            per una LAY). Flumine abbina comunque al MIGLIOR prezzo del libro,
+            non al limite: e' un ordine TAKER, che e' quello che fa chi chiude
+            dal sito.
+            """
+            vive = [r for r in self.db.trades
+                    if str(r.get("status")) == "open"
+                    and str(r.get("origin") or "") == "auto"
+                    and not r.get("closes_trade_id")
+                    and float(r.get("size") or 0.0) > 0]
+            if not vive:
+                return
+            tr = vive[0]
+            lato_bot = str(tr.get("side") or "").lower()
+            lato_utente = "back" if lato_bot == "lay" else "lay"
+            size = round(float(tr.get("size") or 0.0)
+                         * (0.5 if self.fuori_app == "ridotta" else 1.0), 2)
+            if size < 0.01:
+                return
+            ordine = self.mercato.place_order_utente(
+                market_id=str(tr.get("market_id")),
+                selection_id=int(tr.get("selection_id") or 0),
+                price=(1.01 if lato_utente == "back" else 1000.0),
+                size=size, side=lato_utente,
+                customer_ref=f"utente-fuori-app-{tr.get('id')}")
+            dettaglio = {"trade_id": tr.get("id"), "lato_utente": lato_utente,
+                         "size": size, "quota_del_bot": tr.get("size"),
+                         "market_id": tr.get("market_id"),
+                         "selection_id": tr.get("selection_id"),
+                         "piazzato": ordine is not None,
+                         "modo": self.fuori_app}
+            self.db.log("replay_chiusura_fuori_app", dettaglio)
+            self.fuori_app_fatta = dettaglio
+            # l'istante da cui T14 giudica: SOLO per la chiusura INTERA (una
+            # copertura parziale non e' un cash-out e il bot deve continuare)
+            if ordine is not None and self.fuori_app == "intera":
+                self.chiuso_dall_utente[self.event_id] = float(adesso)
 
         def _certifica_ordini(self) -> None:
             """I controlli sugli ordini partiti in questo giro."""
@@ -1107,6 +1180,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       doppia_lay: bool = False,
                       manuale_sul_bot: bool = False,
                       cashout_globale: bool = False,
+                      fuori_app: Optional[str] = None,
                       mode: str = "live",
                       status: str = "running",
                       scenario: str = "base") -> CERT.Referto:
@@ -1136,6 +1210,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         invecchia_s=invecchia_s, riavvia=riavvia, mode=mode, status=status,
         ordine_manuale=ordine_manuale, doppia_lay=doppia_lay,
         manuale_sul_bot=manuale_sul_bot, cashout_globale=cashout_globale,
+        fuori_app=fuori_app,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: il rischio lo governa la Safe coi suoi
         # parametri (`max_liability_per_trade`, `max_open_trades`, i cap di
@@ -1416,28 +1491,25 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
     if manuali:
         resp = sum(float(r.get("liability") or 0.0) for r in manuali)
         out.note.append(
-            f"[REPERTO — I CAP DEL BOT E LE RIGHE DEL TRADER] {len(manuali)} righe "
-            f"manuali vive per {resp:.2f} EUR di responsabilita'. "
-            f"`bot_db.open_trades:130` e `aggregate_rows:348` NON filtrano per "
-            f"`origin`: quelle righe entrano in `build_risk_ctx` "
-            f"(`bot_service.py:3886`) e quindi nel tetto `max_open_trades`, nel "
-            f"cap di responsabilita' per evento e negli aggregati di giornata "
-            f"del BOT. Le USCITE invece le filtrano (`_exit_candidates:2013`: "
-            f"`origin != 'auto'` -> scartata), quindi il bot non le tocca mai. "
-            f"Asimmetria dichiarata: decide l'utente, qui non si corregge.")
+            f"[CHIUSO IL 16/09] {len(manuali)} righe manuali vive per {resp:.2f} "
+            f"EUR di responsabilita': i CAP del bot adesso contano SOLO "
+            f"l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri "
+            f"(`open_trades`/`aggregate_rows` senza filtro `origin`, con le "
+            f"righe del trader dentro `build_risk_ctx`) non vale piu'; restano "
+            f"nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite "
+            f"le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> "
+            f"scartata): il bot non tocca le righe del trader.")
     if strategia.chiuso_dall_utente:
         out.note.append(
-            "[REPERTO — CASH-OUT GLOBALE] l'utente ha chiuso a mano tutte le "
-            "operazioni della partita. Safe NON ha un `cashout_event`: le sue "
-            "richieste sono `place`, `cashout` (per trade_id) e `cancel` "
-            "(`bot_service.py:1466-1470`), e non esiste nessuno stato per evento "
-            "«chiuso dall'utente». Conseguenza: l'idempotenza blocca solo la "
-            "STESSA chiave (`bot_db.traded_signal_keys:192`), quindi al "
-            "cambiare del punteggio nasce una chiave nuova e il bot puo' "
-            "riaprire. Patch proposta (NON applicata: e' comportamento): un "
-            "kind `cashout_event` in `process_requests:1466` che chiude tutte le "
-            "righe vive dell'evento e scrive un marcatore per evento letto da "
-            "`scan_and_place:4140` prima della riserva.")
+            "[CHIUSO IL 16/09] l'utente ha chiuso a mano tutte le operazioni "
+            "della partita. Safe ADESSO ce l'ha, il cash-out globale: kind "
+            "`cashout_event` in `process_requests`, marcatore "
+            "`meta.chiuso_dall_utente` sulle righe (sopravvive al riavvio) e "
+            "`riprendi_evento` per tornare indietro (consegna S1 del 16/09 "
+            "sera). Il reperto di ieri — nessuno stato per evento, quindi il "
+            "bot poteva riaprire al cambiare del punteggio — non vale piu': "
+            "qui si verifica che dal giro dopo non apra, non copra e non esca "
+            "(controllo T14).")
     if scenario == SCENARIO_PAPER:
         out.note.append("[DIVERGENZA, REPERTO] percorso PAPER legacy: il fill lo "
                         "fa `bot_service._paper_ladder` + `omega_engine.paper_fill` "
@@ -1490,6 +1562,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         doppia_lay=(scenario == SCENARIO_DUE_LAY),
         manuale_sul_bot=(scenario == SCENARIO_MANUALE_E_BOT),
         cashout_globale=(scenario == SCENARIO_CASHOUT_GLOBALE),
+        fuori_app=("intera" if scenario == SCENARIO_FUORI_APP else
+                   ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
         mode=mode, status=status, scenario=scenario)
 
 
@@ -1523,7 +1597,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         STRATEGIE_SCELTE = tuple(s.strip() for s in scelte.split(",") if s.strip())
     from ...stream.backtest.certifica import main as certifica_main
 
-    return certifica_main(["safe_calcio"] + ripuliti)
+    # IL REGISTRO HA TRE VOCI PER IL CALCIO (`safe_base`, `safe_esatto`,
+    # `safe_punta`), non una `safe_calcio`: fino al 16/09 questo chiamante
+    # passava un nome che il registro rifiuta, e il comando non partiva.
+    # La voce si sceglie dalle strategie chieste; con piu' di una si usa
+    # `safe_base`, che accende comunque tutte e tre (il registro passa
+    # `strategie` al replay).
+    voci = {"base": "safe_base", "esatto": "safe_esatto", "punta": "safe_punta"}
+    bot = (voci.get(STRATEGIE_SCELTE[0], "safe_base")
+           if len(STRATEGIE_SCELTE) == 1 else "safe_base")
+    return certifica_main([bot] + ripuliti)
 
 
 # le strategie scelte dalla riga di comando (default: tutte e tre)

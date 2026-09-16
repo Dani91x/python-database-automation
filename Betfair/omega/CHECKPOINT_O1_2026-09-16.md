@@ -64,7 +64,50 @@ regolati ignorati) · E3 e E5 smontati nel controllo.
    `omega_eventi_chiusi_dall_utente()`. Senza, lo stato si toglie solo da SQL.
 4. Testata: affiancare `open_liability` (conto) e `open_liability_bot` (su cui il bot decide).
 
+## Allineamenti chiesti dal coordinatore dopo la certificazione (16/09, tarda sera)
+
+### (1) Sulla partita chiusa dall'utente, gli ordini VIVI e NON ABBINATI del bot si ANNULLANO
+- `omega_service.py:2891` `annulla_ordini_vivi_del_bot(...)` · `:2867` `_puo_essere_vivo` ·
+  `:2948` `ritenta_annulli` · chiamati da `_chiudi_evento:2959` (che ora riceve `market`),
+  da `_dopo_il_cashout` **anche mentre l'evento e' ancora in attesa** (l'attesa non e' un
+  permesso di restare a mercato) e da `settle_open` per i ritenti.
+- Passa da `X.annulla_su_betfair` → `cancel_order_live` VERO, esito **riletto**
+  (`_ordine_ancora_vivo`, `ignoto_e_vivo=True`): attivita' `cancel_richiesto`/`cancel_esito`.
+  Un esito ignoto NON diventa mai «annullato»: l'evento resta in `_DA_ANNULLARE` e si
+  ritenta a ogni giro. **La parte ABBINATA non si tocca**: e' posizione, la regola il
+  settlement (I3). Gli ordini dell'UTENTE non li annulla il bot.
+- `omega_db.trades_for_event` ora seleziona anche `event_id,market_id,meta` (il cancel
+  vuole il mercato, il residuo sta nel meta).
+- E5 (`certificazione.py:829`) ha un terzo braccio: **dopo la chiusura non devono restare
+  ordini del bot a mercato**.
+
+### (2) Porta unica per la posizione di conto
+- `safe_strategy/bot_service.py:1239` usa `posizione_di_conto` al posto delle due letture
+  dirette. Cadenza (30 s/mercato), tetto per ciclo e verdetti **invariati**.
+- **REPERTO trovato facendolo**: il mercato vero di Safe e' `omega_market`
+  (`bot_service:45`), che **non ha** `list_account_orders`/`list_account_cleared_orders`
+  (sono nomi del solo banco) → il `getattr` tornava `None` e **la sorveglianza del conto di
+  Safe era codice MORTO in produzione**: funzionava solo nel replay. Con la porta unica
+  funziona davvero. Due test nuovi tengono il reperto chiuso.
+- I 28 test di `test_chiusura_dell_utente_2026_09_16.py` restano verdi: il finto e' stato
+  adattato (esponeva i due nomi del banco, cioe' sapeva fare piu' del vero) e **dichiarato**
+  nel suo docstring. Ora sono **32** (4 nuovi sulla porta unica).
+
+### Prove
+- Test: **48** in `test_omega_chiuso_dall_utente_2026_09_16.py` (10 nuovi sull'annullo),
+  **114** in `test_omega_replay_2026_09_16.py` (2 nuovi su E5/ordini vivi), **32** in Safe.
+- Falsificazione: **7 mutazioni nuove, 7 catturate** (i due rami di `_puo_essere_vivo`,
+  ordine dell'utente annullato per sbaglio, esito ignoto dato per annullato, `_chiudi_evento`
+  senza annullo, E5 cieco agli ordini vivi, Safe che torna ai due nomi). Totale sessione:
+  **18 mutazioni, 18 catturate**.
+- Replay 4 scenari: **0 violazioni**, E1 x324, E3 x576, E4 x110, E5 x108.
+- Suite `Betfair/omega Betfair/stream Betfair/safe_strategy`: **3327 verdi**.
+
 ## Limiti dichiarati (⊘)
+- **L'annullo non e' sollecitato sul banco**: su 35760084 l'unico ordine del bot e'
+  completamente ABBINATO quando l'utente chiude, quindi non c'e' niente da annullare.
+  Il ramo e' coperto dai test (pending con e senza residuo, residuo di un parziale,
+  esito ignoto, ritento) e dal braccio nuovo di E5, che sul banco resta senza caso.
 - La migrazione NON e' applicata: finche' non lo e', lo stato dell'evento vive in RAM e si
   perde al riavvio (il servizio lo dichiara con `schema_warn`).
 - Gli ordini del bot ancora VIVI su una partita chiusa dall'utente vengono ELENCATI, non

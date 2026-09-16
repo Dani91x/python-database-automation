@@ -1116,10 +1116,17 @@ def _settlement_needs_rest(trade: dict[str, Any], row: Optional[dict],
 # e' il reperto R9 di Omega e il limite dichiarato di Mike.
 # La posizione VERA e' quella del CONTO sul mercato: ``listCurrentOrders`` e
 # ``listClearedOrders`` con i soli ``marketIds``, SENZA filtro di strategia
-# (``omega_market.list_current_orders_account`` / ``list_cleared_orders_account``,
-# gia' esistenti: non se ne creano di nuove). Nel banco le espone
-# ``MercatoFlumine.list_account_orders`` / ``list_account_cleared_orders``
-# (`stream/backtest/banco_comune.py`), che le legge dal blotter di flumine.
+# PORTA UNICA (16/09 sera, ordine del coordinatore): quella lettura si chiede
+# a ``posizione_di_conto(market_id, selection_id=None)`` — UNA funzione sola,
+# con lo stesso nome e la stessa firma in produzione
+# (``omega_market.posizione_di_conto``, che dentro fa
+# ``list_current_orders_account`` + ``list_cleared_orders_account``) e nel banco
+# (``MercatoFlumine.posizione_di_conto``, dal blotter di flumine). Prima Safe
+# chiamava le due letture del BANCO per nome: e in produzione quei due nomi NON
+# ESISTONO su ``omega_market`` (che e' il mercato vero di Safe,
+# ``bot_service:45``), quindi il ``getattr`` tornava None e questa sorveglianza
+# era codice MORTO fuori dal replay. Con la porta unica funziona davvero.
+# Cadenza, tetto per ciclo e verdetti NON cambiano: cambia da dove si entra.
 #
 # CADENZA DICHIARATA: sono DUE chiamate REST in piu' per mercato, quindi si
 # fanno al respiro del database — ``CONTO_EVERY_S`` = 30 s per MERCATO, solo in
@@ -1229,9 +1236,8 @@ def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
       dell'utente non autorizza il bot a smettere di proteggere il resto.
     In PAPER non esiste nessun conto da leggere: si esce subito.
     """
-    leggi_vivi = getattr(market, "list_account_orders", None)
-    leggi_morti = getattr(market, "list_account_cleared_orders", None)
-    if not callable(leggi_vivi) or not callable(leggi_morti):
+    leggi_conto = getattr(market, "posizione_di_conto", None)
+    if not callable(leggi_conto):
         return 0
     now_ts = now.timestamp()
     per_mercato: dict[str, list[dict[str, Any]]] = {}
@@ -1262,8 +1268,9 @@ def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
             if len(per_mercato) >= CONTO_MERCATI_PER_CICLO:
                 continue              # tetto del ciclo: si riprende al giro dopo
             try:
-                per_mercato[market_id] = (list(leggi_vivi(market_id) or [])
-                                          + list(leggi_morti(market_id) or []))
+                # vivi + regolati insieme, in una chiamata sola: la
+                # selezione la filtra ``_netto_su_selezione`` come prima
+                per_mercato[market_id] = list(leggi_conto(market_id) or [])
                 _CONTO_LETTO_A[market_id] = now_ts
             except Exception as ex:  # noqa: BLE001 — rete: si riprova, non si inventa
                 logger.warning("[safe.bot] posizione di conto non letta su %s: %s",

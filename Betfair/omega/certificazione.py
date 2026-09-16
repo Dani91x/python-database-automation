@@ -867,6 +867,16 @@ def _e5(m: Momento) -> Optional[str]:
                 f"aveva gia' chiuso la posizione fuori dall'app: un back con "
                 f"soldi veri su una posizione che non esiste "
                 f"(righe {sorted(int(r.get('id') or 0) for r in marcate)})")
+    # 3. E NON DEVE RESTARE NIENTE DI VIVO. Un ordine del bot ancora appoggiato
+    #    su una partita che l'utente ha chiuso, se si abbina, apre una posizione
+    #    NUOVA su una partita che non e' piu' del bot: va annullato (la parte
+    #    gia' ABBINATA no — quella e' posizione, e la regola il settlement).
+    if giri is not None and giri > GIRI_PER_ACCORGERSI:
+        vivi = [o for _chiave, _id, o in _lay_a_mercato(m) if "VIVO" in o]
+        if vivi:
+            return (f"la partita e' chiusa dall'utente e restano ordini del bot a "
+                    f"mercato: {vivi}. Se si abbinano, il bot riapre una posizione "
+                    f"su una partita che non e' piu' sua")
     return None
 
 

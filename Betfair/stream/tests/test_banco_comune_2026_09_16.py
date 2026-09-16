@@ -57,7 +57,11 @@ PAYLOAD_VERO_CALCIO = {
     "away", "btts", "competition", "cs", "event_name", "home", "ht", "ht_result",
     "inplay", "media", "minute", "mo_market_id", "mo_status", "mo_total_matched",
     "odds", "odds_ts_ms", "open_date", "ou", "pre_ko", "pressure_index",
-    "red_away", "red_home", "score_away", "score_home", "score_raw", "timeline",
+    "red_away", "red_home", "score_away", "score_home", "score_raw",
+    # SPEC §2 «Selezione aggiuntiva» (16/09): scontri diretti + gol subiti,
+    # calcolati dallo scanner e pubblicati nella riga come `pressure_index`
+    "selection_hint",
+    "timeline",
 }
 PAYLOAD_VERO_TENNIS = {
     "competition", "event_name", "games", "inplay", "media", "mo_market_id",

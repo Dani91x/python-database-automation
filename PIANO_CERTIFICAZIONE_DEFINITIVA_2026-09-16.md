@@ -467,6 +467,49 @@ iniettata agiscono in istanti diversi; a ingresso condiviso i fill sono identici
 (decisione del coordinatore), con riga nel referto. Comando: `certifica mike 35760084
 --scenari base,taker --worker 3`.
 
+### Esito S2 — Safe: selezione aggiuntiva ESATTO, sintetiche BASE/PUNTA, tennis completo — CERTIFICATO (16/09 sera)
+
+A. «Selezione aggiuntiva» (SPEC §2: scontri diretti senza troppi 2-2/3-3, difesa avversaria solida)
+implementata in `safe_strategy/selezione.py` + `engine.selection_check:818` (dietro
+`requireSelection`, **nasce SPENTA** come `requireControl`), hint calcolato una volta dallo
+scanner (`payload.selection_hint`), gemello TS `safeStrategy.ts::selectionCheck`, dato =
+`hazard_atlas_v2.json` (abbinamento per nome, limite dichiarato). Soglie NON in SPEC, misurate
+sull'atlante e dichiarate: 2-2/3-3 ≤ 0,12 (il doppio del 6,04 % di 47.460 incontri), gol subiti
+dall'avversaria ≤ 1,37. 17 test; replay 35797769: E10 ×334 violato → base identico con E10 0
+casi; scenario `selezione-aggiuntiva` → 0 segnali (Spagna-Belgio senza scontri diretti).
+Costituzione §2.1 datata. Verifica del coordinatore: 1033 verdi Safe; falsificazione propria
+(difesa avversaria ignorata) → 2 rossi; **regressione `tsc` 13→14 nel `ParamsSheet` legacy
+corretta dal coordinatore** (tre default aggiunti al blocco parsato; tsc 13, build ok).
+B. Sintetiche `_synth_safe_base*`, `_synth_safe_punta` (`tools/synth_safe.py`, formato nativo
+con CS a id globali, IPS, sospensione al gol, CLOSED col WINNER): B3/B9/B12-B16 e P7-P10 ora
+sollecitati, 0 violazioni; falsificazione sul banco (uscita in perdita tolta → B12 rosso).
+**Tabella per l'utente**: 18/39 senza `pre_ko`; bande BASE (fav 1,40-1,80, dog 4-8) 5/39;
+quota live favorita in 1,20-1,34 8/39 e solo 2 fra le 5 in banda; **PUNTA: zero segnali in tutto
+il corpus** (punteggio ammesso 15/39, mai con leader favorito + minuto + quota 1,03-1,10). Con le
+bande del manuale BASE è attivabile su ~1 partita su 8 per pochi secondi.
+C. Tennis: terna × 8 scenari, 24 repliche, 0 violazioni, mai sollecitati 4 → 2 (T10 dato assente,
+L2 forma della strategia: FOK, mai appoggia); T6 ×272 e T8 ×11 sui dati reali; sintetica
+`_synth_safe_tennis`. Difetti del banco/controlli trovati: il ponte non inoltrava
+`process_closed_market` (settlement tennis mai avvenuto: `abilita_settlement` + 3 giri dopo la
+chiusura); T8 cercava uno stato `settled` mai scritto (riscritto sull'invariante «un back non
+perde più dello stake»).
+D. Seguiti S1: scenari `chiusura-fuori-app` (intera/ridotta) su calcio e tennis con ordine VERO
+dell'utente, 0 violazioni, T14 ×918, S4 nuovo reso indipendente dalla confessione del bot;
+replay tennis allineato alla RPC (`payload || {approved_at}`); note obsolete riscritte; nome bot.
+Reperto: T12 calcio era falso positivo sulla PUNTA (chiusure appaiate contate come vive):
+corretto. `certifica.py` conta le voci DICHIARATE nelle violazioni (exit code 1 su condotta
+corretta): da sistemare.
+
+### Esito O1-bis — Omega: annullo ordini vivi su partita chiusa + porta unica — CERTIFICATO
+
+`annulla_ordini_vivi_del_bot:2891` (fail-closed, riletto, ritenta a ogni giro, parte abbinata
+intoccata, ordini dell'utente mai toccati); E5 con terzo braccio. Porta unica
+`posizione_di_conto` anche per Safe (`bot_service.py:1239`): **reperto grave trovato facendolo —
+la sorveglianza del conto di Safe era codice MORTO in produzione** (`omega_market` non ha i nomi
+del banco `list_account_orders`: il `getattr` tornava None, funzionava solo nel replay; il finto
+sapeva fare più del vero). 18/18 falsificazioni; suite omega+stream+safe 3327 verdi. ⊘: l'annullo
+non è sollecitato sul banco (ordine del bot già abbinato alla chiusura).
+
 ### Esito O1 — Omega: chiusure dell'utente, stato evento, numeri solo del bot — CERTIFICATO (16/09 sera)
 
 R9: `sorveglia_posizione_di_conto:2756` dentro `settle_open` (zero letture DB in più), cadenza

@@ -118,6 +118,20 @@ export interface EsattoParams {
     /** soglia dell'indice di pressione (corner + cartellini), orientato sulla
      *  squadra guardata: >= soglia = comanda il gioco. */
     controlMin: number;
+    /** ORDINE DELL'UTENTE 16/09 — SPEC §2 riga «Selezione aggiuntiva»:
+     *  «scontri diretti senza troppi 2-2/3-3, difesa avversaria solida».
+     *  Default OFF come `requireControl`: il dato storico non ha copertura
+     *  misurata e, acceso senza dato, BLOCCA gli ingressi (n/d). */
+    requireSelection: boolean;
+    /** «senza TROPPI 2-2/3-3»: quota massima di scontri diretti finiti 2-2 o
+     *  3-3. Il numero NON è nella SPEC: è la lettura dichiarata il 16/09,
+     *  misurata sull'atlante (2-2/3-3 = 6,04% di 47.460 incontri) e presa al
+     *  DOPPIO della norma. */
+    h2hBigDrawRateMax: number;
+    /** «difesa AVVERSARIA solida»: gol subiti per partita dalla squadra che
+     *  deve fermare la bancata. 1,37 = metà dei 2,7403 gol per partita
+     *  dell'atlante, cioè «non peggio della media». */
+    oppConcededMax: number;
 }
 export interface PuntaParams {
     /** soglia "dal minuto in poi" (vedi BaseParams.minuteMin) */
@@ -202,6 +216,9 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         scoreConfirmSec: 30,
         requireControl: false,
         controlMin: 0.1,
+        requireSelection: false,
+        h2hBigDrawRateMax: 0.12,
+        oppConcededMax: 1.37,
     },
     punta: {
         minuteMin: 66,
@@ -289,6 +306,9 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             scoreConfirmSec: num(e.scoreConfirmSec, d.esatto.scoreConfirmSec),
             requireControl: bool(e.requireControl, d.esatto.requireControl),
             controlMin: num(e.controlMin, d.esatto.controlMin),
+            requireSelection: bool(e.requireSelection, d.esatto.requireSelection),
+            h2hBigDrawRateMax: num(e.h2hBigDrawRateMax, d.esatto.h2hBigDrawRateMax),
+            oppConcededMax: num(e.oppConcededMax, d.esatto.oppConcededMax),
         },
         punta: {
             minuteMin: num(u.minuteMin, d.punta.minuteMin),
@@ -419,6 +439,19 @@ export interface FootballMatchCtx {
      *  numero, altrimenti la pagina mostrerebbe un segnale che il bot non
      *  prende. null = dato non disponibile (mai zero). */
     pressureIndex: number | null;
+    /** SPEC §2 «Selezione aggiuntiva» (16/09): scontri diretti e gol subiti,
+     *  calcolati dallo SCANNER e pubblicati nella riga (come pressureIndex).
+     *  null = dato non disponibile, e non diventa mai uno zero. */
+    selectionHint: SelectionHint | null;
+}
+
+/** I due numeri storici della «Selezione aggiuntiva», come li scrive lo
+ *  scanner (`safe_strategy/selezione.py`). Un campo null = dato assente. */
+export interface SelectionHint {
+    fonte?: string;
+    h2hMeetings: number | null;
+    h2hBigDraws: number | null;
+    conceded: { home: number | null; away: number | null } | null;
 }
 
 /** Estrae il 1X2 pre-match dal payload di get_betfair_odds ({"1x2": {H,D,A|X}}). */
@@ -505,6 +538,9 @@ export function buildFootballCtx(
         // l'indice di controllo lo pubblica lo SCANNER: da live_now non c'e',
         // e un dato assente resta assente (il check diventa "n/d", non falso).
         pressureIndex: null,
+        // stessa ragione: la «selezione aggiuntiva» la pubblica lo SCANNER;
+        // da live_now non c'è, e un dato assente resta assente.
+        selectionHint: null,
     };
 }
 
@@ -562,6 +598,19 @@ export function buildFootballCtxFromScan(
         oddsNameMismatch: false, // nomi e selezioni vengono dallo STESSO catalogo
         red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
         pressureIndex: numOrNull(p.pressure_index),
+        selectionHint: p.selection_hint
+            ? {
+                  fonte: p.selection_hint.fonte,
+                  h2hMeetings: numOrNull(p.selection_hint.h2h_meetings),
+                  h2hBigDraws: numOrNull(p.selection_hint.h2h_big_draws),
+                  conceded: p.selection_hint.conceded
+                      ? {
+                            home: numOrNull(p.selection_hint.conceded.home),
+                            away: numOrNull(p.selection_hint.conceded.away),
+                        }
+                      : null,
+              }
+            : null,
         scoreStableSinceMinute,
         scoreObservedSec,
     };
@@ -798,6 +847,39 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
 }
 
 /** 2 · Calcio Risultato Esatto — banca "Altro risultato Casa/Ospite" (un lato). */
+/**
+ * SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppi 2-2/3-3
+ * e difesa AVVERSARIA solida. Gemello esatto di `engine.selection_check`
+ * (Python): i due motori devono dire la stessa cosa sulla stessa riga.
+ *
+ * «Avversaria» è la difesa della squadra OPPOSTA a quella bancata: la bancata
+ * è quella che non deve segnare ancora, quindi la difesa che deve reggere è
+ * quella dell'altra. Dato assente -> ok null: nessun segnale su un dato che
+ * non c'è (la regola di tutto il modulo).
+ */
+export function selectionCheck(
+    hint: SelectionHint | null,
+    laidSide: SideId,
+    rateMax: number,
+    concededMax: number,
+): ConditionCheck {
+    const label = `Scontri diretti con max ${Math.round(rateMax * 100)}% di 2-2/3-3 e difesa avversaria entro ${fmtOdds(concededMax)} gol subiti`;
+    const opponent: SideId = laidSide === 'home' ? 'away' : 'home';
+    const meetings = hint ? hint.h2hMeetings : null;
+    const bigDraws = hint ? hint.h2hBigDraws : null;
+    const conceded = hint && hint.conceded ? hint.conceded[opponent] : null;
+    if (meetings === null || meetings <= 0 || bigDraws === null || conceded === null) {
+        return { id: 'h2hDifesa', label, value: 'n/d', ok: null };
+    }
+    const rate = bigDraws / meetings;
+    return {
+        id: 'h2hDifesa',
+        label,
+        value: `${bigDraws}/${meetings} 2-2·3-3 · difesa ${fmtOdds(conceded)}`,
+        ok: rate <= rateMax && conceded <= concededMax,
+    };
+}
+
 export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side: SideId): VariantEvaluation {
     const checks: ConditionCheck[] = [];
     const sh = ctx.scoreHome;
@@ -812,6 +894,11 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     // probabile che segni ancora, ed e' proprio il gol che fa perdere.
     if (params.requireControl) {
         checks.push(controlCheck(ctx.pressureIndex, side, false, params.controlMin));
+    }
+    // SPEC §2 «Selezione aggiuntiva» (ordine dell'utente 16/09): filtro di
+    // SELEZIONE DELLA PARTITA, si accende dai parametri come requireControl.
+    if (params.requireSelection) {
+        checks.push(selectionCheck(ctx.selectionHint, side, params.h2hBigDrawRateMax, params.oppConcededMax));
     }
 
     if (sh === null || sa === null) {

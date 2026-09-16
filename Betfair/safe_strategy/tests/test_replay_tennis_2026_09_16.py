@@ -831,3 +831,125 @@ def test_i_giri_dopo_il_fischio_leggono_l_esito_dal_raw_registrato():
     chiusi = [d for d in finali.values() if d["status"] == "CLOSED"]
     assert chiusi, "la registrazione non arriva a CLOSED"
     assert "WINNER" in set(chiusi[0]["runners"].values())
+
+
+# ---------------------------------------------------------------------------
+# 16/09 sera — L'APPROVAZIONE DEL TRADER CONSERVA IL PAYLOAD (difetto 27)
+# ---------------------------------------------------------------------------
+def test_approvare_conserva_exit_kind_e_scrive_approved_at():
+    """La RPC vera fa `payload || {'approved_at': ...}`: CONSERVA tutto e
+    aggiunge la firma. Il replay lo rifaceva da zero e buttava via `exit_kind`,
+    che e' proprio il campo con cui si distingue l'uscita del BOT dal cash-out
+    dell'UTENTE."""
+    class _Db:
+        richieste = [{"id": 1, "status": "proposed",
+                      "payload": {"trade_id": 7, "fraction": 1.0,
+                                  "exit_kind": "mandatory", "price": 1.42}}]
+
+    firma = RT._Stato(ref=CERT.Referto(event_id=EVENTO), scenario="approvata-subito",
+                      competizione=None, inietta=True, approva=True, riavvia=False)
+    firma._firma_le_proposte(_Db(), datetime(2026, 9, 16, 20, 0, tzinfo=timezone.utc))
+    p = _Db.richieste[0]["payload"]
+    assert _Db.richieste[0]["status"] == "pending"
+    assert p["exit_kind"] == "mandatory", "exit_kind buttato via: difetto 27"
+    assert p["price"] == 1.42 and p["trade_id"] == 7
+    assert p["approved_at"] == "2026-09-16T20:00:00Z"
+
+
+def test_il_contratto_dell_approvazione_e_quello_della_MIGRAZIONE():
+    """Meccanico, non a memoria: la RPC deve davvero CONCATENARE il payload."""
+    sql = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))),
+        "migrations", "safe_strategy_proposed_2026-09-14.sql")
+    if not os.path.isfile(sql):
+        pytest.skip("migrazione assente")
+    testo = open(sql, encoding="utf-8").read()
+    assert "payload || jsonb_build_object(" in testo
+    assert "'approved_at'" in testo
+
+
+# ---------------------------------------------------------------------------
+# 16/09 sera — LA CHIUSURA FUORI DALL'APP
+# ---------------------------------------------------------------------------
+def test_la_chiusura_fuori_app_usa_l_ordine_VERO_dell_utente():
+    """L'ordine del trader non e' un finto: passa da `place_order_utente` del
+    banco, cioe' dallo stesso `market.place_order` del bot con un ref suo."""
+    import inspect
+    src = inspect.getsource(RT._Stato._forse_chiudi_fuori_app)
+    assert "place_order_utente" in src
+    assert "utente-fuori-app" in src
+
+
+def test_la_chiusura_fuori_app_e_l_OPPOSTO_del_lato_del_bot():
+    """Il tennis PUNTA: la chiusura del trader e' una LAY della stessa size;
+    nella variante ridotta, META'."""
+    ordini = []
+
+    class _Market:
+        def place_order_utente(self, **kw):
+            ordini.append(kw)
+            return object()
+
+    class _Db:
+        trades = [{"id": 3, "strategy": "tennis", "status": "open",
+                   "closes_trade_id": None, "origin": "auto", "side": "back",
+                   "size": 2.0, "market_id": "1.1", "selection_id": 11}]
+        attivita = []
+
+        def log(self, kind, payload):
+            self.attivita.append((kind, payload))
+
+    for modo, atteso in (("intera", 2.0), ("ridotta", 1.0)):
+        ordini.clear()
+        firma = RT._Stato(ref=CERT.Referto(event_id=EVENTO), scenario="x",
+                          competizione=None, inietta=True, approva=False,
+                          riavvia=False)
+        firma.fuori_app = modo
+        firma._forse_chiudi_fuori_app(_Db(), _Market(),
+                                      datetime(2026, 9, 16, tzinfo=timezone.utc))
+        assert len(ordini) == 1, modo
+        assert ordini[0]["side"] == "lay" and ordini[0]["size"] == atteso
+        assert ordini[0]["selection_id"] == 11
+
+
+# ---------------------------------------------------------------------------
+# S4 — dopo la chiusura DELL'UTENTE il bot non fa altro (gemello di T14)
+# ---------------------------------------------------------------------------
+def _chiusa_dall_utente(**kw):
+    """Una riga col marcatore che scrive il SERVIZIO, non una chiave a mano."""
+    meta = {"variant": "tennis",
+            BS.CHIUSO_DALL_UTENTE_KEY: {"quando": "2026-09-16T20:00:00Z",
+                                        "come": "fuori_app"}}
+    return _trade(status="open", meta=meta, **kw)
+
+
+def test_s4_tace_se_dopo_la_chiusura_il_bot_non_fa_niente():
+    t = _chiusa_dall_utente()
+    cod, sol = _codici(_osserva(ctx=_ctx(), trades=[t]))
+    assert sol.get("S4") == 1, "il controllo non ha avuto un caso"
+    assert "S4" not in cod
+
+
+def test_s4_scatta_se_il_bot_APRE_dopo_la_chiusura_dell_utente():
+    t = _chiusa_dall_utente()
+    nuova = _trade(id=2, status="open")
+    cod, _sol = _codici(_osserva(ctx=_ctx(), trades=[t, nuova],
+                                 aperture=[{"trade": nuova}]))
+    assert "S4" in cod
+
+
+def test_s4_scatta_se_il_bot_AGGIUNGE_UNA_GAMBA_di_chiusura():
+    t = _chiusa_dall_utente()
+    gamba = _trade(id=2, status="open", closes_trade_id=1, side="lay")
+    cod, _sol = _codici(_osserva(ctx=_ctx(), trades=[t, gamba],
+                                 chiusure=[{"trade": gamba}]))
+    assert "S4" in cod
+
+
+def test_s4_non_ha_casi_su_una_chiusura_PARZIALE():
+    """Una copertura parziale dell'utente NON mette il marcatore: il bot deve
+    continuare a proteggere il resto, e il controllo non deve impedirglielo."""
+    t = _trade(status="open")
+    _cod, sol = _codici(_osserva(ctx=_ctx(), trades=[t]))
+    assert not sol.get("S4")

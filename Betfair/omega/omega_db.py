@@ -596,7 +596,11 @@ def trades_for_event(event_id: str) -> list[dict[str, Any]]:
         # ``origin`` + ``closes_trade_id`` (16/09, R8): per sapere se dopo un
         # cash-out resta ancora qualcosa DEL BOT aperto su questa partita
         # servono il proprietario della riga e il legame apertura/chiusura.
-        .select("id,phase,status,pnl,liability,bet_id,side,size,price,mode,origin,closes_trade_id")
+        # ``event_id,market_id,meta`` (16/09): per ANNULLARE un ordine del bot
+        # ancora vivo su una partita che l'utente ha chiuso servono il mercato
+        # (``cancelOrders`` lo vuole) e il residuo scritto nel meta.
+        .select("id,event_id,phase,status,pnl,liability,bet_id,side,size,price,mode,"
+                "origin,closes_trade_id,market_id,meta")
         .eq("event_id", str(event_id))
         .execute()
     )

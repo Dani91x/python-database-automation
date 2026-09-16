@@ -114,6 +114,11 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             scoreConfirmSec: parseNum('R.E. · conferma punteggio (s)', d.esatto.scoreConfirmSec, errors),
             requireControl: DEFAULT_PARAMS.esatto.requireControl,
             controlMin: DEFAULT_PARAMS.esatto.controlMin,
+            // 16/09 — selezione aggiuntiva (SPEC §2): pannello LEGACY, non la espone.
+            // Default del motore (nasce SPENTA), come per requireControl.
+            requireSelection: DEFAULT_PARAMS.esatto.requireSelection,
+            h2hBigDrawRateMax: DEFAULT_PARAMS.esatto.h2hBigDrawRateMax,
+            oppConcededMax: DEFAULT_PARAMS.esatto.oppConcededMax,
         },
         punta: {
             minuteMin: parseNum('Punta · dal minuto', d.punta.minuteMin, errors),

@@ -202,7 +202,54 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # dire solo bruciare il budget di IO del database per rileggere cose ferme.
     # Zero = disattivato (si usa sempre poll_interval_s, comportamento di prima).
     "idle_cycle_s": (60.0, float, 0.0, 600.0),
+    # ---- OMEGA V3 (16/09 sera): lay 1 EUR, margine k misurato, uscita a PROPOSTA ----
+    # LO SWITCH. 2 = motore v2 di oggi (invariato, e' il default: V3 non entra in
+    # produzione finche' non lo ordina l'utente). 3 = motore v3 (`omega_v3.py`):
+    # selezione con margine k sulla probabilita' FUSA, stake fisso, nessuna
+    # chiusura automatica. Il replay confronta i due sulla STESSA partita.
+    "strategy_version": (2, int, 2, 3),
+    # ordine dell'utente: «INGRESSO STANDARD: 1 euro in LAY». In v3 la size NON
+    # viene piu' dall'obiettivo di giornata (era la radice di R1 e R3, §1.2 del
+    # progetto): e' questa, e basta.
+    "v3_stake_eur": (1.0, float, 0.01, 100.0),
+    # il modello che ha vinto il banco (`tools/banco_modelli.py`, 16/09):
+    # 'gamma_poisson' = aggiornamento bayesiano coniugato (binomiale negativa);
+    # gli altri restano selezionabili per poter rifare il confronto dal vivo.
+    "v3_modello": ("gamma_poisson", str, None, None),
+    # margine minimo sulla probabilita': P_nostra <= p_implicita / k. La tabella
+    # per secchio la porta `tools/misura_k.py`; questo e' il pavimento, e il
+    # pavimento non scende sotto 2 perche' al prezzo di lay davvero disponibile
+    # il bias del mercato NON e' dimostrato (K_MISURATO_2026-09-16.md).
+    "v3_k_minimo": (2.0, float, 1.0, 20.0),
+    # casi minimi perche' la tabella storica abbia diritto di veto
+    "v3_empirical_min_n": (200, int, 0, 1000000),
+    # finestre d'ingresso delle due gambe (minuto REALE dal feed, mai l'orologio)
+    "v3_ht_entry_min": (25, int, 0, 45),
+    "v3_ht_entry_max": (44, int, 0, 45),
+    "v3_ft_entry_min": (55, int, 45, 130),
+    "v3_ft_entry_max": (85, int, 45, 130),
+    # CAP DI SICUREZZA. In v2 sono tutti a ZERO = spenti; in v3 NON sono zero, e
+    # i quattro numeri sono quelli proposti al §4.5 del progetto. Restano
+    # dell'utente: si cambiano dal pannello, non dal codice.
+    "v3_max_liability_per_leg": (120.0, float, 0.0, 1000000.0),
+    "v3_max_liability_per_match": (240.0, float, 0.0, 1000000.0),
+    "v3_max_open_liability": (2000.0, float, 0.0, 10000000.0),
+    "v3_daily_loss_cap": (400.0, float, 0.0, 1000000.0),
+    # con 1 EUR di lay la controparte che serve e' 1 EUR, non 5
+    "v3_min_lay_liquidity": (1.0, float, 0.0, 100000.0),
+    # gol AGGIUNTIVI minimi fra il punteggio corrente e quello bancato. 1 = mai il
+    # risultato corrente (che e' il vincolo vero); 2 = anche mai a un gol.
+    "v3_distanza_minima_gol": (1, int, 1, 5),
+    # P massima ammessa per una selezione bancata (tetto duro, oltre al margine k)
+    "v3_p_max_pct": (2.0, float, 0.01, 50.0),
+    # fusione col mercato (pool logaritmico in logit, pesi misurati per fascia in
+    # `tools/banco_fusione.py`): 'auto' = fonde | 'off' = solo modello
+    "v3_fusione_mercato": ("auto", str, None, None),
 }
+
+# Valori ammessi per i due `select` di V3 (specchio della UI, quando ci sara').
+V3_MODELLI_AMMESSI = ("poisson", "dixon_coles", "dixon_robinson", "bivariato",
+                      "gamma_poisson")
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}
 
@@ -228,6 +275,10 @@ def _coerce(key: str, raw: Any) -> Any:
     # qualsiasi ("xxx", "on") passava e il servizio (`!= "veto"`) lo leggeva
     # come OFF: veto empirico spento in silenzio da un refuso della UI
     if key == "model_empirical" and val not in ("veto", "off"):
+        return default
+    if key == "v3_modello" and val not in V3_MODELLI_AMMESSI:
+        return default
+    if key == "v3_fusione_mercato" and val not in ("auto", "off"):
         return default
     if key == "model_calibration_path":
         # None/null dalla UI → "" (prima str(None) = "None": un percorso inesistente)
@@ -256,7 +307,9 @@ def resolve_params(raw: dict[str, Any] | None) -> dict[str, Any]:
                 out[k] = _coerce(k, v)
     if out["price_min"] > out["price_max"]:
         out["price_min"], out["price_max"] = out["price_max"], out["price_min"]
-    for lo_k, hi_k in (("ht_entry_min", "ht_entry_max"), ("ft_entry_min", "ft_entry_max")):
+    for lo_k, hi_k in (("ht_entry_min", "ht_entry_max"), ("ft_entry_min", "ft_entry_max"),
+                       ("v3_ht_entry_min", "v3_ht_entry_max"),
+                       ("v3_ft_entry_min", "v3_ft_entry_max")):
         if out[lo_k] > out[hi_k]:
             out[lo_k], out[hi_k] = out[hi_k], out[lo_k]
     if out["entry_minute_min"] > out["entry_minute_max"]:
@@ -267,4 +320,48 @@ def resolve_params(raw: dict[str, Any] | None) -> dict[str, Any]:
     # green-up: la soglia di "margine ampio" non può superare il cap di rischio
     if out["greenup_hold_max_risk"] > out["greenup_risk_cap"]:
         out["greenup_hold_max_risk"] = out["greenup_risk_cap"]
+    # G1 — IN V3 NON ESISTE UNA CHIUSURA AUTOMATICA. Ordine dell'utente del 16/09:
+    # «il green-up/cash-out passa dalla Control Room come proposta con avviso e
+    # decide l'utente». Il modo piu' robusto di garantirlo non e' un `if` dentro
+    # al servizio (che qualcuno un giorno riscrive): e' spegnere il green-up
+    # automatico QUI, nella whitelist, dove passa ogni parametro che arriva dalla
+    # UI. Chi mettesse `greenup_mode='auto'` dal pannello con V3 acceso se lo
+    # vedrebbe riportare a 'off' a ogni giro, e la certificazione (G1) lo verifica.
+    # Restano attive le protezioni che NON chiudono: settlement e riconciliazione.
+    if int(out.get("strategy_version") or 2) >= 3:
+        out["greenup_mode"] = "off"
+        out["greenup_enabled"] = False
+        out["engine"] = "legs"     # il motore v1 "quota piu' alta" non esiste in V3
     return out
+
+
+def parametri_v3(params: dict[str, Any]) -> dict[str, Any]:
+    """Il sottoinsieme che riguarda V3, con i nomi senza prefisso: e' quello che
+    `omega_engine.seleziona_v3` e la certificazione si passano. Chiave unica di
+    lettura, cosi' nessuno va a pescare `params['v3_...']` a mano in giro."""
+    p = resolve_params(params) if not params or "strategy_version" not in params else params
+    return {
+        "attivo": int(p.get("strategy_version") or 2) >= 3,
+        "stake": float(p.get("v3_stake_eur") or DEFAULTS["v3_stake_eur"]),
+        "modello": str(p.get("v3_modello") or DEFAULTS["v3_modello"]),
+        "k_minimo": float(p.get("v3_k_minimo") or DEFAULTS["v3_k_minimo"]),
+        "empirical_min_n": int(p.get("v3_empirical_min_n", DEFAULTS["v3_empirical_min_n"])),
+        "ht_entry_min": int(p.get("v3_ht_entry_min", DEFAULTS["v3_ht_entry_min"])),
+        "ht_entry_max": int(p.get("v3_ht_entry_max", DEFAULTS["v3_ht_entry_max"])),
+        "ft_entry_min": int(p.get("v3_ft_entry_min", DEFAULTS["v3_ft_entry_min"])),
+        "ft_entry_max": int(p.get("v3_ft_entry_max", DEFAULTS["v3_ft_entry_max"])),
+        "max_liability_per_leg": float(p.get("v3_max_liability_per_leg",
+                                             DEFAULTS["v3_max_liability_per_leg"])),
+        "max_liability_per_match": float(p.get("v3_max_liability_per_match",
+                                               DEFAULTS["v3_max_liability_per_match"])),
+        "max_open_liability": float(p.get("v3_max_open_liability",
+                                          DEFAULTS["v3_max_open_liability"])),
+        "daily_loss_cap": float(p.get("v3_daily_loss_cap", DEFAULTS["v3_daily_loss_cap"])),
+        "min_lay_liquidity": float(p.get("v3_min_lay_liquidity",
+                                         DEFAULTS["v3_min_lay_liquidity"])),
+        "distanza_minima_gol": int(p.get("v3_distanza_minima_gol",
+                                         DEFAULTS["v3_distanza_minima_gol"])),
+        "p_max": float(p.get("v3_p_max_pct", DEFAULTS["v3_p_max_pct"])) / 100.0,
+        "fusione": str(p.get("v3_fusione_mercato") or DEFAULTS["v3_fusione_mercato"]) == "auto",
+        "commissione": float(p.get("commission_pct", DEFAULTS["commission_pct"])) / 100.0,
+    }

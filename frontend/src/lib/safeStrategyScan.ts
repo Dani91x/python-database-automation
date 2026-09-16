@@ -103,6 +103,17 @@ export interface CalcioScanPayload {
      *  corner (finestra mobile sulla timeline) e cartellini, cosi' la UI e il
      *  bot leggono lo STESSO numero. Assente sulle righe scritte prima. */
     pressure_index?: number | null;
+    /** SPEC §2 «Selezione aggiuntiva» (16/09): i due numeri storici della voce
+     *  — scontri diretti finiti 2-2/3-3 e gol subiti per partita — calcolati
+     *  UNA volta sola dallo SCANNER (`safe_strategy/selezione.py`, atlante
+     *  `hazard_atlas_v2`) e pubblicati qui, come `pressure_index`: i due motori
+     *  devono leggere lo STESSO numero. Assente = dato non disponibile, mai zero. */
+    selection_hint?: {
+        fonte?: string;
+        h2h_meetings: number | null;
+        h2h_big_draws: number | null;
+        conceded: { home: number | null; away: number | null } | null;
+    } | null;
     pre_ko: { home: number; draw: number; away: number; captured_at?: string } | null;
     cs: {
         market_id: string | null;

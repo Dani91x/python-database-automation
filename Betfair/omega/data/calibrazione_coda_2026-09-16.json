@@ -1,0 +1,197 @@
+{
+ "5_gamma_poisson": [
+  {
+   "secchio": "<0,1%",
+   "esposizione": 202096638,
+   "uscite_attese": 10021.2,
+   "uscite_vere": 8711,
+   "p_prevista": 4.9586074290985665e-05,
+   "p_osservata": 4.31031415772488e-05,
+   "rapporto_prevista_su_vera": 1.1504051091523861
+  },
+  {
+   "secchio": "0,1-0,2%",
+   "esposizione": 6952089,
+   "uscite_attese": 10071.2,
+   "uscite_vere": 9084,
+   "p_prevista": 0.0014486545955566391,
+   "p_osservata": 0.0013066576103959544,
+   "rapporto_prevista_su_vera": 1.10867191529819
+  },
+  {
+   "secchio": "0,2-0,5%",
+   "esposizione": 8027974,
+   "uscite_attese": 26696.6,
+   "uscite_vere": 24057,
+   "p_prevista": 0.003325446410537084,
+   "p_osservata": 0.002996646476433531,
+   "rapporto_prevista_su_vera": 1.109722630510248
+  },
+  {
+   "secchio": "0,5-1%",
+   "esposizione": 6012039,
+   "uscite_attese": 42475.3,
+   "uscite_vere": 39254,
+   "p_prevista": 0.007065047831781966,
+   "p_osservata": 0.006529232428465617,
+   "rapporto_prevista_su_vera": 1.0820640724904116
+  },
+  {
+   "secchio": "1-2%",
+   "esposizione": 6056647,
+   "uscite_attese": 88735.8,
+   "uscite_vere": 84286,
+   "p_prevista": 0.01465097364742296,
+   "p_osservata": 0.013916280740812532,
+   "rapporto_prevista_su_vera": 1.0527937687011286
+  },
+  {
+   "secchio": "2-5%",
+   "esposizione": 7139506,
+   "uscite_attese": 237885.2,
+   "uscite_vere": 232326,
+   "p_prevista": 0.03331956519402633,
+   "p_osservata": 0.03254090689187739,
+   "rapporto_prevista_su_vera": 1.0239285986938276
+  },
+  {
+   "secchio": "5-10%",
+   "esposizione": 5488155,
+   "uscite_attese": 393188.2,
+   "uscite_vere": 402777,
+   "p_prevista": 0.07164305493404269,
+   "p_osservata": 0.07339023770283457,
+   "rapporto_prevista_su_vera": 0.9761932537149366
+  }
+ ],
+ "0_v2_lognormale": [
+  {
+   "secchio": "<0,1%",
+   "esposizione": 203975585,
+   "uscite_attese": 9223.1,
+   "uscite_vere": 11382,
+   "p_prevista": 4.521666564254051e-05,
+   "p_osservata": 5.5800795962908995e-05,
+   "rapporto_prevista_su_vera": 0.8103229508159024
+  },
+  {
+   "secchio": "0,1-0,2%",
+   "esposizione": 6020476,
+   "uscite_attese": 8517.2,
+   "uscite_vere": 9365,
+   "p_prevista": 0.0014147008910300274,
+   "p_osservata": 0.0015555248455437743,
+   "rapporto_prevista_su_vera": 0.9094685276695029
+  },
+  {
+   "secchio": "0,2-0,5%",
+   "esposizione": 7794300,
+   "uscite_attese": 25528.3,
+   "uscite_vere": 26937,
+   "p_prevista": 0.0032752460792175833,
+   "p_osservata": 0.003455987067472384,
+   "rapporto_prevista_su_vera": 0.947702064641408
+  },
+  {
+   "secchio": "0,5-1%",
+   "esposizione": 5483595,
+   "uscite_attese": 38440.0,
+   "uscite_vere": 37901,
+   "p_prevista": 0.007009994040573318,
+   "p_osservata": 0.006911706645002047,
+   "rapporto_prevista_su_vera": 1.0142204234958878
+  },
+  {
+   "secchio": "1-2%",
+   "esposizione": 5922891,
+   "uscite_attese": 84596.9,
+   "uscite_vere": 83506,
+   "p_prevista": 0.014283045602218786,
+   "p_osservata": 0.014098858142079602,
+   "rapporto_prevista_su_vera": 1.0130639983949803
+  },
+  {
+   "secchio": "2-5%",
+   "esposizione": 7261403,
+   "uscite_attese": 248368.2,
+   "uscite_vere": 239648,
+   "p_prevista": 0.03420388159477233,
+   "p_osservata": 0.03300298854091971,
+   "rapporto_prevista_su_vera": 1.0363874032911795
+  },
+  {
+   "secchio": "5-10%",
+   "esposizione": 5451617,
+   "uscite_attese": 401050.5,
+   "uscite_vere": 409041,
+   "p_prevista": 0.07356542891922345,
+   "p_osservata": 0.0750311329647699,
+   "rapporto_prevista_su_vera": 0.9804653883310723
+  }
+ ],
+ "1_poisson": [
+  {
+   "secchio": "<0,1%",
+   "esposizione": 204454037,
+   "uscite_attese": 8947.8,
+   "uscite_vere": 11834,
+   "p_prevista": 4.376424679796984e-05,
+   "p_osservata": 5.7880979870306986e-05,
+   "rapporto_prevista_su_vera": 0.7561075658365098
+  },
+  {
+   "secchio": "0,1-0,2%",
+   "esposizione": 5924411,
+   "uscite_attese": 8387.8,
+   "uscite_vere": 9613,
+   "p_prevista": 0.0014157991379347915,
+   "p_osservata": 0.0016226085597369933,
+   "rapporto_prevista_su_vera": 0.8725450937866843
+  },
+  {
+   "secchio": "0,2-0,5%",
+   "esposizione": 7831619,
+   "uscite_attese": 26105.4,
+   "uscite_vere": 27895,
+   "p_prevista": 0.003333337761786525,
+   "p_osservata": 0.003561843342992043,
+   "rapporto_prevista_su_vera": 0.9358462573444998
+  },
+  {
+   "secchio": "0,5-1%",
+   "esposizione": 5255228,
+   "uscite_attese": 37631.9,
+   "uscite_vere": 37712,
+   "p_prevista": 0.007160856805207652,
+   "p_osservata": 0.007176092074406667,
+   "rapporto_prevista_su_vera": 0.9978769406745279
+  },
+  {
+   "secchio": "1-2%",
+   "esposizione": 5731552,
+   "uscite_attese": 82304.3,
+   "uscite_vere": 82037,
+   "p_prevista": 0.014359867520733748,
+   "p_osservata": 0.014313226155847491,
+   "rapporto_prevista_su_vera": 1.0032586199909377
+  },
+  {
+   "secchio": "2-5%",
+   "esposizione": 7070191,
+   "uscite_attese": 239724.4,
+   "uscite_vere": 229951,
+   "p_prevista": 0.03390635686603679,
+   "p_osservata": 0.03252401526351976,
+   "rapporto_prevista_su_vera": 1.0425021815823436
+  },
+  {
+   "secchio": "5-10%",
+   "esposizione": 5640959,
+   "uscite_attese": 411958.5,
+   "uscite_vere": 420211,
+   "p_prevista": 0.07302986771705795,
+   "p_osservata": 0.07449283003120569,
+   "rapporto_prevista_su_vera": 0.9803610318800495
+  }
+ ]
+}

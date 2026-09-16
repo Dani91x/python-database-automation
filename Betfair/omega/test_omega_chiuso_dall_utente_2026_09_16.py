@@ -513,6 +513,167 @@ def test_r8_falsificazione_senza_lo_stato_la_partita_torna_aperta():
 
 
 # ===========================================================================
+# ORDINE DEL COORDINATORE (16/09 sera): su una partita chiusa dall'utente gli
+# ordini del BOT ancora VIVI e NON ABBINATI si ANNULLANO. La parte abbinata no:
+# quella e' posizione, e la regola il settlement.
+# ===========================================================================
+class MercatoConAnnullo(MercatoFinto):
+    """Espone ``cancel_order_live`` con la firma e il RISULTATO veri
+    (``omega_market.CancelResult``): un finto che torna un dizionario, o un
+    booleano, certificherebbe un'altra cosa."""
+
+    def __init__(self, righe: List[dict], *, residuo_dopo: float = 0.0,
+                 solleva_cancel: bool = False) -> None:
+        super().__init__(righe)
+        self.residuo_dopo = float(residuo_dopo)
+        self.solleva_cancel = bool(solleva_cancel)
+        self.annullati: List[tuple] = []
+
+    def cancel_order_live(self, bet_id: str, market_id: str,
+                          size_reduction: Optional[float] = None) -> Any:
+        self.annullati.append((str(bet_id), str(market_id), size_reduction))
+        if self.solleva_cancel:
+            raise RuntimeError("rete caduta durante l'annullo")
+        return OM.CancelResult(ok=True, status="SUCCESS", bet_id=str(bet_id),
+                               size_cancelled=1.0, size_matched=0.0,
+                               size_remaining=self.residuo_dopo, riletto=True)
+
+
+def _conto_chiuso() -> List[dict]:
+    return [_riga_rest(bet_id="100000000001", side="LAY", size=5.26, ref=REF_BOT),
+            _riga_rest(bet_id="900000000002", side="BACK", size=5.26, ref="utente-1")]
+
+
+def test_un_ordine_appoggiato_del_bot_viene_annullato():
+    """La riga abbinata (id 1) chiude la partita; la riga 2 ha un ordine ancora
+    VIVO e non abbinato: quello si annulla."""
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    market = MercatoConAnnullo(_conto_chiuso())
+    assert S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db,
+                                          now=ADESSO) == 1
+    assert [b for b, _m, _r in market.annullati] == ["100000000002"]
+    assert market.annullati[0][1] == MKT, "il mercato dell'annullo non e' quello vero"
+    assert "cancel_richiesto" in db.kinds() and "cancel_esito" in db.kinds()
+    assert db.get_trade(2)["meta"].get("annullato_per_chiusura_utente")
+
+
+def test_un_pending_senza_residuo_dichiarato_si_annulla_lo_stesso():
+    """Un ordine reale a esito ancora aperto ('pending' con `bet_id`) puo'
+    essere vivo anche senza che nessuno abbia scritto un `size_remaining`:
+    e' il caso dell'esito IGNOTO, ed e' il piu' pericoloso di tutti."""
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    market = MercatoConAnnullo(_conto_chiuso())
+    S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db, now=ADESSO)
+    assert [b for b, _m, _r in market.annullati] == ["100000000002"]
+
+
+def test_il_RESIDUO_di_un_parziale_si_annulla():
+    """La gamba e' abbinata in parte e il resto e' ancora appoggiato
+    (`meta.size_remaining` > 0, scritto da Betfair al piazzamento): la parte
+    abbinata resta (e' posizione), il residuo si toglie dal mercato."""
+    db = DbFinto([_lay_del_bot(meta={"size_remaining": 2.0})])
+    market = MercatoConAnnullo(_conto_chiuso())
+    assert S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db,
+                                          now=ADESSO) == 1
+    assert [b for b, _m, _r in market.annullati] == ["100000000001"]
+
+
+def test_la_parte_ABBINATA_non_si_annulla_mai():
+    """La lay del bot e' abbinata al 100%: e' una POSIZIONE. Annullarla non
+    vuol dire niente, e chiederlo a Betfair sarebbe un ordine sbagliato."""
+    db = DbFinto([_lay_del_bot()])
+    market = MercatoConAnnullo(_conto_chiuso())
+    assert S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db,
+                                          now=ADESSO) == 1
+    assert market.annullati == []
+
+
+def test_un_ordine_dell_utente_non_lo_annulla_il_bot():
+    manuale = _lay_del_bot(id=3, status="pending", origin="manual",
+                           bet_id="900000000777", meta={"size_remaining": 4.0})
+    db = DbFinto([_lay_del_bot(), manuale])
+    market = MercatoConAnnullo(_conto_chiuso())
+    S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db, now=ADESSO)
+    assert market.annullati == [], "il bot ha annullato un ordine dell'utente"
+
+
+def test_un_annullo_a_esito_IGNOTO_non_diventa_mai_annullato():
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    market = MercatoConAnnullo(_conto_chiuso(), solleva_cancel=True)
+    S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db, now=ADESSO)
+    assert not db.get_trade(2)["meta"].get("annullato_per_chiusura_utente")
+    assert "35760084" in S._DA_ANNULLARE, "l'evento non e' in coda per il ritento"
+    p = [pp for k, pp in db.attivita
+         if k == "chiuso_dall_utente" and pp.get("verdetto") == "ordini_ancora_vivi"]
+    assert p and p[0]["quanti"] == 1
+
+
+def test_l_annullo_non_confermato_si_ritenta_al_giro_dopo():
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    rotto = MercatoConAnnullo(_conto_chiuso(), solleva_cancel=True)
+    S.sorveglia_posizione_di_conto(params=_params(), market=rotto, db=db, now=ADESSO)
+    assert S._DA_ANNULLARE == {"35760084"}
+    buono = MercatoConAnnullo(_conto_chiuso())
+    assert S.ritenta_annulli(market=buono, db=db, now=ADESSO) == 1
+    assert S._DA_ANNULLARE == set()
+    assert db.get_trade(2)["meta"].get("annullato_per_chiusura_utente")
+
+
+def test_un_residuo_ancora_vivo_dopo_l_annullo_resta_in_coda():
+    """Betfair dice che il residuo e' ancora li': la riga NON si dichiara
+    annullata e l'evento resta in coda (fail-closed)."""
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    market = MercatoConAnnullo(_conto_chiuso(), residuo_dopo=3.0)
+    S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db, now=ADESSO)
+    assert S._DA_ANNULLARE == {"35760084"}
+    assert not db.get_trade(2)["meta"].get("annullato_per_chiusura_utente")
+
+
+def test_anche_il_cashout_nell_app_annulla_cio_che_resta_vivo():
+    """Con una gamba ancora IN VOLO l'evento non prende subito lo stato (una
+    riga 'pending' potrebbe diventare una posizione), ma l'ordine vivo e non
+    abbinato si annulla SUBITO. Quando la riga si chiude davvero, il giro dopo
+    scrive lo stato."""
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(id=1, status="hedged"), appoggiato])
+    market = MercatoConAnnullo([])
+    S._dopo_il_cashout(db=db, tr=db.get_trade(1), now=ADESSO, partial=False,
+                       market=market)
+    assert [b for b, _m, _r in market.annullati] == ["100000000002"]
+    assert db.user_closed_event_ids() == set()
+    db.trades[1]["status"] = "error"          # la riconciliazione l'ha chiusa
+    assert S.chiudi_eventi_in_attesa(db=db, now=ADESSO, market=market) == 1
+    assert db.user_closed_event_ids() == {"35760084"}
+
+
+def test_annullo_falsificazione_senza_di_esso_l_ordine_resta_a_mercato():
+    """IL DIFETTO RIMESSO: si scrive lo stato e basta. L'ordine appoggiato del
+    bot resta vivo su una partita che non e' piu' sua: se si abbina, il bot
+    riapre una posizione da solo."""
+    appoggiato = _lay_del_bot(id=2, status="pending", bet_id="100000000002",
+                              meta={"size_remaining": 3.0})
+    db = DbFinto([_lay_del_bot(), appoggiato])
+    market = MercatoConAnnullo(_conto_chiuso())
+    # senza il mercato, `_chiudi_evento` non puo' annullare niente
+    S._chiudi_evento(db=db, event_id="35760084", now=ADESSO, dove="fuori dall'app")
+    assert market.annullati == [], "il difetto: nessun annullo"
+    S._chiudi_evento(db=db, event_id="35760084", now=ADESSO, dove="fuori dall'app",
+                     market=market)
+    assert [b for b, _m, _r in market.annullati] == ["100000000002"]
+
+
+# ===========================================================================
 # R6 — i numeri con cui il bot decide
 # ===========================================================================
 def _righe_miste() -> List[dict]:

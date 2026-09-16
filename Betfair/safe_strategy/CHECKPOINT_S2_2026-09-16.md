@@ -10,7 +10,8 @@
 ## Stato
 - [x] A — ESATTO selezione aggiuntiva (codice, test, replay prima/dopo: FATTO)
 - [x] B — BASE e PUNTA: sintetiche + replay + tabella bande (FATTO)
-- [ ] C — TENNIS: scenari su terna reale + sintetiche T8/L2
+- [x] C — TENNIS: scenari su terna reale + sintetiche (FATTO)
+- [x] D — i quattro seguiti della consegna S1 (FATTO)
 
 ## Diario
 - h00 — letti HANDOFF, PROCESSO §6-§7, PIANO (Esiti C.3/C.3-bis/C.4/C.4-bis/C.4-ter),
@@ -168,3 +169,54 @@ vantaggio -> ingresso a **1,02** -> due game persi di fila e parita' (uscita
 OBBLIGATORIA) -> il mercato CHIUDE col WINNER dall'altra parte. Scenari `base`
 e `mai-approvata`: 0 violazioni; e' la partita su cui il buco del settlement e'
 venuto fuori. Dichiarata sintetica dal banco stesso.
+
+## D — I QUATTRO SEGUITI DELLA CONSEGNA S1 (richiesti dal coordinatore)
+
+### D.1 Scenario `chiusura-fuori-app` (calcio E tennis)
+Il trader chiude la posizione del bot con un ordine SUO su Betfair, con un ref
+che non e' del bot: passa da `banco_comune.MercatoFlumine.place_order_utente`,
+cioe' dallo stesso `market.place_order` e dallo stesso matching — l'unica
+differenza e' il ref, come sul sito. Due varianti: **intera** (chiude tutto) e
+**ridotta** (chiude META').
+
+| replay | scenario | che cosa fa il bot | esito |
+|---|---|---|---|
+| calcio `35797769` | `chiusura-fuori-app` | `posizione_di_conto` x2 -> `chiuso_dall_utente` x1 -> `skip: partita_chiusa_dall_utente` x3, **1 solo ordine in tutta la partita** | **T14 x918, 0 violazioni** |
+| calcio `35797769` | `chiusura-fuori-app-ridotta` | `posizione_di_conto` x13, **nessun** marcatore, il bot CONTINUA a proteggere (exit, cashout) | 0 violazioni |
+| tennis `35792939` | `chiusura-fuori-app` | `posizione_di_conto` x2 -> `chiuso_dall_utente` x1 -> poi solo `settle` | **S4 x406, 0 violazioni** |
+| tennis `35792939` | `chiusura-fuori-app-ridotta` | `posizione_di_conto` x16, nessun marcatore, il bot continua | 0 violazioni |
+
+**Controllo nuovo S4** (gemello tennis di T14): dopo una chiusura dell'utente
+il bot non apre, non copre, non esce. Nato **indipendente dalla confessione del
+bot**: guarda anche cio' che sa il REPLAY (chi ha chiuso e quando), non solo il
+marcatore `meta.chiuso_dall_utente`. La prima stesura guardava solo il
+marcatore e, **misurato**, con il bot reso cieco alla posizione di conto il
+controllo andava a «non lo so» mentre il bot continuava a operare: e' la
+lezione dell'Esito C.4 (un controllo che dipende dalla confessione del bot non
+certifica). Falso positivo escluso: l'ordine che il bot manda NELLO STESSO giro
+in cui l'utente chiude (il trader chiude mentre il bot lavora) non conta.
+**Falsificazione**: `_sorveglia_posizione_di_conto` che torna 0 (il bot non
+guarda piu' il conto) -> **S4 x2 ROSSO**, azioni da 2 a 4. 4 test unitari
+(sano, apre, aggiunge una gamba, chiusura parziale) + falsificazione.
+
+### D.2 `exit_kind` all'approvazione (difetto 27)
+`_firma_le_proposte` RIFACEVA il payload da zero (`trade_id`+`fraction`) e
+buttava via `exit_kind`, mentre la RPC vera fa `payload || {'approved_at': …}`
+(`migrations/safe_strategy_proposed_2026-09-14.sql:74`): CONSERVA tutto e
+aggiunge la firma. Adesso il replay fa lo stesso ed e' legato alla migrazione
+da un test che LEGGE il file SQL (parita' meccanica, non a memoria).
+
+### D.3 Note obsolete e nome del bot
+- `[REPERTO — I CAP…]` e `[REPERTO — CASH-OUT GLOBALE]` riscritte in
+  `[CHIUSO IL 16/09]` con quello che la consegna S1 ha cambiato.
+- `tools/replay_registrazioni.py::main` passava `safe_calcio`, che **il
+  registro rifiuta** (ha `safe_base`/`safe_esatto`/`safe_punta`): il comando non
+  partiva. Adesso la voce si sceglie dalle strategie chieste.
+
+
+## Suite finale
+`python -m pytest Betfair/safe_strategy -q` -> **1033 verdi**.
+`Betfair/safe_strategy Betfair/stream` -> 2485 verdi, **1 rosso non mio**
+(`test_cert_banco…[mike]`: il campione di MIKE viola P1 — perimetro dell'altro
+delegato, in lavorazione mentre scrivo). `pytest -m cert` -> 18 verdi + lo
+stesso rosso di Mike.

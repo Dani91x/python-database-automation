@@ -479,7 +479,9 @@ def p_implicita(prezzo_lay: float, commissione: float) -> Optional[float]:
         L = float(prezzo_lay)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(L):
+    # una "quota" <= 1 non e' un prezzo: un lay a 1,00 avrebbe liability zero e
+    # farebbe passare qualunque cosa il cancello del margine (p_implicita = 1)
+    if not math.isfinite(L) or L <= 1.0:
         return None
     c = max(0.0, min(0.5, float(commissione)))
     den = L - c
@@ -741,48 +743,94 @@ def ev_di_tenere(posizione: Posizione, *, p_evento: float,
     return ev_gamba(p_evento, posizione.lay_price, posizione.size, commissione)
 
 
+def p_punteggio_invariato(*, da_minuto: float, a_minuto: float,
+                          punteggio: Tuple[int, int], periodo: str, p: Parametri,
+                          lambdas: Optional[Tuple[float, float]] = None) -> float:
+    """P(nessun gol fra `da_minuto` e `a_minuto`), cioe' che il quadro regga.
+
+    E' la probabilita' con cui va PESATO qualunque ragionamento del tipo «se
+    aspetto il prezzo migliora»: aspettare ha senso solo nel ramo in cui il
+    punteggio tiene, e quel ramo ha una probabilita' che decade nel tempo."""
+    fine = FINE_PERIODO[periodo] + RECUPERO[periodo]
+    t0 = max(0.0, min(float(da_minuto), fine))
+    t1 = max(t0, min(float(a_minuto), fine))
+    if t1 - t0 <= 1e-9:
+        return 1.0
+    # intensita' residue misurate sull'intera coda del periodo, riscalate
+    # sull'esposizione del solo intervallo [t0, t1]
+    lh, la = intensita_residue(minuto=t0, punteggio=punteggio, periodo=periodo,
+                               p=p, lambdas=lambdas)
+    _, residua_totale = esposizione(t0, periodo, p)
+    if residua_totale <= 0:
+        return 1.0
+    quota = (_integrale_profilo(t0, t1, p.profilo_c1, p.profilo_c2)
+             / max(1e-12, _integrale_profilo(t0, fine, p.profilo_c1, p.profilo_c2)))
+    return math.exp(-(lh + la) * max(0.0, min(1.0, quota)))
+
+
 @dataclass(frozen=True)
 class PuntoTraiettoria:
     minuto: float
-    p_evento: float
+    p_evento: float            # P che la selezione esca, SE il punteggio e' ancora questo
     back_equo: float
-    bloccabile_atteso: float
+    bloccabile_atteso: float   # profitto bloccabile in quel ramo
+    p_invariato: float         # P che il punteggio regga fino a li'
+    valore_attesa: float       # valore ATTESO di aspettare fino a quel minuto
 
 
 def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
                            punteggio: Tuple[int, int], p: Parametri,
                            lambdas: Optional[Tuple[float, float]] = None,
-                           passo: int = 5, commissione: float = 0.05
+                           passo: int = 5, commissione: float = 0.05,
+                           p_evento_ora: Optional[float] = None
                            ) -> List[PuntoTraiettoria]:
     """La TRAIETTORIA attesa del profitto bloccabile da qui a fine periodo.
 
-    A ogni minuto futuro si stima, **condizionando sul fatto che il punteggio sia
-    ancora questo** (che e' l'ipotesi in cui la posizione e' viva), la probabilita'
-    che la selezione esca; da li' il prezzo di back EQUO (1/P) e il profitto che si
-    riuscirebbe a bloccare. Non e' una previsione del book: e' il valore del tempo
-    che passa, che e' l'unica cosa che nel frattempo lavora per noi.
+    A ogni minuto futuro si stima, **nel ramo in cui il punteggio e' ancora questo**,
+    la probabilita' che la selezione esca; da li' il prezzo di back EQUO (1/P) e il
+    profitto che si riuscirebbe a bloccare. Non e' una previsione del book: e' il
+    valore del tempo che passa, l'unica cosa che nel frattempo lavora per un layer.
 
-    Serve a rispondere alla domanda giusta prima di proporre un'uscita: **aspettare
-    vale piu' di chiudere adesso?**"""
+    ATTENZIONE — E' QUI CHE SI SBAGLIA. Guardare solo quel ramo direbbe sempre
+    «aspetta», perche' nel ramo in cui non succede niente aspettare e' gratis. Il
+    valore dell'attesa va quindi PESATO con `p_invariato`, e nel ramo in cui il
+    punteggio cambia si torna a valere quello che vale tenere OGGI:
+
+        valore_attesa(t) = P(regge fino a t)*bloccabile(t) + (1 - P)*EV(tenere ora)
+
+    E' un'approssimazione, ed e' dichiarata: nel ramo «e' cambiato qualcosa» il
+    valore vero puo' essere anche molto peggiore (se il gol e' proprio quello che
+    avvicina il risultato bancato). L'approssimazione sbaglia quindi dalla parte
+    dell'attesa, cioe' rende la proposta di uscita PIU' timida, non meno."""
     fine = FINE_PERIODO[posizione.periodo] + RECUPERO[posizione.periodo]
+    sc = parse_scoreline(posizione.selection_name)
+    ev_ora = (ev_di_tenere(posizione, p_evento=float(p_evento_ora), commissione=commissione)
+              if p_evento_ora is not None else None)
     fuori: List[PuntoTraiettoria] = []
     m = float(minuto)
     while m <= fine + 1e-9:
         griglia = griglia_finale(minuto=m, punteggio=punteggio, periodo=posizione.periodo,
                                  p=p, lambdas=lambdas)
-        sc = parse_scoreline(posizione.selection_name)
         if sc is not None:
             pe = float(griglia.get(sc, 0.0))
         else:
             # aggregato: senza la lista dei nomi quotati non e' calcolabile in modo
-            # onesto -> si dichiara None saltando il punto
+            # onesto -> si salta il punto invece di inventarlo
             pe = float("nan")
         if math.isfinite(pe) and pe > 0:
             back_equo = 1.0 / pe
             b = profitto_bloccabile(posizione, back_price=back_equo,
                                     back_size=float("inf"), commissione=commissione)
-            fuori.append(PuntoTraiettoria(minuto=m, p_evento=pe, back_equo=back_equo,
-                                          bloccabile_atteso=(b.profitto if b else 0.0)))
+            bloccabile = b.profitto if b else 0.0
+            if ev_ora is None:
+                ev_ora = ev_di_tenere(posizione, p_evento=pe, commissione=commissione)
+            p_inv = p_punteggio_invariato(da_minuto=minuto, a_minuto=m,
+                                          punteggio=punteggio, periodo=posizione.periodo,
+                                          p=p, lambdas=lambdas)
+            fuori.append(PuntoTraiettoria(
+                minuto=m, p_evento=pe, back_equo=back_equo,
+                bloccabile_atteso=bloccabile, p_invariato=p_inv,
+                valore_attesa=p_inv * bloccabile + (1.0 - p_inv) * ev_ora))
         m += max(1, int(passo))
     return fuori
 
@@ -824,12 +872,14 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
                             commissione=commissione)
     ev_h = ev_di_tenere(posizione, p_evento=p_evento, commissione=commissione)
     traj = traiettoria_bloccabile(posizione, minuto=minuto, punteggio=punteggio, p=p,
-                                  lambdas=lambdas, commissione=commissione)
+                                  lambdas=lambdas, commissione=commissione,
+                                  p_evento_ora=float(p_evento))
     futuri = [t for t in traj if t.minuto > minuto + 1e-9]
-    max_att = max((t.bloccabile_atteso for t in futuri), default=float("-inf"))
+    # il valore dell'attesa e' PESATO con la probabilita' che il punteggio regga
+    max_att = max((t.valore_attesa for t in futuri), default=float("-inf"))
     min_max = None
     if futuri:
-        best = max(futuri, key=lambda t: t.bloccabile_atteso)
+        best = max(futuri, key=lambda t: t.valore_attesa)
         min_max = best.minuto
     if b is None:
         return PropostaUscita(False, "nessun_prezzo_di_back", 0.0, 0.0, 0.0, ev_h,

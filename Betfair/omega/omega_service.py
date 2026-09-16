@@ -248,6 +248,7 @@ def svuota_le_cache() -> None:
     # per questo che il marker va nella colonna, non nella RAM (difetto 19).
     _EVENTI_CHIUSI.clear()
     _CHIUSURA_IN_ATTESA.clear()
+    _DA_ANNULLARE.clear()
 
 
 def _fase_dovuta(nome: str, ora: float, ogni: float) -> bool:
@@ -2851,7 +2852,7 @@ def sorveglia_posizione_di_conto(*, params: dict[str, Any], market, db,
         logger.critical("[omega] evento %s: posizione chiusa DALL'UTENTE fuori dall'app "
                         "-> il bot non gestisce piu' questa partita", event_id)
         _chiudi_evento(db=db, event_id=event_id, now=now, dove="fuori dall'app",
-                       dettaglio={"selezioni": selezioni})
+                       dettaglio={"selezioni": selezioni}, market=market)
         n += 1
     return n
 
@@ -2863,8 +2864,101 @@ def sorveglia_posizione_di_conto(*, params: dict[str, Any], market, db,
 # UNA gamba di due escludeva anche l'altra). Ora e' scritto, letto e
 # reversibile SOLO con un gesto esplicito («Riprendi»).
 # ---------------------------------------------------------------------------
+def _puo_essere_vivo(tr: dict[str, Any]) -> bool:
+    """La riga puo' avere ANCORA un ordine vivo e NON abbinato su Betfair?
+
+    Due casi soli: un 'pending' con ``bet_id`` (ordine reale il cui esito non e'
+    chiuso) e una riga con un RESIDUO dichiarato da Betfair
+    (``meta.size_remaining`` > 0: appoggiato, parziale). Una riga abbinata e
+    basta non ha niente da annullare — ed e' giusto cosi': la parte ABBINATA e'
+    una POSIZIONE, e una posizione non si annulla, si regola.
+    """
+    if not tr.get("bet_id") or str(tr.get("mode")) != "live":
+        return False
+    if str(tr.get("origin") or "auto") == "manual":
+        return False              # ordine dell'utente: non e' roba del bot
+    if str(tr.get("status")) == "pending":
+        return True
+    residuo = _fnum((tr.get("meta") or {}).get("size_remaining"))
+    return bool(residuo is not None and residuo > 0)
+
+
+# eventi chiusi dall'utente su cui e' rimasto qualcosa da annullare: si
+# ritenta a ogni giro finche' non resta piu' niente di vivo.
+_DA_ANNULLARE: set = set()
+
+
+def annulla_ordini_vivi_del_bot(*, market, db, event_id: str, now: datetime) -> int:
+    """Sulla partita che l'utente ha chiuso, gli ordini del BOT ancora VIVI e
+    NON ABBINATI si ANNULLANO. Ritorna quanti ne restano vivi (0 = pulito).
+
+    ORDINE DELL'UTENTE, 16/09 sera: «non gestire posizioni che non esistono
+    piu'». Un ordine appoggiato del bot su una partita che l'utente ha chiuso e'
+    esattamente una cosa che non deve piu' esistere: se si abbinasse aprirebbe
+    una posizione NUOVA su una partita che non e' piu' del bot. Annullare
+    RIDUCE il rischio, quindi e' sempre permesso (stessa scelta di Mike,
+    ``mike/service.py::_sorveglia_posizione_di_conto``).
+
+    LA PARTE ABBINATA NON SI TOCCA: ``annulla_su_betfair`` chiede l'annullo del
+    solo residuo, e il P&L della posizione lo scrive il settlement vero (I3).
+
+    L'esito si RILEGGE (``_ordine_ancora_vivo`` -> ``cancel_richiesto`` /
+    ``cancel_esito``): un annullo a esito ignoto NON diventa mai «annullato», e
+    l'evento resta in coda per il giro dopo.
+    """
+    try:
+        righe = list(db.trades_for_event(str(event_id)) or [])
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] righe di %s non lette per l'annullo: %s",
+                       event_id, str(ex)[:120])
+        _DA_ANNULLARE.add(str(event_id))
+        return -1
+    restano = 0
+    for tr in righe:
+        if not _puo_essere_vivo(tr):
+            continue
+        meta = dict(tr.get("meta") or {})
+        if meta.get("annullato_per_chiusura_utente"):
+            continue
+        vivo = _ordine_ancora_vivo(market, tr, db=db, now=now, ignoto_e_vivo=True)
+        if vivo:
+            restano += 1
+            continue
+        meta["annullato_per_chiusura_utente"] = now.isoformat()
+        try:
+            db.update_trade(tr["id"], meta=meta)
+            tr["meta"] = meta
+        except Exception as ex:  # noqa: BLE001 — l'ordine e' gia' morto: solo etichette
+            logger.warning("[omega] marcatura annullo su %s KO: %s",
+                           tr.get("id"), str(ex)[:120])
+    if restano:
+        _DA_ANNULLARE.add(str(event_id))
+        logger.critical("[omega] evento %s chiuso dall'utente: restano %d ordini del bot "
+                        "VIVI o a esito ignoto, si ritenta al giro dopo", event_id, restano)
+        db.log("chiuso_dall_utente",
+               {"event_id": str(event_id), "verdetto": "ordini_ancora_vivi",
+                "quanti": restano, "critical": True,
+                "nota": "l'annullo non e' confermato su tutti gli ordini del bot: "
+                        "si ritenta a ogni giro finche' non resta piu' niente"})
+    else:
+        _DA_ANNULLARE.discard(str(event_id))
+    return restano
+
+
+def ritenta_annulli(*, market, db, now: datetime) -> int:
+    """Gli annulli rimasti in sospeso su partite gia' chiuse dall'utente.
+    Costa una lettura per evento in coda, e solo finche' la coda dura."""
+    n = 0
+    for event_id in sorted(_DA_ANNULLARE):
+        if annulla_ordini_vivi_del_bot(market=market, db=db,
+                                       event_id=event_id, now=now) == 0:
+            n += 1
+    return n
+
+
 def _chiudi_evento(*, db, event_id: str, now: datetime, dove: str,
-                   dettaglio: Optional[dict[str, Any]] = None) -> bool:
+                   dettaglio: Optional[dict[str, Any]] = None,
+                   market: Any = None) -> bool:
     """Scrive lo stato «chiuso dall'utente» sull'evento. False se non e' andata
     (colonna assente: migrazione non applicata -> lo dice, forte)."""
     stato = {STATO_CHIUSO_UTENTE: True, "dove": str(dove), "at": now.isoformat(),
@@ -2888,6 +2982,16 @@ def _chiudi_evento(*, db, event_id: str, now: datetime, dove: str,
                      "STATO NON SCRITTO (colonna omega_events.stato_utente assente: "
                      "applicare migrations/omega_chiuso_dall_utente_2026-09-16.sql). "
                      "In questo processo il blocco vale lo stesso; dopo un riavvio no.")})
+    # ORDINE DEL COORDINATORE (16/09 sera): su una partita chiusa dall'utente
+    # gli ordini del BOT ancora VIVI e non abbinati si ANNULLANO. Si fa DOPO
+    # aver scritto lo stato: se l'annullo solleva, il blocco vale comunque.
+    if market is not None:
+        try:
+            annulla_ordini_vivi_del_bot(market=market, db=db, event_id=event_id, now=now)
+        except Exception as ex:  # noqa: BLE001
+            _DA_ANNULLARE.add(str(event_id))
+            db.log("error", {"reason": "annullo_chiusura_utente_failed",
+                             "event_id": str(event_id), "err": str(ex)[:160]})
     return ok
 
 
@@ -2945,9 +3049,14 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     except Exception as ex:  # noqa: BLE001 — una lettura KO non ferma il settlement
         db.log("error", {"reason": "posizione_di_conto_failed", "err": str(ex)[:160]})
     try:
-        chiudi_eventi_in_attesa(db=db, now=now)
+        chiudi_eventi_in_attesa(db=db, now=now, market=market)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "chiusure_in_attesa_failed", "err": str(ex)[:160]})
+    try:
+        if _DA_ANNULLARE:
+            ritenta_annulli(market=market, db=db, now=now)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "annulli_in_sospeso_failed", "err": str(ex)[:160]})
     # chi ha chiusure lo dice il DB, non il meta (review HIGH-3: un crash fra ordine
     # e marker regolava l'apertura da sola e la chiusura orfana con commissione doppia)
     with_closings = _ids_with_closings(db, open_rows)
@@ -3882,7 +3991,7 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         "price": res.get("price"), "size": res.get("size"), "locked_pnl": locked,
         "planned_lock": res.get("planned_lock"),
         "residual_size": residual_after, "mode": tr.get("mode")})
-    _dopo_il_cashout(db=db, tr=tr, now=now, partial=partial)
+    _dopo_il_cashout(db=db, tr=tr, now=now, partial=partial, market=market)
     return res
 
 
@@ -3906,7 +4015,8 @@ def _esposto_del_bot(db, event_id: str) -> Optional[list[dict[str, Any]]]:
             and str(r.get("status")) in ("open", "pending")]
 
 
-def _dopo_il_cashout(*, db, tr: dict[str, Any], now: datetime, partial: bool) -> None:
+def _dopo_il_cashout(*, db, tr: dict[str, Any], now: datetime, partial: bool,
+                     market: Any = None) -> None:
     """DOPO una chiusura chiesta dall'utente: si DICE che cosa succede adesso.
 
     Reperto R8 (16/09): fino a oggi il bot smetteva di aprire su quella partita
@@ -3949,6 +4059,18 @@ def _dopo_il_cashout(*, db, tr: dict[str, Any], now: datetime, partial: bool) ->
         # stato solo perche' al momento del clic l'ordine non era ancora
         # abbinato (misurato sul banco, scenario `cashout-globale`).
         _CHIUSURA_IN_ATTESA.add(event_id)
+        # ...ma cio' che e' ancora VIVO e NON ABBINATO si annulla SUBITO: un
+        # ordine appoggiato del bot su una partita che l'utente sta chiudendo
+        # e' gia' adesso una cosa che non deve esistere. La parte abbinata resta
+        # (e' posizione), e finche' resta l'evento non prende lo stato.
+        if market is not None:
+            try:
+                annulla_ordini_vivi_del_bot(market=market, db=db,
+                                            event_id=event_id, now=now)
+            except Exception as ex:  # noqa: BLE001
+                _DA_ANNULLARE.add(event_id)
+                db.log("error", {"reason": "annullo_chiusura_utente_failed",
+                                 "event_id": event_id, "err": str(ex)[:160]})
         db.log("diagnosi",
                {"su": "chiusura_dell_utente", "verdetto": "resta_aperto_del_bot",
                 "trade_id": tr.get("id"), "event_id": event_id,
@@ -3962,6 +4084,7 @@ def _dopo_il_cashout(*, db, tr: dict[str, Any], now: datetime, partial: bool) ->
         return
     _CHIUSURA_IN_ATTESA.discard(event_id)
     _chiudi_evento(db=db, event_id=event_id, now=now, dove="cash-out nell'app",
+                   market=market,
                    dettaglio={"trade_id": tr.get("id"),
                               "chiuso_con": "richieste `cashout` della UI"})
 
@@ -3971,7 +4094,7 @@ def _dopo_il_cashout(*, db, tr: dict[str, Any], now: datetime, partial: bool) ->
 _CHIUSURA_IN_ATTESA: set = set()
 
 
-def chiudi_eventi_in_attesa(*, db, now: datetime) -> int:
+def chiudi_eventi_in_attesa(*, db, now: datetime, market: Any = None) -> int:
     """Gli eventi con una chiusura dell'utente ANCORA IN VOLO: se non resta
     piu' niente di esposto del bot, adesso lo stato si scrive. Ritorna quanti.
 
@@ -3984,10 +4107,18 @@ def chiudi_eventi_in_attesa(*, db, now: datetime) -> int:
             continue
         resta = _esposto_del_bot(db, event_id)
         if resta is None or resta:
+            # finche' si aspetta, si continua a togliere dal mercato cio' che
+            # e' vivo e non abbinato (l'attesa non e' un permesso di restare)
+            if market is not None and event_id in _DA_ANNULLARE:
+                try:
+                    annulla_ordini_vivi_del_bot(market=market, db=db,
+                                                event_id=event_id, now=now)
+                except Exception:  # noqa: BLE001 - si ritenta al giro dopo
+                    pass
             continue
         _CHIUSURA_IN_ATTESA.discard(event_id)
         _chiudi_evento(db=db, event_id=event_id, now=now,
-                       dove="cash-out nell'app",
+                       dove="cash-out nell'app", market=market,
                        dettaglio={"chiuso_con": "richieste `cashout` della UI",
                                   "nota_tempo": "la chiusura era ancora in volo al "
                                                 "momento del clic: lo stato si scrive "

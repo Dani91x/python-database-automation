@@ -1149,6 +1149,13 @@ export const MIKE_ACTIVITY_KINDS = [
     // 16/09 h18:20 (ordine dell’utente): cash-out globale fatto dall’utente.
     // Da quel momento il bot non apre più niente su quella partita.
     'chiuso_dall_utente',
+    // 16/09 sera (ordine dell’utente): «se chiudo io il bot deve saperlo, anche
+    // FUORI dall’app». Il bot legge la POSIZIONE DI CONTO sul mercato (senza
+    // filtro di strategia) e dice che cosa ci ha visto; se quella lettura non è
+    // disponibile lo dichiara invece di tacere. E una lay appoggiata che sparisce
+    // dai correnti MENTRE il mercato è sospeso non è «uscita dagli ordini vivi»:
+    // è la scadenza di Betfair, e la si legge alla riapertura.
+    'posizione_di_conto', 'posizione_di_conto_non_letta', 'resting_in_sospensione',
     'cancel', 'skip', 'no_fill', 'would_place', 'size_legalized', 'pre_cycle', 'cover',
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
@@ -1184,6 +1191,10 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     rilettura_alla_riapertura: { label: 'ORDINE RILETTO ALLA RIAPERTURA', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     ordine_scaduto_alla_sospensione: { label: 'ORDINE SCADUTO NELLA SOSPENSIONE', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     chiuso_dall_utente: { label: 'CHIUSO DALL’UTENTE', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40', critical: true },
+    // 16/09 sera — la POSIZIONE DI CONTO sul mercato (ordini dell’utente compresi).
+    posizione_di_conto: { label: 'POSIZIONE DI CONTO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+    posizione_di_conto_non_letta: { label: 'POSIZIONE DI CONTO NON LETTA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
+    resting_in_sospensione: { label: 'APPOGGIATA: SOSPENSIONE IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     size_legalized: { label: 'IMPORTO LEGALIZZATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
     loss_exit_deciso: { label: 'USCITA IN PERDITA DECISA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_gambe_non_piazzate: { label: 'GAMBE MAI PIAZZATE', cls: 'bg-white/5 text-slate-300 border-white/10' },
@@ -1258,6 +1269,22 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `hai chiuso TUTTE le operazioni della partita`
                 + `${p.dove ? ` (${String(p.dove)}${p.minuto == null ? '' : ` · ${String(p.minuto)}'`})` : ''}`
                 + ` · da qui il bot non apre più niente: riattivalo con «Riprendi»`;
+        case 'posizione_di_conto': {
+            const verdetto = String(p.verdetto ?? '');
+            const testo = verdetto === 'gambe_non_ritrovate'
+                ? 'i tuoi ordini del bot non si ritrovano sul conto: è una verifica, non una chiusura'
+                : verdetto === 'ridotta_dall_utente'
+                    ? 'hai chiuso solo una PARTE della posizione: il bot protegge quello che resta'
+                    : 'letta la posizione del conto sul mercato';
+            const numeri = Number.isFinite(n('atteso'))
+                ? ` · il bot crede di avere ${money('atteso')}, sul conto ce ne sono ${money('netto_di_conto')}` : '';
+            return `${testo}${numeri}`;
+        }
+        case 'posizione_di_conto_non_letta':
+            return `posizione di conto NON letta: una chiusura fatta fuori dall’app resterebbe invisibile`;
+        case 'resting_in_sospensione':
+            return `${role()} non è più fra gli ordini correnti mentre il mercato è sospeso:`
+                + ` l’esito lo dice Betfair alla riapertura, non si indovina adesso`;
         case 'mercato_sospeso':
             return `mercato ${p.stato ? String(p.stato) : 'sospeso'} con una lay appoggiata sul book:`
                 + ` Betfair può averla fatta scadere, alla riapertura si rilegge`;

@@ -111,6 +111,13 @@ class Osservazione:
     rifiutati: List[Dict[str, Any]] = field(default_factory=list)
     attivita: List[Tuple[str, Dict[str, Any], Any]] = field(default_factory=list)
     proposte: List[Dict[str, Any]] = field(default_factory=list)
+    # QUANDO L'UTENTE HA CHIUSO, saputo dal REPLAY e non dal bot: {event_id: ts}.
+    # ⚠️ lezione del 16/09 (Esito C.4): un controllo che dipende dalla
+    # CONFESSIONE del bot non certifica. Se il bot smettesse di accorgersi della
+    # chiusura fatta fuori dall'app, il marcatore `meta.chiuso_dall_utente` non
+    # verrebbe scritto e un controllo che guarda solo quello resterebbe zitto:
+    # misurato, va a «non lo so» mentre il bot continua a operare.
+    chiuso_dall_utente: Dict[str, float] = field(default_factory=dict)
     errore_servizio: str = ""
 
     # ------------------------------------------------------------ comodita'
@@ -833,6 +840,68 @@ def _l2(oss: Osservazione) -> Optional[str]:
                 f"le due lay possono convivere a mercato. REPERTO da portare "
                 f"all'utente: non si corregge qui (e' strategia/esecuzione).")
     return None
+
+
+@_controllo("S4", "16/09 (consegna S1): dopo una chiusura DELL'UTENTE (cash-out "
+                  "globale o chiusura fatta fuori dall'app) il bot non apre, non "
+                  "copre e non esce piu' su quella partita",
+            quando=lambda o: bool(_righe_chiuse_dall_utente(o))
+            or bool(o.chiuso_dall_utente))
+def _s4(oss: Osservazione) -> Optional[str]:
+    """Il gemello tennis di T14 (calcio). Il marcatore lo scrive il SERVIZIO
+    (`bot_service.segna_chiuso_dall_utente` -> `meta.chiuso_dall_utente`), sia
+    quando l'utente preme cash-out sia quando la chiusura la fa FUORI dall'app
+    e il bot se ne accorge dalla posizione di CONTO: da li' in poi, su quella
+    partita, non deve fare altro. Una chiusura PARZIALE non mette il marcatore
+    (il bot deve continuare a proteggere il resto): quel caso qui non entra."""
+    chiuse = {int(t.get("id") or 0) for t in _righe_chiuse_dall_utente(oss)}
+    eventi = {str(t.get("event_id") or "") for t in _righe_chiuse_dall_utente(oss)}
+    # ...e cio' che il REPLAY sa di suo, che non dipende dal bot
+    eventi |= {str(e) for e in (oss.chiuso_dall_utente or {})}
+    if oss.chiuso_dall_utente and not chiuse:
+        # il bot non ha (ancora) scritto il marcatore: le posizioni vive
+        # sull'evento chiuso dall'utente sono quelle da non toccare piu'
+        chiuse = {int(t.get("id") or 0) for t in _posizioni_tennis(oss)
+                  if str(t.get("event_id") or "") in eventi}
+    for a in _aperture_tennis(oss):
+        tr = a.get("trade") or {}
+        if str(tr.get("event_id") or "") in eventi:
+            return (f"partita chiusa dall'utente, e il bot ha APERTO la riga "
+                    f"{tr.get('id')}: doveva capirlo e non fare altro")
+    for c in _chiusure_tennis(oss):
+        tr = c.get("trade") or {}
+        padre = tr.get("closes_trade_id")
+        if padre is not None and int(padre) in chiuse:
+            return (f"partita chiusa dall'utente, e il bot ha aggiunto la gamba "
+                    f"di chiusura {tr.get('id')} sulla posizione {padre}")
+    # ORDINI VERI partiti dopo la chiusura dell'utente: e' la prova che non
+    # dipende da cio' che il bot scrive di se'.
+    # ⚠️ FALSO POSITIVO ESCLUSO (16/09): dentro il giro in cui l'utente chiude,
+    # il bot puo' aver gia' mandato il suo ordine PRIMA (il replay chiude alla
+    # fine del giro, come nella realta' un ordine dell'utente arriva mentre il
+    # bot sta lavorando). Si giudicano i giri SUCCESSIVI, non quello.
+    ultimo = max((float(v) for v in (oss.chiuso_dall_utente or {}).values()),
+                 default=None)
+    if ultimo is not None and float(oss.now_ts or 0.0) > ultimo:
+        for o in oss.ordini or []:
+            rif = str(o.get("customer_order_ref") or "")
+            if rif.startswith("utente"):
+                continue                  # l'ordine del trader non e' del bot
+            return (f"partita chiusa dall'utente, e il bot ha mandato a Betfair "
+                    f"l'ordine {rif or o.get('bet_id')}: doveva capirlo e non "
+                    f"fare altro")
+    return None
+
+
+def _righe_chiuse_dall_utente(oss: Osservazione) -> List[Dict[str, Any]]:
+    """Le righe con il marcatore `meta.chiuso_dall_utente` scritto dal servizio."""
+    fuori: List[Dict[str, Any]] = []
+    for t in oss.trades:
+        if not _e_tennis(t):
+            continue
+        if isinstance((t.get("meta") or {}).get(BS.CHIUSO_DALL_UTENTE_KEY), dict):
+            fuori.append(t)
+    return fuori
 
 
 # ===========================================================================

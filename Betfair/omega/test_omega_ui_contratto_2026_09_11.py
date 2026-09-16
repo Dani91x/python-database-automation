@@ -132,7 +132,20 @@ def _ui_field_bounds() -> dict[str, tuple[float | None, float | None]]:
 # ``frontend/src/lib/omega.ts`` — gruppo "§20 respiro del database", numero,
 # unita' secondi, default 120, minimo 0, massimo 3600 — e questa riga sparisce.
 # Finche' e' qui il servizio onora comunque il valore, coi suoi default.
-_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset({"conto_every_s"})
+# 16/09 SERA, SECONDO BLOCCO — i parametri di OMEGA V3 (`omega_v3.py`, motore
+# dietro `strategy_version`). Stesso identico caso di `conto_every_s`: il
+# delegato che li ha scritti aveva il divieto esplicito di toccare il frontend
+# (il pannello e il servizio erano in mano ad altre due sessioni nello stesso
+# giorno). Finche' `strategy_version` vale 2 — il default — NESSUNO di questi
+# parametri ha effetto su cio' che gira: il motore v2 non li legge.
+# Da aggiungere a ``OMEGA_PARAM_GROUPS`` / ``OMEGA_PARAM_DEFAULTS`` in
+# ``frontend/src/lib/omega.ts``, gruppo nuovo «Omega V3», con default e limiti
+# presi da ``omega_config._SPEC``; `v3_modello` e `v3_fusione_mercato` sono due
+# `select` (valori in ``omega_config.V3_MODELLI_AMMESSI`` e 'auto'/'off').
+# L'esenzione si spegne da sola: appena il pannello dichiara una chiave, i
+# controlli su default e clamp tornano a valere su di essa.
+_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset({"conto_every_s"}) | frozenset(
+    k for k in C._SPEC if k.startswith("v3_")) | {"strategy_version"}
 
 
 class TestWhitelistParametri:

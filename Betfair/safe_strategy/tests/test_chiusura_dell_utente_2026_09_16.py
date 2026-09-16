@@ -73,7 +73,8 @@ def _ordine(ref: str, side: str, size: float, *, market_id: str = "1.1",
 
 class MercatoConConto(FakeMarket):
     """Un mercato che espone la POSIZIONE DI CONTO come il banco comune
-    (`MercatoFlumine.list_account_orders` / `list_account_cleared_orders`) e
+    (`posizione_di_conto`, la PORTA UNICA: stesso nome e stessa firma in
+    produzione e nel banco) e
     come la produzione (`omega_market.list_current_orders_account` /
     `list_cleared_orders_account`)."""
 
@@ -84,12 +85,19 @@ class MercatoConConto(FakeMarket):
         self.letture: list[str] = []
         self.annullati: list[str] = []
 
-    def list_account_orders(self, market_id):
+    def posizione_di_conto(self, market_id, selection_id=None):
+        """LA PORTA UNICA (16/09 sera): stesso nome, stessa firma e stesse
+        chiavi di ``omega_market.posizione_di_conto`` e di
+        ``MercatoFlumine.posizione_di_conto``. Prima il finto esponeva le due
+        letture separate del BANCO — due nomi che in produzione, su
+        ``omega_market``, non esistono: il finto sapeva fare piu' del vero."""
         self.letture.append(str(market_id))
-        return [o for o in self.vivi if str(o["market_id"]) == str(market_id)]
-
-    def list_account_cleared_orders(self, market_id):
-        return [o for o in self.regolati if str(o["market_id"]) == str(market_id)]
+        righe = [o for o in self.vivi + self.regolati
+                 if str(o["market_id"]) == str(market_id)]
+        if selection_id is None:
+            return righe
+        return [o for o in righe
+                if int(o.get("selection_id") or -1) == int(selection_id)]
 
     def cancel_order_live(self, bet_id, market_id, size_reduction=None):
         self.annullati.append(str(bet_id))
@@ -497,3 +505,49 @@ def test_la_riserva_manuale_non_entra_nei_cap_del_ciclo():
                          "liability": 62.0, "strategy": "esatto"})
     assert [t["id"] for t in ctx["open"]] == [2]
     assert ctx["day_liability"] == pytest.approx(62.0)
+
+# ===========================================================================
+# LA PORTA UNICA (16/09 sera, ordine del coordinatore)
+# ===========================================================================
+def test_il_mercato_VERO_di_safe_espone_la_porta_unica():
+    """Safe in produzione usa ``omega_market`` (``bot_service:45``). La
+    sorveglianza del conto deve chiamare qualcosa che LI' ESISTE."""
+    import inspect
+
+    from Betfair.omega import omega_market as OM
+
+    assert callable(getattr(OM, "posizione_di_conto", None))
+    firma = inspect.signature(OM.posizione_di_conto)
+    assert list(firma.parameters) == ["market_id", "selection_id"]
+
+
+def test_i_due_nomi_del_BANCO_non_esistono_sul_mercato_vero():
+    """Il reperto: fino al 16/09 sera Safe chiedeva ``list_account_orders`` /
+    ``list_account_cleared_orders``, che esistono solo sul banco. Su
+    ``omega_market`` non ci sono: il ``getattr`` tornava None e la sorveglianza
+    era codice MORTO fuori dal replay. Questo test tiene il reperto chiuso."""
+    from Betfair.omega import omega_market as OM
+
+    assert getattr(OM, "list_account_orders", None) is None
+    assert getattr(OM, "list_account_cleared_orders", None) is None
+
+
+def test_il_banco_espone_la_porta_unica_con_la_stessa_firma():
+    import inspect
+
+    from Betfair.stream.backtest import banco_comune as B
+
+    firma = inspect.signature(B.MercatoFlumine.posizione_di_conto)
+    assert list(firma.parameters) == ["self", "market_id", "selection_id"]
+
+
+def test_senza_la_porta_unica_la_sorveglianza_non_parte():
+    """Falsificazione: un mercato che NON espone ``posizione_di_conto`` (com'e'
+    ``omega_market`` prima del 16/09) non fa partire niente — ed e' esattamente
+    quello che succedeva in produzione."""
+    class SenzaPorta:
+        pass
+
+    assert S._sorveglia_posizione_di_conto(
+        db=FakeDB(), market=SenzaPorta(), parents=[], closings={},
+        now=NOW, params={}) == 0

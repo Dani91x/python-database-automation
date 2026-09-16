@@ -369,6 +369,14 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                      "(regola di piattaforma: mai due lay sulla stessa selezione)",
     "riavvio": "a meta' partita si buttano le cache di PROCESSO di bot_service: lo "
                "stato si deve ritrovare dal database",
+    "chiusura-fuori-app": "posizione del bot aperta, e il trader la chiude con un "
+                          "ordine SUO su Betfair (ref non del bot), fuori dall'app: "
+                          "il bot deve accorgersene dalla POSIZIONE DI CONTO, "
+                          "scrivere `chiuso_dall_utente` e non fare altro",
+    "chiusura-fuori-app-ridotta": "come sopra ma il trader chiude solo META' della "
+                                  "posizione: il bot lo DICHIARA "
+                                  "(`ridotta_dall_utente`) e continua a proteggere "
+                                  "il resto",
 }
 
 QUANTI_GUASTI = 3
@@ -479,7 +487,8 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     # ordini, approvazione e riconciliazione non hanno un caso da giudicare
     inietta = scenario in ("posizione-iniettata", "approvata-subito", "mai-approvata",
                            "bot-fermo", "riavvio", "esiti-ignoti",
-                           "paper-iniettata", "uscita-ignota")
+                           "paper-iniettata", "uscita-ignota",
+                           "chiusura-fuori-app", "chiusura-fuori-app-ridotta")
     firma = _Stato(ref=ref, scenario=scenario, competizione=comp, inietta=inietta,
                    approva=(scenario == "approvata-subito"),
                    riavvia=(scenario == "riavvio"))
@@ -498,6 +507,9 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     firma.guasti = QUANTI_GUASTI if scenario in ("esiti-ignoti",
                                                   "uscita-ignota") else 0
     firma.guasti_sull_uscita = (scenario == "uscita-ignota")
+    firma.fuori_app = ("intera" if scenario == "chiusura-fuori-app" else
+                       ("ridotta" if scenario == "chiusura-fuori-app-ridotta"
+                        else None))
 
     def servizio(*, db, market, now, row, banco, strategia):  # noqa: A002
         orologio["now"] = now
@@ -683,6 +695,11 @@ class _Stato:
         self.strategia = None
         self.ultimo_now = None
         self.giri_di_chiusura = 0
+        # CHIUSURA FUORI DALL'APP: "intera" | "ridotta" | None
+        self.fuori_app: Optional[str] = None
+        self.fuori_app_fatta: Optional[Dict[str, Any]] = None
+        # {event_id: istante} saputo dal REPLAY, non dal bot
+        self.chiuso_dall_utente: Dict[str, float] = {}
 
     # ------------------------------------------------------------- un giro
     def giro(self, *, db, market, now, row, banco, strategia) -> None:
@@ -767,6 +784,12 @@ class _Stato:
         # aperta da lui
         if self.inietta and not self._iniettata and row is not None:
             self._iniettata = self._apri_dichiarata(db, market, row, params, now)
+
+        # IL TRADER CHIUDE FUORI DALL'APP: un ordine SUO su Betfair, con un ref
+        # che non e' del bot (come sul sito). Il bot non lo vede fra i propri
+        # ordini: se ne deve accorgere dalla POSIZIONE DI CONTO.
+        if self.fuori_app and self.fuori_app_fatta is None:
+            self._forse_chiudi_fuori_app(db, market, now)
 
         # IL GUASTO SULLA CHIUSURA: si arma appena c'e' qualcosa da chiudere.
         # E' l'unico modo di far restare una LAY in volo a esito ignoto sul
@@ -869,7 +892,10 @@ class _Stato:
             cancellati=cancellati,
             rifiutati=list(market.rifiutati),
             attivita=list(db.attivita[n_att:]),
-            proposte=proposte, errore_servizio=errore)
+            proposte=proposte, errore_servizio=errore,
+            # cio' che il REPLAY sa: l'utente ha chiuso, e non perche' il bot
+            # lo abbia scritto (vedi il campo sull'Osservazione)
+            chiuso_dall_utente=dict(self.chiuso_dall_utente))
 
     @staticmethod
     def _righe_ordine(market) -> List[Dict[str, Any]]:
@@ -893,6 +919,49 @@ class _Stato:
         nd = [c.id for c in (getattr(valutazione, "checks", None) or ()) if c.ok is None]
         return ("nd: " + ",".join(nd[:3])) if nd else "nessun motivo"
 
+    # ------------------------------------------ il trader chiude fuori dall'app
+    def _forse_chiudi_fuori_app(self, db, market, now) -> None:
+        """Il trader chiude la posizione del bot con un ordine SUO.
+
+        Passa da `banco_comune.MercatoFlumine.place_order_utente`: stesso
+        `market.place_order`, stesso matching, ref diverso — esattamente cio'
+        che succede quando si chiude dal sito di Betfair. Il tennis PUNTA, quindi
+        la chiusura del trader e' una LAY sulla stessa selezione.
+        """
+        piazza = getattr(market, "place_order_utente", None)
+        if not callable(piazza):
+            return
+        vive = [t for t in db.trades
+                if str(t.get("strategy") or "") == "tennis"
+                and str(t.get("status") or "") == "open"
+                and t.get("closes_trade_id") is None
+                and str(t.get("origin") or "") == "auto"
+                and float(t.get("size") or 0.0) > 0]
+        if not vive:
+            return
+        tr = vive[0]
+        lato_bot = str(tr.get("side") or "").lower()
+        lato_utente = "back" if lato_bot == "lay" else "lay"
+        size = round(float(tr.get("size") or 0.0)
+                     * (0.5 if self.fuori_app == "ridotta" else 1.0), 2)
+        if size < 0.01:
+            return
+        ordine = piazza(market_id=str(tr.get("market_id")),
+                        selection_id=int(tr.get("selection_id") or 0),
+                        price=(1.01 if lato_utente == "back" else 1000.0),
+                        size=size, side=lato_utente,
+                        customer_ref=f"utente-fuori-app-{tr.get('id')}")
+        dettaglio = {"trade_id": tr.get("id"), "lato_utente": lato_utente,
+                     "size": size, "size_del_bot": tr.get("size"),
+                     "market_id": tr.get("market_id"),
+                     "selection_id": tr.get("selection_id"),
+                     "piazzato": ordine is not None, "modo": self.fuori_app}
+        db.log("replay_chiusura_fuori_app", dettaglio)
+        self.fuori_app_fatta = dettaglio
+        # solo la chiusura INTERA e' un «non fare altro»: quella parziale no
+        if ordine is not None and self.fuori_app == "intera":
+            self.chiuso_dall_utente[str(self.ref.event_id)] = float(now.timestamp())
+
     # ------------------------------------------------------- il trader firma
     def _firma_le_proposte(self, db, now) -> None:
         """La Control Room promuove la proposta a richiesta: 'proposed' ->
@@ -903,7 +972,16 @@ class _Stato:
                 continue
             corpo = dict(r.get("payload") or {})
             r["status"] = "pending"
-            r["payload"] = {"trade_id": corpo.get("trade_id"), "fraction": 1.0,
+            # ⚠️ DIFETTO 27 (il finto che non parla come il vero), corretto il
+            # 16/09: la RPC VERA (`migrations/safe_strategy_proposed_2026-09-14.sql`
+            # :74) fa `payload = payload || {'approved_at': ...}`, cioe' CONSERVA
+            # tutto il corpo e AGGIUNGE la firma. Il replay lo RIFACEVA da zero
+            # con trade_id+fraction e buttava via `exit_kind` — proprio il campo
+            # con cui `_uscita_del_bot_approvata` distingue l'uscita del BOT dal
+            # cash-out dell'UTENTE. Un finto che perde una chiave certifica un
+            # comportamento che in produzione non esiste.
+            r["payload"] = {**corpo,
+                            "approved_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "approvata_da": "replay: il trader firma al giro dopo"}
             r["created_at"] = now.isoformat()
             r["updated_at"] = now.isoformat()

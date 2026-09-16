@@ -489,6 +489,26 @@ def test_e5_non_accusa_il_bot_per_un_PLACE_DI_PRIMA():
     assert "E5" not in _scatta("E5", m)
 
 
+def test_e5_scatta_se_restano_ordini_VIVI_del_bot_sulla_partita_chiusa():
+    """Ordine del coordinatore (16/09 sera): su una partita chiusa dall'utente
+    un ordine del bot ancora appoggiato, se si abbina, riapre una posizione su
+    una partita che non e' piu' sua. Va annullato."""
+    db = _db_chiusa_fuori()
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=db,
+                     chiuso_fuori_app=True, giri_da_fuori_app=10,
+                     esito_giro={"placed": 0, "greenup": 0},
+                     righe_ordine=[_ordine_vivo(E.customer_ref_for(1))])
+    assert "E5" in _scatta("E5", m)
+
+
+def test_e5_e_verde_quando_l_ordine_e_stato_annullato():
+    m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(),
+                     db=_db_chiusa_fuori(), chiuso_fuori_app=True,
+                     giri_da_fuori_app=10, esito_giro={"placed": 0, "greenup": 0},
+                     righe_ordine=[])
+    assert "E5" not in _scatta("E5", m)
+
+
 def test_e5_non_ha_un_caso_finche_l_utente_non_ha_chiuso():
     m = CERT.Momento(tipo="giro", now=ADESSO, params=_params(), db=_db(),
                      esito_giro={"placed": 1, "greenup": 1})

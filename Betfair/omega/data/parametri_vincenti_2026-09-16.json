@@ -1,0 +1,10 @@
+{
+ "beta_squilibrio": -0.01332,
+ "forma_gamma": 13.33601,
+ "gol_totali": 2.76756,
+ "profilo_c1": 0.40955,
+ "profilo_c2": 0.00727,
+ "quota_casa": 0.56391,
+ "rho": -0.02893,
+ "modello": "gamma_poisson"
+}

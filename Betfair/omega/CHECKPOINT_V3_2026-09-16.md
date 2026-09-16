@@ -29,8 +29,9 @@ Uscita: la proposta di green nasce da una TRAIETTORIA attesa del profitto blocca
 | 0 | lettura progetto + codice | FATTO |
 | 1 | MISURA DI k (`tools/misura_k.py`) -> `data/k_misurato_2026-09-16.json` | **FATTO — risultato sotto** |
 | 1b | `K_MISURATO_2026-09-16.md` | FATTO |
-| 2 | banco modelli: costruzione candidati 1-6 + log-loss/Brier OOS + calibrazione | IN CORSO |
-| 3 | `omega_v3.py` (funzioni pure) + test falsificati | DA FARE |
+| 2 | banco modelli 1-5 (`tools/banco_modelli.py`) + log-loss/Brier OOS | **FATTO — risultato sotto** |
+| 2b | banco fusione col mercato (candidato 6, `tools/banco_fusione.py`) | IN CORSO |
+| 3 | `omega_v3.py` (funzioni pure) + 41 test falsificati | **FATTO (verde)** |
 | 4 | `omega_engine.py`: percorso v3 dietro `strategy_version=3` (default 2) | DA FARE |
 | 5 | `certificazione.py` A8-A12/C5/G1/G2 + scenario `v3` nel replay + replay 35760084/35797769 | DA FARE |
 | 6 | referto | DA FARE |
@@ -89,6 +90,74 @@ non sono indipendenti: esce una sola scoreline).
 
 Il motore usa comunque `k_soglia = max(2, k_prudente)` e non scende MAI sotto 2 dove il
 bias non e' dimostrato (`misura_k.tabella_k`).
+
+## PASSO 2 — BANCO DEI MODELLI: chi vince, sui nostri dati, fuori campione
+
+Comando: `python -m Betfair.omega.tools.estrai_transizioni --leghe 60` poi
+`python -m Betfair.omega.tools.banco_modelli --max-iter 600`
+Dati: `omega_minute_transitions`, **1,07 M righe** da ~1,4 M partite (globale 22.193
+righe; 60 leghe campionate). Stati con n >= 200: **548**. Fit = massima verosimiglianza
+multinomiale sui conteggi; prova su dati mai visti, con **due split indipendenti**
+(meta' degli stati / 30 leghe contro 30). Metriche: log-loss e Brier multiclasse, piu'
+la log-loss **della sola coda** (celle che il modello mette sotto il 2 %: e' li' che
+Omega opera). Risultati in `data/banco_modelli_2026-09-16.json`.
+
+| modello | logloss OOS (stati) | Brier | **coda <2 %** | HT | FT | logloss OOS (leghe) | coda (leghe) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **5 Gamma-Poisson (bayesiano)** | **2,13041** | **0,78179** | **4,95478** | 1,26203 | **2,42266** | **1,93221** | **4,91797** |
+| 3 Dixon-Robinson (1998) | 2,13731 | 0,78186 | 5,17026 | **1,26171** | 2,43198 | 1,93301 | 5,01694 |
+| 4 bivariato Karlis-Ntzoufras (2003) | 2,13737 | 0,78188 | 5,17044 | 1,26166 | 2,43208 | 1,93307 | 5,01757 |
+| 0 **v2 di produzione** (DC + mistura log-normale cv 0,30) | 2,14697 | 0,78381 | 5,11069 | 1,26589 | 2,44349 | 1,93904 | 5,01360 |
+| 2 Dixon-Coles (1997) | 2,14830 | 0,78393 | 5,22601 | 1,26582 | 2,44529 | 1,93921 | 5,02951 |
+| 1 Poisson indipendente | 2,14840 | 0,78395 | 5,22668 | 1,26577 | 2,44544 | 1,93929 | 5,03001 |
+
+**Le cinque cose che i numeri dicono** (stesso ordine nei due split: non e' rumore):
+
+1. **Vince il Gamma-Poisson bayesiano**, e vince proprio DOVE CONTA: sulla coda
+   (`4,955` contro `5,111` del v2 di produzione e `5,226` del Poisson puro). E' il
+   modello che aggiorna il tasso di ciascuna squadra dai gol gia' visti
+   (posteriore coniugato Gamma) e la cui predittiva e' una **binomiale negativa**.
+2. **Il Poisson bivariato NON e' giustificato dai dati**: `lambda3` si ferma a **0,000**
+   in entrambi gli split, cioe' il modello degenera nel Dixon-Robinson. Risposta chiara
+   al candidato 4: non serve.
+3. **Dixon-Coles quasi non guadagna qui** (2,14830 contro 2,14840 del Poisson) e il rho
+   stimato e' **-0,015/-0,031**, molto piu' piccolo del **-0,13** cablato in produzione
+   (`omega_model.py:41`). Onesta': su dati AGGREGATI sui lambda la correzione tau non si
+   puo' isolare (l'eterogeneita' fra partite domina). Il rho va tenuto, non gonfiato.
+4. **`forma_gamma` 6,7-13,3 => cv = 1/sqrt(a) = 0,27-0,39**: il `model_lambda_cv` 0,30 di
+   produzione era azzeccato. Ma la mistura log-normale del v2 *spalma* quell'incertezza
+   e basta; il Gamma-Poisson la spalma **e impara dai gol visti**. Da qui il vantaggio.
+5. **`beta_squilibrio` viene NEGATIVO** (chi e' avanti segna di piu'), il contrario del
+   «chi e' sotto attacca». Non e' un paradosso: su dati aggregati chi e' avanti e'
+   di solito la squadra piu' forte, e la forza non si puo' separare dal comportamento.
+   Conferma della struttura: nel Gamma-Poisson `beta` scende a **-0,013** (contro -0,098
+   del Dixon-Robinson) **perche' il posteriore ha gia' assorbito la forza**.
+
+`profilo_c1` = **0,41**: l'intensita' dei gol al 90' vale `exp(0,41) = 1,5` volte quella
+d'inizio partita — il profilo crescente di Dixon & Robinson, misurato sui nostri dati.
+
+Calibrazione fuori campione (split leghe), decile piu' basso (dove sta tutta l'attivita'
+di Omega): Gamma-Poisson **p prevista 0,335 % contro 0,331 % osservata** su 241 M di
+peso; v2 0,337 % contro 0,338 %. Entrambi calibrati; serve la risoluzione fine sulla
+coda (passo 2c).
+
+## PASSO 3 — `omega_v3.py`
+
+Modulo nuovo, **tutto puro** (nessun I/O, nessun Betfair, nessun database), che contiene:
+`Parametri` · `esposizione` (profilo temporale) · `intensita_residue` · `griglia_residua`
+/ `griglia_finale` (i 5 modelli) · `fondi_col_mercato` (pool logaritmico in logit) ·
+`probabilita_selezioni` (scoreline **e aggregati**) · `p_implicita` · `candidato` (il
+cancello del margine k) · `finestra_ingresso` · `profitto_bloccabile` ·
+`p_punteggio_invariato` · `traiettoria_bloccabile` · `proposta_uscita`.
+Test: `Betfair/omega/test_omega_v3_2026_09_16.py`, **41 verdi**, ognuno falsificato.
+
+**Due difetti trovati dalla falsificazione** (il banco ha corretto il codice, non il test):
+- `p_implicita(1.00)` valeva 1,0 e faceva passare qualunque cosa il cancello -> guardia
+  `L <= 1` (`omega_v3.py:p_implicita`).
+- la traiettoria del bloccabile, guardata nel solo ramo «non succede niente», diceva
+  **sempre** «aspetta» e non si sarebbe mai chiuso niente. Ora il valore dell'attesa e'
+  pesato con `p_punteggio_invariato` e nell'altro ramo si torna a valere l'EV di tenere
+  di oggi (`valore_attesa = P(regge)*bloccabile + (1-P)*EV_tenere`).
 
 ## Log
 
