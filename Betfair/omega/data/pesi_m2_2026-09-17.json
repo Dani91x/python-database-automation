@@ -7,6 +7,7 @@
   "n_train": 1338,
   "n_test": 657
  },
+ "stima_riusata": true,
  "pesi": {
   "mercato": 1.0,
   "fixture": 0.0,
