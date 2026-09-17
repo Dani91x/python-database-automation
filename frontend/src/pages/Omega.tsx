@@ -24,6 +24,7 @@ import ManualPanel from '@/components/omega/ManualPanel';
 import MissionPanel from '@/components/omega/MissionPanel';
 import { useScanLiveFeedRows } from '@/lib/useScanLiveFeed';
 import { TradingHistory } from '@/components/trading/TradingHistory';
+import { StoricoLink } from '@/components/trading/StoricoLink';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
 import { TotaliBar } from '@/components/trading/EventPnlTable';
 import { groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, tradesOfMode } from '@/lib/eventGroups';
@@ -488,6 +489,8 @@ export default function Omega() {
                 <BotHeader
                     bot="omega"
                     status={status}
+                    // «Storico» sempre nello stesso posto (17/09): Omega e' calcio.
+                    storico={<StoricoLink sport="calcio" compatto testId="omega-storico-link" />}
                     running={running}
                     busy={busy}
                     onStart={handleStart}

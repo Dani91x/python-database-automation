@@ -31,6 +31,7 @@ import { SectionFilter, useSectionFilter } from '@/components/trading/SectionFil
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
 import { TradingHistory } from '@/components/trading/TradingHistory';
+import { StoricoLink } from '@/components/trading/StoricoLink';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
 import { Badge } from '@/components/ui/badge';
@@ -367,6 +368,8 @@ export default function Mike() {
                     nowMs={nowMs}
                     statusPrefix="BOT"
                     statusTestId="mike-status"
+                    // «Storico» sempre nello stesso posto (17/09): Mike e' calcio.
+                    storico={<StoricoLink sport="calcio" compatto testId="mike-storico-link" />}
                     running={running}
                     busy={bot.busy}
                     startDisabled={!bot.available}

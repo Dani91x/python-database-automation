@@ -25,7 +25,7 @@ import { ExitBadge } from '@/components/trading/ExitBadge';
 import { ModeBadge } from '@/components/trading/ModeBadge';
 import { liveScoreLabel } from '@/lib/useScanLiveFeed';
 import { tradeExit } from '@/lib/dailyHistory';
-import { fmtMoney, fmtOdds, fmtPct, fmtTime, DASH } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtPct, fmtTime, fmtQuotaAbbinata, DASH } from '@/lib/format';
 import { statusMeta, pnlClass, pnlClassSoft, T } from '@/lib/tradeStatus';
 import { positionInfo } from '@/lib/omega';
 import { ticksBetween } from '@/lib/riskMath';
@@ -439,6 +439,11 @@ export function SafeTradesTable({
                         // tono attenuato e col badge, così non si confonde con
                         // ciò che si sta operando adesso.
                         const otherMode = currentMode != null && t.mode !== currentMode;
+                        // reperto 17/09 — dopo la conferma `price` porta il MEDIO abbinato
+                        // (non il chiesto travestito): stessa lettura di `statoOrdine`, usata
+                        // qui solo per la colonna quota d'ingresso (il resto sta in StatoOrdineRiga).
+                        const ordine = statoOrdine(t);
+                        const entryQuota = fmtQuotaAbbinata(ordine.prezzoMedio.valore ?? t.price, ordine.prezzoChiesto.valore ?? t.price);
                         return (
                             <Fragment key={t.id}>
                             <tr
@@ -517,7 +522,9 @@ export function SafeTradesTable({
                                         {t.side.toUpperCase()}
                                     </Badge>
                                 </td>
-                                <td className="px-3 py-2 text-right tabular-nums">{fmtOdds(t.price)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums" data-testid="safe-price-entry" title={entryQuota.title ?? undefined}>
+                                    {entryQuota.diverso ? `abbinato ${entryQuota.text}` : entryQuota.text}
+                                </td>
                                 <td className="px-3 py-2 text-right tabular-nums" data-testid="safe-price-now">
                                     {nowPrice != null ? (
                                         <span

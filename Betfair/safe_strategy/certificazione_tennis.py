@@ -909,7 +909,9 @@ def _righe_chiuse_dall_utente(oss: Osservazione) -> List[Dict[str, Any]]:
 # C. CONSAPEVOLEZZA DELL'ORDINE (C.12a)
 # ===========================================================================
 @_controllo("C1", "C.12a: ogni riga eseguita porta CHIESTO, ABBINATO, RESIDUO e "
-                  "PREZZO MEDIO (sono i campi che la UI mostra)",
+                  "PREZZO MEDIO, sia nel meta SIA nelle COLONNE della migrazione "
+                  "`trades_consapevolezza_ordine_2026-09-16.sql` (sono le colonne che "
+                  "la UI e i controlli K1/K5 leggono davvero, non il meta)",
             quando=lambda o: bool(o.aperture or o.chiusure))
 def _c1(oss: Osservazione) -> Optional[str]:
     for a in oss.aperture + oss.chiusure:
@@ -924,6 +926,26 @@ def _c1(oss: Osservazione) -> Optional[str]:
                                 "price_medio") if esec.get(k) is None]
         if mancanti:
             return f"trade {tr.get('id')}: `meta.esecuzione` senza {mancanti}"
+        # ⚠️ REPERTO 17/09 (trade live #297, tennis, back 1,03 x 3 EUR): il meta
+        # aveva GIA' tutti questi numeri quando le COLONNE nuove
+        # (`size_requested`, `size_matched`, `avg_price_matched`) erano NULL
+        # sulla riga, perche' la conferma dell'apertura usava `db.update_trade`
+        # diretto invece di `execution.aggiorna_trade`. Il controllo restava
+        # verde perche' guardava SOLO il meta — cio' che il bot si racconta —
+        # e non le colonne che UI, K1 e K5 leggono davvero. Un trade con un
+        # bet_id vero (ordine REALE piazzato, non una riserva in coda) deve
+        # avere anche le colonne valorizzate. `betfair_updated_at` resta fuori
+        # da questa lista: il percorso REST la valorizza da `placedDate`
+        # dell'exchange, ma non e' dichiarata garantita in ogni risposta.
+        if tr.get("bet_id"):
+            mancanti_colonna = [c for c in ("size_requested", "size_matched",
+                                            "avg_price_matched")
+                                if tr.get(c) is None]
+            if mancanti_colonna:
+                return (f"trade {tr.get('id')} (bet_id {tr.get('bet_id')}): "
+                        f"`meta.esecuzione` e' completo ma la COLONNA {mancanti_colonna} "
+                        f"e' NULL sulla riga — UI e controlli K1/K5 leggono la colonna, "
+                        f"non il meta (reperto 17/09, trade live #297)")
     return None
 
 

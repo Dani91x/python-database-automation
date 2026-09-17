@@ -55,6 +55,7 @@ import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
+import { StoricoLink } from '@/components/trading/StoricoLink';
 import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
 import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
 import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
@@ -178,9 +179,19 @@ export default function ControlRoom() {
         return { calcio: vivo, tennis: vivo };
     }, [vm.runner]);
 
+    /**
+     * LA GIORNATA OPERATIVA della pagina (Europe/Rome), una sola volta: la
+     * usano la barra della giornata e la scheda delle posizioni chiuse, che
+     * dal 17/09 mostra SOLO oggi.
+     */
+    const giornoOperativo = useMemo(() => romeDay(new Date(vm.nowMs)), [vm.nowMs]);
+
+    // il contatore della scheda deve contare QUELLO CHE LA SCHEDA MOSTRA:
+    // soldi veri, dello sport scelto, e SOLO della giornata di oggi.
     const contaChiuse = useMemo(
-        () => vm.chiuse.filter((c) => (sport == null || c.sport === sport) && c.modo === 'live').length,
-        [vm.chiuse, sport],
+        () => vm.chiuse.filter((c) => (sport == null || c.sport === sport)
+            && c.modo === 'live' && c.giorno === giornoOperativo).length,
+        [vm.chiuse, sport, giornoOperativo],
     );
 
     // RITORNO AL PUNTO ESATTO: si consuma UNA volta sola, quando le righe ci
@@ -364,7 +375,7 @@ export default function ControlRoom() {
                 la muoveva di un pixel. */}
             <DayBar
                 testId="cr-giornata"
-                dayLabel={etichettaGiorno(romeDay(new Date(vm.nowMs)))}
+                dayLabel={etichettaGiorno(giornoOperativo)}
                 realized={vm.soldiGiornata.realizzato}
                 goal={vm.obiettivo}
                 matches={vm.totali.partite}
@@ -377,6 +388,16 @@ export default function ControlRoom() {
                 countsNote="Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot. «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato."
                 ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
             />
+
+            {/* I GIORNI PRECEDENTI HANNO UNA CASA. Tutta questa pagina parla
+                della giornata di oggi (ordine dell'utente, 17/09): lo Storico
+                è dove si guarda il resto, ed è raggiungibile da qui senza
+                cercarlo dentro le schede dei singoli bot. */}
+            <div className="flex items-center gap-2 flex-wrap text-[11px] text-white/45 px-1"
+                data-testid="cr-riga-storico">
+                <span>Questa pagina mostra <b className="text-white/70">solo la giornata di oggi</b>. I giorni precedenti:</span>
+                <StoricoLink sport={sport} testId="cr-storico" />
+            </div>
 
             {/* LA PROVA, SEPARATA. La barra sopra misura l'obiettivo con soldi
                 veri; il paper e' esercitazione e non deve spostarla di un
@@ -538,7 +559,7 @@ export default function ControlRoom() {
                     </TabsContent>
 
                     <TabsContent value="chiuse" className="mt-3">
-                        <PosizioniChiuse chiuse={vm.chiuse} sport={sport} />
+                        <PosizioniChiuse chiuse={vm.chiuse} sport={sport} giorno={giornoOperativo} />
                     </TabsContent>
                 </Tabs>
 

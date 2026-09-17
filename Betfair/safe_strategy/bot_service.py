@@ -1369,6 +1369,77 @@ def _stato_da_settlement_reale(db, trade: dict[str, Any], righe: list[dict[str, 
                                   "reason": "settlement_da_posizione_di_conto"})
 
 
+# budget REST: righe gia' 'open'/'hedged' senza colonne di consapevolezza,
+# quante se ne completano per ciclo (17/09). Il costo si esaurisce da solo: una
+# volta riempite, non sono piu' candidate.
+CONSAPEVOLEZZA_BACKFILL_PER_CICLO = 3
+
+
+def _completa_consapevolezza_mancante(*, db, market, rows: list[dict[str, Any]]) -> int:
+    """Colonne di consapevolezza mancanti su righe GIA' 'open'/'hedged' (17/09).
+
+    REPERTO: ``reconcile_pending`` (via ``_racconta_il_vero``) scrive
+    ``size_matched``/``size_remaining``/``avg_price_matched`` SOLO mentre la
+    riga e' ancora 'pending' — una volta passata a 'open' (place diretto REST,
+    o riconciliazione confermata) o a 'hedged' (chiusura confermata,
+    ``apply_hedge_state``) nessun percorso la rivisita piu'. Una riga piazzata
+    PRIMA del fix di ``_conferma_apertura`` (17/09) resta quindi con le colonne
+    NULL per sempre, anche dopo un riavvio con il codice corretto.
+
+    Qui si completa con UNA lettura per bet_id (``order_state_by_bet_id``, lo
+    stesso gia' usato dalla riconciliazione per bet_id: stesse chiavi,
+    ``size_matched``/``avg_price_matched``/``size_remaining``/``matched_date``/
+    ``placed_date``), solo per le righe LIVE con un bet_id e ancora senza
+    ``size_matched`` sulla colonna. Budget per ciclo
+    (``CONSAPEVOLEZZA_BACKFILL_PER_CICLO``): non e' mai stato misurato quante
+    righe storiche ne abbiano bisogno, quindi non si assume che siano poche."""
+    fn = getattr(market, "order_state_by_bet_id", None)
+    if not callable(fn):
+        return 0
+    n = 0
+    for tr in rows:
+        if n >= CONSAPEVOLEZZA_BACKFILL_PER_CICLO:
+            break
+        if str(tr.get("mode") or "") == "paper":
+            continue
+        if str(tr.get("status") or "") not in ("open", "hedged"):
+            continue
+        bet_id = tr.get("bet_id")
+        if not bet_id or tr.get("size_matched") is not None:
+            continue
+        try:
+            st = fn(str(bet_id))
+        except Exception as ex:  # noqa: BLE001 — si riprova al giro dopo, mai a caso
+            logger.debug("[safe.bot] order_state_by_bet_id KO in backfill (bet %s): %s",
+                         bet_id, str(ex)[:120])
+            continue
+        if not isinstance(st, dict) or not st.get("found"):
+            continue
+        _racconta_il_vero(db, tr, st)
+        n += 1
+    return n
+
+
+def _cleared_orders_for_market(market, market_id: str) -> Optional[list[dict[str, Any]]]:
+    """I cleared orders di QUESTO mercato, per il settlement I3 (17/09):
+    ``execution.settle_position`` regola con il ``profit`` di Betfair quando
+    ce l'ha per OGNI gamba della posizione, e ripiega da solo sul calcolo di
+    sempre altrimenti. Una lettura per mercato, solo quando il mercato e' gia'
+    CHIUSO (il chiamante lo garantisce): stesso budget di un'altra lettura di
+    chiusura, non una lettura nuova per ciclo su una posizione ancora viva.
+    ``None`` se il mercato non sa farla (banco di replay senza questa lettura,
+    rete KO): mai un'eccezione qui deve bloccare il settlement."""
+    fn = getattr(market, "list_cleared_orders", None)
+    if not callable(fn):
+        return None
+    try:
+        return fn(market_ids=[str(market_id)]) or None
+    except Exception as ex:  # noqa: BLE001 — senza cleared si ripiega, non si blocca
+        logger.debug("[safe.bot] list_cleared_orders KO (mercato %s): %s",
+                     market_id, str(ex)[:120])
+        return None
+
+
 def settle_open(*, params: dict[str, Any], market, db, now: datetime,
                 rows_by_event: Optional[dict[str, dict]] = None) -> int:
     try:
@@ -1378,6 +1449,14 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
         return 0
     if not rows:
         return 0
+    # 17/09 — colonne di consapevolezza mancanti su righe GIA' open/hedged
+    # (vedi ``_completa_consapevolezza_mancante``): PRIMA di settlement/conto,
+    # cosi' un mercato che chiude in questo stesso giro regola con i numeri
+    # gia' completi.
+    try:
+        _completa_consapevolezza_mancante(db=db, market=market, rows=rows)
+    except Exception as ex:  # noqa: BLE001 — mai bloccare il ciclo per un backfill
+        _log(db, "error", {"reason": "consapevolezza_backfill_failed", "err": str(ex)[:160]})
     rows_by_event = rows_by_event or {}
     now_ts = now.timestamp()
     parents = [r for r in rows if not r.get("closes_trade_id")]
@@ -1415,6 +1494,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             continue
         todo.append(tr)
     snaps = _read_markets_batch(market, todo, now_ts)
+    cleared_cache: dict[str, Optional[list[dict[str, Any]]]] = {}
     for tr in todo:
         try:
             mid = str(tr.get("market_id") or "")
@@ -1428,8 +1508,14 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             if not snap.closed:
                 continue
             comm = _commission_rate(tr.get("commission"), fallback_commission)
+            # I3 (17/09) — "Betfair e' la verita'": UNA lettura dei cleared
+            # orders per MERCATO (non per riga), solo quando il mercato e'
+            # gia' chiuso (mai a ogni ciclo su una posizione ancora viva).
+            if mid not in cleared_cache:
+                cleared_cache[mid] = _cleared_orders_for_market(market, mid)
             if X.settle_position(db=db, trade=tr, closings=closings.get(int(tr["id"]), []),
-                                 snap=snap, commission=comm, now=now):
+                                 snap=snap, commission=comm, now=now,
+                                 cleared_orders=cleared_cache[mid], table_prefix="safe"):
                 settled += 1
         except Exception as ex:  # noqa: BLE001 — una riga rotta non blocca le altre
             _log(db, "settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
@@ -3007,6 +3093,32 @@ _HOLD_REWRITE_S = 30.0            # riscrittura di meta.exit_hold a motivo invar
 _EXIT_MODEL: dict[str, Any] = {"model": None, "mod": None}
 
 
+def _hold_firma(hold: dict[str, Any]) -> tuple:
+    """La SOSTANZA di un hold (M-28, rafforzato 17/09): (motivo, tipo di
+    uscita, messaggio SENZA i numeri che cambiano a ogni tick, P&L bloccato
+    AL CENTESIMO, fonte della probabilita').
+
+    REPERTO 17/09 (trade live #297): l'attivita' scriveva la STESSA riga
+    'exit_hold' («incasso rifiutato: bloccherebbe +0,00 € invece di almeno
+    +0,01 €», leader_vince_il_game, locked 0.0) ogni 15-30 s. Il confronto di
+    M-28 (``hold_code(why)``) toglie i numeri dal MESSAGGIO — back/lay di un
+    tick o P(perdita) alla terza cifra non fanno piu' rumore — ma cosi' facendo
+    non vedeva PIU' un ``locked`` che si muove per davvero (es. da +0,00 a
+    -0,03 €, uno scivolamento vero): il messaggio-modello resta identico anche
+    quando il numero dentro cambia. Qui il ``locked`` arrotondato al centesimo
+    torna a far parte della firma, separato dal messaggio: un tick di prezzo
+    che non sposta il centesimo non riscrive nulla, un centesimo che si muove
+    per davvero si'."""
+    locked = hold.get("locked")
+    return (
+        str(hold.get("exit_reason") or ""),
+        str(hold.get("kind") or ""),
+        XE.hold_code(hold.get("reason") or ""),
+        (round(float(locked), 2) if isinstance(locked, (int, float)) else None),
+        str(hold.get("source") or ""),
+    )
+
+
 def _exit_model(opp_mod: Any, params: dict[str, Any]) -> Any:
     """OpportunityModel condiviso (cache del book per stato+λ): uno per processo."""
     if opp_mod is None:
@@ -3342,9 +3454,10 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
     """(tenere?, numeri usati). Solo per le uscite in PROFITTO (time/profit);
     le uscite in perdita passano senza gate. Il P&L bloccato e le esposizioni
     sono al netto delle gambe già fillate (vale anche per il residuo).
-    HOLD → log 'exit_hold' una volta per motivo + ``meta.exit_hold`` per la UI
-    (riscritto al cambio motivo o ogni 30 s); EXIT → ``meta.exit_hold`` rimosso.
-    Un HOLD non blocca mai una successiva uscita in perdita (non gated)."""
+    HOLD → log 'exit_hold' una volta per SOSTANZA (``_hold_firma``) +
+    ``meta.exit_hold`` per la UI (riscritto al cambio di sostanza o ogni 30 s,
+    ``_HOLD_REWRITE_S``); EXIT → ``meta.exit_hold`` rimosso. Un HOLD non blocca
+    mai una successiva uscita in perdita (non gated)."""
     if decision.kind not in XE.PROFIT_KINDS:
         return False, {}
     conti = _conti_di_chiusura(db, trade, prices, params)
@@ -3388,9 +3501,12 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
             "exit_reason": decision.reason,
             "p_lose": p_lose, "source": source, "locked": locked, "ev_hold": info["ev_hold"],
             "ts": now.isoformat()}
-    # M-28: il confronto è sul CODICE (motivo senza numeri): il testo contiene
-    # P(perdita) e EV, che cambiano a ogni tick → prima si riscriveva sempre.
-    changed = prev is None or XE.hold_code(prev.get("code") or prev.get("reason")) != code
+    # M-28 (rafforzato 17/09): la SOSTANZA e' (motivo, tipo, messaggio senza
+    # numeri, locked al centesimo, fonte) — vedi ``_hold_firma``. P(perdita) e
+    # back/lay che ballano di un tick, o EV alla seconda cifra, non toccano la
+    # firma: nessun rumore. Un locked che si muove per davvero, o il motivo che
+    # cambia, la toccano: si scrive.
+    changed = prev is None or _hold_firma(prev) != _hold_firma(hold)
     last_ts = XE.parse_ts((prev or {}).get("ts"))
     if changed or last_ts is None or now.timestamp() - last_ts >= _HOLD_REWRITE_S:
         _write_meta_key(db, trade, meta, HOLD_KEY, hold)
@@ -3408,15 +3524,16 @@ def _write_model_hold(db, trade: dict[str, Any], meta: dict[str, Any],
                       info: dict[str, Any], now: datetime) -> None:
     """meta.exit_hold di un trade di MODELLO tenuto aperto (stesso contratto del
     gate delle 4 strategie: reason, kind, p_lose, source, locked, ev_hold, ts).
-    Riscritto solo al cambio di motivo o ogni _HOLD_REWRITE_S; log 'exit_hold'
-    una volta per motivo."""
+    Riscritto solo al cambio di SOSTANZA (``_hold_firma``) o ogni
+    _HOLD_REWRITE_S; log 'exit_hold' una volta per sostanza."""
     why = str(info.get("why") or "modello: tengo")
     prev = meta.get(HOLD_KEY) if isinstance(meta.get(HOLD_KEY), dict) else None
     code = XE.hold_code(why)
     hold = {"reason": why, "code": code, "kind": "model", "p_lose": info.get("p_lose"),
             "source": info.get("source"), "locked": info.get("locked"),
             "ev_hold": info.get("ev_hold"), "ts": now.isoformat()}
-    changed = prev is None or XE.hold_code(prev.get("code") or prev.get("reason")) != code
+    # stessa firma di ``_model_gate`` (vedi ``_hold_firma``, reperto 17/09).
+    changed = prev is None or _hold_firma(prev) != _hold_firma(hold)
     last_ts = XE.parse_ts((prev or {}).get("ts"))
     if changed or last_ts is None or now.timestamp() - last_ts >= _HOLD_REWRITE_S:
         _write_meta_key(db, trade, meta, HOLD_KEY, hold)
@@ -4250,6 +4367,29 @@ def _paper_ladder(side: str, feed_prices: Optional[dict[str, Any]],
     return ((px, max(0.0, _f(avail, 0.0))),)
 
 
+def _conferma_apertura(db, trade_id: int, row: dict[str, Any], out: "X.PlaceOutcome",
+                       meta: dict[str, Any]) -> None:
+    """Scrive la conferma dell'apertura, COLONNE di consapevolezza incluse.
+
+    REPERTO 17/09 (trade live #297, tennis, back 1,03 x 3 EUR): questa
+    conferma chiamava ``db.update_trade`` DIRETTO, senza passare da
+    ``X.aggiorna_trade``. Il blocco ``meta.esecuzione`` portava
+    ``size_richiesta 3.0, size_abbinata 3.0, size_residua 0.0,
+    price_medio 1.03``, ma le cinque colonne nuove della migrazione
+    ``trades_consapevolezza_ordine_2026-09-16.sql`` restavano NULL sulla riga,
+    nonostante ``out.consapevolezza`` avesse gia' i numeri giusti. Omega
+    (``omega_service.py``) e Mike (``service.py``) passavano gia' da
+    ``X.aggiorna_trade``: Safe era l'unico bot rimasto fuori. Isolata in
+    funzione a se' per essere testata senza dover montare tutto ``_execute``."""
+    X.aggiorna_trade(
+        db, trade_id,
+        campi=dict(status="open", price=out.price, size=out.size,
+                   liability=X.liability_of(str(row["side"]), out.size, out.price or 0.0),
+                   bet_id=out.bet_id, meta=meta),
+        consapevolezza=out.consapevolezza,
+    )
+
+
 def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
              now: datetime, best_size: Optional[float], ladder: Any,
              feed_prices: Optional[dict[str, Any]] = None) -> X.PlaceOutcome:
@@ -4346,10 +4486,7 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
                 meta["tempi"] = {**(meta.get("tempi") or {}),
                                  "decisione_to_risposta_ms": round(float(t5) - float(t3), 1)}
         try:
-            db.update_trade(trade_id, status="open", price=out.price, size=out.size,
-                            liability=X.liability_of(str(row["side"]), out.size,
-                                                     out.price or 0.0),
-                            bet_id=out.bet_id, meta=meta)
+            _conferma_apertura(db, trade_id, row, out, meta)
         except Exception as ex:  # noqa: BLE001 — ordine eseguito, riga non confermata
             logger.critical("[safe.bot] conferma DB FALLITA (trade %s, mode %s): %s",
                             trade_id, row.get("mode"), str(ex)[:160])

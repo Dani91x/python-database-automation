@@ -19,6 +19,7 @@
 import { isSettled, isErrorRow } from '@/lib/eventGroups';
 import type { Bot, Modo } from '@/lib/controlRoom';
 import { modoDi } from '@/lib/controlRoom';
+import { romeDay } from '@/lib/dailyHistory';
 import type { RigaOrdine } from '@/lib/statoOrdine';
 
 export type Esito = 'vinta' | 'persa' | 'pari';
@@ -62,6 +63,31 @@ export interface PosizioneChiusa {
     righe: RigaChiusa[];
     /** quando si è chiusa (l'ultima riga regolata) */
     chiusaAt: string;
+    /** quando è stata PIAZZATA l'apertura (ISO); '' se il dato manca */
+    piazzataAt: string;
+    /**
+     * GIORNATA OPERATIVA della posizione: 'YYYY-MM-DD' nel fuso Europe/Rome,
+     * dal giorno di **PIAZZAMENTO** dell'apertura — la stessa attribuzione
+     * dello storico dei tre bot (`p_day_by = 'placed'`, `attributionOf` in
+     * `lib/dailyHistory`). Una posizione aperta alle 23:50 e regolata alle
+     * 00:10 appartiene al giorno in cui è stata APERTA, non al successivo.
+     *
+     * Se il piazzamento manca si ripiega sul regolamento: una posizione senza
+     * giornata sparirebbe dal filtro «oggi», e quelli sono soldi veri.
+     * '' solo quando non c'è proprio nessuna data.
+     */
+    giorno: string;
+}
+
+/**
+ * La giornata operativa (Europe/Rome) di un istante ISO. '' se non c'è o non
+ * è leggibile: mai una data inventata.
+ */
+export function giornataDi(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return '';
+    return romeDay(new Date(ms));
 }
 
 export interface TradeChiudibile {
@@ -235,6 +261,7 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
             .sort((x, y) => x.at.localeCompare(y.at));
 
         const chiusaAt = righe.reduce((m, r) => (r.at > m ? r.at : m), '');
+        const piazzataAt = testo(a.placed_at) ?? '';
 
         out.push({
             id: a.id,
@@ -247,6 +274,8 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
             esito: esitoDi(globale),
             righe,
             chiusaAt,
+            piazzataAt,
+            giorno: giornataDi(piazzataAt) || giornataDi(chiusaAt),
         });
     }
 
@@ -259,18 +288,51 @@ export interface FiltroChiuse {
     sport?: 'calcio' | 'tennis' | 'tutti';
     modo?: Modo | 'tutte';
     bot?: Bot | 'tutti';
+    /**
+     * GIORNATA OPERATIVA da mostrare, 'YYYY-MM-DD' (Europe/Rome).
+     *
+     * Ordine dell'utente del 17/09: «in "posizioni chiuse" voglio vedere SOLO
+     * le posizioni della giornata, non le precedenti; per i giorni precedenti
+     * deve esserci uno STORICO dedicato». Le righe dei bot arrivano dalle RPC
+     * di stato con un semplice `limit` (Omega: `get_omega_trades(p_limit)`),
+     * quindi contengono ANCHE i giorni passati: senza questo filtro il banco
+     * della giornata mostrava operazioni di settimane prima.
+     *
+     * `undefined` / `null` / '' = nessun filtro di giornata (lo usa lo storico).
+     */
+    giorno?: string | null;
 }
 
 export function filtraChiuse(
     righe: readonly PosizioneChiusa[], f: FiltroChiuse,
 ): PosizioneChiusa[] {
+    const giorno = typeof f.giorno === 'string' && f.giorno.trim() ? f.giorno.trim() : null;
     return righe.filter((p) => {
         if (f.esito && f.esito !== 'tutte' && p.esito !== f.esito) return false;
         if (f.sport && f.sport !== 'tutti' && p.sport !== f.sport) return false;
         if (f.modo && f.modo !== 'tutte' && p.modo !== f.modo) return false;
         if (f.bot && f.bot !== 'tutti' && p.bot !== f.bot) return false;
+        // una posizione SENZA giornata leggibile non è «di oggi»: lo dice la
+        // scheda con un avviso, invece di finire nel totale del giorno
+        if (giorno && p.giorno !== giorno) return false;
         return true;
     });
+}
+
+/**
+ * Quante posizioni chiuse restano FUORI dalla giornata mostrata (e quante non
+ * hanno proprio una data). Serve alla scheda per dire «ce ne sono altre, sono
+ * nello Storico» invece di far sparire delle operazioni in silenzio.
+ */
+export function fuoriGiornata(
+    righe: readonly PosizioneChiusa[], giorno: string,
+): { altriGiorni: number; senzaData: number } {
+    let altriGiorni = 0, senzaData = 0;
+    for (const p of righe) {
+        if (!p.giorno) { senzaData += 1; continue; }
+        if (p.giorno !== giorno) altriGiorni += 1;
+    }
+    return { altriGiorni, senzaData };
 }
 
 export interface RiepilogoChiuse {

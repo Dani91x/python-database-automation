@@ -1229,6 +1229,10 @@ def _riga_regolata(o: dict) -> dict:
         "price": o.get("priceMatched") or o.get("priceRequested"),
         "avg_price_matched": o.get("priceMatched"),
         "profit": float(o.get("profit") or 0.0),
+        # I3 (17/09) — Betfair applica gia' la commissione sul ``profit``: non
+        # serve a ricalcolare nulla, serve a DICHIARARE nel meta con che
+        # numero Betfair ha regolato, per il trader ("dati reali").
+        "commission": o.get("commission"),
         "bet_outcome": o.get("betOutcome"),
         "customer_order_ref": o.get("customerOrderRef"),
     }

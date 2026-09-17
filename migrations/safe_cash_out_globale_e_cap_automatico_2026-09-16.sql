@@ -31,6 +31,15 @@
 --     chiusa dall'utente);
 --   · i cap ripiegano sui numeri COMPLETI, cioe' piu' alti — piu' prudenti, mai
 --     il contrario.
+--
+-- CORRETTA il 17/09/2026: la §2 di questo file (`safe_request`) ripartiva dalla
+-- firma vecchia e cancellava in silenzio la barriera di modalita' paper/live
+-- introdotta da `safe_strategy_paper_live_2026-09-13.sql` (§5, righe 731-833:
+-- v_req_mode/v_ctrl_mode, lettura di `safe_strategy_control.mode`, RAISE
+-- "modalita' non corrispondente" prima dell'INSERT). Il corpo qui sotto riparte
+-- TESTUALMENTE dalla versione del 13/09 con SOLO i due kind nuovi aggiunti:
+-- nessun'altra riga cambiata. Una barriera certificata non puo' sparire in
+-- silenzio (regola della piattaforma, 14/09).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -43,21 +52,27 @@ ALTER TABLE public.safe_strategy_requests
     CHECK (kind IN ('place','cashout','cancel','cashout_event','riprendi_evento'));
 
 -- ----------------------------------------------------------------------------
--- 2. safe_request: accetta i due kind nuovi e ne valida il payload
---    (resta owner-only e SECURITY DEFINER, come l'originale in
---     safe_strategy_bot_v2.sql: qui si aggiungono SOLO i due rami).
+-- 2. safe_request: accetta i due kind nuovi e ne valida il payload.
+--    Il corpo riparte TESTUALMENTE da `safe_strategy_paper_live_2026-09-13.sql`
+--    (§5, righe 731-833, versione viva sul DB): la barriera di modalita'
+--    (v_req_mode/v_ctrl_mode, lettura di safe_strategy_control.mode, RAISE
+--    "modalita' non corrispondente" prima dell'INSERT) resta IDENTICA. Le
+--    uniche righe aggiunte sono i due kind nuovi nel controllo p_kind e il ramo
+--    ELSIF cashout_event/riprendi_evento (vedi correzione 17/09 in testa al file).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.safe_request(p_kind text, p_payload jsonb DEFAULT '{}'::jsonb)
 RETURNS bigint
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_id       bigint;
-    v_payload  jsonb := coalesce(p_payload, '{}'::jsonb);
-    v_amount   numeric;
-    v_fraction numeric;
-    v_price    numeric;
-    v_size     numeric;
+    v_id        bigint;
+    v_payload   jsonb := coalesce(p_payload, '{}'::jsonb);
+    v_amount    numeric;
+    v_fraction  numeric;
+    v_price     numeric;
+    v_size      numeric;
+    v_req_mode  text;
+    v_ctrl_mode text;
 BEGIN
     IF NOT public.betfair_live_is_owner() THEN
         RAISE EXCEPTION 'non autorizzato (owner-only)';
@@ -65,6 +80,9 @@ BEGIN
     IF p_kind NOT IN ('place','cashout','cancel','cashout_event','riprendi_evento') THEN
         RAISE EXCEPTION 'kind non valido: %', p_kind;
     END IF;
+
+    SELECT lower(btrim(c.mode)) INTO v_ctrl_mode
+      FROM public.safe_strategy_control c WHERE c.id = 1;
 
     IF p_kind = 'place' THEN
         IF coalesce(v_payload->>'event_id','') = ''
@@ -76,6 +94,8 @@ BEGIN
            OR v_payload->>'size' IS NULL THEN
             RAISE EXCEPTION 'payload place incompleto (servono event_id, market_id, market_type, selection_id, side, price, size)';
         END IF;
+        -- Cast GUARDATI: '' → NULL; testo non numerico → messaggio parlante
+        -- invece del 22P02 grezzo (invalid_text_representation).
         BEGIN
             v_price := nullif(v_payload->>'price','')::numeric;
             v_size  := nullif(v_payload->>'size','')::numeric;
@@ -89,7 +109,8 @@ BEGIN
         IF v_size IS NULL OR v_size <= 0 THEN
             RAISE EXCEPTION 'size non valida: %', v_payload->>'size';
         END IF;
-        IF coalesce(v_payload->>'mode','paper') NOT IN ('paper','live') THEN
+        v_req_mode := coalesce(nullif(lower(btrim(v_payload->>'mode')), ''), 'paper');
+        IF v_req_mode NOT IN ('paper','live') THEN
             RAISE EXCEPTION 'mode non valido: %', v_payload->>'mode';
         END IF;
     ELSIF p_kind = 'cashout' THEN
@@ -106,20 +127,51 @@ BEGIN
         IF v_amount IS NOT NULL AND v_amount <= 0 THEN
             RAISE EXCEPTION 'amount deve essere > 0: %', v_amount;
         END IF;
+        -- M-06: la frazione si applica all'esposizione RESIDUA (cash out
+        -- ripetuti sullo stesso trade): resta valida in (0,1].
         IF v_fraction IS NOT NULL AND (v_fraction <= 0 OR v_fraction > 1) THEN
             RAISE EXCEPTION 'fraction deve essere in (0,1]: %', v_fraction;
+        END IF;
+        -- comando su un trade esistente: la modalita' si controlla solo se c'e'
+        v_req_mode := nullif(lower(btrim(v_payload->>'mode')), '');
+        IF v_req_mode IS NOT NULL AND v_req_mode NOT IN ('paper','live') THEN
+            RAISE EXCEPTION 'mode non valido: %', v_payload->>'mode';
         END IF;
     ELSIF p_kind IN ('cashout_event','riprendi_evento') THEN
         -- CASH-OUT GLOBALE / RIPRENDI: si ragiona per PARTITA, non per riga.
         -- Basta e avanza l'event_id: quali righe chiudere (o riprendere) lo
-        -- decide il servizio leggendo le SUE tabelle, non il client.
+        -- decide il servizio leggendo le SUE tabelle, non il client. Oggi
+        -- (17/09) ne' la UI ne' il servizio passano `mode` in questo payload
+        -- (vedi referto: frontend/src/lib/chiusuraUtente.ts:164-175,
+        -- Betfair/safe_strategy/bot_service.py `_request_cashout_event` /
+        -- `_request_riprendi_evento`): il controllo resta comunque OPZIONALE,
+        -- stessa semantica di cashout/cancel, cosi' un client futuro che lo
+        -- passasse non aggirerebbe la barriera.
         IF coalesce(v_payload->>'event_id','') = '' THEN
             RAISE EXCEPTION 'payload % senza event_id', p_kind;
+        END IF;
+        v_req_mode := nullif(lower(btrim(v_payload->>'mode')), '');
+        IF v_req_mode IS NOT NULL AND v_req_mode NOT IN ('paper','live') THEN
+            RAISE EXCEPTION 'mode non valido: %', v_payload->>'mode';
         END IF;
     ELSE  -- cancel
         IF v_payload->>'trade_id' IS NULL THEN
             RAISE EXCEPTION 'payload cancel senza trade_id';
         END IF;
+        v_req_mode := nullif(lower(btrim(v_payload->>'mode')), '');
+        IF v_req_mode IS NOT NULL AND v_req_mode NOT IN ('paper','live') THEN
+            RAISE EXCEPTION 'mode non valido: %', v_payload->>'mode';
+        END IF;
+    END IF;
+
+    -- LA BARRIERA. Si applica solo quando entrambe le modalità sono note: con
+    -- un control illeggibile (v_ctrl_mode NULL) NON si blocca l'operatività —
+    -- sarebbe un guasto del DB che impedisce anche di CHIUDERE una posizione
+    -- aperta, e il servizio ha comunque il suo controllo a valle.
+    IF v_ctrl_mode IS NOT NULL AND v_req_mode IS NOT NULL
+       AND v_req_mode <> v_ctrl_mode THEN
+        RAISE EXCEPTION 'modalità non corrispondente: la richiesta è in %, la sezione è in % — cambia modalità (e conferma il LIVE) prima di riprovare',
+                        upper(v_req_mode), upper(v_ctrl_mode);
     END IF;
 
     INSERT INTO public.safe_strategy_requests (kind, payload)

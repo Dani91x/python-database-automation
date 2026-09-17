@@ -250,20 +250,121 @@ export async function fetchOmegaDayTrades(day: string): Promise<DayTrade[]> {
     return normalizeDayTrades(data);
 }
 
-export async function fetchSafeDayTrades(day: string, sport: SafeSportFilter = null): Promise<DayTrade[]> {
-    const { data, error } = await supabase.rpc('get_safe_day_trades', { p_day: day, p_sport: sport });
+/**
+ * L'errore con cui PostgREST dice «quella firma non esiste» quando una
+ * migrazione non è ancora applicata. Riconoscerlo serve a distinguere «la RPC
+ * non sa fare questa cosa» da «la RPC è andata in errore»: sono due fatti
+ * diversi e la pagina li deve dire in modo diverso.
+ */
+export function eFirmaMancante(messaggio: string): boolean {
+    const m = messaggio.toLowerCase();
+    return m.includes('pgrst202')
+        || m.includes('could not find the function')
+        || m.includes('schema cache');
+}
+
+/** Esito di una lettura che può cadere su una firma più vecchia. */
+export interface DailyPerModo {
+    rows: DailyRow[];
+    /**
+     * La RPC ha davvero filtrato per modalità?
+     *
+     * ⚠️ VERIFICATO SUL DB REALE IL 17/09: `get_omega_daily` esiste solo con
+     * due argomenti (`p_from`, `p_to`) e NON guarda `omega_trades.mode`.
+     * Chiedendo 'live' si ottengono le righe di TUTTE le modalità. Chiamarle
+     * «soldi veri» sarebbe la bugia più costosa della pagina: qui si ritorna
+     * `false` e chi legge deve tenerle fuori dai totali di modalità.
+     * La migrazione che chiude il buco è `migrations/storico_sport_2026-09-17.sql`.
+     */
+    modoAttendibile: boolean;
+}
+
+/** Lo storico di Omega per UNA modalità, con ripiego dichiarato. */
+export async function fetchOmegaDailyPerModo(
+    from: string, to: string, mode: 'paper' | 'live',
+): Promise<DailyPerModo> {
+    const { data, error } = await supabase.rpc('get_omega_daily', {
+        p_from: from, p_to: to, p_mode: mode,
+    });
+    if (!error) return { rows: normalizeDailyRows(data), modoAttendibile: true };
+    if (!eFirmaMancante(error.message)) throw new Error(error.message);
+    const ripiego = await supabase.rpc('get_omega_daily', { p_from: from, p_to: to });
+    if (ripiego.error) throw new Error(ripiego.error.message);
+    return { rows: normalizeDailyRows(ripiego.data), modoAttendibile: false };
+}
+
+/** I trade di un giorno di Omega per UNA modalità, con ripiego dichiarato. */
+export async function fetchOmegaDayTradesPerModo(
+    day: string, mode: 'paper' | 'live',
+): Promise<{ trades: DayTrade[]; modoAttendibile: boolean }> {
+    const { data, error } = await supabase.rpc('get_omega_day_trades', { p_day: day, p_mode: mode });
+    if (!error) return { trades: normalizeDayTrades(data), modoAttendibile: true };
+    if (!eFirmaMancante(error.message)) throw new Error(error.message);
+    const ripiego = await supabase.rpc('get_omega_day_trades', { p_day: day });
+    if (ripiego.error) throw new Error(ripiego.error.message);
+    return { trades: normalizeDayTrades(ripiego.data), modoAttendibile: false };
+}
+
+/**
+ * Importo PIAZZATO per giornata (la base del ROI), da
+ * `migrations/storico_sport_2026-09-17.sql`. Finché la migrazione non è
+ * applicata la funzione non esiste: si ritorna `null` — «non lo so» — invece
+ * di uno zero che farebbe sembrare il ROI infinito o nullo.
+ */
+export async function fetchStakePerGiorno(
+    bot: 'omega' | 'safe' | 'mike', from: string, to: string,
+    sport: SafeSportFilter = null, mode: SafeModeFilter = null,
+): Promise<Record<string, number> | null> {
+    const { data, error } = await supabase.rpc('get_storico_stake', {
+        p_bot: bot, p_from: from, p_to: to, p_sport: sport, p_mode: mode,
+    });
+    if (error) {
+        if (eFirmaMancante(error.message)) return null;
+        throw new Error(error.message);
+    }
+    if (!Array.isArray(data)) return null;
+    const out: Record<string, number> = {};
+    for (const raw of data) {
+        const r = (raw ?? {}) as Record<string, unknown>;
+        const day = typeof r.day === 'string' ? r.day.slice(0, 10) : '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+        out[day] = num(r.stake_placed);
+    }
+    return out;
+}
+
+/**
+ * I trade di un giorno di Safe. `mode` null = TUTTE le modalità (comportamento
+ * storico della RPC): chiedere una modalità sola va fatto apposta, come per
+ * `fetchSafeDaily`.
+ */
+export async function fetchSafeDayTrades(
+    day: string, sport: SafeSportFilter = null, mode: SafeModeFilter = null,
+): Promise<DayTrade[]> {
+    const { data, error } = await supabase.rpc('get_safe_day_trades', {
+        p_day: day, p_sport: sport, p_mode: mode,
+    });
     if (error) throw new Error(error.message);
     return normalizeDayTrades(data);
 }
 
-export async function fetchMikeDaily(from: string, to: string): Promise<DailyRow[]> {
-    const { data, error } = await supabase.rpc('get_mike_daily', { p_from: from, p_to: to });
+/**
+ * Lo storico di Mike. `mode` null = la modalità CORRENTE del bot, che è quello
+ * che la RPC fa da `mike_storico_per_modalita_2026-09-14.sql` (mai «tutte»):
+ * passare null lascia il comportamento identico a prima.
+ */
+export async function fetchMikeDaily(
+    from: string, to: string, mode: SafeModeFilter = null,
+): Promise<DailyRow[]> {
+    const { data, error } = await supabase.rpc('get_mike_daily', {
+        p_from: from, p_to: to, p_mode: mode,
+    });
     if (error) throw new Error(error.message);
     return normalizeDailyRows(data);
 }
 
-export async function fetchMikeDayTrades(day: string): Promise<DayTrade[]> {
-    const { data, error } = await supabase.rpc('get_mike_day_trades', { p_day: day });
+export async function fetchMikeDayTrades(day: string, mode: SafeModeFilter = null): Promise<DayTrade[]> {
+    const { data, error } = await supabase.rpc('get_mike_day_trades', { p_day: day, p_mode: mode });
     if (error) throw new Error(error.message);
     return normalizeDayTrades(data);
 }

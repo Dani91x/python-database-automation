@@ -1965,26 +1965,49 @@ def _flumine_enqueue_cancel(tr: dict[str, Any], *, db, bet_id: str,
         return False
 
 
-def _mirror_fill(mirror: Optional[dict], req: Optional[dict]) -> tuple[float, float, str]:
-    """(size_matched, avg_price_matched, status) dallo SPECCHIO betfair_live_orders
-    (autoritativo, scritto write-on-change da LiveTradingStrategy.process_orders);
-    in sua assenza, dallo snapshot ``result`` della riga di coda (scritto al
-    place, può essere più vecchio del fill)."""
+def _mirror_fill(mirror: Optional[dict], req: Optional[dict]
+                 ) -> tuple[float, float, str, Optional[float], Optional[str]]:
+    """(size_matched, avg_price_matched, status, size_remaining, betfair_updated_at)
+    dallo SPECCHIO betfair_live_orders (autoritativo, scritto write-on-change da
+    LiveTradingStrategy.process_orders); in sua assenza, dallo snapshot ``result``
+    della riga di coda (scritto al place, può essere più vecchio del fill).
+
+    REPERTO 17/09 (consapevolezza dell'ordine sul percorso flumine): ``matched``
+    e ``avg`` bastavano per confermare la riga (via ``_confirm_open_trade`` →
+    ``X.aggiorna_trade``), ma ``size_remaining`` e ``betfair_updated_at`` non
+    venivano MAI letti qui, quindi restavano NULL sulle due colonne nuove anche
+    dopo la conferma. ``size_remaining`` esiste sia sullo specchio
+    (``LiveTradingStrategy._order_row``) sia sul ``result`` della coda
+    (``live_order_worker._order_snapshot``); ``betfair_updated_at`` (l'istante
+    REALE di Betfair, ``matched_at`` = ``date_time_status_update``) esiste SOLO
+    sullo specchio — dal solo ``result`` resta ``None``, mai inventato."""
     src: Any = mirror if mirror is not None else ((req or {}).get("result") or {})
     if not isinstance(src, dict):
         src = {}
     matched = float(src.get("size_matched") or 0.0)
     avg = float(src.get("average_price_matched") or 0.0)
     status = str(src.get("status") or "").upper()
-    return matched, avg, status
+    remaining_raw = src.get("size_remaining")
+    remaining = float(remaining_raw) if remaining_raw is not None else None
+    updated_at = mirror.get("matched_at") if isinstance(mirror, dict) else None
+    return matched, avg, status, remaining, updated_at
 
 
 def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
-                     bet_id: Any, min_stake: float, mode: str = "paper") -> int:
+                     bet_id: Any, min_stake: float, mode: str = "paper",
+                     size_remaining: Optional[float] = None,
+                     betfair_updated_at: Optional[str] = None) -> int:
     """Conferma la riserva a 'open' con size/prezzo medio REALI (simulati in
     paper, dall'order stream in live). Qualunque matched>0 è contabilizzato
     (mai posizioni nude); sotto min_stake viene annotato ``below_min_stake``
-    (scelta accounting-first)."""
+    (scelta accounting-first).
+
+    C.12a — ``size_remaining``/``betfair_updated_at`` (dallo specchio, via
+    ``_mirror_fill``) vanno nel meta PRIMA di ``_confirm_open_trade``: è lì che
+    ``fuso.get(...)`` li legge per scriverli sulle colonne nuove (stessa strada
+    di ``requested_size`` sul percorso REST, righe ~1689-1704). Senza, la
+    conferma via coda flumine (paper E live) lasciava NULL proprio queste due
+    colonne pur avendo già ``size_matched``/``avg_price_matched`` corretti."""
     side = str(tr.get("side") or "lay")
     price = avg if avg and avg > 1.0 else float(tr.get("price") or 0.0)
     size = round(float(matched), 2)
@@ -1993,6 +2016,10 @@ def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
     meta["fill"] = f"flumine_{mode}"
     if size + 1e-9 < float(min_stake):
         meta["below_min_stake"] = True
+    if size_remaining is not None:
+        meta["size_remaining"] = round(float(size_remaining), 2)
+    if betfair_updated_at is not None:
+        meta["betfair_updated_at"] = betfair_updated_at
     _confirm_open_trade(
         db, tr["id"], event_id=tr["event_id"], price=price, size=size,
         liability=_back_liability(size, side, price),
@@ -2087,7 +2114,7 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
         mirror = db.get_live_order_mirror(f"awlq{rid}", "paper")
     except Exception:  # noqa: BLE001
         mirror = None
-    matched, avg, status_name = _mirror_fill(mirror, req)
+    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req)
     bet_id = (mirror or {}).get("bet_id") or req.get("bet_id")
     terminal = status_name in _FLUMINE_TERMINAL
     fully = matched > 0 and matched + 0.005 >= res_size
@@ -2096,7 +2123,9 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
         # --- attesa fill (quasi-FOK: fino al TTL l'ordine lavora il book reale) ---
         if fully or (terminal and matched > 0):
             return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
-                                    bet_id=bet_id, min_stake=min_stake)
+                                    bet_id=bet_id, min_stake=min_stake,
+                                    size_remaining=size_remaining,
+                                    betfair_updated_at=betfair_updated_at)
         if terminal:  # terminale SENZA fill (lapsed/expired/violation)
             return _flumine_no_fill_error(tr, db=db, now=now,
                                           reason=f"terminal_{status_name.lower() or 'no_fill'}")
@@ -2111,7 +2140,9 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
         # oltre la hard deadline senza poter cancellare (runner giù / specchio muto)
         if matched > 0:
             return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
-                                    bet_id=bet_id, min_stake=min_stake)
+                                    bet_id=bet_id, min_stake=min_stake,
+                                    size_remaining=size_remaining,
+                                    betfair_updated_at=betfair_updated_at)
         # specchio MUTO oltre la hard deadline: esito non conoscibile → NO-FILL
         # (H-12: mai un fill inventato ai dati della riserva)
         return _flumine_no_fill_error(
@@ -2136,7 +2167,9 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
         db.log("flumine_cancel_timeout", {"trade_id": tr.get("id"), "request_id": rid})
     if matched > 0:
         return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
-                                bet_id=bet_id, min_stake=min_stake)
+                                bet_id=bet_id, min_stake=min_stake,
+                                size_remaining=size_remaining,
+                                betfair_updated_at=betfair_updated_at)
     return _flumine_no_fill_error(
         tr, db=db, now=now,
         reason="no_mirror_after_cancel" if mirror is None else "cancelled_no_fill")
@@ -2203,14 +2236,16 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
         mirror = db.get_live_order_mirror(f"awlq{rid}", "live")
     except Exception:  # noqa: BLE001
         mirror = None
-    matched, avg, status_name = _mirror_fill(mirror, req)
+    matched, avg, status_name, size_remaining, betfair_updated_at = _mirror_fill(mirror, req)
     bet_id = (mirror or {}).get("bet_id") or (req or {}).get("bet_id")
 
     # 1) esito TERMINALE dallo specchio (order stream: autoritativo, real-time)
     if status_name in _FLUMINE_TERMINAL:
         if matched > 0:
             return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
-                                    bet_id=bet_id, min_stake=min_stake, mode="live")
+                                    bet_id=bet_id, min_stake=min_stake, mode="live",
+                                    size_remaining=size_remaining,
+                                    betfair_updated_at=betfair_updated_at)
         # FOK ucciso da Betfair senza alcun fill: stesso esito del legacy
         # (live_not_matched) — riserva a 'error', evento consumato.
         return _flumine_no_fill_error(
@@ -2242,7 +2277,9 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
                     return _flumine_confirm(
                         tr, db=db, matched=m2,
                         avg=float(state.get("avg_price_matched") or 0.0),
-                        bet_id=bet_id, min_stake=min_stake, mode="live")
+                        bet_id=bet_id, min_stake=min_stake, mode="live",
+                        size_remaining=state.get("size_remaining"),
+                        betfair_updated_at=state.get("matched_date"))
                 return _flumine_no_fill_error(tr, db=db, reason="live_rest_no_fill", now=now)
             # bet_id noto ma Betfair non lo conosce in NESSUNA lista → mai
             # matchato (ordine ucciso/void): riserva a 'error', mai un doppio.

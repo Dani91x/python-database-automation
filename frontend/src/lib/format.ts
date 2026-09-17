@@ -59,6 +59,47 @@ export function fmtOdds(v: number | null | undefined): string {
     return n === null ? DASH : itFixed(n, 2);
 }
 
+/** Testo + tooltip di una quota MEDIA abbinata, col richiesto a fianco. */
+export interface QuotaAbbinataFmt {
+    /** `1,06` da sola, oppure `1,06 (chiesto 1,02)` quando differiscono dal chiesto */
+    text: string;
+    /** `medio 1,06027` quando il medio ha più di 2 decimali; altrimenti null */
+    title: string | null;
+    /** true = `text` porta già il "(chiesto ...)": chi scrive la frase intorno
+     *  decide se anteporre "abbinato" (dov'era solo la quota nuda) o lasciarlo
+     *  com'è (dove "abbinato" c'è già scritto a fianco). */
+    diverso: boolean;
+}
+
+/**
+ * Prezzo MEDIO abbinato (`averagePriceMatched` di Betfair), col prezzo
+ * CHIESTO a fianco quando è diverso (reperto 17/09, trade Safe tennis #298:
+ * `price` in DB vale `1.0602666666666665`, la MEDIA di due fill a 1,06 e
+ * 1,07 — mostrarlo come "1,06" e basta nasconde che una parte è stata
+ * abbinata a un prezzo diverso da quello chiesto).
+ *
+ * `fmtOdds` resta il formattatore UNICO per la quota nuda (2 decimali,
+ * virgola italiana, "come la mostra Betfair"): questa funzione lo COMPONE,
+ * non lo duplica. Se il medio ha più precisione di 2 decimali (una media di
+ * più fill a prezzi diversi), il valore esatto va nel `title` per il
+ * tooltip: Betfair stesso arrotonda le sue quote a 2 decimali, ma la MEDIA
+ * di più fill può averne di più.
+ */
+export function fmtQuotaAbbinata(
+    medio: number | null | undefined,
+    chiesto?: number | null | undefined,
+): QuotaAbbinataFmt {
+    const m = finite(medio);
+    if (m === null) return { text: DASH, title: null, diverso: false };
+    const c = finite(chiesto);
+    const m2 = Number(m.toFixed(2));
+    const EPS = 1e-9;
+    const title = Math.abs(m - m2) > EPS ? `medio ${itFixed(m, 5)}` : null;
+    const diverso = c !== null && Math.abs(m2 - Number(c.toFixed(2))) > EPS;
+    const text = diverso ? `${fmtOdds(m)} (chiesto ${fmtOdds(c)})` : fmtOdds(m);
+    return { text, title, diverso };
+}
+
 /**
  * Percentuale: `12,5 %`.
  * ATTENZIONE alla scala: `v` è una FRAZIONE 0–1 (0,125 → "12,5 %").

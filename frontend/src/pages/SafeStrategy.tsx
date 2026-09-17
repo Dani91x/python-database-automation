@@ -40,6 +40,7 @@ import { useSafeBot } from '@/components/safestrategy/useSafeBot';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import type { VariantId } from '@/lib/safeStrategy';
 import { TradingHistory } from '@/components/trading/TradingHistory';
+import { StoricoLink } from '@/components/trading/StoricoLink';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
@@ -1071,6 +1072,10 @@ export default function SafeStrategy() {
                     nowMs={nowMs}
                     statusPrefix="BOT"
                     statusTestId="bot-status"
+                    // «Storico» sempre nello stesso posto (17/09). Safe opera su
+                    // due sport: il pulsante porta allo storico dello sport che
+                    // si sta guardando, cosi' non si finisce nell'altro per caso.
+                    storico={<StoricoLink sport={topTab === 'tennis' ? 'tennis' : 'calcio'} compatto testId="safe-storico-link" />}
                     running={running}
                     busy={bot.busy}
                     onStart={() => { void bot.start(); }}

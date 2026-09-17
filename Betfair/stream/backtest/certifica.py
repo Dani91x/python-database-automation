@@ -30,11 +30,48 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import registro_bot as REG
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# la regola dell'ESITO: le voci DICHIARATE/APPROVATE non sono difetti
+# ---------------------------------------------------------------------------
+def violazioni_effettive(r: Any) -> List[Any]:
+    """Le violazioni di un referto che CONTANO per l'ESITO e l'exit code.
+
+    Stessa regola di `Referto.pulita` (vedi `certificazione_tennis.py` e
+    `replay_tennis.py`): un codice che finisce con `-DICHIARATA` o
+    `-APPROVAZIONE` e' una scelta esplicita dell'utente, non un difetto, e non
+    deve far salire il totale ne' far uscire il banco con exit code 1. Il
+    banco comune deve leggere la STESSA regola dei referti, non una copia a
+    mano che puo' disallinearsi: qui si applica il suffisso, in `Referto.pulita`
+    si applica per-partita, ed e' la stessa condizione."""
+    return [v for v in r.violazioni if not v.codice.endswith("-DICHIARATA")
+            and not v.codice.endswith("-APPROVAZIONE")]
+
+
+def esito_del_banco(referti: List[Any]) -> Tuple[int, int, int, int]:
+    """Il calcolo UNICO dell'ESITO e dell'exit code di `main`: la stessa
+    funzione alimenta sia la riga stampata a schermo sia il `return`, cosi'
+    le due cose non possono piu' disallinearsi (difetto del 17/09: `main`
+    aveva `tot` cablato a mano su `r.violazioni` invece che su
+    `violazioni_effettive`, e un test che testava solo `violazioni_effettive`
+    non se ne accorgeva). Ritorna ``(tot, pulite, mute, exit_code)``:
+
+    * ``tot``       — violazioni EFFETTIVE (esclude -DICHIARATA/-APPROVAZIONE);
+    * ``pulite``    — partite senza violazioni effettive, con almeno una decisione;
+    * ``mute``      — partite senza nemmeno una decisione (il bot non ha operato);
+    * ``exit_code`` — 0 se `tot == 0`, altrimenti 1.
+    """
+    tot = sum(len(violazioni_effettive(r)) for r in referti)
+    pulite = sum(1 for r in referti if r.pulita and r.decisioni > 0)
+    mute = sum(1 for r in referti if r.decisioni == 0)
+    exit_code = 0 if tot == 0 else 1
+    return tot, pulite, mute, exit_code
 
 
 # ---------------------------------------------------------------------------
@@ -454,9 +491,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                  f"reggerebbero senza swap, tetto di processo {max(1, core_fisici() - 1)}"
                  if libera else ""))
     print()
-    tot = sum(len(r.violazioni) for r in referti)
-    pulite = sum(1 for r in referti if r.pulita and r.decisioni > 0)
-    mute = sum(1 for r in referti if r.decisioni == 0)
+    tot, pulite, mute, esito_exit_code = esito_del_banco(referti)
     print(f"ESITO: {pulite} partite senza violazioni, "
           f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
     print(f"       {tot} violazioni totali")
@@ -480,7 +515,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "azioni": r.azioni, "stati": r.stati_visti, "note": r.note,
             "violazioni": [v.__dict__ for v in r.violazioni],
         } for r in referti], indent=1, default=str))
-    return 0 if tot == 0 else 1
+    return esito_exit_code
 
 
 if __name__ == "__main__":

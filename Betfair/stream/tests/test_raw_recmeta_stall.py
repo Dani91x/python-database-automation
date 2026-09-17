@@ -126,7 +126,20 @@ def _stall_env(monkeypatch, *, live_orders):
     from Betfair.stream import runner as R
     import Betfair.stream.raw_listener as RL
 
-    monkeypatch.setattr(R, "_RAW_STALL_LAST_RESTART", 0.0)
+    # DIFETTO instabile (17/09): con `_RAW_STALL_LAST_RESTART = 0.0` il gate
+    # `stall_restart_due(..., now_monotonic - last_restart_monotonic >=
+    # min_interval_s)` (`runner_lifecycle.py`) confronta 0.0 con
+    # `time.monotonic()` VERO, non patchato. Su Windows `time.monotonic()` e'
+    # legato all'uptime del sistema (GetTickCount64): a macchina appena accesa
+    # (< `_RAW_STALL_RESTART_MIN_INTERVAL_SEC`, default 900s) il gate risultava
+    # FALSE e l'alert "RINVIATO"/l'auto-recovery non scattava mai — flaky, non
+    # deterministico. Falsificato con un monkeypatch di `time.monotonic()`
+    # fisso a 100.0 (uptime finto sotto soglia): il test sottostante falliva
+    # in modo riproducibile. Il fix e' nel TEST, non nel runner: l'ultimo
+    # restart va espresso RELATIVO al clock vero (`_time.monotonic() -
+    # 10_000`, ben oltre il min-interval di 900s), cosi' il test non dipende
+    # piu' da quanto e' acceso il PC.
+    monkeypatch.setattr(R, "_RAW_STALL_LAST_RESTART", _time.monotonic() - 10_000)
     monkeypatch.setattr(R, "_RAW_STALL_ALERTED", True)  # niente ramo WARN
     monkeypatch.setattr(R, "_STREAM_KA_LAST", _time.monotonic())  # no keepAlive
     monkeypatch.setattr(R.db, "upsert_live_heartbeat", lambda **k: None)

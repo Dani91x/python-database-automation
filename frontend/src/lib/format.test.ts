@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     MINUS, DASH, fmtMoney, fmtOdds, fmtPct, fmtPctPoints, fmtNum, fmtTicks,
-    fmtTime, fmtDateTime, fmtAge, ageSeconds,
+    fmtTime, fmtDateTime, fmtAge, ageSeconds, fmtQuotaAbbinata,
 } from './format';
 
 describe('fmtMoney', () => {
@@ -54,6 +54,38 @@ describe('fmtOdds / fmtPct / fmtNum / fmtTicks', () => {
         expect(fmtTicks(2)).toBe('2 tick');
         expect(fmtTicks(-8)).toBe('8 tick');
         expect(fmtTicks(null)).toBe('—');
+    });
+});
+
+describe('fmtQuotaAbbinata — reperto 17/09 (Safe tennis #298: DB price = 1.0602666666666665)', () => {
+    it('media con più di 2 decimali diversa dal chiesto: testo "X (chiesto Y)" + tooltip preciso', () => {
+        const r = fmtQuotaAbbinata(1.0602666666666665, 1.02);
+        expect(r.text).toBe('1,06 (chiesto 1,02)');
+        expect(r.title).toBe('medio 1,06027');
+        expect(r.diverso).toBe(true);
+    });
+    it('#297: chiesto 1,02 abbinato a 1,03 (esatto, 2 decimali): niente tooltip, ma testo con lo scarto', () => {
+        const r = fmtQuotaAbbinata(1.03, 1.02);
+        expect(r.text).toBe('1,03 (chiesto 1,02)');
+        expect(r.title).toBeNull();
+        expect(r.diverso).toBe(true);
+    });
+    it('#299: chiesto 1,03 abbinato a 1,03 (uguali): solo la quota, come fmtOdds', () => {
+        const r = fmtQuotaAbbinata(1.03, 1.03);
+        expect(r.text).toBe('1,03');
+        expect(r.title).toBeNull();
+        expect(r.diverso).toBe(false);
+    });
+    it('senza chiesto (o uguale a se stesso): solo la quota nuda', () => {
+        expect(fmtQuotaAbbinata(1.03, null)).toEqual({ text: '1,03', title: null, diverso: false });
+        expect(fmtQuotaAbbinata(1.03)).toEqual({ text: '1,03', title: null, diverso: false });
+    });
+    it('quota alta a 2 decimali, come la mostra oggi la UI (fmtOdds/valoreOdds: sempre 2 decimali)', () => {
+        expect(fmtQuotaAbbinata(120).text).toBe('120,00');
+    });
+    it('medio assente: trattino, mai zero', () => {
+        expect(fmtQuotaAbbinata(null, 1.02)).toEqual({ text: DASH, title: null, diverso: false });
+        expect(fmtQuotaAbbinata(undefined)).toEqual({ text: DASH, title: null, diverso: false });
     });
 });
 

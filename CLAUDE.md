@@ -35,6 +35,19 @@ scenari → paper come specchio della realtà → live solo se il paper conferma
   falsificazione rossa sui difetti applicabili, parità paper/live, stati e fasi elencati,
   firma di chi ha rieseguito il replay).
 
+## Cronostoria e metodo di sessione (ordine dell'utente, 17/09/2026, standard di default)
+
+- **`CRONOSTORIA.md`** (radice) è il punto d'ingresso unico: una sezione per giornata con stato
+  di partenza verificato, task certificate, checkpoint, reperti aperti, decisioni e **punto
+  esatto di ripresa**. All'avvio di ogni sessione si legge l'ULTIMA sezione, si verifica di
+  persona lo stato (git, DB in sola lettura, suite, app) e si riparte da lì: mai da zero, mai
+  rifacendo lavoro già certificato. A ogni task certificata si aggiunge il checkpoint; a fine
+  sessione si chiude la sezione con «punto di ripresa» e «prossimi passi».
+- **Coordinatore + delegati**: la sessione principale coordina e REVISIONA; ogni task va a un
+  agente (Opus 5 per costruzione complessa, Sonnet 5 per revisioni, fix piccoli, audit). Il
+  coordinatore non si fida del referto: rilegge il diff, rilancia test e replay, falsifica in
+  entrambe le direzioni. Regola completa: `~/.claude/rules/sessione-coordinatore-cronostoria.md`.
+
 ## Vincoli operativi
 
 - Mai `git add -A` (c'è un log da 3 GB). `git fetch` prima di ogni push: lavorano più

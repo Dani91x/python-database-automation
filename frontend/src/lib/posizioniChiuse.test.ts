@@ -8,7 +8,8 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import {
-    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, type TradeChiudibile,
+    posizioniChiuse, filtraChiuse, riepilogoChiuse, esitoDi, fuoriGiornata,
+    type TradeChiudibile,
 } from './posizioniChiuse';
 
 function t(over: Partial<TradeChiudibile> & { id: number }): TradeChiudibile {
@@ -228,5 +229,99 @@ describe('una gamba ancora viva = posizione NON chiusa', () => {
         ]);
         expect(p).toHaveLength(1);
         expect(p[0].pnlGlobale).toBe(0.3);
+    });
+});
+
+// ============================================================================
+// SOLO LA GIORNATA (ordine dell'utente, 17/09)
+//
+// «in "posizioni chiuse" voglio vedere SOLO le posizioni della giornata, non
+// le precedenti; per i giorni precedenti deve esserci uno STORICO dedicato».
+//
+// La giornata e' quella di PIAZZAMENTO, nel fuso Europe/Rome — la stessa
+// attribuzione dello storico dei tre bot (`p_day_by='placed'`). Il confine e'
+// mezzanotte a ROMA, non a Londra e non nel fuso del browser: d'estate Roma e'
+// UTC+2, quindi le 22:00 UTC sono gia' il giorno dopo.
+// ============================================================================
+describe('posizioni chiuse: SOLO la giornata operativa', () => {
+    const oggi = t({
+        id: 10, pnl: 1,
+        placed_at: '2026-09-17T09:00:00.000Z',      // 11:00 a Roma, 17 settembre
+        settled_at: '2026-09-17T12:00:00.000Z',
+    });
+    const ieri = t({
+        id: 11, pnl: 5,
+        placed_at: '2026-09-16T09:00:00.000Z',      // 16 settembre
+        settled_at: '2026-09-16T12:00:00.000Z',
+    });
+
+    it('la giornata viene dal PIAZZAMENTO, non dal regolamento', () => {
+        // piazzata il 16 alle 23:30 di Roma, regolata il 17: giornata = 16
+        const p = posizioniChiuse([t({
+            id: 12, pnl: 1,
+            placed_at: '2026-09-16T21:30:00.000Z',   // 23:30 a Roma del 16
+            settled_at: '2026-09-17T06:00:00.000Z',
+        })]);
+        expect(p[0].giorno).toBe('2026-09-16');
+    });
+
+    it('il confine e\' mezzanotte a ROMA: d\'estate le 22:00 UTC sono gia\' il giorno dopo', () => {
+        const prima = posizioniChiuse([t({ id: 20, pnl: 1, placed_at: '2026-09-16T21:59:59.000Z' })]);
+        const dopo = posizioniChiuse([t({ id: 21, pnl: 1, placed_at: '2026-09-16T22:00:01.000Z' })]);
+        expect(prima[0].giorno).toBe('2026-09-16');   // 23:59:59 a Roma
+        expect(dopo[0].giorno).toBe('2026-09-17');    // 00:00:01 a Roma
+    });
+
+    it('d\'inverno Roma e\' UTC+1: il confine si sposta alle 23:00 UTC', () => {
+        const prima = posizioniChiuse([t({ id: 22, pnl: 1, placed_at: '2026-01-14T22:59:59.000Z' })]);
+        const dopo = posizioniChiuse([t({ id: 23, pnl: 1, placed_at: '2026-01-14T23:00:01.000Z' })]);
+        expect(prima[0].giorno).toBe('2026-01-14');
+        expect(dopo[0].giorno).toBe('2026-01-15');
+    });
+
+    it('il filtro di giornata tiene OGGI e lascia fuori IERI', () => {
+        const tutte = posizioniChiuse([oggi, ieri]);
+        expect(tutte).toHaveLength(2);
+        const soloOggi = filtraChiuse(tutte, { giorno: '2026-09-17' });
+        expect(soloOggi.map((p) => p.id)).toEqual([10]);
+    });
+
+    // ⚠️ FALSIFICAZIONE: senza il filtro il totale prende dentro anche ieri.
+    // E' il difetto che il banco della giornata aveva fino al 17/09: le righe
+    // dei tre bot arrivano dalle RPC di stato con un semplice `limit`
+    // (`get_omega_trades(p_limit=2000)`), non filtrate per giorno.
+    it('falsificazione: senza filtro il totale somma anche i giorni precedenti', () => {
+        const tutte = posizioniChiuse([oggi, ieri]);
+        expect(riepilogoChiuse(tutte).totale).toBe(6);                       // 1 + 5, sbagliato
+        expect(riepilogoChiuse(filtraChiuse(tutte, { giorno: '2026-09-17' })).totale).toBe(1);
+    });
+
+    it('senza giornata il filtro non filtra (lo usa lo storico)', () => {
+        const tutte = posizioniChiuse([oggi, ieri]);
+        expect(filtraChiuse(tutte, {}).length).toBe(2);
+        expect(filtraChiuse(tutte, { giorno: null }).length).toBe(2);
+        expect(filtraChiuse(tutte, { giorno: '' }).length).toBe(2);
+    });
+
+    it('il filtro di giornata si combina con gli altri, non li sostituisce', () => {
+        const tutte = posizioniChiuse([
+            oggi,
+            t({ id: 13, pnl: 2, mode: 'paper', placed_at: '2026-09-17T09:00:00.000Z' }),
+        ]);
+        const veri = filtraChiuse(tutte, { giorno: '2026-09-17', modo: 'live' });
+        expect(veri.map((p) => p.id)).toEqual([10]);
+    });
+
+    it('una posizione senza data di piazzamento ripiega sul regolamento', () => {
+        const p = posizioniChiuse([t({
+            id: 30, pnl: 1, placed_at: null, settled_at: '2026-09-17T12:00:00.000Z',
+        })]);
+        expect(p[0].piazzataAt).toBe('');
+        expect(p[0].giorno).toBe('2026-09-17');   // i suoi euro non spariscono dal giorno
+    });
+
+    it('quante restano fuori dalla giornata: si dice, non si fanno sparire', () => {
+        const tutte = posizioniChiuse([oggi, ieri]);
+        expect(fuoriGiornata(tutte, '2026-09-17')).toEqual({ altriGiorni: 1, senzaData: 0 });
     });
 });

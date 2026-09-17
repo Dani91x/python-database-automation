@@ -31,7 +31,7 @@ import { ExitBadge } from '@/components/trading/ExitBadge';
 import { sideBadgeClass } from '@/components/safestrategy/variantStyles';
 import { cappedFrom, tradeExposure, hedgeTooltip } from '@/lib/safeBot';
 import { tradeExit } from '@/lib/dailyHistory';
-import { fmtMoney, fmtOdds, fmtPct, fmtTime, fmtAge, ageSeconds } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtPct, fmtTime, fmtAge, ageSeconds, fmtQuotaAbbinata } from '@/lib/format';
 import {
     tradeModelOf, greenupBadge, greenupInfo, hedgeInfo, commissionPctOf, hasOwnCommission,
     positionInfo, terminalError, type HedgeInfo,
@@ -330,7 +330,15 @@ function LegCell<T extends MatchTradeLike>({
                 <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" data-testid="omega-side" className={`px-1.5 py-0 text-[10px] font-heading font-bold ${sideBadgeClass(side)}`}>{side}</Badge>
                     <span className="font-bold text-white text-[15px] tabular-nums" title={`${side === 'LAY' ? 'risultato bancato' : 'selezione'} sul ${LEG_MARKET[kind] || 'mercato'}`}>{t.runner_name ?? '—'}</span>
-                    <span className="text-slate-300 tabular-nums" title="quota d'ingresso">@{fmtOdds(t.price)}</span>
+                    {(() => {
+                        // reperto 17/09 — dopo la conferma `price` porta il MEDIO abbinato
+                        // (non il chiesto travestito): stessa lettura di `statoOrdine` già
+                        // calcolata sopra come `ordine` per il badge di stato.
+                        const eq = fmtQuotaAbbinata(ordine.prezzoMedio.valore ?? t.price, ordine.prezzoChiesto.valore ?? t.price);
+                        return (
+                            <span className="text-slate-300 tabular-nums" data-testid="omega-entry-price" title={eq.title ?? "quota d'ingresso"}>@{eq.diverso ? `abbinato ${eq.text}` : eq.text}</span>
+                        );
+                    })()}
                     {t.origin === 'manual' && <Badge variant="outline" className="px-1 py-0 text-[10px] bg-violet-500/15 text-violet-300 border-violet-500/40" title="operazione decisa a mano">✋</Badge>}
                     {t.mode === 'live' && <Badge variant="outline" className="px-1 py-0 text-[10px] bg-red-500/15 text-red-300 border-red-500/40" title="soldi veri">LIVE</Badge>}
                 </div>

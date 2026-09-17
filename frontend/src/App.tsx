@@ -25,6 +25,7 @@ import Omega from "@/pages/Omega";
 import SafeStrategy from "@/pages/SafeStrategy";
 import Mike from "@/pages/Mike";
 import ControlRoom from "@/pages/ControlRoom";
+import { StoricoCalcio, StoricoTennis } from "@/pages/StoricoSport";
 import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
@@ -198,6 +199,25 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <ControlRoom />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* LO STORICO, uno per sport (ordine dell'utente 17/09).
+                                Le schede dei bot e la Control Room mostrano SOLO la
+                                giornata di oggi: i giorni precedenti si guardano qui. */}
+                            <Route
+                                path="/storico/calcio"
+                                element={
+                                    <ProtectedRoute>
+                                        <StoricoCalcio />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/storico/tennis"
+                                element={
+                                    <ProtectedRoute>
+                                        <StoricoTennis />
                                     </ProtectedRoute>
                                 }
                             />

@@ -1486,14 +1486,21 @@ _SETTLED = ("won", "lost", "void")
 
 
 def settle_row(db, tr: dict[str, Any], status: str, pnl: float, now: datetime,
-               position: Optional[dict[str, Any]] = None) -> None:
+               position: Optional[dict[str, Any]] = None,
+               pnl_source: Optional[dict[str, Any]] = None) -> None:
     """Regola UNA riga. ``position`` (M-04) = {'id','pnl','result'} della
     POSIZIONE (apertura + chiusure): finisce in ``meta.position_*`` e nel log,
     così la UI può mostrare l'esito della posizione e non della singola gamba
-    (un green-up in utile ha l'apertura 'lost' e la posizione 'won')."""
+    (un green-up in utile ha l'apertura 'lost' e la posizione 'won').
+
+    ``pnl_source`` (REPERTO 17/09, I3 "Betfair è la verità"): dichiara SE
+    questo ``pnl`` viene dai cleared orders di Betfair o e' CALCOLATO dal bot
+    (prezzo medio × size) — mai silenzioso, cosi' il trader vede quando un
+    numero e' ancora una stima. ``None`` = comportamento di sempre (nessuna
+    dichiarazione: i chiamanti che non la passano — Omega — restano identici)."""
     fields: dict[str, Any] = {"status": status, "pnl": round(float(pnl), 2),
                               "settled_at": now.isoformat()}
-    if position:
+    if position or pnl_source:
         # M12: il meta si fonde sulla riga CORRENTE, non sullo snapshot in
         # memoria (fra la lettura e qui possono averla riscritta apply_hedge_state
         # o close_trade: si perderebbero hedge/exit_*).
@@ -1504,10 +1511,13 @@ def settle_row(db, tr: dict[str, Any], status: str, pnl: float, now: datetime,
                 cur = fn(int(tr["id"])) or tr
             except Exception:  # noqa: BLE001
                 cur = tr
-        meta = {**(cur.get("meta") or {}),
-                "position_id": position.get("id"),
-                "position_pnl": position.get("pnl"),
-                "position_result": position.get("result")}
+        meta = dict(cur.get("meta") or {})
+        if position:
+            meta.update({"position_id": position.get("id"),
+                        "position_pnl": position.get("pnl"),
+                        "position_result": position.get("result")})
+        if pnl_source:
+            meta["pnl_source"] = pnl_source
         fields["meta"] = meta
         tr["meta"] = meta
     db.update_trade(tr["id"], **fields)
@@ -1532,8 +1542,95 @@ def position_result(total: float) -> str:
     return "won" if t > 0 else ("lost" if t < 0 else "flat")
 
 
+# ---------------------------------------------------------------------------
+# I3 — "BETFAIR E' LA VERITA'": il P&L di regolamento dai cleared orders VERI,
+# quando ci sono, invece che calcolato dal prezzo medio × size (17/09).
+#
+# REPERTO 17/09 (registro Betfair, listClearedOrders, sola lettura, contro il
+# DB): #298 (apertura back) aveva sulla riga il prezzo MEDIO di due fill
+# (2,92 € a 1,06 + 0,08 € a 1,07 = 1,0602666...), mentre Betfair aveva
+# regolato l'ordine con profit +0,19; la sua chiusura #299 (lay) con profit
+# -0,09. Netto Betfair della coppia = +0,10. Il calcolo del bot (prezzo medio,
+# esposizioni nette, commissione sul netto) pianificava +0,09: un centesimo di
+# differenza, dovuto SOLO all'arrotondamento del prezzo medio — la stessa
+# operazione, due numeri.
+# ---------------------------------------------------------------------------
+def _cleared_index(cleared_orders: Optional[list[dict[str, Any]]]
+                   ) -> "tuple[dict[str, dict], dict[str, dict]]":
+    """(per bet_id, per customer_order_ref) — le chiavi che
+    ``omega_market.list_cleared_orders`` normalizza (``_riga_regolata``)."""
+    by_bet: dict[str, dict] = {}
+    by_ref: dict[str, dict] = {}
+    for o in cleared_orders or []:
+        if o.get("bet_id"):
+            by_bet[str(o["bet_id"])] = o
+        if o.get("customer_order_ref"):
+            by_ref[str(o["customer_order_ref"])] = o
+    return by_bet, by_ref
+
+
+def _cleared_match(row: dict[str, Any], by_bet: dict[str, dict], by_ref: dict[str, dict],
+                   *, table_prefix: str) -> Optional[dict[str, Any]]:
+    """L'ordine REGOLATO di Betfair che corrisponde a QUESTA riga (apertura o
+    chiusura), o ``None`` se Betfair non lo ha ancora (o non lo avra' mai: una
+    riga PAPER non ha una controparte vera a mercato). Si cerca per ``bet_id``
+    (chiave certa) e per il ref di piazzamento (``{prefix}-t{id}``, lo stesso
+    che ``execution.place``/``close_trade`` scrivono come ``customerOrderRef``:
+    difetto 1 del catalogo se le due grafie divergessero)."""
+    if str(row.get("mode") or "") == "paper":
+        return None
+    bet_id = row.get("bet_id")
+    if bet_id and str(bet_id) in by_bet:
+        return by_bet[str(bet_id)]
+    try:
+        ref = f"{table_prefix}-t{int(row.get('id') or 0)}"
+    except (TypeError, ValueError):
+        return None
+    return by_ref.get(ref)
+
+
+def _posizione_da_cleared(trade: dict[str, Any], legs: list[dict[str, Any]],
+                          cleared_orders: Optional[list[dict[str, Any]]], *,
+                          table_prefix: str
+                          ) -> "Optional[tuple[float, list[float], list[dict]]]":
+    """(pnl_open, [pnl_chiusure], [ordini_trovati]) letti DA BETFAIR se OGNI
+    gamba della posizione (apertura + tutte le chiusure) e' gia' nei cleared
+    orders con un ``profit`` numerico — altrimenti ``None``: si mischia un
+    numero VERO con uno STIMATO sulla stessa posizione mai, e' peggio che
+    dichiarare che non si sa ancora (si ripiega su ``settle_group``/
+    ``omega_engine.settle_pnl``, il calcolo di sempre).
+
+    Il ``profit`` di Betfair e' GIA' netto di commissione (verificato sul
+    reperto: #298 +0,19 e #299 -0,09 sommano al netto vero +0,10): non si
+    riapplica ``commission`` sopra."""
+    if not cleared_orders:
+        return None
+    by_bet, by_ref = _cleared_index(cleared_orders)
+    trovati: list[dict[str, Any]] = []
+    for row in [trade] + list(legs):
+        m = _cleared_match(row, by_bet, by_ref, table_prefix=table_prefix)
+        if m is None or m.get("profit") is None:
+            return None
+        trovati.append(m)
+    pnl_open = round(float(trovati[0]["profit"]), 2)
+    pnl_closes = [round(float(m["profit"]), 2) for m in trovati[1:]]
+    return pnl_open, pnl_closes, trovati
+
+
+def _pnl_source_betfair(m: dict[str, Any]) -> dict[str, Any]:
+    return {"kind": "betfair_cleared", "bet_id": m.get("bet_id"),
+            "profit": m.get("profit"), "commission": m.get("commission"),
+            "bet_outcome": m.get("bet_outcome"),
+            "customer_order_ref": m.get("customer_order_ref")}
+
+
+_PNL_SOURCE_CALCOLATO = {"kind": "calcolato"}
+
+
 def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]],
-                    snap: Any, commission: float, now: datetime) -> bool:
+                    snap: Any, commission: float, now: datetime,
+                    cleared_orders: Optional[list[dict[str, Any]]] = None,
+                    table_prefix: str = "safe") -> bool:
     """Regola un'apertura CON TUTTE le sue chiusure (o da sola se non ne ha),
     a mercato ``snap`` CHIUSO. Ritorna True se l'apertura è stata regolata.
 
@@ -1544,7 +1641,12 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
         già regolate (crash a metà del ciclo precedente) restano nel netto ma
         non vengono riscritte; l'apertura è l'ultima scrittura, quindi finché
         è viva il ciclo successivo ripete il calcolo identico.
-    """
+
+    ``cleared_orders`` (I3, 17/09): se il CHIAMANTE li passa (li' dove
+    ``market.list_cleared_orders`` è stato letto in questo ciclo) e OGNI gamba
+    della posizione ha gia' un ``profit`` di Betfair, si regola con QUEI
+    numeri — non con prezzo medio × size. Nessun chiamante esistente (Omega)
+    li passa: default ``None``, comportamento IDENTICO a prima."""
     legs = [c for c in closings or [] if str(c.get("status")) != "error"]
     if any(str(c.get("status")) == "pending" for c in legs):
         _log(db, "settle_wait", {"trade_id": trade.get("id"),
@@ -1573,36 +1675,55 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
         return True
     won = int(snap.winner_selection_id) == int(trade["selection_id"])
     if legs:
-        pnl_open, pnl_closes = settle_group(trade, legs, won, commission)
+        da_betfair = _posizione_da_cleared(trade, legs, cleared_orders,
+                                           table_prefix=table_prefix)
+        if da_betfair is not None:
+            pnl_open, pnl_closes, trovati = da_betfair
+            fonte = "betfair_cleared"
+            fonti = [_pnl_source_betfair(m) for m in trovati]
+        else:
+            pnl_open, pnl_closes = settle_group(trade, legs, won, commission)
+            fonte = "calcolato"
+            fonti = [_PNL_SOURCE_CALCOLATO] * (1 + len(legs))
         # M-04: P&L della POSIZIONE = somma delle gambe, UN SOLO evento di
         # regolazione ('settle_position'); i 'settle' per gamba restano come
         # prova dell'ordine di scrittura (ripresa sicura), mai come toast.
         total = round(float(pnl_open) + sum(float(p) for p in pnl_closes), 2)
         pos = {"id": pos_id, "pnl": total, "result": position_result(total)}
-        for c, p in zip(legs, pnl_closes):
+        for c, p, src in zip(legs, pnl_closes, fonti[1:]):
             if str(c.get("status")) in _SETTLED:
                 continue  # già regolata da un ciclo interrotto: resta nel netto
-            settle_row(db, c, "won" if p >= 0 else "lost", p, now, position=pos)
+            settle_row(db, c, "won" if p >= 0 else "lost", p, now, position=pos,
+                      pnl_source=src)
         settle_row(db, trade, "won" if pnl_open >= 0 else "lost", pnl_open, now,
-                   position=pos)
+                   position=pos, pnl_source=fonti[0])
         _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
                                      "position_pnl": total, "position_result": pos["result"],
                                      "legs": [c.get("id") for c in legs],
-                                     "commission": commission})
+                                     "commission": commission, "pnl_source": fonte})
         return True
-    status, pnl = E.settle_pnl(
-        our_selection_id=int(trade["selection_id"]),
-        winner_selection_id=snap.winner_selection_id,
-        size=float(trade["size"]), price=float(trade["price"]),
-        commission=commission, voided=snap.voided,
-        side=str(trade.get("side") or "lay"),
-    )
+    da_betfair = _posizione_da_cleared(trade, [], cleared_orders, table_prefix=table_prefix)
+    if da_betfair is not None:
+        pnl, _vuoto, trovati = da_betfair
+        status = "won" if pnl >= 0 else "lost"
+        fonte, fonte_riga = "betfair_cleared", _pnl_source_betfair(trovati[0])
+    else:
+        status, pnl = E.settle_pnl(
+            our_selection_id=int(trade["selection_id"]),
+            winner_selection_id=snap.winner_selection_id,
+            size=float(trade["size"]), price=float(trade["price"]),
+            commission=commission, voided=snap.voided,
+            side=str(trade.get("side") or "lay"),
+        )
+        fonte, fonte_riga = "calcolato", _PNL_SOURCE_CALCOLATO
     settle_row(db, trade, status, pnl, now,
                position={"id": pos_id, "pnl": round(float(pnl), 2),
-                         "result": position_result(pnl)})
+                         "result": position_result(pnl)},
+               pnl_source=fonte_riga)
     _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
                                  "position_pnl": round(float(pnl), 2),
-                                 "position_result": position_result(pnl), "legs": []})
+                                 "position_result": position_result(pnl), "legs": [],
+                                 "pnl_source": fonte})
     return True
 
 

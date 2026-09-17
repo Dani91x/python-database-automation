@@ -16,17 +16,28 @@
 // IL RIEPILOGO IN ALTO DESCRIVE QUELLO CHE SI VEDE SOTTO, non tutto il
 // resto: un totale che non corrisponde alle righe elencate è il modo più
 // rapido di far perdere fiducia a un trader.
+//
+// SOLO LA GIORNATA DI OGGI (ordine dell'utente, 17/09). Le righe dei tre bot
+// arrivano dalle RPC di stato con un semplice `limit` (Omega:
+// `get_omega_trades(p_limit=2000)`), quindi contengono anche i giorni passati:
+// prima di questa scheda il banco della giornata elencava operazioni di
+// settimane prima insieme a quelle di stamattina, e il totale in alto le
+// sommava. I giorni precedenti hanno una casa: la dashboard «Storico», a cui
+// porta il pulsante qui in testata.
 // ============================================================================
 import { useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { EmptyState } from '@/components/trading/EmptyState';
+import { StoricoLink } from '@/components/trading/StoricoLink';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { BOT_LABEL, type Bot, type Modo } from '@/lib/controlRoom';
+import { dayLabel } from '@/lib/dailyHistory';
 import {
-    filtraChiuse, riepilogoChiuse, type PosizioneChiusa, type Esito,
+    filtraChiuse, riepilogoChiuse, fuoriGiornata,
+    type PosizioneChiusa, type Esito,
 } from '@/lib/posizioniChiuse';
 
 const ESITO_TESTO: Record<Esito, string> = { vinta: 'vinte', persa: 'perse', pari: 'pari' };
@@ -38,26 +49,49 @@ export interface PosizioniChiuseProps {
     chiuse: PosizioneChiusa[];
     /** lo sport scelto in cima alla pagina; null = tutti */
     sport: 'calcio' | 'tennis' | null;
+    /**
+     * LA GIORNATA OPERATIVA da mostrare, 'YYYY-MM-DD' (Europe/Rome).
+     * È l'unico giorno che questa scheda elenca: i precedenti stanno nello
+     * Storico. Senza questo dato la scheda non filtra (e lo dichiara), invece
+     * di indovinare una data da sola.
+     */
+    giorno: string;
     testId?: string;
 }
 
-export function PosizioniChiuse({ chiuse, sport, testId = 'cr-chiuse' }: PosizioniChiuseProps) {
+export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }: PosizioniChiuseProps) {
     const [esito, setEsito] = useState<Esito | 'tutte'>('tutte');
     const [modo, setModo] = useState<Modo | 'tutte'>('live');
     const [bot, setBot] = useState<Bot | 'tutti'>('tutti');
     const [aperta, setAperta] = useState<number | null>(null);
 
     const righe = useMemo(
-        () => filtraChiuse(chiuse, { esito, modo, bot, sport: sport ?? 'tutti' }),
-        [chiuse, esito, modo, bot, sport],
+        () => filtraChiuse(chiuse, { esito, modo, bot, sport: sport ?? 'tutti', giorno }),
+        [chiuse, esito, modo, bot, sport, giorno],
     );
     const r = useMemo(() => riepilogoChiuse(righe), [righe]);
+    // quante restano FUORI da oggi: si dice, non si fanno sparire
+    const fuori = useMemo(
+        () => fuoriGiornata(
+            filtraChiuse(chiuse, { sport: sport ?? 'tutti' }), giorno,
+        ),
+        [chiuse, sport, giorno],
+    );
 
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
-            {/* IL RIEPILOGO — descrive le righe qui sotto, non la giornata intera */}
+            {/* IL RIEPILOGO — descrive le righe qui sotto, non tutto lo storico */}
             <div className="px-3 py-2 border-b border-white/10 flex items-baseline gap-3 flex-wrap">
                 <span className="text-[11px] uppercase tracking-wider text-white/60">Posizioni chiuse</span>
+                {/* LA GIORNATA, in chiaro: «Oggi · N chiuse». Un elenco senza
+                    data lascia credere che sia tutto quello che esiste. */}
+                <span
+                    className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary"
+                    data-testid="cr-chiuse-giornata"
+                    title={`giornata operativa ${dayLabel(giorno)} (Europe/Rome), per giorno di PIAZZAMENTO`}
+                >
+                    Oggi · {r.n} {r.n === 1 ? 'chiusa' : 'chiuse'}
+                </span>
                 <span className={`font-mono text-[15px] font-bold tabular-nums ${pnlClass(r.totale)}`}
                     data-testid="cr-chiuse-totale">
                     {r.totale == null ? DASH : fmtMoney(r.totale, { signed: true })}
@@ -71,12 +105,32 @@ export function PosizioniChiuse({ chiuse, sport, testId = 'cr-chiuse' }: Posizio
                         <span title="vinte su vinte+perse">{fmtPct(r.percentualeVinte, 0)}</span>
                     )}
                 </span>
-                {modo === 'live' && (
-                    <span className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">
-                        soldi veri
-                    </span>
-                )}
+                <span className="ml-auto flex items-center gap-2">
+                    {modo === 'live' && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">
+                            soldi veri
+                        </span>
+                    )}
+                    <StoricoLink sport={sport} compatto testId="cr-chiuse-storico" />
+                </span>
             </div>
+
+            {/* «ce ne sono altre, e so dove sono»: il numero dei giorni
+                precedenti non sparisce, diventa un invito allo Storico. */}
+            {(fuori.altriGiorni > 0 || fuori.senzaData > 0) && (
+                <div className="px-3 py-1.5 border-b border-white/10 text-[10.5px] text-white/45"
+                    data-testid="cr-chiuse-fuori-giornata">
+                    Qui c&apos;è solo <b className="text-white/70">{dayLabel(giorno)}</b>.
+                    {fuori.altriGiorni > 0 && (
+                        <> Altre <b className="text-white/70">{fuori.altriGiorni}</b> posizioni chiuse
+                        sono di giorni precedenti: si guardano nello <b className="text-white/70">Storico</b>.</>
+                    )}
+                    {fuori.senzaData > 0 && (
+                        <> <b className="text-amber-300">{fuori.senzaData}</b> senza data di piazzamento
+                        leggibile: non entrano in nessuna giornata.</>
+                    )}
+                </div>
+            )}
 
             {/* I FILTRI — «filtrabili chiaramente»: si vede sempre quale è attivo */}
             <div className="px-3 py-2 border-b border-white/10 flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -126,7 +180,9 @@ export function PosizioniChiuse({ chiuse, sport, testId = 'cr-chiuse' }: Posizio
                         <EmptyState>
                             {chiuse.length === 0
                                 ? 'Nessuna posizione ancora chiusa oggi. Quando una si liquida, compare qui con il suo risultato.'
-                                : 'Nessuna posizione con questi filtri. Allargali per rivedere le altre.'}
+                                : fuori.altriGiorni > 0
+                                    ? 'Nessuna posizione chiusa OGGI con questi filtri. Le giornate precedenti sono nello Storico.'
+                                    : 'Nessuna posizione con questi filtri. Allargali per rivedere le altre.'}
                         </EmptyState>
                     </div>
                 )}

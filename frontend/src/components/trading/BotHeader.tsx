@@ -84,7 +84,7 @@ export function botStatusWithBeat(
 
 export function BotHeader({
     bot, status, statusPrefix = '', statusTestId, health, modeToggle, params,
-    running, busy, onStart, onStop, startDisabled, onHeight, extra,
+    running, busy, onStart, onStop, startDisabled, onHeight, extra, storico,
     heartbeatAt, nowMs,
 }: {
     bot: BotKey;
@@ -108,6 +108,18 @@ export function BotHeader({
     /** altezza reale dell'header, per le TabsList sticky */
     onHeight?: (px: number) => void;
     extra?: ReactNode;
+    /**
+     * IL PULSANTE «STORICO» (`<StoricoLink/>`), sempre nello STESSO POSTO nelle
+     * tre sezioni: primo elemento del gruppo di destra, prima di PAPER/LIVE.
+     *
+     * Ha una prop sua e non entra in `extra` proprio per questo: `extra` finisce
+     * a sinistra, in mezzo a badge di stato e chip di salute, e ogni pagina lo
+     * riempie con cose diverse. Un pulsante che il trader deve trovare senza
+     * cercarlo non può stare in una posizione che dipende dalla pagina
+     * (ordine dell'utente, 17/09: «pulsanti "Storico" immediatamente capibili,
+     * stessa posizione in ogni scheda»).
+     */
+    storico?: ReactNode;
     /**
      * `control.heartbeat_at` + orologio della pagina: con `status='running'` e
      * il battito oltre `SERVICE_STALE_S` il badge diventa rosso «SENZA
@@ -162,6 +174,7 @@ export function BotHeader({
                     {extra}
                 </div>
                 <div className="flex items-center gap-2">
+                    {storico}
                     {modeToggle}
                     {params}
                     {running ? (

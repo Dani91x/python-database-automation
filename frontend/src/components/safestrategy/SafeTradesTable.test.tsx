@@ -99,4 +99,27 @@ describe('SafeTradesTable — trade di modello', () => {
         expect(pctIt(0.004)).toBe(fmtPct(0.004));
         expect(pctIt(null)).toBe('—');
     });
+
+    // reperto 17/09 — trade Safe tennis #298: la riga in DB ha `price` uguale
+    // al MEDIO abbinato da Betfair (1,0602666666666665: 2,92 € a 1,06 + 0,08 €
+    // a 1,07), non al prezzo chiesto. La colonna "quota d'ingresso" mostrava
+    // solo `fmtOdds(t.price)` = "1,06" senza dire che era una media né quanto
+    // era stato chiesto: il trader non aveva sotto gli occhi la discordanza
+    // che ha visto lui stesso confrontando col registro di Betfair.
+    it('quota d\'ingresso: medio abbinato diverso dal chiesto -> "abbinato X (chiesto Y)" col preciso in tooltip', () => {
+        renderTable([trade({
+            id: 298, side: 'back', price: 1.0602666666666665, size: 3,
+            meta: { esecuzione: { price_richiesto: 1.02, price_medio: 1.0602666666666665 } },
+        })]);
+        const cell = screen.getByTestId('safe-price-entry');
+        expect(cell).toHaveTextContent('abbinato 1,06 (chiesto 1,02)');
+        expect(cell.title).toBe('medio 1,06027');
+    });
+
+    it('quota d\'ingresso senza nota di esecuzione: resta la quota nuda (nessuna regressione)', () => {
+        renderTable([trade({ id: 297, side: 'back', price: 1.03, size: 3, meta: null })]);
+        const cell = screen.getByTestId('safe-price-entry');
+        expect(cell).toHaveTextContent('1,03');
+        expect(cell.title).toBe('');
+    });
 });

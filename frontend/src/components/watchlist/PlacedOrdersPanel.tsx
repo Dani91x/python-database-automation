@@ -10,7 +10,7 @@ import { CheckCircle2, Loader2, Clock, AlertCircle, CircleDashed, CircleDot, Ref
 import {
     fetchBetfairOrders, placedOrderState, type PlacedOrder, type PlacedOrderState,
 } from '@/lib/betfair';
-import { fmtMoney, fmtOdds, DASH } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtQuotaAbbinata } from '@/lib/format';
 
 const FAST_MS = 3000;   // poll mentre ci sono ordini in corso
 const SLOW_MS = 15000;  // poll quando tutti gli ordini sono conclusi
@@ -67,7 +67,19 @@ function OrderRow({ o }: { o: PlacedOrder }) {
                         : (st === 'queued' || st === 'sending')
                             ? <span>in attesa dal worker locale…</span>
                             : <>
-                                abbinato {fmtMoney(matched)}{avg != null ? ` @ ${fmtOdds(avg)}` : ` @ ${DASH}`}
+                                {/* reperto 17/09 — `avg` è il MEDIO abbinato da Betfair
+                                    (`averagePriceMatched`, può avere più di 2 decimali su
+                                    più fill a prezzi diversi): confrontato col prezzo
+                                    CHIESTO `o.price`, non più mostrato come se fosse la
+                                    stessa quota travestita da 2 decimali. */}
+                                {(() => {
+                                    const eq = fmtQuotaAbbinata(avg, o.price);
+                                    return (
+                                        <span title={eq.title ?? undefined}>
+                                            abbinato {fmtMoney(matched)} @ {eq.text}
+                                        </span>
+                                    );
+                                })()}
                                 {betId ? <span className="text-white/40"> · betId {betId}</span> : null}
                             </>}
                 </div>

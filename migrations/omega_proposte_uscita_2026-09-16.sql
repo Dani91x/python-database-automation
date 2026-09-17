@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS public.omega_requests (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- RLS come tutte le tabelle sorelle Safe (`safe_strategy_control`,
+-- `safe_strategy_trades`, `safe_strategy_activity`, `safe_strategy_requests`,
+-- `safe_strategy_opportunities` in `safe_strategy_bot.sql`): ENABLE + REVOKE,
+-- nessuna policy — l'accesso passa dalle RPC SECURITY DEFINER qui sotto, non
+-- da SELECT diretto della UI, quindi non serve una policy owner come per la
+-- realtime di Safe.
+ALTER TABLE public.omega_requests ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.omega_requests
     DROP CONSTRAINT IF EXISTS omega_requests_status_check;

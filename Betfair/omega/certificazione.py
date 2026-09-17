@@ -1692,6 +1692,70 @@ def _k6(righe, ordini, rifiutati):
     return None
 
 
+# colonne della migrazione trades_consapevolezza_ordine_2026-09-16.sql: le
+# STESSE cinque di execution.COLONNE_CONSAPEVOLEZZA (safe_strategy/execution.py).
+_COLONNE_CONSAPEVOLEZZA = ("size_requested", "size_matched", "size_remaining",
+                           "avg_price_matched", "betfair_updated_at")
+
+
+@_controllo_banco("K7", "il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non "
+                        "restano NULL sulla COLONNA quando il meta ha GIA' il "
+                        "numero giusto (la scrittura non e' passata da "
+                        "X.aggiorna_trade)")
+def _k7(righe, ordini, rifiutati):
+    """REPERTO 17/09: su Safe (bot_service.py, trade live #297) la conferma di
+    apertura chiamava ``db.update_trade`` DIRETTO invece di ``X.aggiorna_trade``:
+    ``meta`` portava gia' size_richiesta/size_residua/istante di Betfair
+    corretti, ma le colonne dedicate della migrazione
+    ``trades_consapevolezza_ordine_2026-09-16.sql`` restavano NULL sulla riga —
+    stesso difetto trovato (e corretto) sul percorso flumine di Omega
+    (``_mirror_fill``/``_flumine_confirm``, 17/09): il meta aveva gia'
+    ``size_remaining``/``betfair_updated_at``, la colonna no.
+
+    Guarda SOLO tre colonne (``size_requested``, ``size_remaining``,
+    ``betfair_updated_at``): sono le uniche con un corrispondente INEQUIVOCABILE
+    nel meta (``requested_size``/``size_remaining``/``betfair_updated_at``,
+    scritti da ``_place_one``/``_flumine_confirm``). ``size_matched`` e
+    ``avg_price_matched`` non hanno un meta equivalente distinto (il loro
+    corrispondente storico e' ``size``/``price`` della riga stessa, gia'
+    incrociati contro il mercato vero da K1): pretenderli qui SENZA un secondo
+    numero indipendente con cui confrontarli accuserebbe anche righe scritte
+    PRIMA che queste colonne esistessero (falso positivo, stesso genere di
+    quelli gia' trovati dal banco il 16/09 su K1/K5 — vedi sopra).
+
+    Si accusa solo quando il meta HA il numero e la colonna no: un meta muto
+    (nessun requested_size/size_remaining/betfair_updated_at da nessuna parte,
+    come le righe sintetiche pre-migrazione) resta in silenzio — non e' prova
+    di niente, e' solo un fixture che non parla di questo.
+
+    Non si accusano le righe 'reconciling' (esito ancora ignoto, dichiarato), ne'
+    le righe non ancora confermate (``status`` diverso da 'open'/'hedged': una
+    riserva 'pending' porta gia' ``meta.requested_size`` PRIMA che
+    ``X.aggiorna_trade`` sia mai stato chiamato — accusarla vorrebbe dire
+    accusare una riga che semplicemente non e' ancora arrivata alla conferma),
+    ne' le righe senza ``bet_id`` (K5: falso positivo gia' trovato dal banco il
+    16/09, il paper storico via ``paper_fill``/snapshot non ha un ordine vero)."""
+    _MAPPA = (("size_requested", "requested_size"),
+              ("size_remaining", "size_remaining"),
+              ("betfair_updated_at", "betfair_updated_at"))
+    for r in righe or ():
+        meta = r.get("meta") or {}
+        if meta.get("reconciling"):
+            continue
+        if str(r.get("status") or "") not in ("open", "hedged"):
+            continue
+        if not r.get("bet_id"):
+            continue
+        mancanti = [colonna for colonna, chiave_meta in _MAPPA
+                    if r.get(colonna) is None and meta.get(chiave_meta) is not None]
+        if mancanti:
+            return (f"riga #{r.get('id')}: il meta ha gia' "
+                    f"{[m for _c, m in _MAPPA if meta.get(m) is not None]}, ma la "
+                    f"COLONNA resta NULL su {mancanti} (la scrittura non e' "
+                    f"passata da X.aggiorna_trade)")
+    return None
+
+
 def verifica_consapevolezza(righe: Optional[List[Dict[str, Any]]],
                             ordini: Optional[Dict[str, Any]],
                             rifiutati: Optional[set] = None,
