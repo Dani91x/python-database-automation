@@ -4,7 +4,10 @@
 // Stessa forma della scheda della Safe (`SchedaChiusura.tsx`), perché è lo
 // stesso gesto: il bot propone, l'utente decide. Quello che cambia sono i
 // numeri, perché Omega banca un risultato e non punta una squadra:
-//   · **profitto bloccabile** — EUR netti, uguali in ogni esito, se si chiude ORA;
+//   · **risultato bloccabile** — EUR netti, uguali in ogni esito, se si chiude
+//     ORA. Può essere NEGATIVO: dal 17/09 il bot propone anche le uscite in
+//     PERDITA (protezione, cap), perché tenere può costare di più. È l'ordine
+//     dell'utente: «la scheda vale sia in profit che in loss»;
 //   · **EV di tenere** — quanto vale portarla al settlement con la P di adesso;
 //   · **la traiettoria** — se il punteggio regge, quanto si bloccherebbe più
 //     avanti e a che minuto. È la ragione per cui una proposta può NON partire.
@@ -20,7 +23,7 @@ import { Loader2, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, fmtPctPoints, fmtTime, DASH } from '@/lib/format';
 import {
-    motivoNonApprovabileOmega, motivoUscitaOmegaLabel,
+    motivoNonApprovabileOmega, motivoUscitaOmegaLabel, eUnaProtezioneOmega,
     type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
 
@@ -41,6 +44,11 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChi
     const bloccabile = p.profitto_bloccabile == null ? null : Number(p.profitto_bloccabile);
     const evTenere = p.ev_tenere == null ? null : Number(p.ev_tenere);
     const aspetta = p.meglio_aspettare === true;
+    // 17/09 — ORDINE DELL'UTENTE: la scheda vale «sia in profit che in loss».
+    // Una PROTEZIONE non e' un affare: si chiude perche' tenere costa di piu'.
+    // Scriverci sopra «Chiudi ora» in verde direbbe al trader il contrario di
+    // quello che sta facendo.
+    const protezione = eUnaProtezioneOmega(p);
 
     const azione = async (fn: (id: number) => Promise<void>) => {
         setInCorso(true);
@@ -66,6 +74,13 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChi
                 {live
                     ? <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">soldi veri</span>
                     : <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-white/50">paper</span>}
+                {protezione && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300"
+                        data-testid="cr-omega-protezione"
+                        title="non e’ un guadagno: si chiude perche’ tenere costa di piu’">
+                        protezione · si blocca una perdita
+                    </span>
+                )}
                 {aspetta && (
                     <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300"
                         title="se il punteggio regge, piu’ avanti si bloccherebbe di piu’">
@@ -108,14 +123,22 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChi
                     valore={p.bloccabile_max_atteso == null ? DASH : fmtMoney(Number(p.bloccabile_max_atteso), { signed: true })}
                     nota={p.minuto_del_massimo == null ? undefined
                         : `al ${Math.round(Number(p.minuto_del_massimo))}′`} />
-                <Cella etichetta="Controparte alla decisione"
-                    valore={p.size_available_at_decision == null ? DASH : fmtMoney(Number(p.size_available_at_decision))}
+                <Cella etichetta={p.liability == null ? 'Controparte alla decisione' : 'Rischio impegnato'}
+                    valore={p.liability != null ? fmtMoney(Number(p.liability))
+                        : p.size_available_at_decision == null ? DASH
+                        : fmtMoney(Number(p.size_available_at_decision))}
                     nota={p.decided_at ? `decisa alle ${fmtTime(p.decided_at)}` : 'istante non dichiarato'} />
             </div>
 
             <div className="px-3 py-2 text-[12px] text-white/70 border-t border-white/5">
                 <b className="text-white">Perché:</b>{' '}
                 {motivoUscitaOmegaLabel(p.motivo_codice) ?? 'motivo non dichiarato'}
+                {p.cap_scattato && <> <span className="font-mono text-[11px] text-white/50">({p.cap_scattato})</span></>}
+                {p.riproposta_perche && (
+                    <span className="block text-[11px] text-sky-300/80 mt-0.5">
+                        torna a chiedertelo perché {p.riproposta_perche}
+                    </span>
+                )}
                 <span className="block text-[11px] text-white/40 mt-0.5">
                     aggiornata {p.proposed_at ? `alle ${fmtTime(p.proposed_at)}` : DASH}
                     {' · '}il prezzo su cui si piazza lo guardi tu, vivo, un istante prima
@@ -142,11 +165,14 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChi
                     <Button
                         onClick={() => (live ? setArmato(true) : void azione(onApprova))}
                         disabled={!!blocco || inCorso}
-                        className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] disabled:opacity-40"
+                        className={`rounded-none h-10 text-white font-bold uppercase tracking-wider text-[12px] disabled:opacity-40 ${
+                            protezione ? 'bg-red-600/80 hover:bg-red-600' : 'bg-emerald-600/80 hover:bg-emerald-600'
+                        }`}
                         data-testid="cr-omega-approva"
                         title={blocco ?? 'invia l’ordine di chiusura'}
                     >
-                        {inCorso ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Chiudi ora'}
+                        {inCorso ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : protezione ? 'Chiudi in perdita' : 'Chiudi ora'}
                     </Button>
                 )}
                 <Button

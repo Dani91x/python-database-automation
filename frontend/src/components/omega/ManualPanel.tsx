@@ -80,7 +80,10 @@ function num(v: unknown): number | null {
  * credere di avere una posizione che potrebbe non esserci (o essere piu'
  * piccola), e invita a ripiazzare raddoppiando l'esposizione.
  */
-export function manualRequestText(r: { kind: string; status: string; result: Record<string, unknown> | null }): {
+export function manualRequestText(r: {
+    kind: string; status: string; result: Record<string, unknown> | null;
+    payload?: Record<string, unknown> | null;
+}): {
     kind: string; status: string; detail: string | null; cls: string;
 } {
     const res = r.result ?? {};
@@ -108,7 +111,22 @@ export function manualRequestText(r: { kind: string; status: string; result: Rec
                 : (detail ?? 'importo ridotto alla liquidita disponibile');
         }
     }
-    return { kind: MANUAL_KIND_LABEL[r.kind] ?? r.kind, status, detail, cls };
+    // ⚠️ 17/09 — NON OGNI `cashout` DI QUESTA CODA E' UN COMANDO TUO.
+    // Dalla stessa coda passano le USCITE PROPOSTE DAL BOT che hai approvato
+    // (la RPC porta la riga da 'proposed' a 'pending' e ci scrive `approved_at`).
+    // Chiamarle «cash out» come il bottone farebbe credere di averle decise tu,
+    // e nello storico le due cose non si distinguerebbero piu'.
+    const kind = eUnaUscitaApprovata(r.payload)
+        ? 'uscita proposta dal bot, approvata'
+        : MANUAL_KIND_LABEL[r.kind] ?? r.kind;
+    return { kind, status, detail, cls };
+}
+
+/** La richiesta in coda e' l'APPROVAZIONE di una proposta del bot? */
+export function eUnaUscitaApprovata(payload: Record<string, unknown> | null | undefined): boolean {
+    if (!payload) return false;
+    return payload.approved_at != null || payload.motivo_codice != null
+        || payload.approvata_da != null;
 }
 
 /**

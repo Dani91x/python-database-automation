@@ -576,9 +576,15 @@ class _Esito:
     """Un `PlaceResult` con le chiavi VERE (`omega_market.PlaceResult`)."""
 
     def __init__(self, ok, size_matched=0.0, avg_price_matched=None,
-                 size_requested=None):
+                 size_requested=None, order_status=None):
         self.ok = ok
-        self.order_status = "EXECUTION_COMPLETE" if ok else "EXPIRED"
+        # `order_status` sono le PAROLE DI BETFAIR, quelle che il banco mette nel
+        # `PlaceResult` (`banco_comune._stato_betfair`): 'EXECUTABLE' = ancora
+        # vivo, gli altri sono terminali. Si puo' forzare perche' la differenza
+        # fra «morto senza abbinare» e «vivo e non ancora abbinato» e' esattamente
+        # quello che J3 deve saper distinguere (17/09).
+        self.order_status = (order_status if order_status is not None
+                             else ("EXECUTION_COMPLETE" if ok else "EXPIRED"))
         self.bet_id = "1" if ok else None
         self.size_matched = size_matched
         self.avg_price_matched = avg_price_matched
@@ -649,6 +655,136 @@ def test_j3_scatta_su_un_ref_ripetuto():
     assert "J3" in _scatta("J3", m)
 
 
+# ---------------------------------------------------------------------------
+# J3 — FALSO POSITIVO DEL CONTROLLO (17/09, PROCESSO §6.7): il replay reale su
+# 35760084/rifiuti-betfair ha mostrato 2 violazioni gia' note
+# (CHECKPOINT_V3_2026-09-16.md:329). Diagnosi condivisa col coordinatore:
+# `_leg_certain_failure` (omega_service.py) CANCELLA la riserva DOPO un
+# rifiuto CERTO di Betfair (ok=False, nessun bet_id: nessun ordine e' MAI
+# esistito) — la riga non c'e' piu' quando J3 la cerca, ma non c'e' NIENTE da
+# riconciliare. Le 4 combinazioni sotto provano che l'esclusione e' STRETTA:
+# vale SOLO quando ref per-gamba + rifiuto certo dal BANCO (m.esito, mai le
+# attivita' scritte dal bot).
+# ---------------------------------------------------------------------------
+def test_j3_non_scatta_su_rifiuto_certo_con_riga_cancellata():
+    """Il caso VERO (c): ref per-gamba corretto, banco dice ok=False senza
+    bet_id, riga assente (cancellata da _leg_certain_failure) -> non e' un
+    buco, J3 tace."""
+    db = _db([])
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=db, esito=_Esito(False),
+                     richiesta={"customer_ref": E.customer_ref_for(1),
+                                "price": 300.0, "size": 5.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" not in _scatta("J3", m)
+
+
+def test_j3_scatta_ancora_se_la_riga_manca_dopo_un_ordine_accettato():
+    """FALSIFICAZIONE (a): esito ACCETTATO (ok=True, bet_id presente) e riga
+    assente resta un buco VERO — l'esclusione vale SOLO per il rifiuto
+    certo, mai per un ordine che il banco dice vivo."""
+    db = _db([])
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=db, esito=_Esito(True, 5.0, 300.0),
+                     richiesta={"customer_ref": E.customer_ref_for(1),
+                                "price": 300.0, "size": 5.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" in _scatta("J3", m)
+
+
+def test_j3_scatta_ancora_su_ref_malformato_anche_col_rifiuto_certo():
+    """FALSIFICAZIONE (b): rifiuto certo ma il ref e' quello STORICO
+    per-evento (non per-gamba) — l'esclusione non copre un ref sbagliato,
+    anche se il rifiuto e' genuino."""
+    db = _db([])
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=db, esito=_Esito(False),
+                     richiesta={"customer_ref": "omega-" + EVENTO, "price": 300.0,
+                                "size": 5.0, "side": "lay", "market_id": "1.2",
+                                "selection_id": 13})
+    assert "J3" in _scatta("J3", m)
+
+
+def test_j3_scatta_ancora_su_esito_ignoto_con_riga_assente():
+    """Un esito IGNOTO (`m.esito is None`, l'eccezione durante il place) NON
+    e' un rifiuto CERTO: l'esclusione non deve mai coprire un dubbio (I3) —
+    qui J3 resta acceso, come prima di questo fix."""
+    db = _db([])
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=db, esito=None,
+                     richiesta={"customer_ref": E.customer_ref_for(1),
+                                "price": 300.0, "size": 5.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" in _scatta("J3", m)
+
+
+# ---------------------------------------------------------------------------
+# J3, SECONDO RAMO (17/09): il FOK UCCISO A ZERO.
+# Reperto del raccordo V3: su `35797769` Betfair ACCETTA l'ordine (ok=True,
+# bet_id presente) e il FOK lo uccide senza abbinare (`size_matched` 0, stato
+# TERMINALE). `_leg_certain_failure` cancella la riserva — giusto: a mercato non
+# resta niente. J3 accusava lo stesso, perche' la sua esclusione chiedeva
+# `ok=False`. Le tre prove sotto tengono l'esclusione STRETTA: vale solo con
+# stato terminale DICHIARATO DAL BANCO, mai su un ordine che potrebbe essere vivo.
+# ---------------------------------------------------------------------------
+def test_j3_non_scatta_sul_fok_ucciso_a_zero_con_riga_cancellata():
+    """(a) ref per-gamba, ok=True, abbinato 0, stato TERMINALE, riga assente:
+    l'ordine e' esistito un istante e non ha abbinato niente — non c'e' nessuna
+    posizione da riconciliare, J3 tace."""
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=_db([]), esito=_Esito(True, 0.0, None,
+                                              order_status="LAPSED"),
+                     richiesta={"customer_ref": E.customer_ref_for(2),
+                                "price": 80.0, "size": 1.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" not in _scatta("J3", m)
+
+
+def test_j3_scatta_se_qualcosa_si_e_abbinato_e_la_riga_manca():
+    """FALSIFICAZIONE (b): ordine ACCETTATO con `size_matched > 0` e riga
+    assente — li' una posizione c'e' davvero, e non e' ritrovabile: buco vero."""
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=_db([]), esito=_Esito(True, 1.0, 80.0,
+                                              order_status="EXECUTION_COMPLETE"),
+                     richiesta={"customer_ref": E.customer_ref_for(2),
+                                "price": 80.0, "size": 1.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" in _scatta("J3", m)
+
+
+def test_j3_scatta_se_lo_stato_non_e_terminale_anche_con_abbinato_zero():
+    """FALSIFICAZIONE (c): ok=True, abbinato 0, ma l'ordine e' ancora
+    EXECUTABLE — e' VIVO a mercato, e la riga non c'e': il caso peggiore."""
+    m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(), event_id=EVENTO,
+                     db=_db([]), esito=_Esito(True, 0.0, None,
+                                              order_status="EXECUTABLE"),
+                     richiesta={"customer_ref": E.customer_ref_for(2),
+                                "price": 80.0, "size": 1.0, "side": "lay",
+                                "market_id": "1.2", "selection_id": 13})
+    assert "J3" in _scatta("J3", m)
+
+
+def test_j3_scatta_se_lo_stato_non_e_leggibile():
+    """Un esito AMBIGUO (stato vuoto o sconosciuto) non e' un esito terminale:
+    in dubbio si accusa, non si assolve (I3)."""
+    for stato in ("", "BOH"):
+        m = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(),
+                         event_id=EVENTO, db=_db([]),
+                         esito=_Esito(True, 0.0, None, order_status=stato),
+                         richiesta={"customer_ref": E.customer_ref_for(2),
+                                    "price": 80.0, "size": 1.0, "side": "lay",
+                                    "market_id": "1.2", "selection_id": 13})
+        assert "J3" in _scatta("J3", m), stato
+
+
+def test_gli_stati_terminali_sono_un_elenco_chiuso():
+    """L'elenco sta nel CONTROLLO, non importato dal codice che giudica: un
+    controllo che prendesse l'elenco dal servizio sbaglierebbe insieme a lui."""
+    assert "EXECUTABLE" not in CERT.STATI_TERMINALI
+    assert {"EXECUTION_COMPLETE", "EXPIRED", "LAPSED", "VIOLATION", "VOIDED",
+            "CANCELLED"} == set(CERT.STATI_TERMINALI)
+
+
 def test_j4_scatta_se_closes_trade_id_e_solo_nel_meta():
     db = _db([{"id": 2, "status": "pending", "side": "back",
                "meta": {"cashout": True, "closes_trade_id": 1}}])
@@ -683,6 +819,32 @@ def test_j6_scatta_su_un_parziale_non_dichiarato():
                                        "market_id": "1.2", "selection_id": 13},
                             attivita=[("place_parziale", {}, None)])
     assert "J6" not in _scatta("J6", con_nota)
+
+
+def test_j6_non_e_nemmeno_sollecitato_quando_non_si_e_abbinato_niente():
+    """(17/09) ABBINATO ZERO NON E' UN PARZIALE, e' un NO-FILL: il FOK che
+    Betfair uccide. `place_parziale` serve a mostrare un RESIDUO VIVO, e li' non
+    c'e' ne' abbinato ne' residuo — scriverlo direbbe una cosa falsa. Il caso lo
+    giudicano J1 e la famiglia K, non J6."""
+    niente = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(),
+                          event_id=EVENTO, db=_db(),
+                          esito=_Esito(True, 0.0, None, order_status="LAPSED"),
+                          richiesta={"customer_ref": "omega-t1", "price": 80.0,
+                                     "size": 1.0, "side": "lay",
+                                     "market_id": "1.2", "selection_id": 13},
+                          attivita=[("place", {}, None)])
+    sollecitati: dict = {}
+    CERT.verifica(niente, sollecitati)
+    assert not sollecitati.get("J6"), "J6 non deve avere un caso su un no-fill"
+    # FALSIFICAZIONE: appena si abbina QUALCOSA (0,4 su 1) J6 torna ad accusare
+    parziale = CERT.Momento(tipo="ordine", now=ADESSO, params=_params(),
+                            event_id=EVENTO, db=_db(),
+                            esito=_Esito(True, 0.4, 80.0),
+                            richiesta={"customer_ref": "omega-t1", "price": 80.0,
+                                       "size": 1.0, "side": "lay",
+                                       "market_id": "1.2", "selection_id": 13},
+                            attivita=[("place", {}, None)])
+    assert "J6" in _scatta("J6", parziale)
 
 
 def test_j7_scatta_su_un_annullo_senza_esito_riletto():

@@ -28,6 +28,12 @@ _OMEGA_TS = _ROOT / "frontend" / "src" / "lib" / "omega.ts"
 _STATUS_TS = _ROOT / "frontend" / "src" / "lib" / "tradeStatus.ts"
 _TABLE_TSX = _ROOT / "frontend" / "src" / "components" / "omega" / "MatchTradesTable.tsx"
 _SERVICE_PY = Path(__file__).resolve().parent / "omega_service.py"
+# 17/09: il PRODUTTORE DELLE PROPOSTE scrive su `omega_activity` come il
+# servizio (`proposta_scritta`, `proposta_decaduta`, `proposta_riproposta`,
+# `schema_warn`, `skip`, `error`). Se restasse fuori da questo elenco i suoi
+# `kind` arriverebbero in pagina tradotti parola per parola dal fallback —
+# «PROPOSTA SCRITTA» sembra innocuo, ma e' esattamente il buco M-01.
+_PROPOSTE_PY = Path(__file__).resolve().parent / "omega_proposte.py"
 _EXEC_PY = _ROOT / "Betfair" / "safe_strategy" / "execution.py"
 
 
@@ -252,7 +258,7 @@ def _kind_loggati() -> set[str]:
     servizio più quelli dello strato CONDIVISO (execution.py scrive sulla
     tabella del `db` che gli viene iniettato: con Omega è omega_activity)."""
     kinds: set[str] = set()
-    for src in (_read(_SERVICE_PY), _read(_EXEC_PY)):
+    for src in (_read(_SERVICE_PY), _read(_PROPOSTE_PY), _read(_EXEC_PY)):
         kinds |= set(_LOG_LITERAL.findall(src))
         kinds |= set(_LOG_SHARED.findall(src))
         kinds |= set(_LOG_DEDUP.findall(src))

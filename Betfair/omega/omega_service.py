@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_model as M
+from Betfair.omega import omega_v3 as V3
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.stream import avvio_app as AA
@@ -204,6 +205,14 @@ _CACHE_INSIEMI: dict[str, _Cache] = {}
 _FASE_ESEGUITA_A: dict[str, float] = {}
 # missioni attive viste dall'ultimo giro (ritmo adattivo: l'utente sta guardando)
 _ULTIME_MISSIONI_ATTIVE: int = 0
+# V3 (17/09, raccordo T2) — le TARATURE del motore v3, lette da file UNA volta:
+# i parametri del modello che ha vinto il banco e la tabella di k per secchio.
+# Sono dati immutabili e versionati (`Betfair/omega/data/`), non letture di
+# database: stanno qui perche' il giro non deve aprire un file a ogni gamba.
+# Nell'elenco di `svuota_le_cache` ci vanno lo stesso — cosi' un replay che
+# cambia scenario riparte dal file e nessuno stato passa da uno scenario
+# all'altro (test `test_ogni_cache_di_processo_e_nell_elenco_di_svuota_le_cache`).
+_CACHE_V3_TARATURE: dict[str, Any] = {}
 # FASE A (16/09) — all'avvio dell'app nessun bot opera: la guardia confronta
 # l'``APP_BOOT_ID`` di questo processo con quello salvato in ``omega_control.stats``.
 # Vive per PROCESSO e si accende in ``main()``: un ``run_once`` chiamato da un
@@ -249,6 +258,16 @@ def svuota_le_cache() -> None:
     _EVENTI_CHIUSI.clear()
     _CHIUSURA_IN_ATTESA.clear()
     _DA_ANNULLARE.clear()
+    # 17/09: anche il produttore delle PROPOSTE ha una cache di processo (i
+    # parametri del modello letti dal file del banco). Un riavvio la butta via.
+    try:
+        from . import omega_proposte as _PR
+
+        _PR.svuota_le_cache()
+    except Exception:  # noqa: BLE001 — mai far fallire un azzeramento
+        pass
+    # V3: le tarature lette da file (parametri del modello, tabella di k)
+    _CACHE_V3_TARATURE.clear()
 
 
 def _fase_dovuta(nome: str, ora: float, ogni: float) -> bool:
@@ -910,6 +929,255 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
     return sel, audit, None
 
 
+# ---------------------------------------------------------------------------
+# OMEGA V3 — IL RACCORDO (17/09). Con ``strategy_version >= 3`` la gamba la
+# sceglie e la dimensiona `omega_v3`, e la piazza LA STESSA catena di sempre
+# (`_size_and_place` -> `_place_one`: riserva -> ordine -> conferma ->
+# consapevolezza). Non c'e' un secondo percorso di esecuzione, e non c'e' un
+# motore "di laboratorio": cio' che il banco certifica e' questo.
+#
+# COSA NON CAMBIA: il default resta `strategy_version=2`, nessuna soglia, nessun
+# tetto, nessuna finestra e nessuno stake del v2 e' toccato, e V3 lo accende
+# SOLO l'utente dal pannello.
+# ---------------------------------------------------------------------------
+def _v3_tarature() -> "tuple[Any, dict]":
+    """(parametri del modello vincente, tabella di k per secchio) — da file, una
+    volta sola. Sono dati VERSIONATI in `Betfair/omega/data/`, non letture di
+    database: se un file manca si usano i default del motore (`V3.Parametri` e
+    k = `v3_k_minimo`) e la decisione resta spiegabile, non si ferma il bot.
+
+    I PARAMETRI DEL MODELLO li carica `omega_proposte.parametri_modello()`, che
+    e' l'UNICO caricatore di quel file in produzione (T1): due letture dello
+    stesso file prima o poi divergono, e allora la proposta d'uscita e la
+    selezione d'ingresso parlerebbero di due modelli diversi. Qui si aggiunge
+    solo la tabella di k, che riguarda il cancello e nient'altro.
+    """
+    got = _CACHE_V3_TARATURE.get("tarature")
+    if got is not None:
+        return got
+    from Betfair.omega import omega_proposte as _PR
+
+    par = _PR.parametri_modello()
+    k_tab: dict = {}
+    try:
+        from Betfair.omega.tools import misura_k as K
+        k_tab = K.carica_tabella_k()
+    except Exception as ex:  # noqa: BLE001 — file assente/rotto: k = pavimento
+        logger.warning("[omega] V3: tabella di k non letta (%s): si usa il "
+                       "pavimento `v3_k_minimo`", str(ex)[:120])
+    _CACHE_V3_TARATURE["tarature"] = (par, k_tab)
+    return par, k_tab
+
+
+def _v3_finestra(params: dict, half: bool) -> "tuple[int, int]":
+    """(minuto minimo, minuto massimo) della gamba: le finestre di V3 quando V3
+    e' acceso, quelle di sempre altrimenti. Il minuto e' quello REALE del feed
+    (``state.minute``), mai l'orologio: e' il chiamante a passarlo."""
+    if int((params or {}).get("strategy_version") or 2) >= 3:
+        chiave = "v3_ht" if half else "v3_ft"
+    else:
+        chiave = "ht" if half else "ft"
+    return int(params[f"{chiave}_entry_min"]), int(params[f"{chiave}_entry_max"])
+
+
+def _v3_p_empirica(db, *, league_id: Optional[int], state: "M.LiveState", half: bool,
+                   payload: Optional[dict], params: dict, n_min: int):
+    """``nome -> (P storica, n)`` per il VETO DI CODA di V3 (A12), o None.
+
+    E' la stessa tabella che il v2 usa (`omega_empirical`): per minuto quando
+    c'e', altrimenti HT->FT a inizio ripresa. Sotto ``n_min`` casi il dato NON
+    ha diritto di parola e si risponde None — fingere che abbia parlato sarebbe
+    peggio che tacere. Gli AGGREGATI («Any Unquoted …») non hanno una riga nelle
+    tabelle storiche, che sono per scoreline: li' si risponde None e la
+    decisione resta del modello, dichiarandolo nell'audit.
+    """
+    if str(params.get("model_empirical", "veto")) != "veto":
+        return None
+    minute_tbl = _minute_table(db, league_id, state.minute, half, params)
+    emp_table = None
+    ht_score = None
+    if minute_tbl is None and not half:
+        # stessa finestra del v2 (review 11/09 HIGH-3): oltre, il confronto
+        # HT->FT non e' onesto perche' il punteggio non e' piu' quello del 45'
+        if int(state.minute) <= int(params.get("model_empirical_max_minute",
+                                               int(params["ft_entry_min"]) + 10)):
+            ht_score = M.half_time_score(payload)
+            emp_table = _empirical_table(db, league_id, params)
+    if minute_tbl is None and emp_table is None:
+        return None
+    current = (int(state.score_home), int(state.score_away))
+
+    def _p(nome: str) -> "Optional[tuple[float, int]]":
+        sc = E.parse_scoreline(str(nome or ""))
+        if sc is None:
+            return None
+        got = None
+        if minute_tbl is not None:
+            got = minute_tbl.p_result(minute=int(state.minute), score=current,
+                                      result=sc, half=half, league_id=league_id)
+        elif ht_score is not None and current == (int(ht_score[0]), int(ht_score[1])):
+            got = emp_table.p_ft_given_ht(ht_score, sc, league_id)
+        if got is None:
+            return None
+        p, n = float(got[0]), int(got[1])
+        if n < int(n_min):
+            return None
+        return (p, n)
+
+    return _p
+
+
+def _v3_select(*, db, event_id: str, payload: Optional[dict], snapshot,
+               state: "M.LiveState", half: bool, params: dict,
+               aggregates: dict, liability_partita: float = 0.0,
+               celle_gia_bancate: Optional[set] = None):
+    """(candidato V3 | None, blocco di audit, motivo dello skip).
+
+    Gemella di `_model_select`, ma per il motore v3: stessi ingressi di
+    produzione (book dello scanner, minuto e punteggio REALI dal feed, catena
+    lambda di `_prematch_lambdas`), e OGNI non-ingresso porta un motivo fra
+    quelli dichiarati (`certificazione.MOTIVI_V3`) piu' lo scarto di ogni
+    singolo runner col MARGINE VERO — «nessun candidato» da solo non spiega
+    niente (A8).
+
+    I tetti che impediscono di APRIRE si valutano qui, cosi' il loro motivo
+    finisce nella decisione e non in un ramo muto; le USCITE non passano di qui
+    e restano sempre permesse (§12).
+    """
+    cfg = omega_config.parametri_v3(params)
+    # IL MERCATO E' UNO SOLO: il CORRECT SCORE, e la probabilita' e' sempre
+    # quella della griglia FINALE (`periodo='ft'`), anche nel primo tempo. La
+    # gamba sull'HALF_TIME_SCORE non si fa (M4M5M6_2026-09-17 §2.3: sul book HT
+    # il bias prudente nella fascia 2-5 % vale 0,92 e sotto il 2 % non ci sono
+    # uscite). «Due ingressi» = DUE CELLE DIVERSE dello stesso mercato, in due
+    # MOMENTI diversi: la finestra la porta la GAMBA (`half`), non il periodo.
+    periodo = V3.PERIODO_FT
+    minuto = getattr(state, "minute", None)
+    if minuto is None:
+        return None, None, "no_live_state"
+    chiave = "ht" if half else "ft"
+    lo, hi = int(cfg[f"{chiave}_entry_min"]), int(cfg[f"{chiave}_entry_max"])
+    if not V3.in_finestra(periodo, minuto, minuto_min=lo, minuto_max=hi):
+        return None, None, "fuori_finestra"
+    # il freno della PERDITA giornaliera sta prima della selezione: non serve un
+    # candidato per sapere che oggi non si apre piu'
+    cap_perdita = float(cfg["daily_loss_cap"] or 0.0)
+    if cap_perdita > 0 and E.realized_effective(aggregates) <= -cap_perdita:
+        return None, None, "cap_perdita_giornaliera"
+    runners = list(getattr(snapshot, "runners", ()) or ())
+    if not runners:
+        return None, None, "no_market"
+    lam = _prematch_lambdas(db, event_id, payload,
+                            state=_state_for_model(state, params), params=params)
+    if lam is None:
+        return None, None, "no_model_lambdas"
+    lh, la, league_id, source = lam
+    punteggio = (int(state.score_home), int(state.score_away))
+    parametri, _k_tab = _v3_tarature()
+    # LA TABELLA DI k NON SI PASSA PIU' (17/09, dichiarato). `omega_v3` la
+    # combina col pavimento come `max(k_minimo, k_tab[secchio])`, e la tabella
+    # misurata il 16/09 vale 2,0 in OGNI secchio: passarla riporterebbe in
+    # silenzio il margine a 2,0 e renderebbe inerte la decisione dell'utente
+    # (k = 1,11, il bias PRUDENTE misurato in gioco, M4M5M6 §2.3). Il pavimento
+    # e' il parametro; la tabella resta caricata e disponibile per il referto.
+    cand, scarti = E.seleziona_v3(
+        runners, periodo=periodo, minuto=float(minuto), punteggio=punteggio,
+        params=params, lambdas=(float(lh), float(la)),
+        parametri_modello=parametri, k_tab=None,
+        finestra=(lo, hi), escludi=sorted(celle_gia_bancate or ()),
+        p_empirica=_v3_p_empirica(db, league_id=league_id, state=state, half=False,
+                                  payload=payload, params=params,
+                                  n_min=int(cfg["empirical_min_n"])),
+        p_mercato=V3.p_mercato_devigata(runners))
+    scarti = tuple((n, p) for n, p in (scarti or ()) if n)
+    audit: dict[str, Any] = {
+        "motore": "v3",
+        "modello": cfg["modello"],
+        "lambda_pre": [round(float(lh), 4), round(float(la), 4)],
+        "lambda_source": source,
+        "league_id": league_id,
+        "periodo": periodo,
+        "mercato": "CORRECT_SCORE",
+        "gamba": "A" if half else "B",
+        "minuto": int(minuto),
+        "punteggio": f"{punteggio[0]}-{punteggio[1]}",
+        "finestra": [lo, hi],
+        "k_minimo": float(cfg["k_minimo"]),
+        "scartati": [f"{n}: {p}" for n, p in scarti[:12]],
+    }
+    if cand is None:
+        return None, audit, "nessun_candidato"
+    audit.update({
+        "runner": cand.name, "price": float(cand.price),
+        "p_modello": round(float(cand.p_modello), 8),
+        "p_fusa": round(float(cand.p_fusa), 8),
+        "p_empirica": (None if cand.p_empirica is None
+                       else round(float(cand.p_empirica), 8)),
+        "n_empirico": cand.n_empirico,
+        "p_selected": round(float(cand.p_nostra), 8),
+        "p_implied": round(float(cand.p_implicita), 8),
+        "k_usato": float(cand.k_usato), "margine": round(float(cand.margine), 4),
+        "ev": float(cand.ev), "liability": float(cand.liability),
+        "motivo": cand.motivo,
+    })
+    # i TETTI, col numero vero della gamba scelta
+    cap_gamba = float(cfg["max_liability_per_leg"] or 0.0)
+    if cap_gamba > 0 and float(cand.liability) > cap_gamba + 0.011:
+        # non dovrebbe accadere (`omega_v3` scarta il runner), ma se accadesse
+        # sarebbe un ingresso oltre il tetto: si tace e si dichiara
+        return None, audit, "nessun_candidato"
+    cap_match = float(cfg["max_liability_per_match"] or 0.0)
+    if cap_match > 0 and float(liability_partita) + float(cand.liability) > cap_match + 0.011:
+        return None, audit, "cap_partita"
+    cap_aperto = float(cfg["max_open_liability"] or 0.0)
+    if cap_aperto > 0:
+        impegnato = E.open_liability_effective(aggregates)
+        if impegnato + float(cand.liability) > cap_aperto + 0.011:
+            return None, audit, "cap_aperto"
+    return cand, audit, None
+
+
+def _v3_esposizione_di_partita(db, event_id: str) -> "tuple[float, set]":
+    """(liability gia' esposta dal BOT su questa partita, celle gia' bancate).
+
+    UNA sola lettura per le due cose che servono alla seconda gamba: quanto
+    rischio c'e' gia' (tetto di PARTITA) e su quali selezioni — perche' «due
+    ingressi» vuol dire due CELLE DIVERSE dello stesso Correct Score, non due
+    volte la stessa.
+
+    ``inf`` quando la lettura fallisce: «non lo so» non e' «niente» (I3), e in
+    dubbio non si aggiunge esposizione a una partita che ne ha gia'.
+    """
+    righe = _esposto_del_bot(db, str(event_id))
+    if righe is None:
+        return float("inf"), set()
+    tot = 0.0
+    celle: set = set()
+    for r in righe:
+        try:
+            tot += float(r.get("liability") or 0.0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            celle.add(int(r.get("selection_id")))
+        except (TypeError, ValueError):
+            continue
+    return tot, celle
+
+
+def _v3_selection_dal_candidato(cand, snapshot) -> "E.Selection":
+    """Il candidato V3 nella forma che la catena di piazzamento gia' conosce,
+    con la CONTROPARTE VERA del book: `CandidatoV3` non porta la size lay
+    disponibile, e `omega_engine.selezione_da_v3` la lascia a zero — cosi'
+    `_size_and_place` non saprebbe dire se il book regge l'ordine."""
+    base = E.selezione_da_v3(cand)
+    runner = next((r for r in getattr(snapshot, "runners", ()) or ()
+                   if int(getattr(r, "selection_id", -1)) == int(cand.selection_id)), None)
+    return E.Selection(selection_id=base.selection_id, name=base.name,
+                       price=base.price,
+                       lay_size_available=float(getattr(runner, "lay_size", 0.0) or 0.0))
+
+
 def _market_fit_cached(event_id: str, payload: Optional[dict], state: "M.LiveState",
                        league_id: Optional[int]):
     """Fit di mercato per (evento, 5′, punteggio) — una volta, poi cache (review H5)."""
@@ -990,8 +1258,14 @@ def scan_and_place_legs(
     if params["stop_on_goal"] and realized >= goal:
         _log_dedup(db, ("goal_stop",), "goal_stop", {"realized": round(realized, 2), "goal": goal})
         return 0
-    if params["daily_loss_cap"] and params["daily_loss_cap"] > 0 and realized <= -params["daily_loss_cap"]:
-        _log_dedup(db, ("loss_stop",), "loss_stop", {"realized": round(realized, 2), "cap": params["daily_loss_cap"]})
+    # il tetto di PERDITA giornaliera e' quello del motore acceso: in v2 e' a
+    # zero (spento, §19.5), in V3 vale `v3_daily_loss_cap`. Oltre il tetto si
+    # smette di APRIRE; le uscite restano sempre permesse (§12).
+    cap_perdita = float(params["daily_loss_cap"] or 0.0)
+    if int(params.get("strategy_version") or 2) >= 3:
+        cap_perdita = float(params.get("v3_daily_loss_cap") or 0.0)
+    if cap_perdita > 0 and realized <= -cap_perdita:
+        _log_dedup(db, ("loss_stop",), "loss_stop", {"realized": round(realized, 2), "cap": cap_perdita})
         return 0
     commission = params["commission_pct"] / 100.0
     placed = 0
@@ -1034,9 +1308,15 @@ def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, ag
         if params["max_events"] and traded_count >= params["max_events"] \
                 and not any((ev.event_id, leg) in traded_legs for leg in E.LEG_PHASES):
             return 0, traded_count   # cap raggiunto: niente partite NUOVE, ma la 2ª gamba si fa sempre
+        v3_on = int(params.get("strategy_version") or 2) >= 3
         if ev.open_date is not None:   # pre-filtro orologio, largo (recuperi/KO ritardati)
             cm = E.minute_from_clock(ev.open_date, now)
-            if cm < params["ht_entry_min"] - 25 or cm > params["ft_entry_max"] + 25:
+            # le finestre del motore ACCESO (in V3 sono le `v3_*`): il pre-filtro
+            # e' largo 25' per parte, ma deve comunque riferirsi alla finestra
+            # giusta, se no una gamba V3 in finestra verrebbe scartata qui.
+            primo = _v3_finestra(params, True)[0]
+            ultimo = _v3_finestra(params, False)[1]
+            if cm < primo - 25 or cm > ultimo + 25:
                 return 0, traded_count
         state, status, score_str = _live_state_for(market, ev, score_lookup, now, decision=True)
         if state is None:
@@ -1050,11 +1330,15 @@ def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, ag
         for leg, mtype, half, leg_phase, k_min, k_max in _LEGS:
             if phase != leg_phase or (ev.event_id, leg) in traded_legs:
                 continue
-            if not (params[k_min] <= state.minute <= params[k_max]):
+            fin_min, fin_max = (_v3_finestra(params, half) if v3_on
+                                else (params[k_min], params[k_max]))
+            if not (fin_min <= state.minute <= fin_max):
                 continue
             if not _leg_retry_allowed(ev.event_id, leg, now):
                 continue
-            pair = _leg_market(market, ev, mtype, payload)
+            # V3: il mercato e' SEMPRE il Correct Score, anche per la gamba
+            # del primo tempo (la gamba sull'HALF_TIME_SCORE non si fa piu').
+            pair = _leg_market(market, ev, ("CORRECT_SCORE" if v3_on else mtype), payload)
             if pair is None:
                 _log_dedup(db, (ev.event_id, leg, "no_market"), "skip",
                            {"event_id": ev.event_id, "leg": leg, "reason": "no_market"})
@@ -1068,6 +1352,41 @@ def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, ag
                 _log_dedup(db, (ev.event_id, leg, "market_not_open"), "skip",
                            {"event_id": ev.event_id, "leg": leg,
                             "reason": f"market_{str(snapshot.status).lower()}"})
+                continue
+            if v3_on:
+                # ---- OMEGA V3: sceglie il motore nuovo, piazza la catena di
+                # sempre. Niente target di giornata: lo stake e' fisso (1,00 EUR)
+                # e i tetti sono i `v3_*`.
+                liab_partita, celle = 0.0, set()
+                altra = "ft_cs" if leg == "ht_cs" else "ht_cs"
+                if (ev.event_id, altra) in traded_legs:
+                    # una sola lettura, e solo quando l'altra gamba esiste
+                    # davvero: se non c'e', ne' il tetto di PARTITA ne' il
+                    # vincolo «celle diverse» possono mordere
+                    liab_partita, celle = _v3_esposizione_di_partita(db, ev.event_id)
+                cand, audit, why = _v3_select(
+                    db=db, event_id=ev.event_id, payload=payload, snapshot=snapshot,
+                    state=state, half=half, params=params, aggregates=aggregates,
+                    liability_partita=liab_partita, celle_gia_bancate=celle)
+                if cand is None:
+                    _log_dedup(db, (ev.event_id, leg, why), "skip",
+                               {"event_id": ev.event_id, "leg": leg, "reason": why,
+                                "motore": "v3", "minute": state.minute,
+                                "score": score_str,
+                                "scartati": (audit or {}).get("scartati") or []})
+                    continue
+                did = _size_and_place(
+                    ev=ev, cs=cs, sel=_v3_selection_dal_candidato(cand, snapshot),
+                    snapshot=snapshot, target=0.0, minute=state.minute,
+                    score_str=score_str, mode=mode, commission=commission,
+                    params=params, aggregates=aggregates, market=market, db=db,
+                    now=now, phase=leg, model=audit,
+                    v3=omega_config.parametri_v3(params))
+                placed += did
+                if did:
+                    if (ev.event_id, altra) not in traded_legs:
+                        traded_count += 1      # la partita conta una volta sola
+                    traded_legs.add((ev.event_id, leg))
                 continue
             # §14: target di GAMBA = (G − R) / gambe ancora piazzabili oggi (questa
             # inclusa): l'obiettivo si spalma su tutte le operazioni residue, la
@@ -1231,33 +1550,66 @@ def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], n
 
 
 def _size_and_place(*, ev, cs, sel, snapshot, target, minute, score_str, mode, commission,
-                    params, aggregates, market, db, now, phase=None, model=None) -> int:
+                    params, aggregates, market, db, now, phase=None, model=None,
+                    v3: Optional[dict[str, Any]] = None) -> int:
     """Sizing dal target (I2), cap liability/liquidità (mai fill parziali: meglio
     un lay più piccolo ma COMPLETO), cap esposizione aperta, poi reserve-first. 0/1.
-    ``requested_size`` = size PRIMA del cap di liquidità (audit target vs effettivo, §6)."""
-    size = E.lay_size_from_target(target, commission=commission, min_stake=params["min_stake"])
-    size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
-    requested_size = size
-    if sel.lay_size_available and size > sel.lay_size_available:
-        size = round(sel.lay_size_available, 2)
-        db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
-                                "available": sel.lay_size_available, "size": size})
-    if size < params["min_stake"]:
-        _log_dedup(db, (ev.event_id, phase, "insufficient_liquidity"), "skip",
-                   {"event_id": ev.event_id, "leg": phase, "reason": "insufficient_liquidity",
-                    "avail": sel.lay_size_available})
-        return 0
+    ``requested_size`` = size PRIMA del cap di liquidità (audit target vs effettivo, §6).
+
+    ``v3`` (17/09) = il blocco `omega_config.parametri_v3` quando il motore acceso
+    è V3: allora la size NON viene dall'obiettivo di giornata ma è lo STAKE FISSO
+    dell'utente (1,00 EUR) e non si taglia MAI — o si entra interi, o non si entra.
+    Il resto del percorso (riserva, ordine, conferma, consapevolezza) è lo stesso.
+    """
+    if v3 is None:
+        size = E.lay_size_from_target(target, commission=commission, min_stake=params["min_stake"])
+        size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
+        requested_size = size
+        if sel.lay_size_available and size > sel.lay_size_available:
+            size = round(sel.lay_size_available, 2)
+            db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
+                                    "available": sel.lay_size_available, "size": size})
+        if size < params["min_stake"]:
+            _log_dedup(db, (ev.event_id, phase, "insufficient_liquidity"), "skip",
+                       {"event_id": ev.event_id, "leg": phase, "reason": "insufficient_liquidity",
+                        "avail": sel.lay_size_available})
+            return 0
+        cap_aperto = float(params["max_open_liability"] or 0.0)
+    else:
+        # V3: stake ESATTO. Un taglio per liquidità o per tetto di gamba è uno
+        # SKIP, non un ingresso più piccolo: a 1,00 EUR mezzo lay non è mezza
+        # strategia, è un'altra strategia (A9).
+        size = round(float(v3["stake"]), 2)
+        requested_size = size
+        disponibile = float(sel.lay_size_available or 0.0)
+        if disponibile + 1e-9 < size:
+            _log_dedup(db, (ev.event_id, phase, "insufficient_liquidity"), "skip",
+                       {"event_id": ev.event_id, "leg": phase, "motore": "v3",
+                        "reason": "insufficient_liquidity", "avail": disponibile,
+                        "size": size})
+            return 0
+        cap_gamba = float(v3.get("max_liability_per_leg") or 0.0)
+        if cap_gamba > 0 and E.liability_from_lay(size, sel.price) > cap_gamba + 0.011:
+            # difesa: `omega_v3` ha già scartato i runner oltre il tetto di gamba.
+            # Se si arriva qui è un difetto, e il difetto NON deve diventare un ordine.
+            _log_dedup(db, (ev.event_id, phase, "v3_cap_gamba"), "skip",
+                       {"event_id": ev.event_id, "leg": phase, "motore": "v3",
+                        "reason": "v3_cap_di_gamba", "critical": True,
+                        "liability": E.liability_from_lay(size, sel.price),
+                        "cap": cap_gamba})
+            return 0
+        cap_aperto = float(v3.get("max_open_liability") or 0.0)
     liability = E.liability_from_lay(size, sel.price)
-    if params["max_open_liability"] and params["max_open_liability"] > 0:
+    if cap_aperto and cap_aperto > 0:
         # review H1: il capitale impegnato include le perdite già BLOCCATE non
         # ancora incassate — altrimenti ogni green-up in perdita "liberava" il cap
         # e il bot si riesponeva subito coi soldi appena persi.
         impegnato = E.open_liability_effective(aggregates)
-        if impegnato + liability > params["max_open_liability"]:
+        if impegnato + liability > cap_aperto:
             _log_dedup(db, (ev.event_id, phase, "max_open_liability"), "skip",
                        {"event_id": ev.event_id, "leg": phase, "reason": "max_open_liability",
                         "impegnato": impegnato, "liability": liability,
-                        "cap": params["max_open_liability"]})
+                        "cap": cap_aperto})
             return 0
     did = _place_one(
         ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size, price=sel.price,
@@ -1486,6 +1838,11 @@ def _confirm_open_trade(
             # migrazione e' applicata. ``price`` e ``size`` restano quello che
             # sono sempre stati (l'abbinato): niente cambia per chi li legge,
             # ma il chiesto non si perde piu'.
+            # R-C1 (17/09): ``size_remaining``/``betfair_updated_at`` arrivano
+            # QUI solo se il chiamante li ha scritti in ``meta``/``extra_meta``
+            # — non si inventano: ogni chiamante che sa che l'ordine e' TERMINALE
+            # (niente piu' vivo sul book: reconcile_pending, _flumine_confirm)
+            # deve dichiararlo esplicitamente (anche 0.0, MAI lasciarlo cadere).
             fuso = {**(extra_meta or {}), **dict(meta or {})}
             X.aggiorna_trade(
                 db, trade_id,
@@ -1618,8 +1975,28 @@ def _place_one(
                                  base_meta={**keep_meta, "requested_size": req_size})
             return 0
         final_price, final_size = fill.avg_price, fill.matched_size
+        # R-J6 (17/09): il fill istantaneo (paper legacy, snapshot del book) puo'
+        # essere PARZIALE (``fill.fully_matched=False``) senza mai passare dal
+        # ramo LIVE che sotto logga ``place_parziale`` — qui non scattava mai,
+        # il trader restava senza vedere il residuo. Nessun ordine resta vivo
+        # (fill istantaneo su snapshot, non un ordine a mercato): il residuo
+        # non piazzato e' PERSO, non "in attesa" — dichiarato con 0.0 in
+        # ``size_remaining`` (nessun residuo VIVO sul book, coerente con C1).
+        if not fill.fully_matched and float(final_size) + 0.005 < float(size):
+            residuo_paper = round(float(size) - float(final_size), 2)
+            db.log("place_parziale", {
+                "event_id": ev.event_id, "trade_id": trade_id, "critical": True,
+                "size_requested": round(float(size), 2),
+                "size_matched": round(float(final_size), 2),
+                "size_remaining": 0.0, "avg_price_matched": final_price,
+                "nota": (f"parziale paper {float(final_size):.2f} su {float(size):.2f}, "
+                         f"residuo {residuo_paper:.2f} mai piazzato (fill istantaneo "
+                         f"su snapshot, nessun ordine resta a mercato)")})
         meta = {"fully_matched": fill.fully_matched,
-                "requested_size": requested_size if requested_size is not None else size}
+                "requested_size": requested_size if requested_size is not None else size,
+                # C.12a/R-C1: nessun ordine reale resta vivo su un fill istantaneo
+                # simulato: il residuo e' 0.0 DICHIARATO (mai None).
+                "size_remaining": 0.0}
         bet_id = None
     else:  # live — soldi veri
         # LIVE=DEMO (§6-bis v2): se il gate live passa, il place va sulla coda
@@ -2007,7 +2384,13 @@ def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
     ``fuso.get(...)`` li legge per scriverli sulle colonne nuove (stessa strada
     di ``requested_size`` sul percorso REST, righe ~1689-1704). Senza, la
     conferma via coda flumine (paper E live) lasciava NULL proprio queste due
-    colonne pur avendo già ``size_matched``/``avg_price_matched`` corretti."""
+    colonne pur avendo già ``size_matched``/``avg_price_matched`` corretti.
+
+    R-J6 (17/09, aggiunto qui su master): se l'abbinato e' sotto il RICHIESTO
+    (``tr['size']``, la size dell'ordine davvero accodato) l'attivita'
+    ``place_parziale`` si logga SEMPRE — prima qui non scattava mai (solo il
+    place REST diretto la loggava) e J6 restava sollecitabile solo su quel
+    percorso."""
     side = str(tr.get("side") or "lay")
     price = avg if avg and avg > 1.0 else float(tr.get("price") or 0.0)
     size = round(float(matched), 2)
@@ -2020,6 +2403,17 @@ def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
         meta["size_remaining"] = round(float(size_remaining), 2)
     if betfair_updated_at is not None:
         meta["betfair_updated_at"] = betfair_updated_at
+    res_size = float(tr.get("size") or 0.0)
+    if size + 0.005 < res_size:
+        residuo = round(max(0.0, res_size - size), 2)
+        db.log("place_parziale", {
+            "event_id": tr.get("event_id"), "trade_id": tr["id"], "critical": True,
+            "size_requested": round(res_size, 2), "size_matched": size,
+            "size_remaining": (round(float(size_remaining), 2)
+                               if size_remaining is not None else 0.0),
+            "avg_price_matched": price,
+            "nota": (f"parziale flumine {size:.2f} su {res_size:.2f}, residuo "
+                     f"{residuo:.2f} mai piazzato (ordine terminale, mode={mode})")})
     _confirm_open_trade(
         db, tr["id"], event_id=tr["event_id"], price=price, size=size,
         liability=_back_liability(size, side, price),
@@ -2510,6 +2904,12 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
             # aperta (gli altri percorsi di conferma la tolgono: qui restava)
             bet_id=None, meta={**{k: v for k, v in meta_tr.items() if k != "phase"},
                                "reconciled": "paper"}, mode="paper",
+            # R-C1 (17/09): la riserva PAPER orfana si conferma coi dati suoi
+            # (nessun ordine reale a mercato) — il residuo e' 0.0 DICHIARATO
+            # (nessuna gamba resta "vivo sul book" di un mercato che non
+            # esiste), l'istante e' quello di QUESTA riconciliazione (non
+            # c'e' un "istante di Betfair" per un fill mai stato reale).
+            extra_meta={"size_remaining": 0.0, "betfair_updated_at": now.isoformat()},
         )
         # L-06: la conferma PAPER non era loggata da nessuna parte (attività muta)
         db.log("reconciled_paper", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
@@ -2536,6 +2936,12 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                     bet_id=d.get("bet_id"),
                     meta={**{k: v for k, v in (tr.get("meta") or {}).items() if k != "phase"},
                           "reconciled": "live"}, mode="live",
+                    # R-C1 (17/09): residuo e istante DELL'ORDINE VERO, letti
+                    # da Betfair via ``reconcile_decision`` — prima si
+                    # perdevano qui (mai passati a ``_confirm_open_trade``,
+                    # colonna sempre None anche a fill completo).
+                    extra_meta={"size_remaining": d.get("size_remaining"),
+                               "betfair_updated_at": d.get("betfair_updated_at")},
                 )
                 db.log("reconciled_open", {"trade_id": tr["id"], "event_id": tr["event_id"], "bet_id": d.get("bet_id")})
                 n += 1
@@ -3930,6 +4336,58 @@ def _cashout_prices(market, tr: dict[str, Any]) -> Optional[dict[str, Any]]:
     return None
 
 
+def _uscita_del_bot_approvata(payload: dict[str, Any]) -> bool:
+    """La richiesta `cashout` è l'APPROVAZIONE di un'uscita decisa dal BOT?
+
+    ⚠️ NON OGNI `cashout` È UNA CHIUSURA DELL'UTENTE (reperto O-3, 17/09).
+    La scheda delle proposte manda una richiesta `cashout` IDENTICA a quella del
+    bottone «Cash out», ma quella chiusura l'ha DECISA IL BOT: l'utente ha solo
+    firmato. Trattarla come una chiusura sua vorrebbe dire marcare la partita
+    «chiusa dall'utente» ed escluderla — cioè spegnere il bot su una partita che
+    sta gestendo lui. È lo stesso difetto che la Safe ha trovato e corretto il
+    16/09 (`bot_service._uscita_del_bot_approvata`), e che il replay tennis
+    `approvata-subito` ha mostrato subito.
+
+    Si riconosce da tre segni, e ne basta uno:
+      · ``approved_at`` — lo aggiunge la RPC ``omega_request_approve``
+        (`migrations/omega_proposte_coda_unica_2026-09-17.sql`) e SOLO le
+        proposte passano di lì;
+      · ``motivo_codice`` (o ``exit_kind``) — il codice della regola d'uscita,
+        scritto da ``omega_proposte`` nel payload della proposta;
+      · ``approvata_da`` — la firma del trader, come la scrive il replay.
+    Un «Cash out» premuto sulla scheda non ne ha nessuno."""
+    if not isinstance(payload, dict):
+        return False
+    return bool(payload.get("approved_at") or payload.get("motivo_codice")
+                or payload.get("exit_kind") or payload.get("approvata_da"))
+
+
+def _exit_kind_della_proposta(payload: dict[str, Any],
+                              lock_ref: Optional[float]) -> "tuple[str, str]":
+    """(``meta.exit_kind``, ``meta.exit_reason``) di una chiusura DECISA dal bot
+    e APPROVATA dall'utente.
+
+    Il vocabolario è quello CHIUSO e condiviso con la Safe
+    (``safe_strategy.exits.ui_exit_kind``): mai un codice inventato qui, o il
+    badge della UI direbbe una cosa che il resto della piattaforma non conosce.
+    La REGOLA che ha deciso è `profit` quando si blocca un guadagno, `loss`
+    quando si blocca una perdita (protezione, cap, rischio) — e con `loss` la
+    scheda non scrive mai «green-up» su una perdita."""
+    from Betfair.safe_strategy import exits as XE
+
+    motivo = str(payload.get("motivo_codice") or payload.get("exit_kind") or "")
+    in_perdita = lock_ref is not None and float(lock_ref) < 0.0
+    regola = "loss" if (in_perdita or motivo in ("protezione", "cap", "rischio")) else "profit"
+    kind = XE.ui_exit_kind(regola, locked=lock_ref, manual=False, integral=True)
+    testi = {
+        "blocca_il_profitto": "Uscita proposta dal bot (blocca il profitto), approvata da te",
+        "protezione": "Uscita proposta dal bot (protezione: tenere costava di piu'), approvata da te",
+        "cap": "Uscita proposta dal bot (tetto di rischio scattato), approvata da te",
+        "rischio": "Uscita proposta dal bot (rischio oltre la soglia), approvata da te",
+    }
+    return kind, testi.get(motivo, "Uscita proposta dal bot, approvata da te")
+
+
 def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     """Chiude a mercato (green-up totale o cash-out parziale) UNA gamba aperta.
 
@@ -3937,6 +4395,11 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     = green-up totale). La gamba di chiusura è una riga NUOVA in omega_trades col
     lato opposto e ``closes_trade_id``; l'originale passa a 'hedged' con
     ``meta.locked_pnl``. Il settlement nettizza poi le due gambe insieme.
+
+    ⚠️ Due chiusure diverse passano di qui (O-3, 17/09): il CASH OUT dell'utente
+    e l'APPROVAZIONE di un'uscita decisa dal bot. La seconda si riconosce dal
+    payload (``_uscita_del_bot_approvata``) e NON marca la partita come chiusa
+    dall'utente: il bot continua a gestirla.
     """
     tid = payload.get("trade_id")
     if tid is None:
@@ -3958,6 +4421,25 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         return {"error": "trade_inesistente"}
     if str(tr.get("status")) != "open":
         return {"error": f"trade_non_aperto:{tr.get('status')}"}
+
+    # ⚠️ IL CANCELLETTO, DAL LATO DELL'ESECUZIONE (G1, 17/09).
+    # Una richiesta che porta `motivo_codice` e' una PROPOSTA del bot: puo'
+    # essere eseguita SOLO se e' passata dalla RPC `omega_request_approve`, che
+    # ci scrive sopra `approved_at`. Se e' arrivata a 'pending' senza quella
+    # firma, qualcuno ha allargato il filtro della coda (o l'ha scritta a mano):
+    # il bot starebbe per chiudere una posizione che nessuno gli ha detto di
+    # chiudere. Si rifiuta, forte — la posizione resta aperta e visibile, che e'
+    # il lato giusto in cui sbagliare (memoria 12/09).
+    if payload.get("motivo_codice") and not (payload.get("approved_at")
+                                             or payload.get("approvata_da")):
+        db.log("error", {"reason": "proposta_non_firmata", "trade_id": tid,
+                         "event_id": tr.get("event_id"), "critical": True,
+                         "motivo_codice": payload.get("motivo_codice"),
+                         "nota": "richiesta di chiusura con i numeri di una PROPOSTA ma "
+                                 "senza la firma dell'utente (`approved_at` della RPC): "
+                                 "NON si esegue. In V3 nessuna chiusura parte da sola."})
+        return {"error": "proposta_non_firmata",
+                "message": "questa chiusura non risulta approvata: non si esegue"}
 
     prices = _cashout_prices(market, tr)
     if not prices:
@@ -4007,27 +4489,70 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     residual_after = res.get("residual_size")
     partial = bool(fraction < 1.0 or amount is not None
                    or (residual_after is not None and float(residual_after) > X.HEDGE_EPS))
-    reason = EXIT_REASON_MANUAL + (" (parziale)" if partial else "")
+    # O-3 (17/09): chi ha DECISO questa chiusura? L'utente col bottone, o il bot
+    # con una proposta che l'utente ha firmato? Il payload lo dice.
+    del_bot = _uscita_del_bot_approvata(payload)
+    if del_bot:
+        exit_kind, reason = _exit_kind_della_proposta(payload, lock_ref)
+    else:
+        exit_kind, reason = EXIT_KIND_MANUAL, EXIT_REASON_MANUAL
+    reason = reason + (" (parziale)" if partial else "")
     try:
         getter = getattr(db, "get_trade", None)
         cur = (getter(tid) if callable(getter) else None) or tr
-        meta = {**(cur.get("meta") or {}), "exit_kind": EXIT_KIND_MANUAL,
+        meta = {**(cur.get("meta") or {}), "exit_kind": exit_kind,
                 "exit_reason": reason,
                 "exit_profit": bool(lock_ref is not None and float(lock_ref) >= 0.0)}
+        if del_bot:
+            # LA FIRMA, sulla riga di APERTURA: chi ha approvato e quando. Senza,
+            # nello storico una chiusura decisa dal bot e una premuta a mano
+            # sarebbero indistinguibili, e la latenza fra la DECISIONE e
+            # l'ordine non sarebbe piu' misurabile (cert. Safe 14/09).
+            meta["chiusura_proposta"] = {
+                "motivo_codice": payload.get("motivo_codice"),
+                "approved_at": payload.get("approved_at"),
+                "approvata_da": payload.get("approvata_da") or "utente (Control Room)",
+                "decided_at": payload.get("decided_at"),
+                "proposed_at": payload.get("proposed_at"),
+                "profitto_bloccabile": payload.get("profitto_bloccabile"),
+                "ev_tenere": payload.get("ev_tenere"),
+                "p_evento": payload.get("p_evento"),
+            }
+            # la proposta e' stata eseguita: il marcatore non deve restare, o al
+            # giro dopo il produttore crederebbe che ce ne sia una ancora viva
+            # (import PIGRO: `omega_proposte` chiama questo modulo, non il contrario)
+            from . import omega_proposte as _PR
+
+            meta.pop(_PR.PROPOSTA_KEY, None)
         db.update_trade(tid, meta=meta)
         tr["meta"] = meta
     except Exception as ex:  # noqa: BLE001 — l'ordine è già passato: solo etichette
-        logger.warning("[omega] exit_kind manuale su trade %s KO: %s", tid, str(ex)[:120])
-    _greenup_stamp_closing(db, res.get("closing_trade_id"), EXIT_KIND_MANUAL, reason,
+        logger.warning("[omega] exit_kind su trade %s KO: %s", tid, str(ex)[:120])
+    _greenup_stamp_closing(db, res.get("closing_trade_id"), exit_kind, reason,
                            profit=bool(lock_ref is not None and float(lock_ref) >= 0.0),
                            commission=tr.get("commission"))
-    db.log("cashout_manual", {
+    db.log("uscita_approvata" if del_bot else "cashout_manual", {
         "trade_id": tid, "event_id": tr.get("event_id"),
-        "closing_trade_id": res.get("closing_trade_id"), "exit_kind": EXIT_KIND_MANUAL,
+        "closing_trade_id": res.get("closing_trade_id"), "exit_kind": exit_kind,
         "exit_reason": reason, "fraction": fraction, "amount": amount, "partial": partial,
         "price": res.get("price"), "size": res.get("size"), "locked_pnl": locked,
         "planned_lock": res.get("planned_lock"),
-        "residual_size": residual_after, "mode": tr.get("mode")})
+        "residual_size": residual_after, "mode": tr.get("mode"),
+        **({"motivo_codice": payload.get("motivo_codice"),
+            "approved_at": payload.get("approved_at"),
+            "decided_at": payload.get("decided_at"),
+            # LA FIRMA, dichiarata: `approved_at` lo scrive SOLO la RPC
+            # `omega_request_approve`. E' questo il campo su cui poggia G1 —
+            # un'uscita del bot senza firma non e' un'uscita approvata, e' una
+            # chiusura partita da sola.
+            "firmata": bool(payload.get("approved_at") or payload.get("approvata_da")),
+            "nota": "uscita DECISA DAL BOT e approvata dall'utente: la partita NON "
+                    "e' 'chiusa dall'utente' e il bot continua a gestirla"}
+           if del_bot else {})})
+    if del_bot:
+        # NON si chiama `_dopo_il_cashout`: quella funzione esiste per dire «da
+        # qui in poi la partita e' dell'utente», e qui la partita e' del bot.
+        return res
     _dopo_il_cashout(db=db, tr=tr, now=now, partial=partial, market=market)
     return res
 
@@ -5680,12 +6205,29 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "settle_phase_failed", "err": str(ex)[:160]})
         n_settled = 0
 
-    # 1-bis) GREEN-UP AUTOMATICO (§12) — SEMPRE, anche a bot fermo, paper e live:
-    #    una gamba aperta va gestita fino alla fine (uscita a mercato sul gol /
-    #    crollo di quota / take-profit), fermare il bot blocca solo i nuovi ingressi.
+    # 1-bis) LE USCITE — SEMPRE, anche a bot fermo, paper e live: una gamba
+    #    aperta va gestita fino alla fine; fermare il bot blocca solo i NUOVI
+    #    ingressi. Due modi, mai insieme (sarebbero due decisioni sulla stessa
+    #    gamba):
+    #      · GREEN-UP AUTOMATICO (§12, motore v2 con `greenup_mode='auto'`): il
+    #        bot chiude da solo a mercato sul gol / crollo di quota / take-profit;
+    #      · PROPOSTE (17/09, regola non negoziabile del mandato §1): il bot NON
+    #        chiude — calcola i numeri e SCRIVE UNA PROPOSTA che firma l'utente
+    #        dalla Control Room, in profitto e in perdita. È quello che gira con
+    #        `greenup_mode='off'` e, per costruzione, con `strategy_version >= 3`
+    #        (la whitelist spegne il green-up da sola, `omega_config:331-334`).
+    #    Il default NON cambia: la scelta è dell'utente, dal pannello.
+    n_proposte = 0
     try:
-        n_greenup = process_auto_greenup(params=params, market=market, db=db, now=now,
-                                         feed=greenup_feed)
+        if _greenup_active(params):
+            n_greenup = process_auto_greenup(params=params, market=market, db=db, now=now,
+                                             feed=greenup_feed)
+        else:
+            n_greenup = 0
+            from . import omega_proposte as PR
+
+            n_proposte = PR.process_proposte_uscita(params=params, market=market, db=db,
+                                                    now=now, feed=greenup_feed)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "greenup_phase_failed", "err": str(ex)[:160]})
         n_greenup = 0
@@ -5743,6 +6285,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         _IDLE_STATS_AT["status"] = "stopped"
         db.log("stop", {})
         return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup,
+                "proposte": n_proposte,
                 "fretta": _c_e_fretta(None, bool(n_settled or n_greenup or n_manual))}
     if status != "running":
         # heartbeat ANCHE a bot fermo (seconda passata MEDIUM-4): settlement, green-up e
@@ -5758,7 +6301,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         except Exception:  # noqa: BLE001
             pass
         return {"idle": True, "status": status, "settled": n_settled, "manual": n_manual,
-                "greenup": n_greenup,
+                "greenup": n_greenup, "proposte": n_proposte,
                 "fretta": _c_e_fretta(None, bool(n_settled or n_greenup or n_manual))}
 
     # 2) universo eventi del giorno + aggregati freschi
@@ -6005,7 +6548,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     except Exception as ex:  # noqa: BLE001 — L-06: il ciclo è comunque andato a buon fine
         logger.warning("[omega] set_control stats KO: %s", str(ex)[:120])
     return {"placed": n_placed, "settled": n_settled, "events": len(events),
-            "missions": n_missions, "greenup": n_greenup, "stats": stats,
+            "missions": n_missions, "greenup": n_greenup, "proposte": n_proposte,
+            "stats": stats,
             "fretta": _c_e_fretta(stats, bool(n_placed or n_settled or n_greenup or n_manual))}
 
 

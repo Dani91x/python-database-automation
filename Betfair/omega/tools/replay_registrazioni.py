@@ -90,6 +90,7 @@ from .. import certificazione as CERT
 from .. import omega_config
 from .. import omega_engine as E
 from .. import omega_market as OM
+from .. import omega_proposte as PROPOSTE
 from .. import omega_service as S
 from .. import omega_v3 as V3
 from ...stream.backtest.banco_comune import (
@@ -264,6 +265,7 @@ class DbMemoriaOmega(DbMemoria):
         self.obiettivi: Dict[str, float] = {}
         self.missioni: List[Dict[str, Any]] = []
         self.richieste_manuali: List[Dict[str, Any]] = []
+        self._rid_proposta = 0
 
     # ------------------------------------------------------------- control
     def read_control(self) -> Optional[Dict[str, Any]]:
@@ -510,6 +512,47 @@ class DbMemoriaOmega(DbMemoria):
 
     def fail_stale_processing(self, max_age_min: int = 10) -> None:
         return None
+
+    # ------------------------------------------- le PROPOSTE DI USCITA (17/09)
+    # STESSA CODA delle richieste manuali (`omega_manual_requests`), come dopo
+    # `migrations/omega_proposte_coda_unica_2026-09-17.sql`. Il perno e' che
+    # `pending_manual_requests` qui sopra filtra 'pending': una riga 'proposed'
+    # resta ferma finche' un essere umano non la promuove. Se qualcuno allargasse
+    # quel filtro, il cancelletto sparirebbe — ed e' quello che G1 verifica.
+    def proposta_di_chiusura_viva(self, trade_id: int) -> Optional[Dict[str, Any]]:
+        for r in self.richieste_manuali:
+            if (str(r.get("status")) == "proposed"
+                    and str((r.get("payload") or {}).get("trade_id")) == str(int(trade_id))):
+                return dict(r)
+        return None
+
+    def scrivi_proposta_di_chiusura(self, trade_id: int,
+                                    payload: Dict[str, Any]) -> Optional[int]:
+        corpo = {**payload, "trade_id": int(trade_id)}
+        for r in self.richieste_manuali:
+            if (str(r.get("status")) == "proposed"
+                    and str((r.get("payload") or {}).get("trade_id")) == str(int(trade_id))):
+                r["payload"] = corpo
+                r["updated_at"] = self._adesso()
+                return int(r["id"])
+        self._rid_proposta += 1
+        rid = 900000 + self._rid_proposta     # id separati da quelli dello scenario
+        self.richieste_manuali.append({
+            "id": rid, "kind": "cashout", "status": "proposed", "payload": corpo,
+            "result": None, "created_at": self._adesso(), "updated_at": self._adesso(),
+            "processed_at": None,
+        })
+        return rid
+
+    def chiudi_proposta(self, trade_id: int, motivo: str) -> None:
+        for r in self.richieste_manuali:
+            if (str(r.get("status")) == "proposed"
+                    and str((r.get("payload") or {}).get("trade_id")) == str(int(trade_id))):
+                r["status"] = "rejected"
+                r["result"] = {**(r.get("result") or {}), "decaduta": True,
+                               "motivo": str(motivo)[:200]}
+                r["updated_at"] = self._adesso()
+                return
 
     # ------------------------------------------------------------- missioni
     def active_missions(self) -> List[Dict[str, Any]]:
@@ -908,69 +951,28 @@ GOAL_UNA_PARTITA = 5.0
 # motivo per cui `cap-stretto` esiste.
 _APRE: Dict[str, Any] = {"__goal": GOAL_UNA_PARTITA, "price_max": 500.0}
 
-def _p_mercato_devigata(runners):
-    """P di MERCATO per selezione, devigata sul mercato intero.
-
-    Il mid di back/lay di ogni runner, normalizzato perche' la somma faccia 1:
-    e' la probabilita' che il book esprime, ripulita dallo spread. Serve alla
-    FUSIONE (candidato 6 del banco): il mercato sa cose che il modello non sa.
-    Se meta' del book manca non si deviga niente e la funzione tace — normalizzare
-    mezzo mercato produrrebbe probabilita' inventate."""
-    pesi = {}
-    for r in runners:
-        b = getattr(r, "back_price", None)
-        l = getattr(r, "lay_price", None)
-        try:
-            if b and l:
-                w = 0.5 * (1.0 / float(b) + 1.0 / float(l))
-            elif b or l:
-                w = 1.0 / float(b or l)
-            else:
-                continue
-        except (TypeError, ValueError, ZeroDivisionError):
-            continue
-        if w > 0:
-            pesi[str(getattr(r, "name", "") or "")] = w
-    tot = sum(pesi.values())
-    if tot <= 0.5 or len(pesi) < 6:
-        return None
-    equa = {k: v / tot for k, v in pesi.items()}
-    return lambda nome: equa.get(str(nome))
-
 
 def _parametri_v3_dal_banco() -> "V3.Parametri":
-    """I parametri del modello che ha VINTO il banco (`tools/banco_modelli.py`),
-    dal file versionato. Se il file manca si usano i default di `omega_v3`: il
-    replay non deve mai fermarsi per un file di taratura assente, ma il referto
-    lo dice."""
-    percorso = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "data", "parametri_vincenti_2026-09-16.json")
-    try:
-        with open(percorso, "r", encoding="utf-8") as fh:
-            valori = json.load(fh)
-        campi = {k: v for k, v in valori.items()
-                 if k in V3.Parametri.__dataclass_fields__}
-        # dal JSON i pesi per fascia arrivano come liste; `Parametri` e' frozen e
-        # vuole tuple (una lista dentro un dataclass frozen non e' hashabile e
-        # soprattutto sarebbe mutabile: due chiamanti si passerebbero lo stesso
-        # oggetto)
-        if isinstance(campi.get("peso_per_fascia"), list):
-            campi["peso_per_fascia"] = tuple(tuple(x) for x in campi["peso_per_fascia"])
-        return V3.Parametri(**campi)
-    except (OSError, ValueError, TypeError):
-        return V3.Parametri()
+    """I parametri del modello che ha VINTO il banco (`tools/banco_modelli.py`).
+
+    17/09 — si chiama il caricatore DI PRODUZIONE (`omega_proposte.
+    parametri_modello`), non se ne tiene una seconda copia qui: il replay deve
+    usare gli stessi numeri del servizio, e due letture dello stesso file prima
+    o poi divergono. E' lo STESSO oggetto che `omega_service._v3_tarature` da'
+    al motore di selezione (T2+T1: un caricatore solo, non due)."""
+    return PROPOSTE.parametri_modello()
 
 
 SCENARI: Dict[str, Dict[str, Any]] = {
     # come gira in produzione, coi parametri e l'obiettivo di default
-    "base": {},
+    "base": {"strategy_version": 2},
     # l'obiettivo di GAMBA di una giornata vera (vedi sopra)
-    "giornata-reale": {"__goal": GOAL_UNA_PARTITA},
+    "giornata-reale": {"__goal": GOAL_UNA_PARTITA, "strategy_version": 2},
     # l'unico scenario in cui, su QUESTA registrazione, Omega apre davvero
-    "apertura": dict(_APRE),
+    "apertura": dict(_APRE, strategy_version=2),
     # PAPER: stessa strategia, altro percorso di esecuzione (E.paper_fill).
     # Serve a MISURARE la divergenza col live (decisione 3 dell'utente).
-    "paper": dict(_APRE),
+    "paper": dict(_APRE, strategy_version=2),
     # tetti di rischio STRETTI: oggi in produzione sono tutti a ZERO, cioe'
     # SPENTI (§19.5), quindi senza questo scenario i controlli C1/C2/C3 non
     # avrebbero MAI un caso da giudicare.
@@ -1005,17 +1007,45 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # lo scenario non aspetta due minuti di tempo di mercato per provare una
     # cosa che in produzione ha la sua cadenza dichiarata.
     "chiuso-fuori-app": dict(_APRE, conto_every_s=0.0),
-    # ---- V3 (16/09 sera): IL MOTORE NUOVO, IN OMBRA SULLA STESSA PARTITA ----
-    # `strategy_version=3` accende i controlli A8-A12/C5/G1/G2 della
-    # certificazione e spegne il green-up automatico (la whitelist lo riporta a
-    # 'off' da sola). Il SERVIZIO non chiama ancora `omega_v3`: quella riga sta
-    # in `omega_service.py`, che stasera e' in mano a un altro delegato. Il
-    # replay quindi fa girare V3 **in parallelo**, sullo STESSO book e sullo
-    # STESSO stato che il servizio ha sotto gli occhi, e confronta le due
-    # decisioni gamba per gamba. E' un confronto onesto perche' i dati sono gli
-    # stessi identici; NON e' ancora una certificazione del percorso di
-    # produzione, e il referto lo dice in testa.
-    "v3": dict(_APRE, strategy_version=3),
+    # ---- V4 (17/09): IL MOTORE DI DEFAULT, SUL PERCORSO DI PRODUZIONE ----
+    # Dal 17/09 `strategy_version` vale 3 di default: non c'e' niente da
+    # accendere qui. Il servizio sceglie e dimensiona con `omega_v3`
+    # (`omega_service._v3_select` -> `_size_and_place` -> `_place_one`: riserva,
+    # ordine, conferma, consapevolezza — la catena di sempre), su UN SOLO
+    # mercato (il Correct Score), due celle diverse in due momenti (1'-44' e
+    # 46'-85'), stake fisso, fascia [1 %, 2 %], margine k = 1,11, tetti
+    # 95/190/1.000/300. Questo scenario e' cio' che il bot farebbe stasera.
+    "v4": dict(_APRE, strategy_version=3),
+    # V4 + RIAVVIO a meta' partita: una posizione aperta si ritrova dal
+    # DATABASE, non dalla RAM (difetto 19 del catalogo).
+    "v4-riavvio": dict(_APRE, strategy_version=3),
+    # V4 + bot FERMATO dalla UI con una posizione aperta: settlement e
+    # riconciliazione girano, le aperture no (§12). In V3 non c'e' green-up
+    # automatico, quindi qui si guarda proprio che NON parta niente da solo.
+    "v4-bot-fermo": dict(_APRE, strategy_version=3),
+    # ---- V3 LEGACY: IL CANCELLO DEL 16/09, PER CONFRONTO ----
+    # Stessi ingressi, ma coi numeri di ieri: k = 2 al prezzo del tocco,
+    # nessun pavimento di fascia, distanza 1 gol, finestre 25'-44' / 55'-85',
+    # tetti 120/240/2.000/400. Sulle registrazioni vere NON apre mai
+    # (REFERTO_V3_2026-09-16 §5: margine migliore 0,78-0,87x contro 2 chiesti):
+    # tenerlo nel banco e' il modo di far vedere, coi numeri, che cosa cambia.
+    "v3": dict(_APRE, strategy_version=3, v3_k_minimo=2.0, v3_p_min_pct=0.0,
+               v3_distanza_minima_gol=1, v3_ht_entry_min=25, v3_ft_entry_min=55,
+               v3_max_liability_per_leg=120.0, v3_max_liability_per_match=240.0,
+               v3_max_open_liability=2000.0, v3_daily_loss_cap=400.0),
+    # ---- LE USCITE SONO PROPOSTE, E IL TRADER LE FIRMA (17/09) -------------
+    # `strategy_version=3` spegne il green-up automatico (la whitelist lo porta a
+    # 'off' da sola) e ACCENDE il produttore delle proposte
+    # (`omega_proposte.process_proposte_uscita`, fase 1-bis di `run_once`). Qui
+    # il banco fa quello che fa il trader dalla Control Room: al giro dopo FIRMA
+    # la proposta viva, esattamente come la RPC `omega_request_approve`
+    # ('proposed' -> 'pending' col payload CONSERVATO e `approved_at` aggiunto).
+    # Da li' in poi il percorso e' quello di sempre: `process_manual` la drena
+    # come `cashout` e la esegue con `execution.close_trade`.
+    # E' lo stesso scenario che sul tennis si chiama `approvata-subito`
+    # (`Betfair/safe_strategy/tools/replay_tennis.py`): non si inventa un
+    # meccanismo nuovo per la stessa cosa.
+    "proposta-approvata": dict(_APRE, strategy_version=3),
     # ---- BETFAIR RIFIUTA IL LAY (addendum 16/09, difetto 2 del 15/09) ----
     # `place_rifiuto` del banco: l'istruzione torna `ok=False` e NESSUN ordine
     # esiste a mercato. Senza provocarlo, `res.ok` non vale MAI False in tutto
@@ -1025,41 +1055,62 @@ SCENARI: Dict[str, Dict[str, Any]] = {
 }
 
 SCENARI_DESCRITTI: Dict[str, str] = {
-    "base": "parametri E obiettivo di default (G=250): su UNA partita il target "
+    "base": "MOTORE v2 LEGACY (`strategy_version=2` DICHIARATO), per non "
+            "perdere la copertura del vecchio motore. Parametri E obiettivo di "
+            "default (G=250): su UNA partita il target "
             "di gamba vale ~125 EUR e nessun book ha quella controparte — "
             "reperto del banco, non di Omega",
-    "giornata-reale": "come sopra ma con l'obiettivo di giornata riportato a una "
+    "giornata-reale": "MOTORE v2 LEGACY: come sopra ma con l'obiettivo di giornata riportato a una "
                       "partita sola (G=5 EUR = 2,50 EUR a gamba, il target che "
                       "Omega avrebbe con ~100 gambe in un giorno)",
-    "apertura": "giornata-reale + banda di quota allargata a 500 (manopola della "
+    "apertura": "MOTORE v2 LEGACY (la banda di quota non esiste in v3: li' il "
+                "limite e' il tetto di liability per gamba). "
+                "giornata-reale + banda di quota allargata a 500 (manopola della "
                 "whitelist): su 35760084 l'unico risultato sovrapprezzato dal "
                 "mercato e' il '3 - 3' a 300, fuori dal price_max di 120",
-    "paper": "modalita' PAPER: fill istantaneo di omega_engine.paper_fill, "
+    "paper": "MOTORE v2 LEGACY in modalita' PAPER: fill istantaneo di omega_engine.paper_fill, "
              "senza bet delay (P4) — si misura la divergenza col live",
-    "cap-stretto": "tetti di rischio stretti: in produzione sono a ZERO (§19.5), "
+    "cap-stretto": "CONDOTTA (motore di DEFAULT, oggi v3): tetti di rischio del "
+                   "v2 stretti - in produzione sono a ZERO (§19.5), "
                    "senza questo scenario C1/C2/C3 non hanno mai un caso",
-    "bot-fermo": "bot fermato dalla UI con posizione aperta: settlement, "
-                 "green-up e riconciliazione girano, le aperture no (§12)",
-    "feed-stantio": "riga E scanner vecchi: nessuna decisione sui prezzi fermi "
+    "bot-fermo": "CONDOTTA (motore di DEFAULT): bot fermato dalla UI con "
+                 "posizione aperta - settlement, uscite e riconciliazione "
+                 "girano, le aperture no (§12)",
+    "feed-stantio": "CONDOTTA (motore di DEFAULT): riga E scanner vecchi, nessuna decisione sui prezzi fermi "
                     "(FEED_MAX_AGE_S / DECISION_MAX_AGE_S / CASHOUT_FEED_MAX_AGE_S)",
-    "esiti-ignoti": "i primi piazzamenti sollevano: nasce la riconciliazione "
+    "esiti-ignoti": "CONDOTTA (motore di DEFAULT): i primi piazzamenti sollevano, nasce la riconciliazione "
                     "(§I3, difetto 4 del 15/09)",
-    "riavvio": "riavvio a meta' partita con posizione aperta: lo stato si "
+    "riavvio": "CONDOTTA (motore di DEFAULT): riavvio a meta' partita con posizione aperta, lo stato si "
                "ritrova dal DB, non dalla RAM (difetto 19 del catalogo)",
-    "manuale-e-bot": "una lay MANUALE dell'utente sulla stessa partita: il bot "
+    "manuale-e-bot": "CONDOTTA (motore di DEFAULT): una lay MANUALE dell'utente sulla stessa partita, il bot "
                      "deve ignorarla, e i suoi numeri non devono contenerla (E3)",
-    "cashout-globale": "l'utente chiude a mano TUTTE le gambe della partita "
+    "cashout-globale": "CONDOTTA (motore di DEFAULT): l'utente chiude a mano TUTTE le gambe della partita "
                        "(una richiesta `cashout` per gamba, come fa la UI): dal "
                        "giro dopo il bot non deve fare piu' niente li' (E4)",
-    "v3": "MOTORE V3 IN OMBRA (`omega_v3.py`): stesso book, stesso minuto, stesso "
-          "punteggio del v2, decisione calcolata in parallelo e messa a confronto. "
-          "Il servizio non lo chiama ancora (omega_service.py e' di un altro "
-          "delegato): qui si misura COSA AVREBBE FATTO, non si certifica il "
-          "percorso di produzione",
-    "rifiuti-betfair": "Betfair RIFIUTA i primi lay (`ok=False`, nessun ordine a "
+    "proposta-approvata": "LE USCITE SONO PROPOSTE: col green-up automatico "
+                          "spento il bot non chiude piu' da solo — scrive una "
+                          "proposta coi numeri, e il banco la FIRMA al giro dopo "
+                          "come fa il trader dalla Control Room (G1/G2/G3/G4)",
+    "v4": "IL MOTORE DI DEFAULT dal 17/09 sul percorso di produzione: SOLO "
+          "Correct Score, due celle diverse in due momenti (1'-44' e 46'-85'), "
+          "stake fisso 1,00 EUR, fascia di P [1 %, 2 %], margine k = 1,11, "
+          "tetti 95/190/1.000/300. Il servizio chiama `omega_service._v3_select` "
+          "e piazza con la catena di sempre (riserva, ordine, conferma, "
+          "consapevolezza): quello che si misura qui e' quello che diventa un "
+          "ordine. Il motore v2 NON opera",
+    "v4-riavvio": "V4 + riavvio a meta' partita con posizione aperta: lo stato "
+                  "si ritrova dal DB, non dalla RAM (difetto 19)",
+    "v4-bot-fermo": "V4 + bot fermato dalla UI con posizione aperta: settlement "
+                    "e riconciliazione girano, le aperture no, e nessuna "
+                    "chiusura parte da sola (§12, G1)",
+    "v3": "IL CANCELLO DEL 16/09, per confronto: k = 2 al prezzo del tocco, "
+          "nessun pavimento di fascia, distanza 1 gol, finestre 25'-44' / "
+          "55'-85', tetti 120/240/2.000/400. Sulle registrazioni vere non apre "
+          "mai (REFERTO_V3 §5: margine migliore 0,78-0,87x contro 2 chiesti)",
+    "rifiuti-betfair": "CONDOTTA (motore di DEFAULT): Betfair RIFIUTA i primi lay (`ok=False`, nessun ordine a "
                        "mercato): la riga non deve mai restare viva (K2, difetto 2 "
                        "del 15/09)",
-    "chiuso-fuori-app": "l'utente chiude la posizione DIRETTAMENTE SU BETFAIR "
+    "chiuso-fuori-app": "CONDOTTA (motore di DEFAULT): l'utente chiude la posizione DIRETTAMENTE SU BETFAIR "
                         "(ordine con un ref suo, fuori dall'app): il bot lo "
                         "scopre dalla POSIZIONE DI CONTO e smette di gestire "
                         "quella partita (E5, reperto R9)",
@@ -1090,6 +1141,35 @@ def _riavvia_processo() -> List[str]:
 # ---------------------------------------------------------------------------
 # la strategia flumine: alimenta lo scanner, fa girare il servizio, certifica
 # ---------------------------------------------------------------------------
+class _PropostaDallaCoda:
+    """La proposta COME STA NELLA CODA, non come l'ha calcolata il produttore.
+
+    I controlli G2/G4 devono giudicare quello che la Control Room leggerebbe: se
+    un campo si perdesse fra il calcolo e la scrittura, un oggetto preso dalla
+    RAM del produttore non se ne accorgerebbe mai. Gli attributi sono gli stessi
+    di `omega_v3.PropostaUscita` — chiavi identiche al vero, difetto 27 del
+    catalogo — e `proponi` si DEDUCE dal motivo, non si copia da un flag: una
+    riga 'proposed' con un motivo che dice «si tiene» e' gia' una violazione.
+    """
+
+    __slots__ = ("proponi", "motivo_codice", "profitto_bloccabile", "back_price",
+                 "back_size", "ev_tenere", "meglio_aspettare", "bloccabile_max_atteso",
+                 "minuto_del_massimo", "p_evento", "testo")
+
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self.motivo_codice = payload.get("motivo_codice")
+        self.proponi = str(self.motivo_codice or "") in PROPOSTE.MOTIVI_CHE_PROPONGONO
+        self.profitto_bloccabile = payload.get("profitto_bloccabile")
+        self.back_price = payload.get("back_price")
+        self.back_size = payload.get("back_size")
+        self.ev_tenere = payload.get("ev_tenere")
+        self.meglio_aspettare = payload.get("meglio_aspettare")
+        self.bloccabile_max_atteso = payload.get("bloccabile_max_atteso")
+        self.minuto_del_massimo = payload.get("minuto_del_massimo")
+        self.p_evento = payload.get("p_evento")
+        self.testo = payload.get("motivo_codice")
+
+
 def _crea_strategia():
     from flumine import BaseStrategy
 
@@ -1104,7 +1184,7 @@ def _crea_strategia():
                      goal: float = omega_config.DEFAULT_DAILY_GOAL,
                      ferma_su_posizione: bool = False,
                      lay_manuale: bool = False, cashout_globale: bool = False,
-                     chiude_fuori_app: bool = False,
+                     chiude_fuori_app: bool = False, firma_proposte: bool = False,
                      ogni_ms: int = 0, riavvia: bool = False, **kw: Any) -> None:
             self.event_id = str(event_id)
             self.params = dict(params)
@@ -1133,12 +1213,23 @@ def _crea_strategia():
             self.fuori_app_giro: Optional[int] = None
             self.fuori_app_dettaglio: Dict[str, Any] = {}
             self.fuori_app_ordini: List[Any] = []
-            # V3 IN OMBRA (scenario `v3`): le decisioni del motore nuovo sulla
-            # stessa partita, i lambda che il servizio ha risolto e i parametri
-            # del modello vincitore del banco (`data/parametri_vincenti_*.json`).
+            # LE PROPOSTE DI USCITA (17/09): il trader firma, e si tiene conto
+            # di che fine fa ogni firma (G3).
+            self.firma_proposte = bool(firma_proposte)
+            self.proposte_viste: Dict[str, Dict[str, Any]] = {}
+            self.proposte_osservate = 0
+            self.proposte_scritte: set = set()
+            self.approvazioni: List[Dict[str, Any]] = []
+            # V3 SUL PERCORSO DI PRODUZIONE (17/09, raccordo T2). Con
+            # `strategy_version >= 3` la gamba la sceglie `omega_service._v3_select`
+            # DENTRO il giro vero: qui si raccoglie ogni sua decisione — quella
+            # che ha prodotto (o non prodotto) un ordine, non un'ombra.
             self.decisioni_v3: List[Dict[str, Any]] = []
-            self.lambda_ombra: Dict[str, Tuple[float, float]] = {}
-            self.parametri_v3 = _parametri_v3_dal_banco()
+            # QUALE MOTORE sta operando in questo replay. Non e' un'etichetta di
+            # comodo: i controlli A9/C5 (stake esatto, tetto di gamba) valgono
+            # solo sui momenti prodotti da V3, e un ordine marcato col motore
+            # sbagliato li farebbe tacere.
+            self.motore = "v3" if int(self.params.get("strategy_version") or 2) >= 3 else "v2"
             self._req_id = 0
             self.mercati: Dict[str, Any] = {}
             self.db = DbMemoriaOmega({
@@ -1244,6 +1335,13 @@ def _crea_strategia():
             #    rileggendo la POSIZIONE DI CONTO.
             if self.scenario_fuori_app and not self.fuori_app_fatto:
                 self._chiudi_fuori_app()
+            # 2-septies) IL TRADER FIRMA LA PROPOSTA (scenario
+            #    `proposta-approvata`). E' il gesto della Control Room, fatto
+            #    come lo fa la RPC vera: 'proposed' -> 'pending', payload
+            #    CONSERVATO piu' `approved_at`. Va PRIMA di `run_once`, perche'
+            #    e' `process_manual` (dentro il giro) a doverla drenare.
+            if self.firma_proposte:
+                self._firma_le_proposte(adesso)
             # 3) IL SERVIZIO INTERO — `run_once`, non un pezzo
             prima_attivita = len(self.db.attivita)
             try:
@@ -1281,7 +1379,7 @@ def _crea_strategia():
             for p in nuovi:
                 self._osserva(CERT.Momento(
                     tipo="ordine", now=adesso, params=self.params,
-                    event_id=self.event_id, mode=self.mode,
+                    event_id=self.event_id, mode=self.mode, motore=self.motore,
                     richiesta=p["richiesta"], esito=p["esito"],
                     db=self.db, attivita=attivita))
             # 6) fine giro: persistenza, stats, settlement
@@ -1292,9 +1390,16 @@ def _crea_strategia():
             for chiave in ("placed", "settled", "greenup", "missions"):
                 if esito.get(chiave):
                     self.referto.azioni += int(esito[chiave] or 0)
+            # 5-bis) LE PROPOSTE DI USCITA, come stanno NELLA CODA dopo il giro
+            #    (non come le ha calcolate il produttore: quello che conta e' cio'
+            #    che il trader vedrebbe in pagina), e che fine hanno fatto le
+            #    firme gia' date.
+            self._osserva_le_proposte(adesso)
+            self._aggiorna_le_approvazioni()
             self._osserva(CERT.Momento(
                 tipo="giro", now=adesso, params=self.params, event_id=self.event_id,
                 mode=self.mode, db=self.db, stats=esito.get("stats"),
+                approvazioni=list(self.approvazioni),
                 esito_giro=esito, attivita=self.db.attivita,
                 feed_eta=self.feed.eta_riga(self.event_id),
                 status_control=str(self.db.control.get("status") or ""),
@@ -1330,114 +1435,107 @@ def _crea_strategia():
             self.referto.violazioni.extend(CERT.verifica(m, self.referto.sollecitati))
             CERT.osserva(self.referto.andamento, m)
 
-        def _ombra_v3(self, *, event_id, snapshot, state, half, params, audit,
-                      sel, why) -> None:
-            """Fa girare `omega_v3` sullo STESSO book che il servizio ha appena
-            guardato, e registra la decisione — piu' i due numeri che servono al
-            confronto: cosa ha scelto il v2 e cosa avrebbe scelto il v3.
+        def _firma_le_proposte(self, now: datetime) -> None:
+            """La Control Room promuove la proposta a richiesta: 'proposed' ->
+            'pending' col payload del cash-out.
 
-            Nessun ordine, nessuna scrittura: e' un osservatore. Se V3 esplode,
-            il replay NON si ferma (si annota e si va avanti): un motore in
-            prova non puo' far cadere la certificazione del motore che gira.
-            """
-            periodo = "ht" if half else "ft"
-            runners = list(getattr(snapshot, "runners", ()) or ())
-            nomi = [str(getattr(r, "name", "") or "") for r in runners]
-            minuto = getattr(state, "minute", None)
-            punteggio = (int(getattr(state, "score_home", 0) or 0),
-                         int(getattr(state, "score_away", 0) or 0))
-            lam = None
-            blocco = audit if isinstance(audit, dict) else {}
-            coppia = blocco.get("lambda_pre")
-            if isinstance(coppia, (list, tuple)) and len(coppia) == 2:
-                lam = (float(coppia[0]), float(coppia[1]))
-            elif self.lambda_ombra.get(str(event_id)):
-                lam = self.lambda_ombra[str(event_id)]
-            cand = None
-            scarti: List[Tuple[str, str]] = []
-            errore = None
-            try:
-                cand, scarti_t = E.seleziona_v3(runners, periodo=periodo, minuto=minuto,
-                                                punteggio=punteggio, params=params,
-                                                lambdas=lam,
-                                                parametri_modello=self.parametri_v3,
-                                                p_mercato=_p_mercato_devigata(runners))
-                scarti = [x for x in (scarti_t or ()) if x[0]]
-            except Exception as ex:  # noqa: BLE001
-                errore = f"{type(ex).__name__}: {ex}"
-            if minuto is None:
-                motivo = "no_live_state"
-            elif not runners:
-                motivo = "no_market"
-            elif not V3.in_finestra(periodo, minuto,
-                                    minuto_min=params.get(f"v3_{periodo}_entry_min"),
-                                    minuto_max=params.get(f"v3_{periodo}_entry_max")):
-                motivo = "fuori_finestra"
-            elif lam is None:
-                motivo = "no_model_lambdas"
-            else:
-                motivo = "nessun_candidato"
-            self._osserva(CERT.Momento(
-                tipo="selezione", now=self.banco.adesso(), params=params,
-                event_id=str(event_id), mode=self.mode, motore="v3",
-                leg=("ht_cs" if half else "ft_cs"), half=bool(half), state=state,
-                snapshot=snapshot, cand=cand, scartati=scarti,
-                motivo=(None if cand is not None else motivo), db=self.db))
-            if cand is not None:
-                # il dimensionamento CHE V3 AVREBBE FATTO: stake fisso e cap di
-                # gamba. Senza questo momento A9 e C5 non avrebbero mai un caso
-                # su V3, e il referto direbbe «non lo so» su due regole che
-                # invece si possono verificare gia' adesso.
+            ⚠️ DIFETTO 27 DEL CATALOGO (il finto che non parla come il vero),
+            gia' costato una certificazione sulla Safe il 16/09: la RPC VERA fa
+            `payload = payload || {'approved_at': ...}`, cioe' CONSERVA tutto il
+            corpo e AGGIUNGE la firma. Rifarlo da zero con trade_id+fraction
+            butterebbe via `motivo_codice` — proprio il campo con cui
+            `_uscita_del_bot_approvata` distingue l'uscita del BOT dal cash-out
+            dell'UTENTE — e il replay certificherebbe un comportamento che in
+            produzione non esiste."""
+            for r in self.db.richieste_manuali:
+                if str(r.get("status")) != "proposed":
+                    continue
+                corpo = dict(r.get("payload") or {})
+                r["status"] = "pending"
+                r["payload"] = {**corpo,
+                                "approved_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                "approvata_da": "replay: il trader firma al giro dopo"}
+                r["updated_at"] = now.isoformat()
+                self.approvazioni.append({
+                    "request_id": int(r.get("id") or 0),
+                    "trade_id": corpo.get("trade_id"),
+                    "event_id": str(corpo.get("event_id") or self.event_id),
+                    "motivo_codice": corpo.get("motivo_codice"),
+                    "profitto_bloccabile": corpo.get("profitto_bloccabile"),
+                    "giro_di_approvazione": self.giri,
+                    "quando": now.isoformat(),
+                })
+                self.db.log("replay_proposta_firmata",
+                            {"request_id": int(r.get("id") or 0),
+                             "trade_id": corpo.get("trade_id"),
+                             "motivo_codice": corpo.get("motivo_codice"),
+                             "profitto_bloccabile": corpo.get("profitto_bloccabile"),
+                             "quando": now.isoformat()})
+
+        def _osserva_le_proposte(self, now: datetime) -> None:
+            """Un momento `proposta` per ogni riga 'proposed' nella coda.
+
+            Si legge il PAYLOAD PERSISTITO, non l'oggetto in RAM del produttore:
+            quello che i controlli devono giudicare e' cio' che la Control Room
+            leggerebbe. `proposte_viste` porta cio' che si sapeva PRIMA di questo
+            giro — e' su quello che G2 misura `decided_at` fermo e `proposed_at`
+            mobile."""
+            for r in self.db.richieste_manuali:
+                if str(r.get("status")) != "proposed":
+                    continue
+                corpo = dict(r.get("payload") or {})
+                tid = str(corpo.get("trade_id") or "")
+                # LA MEMORIA E' PER RICHIESTA, non per gamba: una proposta
+                # DECADUTA e una nuova sulla stessa gamba sono due decisioni
+                # diverse, e la seconda ha un `decided_at` nuovo per definizione.
+                # Confrontarle fra loro accuserebbe il bot di aver rinfrescato un
+                # istante che invece non ha mai toccato.
+                rid = str(r.get("id") or "")
+                prima = dict(self.proposte_viste.get(rid) or {})
+                self.proposte_osservate += 1
+                self.proposte_scritte.add(int(r.get("id") or 0))
                 self._osserva(CERT.Momento(
-                    tipo="sizing", now=self.banco.adesso(), params=params,
-                    event_id=str(event_id), mode=self.mode, motore="v3",
-                    leg=("ht_cs" if half else "ft_cs"), state=state,
-                    size=float(cand.size), price=float(cand.price), cand=cand,
-                    db=self.db))
-            # CHE COSA PENSA V3 DELLA CELLA CHE IL v2 HA SCELTO — calcolata a
-            # parte, FUORI dalla finestra e fuori dal cancello: e' una domanda
-            # sul MODELLO («quella cella e' davvero cosi' rara?»), non sulla
-            # regola d'ingresso. Senza questa riga il confronto fra i due motori
-            # resterebbe muto proprio sul caso che interessa.
-            giudizio = None
-            if sel is not None and lam is not None and minuto is not None:
-                try:
-                    ps = V3.probabilita_selezioni(
-                        periodo=periodo, minuto=float(minuto), punteggio=punteggio,
-                        nomi=nomi, p=self.parametri_v3, lambdas=lam)
-                    p_mod = ps.get(str(sel.name))
-                    p_imp = V3.p_implicita(float(sel.price),
-                                           float(params.get("commission_pct") or 5.0) / 100.0)
-                    if p_mod is not None and p_imp:
-                        mercato = _p_mercato_devigata(runners)
-                        p_fusa = V3.fondi_col_mercato(
-                            p_mod, mercato(str(sel.name)) if mercato else None,
-                            self.parametri_v3)
-                        giudizio = {"p_v3": round(p_fusa, 6), "p_impl": round(p_imp, 6),
-                                    "margine": round(p_imp / max(1e-12, p_fusa), 3)}
-                except Exception:  # noqa: BLE001
-                    giudizio = None
-            self.decisioni_v3.append({
-                "v3_sulla_scelta_v2": giudizio,
-                "minuto": minuto, "punteggio": f"{punteggio[0]}-{punteggio[1]}",
-                "gamba": ("ht_cs" if half else "ft_cs"),
-                "lambda": list(lam) if lam else None,
-                "v2": (None if sel is None else
-                       {"nome": sel.name, "quota": sel.price,
-                        "p_sel": round(float(sel.p_selected), 6),
-                        "p_impl": round(float(sel.p_implied), 6)}),
-                "v2_motivo": (None if sel is not None else str(why or "")),
-                "v3": (None if cand is None else
-                       {"nome": cand.name, "quota": cand.price, "size": cand.size,
-                        "p_nostra": round(float(cand.p_nostra), 6),
-                        "p_impl": round(float(cand.p_implicita), 6),
-                        "k": cand.k_usato, "margine": round(float(cand.margine), 3),
-                        "ev": cand.ev, "liability": cand.liability,
-                        "motivo": cand.motivo}),
-                "v3_motivo": (None if cand is not None else motivo),
-                "v3_scarti": [f"{n}: {p}" for n, p in scarti[:6]],
-                "v3_errore": errore,
-            })
+                    tipo="proposta", now=now, params=self.params,
+                    event_id=str(corpo.get("event_id") or self.event_id),
+                    mode=self.mode, motore="v3", db=self.db,
+                    proposta=_PropostaDallaCoda(corpo), trade_id=corpo.get("trade_id"),
+                    minute=corpo.get("minute"),
+                    decided_at=corpo.get("decided_at"),
+                    proposed_at=corpo.get("proposed_at"),
+                    stato_richiesta=str(r.get("status")),
+                    proposte_viste={tid: prima} if prima else {}))
+                self.proposte_viste[rid] = {
+                    "decided_at": corpo.get("decided_at"),
+                    "proposed_at": corpo.get("proposed_at"),
+                    "profitto": corpo.get("profitto_bloccabile"),
+                }
+
+        def _aggiorna_le_approvazioni(self) -> None:
+            """Che fine ha fatto ogni firma: e' il cuore di G3 (reperti O-1/O-3).
+
+            Non si guarda un flag scritto da noi: si guarda lo STATO della riga
+            in coda, l'`exit_kind` finito sulla riga del trade e se la partita e'
+            stata marcata «chiusa dall'utente» — che per un'uscita decisa dal bot
+            e solo firmata sarebbe un errore."""
+            per_id = {int(r.get("id") or 0): r for r in self.db.richieste_manuali}
+            for a in self.approvazioni:
+                r = per_id.get(int(a.get("request_id") or 0))
+                stato = str((r or {}).get("status") or "sparita")
+                a["status"] = stato
+                if not a.get("eseguita"):
+                    # il contatore si FERMA quando la richiesta esce dalla coda:
+                    # dopo, «86 giri fa» direbbe solo da quanto e' finita la
+                    # partita, non quanto ci ha messo il servizio a eseguirla
+                    a["giri_da_approvazione"] = (
+                        self.giri - int(a.get("giro_di_approvazione") or 0))
+                a["eseguita"] = a.get("eseguita") or stato in ("done", "error")
+                eid = str(a.get("event_id") or "")
+                a["evento_chiuso_dall_utente"] = bool(self.db.event_user_state(eid))
+                tid = a.get("trade_id")
+                riga = next((t for t in self.db.trades
+                             if str(t.get("id")) == str(tid)), None)
+                a["exit_kind"] = ((riga or {}).get("meta") or {}).get("exit_kind")
+                a["stato_riga"] = (riga or {}).get("status")
 
         def _chiudi_fuori_app(self) -> None:
             """L'UTENTE CHIUDE LA POSIZIONE DEL BOT DIRETTAMENTE SU BETFAIR.
@@ -1622,31 +1720,20 @@ class Sonde:
         st = self.s
         self._originali = {
             "_model_select": S._model_select,
+            "_v3_select": S._v3_select,
             "_size_and_place": S._size_and_place,
             "_greenup_decide": S._greenup_decide,
             "_greenup_p_lose": S._greenup_p_lose,
             "_floor_plausibile": S._floor_plausibile,
             "dynamic_target": E.dynamic_target,
-            "_prematch_lambdas": S._prematch_lambdas,
         }
         vero_select = S._model_select
+        vero_v3 = S._v3_select
         vero_size = S._size_and_place
         vero_decide = S._greenup_decide
         vero_p = S._greenup_p_lose
         vero_floor = S._floor_plausibile
         vero_target = E.dynamic_target
-        vero_lambdas = S._prematch_lambdas
-
-        def lambdas_sorvegliati(db, event_id, payload, **kw):
-            """Gli STESSI lambda del v2, messi da parte per il motore in ombra.
-
-            Cosi' il confronto v2/v3 e' sulla SELEZIONE, non sulla catena dei
-            lambda: se i due partissero da lambda diversi, la differenza fra le
-            due decisioni non direbbe piu' niente su chi sceglie meglio."""
-            out = vero_lambdas(db, event_id, payload, **kw)
-            if out:
-                st.lambda_ombra[str(event_id)] = (float(out[0]), float(out[1]))
-            return out
 
         def target_sorvegliato(goal, realized, matches_remaining):
             out = vero_target(goal, realized, matches_remaining)
@@ -1665,11 +1752,63 @@ class Sonde:
                 leg=("ht_cs" if half else "ft_cs"), half=bool(half), state=state,
                 snapshot=snapshot, sel=sel, audit=audit, motivo=why,
                 size_needed=size_needed, db=st.db))
-            # ---- V3 IN OMBRA: stesso book, stesso istante, altra decisione ----
-            if int(params.get("strategy_version") or 2) >= 3:
-                st._ombra_v3(event_id=event_id, snapshot=snapshot, state=state,
-                             half=half, params=params, audit=audit, sel=sel, why=why)
             return sel, audit, why
+
+        def v3_select_sorvegliata(**kw):
+            """LA DECISIONE DI V3 SUL PERCORSO DI PRODUZIONE.
+
+            La firma e' `**kw` DI PROPOSITO: la sonda non deve mai essere una
+            seconda copia della firma vera. Il 17/09 lo era, il servizio ha
+            aggiunto un argomento e ogni giro e' morto con
+            `scan_event_failed` — il replay ha continuato a girare dicendo
+            «nessuna gamba», che e' il tipo di silenzio che una certificazione
+            non puo' permettersi.
+
+            Non e' piu' un'ombra: e' la funzione che il SERVIZIO chiama quando
+            `strategy_version >= 3`, e cio' che esce di qui e' cio' che (se
+            passa) diventa un ordine. Il momento porta il CANDIDATO, non una
+            `Selection`: i controlli del v2 (A2/A3/A4/A7) parlano il vocabolario
+            del v2, e giudicare V3 con quello e' il falso positivo che il primo
+            replay aveva gia' trovato il 16/09.
+            """
+            cand, audit, why = vero_v3(**kw)
+            event_id = kw.get("event_id")
+            params = kw.get("params") or {}
+            snapshot = kw.get("snapshot")
+            state = kw.get("state")
+            half = bool(kw.get("half"))
+            # gli scarti tornano dall'audit come "nome: perche'": qui si
+            # rimettono in coppia, che e' la forma che A8 guarda
+            scarti: List[Tuple[str, str]] = []
+            for voce in ((audit or {}).get("scartati") or ()):
+                nome, _, perche = str(voce).partition(": ")
+                scarti.append((nome, perche or "?"))
+            st._osserva(CERT.Momento(
+                tipo="selezione", now=st.banco.adesso(), params=params,
+                event_id=str(event_id), mode=st.mode, motore="v3",
+                leg=("ht_cs" if half else "ft_cs"), half=bool(half), state=state,
+                snapshot=snapshot, cand=cand, scartati=scarti, audit=audit,
+                motivo=why, db=st.db))
+            minuto = getattr(state, "minute", None)
+            st.decisioni_v3.append({
+                "minuto": minuto,
+                "punteggio": (None if state is None else
+                              f"{getattr(state, 'score_home', '?')}-"
+                              f"{getattr(state, 'score_away', '?')}"),
+                "gamba": ("ht_cs" if half else "ft_cs"),
+                "lambda": (audit or {}).get("lambda_pre"),
+                "fonte_lambda": (audit or {}).get("lambda_source"),
+                "v3": (None if cand is None else
+                       {"nome": cand.name, "quota": cand.price, "size": cand.size,
+                        "p_nostra": round(float(cand.p_nostra), 6),
+                        "p_impl": round(float(cand.p_implicita), 6),
+                        "k": cand.k_usato, "margine": round(float(cand.margine), 3),
+                        "ev": cand.ev, "liability": cand.liability,
+                        "motivo": cand.motivo}),
+                "v3_motivo": why,
+                "v3_scarti": list((audit or {}).get("scartati") or ())[:6],
+            })
+            return cand, audit, why
 
         def size_sorvegliato(**kw):
             """Il dimensionamento si osserva DOPO: la size che conta e' quella
@@ -1687,6 +1826,9 @@ class Sonde:
             st._osserva(CERT.Momento(
                 tipo="sizing", now=st.banco.adesso(), params=kw.get("params") or {},
                 event_id=str(getattr(kw.get("ev"), "event_id", "")), mode=st.mode,
+                # il motore lo dice il DIMENSIONAMENTO stesso: `v3` non e' None
+                # solo quando la gamba l'ha scelta V3 (A9/C5 valgono li')
+                motore=("v3" if kw.get("v3") is not None else "v2"),
                 leg=kw.get("phase"), sel=kw.get("sel"), snapshot=kw.get("snapshot"),
                 state=None, target=kw.get("target"),
                 goal=(t[0] if t else None), realized=(t[1] if t else None),
@@ -1740,8 +1882,8 @@ class Sonde:
                 distance=distance, db=st.db))
             return ok
 
-        S._prematch_lambdas = lambdas_sorvegliati     # type: ignore[assignment]
         S._model_select = select_sorvegliata          # type: ignore[assignment]
+        S._v3_select = v3_select_sorvegliata          # type: ignore[assignment]
         S._size_and_place = size_sorvegliato          # type: ignore[assignment]
         S._greenup_decide = decide_sorvegliata        # type: ignore[assignment]
         S._greenup_p_lose = p_lose_sorvegliata        # type: ignore[assignment]
@@ -1750,8 +1892,8 @@ class Sonde:
         return self
 
     def __exit__(self, *_exc: Any) -> None:
-        S._prematch_lambdas = self._originali["_prematch_lambdas"]  # type: ignore[assignment]
         S._model_select = self._originali["_model_select"]        # type: ignore[assignment]
+        S._v3_select = self._originali["_v3_select"]              # type: ignore[assignment]
         S._size_and_place = self._originali["_size_and_place"]    # type: ignore[assignment]
         S._greenup_decide = self._originali["_greenup_decide"]    # type: ignore[assignment]
         S._greenup_p_lose = self._originali["_greenup_p_lose"]    # type: ignore[assignment]
@@ -1806,7 +1948,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       goal: float = omega_config.DEFAULT_DAILY_GOAL,
                       ferma_su_posizione: bool = False,
                       lay_manuale: bool = False, cashout_globale: bool = False,
-                      chiude_fuori_app: bool = False,
+                      chiude_fuori_app: bool = False, firma_proposte: bool = False,
                       ogni_ms: int = 0, invecchia_s: float = 0.0,
                       guasti: int = 0, rifiuti: int = 0,
                       riavvia: bool = False) -> CERT.Referto:
@@ -1844,7 +1986,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         catalogo=catalogo, feed=feed, punteggi=punteggi, nome_evento=nome_evento,
         status=status, goal=float(goal), ferma_su_posizione=ferma_su_posizione,
         lay_manuale=lay_manuale, cashout_globale=cashout_globale,
-        chiude_fuori_app=chiude_fuori_app,
+        chiude_fuori_app=chiude_fuori_app, firma_proposte=firma_proposte,
         ogni_ms=ogni_ms, riavvia=riavvia,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: qui il rischio lo governa Omega coi
@@ -1934,6 +2076,17 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             f"liability={r.get('liability')} bet_id={r.get('bet_id')} "
             f"pnl={r.get('pnl')} closes={r.get('closes_trade_id')} "
             f"fonte_lambda={(meta.get('model') or {}).get('lambda_source')}")
+    # UN GIRO CHE ESPLODE NON DEVE PASSARE PER «NESSUNA GAMBA» (reperto 17/09):
+    # `scan_and_place_legs` cattura l'eccezione per evento e va avanti, quindi
+    # una firma sbagliata puo' spegnere le decisioni di TUTTA la partita
+    # lasciando il referto pulito. Qui si grida.
+    rotti = [pl for k, pl, _e in db.attivita
+             if k == "error" and str((pl or {}).get("reason")) == "scan_event_failed"]
+    if rotti:
+        out.note.append(
+            f"!! SCANSIONE DELL'EVENTO FALLITA {len(rotti)} volte: nessuna "
+            f"decisione e' stata presa su questa partita. Primo errore: "
+            f"{str(rotti[0].get('err'))[:200]}")
     motivi = Counter()
     for k, p, _e in db.attivita:
         if k in ("skip", "error", "size_reduced", "place_rifiutato"):
@@ -2004,20 +2157,62 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
     if out.andamento.uscite:
         out.note.append("decisioni di uscita: "
                         + " | ".join(f"{k} x{n}" for k, n in out.andamento.uscite.items()))
-    # ---- V3 IN OMBRA: il confronto gamba per gamba, sulla stessa partita ----
+    # ---- LE USCITE A PROPOSTA (17/09): cosa ha chiesto il bot, e che fine ha fatto
+    # SOLO le PROPOSTE: una richiesta `cashout` senza `motivo_codice` e' il
+    # bottone «Cash out» dell'utente, non una domanda del bot (scenario
+    # `cashout-globale`). Contarla qui direbbe che il bot ha proposto qualcosa
+    # che non ha mai proposto.
+    proposte = [r for r in db.richieste_manuali
+                if str(r.get("kind")) == "cashout"
+                and (r.get("payload") or {}).get("motivo_codice")]
+    if proposte or strategia.proposte_osservate or strategia.approvazioni:
+        motivi = Counter(str((r.get("payload") or {}).get("motivo_codice") or "-")
+                         for r in proposte)
+        stati = Counter(str(r.get("status")) for r in proposte)
+        out.note.append(
+            f"PROPOSTE DI USCITA: {len(strategia.proposte_scritte)} distinte, "
+            f"{strategia.proposte_osservate} osservazioni nella coda | per motivo "
+            f"{dict(motivi)} | per stato {dict(stati)}")
+        for r in proposte[:4]:
+            pl = r.get("payload") or {}
+            out.note.append(
+                f"  proposta #{r.get('id')} trade {pl.get('trade_id')} stato="
+                f"{r.get('status')} motivo={pl.get('motivo_codice')} | blocchi "
+                f"{pl.get('profitto_bloccabile')} EUR contro un EV di tenere di "
+                f"{pl.get('ev_tenere')} EUR | P del bancato {pl.get('p_evento')} "
+                f"({pl.get('p_fonte')}) | liability {pl.get('liability')} | al "
+                f"{pl.get('minute')}' sul {pl.get('score')} | decisa "
+                f"{pl.get('decided_at')} aggiornata {pl.get('proposed_at')}")
+        for a in strategia.approvazioni[:4]:
+            out.note.append(
+                f"  FIRMA della proposta #{a.get('request_id')} (trade "
+                f"{a.get('trade_id')}, motivo {a.get('motivo_codice')}): dopo "
+                f"{a.get('giri_da_approvazione')} giri stato='{a.get('status')}', "
+                f"eseguita={a.get('eseguita')}, riga={a.get('stato_riga')}, "
+                f"exit_kind={a.get('exit_kind')}, partita chiusa dall'utente="
+                f"{a.get('evento_chiuso_dall_utente')}")
+        if strategia.firma_proposte and not strategia.approvazioni:
+            out.note.append("  nessuna firma: su questa registrazione non e' mai "
+                            "nata una proposta da approvare (il caso non e' capitato)")
+    # ---- V3 SUL PERCORSO DI PRODUZIONE: ogni decisione del motore acceso ----
+    # Dal 17/09 queste righe NON descrivono piu' un'ombra: `decisioni_v3` le
+    # scrive la sonda su `omega_service._v3_select`, cioe' la funzione che il
+    # servizio chiama DAVVERO quando `strategy_version >= 3`. Cio' che qui si
+    # legge come "gamba aperta" e' una gamba che ha percorso riserva -> ordine
+    # -> conferma. Il confronto v2/v3 sulla STESSA occasione non c'e' piu', e
+    # non poteva esserci: con V3 acceso il motore di oggi non sceglie niente.
+    # Il confronto resta fra SCENARI (`base`/`apertura` contro `v3`) sulla
+    # stessa registrazione, ed e' misurato nel referto del raccordo.
     if strategia.decisioni_v3:
         dec = strategia.decisioni_v3
         con_v3 = [d for d in dec if d["v3"]]
-        con_v2 = [d for d in dec if d["v2"]]
-        errori = [d for d in dec if d.get("v3_errore")]
         out.note.append(
-            f"V3 IN OMBRA: {len(dec)} occasioni di selezione osservate | il v2 "
-            f"avrebbe scelto {len(con_v2)} volte, il v3 {len(con_v3)}"
-            + (f" | {len(errori)} errori del motore in prova" if errori else ""))
+            f"V3 (PERCORSO DI PRODUZIONE): {len(dec)} occasioni di selezione "
+            f"osservate | gambe scelte da V3: {len(con_v3)}")
         motivi_v3 = Counter(str(d["v3_motivo"]) for d in dec if d["v3_motivo"])
         if motivi_v3:
             out.note.append("V3, perche' non entra: "
-                            + " | ".join(f"{m} x{n}" for m, n in motivi_v3.most_common(6)))
+                            + " | ".join(f"{m} x{n}" for m, n in motivi_v3.most_common(8)))
         # PERCHE' OGNI RUNNER E' STATO SCARTATO: e' la vera risposta a «non entra»
         scarti = Counter()
         margini: List[float] = []
@@ -2040,7 +2235,8 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             out.note.append(
                 f"V3, QUANTO MANCAVA: su {len(margini)} selezioni scartate per margine, "
                 f"il MIGLIORE offerto dal mercato era {margini[-1]:.2f}x "
-                f"(mediana {margini[len(margini) // 2]:.2f}x) contro i 2,00x richiesti — "
+                f"(mediana {margini[len(margini) // 2]:.2f}x) contro i "
+                f"{float(par.get('v3_k_minimo') or 0.0):.2f}x richiesti — "
                 f"e' la distanza fra questa partita e un ingresso")
         # le gambe DISTINTE che V3 avrebbe aperto (una per gamba, la prima utile)
         prime: Dict[str, Dict[str, Any]] = {}
@@ -2063,28 +2259,14 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
         else:
             out.note.append("V3: nessuna gamba aperta su questa partita "
                             "(e' un verdetto sulla partita, non un guasto)")
-        # LA DOMANDA CHE INTERESSA: la cella che il v2 ha scelto, vista da V3.
-        for d in dec:
-            if not d["v2"]:
-                continue
-            nome = d["v2"]["nome"]
-            g = d.get("v3_sulla_scelta_v2")
-            verdetto = "non calcolabile (lambda o griglia assenti)"
-            if g:
-                verdetto = (f"quella cella vale {g['p_v3'] * 100:.3f}% contro una "
-                            f"p_implicita del {g['p_impl'] * 100:.3f}%: margine "
-                            f"{g['margine']:.2f}x, e ne servono 2,00x")
-            out.note.append(
-                f"LA SCELTA DEL v2 VISTA DA V3: al {d['minuto']}' sul {d['punteggio']} il "
-                f"v2 banca '{nome}' a {d['v2']['quota']:g} (la P del v2 e' "
-                f"{d['v2']['p_sel'] * 100:.3f}% contro p_implicita "
-                f"{d['v2']['p_impl'] * 100:.3f}%, margine {d['v2']['p_impl'] / max(1e-12, d['v2']['p_sel']):.2f}x). "
-                f"Per V3 {verdetto}")
-            break
-        out.note.append("V3 IN OMBRA: il servizio NON lo chiama ancora "
-                        "(`omega_service.py` e' di un altro delegato stasera). Qui "
-                        "si misura COSA AVREBBE FATTO sullo stesso book, non si "
-                        "certifica il percorso di produzione.")
+        fonti = Counter(str(d.get("fonte_lambda")) for d in dec if d.get("fonte_lambda"))
+        if fonti:
+            out.note.append("V3, fonte dei lambda: "
+                            + " | ".join(f"{m} x{n}" for m, n in fonti.most_common(5)))
+        out.note.append(
+            "V3: il motore di oggi (v2) NON ha operato in questo scenario — la "
+            "gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di "
+            "produzione (riserva -> ordine -> conferma -> consapevolezza).")
     if mode == "paper":
         out.note.append(
             "PAPER: i fill vengono da `omega_engine.paper_fill` (istantaneo, sullo "
@@ -2120,14 +2302,15 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                if scenario == "feed-stantio" else 0.0)
     ref = certifica_evento(
         event_id, data_dir=data_dir, params=par, mode=mode, status=status,
-        goal=goal, ferma_su_posizione=(scenario == "bot-fermo"),
+        goal=goal, ferma_su_posizione=(scenario in ("bot-fermo", "v4-bot-fermo")),
         lay_manuale=(scenario == "manuale-e-bot"),
         cashout_globale=(scenario == "cashout-globale"),
         chiude_fuori_app=(scenario == "chiuso-fuori-app"),
+        firma_proposte=(scenario == "proposta-approvata"),
         ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
         guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
         rifiuti=(QUANTI_GUASTI if scenario == "rifiuti-betfair" else 0),
-        riavvia=(scenario == "riavvio"))
+        riavvia=(scenario in ("riavvio", "v4-riavvio")))
     ref.note.insert(0, f"scenario '{scenario}': {SCENARI_DESCRITTI.get(scenario, '-')}")
     if scenario == "manuale-e-bot":
         quante = int(ref.sollecitati.get("E3") or 0)
@@ -2144,10 +2327,18 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             + ("" if quante else " — su questa registrazione il bot non ha mai "
                                 "aperto, quindi non c'era niente da chiudere a "
                                 "mano: il caso non e' capitato"))
-    if scenario == "bot-fermo":
+    if scenario == "proposta-approvata":
+        g = {c: int(ref.sollecitati.get(c) or 0) for c in ("G1", "G2", "G3", "G4")}
+        ref.note.append(
+            f"scenario proposta-approvata: controlli sollecitati {g}"
+            + ("" if g["G2"] else " — nessuna proposta e' stata scritta su questa "
+                                "registrazione (o il bot non ha mai aperto, o "
+                                "chiudere non ha mai battuto tenere): il caso non "
+                                "e' capitato, e G2/G3/G4 restano «non lo so»"))
+    if scenario in ("bot-fermo", "v4-bot-fermo"):
         quante = int(ref.sollecitati.get("C4") or 0)
         ref.note.append(
-            f"scenario bot-fermo: il controllo C4 («a bot fermo nessuna apertura, "
+            f"scenario {scenario}: il controllo C4 («a bot fermo nessuna apertura, "
             f"le protezioni girano») e' stato sollecitato {quante} volte"
             + ("" if quante else " — su questa registrazione nessuna posizione si "
                                 "e' mai aperta, quindi il bot non e' mai stato "

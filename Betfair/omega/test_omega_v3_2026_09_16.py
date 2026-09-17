@@ -311,16 +311,69 @@ def test_profitto_bloccabile_e_la_formula_del_green_up():
     assert abs(b.profitto - 0.5 * 0.95) < 1e-6    # (s - sb) al netto
 
 
-def test_bloccare_in_perdita_e_possibile_ma_non_si_propone():
-    """Prezzo mosso CONTRO (back 50 su un lay a 100): il bloccabile e' negativo e la
-    proposta non parte. E' la memoria del 12/09 scritta in codice."""
+def test_bloccare_in_perdita_col_rischio_ancora_basso_non_si_propone():
+    """Prezzo mosso CONTRO (back 50 su un lay a 100): il bloccabile e' negativo.
+
+    Finche' TENERE vale piu' di quella perdita certa, non si propone niente: e'
+    la memoria del 12/09 («le chiusure distruggono valore») scritta in codice.
+    Qui la P del bancato e' lo 0,5%: l'EV di tenere e' POSITIVO, chiudere
+    sarebbe regalare un euro."""
     pos = V3.Posizione("ft", "3 - 3", lay_price=100.0, size=1.0)
     b = V3.profitto_bloccabile(pos, back_price=50.0, back_size=100.0)
     assert b is not None and b.profitto < 0
     pr = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=50.0,
-                            back_size=100.0, p_evento=0.02, p=V3.Parametri())
+                            back_size=100.0, p_evento=0.005, p=V3.Parametri())
+    assert pr.ev_tenere > pr.profitto_bloccabile
     assert pr.proponi is False
     assert pr.motivo_codice == "bloccabile_non_positivo"
+
+
+def test_in_perdita_si_propone_la_PROTEZIONE_quando_tenere_costa_di_piu():
+    """ORDINE DELL'UTENTE 17/09: «la scheda dove approvo le uscite, SIA IN PROFIT
+    CHE IN LOSS».
+
+    Stessa posizione del test qui sopra, stesso prezzo, stesso bloccabile
+    negativo: cambia SOLO la P che il risultato bancato esca (il gol che ha
+    avvicinato la cella). A P=30% tenere vale -29,03 EUR contro -1,00 EUR di
+    perdita certa: chiudere e' il male minore, e il bot lo deve CHIEDERE.
+    Fino al 17/09 questo caso usciva da `bloccabile_non_positivo` e la Control
+    Room non vedeva niente — una gamba che stava perdendo restava muta."""
+    pos = V3.Posizione("ft", "3 - 3", lay_price=100.0, size=1.0)
+    pr = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=50.0,
+                            back_size=100.0, p_evento=0.30, p=V3.Parametri())
+    assert pr.proponi is True
+    assert pr.motivo_codice == "protezione"
+    assert pr.profitto_bloccabile < 0          # e' una PERDITA che si blocca
+    assert pr.ev_tenere < pr.profitto_bloccabile
+    # i numeri che la scheda deve mostrare ci sono tutti
+    assert pr.back_price == 50.0 and pr.back_size > 0 and pr.p_evento == 0.30
+
+
+def test_un_cap_scattato_propone_a_prescindere_dall_EV():
+    """Un tetto di rischio non chiede all'EV il permesso: chiede di ridurre il
+    rischio, e il motivo lo dice al trader (`cap`, non `profitto`)."""
+    pos = V3.Posizione("ft", "3 - 3", lay_price=100.0, size=1.0)
+    senza = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=50.0,
+                               back_size=100.0, p_evento=0.005, p=V3.Parametri())
+    assert senza.proponi is False              # senza cap: si tiene
+    con = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=50.0,
+                             back_size=100.0, p_evento=0.005, p=V3.Parametri(),
+                             cap_scattato="v3_daily_loss_cap")
+    assert con.proponi is True and con.motivo_codice == "cap"
+    assert "v3_daily_loss_cap" in con.testo
+
+
+def test_la_soglia_di_rischio_e_SPENTA_per_default():
+    """`p_lose_max` = 0 (default): il ramo `rischio` non esiste. Accendendola,
+    esiste. Nessuna soglia nuova accesa di iniziativa (regola dell'utente)."""
+    pos = V3.Posizione("ft", "3 - 3", lay_price=100.0, size=1.0)
+    spenta = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=400.0,
+                                back_size=100.0, p_evento=0.40, p=V3.Parametri())
+    assert spenta.motivo_codice != "rischio"
+    accesa = V3.proposta_uscita(pos, minuto=70, punteggio=(2, 2), back_price=400.0,
+                                back_size=100.0, p_evento=0.40, p=V3.Parametri(),
+                                p_lose_max=0.25)
+    assert accesa.proponi is True and accesa.motivo_codice == "rischio"
 
 
 def test_senza_controparte_non_si_propone():

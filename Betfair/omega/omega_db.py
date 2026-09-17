@@ -306,6 +306,103 @@ def fail_stale_processing(max_age_min: int = 10) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# LE PROPOSTE DI USCITA (17/09) — stessa coda delle richieste manuali
+#
+# Modello COPIATO dalla Safe (`Betfair/safe_strategy/bot_db.py:550-620`), non
+# inventato: uno stato in piu' ('proposed') su una coda che esiste gia'. Il
+# servizio drena SOLO 'pending' (``pending_manual_requests`` qui sopra), quindi
+# una riga 'proposed' resta ferma finche' un essere umano non la promuove con
+# ``omega_request_approve``. E' questo, e solo questo, il cancelletto.
+#
+# REPERTO O-1 (17/09): `migrations/omega_proposte_uscita_2026-09-16.sql` aveva
+# messo le proposte su una TABELLA NUOVA (`omega_requests`) che il servizio non
+# legge: una proposta approvata non sarebbe mai stata eseguita. La coda e' UNA:
+# `omega_manual_requests`. La correzione e'
+# `migrations/omega_proposte_coda_unica_2026-09-17.sql`, da applicare.
+# ---------------------------------------------------------------------------
+REQUEST_STATES = ("proposed", "pending", "processing", "done", "rejected", "error")
+
+# il testo di un errore del database che dice «la migrazione non c'e'»: CHECK
+# violato sullo stato nuovo, colonna `updated_at` assente, indice mancante. Si
+# distingue da un guasto qualunque perche' il ripiego e' diverso: con la
+# migrazione mancante non si propone e lo si DICHIARA (schema_warn), con un
+# guasto si riprova al giro dopo.
+_SEGNI_DI_SCHEMA = ("omega_manual_requests_status_check", "updated_at",
+                    "violates check constraint", "column", "does not exist",
+                    "pgrst204", "42703", "23514")
+
+
+def pare_schema_mancante(ex: BaseException) -> bool:
+    """L'errore parla di SCHEMA (migrazione non applicata) e non di un guasto?"""
+    testo = f"{type(ex).__name__}: {ex}".lower()
+    return any(s in testo for s in _SEGNI_DI_SCHEMA)
+
+
+def proposta_di_chiusura_viva(trade_id: int) -> Optional[dict[str, Any]]:
+    """La proposta di chiusura ancora IN ATTESA DI APPROVAZIONE per questo trade.
+
+    Serve a non creare un duplicato a ogni ciclo: finche' la condizione di
+    uscita regge, la proposta e' UNA e si aggiorna (prezzo, liquidita', motivo).
+    E' quello che la rende viva sotto gli occhi di chi deve decidere."""
+    rows = (
+        _sb().table("omega_manual_requests").select("*")
+        .eq("status", "proposed").eq("payload->>trade_id", str(int(trade_id)))
+        .limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def scrivi_proposta_di_chiusura(trade_id: int, payload: dict[str, Any]) -> Optional[int]:
+    """Crea o AGGIORNA la proposta di chiusura di ``trade_id``.
+
+    Non passa da ``manual_request``: quelle nascono 'pending' e sono comandi
+    dell'utente, da eseguire subito. Questa nasce 'proposed' e resta ferma
+    finche' un essere umano non la promuove.
+    Ritorna l'id, oppure None se la scrittura non e' riuscita (il chiamante NON
+    deve interpretarlo come "proposta fatta": senza id non c'e' proposta).
+    Le eccezioni NON si inghiottono: il chiamante deve poter distinguere una
+    migrazione mancante (si dichiara) da un guasto (si riprova)."""
+    corpo = {**payload, "trade_id": int(trade_id)}
+    viva = proposta_di_chiusura_viva(trade_id)
+    if viva is not None:
+        (
+            _sb().table("omega_manual_requests")
+            .update({"payload": corpo, "updated_at": _now_iso()})
+            .eq("id", int(viva["id"])).execute()
+        )
+        return int(viva["id"])
+    res = (
+        _sb().table("omega_manual_requests")
+        .insert({"kind": "cashout", "status": "proposed", "payload": corpo}).execute()
+    )
+    dati = getattr(res, "data", None) or []
+    return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
+
+
+def chiudi_proposta(trade_id: int, motivo: str) -> None:
+    """La condizione di uscita non regge piu': la proposta viva decade.
+
+    Non e' un rifiuto dell'utente — e' il mercato che e' cambiato. Si marca
+    'rejected' col motivo, cosi' resta la traccia di una chiusura PROPOSTA e mai
+    avvenuta: senza, sparirebbe e nessuno saprebbe che era stata offerta."""
+    viva = proposta_di_chiusura_viva(trade_id)
+    if viva is None:
+        return
+    (
+        _sb().table("omega_manual_requests")
+        .update({"status": "rejected",
+                 "result": {**(viva.get("result") or {}), "decaduta": True,
+                            "motivo": str(motivo)[:200]},
+                 "updated_at": _now_iso()})
+        .eq("id", int(viva["id"])).execute()
+    )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def replace_events(events: list[dict[str, Any]]) -> None:
     """SOSTITUISCE la cache eventi: upsert delle righe fresche + DELETE delle
     righe non più presenti. Senza purge la cache accumulava eventi di giorni

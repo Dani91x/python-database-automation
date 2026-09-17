@@ -10,6 +10,12 @@
 //   · «Chiudi ora» approvabile su una proposta che il servizio NON propone → rosso;
 //   · l'esito `{ok:false}` della RPC scartato invece che rilanciato → rosso;
 //   · l'ordinamento che mette in fondo quella che conviene chiudere → rosso.
+//
+// 17/09 — AGGIUNTE (reperto O-1 + ordine dell'utente «uscite in profit E in loss»):
+//   · il canale realtime che torna su `omega_requests` (la tabella che nessun
+//     worker drena) → rosso;
+//   · una PROTEZIONE (bloccabile negativo) dichiarata non approvabile → rosso;
+//   · una protezione in fondo alla lista, dietro un green-up → rosso.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -21,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
     motivoUscitaOmegaLabel, motivoNonApprovabileOmega, ordinaProposteOmega,
     fetchProposteOmega, approvaPropostaOmega, ignoraPropostaOmega,
+    subscribeProposteOmega, eUnaProtezioneOmega,
     type PropostaUscitaOmega, type PropostaUscitaOmegaPayload,
 } from './omegaProposte';
 
@@ -48,9 +55,13 @@ function proposta(id: number, over: Partial<PropostaUscitaOmegaPayload> = {},
     return { id, kind: 'cashout', payload: payload(over), created_at: created, updated_at: null };
 }
 
-describe('i SEI motivi di omega_v3, in italiano', () => {
+describe('i motivi di omega_v3, in italiano', () => {
+    // 17/09: ai sei esiti storici se ne aggiungono TRE che PROPONGONO senza che
+    // ci sia un guadagno (`protezione`, `cap`, `rischio`). Ordine dell'utente:
+    // la scheda vale «sia in profit che in loss».
     const attesi = ['blocca_il_profitto', 'tenere_vale_di_piu', 'aspettare_vale_di_piu',
-        'bloccabile_non_positivo', 'controparte_insufficiente', 'nessun_prezzo_di_back'];
+        'bloccabile_non_positivo', 'controparte_insufficiente', 'nessun_prezzo_di_back',
+        'protezione', 'cap', 'rischio'];
 
     it('nessuno cade nel traduttore parola per parola', () => {
         for (const k of attesi) {
@@ -89,20 +100,71 @@ describe('quando si puo approvare — fail-closed', () => {
         expect(motivoNonApprovabileOmega(payload({ back_size: 0 }))).toMatch(/importo di chiusura/);
     });
 
-    it('senza profitto bloccabile dichiarato non si approva', () => {
+    it('senza risultato bloccabile dichiarato non si approva', () => {
         expect(motivoNonApprovabileOmega(payload({ profitto_bloccabile: null })))
-            .toMatch(/profitto bloccabile/);
+            .toMatch(/bloccabile non dichiarato/);
+    });
+
+    // ---- 17/09: LE USCITE IN PERDITA SI DEVONO POTER FIRMARE ----------------
+    it('la PROTEZIONE e approvabile, anche col bloccabile NEGATIVO', () => {
+        const p = payload({ motivo_codice: 'protezione', profitto_bloccabile: -1.4,
+            ev_tenere: -29.03, p_evento: 0.3 });
+        expect(motivoNonApprovabileOmega(p)).toBeNull();
+    });
+
+    it('un CAP scattato e approvabile: e una riduzione del rischio, non un affare', () => {
+        const p = payload({ motivo_codice: 'cap', profitto_bloccabile: -0.2,
+            cap_scattato: 'v3_daily_loss_cap' });
+        expect(motivoNonApprovabileOmega(p)).toBeNull();
+    });
+
+    it('il RISCHIO oltre la soglia e approvabile', () => {
+        expect(motivoNonApprovabileOmega(payload({ motivo_codice: 'rischio',
+            profitto_bloccabile: -3 }))).toBeNull();
+    });
+
+    it('una proposta in perdita si riconosce, e non e verde', () => {
+        expect(eUnaProtezioneOmega(payload({ motivo_codice: 'protezione',
+            profitto_bloccabile: -1.4 }))).toBe(true);
+        expect(eUnaProtezioneOmega(payload({ motivo_codice: 'cap',
+            profitto_bloccabile: 0.5 }))).toBe(true);
+        // un green-up col bloccabile negativo e' comunque una perdita bloccata
+        expect(eUnaProtezioneOmega(payload({ profitto_bloccabile: -0.01 }))).toBe(true);
+        expect(eUnaProtezioneOmega(payload())).toBe(false);
     });
 });
 
-describe('ordine: prima quelle in cui chiudere conviene', () => {
-    it('blocca_il_profitto prima, poi le altre; a parita la piu vecchia', () => {
+describe('ordine: prima quelle che urgono', () => {
+    it('blocca_il_profitto prima delle altre; a parita la piu vecchia', () => {
         const ordinate = ordinaProposteOmega([
             proposta(1, { motivo_codice: 'tenere_vale_di_piu' }, '2026-09-16T20:00:00Z'),
             proposta(2, { motivo_codice: 'blocca_il_profitto' }, '2026-09-16T21:00:00Z'),
             proposta(3, { motivo_codice: 'blocca_il_profitto' }, '2026-09-16T20:30:00Z'),
         ]);
         expect(ordinate.map((p) => p.id)).toEqual([3, 2, 1]);
+    });
+
+    it('la PROTEZIONE passa davanti al green-up: non approvarla COSTA', () => {
+        const ordinate = ordinaProposteOmega([
+            proposta(1, { motivo_codice: 'blocca_il_profitto' }, '2026-09-16T20:00:00Z'),
+            proposta(2, { motivo_codice: 'protezione' }, '2026-09-16T21:00:00Z'),
+            proposta(3, { motivo_codice: 'cap' }, '2026-09-16T20:30:00Z'),
+        ]);
+        expect(ordinate.map((p) => p.id)).toEqual([3, 2, 1]);
+    });
+});
+
+describe('realtime: la coda e UNA sola (reperto O-1)', () => {
+    it('il canale ascolta omega_manual_requests, la coda che il servizio drena', () => {
+        const on = vi.fn().mockReturnThis();
+        const canale = { on, subscribe: vi.fn().mockReturnThis() };
+        vi.mocked(supabase.channel).mockReturnValue(canale as never);
+        const stop = subscribeProposteOmega(() => undefined);
+        expect(on).toHaveBeenCalledTimes(1);
+        const filtro = on.mock.calls[0][1] as { table: string; schema: string };
+        expect(filtro.table).toBe('omega_manual_requests');
+        expect(filtro.schema).toBe('public');
+        stop();
     });
 });
 

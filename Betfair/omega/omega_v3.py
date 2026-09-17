@@ -427,6 +427,43 @@ def fondi_col_mercato(p_modello: float, p_mercato: Optional[float], p: Parametri
     return _inv_logit(w * _logit(p_modello) + (1.0 - w) * _logit(float(p_mercato)))
 
 
+def p_mercato_devigata(runners: Sequence[Any]):
+    """`nome -> P di MERCATO`, devigata sul mercato intero, o None.
+
+    Il mid di back/lay di ogni runner, normalizzato perche' la somma faccia 1:
+    e' la probabilita' che il book esprime, ripulita dallo spread. Serve alla
+    FUSIONE: il mercato sa cose che il modello non sa. Se meta' del book manca
+    non si deviga niente e la funzione tace — normalizzare mezzo mercato
+    produrrebbe probabilita' inventate.
+
+    Sta QUI, e non nel replay, perche' il servizio e il banco devono fondere
+    con lo STESSO metro: se il replay devigasse in un modo e la produzione in un
+    altro, la certificazione non direbbe piu' niente sulla decisione vera.
+    `runners` sono `omega_engine.ScoreRunner` (o qualunque oggetto con
+    `name`/`back_price`/`lay_price`: le chiavi sono quelle del v2).
+    """
+    pesi: Dict[str, float] = {}
+    for r in runners or ():
+        b = getattr(r, "back_price", None)
+        l = getattr(r, "lay_price", None)
+        try:
+            if b and l:
+                w = 0.5 * (1.0 / float(b) + 1.0 / float(l))
+            elif b or l:
+                w = 1.0 / float(b or l)
+            else:
+                continue
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+        if w > 0:
+            pesi[str(getattr(r, "name", "") or "")] = w
+    tot = sum(pesi.values())
+    if tot <= 0.5 or len(pesi) < 6:
+        return None
+    equa = {k: v / tot for k, v in pesi.items()}
+    return lambda nome: equa.get(str(nome))
+
+
 # --------------------------------------------------------------------------
 # 5. LE PROBABILITA' DI OGNI SELEZIONE DEL MERCATO (aggregati compresi)
 # --------------------------------------------------------------------------
@@ -547,6 +584,8 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
               distanza_minima_gol: int = 1,
               punteggio: Tuple[int, int] = (0, 0),
               p_max: float = 1.0,
+              p_min: float = 0.0,
+              escludi: Sequence[int] = (),
               cap_liability_gamba: float = 0.0,
               k_default: float = K_MINIMO) -> Optional[CandidatoV3]:
     """La selezione da bancare, o None con i motivi degli scarti.
@@ -566,9 +605,15 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
     sh, sa = int(punteggio[0]), int(punteggio[1])
     migliore: Optional[CandidatoV3] = None
     scartati: List[Tuple[str, str]] = []
+    fuori = {int(x) for x in (escludi or ())}
 
     for r in runners:
         nome = str(r.name or "")
+        if int(r.selection_id) in fuori:
+            # la cella e' gia' della PRIMA gamba di questa partita: due ingressi
+            # vuol dire due celle DIVERSE, se no e' un solo ingresso doppio
+            scartati.append((nome, "cella_gia_bancata"))
+            continue
         prezzo = r.lay_price
         if prezzo is None or not math.isfinite(float(prezzo)) or float(prezzo) <= 1.0:
             scartati.append((nome, "senza_lay"))
@@ -594,6 +639,18 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
         if p_imp is None:
             scartati.append((nome, "prezzo_non_valido"))
             continue
+        # LA FASCIA IN CUI SI OPERA sta sulla p_IMPLICITA AL TOCCO, non sulla P
+        # nostra: e' li' che il bias e' stato MISURATO (`tools/k_in_gioco.py`
+        # raggruppa per fascia di p_impl; M4M5M6 §2.3). Fuori da quella fascia
+        # non si sa se il bias c'e', e dove si sa che non c'e' — la fascia
+        # 2-5 %, bias prudente 0,71 — l'EV e' negativo: quelle celle si
+        # scartano, anche quando il MARGINE sembra buono.
+        if p_imp < float(p_min):
+            scartati.append((nome, "p_impl_sotto_fascia"))
+            continue
+        if float(p_max) > 0.0 and p_imp > float(p_max):
+            scartati.append((nome, "p_impl_oltre_fascia"))
+            continue
         # fusione col mercato: il book sa cose che noi non sappiamo
         p_fusa = float(p_mod)
         emp_p: Optional[float] = None
@@ -606,6 +663,9 @@ def _seleziona(*, periodo: str, runners: Sequence[RunnerV3], probabilita: Dict[s
         # costa la liability intera, per eccesso solo un'occasione persa
         p_nostra = p_fusa if emp_p is None else max(p_fusa, emp_p)
         if p_nostra > float(p_max):
+            # IL TETTO DURO SULLA P NOSTRA (semantica del 16/09): non si banca
+            # una cella che il NOSTRO modello considera probabile, qualunque
+            # cosa dica il prezzo.
             scartati.append((nome, "p_oltre_il_tetto"))
             continue
         etichetta = secchio_di(p_imp) if secchio_di is not None else ""
@@ -860,7 +920,13 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
 @dataclass(frozen=True)
 class PropostaUscita:
     """La PROPOSTA che finisce in Control Room. Non e' un ordine: e' una domanda
-    all'utente, con i numeri in mano."""
+    all'utente, con i numeri in mano.
+
+    ``profitto_bloccabile`` puo' essere NEGATIVO: e' una perdita che si BLOCCA,
+    ed e' una proposta legittima (motivo ``protezione`` o ``cap``). Ordine
+    dell'utente del 17/09: «la scheda dove l'utente approva le uscite, SIA IN
+    PROFIT CHE IN LOSS». Chi legge questo campo non puo' assumere il segno.
+    """
     proponi: bool
     motivo_codice: str
     profitto_bloccabile: float
@@ -879,8 +945,10 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
                     p_evento: float, p: Parametri,
                     lambdas: Optional[Tuple[float, float]] = None,
                     commissione: float = 0.05,
-                    margine_attesa: float = 0.02) -> PropostaUscita:
-    """Propone (o no) di bloccare il profitto, con il motivo scritto.
+                    margine_attesa: float = 0.02,
+                    cap_scattato: Optional[str] = None,
+                    p_lose_max: float = 0.0) -> PropostaUscita:
+    """Propone (o no) di chiudere la gamba, con il motivo scritto.
 
     La regola NON e' una soglia fissa: si confrontano tre numeri —
       · `bloccabile` = cosa si porta a casa chiudendo adesso, certo;
@@ -889,7 +957,34 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
     Si propone quando chiudere adesso vale PIU' che tenere **e** piu' che aspettare
     (entro `margine_attesa`, il premio che si paga per la certezza). In tutti gli
     altri casi si tiene, e si dice perche' — la memoria del 12/09 («le chiusure
-    distruggono valore») e' la ragione per cui questa funzione e' cosi' timida."""
+    distruggono valore») e' la ragione per cui questa funzione e' cosi' timida.
+
+    17/09 — LE TRE PROPOSTE CHE NON SONO UN AFFARE (ordine dell'utente: «la
+    scheda dove approvo le uscite, SIA IN PROFIT CHE IN LOSS»). Fino a ieri
+    l'unico esito che proponeva era `blocca_il_profitto`, e con un bloccabile
+    negativo si usciva sempre da `bloccabile_non_positivo`: in perdita il bot
+    non chiedeva MAI niente, e una gamba con la cella che si avvicinava restava
+    muta fino al settlement. Adesso:
+
+      · `cap`        — un tetto di rischio e' SCATTATO (liability di gamba, di
+                       partita, aperta, stop-loss giornaliero). Non si guarda
+                       l'EV: si chiede di ridurre il rischio, e il motivo lo
+                       dice. Il tetto lo passa il chiamante (`cap_scattato`), che
+                       e' l'unico a conoscere gli aggregati.
+      · `protezione` — chiudere adesso costa (bloccabile <= 0) ma TENERE costa di
+                       piu' (`ev_tenere < bloccabile`): e' il gol che ha
+                       avvicinato la cella, la quota dimezzata. Qui il guardiano
+                       dell'attesa NON si applica: il valore dell'attesa e'
+                       calcolato nel ramo «se il punteggio regge», che e'
+                       esattamente il ramo che sta venendo meno. Aspettare in
+                       quel caso non e' prudenza, e' non guardare.
+      · `rischio`    — la P che l'evento bancato esca ha superato `p_lose_max`.
+                       Soglia SPENTA per default (0 = mai): si accende dal
+                       pannello, e finche' e' zero questo ramo non esiste.
+
+    Nessuna di queste chiude niente: sono domande all'utente. La firma resta
+    sua, sempre (G1).
+    """
     b = profitto_bloccabile(posizione, back_price=back_price, back_size=back_size,
                             commissione=commissione)
     ev_h = ev_di_tenere(posizione, p_evento=p_evento, commissione=commissione)
@@ -914,12 +1009,41 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
                               b.back_size, ev_h, meglio_aspettare,
                               (0.0 if max_att == float("-inf") else max_att), min_max,
                               float(p_evento), b.nota)
+    attesa = (0.0 if max_att == float("-inf") else max_att)
+    # --- CAP SCATTATO: si riduce il rischio, e non e' un affare -------------
+    if cap_scattato:
+        return PropostaUscita(True, "cap", b.profitto, b.back_price, b.back_size,
+                              ev_h, meglio_aspettare, attesa, min_max, float(p_evento),
+                              f"tetto di rischio scattato ({cap_scattato}): chiudere ora "
+                              f"{'blocca' if b.profitto >= 0 else 'costa'} "
+                              f"{abs(b.profitto):.2f} EUR (EV di tenere {ev_h:.2f} EUR). "
+                              f"Non e' un affare: e' una riduzione del rischio")
+    # --- RISCHIO OLTRE LA SOGLIA (spenta per default: p_lose_max = 0) -------
+    if float(p_lose_max) > 0 and float(p_evento) > float(p_lose_max):
+        return PropostaUscita(True, "rischio", b.profitto, b.back_price, b.back_size,
+                              ev_h, meglio_aspettare, attesa, min_max, float(p_evento),
+                              f"P che il risultato bancato esca {float(p_evento) * 100:.2f}% "
+                              f"oltre il massimo tollerato {float(p_lose_max) * 100:.2f}%: "
+                              f"chiudere ora vale {b.profitto:.2f} EUR contro un EV di "
+                              f"tenere di {ev_h:.2f} EUR")
     if b.profitto <= 0:
+        # PROTEZIONE: chiudere costa, ma tenere costa di piu'. Il confronto e'
+        # fra due numeri OMOGENEI (euro netti di commissione): il certo contro
+        # l'atteso. Non c'e' nessuna soglia nuova qui — c'e' il confronto che
+        # gia' governava il ramo in profitto, applicato anche sotto lo zero.
+        if ev_h < b.profitto:
+            return PropostaUscita(True, "protezione", b.profitto, b.back_price,
+                                  b.back_size, ev_h, meglio_aspettare, attesa, min_max,
+                                  float(p_evento),
+                                  f"chiudere ora costa {abs(b.profitto):.2f} EUR ma tenere "
+                                  f"ne vale {ev_h:.2f}: bloccare la perdita e' il male "
+                                  f"minore (P del bancato {float(p_evento) * 100:.2f}%)")
         return PropostaUscita(False, "bloccabile_non_positivo", b.profitto, b.back_price,
                               b.back_size, ev_h, meglio_aspettare,
-                              (0.0 if max_att == float("-inf") else max_att), min_max,
+                              attesa, min_max,
                               float(p_evento),
-                              f"chiudere ora vale {b.profitto:.2f} EUR: si tiene")
+                              f"chiudere ora vale {b.profitto:.2f} EUR contro un EV di "
+                              f"tenere di {ev_h:.2f} EUR: si tiene")
     if b.profitto < ev_h:
         return PropostaUscita(False, "tenere_vale_di_piu", b.profitto, b.back_price,
                               b.back_size, ev_h, meglio_aspettare,

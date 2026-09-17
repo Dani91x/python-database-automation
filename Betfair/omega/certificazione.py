@@ -151,6 +151,15 @@ class Momento:
     # quello che si sapeva delle proposte vive PRIMA di questo momento:
     # trade_id -> {decided_at, proposed_at, profitto}
     proposte_viste: Optional[Dict[str, Dict[str, Any]]] = None
+    # 17/09 — lo STATO della riga in coda al momento dell'osservazione
+    # ('proposed' | 'pending' | 'processing' | 'done' | 'rejected' | 'error').
+    # Serve a G4: una proposta in perdita deve restare una PROPOSTA, cioe' stare
+    # ferma in 'proposed' finche' non la firma un essere umano.
+    stato_richiesta: Optional[str] = None
+    # 17/09 — le proposte APPROVATE dall'utente, e che fine hanno fatto (G3).
+    # Una voce per approvazione: {request_id, trade_id, event_id, status,
+    # giri_da_approvazione, eseguita, evento_chiuso_dall_utente, exit_kind}
+    approvazioni: Optional[List[Dict[str, Any]]] = None
 
     # ------------------------------------------------------------ comodita'
     @property
@@ -379,7 +388,12 @@ def _a7(m: Momento) -> Optional[str]:
 # B. OBIETTIVO DI GIORNATA E TARGET PER GAMBA (§2, §14.2)
 # ===========================================================================
 @_controllo("B1", "target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)",
-            quando=lambda m: m.tipo == "sizing" and m.target is not None
+            # SOLO il motore di oggi: in V3 la size NON viene dall'obiettivo di
+            # giornata (e' lo stake fisso dell'utente, A9) e un «target di gamba»
+            # non esiste — la riga ne porta 0,00. Giudicare V3 con la regola del
+            # v2 e' lo stesso falso positivo che A1 aveva gia' avuto il 16/09.
+            quando=lambda m: m.tipo == "sizing" and m.motore != "v3"
+            and m.target is not None
             and m.goal is not None and m.realized is not None and m.legs_left is not None)
 def _b1(m: Momento) -> Optional[str]:
     atteso = E.dynamic_target(float(m.goal), float(m.realized), int(m.legs_left))
@@ -402,7 +416,15 @@ def _b2(m: Momento) -> Optional[str]:
         if abs(tm - 2.0 * tl) > 0.011:
             return f"target_match {tm} != 2 x target_leg {tl}"
     pct = _num(st.get("goal_pct"))
-    if pct is not None and (pct < 0 or pct > 100.0 + 1e-9):
+    # 17/09 sera (replay 35797769 `cashout-globale`, motore v3): dopo una chiusura
+    # in PERDITA il realizzato di giornata e' negativo e la barra sta sotto lo
+    # zero (-6,6 %): e' un numero onesto, non un fuori scala. Il fuori scala vero
+    # e' un pct negativo SENZA una perdita realizzata, o sopra il 100 %.
+    realizzato = _num(st.get("realized_effective"))
+    if realizzato is None:
+        realizzato = _num(st.get("realized_today"))
+    in_perdita = realizzato is not None and realizzato < 0
+    if pct is not None and ((pct < 0 and not in_perdita) or pct > 100.0 + 1e-9):
         return f"goal_pct fuori scala: {pct}"
     goal = _num(st.get("goal"))
     if goal is not None and goal <= 0:
@@ -968,6 +990,44 @@ def _j2(m: Momento) -> Optional[str]:
     return None
 
 
+# GLI STATI TERMINALI di Betfair: l'ordine e' MORTO e a mercato non resta
+# niente. E' l'elenco CHIUSO con cui `_j3` riconosce un FOK ucciso a zero;
+# scritto QUI e non importato da `omega_service` di proposito — un controllo che
+# prendesse l'elenco dal codice che giudica sbaglierebbe insieme a lui.
+# Uno stato che non sta qui dentro (o che manca) NON e' terminale: e' AMBIGUO.
+STATI_TERMINALI = frozenset({"EXECUTION_COMPLETE", "EXPIRED", "LAPSED",
+                             "VIOLATION", "VOIDED", "CANCELLED"})
+
+
+def _fok_ucciso_a_zero(esito: Any) -> bool:
+    """L'ordine e' stato ACCETTATO, non ha abbinato NIENTE ed e' MORTO.
+
+    E' il FOK che Betfair uccide quando la controparte non basta: un `bet_id`
+    esiste, ma a mercato non resta nulla e la posizione non e' mai nata. Tutti e
+    tre i pezzi vengono dal `PlaceResult` VERO del banco — mai dalle attivita'
+    scritte dal bot (§7.36: il bot puo' sbagliarsi anche nel dichiararsi).
+
+    Se lo STATO non e' leggibile, o non e' uno dei terminali dichiarati, questa
+    funzione risponde NO: un esito ambiguo e' un rischio, e chi giudica deve
+    accusare, non assolvere.
+    """
+    if esito is None or not bool(getattr(esito, "ok", False)):
+        return False
+    abbinato = _num(getattr(esito, "size_matched", None))
+    if abbinato is None or abbinato > 0.0049:
+        return False
+    stato = str(getattr(esito, "order_status", "") or "").strip().upper()
+    return stato in STATI_TERMINALI
+
+
+def _e_ref_per_gamba(ref: str) -> bool:
+    """True se ``ref`` ha il FORMATO per-gamba ``omega-t<int>`` (§6/§16 review
+    C1) — un metro indipendente dal codice (``customer_ref_for`` potrebbe
+    cambiare forma, questo controllo no)."""
+    resto = ref[len("omega-t"):] if ref.startswith("omega-t") else ""
+    return bool(resto) and resto.isdigit()
+
+
 @_controllo("J3", "il riferimento del piazzamento e' quello PER GAMBA "
                   "(`omega-t<id>`, §16 review C1) e non si ripete",
             quando=lambda m: m.tipo == "ordine" and m.richiesta is not None)
@@ -981,13 +1041,45 @@ def _j3(m: Momento) -> Optional[str]:
     Il secondo confronta col FORMATO scritto nella Costituzione (§6, §16
     review C1: `omega-t<id>`, uno per gamba): quello e' un metro indipendente
     dal codice, e prende anche il caso in cui la funzione cambia forma.
-    """
+
+    DUE ESCLUSIONI, che sono la stessa cosa vista da due parti: quando la riga
+    non c'e' piu' perche' `_leg_certain_failure` l'ha cancellata dopo un esito
+    CERTO negativo, non c'e' NIENTE da riconciliare. I due modi in cui Betfair
+    dice «niente»: il RIFIUTO (`ok=False`, nessun `bet_id`: l'ordine non e' mai
+    esistito) e il FOK UCCISO A ZERO (`ok=True`, il `bet_id` c'e', ma
+    `size_matched == 0` e lo stato e' TERMINALE: l'ordine e' esistito per un
+    istante e non ha abbinato niente). In nessuno dei due resta una posizione,
+    e J3 esiste per garantire che una posizione VIVA sia ritrovabile.
+
+    FALSO POSITIVO DEL CONTROLLO trovato dal replay (17/09, PROCESSO §6.7:
+    prima di accusare il bot si esclude che il falso positivo sia del
+    controllo): quando ``_leg_certain_failure`` cancella la riserva DOPO un
+    rifiuto CERTO di Betfair (``ok=False``, nessun ``bet_id``: nessun ordine
+    e' MAI esistito), la riga non c'e' piu' quando questo controllo la cerca
+    — ma non c'e' NIENTE da riconciliare, quindi non e' un buco. Qui non si
+    accusa SOLO quando ENTRAMBE le condizioni sono vere: (1) il ref e' gia'
+    nel formato per-gamba corretto (altrimenti un ref malformato resterebbe
+    comunque un problema, anche col rifiuto), e (2) il BANCO STESSO dice che
+    l'ordine e' stato rifiutato — ``m.esito``, il ``PlaceResult`` VERO che il
+    banco ha osservato, MAI le attivita' scritte dal bot (§7.36: il bot puo'
+    sbagliarsi anche nel dichiararsi). Un esito IGNOTO (``m.esito is None``,
+    l'eccezione durante il place) NON e' un rifiuto certo: li' si continua ad
+    accusare, come oggi — e' esattamente il caso che l'esclusione non deve
+    coprire."""
     ref = str((m.richiesta or {}).get("customer_ref") or "")
     if not ref:
         return "ordine piazzato senza customer_ref: non sara' riconciliabile"
     riga = _riga_dal_ref(m, ref) or _riga_del_piazzamento(m)
     if riga is None:
         if str((m.richiesta or {}).get("side", "")).lower() == "lay":
+            esito = m.esito
+            rifiuto_certo = (esito is not None
+                             and not bool(getattr(esito, "ok", False))
+                             and not getattr(esito, "bet_id", None))
+            # 17/09, SECONDO RAMO: il FOK ucciso a zero. Lo stato terminale lo
+            # dice il `PlaceResult` del banco; se non e' leggibile si accusa.
+            if _e_ref_per_gamba(ref) and (rifiuto_certo or _fok_ucciso_a_zero(esito)):
+                return None
             return (f"ref '{ref}' non riconducibile a nessuna riga con "
                     f"`customer_ref_for`: la riconciliazione non ritroverebbe "
                     f"l'ordine")
@@ -1042,6 +1134,12 @@ def _j5(m: Momento) -> Optional[str]:
             and bool(getattr(m.esito, "ok", False))
             and _num(getattr(m.esito, "size_matched", None)) is not None
             and _num((m.richiesta or {}).get("size")) is not None
+            # PARZIALE vuol dire che QUALCOSA si e' abbinato (17/09): abbinato
+            # ZERO e' un NO-FILL (il FOK ucciso), e li' non c'e' nessun residuo
+            # vivo da mostrare al trader — `place_parziale` direbbe una cosa
+            # falsa. Il no-fill lo giudicano J1 (mai una posizione aperta da un
+            # place non riuscito) e la famiglia K (la riga non resta viva).
+            and (_num(getattr(m.esito, "size_matched", None)) or 0.0) > 0.0049
             and (_num(getattr(m.esito, "size_matched", None)) or 0.0) + 0.005
             < (_num((m.richiesta or {}).get("size")) or 0.0))
 def _j6(m: Momento) -> Optional[str]:
@@ -1181,6 +1279,10 @@ def _a8(m: Momento) -> Optional[str]:
 @_controllo("A9", "V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper "
                   "come in live (ordine dell'utente 16/09)",
             quando=lambda m: _v3_suo(m) and m.tipo in ("sizing", "ordine")
+            # solo le APERTURE (lay): una CHIUSURA e' un BACK dimensionato dal
+            # green-up/cash-out (s*L/B), e giudicarla con lo stake fisso e' un
+            # falso positivo (replay 35777617 `cashout-globale`, 17/09 sera)
+            and str((m.richiesta or {}).get("side") or "lay").lower() == "lay"
             and (m.size is not None or (m.richiesta or {}).get("size") is not None))
 def _a9(m: Momento) -> Optional[str]:
     voluto = _num((m.params or {}).get("v3_stake_eur"))
@@ -1234,6 +1336,25 @@ def _a11(m: Momento) -> Optional[str]:
     if tetto is not None and p_nostra is not None and p_nostra > tetto / 100.0 + 1e-9:
         return (f"P_nostra {p_nostra * 100:.3f}% sopra il tetto duro {tetto:.2f}% "
                 f"su '{getattr(c, 'name', '?')}'")
+    # LA FASCIA IN CUI SI OPERA, e sta sulla p_IMPLICITA AL TOCCO (17/09).
+    # Il bias e' stato misurato per FASCIA DI p_impl (`tools/k_in_gioco.py`,
+    # M4M5M6 §2.3): sotto il pavimento non lo si conosce, sopra il tetto lo si
+    # conosce e vale MENO DI UNO (fascia 2-5 %: 0,71, cioe' EV negativo). Una
+    # cella fuori fascia non si banca nemmeno col margine migliore del mondo.
+    # Il buco l'ha trovato la falsificazione del raccordo: spegnendo la fascia
+    # dentro `omega_v3` nessun controllo se ne accorgeva.
+    p_impl = _num(getattr(c, "p_implicita", None))
+    pavimento = _num((m.params or {}).get("v3_p_min_pct"))
+    if pavimento is not None and p_impl is not None \
+            and p_impl + 1e-9 < pavimento / 100.0:
+        return (f"p_implicita {p_impl * 100:.3f}% SOTTO il pavimento di fascia "
+                f"{pavimento:.2f}% su '{getattr(c, 'name', '?')}': li' il bias "
+                f"in gioco non e' misurato")
+    if tetto is not None and p_impl is not None and tetto > 0 \
+            and p_impl > tetto / 100.0 + 1e-9:
+        return (f"p_implicita {p_impl * 100:.3f}% SOPRA il tetto di fascia "
+                f"{tetto:.2f}% su '{getattr(c, 'name', '?')}': li' il bias "
+                f"misurato in gioco e' sotto 1 (EV negativo)")
     return None
 
 
@@ -1302,11 +1423,56 @@ def _g1(m: Momento) -> Optional[str]:
         return (f"decisione di uscita '{m.azione}' in V3: l'unica uscita ammessa e' "
                 f"la PROPOSTA (perche': {m.perche})")
     # (c) nessun ordine di chiusura (back sulla stessa selezione) puo' partire
+    #     senza una decisione UMANA dichiarata nello stesso giro.
     if m.tipo == "ordine":
         r = m.richiesta or {}
         if str(r.get("side") or "").lower() == "back" and not r.get("approvata_dall_utente"):
-            return (f"ordine di BACK (= chiusura) partito senza approvazione "
-                    f"dell'utente: ref {r.get('customer_ref')}")
+            firma = _firma_umana(m, r)
+            if firma is None:
+                return (f"ordine di BACK (= chiusura) partito senza approvazione "
+                        f"dell'utente: ref {r.get('customer_ref')}")
+    return None
+
+
+# le attivita' con cui il servizio DICHIARA che a chiudere e' stata una persona.
+#   `cashout_manual`  — il bottone «Cash out» della scheda: e' un gesto suo;
+#   `uscita_approvata` — una proposta del BOT che l'utente ha FIRMATO. Vale solo
+#                        con `firmata=True`, cioe' col `approved_at` che scrive
+#                        la RPC: senza, quella riga e' arrivata a 'pending' senza
+#                        passare dal cancelletto, e non e' una firma.
+_ATTIVITA_DI_CHIUSURA_UMANA = ("cashout_manual", "uscita_approvata")
+
+
+def _trade_dal_ref(ref: Any) -> Optional[int]:
+    """L'id della riga dal `customerOrderRef` (`omega-t<id>`), o None."""
+    testo = str(ref or "")
+    pezzo = testo.rsplit("-t", 1)[-1] if "-t" in testo else ""
+    pezzo = "".join(c for c in pezzo if c.isdigit())
+    return int(pezzo) if pezzo else None
+
+
+def _firma_umana(m: Momento, richiesta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """L'attivita' con cui il servizio dichiara CHI ha deciso questa chiusura.
+
+    None = nessuna: l'ordine di back e' partito da solo, ed e' la cosa che in V3
+    non deve mai succedere (memoria 12/09: cinque chiusure automatiche, tutte
+    sbagliate, -42,39 EUR). Si guardano le attivita' DI QUESTO GIRO, non un flag
+    che il codice potrebbe scrivere a comodo: e' la stessa riga che finisce in
+    pagina sotto gli occhi del trader.
+    """
+    tid = _trade_dal_ref(richiesta.get("customer_ref"))
+    for voce in (m.attivita or ()):
+        try:
+            kind, payload = str(voce[0]), (voce[1] or {})
+        except (TypeError, IndexError):
+            continue
+        if kind not in _ATTIVITA_DI_CHIUSURA_UMANA:
+            continue
+        if kind == "uscita_approvata" and not payload.get("firmata"):
+            continue          # promossa a 'pending' senza passare dalla RPC: NON e' una firma
+        chiusura = payload.get("closing_trade_id")
+        if tid is None or chiusura is None or int(chiusura) == int(tid):
+            return {"kind": kind, **payload}
     return None
 
 
@@ -1321,9 +1487,18 @@ def _g2(m: Momento) -> Optional[str]:
             return f"proposta senza '{campo}': la Control Room non puo' mostrare i numeri"
     if not getattr(p, "proponi", False):
         return None
-    if _num(getattr(p, "profitto_bloccabile", None)) is None or \
-            float(getattr(p, "profitto_bloccabile")) <= 0:
-        return "proposta di chiusura con profitto bloccabile non positivo"
+    motivo = str(getattr(p, "motivo_codice", "") or "")
+    bloccabile = _num(getattr(p, "profitto_bloccabile", None))
+    if bloccabile is None:
+        return "proposta di chiusura senza il numero bloccabile"
+    # 17/09 — ORDINE DELL'UTENTE: la scheda vale «sia in profit che in loss».
+    # Un bloccabile NEGATIVO e' legittimo quando il motivo lo dichiara
+    # (protezione: tenere costa di piu'; cap: un tetto e' scattato; rischio: la
+    # P ha superato la soglia). Con `blocca_il_profitto` resta un errore: quel
+    # motivo PROMETTE un guadagno, e un guadagno negativo e' una bugia in pagina.
+    if float(bloccabile) <= 0 and motivo not in ("protezione", "cap", "rischio"):
+        return (f"proposta '{motivo}' con profitto bloccabile non positivo "
+                f"({bloccabile:.2f} EUR): quel motivo promette un guadagno")
     # `decided_at` non si rinfresca (altrimenti la latenza misurata e' sempre
     # zero e il numero dice il contrario del vero — cert. Safe 14/09)
     prima = (m.proposte_viste or {}).get(str(m.trade_id))
@@ -1336,6 +1511,99 @@ def _g2(m: Momento) -> Optional[str]:
             and prima.get("profitto") != _num(getattr(p, "profitto_bloccabile", None)):
         return (f"il profitto bloccabile del trade {m.trade_id} e' cambiato senza "
                 f"che la proposta venisse riscritta: la pagina mostra un numero vecchio")
+    return None
+
+
+# entro quanti GIRI del servizio una proposta firmata deve essere passata a
+# mercato. `process_manual` la drena nello stesso giro in cui la trova, quindi
+# due giri sono gia' larghi: il terzo vuol dire che nessuno la sta leggendo — ed
+# e' esattamente il reperto O-1 (la coda sbagliata).
+GIRI_MASSIMI_PER_ESEGUIRE = 2
+
+
+@_controllo("G3", "una proposta APPROVATA dall'utente viene ESEGUITA dalla coda "
+                  "manuale entro pochi giri, e NON marca la partita «chiusa "
+                  "dall'utente» (reperti O-1 e O-3, 17/09)",
+            quando=lambda m: m.tipo == "giro" and bool(m.approvazioni))
+def _g3(m: Momento) -> Optional[str]:
+    """I due modi in cui una firma puo' non valere niente.
+
+    (a) LA CODA SBAGLIATA (O-1). La migrazione del 16/09 aveva messo le proposte
+        su `omega_requests`, una tabella che il servizio non drena: approvare
+        portava la riga da 'proposed' a 'pending' e li' restava per sempre. Il
+        trader vedeva «fatto» su una posizione ancora aperta, e se ne sarebbe
+        accorto al settlement. Qui si guarda il FATTO: dopo la firma, entro
+        ``GIRI_MASSIMI_PER_ESEGUIRE`` giri, la richiesta dev'essere uscita da
+        'pending'.
+    (b) LA CHIUSURA ATTRIBUITA ALL'UTENTE (O-3). Quella chiusura l'ha DECISA il
+        bot; l'utente ha firmato. Marcarla come chiusura sua spegnerebbe il bot
+        su una partita che sta gestendo lui — e' il difetto che la Safe ha
+        trovato il 16/09 (T14 violato x282).
+    """
+    for a in (m.approvazioni or ()):
+        if not isinstance(a, dict):
+            continue
+        giri = a.get("giri_da_approvazione")
+        stato = str(a.get("status") or "")
+        if stato in ("proposed",):
+            return (f"la richiesta {a.get('request_id')} risulta APPROVATA ma e' "
+                    f"tornata in 'proposed': la firma si e' persa")
+        if (not a.get("eseguita") and isinstance(giri, int)
+                and giri > GIRI_MASSIMI_PER_ESEGUIRE):
+            return (f"la proposta {a.get('request_id')} (trade {a.get('trade_id')}) e' "
+                    f"stata approvata {giri} giri fa ed e' ancora '{stato}': il servizio "
+                    f"non sta drenando la coda su cui vive la proposta (reperto O-1)")
+        if a.get("eseguita") and a.get("evento_chiuso_dall_utente"):
+            return (f"la proposta {a.get('request_id')} e' stata eseguita e la partita "
+                    f"{a.get('event_id')} risulta «chiusa dall'utente»: quella chiusura "
+                    f"l'ha DECISA il bot, l'utente ha solo firmato (reperto O-3)")
+        if a.get("eseguita") and str(a.get("exit_kind") or "") == "manual":
+            return (f"la proposta {a.get('request_id')} e' stata eseguita con "
+                    f"exit_kind='manual': nello storico non si distingue piu' da un "
+                    f"cash out premuto a mano, e la latenza della firma non e' piu' "
+                    f"misurabile (reperto O-3)")
+    return None
+
+
+@_controllo("G4", "IN PERDITA il bot PROPONE (motivo `protezione`/`cap`/`rischio`) "
+                  "e non chiude mai da solo: la riga resta 'proposed' finche' non "
+                  "la firma una persona (ordine dell'utente 17/09)",
+            quando=lambda m: m.tipo == "proposta" and m.proposta is not None
+            and (_num(getattr(m.proposta, "profitto_bloccabile", None)) or 0.0) < 0)
+def _g4(m: Momento) -> Optional[str]:
+    """La meta' che mancava. Fino al 17/09 `proposta_uscita` usciva SEMPRE da
+    `bloccabile_non_positivo` quando chiudere costava: in perdita il bot non
+    chiedeva niente e una gamba con la cella che si avvicinava restava muta fino
+    al settlement. L'utente lo ha vietato: «la scheda vale sia in profit che in
+    loss».
+
+    Due cose insieme, e servono entrambe:
+      · la proposta in perdita ESISTE e dichiara perche' (`protezione` / `cap` /
+        `rischio`, mai `blocca_il_profitto`: quel motivo promette un guadagno);
+      · e resta una PROPOSTA — cioe' la riga in coda e' 'proposed'. Se il bot
+        se la promuovesse da solo a 'pending' avrebbe chiuso senza firma, che e'
+        esattamente cio' che G1 vieta, dal lato della coda.
+    """
+    p = m.proposta
+    motivo = str(getattr(p, "motivo_codice", "") or "")
+    bloccabile = _num(getattr(p, "profitto_bloccabile", None))
+    if not getattr(p, "proponi", False):
+        # si TIENE con un bloccabile negativo: legittimo solo se tenere vale di
+        # piu'. Se tenere vale MENO, il bot sta stando zitto su una perdita che
+        # si allarga — ed e' il buco che questo controllo esiste per trovare.
+        ev = _num(getattr(p, "ev_tenere", None))
+        if ev is not None and bloccabile is not None and ev < bloccabile:
+            return (f"bloccabile {bloccabile:.2f} EUR contro un EV di tenere di "
+                    f"{ev:.2f} EUR e NESSUNA proposta (motivo '{motivo}'): tenere "
+                    f"costa di piu' e il trader non lo sa")
+        return None
+    if motivo not in ("protezione", "cap", "rischio"):
+        return (f"proposta in perdita ({bloccabile:.2f} EUR) col motivo '{motivo}': "
+                f"il trader leggerebbe un guadagno dove c'e' una perdita bloccata")
+    stato = str(m.stato_richiesta or "")
+    if stato and stato != "proposed":
+        return (f"la proposta in perdita del trade {m.trade_id} e' in stato '{stato}' "
+                f"invece che 'proposed': nessuno l'ha firmata, e sta per partire")
     return None
 
 
@@ -1415,11 +1683,16 @@ class Andamento:
 def osserva(and_: Andamento, m: Momento) -> None:
     """Aggiorna l'andamento con quello che il servizio ha appena fatto."""
     if m.tipo == "selezione":
-        if m.sel is None:
+        # V3 non porta una `Selection`, porta il CANDIDATO: leggere `m.sel` per
+        # sapere se si e' entrati farebbe contare ogni gamba V3 APERTA come uno
+        # skip «senza motivo» (`ft_cs:None`) — che e' il contrario del vero
+        # (reperto del raccordo del 17/09, sintetica `_synth_omega_*`).
+        scelta = m.cand if str(m.motore) == "v3" else m.sel
+        if scelta is None:
             motivo = f"{m.leg}:{m.motivo}"
             and_.skip_per_motivo[motivo] = and_.skip_per_motivo.get(motivo, 0) + 1
         else:
-            k = (str(m.leg), str(getattr(m.sel, "name", "")), )
+            k = (str(m.leg), str(getattr(scelta, "name", "")), )
             and_.proposte_per_gamba[k] = and_.proposte_per_gamba.get(k, 0) + 1
     elif m.tipo == "uscita":
         chiave = f"{m.trigger}:{m.azione}"

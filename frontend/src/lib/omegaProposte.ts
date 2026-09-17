@@ -55,6 +55,16 @@ export interface PropostaUscitaOmegaPayload {
     meglio_aspettare?: boolean | null;
     bloccabile_max_atteso?: number | null;
     minuto_del_massimo?: number | null;
+    /** quanto è impegnato su questa gamba (con stake fisso 1 €: quota − 1) */
+    liability?: number | null;
+    /** da dove viene la P (catena λ del servizio): è un codice, non una frase */
+    p_fonte?: string | null;
+    /** il tetto di rischio scattato, quando il motivo è `cap` */
+    cap_scattato?: string | null;
+    /** perché la proposta si ripresenta dopo che l'avevi ignorata */
+    riproposta_perche?: string | null;
+    /** l'istante della firma: lo aggiunge la RPC `omega_request_approve` */
+    approved_at?: string | null;
     minute?: number | null;
     score?: string | null;
     mode?: 'paper' | 'live' | null;
@@ -86,7 +96,24 @@ const MOTIVO_IT: Record<string, string> = {
     bloccabile_non_positivo: 'chiudere adesso non porta a casa niente',
     controparte_insufficiente: 'non c’è abbastanza controparte per chiudere per intero',
     nessun_prezzo_di_back: 'nessun prezzo di back: non c’è niente da bloccare',
+    // 17/09 — LE PROPOSTE CHE NON SONO UN AFFARE (ordine dell'utente: la scheda
+    // vale «SIA IN PROFIT CHE IN LOSS»). Qui il bot non offre un guadagno: chiede
+    // di ridurre il rischio, e il testo deve dirlo senza ambiguità.
+    protezione: 'chiudere adesso costa, ma tenere costa di più: si blocca la perdita minore',
+    cap: 'un tetto di rischio è scattato: il bot chiede di ridurre l’esposizione',
+    rischio: 'il rischio che il risultato bancato esca ha superato la soglia che hai messo',
 };
+
+/** I motivi con cui il servizio PROPONE di chiudere (gli altri dicono perché si tiene). */
+const MOTIVI_CHE_PROPONGONO = new Set(['blocca_il_profitto', 'protezione', 'cap', 'rischio']);
+
+/** Una proposta che NON è un guadagno: la scheda la deve gridare, non colorarla di verde. */
+export function eUnaProtezioneOmega(p: PropostaUscitaOmegaPayload): boolean {
+    const codice = String(p.motivo_codice ?? '');
+    if (codice === 'protezione' || codice === 'cap' || codice === 'rischio') return true;
+    const bloccabile = Number(p.profitto_bloccabile);
+    return Number.isFinite(bloccabile) && bloccabile < 0;
+}
 
 export function motivoUscitaOmegaLabel(codice: string | null | undefined): string | null {
     const k = codice != null ? String(codice).trim().toLowerCase() : '';
@@ -108,7 +135,7 @@ export function motivoUscitaOmegaLabel(codice: string | null | undefined): strin
 export function motivoNonApprovabileOmega(p: PropostaUscitaOmegaPayload): string | null {
     const back = Number(p.back_price);
     const size = Number(p.back_size);
-    if (String(p.motivo_codice ?? '') !== 'blocca_il_profitto') {
+    if (!MOTIVI_CHE_PROPONGONO.has(String(p.motivo_codice ?? ''))) {
         return `il servizio non propone di chiudere: ${motivoUscitaOmegaLabel(p.motivo_codice) ?? 'motivo non dichiarato'}`;
     }
     if (!Number.isFinite(back) || back <= 1) {
@@ -117,19 +144,33 @@ export function motivoNonApprovabileOmega(p: PropostaUscitaOmegaPayload): string
     if (!Number.isFinite(size) || size <= 0) {
         return 'importo di chiusura non disponibile: non si piazza al buio';
     }
+    // ⚠️ il numero può essere NEGATIVO: è una perdita che si blocca, ed è una
+    // proposta legittima (protezione / cap). Si pretende che ci SIA, non che sia
+    // positivo — pretenderlo positivo renderebbe non approvabile proprio la
+    // proposta che l'utente ha chiesto il 17/09.
     if (p.profitto_bloccabile == null || !Number.isFinite(Number(p.profitto_bloccabile))) {
-        return 'profitto bloccabile non dichiarato dal servizio';
+        return 'risultato bloccabile non dichiarato dal servizio';
     }
     return null;
 }
 
-/** Le proposte in cui chiudere conviene davvero, prima. A parità, la più vecchia. */
+/**
+ * Prima quello che URGE, poi quello che conviene, poi il resto. A parità, la più
+ * vecchia. Una protezione (o un cap) davanti a un green-up: non approvare una
+ * protezione COSTA, non approvare un profitto no.
+ */
+function priorita(p: PropostaUscitaOmegaPayload | undefined): number {
+    const codice = String(p?.motivo_codice ?? '');
+    if (codice === 'cap' || codice === 'protezione' || codice === 'rischio') return 0;
+    if (codice === 'blocca_il_profitto') return 1;
+    return 2;
+}
+
 export function ordinaProposteOmega(
     p: readonly PropostaUscitaOmega[],
 ): PropostaUscitaOmega[] {
     return [...p].sort((a, b) => {
-        const pa = a.payload?.motivo_codice === 'blocca_il_profitto' ? 0 : 1;
-        const pb = b.payload?.motivo_codice === 'blocca_il_profitto' ? 0 : 1;
+        const pa = priorita(a.payload), pb = priorita(b.payload);
         if (pa !== pb) return pa - pb;
         return Date.parse(a.created_at) - Date.parse(b.created_at);
     });
@@ -184,11 +225,20 @@ export async function ignoraPropostaOmega(
     esigiOk(data, 'la proposta non è più in attesa di una decisione');
 }
 
-/** Realtime sulla coda di Omega: UN solo canale, come per la Safe. */
+/**
+ * Realtime sulla coda di Omega: UN solo canale, come per la Safe.
+ *
+ * ⚠️ REPERTO O-1 (17/09): la tabella è `omega_manual_requests`, la coda che il
+ * servizio DRENA davvero (`omega_db.pending_manual_requests`). La migrazione del
+ * 16/09 ne aveva creata una seconda (`omega_requests`) che nessun worker legge:
+ * una proposta approvata lì sarebbe rimasta ferma per sempre, e il trader
+ * avrebbe visto «fatto» su una posizione ancora aperta. Una coda sola.
+ * (`migrations/omega_proposte_coda_unica_2026-09-17.sql`)
+ */
 export function subscribeProposteOmega(onChange: () => void): () => void {
     const ch = supabase
         .channel('control-room-proposte-omega')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_requests' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_manual_requests' }, onChange)
         .subscribe();
     return () => { void supabase.removeChannel(ch); };
 }

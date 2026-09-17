@@ -276,18 +276,20 @@ export interface OmegaParams {
      */
     conto_every_s: number;
 
-    // ---- OMEGA V3 (16/09 sera) — IN OMBRA finché non lo ordina l'utente ----
-    // `strategy_version` resta 2: il motore v3 (`omega_v3.py`) gira solo nel
-    // replay, sullo stesso book, per confrontarlo col v2. I quindici parametri
-    // sotto esistono già nella whitelist del servizio (`omega_config._SPEC`):
-    // la pagina li MOSTRA coi default del servizio, non ne inventa.
-    /** 2 = motore v2 di produzione (default) · 3 = motore v3 */
+    // ---- OMEGA V3 — il motore di DEFAULT dal 17/09 ----
+    // `strategy_version` vale 3: SOLO Correct Score, due celle diverse in due
+    // momenti (1′-44′ e 46′-85′), stake fisso, margine k = 1,11 (bias prudente
+    // misurato in gioco), nessuna chiusura automatica. Resta comunque l'UTENTE
+    // ad accendere il bot: questo dice solo QUALE motore usa quando lo accende.
+    // I parametri sotto esistono nella whitelist del servizio
+    // (`omega_config._SPEC`): la pagina li MOSTRA, non ne inventa.
+    /** 2 = motore v2 (legacy) · 3 = motore v3 (default) */
     strategy_version: number;
     /** v3: «INGRESSO STANDARD: 1 euro in LAY». La size non viene più dall'obiettivo. */
     v3_stake_eur: number;
     /** modello di probabilità: ha vinto il banco `gamma_poisson` (16/09) */
     v3_modello: string;
-    /** margine minimo: P_nostra ≤ p_implicita / k. Pavimento a 2 (k misurato) */
+    /** margine minimo: P_nostra ≤ p_implicita / k. Pavimento 1,11 (bias prudente in gioco, M4M5M6 §2.3) */
     v3_k_minimo: number;
     /** casi minimi perché la tabella storica abbia diritto di veto */
     v3_empirical_min_n: number;
@@ -304,8 +306,12 @@ export interface OmegaParams {
     v3_distanza_minima_gol: number;
     /** P massima ammessa per una selezione bancata (punti %) */
     v3_p_max_pct: number;
+    /** P MINIMA ammessa: sotto la fascia il bias non copre lo spread (punti %) */
+    v3_p_min_pct: number;
     /** fusione col mercato (pool logaritmico): 'auto' | 'off' */
     v3_fusione_mercato: string;
+    /** proposte di uscita: P massima tollerata che il bancato esca (punti %). 0 = SPENTA */
+    proposta_p_lose_max_pct: number;
 }
 
 /** P del modello di un trade Omega (meta.model.{p_model_raw,calibrated}) */
@@ -395,6 +401,11 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     cashout: { label: 'CASH OUT', cls: A_CLOSE },
     cashout_manual: { label: 'CASH OUT MANUALE', cls: A_CLOSE },
     cashout_error: { label: 'CASH OUT FALLITO', cls: A_BAD, critical: true },
+    // ---- le USCITE A PROPOSTA (17/09): il bot chiede, tu firmi ----
+    proposta_scritta: { label: 'USCITA PROPOSTA · aspetta la tua firma', cls: A_WARN },
+    proposta_riproposta: { label: 'USCITA RIPROPOSTA · la situazione è cambiata', cls: A_WARN },
+    proposta_decaduta: { label: 'PROPOSTA DECADUTA · la condizione non regge più', cls: A_MUTED },
+    uscita_approvata: { label: 'USCITA APPROVATA DA TE (decisa dal bot)', cls: A_CLOSE },
     // ---- regolamento
     settle: { label: 'REGOLATA', cls: A_PLAIN },
     settle_hedged: { label: 'REGOLATA (coperta)', cls: A_CLOSE },
@@ -893,23 +904,25 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     // OMEGA V3 — gli STESSI default del servizio (omega_config._SPEC): un
     // default della UI diverso riscriverebbe il valore vivo con un «Salva»
     // fatto per cambiare altro (H-07).
-    strategy_version: 2,
+    strategy_version: 3,
     v3_stake_eur: 1,
     v3_modello: 'gamma_poisson',
-    v3_k_minimo: 2,
+    v3_k_minimo: 1.11,
     v3_empirical_min_n: 200,
-    v3_ht_entry_min: 25,
+    v3_ht_entry_min: 1,
     v3_ht_entry_max: 44,
-    v3_ft_entry_min: 55,
+    v3_ft_entry_min: 46,
     v3_ft_entry_max: 85,
-    v3_max_liability_per_leg: 120,
-    v3_max_liability_per_match: 240,
-    v3_max_open_liability: 2000,
-    v3_daily_loss_cap: 400,
+    v3_max_liability_per_leg: 95,
+    v3_max_liability_per_match: 190,
+    v3_max_open_liability: 1000,
+    v3_daily_loss_cap: 300,
     v3_min_lay_liquidity: 1,
-    v3_distanza_minima_gol: 1,
+    v3_distanza_minima_gol: 2,
     v3_p_max_pct: 2,
+    v3_p_min_pct: 1,
     v3_fusione_mercato: 'auto',
+    proposta_p_lose_max_pct: 0,
     price_min: 20,
     price_max: 120,
     entry_minute_min: 30,
@@ -1107,10 +1120,10 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
         ],
     },
     {
-        label: 'Motore v3 — IN OMBRA, non decide nulla',
-        note: 'Il motore v3 (lay da 1 €, margine k misurato sulla probabilità fusa, NESSUNA chiusura automatica: le uscite diventano proposte) gira solo nel replay, sullo stesso book del v2, per confrontarli. Finché « Versione della strategia » resta 2 questi campi non toccano un solo ordine vero: lo switch a 3 lo ordina l’utente, non la pagina.',
+        label: 'Motore v3 — il motore di default dal 17/09',
+        note: 'Dal 17/09 è v3 a decidere gli ingressi: UN SOLO mercato, il CORRECT SCORE, e due ingressi vuol dire due CELLE DIVERSE in due momenti (gamba A 1′-44′, gamba B 46′-85′). Lay fisso da 1 €, si banca solo dentro la fascia di probabilità implicita 1-2 % (quote lay ≈ 47,5-95, la fascia in cui il bias è stato misurato in gioco) con margine k = 1,11, mai a meno di 2 gol dal punteggio corrente, e coi tetti di liability 95 € per gamba / 190 € per partita / 1.000 € aperti / 300 € di perdita al giorno. NESSUNA chiusura automatica: le uscite diventano proposte che firmi tu dalla Control Room. Il bot, comunque, lo accendi sempre tu: questi campi dicono COME opera quando è acceso, non SE è acceso. « Versione della strategia » a 2 riporta al motore di prima.',
         fields: [
-            { key: 'strategy_version', label: 'Versione della strategia (2 = v2 in produzione, 3 = v3)', type: 'number', step: 1, min: 2, max: 3, hint: 'default del servizio: 2. Portarlo a 3 cambia il motore che decide gli ingressi' },
+            { key: 'strategy_version', label: 'Versione della strategia (2 = v2 legacy, 3 = v3)', type: 'number', step: 1, min: 2, max: 3, hint: 'default del servizio: 3 (SOLO Correct Score, due celle in due momenti, stake fisso, uscita a proposta). 2 riporta al motore di prima' },
             { key: 'v3_stake_eur', label: 'v3: ingresso in LAY (€)', type: 'number', step: 0.5, min: 0.01, max: 100, hint: 'ordine dell’utente: 1 €. In v3 la size NON viene più dall’obiettivo di giornata' },
             { key: 'v3_modello', label: 'v3: modello di probabilità', type: 'select', hint: 'ha vinto il banco dei modelli del 16/09 (log-loss 1,93221 su 1,07 M transizioni)', options: [
                 { value: 'gamma_poisson', label: 'gamma_poisson (bayesiano coniugato) — vincitore del banco' },
@@ -1123,19 +1136,27 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
                 { value: 'auto', label: 'auto (fonde modello e mercato)' },
                 { value: 'off', label: 'off (solo modello)' },
             ] },
-            { key: 'v3_k_minimo', label: 'v3: margine minimo k', type: 'number', step: 0.5, min: 1, max: 20, hint: 'P nostra ≤ P implicita / k. Il pavimento non scende sotto 2: al prezzo di lay davvero disponibile il bias del mercato NON è dimostrato' },
-            { key: 'v3_p_max_pct', label: 'v3: P MAX della selezione (punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'tetto duro, oltre al margine k' },
-            { key: 'v3_distanza_minima_gol', label: 'v3: distanza minima dal punteggio (gol)', type: 'number', step: 1, min: 1, max: 5, hint: '1 = mai il risultato corrente; 2 = nemmeno a un gol' },
+            { key: 'v3_k_minimo', label: 'v3: margine minimo k', type: 'number', step: 0.01, min: 1, max: 20, hint: 'P nostra ≤ P implicita / k. Default 1,11 = il bias PRUDENTE misurato in gioco (M4M5M6 §2.3): alzarlo chiude gli ingressi, abbassarlo li apre sotto il bias dimostrato' },
+            { key: 'v3_p_max_pct', label: 'v3: tetto della fascia (p implicita, punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'fa due cose: è il TETTO DELLA FASCIA sulla probabilità implicita al tocco (sopra il 2 % il bias misurato in gioco vale 0,71, cioè EV negativo) ed è anche il tetto duro sulla P del nostro modello' },
+            { key: 'v3_p_min_pct', label: 'v3: pavimento della fascia (p implicita, punti %)', type: 'number', step: 0.1, min: 0, max: 50, hint: 'sotto l’ 1 % di probabilità implicita (quote lay sopra ~95) il bias in gioco non è misurato e la liability per unità di EV esplode: quelle celle si scartano' },
+            { key: 'v3_distanza_minima_gol', label: 'v3: distanza minima dal punteggio (gol)', type: 'number', step: 1, min: 1, max: 5, hint: 'default 2: nemmeno a un gol dal punteggio corrente' },
             { key: 'v3_empirical_min_n', label: 'v3: casi minimi per il veto empirico', type: 'number', step: 50, min: 0, max: 1000000 },
-            { key: 'v3_ht_entry_min', label: 'v3 gamba 1T: minuto MIN', type: 'number', step: 1, min: 0, max: 45 },
-            { key: 'v3_ht_entry_max', label: 'v3 gamba 1T: minuto MAX', type: 'number', step: 1, min: 0, max: 45 },
-            { key: 'v3_ft_entry_min', label: 'v3 gamba 2T: minuto MIN', type: 'number', step: 1, min: 45, max: 130 },
-            { key: 'v3_ft_entry_max', label: 'v3 gamba 2T: minuto MAX', type: 'number', step: 1, min: 45, max: 130 },
+            { key: 'v3_ht_entry_min', label: 'v3 gamba A (Correct Score, 1° tempo): minuto MIN', type: 'number', step: 1, min: 0, max: 45, hint: 'in v3 il mercato è UNO SOLO, il Correct Score: due ingressi = due celle diverse in due momenti' },
+            { key: 'v3_ht_entry_max', label: 'v3 gamba A (Correct Score, 1° tempo): minuto MAX', type: 'number', step: 1, min: 0, max: 45 },
+            { key: 'v3_ft_entry_min', label: 'v3 gamba B (Correct Score, 2° tempo): minuto MIN', type: 'number', step: 1, min: 0, max: 130, hint: 'default 46′: dopo l’intervallo, su una cella DIVERSA da quella della gamba A' },
+            { key: 'v3_ft_entry_max', label: 'v3 gamba B (Correct Score, 2° tempo): minuto MAX', type: 'number', step: 1, min: 45, max: 130 },
             { key: 'v3_min_lay_liquidity', label: 'v3: liquidità lay MIN (€)', type: 'number', step: 0.5, min: 0, max: 100000, hint: 'con 1 € di lay la controparte che serve è 1 €, non 5' },
-            { key: 'v3_max_liability_per_leg', label: 'v3: cap liability per gamba (€)', type: 'number', step: 10, min: 0, max: 1000000, hint: 'in v3 i cap NON sono zero: 0 = OFF' },
+            { key: 'v3_max_liability_per_leg', label: 'v3: cap liability per gamba (€)', type: 'number', step: 5, min: 0, max: 1000000, hint: 'default 95 €: con 1 € di stake vuol dire quota lay massima 96 — oltre, la cella si SCARTA (non si taglia la size). 0 = OFF' },
             { key: 'v3_max_liability_per_match', label: 'v3: cap liability per partita (€)', type: 'number', step: 10, min: 0, max: 1000000, hint: '0 = OFF' },
             { key: 'v3_max_open_liability', label: 'v3: cap liability aperta (€)', type: 'number', step: 100, min: 0, max: 10000000, hint: '0 = OFF' },
             { key: 'v3_daily_loss_cap', label: 'v3: stop-loss giornaliero (€)', type: 'number', step: 25, min: 0, max: 1000000, hint: '0 = OFF' },
+        ],
+    },
+    {
+        label: 'Uscite — proposte che firmi tu',
+        note: 'Quando il green-up automatico è SPENTO (« Modalità green-up » = off, e sempre con la strategia v3) Omega non chiude più da solo: calcola i numeri e SCRIVE UNA PROPOSTA nella scheda della Control Room, in profitto e in perdita. La firma è tua, sempre. Qui c’è una sola manopola, e nasce SPENTA.',
+        fields: [
+            { key: 'proposta_p_lose_max_pct', label: 'Proposte: P massima tollerata del risultato bancato (punti %)', type: 'number', step: 0.5, min: 0, max: 100, hint: '0 = SPENTA (default del servizio). Sopra zero, quando la P che il risultato bancato esca supera questa soglia il bot propone l’uscita col motivo « rischio » — non perché sia un affare, ma per ridurre il rischio' },
         ],
     },
 ];

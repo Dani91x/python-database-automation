@@ -646,7 +646,17 @@ def candidate_customer_refs(trade: dict) -> list[str]:
     """Ref con cui un pending può essere riconosciuto su Betfair, in ordine:
     per-gamba (nuovo, ``omega-t<id>``), poi i ref STORICI (``omega-m<id>``
     manuale, ``omega-<event_id>`` auto) — MAI per le gambe di chiusura, che
-    altrimenti verrebbero confermate con l'ordine dell'APERTURA (review CRIT-1)."""
+    altrimenti verrebbero confermate con l'ordine dell'APERTURA (review CRIT-1).
+
+    R-J3 (17/09): il ref storico per-evento (``omega-<event_id>``, pre §16
+    review C1) non distingue le GAMBE — con due gambe per partita (v2:
+    ``ht_cs``/``ft_cs``, ``uq_omega_trades_auto_leg`` su
+    ``event_id, coalesce(phase,'')``) due righe 'pending' diverse condividono
+    lo STESSO event_id e includerebbero lo STESSO candidato storico: un
+    ordine Betfair superstite con quel vecchio ref confermerebbe la gamba
+    SBAGLIATA (o entrambe, due volte). Catalogo §7.6 (ref che collidono): qui
+    il candidato storico resta SOLO per i trade SENZA fase — al piu' uno per
+    evento, per costruzione dello stesso indice."""
     refs: list[str] = []
     if trade.get("id") is not None:
         refs.append(customer_ref_for(trade["id"]))
@@ -654,7 +664,7 @@ def candidate_customer_refs(trade: dict) -> list[str]:
         return refs
     if str(trade.get("origin") or "auto") == "manual" and trade.get("id") is not None:
         refs.append(f"omega-m{trade['id']}"[:32])
-    else:
+    elif not trade.get("phase"):
         refs.append(f"omega-{trade.get('event_id')}"[:32])
     return refs
 
@@ -713,9 +723,16 @@ def reconcile_decision(
             # esecuzione (remaining>0) verrebbe congelato con size sbagliata →
             # esposizione/cap errati. Finché non è completo → 'keep' (aspetta).
             if matched > 0 and remaining <= 0:
+                # R-C1 (17/09): l'ordine e' COMPLETO (niente piu' vivo sul
+                # book, e' la condizione stessa che porta qui) — il residuo
+                # VERO e' 0.0, dichiarato e non lasciato cadere. L'istante e'
+                # quello di Betfair (matched_date, o placed_date se il fill
+                # non porta una sua data), non quello del nostro processo.
                 return {"action": "confirm",
                         "price": float(o.get("avg_price_matched") or trade.get("price") or 0.0),
-                        "size": matched, "bet_id": o.get("bet_id")}
+                        "size": matched, "bet_id": o.get("bet_id"),
+                        "size_remaining": 0.0,
+                        "betfair_updated_at": o.get("matched_date") or o.get("placed_date")}
             # certificazione 12/09: ordine COMPLETO con zero abbinato e zero
             # residuo (FOK ucciso / annullato) — nessuna esposizione. Prima
             # restava 'keep' per sempre (un pending mai liberato). 'free' solo
@@ -730,10 +747,16 @@ def reconcile_decision(
                 # F6: ordine chiuso SENZA size (lapsed/cancellato/void): nessuna
                 # esposizione — mai confermare con la size della riserva
                 return {"action": "free"}
+            # ordine REGOLATO: nessun residuo vivo per definizione (0.0,
+            # dichiarato). ``_riga_regolata`` (omega_market.py, CONDIVISO) non
+            # porta una data propria del regolamento: l'istante di Betfair
+            # resta ⊘ qui (limite noto, non un'invenzione — vedi referto).
             return {"action": "confirm",
                     "price": float(o.get("price") or trade.get("price") or 0.0),
                     "size": settled,
-                    "bet_id": o.get("bet_id")}
+                    "bet_id": o.get("bet_id"),
+                    "size_remaining": 0.0,
+                    "betfair_updated_at": None}
     # non trovato in nessuna lista: decidi con GRACE PERIOD (mai 'free' su un ordine
     # appena piazzato ma non ancora visibile via API → eviterebbe un doppio).
     age = _age_seconds(trade.get("placed_at"), now_iso)
@@ -1123,7 +1146,9 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
                  parametri_modello: Optional[Any] = None,
                  k_tab: Optional[dict] = None,
                  p_empirica: Optional[Callable[[str], Optional[tuple]]] = None,
-                 p_mercato: Optional[Callable[[str], Optional[float]]] = None):
+                 p_mercato: Optional[Callable[[str], Optional[float]]] = None,
+                 finestra: Optional[tuple] = None,
+                 escludi: Optional[list] = None):
     """(candidato V3 per la gamba | None, motivi di scarto di ogni runner).
 
     `runners`: `ScoreRunner` (gli stessi del v2). `periodo`: 'ht' | 'ft'.
@@ -1137,9 +1162,14 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
     from Betfair.omega import omega_config as C
 
     cfg = C.parametri_v3(params or {})
-    if not V3.in_finestra(periodo, minuto,
-                          minuto_min=cfg[f"{periodo}_entry_min"],
-                          minuto_max=cfg[f"{periodo}_entry_max"]):
+    # `finestra` = (minuto_min, minuto_max) della GAMBA, quando la gamba e il
+    # periodo del modello non coincidono piu': dal 17/09 V3 opera su un mercato
+    # solo (il Correct Score, `periodo='ft'`) con DUE finestre — la prima gamba
+    # nel 1T, la seconda nel 2T. Senza questo parametro la gamba del 1T sarebbe
+    # giudicata con la finestra della seconda e non aprirebbe mai.
+    lo, hi = (finestra if finestra is not None
+              else (cfg[f"{periodo}_entry_min"], cfg[f"{periodo}_entry_max"]))
+    if not V3.in_finestra(periodo, minuto, minuto_min=lo, minuto_max=hi):
         return None, (("", "fuori_finestra"),)
 
     p = parametri_modello or V3.Parametri(modello=cfg["modello"])
@@ -1177,7 +1207,8 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
         min_liquidita=cfg["min_lay_liquidity"],
         distanza_minima_gol=cfg["distanza_minima_gol"],
         punteggio=(int(punteggio[0]), int(punteggio[1])),
-        p_max=cfg["p_max"], cap_liability_gamba=cfg["max_liability_per_leg"],
+        p_max=cfg["p_max"], p_min=cfg["p_min"], escludi=tuple(escludi or ()),
+        cap_liability_gamba=cfg["max_liability_per_leg"],
         k_default=cfg["k_minimo"])
 
 

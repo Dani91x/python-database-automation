@@ -29,25 +29,30 @@ const SAFE_KIND_NUOVI = ['chiuso_dall_utente', 'posizione_di_conto', 'riprendi_e
 const OMEGA_KIND_NUOVI = ['chiuso_dall_utente', 'evento_ripreso'];
 
 /** i default DICHIARATI dal servizio (`omega_config._SPEC`), chiave per chiave */
+// 17/09: i default sono quelli DECISI SUI DATI dal coordinatore (CRONOSTORIA,
+// «DECISIONI DEL COORDINATORE admin-b1»): motore v3 di default, solo Correct
+// Score, fascia p_impl 1-2 %, k 1,11, cap 95/190/1000/300, due celle 1'-44' / 46'-85'.
 const V3_DEFAULT: Record<string, number | string> = {
     conto_every_s: 120,
-    strategy_version: 2,
+    strategy_version: 3,
     v3_stake_eur: 1,
     v3_modello: 'gamma_poisson',
-    v3_k_minimo: 2,
+    v3_k_minimo: 1.11,
     v3_empirical_min_n: 200,
-    v3_ht_entry_min: 25,
+    v3_ht_entry_min: 1,
     v3_ht_entry_max: 44,
-    v3_ft_entry_min: 55,
+    v3_ft_entry_min: 46,
     v3_ft_entry_max: 85,
-    v3_max_liability_per_leg: 120,
-    v3_max_liability_per_match: 240,
-    v3_max_open_liability: 2000,
-    v3_daily_loss_cap: 400,
+    v3_max_liability_per_leg: 95,
+    v3_max_liability_per_match: 190,
+    v3_max_open_liability: 1000,
+    v3_daily_loss_cap: 300,
     v3_min_lay_liquidity: 1,
-    v3_distanza_minima_gol: 1,
+    v3_distanza_minima_gol: 2,
     v3_p_max_pct: 2,
+    v3_p_min_pct: 1,
     v3_fusione_mercato: 'auto',
+    proposta_p_lose_max_pct: 0,
 };
 
 describe('SAFE — i kind della chiusura dell utente hanno la loro etichetta', () => {
@@ -119,9 +124,10 @@ describe('OMEGA — i kind e i parametri nuovi hanno la loro UI', () => {
         }
     });
 
-    it('v3 resta IN OMBRA: il default della versione e 2, non 3', () => {
-        // portarlo a 3 qui cambierebbe il motore che decide gli ingressi con un
-        // «Salva» fatto per cambiare altro. Lo switch lo ordina l utente.
-        expect(OMEGA_PARAM_DEFAULTS.strategy_version).toBe(2);
+    it('v3 e il motore di DEFAULT dal 17/09: la versione vale 3', () => {
+        // ordine dell utente del 17/09 («decide lui la soluzione migliore»):
+        // il motore di default e v3. Un «Salva» del pannello non deve
+        // riportarlo a 2 in silenzio. Il bot lo accende comunque l utente.
+        expect(OMEGA_PARAM_DEFAULTS.strategy_version).toBe(3);
     });
 });

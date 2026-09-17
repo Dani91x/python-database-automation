@@ -203,11 +203,15 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # Zero = disattivato (si usa sempre poll_interval_s, comportamento di prima).
     "idle_cycle_s": (60.0, float, 0.0, 600.0),
     # ---- OMEGA V3 (16/09 sera): lay 1 EUR, margine k misurato, uscita a PROPOSTA ----
-    # LO SWITCH. 2 = motore v2 di oggi (invariato, e' il default: V3 non entra in
-    # produzione finche' non lo ordina l'utente). 3 = motore v3 (`omega_v3.py`):
-    # selezione con margine k sulla probabilita' FUSA, stake fisso, nessuna
-    # chiusura automatica. Il replay confronta i due sulla STESSA partita.
-    "strategy_version": (2, int, 2, 3),
+    # LO SWITCH. 2 = motore v2 (quello fino al 17/09: due mercati, size dal
+    # target di giornata, green-up automatico). 3 = motore v3 (`omega_v3.py`):
+    # SOLO Correct Score, due celle in due momenti, stake fisso, margine k sulla
+    # probabilita' FUSA, nessuna chiusura automatica (l'uscita e' una proposta).
+    # DEFAULT 3 dal 17/09 (decisione del coordinatore sui dati, CRONOSTORIA
+    # «DECISIONI DEL COORDINATORE admin-b1 h16:40»): resta comunque l'UTENTE ad
+    # accendere il bot dalla UI — questo dice solo QUALE motore usa quando lo
+    # accende.
+    "strategy_version": (3, int, 2, 3),
     # ordine dell'utente: «INGRESSO STANDARD: 1 euro in LAY». In v3 la size NON
     # viene piu' dall'obiettivo di giornata (era la radice di R1 e R3, §1.2 del
     # progetto): e' questa, e basta.
@@ -216,35 +220,70 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # 'gamma_poisson' = aggiornamento bayesiano coniugato (binomiale negativa);
     # gli altri restano selezionabili per poter rifare il confronto dal vivo.
     "v3_modello": ("gamma_poisson", str, None, None),
-    # margine minimo sulla probabilita': P_nostra <= p_implicita / k. La tabella
-    # per secchio la porta `tools/misura_k.py`; questo e' il pavimento, e il
-    # pavimento non scende sotto 2 perche' al prezzo di lay davvero disponibile
-    # il bias del mercato NON e' dimostrato (K_MISURATO_2026-09-16.md).
-    "v3_k_minimo": (2.0, float, 1.0, 20.0),
+    # margine minimo sulla probabilita': P_nostra <= p_implicita / k.
+    # 17/09: il pavimento scende da 2,0 a **1,11**, che e' il bias PRUDENTE
+    # misurato in gioco (M4M5M6_2026-09-17.md §2.3, estremo basso dell'intervallo
+    # sulla fascia operabile). Il 2,0 del 16/09 (K_MISURATO_2026-09-16.md) era il
+    # k richiesto in assenza di una misura in gioco: con quella misura il
+    # margine richiesto e' il bias dimostrato, non un numero di prudenza.
+    # Decisione del coordinatore sui dati (CRONOSTORIA, admin-b1 h16:40).
+    "v3_k_minimo": (1.11, float, 1.0, 20.0),
     # casi minimi perche' la tabella storica abbia diritto di veto
     "v3_empirical_min_n": (200, int, 0, 1000000),
-    # finestre d'ingresso delle due gambe (minuto REALE dal feed, mai l'orologio)
-    "v3_ht_entry_min": (25, int, 0, 45),
+    # FINESTRE delle due gambe, sul minuto REALE dal feed (mai l'orologio).
+    # 17/09: in V3 il mercato e' UNO SOLO, il CORRECT SCORE, e «due ingressi»
+    # vuol dire DUE CELLE DIVERSE in DUE MOMENTI diversi (M4M5M6 §2.3: sul
+    # HALF_TIME_SCORE il bias prudente e' 0,92 nella fascia 2-5 % e sotto il 2 %
+    # non ci sono uscite: quella gamba non si fa).
+    #   gamba A: 1'-44'   (il Correct Score e' quotabile dal 1')
+    #   gamba B: 46'-85'  (dopo l'intervallo, su una cella DIVERSA)
+    # I nomi delle chiavi restano `v3_ht_*` / `v3_ft_*` perche' sono le stesse
+    # due gambe di sempre (`phase` 'ht_cs'/'ft_cs'): cambia il mercato, non la
+    # struttura — rinominarle avrebbe rotto righe, aggregati e UI gia' scritti.
+    "v3_ht_entry_min": (1, int, 0, 45),
     "v3_ht_entry_max": (44, int, 0, 45),
-    "v3_ft_entry_min": (55, int, 45, 130),
+    "v3_ft_entry_min": (46, int, 0, 130),
     "v3_ft_entry_max": (85, int, 45, 130),
-    # CAP DI SICUREZZA. In v2 sono tutti a ZERO = spenti; in v3 NON sono zero, e
-    # i quattro numeri sono quelli proposti al §4.5 del progetto. Restano
-    # dell'utente: si cambiano dal pannello, non dal codice.
-    "v3_max_liability_per_leg": (120.0, float, 0.0, 1000000.0),
-    "v3_max_liability_per_match": (240.0, float, 0.0, 1000000.0),
-    "v3_max_open_liability": (2000.0, float, 0.0, 10000000.0),
-    "v3_daily_loss_cap": (400.0, float, 0.0, 1000000.0),
+    # CAP DI SICUREZZA. In v2 sono tutti a ZERO = spenti; in v3 NON sono zero.
+    # 17/09: portati a 95 / 190 / 1.000 / 300 (decisione del coordinatore sui
+    # dati). Il tetto di GAMBA a 95 EUR con stake 1,00 EUR vuol dire quota lay
+    # massima 96: oltre, la cella si SCARTA (non si taglia la size, A9).
+    # Restano dell'utente: si cambiano dal pannello, non dal codice.
+    "v3_max_liability_per_leg": (95.0, float, 0.0, 1000000.0),
+    "v3_max_liability_per_match": (190.0, float, 0.0, 1000000.0),
+    "v3_max_open_liability": (1000.0, float, 0.0, 10000000.0),
+    "v3_daily_loss_cap": (300.0, float, 0.0, 1000000.0),
     # con 1 EUR di lay la controparte che serve e' 1 EUR, non 5
     "v3_min_lay_liquidity": (1.0, float, 0.0, 100000.0),
     # gol AGGIUNTIVI minimi fra il punteggio corrente e quello bancato. 1 = mai il
     # risultato corrente (che e' il vincolo vero); 2 = anche mai a un gol.
-    "v3_distanza_minima_gol": (1, int, 1, 5),
-    # P massima ammessa per una selezione bancata (tetto duro, oltre al margine k)
+    # 17/09: 2, cioe' nemmeno a un gol di distanza.
+    "v3_distanza_minima_gol": (2, int, 1, 5),
+    # LA FASCIA IN CUI SI OPERA, ed e' sulla **p_IMPLICITA AL TOCCO** (17/09).
+    # [1,0 %, 2,0 %] di p_impl = quote lay circa **47,5-95**. E' la fascia in cui
+    # il bias e' stato MISURATO in gioco: `tools/k_in_gioco.py` raggruppa per
+    # fascia di p_impl, e M4M5M6 §2.3 dice che sotto l'1 % il bias non e'
+    # misurato, mentre nella fascia 2-5 % il bias prudente vale **0,71**, cioe'
+    # EV NEGATIVO. Una cella fuori fascia si scarta (`p_impl_sotto_fascia` /
+    # `p_impl_oltre_fascia`) anche quando il margine sembra ottimo.
+    #
+    # ATTENZIONE, `v3_p_max_pct` fa DUE cose e sono due cose diverse:
+    #   * tetto della FASCIA sulla p_implicita (sopra: bias sotto 1);
+    #   * tetto DURO sulla P NOSTRA (semantica del 16/09, scarto
+    #     `p_oltre_il_tetto`): non si banca una cella che il NOSTRO modello
+    #     considera probabile, qualunque cosa dica il prezzo.
     "v3_p_max_pct": (2.0, float, 0.01, 50.0),
+    "v3_p_min_pct": (1.0, float, 0.0, 50.0),
     # fusione col mercato (pool logaritmico in logit, pesi misurati per fascia in
     # `tools/banco_fusione.py`): 'auto' = fonde | 'off' = solo modello
     "v3_fusione_mercato": ("auto", str, None, None),
+    # ---- LE PROPOSTE DI USCITA (17/09) ----
+    # P MASSIMA TOLLERATA che il risultato bancato esca: oltre, il produttore
+    # propone l'uscita col motivo `rischio` — non perche' sia un affare, ma per
+    # ridurre il rischio. ZERO = SPENTA, ed e' il default: nessuna soglia nuova
+    # si accende di iniziativa (regola dell'utente). Si accende dal pannello, in
+    # punti percentuali (2.5 = 2,5%).
+    "proposta_p_lose_max_pct": (0.0, float, 0.0, 100.0),
 }
 
 # Valori ammessi per i due `select` di V3 (specchio della UI, quando ci sara').
@@ -307,6 +346,10 @@ def resolve_params(raw: dict[str, Any] | None) -> dict[str, Any]:
                 out[k] = _coerce(k, v)
     if out["price_min"] > out["price_max"]:
         out["price_min"], out["price_max"] = out["price_max"], out["price_min"]
+    # la FASCIA di probabilita' di V3: un pavimento sopra il tetto non e' una
+    # fascia, e' un insieme vuoto (nessuna cella passerebbe, in silenzio)
+    if out["v3_p_min_pct"] > out["v3_p_max_pct"]:
+        out["v3_p_min_pct"], out["v3_p_max_pct"] = out["v3_p_max_pct"], out["v3_p_min_pct"]
     for lo_k, hi_k in (("ht_entry_min", "ht_entry_max"), ("ft_entry_min", "ft_entry_max"),
                        ("v3_ht_entry_min", "v3_ht_entry_max"),
                        ("v3_ft_entry_min", "v3_ft_entry_max")):
@@ -362,6 +405,7 @@ def parametri_v3(params: dict[str, Any]) -> dict[str, Any]:
         "distanza_minima_gol": int(p.get("v3_distanza_minima_gol",
                                          DEFAULTS["v3_distanza_minima_gol"])),
         "p_max": float(p.get("v3_p_max_pct", DEFAULTS["v3_p_max_pct"])) / 100.0,
+        "p_min": float(p.get("v3_p_min_pct", DEFAULTS["v3_p_min_pct"])) / 100.0,
         "fusione": str(p.get("v3_fusione_mercato") or DEFAULTS["v3_fusione_mercato"]) == "auto",
         "commissione": float(p.get("commission_pct", DEFAULTS["commission_pct"])) / 100.0,
     }

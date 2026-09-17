@@ -144,16 +144,24 @@ def test_a10_rifiuta_un_k_sotto_il_pavimento():
 
 # ------------------------------------------------------------------ A11
 def test_a11_il_punteggio_corrente_non_si_banca():
-    sano = _mom(tipo="selezione", now=ORA, params=_params(), leg="ht_cs",
+    # `v3_p_min_pct` a zero: dal 17/09 A11 guarda anche il PAVIMENTO di fascia,
+    # e la P del finto di questo test (dell'16/09) sta sotto l'1 %. Qui si prova
+    # la DISTANZA dal punteggio, quindi il pavimento si toglie.
+    par = _params(v3_p_min_pct=0.0)
+    sano = _mom(tipo="selezione", now=ORA, params=par, leg="ht_cs",
                         cand=_cand(nome="2 - 1", prezzo=65.0), state=_stato(38, 0, 1))
     assert "A11" not in _codici(CERT.verifica(sano))
-    malato = _mom(tipo="selezione", now=ORA, params=_params(), leg="ht_cs",
+    malato = _mom(tipo="selezione", now=ORA, params=par, leg="ht_cs",
                           cand=_cand(nome="0 - 1", prezzo=65.0), state=_stato(38, 0, 1))
     assert "A11" in _codici(CERT.verifica(malato))
 
 
 def test_a11_tetto_duro_sulla_p():
-    m = _mom(tipo="selezione", now=ORA, params=_params(v3_p_max_pct=0.1),
+    # `v3_p_min_pct` a zero: dal 17/09 la fascia ha anche un PAVIMENTO, e un
+    # pavimento sopra il tetto verrebbe scambiato dalla whitelist (fascia vuota).
+    # Qui si prova il TETTO, quindi il pavimento si toglie.
+    m = _mom(tipo="selezione", now=ORA,
+                     params=_params(v3_p_max_pct=0.1, v3_p_min_pct=0.0),
                      leg="ht_cs", cand=_cand(nome="2 - 1"), state=_stato(38, 0, 1))
     assert "A11" in _codici(CERT.verifica(m))
 

@@ -56,6 +56,16 @@ def _reset_omega_process_state():
     originali = {k: C.DEFAULTS[k] for k in _CHIAVI_CADENZA if k in C.DEFAULTS}
     for k in originali:
         C.DEFAULTS[k] = 0.0
+    # 3) L'INTERRUTTORE DEL MOTORE (17/09). In PRODUZIONE il default e' passato a
+    #    `strategy_version=3` (decisione del coordinatore sui dati). La suite
+    #    storica di Omega e' scritta per il motore v2 — due mercati, size dal
+    #    target di giornata, green-up automatico — e senza questo pin ogni suo
+    #    test misurerebbe un motore che non e' quello che sta collaudando.
+    #    Qui si PINNA a 2: i test di V3 lo mettono a 3 APPOSTA, e il default VERO
+    #    di produzione resta verificato su `omega_config._SPEC` (che questa
+    #    fixture non tocca) dal contratto della UI.
+    originali["strategy_version"] = C.DEFAULTS["strategy_version"]
+    C.DEFAULTS["strategy_version"] = 2
     S.svuota_le_cache()
     try:
         yield

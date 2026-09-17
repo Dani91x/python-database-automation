@@ -105,6 +105,20 @@ describe('manualRequestText — "done" non significa "eseguita"', () => {
     it('un cash out "done" resta ESEGUITA (la regola vale sui piazzamenti)', () => {
         expect(manualRequestText({ kind: 'cashout', status: 'done', result: { ok: true } }).status).toBe('ESEGUITA');
     });
+
+    // ---- 17/09 (O-1/O-3): la coda e' UNA, ma i comandi non sono tutti tuoi ----
+    it('un cash out TUO resta «cash out»', () => {
+        const r = manualRequestText({ kind: 'cashout', status: 'done', result: { ok: true },
+            payload: { trade_id: 12, fraction: 1 } });
+        expect(r.kind).toBe('cash out');
+    });
+
+    it('una PROPOSTA DEL BOT che hai firmato si riconosce: non e un comando tuo', () => {
+        const r = manualRequestText({ kind: 'cashout', status: 'done', result: { ok: true },
+            payload: { trade_id: 12, motivo_codice: 'protezione',
+                approved_at: '2026-09-17T14:00:00Z' } });
+        expect(r.kind).toBe('uscita proposta dal bot, approvata');
+    });
 });
 
 describe('ManualPanel — anteprima del rischio mai negativa', () => {
