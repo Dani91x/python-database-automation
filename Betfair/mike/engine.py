@@ -271,6 +271,27 @@ class MatchCtx:
     # richiesta rifiutata — se la prossima e' diversa e' una domanda NUOVA e si
     # fa, se e' identica non si rifa.
     rifiuti: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL FRENO DELLA COPERTURA.
+    # ``ctx.rifiuti`` sopra confronta anche PREZZO e SIZE: e' la difesa contro
+    # la stessa identica domanda rifatta uguale. La copertura Over 4.5 pero' si
+    # ridimensiona a ogni giro sul book che si muove, quindi ogni tentativo e'
+    # una domanda "nuova" e quel freno non la vede: il 17/09 sono usciti 104
+    # rifiuti ``CANCELLED_NOT_PLACED`` in un'ora, uno ogni ~5 s.
+    # Qui si conta il RIFIUTO PER CODICE D'ERRORE, non per prezzo:
+    #   {"error_code": str, "conteggio": int, "ultimo_ts": float,
+    #    "ref": str, "motivo": str, "max": int, "bloccata": bool,
+    #    "stato": "LIVE_COVER_BLOCKED" | ""}
+    # ``ultimo_ts`` e' anche l'orologio del ritmo minimo fra due tentativi
+    # (``cover_retry_min_s``). Persistito (``service._CTX_FIELDS``): un riavvio
+    # non deve far ricominciare il conteggio da zero.
+    cover_rifiuti: Optional[Dict[str, Any]] = None
+    # ⚠️ ORDINE DELL'UTENTE 17/09 (ordine 5) — «il bot deve essere informato dei
+    # cambi di stato del mercato durante la copertura». Ultimo stato VISTO del
+    # mercato Over/Under 4.5 mentre una copertura e' in corso:
+    #   {"stato": "aperto"|"sospeso"|"chiuso"|"ignoto", "ts": float}
+    # Serve a riconoscere la TRANSIZIONE (e a scrivere un'attivita' una volta
+    # sola, non a ogni giro). Persistito.
+    cover_mercato: Optional[Dict[str, Any]] = None
     # ⚠️ ORDINE DELL'UTENTE 16/09 — LA MEMORIA DELLA SOSPENSIONE.
     # La lay di uscita al fischio e' APPOGGIATA: resta sul book, e Betfair la
     # CANCELLA (LAPSE) a ogni sospensione del mercato — un gol precoce basta.
@@ -1507,6 +1528,112 @@ def motivo_del_rifiuto(a: Action, r: Dict[str, Any]) -> str:
             f"{float(a.size or 0.0):.2f} @ {a.price} non si ripropone identica")
 
 
+# ---------------------------------------------------------------------------
+# IL FRENO DELLA COPERTURA — ordine dell'utente 17/09, reperto 25
+# ---------------------------------------------------------------------------
+# Fatto: Bnei Yehuda v Maccabi Herzliya (evento 36077571), Under 3.5 back 5 EUR
+# a 1.44 abbinata alle 17:16:03; la copertura Over 4.5 sotto minimo (1,21-1,37
+# EUR a 5.4-5.9) RIFIUTATA 104 volte di fila, una ogni ~5 s fino alle 18:13,
+# sempre con lo stesso codice ``CANCELLED_NOT_PLACED``. Nessun freno: il rifiuto
+# finiva in ``mike_activity``, la riga andava in 'error', e il giro dopo il
+# motore ne riservava un'altra.
+#
+# Perche' ``tentativo_gia_rifiutato`` non bastava: quello confronta prezzo e
+# size, e la copertura li RICALCOLA a ogni giro (il book si muove, la liability
+# netta cambia). Ogni tentativo era formalmente una domanda nuova.
+#
+# Qui si conta il CODICE D'ERRORE. Dopo ``cover_rifiuti_max`` rifiuti con lo
+# stesso codice la copertura si FERMA (fail-closed) e ci vuole l'utente
+# («Riprendi») per riaprirla; un codice DIVERSO e' una notizia nuova e riapre
+# un tentativo azzerando il conteggio. Non e' un tetto sulla strategia: la
+# copertura resta quella che e' (stessa formula, stesse tranche, stessi
+# prezzi), cambia solo quante volte si ritenta una richiesta che il mercato
+# respinge, e con che ritmo.
+COVER_BLOCCATA = "LIVE_COVER_BLOCKED"
+
+
+def _cover_rifiuti(ctx: MatchCtx) -> Dict[str, Any]:
+    r = ctx.cover_rifiuti
+    return dict(r) if isinstance(r, dict) else {}
+
+
+def registra_rifiuto_copertura(ctx: MatchCtx, *, error_code: Optional[str],
+                               motivo: str, ref: str, now: float,
+                               params: Dict[str, Any]) -> Dict[str, Any]:
+    """Un rifiuto della COPERTURA, contato per codice d'errore.
+
+    Lo chiama CHI ESEGUE (``service.execute_place``) e SOLO quando nessun
+    ordine e' nato e la risposta e' definitiva: su un esito IGNOTO non si
+    conta niente, li' comanda la riconciliazione.
+    """
+    codice = str(error_code or motivo or "senza_codice").strip()[:60] or "senza_codice"
+    prima = _cover_rifiuti(ctx)
+    # codice DIVERSO = notizia nuova: il conteggio riparte da uno e la
+    # copertura torna tentabile (una volta).
+    n = int(prima.get("conteggio") or 0) + 1 if str(prima.get("error_code") or "") == codice else 1
+    massimo = max(1, int(params.get("cover_rifiuti_max") or 1))
+    nuovo = {"error_code": codice, "conteggio": n, "ultimo_ts": float(now),
+             "ref": str(ref), "motivo": str(motivo)[:120], "max": massimo,
+             "bloccata": bool(n >= massimo),
+             "stato": COVER_BLOCCATA if n >= massimo else ""}
+    ctx.cover_rifiuti = nuovo
+    return nuovo
+
+
+def copertura_bloccata(ctx: MatchCtx) -> Optional[Dict[str, Any]]:
+    """Il verbale del freno se la copertura e' FERMA, altrimenti None."""
+    r = ctx.cover_rifiuti
+    return dict(r) if isinstance(r, dict) and r.get("bloccata") else None
+
+
+def segna_tentativo_copertura(ctx: MatchCtx, now: float) -> None:
+    """Orologio del ritmo minimo: si e' appena TENTATA la copertura.
+
+    Si scrive PRIMA di sapere com'e' andata, perche' e' il tentativo — non
+    l'esito — che consuma una chiamata a Betfair e un bet delay.
+    """
+    r = _cover_rifiuti(ctx)
+    r["ultimo_ts"] = float(now)
+    r.setdefault("error_code", "")
+    r.setdefault("conteggio", 0)
+    r.setdefault("bloccata", False)
+    ctx.cover_rifiuti = r
+
+
+def attesa_ritento_copertura(ctx: MatchCtx, snap: Snapshot,
+                             params: Dict[str, Any]) -> Optional[float]:
+    """Secondi che mancano al prossimo tentativo di copertura, o None se si puo'
+    gia' tentare. Fail-closed: un orologio assente non blocca, un orologio nel
+    FUTURO (clock che torna indietro) blocca."""
+    r = ctx.cover_rifiuti
+    if not isinstance(r, dict) or r.get("ultimo_ts") is None:
+        return None
+    minimo = float(params.get("cover_retry_min_s") or 0.0)
+    if minimo <= 0.0:
+        return None
+    manca = float(r["ultimo_ts"]) + minimo - float(snap.now)
+    return round(manca, 1) if manca > 0.0 else None
+
+
+def sblocca_copertura(ctx: MatchCtx) -> Optional[Dict[str, Any]]:
+    """L'INTERVENTO UMANO: «Riprendi» dalla UI azzera il freno della copertura.
+    Ritorna il verbale che c'era (per scriverlo nell'attivita'), o None."""
+    prima = ctx.cover_rifiuti
+    ctx.cover_rifiuti = None
+    return dict(prima) if isinstance(prima, dict) else None
+
+
+def copertura_in_corso(ctx: MatchCtx) -> bool:
+    """C'e' una copertura Over 4.5 da fare o gia' sul book adesso?
+
+    E' la finestra in cui lo stato del mercato 4.5 e' una notizia: fuori di qui
+    una sospensione dell'Over 4.5 non riguarda nessun ordine di Mike.
+    """
+    if any(l.role == "over_cover" and (l.is_live or l.needs_reconcile) for l in ctx.legs):
+        return True
+    return ctx.state in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
+
+
 def _under_position(ctx: MatchCtx) -> Tuple[float, Optional[float]]:
     return position(ctx.legs, MARKET_OU35, SEL_UNDER, UNDER_ROLES)
 
@@ -1858,6 +1985,60 @@ def _mai_sovracopertura(ctx: MatchCtx, d: Decision) -> Decision:
                     telemetry=dict(d.telemetry))
 
 
+def _freno_copertura(ctx: MatchCtx, d: Decision, snap: Snapshot,
+                     params: Dict[str, Any]) -> Decision:
+    """⚠️ ORDINE DELL'UTENTE 17/09 — L'ULTIMA PAROLA SULLA COPERTURA.
+
+    Due motivi per NON emettere una copertura, e stanno qui perche' tutti i rami
+    che la propongono (``_decide_uncovered`` e il riprezzo di
+    ``_decide_cover_pending``) devono passare dallo stesso freno:
+
+      1. **Bloccata**: ``cover_rifiuti_max`` rifiuti con lo STESSO codice
+         d'errore. Fail-closed: non si ritenta piu' finche' non interviene
+         l'utente («Riprendi» → ``sblocca_copertura``) o finche' Betfair non
+         risponde con un codice DIVERSO.
+      2. **Troppo presto**: meno di ``cover_retry_min_s`` dall'ultimo tentativo.
+         Il bet delay in gioco e' 5 s: ritentare ogni 5 s vuol dire chiedere
+         prima di sapere com'e' andata la volta prima.
+
+    Via anche l'``cancel`` della copertura che accompagna il riprezzo: annullare
+    senza poter ripiazzare lascerebbe la posizione ANCORA PIU' scoperta. E via
+    gli ``updates``: ``attempts`` non deve consumarsi per un tentativo che non
+    e' mai partito, e ``cover_stage`` non deve avanzare su una tranche che non
+    e' stata comprata.
+
+    Cio' che RIDUCE il rischio non passa di qui: uscite, green-up, chiusure e
+    cash out non hanno ruolo ``over_cover`` e restano intatti — e' la stessa
+    lezione del 15/09, quando il freno live aveva frenato anche le uscite.
+    """
+    if not any(a.kind == "place" and a.role == "over_cover" for a in d.actions):
+        return d
+    bloccata = copertura_bloccata(ctx)
+    manca = None if bloccata else attesa_ritento_copertura(ctx, snap, params)
+    if bloccata is None and manca is None:
+        return d
+    kept = [a for a in d.actions if a.role != "over_cover"]
+    # lo stato dice la verita': se non resta nessuna copertura viva sul book,
+    # "in attesa di fill" sarebbe una bugia.
+    viva = any(l.role == "over_cover" and (l.is_live or l.needs_reconcile) for l in ctx.legs)
+    stato = "LIVE_UNCOVERED" if (d.state == "LIVE_COVER_PENDING" and not viva) else d.state
+    if bloccata is not None:
+        perche = (f"copertura FERMATA dal freno: {int(bloccata.get('conteggio') or 0)} rifiuti "
+                  f"con lo stesso codice ({bloccata.get('error_code')}) — serve l'utente")
+        tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                               "reason": "copertura_bloccata",
+                               "error_code": bloccata.get("error_code"),
+                               "conteggio": int(bloccata.get("conteggio") or 0),
+                               "max": int(bloccata.get("max") or 0),
+                               "stato_freno": COVER_BLOCCATA}}
+    else:
+        perche = f"copertura: ritento fra {manca:.0f} s (ritmo minimo fra due tentativi)"
+        tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                               "reason": "ritmo_minimo", "manca_s": manca}}
+    return Decision(state=stato, actions=kept, reason=perche, updates={},
+                    telemetry={**dict(d.telemetry), **tele})
+
+
 def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     """Chiusura MANUALE in corso (C2): prima si annullano gli ordini vivi, poi si
     chiude la posizione netta delle selezioni ancora VIVE, poi si chiude il ciclo.
@@ -1975,6 +2156,15 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
         d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura", ctx.state)
     # ORDINE DELL'UTENTE 16/09 h16:15 — «non devono mai esserci 2 lay a mercato».
     # Ultima parola, su OGNI ramo: vedi ``_una_sola_lay``.
+    # ORDINE DELL'UTENTE 17/09 — il FRENO sui rifiuti ripetuti della copertura e
+    # il ritmo minimo fra due tentativi. Va PRIMA di ``_mai_sovracopertura``,
+    # non dopo: il riprezzo emette ``cancel`` + ``place`` insieme e la guardia
+    # della sovracopertura ne toglie gia' il ``place`` (la copertura vecchia e'
+    # ancora viva), lasciando il solo annullamento. Se il freno arrivasse dopo
+    # non vedrebbe piu' nessun ``place`` da togliere e l'annullamento partirebbe
+    # lo stesso: la copertura verrebbe tolta dal book senza poter essere
+    # ripiazzata, cioe' la posizione resterebbe ANCORA PIU' scoperta.
+    d = _freno_copertura(ctx, d, snap, params)
     d = _una_sola_lay(ctx, d)
     # ORDINE DELL'UTENTE 16/09 sera — «MAI SOVRACOPERTURA». Stessa regola, sul
     # BACK di copertura: vedi ``_mai_sovracopertura``.
@@ -2760,7 +2950,21 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     if liab <= 0.0:
         return Decision("LIVE_COVERED", acts, "nessuna liability Under da coprire",
                         updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
-    if timing == "wait" or price_over is None or not operabile(bk):
+    # ⚠️ ORDINE DELL'UTENTE 17/09 — LO STATO DEL MERCATO, DETTO PER NOME.
+    # ``operabile`` c'era gia' (dentro la condizione qui sotto), ma il motivo
+    # finiva in un "attendo per coprire" indistinguibile dall'attesa
+    # intelligente: in pagina e nel referto non si vedeva che il mercato era
+    # SOSPESO. Sospeso, chiuso, non attivo e IGNOTO valgono tutti "non adesso"
+    # (fail-closed: ``stato_mercato(None) == ignoto`` e ``operabile(None)`` e'
+    # False), si aspetta e si riprende alla riapertura.
+    if not operabile(bk):
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura: mercato Over 4.5 %s, si aspetta la riapertura"
+                        % stato_mercato(bk),
+                        telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                                                  "x_now": x_now, "reason": "mercato_non_aperto",
+                                                  "stato_mercato": stato_mercato(bk)}})
+    if timing == "wait" or price_over is None:
         tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals, "hazard": snap.hazard,
                                "p4_market": snap.p4_market, "price_over": price_over,
                                "max_min": int(params["cover_wait_max_min"]),
@@ -2860,6 +3064,15 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     if leg.is_live and snap.now - leg.placed_at >= float(params["close_retry_s"]) and \
             ctx.attempts < int(params["close_max_attempts"]):
         bk = snap.book(MARKET_OU45, SEL_OVER)
+        # ⚠️ ORDINE DELL'UTENTE 17/09 — QUI IL MERCATO NON SI GUARDAVA AFFATTO.
+        # Il riprezzo emette ``cancel`` + ``place``: a mercato SOSPESO (o chiuso,
+        # o ignoto) quel place non puo' nascere, e il cancel avrebbe tolto la
+        # copertura dal book lasciando la posizione scoperta per niente. Si
+        # aspetta, e si riprende alla riapertura.
+        if bk is not None and not operabile(bk):
+            return Decision("LIVE_COVER_PENDING", [],
+                            "copertura: mercato Over 4.5 %s, nessun riprezzo"
+                            % stato_mercato(bk))
         if bk is not None and price_ok(bk.best_back) and leg.remaining > 0:
             # RESIDUO ESATTO sull'esposizione NETTA: la liability Under e' al netto
             # delle lay di green gia' abbinate; ``already`` somma il netto con 5+ gol

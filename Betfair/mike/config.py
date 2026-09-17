@@ -190,6 +190,27 @@ PARAM_SPEC: dict[str, Spec] = {
     # importi ESATTI al centesimo (copertura 3.61, stake 1.23): sotto-minimo / fuori passo via
     # Betfair/stream/trading/submin.py (place-and-trim, come Bet Angel/Fairbot). False = legalizza .it
     "exact_sizes": (True, bool, None, None, None),
+    # ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL FRENO SUI RIFIUTI RIPETUTI.
+    # Bnei Yehuda v Maccabi Herzliya, evento 36077571: la copertura Over 4.5
+    # sotto minimo (1,21-1,37 EUR a 5.4-5.9) e' stata RIFIUTATA 104 volte di
+    # fila, una ogni ~5 s dalle 17:16 alle 18:13, sempre con lo stesso codice
+    # ``CANCELLED_NOT_PLACED``. Il freno anti-duplicato del 16/09
+    # (``engine.tentativo_gia_rifiutato``) non poteva vederle: confronta prezzo
+    # e size, e la copertura li ricalcola a ogni giro sul book che si muove,
+    # quindi ogni tentativo era una richiesta "nuova".
+    #   * ``cover_rifiuti_max`` = quanti rifiuti con lo STESSO codice d'errore
+    #     prima di FERMARE la copertura (fail-closed: poi serve l'intervento
+    #     dell'utente con «Riprendi», oppure un codice d'errore DIVERSO, che e'
+    #     una notizia nuova e riapre un tentativo).
+    #   * ``cover_retry_min_s`` = ritmo MINIMO fra due tentativi della
+    #     copertura. Il bet delay in gioco e' 5 s: ritentare ogni 5 s vuol dire
+    #     chiedere a Betfair prima ancora di sapere com'e' andata la volta
+    #     prima, e sbattere contro i limiti di chiamata dell'exchange.
+    # Non cambiano nessuna soglia di strategia: la copertura resta quella
+    # (stessa formula, stesse tranche, stessi prezzi), cambia solo quante volte
+    # e con che ritmo si puo' RITENTARE una richiesta che il mercato respinge.
+    "cover_rifiuti_max": (3, int, 1, 20, None),
+    "cover_retry_min_s": (15, int, 1, 300, None),
     # ---- cash-out globale ----
     "cashout_profit_pct": (5.0, float, 0.5, 50.0, None),
     "cashout_base": ("total", str, None, None, ("total", "under")),
@@ -372,6 +393,10 @@ REMOVED_PARAMS = ("max_matches", "catalogue_refresh_s", "stream_extra_lines", "m
 # tupla esiste solo come valvola dichiarata per un parametro appena nato, e il
 # test di contratto (``test_mike_certificazione_ui``) fallisce se una chiave ci
 # resta dentro senza motivo scritto qui accanto.
+# 17/09 sera — ``cover_rifiuti_max`` e ``cover_retry_min_s`` erano qui dentro
+# finche' ``frontend/`` era in mano a un'altra sessione. La UI li ha ora
+# (``frontend/src/lib/mike.ts``: MIKE_PARAM_FIELDS gruppo 'cover' +
+# MIKE_PARAM_DEFAULTS), quindi la tupla torna VUOTA: nessuna deroga aperta.
 BACKEND_ONLY_PARAMS: tuple[str, ...] = ()
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in PARAM_SPEC.items()}

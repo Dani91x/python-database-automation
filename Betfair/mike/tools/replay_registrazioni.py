@@ -115,6 +115,23 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # 12 EUR: lo stake da 10 passa, la copertura no. Con 8 l'ingresso non
     # avverrebbe proprio e il controllo del tetto non avrebbe MAI un caso.
     "cap-stretto": {"max_liability_per_match": 12.0},
+    # 17/09 (reperto 25): la copertura sotto minimo rifiutata SEMPRE. Il freno
+    # si tara a 1 rifiuto perche' su una registrazione la copertura si tenta
+    # poche volte: con il default (3) il controllo S1 non avrebbe MAI un caso e
+    # il referto direbbe "non lo so" invece di "sano". Non e' un cambio di
+    # strategia: e' la stessa taratura di `cap-stretto`, che stringe il tetto
+    # per far parlare il clamp.
+    # 17/09 (reperto 25). Due tarature, dichiarate:
+    #  * ``stake`` 3,00 invece di 10: la copertura si dimensiona
+    #    X = factor*S/((Po-1)(1-c)) e con 10 EUR di stake finisce SOPRA il minimo
+    #    .it, quindi il caso del 17/09 (copertura SOTTO minimo) non capiterebbe
+    #    mai sulla registrazione e il controllo S1 non avrebbe niente da
+    #    guardare. Con 3,00 la copertura e' sotto-minima, come quel giorno.
+    #  * ``cover_rifiuti_max`` 1 invece di 3: su una registrazione la copertura
+    #    si tenta poche volte; col default il freno non scatterebbe mai.
+    # Stessa natura della taratura di ``cap-stretto``: si stringe per far parlare
+    # una guardia, non si cambia la strategia.
+    "copertura-rifiutata": {"cover_rifiuti_max": 1, "stake": 3.00},
     # bot fermo / stop giornaliero: nessuna apertura, le chiusure restano (§5)
     "bot-fermo": {"pre_enabled": False, "reentry_enabled": False},
     # seconda puntata spenta: l'altro ramo del gol precoce (§15.3)
@@ -157,6 +174,11 @@ SCENARIO_CHIUSO_FUORI_APP = "chiuso-fuori-app"
 # replay nessun ordine viene rifiutato.
 SCENARIO_RIFIUTI = "rifiuti-betfair"
 QUANTI_RIFIUTI = 3
+# 17/09 (reperto 25): la COPERTURA sotto minimo rifiutata SEMPRE, con il
+# codice vero di quel giorno. Non un rifiuto che finisce dopo N: 171 su 171.
+SCENARIO_COVER_RIFIUTATA = "copertura-rifiutata"
+COVER_RIFIUTO_CODICE = "CANCELLED_NOT_PLACED"
+COVER_RIFIUTO_INTERNO = "INVALID_BET_SIZE"
 # quanto l'utente ha di SUO sulla stessa selezione, prima di chiudere tutto:
 # serve a provare che Mike riconosce LA SUA posizione dentro quella di conto e
 # non da' per sua ogni cosa che vede.
@@ -709,6 +731,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       invecchia_s: float = 0.0,
                       guasti: int = 0,
                       rifiuti: int = 0,
+                      cover_rifiutata: bool = False,
                       campioni_diff: int = 0,
                       riavvia: bool = False,
                       cashout_utente: bool = False,
@@ -791,6 +814,16 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         # sul LATO LAY: e' li' che vivono le uscite appoggiate, cioe' il ramo
         # (`_piazza_resting_live`) in cui il 15/09 `res.ok` non veniva letto
         strategia.mercato.rifiuta_lato = "lay"
+    if cover_rifiutata:
+        # 17/09 — LA COPERTURA SOTTO MINIMO RIFIUTATA SEMPRE, come il 17/09.
+        # -1 = il rifiuto non si consuma; il filtro sulla size colpisce SOLO gli
+        # ordini sotto il minimo .it (la copertura), non l'ingresso da 5 EUR ne'
+        # le uscite. Il codice e' quello vero, esterno E interno.
+        strategia.mercato.guasti["place_rifiuto"] = -1
+        strategia.mercato.rifiuta_lato = "back"
+        strategia.mercato.rifiuta_sotto_minimo = 2.00
+        strategia.mercato.rifiuto_codice = COVER_RIFIUTO_CODICE
+        strategia.mercato.rifiuto_codice_interno = COVER_RIFIUTO_INTERNO
     if guasti > 0:
         # i primi N piazzamenti falliranno con esito IGNOTO: e' cosi' che
         # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
@@ -977,6 +1010,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                "flumine con un ref che non e' di Mike, piu' una posizione sua "
                                "sulla stessa selezione): il bot lo scopre dalla POSIZIONE DI "
                                "CONTO e non gestisce piu' quella partita (§15.7-ter, R3)",
+    SCENARIO_COVER_RIFIUTATA: "Betfair rifiuta SEMPRE la copertura sotto minimo "
+                              "(CANCELLED_NOT_PLACED / INVALID_BET_SIZE, come il 17/09 "
+                              "sull'evento 36077571): sollecita il FRENO fail-closed "
+                              "(S1) e il ritmo minimo fra due tentativi",
     SCENARIO_RIFIUTI: "Betfair RIFIUTA i primi piazzamenti (`ok=False`): l'esito si legge "
                       "e nessuna gamba rifiutata diventa una posizione (difetto 2 del "
                       "catalogo del 15/09)",
@@ -1025,6 +1062,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         guasti=(QUANTI_GUASTI if scenario in (SCENARIO_ESITI_IGNOTI,
                                               SCENARIO_TAKER_IGNOTI) else 0),
         rifiuti=(QUANTI_RIFIUTI if scenario == SCENARIO_RIFIUTI else 0),
+        cover_rifiutata=(scenario == SCENARIO_COVER_RIFIUTATA),
         campioni_diff=campioni_diff,
         riavvia=(scenario == SCENARIO_RIAVVIO),
         cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),

@@ -96,6 +96,18 @@ class SubminState:
     # epoch ms della RICHIESTA di cancel (step2); 0 = non ancora richiesto.
     # Il passaggio a TRIMMED avviene solo quando il trim viene OSSERVATO.
     trim_requested_ms: int = 0
+    # 17/09 — nucleo universale. ``park_price=0.0`` = non deciso: vale la quota
+    # estrema storica (``initial_place_price``), cosi' uno stato persistito da
+    # una versione precedente si comporta ESATTAMENTE come prima (percorso B).
+    park_price: float = 0.0
+    serve_replace: bool = True
+
+    @property
+    def prezzo_parcheggio(self) -> float:
+        """Quota del gradino 1 (percorso A = la target, percorso B = l'estrema)."""
+        if self.park_price and self.park_price > 0:
+            return float(self.park_price)
+        return initial_place_price(self.side)
 
     @property
     def size_reduction(self) -> float:
@@ -268,6 +280,9 @@ def start_submin(
     target_size: float,
     jurisdiction: str,
     note: str = "",
+    best_back: Optional[float] = None,
+    best_lay: Optional[float] = None,
+    max_stake: Optional[float] = None,
 ) -> SubminState:
     """Crea uno `SubminState` iniziale (step=INIT) validando i vincoli.
 
@@ -290,6 +305,15 @@ def start_submin(
             "usa un place normale (submin non necessario)"
         )
     tick = round_to_tick(target_price)
+    # 17/09 — la scelta del gradino 1 passa dal NUCLEO UNICO, identico al REST:
+    # quota target non abbinabile -> percorso A (parcheggio ALLA target, niente
+    # replace); altrimenti percorso B (quota estrema + replace), come prima.
+    piano = pianifica_submin(
+        side=s, target_price=tick, target_size=tsize, jurisdiction=jurisdiction,
+        best_back=best_back, best_lay=best_lay, max_stake=max_stake,
+    )
+    if piano.rifiuto:
+        raise ValueError(piano.rifiuto)
     return SubminState(
         step=SubminStep.INIT,
         bet_id=None,
@@ -297,7 +321,9 @@ def start_submin(
         target_price=tick,
         placed_size=round(float(placed), 2),
         side=s,
-        note=note or "submin init",
+        note=note or ("submin init; " + piano.motivo),
+        park_price=piano.park_price,
+        serve_replace=piano.serve_replace,
     )
 
 
@@ -373,6 +399,334 @@ def _guard_replace_cap_lay(
             f"replace LAY: liability €{new_liab:.2f} a quota {new_price} "
             f"oltre cap €{float(max_stake):.2f}"
         )
+
+
+# ===========================================================================
+# NUCLEO UNIVERSALE DEL PLACE-AND-TRIM (17/09/2026)
+# ===========================================================================
+# Ordine dell'utente: "il place-and-trim DEVE ESSERE AGGIUSTATO E RESO
+# UNIVERSALE PER OGNI CASO CHE CI SERVE PRESENTE E FUTURO".
+#
+# Reperto 25 (17/09, Mike LIVE evento 36077571): 111 tentativi su 111 rifiutati
+# con ``CANCELLED_NOT_PLACED`` AL GRADINO 3 (il replace). I gradini 1 e 2 sono
+# sempre andati a buon fine: quindi Betfair ACCETTA un ordine ridotto SOTTO il
+# minimo che resta a riposo sul book (il taglio e' confermato, ``sizeCancelled``
+# esatto). Cio' che fallisce e' il RI-PIAZZAMENTO dentro ``replaceOrders``.
+#
+# Docs Betfair (replaceOrders): "This operation is logically a bulk cancel
+# followed by a bulk place. The cancel is completed first then the new orders
+# are placed... In the case where the new orders cannot be placed the
+# cancellations will not be rolled back." Quindi il replace ri-piazza un ordine
+# NUOVO, che passa dalla validazione di piazzamento (minimo di giurisdizione,
+# bet delay in-play, stato del mercato): un residuo sotto minimo non la supera.
+#
+# CONSEGUENZA DI PROGETTO: il replace si EVITA quando si puo'.
+#
+#   PERCORSO A ("trim in loco", preferito, 2 chiamate mutanti):
+#       la quota target NON e' abbinabile (ordine passivo, e' il caso della
+#       copertura di Mike con ``cover_place_at_ticks``) ->
+#       1. placeOrders del MINIMO direttamente ALLA QUOTA TARGET (LAPSE, niente
+#          fill-or-kill): non si abbina, resta a riposo;
+#       2. cancelOrders con ``sizeReduction`` = minimo - importo voluto.
+#       Fine: l'ordine e' gia' alla quota giusta, NESSUN replace, quindi
+#       ``CANCELLED_NOT_PLACED`` non puo' proprio accadere.
+#
+#   PERCORSO B (fallback, 3 chiamate mutanti):
+#       la quota target E' abbinabile (ordine aggressivo) oppure il book non e'
+#       noto -> parcheggio alla quota estrema (BACK 1000 / LAY 1.01), taglio,
+#       replace. E' la sequenza storica, quella che in-play fallisce: si prova
+#       UNA volta sola e il rifiuto va dichiarato con il codice INTERNO.
+#
+# Percorso A e percorso B sono decisi da UNA funzione pura (``pianifica_submin``)
+# usata da ENTRAMBI gli adattatori: REST (``omega_market.place_submin_live``) e
+# flumine (``start_submin``/``advance_submin`` qui sotto). Nessuna copia.
+
+PARK_TARGET = "target"   # percorso A: parcheggio ALLA quota target, niente replace
+PARK_FAR = "far"         # percorso B: parcheggio alla quota estrema + replace
+
+
+@dataclass(frozen=True)
+class PianoSubmin:
+    """Piano dei gradini deciso PRIMA di toccare Betfair (funzione pura).
+
+    ``rifiuto`` valorizzato = il piano NON e' eseguibile (fail-closed): il
+    chiamante deve dichiarare il rifiuto, senza piazzare nulla.
+    """
+
+    serve_trucco: bool          # False = place normale (target >= minimo)
+    park_mode: str              # PARK_TARGET | PARK_FAR
+    park_price: float           # quota del gradino 1
+    park_size: float            # size del gradino 1 = minimo di giurisdizione
+    target_price: float         # quota finale (al tick)
+    target_size: float          # importo finale (sotto minimo)
+    size_reduction: float       # quanto si taglia al gradino 2
+    serve_replace: bool         # True solo nel percorso B
+    chiamate_mutanti: int       # quante chiamate mutanti costa il piano
+    motivo: str
+    rifiuto: Optional[str] = None
+
+
+def quota_non_abbinabile(
+    side: str, price: float, *,
+    best_back: Optional[float] = None,
+    best_lay: Optional[float] = None,
+) -> Optional[bool]:
+    """L'ordine (side, price) resta a riposo senza abbinarsi subito?
+
+    ``best_back`` = migliore quota DISPONIBILE PER BANCARE (top di
+    ``availableToBack``); ``best_lay`` = migliore quota DISPONIBILE PER LAYARE
+    (top di ``availableToLay``).
+
+    - BACK a quota P: si abbina subito se P <= best_back -> non abbinabile se
+      P > best_back (chiedo una quota migliore di quella offerta).
+    - LAY a quota P: si abbina subito se P >= best_lay -> non abbinabile se
+      P < best_lay.
+
+    Ritorna ``None`` se il dato di book manca: IGNOTO, e chi decide deve
+    trattarlo come "potrebbe abbinarsi" (fail-closed sui soldi).
+    """
+    s = (side or "").lower()
+    if s not in _VALID_SIDES:
+        raise ValueError(f"side non valido: {side!r} (atteso back|lay)")
+    p = float(price)
+    if s == "back":
+        if best_back is None:
+            return None
+        return p > float(best_back) + _TOL
+    if best_lay is None:
+        return None
+    return p < float(best_lay) - _TOL
+
+
+def liability_parcheggio(side: str, park_price: float, park_size: float) -> float:
+    """Quanto ESPONE il parcheggio del gradino 1.
+
+    BACK: lo stake. LAY: la liability = size*(quota-1), che col percorso A
+    (parcheggio ALLA quota target) puo' essere enorme: 2,00 EUR a quota 95
+    sono 188,00 EUR impegnati fino al taglio, contro 0,02 EUR del parcheggio
+    a 1.01 del percorso B.
+    """
+    s = (side or "").lower()
+    if s == "lay":
+        return round(float(park_size) * (float(park_price) - 1.0), 2)
+    return round(float(park_size), 2)
+
+
+def guardia_cap_parcheggio(side: str, park_price: float, park_size: float,
+                           max_stake: Optional[float]) -> None:
+    """IL PARCHEGGIO NON ESPONE MAI PIU' DEL CAP (money-critical).
+
+    Solleva ``ValueError`` se la liability del gradino 1 supera il cap
+    effettivo per-ordine. Difensiva: cap ignoto (``None``) non blocca, come
+    ``_guard_replace_cap_lay`` per il replace.
+    """
+    if max_stake is None:
+        return
+    liab = liability_parcheggio(side, park_price, park_size)
+    if liab > float(max_stake) + _TOL:
+        raise ValueError(
+            "parcheggio place-and-trim: liability %.2f EUR a quota %s oltre il "
+            "cap %.2f EUR" % (liab, park_price, float(max_stake)))
+
+
+def pianifica_submin(
+    *,
+    side: str,
+    target_price: float,
+    target_size: float,
+    jurisdiction: str,
+    best_back: Optional[float] = None,
+    best_lay: Optional[float] = None,
+    consenti_replace: bool = True,
+    max_stake: Optional[float] = None,
+) -> PianoSubmin:
+    """Decide i gradini del place-and-trim. Pura: nessuna rete, nessuno stato.
+
+    E' il NUCLEO UNICO: REST e flumine devono passare di qui, cosi' la sequenza
+    e le garanzie sono identiche sui due percorsi.
+    """
+    s = (side or "").lower()
+    if s not in _VALID_SIDES:
+        raise ValueError(f"side non valido: {side!r} (atteso back|lay)")
+    if target_size is None:
+        raise ValueError("target_size mancante")
+    tsize = round(float(target_size), 2)
+    if tsize <= SUBMIN_ABS_MIN_SIZE - _TOL:
+        raise ValueError(
+            f"target_size {target_size!r} sotto il floor assoluto "
+            f"{SUBMIN_ABS_MIN_SIZE:.2f} EUR"
+        )
+    minimo = round(float(place_min_size(jurisdiction, s)), 2)
+    tick = round_to_tick(float(target_price))
+
+    # Caso banale: non serve nessun trucco.
+    if tsize >= minimo - _TOL:
+        return PianoSubmin(
+            serve_trucco=False, park_mode=PARK_TARGET, park_price=tick,
+            park_size=tsize, target_price=tick, target_size=tsize,
+            size_reduction=0.0, serve_replace=False, chiamate_mutanti=1,
+            motivo=f"target {tsize:.2f} >= minimo {minimo:.2f}: place normale",
+        )
+
+    riduzione = round(minimo - tsize, 2)
+    if riduzione < 0.01:
+        raise ValueError(f"riduzione nulla: minimo {minimo} target {tsize}")
+
+    passiva = quota_non_abbinabile(s, tick, best_back=best_back, best_lay=best_lay)
+    # GUARDIA money-critical: nel percorso A il parcheggio sta ALLA quota target,
+    # quindi per un LAY impegna size*(quota-1). Se sfonda il cap effettivo NON si
+    # usa il percorso A: si ripiega sul parcheggio lontano (1.01, liability
+    # trascurabile) e, se nemmeno quello e' possibile, si rifiuta.
+    cap_sfondato = False
+    if passiva is True and max_stake is not None:
+        liab_park = liability_parcheggio(s, tick, minimo)
+        cap_sfondato = liab_park > float(max_stake) + _TOL
+    if passiva is True and cap_sfondato:
+        if not consenti_replace:
+            return PianoSubmin(
+                serve_trucco=True, park_mode=PARK_FAR,
+                park_price=initial_place_price(s), park_size=minimo,
+                target_price=tick, target_size=tsize, size_reduction=riduzione,
+                serve_replace=True, chiamate_mutanti=0,
+                motivo="parcheggio oltre il cap e replace non consentito",
+                rifiuto=("SUBMIN_CAP_PARCHEGGIO: il parcheggio del minimo a "
+                         "quota %s impegnerebbe %.2f EUR, oltre il cap %.2f EUR; "
+                         "nessun ordine piazzato." % (
+                             tick, liability_parcheggio(s, tick, minimo),
+                             float(max_stake))),
+            )
+        return PianoSubmin(
+            serve_trucco=True, park_mode=PARK_FAR,
+            park_price=initial_place_price(s), park_size=minimo,
+            target_price=tick, target_size=tsize, size_reduction=riduzione,
+            serve_replace=True, chiamate_mutanti=3,
+            motivo=("percorso B forzato: il parcheggio alla quota target "
+                    "impegnerebbe %.2f EUR, oltre il cap %.2f EUR" % (
+                        liability_parcheggio(s, tick, minimo), float(max_stake))),
+        )
+    if passiva is True:
+        return PianoSubmin(
+            serve_trucco=True, park_mode=PARK_TARGET, park_price=tick,
+            park_size=minimo, target_price=tick, target_size=tsize,
+            size_reduction=riduzione, serve_replace=False, chiamate_mutanti=2,
+            motivo=(
+                f"percorso A: quota {tick} NON abbinabile "
+                f"(best_back={best_back}, best_lay={best_lay}) -> parcheggio "
+                "ALLA quota target e taglio in loco, nessun replace"
+            ),
+        )
+
+    perche = ("quota target abbinabile: il parcheggio del minimo alla quota "
+              "target si abbinerebbe per intero"
+              if passiva is False else
+              "book NON noto: la quota target potrebbe essere abbinabile")
+    if not consenti_replace:
+        return PianoSubmin(
+            serve_trucco=True, park_mode=PARK_FAR,
+            park_price=initial_place_price(s), park_size=minimo,
+            target_price=tick, target_size=tsize, size_reduction=riduzione,
+            serve_replace=True, chiamate_mutanti=0,
+            motivo="percorso B necessario ma replace non consentito",
+            rifiuto=(
+                "SUBMIN_REPLACE_VIETATO: " + perche + "; il percorso B usa "
+                "replaceOrders, che in-play viene rifiutato "
+                "(CANCELLED_NOT_PLACED). Nessun ordine piazzato."
+            ),
+        )
+    return PianoSubmin(
+        serve_trucco=True, park_mode=PARK_FAR,
+        park_price=initial_place_price(s), park_size=minimo,
+        target_price=tick, target_size=tsize, size_reduction=riduzione,
+        serve_replace=True, chiamate_mutanti=3,
+        motivo="percorso B (parcheggio lontano + replace): " + perche,
+    )
+
+
+def marca_submin(piano: "PianoSubmin", *, bet_id: Optional[str] = None,
+                 steps: Optional[list] = None) -> dict:
+    """MARCA da appendere all'ordine/trade: "questo e' TRIMMATO, non piazzato".
+
+    Serve ai controlli di condotta del banco comune (famiglia B8, minimi .it):
+    senza marca un ordine da 0,79 EUR e' una VIOLAZIONE (piazzato sotto minimo);
+    con la marca e' legale (parcheggiato al minimo e poi ridotto). Il banco deve
+    violare SOLO se un ordine sotto minimo NON porta questa marca.
+    """
+    return {
+        "park_price": piano.park_price,
+        "park_size": piano.park_size,
+        "trimmed_from": piano.park_size,
+        "target_size": piano.target_size,
+        "target_price": piano.target_price,
+        "size_reduction": piano.size_reduction,
+        "park_mode": piano.park_mode,
+        "serve_replace": piano.serve_replace,
+        "chiamate_mutanti": piano.chiamate_mutanti,
+        "bet_id": bet_id,
+        "steps": list(steps or ([] if not piano.serve_trucco else
+                                (["place", "cancel"] if not piano.serve_replace
+                                 else ["place", "cancel", "replace"]))),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Lettura dei report Betfair: esterno E INTERNO
+# ---------------------------------------------------------------------------
+# Reperto 25: leggevamo solo l'``errorCode`` ESTERNO del ReplaceInstructionReport
+# (``CANCELLED_NOT_PLACED`` = "Bet cancelled but replacement bet was not
+# placed"), che dice COSA e' successo ma non PERCHE'. Il perche' sta nei report
+# ANNIDATI (``placeInstructionReport``/``cancelInstructionReport``): da 111
+# rifiuti non abbiamo il codice vero. Qui si estraggono tutti, e i chiamanti li
+# persistono.
+
+def esito_istruzione(report: Any) -> dict:
+    """Normalizza un report Betfair (place/cancel/replace) in un dict piatto.
+
+    Chiavi del VERO, camelCase, come le manda Betfair:
+    ``instructionReports``, ``status``, ``errorCode``, ``betId``,
+    ``sizeMatched``, ``sizeCancelled``, ``orderStatus``,
+    ``placeInstructionReport``, ``cancelInstructionReport``.
+    """
+    rep = report if isinstance(report, dict) else {}
+    reports = rep.get("instructionReports") or []
+    ir = reports[0] if reports and isinstance(reports[0], dict) else {}
+    pir = ir.get("placeInstructionReport") or {}
+    cir = ir.get("cancelInstructionReport") or {}
+    if not isinstance(pir, dict):
+        pir = {}
+    if not isinstance(cir, dict):
+        cir = {}
+    return {
+        "status": rep.get("status"),
+        "istruzione_status": ir.get("status"),
+        "error_code": ir.get("errorCode") or rep.get("errorCode"),
+        # CODICE INTERNO: il motivo VERO di un CANCELLED_NOT_PLACED.
+        "place_status": pir.get("status"),
+        "place_error_code": pir.get("errorCode"),
+        "cancel_status": cir.get("status"),
+        "cancel_error_code": cir.get("errorCode"),
+        "bet_id": pir.get("betId") or ir.get("betId"),
+        "size_matched": float(pir.get("sizeMatched") or ir.get("sizeMatched") or 0.0),
+        "size_cancelled": float(
+            cir.get("sizeCancelled") or ir.get("sizeCancelled") or 0.0),
+        "order_status": pir.get("orderStatus") or ir.get("orderStatus"),
+        "placed_date": pir.get("placedDate") or ir.get("placedDate"),
+        "average_price_matched": pir.get("averagePriceMatched")
+        or ir.get("averagePriceMatched"),
+    }
+
+
+def codice_rifiuto(esito: dict) -> Optional[str]:
+    """Codice da dichiarare al chiamante: l'INTERNO se c'e', altrimenti l'esterno.
+
+    ``CANCELLED_NOT_PLACED`` da solo non e' una diagnosi; con il codice interno
+    (``INVALID_BET_SIZE``, ``INVALID_PROFIT_RATIO``, ``MARKET_SUSPENDED``,
+    ``BET_LAPSED_PRICE_IMPROVEMENT``, ...) lo diventa.
+    """
+    esterno = esito.get("error_code")
+    interno = esito.get("place_error_code") or esito.get("cancel_error_code")
+    if esterno and interno:
+        return f"{esterno}:{interno}"
+    return str(interno or esterno) if (interno or esterno) else None
 
 
 # ---------------------------------------------------------------------------
@@ -459,10 +813,16 @@ def advance_submin(
                     "NON ripiazzato"
                 ),
             )
+        park = state.prezzo_parcheggio
+        # DIFESA IN PROFONDITA': il cap si ri-valida al momento del place, con
+        # il cap EFFETTIVO che porta l'adattatore (lo stato persistito potrebbe
+        # venire da un cap diverso).
+        guardia_cap_parcheggio(state.side, park, state.placed_size,
+                               getattr(ops, "max_stake", None))
         placed_order = _require_ops(ops).place(
             market,
             side=state.side,
-            price=initial_place_price(state.side),
+            price=park,
             size=state.placed_size,
             customer_order_ref=customer_order_ref,
         )
@@ -470,7 +830,7 @@ def advance_submin(
             state,
             step=SubminStep.PLACED,
             bet_id=_bet_id(placed_order),
-            note=f"step1 place {state.placed_size:.2f}@{initial_place_price(state.side)} (LAPSE)",
+            note=f"step1 place {state.placed_size:.2f}@{park} (LAPSE)",
         )
 
     # --- STEP 2: cancel parziale (size_reduction) → resta target -----------
@@ -564,6 +924,15 @@ def advance_submin(
                     note="step3: park scomparso (cancellato per intero) — sequenza fallita pulita",
                 )
             return state  # attesa
+        # PERCORSO A (17/09): il parcheggio era GIA' alla quota target, quindi
+        # dopo il taglio l'ordine e' gia' dove deve stare: nessun replace, e
+        # quindi nessun ``CANCELLED_NOT_PLACED`` possibile.
+        if not state.serve_replace:
+            return _dc_replace(
+                state, step=SubminStep.REPRICED, bet_id=bid,
+                note=("percorso A: parcheggio alla quota target, "
+                      "nessun replace necessario"),
+            )
         # Idempotenza/ripresa: se è già alla target_price, avanza.
         cur_price = _order_price(order)
         if cur_price is not None and abs(cur_price - state.target_price) <= _TOL:

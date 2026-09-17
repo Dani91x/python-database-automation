@@ -712,6 +712,118 @@ def _r1(ctx, snap, d, params):
 
 
 # ===========================================================================
+# S. IL FRENO DELLA COPERTURA E LO STATO DEL MERCATO (17/09, reperto 25)
+#
+# Fatto: evento 36077571, la copertura Over 4.5 sotto minimo rifiutata 171
+# volte di fila con lo stesso codice ``CANCELLED_NOT_PLACED``, una ogni ~5 s
+# per un'ora, senza nessun freno. Questi due controlli lo rendono ROSSO nel
+# banco invece che scoprirlo con i soldi veri.
+# ===========================================================================
+@_controllo("S1", "a freno scattato (cover_rifiuti_max rifiuti con lo stesso codice) "
+                  "il bot NON ripropone la copertura (17/09, reperto 25)",
+            quando=lambda ctx, snap, d, p: bool(E.copertura_bloccata(ctx)))
+def _s1(ctx, snap, d, params):
+    """Il freno e' fail-closed: da bloccata, la copertura si riapre solo con
+    l'utente («Riprendi») o con un codice d'errore DIVERSO. Se il motore la
+    ripropone lo stesso, siamo di nuovo al 17/09."""
+    fermo = E.copertura_bloccata(ctx)
+    if not fermo:
+        return None
+    ancora = [a for a in d.actions if a.kind == "place" and a.role == "over_cover"]
+    if ancora:
+        return (f"copertura FERMATA dal freno ({fermo.get('conteggio')} rifiuti "
+                f"'{fermo.get('error_code')}') e il bot la ripropone lo stesso")
+    return None
+
+
+@_controllo("S2", "nessun piazzamento di copertura mentre il mercato Over 4.5 non e' "
+                  "OPEN: si aspetta la riapertura (ordine dell'utente 17/09, n.5)",
+            quando=lambda ctx, snap, d, p: not E.operabile(
+                _book(snap, E.MARKET_OU45, E.SEL_OVER)))
+def _s2(ctx, snap, d, params):
+    """Sospeso, chiuso, non attivo e IGNOTO valgono tutti «non adesso»: un place
+    su mercato sospeso non nasce, e il cancel che lo accompagna lascerebbe la
+    posizione ancora piu' scoperta."""
+    bk = _book(snap, E.MARKET_OU45, E.SEL_OVER)
+    if E.operabile(bk):
+        return None
+    tocca = [a for a in d.actions
+             if a.role == "over_cover" and a.kind in ("place", "cancel")]
+    if tocca:
+        ruoli = ", ".join(sorted({str(a.kind) for a in tocca}))
+        return (f"mercato Over 4.5 {E.stato_mercato(bk)} e il bot emette lo stesso "
+                f"{ruoli} sulla copertura")
+    return None
+
+
+def _cover_rifiutate(ctx) -> List[Any]:
+    """Le gambe di copertura che il MERCATO ha rifiutato (mai abbinate, morte).
+
+    ⚠️ Si guardano le GAMBE, non ``ctx.cover_rifiuti``. E' il punto: se il
+    contatore del freno smettesse di contare, S1 (che guarda il freno) non
+    avrebbe piu' un caso e il referto direbbe «non lo so» invece di rosso — il
+    bot tornerebbe a ritentare all'infinito e il banco lo dichiarerebbe sano.
+    Lo stato della gamba viene dall'ESITO del piazzamento, non dal freno.
+    """
+    return [l for l in ctx.legs
+            if l.role == "over_cover" and str(l.status) in ("cancelled", "error")
+            and float(l.matched or 0.0) <= 0.005]
+
+
+def _ultima_cover_tentata(ctx) -> Optional[float]:
+    """L'istante dell'ultimo tentativo di copertura, letto dalle GAMBE."""
+    ts = [float(l.placed_at or 0.0) for l in ctx.legs
+          if l.role == "over_cover" and float(l.placed_at or 0.0) > 0.0]
+    return max(ts) if ts else None
+
+
+@_controllo("S3", "dopo `cover_rifiuti_max` coperture RIFIUTATE dal mercato il bot non "
+                  "ne piazza altre: il freno deve SCATTARE (17/09, reperto 25)",
+            quando=lambda ctx, snap, d, p: (
+                len(_cover_rifiutate(ctx)) >= max(1, int(p.get("cover_rifiuti_max") or 1))))
+def _s3(ctx, snap, d, params):
+    """⚠️ IL FRATELLO NECESSARIO DI S1. S1 verifica che, A FRENO SCATTATO, il bot
+    non riproponga la copertura; questo verifica che il freno SCATTI. Senza,
+    neutralizzare il conteggio dei rifiuti dava «0 violazioni e S1 a zero»:
+    esattamente i 171 tentativi del 17/09, dichiarati sani.
+
+    Contato dai RIFIUTI osservati sulle gambe, non dal contatore del freno.
+    """
+    massimo = max(1, int(params.get("cover_rifiuti_max") or 1))
+    rifiutate = _cover_rifiutate(ctx)
+    if len(rifiutate) < massimo:
+        return None
+    ancora = [a for a in d.actions if a.kind == "place" and a.role == "over_cover"]
+    if ancora:
+        return (f"{len(rifiutate)} coperture gia' RIFIUTATE dal mercato (soglia "
+                f"{massimo}) e il bot ne piazza un'altra: il freno non e' scattato")
+    return None
+
+
+@_controllo("S4", "fra due tentativi di copertura passa almeno `cover_retry_min_s` "
+                  "(bet delay + margine, 17/09)",
+            quando=lambda ctx, snap, d, p: any(
+                a.kind == "place" and a.role == "over_cover" for a in d.actions))
+def _s4(ctx, snap, d, params):
+    """Il 17/09 si ritentava ogni ~5 s, cioe' prima ancora di sapere com'era
+    andata la volta prima (il bet delay in gioco e' 5 s). Il tempo e' quello del
+    MERCATO (``snap.now``) e l'istante precedente viene dalle GAMBE."""
+    minimo = float(params.get("cover_retry_min_s") or 0.0)
+    if minimo <= 0.0:
+        return None
+    if not any(a.kind == "place" and a.role == "over_cover" for a in d.actions):
+        return None
+    ultimo = _ultima_cover_tentata(ctx)
+    if ultimo is None:
+        return None
+    passati = float(snap.now) - ultimo
+    if 0.0 <= passati < minimo:
+        return (f"nuovo tentativo di copertura dopo {passati:.1f} s dal precedente, "
+                f"meno del ritmo minimo {minimo:.0f} s")
+    return None
+
+
+# ===========================================================================
 # K. LA CONSAPEVOLEZZA DELL'ORDINE, CONTRO IL MERCATO (16/09 sera)
 #
 # ⚠️ PERCHE' QUESTA FAMIGLIA ESISTE. Il 16/09 sera la falsificazione

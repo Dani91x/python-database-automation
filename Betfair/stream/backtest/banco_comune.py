@@ -492,6 +492,21 @@ class MercatoFlumine:
         # letto. Rifiutare "i primi tre ordini" colpirebbe solo le aperture e
         # il difetto 2 resterebbe senza un caso.
         self.rifiuta_lato: Optional[str] = None
+        # 17/09 (reperto 25) — RIFIUTO PERSISTENTE, con il codice VERO di
+        # Betfair. Con ``guasti["place_rifiuto"] == -1`` il rifiuto non si
+        # consuma: e' il caso reale del 17/09, dove la copertura sotto minimo e'
+        # stata rifiutata 171 volte su 171, sempre con lo stesso codice. Senza
+        # un rifiuto che NON finisce, il banco non puo' sollecitare il freno.
+        # ``rifiuta_market_id`` restringe il rifiuto a UN mercato (la copertura
+        # vive sull'OU45: rifiutare tutto colpirebbe anche le uscite).
+        self.rifiuta_market_id: Optional[str] = None
+        # ``rifiuta_sotto_minimo``: rifiuta SOLO gli ordini sotto il minimo di
+        # giurisdizione. E' il caso REALE del 17/09 alla lettera: l'ingresso da
+        # 5 EUR passa, la copertura sotto minimo (1,21 EUR) no. Non serve
+        # conoscere il market id della copertura per colpire solo lei.
+        self.rifiuta_sotto_minimo: Optional[float] = None
+        self.rifiuto_codice: str = "INVALID_ODDS"
+        self.rifiuto_codice_interno: Optional[str] = None
         # quante LETTURE ha fatto il bot (ognuna costa `LATENZA_LETTURA_S` di
         # tempo di mercato): il referto lo dichiara, perche' l'assunzione pesa
         # in proporzione a questo numero
@@ -510,22 +525,41 @@ class MercatoFlumine:
         if self.guasti.get("place_exception", 0) > 0:
             self.guasti["place_exception"] -= 1
             raise RuntimeError("guasto provocato: esito IGNOTO dal place")
-        if (self.guasti.get("place_rifiuto", 0) > 0
+        _quanti = int(self.guasti.get("place_rifiuto", 0))
+        if ((_quanti > 0 or _quanti == -1)
                 and (self.rifiuta_lato is None
-                     or str(side).lower() == str(self.rifiuta_lato).lower())):
+                     or str(side).lower() == str(self.rifiuta_lato).lower())
+                and (self.rifiuta_market_id is None
+                     or str(market_id) == str(self.rifiuta_market_id))
+                and (self.rifiuta_sotto_minimo is None
+                     or float(size) < float(self.rifiuta_sotto_minimo) - 1e-9)):
             # IL RIFIUTO DICHIARATO DI BETFAIR (`ok=False`): l'istruzione torna
             # con un report negativo e NESSUN ordine esiste. E' il difetto 2 del
             # catalogo del 15/09 («`res.ok` mai letto: un rifiuto trattato come
             # copertura esistente»), e senza provocarlo il replay non ha MAI un
             # caso in cui `ok` valga False — quindi non puo' accorgersi se
             # qualcuno smettesse di leggerlo. Le parole sono quelle di Betfair.
-            self.guasti["place_rifiuto"] -= 1
+            if _quanti > 0:                       # -1 = rifiuto che non finisce
+                self.guasti["place_rifiuto"] = _quanti - 1
+            codice = str(self.rifiuto_codice)
+            interno = self.rifiuto_codice_interno
             self.rifiutati.append({"ref": str(customer_ref or ""),
-                                   "err": "INVALID_ODDS (rifiuto provocato)"})
+                                   "err": f"{codice} (rifiuto provocato)"})
+            # Le parole e la FORMA sono quelle di Betfair: su un replace
+            # rifiutato il codice esterno e' ``CANCELLED_NOT_PLACED`` e il
+            # motivo vero sta in ``placeInstructionReport.errorCode``.
+            grezzo: Dict[str, Any] = {"motivo": f"rifiuto provocato: {codice}",
+                                      "error_code": codice}
+            if interno:
+                grezzo["instructionReports"] = [{
+                    "status": "FAILURE", "errorCode": codice,
+                    "cancelInstructionReport": {"status": "SUCCESS",
+                                                "sizeCancelled": 0.0},
+                    "placeInstructionReport": {"status": "FAILURE",
+                                               "errorCode": str(interno)}}]
             return PlaceResult(ok=False, order_status="EXPIRED", bet_id=None,
                                size_matched=0.0, avg_price_matched=None,
-                               raw={"motivo": "rifiuto provocato: INVALID_ODDS",
-                                    "error_code": "INVALID_ODDS"})
+                               raw=grezzo, error_code=codice)
 
         mercato = self.s.mercati.get(str(market_id))
         if mercato is None:

@@ -255,7 +255,13 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # ORDINE DELL'UTENTE 16/09 SERA — la partita chiusa dall'utente
                # FUORI dall'app: un riavvio non deve far ricominciare Mike a
                # gestire una posizione che non c'e' piu'.
-               "chiuso_dall_utente")
+               "chiuso_dall_utente",
+               # 17/09 (reperto 25) — il FRENO della copertura (conteggio dei
+               # rifiuti per codice d'errore, orologio del ritmo minimo) e
+               # l'ultimo stato visto del mercato Over 4.5. Senza persistenza un
+               # riavvio farebbe ricominciare i 104 tentativi da capo (difetto
+               # 19 del catalogo: lo stato che vive solo in RAM).
+               "cover_rifiuti", "cover_mercato")
 
 
 # ===========================================================================
@@ -587,10 +593,35 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
             logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
                             "ciclo e' gia' pending", info.event_id, leg.ref, doppia.get("id"))
             return "cancelled"
+    # ⚠️ IL FRENO DELLA COPERTURA, FAIL-CLOSED (ordine dell'utente 17/09).
+    # E' la SECONDA barriera: la prima e' ``engine._freno_copertura``, che toglie
+    # l'azione dalla decisione. Se un percorso qualunque arrivasse comunque fin
+    # qui con una copertura mentre il freno e' scattato, nessun ordine parte.
+    # Riguarda SOLO la copertura (ruolo ``over_cover``), che e' un INGRESSO:
+    # uscite, green-up e chiusure passano sempre — la lezione del 15/09, quando
+    # il freno live aveva frenato anche le uscite.
+    if leg.role == "over_cover" and ctx is not None:
+        fermo = E.copertura_bloccata(ctx)
+        if fermo is not None:
+            leg.status = "cancelled"
+            db.log("skip", {"leg": leg.ref, "role": leg.role,
+                            "reason": "copertura_bloccata",
+                            "error_code": fermo.get("error_code"),
+                            "conteggio": int(fermo.get("conteggio") or 0),
+                            "max": int(fermo.get("max") or 0),
+                            "stato_freno": E.COVER_BLOCCATA,
+                            "critical": True}, info.event_id)
+            logger.critical("[mike] %s: copertura FERMA (%s x%s): nessun tentativo",
+                            info.event_id, fermo.get("error_code"), fermo.get("conteggio"))
+            return "cancelled"
     if book is None or book.status != "OPEN":
         leg.status = "cancelled"
-        db.log("skip", {"leg": leg.ref, "reason": f"book non OPEN ({book.status if book else 'assente'})"},
-               info.event_id)
+        # M-17 (ordine dell'utente 17/09) — SOSPESO/CHIUSO/IGNOTO si chiamano per
+        # nome anche qui: "book non OPEN" non diceva se il mercato riaprira'.
+        db.log("skip", {"leg": leg.ref, "role": leg.role,
+                        "reason": f"mercato {E.stato_mercato(book)}",
+                        "stato_mercato": E.stato_mercato(book),
+                        "market": leg.market}, info.event_id)
         return "cancelled"
     if mode == "paper" and not feed_fresh:
         leg.status = "cancelled"
@@ -677,6 +708,12 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         # scritta nel meta della riga.
         meta_exec["closes_trade_id"] = int(
             (row.get("meta") or {}).get("closes_trade_id_pending") or -1)
+    if leg.role == "over_cover" and ctx is not None:
+        # L'OROLOGIO DEL RITMO MINIMO si fa partire PRIMA della chiamata: e' il
+        # TENTATIVO che consuma una richiesta a Betfair e un bet delay, non il
+        # suo esito. Se la risposta non arrivasse mai, il prossimo giro deve
+        # comunque aspettare ``cover_retry_min_s``.
+        E.segna_tentativo_copertura(ctx, now.timestamp())
     out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
                   selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
                   best_size=avail_size, ladder=(), client_ref=f"mike-t{trade_id}",
@@ -733,11 +770,40 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
     # stesso ``place_rifiutato`` gia' in uso per la lay appoggiata): un rifiuto
     # per INSUFFICIENT_FUNDS e uno per INVALID_PROFIT_RATIO non sono la stessa
     # cosa, e finora erano entrambi uno ``skip`` muto.
+    # ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL RIFIUTO DELLA COPERTURA SI
+    # CONTA. 104 rifiuti identici in un'ora, uno ogni ~5 s, e nessuno li contava:
+    # il conteggio per CODICE D'ERRORE e' quello che permette di fermarsi.
+    freno: Optional[Dict[str, Any]] = None
+    if leg.role == "over_cover" and ctx is not None:
+        freno = E.registra_rifiuto_copertura(
+            ctx, error_code=out.error_code, motivo=str(out.fill_note or ""),
+            ref=leg.ref, now=now.timestamp(), params=params)
     if out.error_code:
         db.log("place_rifiutato", {"leg": leg.ref, "trade_id": trade_id, "role": leg.role,
                                    "side": leg.side, "price": leg.price, "size": leg.size,
                                    "error_code": out.error_code, "critical": True,
-                                   "reason": out.fill_note}, info.event_id)
+                                   "reason": out.fill_note,
+                                   # il CONTEGGIO in chiaro: un rifiuto isolato e il
+                                   # centesimo di fila non sono la stessa notizia
+                                   "conteggio": (None if freno is None
+                                                 else int(freno.get("conteggio") or 0)),
+                                   "max": (None if freno is None
+                                           else int(freno.get("max") or 0))}, info.event_id)
+    if freno is not None and freno.get("bloccata"):
+        # IL FRENO E' SCATTATO: da qui la copertura non si ritenta piu' finche'
+        # non interviene l'utente («Riprendi») o finche' Betfair non risponde
+        # con un codice DIVERSO. E' una notizia critica, non un dettaglio.
+        db.log("error", {"reason": "copertura_bloccata", "leg": leg.ref,
+                         "role": leg.role, "trade_id": trade_id,
+                         "error_code": freno.get("error_code"),
+                         "conteggio": int(freno.get("conteggio") or 0),
+                         "max": int(freno.get("max") or 0),
+                         "stato_freno": E.COVER_BLOCCATA, "critical": True,
+                         "nota": "copertura Over 4.5 FERMATA dopo rifiuti identici "
+                                 "ripetuti: serve un intervento (Riprendi) o un "
+                                 "codice d'errore diverso"}, info.event_id)
+        logger.critical("[mike] %s: COPERTURA BLOCCATA dopo %s rifiuti '%s' (%s)",
+                        info.event_id, freno.get("conteggio"), freno.get("error_code"), leg.ref)
     db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
                     "error_code": out.error_code}, info.event_id)
     return "cancelled"
@@ -2019,6 +2085,53 @@ def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Sna
     ctx.riapertura = {**r, "letto": True, "letto_ts": now_ts, "esiti": esiti}
 
 
+def _sorveglia_mercato_copertura(*, db: Any, ctx: E.MatchCtx, snap: E.Snapshot,
+                                 now_ts: float, ev: Dict[str, Any]) -> None:
+    """⚠️ ORDINE DELL'UTENTE 17/09 — «il bot deve essere informato dei cambi di
+    stato del mercato (SOSPESO / APERTO / CHIUSO) DURANTE la copertura».
+
+    Che cosa c'era prima, per non raccontarsela: ``_sorveglia_sospensione``
+    guarda SOLO il mercato Under 3.5 e SOLO se c'e' una lay APPOGGIATA viva
+    (la copertura e' un BACK sull'Over 4.5, quindi non ci entrava mai). Il
+    motore ``operabile()`` lo consultava, ma la notizia moriva li': in pagina
+    e nel referto una copertura ferma per sospensione era indistinguibile da
+    una copertura ferma per attesa "intelligente".
+
+    Qui si osserva lo stato del mercato della COPERTURA e si scrive UNA riga per
+    TRANSIZIONE (non una per giro): sospeso/chiuso/ignoto quando si perde
+    l'operabilita', riaperto quando torna. L'ignoto vale come non aperto
+    (fail-closed): ``stato_mercato(None)`` e' ``ignoto``, mai "aperto".
+
+    Nessun ordine viene emesso o annullato da qui: e' consapevolezza, non
+    esecuzione. Chi decide resta il motore.
+    """
+    if not E.copertura_in_corso(ctx):
+        return
+    bk = snap.book(E.MARKET_OU45, E.SEL_OVER)
+    stato = E.stato_mercato(bk)
+    prima = str((ctx.cover_mercato or {}).get("stato") or "")
+    if stato == prima:
+        return                              # nessuna transizione: niente da dire
+    ctx.cover_mercato = {"stato": stato, "ts": float(now_ts)}
+    if not prima and stato == E.STATO_APERTO:
+        return                              # prima lettura, mercato regolare: nessuna notizia
+    mid = str(((ev.get("markets") or {}).get(E.MARKET_OU45) or {}).get("market_id") or "")
+    gambe = sorted(l.ref for l in ctx.legs
+                   if l.role == "over_cover" and (l.is_live or l.needs_reconcile))
+    comune = {"stato": stato, "mercato": E.MARKET_OU45, "market_id": mid,
+              "fase": "copertura", "refs": gambe, "state": ctx.state}
+    if stato != E.STATO_APERTO:
+        db.log("mercato_sospeso", {**comune, "critical": True,
+                                   "nota": "mercato della copertura Over 4.5 non operabile: "
+                                           "nessun ordine di copertura finche' non riapre"},
+               str(ev["event_id"]))
+        return
+    db.log("skip", {**comune, "reason": "mercato_riaperto",
+                    "nota": "mercato della copertura Over 4.5 di nuovo aperto: "
+                            "la copertura riprende da dove era rimasta"},
+           str(ev["event_id"]))
+
+
 def _resting_filled(leg: E.Leg, book: Optional[E.Book]) -> bool:
     """Simulazione CONSERVATIVA della lay appoggiata a ``leg.price``: si considera
     abbinata SOLO quando il mercato ha scambiato SOTTO il suo prezzo (best back
@@ -2101,16 +2214,26 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
                     db.upsert_event(events[eid])
                     db.log("resume_event", {"by": "utente", "to": "WATCH"}, eid)
                     res = _result("ok", "Partita ripresa.", ok=True, state="WATCH")
-                elif ctx.no_reentry or ctx.flatten_pending:
+                elif ctx.no_reentry or ctx.flatten_pending or E.copertura_bloccata(ctx):
                     # C3: dopo un cash out manuale pre-KO il bot NON rientra da
                     # solo; "Riprendi" e' l'unico modo di riabilitarlo. Si azzera
                     # anche ``flatten_pending``, altrimenti il completamento
                     # della chiusura manuale rimetterebbe subito il divieto.
                     ctx.no_reentry = False
                     ctx.flatten_pending = False
+                    # 17/09 — ed e' anche L'INTERVENTO UMANO che riapre la
+                    # copertura fermata dal freno sui rifiuti ripetuti: il freno
+                    # e' fail-closed, da solo non si toglie mai.
+                    sbloccata = E.copertura_bloccata(ctx)
+                    E.sblocca_copertura(ctx)
                     events[eid] = _row_from_ctx(ev, ctx, extra)
                     db.upsert_event(events[eid])
-                    db.log("resume_event", {"by": "utente", "no_reentry": False}, eid)
+                    db.log("resume_event", {"by": "utente", "no_reentry": False,
+                                            "copertura_sbloccata": (
+                                                None if sbloccata is None
+                                                else {"error_code": sbloccata.get("error_code"),
+                                                      "conteggio": int(sbloccata.get("conteggio") or 0)})},
+                           eid)
                     res = _result("ok", "Rientro riabilitato su questa partita.", ok=True,
                                   state=ctx.state)
                 else:
@@ -3075,6 +3198,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # non deve mai decidere su una gamba data per viva senza averla riletta.
     _sorveglia_sospensione(db=db, market=market, ctx=ctx, snap=snap, params=params,
                            mode=mode, now_ts=now_ts, ev=ev, cache=cache)
+
+    # -- LO STATO DEL MERCATO DELLA COPERTURA (ordine dell'utente, 17/09) ---------
+    # Il fratello del controllo qui sopra, sull'altro mercato: quello guarda la
+    # lay appoggiata sull'Under 3.5, questo guarda l'Over 4.5 mentre la
+    # copertura e' in corso. Anche questo PRIMA della decisione.
+    _sorveglia_mercato_copertura(db=db, ctx=ctx, snap=snap, now_ts=now_ts, ev=ev)
 
     # -- LA POSIZIONE DI CONTO (ordine dell'utente, 16/09 sera) -------------------
     # «SE CHIUDO IO, IL BOT DEVE SAPERLO, ANCHE FUORI DALL'APP». Anche questa

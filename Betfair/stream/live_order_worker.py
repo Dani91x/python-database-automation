@@ -2628,6 +2628,11 @@ def _submin_state_to_dict(state: Any) -> Dict[str, Any]:
         "side": state.side,
         "note": state.note,
         "trim_requested_ms": int(getattr(state, "trim_requested_ms", 0) or 0),
+        # 17/09 - nucleo universale del place-and-trim: quota del parcheggio
+        # (percorso A = quota target, percorso B = 1000/1.01) e se serve il
+        # replace; senza, una ripresa dopo riavvio tornerebbe al percorso B.
+        "park_price": float(getattr(state, "park_price", 0.0) or 0.0),
+        "serve_replace": bool(getattr(state, "serve_replace", True)),
     }
 
 
@@ -2645,6 +2650,9 @@ def _submin_state_from_dict(d: Dict[str, Any]) -> Any:
         # persistito dal fix 11/07 (verifica osservata del trim); default 0
         # per righe scritte prima del fix.
         trim_requested_ms=int(d.get("trim_requested_ms") or 0),
+        # default = comportamento storico per le righe scritte prima del 17/09
+        park_price=float(d.get("park_price") or 0.0),
+        serve_replace=bool(d.get("serve_replace", True)),
     )
 
 

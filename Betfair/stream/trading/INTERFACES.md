@@ -486,3 +486,97 @@ inline, tabella posizioni/P&L (`fetchLivePositions`). Kill-switch visibile.
 - Place-and-trim su `.it` = da verificare empiricamente (cert LIVE minimale, §protocollo piano).
 </content>
 </invoke>
+
+---
+
+## Place-and-trim: contratto del modulo UNICO (17/09/2026)
+
+Ordine dell'utente: «il place-and-trim DEVE ESSERE AGGIUSTATO E RESO UNIVERSALE PER OGNI
+CASO CHE CI SERVE PRESENTE E FUTURO». Indagine e fonti:
+`Betfair/stream/trading/PLACE_AND_TRIM_INDAGINE_2026-09-17.md`.
+
+### Nucleo unico (funzioni PURE, nessuna rete) — `Betfair/stream/trading/submin.py`
+
+| funzione | contratto |
+|---|---|
+| `quota_non_abbinabile(side, price, best_back=, best_lay=)` | `True` = l'ordine resta a riposo; `False` = si abbina subito; `None` = book IGNOTO |
+| `pianifica_submin(side, target_price, target_size, jurisdiction, best_back=, best_lay=, consenti_replace=True)` | `PianoSubmin`: percorso A/B, quota e size del parcheggio, `size_reduction`, `serve_replace`, `chiamate_mutanti`, `rifiuto` |
+| `esito_istruzione(report)` | normalizza un report Betfair, **compresi** `placeInstructionReport` e `cancelInstructionReport` |
+| `codice_rifiuto(esito)` | `"ESTERNO:INTERNO"` (es. `CANCELLED_NOT_PLACED:INVALID_BET_SIZE`) |
+| `marca_submin(piano, bet_id=, steps=)` | MARCA `submin` da appendere all'ordine/trade |
+
+Adattatori (nessuna copia della sequenza):
+
+- **REST**: `Betfair/omega/omega_market.py::place_submin_live` (Mike, Omega, Safe);
+- **flumine**: `start_submin` / `advance_submin` (live_order_worker, scalper, tennis).
+
+Le firme pubbliche restano compatibili: `best_back`/`best_lay` sono kwargs OPZIONALI.
+
+### Matrice dei casi coperti
+
+| caso | percorso | chiamate mutanti | test |
+|---|---|---|---|
+| target >= minimo | place normale | 1 | `test_sopra_il_minimo_nessun_trucco` |
+| BACK sotto minimo, quota NON abbinabile | A (park alla target, niente replace) | 2 | `test_percorso_a_quando_la_quota_non_e_abbinabile`, `test_macchina_percorso_a_non_chiama_mai_replace` |
+| LAY sotto minimo, quota NON abbinabile | A | 2 | `test_lay_percorso_a` |
+| quota abbinabile (caso Mike, aggressivo) | B (park lontano + replace) | 3 | `test_percorso_b_quando_la_quota_e_abbinabile`, `test_macchina_percorso_b_chiama_il_replace` |
+| book IGNOTO | B (conservativo) | 3 | `test_book_ignoto_sceglie_il_percorso_conservativo` |
+| replace vietato dal chiamante | rifiuto, 0 ordini | 0 | `test_replace_non_consentito_rifiuta_senza_piazzare` |
+| fill-or-kill + quota non abbinabile | rifiuto `SUBMIN_NESSUNA_CONTROPARTE`, 0 ordini | 0 | percorso REST |
+| importo < 0,01 EUR | `ValueError` | 0 | `test_sotto_il_floor_assoluto_solleva` |
+| parcheggio abbinato | ritiro + abort, niente ritento | — | `test_guardia_il_parcheggio_non_deve_mai_abbinarsi` |
+| taglio non confermato dal report | ritiro + rifiuto dichiarato | — | `test_guardia_senza_taglio_confermato_non_si_riprezza` |
+| taglio non confermato dalla LETTURA (`listCurrentOrders`) | ritiro + `TRIM_NON_VERIFICATO` | — | verifica fail-closed REST |
+| replace rifiutato | ritiro + codice ESTERNO:INTERNO nel DB e nel log `critical` | — | `test_guardia_riprezzo_rifiutato_ritira_il_residuo` |
+| ritiro fallito | esito IGNOTO propagato (riconciliazione), mai «annullato» | — | `test_se_il_ritiro_finale_fallisce_si_solleva` |
+
+Finti dei test: chiavi e tipi IDENTICI al vero (`instructionReports`,
+`placeInstructionReport`, `cancelInstructionReport`, `errorCode`, `betId`, `sizeMatched`,
+`sizeCancelled`, `status`, `orderStatus`, `sizeRemaining`).
+
+### Regola money-critical: «il parcheggio non espone mai piu' del cap»
+
+Nel percorso A il parcheggio del minimo sta **ALLA quota target**: per un LAY impegna
+`size*(quota-1)`. A quota 95 il minimo .it LAY (0,50 EUR) impegna 47,00 EUR, e il minimo
+BACK (2,00 EUR) ne impegnerebbe 188,00 — contro gli 0,01 EUR del parcheggio a 1.01 del
+percorso B. E' la stessa esposizione che `_guard_replace_cap_lay` gia' controllava sul
+replace, e vale identica sul parcheggio.
+
+- `liability_parcheggio(side, park_price, park_size)` -> quanto impegna il gradino 1
+  (BACK: lo stake; LAY: la liability).
+- `guardia_cap_parcheggio(side, park_price, park_size, max_stake)` -> solleva
+  `ValueError` se sfonda il cap. Cap ignoto (`None`) non blocca, come per il replace.
+- `pianifica_submin(..., max_stake=)`: se il percorso A sfonderebbe il cap **ripiega sul
+  percorso B** (parcheggio a 1.01/1000, liability trascurabile) e lo scrive in `motivo`;
+  se nemmeno il replace e' consentito -> `rifiuto` `SUBMIN_CAP_PARCHEGGIO`, 0 ordini.
+- Difesa in profondita' negli adattatori: `place_submin_live(max_stake=)` ri-controlla
+  prima del gradino 1; `advance_submin` ri-controlla al place usando `ops.max_stake`.
+
+Test: `test_liability_del_parcheggio_lay_alla_quota_target`,
+`test_lay_percorso_a_vietato_se_il_parcheggio_sfonda_il_cap`,
+`test_cap_sfondato_e_replace_vietato_rifiuta_senza_piazzare`,
+`test_cap_capiente_lascia_il_percorso_a`, `test_guardia_cap_parcheggio_solleva`,
+`test_la_macchina_flumine_ri_valida_il_cap_al_place`.
+
+### Marca `submin` e controlli del banco (DA FARE lato banco)
+
+Ogni ordine nato dal place-and-trim porta `marca_submin(...)`:
+
+```
+{"park_price":5.9,"park_size":2.0,"trimmed_from":2.0,"target_size":0.79,
+ "target_price":5.9,"size_reduction":1.21,"park_mode":"target",
+ "serve_replace":false,"chiamate_mutanti":2,"bet_id":"...","steps":["place","cancel"]}
+```
+
+**Regola per i controlli di condotta del banco comune** (`Betfair/stream/backtest/`,
+famiglia B8 «minimi .it» e affini): un ordine sotto il minimo di giurisdizione e' una
+violazione **solo se NON porta la marca `submin`**. Con la marca e' legale (parcheggiato
+al minimo e poi ridotto). Senza questa distinzione il banco conta come violazione ogni
+ordine trimmato (misurato dal delegato tennis: 4.087 -> 8.566 violazioni accendendo il
+place-and-trim nel replay).
+
+### Test di contratto (DA SCRIVERE)
+
+Nessun modulo di produzione deve costruire da solo un ordine sotto il minimo: gli unici
+punti ammessi sono `place_submin_live` e `start_submin`/`advance_submin`. La lista dei
+chiamanti legittimi e' in `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` §5.
