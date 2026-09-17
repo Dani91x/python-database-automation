@@ -46,6 +46,7 @@ import argparse
 import logging
 import os
 import re
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -135,6 +136,41 @@ _OPP_MARKER_KEYS = ("ts_ms", "seen_ms", "decided", "for_mike")
 # una chiamata Betfair fallita NON si ripete a ogni tick (0,5 s): catalogo
 # ritentato dopo 30 s, poll REST dei book dopo la sua cadenza normale
 _CATALOGUE_RETRY_SEC = 30.0
+# 17/09 - COPERTURA PER MERCATO, non per socket. Un mercato sottoscritto che
+# da questo tempo non consegna un book CON PREZZI e' "scoperto" e torna al poll
+# REST, anche se lo shard e' sano: il 17/09 lo stream consegnava book di sola
+# ``marketDefinition`` (runner con selection_id e status, scalette vuote) e il
+# fallback non e' mai partito perche' "coperto" si decideva sugli heartbeat.
+_STREAM_PRICE_MAX_AGE_SEC = 20.0
+# oltre questo tempo SENZA UN PREZZO da nessuna fonte (stream o REST) il
+# mercato entra in ``stream_mercati_senza_quote``: il 17/09 ``last_error`` era
+# null mentre il feed era morto da ore, ed e' questo che ha reso il blackout
+# invisibile al trader.
+_SENZA_QUOTE_MAX_AGE_SEC = 30.0
+# un mercato che AVEVA prezzi dallo stream e li ha persi da piu' di questo
+# tempo, senza che il REST lo copra, e' un allarme anche se giovane
+_STREAM_PERSO_MAX_AGE_SEC = 60.0
+# MERCATI CORE: quelli su cui si apre, si esce e ci si copre (il MATCH_ODDS di
+# calcio e tennis, il Correct Score e l'Half Time Score dei candidati).
+# Le linee a gol (``kind == "opp"``) NON sono core: una Over 7.5 o una linea
+# esotica puo' legittimamente non avere NESSUNA offerta a book, e farci scattare
+# l'allarme lo terrebbe acceso in permanenza - cioe' lo spegnerebbe, perche' un
+# allarme sempre acceso il trader impara a ignorarlo. Restano contate in
+# ``stream_mercati_senza_quote``, che e' un FATTO, non un allarme.
+_KIND_CORE = (None, "cs", "ht")
+# 17/09 - FLUMINE NON DEVE STARE NEL PROCESSO DEL FEED.
+# ``flumine/__init__.py:13`` sostituisce ``bettingresources.RunnerBookEX`` con
+# una classe che lascia i livelli del ladder come dizionari: da quel momento
+# ``scanner.best_price`` leggeva ``None`` su OGNI prezzo, da stream e da REST.
+# E' la causa del blackout del 17/09. La causa e' tolta alla radice
+# (``stream/scalper/hazard_atlas.py`` + import pigro nel package) e la lettura
+# regge entrambe le forme, ma se flumine ricompare qui dentro bisogna SAPERLO:
+# e' un import che non ci deve essere, e costa CPU e memoria a un servizio di
+# feed.
+_FLUMINE = "flumine"
+# quanti mercati senza quote si elencano nello stato (il conteggio e' sempre
+# intero): la riga di stato non deve diventare un registro
+_SENZA_QUOTE_ELENCO_MAX = 30
 
 
 def _pre_ko_ou_hours() -> float:
@@ -212,6 +248,33 @@ class Scanner:
         )
         # indice market_id → (sport, meta) per applicare i book (stream E rest)
         self.market_meta: Dict[str, "tuple[str, Dict[str, Any]]"] = {}
+        # 17/09 - QUANDO OGNI MERCATO HA CONSEGNATO L'ULTIMO PREZZO.
+        # ``stream_price_mono``: solo dallo STREAM, ed e' cio' che decide se un
+        # mercato e' coperto o se va al poll REST (un mercato che riceve solo
+        # definizioni NON e' coperto). ``price_mono``: da QUALSIASI fonte, ed e'
+        # cio' su cui si denuncia "quote assenti" nello stato.
+        # ``rilevante_da_mono``: da quando un mercato e' rilevante, per dare
+        # un'eta' anche a chi un prezzo non l'ha mai avuto.
+        self.stream_price_mono: Dict[str, float] = {}
+        self.price_mono: Dict[str, float] = {}
+        self.rilevante_da_mono: Dict[str, float] = {}
+        # book SENZA un solo prezzo, per mercato: non sono un aggiornamento di
+        # quote e non devono toccare ``odds``/``odds_ts_ms``. Contarli e' l'unico
+        # modo per accorgersene dal vivo.
+        self.book_vuoti: Dict[str, int] = {}
+        self.book_vuoti_rest = 0
+        # mercati rilevanti senza un prezzo da oltre _SENZA_QUOTE_MAX_AGE_SEC
+        # (aggiornato a ogni tick) e da quanto dura il piu' vecchio: e' il FATTO,
+        # comprese le linee a gol illiquide
+        self.mercati_senza_quote: List[str] = []
+        self.senza_quote_eta_s: float = 0.0
+        # i soli mercati CORE senza quote: e' l'ALLARME (last_error, WARNING,
+        # badge REST). Sottoinsieme del precedente.
+        self.mercati_allarme: List[str] = []
+        self.allarme_eta_s: float = 0.0
+        # flumine caricato nel processo: si dice UNA volta nel log e sempre
+        # nello stato (vedi _FLUMINE)
+        self.flumine_detto = False
         # throttle di pubblicazione per-evento (solo cambi di QUOTE; i cambi
         # critici — gol, set, stato mercato — passano subito: written_crit)
         self.last_pub_mono: Dict[str, float] = {}
@@ -360,6 +423,101 @@ class Scanner:
                 })
         self.market_meta = idx
 
+    def _aggiorna_copertura(self, now_mono: float,
+                            rilevanti: List[str]) -> "tuple[set, List[str]]":
+        """Chi e' COPERTO dallo stream e chi e' SENZA QUOTE. 17/09.
+
+        ``coperti``: mercati di uno shard che consegna book E che hanno dato un
+        prezzo DALLO STREAM da meno di ``_STREAM_PRICE_MAX_AGE_SEC``. Tutti gli
+        altri vanno al poll REST, anche se il socket e' sanissimo: e' il buco
+        che il 17/09 e' rimasto aperto per ore.
+
+        ``senza_quote``: mercati rilevanti che da oltre
+        ``_SENZA_QUOTE_MAX_AGE_SEC`` non hanno un prezzo da NESSUNA fonte. E'
+        quello che ``last_error`` deve dire al trader.
+        """
+        rilevanti_set = set(rilevanti)
+        coperti: set = set()
+        if self.stream is not None:
+            for mid in self.stream.covered_ids():
+                ts = self.stream_price_mono.get(mid)
+                if ts is not None and now_mono - ts <= _STREAM_PRICE_MAX_AGE_SEC:
+                    coperti.add(mid)
+        # un mercato che smette di essere rilevante non deve restare a
+        # invecchiare nelle mappe (memoria e falsi allarmi)
+        for mappa in (self.stream_price_mono, self.price_mono, self.rilevante_da_mono):
+            for mid in [m for m in mappa if m not in rilevanti_set]:
+                mappa.pop(mid, None)
+        senza: List["tuple[float, str]"] = []
+        allarme: List["tuple[float, str]"] = []
+        for mid in rilevanti:
+            base = self.price_mono.get(mid)
+            if base is None:
+                base = self.rilevante_da_mono.setdefault(mid, now_mono)
+            eta = now_mono - base
+            # (a) nessun prezzo da NESSUNA fonte (ne' stream ne' REST) da > 30 s
+            senza_da_nessuno = eta > _SENZA_QUOTE_MAX_AGE_SEC
+            # (b) aveva prezzi DALLO STREAM e li ha persi da > 60 s, e il REST
+            #     non lo sta coprendo. In pratica (a) lo prende gia' prima; resta
+            #     esplicito perche' e' la condizione dell'incidente del 17/09 e
+            #     non deve dipendere dalla soglia dell'altra.
+            ts_stream = self.stream_price_mono.get(mid)
+            perso_dallo_stream = (
+                ts_stream is not None
+                and now_mono - ts_stream > _STREAM_PERSO_MAX_AGE_SEC
+                and senza_da_nessuno
+            )
+            if senza_da_nessuno:
+                senza.append((eta, mid))
+            if (senza_da_nessuno or perso_dallo_stream) and self._e_core(mid):
+                allarme.append((eta, mid))
+        senza.sort(reverse=True)
+        allarme.sort(reverse=True)
+        self.senza_quote_eta_s = senza[0][0] if senza else 0.0
+        self.mercati_senza_quote = [mid for _, mid in senza]
+        self.allarme_eta_s = allarme[0][0] if allarme else 0.0
+        self.mercati_allarme = [mid for _, mid in allarme]
+        return coperti, self.mercati_allarme
+
+    def _e_core(self, market_id: str) -> bool:
+        """E' un mercato CORE (MATCH_ODDS, Correct Score, Half Time Score)?
+
+        Solo questi fanno ALLARME: sono quelli su cui si apre, si esce e ci si
+        copre. Le linee a gol senza offerte sono un fatto normale del mercato.
+        """
+        trovato = self.market_meta.get(market_id)
+        if not trovato:
+            return False
+        return (trovato[1].get("kind") or None) in _KIND_CORE
+
+    def flumine_caricato(self) -> bool:
+        """``flumine`` e' finito nel processo del feed? (non ci deve stare)"""
+        return _FLUMINE in sys.modules
+
+    def controlla_flumine(self) -> Optional[str]:
+        """Se flumine e' stato caricato lo si denuncia: WARNING una volta sola,
+        poi resta nello stato finche' dura (cioe' per sempre: non si scarica)."""
+        if not self.flumine_caricato():
+            return None
+        if not self.flumine_detto:
+            self.flumine_detto = True
+            logger.warning(
+                "[safe-scan] FLUMINE CARICATO NEL PROCESSO DEL FEED: sostituisce "
+                "RunnerBookEX e il ladder arriva come dizionari. E' l'incidente "
+                "del 17/09: trovare l'import e toglierlo."
+            )
+        return "flumine caricato nel processo del feed"
+
+    def allarme_quote(self) -> Optional[str]:
+        """Il messaggio di ``last_error`` quando mancano le quote sui mercati
+        CORE (None = tutto a posto). Il 17/09 ``last_error`` era null mentre il
+        feed era morto da ore: il badge STREAM verde ha reso il blackout
+        invisibile."""
+        n = len(self.mercati_allarme)
+        if not n:
+            return None
+        return f"quote assenti da {self.allarme_eta_s:.0f}s su {n} mercati"
+
     def relevant_market_ids(self, sport: str, now: datetime) -> List[str]:
         """Mercati del sport che servono QUOTE adesso (scanner.is_relevant_market),
         ordinati per priorità (in-play prima, poi per KO). Il resto del catalogo
@@ -466,7 +624,8 @@ class Scanner:
             now or datetime.now(timezone.utc), self.pre_ko_ou_hours,
         )
 
-    def refresh_stream_set(self, now: datetime) -> None:
+    def refresh_stream_set(self, now: datetime,
+                           per_sport: Optional[Dict[str, List["tuple[tuple, str]"]]] = None) -> None:
         """Subscription stream = mercati rilevanti di TUTTI gli sport insieme.
 
         Parte SOLO quando tutti gli sport hanno un catalogo caricato (warm-up in
@@ -485,23 +644,46 @@ class Scanner:
         # potevano essere troncate dallo shard con il pool pieno (audit H5)
         ranked: List["tuple[tuple, str]"] = []
         for sport in self.sports:
-            ranked.extend(self.ranked_relevant_markets(sport, now))
+            ranked.extend(
+                self.ranked_relevant_markets(sport, now) if per_sport is None
+                else per_sport.get(sport, [])
+            )
         ranked.sort()
         ids = [mid for _, mid in ranked]
         if ids:
             self.stream.set_markets(ids)
 
-    def _apply_market_book(self, book: Any) -> None:
-        """Applica UN MarketBook (dal poll REST o dallo STREAM) allo stato evento."""
+    def _segna_prezzi(self, market_id: Any, dallo_stream: bool) -> None:
+        """Questo mercato ha appena consegnato un book CON PREZZI."""
+        mid = str(market_id)
+        ora = time.monotonic()
+        self.price_mono[mid] = ora
+        if dallo_stream:
+            self.stream_price_mono[mid] = ora
+
+    def _segna_book_vuoto(self, market_id: Any, dallo_stream: bool) -> None:
+        """Book SENZA un solo prezzo: si conta, non si applica come quota."""
+        if dallo_stream:
+            mid = str(market_id)
+            self.book_vuoti[mid] = self.book_vuoti.get(mid, 0) + 1
+        else:
+            self.book_vuoti_rest += 1
+
+    def _apply_market_book(self, book: Any, dallo_stream: bool = False) -> None:
+        """Applica UN MarketBook (dal poll REST o dallo STREAM) allo stato evento.
+
+        ``dallo_stream`` distingue la FONTE: solo un prezzo arrivato dallo
+        stream rende un mercato "coperto" e tiene fermo il poll REST.
+        """
         found = self.market_meta.get(getattr(book, "market_id", None))
         if not found:
             return
         sport, meta = found
         if meta.get("kind") in ("cs", "ht"):
-            self._apply_cs_book(meta, book)
+            self._apply_cs_book(meta, book, dallo_stream)
             return
         if meta.get("kind") == "opp":
-            self._apply_opp_book(meta, book)
+            self._apply_opp_book(meta, book, dallo_stream)
             return
         pairs: Dict[int, Dict[str, Any]] = {}
         for r in getattr(book, "runners", None) or []:
@@ -522,14 +704,34 @@ class Scanner:
         }
         ev = self.events.setdefault(meta["event_id"], {})
         ev["sport"] = sport
+        # la DEFINIZIONE si applica SEMPRE: e' l'unica cosa che un book di sola
+        # marketDefinition porta di sicuro, ed e' informazione buona
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
         ev["mo_total_matched"] = scanner.num_or_none(getattr(book, "total_matched", None))
+        ora_ms = int(self._ora() * 1000)
+        # 17/09 - UN BOOK SENZA PREZZI NON E' UN AGGIORNAMENTO DI QUOTE.
+        # betfairlightweight, su un messaggio di sola ``marketDefinition``, crea
+        # i runner dalla definizione (selection_id e status presenti) con le
+        # scalette VUOTE e pubblica comunque il MarketBook
+        # (streaming/cache.py:314-351, streaming/stream.py:211-215).
+        # Applicarlo cancellava le quote buone E faceva avanzare ``odds_ts_ms``,
+        # cioe' dichiarava fresche quote che non esistevano: le uscite finivano
+        # in ``prezzi_non_nel_feed`` per sempre e nessuno lo vedeva.
+        if not scanner.has_any_price(pairs):
+            # il blocco nasce UNA volta sola, perche' la riga dica onestamente
+            # "quote assenti" - ma senza timestamp di prezzo
+            ev.setdefault("odds", odds)
+            ev["odds_vuote_ms"] = ora_ms
+            self._segna_book_vuoto(meta["market_id"], dallo_stream)
+            return
         # ts dell'ULTIMO CAMBIO delle quote 1X2 (non dell'ultimo poll): il motore
         # opportunità penalizza i prezzi fermi, il write-on-change resta pulito
         if ev.get("odds") != odds:
-            ev["odds_ts_ms"] = int(self._ora() * 1000)
+            ev["odds_ts_ms"] = ora_ms
         ev["odds"] = odds
+        ev["odds_seen_ms"] = ora_ms          # ultima osservazione CON prezzi
+        self._segna_prezzi(meta["market_id"], dallo_stream)
         # riferimento pre-KO: aggiorna pre-KO, congela al primo in-play
         ev["pre_ko"] = scanner.freeze_pre_ko(
             ev.get("pre_ko"), ev["inplay"], odds if sport == "calcio" else None,
@@ -540,7 +742,8 @@ class Scanner:
             adesso_iso=(None if self.orologio is None else self._ora_iso()),
         )
 
-    def _apply_cs_book(self, meta: Dict[str, Any], book: Any) -> None:
+    def _apply_cs_book(self, meta: Dict[str, Any], book: Any,
+                       dallo_stream: bool = False) -> None:
         """MarketBook CORRECT_SCORE (stream o REST) → blocco `cs` COMPLETO
         dell'evento (tutte le selezioni con id/nome/prezzi/size/stato runner)."""
         ev = self.events.get(meta["event_id"])
@@ -556,13 +759,27 @@ class Scanner:
             }
             for r in getattr(book, "runners", None) or []
         ]
+        # 17/09 - stesso difetto del MATCH_ODDS: un book di sola definizione
+        # sostituiva il blocco Correct Score/Half Time con uno senza prezzi, ed
+        # e' su quello che Omega decide se coprirsi. Si aggiorna SOLO lo stato.
+        if not scanner.has_any_price(selections):
+            self._segna_book_vuoto(meta["market_id"], dallo_stream)
+            blk = ev.get(meta.get("kind") or "cs")
+            if isinstance(blk, dict):
+                blk["status"] = getattr(book, "status", None)
+                blk["inplay"] = bool(getattr(book, "inplay", False))
+                return
+            # nessun blocco ancora: nasce (onesto, senza prezzi) una volta sola
+        else:
+            self._segna_prezzi(meta["market_id"], dallo_stream)
         ev[meta.get("kind") or "cs"] = scanner.build_cs_block(
             meta["market_id"], getattr(book, "status", None), selections,
             inplay=bool(getattr(book, "inplay", False)),
             total_matched=scanner.num_or_none(getattr(book, "total_matched", None)),
         )
 
-    def _apply_opp_book(self, meta: Dict[str, Any], book: Any) -> None:
+    def _apply_opp_book(self, meta: Dict[str, Any], book: Any,
+                        dallo_stream: bool = False) -> None:
         """MarketBook di un mercato a gol (Over/Under, Gol/NoGol, 1X2 1T) → blocco
         generico nel dizionario `opp` dell'evento (poi diviso in ou/btts/ht_result).
 
@@ -587,6 +804,20 @@ class Scanner:
             }
             for r in getattr(book, "runners", None) or []
         ]
+        store = ev.setdefault("opp", {})
+        # 17/09 - un book di sola definizione NON sostituisce il blocco a gol:
+        # sono le linee su cui Mike si copre e su cui si esce. Si aggiorna solo
+        # lo stato del mercato, e il book vuoto si conta.
+        if not scanner.has_any_price(selections):
+            self._segna_book_vuoto(meta["market_id"], dallo_stream)
+            prec = store.get(meta["market_id"])
+            if isinstance(prec, dict):
+                prec["status"] = getattr(book, "status", None)
+                prec["inplay"] = bool(getattr(book, "inplay", False))
+                prec["seen_ms"] = int(self._ora() * 1000)
+                return
+        else:
+            self._segna_prezzi(meta["market_id"], dallo_stream)
         blk = scanner.build_market_block(
             meta["market_id"], getattr(book, "status", None), selections,
             inplay=bool(getattr(book, "inplay", False)),
@@ -596,7 +827,6 @@ class Scanner:
         )
         if blk is None:
             return
-        store = ev.setdefault("opp", {})
         prev = store.get(meta["market_id"])
         prev_ts = prev.get("ts_ms") if isinstance(prev, dict) else None
         # i marker ``decided``/``for_mike`` li aggiunge _prune_opp_blocks sul
@@ -634,6 +864,8 @@ class Scanner:
                 price_projection=filters.price_projection(price_data=["EX_BEST_OFFERS"]),
             )
             for b in books or []:
+                # dallo_stream=False: un prezzo preso via REST NON rende
+                # "coperto" il mercato (il REST e' il fallback, non la fonte)
                 self._apply_market_book(b)
             time.sleep(_REQ_DELAY)
         st.books_ts = time.monotonic()
@@ -1023,7 +1255,7 @@ class Scanner:
             return self._opp_model
         self._opp_atlas_loaded = True
         try:
-            from Betfair.stream.scalper.theta_bot import load_hazard_atlas
+            from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
 
             from .opportunity import OpportunityModel
         except Exception as e:  # noqa: BLE001
@@ -1301,6 +1533,19 @@ class Scanner:
             "stream_markets": len(self.stream.covered_ids()) if self.stream else 0,
             "stream_connections": self.stream.active_connections() if self.stream else 0,
             "stream_capacity": self.stream.capacity if self.stream else 0,
+            # 17/09 - un book SENZA prezzi e' un evento da CONTARE, non da
+            # subire, e i mercati che non hanno quote vanno detti per NOME.
+            "stream_books_vuoti": sum(self.book_vuoti.values()),
+            "rest_books_vuoti": self.book_vuoti_rest,
+            "stream_mercati_senza_quote": self.mercati_senza_quote[:_SENZA_QUOTE_ELENCO_MAX],
+            "stream_mercati_senza_quote_n": len(self.mercati_senza_quote),
+            "stream_senza_quote_eta_s": round(self.senza_quote_eta_s, 1),
+            # i soli mercati CORE: sono questi a fare allarme e badge REST
+            "stream_mercati_allarme": self.mercati_allarme[:_SENZA_QUOTE_ELENCO_MAX],
+            "stream_mercati_allarme_n": len(self.mercati_allarme),
+            # flumine nel processo del feed = ladder a dizionari (17/09)
+            "flumine_caricato": self.flumine_caricato(),
+            "stream_shards": self.stream.stato_shard() if self.stream else [],
             # mercati a gol sotto quote per il motore opportunità (peso sul pool)
             "opp_events": len(self.opp_markets),
             "opp_markets": sum(len(m) for m in self.opp_markets.values()),
@@ -1374,14 +1619,33 @@ class Scanner:
             # QUOTE: stream ufficiale (push, conflate 1s) sui mercati rilevanti;
             # poll REST come FALLBACK per i mercati rilevanti che lo stream non
             # copre (oltre il cap, o stream non in salute) — mai un buco dati.
+            # la classifica dei mercati rilevanti si calcola UNA volta per giro
+            # e la riusano sia lo stream sia il fallback REST (prima la
+            # calcolava refresh_stream_set e poi di nuovo il ciclo dei book)
+            ranked_per_sport = {
+                sport: self.ranked_relevant_markets(sport, now) for sport in self.sports
+            }
+            rilevanti = {
+                sport: [mid for _, mid in r] for sport, r in ranked_per_sport.items()
+            }
             with self.crono.fase("stream"):
-                self.refresh_stream_set(now)
+                self.refresh_stream_set(now, ranked_per_sport)
                 if self.stream is not None:
                     for b in self.stream.drain():
-                        self._apply_market_book(b)
-            stream_ok = self.stream is not None and self.stream.healthy()
-            self.last_source = "stream" if stream_ok else "rest"
-            covered = self.stream.covered_ids() if self.stream is not None else set()
+                        self._apply_market_book(b, dallo_stream=True)
+            # 17/09 - COPERTURA PER MERCATO. Prima: `covered_ids()` sulla salute
+            # del SOCKET, cioe' gli heartbeat ogni 5 s; una connessione viva che
+            # non consegnava quote dichiarava coperti tutti i mercati e
+            # `poll_books` non partiva MAI (fasi_p95.book = 0.0 per ore).
+            tutti_rilevanti = [mid for ids in rilevanti.values() for mid in ids]
+            covered, in_allarme = self._aggiorna_copertura(now_mono, tutti_rilevanti)
+            # il badge STREAM/REST: "rest" quando ci si ripiega davvero, cioe'
+            # quando lo stream non consegna o un mercato CORE resta senza quote.
+            # Una linea a gol illiquida non deve far diventare rosso il badge.
+            self.last_source = (
+                "stream" if (self.stream is not None and not in_allarme
+                             and self.stream.serving()) else "rest"
+            )
             any_inplay_c = any(
                 e.get("sport") == "calcio" and e.get("inplay") for e in self.events.values()
             )
@@ -1396,9 +1660,7 @@ class Scanner:
                 st = self.sports[sport]
                 if now_mono - st.books_ts <= period:
                     continue
-                uncovered = [
-                    mid for mid in self.relevant_market_ids(sport, now) if mid not in covered
-                ]
+                uncovered = [mid for mid in rilevanti[sport] if mid not in covered]
                 if uncovered:
                     try:
                         with self.crono.fase("book"):
@@ -1472,7 +1734,12 @@ class Scanner:
             # (ogni 2 s, mai dietro alla rete); qui resta solo per --once/test.
             if self.score_worker is None and now_mono - self.status_ts > _STATUS_PERIOD_SEC:
                 self.publish_status(len(self.written_sig))
-            self.last_error = None
+            # 17/09 - un giro andato bene non vuol dire che ci siano le QUOTE:
+            # se mancano, lo si scrive qui, dove prima si azzerava e basta
+            self.last_error = self.controlla_flumine() or self.allarme_quote()
+            if self.last_error and in_allarme:
+                logger.warning("[safe-scan] %s (primi: %s)",
+                               self.last_error, ", ".join(in_allarme[:5]))
         except Exception as e:  # noqa: BLE001 - lo scanner non muore mai per un giro storto
             self.last_error = f"{type(e).__name__}: {str(e)[:140]}"
             logger.warning("[safe-scan] ciclo KO: %s", self.last_error)

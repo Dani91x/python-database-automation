@@ -200,9 +200,39 @@ def parse_iso(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def livello_campo(levels: Any, campo: str) -> Any:
+    """Un campo del MIGLIOR livello del ladder, in ENTRAMBE le forme in cui gira.
+
+    Betfair manda ``{"price": .., "size": ..}``; betfairlightweight lo
+    trasforma in un ``PriceSize`` con gli attributi. Ma ``flumine``, appena
+    importato, SOSTITUISCE ``RunnerBookEX`` con la sua versione "pigra"
+    (``flumine/patching.py``, da ``flumine/__init__.py:13``), che lascia i
+    livelli come DIZIONARI.
+
+    IL 17/09/2026 E' SUCCESSO DAVVERO, ed e' la causa del blackout delle quote
+    su tutto il feed: ``safe_strategy/service.py`` caricava l'Atlante Hazard da
+    ``Betfair.stream.scalper.theta_bot``, quel package importava ``scalper_bot``
+    -> ``from flumine import BaseStrategy``, e da quell'istante il processo del
+    feed leggeva ``None`` su OGNI prezzo (misurato: un ladder
+    ``{'price': 3.2, 'size': 821.19}`` letto come ``None``), da stream e da
+    REST, in silenzio, per ore.
+    La causa e' stata tolta alla radice (``Betfair/stream/scalper/hazard_atlas.py``,
+    modulo puro, + import pigro nel package). Questa e' la difesa in profondita':
+    il giorno che qualcuno reintroduce un import di flumine nel processo del
+    feed, i prezzi si leggono lo stesso.
+    """
+    if not levels:
+        return None
+    top = levels[0]
+    if isinstance(top, dict):
+        return top.get(campo)
+    return getattr(top, campo, None)
+
+
 def best_price(levels: Any) -> Optional[float]:
     try:
-        return float(levels[0].price) if levels else None
+        v = livello_campo(levels, "price")
+        return float(v) if v is not None else None
     except Exception:  # noqa: BLE001 - struttura inattesa = prezzo assente
         return None
 
@@ -211,7 +241,8 @@ def best_size(levels: Any) -> Optional[float]:
     """Importo (EUR) disponibile al MIGLIOR prezzo: è quanto si può abbinare
     SUBITO a quella quota (best offers, livello 0)."""
     try:
-        return round(float(levels[0].size), 2) if levels else None
+        v = livello_campo(levels, "size")
+        return round(float(v), 2) if v is not None else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -227,6 +258,46 @@ def price_pair(ex: Any) -> Dict[str, Optional[float]]:
         "back_size": best_size(atb),
         "lay_size": best_size(atl),
     }
+
+
+def _pair_con_prezzo(p: Any) -> bool:
+    """Una coppia back/lay porta almeno UN prezzo utilizzabile."""
+    if isinstance(p, dict):
+        return p.get("back") is not None or p.get("lay") is not None
+    return False
+
+
+def has_any_price(sorgente: Any) -> bool:
+    """Almeno UN prezzo (back o lay) su almeno UNA selezione.
+
+    Serve a distinguere un aggiornamento di QUOTE da un book di sola
+    DEFINIZIONE: betfairlightweight, quando il messaggio porta solo
+    ``marketDefinition`` e nessun ``rc``, crea comunque i runner dalla
+    definizione (con selection_id e status) e pubblica il MarketBook con le
+    scalette VUOTE (streaming/cache.py:314-351 + streaming/stream.py:211-215).
+    Applicarlo come se fosse un prezzo cancella le quote buone: e' successo il
+    17/09/2026 alle 12:47:04 UTC su TUTTO il feed (tennis, calcio, mercati a
+    gol) ed e' sopravvissuto al riavvio delle 13:13 UTC.
+
+    Accetta le tre forme con cui il prezzo gira nel servizio:
+      * un MarketBook (oggetto con ``runners``, stream o REST);
+      * il dizionario ``{selection_id: pair}`` di ``_apply_market_book``;
+      * la lista di selezioni gia' costruita (``_apply_cs_book``/``_apply_opp_book``).
+    """
+    if sorgente is None:
+        return False
+    runners = getattr(sorgente, "runners", None)
+    if runners is not None and not isinstance(sorgente, (dict, list, tuple)):
+        for r in runners or []:
+            if _pair_con_prezzo(price_pair(getattr(r, "ex", None))):
+                return True
+        return False
+    valori = sorgente.values() if isinstance(sorgente, dict) else sorgente
+    try:
+        iteratore = iter(valori)
+    except TypeError:
+        return False
+    return any(_pair_con_prezzo(v) for v in iteratore)
 
 
 def selection_sides(runners: List[Dict[str, Any]]) -> Dict[str, Optional[int]]:

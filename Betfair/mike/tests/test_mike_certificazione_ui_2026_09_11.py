@@ -668,10 +668,23 @@ def test_storico_le_rpc_di_mike_sono_nella_migrazione_v2_con_tutti_gli_argomenti
     assert "public.trading_day_trades('mike_trades', NULL, p_day, 'placed')" in day
 
 
+def _rpc_call_pattern(rpc_name: str, *params: str) -> re.Pattern[str]:
+    """Chiamata `rpc('<rpc_name>', { ...<params>... })`, indifferente a spazi/a capo.
+
+    I token vanno cercati NELL'ORDINE dato (contratto), ma senza pretendere che
+    siano su un'unica riga ne' gli unici parametri passati: la UI puo' scrivere
+    la chiamata su piu' righe e aggiungere altri parametri (es. p_mode).
+    """
+    tokens = [re.escape(f"rpc('{rpc_name}',"), re.escape("{")] + [
+        re.escape(p) for p in params
+    ]
+    return re.compile(r"\s*".join(tokens))
+
+
 def test_storico_la_ui_chiama_le_rpc_con_i_parametri_della_migrazione():
     hist = (FRONTEND / "lib" / "dailyHistory.ts").read_text(encoding="utf-8")
-    assert "rpc('get_mike_daily', { p_from: from, p_to: to })" in hist
-    assert "rpc('get_mike_day_trades', { p_day: day })" in hist
+    assert _rpc_call_pattern("get_mike_daily", "p_from: from,", "p_to: to").search(hist)
+    assert _rpc_call_pattern("get_mike_day_trades", "p_day: day").search(hist)
     # e l'errore che arriva senza migrazione e' LEGGIBILE (checklist 8)
     assert "mike_history_v2.sql" in MIKE_TS
     assert "withMikeHistoryError(fetchMikeDaily)" in PAGE_TS

@@ -2931,18 +2931,18 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
             return False   # assestamento post-evento: si aspetta
     if not XE.feed_is_fresh(row, now_ts, scanner_ts):
         if decision is not None:
-            _exit_wait(db, trade, meta, decision, "feed_non_fresco")
+            _exit_wait(db, trade, meta, decision, "feed_non_fresco", now_ts)
         return False
     if XE.market_open(trade, payload) is False:
         if decision is not None:
-            _exit_wait(db, trade, meta, decision, "mercato_sospeso")
+            _exit_wait(db, trade, meta, decision, "mercato_sospeso", now_ts)
         return False
     prices = prices_from_row(row, market_type=str(trade.get("market_type") or ""),
                              selection_id=int(trade.get("selection_id") or 0),
                              market_id=trade.get("market_id"))
     if not prices or not (prices.get("back") or prices.get("lay")):
         if decision is not None:
-            _exit_wait(db, trade, meta, decision, "prezzi_non_nel_feed")
+            _exit_wait(db, trade, meta, decision, "prezzi_non_nel_feed", now_ts)
         return False
     if decision is None:
         decision, info = _decide_model_exit(db=db, trade=trade, meta=meta, prices=prices,
@@ -2957,7 +2957,7 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
         if isinstance(meta.get(HOLD_KEY), dict):
             _write_meta_key(db, trade, meta, HOLD_KEY, None)   # si esce: niente più attesa
         if now_ts < float(decision.not_before_ts or 0.0):
-            _exit_wait(db, trade, meta, decision, "assestamento_post_evento")
+            _exit_wait(db, trade, meta, decision, "assestamento_post_evento", now_ts)
             return False
     else:
         hold, info = _model_gate(db=db, trade=trade, meta=meta, decision=decision,
@@ -2976,7 +2976,7 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
     if siblings:
         sib_prices = _combo_leg_prices(siblings, rows_by_event=None, row=row)
         if sib_prices is None:
-            _exit_wait(db, trade, meta, decision, "combo_prezzi_incompleti")
+            _exit_wait(db, trade, meta, decision, "combo_prezzi_incompleti", now_ts)
             return False
     # CERT. 14/09 — CANCELLETTO DI APPROVAZIONE (SOLO TENNIS, SOLO CHIUSURE).
     # Qui l'uscita e' matura e passerebbe a mercato. Col cancelletto acceso si
@@ -3795,13 +3795,23 @@ def combo_siblings(db, trade: dict[str, Any],
     return out
 
 
+# 17/09 - un'ATTESA che dura si ridice. ``prezzi_non_nel_feed`` era scritto una
+# volta sola, al cambio di motivo: quel giorno e' stato loggato alle 12:47 e poi
+# piu' niente, mentre le uscite restavano ferme per ore. Un'attesa che non si
+# ripete e' indistinguibile da un'attesa finita.
+_EXIT_WAIT_RILOG_S = 60.0
+
+
 def _exit_wait(db, trade: dict[str, Any], meta: dict[str, Any], decision: XE.ExitDecision,
-               why: str) -> None:
-    """Log 'exit_wait' solo al CAMBIO di motivo (niente rumore a ogni ciclo)."""
+               why: str, now_ts: Optional[float] = None) -> None:
+    """Log 'exit_wait' al CAMBIO di motivo e poi almeno una volta al minuto
+    finche' l'attesa dura (niente rumore a ogni ciclo, e nessun silenzio)."""
+    ora = float(now_ts) if now_ts is not None else time.time()
     tr = meta.get(XE.TRACK_KEY) or {}
-    if tr.get("wait_reason") == why:
+    stesso = tr.get("wait_reason") == why
+    if stesso and ora - float(tr.get("wait_log_ts") or 0.0) < _EXIT_WAIT_RILOG_S:
         return
-    tr = {**tr, "wait_reason": why}
+    tr = {**tr, "wait_reason": why, "wait_log_ts": ora}
     meta = {**meta, XE.TRACK_KEY: tr}
     try:
         db.update_trade(int(trade["id"]), meta=meta)
@@ -3809,7 +3819,8 @@ def _exit_wait(db, trade: dict[str, Any], meta: dict[str, Any], decision: XE.Exi
     except Exception:  # noqa: BLE001
         pass
     _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
-                           "reason": decision.reason, "wait": why})
+                           "reason": decision.reason, "wait": why,
+                           "ripetuto": bool(stesso)})
 
 
 # CERT. 14/09 — CANCELLETTO DI APPROVAZIONE SULLE CHIUSURE DEL TENNIS.
@@ -4601,6 +4612,57 @@ def _sig(signal: Any, name: str, default: Any = None) -> Any:
 # dedupe dei log 'skip': {(event_id, signal_key): {"reason", "logged_ts", "seen_ts"}}
 _SKIP_LOG_STATE: dict[tuple[str, str], dict[str, Any]] = {}
 _SKIP_LOG_PRUNE_S = 600.0
+# 17/09 - "QUOTE ASSENTI" SI DICE, non si tace. Ogni minuto per evento: meno
+# sarebbe rumore, di piu' e' un silenzio. Non usa ``skip_log_interval_s`` (300 s
+# di default) perche' questo non e' un segnale scartato per strategia: e' il
+# feed che non porta i prezzi, e il trader deve accorgersene subito.
+_QUOTE_ASSENTI_LOG_S = 60.0
+
+
+def _prezzo_vivo(b: Any) -> bool:
+    """Un blocco selezione porta almeno un prezzo utilizzabile."""
+    return isinstance(b, dict) and (b.get("back") is not None or b.get("lay") is not None)
+
+
+def _ha_quote(payload: dict[str, Any]) -> bool:
+    """La riga porta almeno UN prezzo utilizzabile, su un mercato qualsiasi.
+
+    17/09 - la riga c'era, fresca (i punteggi continuavano ad arrivare) e con i
+    ``selection_id`` giusti, ma ``odds.p1``/``p2`` (tennis), ``odds.home/draw/
+    away`` e i blocchi a gol (calcio) erano TUTTI ``null``: lo scanner
+    applicava book di sola ``marketDefinition``. ``TennisModel.evaluate``
+    tornava ``[]`` in silenzio e il cecchino calcio non guardava nemmeno la
+    riga (gate su ``odds_ts_ms``, congelato): nessuna opportunita', quindi
+    nessuno ``skip``, quindi nessun modo di sapere perche' il bot taceva.
+
+    Il controllo e' volutamente LARGO - basta un prezzo ovunque - perche' una
+    partita di calcio puo' legittimamente avere solo i mercati a gol nel feed:
+    restringerlo al 1X2 spegnerebbe il motore opportunita' su quelle righe, e
+    quella sarebbe un'alterazione della strategia, non una protezione.
+    """
+    odds = payload.get("odds")
+    if isinstance(odds, dict) and any(_prezzo_vivo(b) for b in odds.values()):
+        return True
+    for chiave in ("ou", "btts", "ht_result", "cs", "ht"):
+        blocco = payload.get(chiave)
+        blocchi = blocco if isinstance(blocco, list) else [blocco]
+        for blk in blocchi:
+            if not isinstance(blk, dict):
+                continue
+            if any(_prezzo_vivo(sel) for sel in (blk.get("selections") or [])):
+                return True
+    return False
+
+
+def _skip_quote_assenti(db, now: datetime, event_id: str, sport: str,
+                        payload: dict[str, Any]) -> None:
+    """Un solo ``skip`` al minuto per evento, con il motivo per esteso."""
+    _log_skip(db, now, {"skip_log_interval_s": _QUOTE_ASSENTI_LOG_S},
+              {"event_id": event_id, "sport": sport,
+               "reason": "quote_assenti", "signal_key": "quote_assenti",
+               "event_name": payload.get("event_name"),
+               "mo_market_id": payload.get("mo_market_id"),
+               "odds_ts_ms": payload.get("odds_ts_ms")})
 
 # CERTIFICAZIONE 12/09 — NOMI DELLE PARTITE PER L'ATTIVITA'.
 # Il servizio scriveva solo l'``event_id`` nei log: nella scheda Attivita' il
@@ -5663,6 +5725,11 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
         if sport == "tennis":
             if tennis_model is None:
                 continue
+            # 17/09 - LA RIGA C'E' MA I PREZZI NO. ``evaluate`` tornerebbe []
+            # in silenzio e il trader non saprebbe MAI perche' il bot tace.
+            if not _ha_quote(payload):
+                _skip_quote_assenti(db, now, event_id, "tennis", payload)
+                continue
             try:
                 t_opps = _tag(tennis_model.evaluate(payload, now_ts), "tennis")
             except Exception as ex:  # noqa: BLE001
@@ -5691,6 +5758,12 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                     scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
             continue
         if sport != "calcio" or model is None or opp_mod is None:
+            continue
+        # 17/09 - stesso silenzio del tennis, per un'altra strada: senza prezzi
+        # 1X2 il modello non produce nulla e il cecchino non rivaluta la riga
+        # (gate su ``odds_ts_ms``, che con i book vuoti resta congelato).
+        if not _ha_quote(payload):
+            _skip_quote_assenti(db, now, event_id, "calcio", payload)
             continue
         out["events"] += 1
         seen.add(event_id)

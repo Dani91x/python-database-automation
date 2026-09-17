@@ -1050,6 +1050,7 @@ export default function SafeStrategy() {
                             isCashOutPending={bot.isCashOutPending}
                             freshnessOf={freshnessOf}
                             requests={bot.requests}
+                            activity={bot.activity}
                             onCashOut={cashOut}
                             onCancel={cancelReserve}
                             emptyText={emptyText}

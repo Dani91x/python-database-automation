@@ -57,6 +57,17 @@ scenari → paper come specchio della realtà → live solo se il paper conferma
 - Nessun processo, registratore o runner nuovo senza permesso esplicito.
 - Mai uccidere backtest o replay lunghi senza chiedere.
 - Le migrazioni SQL si scrivono in `migrations/` e le applica l'utente.
+- **Worktree (17/09, incidente)**: i delegati in worktree creano JUNCTION a `.venv` e
+  `frontend/node_modules` del checkout principale. **MAI `git worktree remove --force`** e mai
+  cancellazioni ricorsive di un worktree: prima `cmd /c rmdir <worktree>\.venv` e
+  `cmd /c rmdir <worktree>\frontend\node_modules` (rmdir toglie solo il collegamento), poi
+  `git worktree remove`; dopo, verificare che `.venv/Scripts/python.exe` e
+  `frontend/node_modules` del principale esistano. Mai `npm install`/`npm ci`/`pip install`
+  nel checkout principale mentre l'app è viva senza dirlo all'utente.
+- **Più sessioni sullo stesso repo (17/09)**: ogni sessione ha un DOMINIO di file dichiarato
+  in `CRONOSTORIA.md`; un file fuori dal proprio dominio si tocca SOLO dopo aver avvisato
+  l'altra sessione (SendMessage) e ricevuto conferma; le scritture su `CRONOSTORIA.md` vanno
+  ciascuna nel proprio blocco; prima di ogni commit `git status` e nessun file altrui in stage.
 - Test: `python -m pytest Betfair/ -q -p no:cacheprovider`; `frontend/`: `npx vitest run`,
   `npx tsc -p tsconfig.app.json --noEmit` (**0 errori** dal 17/09: non regredire, mai `@ts-ignore`/`any` per zittire).
 

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git worktree remove*)",
+      "Bash(rm -rf .claude/worktrees*)",
+      "Bash(Remove-Item*worktrees*)"
+    ]
+  }
+}

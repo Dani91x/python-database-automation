@@ -82,7 +82,7 @@ def atlante() -> Dict[str, Any]:
     global _ATLAS
     if _ATLAS is None:
         try:
-            from Betfair.stream.scalper.theta_bot import load_hazard_atlas
+            from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
 
             _ATLAS = load_hazard_atlas(ATLAS_PATH) or {}
         except Exception as ex:  # noqa: BLE001 - l'atlante non deve mai fermare lo scanner

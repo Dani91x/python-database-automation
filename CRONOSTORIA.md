@@ -286,6 +286,221 @@ l'invio; (8) via al percorso «al ms» dentro C3-F1 (+7-10 gg). Tennis: (9) `ten
 spento nei parametri: accenderlo o no (scelta di rischio dell'utente). Più: orologio del PC
 da sincronizzare; push del commit.
 
+- **SAFE TENNIS (h14:30, decisioni dell'utente)**: (1) uscita al singolo game perso: resta SPENTA; (2) NESSUN alert sul prezzo: strategia come da manuale, eventualmente in futuro; (11) replay con competizione dichiarata: va bene così; (7) bet delay per mercato dal betDelay: ok;
+  (3) riserva DB PRIMA dell'invio; (4) SÌ al percorso «al ms» dentro C3-F1 → costruzione lanciata
+  (Opus 5, worktree: L0/L1/F1/L3/L4/L6 + F2 paper Safe via coda + F5 parità); (12) allinea paper
+  e live (stessa costruzione); (13) i 4 bot tennis: audit maniacale + allineamento al banco come
+  Safe, su una partita → lanciato (Opus 5, worktree); (9) attese e buchi del book visibili al
+  trader → lanciato (Sonnet 5, UI); (7) bet delay Betfair: doc ufficiale «1-12 s per mercato,
+  valore nel campo betDelay del marketDefinition/listMarketBook»; nelle registrazioni tennis 3 s
+  (52 mercati) e 5 s (7): il valore vero è quello per mercato, il bot lo leggerà (L1). NON
+  verificabile da qui (geoblock ADM) la newsletter Betfair 08/2025 sui «passive bet delays»
+  (ordini make senza ritardo al 100 % dei tornei tennis): da confermare dal vivo.
+  **PROMEMORIA per l'utente**: (5) prova dal vivo del cash-out globale con stake minimo;
+  (8) sincronizzare l'orologio del PC. Sentinella live FERMATA su ordine dell'utente (h14:35):
+  avvisa lui.
+
+- **OMEGA — MANDATO DELL'UTENTE (h15, ordini)**: «Omega è un asset e dobbiamo usarlo; prodotto
+  rivoluzionario per piccoli profitti costanti». Due ingressi a partita (1T e 2T); **stake FISSO
+  1 € in lay a qualunque quota**; range di quota e finestre di tempo: tolti se peggiorativi (lo
+  sono, misurato); obiettivo = tutto il palinsesto di giornata con un target per partita, come
+  metrica (altri bot concorrono all'obiettivo); **NON NEGOZIABILI**: massività («più posizioni
+  possibili», «una loss lo compromette totalmente») e **SCHEDA IN UI DOVE L'UTENTE APPROVA LE
+  USCITE in profit e in loss** come Safe tennis, chiusura dalla scheda. **Omega passa alla
+  sessione dedicata `admin-b1`** (coordinatore Fable 5.1 + Opus 5/Sonnet 5): mandato completo in
+  `Betfair/omega/MANDATO_OMEGA_V4_2026-09-17.md` (metodo, stato, programma a 30 punti, decisioni,
+  documenti, prima ora). `admin-6d` resta su Safe/Mike/UI/banco e sui file condivisi.
+
+- **INCIDENTE QUOTE (h14:47 locali = 12:47Z)**: TUTTE le righe in gioco di `safe_strategy_scan`
+  (4 calcio, 11 tennis) hanno quote nulle e `mo_total_matched` 0 dalle 12:47-12:48Z (4 doppi tennis
+  dal riavvio 12:17Z); punteggi freschi; scanner dichiara stream sano (heartbeat) e `last_error`
+  null. Betfair HA i prezzi (REST 13:03Z: Barrena 1,04/1,05, matched 5.877 €). Nessun file di
+  produzione dello scanner (`safe_strategy/service.py`, `stream.py`) toccato oggi: difetto
+  preesistente scatenato dal cambio del set di mercati (risottoscrizione) o dal ripiego REST.
+  Effetto: Safe tennis non entra e non può chiudere; Mike senza quote sulle sue partite.
+  Mitigazione: riavvio dell'app (utente). Diagnosi Opus 5 in corso (`INCIDENTE_QUOTE_TENNIS_
+  2026-09-17.md`) con patch proposta: mai sovrascrivere quote valide con un book vuoto, status
+  per shard, test falsificati. Reperto collaterale del coordinatore: `git worktree remove
+  --force` ha svuotato `frontend/node_modules` del checkout principale (junction): lezione in
+  memoria; reinstallato da un delegato.
+
+- **4 BOT TENNIS (h17:50, ordine dell'utente)**: «stessa trafila degli altri bot validati:
+  backtest reali, gestione di ogni possibile casistica, DEVONO ESSERE PERFETTI; i bug di
+  progettazione vanno risolti; voglio vederli in UI, indipendenti come gli altri». Audit
+  consegnato (`Betfair/stream/tennis_live/AUDIT_4_BOT_TENNIS_2026-09-17.md`, worktree
+  `agent-ab70cb4cf8bd9f258`): backtest di luglio su una COPIA di laboratorio (verdetto «no edge»
+  da rifare); 4 bot registrati e certificabili sul banco con il codice di produzione (18
+  controlli, replay Sinner-Struff: pro 0, flb 0, scalper 159 K5, swing 1.168 K5); 6 bug
+  corretti e falsificati; 3 reperti money-critical (swing 7,57 € abbandonati, scalper residuo
+  accumulato, flb/scalper senza freno dopo rifiuto: 8.132/20.534 tentativi); 6 divergenze di
+  strategia → decise dal delegato nel senso del DOSSIER con motivo (ordine utente: niente
+  domande); storico P&L (migrazione scritta), ref specchio stabile, Control Room per bot
+  (interruttore paper/live, stake, stato, storico). Fasi F1-F4 lanciate (Opus 5, worktree).
+
+- **INCIDENTE QUOTE — CAUSA VERA E FIX CERTIFICATO (h19:05)**: `service.py:1226` importava
+  pigramente l'atlante hazard da `stream/scalper/theta_bot` → `scalper/__init__` → `scalper_bot`
+  → `flumine`, che riscrive `RunnerBookEX` in forma a dizionari → `scanner.best_price` (attributo
+  `.price` in `except → None`) restituiva None su OGNI runner, stream e REST, per la vita del
+  processo. Scattava alla prima valutazione delle opportunità calcio in gioco (oggi h14:47; in
+  repo dal 10/09 `99fbff8`; scalper→flumine dal 02/07): senza calcio in gioco (mattina) mai.
+  FIX (Opus 5, verificato dal coordinatore): (1) radice: `Betfair/stream/scalper/hazard_atlas.py`
+  modulo puro, `theta_bot` riesporta, package scalper con import pigro PEP 562, chiamanti
+  ripuntati (service, selezione, opportunity, `mike/dossier.py`); (2) difesa: `livello_campo` →
+  `best_price/best_size` leggono oggetti e dict; test del banco riscritto («lo scanner LEGGE
+  anche il ladder di flumine»); (3) guardia runtime `flumine_caricato` in status + `last_error`;
+  più i 5 punti precedenti: book senza prezzi mai applicato, copertura per MERCATO con REST
+  entro 20 s, risottoscrizione A CALDO senza abbattere la connessione, stato onesto (allarme solo
+  sui mercati core, elenco completo nello status, `source` rest/stream), `skip quote_assenti` e
+  `exit_wait` riloggato. 46 test nuovi + 19 falsificazioni del delegato + 2 del coordinatore
+  (guardia disattivata → 6 rossi; package eager → rosso). Prove dal vivo (dry, lock alternativo):
+  delegato 120 s allarme 0/quote su 20/20 eventi/flumine false; coordinatore 190 s 442 righe con
+  quote 0 senza, risottoscrizione a caldo a +36 s con 83 mercati senza ammutolire, un mercato in
+  allarme per 30 s dichiarato e rientrato. Suite intera **4390 verdi** (+1 test Mike sistemato:
+  contratto UI multi-riga), replay safe_tennis 15/15, mike 2/2, omega 1/1 → 0 violazioni.
+  Build frontend 19:06. **Riavvio 1 = feed** (utente); riavvio 2 con Omega T2 (~20:00).
+
+### Omega — sessione dedicata (coordinatore: admin-b1) — da compilare dalla sessione Omega
+
+**Stato di partenza verificato dal coordinatore admin-b1 (h15:40)**: master `3733f17`, 5 commit
+avanti a origin (push dell'utente); suite Omega **976 verdi** (il mandato dice 960: i 16 in più
+sono i test M1-bis/M1-ter dei commit `bd1b428`/`c894ca3`); `certifica --elenco`: `omega` OK,
+registrato con `omega_service`/`certificazione`. Non committato sul checkout (di admin-6d):
+`CRONOSTORIA.md`, `SafeTradesTable.tsx`, `SafeStrategy.tsx`, `data/pesi_m2_2026-09-17.json`.
+Letti: mandato, VISIONE (+§9), PROGETTO V4 §2-§9, M4M5M6, M1-ter §0/§1/§7-9, K_MISURATO,
+REFERTO_V3, PROCESSO §6-7, COSTITUZIONE §0-1, Mike CHECKPOINT §1-2, PAPER §C3, CHECKPOINT_O1.
+
+**Reperti del coordinatore (prima di ogni delega)**:
+- **O-1 (money-critical)**: la migrazione `omega_proposte_uscita_2026-09-16.sql` (applicata) ha
+  CREATO la tabella `omega_requests`, ma la coda che il servizio drena è `omega_manual_requests`
+  (`omega_db.pending_manual_requests:257`, `process_manual:3519`); RPC `omega_request_approve`/
+  `ignore`/`get_omega_proposte` e la UI (`omegaProposte.ts:143,191`) puntano a `omega_requests`
+  → una proposta APPROVATA (`proposed→pending`) non verrebbe MAI eseguita. Il commento della
+  migrazione («non è una tabella nuova») è falso. Da chiudere nel task 22 (una coda sola).
+- **O-2**: v3 NON è collegata al servizio (0 occorrenze di `omega_v3`/`strategy_version` in
+  `omega_service.py`); il replay la fa girare solo in ombra (`replay_registrazioni._ombra_v3`).
+- **O-3**: `_manual_cashout:3933` + `_dopo_il_cashout:4055` marcano OGNI `cashout` come chiusura
+  dell'utente (`exit_kind='manual'`, evento «chiuso dall'utente»): una proposta approvata
+  (`payload.approved_at`) spegnerebbe il bot sulla partita — stesso difetto Safe del 14/09
+  (`bot_service._uscita_del_bot_approvata:2568`).
+- **O-4**: `omega_v3.proposta_uscita:877` rifiuta con `bloccabile_non_positivo`: oggi nessuna
+  proposta in LOSS; il mandato la esige (protezione con EV tengo / bloccabile / p_lose / liability).
+- **O-5**: `reconcile_pending:2457` conferma con `_confirm_open_trade(price,size)` senza
+  `size_requested`/`size_remaining`/`betfair_updated_at` dall'ordine vero (stesso buco di
+  `_mirror_fill`, K7); `reconcile_decision` (`omega_engine.py:687`) non li restituisce.
+
+**Task lanciate (worktree, h15:45)**: T1 Opus 5 = produttore delle proposte (punto 22) + coda
+unica + proposte in loss + riconoscimento dell'approvazione (O-1, O-3, O-4); T2 Opus 5 =
+raccordo v3→servizio (O-2; infrastruttura: strategia e switch `strategy_version=2` invariati);
+T3 Sonnet 5 = consapevolezza (punto 23: O-5, R-J3, R-J6, migrazione `CHECK` cancelled/lapsed).
+Fase 2 (quota viva) NON lanciata: M1-ter dice che la politica non ha un punto di lavoro
+(fill 0,09 % al prezzo di riserva = miglior back): decisione dell'utente con i numeri.
+
+**DECISIONI DEL COORDINATORE admin-b1 (h16:40) — ordine dell'utente h16:30 via admin-6d: «deve
+trovare lui la soluzione migliore: 1 € a lay, cella per probabilità, minuti decisi dal bot;
+nessuna domanda». Ogni voce ha il numero che la motiva; diventano DEFAULT del pannello.**
+- (a) Stake: `v3_stake_eur=1.0` lay fisso (ordine).
+- (b) Mercato e fascia: SOLO Correct Score. Bias prudente in gioco (M6 §2.3) ≥ 1 solo nelle
+  fasce CS 0,5-1 % (1,11) e 1-2 % (1,11) per p_implicita al tocco; CS 0,2-0,5 % 0,97 e 2-5 %
+  0,71 (EV negativo) escluse; HT 2-5 % 0,92 esclusa, HT < 2 % zero uscite su 1.888 celle: non
+  misurabile → gamba sull'HALF_TIME_SCORE FUORI con motivo scritto. Fra le due fasce buone l'EV
+  per euro di liability (stake 1 €: liability = quota−1) è 0,15 %/€ (0,5-1 %, quote 95-190)
+  contro 0,87 %/€ (1-2 %, quote 47-95) → fascia operativa **p_impl 1-2 %** = quote **47,5-95**:
+  `v3_p_max_pct=2.0`, P minima 1,0 % (parametro `v3_p_min_pct` se banale, altrimenti tetto di
+  quota 95 con lo stesso significato). Distanza minima 2 gol (`v3_distanza_minima_gol=2`): è la
+  popolazione su cui il bias è misurato. Aggregati Any Unquoted/Other ammessi (v3 li prezza,
+  K_MISURATO li valuta). Ordinamento: v3 sceglie la P più bassa che passa il cancello; l'EV per
+  euro di liability è quasi costante dentro la fascia: non si cambia stasera.
+- (b-cap) Cap derivati: liability per gamba **95 €** (= quota 96, bordo della fascia), per
+  partita **190 €** (due gambe), aperta insieme **1.000 €** (~10 gambe), perdita giornaliera
+  **300 €** (~3 perdite di gamba: con premio 0,95 € e p_reale 1,3-1,9 % una perdita ogni 60-75
+  gambe è il ritmo atteso; tre in un giorno è il segnale di fermarsi ad aprire). Paniere: NO
+  stasera (lavoro di motore, Fase 3; M5 dice ×4,9 sul P&L: resta in coda).
+- (c) Minuti: due ingressi = due celle del Correct Score in due momenti: gamba A finestra
+  **1'-44'**, gamba B **46'-85'** (M3: 10,7 celle al 1' contro 2,4 all'86', liability metà per
+  la stessa cella; M4: nella 1-2 % aspettare vale 0; oltre l'85' il CS resta spesso senza
+  controparte). Se il motore non regge due gambe sullo stesso mercato entro sera: gamba HT
+  resta sull'HALF_TIME_SCORE ma chiusa dai dati (motivo scritto), gamba FT dal 1'. **Quotazione
+  continua (quota viva) NON stasera**: M1-ter misura fill 0,09 % al prezzo di riserva (= miglior
+  back), nessun punto di lavoro, 12-16 h di costruzione non certificabili entro sera → si prende
+  al tocco (FOK, percorso di produzione esistente). Divergenza dichiarata dall'ordine (c).
+- (d) Cancello: `v3_k_minimo=1.11` = bias prudente misurato delle fasce buone (era 2 = «bias non
+  dimostrato», che sulle registrazioni non apre mai). Sulla P v3 (gamma-Poisson fusa col
+  mercato, calibrata prudente 0,87-0,93 sulla coda) è un doppio margine. CUSUM online: NON
+  stasera (il paper misura il k realizzato per fascia; CUSUM in Fase 2).
+- (e) Uscite: proposte in profit e in loss con firma (T1); nessuna chiusura automatica.
+- (f) Job quote pre-partita e catch-up transizioni: in checklist come «da lanciare», non bloccano.
+- Paper di stasera, differenze dichiarate rispetto al live: bet delay NON applicato in paper
+  (§7.14), percorso via runner solo per le partite seguite, ripiego locale per le altre.
+
+**Checkpoint O-A (h17:10) — riferimento su master `3733f17` PRIMA di ogni merge**, eseguito dal
+coordinatore: `certifica omega 35760084 --scenari tutti --worker 3` → 14 scenari, **13 puliti,
+1 con 2 violazioni** (J3 ×2 in `rifiuti-betfair`: «ref omega-t1 non riconducibile a nessuna
+riga»: la riga di riserva viene cancellata da `_leg_certain_failure` dopo un rifiuto CERTO di
+Betfair e J3 la cerca dopo → falso positivo del controllo, già noto da `CHECKPOINT_V3:329`; in
+chiusura a T3). Mai sollecitati 17/50: A6, C3, D1-D6, E2, J6, J7, A9-A12, C5, G2 (A9-A12/C5
+arrivano con T2, G2 con T1, J6/J7 richiedono lo scenario «parziali» ⊘ stasera). K1-K7 ×1466,
+E3 ×576, E4 ×110, E5 ×108: identici a CHECKPOINT_O1. Referto:
+`scratchpad/baseline_master_35760084_tutti.txt`.
+**T3 verificata dal coordinatore (codice)**: diff riga per riga ok (4 correzioni circoscritte:
+`reconcile_decision` restituisce residuo 0,0 e istante; `reconcile_pending` LIVE/PAPER li passa;
+`candidate_customer_refs` senza ref storico per le righe con `phase`; `place_parziale` in
+`_flumine_confirm` e nel paper legacy); suite nel worktree 985 verdi; falsificazioni MIE
+(regolato senza `size_remaining` → 1 rosso; `place_parziale` flumine spento → 1 rosso), md5
+ripristinati. Replay del delegato: 4 scenari = riferimento (stesse 2 J3). Merge su master
+DOPO la chiusura di J3 (follow-up a T3, scadenza 17:45).
+
+**Checkpoint O-1 (h17:40) — T3 CERTIFICATA e SU MASTER (non committata)**. J3 chiuso come
+falso positivo del controllo: `_j3` non accusa una riga assente SOLO se il ref ha il formato
+per gamba `omega-t<int>` E il BANCO (`m.esito`, `PlaceResult` vero, mai le attività del bot)
+dice rifiuto certo (`ok=False`, nessun `bet_id`); esito ignoto resta accusato;
+`_leg_certain_failure` intatta. 4 test nuovi in `test_omega_replay_2026_09_16.py` (verde/rosso
+nelle due direzioni); falsificazione MIA (formato del ref ignorato → 1 rosso), md5 ripristinato.
+Suite: worktree 989 verdi, **master 992 verdi**. Replay `certifica omega 35760084 --scenari
+tutti --worker 3`: worktree **14/14 puliti, 0 violazioni**; **master dopo la patch 14/14
+puliti, 0 violazioni**, copertura IDENTICA al riferimento O-A (K1-K7 ×1466, E3 ×576, J3 ×11,
+B4 ×459; nel worktree B4 ×447: differenza d'ambiente, su master non c'è). Mai sollecitati
+restano 17/50 (attesi da T1/T2 e dallo scenario «parziali» ⊘). Applicazione su master: patch
+`git apply` + 3 file nuovi, md5 identici al worktree per tutti i file; nessun file di admin-6d
+toccato. Referto del delegato: `Betfair/omega/CHECKPOINT_T3_CONSAPEVOLEZZA_2026-09-17.md`;
+referti miei: `scratchpad/t3_35760084_tutti.txt`, `master_post_t3_35760084_tutti.txt`.
+Migrazione `migrations/omega_trades_status_cancelled_lapsed_2026-09-17.sql` scritta, da
+applicare (checklist). Reperti aperti dichiarati da T3: `_leg_certain_failure` con abbinato 0
+(solo segnalato); `_manual_place` probabile stesso buco R-C1 (passato a T1).
+
+**Checkpoint O-2 (h18:55) — T1 PROPOSTE DI USCITA CERTIFICATA e SU MASTER (non committata)**.
+Costruito (Opus 5): `Betfair/omega/omega_proposte.py` (produttore, modello Safe copiato, fase
+1-bis di `run_once` al posto del green-up quando l'automatico è spento: `greenup_mode='off'` o
+`strategy_version>=3`; nessun default cambiato da T1); `omega_db` con le tre funzioni della coda
+SU `omega_manual_requests`; **O-1 chiuso** con `migrations/omega_proposte_coda_unica_2026-09-17.sql`
+(DA APPLICARE: `updated_at`, CHECK status/kind superset, indice unico proposta viva, tre RPC
+ripuntate a firma identica, `get_omega_manual_requests` filtra proposed/rejected, drop di
+`omega_requests` solo se vuota); **O-3 chiuso** (`_uscita_del_bot_approvata`, firma su
+`meta.chiusura_proposta`, attività `uscita_approvata`, `_dopo_il_cashout` NON chiamato,
+cancelletto fail-closed `proposta_non_firmata`); **O-4 chiuso** (`proposta_uscita` con motivi
+`protezione` = ev_tenere < bloccabile anche sotto zero, `cap`, `rischio` con
+`proposta_p_lose_max_pct` default 0 = spento); controlli G2 riscritto, **G3/G4 nuovi**, G1(c) su
+attività di chiusura umana (⊘ dipende dall'attività `uscita_approvata` con `firmata`: da
+rafforzare col banco); scenario `proposta-approvata` nel banco; UI: scheda con «Chiudi in
+perdita», elenco manuali etichettato, realtime su `omega_manual_requests`. Un test del 16/09
+(«in perdita non si propone mai») sostituito per ordine del 17/09.
+Verifica MIA: diff riga per riga (servizio, v3, db, migrazione, produttore intero, controlli,
+replay, frontend); suite worktree 1002 verdi; falsificazioni mie (cancelletto firma tolto → 1
+rosso; cap mai proposto → 10 rossi), md5 ripristinati; **master dopo la patch: 1021 verdi, tsc 0,
+vitest 165 verdi (ControlRoom/omegaProposte/ManualPanel/omega)**; replay **35760084 tutti i 15
+scenari puliti, 0 violazioni** (copertura ⊇ O-1: A8 ×132, G1 ×936, K ×1577; G3/G4 ×0 qui perché
+nessuna proposta è possibile su quella partita); **35777617 5/5 puliti, 0 violazioni**, ciclo
+completo: proposta `cap` al 74' (blocchi −0,48 € vs EV +2,36 €) → firma → drenata → eseguita in 1
+giro, `exit_kind=loss`, partita NON chiusa dall'utente; **G2 ×87, G3 ×86, G4 ×46** sollecitati.
+Reperti del delegato corretti: churn delle proposte sui motivi transitori (9 proposte/8
+decadenze → 1), memoria G2 per richiesta. Limiti ⊘: RPC vere non provate contro Supabase;
+`betfair_updated_at` vuoto sulla gamba di chiusura nel banco (specchio dell'order stream
+assente): da riguardare in paper; sul banco escono solo `cap` e `controparte_insufficiente`
+(`blocca_il_profitto`/`protezione`/`rischio` provati dai test). Junction dichiarate da T1 nel
+suo worktree (`.venv`, `frontend/node_modules`): da togliere con `rmdir` prima di rimuoverlo.
+Referti: `CHECKPOINT_T1_PROPOSTE_2026-09-17.md`; miei `scratchpad/t1_*.txt`,
+`master_post_t1_*.txt`.
+
+
 ### Punto di ripresa (aggiornato h13:20)
 0. **Omega**: verdetto negativo delle misure (checkpoint 22) da discutere con l'utente nel
    pomeriggio; opzioni: fermare lo sviluppo di v4 e riallocare su Mike/Safe; oppure una NUOVA

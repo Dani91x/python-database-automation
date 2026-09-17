@@ -21,7 +21,7 @@ MAX_GOALS = 8
 
 def load_atlas() -> Optional[Dict[str, Any]]:
     try:
-        from Betfair.stream.scalper.theta_bot import load_hazard_atlas
+        from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
 
         return load_hazard_atlas()
     except Exception as ex:  # noqa: BLE001 — senza atlante Mike copre subito (fail-safe)
@@ -286,7 +286,7 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     goals = int(score_home) + int(score_away)
     try:
         if atlas is not None:
-            from Betfair.stream.scalper.theta_bot import hazard_lookup
+            from Betfair.stream.scalper.hazard_atlas import hazard_lookup
 
             p, src = hazard_lookup(atlas, float(minute), goals, dossier.get("league_id"), home, away)
             out["hazard_atlas"] = round(float(p), 4) if p is not None else None

@@ -36,8 +36,13 @@ import {
     tradeCommission, tradeExposureNow, FEED_ROW_STALE_MS,
     tradeHold, holdReasonLabel, holdReasonHasP, pLoseEntry, tradeOppKind,
     groupClosingLegs, hedgeTooltip, partialHedge,
-    type FeedFreshness, type SafeMode, type SafeRequest, type SafeTrade, type SafeTradeStatus, type TradeBook,
+    type FeedFreshness, type SafeActivityRow, type SafeMode, type SafeRequest, type SafeTrade,
+    type SafeTradeStatus, type TradeBook,
 } from '@/lib/safeBot';
+// reperto 17/09 — LO STATO DI USCITA (exit_wait/exit_hold/feed_blind) che il
+// trader NON vedeva: fra un punto e l'altro il book si svuota per qualche
+// secondo e la posizione restava «in perdita senza spiegazione».
+import { latestExitActivityFor, safeActivityExitStatus } from '@/lib/safeExitStatus';
 import { safeMarketLabel, safeReasonLabel } from './safeActivity';
 // C.12b — stato dell'ORDINE condiviso con Omega, Mike e la Control Room
 import { StatoOrdineRiga, StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
@@ -320,6 +325,14 @@ export interface SafeTradesTableProps {
     /** ultime richieste operative: esito visibile sulla riga (L-07) */
     requests?: SafeRequest[];
     /**
+     * Attività del servizio (`safe_strategy_activity`, C.xx 17/09): serve a
+     * mostrare lo STATO DI USCITA (`exit_wait` / `exit_hold` / `feed_blind`)
+     * dell'ultimo ciclo per quel trade — «In attesa: mercato sospeso»,
+     * «Tenuta: ...», «Proposta in attesa della tua firma». Assente = nessuno
+     * stato aggiuntivo (le altre attività continuano a comportarsi come oggi).
+     */
+    activity?: SafeActivityRow[];
+    /**
      * CERT. 13/09 — modalità ATTIVA sul servizio in questo momento.
      * Serve solo a ATTENUARE le righe di un'altra modalità: una posizione LIVE
      * in una schermata PAPER (o viceversa) non è un errore, ma non è nemmeno
@@ -338,7 +351,7 @@ const COLS = 16;
 
 export function SafeTradesTable({
     trades, commissionPct, liveFeed, isCashOutPending, freshnessOf, onCashOut, onCancel,
-    requests = [], emptyText, currentMode, nowMs,
+    requests = [], emptyText, currentMode, nowMs, activity = [],
 }: SafeTradesTableProps) {
     const now = nowMs ?? Date.now();
     const groups = groupClosingLegs(trades);
@@ -419,6 +432,27 @@ export function SafeTradesTable({
                         const kind = tradeOppKind(t);
                         const hold = isLive ? tradeHold(t) : null;
                         const runLine = isLive ? exitRunLine(t) : null;
+                        // reperto 17/09 — STATO DI USCITA dall'ultima attività del
+                        // servizio per QUESTO trade (exit_wait/exit_hold/feed_blind).
+                        // Si mostra solo quando non è già detto da un altro indicatore
+                        // della riga (il gate a modello scrive `meta.exit_hold` insieme
+                        // al log: mostrarlo due volte con parole diverse confonderebbe
+                        // più di quanto spieghi), cioè:
+                        //   · 'wait' e 'proposal' → sempre (oggi invisibili altrove)
+                        //   · 'blind-data' (dato mancante nel feed) → sempre (diverso
+                        //     dal mercato assente, che ha già `blindSince`)
+                        //   · 'hold' → solo se `meta.exit_hold` non è (ancora) scritto
+                        //   · 'blind-market' → solo se `blindSince` non lo dice già
+                        const blindAt = isLive ? blindSince(t) : null;
+                        const exitAct = isLive && activity.length ? latestExitActivityFor(t.id, activity) : null;
+                        const exitStatus = exitAct ? safeActivityExitStatus(exitAct) : null;
+                        const showExitStatus = !!exitStatus && (
+                            exitStatus.tone === 'wait'
+                            || exitStatus.tone === 'proposal'
+                            || exitStatus.tone === 'blind-data'
+                            || (exitStatus.tone === 'hold' && !hold)
+                            || (exitStatus.tone === 'blind-market' && !blindAt)
+                        );
                         const pEntry = kind ? pLoseEntry(t) : null;
                         const orphanClosing = t.closes_trade_id != null;
                         const reason = safeReasonLabel(String((t.meta ?? {})['reason'] ?? '') || null);
@@ -533,6 +567,14 @@ export function SafeTradesTable({
                                         >
                                             {fmtOdds(nowPrice)}
                                         </span>
+                                    ) : book && !blocked && book[closeSide === 'lay' ? 'lay' : 'back'] == null ? (
+                                        // reperto 17/09 — libro presente ma il lato con cui SI
+                                        // CHIUDE è assente (capita per pochi secondi fra un punto
+                                        // e l'altro): un trattino muto sembrava un guasto della
+                                        // pagina, non una condizione del mercato reale.
+                                        <span className="text-amber-300 text-[11px]" data-testid="safe-price-missing" title={`${closeSide === 'lay' ? 'lay' : 'back'} assente nel feed per questa selezione: nessuna uscita automatica possibile finché non torna`}>
+                                            quota momentaneamente assente
+                                        </span>
                                     ) : <span className="text-slate-600">{DASH}</span>}
                                 </td>
                                 <td className="px-3 py-2 text-right tabular-nums" data-testid="safe-tick-delta">
@@ -626,6 +668,26 @@ export function SafeTradesTable({
                                         >
                                             In attesa: {holdReasonLabel(hold.reason)}
                                             {hold.pLose != null && !holdReasonHasP(hold.reason) ? `, P(perdita) ${fmtPct(hold.pLose)}` : ''}
+                                        </div>
+                                    )}
+                                    {/* reperto 17/09 — stato di uscita dall'ultima attività
+                                        del servizio: spiega le attese che oggi non dicevano
+                                        niente al trader (prezzo assente dal book, mercato
+                                        sospeso, feed cieco su dati diversi dal mercato,
+                                        proposta di chiusura in attesa di firma). */}
+                                    {showExitStatus && exitStatus && (
+                                        <div
+                                            className={`mt-0.5 text-[10px] whitespace-nowrap ${
+                                                exitStatus.tone === 'proposal' ? 'text-fuchsia-300'
+                                                    : exitStatus.tone === 'hold' ? 'text-sky-300/90'
+                                                        : exitStatus.tone.startsWith('blind') ? 'text-red-300'
+                                                            : 'text-amber-300'
+                                            }`}
+                                            data-testid="safe-exit-status"
+                                            data-tone={exitStatus.tone}
+                                            title={exitStatus.tooltip}
+                                        >
+                                            {exitStatus.text}
                                         </div>
                                     )}
                                     {outcome && (

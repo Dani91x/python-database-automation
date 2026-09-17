@@ -644,7 +644,7 @@ class OpportunityModel:
             return out
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard
-            from Betfair.stream.scalper.theta_bot import hazard_lookup
+            from Betfair.stream.scalper.hazard_atlas import hazard_lookup
         except Exception:  # noqa: BLE001
             return out
         sh = int(payload.get("score_home") or 0)

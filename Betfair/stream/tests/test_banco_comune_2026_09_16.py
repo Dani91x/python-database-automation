@@ -168,20 +168,31 @@ class _BookFinto:
         self.publish_time = datetime.now(timezone.utc)
 
 
-def test_il_ladder_di_flumine_e_muto_per_lo_scanner():
-    """LA PROVA DEL DANNO: coi dizionari di flumine lo scanner legge None.
+def test_lo_scanner_legge_anche_il_ladder_di_flumine():
+    """RISCRITTO IL 17/09/2026, dopo l'incidente.
 
-    `scanner.price_pair` chiede `levels[0].price` dentro un `except Exception`
-    che ritorna None. Passargli il ladder di flumine cosi' com'e' non da'
-    errore: da' PREZZI ASSENTI, in silenzio. E' il motivo per cui il banco
-    riespone i livelli nella forma di produzione.
+    Prima questo test certificava il DANNO: «coi dizionari di flumine lo
+    scanner legge None». Quel giorno il danno e' successo per davvero, in
+    produzione e per ore — `safe_strategy/service.py` caricava l'Atlante Hazard
+    da `scalper.theta_bot`, il package importava `scalper_bot` ->
+    `from flumine import BaseStrategy`, e `flumine/__init__.py:13` sostituiva
+    `RunnerBookEX` per TUTTO il processo del feed: ogni prezzo `None`, da
+    stream e da REST, in silenzio (misurato: un ladder
+    `{'price': 3.2, 'size': 821.19}` letto come `None`).
+
+    La proprieta' che vogliamo non e' piu' «lo scanner e' muto», e' «lo scanner
+    LEGGE», in tutte e due le forme. La causa e' tolta alla radice
+    (`stream/scalper/hazard_atlas.py`, modulo puro, + import pigro nel package);
+    questa e' la difesa in profondita'.
     """
-    grezzo = SCAN.price_pair(_ExDiFlumine())
-    assert grezzo == {"back": None, "lay": None, "back_size": None, "lay_size": None}
-
+    atteso = {"back": 2.5, "lay": 2.6, "back_size": 100.0, "lay_size": 80.0}
+    # forma flumine (dizionari): letta
+    assert SCAN.price_pair(_ExDiFlumine()) == atteso
+    # forma di produzione (oggetti con .price/.size): letta uguale
     vista = B.libro_di_produzione(_BookFinto())
-    tradotto = SCAN.price_pair(vista.runners[0].ex)
-    assert tradotto == {"back": 2.5, "lay": 2.6, "back_size": 100.0, "lay_size": 80.0}
+    assert SCAN.price_pair(vista.runners[0].ex) == atteso
+    # il banco continua a riesporre il ladder: le due strade coincidono
+    assert SCAN.has_any_price([SCAN.price_pair(_ExDiFlumine())]) is True
 
 
 def test_la_vista_del_book_porta_tutto_quello_che_lo_scanner_legge():
