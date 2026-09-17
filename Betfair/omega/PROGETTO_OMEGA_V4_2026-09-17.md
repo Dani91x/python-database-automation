@@ -31,6 +31,7 @@
 | 7. piano di costruzione a fasi | **§7** |
 | 8. rischi, non-promesse, decisioni dell'utente | **§8** |
 | sintesi per la Control Room | **§9** |
+| **misure bloccanti M4/M5/M6 (referto separato)** | **`Betfair/omega/M4M5M6_2026-09-17.md`** |
 
 ## A. L'ORDINE, E COSA QUESTO PROGETTO NE FA
 
@@ -436,6 +437,8 @@ Tre proprietà, che sono le richieste dell'utente in forma di equazione:
 
 #### 1.3-bis Il tempo, misurato: di quanto migliora il margine restando fermi
 
+> ⚠️ **SUPERATO DALLE MISURE DEL 17/09.** Vedi `Betfair/omega/M4M5M6_2026-09-17.md` §3 (M4): appaiato, l'effetto e' +15 %/+8,5 %/+3,9 % **solo** nella coda del Correct Score (<= 1 %), ~0 nella 1-2 %, nullo dal 2 % in su e **negativo** su tutto l'Half Time Score. I numeri qui sotto restano come traccia del ragionamento, non come base di decisione.
+
 Due misure indipendenti, da incrociare.
 
 **(a) Quanto sale la quota di MERCATO della stessa cella, senza gol** (39 registrazioni, coppie
@@ -565,11 +568,14 @@ certificate sul banco. **v4 le riusa una per una** (riferimenti a `Betfair/mike/
 `pending` (quotata, viva a mercato) → `open` (abbinata in tutto o in parte e non più viva) ·
 `cancelled` (mai abbinata, ritirata) · `pending_reconcile` (esito IGNOTO,
 `STATUS_RECONCILE`, `engine.py:62`) · `settled`.
-⚠️ **Reperto di progetto**: in Mike il vincolo `CHECK` di `mike_trades.status` **non ammette**
-`cancelled`, e una gamba scaduta finisce `error` con `meta.reason='lapsed_alla_sospensione'`
-(`service.py:1618-1654`). Prima di scrivere codice v4 va **verificato il `CHECK` di
-`omega_trades.status`**: è il difetto §7.18 del catalogo («vincolo CHECK che non ammette uno
-stato del motore → upsert rifiutato per 12 giorni»). **Fase 1, controllo di contratto.**
+⚠️ **Reperto di progetto, VERIFICATO il 17/09.** Il `CHECK` di `omega_trades.status` ammette
+`pending | open | hedged | won | lost | void | error`: **`cancelled` e `lapsed` non ci sono**, e
+oggi ripiegano su `error` + `meta.reason` — esattamente come in Mike, dove una gamba scaduta
+finisce `error` con `meta.reason='lapsed_alla_sospensione'` (`mike/service.py:1618-1654`).
+Se v4 li vuole come **stati dichiarati** — e una quotazione viva li produce a ogni gol — serve una
+**migrazione, in Fase 0**. È il difetto §7.18 del catalogo («vincolo `CHECK` che non ammette uno
+stato del motore → upsert rifiutato per 12 giorni, posizioni scoperte al fischio»): non si scopre
+in produzione.
 
 ### 2.3 «Il tempo è dalla nostra parte»: quando aspettare, quando abbandonare
 
@@ -782,6 +788,8 @@ righe `proposed` — se lo facesse, avrebbe chiuso da solo.
 
 ### 5.2 Dove conviene quotare: EV per euro di liability
 
+> ⚠️ **SUPERATO DALLE MISURE DEL 17/09.** Vedi `Betfair/omega/M4M5M6_2026-09-17.md` §2 (M6): in gioco la fascia **2-5 % e' a EV NEGATIVO** (bias equo 0,71); la fascia operativa e' **Correct Score con `p_implicita` <= 2 %**. I numeri qui sotto restano come traccia del ragionamento, non come base di decisione.
+
 > Comando: `python -m Betfair.omega.tools.ev_per_liability --livello best_back --liability 30`
 > Compone il `k` **prudente** appaiato di §D.1 con la quota mediana misurata di §5.1.
 
@@ -834,6 +842,8 @@ nel primo tempo** che nel secondo. Ci sono due letture possibili dell'ordine:
 Il progetto **raccomanda (b) con motivo misurato**, e **non la applica senza ordine**.
 
 ### 5.4 Quanto ne esce: volume, P&L atteso, coda
+
+> ⚠️ **SUPERATO DALLE MISURE DEL 17/09.** Vedi `Betfair/omega/M4M5M6_2026-09-17.md` §4 (M5): il Monte Carlo con le correlazioni vere sostituisce questi conti analitici (+170 EUR/mese a phi = 0,10, 10,7 % di mesi negativi, drawdown mediano 101 EUR). I numeri qui sotto restano come traccia del ragionamento, non come base di decisione.
 
 Ingredienti, tutti dichiarati:
 
@@ -893,6 +903,8 @@ riferimento la dà l'utente** (§8.3).
 
 ### 5.6 Il paniere di celle (opzione da sottoporre — §8.2)
 
+> ⚠️ **SUPERATO DALLE MISURE DEL 17/09.** Vedi `Betfair/omega/M4M5M6_2026-09-17.md` §4.2 (M5): il paniere di 5 celle moltiplica il P&L per 4,9 e lascia il drawdown quasi invariato; i mesi negativi passano da 10,7 % a 0 %. I numeri qui sotto restano come traccia del ragionamento, non come base di decisione.
+
 Le scoreline di un mercato sono **mutuamente esclusive**: ne esce esattamente una. Bancandone `n`
 con stake `s_i` a prezzo `L_i`, il caso peggiore **non** è la somma delle liability ma
 
@@ -948,14 +960,16 @@ Le cinque colonne esistono già e sono condivise
 
 ### 6.2 Il reperto che va chiuso prima di scrivere v4
 
-**R-C1** — Omega scrive la consapevolezza **in un punto solo**: `_confirm_open_trade`
-(`omega_service.py:1490-1498`, `X.aggiorna_trade(..., consapevolezza=...)`). I rami flumine
-(`_flumine_confirm:1982`, `_poll_one_flumine_live_trade:2177`) usano `db.update_trade` **diretto**.
-È **esattamente** il difetto trovato su Safe il 17/09 (le cinque colonne NULL sulla prima
-operazione live reale, `CRONOSTORIA.md` checkpoint 8), e con una quotazione viva — che passa
-**necessariamente** dal percorso appoggiato — diventerebbe la regola invece che l'eccezione.
-**Va chiuso in Fase 1**, con lo stesso rimedio di Safe: un solo scrittore, e il controllo che
-pretende le **colonne** valorizzate, non solo `meta`.
+**R-C1 — CORRETTO il 17/09 dal coordinatore, e la correzione va letta.** La prima stesura di
+questo progetto sosteneva che i rami flumine scrivessero la consapevolezza con `db.update_trade`
+diretto. **È falso**: `_flumine_confirm` passa già da `_confirm_open_trade` → `X.aggiorna_trade`
+dal 16/09 (commit `f562fff`), e nessuna delle 11 `db.update_trade` dirette conferma un
+abbinamento (sono marker di riserva/accodamento, o esiti `error`). Il difetto **vero**, trovato e
+corretto oggi, era `_mirror_fill`, che non rileggeva `size_remaining` e `matched_at` dallo
+specchio; il controllo **K7** è stato aggiunto per quello. **Resta aperto lo stesso buco in
+`reconcile_pending`** (percorso REST legacy): è quello che la Fase 0 deve chiudere.
+Il metodo resta valido: un solo scrittore della consapevolezza, e un controllo che pretende le
+**colonne** valorizzate, non solo `meta`.
 
 **R-J3** (aperto dal 16/09) — il ref `omega-t1` del piazzamento non è riconducibile a nessuna riga
 con `customer_ref_for`: la riconciliazione non ritroverebbe l'ordine. Con l'ordine FOK di oggi è
@@ -974,14 +988,16 @@ riga mai viva · K3 ref piazzato = ref riletto · K4 `closes_trade_id` nella **c
 aperta senza ordine a mercato · K6 residuo dichiarato. Misurate: **1.466 sollecitazioni, 0
 violazioni**.
 
-**v4 aggiunge tre controlli K, perché la quotazione viva crea tre modi nuovi di mentire:**
+**v4 aggiunge tre controlli K, perché la quotazione viva crea tre modi nuovi di mentire.**
+I numeri partono da **K8**: `K7` esiste già dal 17/09 (`certificazione.py:1701`, residuo/chiesto/
+istante di Betfair, nato dal difetto di `_mirror_fill`).
 
-- **K7 — «la quota che il bot crede di avere a mercato è quella che c'è»**: prezzo e size
+- **K8 — «la quota che il bot crede di avere a mercato è quella che c'è»**: prezzo e size
   dell'ordine vivo, letti dal banco, uguali a quelli scritti sulla riga. Un `L*` che cambia senza
   che l'ordine cambi è una bugia al trader.
-- **K8 — «mai due lay vive o in volo sulla stessa gamba»**, verificata **sullo stato del banco**,
+- **K9 — «mai due lay vive o in volo sulla stessa gamba»**, verificata **sullo stato del banco**,
   non sulla confessione del bot (modello J5 di Mike, `mike/certificazione.py:529-569`).
-- **K9 — «dopo una sospensione con una quota viva, alla riapertura l'ordine è stato RILETTO prima
+- **K10 — «dopo una sospensione con una quota viva, alla riapertura l'ordine è stato RILETTO prima
   di decidere»** (modello R1 di Mike, `mike/certificazione.py:691-711`, `quando=` sollecitato da
   `ctx.riapertura.refs`).
 
@@ -1016,9 +1032,9 @@ chiusa senza il suo referto completo secondo `PROCESSO_STANDARD_BOT.md` §6.8.
 | **M6** | **`k` IN GIOCO per fascia**, su campione serio: tutte le registrazioni, tutte le celle candidate a ogni minuto, esito vero, bootstrap a grappolo. Oggi: 293 celle, 20 partite, 12 uscite (M1 §6.1) | `tools/superficie_liability.py` (aggiunta degli esiti per fascia e minuto) | — | — | celle a caso: `k` deve tornare ~1 | 3-4 |
 | **M4** | deriva **appaiata** del margine: modello + mercato sulla **stessa cella**, minuto per minuto, sulle registrazioni | `tools/superficie_liability.py` + `omega_v3` | — | — | celle a caso (placebo): la deriva **deve** sparire | 3-4 |
 | **M5** | **Monte Carlo** di P&L e drawdown con correlazione fra gambe della stessa partita e gol che uccidono più quote insieme | strumento nuovo in `tools/` | — | — | seme diverso → stessi intervalli | 3 |
-| **0** | **chiudere i reperti**: R-C1 (consapevolezza in un solo scrittore), R-J3 (ref riconciliabile), R-J6 (`place_parziale`), `CHECK` di `omega_trades.status` per gli stati nuovi | `omega_service.py`, migrazione | K1-K6 già esistenti + contratto sul `CHECK` | `rifiuti-betfair`, `chiuso-fuori-app`, `_synth_omega_prezzo_migliore` | i 5 difetti del 15/09 col metodo dell'**md5** su `omega_service.py` (il 16/09 non si poteva: il file era di un altro delegato) | 6-8 |
+| **0** | **chiudere i reperti**: R-C1 residuo (`reconcile_pending`, percorso REST legacy), R-J3 (ref riconciliabile), R-J6 (`place_parziale`), **migrazione** del `CHECK` di `omega_trades.status` per `cancelled` e `lapsed` | `omega_service.py`, migrazione | K1-K6 già esistenti + contratto sul `CHECK` | `rifiuti-betfair`, `chiuso-fuori-app`, `_synth_omega_prezzo_migliore` | i 5 difetti del 15/09 col metodo dell'**md5** su `omega_service.py` (il 16/09 non si poteva: il file era di un altro delegato) | 6-8 |
 | **1** | **modello**: hazard per lega (P1), effetto rosso (P2), `p_sup` (P3), calibrazione applicata (P5), fiducia della fonte λ (P6) | `omega_v3.py`, `tools/banco_modelli.py`, `data/` | — (funzioni pure: test falsificati) | — | `k_se = 0` → i numeri di A10 cambiano; rosso spento → log-loss OOS peggiora | 8-10 |
-| **2** | **prezzo di riserva e quotazione viva**: `L*`, le due strade, isteresi, abbandono, macchina a stati della gamba quotata | `omega_v3.py` (puro), `omega_engine.py` (innesto), `omega_service.py` (giro), `omega_config.py` | **A13** (k_prezzo e k_modello scritti), **A14** (mai una quota oltre `L*`), **K7**, **K8**, **K9**, **D1** (scritture DB/minuto) | nuovo scenario **`quotazione`**; `esiti-ignoti`, `riavvio`, `feed-stantio`, `cap-stretto`, `bot-fermo` | quota che non si sposta quando `L*` cambia di 5 tick → A14 rosso; due lay vive → K8 rosso; rilettura saltata → K9 rosso | 12-16 |
+| **2** | **prezzo di riserva e quotazione viva**: `L*`, le due strade, isteresi, abbandono, macchina a stati della gamba quotata | `omega_v3.py` (puro), `omega_engine.py` (innesto), `omega_service.py` (giro), `omega_config.py` | **A13** (k_prezzo e k_modello scritti), **A14** (mai una quota oltre `L*`), **K8**, **K9**, **K10**, **D1** (scritture DB/minuto) | nuovo scenario **`quotazione`**; `esiti-ignoti`, `riavvio`, `feed-stantio`, `cap-stretto`, `bot-fermo` | quota che non si sposta quando `L*` cambia di 5 tick → A14 rosso; due lay vive → K9 rosso; rilettura saltata → K10 rosso | 12-16 |
 | **3** | **proposte di uscita**: produttore Python su `omega_requests`, gate G1, raccordo con `_greenup_candidates` | `omega_service.py`, `omega_db.py` | **G2** finalmente sollecitato | `manuale-e-bot`, `cashout-globale`, `chiuso-fuori-app` | servizio che drena una riga `proposed` → G1 rosso | 5-6 |
 | **4** | **finestre, fasce, cap, dimensionamento a liability fissa**, paniere se l'utente lo approva | `omega_config.py`, `omega_engine.py` | **C5** cap di gamba, **C6** cap di paniere a caso peggiore, **A15** fascia di probabilità | `cap-stretto` esteso | stake fisso al posto di liability fissa → A15 rosso | 4-6 |
 | **5** | **UI**: parametri v4 nel pannello, pagina delle proposte, la quota viva visibile con chiesto/abbinato/residuo | `frontend/src/lib/omega.ts`, Control Room | contratto UI (`test_omega_ui_contratto_2026_09_11.py`) | — | — | 4-6 |

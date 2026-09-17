@@ -1,0 +1,43 @@
+{
+ "finestra": [
+  "2026-08-20",
+  "2026-09-18"
+ ],
+ "partite_giocate_con_esito": 14725,
+ "con_punteggio_45": 14182,
+ "fonti": {
+  "fixture_predictions (riga)": {
+   "n": 9879,
+   "pct": 67.1
+  },
+  "poisson lambda (db_json_analisi.inputs)": {
+   "n": 4183,
+   "pct": 28.4
+  },
+  "tactical_engine lambda": {
+   "n": 962,
+   "pct": 6.5
+  },
+  "ht_predictions.lambda_1h": {
+   "n": 4183,
+   "pct": 28.4
+  },
+  "percent 1X2 (API-Football)": {
+   "n": 9213,
+   "pct": 62.6
+  },
+  "h2h (raw_json.response[0].h2h non vuoto)": {
+   "n": 7438,
+   "pct": 50.5
+  },
+  "betfair_market_odds (quote pre-match)": {
+   "n": 435,
+   "pct": 3.0
+  }
+ },
+ "righe_tabelle_transizioni": {
+  "omega_minute_transitions": 1072786,
+  "omega_ht_ft_transitions": 136272
+ },
+ "ultimo_run_date_quote": "2026-09-11"
+}

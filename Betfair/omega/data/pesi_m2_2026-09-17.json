@@ -1,0 +1,269 @@
+{
+ "generato": "2026-09-17",
+ "metodo": "pool logaritmico sulle lambda, pesi stimati su TRAIN e misurati su TEST",
+ "split": {
+  "criterio": "run_date delle quote",
+  "soglia": "2026-07-25",
+  "n_train": 1338,
+  "n_test": 657
+ },
+ "pesi": {
+  "mercato": 1.0,
+  "fixture": 0.0,
+  "tattico": 0.0,
+  "api": 0.0,
+  "forza": 0.0,
+  "forma": 0.0,
+  "h2h": 0.0,
+  "lega": 0.0
+ },
+ "pesi_ripiego": {
+  "fixture": 0.1154,
+  "tattico": 0.0541,
+  "api": 0.0126,
+  "forza": 0.0905,
+  "forma": 0.0683,
+  "h2h": 0.0619
+ },
+ "pesi_prima_dell_ablazione": {
+  "mercato": 1.0,
+  "fixture": 0.1154,
+  "tattico": 0.0541,
+  "api": 0.0126,
+  "forza": 0.0905,
+  "forma": 0.0683,
+  "h2h": 0.0619,
+  "lega": 0.0
+ },
+ "azzerati_perche_non_migliorano_fuori_campione": [
+  "fixture",
+  "tattico",
+  "api",
+  "forza",
+  "forma",
+  "h2h"
+ ],
+ "cv": {
+  "cv0": 0.2,
+  "c_disp": 1.0534,
+  "c_mancanza": 0.2765
+ },
+ "cv_stimato_coi_pesi_pre_ablazione": {
+  "cv0": 0.05,
+  "c_disp": 1.0534,
+  "c_mancanza": 0.2765
+ },
+ "risultati_fuori_campione": {
+  "fusione": {
+   "n": 657,
+   "ll_ft": 2.931271623537828,
+   "ll_ht": 2.008193938415849,
+   "brier_ft": 0.9276656363382862,
+   "ll_tot": 1.906136433344938,
+   "coda_ft": 0.7856248985087327,
+   "coda_ft_attese": 98.01115029088413,
+   "coda_ft_uscite": 77.0,
+   "coda_ht": 0.5663720627602146,
+   "coda_ht_attese": 44.14059527965148,
+   "coda_ht_uscite": 25.0
+  },
+  "mercato": {
+   "n": 657,
+   "ll_ft": 2.9344235460818453,
+   "ll_ht": 2.009511053374673,
+   "brier_ft": 0.927781255605601,
+   "ll_tot": 1.9122406551786915,
+   "coda_ft": 0.762804660652213,
+   "coda_ft_attese": 99.63232255951151,
+   "coda_ft_uscite": 76.0,
+   "coda_ht": 0.5107266032143565,
+   "coda_ht_attese": 45.033878899679515,
+   "coda_ht_uscite": 23.0,
+   "cv0": 0.2
+  },
+  "fixture": {
+   "n": 223,
+   "ll_ft": 2.9534361120539816,
+   "ll_ht": 2.039182801069449,
+   "brier_ft": 0.9305427386393498,
+   "ll_tot": 1.8890166606443708,
+   "coda_ft": 0.8329381604138595,
+   "coda_ft_attese": 31.214802293463727,
+   "coda_ft_uscite": 26.0,
+   "coda_ht": 0.9692915439935653,
+   "coda_ht_attese": 14.443538775050884,
+   "coda_ht_uscite": 14.0,
+   "cv0": 0.2
+  },
+  "catena": {
+   "n": 657,
+   "ll_ft": 2.950955061015209,
+   "ll_ht": 2.023155793453684,
+   "brier_ft": 0.9290104493852568,
+   "ll_tot": 1.9141799582130725,
+   "coda_ft": 0.7809327852877734,
+   "coda_ft_attese": 99.88055498432817,
+   "coda_ft_uscite": 78.0,
+   "coda_ht": 0.6505539859832746,
+   "coda_ht_attese": 44.57739192262143,
+   "coda_ht_uscite": 29.0,
+   "cv0": 0.25
+  },
+  "fusione_finale": {
+   "n": 657,
+   "ll_ft": 2.9344235460818453,
+   "ll_ht": 2.009511053374673,
+   "brier_ft": 0.927781255605601,
+   "ll_tot": 1.9122406551786915,
+   "coda_ft": 0.762804660652213,
+   "coda_ft_attese": 99.63232255951151,
+   "coda_ft_uscite": 76.0,
+   "coda_ht": 0.5107266032143565,
+   "coda_ht_attese": 45.033878899679515,
+   "coda_ht_uscite": 23.0
+  }
+ },
+ "confronti_bootstrap": {
+  "fusione-mercato.ll_ft": {
+   "differenza": -0.00315,
+   "ic95": [
+    -0.01079,
+    0.00478
+   ],
+   "migliora": false
+  },
+  "fusione-mercato.ll_ht": {
+   "differenza": -0.00132,
+   "ic95": [
+    -0.00658,
+    0.00412
+   ],
+   "migliora": false
+  },
+  "fusione-fixture.ll_ft": {
+   "differenza": -0.07107,
+   "ic95": [
+    -0.11856,
+    -0.02831
+   ],
+   "migliora": true
+  },
+  "fusione-fixture.ll_ht": {
+   "differenza": -0.04169,
+   "ic95": [
+    -0.07466,
+    -0.01308
+   ],
+   "migliora": true
+  },
+  "fusione-catena.ll_ft": {
+   "differenza": -0.01968,
+   "ic95": [
+    -0.03647,
+    -0.00402
+   ],
+   "migliora": true
+  },
+  "fusione-catena.ll_ht": {
+   "differenza": -0.01496,
+   "ic95": [
+    -0.02641,
+    -0.00408
+   ],
+   "migliora": true
+  },
+  "finale-mercato.ll_ft": {
+   "differenza": 0.0,
+   "ic95": [
+    -0.0,
+    0.0
+   ],
+   "migliora": false
+  },
+  "finale-mercato.ll_ht": {
+   "differenza": 0.0,
+   "ic95": [
+    -0.0,
+    0.0
+   ],
+   "migliora": false
+  },
+  "finale-catena.ll_ft": {
+   "differenza": -0.01653,
+   "ic95": [
+    -0.03566,
+    0.00124
+   ],
+   "migliora": false
+  },
+  "finale-catena.ll_ht": {
+   "differenza": -0.01364,
+   "ic95": [
+    -0.02748,
+    -0.00077
+   ],
+   "migliora": true
+  }
+ },
+ "ablazione": {
+  "fixture": {
+   "ll_ft_senza": 2.930723519906531,
+   "differenza": 0.00055,
+   "ic95": [
+    -0.00122,
+    0.00232
+   ],
+   "serve": false
+  },
+  "tattico": {
+   "ll_ft_senza": 2.930903138362869,
+   "differenza": 0.00037,
+   "ic95": [
+    -0.00019,
+    0.001
+   ],
+   "serve": false
+  },
+  "api": {
+   "ll_ft_senza": 2.9306140657329403,
+   "differenza": 0.00066,
+   "ic95": [
+    -0.00189,
+    0.00323
+   ],
+   "serve": false
+  },
+  "forza": {
+   "ll_ft_senza": 2.931770136340724,
+   "differenza": -0.0005,
+   "ic95": [
+    -0.00372,
+    0.00285
+   ],
+   "serve": false
+  },
+  "forma": {
+   "ll_ft_senza": 2.9294565440624423,
+   "differenza": 0.00182,
+   "ic95": [
+    -0.00097,
+    0.00472
+   ],
+   "serve": false
+  },
+  "h2h": {
+   "ll_ft_senza": 2.9310484946676363,
+   "differenza": 0.00022,
+   "ic95": [
+    -0.00156,
+    0.00191
+   ],
+   "serve": false
+  }
+ },
+ "limiti": [
+  "campione vincolato alle 2.018 fixture con quote Betfair pre-match (24/06-11/09/2026): e' l'unico insieme dove si puo' confrontare QUALUNQUE fonte contro il mercato",
+  "quote PRE-MATCH: il peso del mercato IN GIOCO va rimisurato sui book live",
+  "il 29 % del campione sono amichevoli di club (lega 667): forza e forma valgono meno li' che in campionato"
+ ]
+}

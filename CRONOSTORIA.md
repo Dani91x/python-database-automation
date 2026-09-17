@@ -228,7 +228,38 @@ procedura) e gli «Esito …» di `PIANO_CERTIFICAZIONE_DEFINITIVA_2026-09-16.md
     LAPSE non filtrato per modalità); duplicazione `phaseFromMinute` in `tier0_arb`/
     `tier1_quasi` segnalata, non toccata (strategia). Regola in `CLAUDE.md`: 0 errori.
 
+20. **M4/M5/M6 Omega consegnate** (Opus 5, `Betfair/omega/M4M5M6_2026-09-17.md`, 18 test verdi
+    rieseguiti dal coordinatore; 10 falsificazioni del delegato con md5): **criterio di
+    arresto = selezione avversa 1,27** (Monte Carlo: 1,00 → +169 €/mese; 1,27 → 0; 2,5 di M1 →
+    −758 €, 100 % mesi negativi). **M6** (34.069 osservazioni, esito dal WINNER): bias in gioco
+    al netto della geometria del book: CS 0,5-1 % 2,46 (prudente 1,11), CS 1-2 % 2,52 (1,11),
+    **CS 2-5 % 0,71 (EV negativo)**, HT 2-5 % 2,37 (0,92); placebo calibrato/permutato OK.
+    **M4** smentisce il «+14 %/5'»: +8,5 % solo nella coda profonda CS, ~0 dal 2 % in su,
+    negativo su tutto l'HT. **M5**: 1 cella +170 €/mese (10,7 % mesi negativi), paniere 5 celle
+    +835 €/mese (0 % mesi negativi, drawdown mediano 144 €). **M1-bis**: 10 fill su 12.486
+    quotazioni a L* del modello → a quel prezzo non si abbina niente. **Sintesi**: l'edge sta nel
+    PREZZO (bias di fascia al miglior back: 1,31-1,71× contro requisito 1,11), non nel modello;
+    prezzo di riserva riscritto `L*_fascia = (1−c)/(p_equa·k_fascia)+c`; il modello si riduce
+    ad ammissibilità, fascia, veto, proposte. **Misura bloccante ora: M1-ter** (quota viva al
+    miglior back con bias di fascia, selezione avversa vs 1,27) → lanciata.
+
+21. **M2 dati e pesi Omega — consegnata** (Opus 5, `Betfair/omega/M2_DATI_E_PESI_2026-09-17.md`,
+    22 test): **risultato negativo e onesto**: nessuna fonte storica del DB (fixture, tattico,
+    API, forza, forma, h2h) migliora le λ fuori campione (657 partite mai viste) con IC che
+    esclude 0 → **peso zero dichiarato; le λ pre-partita = quote devigate del mercato**. Reperto
+    sul motore: `_prematch_lambdas` usa PRIMA la fixture (fonte peggiore) e DOPO le quote:
+    invertire l'ordine è un miglioramento misurato (HT IC esclude 0). Incertezza che cresce
+    quando manca il mercato (cv 0,20 → 0,52, L* da 186 a 104: la partita senza mercato non
+    apre da sola). Copertura: quote Betfair pre-match solo 3,0 % delle partite e ferme
+    all'11/09 (job manuale); transizioni ferme all'11/09 ma incrementale già esistente
+    (catch-up 1-2 s). Hazard di gol per stato (358 stati): profilo ×1,53 dal 0-5' all'80-85'.
+    Difetto latente: paginazione PostgREST con ordine non totale salta righe in silenzio.
+
 ### DECISIONI APERTE DELL'UTENTE — da ricordargli nel pomeriggio del 17/09 (ordine suo)
+Omega/M2: (10) job giornaliero per le quote Betfair pre-match (`betfair_full_odds.py`, ferme
+dall'11/09, fonte più forte e meno automatica); (11) catch-up delle transizioni + pg_cron
+04:00 UTC (migrazione); (12) invertire l'ordine della catena λ (quote prima della fixture:
+tocca il motore).
 Omega: (1) obiettivo giornaliero da motore a metrica; (2) paniere di 3-5 celle per gamba a
 caso peggiore sotto cap; (3) cassa di riferimento, liability per gamba (proposta 30 €), per
 partita (60 €), stop giornaliero (10 perdite); (4) tetto di quota → fascia di probabilità
