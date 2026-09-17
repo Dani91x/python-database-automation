@@ -255,6 +255,23 @@ procedura) e gli «Esito …» di `PIANO_CERTIFICAZIONE_DEFINITIVA_2026-09-16.md
     (catch-up 1-2 s). Hazard di gol per stato (358 stati): profilo ×1,53 dal 0-5' all'80-85'.
     Difetto latente: paginazione PostgREST con ordine non totale salta righe in silenzio.
 
+22. **M1-bis e M1-ter chiuse — CRITERIO DI ARRESTO RAGGIUNTO sulla variante meglio misurata**
+    (Opus 5, verificato dal coordinatore: 30 test, JSON coerenti; `M1TER_QUOTA_VIVA_BEST_BACK_
+    2026-09-17.md`, 36.118 quotazioni, 39 registrazioni). M1-bis (riscritta): quota viva al
+    prezzo del modello → 11 fill su 13.281 (0,08 %); k al tocco secondo v3 mediana 0,70. M1-ter:
+    il prezzo di riserva dal bias di fascia cade ESATTAMENTE sul miglior back (0 tick di
+    margine, mediana su 14.131 osservazioni; il «1,31-1,71» di M4M5M6 §6-bis.3 era un rapporto
+    di medie, per cella la mediana è 1,14 e solo il 61 % delle celle arriva a 1,11); a quel
+    prezzo fill 0,09 %; +1/+3 tick → fill 1,2/3,5 % ma solo 43/32 % delle quote sopra soglia e
+    247 fill su 352 sono PRESE AL TOCCO (k 0,45-0,53); k realizzato sui fill passivi 0,20-0,26
+    (EV −2,7/−3,7 € per euro); P&L −38 €/−21 € su 36 gambe; selezione avversa 1,77/2,50 (IC
+    largo), 1,62 con IC 1,36-2,02 sull'ammissibilità p_equa → sopra 1,27. **Verdetto del
+    coordinatore: il market making passivo sulle scoreline di coda, con i dati di oggi, non
+    porta in profitto; v4 come progettata NON si costruisce.** Sei misure indipendenti
+    concordano (K_MISURATO, M1, M1-bis, M1-ter, M6 al tocco, M2 modello senza edge). Limiti:
+    2 uscite fra i fill, 11 giorni di calendario, quote pre-match al 3 % delle partite.
+    Commit locali `bd1b428`, `c894ca3`.
+
 ### DECISIONI APERTE DELL'UTENTE — da ricordargli nel pomeriggio del 17/09 (ordine suo)
 Omega/M2: (10) job giornaliero per le quote Betfair pre-match (`betfair_full_odds.py`, ferme
 dall'11/09, fonte più forte e meno automatica); (11) catch-up delle transizioni + pg_cron
@@ -269,8 +286,12 @@ l'invio; (8) via al percorso «al ms» dentro C3-F1 (+7-10 gg). Tennis: (9) `ten
 spento nei parametri: accenderlo o no (scelta di rischio dell'utente). Più: orologio del PC
 da sincronizzare; push del commit.
 
-### Punto di ripresa
-1. **Utente**: applicare le 6 migrazioni nell'ordine 1→6 di `migrations/APPLY_ORDER_2026-09-16.md`
+### Punto di ripresa (aggiornato h13:20)
+0. **Omega**: verdetto negativo delle misure (checkpoint 22) da discutere con l'utente nel
+   pomeriggio; opzioni: fermare lo sviluppo di v4 e riallocare su Mike/Safe; oppure una NUOVA
+   ipotesi misurabile (non «più modello»: M2 dice zero) con criterio di arresto scritto prima.
+   Le 12 decisioni aperte restano elencate sopra. Push dei 4 commit locali: utente.
+1. **Utente (fatto)**: applicare le 6 migrazioni nell'ordine 1→6 di `migrations/APPLY_ORDER_2026-09-16.md`
    (la 3 e la 5 sono le versioni CORRETTE del 17/09), poi le verifiche SELECT del file; riavviare
    l'app.
 2. Con l'utente dal vivo: Fase A (tutti i bot fermi «all'avvio dell'app»), interruttori, cash out
