@@ -41,14 +41,23 @@ import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/Ca
 import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import { fetchMissions } from '@/lib/omegaMissions';
-import { fetchTennisFollows } from '@/lib/tennis';
+import {
+    fetchTennisFollows, fetchTennisBotServices, fetchTennisBotDaily,
+    fetchTennisBotOrdersToday,
+    type TennisBotServiceRow, type TennisBotDailyRow, type TennisBotOrderRow,
+    type TennisBotKey,
+} from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
-import { posizioniChiuse, type PosizioneChiusa, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import {
+    posizioniChiuse, SOGLIA_PARI,
+    type PosizioneChiusa, type TradeChiudibile,
+} from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
     type ArricchimentoPartita,
+    BOT_TENNIS, isBotTennis,
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
@@ -64,9 +73,40 @@ import {
     prezzoVivo, ordinaProposte, SLIPPAGE_PCT_DEFAULT,
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
+import {
+    isPropostaOpportunita, type PropostaOpportunita,
+} from '@/lib/safeBot';
+
+/** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
+export interface PropostaOppVista {
+    proposta: PropostaOpportunita;
+    /** importo abbinabile ORA sul lato da operare (dal feed), null = ignoto */
+    abbinabileOra: number | null;
+    /** eta' del prezzo in secondi, null = ignota (fail-closed) */
+    etaQuoteS: number | null;
+}
 
 /** UNA lettura completa ogni 30 s. Il resto arriva in push. */
 export const RICARICA_MS = 30_000;
+
+/**
+ * I NOMI DELLE FONTI del giro di ricarica, **nell'ordine esatto** delle letture
+ * di `Promise.allSettled`. Una lettura senza nome qui non spariva dal messaggio:
+ * ci finiva come «undefined» (`['a','b'][14]` e' `undefined`, e `undefined !==
+ * null` passa il filtro). Un guasto che si annuncia senza dire di che cosa e'
+ * il guasto e' peggio di un guasto muto.
+ *
+ * Aggiungere una lettura SENZA aggiungere qui il suo nome fa comparire
+ * «fonte #N»: e' il segnale, non un ripiego silenzioso.
+ */
+export const FONTI_RICARICA: readonly string[] = [
+    'feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner',
+    'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)',
+    'campionati e loghi', 'missioni', 'registrazioni tennis',
+    'registrazioni calcio',
+    'servizi bot tennis', 'giornata bot tennis live',
+    'giornata bot tennis paper', 'ordini bot tennis di oggi',
+];
 /** ritmo dell'orologio di pagina: le età devono crescere da sole */
 const TICK_MS = 1_000;
 
@@ -148,6 +188,21 @@ export interface StatoBot {
      * non lo dichiara, non c'è.
      */
     fermatoAllAvvioAt: string | null;
+
+    /**
+     * IL P&L DI OGGI DI QUESTO BOT, nelle due modalita' TENUTE SEPARATE.
+     *
+     * Non si sommano mai: sono un numero vero e un'esercitazione. La riga
+     * mostra quello della modalita' in cui il bot sta operando. `null` = niente
+     * di regolato oggi, che non e' «0,00 €».
+     *
+     * Oggi lo dichiarano i quattro bot tennis (`get_tennis_bot_daily`, netto di
+     * commissione); per Omega, Safe e Mike resta `null` qui e il loro conto sta
+     * dove stava (`soldiGiornata`): due numeri per la stessa cosa sarebbero due
+     * verita'.
+     */
+    pnlOggi: number | null;
+    pnlOggiPaper: number | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -356,6 +411,16 @@ export interface ControlRoomVM {
     operazioni: Map<string, OperazionePartita[]>;
 
     proposte: PropostaVista[];
+    /**
+     * 17/09 — LE OPPORTUNITA' DI MODELLO SONO PROPOSTE, non ordini.
+     * Vivono nella STESSA coda delle chiusure (`safe_strategy_requests`,
+     * 'proposed') e si riconoscono da `payload.opp_key`: qui si separano, o la
+     * scheda della chiusura proverebbe a leggerle come un'uscita (e mostrerebbe
+     * numeri di un'altra cosa).
+     */
+    proposteOpportunita: PropostaOppVista[];
+    piazzaOpportunita: (id: number) => Promise<void>;
+    rifiutaOpportunita: (id: number) => Promise<void>;
     slippagePct: number;
     setSlippagePct: (v: number) => void;
     approva: (id: number) => Promise<void>;
@@ -447,8 +512,20 @@ export function useControlRoom(): ControlRoomVM {
     // mai sostituzione della pagina intera. Alla caduta si azzerano e si torna
     // al database (regola 1).
     const [omegaPush, setOmegaPush] = useState<{ stats: OmegaStats; at: number } | null>(null);
-    const [canali, setCanali] = useState<Record<Bot, LocalStatus>>({ omega: 'off', safe: 'off', mike: 'off' });
-    const [ultimoPush, setUltimoPush] = useState<Record<Bot, number | null>>({ omega: null, safe: null, mike: null });
+    const [canali, setCanali] = useState<Record<Bot, LocalStatus>>(() => perOgniBot<LocalStatus>('off'));
+    const [ultimoPush, setUltimoPush] = useState<Record<Bot, number | null>>(() => perOgniBot<number | null>(null));
+
+    // ── I QUATTRO BOT DEL TENNIS ────────────────────────────────────────────
+    // Quattro righe indipendenti, con la LORO riga di control, il LORO P&L del
+    // giorno e i LORO ordini. Finche' la migrazione del 17/09 non e' applicata
+    // queste letture falliscono e le quattro righe restano «stato non letto»:
+    // e' la verita', ed e' meglio di un «fermo» inventato.
+    const [tennisServizi, setTennisServizi] = useState<TennisBotServiceRow[] | null>(null);
+    /** P&L di oggi per bot, dal database. Live e paper MAI nello stesso conto. */
+    const [tennisOggi, setTennisOggi] = useState<TennisBotDailyRow[]>([]);
+    const [tennisOggiPaper, setTennisOggiPaper] = useState<TennisBotDailyRow[]>([]);
+    /** gli ordini di oggi dei quattro bot: posizioni aperte + scheda partita */
+    const [tennisOrdini, setTennisOrdini] = useState<TennisBotOrderRow[]>([]);
 
     // ---------------------------------------------------------------- lettura
     const ricarica = useCallback(() => {
@@ -477,10 +554,18 @@ export function useControlRoom(): ControlRoomVM {
             // primo ricaricamento, la spia REC si spegneva e la registrazione
             // non si poteva piu' fermare. `get_live_follows` le ha tutte.
             fetchLiveFollows(),
+            // ── i quattro bot tennis: stato, P&L del giorno, ordini di oggi ──
+            // DUE letture per il P&L, mai una: `get_tennis_bot_daily` pretende
+            // `p_mode` proprio perche' paper e live non si sommano.
+            fetchTennisBotServices(),
+            (() => { const g = romeDay(new Date()); return fetchTennisBotDaily(g, g, 'live'); })(),
+            (() => { const g = romeDay(new Date()); return fetchTennisBotDaily(g, g, 'paper'); })(),
+            fetchTennisBotOrdersToday(null),
         ]).then((r) => {
             if (!vivo || mioGiro !== giroCorrente.current) return;
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
-                rDaily, rDailyPaper, rEventi, rMissioni, rFollowT, rFollowC] = r;
+                rDaily, rDailyPaper, rEventi, rMissioni, rFollowT, rFollowC,
+                rTennisSrv, rTennisDaily, rTennisDailyPaper, rTennisOrdini] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -492,6 +577,12 @@ export function useControlRoom(): ControlRoomVM {
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
+            // `null` resta `null` se la lettura fallisce: una riga di control
+            // non letta non e' una riga «ferma».
+            if (rTennisSrv.status === 'fulfilled') setTennisServizi(rTennisSrv.value ?? []);
+            if (rTennisDaily.status === 'fulfilled') setTennisOggi(rTennisDaily.value ?? []);
+            if (rTennisDailyPaper.status === 'fulfilled') setTennisOggiPaper(rTennisDailyPaper.value ?? []);
+            if (rTennisOrdini.status === 'fulfilled') setTennisOrdini(rTennisOrdini.value ?? []);
             setSoldiLetti((prev) => prev || (rOmegaT.status === 'fulfilled'
                 && rSafe.status === 'fulfilled' && rMike.status === 'fulfilled'));
             if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled'
@@ -520,9 +611,8 @@ export function useControlRoom(): ControlRoomVM {
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)',
-                        'campionati e loghi', 'missioni', 'registrazioni tennis',
-                        'registrazioni calcio'][i] : null))
+                .map((x, i) => (x.status === 'rejected'
+                    ? (FONTI_RICARICA[i] ?? `fonte #${i + 1}`) : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -759,6 +849,9 @@ export function useControlRoom(): ControlRoomVM {
                 partiteEsposte: numero(stats?.partite_esposte),
                 stopFermaSoloAperture: stats?.stop_ferma_solo_aperture === true,
                 fermatoAllAvvioAt: testo(stats?.fermato_all_avvio_at),
+                pnlOggi: isBotTennis(bot) ? pnlTennisDi(tennisOggi, bot as TennisBotKey) : null,
+                pnlOggiPaper: isBotTennis(bot)
+                    ? pnlTennisDi(tennisOggiPaper, bot as TennisBotKey) : null,
             };
         };
         const testo = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -777,8 +870,28 @@ export function useControlRoom(): ControlRoomVM {
                 mike?.control?.heartbeat_at ?? null, testo(mike?.control?.status),
                 (mike?.control?.params ?? null) as Record<string, unknown> | null,
                 (mike?.control?.stats ?? null) as Record<string, unknown> | null),
+            // ── I QUATTRO DEL TENNIS, uno per uno ───────────────────────────
+            // Nessuna deduzione e nessuna eredita': stato, modalita' e stake
+            // escono dalla RIGA DI CONTROL di QUEL bot. Riga assente (o
+            // migrazione non applicata) = `stato: null`, che il pannello scrive
+            // «stato non letto» e NON comanda: fail-closed.
+            ...BOT_TENNIS.map((k) => {
+                const c = (tennisServizi ?? []).find((x) => x.bot_key === k) ?? null;
+                // lo `stake` e' una COLONNA, non una voce di `params`: si
+                // espone sotto la chiave 'stake' che l'interruttore legge, e
+                // la colonna vince sempre su un'eventuale omonima nei params.
+                const params = c == null ? null : { ...(c.params ?? {}), stake: c.stake };
+                return riga(
+                    k, modalitaDi(c?.mode), inCorsaDi(c?.status),
+                    c?.heartbeat_at ?? null,
+                    c == null ? null : testo(c.status),
+                    params,
+                    (c?.stats ?? null) as Record<string, unknown> | null,
+                );
+            }),
         ];
-    }, [omega?.control, safe?.control, safe?.params_effective, mike?.control, canali, ultimoPush, nowMs]);
+    }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,
+        tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs]);
 
     // ── LE POSIZIONI GIA' CHIUSE, vinte e perse ──────────────────────────────
     // Una posizione e apertura + coperture: sul green-up del 14/09 le righe da
@@ -794,8 +907,65 @@ export function useControlRoom(): ControlRoomVM {
         aggiungi(omegaTrades as unknown as Record<string, unknown>[], 'omega', 'calcio');
         aggiungi(safe?.trades as unknown as Record<string, unknown>[] | undefined, 'safe');
         aggiungi(mike?.trades as unknown as Record<string, unknown>[] | undefined, 'mike', 'calcio');
+        // ── GLI ORDINI GIA' REGOLATI DEI QUATTRO BOT TENNIS ─────────────────
+        // «Indipendenti come gli altri» (ordine dell'utente, 17/09): una
+        // posizione chiusa di un bot tennis entra in questa scheda con lo
+        // STESSO contratto delle righe di Omega/Safe/Mike, o il contatore
+        // mentirebbe per omissione. La giornata la filtra il meccanismo
+        // condiviso (`PosizioneChiusa.giorno`), qui non si filtra a mano.
+        //
+        // DUE TRADUZIONI OBBLIGATE, e nessuna inventata:
+        //  1. LO STATO. `tennis_live_orders.status` e' lo stato flumine, e
+        //     `EXECUTION_COMPLETE` vuol dire «abbinato tutto», non «regolato»:
+        //     `isSettled` non lo riconoscerebbe mai. Il regolamento lo dichiara
+        //     `settled_at` e l'esito lo dice il P&L.
+        //  2. IL P&L. `tennis_live_orders.pnl` e' LORDO, con la commissione in
+        //     una colonna sua; `RigaChiusa.pnl` e' NETTO per contratto. Si
+        //     sottrae quella dichiarata, mai una commissione stimata.
+        //
+        // Una riga regolata SENZA `pnl` non entra: il suo risultato non lo
+        // sappiamo ancora, e «0,00 €» sarebbe uno zero travestito da pareggio.
+        // Resta visibile fra le posizioni aperte finche' il numero non arriva.
+        for (const o of tennisOrdini) {
+            const bot = o.source;
+            if (bot == null || !isBotTennis(bot as Bot)) continue;
+            if (isErrorRow(o.status)) continue;
+            if (o.settled_at == null) continue;
+            const netto = pnlNettoTennis(o);
+            if (netto == null) continue;
+            const eventId = String(o.event_id ?? '');
+            const feed = feedPerEvento.get(eventId)?.payload as PartitaFeedLike | undefined;
+            righe.push({
+                id: o.id,
+                event_id: eventId,
+                event_name: feed?.event_name ?? null,
+                sport: 'tennis',
+                mode: o.mode,
+                // won / lost / void: sono gli unici stati che la piattaforma
+                // riconosce come regolati. Zero netto = niente si e' mosso.
+                status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
+                pnl: netto,
+                side: o.side,
+                price: o.price ?? null,
+                size: o.size ?? null,
+                // `tennis_live_orders` porta il `selection_id`, non il nome
+                selection_name: null,
+                placed_at: o.placed_at ?? null,
+                settled_at: o.settled_at,
+                // nessuna catena di coperture: ogni ordine e' una posizione sua
+                closes_trade_id: null,
+                strategy: null,
+                size_requested: o.size ?? null,
+                size_matched: o.size_matched ?? null,
+                size_remaining: o.size_remaining ?? null,
+                avg_price_matched: o.average_price_matched ?? null,
+                betfair_updated_at: o.updated_at ?? null,
+                meta: null,
+                __bot: bot as Bot,
+            });
+        }
         return posizioniChiuse(righe);
-    }, [omegaTrades, safe?.trades, mike?.trades]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
@@ -859,12 +1029,40 @@ export function useControlRoom(): ControlRoomVM {
                 chiusura: null,
             });
         }
+        // ── LE POSIZIONI APERTE DEI QUATTRO BOT TENNIS ──────────────────────
+        // Righe di `tennis_live_orders` con `source` = la chiave del bot. La
+        // tabella NON ha una colonna di responsabilita' e NON si inventa qui:
+        // una liability calcolata dal browser sarebbe una seconda verita'
+        // accanto a quella del servizio. `null` = non lo sappiamo.
+        for (const o of tennisOrdini) {
+            if (!ordineTennisAperto(o)) continue;
+            const bot = o.source;
+            if (bot == null || !isBotTennis(bot as Bot)) continue;
+            const eventId = String(o.event_id ?? '');
+            if (!eventId) continue;
+            const feed = feedPerEvento.get(eventId)?.payload as PartitaFeedLike | undefined;
+            out.push({
+                bot: bot as Bot, id: o.id, eventId,
+                partita: feed?.event_name ?? eventId,
+                // `tennis_live_orders` porta il `selection_id`, non il nome:
+                // scriverne uno di fantasia sarebbe peggio di non scriverlo.
+                selezione: null,
+                lato: latoDi(o.side), prezzo: o.price ?? null, size: o.size ?? null,
+                liability: null, modalita: modalitaDi(o.mode),
+                piazzataAt: o.placed_at ?? o.updated_at ?? '',
+                chiusura: null,
+            });
+        }
         // le più recenti in cima: è l'ordine in cui un trader le cerca
         out.sort((a, b) => Date.parse(b.piazzataAt) - Date.parse(a.piazzataAt));
         return out;
-    }, [omegaTrades, safe?.trades, mike?.trades, feedPerEvento]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento]);
 
-    const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(proposte).map((pr) => {
+    const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(
+        // 17/09: le proposte di OPPORTUNITA' stanno nella stessa coda ma sono
+        // un'altra cosa (un'apertura). Qui restano solo le CHIUSURE.
+        proposte.filter((r) => !isPropostaOpportunita(r)),
+    ).map((pr) => {
         const p = pr.payload;
         const riga = feedPerEvento.get(String(p.event_id));
         const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
@@ -886,9 +1084,44 @@ export function useControlRoom(): ControlRoomVM {
         return { proposta: pr, vivo, etaQuoteS, bloccabileOra };
     }), [proposte, feedPerEvento, nowMs, safe?.trades, chiusuraViva]);
 
+    /** le proposte di OPPORTUNITA' (apertura), con l'abbinabile e l'eta' del
+     *  prezzo presi dal feed VIVO: la fotografia della proposta serve solo a
+     *  sapere su cosa il bot ha deciso. */
+    const proposteOpportunita = useMemo<PropostaOppVista[]>(() => (proposte as unknown as {
+        id: number; kind: string; status: string; payload: Record<string, unknown>;
+        created_at?: string | null; updated_at?: string | null;
+    }[])
+        .filter((r) => isPropostaOpportunita(r))
+        .map((r) => {
+            const pr = r as unknown as PropostaOpportunita;
+            const p = pr.payload;
+            const riga = feedPerEvento.get(String(p.event_id));
+            const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+            const vivo = prezzoVivo(payload, p.market_id ?? null, p.selection_id ?? null,
+                                    (p.side ?? null) as 'back' | 'lay' | null);
+            const odds = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
+            const etaQuoteS = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
+                ? Math.max(0, Math.round((nowMs - odds) / 1000))
+                : etaSecondi(riga?.updated_at ?? null, nowMs);
+            return { proposta: pr, abbinabileOra: vivo.abbinabile, etaQuoteS };
+        }), [proposte, feedPerEvento, nowMs]);
+
     const ricaricaProposte = useCallback(async () => {
         try { setProposte(await fetchProposte()); } catch { /* il giro riprova */ }
     }, []);
+
+    const piazzaOpportunita = useCallback(async (id: number) => {
+        // PIAZZA = la proposta passa a 'pending' e la esegue il servizio, con
+        // le stesse barriere di ogni richiesta manuale. Nessuna seconda strada.
+        await approvaProposta(id);
+        await ricaricaProposte();
+    }, [ricaricaProposte]);
+
+    const rifiutaOpportunita = useCallback(async (id: number) => {
+        await ignoraProposta(id, 'opportunita rifiutata dall’operatore');
+        await ricaricaProposte();
+    }, [ricaricaProposte]);
+
 
     const approva = useCallback(async (id: number) => {
         await approvaProposta(id);
@@ -967,9 +1200,42 @@ export function useControlRoom(): ControlRoomVM {
         for (const t of omegaTrades) agg('omega', t);
         for (const t of safe?.trades ?? []) agg('safe', t);
         for (const t of mike?.trades ?? []) agg('mike', t);
+        // ── GLI ORDINI DEI QUATTRO BOT TENNIS SULLA PARTITA ─────────────────
+        // Non passano da `agg`: per un ordine tennis il P&L NON si legge dallo
+        // stato flumine (`EXECUTION_COMPLETE` vuol dire «abbinato tutto», non
+        // «regolato») ma da `settled_at`. Prima del regolamento il risultato e'
+        // IGNOTO e si scrive «—», mai «0,00 €».
+        for (const o of tennisOrdini) {
+            if (isErrorRow(o.status)) continue;
+            const bot = o.source;
+            if (bot == null || !isBotTennis(bot as Bot)) continue;
+            const k = String(o.event_id ?? '');
+            if (!k) continue;
+            const riga: OperazionePartita = {
+                bot: bot as Bot, id: o.id, selezione: null,
+                lato: latoDi(o.side), prezzo: o.price ?? null, size: o.size ?? null,
+                stato: o.status,
+                pnl: o.settled_at != null && typeof o.pnl === 'number' ? o.pnl : null,
+                modalita: modalitaDi(o.mode),
+                at: o.placed_at ?? o.updated_at ?? '',
+                quale: null,
+                ordine: {
+                    status: o.status, side: o.side ?? null,
+                    price: o.price ?? null, size: o.size ?? null,
+                    size_requested: o.size ?? null,
+                    size_matched: o.size_matched ?? null,
+                    size_remaining: o.size_remaining ?? null,
+                    avg_price_matched: o.average_price_matched ?? null,
+                    betfair_updated_at: o.updated_at ?? null,
+                    meta: null,
+                },
+            };
+            const arr = m.get(k);
+            if (arr) arr.push(riga); else m.set(k, [riga]);
+        }
         for (const arr of m.values()) arr.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
         return m;
-    }, [omegaTrades, safe?.trades, mike?.trades]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini]);
 
     const chiudi = useCallback(async (tradeId: number) => {
         // chiusura PIENA: il P&L diventa identico sui due esiti (green-up)
@@ -1051,6 +1317,14 @@ export function useControlRoom(): ControlRoomVM {
             omega: n(oA?.realized_today),
             safe: n(sA?.realized_today),
             mike: n(mA?.realized_today),
+            // TENNIS — il P&L del giorno lo da' il database
+            // (`get_tennis_bot_daily`, p_mode='live'), NETTO di commissione e
+            // per bot. Qui non si somma niente a mano e non si tocca il paper:
+            // sono due conti separati, e separati restano.
+            tennis_scalper: pnlTennisDi(tennisOggi, 'tennis_scalper'),
+            tennis_pro: pnlTennisDi(tennisOggi, 'tennis_pro'),
+            tennis_flb: pnlTennisDi(tennisOggi, 'tennis_flb'),
+            tennis_swing: pnlTennisDi(tennisOggi, 'tennis_swing'),
         };
         const liab = [n(oA?.open_liability), n(sA?.open_liability), n(mA?.open_liability)]
             .filter((v): v is number => v != null);
@@ -1107,7 +1381,7 @@ export function useControlRoom(): ControlRoomVM {
             operazioniPaper: realizzatoOggi.paper.righe || null,
         };
     }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
-        realizzatoOggi]);
+        tennisOggi, realizzatoOggi]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
 
@@ -1127,6 +1401,9 @@ export function useControlRoom(): ControlRoomVM {
         schermo, ultimaCatena,
         operazioni,
         proposte: proposteVista,
+        proposteOpportunita,
+        piazzaOpportunita,
+        rifiutaOpportunita,
         slippagePct, setSlippagePct, approva, ignora, chiudi,
         statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
         proposteOmega: ordinaProposteOmega(proposteOmega), erroreProposteOmega,
@@ -1170,6 +1447,58 @@ export function leggiModiStrategia(
         }
     }
     return null;
+}
+
+/**
+ * Lo stesso valore per OGNI bot. I canali locali (47333/47334/47335) esistono
+ * solo per i tre servizi del calcio: i quattro bot tennis non ne hanno uno, e
+ * «non ne ha» non vuol dire «e' rotto» — il loro battito si legge dal
+ * `heartbeat_at` della riga di control, che c'e' sempre.
+ */
+function perOgniBot<T>(v: T): Record<Bot, T> {
+    return {
+        omega: v, safe: v, mike: v,
+        tennis_scalper: v, tennis_pro: v, tennis_flb: v, tennis_swing: v,
+    };
+}
+
+/**
+ * UN ordine tennis e' ANCORA A MERCATO? Non si guarda lo stato flumine, che
+ * dice un'altra cosa (`EXECUTION_COMPLETE` vuol dire «abbinato tutto», non
+ * «regolato»): si guarda il REGOLAMENTO. Finche' `settled_at` e' nullo e c'e'
+ * qualcosa abbinato o ancora in coda, quella posizione e' aperta.
+ */
+function ordineTennisAperto(o: TennisBotOrderRow): boolean {
+    if (isErrorRow(o.status)) return false;
+    if (o.settled_at != null) return false;
+    const abbinato = Number(o.size_matched ?? 0);
+    const residuo = Number(o.size_remaining ?? 0);
+    return (Number.isFinite(abbinato) && abbinato > 0)
+        || (Number.isFinite(residuo) && residuo > 0);
+}
+
+/**
+ * Il P&L NETTO di UN ordine tennis: `pnl` e' lordo, la commissione sta nella
+ * sua colonna. `null` = non ancora regolato, che non e' «0,00 €». Se la
+ * commissione non e' dichiarata NON si stima: si prende il lordo com'e'.
+ */
+function pnlNettoTennis(o: TennisBotOrderRow): number | null {
+    const lordo = o.pnl;
+    if (typeof lordo !== 'number' || !Number.isFinite(lordo)) return null;
+    const comm = o.commission;
+    const c = typeof comm === 'number' && Number.isFinite(comm) ? comm : 0;
+    return Math.round((lordo - c) * 100) / 100;
+}
+
+/** Il P&L NETTO di oggi di un bot tennis, dalle righe del database. `null` =
+ *  niente di regolato oggi, che non e' «0,00 €». */
+function pnlTennisDi(righe: readonly TennisBotDailyRow[], bot: TennisBotKey): number | null {
+    let somma: number | null = null;
+    for (const r of righe) {
+        if (r.bot_key !== bot || r.pnl_netto == null) continue;
+        somma = (somma ?? 0) + r.pnl_netto;
+    }
+    return somma;
 }
 
 function modalitaDi(v: unknown): Modalita | null {

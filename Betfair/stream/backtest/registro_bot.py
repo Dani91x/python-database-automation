@@ -193,52 +193,61 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
             "(decisione 8 del piano: gli scalper legacy entrano solo se l'utente "
             "li nomina). Registrato per non poter essere dimenticato."),
     ),
+    # ------------------------------------------------------------------
+    # I QUATTRO BOT TENNIS (17/09/2026)
+    # Il servizio di produzione e' `tennis_runner`: il replay istanzia il bot
+    # con la SUA funzione `_instantiate_bot` (preset, dry_run dalla modalita',
+    # tetti di esposizione, scoping per mercato), gli passa il punteggio con
+    # `parse_tennis_scores` alla cadenza del `score_and_now_worker` e giudica
+    # anche le righe che `tennis_live_order_worker._mirror_order` scriverebbe.
+    # Mai una copia di laboratorio (`tennis_lab*` resta fuori dalla produzione).
+    # ------------------------------------------------------------------
     BotRegistrato(
         nome="tennis_scalper",
         sport="tennis",
-        descrizione="scalper tennis 1-tick / 2-tick (runner tennis)",
+        descrizione="scalper tennis: market-making a due gambe sul MATCH_ODDS",
         moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
         mercati=("MATCH_ODDS",),
-        replay=None,
-        controlli=None,
+        replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_scalper",
+        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+        controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
-        motivo_senza_controlli="scalper tennis legacy: perimetro da decidere (piano §5.8).",
         cartella=_cartella_tennis,
     ),
     BotRegistrato(
         nome="tennis_pro",
         sport="tennis",
-        descrizione="tennis PRO (runner tennis)",
+        descrizione="tennis PRO: direzionale score-driven, sei setup sul punteggio IPS",
         moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
         mercati=("MATCH_ODDS",),
-        replay=None,
-        controlli=None,
+        replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_pro",
+        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+        controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
-        motivo_senza_controlli="scalper tennis legacy: perimetro da decidere (piano §5.8).",
         cartella=_cartella_tennis,
     ),
     BotRegistrato(
         nome="tennis_flb",
         sport="tennis",
-        descrizione="tennis FLB (runner tennis)",
+        descrizione="tennis FLB: lay del favorito estremo, senza stop (favourite-longshot bias)",
         moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
         mercati=("MATCH_ODDS",),
-        replay=None,
-        controlli=None,
+        replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_flb",
+        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+        controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
-        motivo_senza_controlli="scalper tennis legacy: perimetro da decidere (piano §5.8).",
         cartella=_cartella_tennis,
     ),
     BotRegistrato(
         nome="tennis_swing",
         sport="tennis",
-        descrizione="tennis SWING (runner tennis)",
+        descrizione="tennis SWING: fade degli estremi del favorito (z robusto + ER + RSI)",
         moduli_produzione=("Betfair.stream.tennis_live.tennis_runner",),
         mercati=("MATCH_ODDS",),
-        replay=None,
-        controlli=None,
+        replay="Betfair.stream.tennis_live.tools.replay_bot:certifica_scenario_tennis_swing",
+        scenari="Betfair.stream.tennis_live.tools.replay_bot:SCENARI_DESCRITTI",
+        controlli="Betfair.stream.tennis_live.certificazione_bot",
         spec="TENNIS_BOT_DOSSIER.md",
-        motivo_senza_controlli="scalper tennis legacy: perimetro da decidere (piano §5.8).",
         cartella=_cartella_tennis,
     ),
 )

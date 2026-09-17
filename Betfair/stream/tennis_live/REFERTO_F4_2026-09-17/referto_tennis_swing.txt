@@ -1,0 +1,1355 @@
+BOT: tennis_swing | spec: TENNIS_BOT_DOSSIER.md | registrazioni: 17 in C:\Users\Admin\Desktop\tennis_rec\20260707
+controlli attivi: 18 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 0f3ef1e49679 (2 file)
+comando: python -m Betfair.stream.backtest.certifica tennis_swing 35790089 35790407 35790443 35790645 35790708 35790713 35792709 35792714 35792939 35792974 35793833 35794049 35795565 35795739 35795988 35796097 35796102 --scenari tutti
+qualita' delle registrazioni: COMPLETE x17
+SCENARI: base, gate-aperto, dry-run, bot-fermo, rifiuti-betfair, feed-stantio, parziali, riavvio, catalogo-assente, live
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+worker: 3 su 4 core fisici (un processo per coppia evento x scenario, 170 coppie; il referto resta nello stesso ordine)
+
+OK  35790089 [base]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [base]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [base]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [base]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [base]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [base]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [base]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [base]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [base]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [base]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [base]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [base]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [base]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [base]  tick=  5626 decisioni= 5622 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [base]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [base]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [base]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [gate-aperto]  tick=  5216 decisioni= 5212 azioni= 130 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790407 [gate-aperto]  tick=  1050 decisioni= 1045 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790443 [gate-aperto]  tick=  5317 decisioni= 5312 azioni=  70 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790645 [gate-aperto]  tick=   253 decisioni=  249 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790708 [gate-aperto]  tick=  4793 decisioni= 4789 azioni=  48 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790713 [gate-aperto]  tick=  2636 decisioni= 2631 azioni=  60 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792709 [gate-aperto]  tick=  1006 decisioni= 1001 azioni=   6 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792714 [gate-aperto]  tick=  5090 decisioni= 5086 azioni= 145 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792939 [gate-aperto]  tick=  4003 decisioni= 3998 azioni=   6 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792974 [gate-aperto]  tick=  3599 decisioni= 3593 azioni=  42 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35793833 [gate-aperto]  tick=  1602 decisioni= 1599 azioni=  39 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [gate-aperto]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795565 [gate-aperto]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795739 [gate-aperto]  tick=  5626 decisioni= 5622 azioni=  37 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795988 [gate-aperto]  tick=  2300 decisioni= 2295 azioni=   9 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796097 [gate-aperto]  tick=  3748 decisioni= 3744 azioni=  30 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796102 [gate-aperto]  tick=  3142 decisioni= 3137 azioni=  12 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790089 [dry-run]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [dry-run]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [dry-run]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [dry-run]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [dry-run]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [dry-run]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [dry-run]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [dry-run]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [dry-run]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [dry-run]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [dry-run]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [dry-run]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [dry-run]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [dry-run]  tick=  5626 decisioni= 5622 azioni=   2 stati=OPEN [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [dry-run]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [dry-run]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [dry-run]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [bot-fermo]  tick=  5216 decisioni= 2483 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [bot-fermo]  tick=  1050 decisioni=  465 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [bot-fermo]  tick=  5317 decisioni= 3192 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [bot-fermo]  tick=   253 decisioni=  133 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [bot-fermo]  tick=  4793 decisioni= 2228 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [bot-fermo]  tick=  2636 decisioni= 1337 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [bot-fermo]  tick=  1006 decisioni=  588 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [bot-fermo]  tick=  5090 decisioni= 2785 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [bot-fermo]  tick=  4003 decisioni= 1969 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [bot-fermo]  tick=  3599 decisioni= 1994 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [bot-fermo]  tick=  1602 decisioni=  632 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [bot-fermo]  tick=  8608 decisioni= 4913 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [bot-fermo]  tick=    26 decisioni=   11 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [bot-fermo]  tick=  5626 decisioni= 2599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [bot-fermo]  tick=  2300 decisioni= 1137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [bot-fermo]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [bot-fermo]  tick=  3142 decisioni= 1819 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: bot DISARMATO a meta' partita con `_disable_strategy` di produzione
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [rifiuti-betfair]  tick=  5216 decisioni= 5212 azioni=  42 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790407 [rifiuti-betfair]  tick=  1050 decisioni= 1045 azioni=   1 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790443 [rifiuti-betfair]  tick=  5317 decisioni= 5312 azioni=  24 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790645 [rifiuti-betfair]  tick=   253 decisioni=  249 azioni=   3 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790708 [rifiuti-betfair]  tick=  4793 decisioni= 4789 azioni=  23 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790713 [rifiuti-betfair]  tick=  2636 decisioni= 2631 azioni=  25 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792709 [rifiuti-betfair]  tick=  1006 decisioni= 1001 azioni=   3 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792714 [rifiuti-betfair]  tick=  5090 decisioni= 5086 azioni=  36 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792939 [rifiuti-betfair]  tick=  4003 decisioni= 3998 azioni=   4 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792974 [rifiuti-betfair]  tick=  3599 decisioni= 3593 azioni=  13 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35793833 [rifiuti-betfair]  tick=  1602 decisioni= 1599 azioni=  11 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [rifiuti-betfair]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795565 [rifiuti-betfair]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795739 [rifiuti-betfair]  tick=  5626 decisioni= 5622 azioni=  13 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795988 [rifiuti-betfair]  tick=  2300 decisioni= 2295 azioni=   3 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796097 [rifiuti-betfair]  tick=  3748 decisioni= 3744 azioni=  11 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796102 [rifiuti-betfair]  tick=  3142 decisioni= 3137 azioni=   5 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: ogni piazzamento e' RIFIUTATO da un trading control di flumine (place_order torna False, stato Violation)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790089 [feed-stantio]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [feed-stantio]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [feed-stantio]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [feed-stantio]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [feed-stantio]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [feed-stantio]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [feed-stantio]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [feed-stantio]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [feed-stantio]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [feed-stantio]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [feed-stantio]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [feed-stantio]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [feed-stantio]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [feed-stantio]  tick=  5626 decisioni= 5622 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [feed-stantio]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [feed-stantio]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [feed-stantio]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: guasto iniettato: il punteggio smette di arrivare dopo il primo terzo (blackout IPS)
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [parziali]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790407 [parziali]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790443 [parziali]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790645 [parziali]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790708 [parziali]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790713 [parziali]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792709 [parziali]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792714 [parziali]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792939 [parziali]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792974 [parziali]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35793833 [parziali]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [parziali]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795565 [parziali]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795739 [parziali]  tick=  5626 decisioni= 5622 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795988 [parziali]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796097 [parziali]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796102 [parziali]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['stake'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790089 [riavvio]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [riavvio]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [riavvio]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [riavvio]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [riavvio]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [riavvio]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [riavvio]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [riavvio]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [riavvio]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [riavvio]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [riavvio]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [riavvio]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [riavvio]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [riavvio]  tick=  5626 decisioni= 5622 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [riavvio]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [riavvio]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [riavvio]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: RIAVVIO a meta' partita concesso a bot FLAT (regola di produzione `_request_restart`): il bot e' stato ri-istanziato con `_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un rebuild dello stream
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [catalogo-assente]  tick=  5216 decisioni= 5212 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790407 [catalogo-assente]  tick=  1050 decisioni= 1045 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790443 [catalogo-assente]  tick=  5317 decisioni= 5312 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790645 [catalogo-assente]  tick=   253 decisioni=  249 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790708 [catalogo-assente]  tick=  4793 decisioni= 4789 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790713 [catalogo-assente]  tick=  2636 decisioni= 2631 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792709 [catalogo-assente]  tick=  1006 decisioni= 1001 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792714 [catalogo-assente]  tick=  5090 decisioni= 5086 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792939 [catalogo-assente]  tick=  4003 decisioni= 3998 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35792974 [catalogo-assente]  tick=  3599 decisioni= 3593 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35793833 [catalogo-assente]  tick=  1602 decisioni= 1599 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35794049 [catalogo-assente]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795565 [catalogo-assente]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795739 [catalogo-assente]  tick=  5626 decisioni= 5622 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35795988 [catalogo-assente]  tick=  2300 decisioni= 2295 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796097 [catalogo-assente]  tick=  3748 decisioni= 3744 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35796102 [catalogo-assente]  tick=  3142 decisioni= 3137 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: scenario `catalogo-assente`: la mappa dei nomi NON e' dichiarata (limite 1 del banco)
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+OK  35790089 [live]  tick=  5216 decisioni= 5212 azioni= 123 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 92.4% (5 buchi dichiarati)
+      nota: punteggi: 104 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790407 [live]  tick=  1050 decisioni= 1045 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 90.2% (2 buchi dichiarati)
+      nota: punteggi: 38 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790443 [live]  tick=  5317 decisioni= 5312 azioni=  70 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (5 buchi dichiarati)
+      nota: punteggi: 124 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790645 [live]  tick=   253 decisioni=  249 azioni=   3 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 6 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790708 [live]  tick=  4793 decisioni= 4789 azioni=  48 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.8% (5 buchi dichiarati)
+      nota: punteggi: 115 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35790713 [live]  tick=  2636 decisioni= 2631 azioni=  68 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 96.6% (1 buchi dichiarati)
+      nota: punteggi: 62 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792709 [live]  tick=  1006 decisioni= 1001 azioni=   6 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (1 buchi dichiarati)
+      nota: punteggi: 25 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792714 [live]  tick=  5090 decisioni= 5086 azioni= 151 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (3 buchi dichiarati)
+      nota: punteggi: 99 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792939 [live]  tick=  4003 decisioni= 3998 azioni=   6 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 98.3% (1 buchi dichiarati)
+      nota: punteggi: 77 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35792974 [live]  tick=  3599 decisioni= 3593 azioni= 112 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.6% (1 buchi dichiarati)
+      nota: punteggi: 74 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35793833 [live]  tick=  1602 decisioni= 1599 azioni=  39 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 94.8% (3 buchi dichiarati)
+      nota: punteggi: 112 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35794049 [live]  tick=  8608 decisioni= 8602 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 99.1% (1 buchi dichiarati)
+      nota: punteggi: 180 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo DICHIARATO (il raw non lo contiene): Sinner, Struff
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795565 [live]  tick=    26 decisioni=   21 azioni=   0 stati=- [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 5 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795739 [live]  tick=  5626 decisioni= 5622 azioni=  37 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 100.0% (0 buchi dichiarati)
+      nota: punteggi: 100 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 1
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35795988 [live]  tick=  2300 decisioni= 2295 azioni=   9 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.8% (2 buchi dichiarati)
+      nota: punteggi: 54 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796097 [live]  tick=  3748 decisioni= 3744 azioni=  30 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 93.7% (3 buchi dichiarati)
+      nota: sidecar punteggi assente: `strat.score` resta None per tutta la partita (tennis_pro non aprira' mai)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+OK  35796102 [live]  tick=  3142 decisioni= 3137 azioni=  12 stati=OPEN,CLOSING [COMPLETE]
+      nota: cache di processo azzerate: Betfair.stream.tennis_live.tennis_runner._INSTANCE_LOCK
+      nota: qualita' registrazione: COMPLETE 91.4% (4 buchi dichiarati)
+      nota: punteggi: 88 campioni dal sidecar (orologio del poll IPS, non del mercato: vedi dichiarazione 2)
+      nota: catalogo NON disponibile: ne' --nomi ne' _names.json
+      nota: place_latency 600 ms (paper tennis di produzione) + betDelay dal marketDefinition, dormito da flumine
+      nota: book attesi durante i piazzamenti: 0; lapse al fischio: 0; lapse alla sospensione: 0
+      nota: SCENARIO DICHIARATO: cambiati SOLO i parametri ['conf_ticks', 'er_max', 'min_matched', 'min_total_matched', 'price_max', 'price_min', 'zin'] (numeri che l'utente puo' gia' cambiare dalla UI). La strategia e' quella di produzione.
+
+ESITO: 170 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     B1  x57969   in DRY-RUN il bot non manda MAI un ordine a mercato (dossier §4: `
+     B2  x92894   ogni ordine chiesto ha prezzo nella ladder Betfair [1.01, 1000] e 
+     B3  x16      un bot DISABILITATO (disarm del runner, `_tennis_disabled`) non ap
+     B4  x170     nessun ordine viene chiesto a mercato NON operabile (sospeso o chi
+     B5  x273     lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+  ?? B6  x0       FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <=
+     B7  x92859   l'esposizione per selezione non supera il tetto che il runner pass
+     B8  x43782   in LIVE .it nessun ordine sotto il minimo di giurisdizione (back 2
+     K1  x28151   ogni ordine che il bot STA SEGUENDO esiste davvero a mercato: un o
+     K2  x43767   un ordine RIFIUTATO (place_order ha risposto False, oppure stato V
+     K3  x92894   lo stato di ogni ordine si rilegge come Enum `OrderStatus` (`.valu
+     K4  x28151   una posizione che il bot crede VIVA ha almeno un ordine a mercato 
+     K5  x19922   nessuna ESPOSIZIONE abbinata resta senza una posizione viva del bo
+     K6  x92894   quando il bot dichiara la posizione CHIUSA non resta nessun suo or
+     K7  x553623  il prezzo medio e l'abbinato che il bot pubblica nelle sue `stats`
+     P1  x92894   ogni ordine del bot arriva allo specchio `tennis_live_orders` con 
+     P2  x92894   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+     P3  x170     a mercato CHIUSO il bot pubblica un P&L di settlement: senza, lo s
+
+?? MAI SOLLECITATI: 1 controlli su 18. Su questi il referto NON dice «sano», dice «non lo so»:
+     B6: FLB: l'ingresso e' sempre un LAY del favorito ESTREMO (best-lay <= `lay_max`) e mai un BACK (dossier §4.3)

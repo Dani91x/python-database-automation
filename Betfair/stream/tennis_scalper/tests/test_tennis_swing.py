@@ -56,9 +56,13 @@ class _Market:
 
     def place_order(self, o):
         self.placed.append(o)
+        # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27):
+        # `Market.place_order` ritorna un BOOL (`market.py:84-98`).
+        return True
 
     def cancel_order(self, o):
         self.cancelled.append(o)
+        return True
 
 
 class _MB:
@@ -138,13 +142,17 @@ def test_time_stop_uses_publish_time_seconds_not_update_count():
 def test_closing_escalates_to_taker_and_pops_only_when_flat():
     # fix audit #10: l'escalation conta i SECONDI di publish_time (come tmax),
     # non gli update del book (in live sono molti al secondo → escalation in 1-2s).
+    # 17/09: la finestra dell'escalation vale per RIMPIAZZARE un hedge GIA' in
+    # volo. Un CLOSING senza nessun hedge (`close_order=None`) e con la posizione
+    # ancora aperta viene coperto SUBITO — aspettare 20 s scoperti era il difetto.
     s = _make(close_retry_s=2.0, maker=True)
     orders = [_Order(111, "BACK", 2.0, 2.00)]
     m = _Market(_Blotter(orders))
+    hedge_in_volo = _Order(111, "LAY", 0.0, 0.0)   # piazzato, non ancora abbinato
     s._tr["1.1"] = {"sel": 111, "side": "BACK", "etk": _tki(2.00),
                     "anchor": _tki(1.80), "order": None, "held": 0, "wait": 0,
-                    "t0": 1, "closing": True, "close_order": None, "close_wait": 0,
-                    "t_close": 10_000}
+                    "t0": 1, "closing": True, "close_order": hedge_in_volo,
+                    "close_wait": 0, "t_close": 10_000}
     def _mb(pt):
         return _MB([_Runner(111, (2.00, 100), (2.02, 100))], pt=pt)
     s.process_market_book(m, _mb(10_500))   # +0.5s
@@ -158,6 +166,24 @@ def test_closing_escalates_to_taker_and_pops_only_when_flat():
     orders.append(_Order(111, "LAY", 1.98, 2.02))
     s.process_market_book(m, _mb(12_200))
     assert "1.1" not in s._tr, "flat verificato → trade chiuso"
+
+
+def test_closing_senza_hedge_copre_subito():
+    """LA REGOLA NUOVA (17/09): in CLOSING senza nessun ordine di copertura e con
+    la posizione ancora aperta, la copertura parte AL PRIMO GIRO. E' la strada
+    da cui passa l'ingresso scaduto che si riempie dopo: prima si aspettavano i
+    20 s dell'escalation con i soldi scoperti."""
+    s = _make(close_retry_s=20.0, maker=True)
+    orders = [_Order(111, "BACK", 2.0, 2.00)]
+    m = _Market(_Blotter(orders))
+    s._tr["1.1"] = {"sel": 111, "side": "BACK", "etk": _tki(2.00),
+                    "anchor": _tki(1.80), "order": None, "held": 0, "wait": 0,
+                    "t0": 1, "closing": True, "close_order": None,
+                    "close_wait": 0, "t_close": 10_000}
+    s.process_market_book(
+        m, _MB([_Runner(111, (2.00, 100), (2.02, 100))], pt=10_200))
+    assert m.placed, "la copertura parte subito, non dopo close_retry_s"
+    assert "1.1" in s._tr, "il trade resta finche' il blotter non e' pari"
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +245,11 @@ def test_dry_ciclo_completo_paper_con_esito():
     s.process_market_book(
         m, _MB([_Runner(111, (1.28, 100), (1.29, 100))], pt=t0 + 91_000))
     assert "1.1" not in s._tr, "trade chiuso con esito"
-    assert s.stats["losses"] == 1              # uscita a tempo
-    assert s.stats["pnl"] != 0.0               # P&L virtuale contabilizzato
+    # ⚠️ VINTO/PERSO SI DECIDE DAL RISULTATO, non dal motivo d'uscita
+    # (correzione 17/09). Qui il motivo e' `time`, ma un LAY a 1,27 chiuso
+    # backando a 1,28 e' un PROFITTO: prima veniva contato come sconfitta e le
+    # metriche del pannello non erano riconciliabili col P&L. Il test vecchio
+    # asseriva il comportamento sbagliato (catalogo §7.28).
+    assert s.stats["pnl"] > 0.0, "lay 1,27 chiuso a 1,28 e' un profitto"
+    assert s.stats["wins"] == 1 and s.stats["losses"] == 0
     assert m.placed == [], "dry: MAI ordini piazzati"

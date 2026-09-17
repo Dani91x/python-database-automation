@@ -18,9 +18,20 @@
 //   · strategie in live: **solo `tennis`**; base, esatto, punta, model,
 //     manual → `paper`;
 //   · stake del tennis = 3,00 €;
-//   · entrate automatiche (`auto_trade_tennis = true`, quel giorno era spento
-//     e il bot non entrava);
 //   · Mike e Omega non si toccano: da qui non partono e basta.
+//
+// ⚠️ REPERTO 17/09 sera — `auto_trade_tennis` NON E' L'INTERRUTTORE DELLE
+// ENTRATE DELLA STRATEGIA S TENNIS. La Strategia S tennis (righe
+// `strategy='tennis'`, le SUE entrate) si accende SOLO da `variants` — quello
+// che questa scheda scrive gia' qui sopra. `auto_trade_tennis` governa il
+// SECONDO motore, indipendente: le "opportunita' di modello tennis" (righe
+// `strategy='model'`, `meta.kind='tennis'`, oggi sempre in paper perche'
+// `strategy_modes.model` non e' mai 'live'). Fino al 17/09 questa scheda
+// forzava quell'interruttore a `true` credendo servisse alla Strategia S: sul
+// campo il trader ha visto 3 righe (2 paper del modello + 1 live della
+// Strategia S) e ha creduto a 3 ingressi della stessa strategia. Da qui in poi
+// la scheda «solo tennis» NON tocca piu' `auto_trade_tennis`: lo lascia
+// esattamente come lo trova.
 // ============================================================================
 import { fmtMoney } from '@/lib/format';
 import {
@@ -65,19 +76,19 @@ export function stakeTennisEffettivo(correnti: Record<string, unknown> | null | 
 }
 
 /**
- * Le tre cose che il gesto «solo tennis» AGGIUNGE alle accensioni: stake a
- * 3,00 € sulla chiave del tennis, entrate automatiche accese. Tutto il resto
- * (tetti, uscite, approvazione delle chiusure) passa intatto.
+ * L'unica cosa che il gesto «solo tennis» AGGIUNGE alle accensioni: stake a
+ * 3,00 € sulla chiave del tennis. Tutto il resto (tetti, uscite, approvazione
+ * delle chiusure, `auto_trade_tennis`) passa intatto.
+ *
+ * ⚠️ 17/09 sera — QUI PRIMA SI FORZAVA `auto_trade_tennis = true`, credendo
+ * fosse l'interruttore delle entrate della Strategia S tennis. Non lo e': e'
+ * il secondo motore (opportunita' di modello, paper). La scheda non lo tocca
+ * piu' (vedi la nota in testa al file).
  */
 export function extraSoloTennis(p: Record<string, unknown>): Record<string, unknown> {
     // LO STAKE — 3,00 € sulla chiave del TENNIS. `stake.backSize` non si tocca:
     // e' il ripiego di chi non ha ancora una chiave sua (la punta).
-    const out = scriviChiave(p, CHIAVE_STAKE_TENNIS, STAKE_TENNIS);
-    // LE ENTRATE AUTOMATICHE — il 14/09 questo interruttore era spento e il
-    // bot, acceso e regolare, non entrava su niente. Avviarlo senza sarebbe
-    // accendere un motore in folle.
-    out.auto_trade_tennis = true;
-    return out;
+    return scriviChiave(p, CHIAVE_STAKE_TENNIS, STAKE_TENNIS);
 }
 
 /**
@@ -121,8 +132,6 @@ export function differenzeSoloTennis(
         // e due grafie diverse per la stessa cifra si leggono come due cifre.
         fuori.push(`stake → ${fmtMoney(STAKE_TENNIS)}`);
     }
-
-    if (correnti.auto_trade_tennis !== true) fuori.push('entrate automatiche → accese');
 
     // ⚠️ 16/09 — `variants` adesso dice CHI E' ACCESO, quindi «solo tennis»
     // SPEGNE base, esatto e punta. Va detto prima del clic, non scoperto dopo.

@@ -48,6 +48,22 @@ CAMPIONE = {
     # costa ~6 minuti, troppo per la suite. Da rivedere quando ci saranno
     # registrazioni piu' corte con gioco dentro.
     "omega": ("35823616",),
+    # I QUATTRO BOT TENNIS (17/09) — campione di SOLA CATENA, e va detto.
+    # 35790407: 1.050 tick (la piu' corta COMPLETE del corpus tennis con il
+    # sidecar dei punteggi), ~8 s per bot con i due scenari. Su questa partita i
+    # bot NON operano: serve a far scattare il rosso se qualcuno rompe il
+    # collegamento `_instantiate_bot` -> punteggio -> `process_market_book` ->
+    # ordini su flumine -> specchio, oppure se un controllo del banco esplode.
+    # NON certifica la condotta: quella sta nel comando, sulla partita di
+    # riferimento (Sinner - Struff, COMPLETE 99,1 %, 8.608 tick):
+    #   python -m Betfair.stream.backtest.certifica tennis_flb 35794049 --scenari tutti
+    # Un campione CORTO in cui un bot tennis apra davvero non esiste nel corpus:
+    # con i parametri di produzione lo scalper e lo swing non aprono nemmeno
+    # sulla partita di riferimento (vedi AUDIT_4_BOT_TENNIS_2026-09-17.md §J).
+    "tennis_scalper": ("35790407",),
+    "tennis_pro": ("35790407",),
+    "tennis_flb": ("35790407",),
+    "tennis_swing": ("35790407",),
 }
 
 

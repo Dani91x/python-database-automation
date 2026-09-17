@@ -33,6 +33,14 @@ from flumine.order.trade import Trade
 from flumine.order.ordertype import LimitOrder
 from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_price
 
+from .condotta_ordini import (
+    FrenoRifiuti,
+    dichiara_chiusura_mercato,
+    ingresso_finito,
+    ordini_vivi_su,
+    size_legale,
+    stato_ordine,
+)
 from .tennis_scalper_bot import compute_green, ticks_between
 
 logger = logging.getLogger(__name__)
@@ -71,12 +79,35 @@ class TennisFLBStrategy(BaseStrategy):
         # la tesi FLB e' validata IN-PLAY: di default nessun ingresso pre-match.
         self.require_inplay: bool = bool(c.get("require_inplay", True))
         self.dry_run: bool = bool(c.get("dry_run", False))
+        # ESECUZIONE MAKER (decisione 17/09, dossier §4.3 «Esecuzione MAKER»).
+        # Il dossier dichiara MAKER ma indicava «rest al best-lay», che e' il
+        # prezzo del TAKER: un LAY a `available_to_lay[0]` incrocia lo spread e
+        # si abbina subito, alla quota PIU' ALTA, cioe' alla liability massima.
+        # La contraddizione si risolve nel senso del documento (MAKER) e con la
+        # convenzione gia' in casa: il LAY maker sta al BEST-BACK
+        # (`tennis_scalper_bot.py`, ramo join). Effetto misurato: in backtest
+        # (`simulation_available_prices=False`) un ordine che incrocia non
+        # incrocia mai e resta in coda, mentre in LIVE si riempie all'istante —
+        # ingressi, prezzo medio e `entry_timeout` avevano significato OPPOSTO
+        # nei due mondi (referto d'audit 17/09 §I.1). `maker=False` rimette il
+        # taker, per chi voglia misurare la differenza.
+        self.maker: bool = bool(c.get("maker", True))
+        # LIVE: le size vanno legalizzate per la giurisdizione (.it), altrimenti
+        # Betfair rifiuta e la gamba resta scoperta. Lo decide il runner:
+        # `live_min_bet` > 0 solo in LIVE (`tennis_runner._instantiate_bot`).
+        self.live: bool = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
 
         # stato runtime
         self._pos_state: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._armed: Dict[Tuple[str, int], bool] = {}
+        # freno dopo i rifiuti di Betfair (condiviso coi quattro bot)
+        self._freno = FrenoRifiuti()
+        self._now_ms: Optional[int] = None
         self.stats: Dict[str, Any] = {"entries": 0, "greens": 0, "held": 0, "pnl": 0.0}
         self.settled_pnl: float = 0.0
+        # gli ordini gia' contati nel settlement: `process_closed_market` puo'
+        # essere richiamato piu' volte sullo stesso mercato (vedi la nota li').
+        self._pnl_settled_oids: set = set()
 
     # ------------------------------------------------------------- telemetria
     def _emit(self, event: str, **payload: Any) -> None:
@@ -115,18 +146,59 @@ class TennisFLBStrategy(BaseStrategy):
         return b * (ba - 1.0) - l * (la - 1.0), l - b
 
     def _place(self, market: Any, sel: int, side: str, price: float,
-               size: float) -> Optional[Any]:
+               size: float, *, copertura: bool = False) -> Optional[Any]:
         size = round(max(0.0, float(size)), 2)
         if price is None or price <= 1.0 or size < 0.01 or self.dry_run:
             if self.dry_run:
                 self._emit("dry_place", sel=sel, side=side, price=price, size=size)
             return None
+        # SIZE LEGALE DI GIURISDIZIONE (.it): un ordine sotto il minimo o non
+        # multiplo di 0,50 viene RIFIUTATO da Betfair e la gamba resta scoperta.
+        # Le coperture si bumpano (meglio un over-hedge di pochi centesimi che
+        # una posizione nuda), gli ingressi no (non si gonfia lo stake acceso).
+        legale, motivo = size_legale(size, side, live=self.live,
+                                     riduce_liability=copertura)
+        if legale is None:
+            self._emit("size_non_legale", sel=sel, side=side, price=price,
+                       size=size, copertura=copertura, motivo=motivo)
+            logger.warning("[FLB] size non legale sel=%s %s %s: %s",
+                           sel, side, size, motivo)
+            return None
+        size = legale
+        # FRENO DOPO I RIFIUTI: non tocca le coperture (una copertura deve poter
+        # partire sempre), solo le aperture.
+        if not copertura:
+            fermo = self._freno.bloccato(market.market_id, sel, self._orologio_s())
+            if fermo:
+                # il motivo si scrive UNA volta per rifiuto, non a ogni tentativo
+                if self._freno.da_annunciare(market.market_id, sel):
+                    self._emit("freno_rifiuti", sel=sel, side=side, motivo=fermo)
+                return None
         try:
             tr = Trade(market_id=market.market_id, selection_id=int(sel),
                        handicap=0, strategy=self)
             o = tr.create_order(side=side, order_type=LimitOrder(
                 price=float(price), size=size, persistence_type="LAPSE"))
-            market.place_order(o)
+            # L'ESITO DEL PIAZZAMENTO SI LEGGE (catalogo §7 difetto 2, «`res.ok`
+            # mai letto»). `Market.place_order` torna un BOOL: `False` significa
+            # che un trading control ha bocciato l'ordine, che NON e' mai entrato
+            # nel blotter e che il suo stato e' `OrderStatus.VIOLATION`
+            # (`flumine/execution/transaction.py:67-75`). Trattarlo come piazzato
+            # lasciava il bot a sorvegliare per 40 s un ordine inesistente, e la
+            # posizione risultava OPEN senza niente a mercato (provato dal
+            # replay: scenario `rifiuti-betfair`, K1/K2/K4 rossi).
+            if not market.place_order(o):
+                n, attesa = self._freno.registra_rifiuto(
+                    market.market_id, sel, self._orologio_s())
+                self._emit("place_rejected", sel=sel, side=side, price=price,
+                           size=size, rifiuti=n, riprovo_fra_s=attesa,
+                           motivo=str(getattr(o, "violation_msg", "") or "rifiutato"))
+                logger.warning("[FLB] piazzamento RIFIUTATO sel=%s %s @%s per %s "
+                               "(%d-esimo, riprovo fra %.0fs): %s",
+                               sel, side, price, size, n, attesa,
+                               getattr(o, "violation_msg", None))
+                return None
+            self._freno.registra_successo(market.market_id, sel)
             return o
         except Exception as exc:  # noqa: BLE001
             logger.debug("place fallito: %s", exc)
@@ -157,7 +229,8 @@ class TennisFLBStrategy(BaseStrategy):
         gside, gsize, _locked_full = g
         p = float(get_nearest_price(price))
         size = gsize * frac
-        o = self._place(market, sel, gside, p, size)
+        # COPERTURA: passa il freno rifiuti e puo' essere bumpata al minimo .it
+        o = self._place(market, sel, gside, p, size, copertura=True)
         # STIMA ESATTA col frac (fix audit #11): compute_green ritorna il locked
         # del green TOTALE; con frac<1 l'hedge copre solo una parte → il floor
         # reale e' min(nw', nl') DOPO l'hedge parziale. Prima la telemetria
@@ -178,8 +251,23 @@ class TennisFLBStrategy(BaseStrategy):
         name = getattr(st, "name", None) or (str(st) if st is not None else "")
         return name in cls._LIVE_ORDER_STATUSES
 
+    def _orologio_s(self) -> float:
+        """L'ora del BOT, in secondi: il `publish_time` dell'ultimo book.
+
+        Il freno dei rifiuti conta il tempo DI MERCATO, non quello del muro: e'
+        l'unico modo perche' replay, paper e live si comportino allo stesso modo
+        (stessa correzione gia' fatta al tetto transazioni dello scalper)."""
+        if self._now_ms is not None:
+            return float(self._now_ms) / 1000.0
+        import time as _t
+
+        return _t.time()
+
     # -------------------------------------------------------------- main loop
     def process_market_book(self, market: Any, mb: Any) -> None:
+        pt0 = getattr(mb, "publish_time_epoch", None)
+        if pt0 is not None:
+            self._now_ms = int(pt0)
         if float(getattr(mb, "total_matched", 0.0) or 0.0) < self.min_matched:
             return
         mid = mb.market_id
@@ -215,9 +303,13 @@ class TennisFLBStrategy(BaseStrategy):
             if self.require_inplay and not inplay:
                 continue
 
-            # INGRESSO: laya il favorito estremo (best-lay <= soglia)
+            # INGRESSO: laya il favorito estremo (best-lay <= soglia).
+            # LA CONDIZIONE resta quella del dossier (`best-lay <= lay_max`):
+            # decide QUANDO. Il PREZZO lo decide `maker`: appoggiato al
+            # best-back (non incrocia, liability piu' piccola, coda) oppure al
+            # best-lay (taker, si abbina subito). Vedi la nota su `self.maker`.
             if bl <= self.lay_max and (sl or 0) >= self.min_lay_size:
-                entry = get_nearest_price(bl)
+                entry = get_nearest_price(bb if self.maker else bl)
                 o = self._place(market, sel, "LAY", entry, self.stake)
                 if o is None and not self.dry_run:
                     continue
@@ -245,7 +337,37 @@ class TennisFLBStrategy(BaseStrategy):
                 st: Dict[str, Any], bb: float, bl: float,
                 pt: Optional[int] = None) -> None:
         b, ba, l, la = self._matched(market, sel)
+        if st.get("state") == PENDING:
+            # ⚠️ CANCEL IN VOLO. `market.cancel_order` e' ASINCRONA: l'ordine
+            # passa per `Cancelling` prima di morire, e in quella finestra puo'
+            # ancora riempirsi. Dichiarare DONE subito dopo il cancel lasciava
+            # un ordine VIVO sul book sotto una posizione «chiusa» (misurato sul
+            # replay del 17/09, 35790089: K6, 2,00 EUR ancora `Cancelling`).
+            if (b + l) > _EPS:
+                # si e' riempito lo stesso: e' una posizione vera, si gestisce
+                # come tutte le altre (uscite del dossier §4.3)
+                st["state"] = OPEN
+                self._emit("cancel_perso", sel=sel, abbinato=round(b + l, 2),
+                           note=("l'ingresso si e' riempito mentre il cancel era "
+                                 "in volo: la posizione e' vera e si gestisce"))
+            elif ordini_vivi_su(market, self, sel) is False:
+                # cancel CONFERMATO e nessun altro ordine vivo sulla selezione
+                self._pos_state[key] = {"state": DONE}
+                return
+            else:
+                return      # cancel non ancora confermato: si aspetta
         if (b + l) <= _EPS:
+            # ⚠️ L'INGRESSO PUO' ESSERE GIA' MORTO: con `persistence_type=LAPSE`
+            # Betfair uccide l'appoggiato a ogni SOSPENSIONE (in tennis: a ogni
+            # punto). Prima il bot aspettava 40 s una quota che a mercato non
+            # esisteva piu'. Si legge lo stato VERO (Enum `.value`).
+            if ingresso_finito(st.get("order")):
+                self._pos_state[key] = {"state": DONE}
+                self._emit("entry_scaduta", sel=sel,
+                           stato=stato_ordine(st.get("order")),
+                           note=("l'ordine d'ingresso non esiste piu' a mercato: "
+                                 "non aspetto il timeout"))
+                return
             # entry LAY non ancora riempita: timeout in SECONDI di publish_time
             # (fallback al conteggio update SOLO se il publish_time manca).
             st["wait"] = int(st.get("wait", 0)) + 1
@@ -255,9 +377,13 @@ class TennisFLBStrategy(BaseStrategy):
                 and (pt - t0) / 1000.0 >= self.entry_timeout
             ) or ((pt is None or t0 is None) and st["wait"] > self.entry_timeout)
             if timed_out:
+                # il cancel e' ASINCRONO: si passa in PENDING e si dichiara DONE
+                # solo quando l'ordine non e' piu' vivo sul book (vedi sopra).
                 self._cancel(market, st.get("order"))
-                self._pos_state[key] = {"state": DONE}
-                self._emit("entry_timeout", sel=sel)
+                st["state"] = PENDING
+                self._emit("entry_timeout", sel=sel,
+                           note=("ingresso scaduto: cancel chiesto, aspetto la "
+                                 "conferma prima di dichiarare chiuso"))
             return
 
         # --- sorveglianza dell'HEDGE di green (fix 2026-07-10: prima non era
@@ -265,7 +391,25 @@ class TennisFLBStrategy(BaseStrategy):
         if st.get("greened") and not st.get("green_locked"):
             go = st.get("green_order")
             if go is None:
-                # dry-run o posizione gia' pari: nulla da sorvegliare
+                # ⚠️ NESSUN ORDINE DI HEDGE. Sono due casi diversissimi e prima
+                # erano confusi in uno solo (correzione 17/09):
+                #   * posizione GIA' PARI (o dry-run): non c'era niente da
+                #     coprire, il green e' davvero concluso;
+                #   * l'hedge NON E' PARTITO (rifiutato, sotto il minimo,
+                #     eccezione): la posizione e' ancora SBILANCIATA e contare
+                #     un green e' una cifra inventata nel pannello — lo stesso
+                #     difetto 3 del 15/09 in forma nuova.
+                # Si distingue guardando il netto VERO dal blotter.
+                if not self.dry_run:
+                    nw_, nl_ = self._net(*self._matched(market, sel))
+                    if abs(nw_ - nl_) > 0.01:
+                        st["greened"] = False       # si riprova al prossimo book
+                        self._emit("green_fallito", sel=sel,
+                                   sbilancio=round(abs(nw_ - nl_), 3),
+                                   note=("l'ordine di copertura non e' partito: "
+                                         "nessun green contato, la posizione e' "
+                                         "ancora aperta"))
+                        return
                 self._confirm_green(sel, st)
                 if self.exit_mode == "green":
                     self._pos_state[key] = {"state": DONE}
@@ -282,7 +426,8 @@ class TennisFLBStrategy(BaseStrategy):
                 # al piu' UN retry per book update.
                 gside = (getattr(go, "side", "") or "").upper() or "BACK"
                 px = bb if gside == "BACK" else bl
-                o2 = self._place(market, sel, gside, get_nearest_price(px), rem)
+                o2 = self._place(market, sel, gside, get_nearest_price(px), rem,
+                                 copertura=True)
                 if o2 is not None:
                     st["green_order"] = o2
                     self._emit("green_replaced", sel=sel, side=gside,
@@ -316,10 +461,31 @@ class TennisFLBStrategy(BaseStrategy):
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
         # P&L VERO: profitto del settlement simulato (include hold-to-end).
+        # DEDUP PER ORDINE (correzione 17/09, lo stesso fix che il PRO ha gia'
+        # a `tennis_pro_bot.py:757-761`): flumine puo' richiamare
+        # `process_closed_market` sullo stesso mercato — il book CLOSED puo'
+        # arrivare piu' di una volta nello stream — e senza dedup `settled_pnl`
+        # e `stats["pnl"]` si RADDOPPIAVANO. E' il numero che finisce nel
+        # pannello e nello storico: doveva essere contato una volta sola.
         try:
             for o in market.blotter.strategy_orders(self):
+                oid = str(getattr(o, "id", "") or id(o))
+                if oid in self._pnl_settled_oids:
+                    continue
+                self._pnl_settled_oids.add(oid)
                 sim = getattr(o, "simulated", None)
                 self.settled_pnl += float(getattr(sim, "profit", 0.0) or 0.0)
         except Exception:  # noqa: BLE001
             pass
         self.stats["pnl"] = round(self.settled_pnl, 3)
+        # FASE DI SETTLEMENT (17/09): a mercato CHIUSO il bot non riceve piu'
+        # book, quindi una posizione ancora creduta aperta resterebbe tale per
+        # sempre. Si dichiara che cosa c'era al fischio e si chiude la memoria.
+        mid = str(getattr(market, "market_id", "") or "")
+        aperte = [sel for (m, sel), st in list(self._pos_state.items())
+                  if m == mid and str(st.get("state") or "") in (PENDING, OPEN)]
+        for chiave in [k for k in self._pos_state if k[0] == mid]:
+            self._pos_state.pop(chiave, None)
+            self._armed.pop(chiave, None)
+        dichiara_chiusura_mercato(market, self, self.event_sink, aperte,
+                                  "tennis_flb")

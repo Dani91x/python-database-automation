@@ -29,14 +29,45 @@ import {
 
 // ---------------------------------------------------------------- vocabolario
 
+/** I bot del CALCIO: tre servizi, tre righe. */
+export type BotCalcio = 'omega' | 'safe' | 'mike';
+
+/**
+ * I QUATTRO BOT DEL TENNIS (17/09). Sono INDIPENDENTI come gli altri: quattro
+ * righe, quattro stati, quattro modalita', quattro stake. Non sono varianti di
+ * Safe e non ereditano niente da nessuno — girano nel servizio
+ * `Betfair/stream/tennis_live/tennis_runner.py` e il loro interruttore e' la
+ * riga per `bot_key` di `tennis_bot_service_control`
+ * (`migrations/tennis_bot_service_control_2026-09-17.sql`).
+ *
+ * Le chiavi sono ESATTAMENTE quelle del `bot_key` del database e del `source`
+ * di `tennis_live_orders`: una chiave diversa qui vorrebbe dire tradurre, e una
+ * traduzione in mezzo ai soldi e' un posto in cui sbagliare.
+ */
+export type BotTennis = 'tennis_scalper' | 'tennis_pro' | 'tennis_flb' | 'tennis_swing';
+
 /** Chi ha prodotto una riga. Accanto al `mode`, MAI al posto: una partita
  *  tradata da due bot ha due provenienze e una sola modalità. */
-export type Bot = 'omega' | 'safe' | 'mike';
+export type Bot = BotCalcio | BotTennis;
+
+/** Nell'ordine in cui vanno mostrati. Una sola lista: se ne nascesse una
+ *  seconda, i due elenchi divergerebbero al primo bot nuovo. */
+export const BOT_TENNIS: readonly BotTennis[] = [
+    'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
+];
+
+export function isBotTennis(b: Bot): b is BotTennis {
+    return (BOT_TENNIS as readonly string[]).includes(b);
+}
 
 export const BOT_LABEL: Record<Bot, string> = {
     omega: 'Omega',
     safe: 'Safe',
     mike: 'Mike',
+    tennis_scalper: 'Scalper',
+    tennis_pro: 'Pro',
+    tennis_flb: 'FLB',
+    tennis_swing: 'Swing',
 };
 
 /** Stato di una partita nella giornata. `chiusa` = fischio passato e non più

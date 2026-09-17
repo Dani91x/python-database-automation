@@ -168,12 +168,171 @@ def ensure_follows_for_bots() -> List[str]:
     return created
 
 
+# ---------------------------------------------------------------------------
+# IL PONTE: dall'INTERRUTTORE per bot all'ARMATURA per evento
+# ---------------------------------------------------------------------------
+# La Control Room accende UN BOT (`tennis_bot_service_control`: una riga per
+# `bot_key`, con `status` + `mode` + `stake` + `params`). Il runner tennis, pero',
+# arma per (evento, bot) su `tennis_bot_control`. Senza questo ponte le quattro
+# righe restano «stato non letto» e i pulsanti della UI non fanno niente.
+#
+# Qui si traduce, e basta: nessun processo nuovo, nessuna tabella nuova,
+# nessuna decisione di strategia. L'armatura per evento resta quella di sempre.
+_BOT_KEYS = ("tennis_scalper", "tennis_pro", "tennis_flb", "tennis_swing")
+
+# la cadenza la DICHIARA chi batte, non la indovina la pagina (review 15/09):
+# finisce in `stats.cadenza_battito_s` e la Control Room giudica la freschezza
+# del battito con QUESTO numero.
+CADENZA_BATTITO_S = ENSURE_POLL_SEC
+
+
+def _modalita_dichiarata(riga: Dict[str, Any]) -> str:
+    """`paper` | `live`. MAI ereditata: una modalita' assente o storta vale
+    `paper`. Ai soldi veri si arriva solo scrivendolo (regola del 14/09)."""
+    m = str((riga or {}).get("mode") or "").strip().lower()
+    return "live" if m == "live" else "paper"
+
+
+def stato_desiderato(righe: Optional[List[Dict[str, Any]]]) -> Optional[Dict[str, Dict[str, Any]]]:
+    """Da cosa dicono gli interruttori a cosa il runner deve armare.
+
+    `None` = interruttori NON LETTI: il chiamante non tocca niente. Dedurre
+    «tutti fermi» da un DB muto disarmerebbe bot vivi.
+    """
+    if righe is None:
+        return None
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in righe or []:
+        bot = str((r or {}).get("bot_key") or "")
+        if bot not in _BOT_KEYS:
+            continue
+        acceso = str(r.get("status") or "").strip().lower() == "running"
+        out[bot] = {
+            "acceso": acceso,
+            "mode": _modalita_dichiarata(r),
+            "stake": r.get("stake"),
+            "params": r.get("params") or {},
+            "stats": r.get("stats"),
+        }
+    return out
+
+
+def _stats_battito(desiderio: Dict[str, Any], eventi: int,
+                   motivo_blocco: Optional[str]) -> Dict[str, Any]:
+    """Le `stats` che la Control Room legge, con i NOMI del frontend
+    (`useControlRoom.ts`: `cadenza_battito_s`, `motivo_blocco`,
+    `stop_ferma_solo_aperture`, `fermato_all_avvio_at`). Riscriverli con altre
+    parole vorrebbe dire due verita' diverse — il difetto 33 del catalogo."""
+    vecchie = desiderio.get("stats")
+    out: Dict[str, Any] = dict(vecchie) if isinstance(vecchie, dict) else {}
+    out["cadenza_battito_s"] = CADENZA_BATTITO_S
+    out["partite_esposte"] = int(eventi)
+    # lo STOP ferma le APERTURE, non le uscite: un bot disarmato continua a
+    # proteggere la posizione aperta (`_disable_strategy` + finestra di flat).
+    # Il pulsante deve dirlo, o promette una cosa che non succede.
+    out["stop_ferma_solo_aperture"] = True
+    out["motivo_blocco"] = motivo_blocco
+    return out
+
+
+def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
+    """UN giro del ponte. Torna un riepilogo (comodo per i test e per il log).
+
+    * interruttore `running` -> la riga (evento, bot) viene ARMATA con la
+      modalita', lo stake e i params dichiarati, su OGNI evento seguito;
+    * interruttore fermo -> le righe attive di quel bot vanno a `stopping`: il
+      runner le porta a `stopped` a posizione FLAT verificata (le protezioni
+      girano, le aperture no);
+    * in ogni caso si scrive `heartbeat_at` e le `stats` che la UI legge.
+    """
+    desiderato = stato_desiderato(db.list_tennis_bot_services())
+    if desiderato is None:
+        return {"letto": False, "armati": 0, "fermati": 0}
+    eventi = sorted(_followed_event_ids())
+    armati = fermati = 0
+    for bot, d in desiderato.items():
+        try:
+            attive = {r.get("event_id"): r for r in
+                      db.list_tennis_bot_controls(statuses=list(_ACTIVE_STATUSES))
+                      if r.get("bot_key") == bot}
+        except Exception as e:  # noqa: BLE001 - una select KO non ferma il giro
+            logger.warning("[tennis-bot-svc] controls KO (%s): %s", bot, str(e)[:160])
+            continue
+        motivo = None
+        if d["acceso"] and not eventi:
+            motivo = "acceso, ma nessun evento tennis seguito in questo momento"
+        if d["acceso"]:
+            for ev in eventi:
+                if ev in attive:
+                    continue
+                db.upsert_tennis_bot_control({
+                    "event_id": ev, "bot_key": bot, "status": "requested",
+                    # PAPER = simulato per costruzione: `dry_run` FALSO cosi' gli
+                    # ordini passano dal blotter e si vedono sul ladder. In LIVE
+                    # `dry_run` resta True finche' l'utente non lo toglie a mano
+                    # (prudenza sui soldi veri, come `_instantiate_bot`).
+                    "dry_run": d["mode"] == "live",
+                    "stake": d["stake"] if d["stake"] is not None else 2,
+                    "params": d["params"],
+                })
+                armati += 1
+        else:
+            for ev in attive:
+                db.set_tennis_bot_status(ev, bot, "stopping")
+                fermati += 1
+        db.set_tennis_bot_service_state(
+            bot, heartbeat=True,
+            stats=_stats_battito(d, len(eventi) if d["acceso"] else 0, motivo))
+    return {"letto": True, "armati": armati, "fermati": fermati,
+            "eventi": len(eventi)}
+
+
+def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
+                                      db: Any = tennis_db) -> List[str]:
+    """All'avvio NUOVO dell'app nessun bot tennis opera — anche dal suo
+    INTERRUTTORE, non solo dalle righe per evento.
+
+    `tennis_bot_service_control.status` e' persistito: senza questo, riaprire
+    l'app farebbe ripartire da sola una riga lasciata `running` ieri sera. Un
+    riavvio dal watchdog (stesso `APP_BOOT_ID`) non tocca niente.
+    Torna i `bot_key` fermati.
+    """
+    boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    righe = db.list_tennis_bot_services()
+    if righe is None:
+        return []
+    ora = tennis_db._now_iso()
+    fermati: List[str] = []
+    for r in righe or []:
+        bot = str((r or {}).get("bot_key") or "")
+        if bot not in _BOT_KEYS:
+            continue
+        if str(r.get("status") or "").strip().lower() not in ("running", "stopping"):
+            continue
+        if AA.stesso_avvio(r.get("stats"), boot):
+            continue          # stesso avvio (watchdog): non si tocca
+        stats = AA.stats_timbrate(r.get("stats"), boot, ora)
+        # il frontend legge `stats.fermato_all_avvio_at` e lo mostra: e' il
+        # modo in cui l'utente capisce perche' il bot che aveva acceso e' fermo
+        stats["fermato_all_avvio_at"] = ora
+        if db.set_tennis_bot_service_state(bot, status="stopped", stopped=True,
+                                           stats=stats):
+            fermati.append(bot)
+            logger.info("[tennis-bot-svc] avvio NUOVO dell'app: interruttore "
+                        "%s riportato a 'stopped' (lo accende l'utente).", bot)
+    return fermati
+
+
 def _ensure_loop(stop: threading.Event) -> None:
     while not stop.is_set():
         try:
             ensure_follows_for_bots()
         except Exception as e:  # noqa: BLE001
             logger.warning("[tennis-bot-svc] ensure loop KO: %s", e)
+        try:
+            riconcilia_interruttori()
+        except Exception as e:  # noqa: BLE001 - il ponte non ferma il servizio
+            logger.warning("[tennis-bot-svc] ponte interruttori KO: %s", e)
         stop.wait(ENSURE_POLL_SEC)
 
 
@@ -193,7 +352,11 @@ def run() -> None:
     # FASE A — PRIMA di creare i follow: un bot armato ieri non deve tornare
     # sullo stream solo perche' l'app e' stata riaperta.
     ferma_bot_al_nuovo_avvio()
+    # ...e anche gli INTERRUTTORI: una riga lasciata `running` ieri sera farebbe
+    # ripartire il bot da sola alla riapertura dell'app.
+    ferma_interruttori_al_nuovo_avvio()
     ensure_follows_for_bots()
+    riconcilia_interruttori()
     lock_port = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
     try:
         lock = acquire_single_instance_lock(lock_port, "tennis-runner")

@@ -29,7 +29,7 @@ import { isErrorRow, isSettled } from '@/lib/eventGroups';
 import { comeLabel, marcatoreRiga, type StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { pnlClass } from '@/lib/tradeStatus';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
-import { BOT_LABEL, type Bot, type PartitaGiornata, type StatoQuote } from '@/lib/controlRoom';
+import { BOT_LABEL, BOT_TENNIS, type Bot, type PartitaGiornata, type Sport, type StatoQuote } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
 /**
@@ -57,12 +57,31 @@ function etichettaStrategia(k: string): string {
     return STRATEGIA_LABEL[k.toLowerCase()] ?? k.toLowerCase().replace(/_/g, ' ');
 }
 
-const BOT_SIGLA: Record<Bot, string> = { omega: 'Ω', safe: 'S', mike: 'M' };
+const BOT_SIGLA: Record<Bot, string> = {
+    omega: 'Ω', safe: 'S', mike: 'M',
+    tennis_scalper: 'Sc', tennis_pro: 'Pr', tennis_flb: 'Fl', tennis_swing: 'Sw',
+};
 const BOT_CLS: Record<Bot, string> = {
     omega: 'text-primary border-primary/40 bg-primary/10',
     safe: 'text-secondary border-secondary/40 bg-secondary/10',
     mike: 'text-teal-300 border-teal-400/40 bg-teal-400/10',
+    // i quattro del tennis: una famiglia di colore sola (ambra), perche' sono
+    // quattro bot dello stesso sport e si leggono insieme
+    tennis_scalper: 'text-amber-300 border-amber-400/40 bg-amber-400/10',
+    tennis_pro: 'text-amber-200 border-amber-300/40 bg-amber-300/10',
+    tennis_flb: 'text-orange-300 border-orange-400/40 bg-orange-400/10',
+    tennis_swing: 'text-yellow-300 border-yellow-400/40 bg-yellow-400/10',
 };
+
+/**
+ * QUALI BOT PUO' AVER TOCCATO QUESTA PARTITA. Su una partita di tennis non
+ * esistono Omega e Mike (sono del calcio) e i quattro bot tennis non esistono
+ * sul calcio: mostrare simboli sempre spenti insegna a non guardarli. Safe
+ * c'e' in tutti e due, perche' ha una strategia per ciascuno sport.
+ */
+export function botDiSport(sport: Sport): Bot[] {
+    return sport === 'tennis' ? ['safe', ...BOT_TENNIS] : ['omega', 'safe', 'mike'];
+}
 
 /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
  *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione. */
@@ -210,9 +229,9 @@ export function SchedaPartita({
                 )}
             </div>
 
-            {/* ── riga 3: i tre bot, cliccabili se hanno operato ── */}
+            {/* ── riga 3: i bot DI QUESTO SPORT, cliccabili se hanno operato ── */}
             <div className="px-2.5 py-2 flex items-center gap-1.5">
-                {(['omega', 'safe', 'mike'] as Bot[]).map((b) => {
+                {botDiSport(p.sport).map((b) => {
                     const ops = perBot(b);
                     const attivo = ops.length > 0;
                     return (

@@ -113,10 +113,14 @@ describe('la scheda tennis: l UNICA differenza, e dichiarata', () => {
             base: 'paper', esatto: 'paper', punta: 'paper',
             tennis: 'live', model: 'paper', manual: 'paper',
         });
-        // le tre cose che quel gesto AGGIUNGE, chieste dall'utente il 15/09
+        // le cose che quel gesto AGGIUNGE, chieste dall'utente il 15/09: solo
+        // le accensioni (variants/strategy_modes) e lo stake. ⚠️ REPERTO 17/09
+        // sera — `auto_trade_tennis` NON e' fra queste: e' il SECONDO motore
+        // (opportunita' di modello tennis), non le entrate della Strategia S,
+        // e la scheda «solo tennis» non lo tocca piu': resta come nei CORRENTI.
         expect((p.stake as Record<string, unknown>).per_strategia)
             .toEqual({ tennis: STAKE_TENNIS });
-        expect(p.auto_trade_tennis).toBe(true);
+        expect(p.auto_trade_tennis).toBe(false);
         // e non porta via niente
         expect(p.tennis_exit_approval).toBe(true);
     });

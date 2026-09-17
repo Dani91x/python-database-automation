@@ -28,6 +28,14 @@ vi.mock('@/lib/mike', () => ({
     stopMike: vi.fn(async () => ({})),
     updateMikeParams: vi.fn(async () => ({})),
 }));
+// i quattro bot tennis parlano con `tennis_bot_service_control`: il finto ha
+// le STESSE firme del vero (bot_key, mode, stake, params), perche' un finto
+// che parla un'altra lingua certifica un bug invece di trovarlo.
+vi.mock('@/lib/tennis', () => ({
+    activateTennisBotService: vi.fn(async () => ({})),
+    stopTennisBotService: vi.fn(async () => ({})),
+    updateTennisBotService: vi.fn(async () => ({})),
+}));
 
 import {
     INTERRUTTORI, interruttoriDiSport, interruttoreDi, statoInterruttore,
@@ -41,6 +49,9 @@ import {
 import { activateOmega, stopOmega, updateOmegaParams } from '@/lib/omega';
 import { activateSafe, stopSafe, updateSafeParams } from '@/lib/safeBot';
 import { activateMike, stopMike, updateMikeParams } from '@/lib/mike';
+import {
+    activateTennisBotService, stopTennisBotService, updateTennisBotService,
+} from '@/lib/tennis';
 
 const mActOmega = vi.mocked(activateOmega);
 const mStopOmega = vi.mocked(stopOmega);
@@ -51,6 +62,9 @@ const mUpdSafe = vi.mocked(updateSafeParams);
 const mActMike = vi.mocked(activateMike);
 const mStopMike = vi.mocked(stopMike);
 const mUpdMike = vi.mocked(updateMikeParams);
+const mActTennis = vi.mocked(activateTennisBotService);
+const mStopTennis = vi.mocked(stopTennisBotService);
+const mUpdTennis = vi.mocked(updateTennisBotService);
 
 beforeEach(() => { vi.clearAllMocks(); });
 
@@ -97,19 +111,36 @@ function sorgente(over: Partial<{
 
 // ---------------------------------------------------------------- il catalogo
 
-describe('i sei interruttori, divisi per sport', () => {
+describe('i dieci interruttori, divisi per sport', () => {
     it('la scheda calcio non contiene il tennis', () => {
         expect(interruttoriDiSport('calcio').map((i) => i.id))
             .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta']);
     });
 
     it('la scheda tennis non contiene il calcio', () => {
-        expect(interruttoriDiSport('tennis').map((i) => i.id)).toEqual(['safe-tennis']);
+        expect(interruttoriDiSport('tennis').map((i) => i.id)).toEqual([
+            'safe-tennis',
+            // i QUATTRO BOT del tennis (17/09): servizi indipendenti, non
+            // strategie di Safe
+            'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
+        ]);
     });
 
-    it('senza scheda scelta ci sono tutti e sei', () => {
-        expect(interruttoriDiSport(null)).toHaveLength(6);
-        expect(INTERRUTTORI).toHaveLength(6);
+    it('senza scheda scelta ci sono tutti e dieci', () => {
+        expect(interruttoriDiSport(null)).toHaveLength(10);
+        expect(INTERRUTTORI).toHaveLength(10);
+    });
+
+    it('i quattro del tennis comandano il SERVIZIO, non una strategia', () => {
+        for (const id of ['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'] as const) {
+            const i = interruttoreDi(id);
+            expect(i.strategia).toBeNull();      // non e' una variante di Safe
+            expect(i.bot).toBe(id);              // un bot per riga: nessuno condiviso
+            expect(i.sport).toBe('tennis');
+            // lo stake e' la COLONNA della riga di control, non una voce annidata
+            expect(i.chiaveImporto).toBe('stake');
+            expect(i.chiaveImportoPerLato).toBeNull();
+        }
     });
 
     it('ogni interruttore di Safe nomina la sua strategia e la sua chiave di stake', () => {
@@ -536,5 +567,76 @@ describe('cambiaModalita su un bot FERMO non contiene nessuna accensione', () =>
         expect(mUpdMike).toHaveBeenCalledWith({ stake: 10 }, 'paper');
         expect(mActOmega).not.toHaveBeenCalled();
         expect(mActMike).not.toHaveBeenCalled();
+    });
+});
+
+
+// ============================================================================
+// I QUATTRO BOT DEL TENNIS — «indipendenti come gli altri» (utente, 17/09).
+//
+// Il pericolo di questo innesto ha un nome: prima del 17/09 `fermaBot` finiva
+// con `else await stopOmega()`, cioe' «tutto quello che non e' Safe ne' Mike e'
+// Omega». Con quattro bot nuovi nel modello, fermare lo Scalper avrebbe fermato
+// OMEGA — e Omega opera sul calcio con soldi veri. I test qui sotto ci stanno
+// per quello, e sono stati FALSIFICATI: rimettendo l'`else` che c'era prima,
+// «spegnere un bot tennis non ferma Omega» diventa rosso; facendo passare il
+// cambio di modalita' da `activateTennisBotService`, «non accende niente»
+// diventa rosso.
+// ============================================================================
+describe('i quattro bot tennis: ognuno parla solo con la SUA riga di control', () => {
+    it('accendere in prova scrive la modalita, e non tocca gli altri bot', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.accendi('tennis_scalper', 'paper');
+        expect(mActTennis).toHaveBeenCalledWith('tennis_scalper', 'paper');
+        expect(mActSafe).not.toHaveBeenCalled();
+        expect(mActOmega).not.toHaveBeenCalled();
+        expect(mActMike).not.toHaveBeenCalled();
+    });
+
+    it('accendere in LIVE scrive «live»: ai soldi veri si arriva solo scrivendolo', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.accendi('tennis_pro', 'live');
+        expect(mActTennis).toHaveBeenCalledWith('tennis_pro', 'live');
+    });
+
+    it('spegnere un bot tennis NON ferma Omega (l’`else` che c’era prima)', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.spegni('tennis_flb');
+        expect(mStopTennis).toHaveBeenCalledWith('tennis_flb');
+        expect(mStopOmega).not.toHaveBeenCalled();
+        expect(mStopSafe).not.toHaveBeenCalled();
+        expect(mStopMike).not.toHaveBeenCalled();
+    });
+
+    it('anche il freno d’emergenza ferma il bot GIUSTO', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.fermaBot('tennis_swing');
+        expect(mStopTennis).toHaveBeenCalledWith('tennis_swing');
+        expect(mStopOmega).not.toHaveBeenCalled();
+    });
+
+    it('cambiare modalita NON accende niente: passa da update, mai da activate', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.cambiaModalita('tennis_scalper', 'live');
+        expect(mUpdTennis).toHaveBeenCalledWith('tennis_scalper', { mode: 'live' });
+        expect(mActTennis).not.toHaveBeenCalled();
+    });
+
+    it('lo stake e una COLONNA: si scrive da solo e non tocca `status`', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.cambiaImporto('tennis_pro', 'stake', 3.5);
+        expect(mUpdTennis).toHaveBeenCalledWith('tennis_pro', { stake: 3.5 });
+        expect(mActTennis).not.toHaveBeenCalled();
+        // e non passa dai parametri degli altri bot
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mUpdMike).not.toHaveBeenCalled();
+        expect(mUpdOmega).not.toHaveBeenCalled();
+    });
+
+    it('un bot tennis non e una strategia di Safe: accenderlo non riscrive `variants`', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.accendi('tennis_swing', 'paper');
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mActSafe).not.toHaveBeenCalled();
     });
 });

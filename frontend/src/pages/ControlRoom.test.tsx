@@ -86,6 +86,11 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         ultimaCatena: { salti: [], trade: null, evento: null },
         operazioni: new Map(),
         proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
+        // 17/09 - le PROPOSTE DI OPPORTUNITA' (apertura) sono una chiave
+        // nuova del modello di vista: il finto la porta con lo stesso tipo,
+        // o la pagina che le cicla esplode qui e non dal vivo.
+        proposteOpportunita: [],
+        piazzaOpportunita: vi.fn(), rifiutaOpportunita: vi.fn(),
         approva: vi.fn(), ignora: vi.fn(), chiudi: vi.fn(),
         // 16/09 — il FINTO parla come il VERO: le chiavi nuove del modello di
         // vista ci sono tutte, con lo stesso tipo. Un finto piu' povero del
@@ -677,7 +682,11 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
                 realizzato: 0.44,          // soldi veri
                 realizzatoPaper: -4.83,    // prova: NON deve entrare nella barra
                 discordanza: null,
-                perBot: { omega: null, safe: 0.44, mike: null },
+                perBot: {
+                    omega: null, safe: 0.44, mike: null,
+                    tennis_scalper: null, tennis_pro: null,
+                    tennis_flb: null, tennis_swing: null,
+                },
                 liability: 3,
                 perSport: { tennis: { n: 5, pnl: 0.44, won: 5, lost: 0 } },
                 perSportPaper: { calcio: { n: 2, pnl: -4.83, won: 0, lost: 2 } },

@@ -58,6 +58,13 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
+from .condotta_ordini import (
+    RESIDUO_ACCETTATO,
+    FrenoRifiuti,
+    dichiara_chiusura_mercato,
+    sbilancio_selezione,
+)
+
 logger = logging.getLogger(__name__)
 
 # Stake minimo accettato (Betfair / client simulato).
@@ -440,6 +447,22 @@ class TennisScalperStrategy(BaseStrategy):
         # verificabile in produzione senza rischio.
         self.dry_run: bool = bool(c.get("dry_run", False))
         self._dry_seen: Dict[Tuple[int, str, float], int] = {}
+        # L'OROLOGIO DEL BOT E' QUELLO DEL MERCATO: ultimo `publish_time_epoch`
+        # visto (ms). Serve ai contatori a finestra (tetto transazioni, throttle
+        # del dry-run) che prima leggevano `time.time()` e percio' si
+        # comportavano in modo diverso in replay, in paper e in live.
+        self._now_ms: Optional[int] = None
+        # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
+        self._freno = FrenoRifiuti()
+        # eventi su cui si e' gia' spiegato perche' la missione non apre: una
+        # riga di attivita' per evento, non una per book
+        self._missione_spiegata: set = set()
+        # selezioni per cui si e' gia' detto che portano un residuo: una riga di
+        # attivita' per selezione, non una per book
+        self._residuo_detto: set = set()
+        # (selezione, lato, size) per cui si e' gia' detto che il residuo non e'
+        # piazzabile: una riga di attivita' per caso, non una per book
+        self._min_bet_detto: set = set()
 
         # FORCE-FLAT: il servizio lo alza per fermare il bot in sicurezza
         # (stesso percorso del near-KO: cancella tutto e chiude flat).
@@ -585,6 +608,34 @@ class TennisScalperStrategy(BaseStrategy):
             return True
         return self._phase_green(inplay)
 
+    def _spiega_missione(self, mid: str, inplay: bool) -> None:
+        """Dice UNA volta per mercato perche' la missione non apre.
+
+        Tre motivi possibili, tutti dal dossier §4.1:
+          * la gamba in-play e' disattivata e il mercato e' gia' in gioco — e'
+            il caso del bot armato a partita iniziata, che prima restava muto;
+          * la fase corrente ha gia' incassato il suo tick;
+          * (implicito) la missione non e' attiva, e allora non si passa di qui.
+        """
+        chiave = (str(mid), bool(inplay))
+        if chiave in self._missione_spiegata:
+            return
+        self._missione_spiegata.add(chiave)
+        if inplay and not self.inplay_tick_enabled:
+            motivo = ("non apro: la partita e' GIA' IN GIOCO e la gamba in-play "
+                      "della missione e' disattivata (`inplay_tick_enabled` "
+                      "falso). Per operare in gioco va acceso dalla scheda del "
+                      "bot.")
+        else:
+            motivo = ("non apro: la fase %s ha gia' incassato il suo tick "
+                      "(missione «1 tick per fase»)"
+                      % ("in-play" if inplay else "pre-match"))
+        self._emit("missione_blocca", market_id=str(mid), inplay=bool(inplay),
+                   one_tick_per_phase=bool(self.one_tick_per_phase),
+                   inplay_tick_enabled=bool(self.inplay_tick_enabled),
+                   motivo=motivo)
+        logger.info("[scalper] %s (market %s)", motivo, mid)
+
     def _book_locked(self, slot: _Slot, locked: float) -> float:
         """Accredita in ``stats['pnl_locked']`` SOLO il DELTA rispetto a quanto gia'
         contabilizzato per il ciclo corrente (fix audit #6, money-critical).
@@ -715,6 +766,9 @@ class TennisScalperStrategy(BaseStrategy):
         now = getattr(market_book, "publish_time_epoch", None)
         if now is None:
             return
+        # l'orologio del bot e' quello del mercato: lo si aggiorna qui, una volta
+        # sola, e da qui lo leggono i contatori a finestra (`_orologio_s`)
+        self._now_ms = int(now)
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
         # TRANSIZIONE PRE-MATCH → IN-PLAY (bug critico: il gap di apertura puo'
@@ -776,6 +830,12 @@ class TennisScalperStrategy(BaseStrategy):
         # gestiscono normalmente fino alla chiusura.
         if self._mission_blocks(inplay):
             no_entry = True
+            # ⚠️ SI DEVE DIRE PERCHE' (17/09). Col preset di produzione
+            # (`one_tick_per_phase=True`, `inplay_tick_enabled=False`) un bot
+            # armato su una partita GIA' IN GIOCO non apre MAI nulla: nel replay
+            # del 17/09 ha fatto 0 azioni su 8.602 giri, e l'utente non aveva
+            # modo di saperlo. Una riga di attivita' per evento, con il motivo.
+            self._spiega_missione(mid, inplay)
         # RUNNER FILTER "favorite": favorito calcolato UNA volta per book.
         fav_sel: Optional[int] = None
         fav_ok = True
@@ -870,9 +930,34 @@ class TennisScalperStrategy(BaseStrategy):
             if slot.status == DONE:
                 if slot.submins:
                     continue  # uscita esatta ancora in corso: niente riciclo
-                nw0, nl0 = self._net_position(slot)
+                # ⚠️ LA TOLLERANZA SI APPLICA ALLA SELEZIONE, NON ALLO SLOT
+                # (correzione 17/09). `_net_position(slot)` legge solo gli
+                # ordini DEL CICLO CORRENTE, e `_reset` li butta via: il
+                # micro-residuo che il bot accetta a ogni ciclo (fino a 0,25
+                # EUR di peggior esito) si ACCUMULAVA senza che nessuno
+                # guardasse il totale. Misurato nel replay del 17/09 su
+                # 35794049: 0,06 EUR di sbilancio residuo con lo slot gia'
+                # tornato IDLE, cioe' oltre la tolleranza che il bot stesso
+                # dichiara. La fonte di verita' e' il blotter, per selezione.
                 tol = 0.30 if slot.residual_ok else 0.02
-                if abs(nw0 - nl0) > tol:
+                sb_sel = sbilancio_selezione(market, self, int(runner.selection_id))
+                if sb_sel is None:
+                    # blotter illeggibile: non si ricicla lo slot al buio
+                    logger.warning("[scalper] esposizione non letta su sel=%s: "
+                                   "non riciclo lo slot", runner.selection_id)
+                    continue
+                nw0, nl0 = self._net_position(slot)
+                # DUE DOMANDE, non una. Il CICLO corrente deve essere chiuso
+                # entro la sua tolleranza (regola di sempre, sugli ordini dello
+                # slot); e la SELEZIONE nel suo insieme non deve portare piu' del
+                # residuo che il bot dichiara di accettare — e' li' che i
+                # micro-residui dei cicli precedenti si sommerebbero senza che
+                # nessuno guardi il totale.
+                # ⚠️ Le due soglie sono DIVERSE apposta: usare 0,02 anche sulla
+                # selezione produce un loop di flatten (un residuo di pochi
+                # centesimi non e' chiudibile: qualunque ordine sarebbe piu'
+                # grande del residuo — misurato, 10.743 flatten in una partita).
+                if abs(nw0 - nl0) > tol or sb_sel > RESIDUO_ACCETTATO:
                     self._begin_flatten(slot)
                     self._drive_flatten(market, slot, best_back, best_lay, now)
                     continue
@@ -928,6 +1013,42 @@ class TennisScalperStrategy(BaseStrategy):
             # D) nuovo ingresso (IDLE) — mai in-play senza allow_inplay, mai
             # dentro il buffer pre-KO (entry_stop_before_s)
             if slot.status == IDLE:
+                # ⚠️ MAI UN CICLO NUOVO SU UNA SELEZIONE ANCORA SBILANCIATA
+                # (correzione 17/09). `_reset` riporta lo slot a IDLE e butta via
+                # i riferimenti agli ordini del ciclo: da quel momento
+                # `_net_position` non vede piu' niente e il residuo accettato
+                # (fino a 0,25 EUR di peggior esito per ciclo) restava a mercato
+                # senza che nessuno lo guardasse, accumulandosi ciclo dopo ciclo.
+                # Misurato: 0,06 EUR di sbilancio con lo slot IDLE, oltre la
+                # tolleranza che il bot stesso dichiara. La fonte e' il blotter.
+                # La soglia e' quella che il bot DICHIARA (accettazione del
+                # micro-residuo, `RESIDUO_ACCETTATO`): sotto, il residuo e' nella
+                # spec e si apre; sopra, si appiattisce e non si apre. Un residuo
+                # di pochi centesimi NON e' chiudibile (qualunque ordine di
+                # chiusura sarebbe piu' grande del residuo): pretendere lo zero
+                # assoluto produceva un loop di flatten (misurato: 10.840
+                # tentativi in una partita).
+                sb_idle = sbilancio_selezione(market, self,
+                                              int(runner.selection_id))
+                if sb_idle is None:
+                    continue        # esposizione non letta: non si apre al buio
+                if sb_idle > RESIDUO_ACCETTATO:
+                    # NON si apre un ciclo nuovo sopra a denaro ancora esposto.
+                    # Qui NON si appiattisce: il flatten appartiene a un ciclo
+                    # vivo e riaprirlo a ogni book produce churn. Se il residuo
+                    # e' di questo slot, la sorveglianza post-DONE ci ha gia'
+                    # provato; quello che resta si DICHIARA, una volta.
+                    if (int(runner.selection_id) not in self._residuo_detto):
+                        self._residuo_detto.add(int(runner.selection_id))
+                        self._emit("residuo_selezione",
+                                   selection_id=int(runner.selection_id),
+                                   sbilancio=round(sb_idle, 3),
+                                   soglia=RESIDUO_ACCETTATO,
+                                   note=("la selezione porta ancora denaro "
+                                         "esposto oltre il residuo accettato: "
+                                         "non apro un ciclo nuovo sopra"))
+                    continue
+                self._residuo_detto.discard(int(runner.selection_id))
                 # GAP-GUARD PUNTEGGIO: nessun nuovo ingresso su un punto che pesa
                 if self.point_pressure:
                     continue
@@ -1000,6 +1121,17 @@ class TennisScalperStrategy(BaseStrategy):
         if settled:
             self.stats["pnl_settled"] = round(
                 float(self.stats.get("pnl_settled", 0.0)) + settled, 3)
+        # FASE DI SETTLEMENT (17/09): a mercato CHIUSO il bot non riceve piu'
+        # book (`check_market_book` accetta solo OPEN). Si dichiara che cosa era
+        # aperto al fischio e si chiude la memoria: uno slot non-IDLE resterebbe
+        # tale per sempre, e il referto lo leggerebbe come «sorveglia il nulla».
+        mid = str(getattr(market, "market_id", "") or "")
+        aperti = [sel for (m, sel), s in list(self._slots.items())
+                  if m == mid and s.status != IDLE]
+        for chiave in [k for k in self._slots if k[0] == mid]:
+            self._slots.pop(chiave, None)
+        dichiara_chiusura_mercato(market, self, self.event_sink, aperti,
+                                  "tennis_scalper")
 
     # ----------------------------------------------------------------- logica
     def _try_enter(
@@ -1200,8 +1332,7 @@ class TennisScalperStrategy(BaseStrategy):
         ob = self._place(market, runner.selection_id, "BACK", back_price, self.stake)
         ol = self._place(market, runner.selection_id, "LAY", lay_price, self.stake)
         if ob is None or ol is None:
-            self._cancel_if_live(market, ob)
-            self._cancel_if_live(market, ol)
+            self._gamba_orfana(market, slot, ob, ol, "maker")
             return
         slot.status = QUOTING2
         slot.entry_back = ob
@@ -1273,8 +1404,7 @@ class TennisScalperStrategy(BaseStrategy):
         ob = self._place(market, runner.selection_id, "BACK", back_price, stake)
         ol = self._place(market, runner.selection_id, "LAY", lay_price, stake)
         if ob is None or ol is None:
-            self._cancel_if_live(market, ob)
-            self._cancel_if_live(market, ol)
+            self._gamba_orfana(market, slot, ob, ol, "join")
             return
         slot.status = QUOTING2
         slot.entry_back = ob
@@ -2052,17 +2182,55 @@ class TennisScalperStrategy(BaseStrategy):
                            side=side, size_orig=size, size=bumped)
                 size = bumped
             else:
-                # residuo minuscolo: accetta il micro-rischio, non piazzare
-                self._emit("min_bet_skip", selection_id=int(selection_id),
-                           side=side, size=size)
+                # RESIDUO NON PIAZZABILE. Sotto 0,25 EUR non esiste un ordine
+                # legale su .it che lo chiuda: bumpare a 2,00 vorrebbe dire
+                # ROVESCIARE la posizione, e piazzare la size esatta richiede il
+                # place-and-trim (⊘ dichiarato, vedi `tennis_runner`).
+                # ⚠️ IL DIFETTO NON ERA IL SALTO, ERA RIPROVARE ALL'INFINITO:
+                # misurato sul replay del 17/09 (35794049, scenario `live`)
+                # **12.249 `min_bet_skip` identici** in una partita, cioe' il
+                # driver del flatten che ritenta a ogni book una chiusura che
+                # non potra' mai partire. Adesso il residuo si ACCETTA una volta
+                # sola, lo si DICHIARA e lo slot lo sa (`residual_ok`), cosi' la
+                # sorveglianza post-DONE usa la tolleranza del residuo accettato
+                # invece di riaprire il flatten in eterno.
+                if slot is not None and not slot.residual_ok:
+                    slot.residual_ok = True
+                if self._residuo_non_piazzabile_detto(selection_id, side, size):
+                    self._emit("min_bet_skip", selection_id=int(selection_id),
+                               side=side, size=size,
+                               note=("residuo sotto il minimo di lato: nessun "
+                                     "ordine legale puo' chiuderlo. Accettato e "
+                                     "dichiarato, NON si ritenta"))
                 return None
         if size < 0.01:
             return None
         # tetto transazioni/ora: blocca SOLO i nuovi ingressi (floor_min=True);
-        # chiusure e flatten passano sempre (la sicurezza vince sui costi)
+        # chiusure e flatten passano sempre (la sicurezza vince sui costi).
+        # ⚠️ L'OROLOGIO E' QUELLO DEL MERCATO (`publish_time_epoch`), non
+        # `time.time()`. Correzione del 17/09: con l'orologio del muro, in
+        # replay e in backtest un'ora di mercato scorre in pochi secondi reali,
+        # la finestra da 3600 s non si svuotava MAI e il tetto scattava dopo 300
+        # piazzamenti bloccando ogni ingresso per il resto della partita —
+        # comportamento diverso da paper e da live, cioe' la parita' che il
+        # processo standard esige (§4). Tutto il resto della logica del bot usa
+        # gia' `publish_time_epoch` (vedi `process_market_book`).
+        now_s = self._orologio_s()
+        # FRENO DOPO I RIFIUTI (17/09): misurato 20.534 piazzamenti rifiutati in
+        # UNA partita nello scenario `rifiuti-betfair`. Non tocca le USCITE
+        # (`floor_min=False`): una chiusura deve poter partire sempre, come per
+        # il tetto transazioni qui sotto.
+        if floor_min and not self.dry_run:
+            fermo = self._freno.bloccato(market.market_id, selection_id, now_s)
+            if fermo:
+                # il motivo si scrive UNA volta per rifiuto, non a ogni
+                # tentativo: 40 rifiuti veri producevano 20.494 righe di
+                # attivita', cioe' un allagamento di `tennis_bot_activity`.
+                if self._freno.da_annunciare(market.market_id, selection_id):
+                    self._emit("freno_rifiuti", selection_id=int(selection_id),
+                               side=side, motivo=fermo)
+                return None
         if self.max_txn_hour > 0 and not self.dry_run:
-            import time as _t
-            now_s = _t.time()
             while self._txn_ts and now_s - self._txn_ts[0] > 3600:
                 self._txn_ts.popleft()
             if floor_min and len(self._txn_ts) >= self.max_txn_hour:
@@ -2072,19 +2240,13 @@ class TennisScalperStrategy(BaseStrategy):
         # DRY-RUN: logga la quota che AVREBBE piazzato (throttled) e basta.
         if self.dry_run:
             key = (int(selection_id), side, price)
-            import time as _t
-            now_s = int(_t.time())
-            if now_s - self._dry_seen.get(key, 0) >= 60:
-                self._dry_seen[key] = now_s
+            if int(now_s) - self._dry_seen.get(key, 0) >= 60:
+                self._dry_seen[key] = int(now_s)
                 self.stats["dry_quotes"] += 1
                 self._emit("dry_place", market_id=market.market_id,
                            selection_id=int(selection_id), side=side,
                            price=price, size=size)
             return None
-        self.stats["orders_placed"] += 1
-        self._emit("place", market_id=market.market_id,
-                   selection_id=int(selection_id), side=side,
-                   price=price, size=size)
         trade = Trade(
             market_id=market.market_id,
             selection_id=int(selection_id),
@@ -2095,7 +2257,31 @@ class TennisScalperStrategy(BaseStrategy):
             side=side,
             order_type=LimitOrder(price=price, size=size, persistence_type="LAPSE"),
         )
-        market.place_order(order)
+        # L'ESITO DEL PIAZZAMENTO SI LEGGE (catalogo §7 difetto 2, «`res.ok` mai
+        # letto»). `Market.place_order` torna un BOOL e `False` vuol dire che un
+        # trading control ha bocciato l'ordine: NON entra nel blotter, resta in
+        # `OrderStatus.VIOLATION` e `_has_live` lo vede morto — quindi lo slot
+        # restava bloccato in QUOTING per i 10 minuti di `entry_ttl_ms` credendo
+        # di avere una quota a mercato (`flumine/execution/transaction.py:67-75`).
+        # Anche il CONTATORE e la telemetria si spostano DOPO: prima contavano
+        # ordini che non erano mai esistiti.
+        if not market.place_order(order):
+            n, attesa = self._freno.registra_rifiuto(
+                market.market_id, selection_id, now_s)
+            self._emit("place_rejected", market_id=market.market_id,
+                       selection_id=int(selection_id), side=side,
+                       price=price, size=size, rifiuti=n, riprovo_fra_s=attesa,
+                       motivo=str(getattr(order, "violation_msg", "") or "rifiutato"))
+            logger.warning("[scalper] piazzamento RIFIUTATO sel=%s %s @%s per %s "
+                           "(%d-esimo, riprovo fra %.0fs): %s",
+                           selection_id, side, price, size, n, attesa,
+                           getattr(order, "violation_msg", None))
+            return None
+        self._freno.registra_successo(market.market_id, selection_id)
+        self.stats["orders_placed"] += 1
+        self._emit("place", market_id=market.market_id,
+                   selection_id=int(selection_id), side=side,
+                   price=price, size=size)
         return order
 
     # ---------------------------------------------- uscite a size ESATTA (.it)
@@ -2290,6 +2476,73 @@ class TennisScalperStrategy(BaseStrategy):
         if getattr(order, "status", None) not in _LIVE_ORDER_STATUSES:
             return False
         return float(getattr(order, "size_remaining", 0.0) or 0.0) > _EPS
+
+    def _residuo_non_piazzabile_detto(self, selection_id: Any, side: str,
+                                      size: float) -> bool:
+        """True solo la PRIMA volta per (selezione, lato, size): il motivo si
+        scrive una volta, non a ogni book (12.249 righe identiche misurate)."""
+        chiave = (int(selection_id), str(side), round(float(size), 2))
+        if chiave in self._min_bet_detto:
+            return False
+        self._min_bet_detto.add(chiave)
+        return True
+
+    def _orologio_s(self) -> float:
+        """L'ora del BOT, in secondi: il `publish_time` dell'ultimo book.
+
+        Ripiega su `time.time()` solo se nessun book e' ancora passato (il bot
+        non ha ancora un'ora di mercato): in produzione e' il primissimo istante,
+        in replay non succede mai perche' `_place` e' raggiungibile solo dentro
+        `process_market_book`.
+        """
+        if self._now_ms is not None:
+            return float(self._now_ms) / 1000.0
+        import time as _t
+
+        return _t.time()
+
+    def _gamba_orfana(self, market: Any, slot: "_Slot", ob: Any, ol: Any,
+                      ramo: str) -> None:
+        """Una delle due gambe non e' partita: l'altra NON si abbandona.
+
+        ⚠️ DIFETTO MONEY-CRITICAL corretto il 17/09. Prima qui si chiamava
+        `_cancel_if_live` UNA volta e si usciva SENZA scrivere niente nello slot:
+        lo slot restava IDLE, `slot.entry_back`/`entry_lay` restavano `None` e
+        l'ordine gia' piazzato spariva da ogni contabilita' (`_net_position`
+        legge solo gli ordini dello slot). Ma quel cancel FALLISCE quasi sempre:
+        un ordine appena piazzato e' `PENDING` e senza `bet_id`, e
+        `BetfairOrder.cancel()` alza `OrderUpdateError`
+        (`flumine/order/order.py:360-369`), eccezione che `_cancel_if_live`
+        seppellisce in un `logger.debug`. Risultato: una gamba NUDA viva sul
+        book che nessuno ricancella e nessuno vede. Il caso e' ordinario, non
+        teorico: basta che il tetto `max_txn_hour` (300 nel preset tennis)
+        tagli la SECONDA gamba.
+
+        La riparazione non inventa niente: l'ordine superstite entra nello slot e
+        lo slot va in `DONE`, dove la SORVEGLIANZA POST-DONE che il bot ha gia'
+        (ritenta il cancel a ogni book e riapre il flatten se la posizione non e'
+        piatta) se ne prende carico. Nessuna regola di strategia cambia.
+        """
+        vivo = ob if ob is not None else ol
+        self._cancel_if_live(market, ob)
+        self._cancel_if_live(market, ol)
+        if vivo is None:
+            return
+        # la gamba superstite entra nella contabilita' dello slot
+        if ob is not None:
+            slot.entry_back = ob
+        if ol is not None:
+            slot.entry_lay = ol
+        slot.status = DONE
+        self._emit("gamba_orfana", ramo=ramo,
+                   selection_id=int(getattr(vivo, "selection_id", 0) or 0),
+                   side=str(getattr(vivo, "side", "") or ""),
+                   note=("una sola delle due gambe e' partita: la superstite "
+                         "resta nello slot e la sorveglianza post-DONE la "
+                         "cancella o la appiattisce"))
+        logger.warning("[scalper] GAMBA ORFANA (%s): solo %s e' partita, "
+                       "presa in carico dalla sorveglianza post-DONE",
+                       ramo, getattr(vivo, "side", "?"))
 
     @staticmethod
     def _cancel_if_live(market: Any, order: Any) -> None:

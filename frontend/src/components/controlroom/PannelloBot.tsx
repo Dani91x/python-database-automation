@@ -92,6 +92,12 @@ export interface RigaInterruttore {
     partiteEsposte: number | null;
     stopFermaSoloAperture: boolean;
     fermatoAllAvvioAt: string | null;
+    /**
+     * Il P&L DI OGGI di questa riga, NELLA MODALITÀ in cui sta operando.
+     * `null`/assente = niente di regolato oggi (o modalità non dichiarata): si
+     * scrive «—», mai «0,00 €», che vorrebbe dire «ho chiuso in pari».
+     */
+    pnlOggi?: number | null;
     /** true sulla PRIMA riga di ciascun bot: lì va il foglio parametri, che è
      *  del servizio e non della singola strategia */
     primaDelBot: boolean;
@@ -311,6 +317,22 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                     title="da quanto è arrivato l'ultimo messaggio dal canale di questo bot">
                     {r.etaPushS == null ? DASH : fmtAge(r.etaPushS)}
                 </span>
+
+                {/* IL P&L DI OGGI, quando il servizio lo dichiara. È quello
+                    della modalità della riga: prova e soldi veri non finiscono
+                    mai nello stesso numero. */}
+                {r.pnlOggi !== undefined && (
+                    <span className="text-[10px] font-mono" data-testid={`cr-bot-pnl-${r.id}`}
+                        title={r.pnlOggi == null
+                            ? "oggi non c'e' ancora niente di regolato per questo bot"
+                            : `P&L di oggi ${live ? 'con soldi veri' : 'in prova'}, netto di commissione`}>
+                        <span className="text-white/30">oggi </span>
+                        <span className={r.pnlOggi == null ? 'text-white/40'
+                            : r.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
+                            {r.pnlOggi == null ? DASH : fmtMoney(r.pnlOggi)}
+                        </span>
+                    </span>
+                )}
 
                 {mostraParametri && (
                     <span className="ml-auto flex items-center gap-1"

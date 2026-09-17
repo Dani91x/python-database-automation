@@ -354,3 +354,94 @@ def upsert_tennis_position(row: Dict[str, Any]) -> None:
     _exec_retry(sb.table("tennis_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
     ))
+
+
+# ---------------------------------------------------------------------------
+# tennis_bot_service_control — L'INTERRUTTORE PER BOT (Control Room)
+# ---------------------------------------------------------------------------
+# ⚠️ Richiede `migrations/tennis_bot_service_control_2026-09-17.sql`, che NON e'
+# ancora applicata. Finche' la tabella non c'e' queste funzioni NON esplodono e
+# NON inventano: dicono «non letto» e lo scrivono nel log UNA volta sola. Un bot
+# di cui non si sa lo stato non si comanda (fail-closed).
+_SERVICE_TABLE = "tennis_bot_service_control"
+_servizio_assente_detto = False
+
+
+def _tabella_servizi_assente(e: Exception) -> bool:
+    """La tabella non esiste ancora (migrazione non applicata)? PostgREST
+    risponde PGRST205 / 42P01. Qualunque ALTRO errore non va mascherato: un DB
+    giu' e una migrazione mancante sono due cose diverse."""
+    t = str(e)
+    return ("PGRST205" in t or "42P01" in t
+            or ("does not exist" in t and _SERVICE_TABLE in t)
+            or ("Could not find the table" in t and _SERVICE_TABLE in t))
+
+
+def list_tennis_bot_services() -> Optional[List[Dict[str, Any]]]:
+    """Le righe di interruttore dei quattro bot tennis.
+
+    `None` = NON LETTO (tabella assente o DB KO). Chi chiama non deve dedurre
+    «tutti fermi»: non sapere non e' sapere che sono fermi.
+    """
+    global _servizio_assente_detto
+    sb = get_tennis_client()
+    try:
+        resp = sb.table(_SERVICE_TABLE).select("*").execute()
+    except Exception as e:  # noqa: BLE001
+        if _tabella_servizi_assente(e):
+            if not _servizio_assente_detto:
+                _servizio_assente_detto = True
+                logger.warning(
+                    "[tennis-db] %s non esiste ancora (migrazione "
+                    "tennis_bot_service_control_2026-09-17.sql NON applicata): "
+                    "l'interruttore per bot della Control Room resta inerte.",
+                    _SERVICE_TABLE)
+            return None
+        logger.warning("[tennis-db] lettura %s KO: %s", _SERVICE_TABLE, str(e)[:160])
+        return None
+    return getattr(resp, "data", None) or []
+
+
+def set_tennis_bot_service_state(
+    bot_key: str,
+    *,
+    status: Optional[str] = None,
+    stats: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+    heartbeat: bool = False,
+    stopped: bool = False,
+) -> bool:
+    """Aggiorna la riga di interruttore di UN bot. `False` = non scritto."""
+    sb = get_tennis_client()
+    upd: Dict[str, Any] = {"updated_at": _now_iso()}
+    if status is not None:
+        upd["status"] = str(status)
+    if stats is not None:
+        upd["stats"] = stats
+    if error is not None:
+        upd["error"] = str(error)[:300]
+    if heartbeat:
+        upd["heartbeat_at"] = _now_iso()
+    if stopped:
+        upd["stopped_at"] = _now_iso()
+    try:
+        sb.table(_SERVICE_TABLE).update(upd).eq("bot_key", str(bot_key)).execute()
+    except Exception as e:  # noqa: BLE001
+        if not _tabella_servizi_assente(e):
+            logger.warning("[tennis-db] scrittura %s KO (%s): %s",
+                           _SERVICE_TABLE, bot_key, str(e)[:160])
+        return False
+    return True
+
+
+def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
+    """Riga di armatura PER EVENTO, idempotente su (event_id, bot_key).
+
+    E' la stessa tabella che la scheda partita usa da sempre: l'interruttore per
+    bot non la sostituisce, la ALIMENTA.
+    """
+    sb = get_tennis_client()
+    payload = dict(row)
+    payload["updated_at"] = _now_iso()
+    _exec_retry(sb.table("tennis_bot_control").upsert(
+        payload, on_conflict="event_id,bot_key"))

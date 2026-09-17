@@ -53,9 +53,13 @@ class _Market:
 
     def place_order(self, o):
         self.placed.append(o)
+        # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27):
+        # `Market.place_order` ritorna un BOOL (`market.py:84-98`).
+        return True
 
     def cancel_order(self, o):
         self.cancelled.append(o)
+        return True
 
 
 class _MB:

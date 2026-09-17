@@ -1,0 +1,189 @@
+OK 35790089 tick=5216 decisioni=5212 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=28 ordini=24 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+KO 35790407 tick=1050 decisioni=1045 azioni=21 ordini=18 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+    K6: la posizione ('1.259747093', 25989821) e' dichiarata chiusa ma l'ordine 140089603056566486 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259747093', 25989821) e' dichiarata chiusa ma l'ordine 140089603056566486 e' ancora 'Cancelling' sul book per 2.0
+KO 35790443 tick=5317 decisioni=5312 azioni=12 ordini=8 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259747081', 27592751) e' dichiarata chiusa ma l'ordine 140089603081689002 e' ancora 'Cancelling' sul book per 2.0
+OK 35790645 tick=253 decisioni=249 azioni=0 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=17 ordini=14 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+OK 35790713 tick=2636 decisioni=2631 azioni=38 ordini=31 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+KO 35792709 tick=1006 decisioni=1001 azioni=16 ordini=12 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+    K6: la posizione ('1.259765861', 10349870) e' dichiarata chiusa ma l'ordine 140089603136851764 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259765861', 10349870) e' dichiarata chiusa ma l'ordine 140089603136851764 e' ancora 'Cancelling' sul book per 2.0
+KO 35792714 tick=5090 decisioni=5086 azioni=21 ordini=17 stati=QUOTING2,IDLE,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259765855', 50809756) e' dichiarata chiusa ma l'ordine 140089603148314692 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259765855', 50809756) e' dichiarata chiusa ma l'ordine 140089603148314692 e' ancora 'Cancelling' sul book per 2.0
+OK 35792939 tick=4003 decisioni=3998 azioni=54 ordini=48 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+KO 35792974 tick=3599 decisioni=3593 azioni=57 ordini=45 stati=IDLE,QUOTING2,CANCELLING,LOCKING,FLATTENING,DONE
+    K6: la posizione ('1.259770632', 9346346) e' dichiarata chiusa ma l'ordine 140089603213612900 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259770632', 9346346) e' dichiarata chiusa ma l'ordine 140089603213612900 e' ancora 'Cancelling' sul book per 2.0
+KO 35793833 tick=1602 decisioni=1599 azioni=22 ordini=19 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259779078', 99346664) e' dichiarata chiusa ma l'ordine 140089603218987149 e' ancora 'Cancelling' sul book per 1.99
+OK 35794049 tick=8608 decisioni=8602 azioni=278 ordini=234 stati=QUOTING2,LOCKING,CANCELLING,IDLE,FLATTENING,DONE
+OK 35795565 tick=26 decisioni=21 azioni=2 ordini=2 stati=IDLE,QUOTING2,CANCELLING
+KO 35795739 tick=5626 decisioni=5622 azioni=28 ordini=21 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259820045', 14833205) e' dichiarata chiusa ma l'ordine 140089603340303620 e' ancora 'Cancelling' sul book per 2.0
+KO 35795988 tick=2300 decisioni=2295 azioni=35 ordini=29 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259820147', 2037861) e' dichiarata chiusa ma l'ordine 140089603395134546 e' ancora 'Cancelling' sul book per 2.0
+KO 35796097 tick=3748 decisioni=3744 azioni=17 ordini=12 stati=QUOTING2,CANCELLING,FLATTENING,DONE,IDLE
+    K6: la posizione ('1.259819626', 73657730) e' dichiarata chiusa ma l'ordine 140089603429306328 e' ancora 'Cancelling' sul book per 2.0
+OK 35796102 tick=3142 decisioni=3137 azioni=30 ordini=27 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+OK 35790089 tick=5216 decisioni=5212 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=2483 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=465 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=3192 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=133 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=2228 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=1337 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=588 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=2785 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=1969 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=1994 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=632 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=4913 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=11 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=2599 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=1137 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=1819 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=80 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=80 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=80 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=0 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=80 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=80 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=60 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=80 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=80 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=80 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=76 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=80 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=4 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=80 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=80 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=80 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=80 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=2 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=2 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=2 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=2 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=2 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=2 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=2 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=2 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=2 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=2 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=2 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=2 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=2 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=2 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=2 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=2 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=1 ordini=0 stati=IDLE
+OK 35790407 tick=1050 decisioni=1045 azioni=1 ordini=0 stati=IDLE
+OK 35790443 tick=5317 decisioni=5312 azioni=1 ordini=0 stati=IDLE
+OK 35790645 tick=253 decisioni=249 azioni=1 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=1 ordini=0 stati=IDLE
+OK 35790713 tick=2636 decisioni=2631 azioni=1 ordini=0 stati=IDLE
+OK 35792709 tick=1006 decisioni=1001 azioni=1 ordini=0 stati=IDLE
+OK 35792714 tick=5090 decisioni=5086 azioni=1 ordini=0 stati=IDLE
+OK 35792939 tick=4003 decisioni=3998 azioni=1 ordini=0 stati=IDLE
+OK 35792974 tick=3599 decisioni=3593 azioni=1 ordini=0 stati=IDLE
+OK 35793833 tick=1602 decisioni=1599 azioni=1 ordini=0 stati=IDLE
+OK 35794049 tick=8608 decisioni=8602 azioni=1 ordini=0 stati=IDLE
+OK 35795565 tick=26 decisioni=21 azioni=1 ordini=0 stati=IDLE
+OK 35795739 tick=5626 decisioni=5622 azioni=1 ordini=0 stati=IDLE
+OK 35795988 tick=2300 decisioni=2295 azioni=1 ordini=0 stati=IDLE
+OK 35796097 tick=3748 decisioni=3744 azioni=1 ordini=0 stati=IDLE
+OK 35796102 tick=3142 decisioni=3137 azioni=1 ordini=0 stati=IDLE
+OK 35790089 tick=5216 decisioni=5212 azioni=22 ordini=20 stati=QUOTING2,CANCELLING,IDLE,FLATTENING
+OK 35790407 tick=1050 decisioni=1045 azioni=24 ordini=21 stati=QUOTING2,CANCELLING,IDLE,FLATTENING
+KO 35790443 tick=5317 decisioni=5312 azioni=15 ordini=13 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259747081', 27592751) e' dichiarata chiusa ma l'ordine 140089604573855769 e' ancora 'Cancelling' sul book per 1.99
+    K6: la posizione ('1.259747081', 27592751) e' dichiarata chiusa ma l'ordine 140089604573855769 e' ancora 'Cancelling' sul book per 1.99
+OK 35790645 tick=253 decisioni=249 azioni=0 ordini=0 stati=IDLE
+OK 35790708 tick=4793 decisioni=4789 azioni=15 ordini=12 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+OK 35790713 tick=2636 decisioni=2631 azioni=35 ordini=25 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+OK 35792709 tick=1006 decisioni=1001 azioni=17 ordini=13 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+OK 35792714 tick=5090 decisioni=5086 azioni=16 ordini=12 stati=QUOTING2,IDLE,CANCELLING,FLATTENING
+KO 35792939 tick=4003 decisioni=3998 azioni=47 ordini=43 stati=QUOTING2,CANCELLING,IDLE,FLATTENING,DONE
+    K6: la posizione ('1.259770641', 71344610) e' dichiarata chiusa ma l'ordine 140089604758045741 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259770641', 71344610) e' dichiarata chiusa ma l'ordine 140089604758045741 e' ancora 'Cancelling' sul book per 2.0
+    K6: la posizione ('1.259770641', 71344610) e' dichiarata chiusa ma l'ordine 140089604758045741 e' ancora 'Cancelling' sul book per 2.0
+OK 35792974 tick=3599 decisioni=3593 azioni=28 ordini=21 stati=IDLE,QUOTING2,CANCELLING,LOCKING,FLATTENING,DONE
+OK 35793833 tick=1602 decisioni=1599 azioni=31 ordini=26 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+OK 35794049 tick=8608 decisioni=8602 azioni=142 ordini=126 stati=QUOTING2,LOCKING,CANCELLING,IDLE,FLATTENING,DONE
+OK 35795565 tick=26 decisioni=21 azioni=2 ordini=2 stati=IDLE,QUOTING2,CANCELLING
+OK 35795739 tick=5626 decisioni=5622 azioni=45 ordini=36 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+KO 35795988 tick=2300 decisioni=2295 azioni=30 ordini=25 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE
+    K6: la posizione ('1.259820147', 2037861) e' dichiarata chiusa ma l'ordine 140089604930275424 e' ancora 'Cancelling' sul book per 1.96
+OK 35796097 tick=3748 decisioni=3744 azioni=22 ordini=16 stati=QUOTING2,CANCELLING,FLATTENING,DONE
+OK 35796102 tick=3142 decisioni=3137 azioni=30 ordini=27 stati=IDLE,QUOTING2,CANCELLING,FLATTENING,DONE

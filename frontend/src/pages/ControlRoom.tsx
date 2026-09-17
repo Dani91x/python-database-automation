@@ -44,6 +44,7 @@ import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
+import { SchedaPropostaOpportunita } from '@/components/controlroom/SchedaPropostaOpportunita';
 import { SchedaChiusuraOmega } from '@/components/controlroom/SchedaChiusuraOmega';
 import {
     useControlRoom,
@@ -82,6 +83,11 @@ const BOT_CLS: Record<Bot, string> = {
     omega: 'text-primary',
     safe: 'text-secondary',
     mike: 'text-teal-300',
+    // i quattro del tennis, stessa famiglia di colore della scheda partita
+    tennis_scalper: 'text-amber-300',
+    tennis_pro: 'text-amber-200',
+    tennis_flb: 'text-orange-300',
+    tennis_swing: 'text-yellow-300',
 };
 
 
@@ -266,11 +272,16 @@ export default function ControlRoom() {
     );
 
     // ── LA PLANCIA, RISTRETTA ALLO SPORT SCELTO ──────────────────────────────
-    // «Nella scheda tennis voglio vedere SOLO il bot di tennis» (utente,
-    // 15/09). Il tennis lo fa unicamente Safe, con la strategia `tennis`:
-    // Mike (Under 3.5) e Omega (risultato esatto) sono calcio e qui non hanno
-    // niente da dire. Senza filtro sarebbe l'operatore a doversi ricordare
-    // quale delle tre righe riguarda la partita che sta guardando.
+    // «Nella scheda tennis voglio vedere SOLO i bot di tennis» (utente,
+    // 15/09). Mike (Under 3.5) e Omega (risultato esatto) sono calcio e qui non
+    // hanno niente da dire. Senza filtro sarebbe l'operatore a doversi
+    // ricordare quale riga riguarda la partita che sta guardando.
+    //
+    // 17/09 — nella scheda tennis le righe adesso sono CINQUE: la strategia
+    // `tennis` di Safe piu' i QUATTRO BOT del tennis (scalper, pro, flb,
+    // swing), che sono servizi indipendenti con la loro riga di control. Il
+    // filtro per sport li porta dentro da solo: l'elenco e' uno
+    // (`INTERRUTTORI`), e non ce n'e' un secondo da tenere allineato.
     const soloTennis = sport === 'tennis';
     const righeBot = useMemo(
         () => righeInterruttori(vm.bots, sport, soloTennis ? { 'safe-tennis': 'Tennis' } : undefined),
@@ -1173,6 +1184,19 @@ function NastroSegnali({ vm, filtroSport }: {
                         slippagePct={vm.slippagePct}
                         onApprova={vm.approva}
                         onIgnora={vm.ignora}
+                    />
+                ))}
+                {/* 17/09 — LE OPPORTUNITA' DI MODELLO (calcio e tennis) non si
+                    piazzano piu' da sole: arrivano qui, SOTTO le chiusure, una
+                    scheda per proposta, con i due tasti PIAZZA e RIFIUTA. */}
+                {vm.proposteOpportunita.map((po) => (
+                    <SchedaPropostaOpportunita
+                        key={`opp-${po.proposta.id}`}
+                        proposta={po.proposta}
+                        abbinabileOra={po.abbinabileOra}
+                        etaQuoteS={po.etaQuoteS}
+                        onPiazza={vm.piazzaOpportunita}
+                        onRifiuta={vm.rifiutaOpportunita}
                     />
                 ))}
             </div>

@@ -42,18 +42,36 @@ class _MB:
         self.market_definition = None
 
 
+class _Blotter:
+    """IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27): un `Market` di
+    flumine ha SEMPRE un `blotter`, ed e' da li' che il bot legge l'esposizione
+    davvero abbinata. Un finto senza blotter faceva credere al bot che
+    l'esposizione fosse illeggibile, e il bot — correttamente — non apriva."""
+
+    def __init__(self, orders=None):
+        self._orders = list(orders or [])
+
+    def strategy_orders(self, _s):
+        return list(self._orders)
+
+
 class _Market:
     market_id = "1.1"
 
-    def __init__(self):
+    def __init__(self, blotter=None):
         self.placed = []
         self.cancelled = []
+        self.blotter = blotter or _Blotter()
 
     def place_order(self, o):
         self.placed.append(o)
+        # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27):
+        # `Market.place_order` ritorna un BOOL (`market.py:84-98`).
+        return True
 
     def cancel_order(self, o):
         self.cancelled.append(o)
+        return True
 
 
 def _make(**params):

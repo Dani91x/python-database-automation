@@ -38,7 +38,11 @@
 import { activateOmega, stopOmega, updateOmegaParams, type OmegaParams } from '@/lib/omega';
 import { activateSafe, stopSafe, updateSafeParams, type SafeBotParams } from '@/lib/safeBot';
 import { activateMike, stopMike, updateMikeParams, type MikeParams } from '@/lib/mike';
-import type { Bot } from '@/lib/controlRoom';
+import {
+    activateTennisBotService, stopTennisBotService, updateTennisBotService,
+    type TennisBotKey,
+} from '@/lib/tennis';
+import { isBotTennis, BOT_TENNIS, BOT_LABEL, type Bot, type BotTennis } from '@/lib/controlRoom';
 
 export type { Bot };
 
@@ -60,7 +64,8 @@ export const STRATEGIE_SAFE_TUTTE = ['base', 'esatto', 'punta', 'tennis', 'model
 
 export type InterruttoreId =
     | 'omega' | 'mike'
-    | 'safe-base' | 'safe-esatto' | 'safe-punta' | 'safe-tennis';
+    | 'safe-base' | 'safe-esatto' | 'safe-punta' | 'safe-tennis'
+    | BotTennis;
 
 export interface Interruttore {
     id: InterruttoreId;
@@ -113,6 +118,24 @@ export const INTERRUTTORI: readonly Interruttore[] = [
         chiaveImporto: 'stake.per_strategia.tennis', chiaveImportoPerLato: 'stake.backSize',
         etichettaImporto: 'stake tennis',
     },
+    // ── I QUATTRO BOT DEL TENNIS (17/09) ────────────────────────────────────
+    // «Tutti i bot tennis finiti e in UI, INDIPENDENTI COME GLI ALTRI»
+    // (utente, 17/09). Quattro SERVIZI, non quattro varianti di qualcosa:
+    // `strategia: null` come Omega e Mike, quindi l'interruttore comanda il
+    // bot intero e la sua modalita' e' quella della SUA riga di control
+    // (`tennis_bot_service_control.mode`). Nessuno dei quattro eredita niente
+    // da nessun altro, e accenderne uno non tocca gli altri tre.
+    //
+    // `chiaveImporto: 'stake'` e' la COLONNA `stake` della riga, non una voce
+    // dentro `params`: il lettore la espone sotto quel nome e la scrittura
+    // passa da `tennis_bot_service_update_params(p_stake)`, che `status` non
+    // lo tocca.
+    ...BOT_TENNIS.map((b): Interruttore => ({
+        id: b, bot: b, strategia: null, sport: 'tennis',
+        etichetta: `${BOT_LABEL[b]} tennis`,
+        chiaveImporto: 'stake', chiaveImportoPerLato: null,
+        etichettaImporto: 'stake',
+    })),
 ];
 
 /** Gli interruttori di uno sport. `null` = tutti (nessuna scheda scelta). */
@@ -485,6 +508,13 @@ export function creaInterruttori(
     };
 
     const avviaBot = async (bot: Bot, modalita: Modalita) => {
+        // I quattro bot tennis: `stake` e `params` a null CONSERVANO quelli
+        // gia' scritti (la RPC fa `coalesce`). La modalita' invece si scrive
+        // sempre, ed e' quella che l'utente ha appena scelto col pulsante.
+        if (isBotTennis(bot)) {
+            await activateTennisBotService(bot as TennisBotKey, modalita);
+            dopo(); return;
+        }
         if (bot === 'mike') { await activateMike(modalita); dopo(); return; }
         const obiettivo = sorgente.obiettivoOmega();
         if (obiettivo == null) throw new ObiettivoOmegaIgnoto();
@@ -495,7 +525,11 @@ export function creaInterruttori(
     };
 
     const fermaBot = async (bot: Bot) => {
-        if (bot === 'safe') await stopSafe();
+        // ⚠️ L'ORDINE CONTA, e l'`else` finale non e' piu' «per forza Omega»:
+        // con i quattro bot tennis nel modello, un `else` distratto fermerebbe
+        // OMEGA al posto dello Scalper. Ogni bot ha il suo ramo, per nome.
+        if (isBotTennis(bot)) await stopTennisBotService(bot as TennisBotKey);
+        else if (bot === 'safe') await stopSafe();
         else if (bot === 'mike') await stopMike();
         else await stopOmega();
         dopo();
@@ -526,6 +560,20 @@ export function creaInterruttori(
 
     const cambiaImporto = async (id: InterruttoreId, chiave: string, importo: number) => {
         const i = interruttoreDi(id);
+        // TENNIS — lo stake e' una COLONNA della riga di control, non una voce
+        // di `params`: si scrive da sola, e `status` non lo tocca nessuno. Una
+        // chiave diversa da 'stake' finirebbe dentro `params`, e li' si riparte
+        // comunque dai parametri correnti.
+        if (isBotTennis(i.bot)) {
+            const k = i.bot as TennisBotKey;
+            if (chiave === 'stake') await updateTennisBotService(k, { stake: importo });
+            else {
+                await updateTennisBotService(k, {
+                    params: scriviChiave(paramsLetti(i.bot), chiave, importo),
+                });
+            }
+            dopo(); return;
+        }
         // si riparte SEMPRE dai parametri correnti: mandare la sola chiave
         // cambiata cancellerebbe tutto il resto.
         const nuovi = scriviChiave(paramsLetti(i.bot), chiave, importo);
@@ -542,6 +590,13 @@ export function creaInterruttori(
      * `X_update_params(p_mode)`, che il `status` non lo tocca proprio.
      */
     const cambiaModalitaServizio = async (bot: Bot, modalita: Modalita) => {
+        // TENNIS — `tennis_bot_service_activate` porterebbe `status` a
+        // 'running': un cambio di modalita' non accende MAI niente, quindi
+        // passa dalla gemella che `status` non lo tocca.
+        if (isBotTennis(bot)) {
+            await updateTennisBotService(bot as TennisBotKey, { mode: modalita });
+            dopo(); return;
+        }
         if (bot === 'omega') { await updateOmegaParams({ mode: modalita }); dopo(); return; }
         if (bot === 'mike') { await updateMikeParams(paramsLetti('mike') as MikeParams, modalita); dopo(); return; }
         const s = sorgente.servizio('safe');

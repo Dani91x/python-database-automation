@@ -35,11 +35,11 @@ describe('una riga per interruttore, filtrate per sport', () => {
             .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta']);
     });
 
-    it('scheda tennis: solo Safe tennis. Niente calcio', () => {
+    it('scheda tennis, con i soli tre servizi del calcio: resta Safe tennis', () => {
         expect(righeInterruttori(TRE, 'tennis').map((r) => r.id)).toEqual(['safe-tennis']);
     });
 
-    it('senza scheda scelta ci sono tutti e sei', () => {
+    it('con i soli tre servizi del calcio non nascono righe tennis fantasma', () => {
         expect(righeInterruttori(TRE, null)).toHaveLength(6);
     });
 
@@ -110,5 +110,79 @@ describe('statoServizioDi — la traduzione non perde niente', () => {
             varianti: ['punta', 'tennis'],
             modiStrategia: { punta: 'paper', tennis: 'live' },
         });
+    });
+});
+
+
+// ============================================================================
+// I QUATTRO BOT DEL TENNIS (17/09) — «indipendenti come gli altri».
+//
+// Falsificazione fatta a mano prima di scriverli: togliendo i quattro
+// `Interruttore` da `lib/interruttori.ts` questi test diventano rossi (nessuna
+// riga tennis), e facendo leggere a `righeBot` il `pnlOggi` invece del
+// `pnlOggiPaper` per una riga in prova il test del P&L diventa rosso.
+// ============================================================================
+const QUATTRO: StatoBotPlancia[] = [
+    bot({
+        bot: 'tennis_scalper', inCorsa: true, modalita: 'live', stato: 'running',
+        pnlOggi: 1.25, pnlOggiPaper: -9.99,
+    }),
+    bot({
+        bot: 'tennis_pro', inCorsa: true, modalita: 'paper', stato: 'running',
+        pnlOggi: 7.77, pnlOggiPaper: -0.4,
+    }),
+    bot({ bot: 'tennis_flb', inCorsa: false, modalita: 'paper', stato: 'stopped' }),
+    // modalita' NON dichiarata dal servizio: non si indovina
+    bot({ bot: 'tennis_swing', inCorsa: true, modalita: null, stato: 'running' }),
+];
+
+describe('i quattro bot tennis sono QUATTRO RIGHE INDIPENDENTI', () => {
+    it('nella scheda tennis compaiono tutti e quattro, accanto a Safe tennis', () => {
+        expect(righeInterruttori([...TRE, ...QUATTRO], 'tennis').map((r) => r.id))
+            .toEqual(['safe-tennis', 'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing']);
+    });
+
+    it('nella scheda CALCIO non compare nemmeno uno', () => {
+        const ids = righeInterruttori([...TRE, ...QUATTRO], 'calcio').map((r) => r.id);
+        expect(ids.some((i) => i.startsWith('tennis_'))).toBe(false);
+    });
+
+    it('ogni riga ha il SUO stato e la SUA modalita: niente si eredita', () => {
+        const r = righeInterruttori(QUATTRO, 'tennis');
+        const di = (id: string) => r.find((x) => x.id === id)!;
+        expect(di('tennis_scalper')).toMatchObject({ acceso: true, modalita: 'live', stato: 'running' });
+        expect(di('tennis_pro')).toMatchObject({ acceso: true, modalita: 'paper', stato: 'running' });
+        expect(di('tennis_flb')).toMatchObject({ acceso: false, modalita: 'paper', stato: 'stopped' });
+        // modalita' non dichiarata resta `null`: il pannello scrive «modalita n/d»
+        expect(di('tennis_swing').modalita).toBeNull();
+    });
+
+    it('spegnerne uno non tocca gli altri tre', () => {
+        const spento = QUATTRO.map((b) => (b.bot === 'tennis_scalper'
+            ? { ...b, inCorsa: false, stato: 'stopped' } : b));
+        const r = righeInterruttori(spento, 'tennis');
+        expect(r.find((x) => x.id === 'tennis_scalper')!.acceso).toBe(false);
+        expect(r.find((x) => x.id === 'tennis_pro')!.acceso).toBe(true);
+        expect(r.find((x) => x.id === 'tennis_swing')!.acceso).toBe(true);
+    });
+
+    it('ognuno porta il foglio parametri della SUA riga: sono servizi diversi', () => {
+        expect(righeInterruttori(QUATTRO, 'tennis').every((x) => x.primaDelBot)).toBe(true);
+    });
+
+    it('il P&L mostrato e quello della MODALITA della riga, mai la somma', () => {
+        const r = righeInterruttori(QUATTRO, 'tennis');
+        const di = (id: string) => r.find((x) => x.id === id)!;
+        expect(di('tennis_scalper').pnlOggi).toBe(1.25);   // live -> il live
+        expect(di('tennis_pro').pnlOggi).toBe(-0.4);       // prova -> quello in prova
+        // senza modalita' dichiarata non si sceglie: nessun numero
+        expect(di('tennis_swing').pnlOggi).toBeNull();
+        // nessuna riga porta 1.25 + (-0.4): la somma non esiste da nessuna parte
+        expect(r.map((x) => x.pnlOggi)).not.toContain(0.85);
+    });
+
+    it('P&L assente = null, mai 0: «niente di regolato» non e «ho chiuso in pari»', () => {
+        expect(righeInterruttori(QUATTRO, 'tennis').find((x) => x.id === 'tennis_flb')!.pnlOggi)
+            .toBeNull();
     });
 });

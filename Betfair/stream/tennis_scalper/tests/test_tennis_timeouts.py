@@ -16,6 +16,7 @@ from Betfair.stream.tennis_scalper.tennis_flb_bot import (
     TennisFLBStrategy,
 )
 from Betfair.stream.tennis_scalper.tennis_pro_bot import (
+    CLOSING,
     FLAT,
     OPEN,
     TennisProStrategy,
@@ -36,10 +37,13 @@ class _Market:
         self.cancelled = []
 
     def place_order(self, o):
-        pass
+        # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27):
+        # `Market.place_order` ritorna un BOOL (`market.py:84-98`).
+        return True
 
     def cancel_order(self, o):
         self.cancelled.append(o)
+        return True
 
 
 def _px(bb=1.90, bl=1.92):
@@ -68,6 +72,12 @@ def test_pro_entry_timeout_counts_seconds_not_updates():
     assert trade["state"] == OPEN         # 100 update NON bastano piu'
     s._now_pt = 1_000_000 + 26_000        # +26s > 25s → timeout
     s._manage(m, trade, _px())
+    # ⚠️ NON si dichiara FLAT dopo un cancel non verificato (correzione 17/09):
+    # l'ingresso puo' riempirsi DOPO e restare orfano (misurato: 3,52 EUR su
+    # 35790089). Si passa in CLOSING, e FLAT arriva solo a blotter pari.
+    assert s._trade["1.1"]["state"] == CLOSING
+    # il blotter dice che non c'e' niente abbinato: il giro dopo e' FLAT
+    s._surveil_closing(m, s._trade["1.1"], _px())
     assert s._trade["1.1"]["state"] == FLAT
 
 
@@ -82,6 +92,9 @@ def test_pro_entry_timeout_fallback_on_missing_publish_time():
     s._now_pt = None
     for _ in range(26):                   # fallback: conta gli update
         s._manage(m, trade, _px())
+    # come sopra: prima CLOSING, poi FLAT a blotter verificato pari
+    assert s._trade["1.1"]["state"] == CLOSING
+    s._surveil_closing(m, s._trade["1.1"], _px())
     assert s._trade["1.1"]["state"] == FLAT
 
 
@@ -103,6 +116,13 @@ def test_flb_entry_timeout_counts_seconds_not_updates():
         s._manage(m, 1, key, st, 1.04, 1.05, 1_000_000 + 5_000)
     assert s._pos_state[key]["state"] == FLB_OPEN
     s._manage(m, 1, key, st, 1.04, 1.05, 1_000_000 + 41_000)  # +41s → timeout
+    # ⚠️ IL CANCEL E' ASINCRONO (correzione 17/09): l'ordine passa per
+    # `Cancelling` prima di morire e in quella finestra puo' ancora riempirsi.
+    # Prima si dichiarava DONE subito e restava un ordine VIVO sotto una
+    # posizione «chiusa» (misurato: K6 su 35790089). Ora si aspetta la conferma.
+    assert s._pos_state[key]["state"] == "PENDING"
+    # qui l'ordine e' None (nessun ordine vivo): il giro dopo e' DONE
+    s._manage(m, 1, key, st, 1.04, 1.05, 1_000_000 + 42_000)
     assert s._pos_state[key]["state"] == "DONE"
 
 
@@ -135,5 +155,15 @@ def test_swing_entry_wait_counts_seconds_not_updates():
     for _ in range(100):                  # +5s di publish_time: NON scade
         s.process_market_book(m, _MB(1_000 + 5_000))
     assert "1.1" in s._tr
+    assert not tr.get("closing"), "dentro i 40s l'ingresso e' ancora in attesa"
     s.process_market_book(m, _MB(1_000 + 41_000))  # +41s → entry cancellata
-    assert "1.1" not in s._tr
+    # ⚠️ IL TRADE NON SI DIMENTICA AL TIMEOUT (correzione 17/09). Prima qui si
+    # faceva `pop` subito dopo un `cancel` mai verificato: se l'ordine si
+    # riempiva DOPO, la posizione restava orfana (misurato: 7,57 EUR abbandonati
+    # su 35790089). Ora si passa in CLOSING e si dimentica solo a selezione
+    # verificata PARI dal blotter.
+    assert "1.1" in s._tr, "il trade resta sorvegliato dopo il timeout"
+    assert s._tr["1.1"].get("closing") is True
+    # il blotter dice che non c'e' NIENTE abbinato: al giro dopo si dimentica
+    s.process_market_book(m, _MB(1_000 + 42_000))
+    assert "1.1" not in s._tr, "selezione verificata pari -> trade chiuso"

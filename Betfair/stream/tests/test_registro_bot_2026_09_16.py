@@ -120,10 +120,12 @@ def test_chi_non_e_certificato_lo_dice_e_dice_perche():
     # aggiunge deve scriverlo qui — cioe' ammetterlo.
     # 16/09 sera: Omega (C.2), Safe base/esatto/punta (C.3) e Safe tennis (C.4)
     # sono certificabili — tolti dall'elenco dal coordinatore.
-    attesi = {
-        "scalper_calcio", "tennis_scalper", "tennis_pro", "tennis_flb",
-        "tennis_swing",
-    }
+    # 17/09: i QUATTRO BOT TENNIS (tennis_scalper, tennis_pro, tennis_flb,
+    # tennis_swing) hanno replay (`tennis_live/tools/replay_bot.py`, che passa
+    # dal servizio di produzione `tennis_runner._instantiate_bot`) e controlli
+    # (`tennis_live/certificazione_bot.py`, famiglie B/K/P) — tolti dall'elenco.
+    # Resta fuori solo lo scalper CALCIO, per decisione 8 del piano.
+    attesi = {"scalper_calcio"}
     assert {b.nome for b in senza} == attesi, (
         "l'elenco dei bot REGISTRATI SENZA CERTIFICAZIONE e' cambiato: "
         f"adesso e' {sorted(b.nome for b in senza)}. Se ne hai certificato uno, "

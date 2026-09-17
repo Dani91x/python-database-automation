@@ -27,8 +27,10 @@ class _Blotter:
 
 class _Market:
     market_id = "1.1"; blotter = _Blotter()
-    def place_order(self, o): pass
-    def cancel_order(self, o): pass
+    # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27): `Market.place_order`
+    # ritorna un BOOL (`flumine/markets/market.py:84-98`), True = piazzato.
+    def place_order(self, o): return True
+    def cancel_order(self, o): return True
 
 
 class _MB:
@@ -54,13 +56,25 @@ def test_net_math():
 
 
 def test_lays_extreme_favourite():
+    """MAKER (default, dossier §4.3): la CONDIZIONE resta il best-lay <= lay_max,
+    ma il PREZZO e' il best-back, cosi' l'ordine si appoggia e non incrocia."""
     s = _make(lay_max=1.10, min_lay_size=5.0)
     mb = _MB([_Runner(111, (1.09, 200), (1.10, 200), ltp=1.10),
               _Runner(222, (5.0, 50), (5.5, 50), ltp=5.2)])
     s.process_market_book(_Market(), mb)
     assert s.stats["entries"] == 1
     st = s._pos_state[("1.1", 111)]
-    assert st["state"] == OPEN and st["entry"] == 1.10
+    assert st["state"] == OPEN and st["entry"] == 1.09
+
+
+def test_taker_esplicito_laya_al_best_lay():
+    """La falsificazione della scelta: con `maker=False` il bot torna a
+    incrociare al best-lay. Se questo test e quello sopra dessero lo stesso
+    prezzo, la scelta maker/taker non esisterebbe davvero."""
+    s = _make(lay_max=1.10, min_lay_size=5.0, maker=False)
+    mb = _MB([_Runner(111, (1.09, 200), (1.10, 200), ltp=1.10)])
+    s.process_market_book(_Market(), mb)
+    assert s._pos_state[("1.1", 111)]["entry"] == 1.10
 
 
 def test_skips_non_extreme():

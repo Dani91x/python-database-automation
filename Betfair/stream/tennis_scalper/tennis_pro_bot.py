@@ -39,6 +39,14 @@ from flumine.order.trade import Trade
 from flumine.order.ordertype import LimitOrder
 from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_price
 
+from .condotta_ordini import (
+    FrenoRifiuti,
+    dichiara_chiusura_mercato,
+    ingresso_finito,
+    ordini_vivi_su,
+    size_legale,
+    stato_ordine,
+)
 from .tennis_scalper_bot import compute_green, ticks_between
 from .tennis_score import TennisScore
 
@@ -182,6 +190,15 @@ class TennisProStrategy(BaseStrategy):
         # ordini gia' contati in pnl_settled (dedup: flumine puo' richiamare
         # process_closed_market piu' volte sullo stesso mercato)
         self._pnl_settled_oids: set = set()
+        # LIVE: le size vanno legalizzate per la giurisdizione (.it), altrimenti
+        # Betfair rifiuta e la gamba resta scoperta. Lo dichiara il runner
+        # (`live_min_bet` > 0 solo in LIVE, `tennis_runner._instantiate_bot`).
+        self.live: bool = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
+        # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
+        self._freno = FrenoRifiuti()
+        # il blotter e' stato letto davvero nell'ultima `_position`? Un'esposizione
+        # non letta NON e' un'esposizione nulla.
+        self._blotter_letto: bool = True
 
     # ------------------------------------------------------------- telemetria
     def _emit(self, event: str, **payload: Any) -> None:
@@ -289,9 +306,16 @@ class TennisProStrategy(BaseStrategy):
     # ------------------------------------------------------- posizione matchata
     def _position(self, market: Any, sel: int) -> Tuple[float, float, float, float]:
         b = bw = l = lw = 0.0
+        self._blotter_letto = True
         try:
             orders = market.blotter.strategy_orders(self)
-        except Exception:  # noqa: BLE001
+        except Exception as _e:  # noqa: BLE001
+            # ⚠️ UN'ESPOSIZIONE NON LETTA NON E' UN'ESPOSIZIONE NULLA. Prima si
+            # tornava (0,0,0,0) in silenzio e chi chiamava concludeva «flat»,
+            # dimenticando una posizione ancora aperta.
+            self._blotter_letto = False
+            logger.warning("[PRO] blotter illeggibile sel=%s: %s — la posizione "
+                           "NON e' dichiarata piatta", sel, _e)
             orders = []
         for o in orders:
             if int(getattr(o, "selection_id", 0) or 0) != int(sel):
@@ -310,14 +334,42 @@ class TennisProStrategy(BaseStrategy):
     def _net(b: float, ba: float, l: float, la: float) -> Tuple[float, float]:
         return (b * (ba - 1.0) - l * (la - 1.0), l - b)
 
+    def _orologio_s(self) -> float:
+        """L'ora del BOT, in secondi: il `publish_time` dell'ultimo book."""
+        if self._now_pt is not None:
+            return float(self._now_pt) / 1000.0
+        import time as _t
+
+        return _t.time()
+
     def _place(self, market: Any, sel: int, side: str, price: float,
-               size: float) -> Optional[Any]:
+               size: float, *, copertura: bool = False) -> Optional[Any]:
         size = round(max(0.0, float(size)), 2)
         if price is None or price <= 1.0 or size < 0.01:
             return None
         if self.dry_run:
             self._emit("dry_place", sel=sel, side=side, price=price, size=size)
             return None
+        # SIZE LEGALE DI GIURISDIZIONE (.it): sotto il minimo o non multipla di
+        # 0,50 Betfair RIFIUTA e la gamba resta scoperta. Le coperture si
+        # bumpano (meglio un over-hedge che una posizione nuda), gli ingressi no.
+        legale, motivo = size_legale(size, side, live=self.live,
+                                     riduce_liability=copertura)
+        if legale is None:
+            self._emit("size_non_legale", sel=sel, side=side, price=price,
+                       size=size, copertura=copertura, motivo=motivo)
+            logger.warning("[PRO] size non legale sel=%s %s %s: %s",
+                           sel, side, size, motivo)
+            return None
+        size = legale
+        # FRENO DOPO I RIFIUTI: mai sulle coperture (devono poter partire sempre)
+        if not copertura:
+            fermo = self._freno.bloccato(market.market_id, sel, self._orologio_s())
+            if fermo:
+                # il motivo si scrive UNA volta per rifiuto, non a ogni tentativo
+                if self._freno.da_annunciare(market.market_id, sel):
+                    self._emit("freno_rifiuti", sel=sel, side=side, motivo=fermo)
+                return None
         try:
             trade = Trade(market_id=market.market_id, selection_id=int(sel),
                           handicap=0, strategy=self)
@@ -326,7 +378,25 @@ class TennisProStrategy(BaseStrategy):
                 order_type=LimitOrder(price=float(price), size=size,
                                       persistence_type="LAPSE"),
             )
-            market.place_order(order)
+            # L'ESITO DEL PIAZZAMENTO SI LEGGE (catalogo §7 difetto 2, «`res.ok`
+            # mai letto»): `Market.place_order` torna un BOOL e `False` vuol dire
+            # che un trading control l'ha bocciato, che l'ordine NON e' nel
+            # blotter e che il suo stato e' `OrderStatus.VIOLATION`
+            # (`flumine/execution/transaction.py:67-75`). Prima il PRO lo
+            # considerava vivo: contava l'ingresso, marcava il game come gia'
+            # tradato (`_last_game_traded`) e non riprovava piu'.
+            if not market.place_order(order):
+                n, attesa = self._freno.registra_rifiuto(
+                    market.market_id, sel, self._orologio_s())
+                self._emit("place_rejected", sel=sel, side=side, price=price,
+                           size=size, rifiuti=n, riprovo_fra_s=attesa,
+                           motivo=str(getattr(order, "violation_msg", "") or "rifiutato"))
+                logger.warning("[PRO] piazzamento RIFIUTATO sel=%s %s @%s per %s "
+                               "(%d-esimo, riprovo fra %.0fs): %s",
+                               sel, side, price, size, n, attesa,
+                               getattr(order, "violation_msg", None))
+                return None
+            self._freno.registra_successo(market.market_id, sel)
             return order
         except Exception as exc:  # noqa: BLE001
             logger.debug("place fallito: %s", exc)
@@ -353,7 +423,9 @@ class TennisProStrategy(BaseStrategy):
         if g is None:
             return min(nw, nl), None
         side, size, locked = g
-        o = self._place(market, sel, side, get_nearest_price(price), size * frac)
+        # COPERTURA: passa il freno rifiuti e puo' essere bumpata al minimo .it
+        o = self._place(market, sel, side, get_nearest_price(price), size * frac,
+                        copertura=True)
         return float(locked), o
 
     # ------------------------------------------------------------- apertura
@@ -593,6 +665,23 @@ class TennisProStrategy(BaseStrategy):
         b, ba, l, la = self._position(market, sel)
 
         if (b + l) <= _EPS:
+            # ⚠️ L'INGRESSO PUO' ESSERE GIA' MORTO: con `persistence_type=LAPSE`
+            # Betfair uccide l'appoggiato a ogni SOSPENSIONE (in tennis: a ogni
+            # punto). Prima il bot aspettava 25 s una quota che a mercato non
+            # esisteva piu', e nel frattempo il game restava marcato come gia'
+            # tradato. Si legge lo stato VERO dell'ordine (Enum `.value`).
+            if ingresso_finito(trade.get("order")):
+                # nemmeno qui si chiude con un ordine ancora vivo sul book
+                if ordini_vivi_su(market, self, sel) is not False:
+                    return
+                self._trade[market.market_id] = {"state": FLAT}
+                # il game torna disponibile: l'ordine non e' MAI stato a mercato
+                self._last_game_traded.pop(market.market_id, None)
+                self._emit("entry_scaduta", sel=sel, kind=trade.get("kind"),
+                           stato=stato_ordine(trade.get("order")),
+                           note=("l'ordine d'ingresso non esiste piu' a mercato: "
+                                 "non aspetto il timeout e il game torna libero"))
+                return
             # entry NON ancora riempita: timeout in SECONDI di publish_time
             # (fallback al conteggio update SOLO se il publish_time manca).
             trade["wait"] = int(trade.get("wait", 0)) + 1
@@ -605,11 +694,25 @@ class TennisProStrategy(BaseStrategy):
                 (pt is None or t0 is None) and trade["wait"] > self.entry_timeout_s
             )
             if timed_out:
+                # ⚠️ NON SI DICHIARA FLAT DOPO UN CANCEL NON VERIFICATO
+                # (correzione 17/09). `BetfairOrder.cancel()` alza
+                # `OrderUpdateError` su un ordine PENDING senza `bet_id`
+                # (`flumine/order/order.py:360-369`) e l'eccezione e' ingoiata:
+                # l'ingresso puo' riempirsi DOPO e restare orfano. Misurato sul
+                # replay del 17/09 (35790089): 3,52 EUR di esposizione abbinata
+                # con il bot che non aveva piu' nessuna posizione.
+                # Si passa in CLOSING, che copre e dichiara FLAT solo a blotter
+                # verificato pari (`_surveil_closing`).
                 self._cancel(market, trade.get("order"))
-                self._trade[market.market_id] = {"state": FLAT}
-                self._emit("entry_timeout", sel=sel, kind=trade.get("kind"))
-                logger.info("[PRO] entry timeout (%s) sel=%s: cancellata",
-                            trade.get("kind"), sel)
+                trade["state"] = CLOSING
+                trade["close_order"] = None
+                trade["close_wait"] = 0
+                trade["t_close"] = pt
+                self._emit("entry_timeout", sel=sel, kind=trade.get("kind"),
+                           note=("ingresso scaduto: cancello e sorveglio finche' "
+                                 "il blotter non dice che la selezione e' pari"))
+                logger.info("[PRO] entry timeout (%s) sel=%s: cancellata, "
+                            "sorveglianza attiva", trade.get("kind"), sel)
             return
         if d is None:
             return
@@ -708,13 +811,45 @@ class TennisProStrategy(BaseStrategy):
         self._cancel(market, trade.get("staged_order"))
         b, ba, l, la = self._position(market, sel)
         nw, nl = self._net(b, ba, l, la)
-        if (b + l) <= _EPS or abs(nw - nl) < 0.02:
+        if self._blotter_letto and ((b + l) <= _EPS or abs(nw - nl) < 0.02):
             # blotter pari: cancella il residuo dell'hedge (un fill tardivo
             # ROVESCEREBBE la posizione appena chiusa) e chiudi davvero.
+            # ⚠️ `self._blotter_letto`: un'esposizione che non si e' potuta
+            # LEGGERE non e' un'esposizione nulla, e non chiude niente.
             self._cancel(market, trade.get("close_order"))
+            # ⚠️ E NEMMENO CON UN ORDINE ANCORA VIVO. `cancel_order` e'
+            # asincrona: finche' un ordine e' `Cancelling` puo' riempirsi, e
+            # dichiarare FLAT adesso vuol dire dimenticarlo. Misurato sul replay
+            # del 17/09 (35790089): il bot andava FLAT con lo sbilancio a 0,002
+            # e si ritrovava 3,52 EUR scoperti poco dopo.
+            vivi = ordini_vivi_su(market, self, sel)
+            if vivi is not False:
+                trade["close_wait"] = int(trade.get("close_wait", 0)) + 1
+                return          # si aspetta la conferma del cancel
             self._trade[market.market_id] = {"state": FLAT}
             self._emit("closed_flat", sel=sel, kind=trade.get("kind"))
             return
+        if not self._blotter_letto:
+            return          # si riprova al prossimo book, senza concludere
+        # ⚠️ LA PRIMA COPERTURA NON ASPETTA L'ESCALATION. Da qui passa anche
+        # l'ingresso SCADUTO che si riempie dopo (`close_order` None): prima si
+        # restava scoperti per tutto `close_retry_s`.
+        if trade.get("close_order") is None:
+            d0 = px.get(sel)
+            mkt0 = (d0.get("bb") if trade.get("side") == "BACK"
+                    else d0.get("bl")) if d0 else None
+            if mkt0 is not None:
+                locked0, o0 = self._close_at(market, sel, mkt0)
+                if o0 is not None:
+                    trade["close_order"] = o0
+                    trade["close_wait"] = 0
+                    trade["t_close"] = getattr(self, "_now_pt", None)
+                    trade["booked"] = float(locked0)
+                    self._emit("copertura_tardiva", sel=sel, price=mkt0,
+                               locked=round(float(locked0), 3),
+                               note=("posizione scoperta senza copertura in volo: "
+                                     "copro subito, non aspetto l'escalation"))
+                    return
         trade["close_wait"] = int(trade.get("close_wait", 0)) + 1
         pt = getattr(self, "_now_pt", None)
         t0 = trade.get("t_close")
@@ -766,3 +901,11 @@ class TennisProStrategy(BaseStrategy):
         if settled:
             self.stats["pnl_settled"] = round(
                 float(self.stats.get("pnl_settled", 0.0)) + settled, 3)
+        # FASE DI SETTLEMENT (17/09): a mercato CHIUSO il bot non riceve piu'
+        # book. Si dichiara che cosa era aperto al fischio e si chiude la
+        # memoria: una posizione creduta viva resterebbe tale per sempre.
+        mid = str(getattr(market, "market_id", "") or "")
+        tr = self._trade.pop(mid, None)
+        if tr is not None and str(tr.get("state") or "") in (OPEN, CLOSING):
+            dichiara_chiusura_mercato(market, self, self.event_sink,
+                                      [tr.get("sel")], "tennis_pro")

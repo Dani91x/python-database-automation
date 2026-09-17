@@ -34,6 +34,10 @@ export interface StatoBotPlancia {
     partiteEsposte: number | null;
     stopFermaSoloAperture: boolean;
     fermatoAllAvvioAt: string | null;
+    /** P&L di OGGI nelle due modalita', mai sommate. Facoltativi: le pagine dei
+     *  singoli bot che non li leggono non devono inventarli. */
+    pnlOggi?: number | null;
+    pnlOggiPaper?: number | null;
 }
 
 /** Lo stato del SERVIZIO di un bot, nella forma che il modello condiviso legge. */
@@ -76,6 +80,12 @@ export function righeInterruttori(
             partiteEsposte: b.partiteEsposte,
             stopFermaSoloAperture: b.stopFermaSoloAperture,
             fermatoAllAvvioAt: b.fermatoAllAvvioAt,
+            // IL P&L DELLA MODALITA' IN CUI STA OPERANDO, mai la somma delle
+            // due: soldi veri ed esercitazione non stanno nello stesso numero.
+            // Modalita' non dichiarata = nessun numero: non si sceglie a caso
+            // quale dei due mostrare.
+            pnlOggi: st.modalita === 'live' ? (b.pnlOggi ?? null)
+                : st.modalita === 'paper' ? (b.pnlOggiPaper ?? null) : null,
             primaDelBot,
         });
     }

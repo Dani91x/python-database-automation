@@ -52,9 +52,15 @@ class _Market:
 
     def place_order(self, o):
         self.placed.append(o)
+        # IL FINTO PARLA COME IL VERO (catalogo §7 difetto 27):
+        # `flumine.markets.market.Market.place_order` ritorna un BOOL
+        # (`market.py:84-98`) e True vuol dire «piazzato». Un finto che
+        # ritornava None faceva credere al bot di essere stato RIFIUTATO.
+        return True
 
     def cancel_order(self, o):
         self.cancelled.append(o)
+        return True
 
 
 def _order(side="BACK", price=1.90, sel=1, matched=0.0, avg=0.0,

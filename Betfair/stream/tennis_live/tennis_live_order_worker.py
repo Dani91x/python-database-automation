@@ -297,9 +297,85 @@ def _result(*, ok: bool, action: str, mode: str, cmd: Dict[str, Any],
     }
 
 
+_SIGLA_BOT = {
+    "tennis_scalper": "tsc", "tennis_pro": "tpr",
+    "tennis_flb": "tfl", "tennis_swing": "tsw",
+}
+
+
+def ref_bot_stabile(bot_key: str, event_id: Optional[str], order: Any) -> str:
+    """Il riferimento STABILE di un ordine di bot nello specchio.
+
+    ⚠️ PERCHE' NON `"bot:" + order.id`. `Order.id` e' `str(uuid.uuid1().time)`
+    (`flumine/order/order.py:78`): cambia a ogni istanza. Il runner tennis
+    RICOSTRUISCE il framework a ogni arm/disarm, quindi lo stesso ordine di
+    Betfair tornava nello specchio con un ref NUOVO: righe duplicate, e le
+    vecchie che restavano `Executable` per sempre (referto d'audit §F.4). Con
+    quel ref nessuna riconciliazione e nessuno storico sono possibili.
+
+    L'ancora e' il `bet_id`, che e' l'identita' di BETFAIR e sopravvive a
+    qualunque riavvio. Quando non c'e' ancora (ordine appena chiesto, o
+    simulazione senza bet_id) si ripiega su un'impronta DETERMINISTICA dei fatti
+    del piazzamento — bot, evento, mercato, selezione, lato, prezzo, size — che
+    dopo un riavvio danno la stessa identica stringa.
+
+    Sta sotto i 32 caratteri di `client_order_ref`.
+    """
+    sigla = _SIGLA_BOT.get(str(bot_key), str(bot_key)[:3])
+    bet = _val(order, "bet_id")
+    if bet:
+        return ("%s-%s" % (sigla, bet))[:32]
+    ot = _val(order, "order_type")
+    impronta = "|".join(str(x) for x in (
+        bot_key, event_id or "", _val(order, "market_id") or "",
+        _val(order, "selection_id") or "", _val(order, "side") or "",
+        getattr(ot, "price", None), getattr(ot, "size", None),
+    ))
+    import hashlib
+
+    h = hashlib.sha1(impronta.encode("utf-8")).hexdigest()[:16]  # noqa: S324
+    return ("%s-x%s" % (sigla, h))[:32]
+
+
+def _commissione_mercato(market: Any) -> Optional[float]:
+    """La commissione del mercato, dal `marketDefinition` STREAMATO
+    (`marketBaseRate`, in percentuale: 5 = 5%). Mai un numero scritto in casa:
+    se il mercato non la dichiara, resta `None` e la UI scrive un trattino."""
+    mb = _val(market, "market_book")
+    md = getattr(mb, "market_definition", None) if mb is not None else None
+    base = getattr(md, "market_base_rate", None)
+    if base is None:
+        return None
+    try:
+        return float(base) / 100.0
+    except (TypeError, ValueError):
+        return None
+
+
+def _pnl_ordine(order: Any) -> Optional[float]:
+    """Il profitto LORDO dell'ordine al regolamento.
+
+    In simulazione (replay e paper) lo da' `order.simulated.profit`. In LIVE
+    quell'oggetto esiste ma e' inerte e risponde 0 — per questo il numero si
+    prende SOLO quando l'ordine e' davvero regolato, e `None` (non zero) quando
+    non lo si sa: «dato assente non e' zero» (catalogo §7.21).
+    """
+    sim = getattr(order, "simulated", None)
+    if sim is None or not bool(sim):
+        return None
+    p = getattr(sim, "profit", None)
+    try:
+        return None if p is None else round(float(p), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _mirror_order(mode: str, event_id: Optional[str], cust_ref: str, order: Any,
                   cmd: Dict[str, Any], source: str = "manual",
-                  status_override: Optional[str] = None) -> None:
+                  status_override: Optional[str] = None,
+                  pnl: Optional[float] = None,
+                  commission: Optional[float] = None,
+                  settled_at: Optional[str] = None) -> None:
     """Specchia l'ordine in ``tennis_live_orders`` (best-effort).
 
     ``source`` = 'manual' (ordini da coda) | bot_key (ordini di un bot ospitato, fix #8).
@@ -337,6 +413,13 @@ def _mirror_order(mode: str, event_id: Optional[str], cust_ref: str, order: Any,
             "status": status,
             "bet_id": snap.get("bet_id"),
             "persistence": cmd.get("persistence"),
+            # IL REGOLAMENTO (migrazione `tennis_bot_pnl_2026-09-17.sql`).
+            # `None` = non ancora regolato: la UI scrive un trattino, MAI 0,00.
+            # Le colonne si passano solo quando ci sono, cosi' un DB senza la
+            # migrazione applicata non riceve chiavi che non conosce.
+            **({"pnl": pnl} if pnl is not None else {}),
+            **({"commission": commission} if commission is not None else {}),
+            **({"settled_at": settled_at} if settled_at is not None else {}),
         })
     except Exception as e:  # noqa: BLE001 - lo specchio non deve far cadere il worker
         logger.debug("[tennis-order] mirror KO %s: %s", cust_ref, e)
@@ -842,18 +925,32 @@ def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
             continue
         # bot → paper|live (OFF non registra il worker); mode di BUILD (fix #14)
         mode = _session_mode(session)
+        # IL MERCATO E' CHIUSO? Allora gli ordini terminali sono REGOLATI, e si
+        # scrive il loro P&L. `market.closed` e' di flumine, non una deduzione.
+        chiuso = bool(_val(market, "closed"))
+        commissione = _commissione_mercato(market) if chiuso else None
         for order in orders or []:
-            oid = _val(order, "id")
-            ref = ("bot:" + str(oid))[:32] if oid is not None else None
-            if ref is None:
-                continue
+            # REF STABILE (non piu' `"bot:" + order.id`, che cambiava a ogni
+            # rebuild del framework e duplicava le righe: referto §F.4)
+            ref = ref_bot_stabile(bot_key, event_id, order)
             sig = _order_sig(order)
+            regolato = chiuso and _is_terminal(order)
+            pnl = _pnl_ordine(order) if regolato else None
+            # la firma include il regolamento: senza, l'ultimo giro (quello che
+            # porta il P&L) verrebbe saltato dal write-on-change
+            sig = (sig, pnl)
             if cache.get(ref) == sig:
-                if _is_terminal(order):
+                if _is_terminal(order) and not chiuso:
                     cache.pop(ref, None)
                 continue
-            _mirror_order(mode, event_id, ref, order, {}, source=bot_key)
-            if _is_terminal(order):
+            quando = _now_iso() if regolato else None
+            comm = None
+            if regolato and commissione is not None and pnl is not None:
+                # la commissione si paga sul PROFITTO, non sulle perdite
+                comm = round(max(0.0, pnl) * commissione, 2)
+            _mirror_order(mode, event_id, ref, order, {}, source=bot_key,
+                          pnl=pnl, commission=comm, settled_at=quando)
+            if _is_terminal(order) and not chiuso:
                 cache.pop(ref, None)
             else:
                 cache[ref] = sig

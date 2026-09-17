@@ -823,3 +823,179 @@ export const TENNIS_BOT_STATUS_LABEL: Record<TennisBotStatus, string> = {
     done: 'Concluso',
     error: 'Errore',
 };
+
+// ============================================================================
+// 6) BOT TENNIS — L'INTERRUTTORE DEL SERVIZIO (tennis_bot_service_control)
+//
+// La sezione 5 qui sopra e' l'armatura PER EVENTO (`tennis_bot_arm`): e' il
+// meccanismo interno, giusto com'e'. Questo NON e' quello: e' l'INTERRUTTORE
+// del bot, una riga per `bot_key`, con lo stesso vocabolario di Omega, Safe e
+// Mike (`status` + `mode` + `stake` + `params` + `stats`). Quando e'
+// `running`, il runner tennis arma il bot su ogni evento che passa il suo
+// filtro; l'armatura per evento resta quella di sempre.
+//
+// ⚠️ Richiede `migrations/tennis_bot_service_control_2026-09-17.sql`, NON
+//    ancora applicata: finche' non c'e', queste chiamate falliscono e la
+//    Control Room mostra i quattro bot con «stato non letto» — che e' la
+//    verita', e non si comanda un bot di cui non sappiamo cosa sta facendo.
+//
+// MONEY-CRITICAL: la modalita' si SCRIVE sempre, non si eredita mai.
+// ============================================================================
+
+export type TennisBotServiceStatus = 'stopped' | 'running' | 'stopping' | 'error';
+export type TennisBotMode = 'paper' | 'live';
+
+/** La riga di control di UN bot tennis, come la scrive il servizio. */
+export interface TennisBotServiceRow {
+    bot_key: TennisBotKey;
+    status: TennisBotServiceStatus | string;
+    mode: TennisBotMode;
+    stake: number | null;
+    params: Record<string, unknown> | null;
+    stats: Record<string, unknown> | null;
+    error: string | null;
+    started_at: string | null;
+    stopped_at: string | null;
+    heartbeat_at: string | null;
+    updated_at: string | null;
+}
+
+function righeDi<T>(data: unknown): T[] {
+    const raw = data as { rows?: T[] } | T[] | null;
+    if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
+/** get_tennis_bot_services() -> { rows: TennisBotServiceRow[] } */
+export async function fetchTennisBotServices(): Promise<TennisBotServiceRow[]> {
+    const { data, error } = await supabase.rpc('get_tennis_bot_services', {});
+    if (error) throw new Error(error.message);
+    return righeDi<TennisBotServiceRow>(data);
+}
+
+/**
+ * tennis_bot_service_activate(p_bot_key, p_mode, p_stake, p_params) — ACCENDE.
+ *
+ * `mode` e' OBBLIGATORIA: ai soldi veri si arriva solo scrivendolo. `stake` e
+ * `params` a `null` CONSERVANO quelli correnti (la RPC fa `coalesce`): mandare
+ * un oggetto parziale sostituirebbe l'intera colonna.
+ */
+export async function activateTennisBotService(
+    botKey: TennisBotKey, mode: TennisBotMode,
+    stake: number | null = null, params: Record<string, unknown> | null = null,
+): Promise<TennisBotServiceRow> {
+    const { data, error } = await supabase.rpc('tennis_bot_service_activate', {
+        p_bot_key: botKey, p_mode: mode, p_stake: stake, p_params: params,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as TennisBotServiceRow;
+}
+
+/** tennis_bot_service_stop(p_bot_key) — porta a 'stopping'. Lo 'stopped' lo
+ *  scrive il runner quando le posizioni sono chiuse: uno scritto dalla UI
+ *  sarebbe bugiardo. */
+export async function stopTennisBotService(botKey: TennisBotKey): Promise<TennisBotServiceRow> {
+    const { data, error } = await supabase.rpc('tennis_bot_service_stop', { p_bot_key: botKey });
+    if (error) throw new Error(error.message);
+    return data as unknown as TennisBotServiceRow;
+}
+
+/**
+ * tennis_bot_service_update_params(...) — cambia SENZA ACCENDERE.
+ * Ogni argomento omesso vuol dire «non toccare». E' il solo modo di cambiare
+ * lo stake o la modalita' di un bot fermo senza farlo partire.
+ */
+export async function updateTennisBotService(
+    botKey: TennisBotKey,
+    cambi: { mode?: TennisBotMode; stake?: number; params?: Record<string, unknown> },
+): Promise<TennisBotServiceRow> {
+    const { data, error } = await supabase.rpc('tennis_bot_service_update_params', {
+        p_bot_key: botKey,
+        p_mode: cambi.mode ?? null,
+        p_stake: cambi.stake ?? null,
+        p_params: cambi.params ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as TennisBotServiceRow;
+}
+
+// --------------------------------------------------- il P&L della giornata
+
+/**
+ * Una giornata di UN bot tennis, dal contratto di
+ * `migrations/tennis_bot_pnl_2026-09-17.sql`. I numeri arrivano gia' fatti dal
+ * database: qui non si somma e non si ricalcola niente.
+ *
+ * `pnl_netto` e' lordo meno commissione: e' il numero da mostrare. Una
+ * giornata senza righe REGOLATE non produce nessuna riga — e «nessuna riga»
+ * vale «—», mai «0,00 €».
+ */
+export interface TennisBotDailyRow {
+    giorno: string;
+    bot_key: TennisBotKey;
+    ordini: number;
+    vinti: number;
+    persi: number;
+    pnl_lordo: number | null;
+    commissione: number | null;
+    pnl_netto: number | null;
+    volume: number | null;
+}
+
+/** Un numero, o `null`. Mai zero per «non lo so». */
+function numeroO(v: unknown): number | null {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * get_tennis_bot_daily(p_from, p_to, p_mode, p_bot) -> { rows: [...] }
+ * `mode` e' OBBLIGATORIA: paper e live non si sommano MAI.
+ */
+export async function fetchTennisBotDaily(
+    from: string, to: string, mode: TennisBotMode, bot: TennisBotKey | null = null,
+): Promise<TennisBotDailyRow[]> {
+    const { data, error } = await supabase.rpc('get_tennis_bot_daily', {
+        p_from: from, p_to: to, p_mode: mode, p_bot: bot,
+    });
+    if (error) throw new Error(error.message);
+    return righeDi<Record<string, unknown>>(data).map((r) => ({
+        giorno: String(r.giorno ?? ''),
+        bot_key: r.bot_key as TennisBotKey,
+        ordini: numeroO(r.ordini) ?? 0,
+        vinti: numeroO(r.vinti) ?? 0,
+        persi: numeroO(r.persi) ?? 0,
+        pnl_lordo: numeroO(r.pnl_lordo),
+        commissione: numeroO(r.commissione),
+        pnl_netto: numeroO(r.pnl_netto),
+        volume: numeroO(r.volume),
+    }));
+}
+
+// ------------------------------------------ gli ordini di oggi (posizioni)
+
+/** Un ordine di oggi di un bot tennis: `tennis_live_orders` con le colonne del
+ *  regolamento. `source` E' la chiave del bot. */
+export interface TennisBotOrderRow extends Omit<LiveOrderRow, 'source'> {
+    /** `source` E' la chiave del bot (`tennis_scalper`…). Su `LiveOrderRow` la
+     *  stessa colonna porta 'runner'/'account': stessa colonna, due vocabolari,
+     *  e qui serve quello dei bot. */
+    source: TennisBotKey | 'runner' | 'account' | null;
+    /** profitto LORDO al regolamento; null = non ancora regolato (≠ zero) */
+    pnl?: number | null;
+    commission?: number | null;
+    settled_at?: string | null;
+}
+
+/** get_tennis_bot_orders_today(p_mode) -> { rows: [...] }. `null` = tutte e due
+ *  le modalita': ogni riga porta la sua, e chi legge le tiene separate. */
+export async function fetchTennisBotOrdersToday(
+    mode: TennisBotMode | null = null,
+): Promise<TennisBotOrderRow[]> {
+    const { data, error } = await supabase.rpc('get_tennis_bot_orders_today', {
+        p_mode: mode,
+    });
+    if (error) throw new Error(error.message);
+    return righeDi<TennisBotOrderRow>(data);
+}

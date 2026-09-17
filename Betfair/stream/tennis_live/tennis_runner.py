@@ -590,11 +590,34 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
         # i valori del control (UI) hanno SEMPRE la precedenza (setdefault).
         for _k, _v in SCALPER_TENNIS_PARAMS.items():
             params.setdefault(_k, _v)
-        if not is_live:
-            # PAPER/OFF: fill simulati a size ESATTE (mirror di run_tennis_scalper
-            # --paper): la granularità .it non esiste in simulazione → green-up esatti.
-            params["size_step"] = 0.0
-            params["live_min_bet"] = 0.0
+    # BLINDATURE DI GIURISDIZIONE PER TUTTI E QUATTRO (17/09). Prima solo lo
+    # scalper le riceveva, perché arrivavano dal suo preset: pro, FLB e swing
+    # andavano in LIVE senza nessun minimo, e un green-up da 0,93 € veniva
+    # RIFIUTATO da Betfair lasciando la gamba SCOPERTA (il runner passa
+    # `min_bet_validation=False`, quindi flumine non intercetta). I quattro bot
+    # leggono `live_min_bet` per sapere se sono in LIVE e legalizzano le size
+    # con `condotta_ordini.size_legale`.
+    if is_live:
+        params.setdefault("live_min_bet", 2.0)   # .it BACK
+        params.setdefault("size_step", 0.5)      # .it granularità
+        # ⊘ USCITE A SIZE ESATTA (place-and-trim) — NON accese qui.
+        # Il park-trim-replace esiste in casa (`Betfair/stream/trading/submin.py`,
+        # usato da `_place_exact` dello scalper) e la regola dell'utente è che
+        # QUALSIASI importo è piazzabile fino a 0,01 €. Accenderlo però NON è una
+        # riga di configurazione: provato il 17/09 sul replay (35794049, scenario
+        # `live`) porta il referto da 4.087 a 8.566 violazioni, perché la
+        # sequenza park→trim→replace mette a mercato ordini che i controlli
+        # leggono come «sotto il minimo» (che è il punto della tecnica: si
+        # RIDUCE sotto il minimo, non si piazza sotto il minimo). Va certificato
+        # come cantiere suo, con i controlli che sanno distinguere un ordine
+        # PIAZZATO sotto il minimo da uno TRIMMATO. Finché non lo è, resta
+        # spento e dichiarato.
+    else:
+        # PAPER/OFF: fill simulati a size ESATTE (mirror di run_tennis_scalper
+        # --paper): la granularità .it non esiste in simulazione → green-up esatti,
+        # e arrotondare falserebbe il confronto fra replay e paper.
+        params["size_step"] = 0.0
+        params["live_min_bet"] = 0.0
     stake = params["stake"]
     cap = stake * (float(params.get("price_max", 6.0)) + 2.0) * 3.0
     kwargs: Dict[str, Any] = {

@@ -1,0 +1,597 @@
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.2 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.2 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.19 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.19 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.2 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.2 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.17 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.26 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.06 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.02 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.06 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.07 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.07 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.08 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.09 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.07 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.06 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.04 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.06 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.09 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=25989821 LAY @1.05 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.27 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.27 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.27 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.2 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.13 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.2 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.25 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.27 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.16 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.28 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.28 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.24 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=9633138 LAY @1.2 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.27 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.16 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.16 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=35635727 LAY @1.28 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.14 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.11 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.11 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.08 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.14 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.15 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.15 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.15 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.17 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.17 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.18 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.17 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.12 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=27592751 LAY @1.11 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.26 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.27 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.27 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.02 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.25 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.09 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.25 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.25 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.27 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.24 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.25 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.26 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.23 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.26 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.27 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.24 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=40762704 LAY @1.28 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.23 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.21 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.22 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.15 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.15 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.21 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.14 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.21 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.21 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.21 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.13 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.11 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.2 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.13 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10460255 LAY @1.26 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.07 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.2 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.12 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.11 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.13 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.07 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.12 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.22 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.03 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833270 LAY @1.02 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.22 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.14 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.12 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.09 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.03 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.03 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.03 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10349870 LAY @1.01 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.06 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.06 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.08 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.07 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.07 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.08 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.06 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.07 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.07 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.02 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.07 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.06 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.12 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.08 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=39177821 LAY @1.05 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.25 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.25 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.23 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.25 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.25 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.25 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.29 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.29 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.29 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.29 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.21 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.24 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.18 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.17 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.11 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.26 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.23 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.15 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.13 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.14 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.11 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.12 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.1 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.23 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.21 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.1 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.09 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.08 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=50809756 LAY @1.02 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.05 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.04 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.04 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.07 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.04 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=12646410 LAY @1.03 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.21 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.22 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.18 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.18 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.23 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.16 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.21 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.06 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.06 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.06 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=92050142 LAY @1.01 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.17 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=92050142 LAY @1.01 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.13 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.06 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.22 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.27 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.18 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.22 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.11 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.14 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.08 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.18 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.15 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.02 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.08 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.02 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.02 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.08 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.03 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.01 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.02 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=99346664 LAY @1.02 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.03 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.06 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.03 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.02 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.04 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.08 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.04 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.11 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.13 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.15 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.14 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.09 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.11 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.11 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.11 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.07 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.13 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.11 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.15 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.13 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.12 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.16 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.08 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.05 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.12 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=10372252 LAY @1.1 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.15 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.17 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.11 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.19 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.25 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.14 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.13 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.13 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.15 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=2037861 LAY @1.1 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=14833205 LAY @1.27 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.24 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.22 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.21 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.24 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.22 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.22 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.21 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.21 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.19 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.17 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.16 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.21 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.14 per 2.0 (1-esimo, riprovo fra 5s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.15 per 2.0 (2-esimo, riprovo fra 10s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.16 per 2.0 (3-esimo, riprovo fra 20s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.17 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.17 per 2.0 (4-esimo, riprovo fra 40s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.15 per 2.0 (5-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.18 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.17 per 2.0 (6-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.18 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.16 per 2.0 (7-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.11 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.08 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.12 per 2.0 (8-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.1 per 2.0 (9-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.22 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.07 per 2.0 (10-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.02 per 2.0 (11-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.16 per 2.0 (12-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.25 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.16 per 2.0 (13-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=73657730 LAY @1.19 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.09 per 2.0 (14-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.07 per 2.0 (15-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.17 per 2.0 (16-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.16 per 2.0 (17-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.02 per 2.0 (18-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.13 per 2.0 (19-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.tennis_scalper.tennis_flb_bot:[FLB] piazzamento RIFIUTATO sel=43172316 LAY @1.12 per 2.0 (20-esimo, riprovo fra 60s): Order has violated: REPLAY_RIFIUTA_TUTTO Error: rifiuto iniettato dal replay
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'TennisFLBStrategy' already added

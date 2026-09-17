@@ -78,9 +78,24 @@ describe('paramsSoloTennis — lo stake e’ 3,00 € e non si discute', () => {
     });
 });
 
-describe('paramsSoloTennis — il bot deve poter ENTRARE davvero', () => {
-    it('accende le entrate automatiche: il 14/09 erano spente e il bot non entrava', () => {
-        expect(paramsSoloTennis(CORRENTI, 'live').auto_trade_tennis).toBe(true);
+describe('paramsSoloTennis — auto_trade_tennis NON e’ il suo interruttore', () => {
+    // ⚠️ REPERTO 17/09 sera — `auto_trade_tennis` governa il SECONDO motore
+    // (opportunita’ di modello tennis, paper), non le entrate della Strategia
+    // S. La scheda «solo tennis» accende la Strategia S da `variants`, sempre:
+    // `auto_trade_tennis` lo lascia esattamente com’e’, qualunque sia.
+    it('con auto_trade_tennis:true nei correnti, resta true', () => {
+        const p = paramsSoloTennis({ ...CORRENTI, auto_trade_tennis: true }, 'live');
+        expect(p.auto_trade_tennis).toBe(true);
+    });
+
+    it('con auto_trade_tennis:false nei correnti, resta false (NON lo accende)', () => {
+        const p = paramsSoloTennis({ ...CORRENTI, auto_trade_tennis: false }, 'live');
+        expect(p.auto_trade_tennis).toBe(false);
+    });
+
+    it('assente nei correnti, resta assente: la scheda non lo scrive', () => {
+        const p = paramsSoloTennis({ variants: ['tennis'] }, 'live');
+        expect(p.auto_trade_tennis).toBeUndefined();
     });
 
     // ⚠️ 16/09 — `variants` adesso dice CHI E’ ACCESO, e ogni strategia
@@ -116,11 +131,17 @@ describe('paramsSoloTennis — non porta via niente', () => {
 });
 
 describe('differenzeSoloTennis — si dice PRIMA del clic', () => {
-    it('elenca il calcio che si spegne, lo stake e le entrate', () => {
+    it('elenca il calcio che si spegne e lo stake', () => {
         const d = differenzeSoloTennis(CORRENTI, 'live').join(' · ');
         expect(d).toMatch(/base, esatto/);
         expect(d).toMatch(/3,00/);
-        expect(d).toMatch(/entrate automatiche/);
+    });
+
+    // ⚠️ REPERTO 17/09 sera — `auto_trade_tennis` non e’ piu’ fra le cose che
+    // questa scheda annuncia di cambiare: non lo cambia piu’.
+    it('NON annuncia piu’ le «entrate automatiche»: la scheda non lo tocca', () => {
+        const d = differenzeSoloTennis(CORRENTI, 'live').join(' · ');
+        expect(d).not.toMatch(/entrate automatiche/);
     });
 
     it('se è già come deve essere, in prova non annuncia niente', () => {
