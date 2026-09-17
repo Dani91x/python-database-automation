@@ -1075,11 +1075,18 @@ class MondoV4:
 
     def __init__(self, nome: str, celle: int, stake_fisso: Optional[float],
                  banda: Optional[Tuple[float, float]] = None,
-                 *, liability_gamba: float, commissione: float) -> None:
+                 *, liability_gamba: float, commissione: float,
+                 prezzo_da: Optional[str] = None,
+                 ammissibilita: Optional[str] = None) -> None:
         self.nome = nome
         self.celle = int(celle)
         self.stake_fisso = stake_fisso
         self.banda = banda
+        # M1-ter: da quale dei tre prezzi della misura viene la quotazione
+        # ("riserva" | "back+1" | "back+3"); None = il prezzo unico di M1-bis
+        self.prezzo_da = prezzo_da
+        # M1-ter: quale regola di ammissibilita' ("m6" | "pequa"); None = M1-bis
+        self.ammissibilita = ammissibilita
         self.liability_gamba = float(liability_gamba)
         self.commissione = float(commissione)
         # market_id -> selection_id -> ordine appoggiato vivo/in attesa
@@ -1329,9 +1336,17 @@ class MisuraV4:
             self.fonte_lambdas = "pre_ko_odds"
 
     # -------------------------------------------------------- la politica
+    def _finestra(self, mercato: str) -> Tuple[int, int]:
+        """La finestra della gamba. M1-ter la sovrascrive (1'-85' sul solo CS)."""
+        return FINESTRE_V4[mercato]
+
+    def _minuto_chiusura(self, mercato: str) -> int:
+        """Il minuto in cui si registra il prezzo di chiusura (fuori dal P&L)."""
+        return MINUTO_CHIUSURA_V4[mercato]
+
     def _giro_mercato(self, market_id: str, mercato: str, minuto: float,
                       punteggio: Tuple[int, int]) -> None:
-        lo, hi = FINESTRE_V4[mercato]
+        lo, hi = self._finestra(mercato)
         book = self.ultimo_book.get(market_id)
         if book is None:
             return
@@ -1340,7 +1355,7 @@ class MisuraV4:
         # prezzo di chiusura al 44'/89' (per il confronto col 12/09, FUORI dal
         # P&L principale). Va registrato PRIMA di uscire per fine finestra, se
         # no una riga di scan che salta dal 88' al 90' lo perderebbe.
-        if minuto >= MINUTO_CHIUSURA_V4[mercato]:
+        if minuto >= self._minuto_chiusura(mercato):
             self._registra_chiusura_finestra(market_id, book)
         # fine finestra: si annulla tutto
         if minuto > hi:
@@ -1454,6 +1469,12 @@ class MisuraV4:
         fuori.sort(key=lambda d: (-d["ev_liability"], d["prezzo"]))
         return fuori
 
+    def _per_mondo(self, mondo: MondoV4, cand: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Adatta un candidato alla variante. In M1-bis il candidato e' gia'
+        completo (un prezzo solo, nessuna regola di ammissibilita' per mondo):
+        lo si consegna com'e'. M1-ter la sovrascrive."""
+        return cand
+
     def _applica_mondo(self, mondo: MondoV4, market_id: str, mercato: str,
                        minuto: float, punteggio: Tuple[int, int], book: Any,
                        candidati: Sequence[Dict[str, Any]], pt: int) -> None:
@@ -1472,6 +1493,9 @@ class MisuraV4:
         for cand in candidati:
             if len(bersaglio) >= mondo.celle:
                 break
+            cand = self._per_mondo(mondo, cand)
+            if cand is None:
+                continue
             if mondo.banda is not None:
                 lo_b, hi_b = mondo.banda
                 # la banda guarda il prezzo a cui si SCAMBIA davvero: per un
@@ -1578,18 +1602,22 @@ class MisuraV4:
             for mid, vive in mondo.vive.items():
                 for sid in list(vive.keys()):
                     vive[sid].uccidi("registrazione_finita")
+            # L'ESITO DELLA CELLA SI SA ANCHE SE NON CI SIAMO ABBINATI: serve al
+            # denominatore della selezione avversa (la frequenza di uscita di
+            # TUTTE le candidate). Prima veniva scritto solo sulle posizioni, e
+            # il rapporto veniva 1,00 per costruzione.
+            for q in mondo.quote:
+                vincitore = self.esiti.get(str(q.market_id))
+                q.esito_cella = (None if vincitore is None
+                                 else bool(int(vincitore) == int(q.selection_id)))
             for mid, righe in mondo.posizioni.items():
-                vincitore = self.esiti.get(str(mid))
                 for q in righe:
                     L = float(q.prezzo_ottenuto or q.prezzo_passivo)
-                    if vincitore is None:
-                        q.esito_cella = None
+                    if q.esito_cella is None:
                         q.pl_regolamento = None
                     else:
-                        uscita = int(vincitore) == int(q.selection_id)
-                        q.esito_cella = bool(uscita)
                         q.pl_regolamento = round(
-                            -q.size * (L - 1.0) if uscita else q.size * (1.0 - c), 4)
+                            -q.size * (L - 1.0) if q.esito_cella else q.size * (1.0 - c), 4)
                     B = q.prezzo_back_chiusura
                     if B and float(B) > 1.0:
                         bloccato = q.size * (1.0 - L / float(B))
@@ -1920,15 +1948,43 @@ def main_v4(args: Any) -> int:
                                     commissione=par["commissione"]),
         "giornata": conto_di_giornata(tutte, kickoff=kickoff, registrazioni=len(eventi),
                                       partite_giorno_tipo=args.partite_giorno),
-        "quote": [q.a_dizionario() for q in tutte],
+        # le QUOTE ABBINATE stanno qui (sono dieci): le 12.486 quotazioni grezze
+        # vanno nel sidecar compresso, come gli altri campioni grossi di `data/`
+        "quote_abbinate": [q.a_dizionario() for q in tutte if q.abbinato],
+        "quote_file": os.path.basename(_percorso_quote(args.out)),
         "durata_totale_s": round(time.time() - t0, 1),
     }
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(dati, fh, ensure_ascii=False, indent=1, sort_keys=True, default=str)
-    print("scritto %s" % args.out)
+    scrivi_quote(_percorso_quote(args.out), tutte)
+    print("scritto %s (+ %s)" % (args.out, _percorso_quote(args.out)))
     stampa_v4(dati)
     return 0
+
+
+def _percorso_quote(percorso_json: str) -> str:
+    """Il sidecar compresso con TUTTE le quotazioni grezze."""
+    base, _est = os.path.splitext(percorso_json)
+    return base + "_quote.json.gz"
+
+
+def scrivi_quote(percorso: str, quote: Sequence[QuotaV4]) -> None:
+    """12.486 righe di quotazione non stanno in un JSON versionato da 14 MB:
+    vanno compresse, come gli altri campioni grossi di `Betfair/omega/data/`."""
+    import gzip
+
+    with gzip.open(percorso, "wt", encoding="utf-8") as fh:
+        json.dump([q.a_dizionario() for q in quote], fh, ensure_ascii=False,
+                  sort_keys=True, default=str)
+
+
+def leggi_quote(percorso: str) -> List[Dict[str, Any]]:
+    """Le quotazioni grezze dal sidecar compresso."""
+    import gzip
+
+    with gzip.open(percorso, "rt", encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def stampa_v4(dati: Dict[str, Any]) -> None:
@@ -1968,6 +2024,606 @@ def stampa_v4(dati: Dict[str, Any]) -> None:
               % (r["variante"], r["gambe_con_fill_per_partita"],
                  r["gambe_con_fill_giorno_tipo"], r["fill_per_partita"],
                  r["fill_giorno_tipo"], r["liability_impegnata_giorno_tipo_eur"]))
+
+
+
+
+# =========================================================================
+# M1-TER — LA QUOTA VIVA AL PREZZO DEL *BIAS DI FASCIA* (non del modello)
+# =========================================================================
+# M1-bis ha misurato la quota viva al prezzo di riserva del MODELLO
+# (`p_sup x k = 2`): 10 fill su 12.486 quotazioni, perche' quel prezzo sta
+# 2,7-3,4 volte sotto il mercato. `M4M5M6_2026-09-17.md` §6-bis.3 riscrive il
+# prezzo di riserva partendo da cio' che e' MISURATO invece che da cio' che il
+# modello crede:
+#
+#     L*_fascia = (1 - c) / ( p_equa(cella) * k_fascia ) + c
+#
+#  * `p_equa` = probabilita' DEVIGATA del mercato per quella cella: mid fra i
+#    due lati, normalizzato a 1 sui runner ATTIVI. Stessa identica regola di
+#    `tools/superficie_liability.py` (>= 6 selezioni prezzate sui DUE lati e
+#    somma dei pesi > 0,5: normalizzare mezzo book inventa probabilita').
+#  * `k_fascia` = il BIAS PRUDENTE misurato da M6 per quella fascia, letto dal
+#    file versionato `data/k_in_gioco_aggregato_2026-09-17.json`
+#    (`bias_equo_prudente`). Non e' un numero scritto qui: e' una misura.
+#
+# **IL MODELLO NON ENTRA NEL PREZZO.** In questa modalita' `omega_v3` non viene
+# nemmeno chiamato: l'ammissibilita' e' geometrica (raggiungibile, >= 2 gol) e
+# il margine viene dal bias di fascia. Conseguenza pratica: **non servono le
+# lambda pre-KO**, quindi si misurano tutte e 39 le registrazioni invece delle
+# 22 di M1-bis.
+#
+# AMMISSIBILITA' — due regole, entrambe misurate, perche' il brief e M6 non
+# definiscono la fascia sulla stessa quantita' (divergenza dichiarata, §1 del
+# referto):
+#   * `m6`    — CORRECT_SCORE, fascia calcolata sulla `p_implicita AL TOCCO`
+#               (e' cosi' che M6 definisce le sue fasce: `k_in_gioco` §23-24) e
+#               ristretta alle DUE fasce con bias prudente > 1: 0,5-1 % e 1-2 %;
+#   * `pequa` — CORRECT_SCORE con `p_equa` fra 0,5 % e 2 % (la lettera del
+#               brief), sempre scartando le celle la cui fascia non ha un bias
+#               prudente > 1 (operare dove il bias non e' dimostrato e' cio' che
+#               `K_MISURATO` §5.2 vieta).
+#
+# TRE PREZZI (tutti con liability fissa 30 EUR, quota VIVA con riprezzo):
+#   (a) esattamente `L*_fascia`, arrotondato al tick verso il basso;
+#   (b) al miglior back + 1 tick;
+#   (c) al miglior back + 3 tick (verso il mid).
+#
+# Gli altri pezzi della vita dell'ordine sono quelli di M1-bis e non cambiano:
+# riprezzo con isteresi di 1 tick, annullo con latenza 300 ms, mai due ordini
+# vivi sulla stessa cella, morte a sospensione / gol / cella impossibile / fine
+# finestra, rientro 20 s dopo la riapertura, matching di flumine con la coda.
+
+FINESTRA_V4TER = (1, 85)
+MERCATO_V4TER = "CORRECT_SCORE"
+# le fasce che M6 misura operabili (bias prudente > 1). NON sono scritte a mano:
+# si leggono dal file di M6 e queste sono solo il default se il file manca.
+FASCE_OPERABILI_ATTESE = ("0,5-1%", "1-2%")
+BANDA_PEQUA_V4TER = (0.005, 0.020)
+# devig: la stessa soglia di `superficie_liability` e di `misura_k`
+DEVIG_MIN_SELEZIONI = 6
+FILE_M6 = "k_in_gioco_aggregato_2026-09-17.json"
+# (nome variante, da dove viene il prezzo, regola di ammissibilita')
+VARIANTI_V4TER: Tuple[Tuple[str, str, str], ...] = (
+    ("a_riserva", "riserva", "m6"),
+    ("b_back1", "back+1", "m6"),
+    ("c_back3", "back+3", "m6"),
+    ("a_riserva_pequa", "riserva", "pequa"),
+    ("b_back1_pequa", "back+1", "pequa"),
+    ("c_back3_pequa", "back+3", "pequa"),
+)
+# quante celle si quotano insieme: TUTTE le ammissibili, dentro il cap di caso
+# peggiore. Con 39 registrazioni e un fill ogni tanto, quotare una cella sola
+# darebbe un campione troppo piccolo per una selezione avversa con intervallo.
+CELLE_V4TER = 60
+
+
+def bias_di_fascia(percorso: Optional[str] = None) -> Dict[Tuple[str, str], float]:
+    """(mercato, fascia) -> bias EQUO PRUDENTE misurato da M6.
+
+    Dal file versionato di M6 (`data/k_in_gioco_aggregato_2026-09-17.json`,
+    campo `bias_equo_prudente`). Le fasce sono quelle di `misura_k.SECCHI`,
+    calcolate sulla `p_implicita AL TOCCO`: la stessa convenzione, cosi' il
+    numero di M6 si incolla qui senza tradurre niente."""
+    p = percorso or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", FILE_M6)
+    fuori: Dict[Tuple[str, str], float] = {}
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            dati = json.load(fh)
+    except (OSError, ValueError):
+        return fuori
+    for r in dati.get("righe", ()):
+        v = r.get("bias_equo_prudente")
+        if v is None:
+            continue
+        fuori[(str(r.get("mercato")), str(r.get("fascia")))] = float(v)
+    return fuori
+
+
+def probabilita_eque(book: Any, stati: Optional[Dict[int, str]] = None
+                     ) -> Tuple[Dict[int, float], Dict[str, Any]]:
+    """`p_equa` per selezione: mid fra i due lati, normalizzato sui runner ATTIVI.
+
+    Riga per riga la regola di `tools/superficie_liability.py` (righe 334-390):
+    si scartano i runner senza entrambi i lati e i book INCROCIATI, si somma
+    `0,5 (1/lay + 1/back)` e si normalizza. Se meno di `DEVIG_MIN_SELEZIONI`
+    selezioni sono prezzate sui due lati, o la somma dei pesi e' <= 0,5, NON si
+    deviga: normalizzare mezzo book inventa probabilita'.
+    """
+    from flumine.utils import get_price
+
+    pesi: Dict[int, float] = {}
+    for runner in getattr(book, "runners", ()) or ():
+        sid = int(getattr(runner, "selection_id", 0) or 0)
+        stato = (stati or {}).get(sid) or str(getattr(runner, "status", "") or "")
+        if stato != "ACTIVE":
+            continue
+        bl = get_price(runner.ex.available_to_lay, 0)
+        bb = get_price(runner.ex.available_to_back, 0)
+        if not bl or not bb:
+            continue
+        bl, bb = float(bl), float(bb)
+        if bb >= bl or bl <= 1.0 or bb <= 1.0:
+            continue                     # book incrociato: non e' un prezzo
+        pesi[sid] = 0.5 * (1.0 / bl + 1.0 / bb)
+    somma = sum(pesi.values())
+    ok = bool(len(pesi) >= DEVIG_MIN_SELEZIONI and somma > 0.5)
+    diagnostica = {"n_mid": len(pesi), "somma_mid": round(somma, 4), "devig_ok": ok}
+    if not ok:
+        return {}, diagnostica
+    return {sid: w / somma for sid, w in pesi.items()}, diagnostica
+
+
+class MisuraV4Ter(MisuraV4):
+    """La politica M1-ter: quota viva col prezzo di riserva del BIAS DI FASCIA."""
+
+    def __init__(self, event_id: str, *, catalogo: Any, esiti: Dict[str, Optional[int]],
+                 par: Dict[str, Any]) -> None:
+        super().__init__(event_id, catalogo=catalogo, esiti=esiti, par=par)
+        # solo il CORRECT SCORE: M6 misura un bias prudente > 1 solo li'
+        self.mercati = {mid: mt for mid, mt in self.mercati.items()
+                        if mt == MERCATO_V4TER}
+        self.mondi = [
+            MondoV4(nome, CELLE_V4TER, None, None,
+                    liability_gamba=float(par["liability_gamba"]),
+                    commissione=float(par["commissione"]),
+                    prezzo_da=prezzo_da, ammissibilita=amm)
+            for nome, prezzo_da, amm in VARIANTI_V4TER]
+        self.bias = dict(par["bias_fascia"])
+        # il modello non serve: senza lambda si quota lo stesso
+        self.lambdas = (0.0, 0.0)
+        self.fonte_lambdas = "non_usato (il prezzo viene dal bias di fascia)"
+        self.devig_ko = 0
+        self.devig_ok = 0
+
+    def _risolvi_lambdas(self, payload: Optional[dict]) -> None:
+        return None                      # in M1-ter il modello non entra
+
+    # ------------------------------------------------------------ candidati
+    def _candidati(self, market_id: str, mercato: str, minuto: float,
+                   punteggio: Tuple[int, int], book: Any) -> List[Dict[str, Any]]:
+        from flumine.utils import get_price, get_size
+
+        from . import misura_k as MK
+        from .. import omega_v3 as V3
+
+        p_eque, diag = probabilita_eque(book)
+        if not p_eque:
+            self.devig_ko += 1
+            return []
+        self.devig_ok += 1
+        c = float(self.par["commissione"])
+        distanza = int(self.par["distanza_minima_gol"])
+        sh, sa = punteggio
+        nomi_mercato = self.catalogo.nomi.get(str(market_id), {})
+        fuori: List[Dict[str, Any]] = []
+        for runner in getattr(book, "runners", ()) or ():
+            if str(getattr(runner, "status", "") or "") != "ACTIVE":
+                continue
+            sid = int(getattr(runner, "selection_id", 0) or 0)
+            nome = str(nomi_mercato.get(sid) or "")
+            coppia = V3.parse_scoreline(nome)
+            if coppia is None:
+                continue                 # mai gli aggregati
+            h, a = coppia
+            if h < sh or a < sa:
+                continue                 # cella ormai impossibile
+            if (h - sh) + (a - sa) < distanza:
+                continue                 # corrente o adiacente
+            p_equa = p_eque.get(sid)
+            if not p_equa or p_equa <= 0:
+                continue
+            atl = get_price(runner.ex.available_to_lay, 0)
+            atb = get_price(runner.ex.available_to_back, 0)
+            if not atl or not atb or float(atb) >= float(atl):
+                continue                 # senza i due lati non c'e' ne' p_equa ne' prezzo
+            atl, atb = float(atl), float(atb)
+            p_tocco = MK.p_implicita(atl, c)
+            if p_tocco is None:
+                continue
+            fascia = MK.secchio_di(p_tocco)          # LA FASCIA E' QUELLA DEL TOCCO
+            k_fascia = self.bias.get((mercato, fascia))
+            if k_fascia is None or k_fascia <= 1.0:
+                continue                 # bias non dimostrato: non si opera
+            l_stella = (1.0 - c) / max(1e-12, p_equa * k_fascia) + c
+            prezzi = self._prezzi(l_stella, atb, atl)
+            if not prezzi:
+                continue
+            fuori.append({
+                "selection_id": sid, "nome": nome,
+                "p_equa": float(p_equa), "p_sup": float(p_equa),
+                "p_centro": float(p_equa), "k_fascia": float(k_fascia),
+                "fascia": fascia, "fascia_psup": fascia,
+                "l_stella": float(l_stella),
+                "prezzo_tocco": atl, "prezzo_back": atb,
+                "size_tocco": float(get_size(runner.ex.available_to_lay, 0) or 0.0),
+                "prezzi": prezzi,
+                "in_banda_pequa": bool(BANDA_PEQUA_V4TER[0] <= p_equa <= BANDA_PEQUA_V4TER[1]),
+                "n_devig": diag["n_mid"],
+            })
+        # ordinamento: la cella con piu' margine al prezzo di riserva per euro di
+        # liability; con la quotazione aperta a tutte le celle conta poco, ma
+        # tiene un ordine stabile e riproducibile
+        fuori.sort(key=lambda d: (-d["k_fascia"], d["prezzi"]["riserva"]["prezzo"]))
+        return fuori
+
+    def _prezzi(self, l_stella: float, best_back: float, best_lay: float
+                ) -> Dict[str, Dict[str, Any]]:
+        """I tre prezzi della misura, con il loro modo e il prezzo a cui si
+        scambierebbe davvero."""
+        c = float(self.par["commissione"])
+        fuori: Dict[str, Dict[str, Any]] = {}
+        grezzi = {
+            "riserva": _tick_giu(min(l_stella, 1000.0)),
+            "back+1": _tick(best_back, 1),
+            "back+3": _tick(best_back, 3),
+        }
+        for nome, prezzo in grezzi.items():
+            if prezzo is None or prezzo <= 1.01:
+                continue
+            if prezzo >= best_lay - 1e-9:
+                # il prezzo che si vorrebbe e' gia' disponibile: si PRENDE al
+                # tocco (FOK fino al limite), e si scambia al prezzo del book
+                modo = "tocco"
+                limite = _tick_giu(min(prezzo, 1000.0))
+                if limite is None:
+                    continue
+                fuori[nome] = {"prezzo": float(limite), "modo": modo,
+                               "prezzo_effettivo": float(best_lay)}
+                continue
+            fuori[nome] = {"prezzo": float(prezzo), "modo": "passivo",
+                           "prezzo_effettivo": float(prezzo)}
+        return fuori
+
+    def _per_mondo(self, mondo: MondoV4, cand: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Il prezzo della VARIANTE e la regola di AMMISSIBILITA' del mondo."""
+        from . import misura_k as MK
+
+        if mondo.ammissibilita == "m6":
+            if cand["fascia"] not in self.par["fasce_operabili"]:
+                return None
+        elif mondo.ammissibilita == "pequa":
+            if not cand["in_banda_pequa"]:
+                return None
+        scelto = (cand.get("prezzi") or {}).get(mondo.prezzo_da or "riserva")
+        if not scelto:
+            return None
+        c = float(self.par["commissione"])
+        p_impl = MK.p_implicita(float(scelto["prezzo_effettivo"]), c)
+        if p_impl is None:
+            return None
+        k_al_prezzo = p_impl / max(1e-12, float(cand["p_equa"]))
+        d = dict(cand)
+        d.update({
+            "prezzo": float(scelto["prezzo"]),
+            "prezzo_effettivo": float(scelto["prezzo_effettivo"]),
+            "modo": str(scelto["modo"]),
+            "k_al_prezzo": float(k_al_prezzo),
+            # EV per unita' di liability al margine EFFETTIVO di questo prezzo:
+            # qui `k` NON e' incollato alla soglia (e' il reperto §7.1 di M1-bis),
+            # quindi il numero e' informativo
+            "ev_liability": ((1.0 - c) * (1.0 - 1.0 / k_al_prezzo)
+                             / max(1e-9, float(scelto["prezzo_effettivo"]) - 1.0)),
+        })
+        return d
+
+    # ------------------------------------------------------------ finestre
+    def _finestra(self, mercato: str) -> Tuple[int, int]:
+        return FINESTRA_V4TER
+
+    def _minuto_chiusura(self, mercato: str) -> int:
+        return int(FINESTRA_V4TER[1])
+
+    def _giro_mercato(self, market_id: str, mercato: str, minuto: float,
+                      punteggio: Tuple[int, int]) -> None:
+        if mercato != MERCATO_V4TER:
+            return
+        super()._giro_mercato(market_id, mercato, minuto, punteggio)
+
+
+def misura_evento_v4ter(event_id: str, cartella: str, *,
+                        par: Dict[str, Any]) -> Tuple[List[QuotaV4], Dict[str, Any]]:
+    """Una registrazione con la politica M1-ter."""
+    from ...stream.backtest import banco_comune as BC
+    from .replay_registrazioni import leggi_catalogo
+
+    raw = os.path.join(cartella, str(event_id), "%s.raw.jsonl" % event_id)
+    diagnostica: Dict[str, Any] = {"event_id": str(event_id), "errori": [], "note": []}
+    if not os.path.exists(raw):
+        diagnostica["errori"].append("registrazione assente")
+        return [], diagnostica
+    catalogo = leggi_catalogo(raw)
+    esiti = esiti_dal_catalogo(catalogo)
+    misura = MisuraV4Ter(event_id, catalogo=catalogo, esiti=esiti, par=par)
+    t0 = time.time()
+    esito = BC.replay_evento(event_id=str(event_id), cartella=cartella,
+                             servizio=misura.giro, nomi_extra=catalogo.nomi,
+                             su_strategia=misura.aggancia)
+    misura.chiudi()
+    diagnostica.update({
+        "durata_s": round(time.time() - t0, 1),
+        "giri": esito.giri, "giri_politica": misura.giri_politica,
+        "sospensioni": misura.sospensioni, "rientri": misura.rientri,
+        "devig_ok": misura.devig_ok, "devig_ko": misura.devig_ko,
+        "kickoff": (catalogo.avvio.isoformat() if catalogo.avvio else None),
+        "esiti": dict(esiti),
+    })
+    diagnostica["errori"].extend(list(esito.errori))
+    diagnostica["note"].extend(list(esito.note) + list(misura.note))
+    quote: List[QuotaV4] = []
+    for mondo in misura.mondi:
+        quote.extend(mondo.quote)
+    return quote, diagnostica
+
+
+# ---------------------------------------------------------------------------
+# SELEZIONE AVVERSA con intervallo — il numero che decide (M4M5M6 §0)
+# ---------------------------------------------------------------------------
+def selezione_avversa(quote: Sequence[QuotaV4], *, giri_boot: int = 2000,
+                      seed: int = 20260917, per_cella: bool = True) -> Dict[str, Any]:
+    """frequenza di uscita degli ABBINATI / frequenza di uscita di TUTTI i
+    candidati, con IC a grappolo SULLE PARTITE (stessa metrica di M1 §7).
+
+    Il numeratore e il denominatore si ricampionano INSIEME sulla stessa
+    partita: sono legati (le stesse partite producono entrambi), e trattarli
+    come indipendenti darebbe un intervallo falsamente stretto.
+    """
+    import random
+
+    con_esito = [q for q in quote if q.esito_cella is not None]
+    if not con_esito:
+        return {"n_candidati": 0, "n_abbinati": 0, "fattore": None}
+    # UNITA' = la CELLA distinta della gamba, non la singola quotazione: una
+    # cella riquotata 40 volte e' UNA candidata, non quaranta (M1 §7 conta le
+    # celle). Il conto per quotazione resta nel JSON come riferimento.
+    if per_cella:
+        viste: Dict[Tuple[str, str, int], QuotaV4] = {}
+        for q in con_esito:
+            chiave = (q.event_id, q.market_id, int(q.selection_id))
+            precedente = viste.get(chiave)
+            if precedente is None or (q.abbinato and not precedente.abbinato):
+                viste[chiave] = q
+        con_esito = list(viste.values())
+    per_partita: Dict[str, List[int]] = {}
+    for q in con_esito:
+        cella = per_partita.setdefault(q.event_id, [0, 0, 0, 0])
+        cella[1] += 1
+        cella[0] += 1 if q.esito_cella else 0
+        if q.abbinato:
+            cella[3] += 1
+            cella[2] += 1 if q.esito_cella else 0
+    usc_t = sum(v[0] for v in per_partita.values())
+    tot_t = sum(v[1] for v in per_partita.values())
+    usc_a = sum(v[2] for v in per_partita.values())
+    tot_a = sum(v[3] for v in per_partita.values())
+    f_tutti = (usc_t / tot_t) if tot_t else None
+    f_abb = (usc_a / tot_a) if tot_a else None
+    fattore = (f_abb / f_tutti) if (f_abb is not None and f_tutti) else None
+    chiavi = list(per_partita)
+    rng = random.Random(seed)
+    campioni: List[float] = []
+    m = len(chiavi)
+    for _ in range(max(1, int(giri_boot))):
+        a = b = x = y = 0
+        for _ in range(m):
+            v = per_partita[chiavi[rng.randrange(m)]]
+            a += v[0]
+            b += v[1]
+            x += v[2]
+            y += v[3]
+        if b and y and a:
+            campioni.append((x / y) / (a / b))
+    campioni.sort()
+    lo = campioni[int(0.025 * (len(campioni) - 1))] if campioni else None
+    hi = campioni[int(0.975 * (len(campioni) - 1))] if campioni else None
+    return {
+        "n_candidati": tot_t, "uscite_candidati": usc_t,
+        "n_abbinati": tot_a, "uscite_abbinati": usc_a,
+        "partite": len(per_partita),
+        "frequenza_candidati": (round(f_tutti, 6) if f_tutti is not None else None),
+        "frequenza_abbinati": (round(f_abb, 6) if f_abb is not None else None),
+        "fattore": (round(fattore, 3) if fattore is not None else None),
+        "ic_lo": (round(lo, 3) if lo is not None else None),
+        "ic_hi": (round(hi, 3) if hi is not None else None),
+        "giri_utili": len(campioni),
+        "unita": "cella" if per_cella else "quotazione",
+        "soglia_arresto": SOGLIA_SELEZIONE_AVVERSA,
+    }
+
+
+# La soglia del criterio di arresto, misurata dal Monte Carlo di M5
+# (`M4M5M6_2026-09-17.md` §0): sopra questo fattore di selezione avversa V4 perde.
+SOGLIA_SELEZIONE_AVVERSA = 1.27
+
+
+def aggrega_v4ter(quote: Sequence[QuotaV4], *, kickoff: Dict[str, Optional[str]],
+                  giri_boot: int, commissione: float) -> Dict[str, Any]:
+    """Per variante x fascia: quote, fill, attesa, k realizzato, selezione
+    avversa con IC, P&L e drawdown."""
+    righe: List[Dict[str, Any]] = []
+    varianti = [v[0] for v in VARIANTI_V4TER]
+    for variante in varianti:
+        base = [q for q in quote if q.variante == variante]
+        if not base:
+            continue
+        fasce = ["tutte"] + sorted({q.fascia_psup for q in base})
+        for fascia in fasce:
+            g = base if fascia == "tutte" else [q for q in base if q.fascia_psup == fascia]
+            if not g:
+                continue
+            gambe = {(q.event_id, q.market_id) for q in g}
+            abb = [q for q in g if q.abbinato]
+            gambe_fill = {(q.event_id, q.market_id) for q in abb}
+            per_gamba: Dict[Tuple[str, str], float] = {}
+            senza_esito = set()
+            for q in abb:
+                chiave = (q.event_id, q.market_id)
+                if q.pl_regolamento is None:
+                    senza_esito.add(chiave)
+                    continue
+                per_gamba[chiave] = per_gamba.get(chiave, 0.0) + float(q.pl_regolamento)
+            for chiave in senza_esito:
+                per_gamba.pop(chiave, None)
+            ordinate = sorted(per_gamba.items(),
+                              key=lambda kv: (kickoff.get(kv[0][0]) or "", kv[0][1]))
+            serie = [v for _k, v in ordinate]
+            riga = {
+                "variante": variante, "fascia": fascia,
+                "n_quote": len(g), "n_quote_al_tocco": sum(1 for q in g if q.modo == "tocco"),
+                "n_gambe": len(gambe), "n_gambe_con_fill": len(gambe_fill),
+                "n_fill": len(abb),
+                "fill_pct": (round(100.0 * len(abb) / len(g), 3) if g else None),
+                "attesa_mediana_s": _mediana([q.attesa_s for q in abb]),
+                "prezzo_medio_quotato": _media([q.prezzo_passivo for q in g]),
+                "prezzo_medio_ottenuto": _media([q.prezzo_ottenuto for q in abb]),
+                "l_stella_mediana": _mediana([q.l_stella for q in g]),
+                "k_al_prezzo_mediano": _mediana([q.k_al_prezzo for q in g]),
+                "quote_sopra_riserva": sum(1 for q in g if q.prezzo_passivo > q.l_stella + 1e-9),
+                "liability_mediana": _mediana([q.liability for q in abb]),
+                "quote_sotto_minimo_it": sum(1 for q in g if q.sotto_minimo_it),
+                "pl_totale_eur": round(sum(serie), 2),
+                "n_gambe_nel_pl": len(serie),
+                "pl_per_gamba_eur": (round(sum(serie) / len(serie), 4) if serie else None),
+                "drawdown_massimo_eur": _drawdown(serie),
+                "pl_se_chiuso_a_finestra_eur": (
+                    round(sum(q.pl_chiusura_finestra for q in abb
+                              if q.pl_chiusura_finestra is not None), 2)
+                    if any(q.pl_chiusura_finestra is not None for q in abb) else None),
+                "attraversati": sum(1 for q in abb if q.attraversato),
+                "pre_gol": sum(1 for q in abb if q.pre_gol),
+            }
+            riga["k_realizzato"] = _k_e_ic(abb, giri_boot=giri_boot,
+                                          commissione=commissione)
+            riga["selezione_avversa"] = selezione_avversa(g, giri_boot=giri_boot)
+            riga["selezione_avversa_per_quotazione"] = selezione_avversa(
+                g, giri_boot=giri_boot, per_cella=False)
+            righe.append(riga)
+    return {"righe": righe}
+
+
+def parametri_v4ter(*, liability: float = LIABILITY_GAMBA_EUR,
+                    cadenza_s: float = 1.0,
+                    file_m6: Optional[str] = None) -> Dict[str, Any]:
+    from .. import omega_config
+
+    d = omega_config.DEFAULTS
+    bias = bias_di_fascia(file_m6)
+    return {
+        "liability_gamba": float(liability),
+        "k_soglia": None,                  # in M1-ter il margine e' il bias di fascia
+        "fattore_psup": None,
+        "cadenza_s": float(cadenza_s),
+        "latenza_annullo_s": LATENZA_ANNULLO_S,
+        "rientro_dopo_sospensione_s": RIENTRO_DOPO_SOSPENSIONE_S,
+        "commissione": float(d["commission_pct"]) / 100.0,
+        "distanza_minima_gol": int(d["v3_distanza_minima_gol"]),
+        "parametri_modello": None,
+        "bias_fascia": bias,
+        "fasce_operabili": tuple(sorted(f for (m, f), v in bias.items()
+                                        if m == MERCATO_V4TER and v > 1.0)),
+        "finestre": {MERCATO_V4TER: list(FINESTRA_V4TER)},
+    }
+
+
+def main_v4ter(args: Any) -> int:
+    cartella = args.cartella
+    eventi = args.eventi if args.eventi else eventi_disponibili(cartella)
+    par = parametri_v4ter(liability=args.liability, cadenza_s=args.cadenza_s)
+    operabili = {k: v for k, v in par["bias_fascia"].items() if v > 1.0}
+    print("POLITICA V4-TER (bias di fascia) — registrazioni: %d" % len(eventi), flush=True)
+    print("liability/gamba %.2f EUR, cadenza %.0f s, finestra %s, mercato %s"
+          % (par["liability_gamba"], par["cadenza_s"], FINESTRA_V4TER, MERCATO_V4TER),
+          flush=True)
+    print("bias di fascia OPERABILI (da %s): %s"
+          % (FILE_M6, {"%s %s" % k: v for k, v in sorted(operabili.items())}), flush=True)
+    if not operabili:
+        print("NESSUNA fascia operabile: il file di M6 manca o non ha bias > 1")
+        return 2
+
+    tutte: List[QuotaV4] = []
+    diagnostiche: List[Dict[str, Any]] = []
+    kickoff: Dict[str, Optional[str]] = {}
+    t0 = time.time()
+    for i, eid in enumerate(eventi, 1):
+        try:
+            quote, diag = misura_evento_v4ter(eid, cartella, par=par)
+        except Exception as ex:  # noqa: BLE001 - un errore e' un referto
+            import traceback
+            quote, diag = [], {"event_id": eid,
+                               "errori": ["%s: %s" % (type(ex).__name__, ex)],
+                               "traccia": traceback.format_exc()[-800:]}
+        tutte.extend(quote)
+        diagnostiche.append(diag)
+        kickoff[str(eid)] = diag.get("kickoff")
+        print("  [%d/%d] %s  quote=%d fill=%d  devig ok/ko=%s/%s  %ss  %s"
+              % (i, len(eventi), eid, len(quote),
+                 sum(1 for q in quote if q.abbinato), diag.get("devig_ok"),
+                 diag.get("devig_ko"), diag.get("durata_s", "?"),
+                 ";".join(diag.get("errori", []))[:70]), flush=True)
+
+    dati = {
+        "generato_il": "2026-09-17",
+        "politica": "v4ter — quota viva col prezzo di riserva del BIAS DI FASCIA (M6)",
+        "fonte": "_live_raw via banco_comune.replay_evento",
+        "matching": "flumine SimulatedOrder 2.13.11, coda _piq, delta trd da "
+                    "RunnerAnalytics, simulation_available_prices=False, isolamento per ordine",
+        "prezzo_di_riserva": "L*_fascia = (1-c)/(p_equa * k_fascia) + c; p_equa devigata "
+                             "come in tools/superficie_liability.py; k_fascia = "
+                             "bias_equo_prudente di M6 (%s)" % FILE_M6,
+        "modello": "NON USATO: in M1-ter il prezzo non viene dal modello",
+        "bias_fascia_usato": {"%s|%s" % k: v for k, v in sorted(par["bias_fascia"].items())},
+        "parametri": {k: (list(v) if isinstance(v, tuple) else v)
+                      for k, v in par.items()
+                      if k not in ("parametri_modello", "bias_fascia")},
+        "varianti": [{"nome": n, "prezzo_da": p, "ammissibilita": a}
+                     for n, p, a in VARIANTI_V4TER],
+        "banda_pequa": list(BANDA_PEQUA_V4TER),
+        "celle_quotate_insieme": CELLE_V4TER,
+        "soglia_selezione_avversa": SOGLIA_SELEZIONE_AVVERSA,
+        "registrazioni": diagnostiche,
+        "n_registrazioni": len(eventi),
+        "n_quote": len(tutte),
+        "risultati": aggrega_v4ter(tutte, kickoff=kickoff, giri_boot=args.boot,
+                                   commissione=par["commissione"]),
+        "superficie": superficie_v4(tutte, giri_boot=args.boot,
+                                    commissione=par["commissione"]),
+        "giornata": conto_di_giornata(tutte, kickoff=kickoff, registrazioni=len(eventi),
+                                      partite_giorno_tipo=args.partite_giorno),
+        "quote_abbinate": [q.a_dizionario() for q in tutte if q.abbinato],
+        "quote_file": os.path.basename(_percorso_quote(args.out)),
+        "durata_totale_s": round(time.time() - t0, 1),
+    }
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as fh:
+        json.dump(dati, fh, ensure_ascii=False, indent=1, sort_keys=True, default=str)
+    scrivi_quote(_percorso_quote(args.out), tutte)
+    print("scritto %s (+ %s)" % (args.out, _percorso_quote(args.out)))
+    stampa_v4ter(dati)
+    return 0
+
+
+def stampa_v4ter(dati: Dict[str, Any]) -> None:
+    print("\n-- M1-TER: variante x fascia --")
+    print("{:<18}{:<10}{:>8}{:>7}{:>7}{:>8}{:>8}{:>9}{:>8}{:>9}{:>18}{:>9}".format(
+        "variante", "fascia", "quote", "gambe", "fill", "fill%", "attesa",
+        "prezzo", "k", "P&L", "sel.avversa (IC)", "DD"))
+    for r in dati["risultati"]["righe"]:
+        k = r["k_realizzato"]
+        sa = r["selezione_avversa"]
+        avversa = ("-" if sa.get("fattore") is None
+                   else "%.2f [%.2f-%.2f]" % (sa["fattore"], sa["ic_lo"] or 0.0,
+                                              sa["ic_hi"] or 0.0))
+        print("{:<18}{:<10}{:>8}{:>7}{:>7}{:>8}{:>8}{:>9}{:>8}{:>9}{:>18}{:>9}".format(
+            r["variante"], r["fascia"], r["n_quote"], r["n_gambe"], r["n_fill"],
+            "-" if r["fill_pct"] is None else "%.2f%%" % r["fill_pct"],
+            "-" if r["attesa_mediana_s"] is None else "%.0fs" % r["attesa_mediana_s"],
+            "-" if r["prezzo_medio_ottenuto"] is None else "%.1f" % r["prezzo_medio_ottenuto"],
+            "-" if k["k"] is None else "%.2f" % k["k"],
+            "%.2f" % r["pl_totale_eur"], avversa,
+            "%.2f" % r["drawdown_massimo_eur"]))
+    print("\nsoglia di arresto sulla selezione avversa: %.2f (M4M5M6 §0)"
+          % dati["soglia_selezione_avversa"])
 
 
 # ---------------------------------------------------------------------------
@@ -2023,9 +2679,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                     dest="passo_minuti",
                     help="passo della griglia dei minuti d'ingresso dentro la finestra")
     # --- M1-bis: la politica V4 (quota viva) --------------------------------
-    ap.add_argument("--politica", choices=("m1", "v4"), default="m1",
-                    help="m1 = ordine appoggiato e dimenticato (la misura del 17/09 "
-                         "mattina); v4 = QUOTA VIVA col prezzo di riserva del modello")
+    ap.add_argument("--politica", choices=("m1", "v4", "v4ter"), default="m1",
+                    help="m1 = ordine appoggiato e dimenticato (17/09 mattina); "
+                         "v4 = quota viva col prezzo di riserva del MODELLO (M1-bis); "
+                         "v4ter = quota viva col prezzo di riserva del BIAS DI FASCIA "
+                         "misurato da M6 (M1-ter)")
     ap.add_argument("--liability", type=float, default=LIABILITY_GAMBA_EUR,
                     help="liability per gamba (EUR) con dimensionamento a liability fissa")
     ap.add_argument("--k-soglia", type=float, default=K_SOGLIA_V4, dest="k_soglia")
@@ -2041,8 +2699,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.out:
         args.out = os.path.join(
             "Betfair", "omega", "data",
-            "politica_v4_2026-09-17.json" if args.politica == "v4"
-            else "ingresso_passivo_2026-09-17.json")
+            {"v4": "politica_v4_2026-09-17.json",
+             "v4ter": "quota_viva_bias_fascia_2026-09-17.json"}.get(
+                args.politica, "ingresso_passivo_2026-09-17.json"))
+    if args.politica == "v4ter":
+        if args.cadenza_s == CADENZA_POLITICA_S:
+            args.cadenza_s = 1.0        # M1-ter riprezza a ogni tick di scan
+        return main_v4ter(args)
     if args.politica == "v4":
         return main_v4(args)
 
