@@ -263,7 +263,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
         const load = async () => {
             if (secondsToOff(clockOpenDate, Date.now()) == null) { if (alive) setLapseCount(0); return; }
             try {
-                const lists = await Promise.all(ids.map(id => api.fetchOrders(id)));
+                const lists = await Promise.all(ids.map(id => api.fetchOrders(id, mode)));
                 if (alive) setLapseCount(countLapseResting(lists.flat(), mode));
             } catch { /* best-effort: niente warning nuovo su fetch KO */ }
         };

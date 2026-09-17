@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, AlertCircle } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 interface CardsByMinuteProps {
     cards: {

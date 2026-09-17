@@ -8,7 +8,6 @@ import type { LadderEntry } from '@/lib/live';
 import type { MarketLite, MarketState, OppConfig, Snapshot } from './types';
 import {
     orderFlowImbalance,
-    weightOfMoney,
     makeMomentumPressure,
     makeValueVsModel,
     spreadScalp,

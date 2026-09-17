@@ -35,7 +35,7 @@ describe('ScalperPanel — fix audit #28 (errori persistenti visibili)', () => {
 
     it('un successo azzera il contatore: nessun banner dopo un blip singolo', async () => {
         mState.mockRejectedValueOnce(new Error('blip'));
-        mState.mockResolvedValue(null);
+        mState.mockResolvedValue({ control: null, activity: [] });
         render(<ScalperPanel eventId="evt1" eventName="A-B" pollMs={15} />);
         await waitFor(() => expect(mState.mock.calls.length).toBeGreaterThanOrEqual(3), { timeout: 3000 });
         expect(screen.queryByText(/Stato scalper NON aggiornato/)).not.toBeInTheDocument();

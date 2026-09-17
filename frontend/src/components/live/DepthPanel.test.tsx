@@ -64,7 +64,7 @@ describe('DepthPanel', () => {
         const now = Date.now();
         mFetch.mockResolvedValue(ladderRow(now - 40_000, 100, 50) as never);
         let cb: ((row: unknown) => void) | null = null;
-        mSub.mockImplementation((_id: string, fn: never) => {
+        mSub.mockImplementation((_id: string, fn) => {
             cb = fn as (row: unknown) => void;
             return () => {};
         });

@@ -219,6 +219,25 @@ procedura) e gli «Esito …» di `PIANO_CERTIFICAZIONE_DEFINITIVA_2026-09-16.md
   `Betfair/stream/tests/test_raw_recmeta_stall.py`, 2 test nuovi, 2 migrazioni corrette,
   `migrations/APPLY_ORDER_2026-09-16.md`, `CLAUDE.md`, `CRONOSTORIA.md`.
 
+18. **Migrazione 7 applicata dall'utente** (h12:50; sonda: `get_omega_daily` con `p_mode`
+    risponde, `get_storico_stake` risponde). **Commit locale `38b0043`** (57 file); il push
+    lo fa l'utente (`git push origin master`: bloccato al coordinatore dal classificatore).
+19. **tsc a ZERO** (Sonnet 5, verificato: 0 errori, vitest 2674 verdi, build OK): 13 errori
+    chiusi con correzioni di tipo; `vite-env.d.ts` mancava dal progetto; una correzione è un
+    bug latente vero: `SeguiLive.tsx` chiamava `fetchOrders(id)` senza `mode` (conteggio
+    LAPSE non filtrato per modalità); duplicazione `phaseFromMinute` in `tier0_arb`/
+    `tier1_quasi` segnalata, non toccata (strategia). Regola in `CLAUDE.md`: 0 errori.
+
+### DECISIONI APERTE DELL'UTENTE — da ricordargli nel pomeriggio del 17/09 (ordine suo)
+Omega: (1) obiettivo giornaliero da motore a metrica; (2) paniere di 3-5 celle per gamba a
+caso peggiore sotto cap; (3) cassa di riferimento, liability per gamba (proposta 30 €), per
+partita (60 €), stop giornaliero (10 perdite); (4) tetto di quota → fascia di probabilità
+0,3-5 % + cap di liability; (5) «1T/2T» = due mercati (gamba FT quotabile dal 1'); (6) aggregati
+Any Unquoted/Any Other bancabili. Latenza tennis: (7) riserva DB prima (consigliato) o dopo
+l'invio; (8) via al percorso «al ms» dentro C3-F1 (+7-10 gg). Tennis: (9) `tennis_exit_on_lost_game`
+spento nei parametri: accenderlo o no (scelta di rischio dell'utente). Più: orologio del PC
+da sincronizzare; push del commit.
+
 ### Punto di ripresa
 1. **Utente**: applicare le 6 migrazioni nell'ordine 1→6 di `migrations/APPLY_ORDER_2026-09-16.md`
    (la 3 e la 5 sono le versioni CORRETTE del 17/09), poi le verifiche SELECT del file; riavviare

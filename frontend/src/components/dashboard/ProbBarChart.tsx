@@ -32,13 +32,13 @@ export function ProbBarChart({ bars, height }: { bars: ProbBar[]; height?: numbe
                     <Tooltip
                         cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                         contentStyle={{ background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                        formatter={(v: number) => [`${v.toFixed(1)}%`, 'probabilità']}
+                        formatter={(v?: number) => [`${(v ?? 0).toFixed(1)}%`, 'probabilità']}
                     />
                     <Bar dataKey="pct" radius={[0, 4, 4, 0]} isAnimationActive={data.length <= 40}>
                         {data.map((d, i) => <Cell key={i} fill={d.color} />)}
                         <LabelList
                             dataKey="pct" position="right"
-                            formatter={(v: number) => `${v.toFixed(1)}%`}
+                            formatter={(v: number | string | boolean | null | undefined) => `${Number(v ?? 0).toFixed(1)}%`}
                             fill="rgba(255,255,255,0.85)" fontSize={11} fontWeight={700}
                         />
                     </Bar>

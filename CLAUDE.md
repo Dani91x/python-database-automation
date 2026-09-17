@@ -58,7 +58,7 @@ scenari → paper come specchio della realtà → live solo se il paper conferma
 - Mai uccidere backtest o replay lunghi senza chiedere.
 - Le migrazioni SQL si scrivono in `migrations/` e le applica l'utente.
 - Test: `python -m pytest Betfair/ -q -p no:cacheprovider`; `frontend/`: `npx vitest run`,
-  `npx tsc -p tsconfig.app.json --noEmit` (13 errori preesistenti: non regredire).
+  `npx tsc -p tsconfig.app.json --noEmit` (**0 errori** dal 17/09: non regredire, mai `@ts-ignore`/`any` per zittire).
 
 ## Documenti di riferimento
 

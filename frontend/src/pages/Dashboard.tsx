@@ -260,7 +260,7 @@ export default function Dashboard() {
                                 <AnalyticsPanels
                                     leagueId={fixtureLeagueId ?? data.league.id ?? null}
                                     leagueName={data.league.name}
-                                    fixtureId={data.fixtureId}
+                                    fixtureId={data.fixtureId!}
                                     homeName={data.home.name}
                                     awayName={data.away.name}
                                 />
