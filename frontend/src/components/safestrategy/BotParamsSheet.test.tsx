@@ -60,10 +60,10 @@ describe('BotParamsSheet — gruppi e valori', () => {
     it('Auto-trade: quattro interruttori con nota di rischio, stato dal DB', async () => {
         await openSheet();
         expect(group('Auto-trade')).toBeInTheDocument();
-        expect(screen.getByRole('checkbox', { name: /MODELLO in automatico/ })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /MODELLO \(calcio\) — NON piazza più da sola/ })).not.toBeChecked();
         expect(screen.getByRole('checkbox', { name: /ANOMALIE di prezzo/ })).not.toBeChecked();
         expect(screen.getByRole('checkbox', { name: /COMBINAZIONI/ })).toBeChecked();
-        expect(screen.getByRole('checkbox', { name: /TENNIS in automatico/ })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /MODELLO tennis — NON piazza più da sola/ })).not.toBeChecked();
         expect(screen.getByText(/se una gamba non si abbina/)).toBeInTheDocument();
     });
 
@@ -79,7 +79,7 @@ describe('BotParamsSheet — gruppi e valori', () => {
 
     it('salvataggio: chiavi ignote preservate, toggles/risk/exits/variants espliciti', async () => {
         const { user, onSave } = await openSheet();
-        await user.click(screen.getByRole('checkbox', { name: /TENNIS in automatico/ }));
+        await user.click(screen.getByRole('checkbox', { name: /MODELLO tennis — NON piazza più da sola/ }));
         const cap = screen.getByLabelText('Cap liability giornaliera €');
         await user.clear(cap);
         await user.type(cap, '600');

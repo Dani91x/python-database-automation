@@ -1053,6 +1053,105 @@ def test_falsificazione_allarme_su_tutti_i_mercati(monkeypatch):
     assert scan.last_source == "rest"
 
 
+# ===========================================================================
+# 6. UN MERCATO CHIUSO NON E' UN BUCO DATI (17/09 sera)
+# ---------------------------------------------------------------------------
+# Reperto dal vivo, ore 17:27: il mercato Half Time Score `1.262446903`,
+# CLOSED su Betfair con 0 runner prezzati, e' rimasto 509 s in
+# `stream_mercati_allarme` (`last_error` permanente, `source: "rest"`)
+# mentre le 11 partite in gioco avevano tutte le quote. La causa: il
+# candidato HT/CS si esclude guardando `ev["mo_status"]` (il MATCH_ODDS
+# dell'evento, che resta OPEN: la partita continua), non lo stato del SUO
+# blocco (`ev["ht"]["status"]`/`ev["cs"]["status"]`), che e' cio' che
+# `_apply_cs_book` aggiorna a ogni book, anche vuoto.
+# ===========================================================================
+def test_mercato_ht_chiuso_esce_da_allarme_e_senza_quote():
+    """Un HT gia' in allarme che CHIUDE (fine 1T) deve uscire SUBITO da
+    entrambe le liste e dalle mappe di copertura, col MATCH_ODDS ancora OPEN
+    (la partita prosegue): `last_error` torna None, il badge torna "stream".
+    """
+    scan = scanner_calcio_con_linea_a_gol()
+    scan.events["c1"]["minute"] = 35                      # candidato HT (15-44)
+    scan.ht_markets["c1"] = {"market_id": "1.HT", "names": {91: "0-0"}}
+    scan._rebuild_market_index()
+    scan.stream.ids.add("1.HT")
+    ora = time.monotonic()
+    scan.stream_price_mono["1.MO"] = scan.price_mono["1.MO"] = ora - 1.0
+    scan.rilevante_da_mono["1.HT"] = ora - 40.0
+    scan.rilevante_da_mono["1.OU25"] = ora - 300.0
+    scan.tick()
+    assert scan.mercati_allarme == ["1.HT"]
+    assert scan.last_error and "su 1 mercati" in scan.last_error
+    assert scan.last_source == "rest"
+
+    # il mercato HT CHIUDE (fine primo tempo): il MATCH_ODDS resta OPEN,
+    # cambia solo lo stato del SUO blocco - esattamente l'incidente del 17/09
+    scan.events["c1"]["ht"] = {"status": "CLOSED", "inplay": True}
+    scan.tick()
+
+    assert "1.HT" not in scan.mercati_allarme
+    assert "1.HT" not in scan.mercati_senza_quote
+    assert "1.HT" not in scan.rilevante_da_mono, "la mappa deve svuotarsi subito, non al giro dopo"
+    assert scan.last_error is None
+    assert scan.last_source == "stream"
+
+
+def test_mercato_ht_chiuso_dall_inizio_mai_in_allarme():
+    """Il mercato nasce gia' CLOSED (mai un prezzo, mai osservato aperto):
+    non e' un buco feed, e' un mercato finito."""
+    scan = scanner_calcio_con_linea_a_gol()
+    scan.events["c1"]["minute"] = 35
+    scan.ht_markets["c1"] = {"market_id": "1.HT", "names": {91: "0-0"}}
+    scan._rebuild_market_index()
+    scan.stream.ids.add("1.HT")
+    scan.events["c1"]["ht"] = {"status": "CLOSED", "inplay": True}
+    ora = time.monotonic()
+    scan.stream_price_mono["1.MO"] = scan.price_mono["1.MO"] = ora - 1.0
+    scan.rilevante_da_mono["1.OU25"] = ora - 300.0
+    scan.tick()
+
+    assert scan.mercati_allarme == []
+    assert "1.HT" not in scan.mercati_senza_quote
+    assert scan.last_error is None
+    assert scan.last_source == "stream"
+
+
+def test_ht_esce_dai_rilevanti_quando_finisce_il_candidato():
+    """La lista rilevanti che alimenta la copertura: l'HT sparisce da solo
+    quando ``is_ht_candidate`` non lo vede piu' (oltre il 45'), a prescindere
+    dallo stato del suo blocco."""
+    scan = scanner_calcio_con_linea_a_gol()
+    scan.events["c1"]["minute"] = 35
+    scan.ht_markets["c1"] = {"market_id": "1.HT", "names": {91: "0-0"}}
+    scan._rebuild_market_index()
+    adesso = datetime.now(timezone.utc)
+    assert "1.HT" in scan.relevant_market_ids("calcio", adesso)
+
+    scan.events["c1"]["minute"] = 46                      # 1T finito
+    assert "1.HT" not in scan.relevant_market_ids("calcio", adesso)
+
+
+def test_falsificazione_allarme_su_mercato_chiuso(monkeypatch):
+    """Tolta la guardia sullo stato del BLOCCO (``_mercato_attivo`` sempre
+    vero, come prima - si guardava solo ``mo_status``), l'HT chiuso resta in
+    allarme finche' resta candidato: e' esattamente il falso allarme del
+    17/09 sera (509 s, mercato CLOSED, partita ancora OPEN)."""
+    monkeypatch.setattr(service.Scanner, "_mercato_attivo", lambda self, mid, now: True)
+    scan = scanner_calcio_con_linea_a_gol()
+    scan.events["c1"]["minute"] = 35
+    scan.ht_markets["c1"] = {"market_id": "1.HT", "names": {91: "0-0"}}
+    scan._rebuild_market_index()
+    scan.stream.ids.add("1.HT")
+    scan.events["c1"]["ht"] = {"status": "CLOSED", "inplay": True}
+    ora = time.monotonic()
+    scan.stream_price_mono["1.MO"] = scan.price_mono["1.MO"] = ora - 1.0
+    scan.rilevante_da_mono["1.HT"] = ora - 40.0
+    scan.rilevante_da_mono["1.OU25"] = ora - 300.0
+    scan.tick()
+    assert scan.mercati_allarme == ["1.HT"], (
+        "senza la guardia sullo stato del blocco, un mercato CLOSED resta in allarme")
+
+
 def test_lo_scanner_legge_il_ladder_a_dizionari():
     """DIFESA IN PROFONDITA' (17/09): il ladder di flumine e' fatto di
     dizionari; leggerlo solo per attributo dava None su OGNI prezzo."""

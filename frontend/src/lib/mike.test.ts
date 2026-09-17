@@ -54,6 +54,21 @@ describe('mike params', () => {
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_goals_hot).toBe(3);
         expect(MIKE_PARAM_DEFAULTS.loss_exit_mode).toBe('model');
         expect(MIKE_PARAM_DEFAULTS.loss_exit_risk_premium_pct).toBe(10);
+        // 17/09 (ordine dell'utente, reperto 25) — freno sui rifiuti ripetuti
+        // della copertura. Deve restare identico al default di
+        // `Betfair/mike/config.py` PARAM_SPEC.
+        expect(MIKE_PARAM_DEFAULTS.cover_rifiuti_max).toBe(3);
+        expect(MIKE_PARAM_DEFAULTS.cover_retry_min_s).toBe(15);
+    });
+    it('cover_rifiuti_max e cover_retry_min_s sono nel gruppo copertura, con i limiti del backend (17/09)', () => {
+        const rifiuti = MIKE_PARAM_FIELDS.find((f) => f.key === 'cover_rifiuti_max');
+        const retry = MIKE_PARAM_FIELDS.find((f) => f.key === 'cover_retry_min_s');
+        expect(rifiuti).toBeTruthy();
+        expect(retry).toBeTruthy();
+        expect(rifiuti?.group).toBe('cover');
+        expect(retry?.group).toBe('cover');
+        if (rifiuti?.kind === 'number') { expect(rifiuti.min).toBe(1); expect(rifiuti.max).toBe(20); }
+        if (retry?.kind === 'number') { expect(retry.min).toBe(1); expect(retry.max).toBe(300); }
     });
     it('number defaults are inside their bounds', () => {
         for (const f of MIKE_PARAM_FIELDS) {
@@ -289,6 +304,34 @@ describe('mike attivita: tutti i kind in italiano', () => {
             .toContain('non abbinato');
         expect(mikeActivityLine('mai_visto', { reason: 'feed_stantio' })).toBe('feed stantio');
         expect(reasonLabel('feed_stantio')).toBe('feed stantio');
+    });
+    it('mercato_sospeso: la riga distingue la linea 3.5 (lay appoggiata) dalla copertura Over 4.5 (17/09)', () => {
+        // vecchio caso: `_sorveglia_sospensione`, payload SENZA `mercato`/`fase`.
+        const line35 = mikeActivityLine('mercato_sospeso', { stato: 'sospeso', refs: ['r1'], critical: true });
+        expect(line35).toContain('lay appoggiata sul book');
+        expect(line35).not.toContain('copertura');
+        // nuovo caso: `_sorveglia_mercato_copertura`, payload con `mercato`/`fase: 'copertura'`.
+        const lineCover = mikeActivityLine('mercato_sospeso', {
+            stato: 'sospeso', mercato: 'OU45', market_id: '1.234', fase: 'copertura',
+            refs: ['over_cover-0-1'], state: 'LIVE_COVER_BLOCKED', critical: true,
+        });
+        expect(lineCover).toContain('linea 4.5');
+        expect(lineCover).toContain('copertura');
+        expect(lineCover).not.toContain('lay appoggiata sul book');
+        // "chiuso" e "ignoto" sono transizioni non operabili quanto "sospeso":
+        // la riga li riporta cosi' come sono, non li appiattisce.
+        expect(mikeActivityLine('mercato_sospeso', { stato: 'chiuso', mercato: 'OU45', fase: 'copertura' }))
+            .toContain('chiuso');
+    });
+    it('mercato_riaperto (skip): riga dedicata, non il fallback generico "mercato riaperto" (17/09)', () => {
+        const line = mikeActivityLine('skip', { reason: 'mercato_riaperto', mercato: 'OU45', market_id: '1.234',
+                                                fase: 'copertura', state: 'LIVE_COVER_BLOCKED' });
+        expect(line).toContain('linea 4.5');
+        expect(line).toContain('APERTO');
+        expect(line).toContain('riprende');
+        // il generico resta INVARIATO per gli altri motivi di skip (regressione).
+        expect(mikeActivityLine('skip', { reason: 'feed_stantio', leg: 'over_cover-0-1' }))
+            .toBe('feed stantio · over_cover-0-1');
     });
 });
 

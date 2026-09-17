@@ -61,6 +61,12 @@ export const SAFE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     risk_block: { label: 'BLOCCATO DAL RISCHIO', cls: WARN, critical: true },
     combo_incomplete: { label: 'COMBINAZIONE INCOMPLETA', cls: BAD, critical: true },
 
+    // ---- proposte di OPPORTUNITA' (17/09): il bot propone, decide l'utente
+    proposta_opportunita: { label: 'OPPORTUNITAÀ PROPOSTA', cls: INFO },
+    opportunita_piazzata: { label: 'OPPORTUNITÀ PIAZZATA', cls: GOOD },
+    opportunita_rifiutata: { label: 'OPPORTUNITÀ RIFIUTATA', cls: MUTED },
+    opportunita_decaduta: { label: 'OPPORTUNITÀ DECADUTA', cls: NEUTRAL },
+
     // ---- riconciliazione
     reconcile_error: { label: 'RICONCILIAZIONE FALLITA', cls: BAD, critical: true },
     reconciled_open: { label: 'RICONCILIATA · posizione aperta', cls: WARN },

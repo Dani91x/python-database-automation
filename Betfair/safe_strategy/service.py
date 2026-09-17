@@ -424,7 +424,8 @@ class Scanner:
         self.market_meta = idx
 
     def _aggiorna_copertura(self, now_mono: float,
-                            rilevanti: List[str]) -> "tuple[set, List[str]]":
+                            rilevanti: List[str],
+                            now: Optional[datetime] = None) -> "tuple[set, List[str]]":
         """Chi e' COPERTO dallo stream e chi e' SENZA QUOTE. 17/09.
 
         ``coperti``: mercati di uno shard che consegna book E che hanno dato un
@@ -435,7 +436,13 @@ class Scanner:
         ``senza_quote``: mercati rilevanti che da oltre
         ``_SENZA_QUOTE_MAX_AGE_SEC`` non hanno un prezzo da NESSUNA fonte. E'
         quello che ``last_error`` deve dire al trader.
+
+        Un mercato CHIUSO (o non piu' rilevante) non entra in nessuna delle due
+        liste: un mercato finito non manca di quote, e' finito (17/09 sera,
+        Half Time Score ``1.262446903``, CLOSED al 45' con la partita ancora
+        OPEN — vedi ``_mercato_attivo``).
         """
+        now = now or datetime.now(timezone.utc)
         rilevanti_set = set(rilevanti)
         coperti: set = set()
         if self.stream is not None:
@@ -451,6 +458,15 @@ class Scanner:
         senza: List["tuple[float, str]"] = []
         allarme: List["tuple[float, str]"] = []
         for mid in rilevanti:
+            if not self._mercato_attivo(mid, now):
+                # CHIUSO (o non piu' rilevante sul SUO stato): fuori da
+                # entrambe le liste E dalle mappe di copertura, subito - non
+                # deve invecchiare fino al prossimo giro in cui sparisse da
+                # ``rilevanti`` (che e' esattamente cio' che non e' successo
+                # il 17/09: il market_id restava candidato).
+                for mappa in (self.stream_price_mono, self.price_mono, self.rilevante_da_mono):
+                    mappa.pop(mid, None)
+                continue
             base = self.price_mono.get(mid)
             if base is None:
                 base = self.rilevante_da_mono.setdefault(mid, now_mono)
@@ -489,6 +505,38 @@ class Scanner:
         if not trovato:
             return False
         return (trovato[1].get("kind") or None) in _KIND_CORE
+
+    def _mercato_attivo(self, market_id: str, now: datetime) -> bool:
+        """Il mercato e' ancora APERTO e rilevante: solo su questi ha senso
+        parlare di "quote assenti". 17/09 sera.
+
+        Un Correct Score o un Half Time Score puo' chiudere (fine 1T, fine
+        partita) mentre il MATCH_ODDS dell'evento resta OPEN — la partita
+        continua. Guardare ``ev["mo_status"]`` (lo stato del MATCH_ODDS) per
+        decidere se il mercato CS/HT e' finito e' la domanda sbagliata: va
+        guardato lo stato del SUO blocco (``ev["cs"]["status"]``/
+        ``ev["ht"]["status"]``), quello che ``_apply_cs_book`` aggiorna a ogni
+        book, anche vuoto. E' esattamente il caso del mercato Half Time Score
+        ``1.262446903``: CLOSED da Betfair al 45', rimasto 509 s in allarme
+        perche' nessuno controllava lo stato del BLOCCO, solo quello (OPEN,
+        la partita proseguiva) del MATCH_ODDS.
+        """
+        trovato = self.market_meta.get(market_id)
+        if not trovato:
+            return False
+        _, meta = trovato
+        ev = self.events.get(meta.get("event_id"))
+        if ev is None:
+            return False
+        kind = meta.get("kind")
+        if kind in ("cs", "ht", "opp"):
+            blocco = ev.get(kind) if kind != "opp" else (ev.get("opp") or {}).get(market_id)
+            stato = blocco.get("status") if isinstance(blocco, dict) else None
+            return stato != "CLOSED"
+        # MATCH_ODDS: CLOSED e' gia' un fatto diretto; ``is_relevant_market``
+        # copre anche "non piu' rilevante" (KO passato, in-play sconosciuto).
+        return scanner.is_relevant_market(
+            ev.get("inplay"), ev.get("mo_status"), meta.get("open_date"), now)
 
     def flumine_caricato(self) -> bool:
         """``flumine`` e' finito nel processo del feed? (non ci deve stare)"""
@@ -1638,7 +1686,7 @@ class Scanner:
             # non consegnava quote dichiarava coperti tutti i mercati e
             # `poll_books` non partiva MAI (fasi_p95.book = 0.0 per ore).
             tutti_rilevanti = [mid for ids in rilevanti.values() for mid in ids]
-            covered, in_allarme = self._aggiorna_copertura(now_mono, tutti_rilevanti)
+            covered, in_allarme = self._aggiorna_copertura(now_mono, tutti_rilevanti, now)
             # il badge STREAM/REST: "rest" quando ci si ripiega davvero, cioe'
             # quando lo stream non consegna o un mercato CORE resta senza quote.
             # Una linea a gol illiquida non deve far diventare rosso il badge.

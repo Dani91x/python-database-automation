@@ -91,15 +91,138 @@ def test_lo_stesso_hold_non_si_riscrive_tre_volte():
     assert "exit_hold" in meta, "il meta della UI deve comunque portare l'ultimo hold"
 
 
-def test_un_locked_che_cambia_per_davvero_scrive_una_seconda_riga():
+def test_un_locked_che_cambia_per_davvero_riscrive_il_meta():
+    """AGGIORNATO 17/09 sera: da qui in poi ``meta.exit_hold`` (per la UI, al
+    centesimo) e l'ATTIVITA' (per la scheda, al SEGNO — vedi
+    ``test_il_segno_del_locked_governa_lattivita_non_il_centesimo`` piu' sotto)
+    hanno soglie diverse di proposito. Un vero scivolamento del bloccato deve
+    sempre farsi vedere nel meta (la UI lo mostra dal vivo); l'attivita' invece
+    NON duplica una riga per un peggioramento che resta dello stesso segno
+    (utile che si riduce ma resta utile, o perdita che si aggrava ma resta
+    perdita): quello lo denuncia il segno che cambia, non il numero."""
     db = FakeDB()
     meta: dict = {}
     _hold_riga(db, meta, best_lay=1.10)
     locked_1 = round(float(meta["exit_hold"]["locked"]), 2)
     # un lay molto peggiore del primo blocca un P&L diverso di ben piu' di un
-    # centesimo: e' uno scivolamento vero, non rumore di tick.
+    # centesimo: e' uno scivolamento vero, non rumore di tick — ma resta
+    # NEGATIVO in entrambi i casi (stesso segno).
     _hold_riga(db, meta, best_lay=1.80)
     locked_2 = round(float(meta["exit_hold"]["locked"]), 2)
     assert locked_1 != locked_2, "il test non falsifica nulla se il locked non e' cambiato"
+    assert locked_1 < 0 and locked_2 < 0, "questo test misura uno scivolamento a segno invariato"
+    # meta.exit_hold segue SEMPRE il numero vero (al centesimo), per la UI
+    assert round(float(meta["exit_hold"]["locked"]), 2) == locked_2
+    # l'ATTIVITA' invece non duplica: stesso segno, nessuna riga in piu'
     righe = _righe_exit_hold(db)
-    assert len(righe) == 2, f"il locked e' cambiato ({locked_1} -> {locked_2}) ma le righe sono {len(righe)}"
+    assert len(righe) == 1, (
+        f"stesso segno ({locked_1} -> {locked_2}): l'attivita' non deve duplicare, "
+        f"trovate {len(righe)} righe")
+
+
+# ===========================================================================
+# REPERTO 17/09 SERA: la firma dell'ATTIVITA' e' PIU' GROSSA di quella del
+# meta (``_hold_firma_attivita`` vs ``_hold_firma``). Su una riga da 3 EUR il
+# locked cambia centesimo quasi a ogni tick e ``_hold_firma`` lo vede sempre
+# come un cambio vero: 126 righe di attivita' "tengo" in 12 minuti su due
+# righe paper. Qui la sostanza dell'ATTIVITA' e' (motivo, tipo, codice del
+# motivo, fonte, SEGNO del bloccato): un centesimo che balla nello stesso
+# segno non scrive una riga nuova, un cambio di segno si'.
+# ===========================================================================
+def _trade_paper():
+    return {"id": 852, "strategy": "model", "side": "back", "size": 3.0,
+            "price": 1.05, "selection_id": 9, "market_id": "m2", "mode": "paper",
+            "commission": 0.05, "event_id": "e2", "meta": {}}
+
+
+def _info_modello(locked: float, *, why: str = "modello: tengo") -> dict:
+    return {"p_lose": 0.3, "source": "model", "locked": locked, "ev_hold": 0.1,
+            "hold_profit": 0.2, "loss_if_lose": 1.0, "why": why}
+
+
+def test_il_segno_del_locked_governa_lattivita_non_il_centesimo():
+    """Sequenza esatta del reperto: +0,00 -> -0,03 (cambio di segno, SCRIVE),
+    -0,03 -> -0,05 (stesso segno, NON scrive), -0,05 -> +0,02 (cambio di
+    segno, SCRIVE)."""
+    db = FakeDB()
+    trade = _trade_paper()
+    meta: dict = {}
+    S._write_model_hold(db, trade, meta, _info_modello(0.00), NOW)   # 1: prev assente, scrive
+    S._write_model_hold(db, trade, meta, _info_modello(-0.03), NOW)  # 2: nonneg->neg, scrive
+    S._write_model_hold(db, trade, meta, _info_modello(-0.05), NOW)  # stesso segno, NON scrive
+    S._write_model_hold(db, trade, meta, _info_modello(0.02), NOW)   # 3: neg->nonneg, scrive
+
+    righe = _righe_exit_hold(db)
+    assert len(righe) == 3, f"attese 3 righe (segno cambiato 2 volte + la prima), trovate {len(righe)}: {righe}"
+    lockeds = [r["locked"] for r in righe]
+    assert lockeds == [0.00, -0.03, 0.02], lockeds
+    # il meta (per la UI) resta AL CENTESIMO su ogni chiamata, comprese quelle
+    # che non hanno scritto l'attivita': -0,03 -> -0,05 e' un cambio vero per
+    # meta.exit_hold anche se l'attivita' tace.
+    assert round(float(meta["exit_hold"]["locked"]), 2) == 0.02
+
+
+def test_falsificazione_senza_la_firma_grossa_lattivita_scrive_ogni_centesimo(monkeypatch):
+    """Rimessa ``_hold_firma`` (al centesimo) al posto di ``_hold_firma_attivita``
+    sull'ATTIVITA' (il difetto del 17/09 sera), la STESSA sequenza scrive una
+    riga per OGNI chiamata: e' il rumore che il reperto denuncia (126 righe in
+    12 minuti)."""
+    monkeypatch.setattr(S, "_hold_firma_attivita", S._hold_firma)
+    db = FakeDB()
+    trade = _trade_paper()
+    meta: dict = {}
+    S._write_model_hold(db, trade, meta, _info_modello(0.00), NOW)
+    S._write_model_hold(db, trade, meta, _info_modello(-0.03), NOW)
+    S._write_model_hold(db, trade, meta, _info_modello(-0.05), NOW)
+    S._write_model_hold(db, trade, meta, _info_modello(0.02), NOW)
+    righe = _righe_exit_hold(db)
+    assert len(righe) == 4, (
+        "senza la firma grossa dell'attivita', ogni centesimo diverso scrive: "
+        f"attese 4 righe, trovate {len(righe)}")
+
+
+def test_exit_hold_porta_il_mode_del_trade_anche_col_servizio_in_live():
+    """Una riga PAPER deve portare ``mode='paper'`` nell'attivita' 'exit_hold'
+    ANCHE quando il ciclo del servizio e' etichettato live (``_LOG_MODE``):
+    prima del fix il timbro del servizio sovrascriveva quello del trade e 107
+    righe su 127 di trade paper finivano etichettate LIVE."""
+    S.set_log_mode("live")
+    try:
+        db = FakeDB()
+        trade = _trade_paper()
+        meta: dict = {}
+        S._write_model_hold(db, trade, meta, _info_modello(0.10), NOW)
+        righe = _righe_exit_hold(db)
+        assert len(righe) == 1
+        assert righe[0]["mode"] == "paper", (
+            f"riga paper etichettata '{righe[0].get('mode')}' col servizio in live")
+    finally:
+        S.set_log_mode("")
+
+
+def test_falsificazione_senza_il_mode_sulla_riga_il_servizio_la_timbra_live():
+    """Tolto ``mode`` dal payload di ``_write_model_hold`` (il difetto vero),
+    ``_log`` timbra il modo del SERVIZIO: una riga paper risulterebbe live."""
+    S.set_log_mode("live")
+    try:
+        db = FakeDB()
+        trade = _trade_paper()
+        meta: dict = {}
+        why = "modello: tengo"
+        info = _info_modello(0.10, why=why)
+        code = XE.hold_code(why)
+        hold = {"reason": why, "code": code, "kind": "model", "p_lose": info.get("p_lose"),
+                "source": info.get("source"), "locked": info.get("locked"),
+                "ev_hold": info.get("ev_hold"), "ts": NOW.isoformat()}
+        S._write_meta_key(db, trade, meta, S.HOLD_KEY, hold)
+        # lo stesso _log del vero, ma SENZA "mode" nel payload (il difetto)
+        S._log(db, "exit_hold", {"trade_id": trade.get("id"), "event_id": trade.get("event_id"),
+                                 "kind": "model", "reason": why, "msg": why,
+                                 **{k: info.get(k) for k in
+                                    ("p_lose", "source", "locked", "ev_hold",
+                                     "hold_profit", "loss_if_lose")}})
+        righe = _righe_exit_hold(db)
+        assert righe[0]["mode"] == "live", (
+            "senza 'mode' nel payload il servizio in live avrebbe dovuto timbrare live")
+    finally:
+        S.set_log_mode("")

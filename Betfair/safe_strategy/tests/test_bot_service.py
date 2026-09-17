@@ -136,6 +136,39 @@ class FakeDB:
             viva["status"] = "rejected"
             viva["result"] = {**(viva.get("result") or {}), "decaduta": True, "motivo": motivo}
 
+    # --- proposte di OPPORTUNITA' (17/09): stessa coda, kind='place',
+    #     riconosciute da payload.opp_key. Stesse chiavi del vero
+    #     (``bot_db.proposte_opportunita`` e compagne).
+    def proposte_opportunita(self, ore=24, limit=300):
+        return [r for r in self.requests
+                if r.get("kind") == "place"
+                and r.get("status") in ("proposed", "rejected")
+                and (r.get("payload") or {}).get("opp_key")]
+
+    def scrivi_proposta_opportunita(self, opp_key, payload, req_id=None):
+        corpo = {**payload, "opp_key": str(opp_key)}
+        if req_id is not None:
+            for r in self.requests:
+                if r["id"] == int(req_id) and r.get("status") == "proposed":
+                    r["payload"] = corpo
+                    return int(req_id)
+            return int(req_id)
+        self._id += 1
+        self.requests.append({"id": self._id, "kind": "place", "status": "proposed",
+                              "payload": corpo, "result": None})
+        return self._id
+
+    def chiudi_proposta_opportunita(self, req_id, motivo):
+        for r in self.requests:
+            if r["id"] == int(req_id) and r.get("status") == "proposed":
+                r["status"] = "rejected"
+                r["result"] = {"decaduta": True, "motivo": str(motivo)[:200]}
+
+    def marca_proposta_opportunita_annotata(self, req_id, result):
+        for r in self.requests:
+            if r["id"] == int(req_id):
+                r["result"] = {**(result or {}), "attivita_scritta": True}
+
     def set_request_status(self, req_id, status, result=None):
         for r in self.requests:
             if r["id"] == req_id:
@@ -847,7 +880,8 @@ def test_opportunita_throttlate():
     state = {"last_ts": NOW.timestamp() - 1.0, "hashes": {}}
     res = _run(db, engine=None, opp_model=model, opp_mod=FAKE_OPP_MOD,
                opps_state=state)
-    assert res["opportunities"] == {"events": 0, "written": 0, "traded": 0}
+    assert res["opportunities"] == {"events": 0, "written": 0, "traded": 0,
+                                    "proposte": 0}
     assert model.calls == 0
 
 
@@ -860,7 +894,14 @@ def test_opportunita_non_tradate_per_default():
     assert db.trades == []
 
 
-def test_opportunita_tradate_se_abilitate_e_oltre_le_soglie():
+def test_opportunita_proposte_e_mai_piazzate_da_sole():
+    """17/09 — ORDINE DELL'UTENTE: l'opportunita' di modello NON parte da sola.
+
+    Prima questo test si chiamava ``..._tradate_se_abilitate_e_oltre_le_soglie``
+    e pretendeva una RIGA a mercato con ``auto_trade_opportunities=True``. Da
+    oggi quell'interruttore non piazza piu': nasce una PROPOSTA nella coda
+    ('proposed', kind='place', ``payload.opp_key``) e i soldi si muovono solo
+    dalla scheda, col tasto PIAZZA."""
     db = FakeDB(status="running", params={"auto_trade_opportunities": True,
                                           "opps_stake": 4})
     # il feed deve portare il mercato dell'opportunita' (O/U 2.5 'ou25'): senza
@@ -869,10 +910,17 @@ def test_opportunita_tradate_se_abilitate_e_oltre_le_soglie():
     db.scan_rows = [_feed_row_goal_markets()]
     res = _run(db, engine=None, opp_model=FakeModel([_opp()]), opp_mod=FAKE_OPP_MOD,
                opps_state={"last_ts": 0.0, "hashes": {}})
-    assert res["opportunities"]["traded"] == 1
-    t = db.trades[0]
-    assert t["strategy"] == "model" and t["size"] == 4
-    assert t["signal_key"] == "model:OVER_UNDER_25:47972:back"
+    assert res["opportunities"]["traded"] == 0
+    assert db.trades == [], "l'interruttore ha piazzato da solo: NON deve piu'"
+    assert res["opportunities"]["proposte"] == 1
+    prop = [r for r in db.requests if r["status"] == "proposed"][0]
+    p = prop["payload"]
+    assert prop["kind"] == "place"
+    assert p["opp_key"] == "1.1|model:OVER_UNDER_25:47972:back"
+    assert p["signal_key"] == "model:OVER_UNDER_25:47972:back"
+    assert p["strategy"] == "model" and p["kind"] == "model"
+    assert p["size"] == 4 and p["mode"] == "paper"
+    assert "proposta_opportunita" in db.kinds()
 
 
 def test_opportunita_sotto_soglia_non_tradate():
@@ -2938,19 +2986,24 @@ def test_opportunita_tennis_pubblicate_e_tradate_solo_se_abilitate():
     st = {"last_ts": 0.0, "hashes": {}}
     r = _run(db, engine=None, opp_model=None, opp_mod=None, opps_state=st,
              extra_mods={"tennis": tennis})
-    assert r["opportunities"] == {"events": 1, "written": 1, "traded": 0}
+    assert r["opportunities"] == {"events": 1, "written": 1, "traded": 0,
+                                  "proposte": 1}
     w = db.opportunities[-1][0]
     assert w["sport"] == "tennis" and w["payload"]["opportunities"][0]["kind"] == "tennis"
     assert r["stats"]["opps"]["tennis"] == 1 and db.trades == []
+    # 17/09 \u2014 l'opportunita' di modello TENNIS non parte da sola nemmeno con
+    # ``auto_trade_tennis`` acceso: e' una PROPOSTA, con dentro il punteggio e
+    # tutto cio' che serve a decidere.
     db = FakeDB(status="running", params={"auto_trade_tennis": True})
     db.scan_rows = [_tennis_feed_row()]
     r = _run(db, engine=None, opp_model=None, opp_mod=None, opps_state={"last_ts": 0.0, "hashes": {}},
              extra_mods={"tennis": tennis})
-    assert r["opportunities"]["traded"] == 1
-    t = db.trades[0]
-    assert t["sport"] == "tennis" and t["strategy"] == "model" and t["meta"]["kind"] == "tennis"
-    assert t["signal_key"] == "tennis:MATCH_ODDS:11:back" and t["size"] == 5
-    assert t["score_at_entry"] == "set 1-0 \u00b7 game 4-2" and t["meta"]["p_lose_entry"] == 0.15
+    assert r["opportunities"]["traded"] == 0 and db.trades == []
+    assert r["opportunities"]["proposte"] == 1
+    p = [q for q in db.requests if q["status"] == "proposed"][0]["payload"]
+    assert p["sport"] == "tennis" and p["strategy"] == "model" and p["kind"] == "tennis"
+    assert p["signal_key"] == "tennis:MATCH_ODDS:11:back" and p["size"] == 5
+    assert p["score"] == "set 1-0 \u00b7 game 4-2" and p["mode"] == "paper"
 
 
 def test_moduli_opzionali_assenti_non_rompono_il_ciclo():

@@ -1121,6 +1121,14 @@ def test_h16_catalogo_dei_kind_di_attivita():
         # del conto sul mercato; `riprendi_evento` = il gesto con cui l'utente
         # riporta la partita in carico al bot.
         "chiuso_dall_utente", "posizione_di_conto", "riprendi_evento",
+        # 17/09: LE OPPORTUNITA' DI MODELLO NON SI PIAZZANO PIU' DA SOLE.
+        # Nascono come PROPOSTA (scheda con PIAZZA/RIFIUTA nella Control Room)
+        # e la loro vita si legge qui: proposta, piazzata (l'utente ha firmato),
+        # rifiutata (l'utente ha detto no), decaduta (l'opportunita' non c'e'
+        # piu' sotto). Ogni riga porta il `mode` della PROPOSTA, non quello del
+        # servizio (reperto del 17/09 sulle righe paper etichettate LIVE).
+        "proposta_opportunita", "opportunita_piazzata",
+        "opportunita_rifiutata", "opportunita_decaduta",
     }
     import re as _re
     from pathlib import Path

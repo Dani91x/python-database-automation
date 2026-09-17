@@ -46,6 +46,7 @@ from Betfair.omega import omega_market as _real_market
 from Betfair.safe_strategy import bot_db as _real_db
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
+from Betfair.safe_strategy import proposte_opportunita as PO
 from Betfair.safe_strategy import risk as RK
 from Betfair.stream import avvio_app as AA
 
@@ -2130,14 +2131,26 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # Le richieste ``pending`` non avevano nemmeno una scadenza: una richiesta
     # LIVE creata ore prima, a servizio spento, veniva eseguita all'avvio
     # successivo qualunque fosse la modalita' corrente.
-    if control_mode and mode != str(control_mode).lower():
+    # 17/09 — UNA PROPOSTA DI OPPORTUNITA' (``payload.opp_key``) e' firmata
+    # dall'utente ma nasce dal BOT: la sua autorita' non e' ``control.mode``
+    # nudo, e' ``modalita_di_strategia('model', control.mode, params)`` —
+    # cioe' il tetto del servizio E la voce scritta in ``strategy_modes``. Con
+    # il servizio in LIVE e il modello in paper, la proposta dice PAPER e
+    # PAPER deve restare: senza questa riga il confronto con ``control_mode``
+    # la rifiuterebbe sempre, e il tasto PIAZZA non funzionerebbe mai.
+    # La direzione dell'errore resta la stessa di sempre: i soldi veri si
+    # raggiungono solo scrivendolo.
+    opp_key = str(payload.get("opp_key") or "").strip()
+    atteso = (modalita_di_strategia("model", str(control_mode).lower(), params)
+              if (opp_key and control_mode) else str(control_mode).lower())
+    if control_mode and mode != atteso:
         _log(db, "skip", {"event_id": event_id, "origin": "manual",
                           "reason": "modalita_non_corrispondente",
-                          "richiesta": mode, "attiva": str(control_mode).lower()})
+                          "richiesta": mode, "attiva": atteso})
         return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
-                            f"attiva {str(control_mode).lower()}",
+                            f"attiva {atteso}",
                 "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
-                           f"servizio e' in {str(control_mode).upper()}"}
+                           f"servizio e' in {atteso.upper()}"}
     try:
         price = float(payload.get("price"))
         size = float(payload.get("size"))
@@ -2202,6 +2215,17 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     if strategy not in _MANUAL_STRATEGIES:
         strategy = "manual"
     kind = str(payload.get("kind") or "").lower()
+    if opp_key:
+        # la riga porta la CHIAVE della proposta da cui nasce: e' cosi' che si
+        # risale dalla posizione alla scheda che l'ha proposta (e viceversa).
+        meta["opp_key"] = opp_key
+        meta["da_proposta"] = True
+        # la riga nata da una proposta porta gli STESSI numeri del modello che
+        # l'automatico ci metteva (``_model_meta``): senza, la tabella dei
+        # trade perderebbe P(perdita) d'ingresso, edge ed EV proprio sulle
+        # righe che l'utente ha firmato guardandoli.
+        meta.update({k: v for k, v in _model_meta(payload, kind, side).items()
+                     if v is not None})
     if strategy == "model" and kind in _MANUAL_OPP_KINDS:
         meta["kind"] = kind
         if kind == "anomaly" and payload.get("rule"):
@@ -2238,6 +2262,16 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                    feed_prices=prices)
     if out.status == "error":
         return {"error": "non_eseguito", "detail": out.fill_note, "trade_id": trade_id}
+    if opp_key:
+        # l'ordine e' partito da una SCHEDA firmata dall'utente: l'attivita' lo
+        # dice con la modalita' della RIGA (non quella del servizio) e con la
+        # consapevolezza dell'ordine, chiesto e abbinato.
+        _log(db, "opportunita_piazzata", {
+            "event_id": event_id, "event_name": payload.get("event_name"),
+            "trade_id": trade_id, "opp_key": opp_key, "kind": kind,
+            "signal_key": payload.get("signal_key"), "side": side,
+            "price": out.price, "size_requested": size, "size": out.size,
+            "status": out.status, "mode": mode})
     return {"ok": True, "trade_id": trade_id, "status": out.status,
             "price": out.price, "size": out.size,
             "pending_fill": out.status == "pending"}
@@ -3035,7 +3069,7 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
         # qui: e' l'unico altro punto in cui il bot fa nascere una gamba.
         if marcatore_utente(leg) or evento_chiuso_dall_utente(leg.get("event_id")):
             _log(db, "skip", {"event_id": str(leg.get("event_id") or ""),
-                              "trade_id": leg.get("id"),
+                              "trade_id": leg.get("id"), "mode": leg.get("mode"),
                               "reason": "partita_chiusa_dall_utente",
                               "nota": "gamba di combo NON chiusa dal bot: la "
                                       "posizione l'ha gia' chiusa l'utente"})
@@ -3060,13 +3094,13 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                     err.startswith("trade_non_aperto"):
                 # 12/09: una gamba GIA' in chiusura (o coperta) non e' un
                 # fallimento critico: la sua chiusura e' in volo o fatta.
-                _log(db, "exit_wait", {"trade_id": leg.get("id"),
+                _log(db, "exit_wait", {"trade_id": leg.get("id"), "mode": leg.get("mode"),
                                        "combo_id": (leg.get("meta") or {}).get("combo_id"),
                                        "wait": err, "kind": "mandatory",
                                        "reason": "combo_solidale"})
                 continue
             _log(db, "exit_failed", {"reason": "combo_gamba_non_chiusa",
-                                     "trade_id": leg.get("id"),
+                                     "trade_id": leg.get("id"), "mode": leg.get("mode"),
                                      "combo_id": (leg.get("meta") or {}).get("combo_id"),
                                      "err": err, "detail": res.get("detail"),
                                      "critical": True})
@@ -3116,6 +3150,29 @@ def _hold_firma(hold: dict[str, Any]) -> tuple:
         XE.hold_code(hold.get("reason") or ""),
         (round(float(locked), 2) if isinstance(locked, (int, float)) else None),
         str(hold.get("source") or ""),
+    )
+
+
+def _hold_firma_attivita(hold: dict[str, Any]) -> tuple:
+    """Firma della riga di ATTIVITA' 'exit_hold' — PIU' GROSSA di ``_hold_firma``
+    (che resta quella di ``meta.exit_hold``, al centesimo, per la UI). REPERTO
+    17/09 sera: su una posizione da 3 EUR il P&L bloccato cambia centesimo
+    quasi a ogni tick, e ``_hold_firma`` lo vede come un cambio vero -> 126
+    righe di attivita' "tengo" in 12 minuti su due sole righe paper. Qui la
+    sostanza e' (motivo di uscita, tipo, codice del motivo SENZA i numeri,
+    fonte, SEGNO del bloccato): un centesimo che balla dentro lo stesso segno
+    non scrive una riga nuova; un motivo diverso o un vero cambio di segno
+    (da tenere in utile a tenere in perdita, o viceversa) si'."""
+    locked = hold.get("locked")
+    segno = None
+    if isinstance(locked, (int, float)):
+        segno = "neg" if float(locked) < -0.005 else "nonneg"
+    return (
+        str(hold.get("exit_reason") or ""),
+        str(hold.get("kind") or ""),
+        XE.hold_code(hold.get("reason") or ""),
+        str(hold.get("source") or ""),
+        segno,
     )
 
 
@@ -3501,21 +3558,25 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
             "exit_reason": decision.reason,
             "p_lose": p_lose, "source": source, "locked": locked, "ev_hold": info["ev_hold"],
             "ts": now.isoformat()}
-    # M-28 (rafforzato 17/09): la SOSTANZA e' (motivo, tipo, messaggio senza
-    # numeri, locked al centesimo, fonte) — vedi ``_hold_firma``. P(perdita) e
-    # back/lay che ballano di un tick, o EV alla seconda cifra, non toccano la
-    # firma: nessun rumore. Un locked che si muove per davvero, o il motivo che
-    # cambia, la toccano: si scrive.
+    # M-28 (rafforzato 17/09): la SOSTANZA di meta.exit_hold e' (motivo, tipo,
+    # messaggio senza numeri, locked al centesimo, fonte) — vedi ``_hold_firma``.
+    # P(perdita) e back/lay che ballano di un tick, o EV alla seconda cifra, non
+    # toccano la firma: nessun rumore. Un locked che si muove per davvero, o il
+    # motivo che cambia, la tocca: si riscrive il meta (per la UI).
     changed = prev is None or _hold_firma(prev) != _hold_firma(hold)
     last_ts = XE.parse_ts((prev or {}).get("ts"))
     if changed or last_ts is None or now.timestamp() - last_ts >= _HOLD_REWRITE_S:
         _write_meta_key(db, trade, meta, HOLD_KEY, hold)
-    if changed:
+    # L'ATTIVITA' invece usa la firma PIU' GROSSA ``_hold_firma_attivita``
+    # (reperto 17/09 sera): un centesimo che balla nello stesso segno non
+    # scrive una riga nuova, un cambio di segno del bloccato si'.
+    if prev is None or _hold_firma_attivita(prev) != _hold_firma_attivita(hold):
         _log(db, "exit_hold", {"trade_id": trade.get("id"), "event_id": trade.get("event_id"),
                                "kind": decision.kind, "reason": decision.reason,
-                               "msg": why, **{k: info[k] for k in
-                                              ("p_lose", "source", "locked", "ev_hold",
-                                               "hold_profit", "loss_if_lose")},
+                               "msg": why, "mode": trade.get("mode"),
+                               **{k: info[k] for k in
+                                  ("p_lose", "source", "locked", "ev_hold",
+                                   "hold_profit", "loss_if_lose")},
                                "back": prices.get("back"), "lay": prices.get("lay")})
     return True, info
 
@@ -3532,14 +3593,18 @@ def _write_model_hold(db, trade: dict[str, Any], meta: dict[str, Any],
     hold = {"reason": why, "code": code, "kind": "model", "p_lose": info.get("p_lose"),
             "source": info.get("source"), "locked": info.get("locked"),
             "ev_hold": info.get("ev_hold"), "ts": now.isoformat()}
-    # stessa firma di ``_model_gate`` (vedi ``_hold_firma``, reperto 17/09).
+    # stessa firma di ``_model_gate`` per il meta (vedi ``_hold_firma``, reperto
+    # 17/09); l'ATTIVITA' invece usa la firma piu' grossa ``_hold_firma_attivita``
+    # (reperto 17/09 sera: centesimo che balla nello stesso segno = nessuna
+    # riga nuova, cambio di segno del bloccato = riga nuova).
     changed = prev is None or _hold_firma(prev) != _hold_firma(hold)
     last_ts = XE.parse_ts((prev or {}).get("ts"))
     if changed or last_ts is None or now.timestamp() - last_ts >= _HOLD_REWRITE_S:
         _write_meta_key(db, trade, meta, HOLD_KEY, hold)
-    if changed:
+    if prev is None or _hold_firma_attivita(prev) != _hold_firma_attivita(hold):
         _log(db, "exit_hold", {"trade_id": trade.get("id"), "event_id": trade.get("event_id"),
                                "kind": "model", "reason": why, "msg": why,
+                               "mode": trade.get("mode"),
                                **{k: info.get(k) for k in ("p_lose", "source", "locked", "ev_hold",
                                                            "hold_profit", "loss_if_lose")}})
 
@@ -3658,7 +3723,7 @@ def _nota_dato_mancante(db, trade: dict[str, Any], meta: dict[str, Any],
     _DATO_MANCANTE_LOG[tid] = now_ts
     da = XE.parse_ts((trade.get("meta") or {}).get("dato_mancante_da"))
     _log(db, "feed_blind", {"trade_id": tid, "event_id": trade.get("event_id"),
-                            "event_name": trade.get("event_name"),
+                            "event_name": trade.get("event_name"), "mode": trade.get("mode"),
                             "reason": motivo, "critical": True,
                             "da_s": round(now_ts - da, 1) if da else None,
                             "effetto": "nessuna regola di uscita puo' girare su "
@@ -3722,7 +3787,7 @@ def note_feed_blind(db, trade: dict[str, Any], now: datetime, now_ts: float) -> 
     _FEED_BLIND_LOG[tid] = now_ts
     since = XE.parse_ts(meta.get("blind_since"))
     _log(db, "feed_blind", {"trade_id": tid, "event_id": trade.get("event_id"),
-                            "event_name": trade.get("event_name"),
+                            "event_name": trade.get("event_name"), "mode": trade.get("mode"),
                             "market_id": trade.get("market_id"),
                             "blind_since": meta.get("blind_since"),
                             "blind_for_s": round(now_ts - since, 1) if since else None,
@@ -3818,7 +3883,8 @@ def _exit_wait(db, trade: dict[str, Any], meta: dict[str, Any], decision: XE.Exi
         trade["meta"] = meta
     except Exception:  # noqa: BLE001
         pass
-    _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
+    _log(db, "exit_wait", {"trade_id": trade.get("id"), "mode": trade.get("mode"),
+                           "kind": decision.kind,
                            "reason": decision.reason, "wait": why,
                            "ripetuto": bool(stesso)})
 
@@ -4081,6 +4147,7 @@ def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
     _log(db, "exit_hold", {"reason": "in_attesa_di_approvazione",
                            "trade_id": trade.get("id"), "request_id": int(rid),
                            "exit_kind": decision.kind, "exit_reason": decision.reason,
+                           "mode": trade.get("mode"),
                            "critical": bool(corpo["urgente"])})
     return True
 
@@ -4189,7 +4256,8 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
                               last_wait_at=now.isoformat(),
                               next_retry_at=_iso_in(now, WAITING_PRICE_RETRY_S))
         if waits <= 3 or waits % WAITING_PRICE_LOG_EVERY == 0:
-            _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
+            _log(db, "exit_wait", {"trade_id": trade.get("id"), "mode": trade.get("mode"),
+                                   "kind": decision.kind,
                                    "reason": decision.reason, "wait": "niente_da_chiudere",
                                    "attempt": waits, "note": res.get("note")})
         return False
@@ -4209,7 +4277,8 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
                               kind=decision.kind, reason=decision.reason,
                               last_error=err, residual_attempts=r_attempts,
                               next_retry_at=None)
-            _log(db, "exit_retry", {"trade_id": trade.get("id"), "kind": decision.kind,
+            _log(db, "exit_retry", {"trade_id": trade.get("id"), "mode": trade.get("mode"),
+                                    "kind": decision.kind,
                                     "reason": decision.reason, "residual": residual,
                                     "residual_attempt": r_attempts, "err": err})
             return False
@@ -4225,12 +4294,14 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
                           next_retry_at=_iso_in(now, XE.retry_backoff_s(attempts)))
         if failed:
             _log(db, "exit_failed", {"reason": "exit_failed", "trade_id": trade.get("id"),
+                                     "mode": trade.get("mode"),
                                      "kind": decision.kind, "exit_reason": decision.reason,
                                      "attempts": attempts, "err": err, "critical": True,
                                      "next_retry_at": _iso_in(now, XE.retry_backoff_s(attempts)),
                                      "detail": res.get("detail")})
         else:
-            _log(db, "exit_retry", {"trade_id": trade.get("id"), "kind": decision.kind,
+            _log(db, "exit_retry", {"trade_id": trade.get("id"), "mode": trade.get("mode"),
+                                    "kind": decision.kind,
                                     "reason": decision.reason, "attempts": attempts,
                                     "err": err,
                                     "next_retry_at": _iso_in(now, XE.retry_backoff_s(attempts))})
@@ -4433,7 +4504,8 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
             motivo = "partita_chiusa_dall_utente"
             _place_fail(db, trade_id, row, motivo, now, params)
             _log(db, "skip", {"event_id": str(row.get("event_id") or ""),
-                              "trade_id": int(trade_id), "reason": motivo,
+                              "trade_id": int(trade_id), "mode": row.get("mode"),
+                              "reason": motivo,
                               "come": mk.get("come"), "quando": mk.get("quando"),
                               "nota": "l'utente ha chiuso questa partita: il bot non "
                                       "piazza piu' nulla finche' non preme «Riprendi»"})
@@ -4600,7 +4672,7 @@ def _place_fail(db, trade_id: int, row: dict[str, Any], err: str, now: datetime,
         _log(db, "place_retry", payload)
     # compatibilità: la UI/e i log storici leggono 'skip' per il motivo
     _log(db, "skip", {"trade_id": trade_id, "event_id": row.get("event_id"),
-                      "reason": err})
+                      "mode": row.get("mode"), "reason": err})
 
 
 def _sig(signal: Any, name: str, default: Any = None) -> Any:
@@ -5687,10 +5759,18 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     dell'ultimo cecchino; tennis: modello tennis) e le pubblica (write-on-change),
     ogni ``opps_interval_s``. ``opps`` di ogni evento = tutti i tipi fusi e
     ordinati per ev·confidenza, ciascuno con ``kind`` (model|anomaly|combo|tennis).
-    Auto-trading per tipo (``auto_trade_kinds``): model (=``auto_trade``), combo
-    (tutte le gambe o nessuna), tennis. Ritorna {'events': n, 'written': n,
-    'traded': n}; i conteggi per tipo restano in ``state['counts']``."""
-    out = {"events": 0, "written": 0, "traded": 0}
+    17/09 — LE OPPORTUNITA' DI MODELLO (calcio e tennis) NON SI PIAZZANO PIU'
+    DA SOLE: diventano PROPOSTE (riga 'proposed' nella coda
+    ``safe_strategy_requests``) e partono solo dalla scheda, col tasto PIAZZA.
+    ``auto_trade_kinds['model']``/``['tennis']`` (cioe' i parametri
+    ``auto_trade_opportunities``/``auto_trade_tennis``) restano leggibili ma
+    NON mandano piu' ordini. Le COMBINAZIONI (``auto_trade_combos``) sono
+    ancora automatiche: divergenza dichiarata, vedi
+    ``CHECKPOINT_PROPOSTE_OPPORTUNITA_2026-09-17.md``.
+
+    Ritorna {'events': n, 'written': n, 'traded': n, 'proposte': n}; i conteggi
+    per tipo restano in ``state['counts']``."""
+    out = {"events": 0, "written": 0, "traded": 0, "proposte": 0}
     st = state if state is not None else _OPPS_STATE
     mods = _extra_mods(extra)
     kinds = dict(auto_trade_kinds or {})
@@ -5714,6 +5794,13 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     counts = {"model": 0, "anomaly": 0, "combo": 0, "tennis": 0}
     to_write: list[dict] = []
     seen: set[str] = set()
+    # PROPOSTE (17/09): le opportunita' di modello non si piazzano da sole. Una
+    # lettura sola per ciclo di cio' che il DB sa gia' (vive, rifiutate,
+    # decadute); ``None`` = non leggibile, e allora non si propone niente.
+    note_proposte = _leggi_proposte_opp(db)
+    corpi_proposte: list[dict] = []
+    eventi_in_gioco: set[str] = set()
+    eventi_valutati: set[str] = set()
     for row in rows:
         sport = str(row.get("sport") or "")
         payload = row.get("payload")
@@ -5722,6 +5809,7 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
         event_id = str(row.get("event_id") or "")
         if not event_id:
             continue
+        eventi_in_gioco.add(event_id)
         if sport == "tennis":
             if tennis_model is None:
                 continue
@@ -5750,12 +5838,17 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 hashes[event_id] = h
                 to_write.append({"event_id": event_id, "sport": "tennis",
                                  "payload": body, "updated_at": now.isoformat()})
-            if kinds.get("tennis") and t_opps:
-                out["traded"] += _auto_trade_opps(
-                    db=db, market=market, payload=payload, event_id=event_id, opps=t_opps,
+            # 17/09 — ``kinds['tennis']`` (auto_trade_tennis) NON governa piu'
+            # il piazzamento: le opportunita' di modello tennis diventano
+            # PROPOSTE e partono solo dalla scheda. L'interruttore resta nei
+            # parametri (e nella UI lo dice) ma non manda piu' ordini.
+            eventi_valutati.add(event_id)
+            if note_proposte is not None and t_opps:
+                corpi_proposte.extend(_proponi_opps(
+                    db=db, payload=payload, event_id=event_id, opps=t_opps,
                     params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
-                    sport="tennis", kind="tennis", risk_ctx=risk_ctx,
-                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
+                    sport="tennis", kind="tennis",
+                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
             continue
         if sport != "calcio" or model is None or opp_mod is None:
             continue
@@ -5814,12 +5907,15 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             hashes[event_id] = h
             to_write.append({"event_id": event_id, "sport": "calcio",
                              "payload": body, "updated_at": now.isoformat()})
-        if kinds.get("model") and opps:
-            out["traded"] += _auto_trade_opps(
-                db=db, market=market, payload=payload, event_id=event_id, opps=opps,
+        # 17/09 — come per il tennis: ``kinds['model']``
+        # (auto_trade_opportunities) non piazza piu'. Si PROPONE.
+        eventi_valutati.add(event_id)
+        if note_proposte is not None and opps:
+            corpi_proposte.extend(_proponi_opps(
+                db=db, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
-                rows_by_event=rows_by_event or {}, risk_ctx=risk_ctx,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
+                rows_by_event=rows_by_event or {},
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
         if kinds.get("combo") and combos:
             out["traded"] += _auto_trade_combos(
                 db=db, market=market, payload=payload, event_id=event_id, combos=combos,
@@ -5827,6 +5923,14 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 risk_ctx=risk_ctx,
                 scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
     st["counts"] = counts
+    # PROPOSTE: si scrivono/aggiornano/fanno decadere DOPO aver visto tutte le
+    # partite del ciclo — la decadenza ha senso solo con il quadro completo.
+    # Con un feed VUOTO non si tocca niente: un giro a vuoto per un errore non
+    # deve cancellare le schede che l'utente ha davanti.
+    if note_proposte is not None and rows:
+        out["proposte"] = _riconcilia_proposte(
+            db=db, note=note_proposte, corpi=corpi_proposte,
+            eventi_in_gioco=eventi_in_gioco, eventi_valutati=eventi_valutati, now=now)
     if to_write:
         try:
             db.upsert_opportunities(to_write)
@@ -5884,38 +5988,52 @@ def _score_of(payload: dict, sport: str) -> Optional[str]:
     return f"{payload.get('score_home')}-{payload.get('score_away')}"
 
 
-def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
-                     params: dict, mode: str, now: datetime,
-                     rows_by_event: dict, sport: str = "calcio", kind: str = "model",
-                     risk_ctx: Optional[dict] = None,
-                     scanner_ts: Optional[float] = None,
-                     scanner_ts_known: bool = False) -> int:
-    """Tratta le opportunità che superano confidenza+edge minimi (strategia
-    'model', tipo in ``meta.kind``; tennis: stake ``risk.model_stake``).
-    DISATTIVO per default: si accende solo da parametri. Gate ``risk`` prima
-    della riserva. 12/09: riga del feed FRESCA obbligatoria."""
+def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
+                  params: dict, mode: str, now: datetime,
+                  rows_by_event: dict, sport: str = "calcio", kind: str = "model",
+                  scanner_ts: Optional[float] = None,
+                  scanner_ts_known: bool = False) -> list[dict]:
+    """LE OPPORTUNITA' DI MODELLO NON SI PIAZZANO PIU' DA SOLE: si PROPONGONO.
+
+    Ordine dell'utente del 17/09: ogni opportunita' di modello (calcio e
+    tennis) arriva come una scheda con tutte le informazioni e due tasti,
+    PIAZZA e RIFIUTA. Questa funzione non tocca ne' ``insert_trade`` ne'
+    ``_execute``: costruisce i CORPI delle proposte e li restituisce; a
+    scriverli (una riga 'proposed' per chiave, aggiornata finche' vive) pensa
+    ``_riconcilia_proposte`` alla fine del ciclo, con UNA sola lettura del DB.
+
+    Restano tutte le barriere di prima, perche' una proposta che il servizio
+    rifiuterebbe comunque e' una scheda che fa perdere tempo e fiducia:
+    confidenza e edge minimi, prezzo/selezione validi, ``market_id`` presente,
+    cap di responsabilita' per operazione, segnale NON gia' tradato, riga del
+    feed FRESCA (12/09). Cade invece il gate ``risk`` (che consuma contesto e
+    si valuta al momento vero del piazzamento, in forma morbida come per ogni
+    richiesta manuale) e ``place_allowed``, che e' un budget di CHIAMATE REST:
+    qui non si chiama Betfair."""
     min_conf = float(params.get("opps_min_confidence") or 0.0)
     min_edge = float(params.get("opps_min_edge") or 0.0)
     stake = float(params.get("opps_stake") or 0.0) if kind == "model" \
         else float(RK.risk_params(params).get("model_stake") or 0.0)
     cap = float(params.get("max_liability_per_trade") or 0.0)
-    commission = float(params.get("commission_pct", 5.0)) / 100.0
     if stake <= 0:
-        return 0
+        return []
     if not scanner_ts_known:
         scanner_ts = _scanner_ts(db, now.timestamp())
     feed_row = (rows_by_event or {}).get(str(event_id))
     if not _row_is_fresh(feed_row, now.timestamp(), scanner_ts):
         _log_skip(db, now, params, {"event_id": event_id, "signal_key": f"{kind}:*",
                                     "reason": _stale_reason(feed_row)})
-        return 0
+        return []
     try:
         traded = set(_traded_keys(db, mode))
     except Exception:  # noqa: BLE001 — FAIL-CLOSED
-        return 0
-    if risk_ctx is None:
-        risk_ctx = build_risk_ctx(db, now, params, mode=mode)
-    n = 0
+        return []
+    # la modalita' con cui l'ordine PARTIREBBE: la scheda la mostra, e il
+    # servizio la ricalcola all'approvazione (``_request_place``). Nessuna
+    # eredita': senza ``strategy_modes.model='live'`` si resta in paper.
+    modo = modalita_di_strategia("model", mode, params)
+    now_iso = now.isoformat()
+    fuori: list[dict] = []
     for o in opps:
         if not isinstance(o, dict):
             continue
@@ -5935,45 +6053,154 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         key = f"{kind}:{market_type}:{selection_id}:{side}"
         if (event_id, key) in traded:
             continue
-        if place_allowed(db, now, params, event_id, key):
-            continue   # H-21: budget esaurito / backoff in corso
         if not o.get("market_id"):
             _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
-                                       "reason": "market_o_selezione_mancante"})
+                                        "reason": "market_o_selezione_mancante"})
             continue
-        avail = o.get("size_available")
         liability = X.liability_of(side, stake, price)
         if cap > 0 and liability > cap:
             continue
-        if _risk_gate(db, now, params, risk_ctx,
-                      {"event_id": event_id, "market_type": market_type,
-                       "liability": liability, "strategy": "model"}, signal_key=key):
+        fuori.append(PO.corpo_proposta(
+            event_id=str(event_id), event_name=payload.get("event_name"), sport=sport,
+            kind=kind, opp={**o, "price": price, "selection_id": selection_id,
+                            "side": side, "market_type": market_type},
+            stake=stake, liability=liability, mode=modo,
+            minute=payload.get("minute"), score=_score_of(payload, sport),
+            now_iso=now_iso, decided_at=now_iso,
+            feed_updated_at=(feed_row or {}).get("updated_at"),
+            odds_ts_ms=payload.get("odds_ts_ms"),
+        ))
+    return fuori
+
+
+def _leggi_proposte_opp(db) -> Optional[dict[str, Any]]:
+    """Le proposte di opportunita' note al DB: vive, rifiutate dall'utente,
+    decadute. UNA lettura per ciclo. ``None`` = non si e' potuto leggere, e in
+    quel caso NON si propone niente (fail-closed: senza sapere cosa l'utente ha
+    gia' rifiutato, riproporlo sarebbe insistere su un suo 'no')."""
+    fn = getattr(db, "proposte_opportunita", None)
+    if not callable(fn):
+        return None
+    try:
+        righe = list(fn() or [])
+    except Exception:  # noqa: BLE001 — FAIL-CLOSED
+        return None
+    vive: dict[str, dict] = {}
+    rifiutate: dict[str, dict] = {}
+    for r in righe:
+        if not PO.e_proposta_di_opportunita(r):
             continue
-        row = _reserve_row(
-            event_id=event_id, event_name=payload.get("event_name"), sport=sport,
-            strategy="model", market_id=o.get("market_id"), market_type=market_type,
-            selection_id=selection_id, selection_name=o.get("selection_name"),
-            side=side, mode=modalita_di_strategia("model", mode, params),
-            price=price, size=stake, liability=liability,
-            commission=commission, minute=payload.get("minute"),
-            score=_score_of(payload, sport),
-            origin="auto", signal_key=key, meta=_model_meta(o, kind, side),
-        )
+        chiave = str((r.get("payload") or {}).get("opp_key") or "")
+        stato = str(r.get("status") or "")
+        if stato == "proposed":
+            vive.setdefault(chiave, r)
+        elif stato == "rejected":
+            rifiutate.setdefault(chiave, r)
+    return {"vive": vive, "rifiutate": rifiutate}
+
+
+def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
+                         eventi_in_gioco: set, eventi_valutati: set,
+                         now: datetime) -> int:
+    """Scrive le proposte nuove, aggiorna quelle vive, fa DECADERE quelle che
+    non hanno piu' un'opportunita' sotto, e annota in attivita' i rifiuti che
+    l'utente ha dato dalla scheda (la RPC scrive la riga, l'attivita' la scrive
+    il servizio al primo ciclo utile). Ritorna il numero di proposte NUOVE."""
+    vive: dict[str, dict] = note.get("vive") or {}
+    rifiutate: dict[str, dict] = note.get("rifiutate") or {}
+    scrivi = getattr(db, "scrivi_proposta_opportunita", None)
+    chiudi = getattr(db, "chiudi_proposta_opportunita", None)
+    nuove = 0
+    chiavi_vive: set[str] = set()
+    for corpo in corpi:
+        chiave = str(corpo.get("opp_key") or "")
+        if not chiave:
+            continue
+        chiavi_vive.add(chiave)
+        gia_decisa = rifiutate.get(chiave)
+        if gia_decisa is not None and not (gia_decisa.get("result") or {}).get("decaduta"):
+            continue   # l'utente ha detto NO su questa chiave: non si insiste
+        esistente = vive.get(chiave)
+        if not callable(scrivi):
+            continue
+        if esistente is None:
+            if gia_decisa is not None:
+                # era DECADUTA (non rifiutata) e l'opportunita' e' tornata:
+                # e' una scheda nuova, e si dice che torna.
+                corpo = {**corpo, "riproposta_perche": "l'opportunita' e' tornata sul feed"}
+            try:
+                rid = scrivi(chiave, corpo)
+            except Exception as ex:  # noqa: BLE001
+                _log(db, "error", {"reason": "proposta_opportunita_fallita",
+                                   "event_id": corpo.get("event_id"),
+                                   "err": str(ex)[:160], "critical": True})
+                continue
+            if not rid:
+                continue
+            nuove += 1
+            _log(db, "proposta_opportunita", {
+                "event_id": corpo.get("event_id"), "event_name": corpo.get("event_name"),
+                "request_id": int(rid), "kind": corpo.get("kind"),
+                "signal_key": corpo.get("signal_key"), "side": corpo.get("side"),
+                "price": corpo.get("price"), "size": corpo.get("size"),
+                "liability": corpo.get("liability"), "mode": corpo.get("mode")})
+            continue
+        # gia' viva: si riscrive SOLO se e' cambiata la sostanza (write-on-change)
+        precedente = esistente.get("payload") or {}
+        if PO.sostanza(precedente) == PO.sostanza(corpo):
+            continue
         try:
-            trade_id = db.insert_trade(row)
-        except Exception:  # noqa: BLE001 — già riservata
-            traded.add((event_id, key))
+            scrivi(chiave, {**corpo, "decided_at": precedente.get("decided_at")
+                            or corpo.get("decided_at"),
+                            **({"riproposta_perche": precedente["riproposta_perche"]}
+                               if precedente.get("riproposta_perche") else {})},
+                   int(esistente["id"]))
+        except Exception as ex:  # noqa: BLE001
+            _log(db, "error", {"reason": "proposta_opportunita_aggiorna_fallita",
+                               "event_id": corpo.get("event_id"), "err": str(ex)[:160]})
+    # --- DECADENZA: l'opportunita' non c'e' piu' sotto la proposta ---
+    if callable(chiudi):
+        for chiave, riga in vive.items():
+            if chiave in chiavi_vive:
+                continue
+            corpo = riga.get("payload") or {}
+            eid = str(corpo.get("event_id") or "")
+            if eid not in eventi_in_gioco:
+                motivo = "partita non piu' in gioco"
+            elif eid in eventi_valutati:
+                motivo = "opportunita' sparita dal feed"
+            else:
+                # partita in gioco ma NON valutata in questo ciclo (quote
+                # assenti, feed non fresco): non si sa, e non sapere non e' un
+                # motivo per buttare via una proposta.
+                continue
+            try:
+                chiudi(int(riga["id"]), motivo)
+            except Exception:  # noqa: BLE001 — il log non ferma il trading
+                continue
+            _log(db, "opportunita_decaduta", {
+                "event_id": eid, "event_name": corpo.get("event_name"),
+                "request_id": int(riga["id"]), "kind": corpo.get("kind"),
+                "signal_key": corpo.get("signal_key"), "motivo": motivo,
+                "mode": corpo.get("mode")})
+    # --- i RIFIUTI dell'utente diventano attivita' (una volta sola) ---
+    marca = getattr(db, "marca_proposta_opportunita_annotata", None)
+    for chiave, riga in rifiutate.items():
+        res = riga.get("result") or {}
+        if not res.get("ignorata_dall_utente") or res.get("attivita_scritta"):
             continue
-        if not trade_id:
-            continue
-        traded.add((event_id, key))
-        _risk_commit(risk_ctx, {**row, "id": trade_id})
-        out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
-                       now=now, best_size=avail, ladder=(),
-                       feed_prices=_feed_prices_of(rows_by_event, event_id, row))
-        if out.status != "error":
-            n += 1
-    return n
+        corpo = riga.get("payload") or {}
+        _log(db, "opportunita_rifiutata", {
+            "event_id": corpo.get("event_id"), "event_name": corpo.get("event_name"),
+            "request_id": int(riga["id"]), "kind": corpo.get("kind"),
+            "signal_key": corpo.get("signal_key"),
+            "motivo": res.get("motivo"), "mode": corpo.get("mode")})
+        if callable(marca):
+            try:
+                marca(int(riga["id"]), res)
+            except Exception:  # noqa: BLE001
+                pass
+    return nuove
 
 
 def _feed_prices_of(rows_by_event: Optional[dict], event_id: str,

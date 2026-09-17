@@ -469,6 +469,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cover_rounding', label: 'Arrotondamento (se non esatto)', kind: 'choice', choices: ['ceil', 'floor', 'nearest'], hint: 'usato solo con importi esatti OFF', group: 'cover' },
     { key: 'cover_max_overshoot_pct', label: 'Sovracopertura max %', kind: 'number', step: 5, min: 0, max: 200, hint: 'oltre: si logga cover_overshoot', group: 'cover' },
     { key: 'exact_sizes', label: 'Importi esatti al centesimo', kind: 'bool', hint: 'on = 3,61 € reali (place-and-trim); off = legalizza a 0,50', group: 'cover' },
+    // 17/09 (ordine dell'utente, reperto 25): il freno sui rifiuti ripetuti della
+    // copertura. Specchio di Betfair/mike/config.py PARAM_SPEC.
+    { key: 'cover_rifiuti_max', label: 'Copertura: rifiuti max prima di fermarsi', kind: 'number', step: 1, min: 1, max: 20, hint: 'rifiuti CONSECUTIVI di Betfair con lo stesso codice d’errore prima di fermare la copertura (stato bloccato): serve «Riprendi», oppure un codice diverso, che è una notizia nuova e riapre il tentativo', group: 'cover' },
+    { key: 'cover_retry_min_s', label: 'Copertura: attesa minima fra tentativi (s)', kind: 'number', step: 1, min: 1, max: 300, hint: 'ritmo minimo fra due tentativi di copertura: il bet delay in gioco è 5 s, ritentare più spesso vuol dire chiedere a Betfair prima di sapere l’esito della volta prima', group: 'cover' },
     { key: 'cashout_profit_pct', label: 'Chiudi tutto a profitto ≥ %', kind: 'number', step: 0.5, min: 0.5, max: 50, hint: 'somma dei P&L bloccabili di Under 3.5 + Over 4.5', group: 'cashout' },
     { key: 'cashout_base', label: 'Base della %', kind: 'choice', choices: ['total', 'under'], hint: 'total = stake Under + copertura; under = solo stake Under', group: 'cashout' },
     { key: 'cashout_place_at_ticks', label: 'Chiusura N tick oltre il best', kind: 'number', step: 1, min: 0, max: 3, hint: 'fill più sicuro, P&L leggermente peggiore', group: 'cashout' },
@@ -539,6 +543,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_wait_max_min: 10, cover_wait_p4_max: 0.16, cover_good_price: 7, cover_wait_min_gain_pct: 8,
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
     cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
+    cover_rifiuti_max: 3, cover_retry_min_s: 15,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
     cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
     cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
@@ -1285,9 +1290,21 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'resting_in_sospensione':
             return `${role()} non è più fra gli ordini correnti mentre il mercato è sospeso:`
                 + ` l’esito lo dice Betfair alla riapertura, non si indovina adesso`;
-        case 'mercato_sospeso':
-            return `mercato ${p.stato ? String(p.stato) : 'sospeso'} con una lay appoggiata sul book:`
+        case 'mercato_sospeso': {
+            // 17/09 (ordine dell'utente) — due mercati possono finire qui: la
+            // linea 3.5 con una lay APPOGGIATA viva (`_sorveglia_sospensione`,
+            // payload senza `mercato`/`fase`) o la linea 4.5 durante la
+            // COPERTURA (`_sorveglia_mercato_copertura`, payload con
+            // `mercato`/`fase: 'copertura'`). Sono due notizie diverse: la
+            // riga deve dire QUALE mercato e PERCHÉ, mai un testo unico.
+            const stato = p.stato ? String(p.stato) : 'sospeso';
+            if (p.fase === 'copertura' || p.mercato != null) {
+                const mkt = marketLabel(p.mercato == null ? null : String(p.mercato));
+                return `mercato ${mkt} (copertura) ${stato}: nessun ordine di copertura finché non riapre`;
+            }
+            return `mercato ${stato} con una lay appoggiata sul book:`
                 + ` Betfair può averla fatta scadere, alla riapertura si rilegge`;
+        }
         case 'rilettura_alla_riapertura': {
             const esito = String(p.esito ?? '');
             const testo = esito === 'vivo' ? 'è ANCORA VIVO sul book'
@@ -1325,8 +1342,17 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `(dry) ${role()} ${side()} ${money('size')} @ ${odds('price')}`;
         case 'cancel':
             return `${role()} annullato${p.by ? ` · ${String(p.by)}` : ''}`;
-        case 'skip':
+        case 'skip': {
+            // 17/09 — la riapertura del mercato della copertura (`_sorveglia_
+            // mercato_copertura`) e' loggata come 'skip' con reason
+            // 'mercato_riaperto': la sua riga, non il generico "mercato
+            // riaperto" del fallback, per dire QUALE mercato riprende.
+            if (p.reason === 'mercato_riaperto') {
+                const mkt = marketLabel(p.mercato == null ? null : String(p.mercato));
+                return `mercato ${mkt} (copertura) di nuovo APERTO: la copertura riprende da dove era rimasta`;
+            }
             return `${reasonLabel(p.reason)}${p.leg ? ` · ${String(p.leg)}` : ''}`;
+        }
         case 'no_fill': {
             const quanto = Number.isFinite(n('size')) ? ` ${money('size')}` : '';
             const liq = Number.isFinite(n('size_disponibile')) ? ` (liquidita' ${money('size_disponibile')})` : '';

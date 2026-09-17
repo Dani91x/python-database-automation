@@ -240,10 +240,10 @@ const STRATEGY_FIELDS: Num[] = [
 ];
 
 const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
-    { key: 'auto_trade_opportunities', label: 'Trada le opportunità di MODELLO in automatico', note: 'rischio: il modello può essere calibrato male sulle leghe minori — stake piccolo, cap giornaliero attivo' },
+    { key: 'auto_trade_opportunities', label: 'Opportunità di MODELLO (calcio) — NON piazza più da sola', note: 'dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA): questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_anomalies', label: 'Trada le ANOMALIE di prezzo in automatico', note: 'rischio: una quota "sbagliata" può essere un punteggio in ritardo sul feed — attesa conferma consigliata' },
     { key: 'auto_trade_combos', label: 'Trada le COMBINAZIONI in automatico', note: 'rischio: se una gamba non si abbina il profitto bloccato salta e resta una posizione scoperta' },
-    { key: 'auto_trade_tennis', label: 'Trada le opportunità TENNIS in automatico', note: 'rischio: ritiri e cali di momentum improvvisi — il rischio ritiro è mostrato sulla card' },
+    { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — oggi in paper finché strategy_modes.model resta paper' },
 ];
 
 const VARIANTS: { id: VariantId; label: string }[] = [

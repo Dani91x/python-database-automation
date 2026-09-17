@@ -1,0 +1,96 @@
+-- ============================================================================
+-- SAFE — LE OPPORTUNITA' DI MODELLO DIVENTANO PROPOSTE  (17/09/2026)
+--
+-- ORDINE DELL'UTENTE (testuale): «Le opportunita' modello (SIA CALCIO CHE
+-- TENNIS) devono apparirmi come la card della chiusura (falle apparire sotto e
+-- con card dedicata) CON TUTTE LE INFORMAZIONI E I DUE TASTI: "PIAZZA" parte
+-- l'ordine, "RIFIUTA" la scheda viene rifiutata.»
+--
+-- NESSUNA TABELLA NUOVA, NESSUNA RPC NUOVA. Una proposta di opportunita' e'
+-- una riga di `public.safe_strategy_requests` con `kind='place'`,
+-- `status='proposed'` e `payload.opp_key` — cioe' esattamente la coda che il
+-- servizio drena gia' (`bot_db.pending_requests`, `.eq('status','pending')`),
+-- con lo stato 'proposed' introdotto per le CHIUSURE il 14/09
+-- (`safe_strategy_proposed_2026-09-14.sql`) e riusato da Omega il 17/09
+-- (`omega_proposte_coda_unica_2026-09-17.sql`).
+--
+-- IL PERNO E' SEMPRE LO STESSO: il servizio drena SOLO `status='pending'`.
+-- Una riga 'proposed' sta ferma finche' un essere umano non la promuove con
+-- `safe_request_approve(id)`. Se un domani quel filtro si allargasse, il
+-- cancelletto sparirebbe in silenzio: e' per questo che
+-- `test_proposte_opportunita_2026_09_17.py` verifica per ISPEZIONE che il
+-- codice delle opportunita' non chiami piu' ne' `insert_trade` ne' `_execute`.
+--
+-- COSA C'E' GIA' E NON SI RIFA':
+--   * lo stato 'proposed'/'rejected' nel CHECK di `status`  -> 14/09
+--   * `safe_request_approve(bigint)`  (proposed -> pending) -> 14/09
+--   * `safe_request_ignore(bigint, text)` (proposed -> rejected, col motivo)
+--     -> 14/09. La UI li riusa TALI E QUALI: PIAZZA e' approve, RIFIUTA e'
+--     ignore. Nessuna seconda strada verso Betfair.
+--   * la pubblicazione realtime della tabella -> `omega_activity_realtime_2026-09-12.sql`
+--   * la RLS della tabella -> `safe_strategy_bot.sql` (owner-only, invariata:
+--     qui non si tocca nessuna policy, quindi nessun accesso cambia).
+--
+-- COSA MANCA, ED E' QUELLO CHE QUESTA MIGRAZIONE AGGIUNGE: due indici.
+--
+-- IDEMPOTENTE: si puo' rieseguire.
+-- DA APPLICARE DALL'UTENTE. Non e' stata applicata.
+-- ORDINE DI APPLICAZIONE: dopo `safe_strategy_bot.sql`,
+-- `safe_strategy_bot_v2.sql` e `safe_strategy_proposed_2026-09-14.sql`.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 1. UNA SOLA PROPOSTA VIVA PER OPPORTUNITA'.
+--
+--    `opp_key` = event_id + kind:market_type:selection_id:side. E' la stessa
+--    chiave con cui l'automatico non si ripeteva, e la sua STABILITA' e' cio'
+--    che rende vero un rifiuto: se ci finisse dentro il prezzo, un "no"
+--    durerebbe un tick e la scheda tornerebbe su da sola.
+--
+--    Senza questo indice un servizio riavviato a meta' ciclo potrebbe
+--    scriverne due, e il trader vedrebbe due schede PIAZZA per la stessa
+--    identica operazione: due posizioni dove ne voleva una.
+--
+--    Non litiga con `uq_safe_requests_proposta_viva` (14/09), che e' sul
+--    `trade_id` delle proposte di CHIUSURA: in una proposta di opportunita'
+--    `payload->>'trade_id'` e' NULL, e in Postgres i NULL non si scontrano fra
+--    loro in un indice unico.
+-- ----------------------------------------------------------------------------
+CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_requests_proposta_opp_viva
+    ON public.safe_strategy_requests (((payload->>'opp_key')))
+    WHERE status = 'proposed' AND payload ? 'opp_key';
+
+-- ----------------------------------------------------------------------------
+-- 2. LA LETTURA DEL SERVIZIO: una sola SELECT per ciclo.
+--
+--    `bot_db.proposte_opportunita` legge le proposte VIVE e quelle gia'
+--    DECISE delle ultime 24 ore (kind='place', status in proposed/rejected).
+--    Le rifiutate servono quanto le vive: senza rileggerle il servizio
+--    riscriverebbe al ciclo dopo una proposta che l'utente ha scartato — cioe'
+--    il rifiuto non esisterebbe. Con le opportunita' che girano ogni 10 s
+--    questa lettura e' su ogni ciclo, e il 13/09 (il giorno in cui il database
+--    e' andato giu' per esaurimento di IO) ha insegnato che una lettura senza
+--    indice, moltiplicata per i cicli, e' un guasto che arriva di notte.
+-- ----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_safe_requests_proposte_opp
+    ON public.safe_strategy_requests (created_at DESC)
+    WHERE kind = 'place' AND status IN ('proposed', 'rejected');
+
+-- ----------------------------------------------------------------------------
+-- 3. PROMEMORIA DI COSA *NON* CAMBIA, perche' e' la parte che regge tutto
+--
+--  * La STRATEGIA S (base / esatto / punta / tennis) non passa di qui: le sue
+--    aperture restano automatiche, coi loro cap e le loro varianti. L'ordine
+--    dell'utente riguarda le OPPORTUNITA' DI MODELLO.
+--  * Le USCITE non cambiano: le chiusure del tennis restano proposte come dal
+--    14/09, con la loro scheda.
+--  * I parametri `auto_trade_opportunities` e `auto_trade_tennis` restano
+--    leggibili e salvabili, ma NON piazzano piu' niente: l'etichetta nella
+--    scheda dei parametri lo dice a chiare lettere.
+--  * `auto_trade_combos` e `auto_trade_anomalies` NON sono toccati da questo
+--    giro (combinazioni a piu' gambe e cecchino hanno un motore proprio):
+--    divergenza dichiarata, sono spenti per default e vanno portati
+--    all'utente. Vedi
+--    `Betfair/safe_strategy/CHECKPOINT_PROPOSTE_OPPORTUNITA_2026-09-17.md`.
+--  * Nessuna policy RLS e nessun GRANT sono modificati.
+-- ----------------------------------------------------------------------------

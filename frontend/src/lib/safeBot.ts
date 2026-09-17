@@ -288,7 +288,11 @@ export type SafeRequestKind = 'place' | 'cashout' | 'cancel'
     | 'cashout_event' | 'riprendi_evento';
 /** 'rejected' = il servizio ha RIFIUTATO la richiesta con un motivo leggibile
  *  (in riconciliazione, ordine già a mercato, mercato sospeso, feed non fresco) */
-export type SafeRequestStatus = 'pending' | 'processing' | 'done' | 'error' | 'rejected';
+// 17/09: 'proposed' e' lo stato di una PROPOSTA del bot (chiusura o
+// opportunita') in attesa della firma dell'utente. Il servizio drena solo
+// 'pending': e' quel filtro, e solo quello, a fare il cancelletto.
+export type SafeRequestStatus =
+    'proposed' | 'pending' | 'processing' | 'done' | 'error' | 'rejected';
 export interface SafeRequest {
     id: number;
     kind: SafeRequestKind;
@@ -1112,7 +1116,85 @@ export async function riprendiEventoSafe(eventId: string): Promise<number> {
     return requestSafe('riprendi_evento', payloadRiprendiEvento(eventId));
 }
 
-/** Ultime richieste (feedback pending/done/error sui bottoni "Investi"). */
+/**
+ * IL PAYLOAD DI UNA PROPOSTA DI OPPORTUNITA' (17/09).
+ *
+ * Una proposta è una riga della STESSA coda (`safe_strategy_requests`,
+ * `kind='place'`, `status='proposed'`) riconoscibile da `opp_key`. Il servizio
+ * drena solo `pending`: finché resta 'proposed' non parte niente. Le chiavi
+ * qui sotto sono quelle che `Betfair/safe_strategy/proposte_opportunita.py`
+ * scrive — una di meno e la scheda mentirebbe.
+ */
+export interface PropostaOpportunitaPayload {
+    opp_key: string;
+    strategy: 'model';
+    kind: SafeOppKind | string;
+    event_id: string;
+    event_name?: string | null;
+    sport?: string | null;
+    market_id?: string | null;
+    market_type?: string | null;
+    selection_id?: number | null;
+    selection_name?: string | null;
+    side?: SafeSide | string | null;
+    price?: number | null;
+    size?: number | null;
+    liability?: number | null;
+    mode?: SafeMode | string | null;
+    minute?: number | null;
+    score?: string | null;
+    signal_key?: string | null;
+    price_at_decision?: number | null;
+    size_available?: number | null;
+    size_available_at_decision?: number | null;
+    p_model?: number | null;
+    p_implied?: number | null;
+    edge?: number | null;
+    ev?: number | null;
+    confidence?: number | null;
+    rationale?: string | null;
+    line?: number | null;
+    odds_ts_ms?: number | null;
+    feed_updated_at?: string | null;
+    decided_at?: string | null;
+    proposed_at?: string | null;
+    riproposta_perche?: string | null;
+}
+
+export interface PropostaOpportunita {
+    id: number;
+    kind: string;
+    status: string;
+    payload: PropostaOpportunitaPayload;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+/** La riga della coda è una PROPOSTA di opportunità (non di chiusura)? */
+export function isPropostaOpportunita(
+    r: { kind?: string | null; payload?: unknown } | null | undefined,
+): boolean {
+    const p = (r?.payload ?? null) as Record<string, unknown> | null;
+    return !!p && typeof p === 'object' && typeof p['opp_key'] === 'string'
+        && !!(p['opp_key'] as string);
+}
+
+/**
+ * Ultime richieste (feedback pending/done/error sui bottoni "Investi").
+ *
+ * 17/09 — le PROPOSTE non sono richieste dell'utente: sono domande del bot, e
+ * vivono nella loro scheda. Se finissero qui dentro riempirebbero la finestra
+ * delle ultime richieste e il bottone "Investi" non troverebbe più la propria
+ * (lo stesso difetto che Omega ha corretto su `get_omega_manual_requests`).
+ * Una proposta APPROVATA passa a 'pending' e da quel momento è una richiesta a
+ * tutti gli effetti: quella si vede.
+ *
+ * Il `limit` resta quello chiesto (contratto della lettura, `safeBot.test.ts`):
+ * le proposte si tolgono DOPO. Costo accettato e dichiarato: in una finestra
+ * fitta di proposte l'elenco delle ultime richieste può tornare più corto di
+ * `limit`. Non è una bugia — sono righe che non sono richieste dell'utente —
+ * ma se un giorno desse fastidio il posto giusto è un filtro lato server.
+ */
 export async function fetchSafeRequests(limit = 30): Promise<SafeRequest[]> {
     const { data, error } = await supabase
         .from('safe_strategy_requests')
@@ -1120,7 +1202,9 @@ export async function fetchSafeRequests(limit = 30): Promise<SafeRequest[]> {
         .order('id', { ascending: false })
         .limit(limit);
     if (error) throw new Error(error.message);
-    return (data ?? []) as unknown as SafeRequest[];
+    const righe = (data ?? []) as unknown as SafeRequest[];
+    return righe.filter((r) => !(isPropostaOpportunita(r)
+        && (r.status === 'proposed' || r.status === 'rejected')));
 }
 
 // --------------------------------------------------------------- realtime

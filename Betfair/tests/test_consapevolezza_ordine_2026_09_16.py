@@ -90,6 +90,10 @@ def betfair(monkeypatch):
             self.place = place_report(matched=5.0, prezzo=2.14)
             self.cancel = cancel_report(tagliato=5.0)
             self.current = {"currentOrders": []}
+            # book vuoto = IGNOTO: il place-and-trim sceglie il percorso
+            # conservativo (parcheggio lontano + replace), che e' la sequenza
+            # storica di questi test.
+            self.book = []
             self.cleared = {"clearedOrders": []}
             self.chiamate = []
 
@@ -130,6 +134,12 @@ def betfair(monkeypatch):
 
                 def list_cleared_orders(_s, **k):
                     return self.cleared
+
+                def list_market_book(_s, *a, **k):
+                    # 17/09: il place-and-trim legge il book per sapere se la
+                    # quota target e' abbinabile. Il finto parla come il vero:
+                    # stesso nome di metodo, stessa forma (lista di book).
+                    return self.book
 
             return fn(Cli())
 
@@ -310,6 +320,10 @@ def test_safe_rifiuto_invalid_profit_ratio_chiude_la_riga_in_error(betfair, monk
                 {"status": "FAILURE", "errorCode": "INVALID_PROFIT_RATIO"}]}
         return cancel_report(tagliato=0.80)   # ritiro del residuo: RIUSCITO
     monkeypatch.setattr(OM, "call_mutating", lambda fn: muta(fn))
+    # 17/09 — dopo il taglio il place-and-trim RILEGGE l'ordine da Betfair
+    # (`listCurrentOrders` per betId): il finto risponde come il vero, con il
+    # residuo al target (2,00 di parcheggio - 1,20 tagliati = 0,80).
+    betfair.current = current_orders(bet_id="B9", residuo=0.80, stato="EXECUTABLE")
     db = DbFinto()
     out = _place_safe(db, size=0.80, side="back")
     assert out.status == "error", "rifiuto CERTO: mai 'pending' su un ordine inesistente"
@@ -346,6 +360,7 @@ def test_safe_se_il_ritiro_fallisce_l_esito_resta_IGNOTO(betfair, monkeypatch):
                 {"status": "FAILURE", "errorCode": "INVALID_PROFIT_RATIO"}]}
         raise RuntimeError("rete KO sul ritiro")
     monkeypatch.setattr(OM, "call_mutating", lambda fn: muta(fn))
+    betfair.current = current_orders(bet_id="B9", residuo=0.80, stato="EXECUTABLE")
     db = DbFinto()
     out = _place_safe(db, size=0.80, side="back")
     assert out.status == "pending", "ordine forse vivo: si riconcilia, non si chiude"

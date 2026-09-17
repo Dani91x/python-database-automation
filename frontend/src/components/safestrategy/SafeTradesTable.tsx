@@ -522,7 +522,12 @@ export function SafeTradesTable({
                                             data-testid="trade-kind"
                                             data-kind={kind}
                                             className={`px-1.5 py-0 text-[10px] font-heading ${OPP_KIND_META[kind].badge}`}
-                                            title={`trade di ${STRATEGY_LABEL.model.toLowerCase()} · ${OPP_KIND_META[kind].title}`}
+                                            // REPERTO 17/09 sera — riga di opportunità di MODELLO
+                                            // (secondo motore, es. auto_trade_tennis per il tennis):
+                                            // MAI la Strategia S delle 4 varianti del manuale
+                                            // (quella e' strategy='base'|'esatto'|'punta'|'tennis').
+                                            // Il tooltip lo dice per non farle confondere in tabella.
+                                            title={`trade di ${STRATEGY_LABEL.model.toLowerCase()} (secondo motore) · ${OPP_KIND_META[kind].title}`}
                                         >
                                             {OPP_KIND_META[kind].label}
                                         </Badge>

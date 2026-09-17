@@ -608,6 +608,90 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# PROPOSTE DI OPPORTUNITA' DI MODELLO (17/09) — stessa coda, stesso cancelletto
+#
+# Una proposta e' una riga 'proposed' con kind='place' e ``payload.opp_key``.
+# Le proposte di CHIUSURA (14/09) sono kind='cashout': i due mondi non si
+# toccano, e la Control Room li distingue dalla presenza di ``opp_key``.
+# ---------------------------------------------------------------------------
+def proposte_opportunita(ore: int = 24, limit: int = 300) -> list[dict[str, Any]]:
+    """Proposte di opportunita' VIVE ('proposed') e gia' DECISE ('rejected')
+    delle ultime ``ore``.
+
+    Le rifiutate servono quanto le vive: una proposta che l'utente ha scartato
+    non deve tornare finche' la chiave resta uguale, e senza rileggerle il
+    servizio la riscriverebbe al ciclo dopo — cioe' il rifiuto non esisterebbe.
+    Una sola SELECT per ciclo (13/09: il DB ha un budget di IO)."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=int(ore))).isoformat()
+    righe = (
+        _sb().table("safe_strategy_requests").select("*")
+        .eq("kind", "place").in_("status", ["proposed", "rejected"])
+        .gte("created_at", cutoff)
+        .order("created_at", desc=True).limit(int(limit)).execute().data or []
+    )
+    return [r for r in righe if isinstance(r.get("payload"), dict)
+            and r["payload"].get("opp_key")]
+
+
+def scrivi_proposta_opportunita(opp_key: str, payload: dict[str, Any],
+                                req_id: Optional[int] = None) -> Optional[int]:
+    """Crea (o AGGIORNA, se ``req_id`` e' noto) la proposta di ``opp_key``.
+
+    Non passa da ``safe_request``: quella nasce 'pending' ed e' per le richieste
+    manuali dell'utente, che vanno eseguite subito. Questa nasce 'proposed' e
+    resta ferma finche' un essere umano non la promuove.
+    Ritorna l'id, oppure None: senza id NON c'e' proposta, e il chiamante non
+    deve raccontare il contrario."""
+    corpo = {**payload, "opp_key": str(opp_key)}
+    if req_id is not None:
+        (
+            _sb().table("safe_strategy_requests")
+            .update({"payload": corpo, "updated_at": _now_iso()})
+            .eq("id", int(req_id)).eq("status", "proposed").execute()
+        )
+        return int(req_id)
+    res = (
+        _sb().table("safe_strategy_requests")
+        .insert({"kind": "place", "status": "proposed", "payload": corpo}).execute()
+    )
+    dati = getattr(res, "data", None) or []
+    return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
+
+
+def chiudi_proposta_opportunita(req_id: int, motivo: str) -> None:
+    """L'opportunita' non c'e' piu' (sparita dal feed, partita finita): la
+    proposta DECADE.
+
+    Non e' un rifiuto dell'utente — e' il mercato che e' cambiato. Si marca
+    'rejected' con ``decaduta``, cosi' resta la traccia di un ordine PROPOSTO e
+    mai partito: senza, sparirebbe e nessuno saprebbe che era stato offerto."""
+    (
+        _sb().table("safe_strategy_requests")
+        .update({"status": "rejected",
+                 "result": {"decaduta": True, "motivo": str(motivo)[:200]},
+                 "updated_at": _now_iso()})
+        .eq("id", int(req_id)).eq("status", "proposed").execute()
+    )
+
+
+def marca_proposta_opportunita_annotata(req_id: int,
+                                        result: dict[str, Any]) -> None:
+    """Segna che il RIFIUTO dell'utente e' gia' finito in attivita'.
+
+    Il rifiuto lo scrive la RPC ``safe_request_ignore`` (il servizio non c'e'
+    in quel momento): l'attivita' la scrive il servizio al primo ciclo utile, e
+    questo flag evita di riscriverla a ogni giro."""
+    (
+        _sb().table("safe_strategy_requests")
+        .update({"result": {**(result or {}), "attivita_scritta": True},
+                 "updated_at": _now_iso()})
+        .eq("id", int(req_id)).execute()
+    )
+
+
 def set_request_status(req_id: int, status: str,
                        result: Optional[dict[str, Any]] = None) -> None:
     """Chiude (o avanza) una richiesta della UI. ``status`` del vocabolario

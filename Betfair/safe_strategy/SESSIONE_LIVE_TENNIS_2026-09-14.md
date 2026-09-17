@@ -22,6 +22,21 @@
 | Interruttore globale | `LIVE_ORDER_MODE` portato da `PAPER` a **`LIVE`** (`.env`) |
 | Kill switch globale | `LIVE_KILL_SWITCH` assente → `false` |
 
+> **NOTA 17/09 sera (reperto Pieczonka v Trungelliti, event_id 36077210).** La riga
+> «Entrate | automatiche (`auto_trade_tennis = true`)» qui sopra si leggeva, a torto, come
+> l'interruttore delle entrate della **Strategia S tennis** (quella che ha piazzato quel
+> 14/09). Non lo è mai stato: `auto_trade_tennis` governa SOLO il **secondo motore** — le
+> righe `strategy='model'`, `meta.kind='tennis'` della riga *(secondo motore)* appena sopra
+> (`risk.model_stake`), oggi sempre in paper. La Strategia S tennis (righe `strategy='tennis'`)
+> si accende esclusivamente da `params.variants` (qui: «Strategie in LIVE: solo `tennis`»).
+> La Control Room («scheda Solo tennis») forzava `auto_trade_tennis = true` a ogni avvio
+> credendo servisse a queste entrate: il 17/09 sera il trader ha visto 3 righe sullo stesso
+> match (2 paper del modello + 1 live della Strategia S) e ha creduto a 3 ingressi della
+> stessa strategia. Corretto in `frontend/src/components/controlroom/soloTennis.ts`
+> (la scheda non tocca più `auto_trade_tennis`) e in `Betfair/safe_strategy/bot_service.py`
+> (etichette `mode` sulle righe di attività `exit_hold`/`exit_wait`/ecc., prima timbrate col
+> modo del servizio anche per un trade paper).
+
 ### Cosa ha bloccato l'avvio, e perché è istruttivo
 I primi **6 tentativi di ordine live fallirono tutti** con `live_order_mode_non_live:PAPER`.
 **Non era la strategia**: i nove controlli passavano tutti. Era il freno globale nel `.env`, che il
