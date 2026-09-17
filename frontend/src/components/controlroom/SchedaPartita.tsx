@@ -29,8 +29,13 @@ import { isErrorRow, isSettled } from '@/lib/eventGroups';
 import { comeLabel, marcatoreRiga, type StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { pnlClass } from '@/lib/tradeStatus';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
+import {
+    BadgeStato, Ingresso, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
+} from '@/components/controlroom/DettaglioRigaView';
 import { BOT_LABEL, BOT_TENNIS, type Bot, type PartitaGiornata, type Sport, type StatoQuote } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
+import { SchedaMike } from '@/components/controlroom/SchedaMike';
+import type { MikeEvent } from '@/lib/mike';
 
 /**
  * Le chiavi del database NON si mostrano al trader.
@@ -119,10 +124,16 @@ export interface SchedaPartitaProps {
         onCashOut: (eventId: string) => Promise<void>;
         onRiprendi: (eventId: string) => Promise<void>;
     };
+    /**
+     * 17/09 — LA PARTITA DI MIKE come il servizio la pubblica (`get_mike_state`,
+     * già letta dall'hook: NESSUNA lettura in più). Assente = Mike non lavora
+     * questa partita, e la scheda non si monta.
+     */
+    mike?: MikeEvent | null;
 }
 
 export function SchedaPartita({
-    p, operazioni, scheda = 'live', registra = null, registratoreVivo = null, safe,
+    p, operazioni, scheda = 'live', registra = null, registratoreVivo = null, safe, mike = null,
 }: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
 
@@ -273,6 +284,11 @@ export function SchedaPartita({
                     <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1">
                         {BOT_LABEL[aperto]} — operazioni su questa partita
                     </div>
+                    {/* 17/09 — MIKE porta con sé un modello: mostrarlo qui è la
+                        stessa carta della sua pagina, dalla stessa lettura. */}
+                    {aperto === 'mike' && mike && (
+                        <div className="mb-1.5"><SchedaMike ev={mike} /></div>
+                    )}
                     <div className="space-y-1">
                         {perBot(aperto).map((o) => (
                             <div key={`${o.bot}-${o.id}`} className="flex items-baseline gap-1.5 text-[11px] flex-wrap">
@@ -308,6 +324,23 @@ export function SchedaPartita({
                                     {o.pnl == null ? DASH : fmtMoney(o.pnl, { signed: true })}
                                 </span>
                                 <span className="text-[9px] text-white/25 font-mono">{fmtTime(o.at)}</span>
+                                {/* ── IL DETTAGLIO DELLA SCHEDA ORIGINALE (17/09) ──
+                                    stato ricco, ingresso (minuto e punteggio), P&L VIVO
+                                    (non solo a regolamento), green-up, modello. Stessa
+                                    riga già in memoria, stesse funzioni delle pagine dei
+                                    bot: qui non si ricalcola niente. */}
+                                {o.dettaglio && (
+                                    <div className="basis-full pl-4 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
+                                        data-testid="cr-op-dettaglio">
+                                        <BadgeStato d={o.dettaglio} testId="cr-op-stato" />
+                                        <Greenup d={o.dettaglio} testId="cr-op-greenup" />
+                                        <Uscita d={o.dettaglio} testId="cr-op-uscita" />
+                                        <Ingresso d={o.dettaglio} testId="cr-op-ingresso" />
+                                        <Copertura d={o.dettaglio} testId="cr-op-copertura" />
+                                        <PnlVivo d={o.dettaglio} testId="cr-op-pnl-vivo" />
+                                        <ModelloP d={o.dettaglio} testId="cr-op-modello" />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

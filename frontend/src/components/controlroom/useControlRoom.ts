@@ -38,7 +38,7 @@ import {
     ignoraPropostaOmega, ordinaProposteOmega, type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
 import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
-import { fetchMikeState, type MikeStateView } from '@/lib/mike';
+import { fetchMikeState, type MikeEvent, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import { fetchMissions } from '@/lib/omegaMissions';
 import {
@@ -53,6 +53,10 @@ import {
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
+import {
+    dettaglioDi, eGambaDiChiusura, quotaViva,
+    type DettaglioRiga, type QuotaViva, type RigaDettagliabile,
+} from '@/components/controlroom/dettaglioRiga';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
@@ -230,6 +234,13 @@ export interface OperazionePartita {
      * parte?» non sapeva rispondere. A leggerli e' `lib/statoOrdine`.
      */
     ordine: RigaOrdine;
+    /**
+     * 17/09 — IL DETTAGLIO DELLA SCHEDA ORIGINALE (stato ricco, P&L vivo,
+     * minuto/punteggio all'ingresso, green-up, modello). Calcolato dalle STESSE
+     * funzioni delle pagine dei bot: `components/controlroom/dettaglioRiga.ts`.
+     * `null` per i quattro bot tennis, le cui righe non portano questi campi.
+     */
+    dettaglio: DettaglioRiga | null;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -265,12 +276,89 @@ export interface PosizioneAperta {
         /** P&L GARANTITO chiudendo per intero adesso; null = non calcolabile */
         bloccabile: number | null;
     } | null;
+    /**
+     * 17/09 — LO STATO DELL'ORDINE anche qui. La riga della colonna posizioni
+     * mostrava un solo `size` (che dopo la conferma è l'ABBINATO): «chiesto
+     * quanto? abbinato tutto? a che prezzo medio?» era leggibile solo aprendo
+     * la scheda della partita. Sono gli stessi tre numeri, dalla stessa riga.
+     */
+    ordine: RigaOrdine;
+    /** 17/09 — il dettaglio della scheda originale (v. `OperazionePartita`) */
+    dettaglio: DettaglioRiga | null;
+    /**
+     * 17/09 — QUOTA DI ADESSO sulla stessa selezione, dal feed di scansione
+     * già caricato per le partite: back, lay e i tick di movimento
+     * dall'ingresso. `null` quando il feed non porta quella selezione (Mike non
+     * pubblica `market_id`/`selection_id` sulle righe: per lui resta `null`).
+     */
+    vivo: QuotaViva | null;
 }
 
 /** Una riga è «a mercato» se non è regolata e non è un piazzamento mai
  *  avvenuto. `error` NON è un'operazione: non conta in nessun numero. */
 function aMercato(t: { status: string }): boolean {
     return !isSettled(t.status) && !isErrorRow(t.status);
+}
+
+/**
+ * 17/09 — LE CHIUSURE COLLEGATE a ogni apertura (`closes_trade_id`).
+ * `legPnl` ne ha bisogno per dire «bloccato»: senza, una posizione già coperta
+ * resterebbe «aperta» per sempre. È lo stesso legame che `groupTradesByMatch`
+ * costruisce per la tabella di Omega — qui basta la mappa.
+ */
+function chiusureCollegate<T extends { id: number; closes_trade_id?: number | null }>(
+    righe: readonly T[],
+): Map<number, T[]> {
+    const m = new Map<number, T[]>();
+    for (const r of righe) {
+        const p = r.closes_trade_id;
+        if (p == null) continue;
+        const k = Number(p);
+        const a = m.get(k);
+        if (a) a.push(r); else m.set(k, [r]);
+    }
+    return m;
+}
+
+/** I campi grezzi dell'ORDINE di una riga: gli stessi tre numeri che leggono
+ *  Omega, Safe, Mike e la scheda partita (`lib/statoOrdine`). */
+function ordineDi(t: {
+    status: string; side?: string | null; price?: number | null; size?: number | null;
+    size_requested?: number | null; size_matched?: number | null;
+    size_remaining?: number | null; avg_price_matched?: number | null;
+    betfair_updated_at?: string | null; meta?: Record<string, unknown> | null;
+}): RigaOrdine {
+    return {
+        status: t.status, side: t.side ?? null,
+        price: t.price ?? null, size: t.size ?? null,
+        size_requested: t.size_requested ?? null,
+        size_matched: t.size_matched ?? null,
+        size_remaining: t.size_remaining ?? null,
+        avg_price_matched: t.avg_price_matched ?? null,
+        betfair_updated_at: t.betfair_updated_at ?? null,
+        meta: t.meta ?? null,
+    };
+}
+
+/**
+ * LA RESPONSABILITÀ di un ordine tennis, calcolata dalla riga.
+ *
+ * `tennis_live_orders` non ha una colonna di responsabilità. Non è un dato che
+ * manca: è l'aritmetica dell'exchange, la stessa che il design system usa
+ * ovunque — su un BACK si rischia lo stake, su un LAY `(quota − 1) × stake`.
+ * Senza prezzo o senza importo resta `null`: mai uno zero inventato.
+ */
+export function liabilityTennis(
+    o: { side?: string | null; price?: number | null; size?: number | null },
+): number | null {
+    const size = typeof o.size === 'number' && Number.isFinite(o.size) ? o.size : null;
+    if (size == null) return null;
+    const lato = latoDi(o.side);
+    if (lato === 'back') return Math.round(size * 100) / 100;
+    if (lato !== 'lay') return null;
+    const price = typeof o.price === 'number' && Number.isFinite(o.price) ? o.price : null;
+    if (price == null || price <= 1) return null;
+    return Math.round((price - 1) * size * 100) / 100;
 }
 
 /** Una proposta con accanto il presente: prezzo e liquidità di ADESSO. */
@@ -391,6 +479,14 @@ export interface ControlRoomVM {
      * va gridato in testata, non sepolto in un pannello.
      */
     mikeRestingLive: boolean | null;
+
+    /**
+     * 17/09 — LE PARTITE DI MIKE come il servizio le pubblica, per `event_id`.
+     * È lo STESSO `fetchMikeState()` già letto per i trade: nessuna lettura in
+     * più. Serve alla scheda della partita per mostrare il modello (P(4 gol),
+     * gol attesi, quote delle due linee, cicli, cash out) come fa la sua pagina.
+     */
+    mikeEventi: Map<string, MikeEvent>;
 
     /**
      * LE PROPOSTE DI CHIUSURA che aspettano il sì, le urgenti in cima.
@@ -1000,33 +1096,92 @@ export function useControlRoom(): ControlRoomVM {
         };
     }, [feedPerEvento]);
 
+    /**
+     * 17/09 — IL LIBRO DI ADESSO sulla selezione di una riga, dal feed di
+     * scansione GIÀ caricato per le partite: nessuna lettura in più, nessuna
+     * chiamata a Betfair. Mike non pubblica `market_id`/`selection_id` sulle
+     * righe: per lui i due prezzi restano `null`, e la riga lo dice.
+     */
+    const libroVivo = useCallback((t: {
+        event_id: string; market_id?: string | null; selection_id?: number | null;
+    }): { back: number | null; lay: number | null } => {
+        const riga = feedPerEvento.get(String(t.event_id));
+        const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+        return {
+            back: prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, 'back').prezzo,
+            lay: prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, 'lay').prezzo,
+        };
+    }, [feedPerEvento]);
+
+    /** Le partite di Mike per `event_id`: una mappa sulla stessa lista gia' letta. */
+    const mikeEventi = useMemo(() => {
+        const m = new Map<string, MikeEvent>();
+        for (const ev of mike?.events ?? []) m.set(String(ev.event_id), ev);
+        return m;
+    }, [mike?.events]);
+
     const posizioni = useMemo<PosizioneAperta[]>(() => {
         const out: PosizioneAperta[] = [];
+        // le CHIUSURE collegate, una volta sola per bot: servono a `legPnl` per
+        // distinguere «bloccato» da «ancora aperto».
+        const closesOmega = chiusureCollegate(omegaTrades);
+        const closesSafe = chiusureCollegate(safe?.trades ?? []);
+        const closesMike = chiusureCollegate(mike?.trades ?? []);
         for (const t of omegaTrades) {
-            if (!aMercato(t)) continue;
+            // una gamba di CHIUSURA (`closes_trade_id`) non e' una posizione:
+            // vive nella scheda della partita sotto la sua apertura (17/09, utente)
+            if (!aMercato(t) || eGambaDiChiusura(t)) continue;
+            const book = libroVivo(t);
             out.push({
                 bot: 'omega', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.runner_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
-                chiusura: null,
+                // 17/09 — «se chiudo ora» anche per Omega: era scritto solo per
+                // Safe, con la stessa matematica e lo stesso feed. Una posizione
+                // in profitto va VISTA, non scoperta quando il bot propone.
+                chiusura: chiusuraViva(t),
+                ordine: ordineDi(t),
+                dettaglio: dettaglioDi(t as RigaDettagliabile, closesOmega.get(t.id) ?? [], {
+                    // P implicita del mercato = 1 / quota LAY viva, come in
+                    // `MatchTradesTable` (mai una seconda formula)
+                    pMercato: book.lay != null && book.lay > 1 ? 1 / book.lay : null,
+                }),
+                vivo: quotaViva(t.price, latoDi(t.side), book),
             });
         }
         for (const t of safe?.trades ?? []) {
-            if (!aMercato(t)) continue;
+            if (!aMercato(t) || eGambaDiChiusura(t)) continue;
+            const book = libroVivo(t);
             out.push({
                 bot: 'safe', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.selection_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
                 chiusura: chiusuraViva(t),
+                ordine: ordineDi(t),
+                dettaglio: dettaglioDi(t as RigaDettagliabile, closesSafe.get(t.id) ?? [], {
+                    pMercato: book.lay != null && book.lay > 1 ? 1 / book.lay : null,
+                    gamba: t.strategy ?? null,
+                }),
+                vivo: quotaViva(t.price, latoDi(t.side), book),
             });
         }
         for (const t of mike?.trades ?? []) {
-            if (!aMercato(t)) continue;
+            if (!aMercato(t) || eGambaDiChiusura(t)) continue;
             out.push({
                 bot: 'mike', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.selection_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
                 chiusura: null,
+                ordine: ordineDi(t),
+                dettaglio: dettaglioDi(
+                    { ...t, pnl: t.pnl ?? 0 } as RigaDettagliabile,
+                    (closesMike.get(t.id) ?? []).map((c) => ({ ...c, pnl: c.pnl ?? 0 })) as RigaDettagliabile[],
+                    { gamba: t.role ?? t.strategy ?? null },
+                ),
+                // `mike_trades` non porta `market_id`/`selection_id`: senza
+                // selezione non esiste un prezzo vivo da mostrare, e non si
+                // inventa quello di un'altra riga.
+                vivo: null,
             });
         }
         // ── LE POSIZIONI APERTE DEI QUATTRO BOT TENNIS ──────────────────────
@@ -1048,15 +1203,31 @@ export function useControlRoom(): ControlRoomVM {
                 // scriverne uno di fantasia sarebbe peggio di non scriverlo.
                 selezione: null,
                 lato: latoDi(o.side), prezzo: o.price ?? null, size: o.size ?? null,
-                liability: null, modalita: modalitaDi(o.mode),
+                // 17/09 — la responsabilità c'era già nella riga: è `size` su un
+                // BACK e `(quota − 1) × size` su un LAY. Non è una seconda
+                // verità accanto a quella del servizio, è l'aritmetica
+                // dell'exchange, la stessa di Omega, Safe e Mike.
+                liability: liabilityTennis(o), modalita: modalitaDi(o.mode),
                 piazzataAt: o.placed_at ?? o.updated_at ?? '',
                 chiusura: null,
+                ordine: ordineDi({
+                    status: o.status, side: o.side, price: o.price ?? null, size: o.size ?? null,
+                    size_requested: o.size ?? null, size_matched: o.size_matched ?? null,
+                    size_remaining: o.size_remaining ?? null,
+                    avg_price_matched: o.average_price_matched ?? null,
+                    betfair_updated_at: o.updated_at ?? null, meta: null,
+                }),
+                // `tennis_live_orders` non porta né `meta`, né minuto/punteggio
+                // all'ingresso, né il modello: il dettaglio dei tre bot calcio
+                // qui NON esiste, e si dichiara assente invece di riempirlo.
+                dettaglio: null,
+                vivo: null,
             });
         }
         // le più recenti in cima: è l'ordine in cui un trader le cerca
         out.sort((a, b) => Date.parse(b.piazzataAt) - Date.parse(a.piazzataAt));
         return out;
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, chiusuraViva, libroVivo]);
 
     const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(
         // 17/09: le proposte di OPPORTUNITA' stanno nella stessa coda ma sono
@@ -1166,7 +1337,11 @@ export function useControlRoom(): ControlRoomVM {
             size_requested?: number | null; size_matched?: number | null;
             size_remaining?: number | null; avg_price_matched?: number | null;
             betfair_updated_at?: string | null; meta?: Record<string, unknown> | null;
-        }) => {
+            // 17/09 — servono al dettaglio (stato ricco, P&L vivo, modello)
+            minute_at_entry?: number | null; score_at_entry?: string | null;
+            closes_trade_id?: number | null; market_id?: string | null;
+            selection_id?: number | null;
+        }, closes: readonly { id: number }[] = []) => {
             if (isErrorRow(t.status)) return;           // non e' un'operazione
             const k = String(t.event_id);
             const riga: OperazionePartita = {
@@ -1193,13 +1368,34 @@ export function useControlRoom(): ControlRoomVM {
                     betfair_updated_at: t.betfair_updated_at ?? null,
                     meta: t.meta ?? null,
                 },
+                // 17/09 — LO STESSO DETTAGLIO della scheda originale del bot,
+                // dalla stessa riga già in memoria: stato ricco, P&L vivo,
+                // minuto/punteggio all'ingresso, green-up, P del modello.
+                dettaglio: dettaglioDi(
+                    {
+                        id: t.id, event_id: t.event_id, side: String(t.side ?? ''),
+                        status: t.status, pnl: t.pnl ?? 0, price: t.price ?? null,
+                        size: t.size ?? null, placed_at: t.placed_at,
+                        phase: t.phase ?? null, meta: t.meta ?? null,
+                        minute_at_entry: t.minute_at_entry ?? null,
+                        score_at_entry: t.score_at_entry ?? null,
+                        closes_trade_id: t.closes_trade_id ?? null,
+                    },
+                    closes as RigaDettagliabile[],
+                    { gamba: t.strategy ?? t.phase ?? t.role ?? null },
+                ),
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
         };
-        for (const t of omegaTrades) agg('omega', t);
-        for (const t of safe?.trades ?? []) agg('safe', t);
-        for (const t of mike?.trades ?? []) agg('mike', t);
+        const closesOmega = chiusureCollegate(omegaTrades);
+        const closesSafe = chiusureCollegate(safe?.trades ?? []);
+        const closesMike = chiusureCollegate(mike?.trades ?? []);
+        for (const t of omegaTrades) agg('omega', t, closesOmega.get(t.id) ?? []);
+        for (const t of safe?.trades ?? []) agg('safe', t, closesSafe.get(t.id) ?? []);
+        for (const t of mike?.trades ?? []) {
+            agg('mike', t, (closesMike.get(t.id) ?? []).map((c) => ({ ...c, pnl: c.pnl ?? 0 })));
+        }
         // ── GLI ORDINI DEI QUATTRO BOT TENNIS SULLA PARTITA ─────────────────
         // Non passano da `agg`: per un ordine tennis il P&L NON si legge dallo
         // stato flumine (`EXECUTION_COMPLETE` vuol dire «abbinato tutto», non
@@ -1229,6 +1425,9 @@ export function useControlRoom(): ControlRoomVM {
                     betfair_updated_at: o.updated_at ?? null,
                     meta: null,
                 },
+                // v. `posizioni`: le righe tennis non portano `meta`, ingresso
+                // né modello. Assente si scrive, non si riempie.
+                dettaglio: null,
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
@@ -1398,6 +1597,7 @@ export function useControlRoom(): ControlRoomVM {
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
+        mikeEventi,
         schermo, ultimaCatena,
         operazioni,
         proposte: proposteVista,

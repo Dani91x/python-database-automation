@@ -56,6 +56,10 @@ import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
+import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
+import {
+    BadgeStato, Ingresso, QuotaOra, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
+} from '@/components/controlroom/DettaglioRigaView';
 import { StoricoLink } from '@/components/trading/StoricoLink';
 import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
 import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
@@ -553,6 +557,7 @@ export default function ControlRoom() {
                             caricamento={vm.caricamento} nowMs={vm.nowMs}
                             registrazioni={vm.registrazioni} registratori={registratori}
                             operazioni={vm.operazioni}
+                            mikeEventi={vm.mikeEventi}
                             copertura={vm.copertura}
                             safe={{
                                 // la modalita' la DICHIARA il servizio: non
@@ -975,7 +980,7 @@ function Scheda({ valore, conta, children, testId, evidenzia = false }: {
  */
 function ElencoPartite({
     gruppi, stato, scheda, caricamento, nowMs, registrazioni, registratori, operazioni, copertura,
-    safe,
+    safe, mikeEventi,
 }: {
     gruppi: GruppoCampionato[];
     stato: 'pre' | 'live';
@@ -986,6 +991,8 @@ function ElencoPartite({
     /** il registratore di ciascuno sport e' vivo? Senza, REC mentirebbe. */
     registratori: { calcio: boolean | null; tennis: boolean | null };
     operazioni: ReturnType<typeof useControlRoom>['operazioni'];
+    /** 17/09 — le partite di Mike col loro modello, gia' lette dall'hook */
+    mikeEventi?: ReturnType<typeof useControlRoom>['mikeEventi'];
     copertura?: ReturnType<typeof useControlRoom>['copertura'];
     /** i due gesti dell'utente sulla partita: cash out globale e «Riprendi» */
     safe?: {
@@ -1065,6 +1072,7 @@ function ElencoPartite({
                                 <SchedaPartita
                                     key={p.event_id} p={p} scheda={scheda}
                                     operazioni={operazioni.get(p.event_id) ?? []}
+                                    mike={mikeEventi?.get(p.event_id) ?? null}
                                     registra={registrazioni.has(p.event_id)}
                                     registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
                                     safe={safe ? {
@@ -1256,6 +1264,26 @@ function ColonnaPosizioni({ posizioni, onChiudi, sport }: {
                             importo <span className="font-mono">{fmtMoney(p.size)}</span>
                             {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
                         </div>
+                        {/* ── IL DETTAGLIO CHE LA SCHEDA DEL BOT MOSTRA GIÀ (17/09) ──
+                            chiesto/abbinato/residuo, quota di adesso e tick, minuto e
+                            punteggio d'ingresso, stato ricco, P&L vivo, green-up, modello.
+                            Tutto dalle stesse righe già in memoria: nessuna lettura in più. */}
+                        <div className="mt-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+                            <StatoOrdineCompatto riga={p.ordine} testId="cr-pos-stato-ordine" />
+                            {p.vivo && <QuotaOra v={p.vivo} testId="cr-pos-quota-viva" />}
+                        </div>
+                        {p.dettaglio && (
+                            <div className="mt-0.5 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
+                                data-testid="cr-pos-dettaglio">
+                                <BadgeStato d={p.dettaglio} testId="cr-pos-stato" />
+                                <Greenup d={p.dettaglio} testId="cr-pos-greenup" />
+                                <Uscita d={p.dettaglio} testId="cr-pos-uscita" />
+                                <Ingresso d={p.dettaglio} testId="cr-pos-ingresso" />
+                                <Copertura d={p.dettaglio} testId="cr-pos-copertura" />
+                                <PnlVivo d={p.dettaglio} testId="cr-pos-pnl-vivo" />
+                                <ModelloP d={p.dettaglio} testId="cr-pos-modello" />
+                            </div>
+                        )}
                         {/* QUANTO VALE CHIUDERE ADESSO — il bot propone solo quando la
                             regola del manuale scatta, e fa bene. Ma una posizione può
                             essere in profitto molto prima, e va VISTO in continuo invece

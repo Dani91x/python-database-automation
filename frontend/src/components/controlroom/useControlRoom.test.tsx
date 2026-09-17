@@ -107,7 +107,7 @@ vi.mock('@/lib/localChannel', async (orig) => ({
 
 import { fetchScanRows, fetchScanStatus, subscribeScanRows, subscribeScanStatus } from '@/lib/safeStrategyScan';
 import { fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents } from '@/lib/omega';
-import { fetchSafeState, fetchRunnerState } from '@/lib/safeBot';
+import { fetchSafeState, fetchRunnerState, type SafeTrade } from '@/lib/safeBot';
 import { fetchMikeState } from '@/lib/mike';
 import { fetchProposte } from '@/lib/controlRoomProposte';
 import { fetchMissions } from '@/lib/omegaMissions';
@@ -323,5 +323,55 @@ describe('posizioni chiuse: i quattro bot tennis sono indipendenti come gli altr
     it('un ordine del RUNNER (source non di un bot) non finisce fra le chiuse', async () => {
         const result = await conOrdini([ordine({ source: 'runner' })]);
         expect(result.current.chiuse).toHaveLength(0);
+    });
+});
+
+// ================================ 3) LE GAMBE DI CHIUSURA NON SONO POSIZIONI (17/09 sera)
+
+/** Una riga di `safe_strategy_trades` come la manda `get_safe_trades`: chiavi vere. */
+function tradeSafe(over: Partial<SafeTrade> = {}): SafeTrade {
+    return {
+        id: 321, event_id: '36061420', event_name: 'Union Brescia - Treviso', sport: 'calcio',
+        strategy: 'esatto', market_id: '1.262', market_type: 'CORRECT_SCORE', selection_id: 4,
+        selection_name: 'Altro risultato Casa', side: 'lay', mode: 'paper', price: 70, size: 2,
+        liability: 138, commission: 0.05, minute_at_entry: 61, score_at_entry: '1-1',
+        status: 'open', pnl: 0, bet_id: null, placed_at: PIAZZATO, settled_at: null,
+        origin: 'auto', closes_trade_id: null, signal_key: null, meta: {},
+        ...over,
+    } as SafeTrade;
+}
+
+describe('gambe di chiusura: il back che chiude un lay NON e una posizione aperta', () => {
+    // il caso vero della sera del 17/09: lay 2 @70 chiuso in perdita da tre back
+    // ancora `open` con `closes_trade_id: 321`. In Control Room comparivano come
+    // tre posizioni con «chiudi ora»: proporre di chiudere una chiusura.
+    it('l apertura resta fra le posizioni, le tre chiusure collegate no', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({
+            ...SAFE_VUOTO,
+            trades: [
+                tradeSafe(),
+                tradeSafe({ id: 322, side: 'back', price: 9.6, size: 4.78, liability: 4.78, closes_trade_id: 321 }),
+                tradeSafe({ id: 323, side: 'back', price: 9.6, size: 7.2, liability: 7.2, closes_trade_id: 321 }),
+                tradeSafe({ id: 324, side: 'back', price: 12, size: 2.08, liability: 2.08, closes_trade_id: 321 }),
+            ],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const safe = result.current.posizioni.filter((p) => p.bot === 'safe');
+        expect(safe.map((p) => p.id)).toEqual([321]);
+        // le tre chiusure restano visibili nella scheda della partita, sotto l apertura
+        const op = result.current.operazioni.get('36061420') ?? [];
+        expect(op.map((o) => o.id).sort()).toEqual([321, 322, 323, 324]);
+    });
+
+    // FALSIFICAZIONE: senza `closes_trade_id` la stessa riga back e una posizione
+    it('un back SENZA closes_trade_id e una posizione come le altre', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({
+            ...SAFE_VUOTO,
+            trades: [tradeSafe({ id: 330, side: 'back', price: 9.6, size: 4.78, liability: 4.78 })],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        expect(result.current.posizioni.filter((p) => p.bot === 'safe').map((p) => p.id)).toEqual([330]);
     });
 });

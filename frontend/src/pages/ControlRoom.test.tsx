@@ -306,6 +306,12 @@ describe('posizioni aperte', () => {
                 lato: 'back', prezzo: 1.03, size: 2, liability: 2, modalita: 'live',
                 piazzataAt: '2026-09-14T14:50:00Z',
                 chiusura: { lato: 'lay', prezzo: 1.02, abbinabile: 88, bloccabile: 0.24 },
+                ordine: {
+                    status: 'open', side: 'back', price: 1.03, size: 2,
+                    size_requested: 2, size_matched: 2, size_remaining: 0,
+                    avg_price_matched: 1.03, betfair_updated_at: null, meta: null,
+                },
+                dettaglio: null, vivo: null,
             }],
         }));
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
