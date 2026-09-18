@@ -886,6 +886,26 @@ export interface LiveAccountRow {
     available: number | null;   // availableToBetBalance (EUR)
     exposure: number | null;    // exposure del conto (EUR)
     updated_at: string;
+    /**
+     * 18/09 (raccordo) — colonne ADDITIVE (`migrations/betfair_live_account_manual_pnl.sql`,
+     * scritta dal backend, NON ancora applicata su Supabase): P&L di oggi
+     * delle scommesse manuali dal SITO Betfair (fuori app). `select('*')`
+     * qui sopra non cambia: se la migrazione non è applicata queste chiavi
+     * semplicemente non arrivano nella riga (`undefined`, non `null`) —
+     * per questo sono opzionali, non obbligatorie.
+     */
+    manual_pnl_eur?: number | null;
+    manual_pnl_is_net?: boolean | null;
+    manual_pnl_orders?: number | null;
+    manual_pnl_excluded?: number | null;
+    manual_pnl_day?: string | null;
+    manual_pnl_updated_at?: string | null;
+    /** Stesso contratto, ma per il terminale MANUALE della nostra app (ladder calcio+tennis). */
+    manual_app_pnl_eur?: number | null;
+    manual_app_pnl_is_net?: boolean | null;
+    manual_app_pnl_orders?: number | null;
+    manual_app_pnl_day?: string | null;
+    manual_app_pnl_updated_at?: string | null;
 }
 
 export async function fetchLiveAccount(): Promise<LiveAccountRow | null> {

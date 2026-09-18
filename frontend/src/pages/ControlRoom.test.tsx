@@ -18,6 +18,20 @@ import { HelmetProvider } from 'react-helmet-async';
 
 vi.mock('@/components/controlroom/useControlRoom', () => ({ useControlRoom: vi.fn() }));
 
+// `SaldoBetfairCard` (18/09, Task 3) è AUTOSUFFICIENTE: apre le sue letture/
+// sottoscrizioni su `@/lib/liveOrders` indipendentemente da `useControlRoom`.
+// Senza questo mock, OGNI test di questo file (che monta la pagina intera)
+// farebbe una vera chiamata di rete verso Supabase: lento, fragile, e vietato
+// (nessuna lettura reale nei test). Nessuna asserzione qui si indebolisce: il
+// componente ha i suoi test dedicati in `SaldoBetfairCard.test.tsx`.
+vi.mock('@/lib/liveOrders', async (orig) => ({
+    ...(await orig() as object),
+    fetchLiveAccount: vi.fn(async () => null),
+    subscribeLiveAccount: vi.fn(() => () => { /* niente */ }),
+    fetchLiveHeartbeat: vi.fn(async () => null),
+    subscribeLiveHeartbeat: vi.fn(() => () => { /* niente */ }),
+}));
+
 import ControlRoom from './ControlRoom';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
 import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
@@ -57,6 +71,22 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
             liability: 40, liabilityPaper: 0, netPnl: 12.5, netPnlPaper: null,
         },
         obiettivo: 250, obiettivoStoricizzato: true, realizzato: 96.4, targetServizio: 31.2,
+        // 18/09 — Task 2: scomposizione dell'obiettivo + saldo/aggancio manuale.
+        // Un finto piu' povero del vero fa esplodere la pagina (memoria 15/09).
+        composizioneOggi: {
+            righe: [
+                { chiave: 'omega', etichetta: 'Omega', valore: 90 },
+                { chiave: 'safe_calcio', etichetta: 'Safe calcio', valore: 6.4 },
+                { chiave: 'safe_tennis', etichetta: 'Safe tennis', valore: null },
+                { chiave: 'mike', etichetta: 'Mike', valore: 0 },
+                { chiave: 'bot_tennis', etichetta: 'Bot tennis', valore: null },
+                { chiave: 'manuale', etichetta: 'Manuale', valore: null },
+            ],
+            totale: 96.4,
+            provaPaper: null,
+        },
+        manualeSitoBetfair: { pnlOggi: null, fonte: 'non-disponibile' },
+        salvaObiettivo: vi.fn(async () => {}),
         bots: [
             { bot: 'omega', modalita: 'paper', inCorsa: true, battitoAt: null, canale: 'connected', etaPushS: 2, freschezzaPush: 'fresca', varianti: null },
             { bot: 'safe', modalita: 'paper', inCorsa: true, battitoAt: null, canale: 'connected', etaPushS: 1, freschezzaPush: 'fresca', varianti: null },
@@ -299,6 +329,25 @@ describe('spia del controllo del gioco', () => {
 // ---------------------------------------------------------------- posizioni
 
 describe('posizioni aperte', () => {
+    // 18/09 (Task 5) — la tab "Aperte" ora monta `SchedaPartita` (STESSA
+    // geometria di "Live") per ogni evento noto al programma di oggi: quella
+    // scheda legge `vm.operazioni` (Map per event_id), non `vm.posizioni`
+    // (lista piatta). Nel servizio vero le due nascono dalle STESSE righe di
+    // trade e sono sempre coerenti; qui il finto va reso coerente a mano —
+    // l'asserzione di sostanza («una posizione live è marcata live e non si
+    // perde nessun dato») non cambia, cambia solo quale mappa la porta.
+    const OPERAZIONE_E1 = {
+        bot: 'safe' as const, id: 1, selezione: 'Rune', lato: 'back' as const,
+        prezzo: 1.03, size: 2, stato: 'open', pnl: null, modalita: 'live' as const,
+        at: '2026-09-14T14:50:00Z', quale: null,
+        ordine: {
+            status: 'open', side: 'back', price: 1.03, size: 2,
+            size_requested: 2, size_matched: 2, size_remaining: 0,
+            avg_price_matched: 1.03, betfair_updated_at: null, meta: null,
+        },
+        dettaglio: null,
+    };
+
     it('una posizione LIVE è marcata live e contata a parte', async () => {
         mVm.mockReturnValue(vm({
             posizioni: [{
@@ -312,11 +361,20 @@ describe('posizioni aperte', () => {
                     avg_price_matched: 1.03, betfair_updated_at: null, meta: null,
                 },
                 dettaglio: null, vivo: null,
-            }],
+            }] as never,
+            operazioni: new Map([['E1', [OPERAZIONE_E1]]]) as never,
         }));
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         expect(within(col).getByText(/1 posizione con soldi veri/)).toBeTruthy();
-        expect(within(col).getByText('BACK')).toBeTruthy();
+        // 18/09 (Task 5) — "Aperte" monta ORA `SchedaPartita` (stessa card di
+        // "Live"), che tiene il dettaglio per bot CHIUSO finché non ci si
+        // clicca sopra (stessa UX di "Live", nessuna regressione lì): si apre
+        // la scheda di Safe e si legge il lato. `SchedaPartita` usa le parole
+        // italiane del design system («punta»/«banca»), non il badge inglese
+        // BACK/LAY della vecchia riga compatta — quel badge resta per le
+        // posizioni ORFANE (fuori dal programma di oggi), invariato.
+        fireEvent.click(within(col).getByTestId('cr-bot-safe-E1'));
+        expect(within(col).getByText('punta')).toBeTruthy();
     });
 
     it('senza posizioni lo dice invece di mostrare una tabella vuota', async () => {
@@ -696,7 +754,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
                 liability: 3,
                 perSport: { tennis: { n: 5, pnl: 0.44, won: 5, lost: 0 } },
                 perSportPaper: { calcio: { n: 2, pnl: -4.83, won: 0, lost: 2 } },
-                operazioni: 5, vinte: 5, perse: 0, operazioniPaper: 2,
+                operazioni: 5, vinte: 5, perse: 0, operazioniPaper: 2, notaContatori: null,
             },
         }));
         const s = mostra();
@@ -913,9 +971,28 @@ describe('comando dei bot', () => {
         expect(eti.textContent).toMatch(/stake minimo/i);
     });
 
-    it('un bot senza scheda parametri lo dice, invece di mostrare un pulsante morto', () => {
+    // ⚠️ 18/09 — QUESTO TEST ASSERIVA IL GAP (A1, riga 144: «Omega non ha
+    // nessun foglio parametri montato qui»). Il gap e' stato chiuso
+    // (`OmegaParamsSheet`, montato in `fogliParametriPerRiga` come
+    // `parametriRiga.omega`): con parametri letti Omega mostra ADESSO la
+    // sua scheda dedicata, non piu' «dalla sua pagina». L'assert vecchio
+    // ("Parametri" non combacia con /dalla sua pagina/i) e' la PROVA che il
+    // gap e' chiuso, non una regressione — capovolto qui per dirlo esplicitamente.
+    it('Omega ha ORA la sua scheda parametri dedicata: non dice più «dalla sua pagina»', () => {
         mVm.mockReturnValue(vm({ bots: [botFermo({ bot: 'omega' })] as never }));
-        expect(mostra().getByTestId('cr-parametri-omega').textContent).toMatch(/dalla sua pagina/i);
+        const s = mostra();
+        expect(s.getByTestId('cr-parametri-omega').textContent).not.toMatch(/dalla sua pagina/i);
+        expect(s.getByTestId('cr-omega-params-trigger')).toBeTruthy();
+    });
+
+    // un bot SENZA parametri letti resta fail-closed (nessuna scheda che
+    // scriverebbe sostituendo tutto con i default): il gate e' lo stesso di
+    // Safe/Mike, «ParametriNonLetti», mai un pulsante morto e muto.
+    it('Omega senza parametri LETTI non apre un foglio che scriverebbe i default', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo({ bot: 'omega', params: {} })] as never }));
+        const s = mostra();
+        expect(s.getByTestId('cr-parametri-omega').textContent).toMatch(/parametri non letti/i);
+        expect(s.queryByTestId('cr-omega-params-trigger')).toBeNull();
     });
 });
 
@@ -1232,5 +1309,133 @@ describe('le uscite di OMEGA arrivano nel nastro come proposte', () => {
         const box = s.getByTestId('cr-proposte-omega-errore');
         expect(box.textContent).toMatch(/does not exist/);
         expect(box.textContent).toMatch(/non vuol dire che non ce ne siano/);
+    });
+});
+
+// ============================================================================
+// ZONE FISSE (Task 1, 18/09): uscite e opportunità sono DUE contenitori
+// indipendenti, l'obiettivo è UNA sola volta, la Catena è richiudibile,
+// «Aperte» monta la stessa scheda di «Live».
+// ============================================================================
+
+describe('uscite e opportunità sono contenitori INDIPENDENTI (Task 4)', () => {
+    it('due card separate: cr-nastro (uscite) e cr-opportunita, ciascuna col suo contatore', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        expect(s.getByTestId('cr-nastro')).toBeTruthy();
+        expect(s.getByTestId('cr-opportunita')).toBeTruthy();
+        expect(s.getByTestId('cr-opportunita-contatore').textContent).toBe('0');
+    });
+
+    it('IL CONTATORE non conta le opportunità e viceversa (verificato a livello di pagina)', () => {
+        mVm.mockReturnValue(vm({
+            proposte: [propostaVista()],
+            proposteOpportunita: [{
+                proposta: {
+                    id: 77, kind: 'model', status: 'proposed',
+                    payload: { opp_key: 'k77', strategy: 'model', kind: 'model', event_id: 'OPP1', mode: 'paper' },
+                },
+                abbinabileOra: 10, etaQuoteS: 1,
+            } as never],
+        }));
+        const s = mostra();
+        // il nastro delle uscite conta SOLO la proposta di chiusura (1), non l'opportunità
+        expect(within(s.getByTestId('cr-nastro')).getByText(/^1 in attesa/)).toBeTruthy();
+        expect(s.getByTestId('cr-opportunita-contatore').textContent).toBe('1');
+    });
+
+    it('STATO VUOTO di una colonna è indipendente da quello dell’altra', () => {
+        mVm.mockReturnValue(vm({
+            proposte: [], proposteOmega: [],
+            proposteOpportunita: [{
+                proposta: {
+                    id: 78, kind: 'model', status: 'proposed',
+                    payload: { opp_key: 'k78', strategy: 'model', kind: 'model', event_id: 'OPP2', mode: 'paper' },
+                },
+                abbinabileOra: 10, etaQuoteS: 1,
+            } as never],
+        }));
+        const s = mostra();
+        // le uscite sono vuote, le opportunità no: i due stati non si confondono
+        expect(within(s.getByTestId('cr-nastro')).getByText(/Nessuna uscita da decidere/)).toBeTruthy();
+        const opportunita = s.getByTestId('cr-opportunita');
+        expect(opportunita.textContent).not.toMatch(/Nessuna opportunità/);
+    });
+});
+
+describe('ZONA 1 — l’obiettivo vive UNA sola volta (Task 1/2)', () => {
+    it('cr-obiettivo esiste una sola volta e contiene la matita di modifica', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        expect(hero).toBeTruthy();
+        expect(within(hero).getByTestId('cr-obiettivo-editor-matita')).toBeTruthy();
+    });
+
+    it('la composizione mostra Omega/Safe calcio/Safe tennis/Mike/bot tennis/manuale', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        const hero = s.getByTestId('cr-obiettivo');
+        expect(within(hero).getByTestId('cr-composizione-omega')).toBeTruthy();
+        expect(within(hero).getByTestId('cr-composizione-safe_calcio')).toBeTruthy();
+        expect(within(hero).getByTestId('cr-composizione-bot_tennis')).toBeTruthy();
+        expect(within(hero).getByTestId('cr-composizione-manuale')).toBeTruthy();
+    });
+});
+
+describe('ZONA 5 — la Catena è richiudibile, chiusa di default (Task 1)', () => {
+    it('il riassunto e i dati della catena restano nel DOM (query per testid), il dettaglio non è espanso di default', () => {
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        const dettagli = s.getByTestId('cr-catena-dettagli') as HTMLDetailsElement;
+        expect(dettagli.tagName).toBe('DETAILS');
+        expect(dettagli.open).toBe(false);
+        // il contenuto esiste comunque (query per testid non dipende dalla visibilità)
+        expect(s.getByTestId('cr-catena')).toBeTruthy();
+    });
+});
+
+describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5)', () => {
+    it('una posizione su un evento sconosciuto resta con la sua riga compatta e il bottone Chiudi', async () => {
+        mVm.mockReturnValue(vm({
+            posizioni: [{
+                bot: 'safe', id: 55, eventId: 'IGNOTO_XYZ', partita: 'Tizio – Caio', selezione: 'Tizio',
+                lato: 'back', prezzo: 1.05, size: 3, liability: 3, modalita: 'live',
+                piazzataAt: '2026-09-14T14:50:00Z',
+                chiusura: { lato: 'lay', prezzo: 1.04, abbinabile: 50, bloccabile: 0.1 },
+                ordine: {
+                    status: 'open', side: 'back', price: 1.05, size: 3,
+                    size_requested: 3, size_matched: 3, size_remaining: 0,
+                    avg_price_matched: 1.05, betfair_updated_at: null, meta: null,
+                },
+                dettaglio: null, vivo: null,
+            }] as never,
+        }));
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+        expect(within(col).getByText('Tizio – Caio')).toBeTruthy();
+        // IL COMANDO NON È PERSO: "Chiudi" resta raggiungibile per la singola posizione
+        expect(within(col).getByTestId('cr-chiudi')).toBeTruthy();
+    });
+
+    it('il comando Chiudi chiama vm.chiudi con l’id della posizione', async () => {
+        const chiudi = vi.fn(async () => {});
+        mVm.mockReturnValue(vm({
+            chiudi,
+            posizioni: [{
+                bot: 'safe', id: 55, eventId: 'IGNOTO_XYZ', partita: 'Tizio – Caio', selezione: 'Tizio',
+                lato: 'back', prezzo: 1.05, size: 3, liability: 3, modalita: 'live',
+                piazzataAt: '2026-09-14T14:50:00Z',
+                chiusura: { lato: 'lay', prezzo: 1.04, abbinabile: 50, bloccabile: 0.1 },
+                ordine: {
+                    status: 'open', side: 'back', price: 1.05, size: 3,
+                    size_requested: 3, size_matched: 3, size_remaining: 0,
+                    avg_price_matched: 1.05, betfair_updated_at: null, meta: null,
+                },
+                dettaglio: null, vivo: null,
+            }] as never,
+        }));
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
+        fireEvent.click(within(col).getByTestId('cr-chiudi'));
+        expect(chiudi).toHaveBeenCalledWith(55);
     });
 });

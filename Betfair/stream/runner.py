@@ -82,7 +82,7 @@ from .config_stream import (
 from . import local_channel as _lc
 from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
-from .reconcile_worker import reconcile_worker
+from .reconcile_worker import reconcile_worker, run_account_sync_if_due, sync_account_worker
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from .risk_engine_worker import risk_engine_worker
@@ -1695,6 +1695,14 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                             db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
                         except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
                             logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
+                    # A2 (fix 18/09 sera, reperto del coordinatore) — STESSO motivo del
+                    # battito appena sopra: sync_account_worker e' un BackgroundWorker,
+                    # vive SOLO dentro framework.run(); qui, parcheggiati in idle SENZA
+                    # eventi (lo stato normale ad app aperta), framework non esiste
+                    # ancora. Chiamata DIRETTA alla stessa funzione condivisa, stesso
+                    # orologio di cadenza (_LAST_ACCOUNT_TS in reconcile_worker.py): mai
+                    # una doppia chiamata REST nel passaggio idle->run o viceversa.
+                    run_account_sync_if_due(session)
                     time.sleep(IDLE_FOLLOW_POLL_SEC)
                     # SESSIONE Betfair .it: scade dopo ~20 min di INATTIVITA' —
                     # senza keepAlive periodico il primo Segui live fallirebbe
@@ -1722,6 +1730,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             if not market_ids:
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[runner] nessun mercato sottoscrivibile: attendo (keep-alive desktop).")
+                    # A2 (fix 18/09 sera): stesso motivo del ramo idle sopra — anche
+                    # qui framework non esiste ancora (nessun BackgroundWorker vivo).
+                    run_account_sync_if_due(session)
                     time.sleep(15)
                     continue
                 logger.warning("[runner] nessun mercato sottoscrivibile (budget?).")
@@ -1879,6 +1890,17 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=heartbeat_worker, interval=HEARTBEAT_SEC or 10.0,
                 func_kwargs={"session": session}, name="heartbeat_worker"))
+            # A2 (fix 18/09) — saldo del CONTO Betfair SEMPRE (OFF/PAPER/LIVE, come
+            # heartbeat_worker sopra): altri bot (Omega/Safe/Mike/tennis, PROCESSI
+            # SEPARATI) possono essere LIVE sullo stesso conto mentre il runner
+            # calcio e' fermo o in PAPER — il saldo deve aggiornarsi comunque.
+            # Tick al ritmo del battito (10s): la cadenza REST reale (20s fissi,
+            # 3 chiamate/min) e' garantita DENTRO sync_account_worker, non qui.
+            # session.context_api_client e' gia' valorizzato dal login sopra (riga
+            # ~1599), a prescindere da LIVE_ORDER_MODE: nessun secondo login.
+            framework.add_worker(BackgroundWorker(
+                framework, function=sync_account_worker, interval=HEARTBEAT_SEC or 10.0,
+                func_kwargs={"session": session}, name="sync_account_worker"))
             # auto-spegnimento (fix 2026-07-08): controlla ogni minuto vita massima
             # e inattività — mai più runner accesi per giorni a martellare Betfair.
             framework.add_worker(BackgroundWorker(

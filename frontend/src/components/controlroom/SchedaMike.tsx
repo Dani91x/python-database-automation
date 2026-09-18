@@ -13,10 +13,32 @@
 // REGOLE: **nessuna fetch nuova** (l'evento arriva dall'`useControlRoom`),
 // nessuna formula nuova (le etichette dei mercati e i numeri vengono da
 // `lib/mike.ts`), e un valore che non c'è è `—`, mai zero.
+//
+// FRESCHEZZA DEL FEED (18/09, priorità massima — money-critical). La pagina
+// originale di Mike porta un badge che TICKA ogni secondo (`MikeMatchCard.tsx`
+// ~riga 521: `etaQuoteS`/`feedFreshness`, nato dal difetto certificato il
+// 13/09: «si poteva chiudere su prezzi vecchi di minuti credendoli di
+// adesso»). Qui in Control Room lo stesso `ev.live` (quindi `feed_age_s`)
+// arriva senza nessun indicatore di età: un trader poteva leggere "Under 3.5
+// back 1.85" e agire come se fosse il prezzo di ADESSO. Si monta la STESSA
+// funzione, con le STESSE soglie (≤5s verde, ≤20s ambra, oltre FEED FERMO),
+// nessuna nuova lettura né una seconda formula. Su una partita TERMINALE
+// (`MIKE_TERMINAL_STATES`: SETTLED/ERROR/SKIPPED) il feed non arriva più: si
+// dichiara "partita chiusa", MAI il rosso "FEED FERMO" — falso allarme
+// (stesso comportamento di `MikeMatchCard.tsx:633-639`).
+//
+// AZIONI DI CHIUSURA: verificato (18/09) che la Control Room oggi non porta
+// NESSUN comando che muove ordini di Mike (cash out/flatten sono solo di
+// Safe, via `AzioniPartita`/`CashOutPartita`: grep mirato, zero occorrenze di
+// "mike" in quei due file). Non c'è quindi nessun pulsante da proteggere qui
+// oggi. Se in futuro un comando Mike venisse aggiunto a questa scheda, deve
+// disabilitarsi esattamente come `MikeMatchCard.tsx:564-567`
+// (`freshness.tone === 'stale' || 'unknown'`), mai una condizione nuova.
 // ============================================================================
 import { fmtMoney, fmtNum, fmtOdds, fmtPct, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
-import type { MikeEvent } from '@/lib/mike';
+import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
+import { useSecondTick } from '@/components/mike/useMikeClock';
 
 /** Una coppia «etichetta / valore», il mattone di tutta la scheda. */
 function Voce({ label, children, title, testId }: {
@@ -58,11 +80,33 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
     const lamHome = num(dos.lambda_home);
     const lamAway = num(dos.lambda_away);
 
+    // CERT. 13/09 — l'età si calcola ADESSO e cresce da sola (stesso tick
+    // condiviso della pagina Mike): un valore congelato alla scrittura del
+    // servizio poteva restare verde per sempre.
+    const terminal = MIKE_TERMINAL_STATES.includes(ev.state);
+    const adesso = useSecondTick(!terminal);
+    const etaQuote = etaQuoteS(live, adesso);
+    const freshness = feedFreshness(etaQuote);
+
     return (
         <div className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2 space-y-1.5"
             data-testid={testId}>
-            <div className="text-[10px] uppercase tracking-wider text-white/40">
-                Mike — modello e mercato su questa partita
+            <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] uppercase tracking-wider text-white/40">
+                    Mike — modello e mercato su questa partita
+                </div>
+                {/* su una partita chiusa il feed non arriva più: dirlo, mai il
+                    rosso "FEED FERMO", che sarebbe un falso allarme */}
+                {terminal
+                    ? <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-600/30 text-slate-300 border-slate-500/40"
+                        data-testid={`${testId}-feed-age`}>
+                        partita chiusa
+                    </span>
+                    : <span className={`text-[10px] px-1.5 py-0.5 rounded border ${freshness.cls}`}
+                        data-testid={`${testId}-feed-age`}
+                        title="età delle quote Under/Over di questa partita: sopra 20 s il servizio non le userebbe per chiudere">
+                        {freshness.label}
+                    </span>}
             </div>
 
             {/* ── P(4 gol): il numero su cui Mike decide ── */}

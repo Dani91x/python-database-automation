@@ -110,6 +110,15 @@ export interface SafeParamsEffective {
     auto_trade_anomalies?: boolean;
     auto_trade_combos?: boolean;
     auto_trade_tennis?: boolean;
+    /** 18/09 — RUBINETTI DELLE PROPOSTE (decisione «B»): spengono la VISTA di
+     *  un tipo di proposta (nessun tetto numerico). Default TRUE = oggi
+     *  invariato. NON sono gli `auto_trade_*` sopra (quelli valgono `false`
+     *  col vecchio significato: riusarli avrebbe nascosto in silenzio le
+     *  proposte che l'utente vuole vedere). */
+    proponi_model?: boolean;
+    proponi_tennis?: boolean;
+    proponi_combo?: boolean;
+    proponi_anomaly?: boolean;
     omega_live_via_flumine?: boolean;
     exits?: Record<string, unknown> | null;
     risk?: Record<string, unknown> | null;
@@ -548,6 +557,11 @@ export interface SafeBotParams extends SafeStrategyParams {
     auto_trade_combos: boolean;
     /** auto-trade delle opportunità TENNIS */
     auto_trade_tennis: boolean;
+    /** 18/09 — rubinetti delle PROPOSTE (vista sì/no), default TRUE. */
+    proponi_model: boolean;
+    proponi_tennis: boolean;
+    proponi_combo: boolean;
+    proponi_anomaly: boolean;
     /** limiti di rischio del servizio */
     risk: SafeRiskParams;
     /** stake di default usato dal motore e proposto dalla UI sui segnali */
@@ -613,6 +627,10 @@ export const SAFE_BOT_DEFAULTS: SafeBotParams = {
     auto_trade_anomalies: false,
     auto_trade_combos: false,
     auto_trade_tennis: false,
+    proponi_model: true,
+    proponi_tennis: true,
+    proponi_combo: true,
+    proponi_anomaly: true,
     risk: { ...SAFE_RISK_DEFAULTS },
     stake: { laySize: 2, backSize: 2, per_strategia: {} },
 };
@@ -677,6 +695,12 @@ export function mergeBotParams(raw: unknown): SafeBotParams {
         auto_trade_anomalies: bool(r.auto_trade_anomalies, SAFE_BOT_DEFAULTS.auto_trade_anomalies),
         auto_trade_combos: bool(r.auto_trade_combos, SAFE_BOT_DEFAULTS.auto_trade_combos),
         auto_trade_tennis: bool(r.auto_trade_tennis, SAFE_BOT_DEFAULTS.auto_trade_tennis),
+        // 18/09 — rubinetti delle proposte: un valore mancante o non booleano
+        // eredita TRUE (comportamento di oggi), mai false come gli auto_trade_*.
+        proponi_model: bool(r.proponi_model, SAFE_BOT_DEFAULTS.proponi_model),
+        proponi_tennis: bool(r.proponi_tennis, SAFE_BOT_DEFAULTS.proponi_tennis),
+        proponi_combo: bool(r.proponi_combo, SAFE_BOT_DEFAULTS.proponi_combo),
+        proponi_anomaly: bool(r.proponi_anomaly, SAFE_BOT_DEFAULTS.proponi_anomaly),
         risk: mergeRiskParams(r.risk),
         stake: {
             laySize: num((r.stake as Record<string, unknown> | undefined)?.laySize, SAFE_BOT_DEFAULTS.stake.laySize),
@@ -1125,6 +1149,23 @@ export async function riprendiEventoSafe(eventId: string): Promise<number> {
  * qui sotto sono quelle che `Betfair/safe_strategy/proposte_opportunita.py`
  * scrive — una di meno e la scheda mentirebbe.
  */
+/**
+ * UNA GAMBA di una proposta COMBO (18/09): stesse chiavi che
+ * `Betfair/safe_strategy/proposte_opportunita.corpo_proposta_combo` scrive
+ * dentro `payload.legs` — niente `market_id`/`selection_id`/`side` in cima al
+ * payload di una combo, perché non esiste UN solo valore da mettere lì.
+ */
+export interface PropostaOpportunitaLeg {
+    market_id?: string | null;
+    market_type?: string | null;
+    selection_id?: number | null;
+    selection_name?: string | null;
+    side?: SafeSide | string | null;
+    price?: number | null;
+    size?: number | null;
+    liability?: number | null;
+}
+
 export interface PropostaOpportunitaPayload {
     opp_key: string;
     strategy: 'model';
@@ -1159,6 +1200,11 @@ export interface PropostaOpportunitaPayload {
     decided_at?: string | null;
     proposed_at?: string | null;
     riproposta_perche?: string | null;
+    /** SOLO per `kind === 'combo'` (18/09): l'id stabile della combinazione. */
+    combo_id?: string | null;
+    /** SOLO per `kind === 'combo'` (18/09): TUTTE le gambe, niente di meno —
+     *  la card le mostra tutte, e PIAZZA le approva atomicamente insieme. */
+    legs?: PropostaOpportunitaLeg[] | null;
 }
 
 export interface PropostaOpportunita {
@@ -1177,6 +1223,61 @@ export function isPropostaOpportunita(
     const p = (r?.payload ?? null) as Record<string, unknown> | null;
     return !!p && typeof p === 'object' && typeof p['opp_key'] === 'string'
         && !!(p['opp_key'] as string);
+}
+
+/**
+ * IL PREZZO VIVO di ogni gamba di una proposta COMBO (18/09), indicizzato
+ * dalla POSIZIONE della gamba in `payload.legs` (stessa chiave — la stringa
+ * dell'indice — che `_request_place_combo` si aspetta in
+ * `legs_prices_visti`). `null` = quella gamba non ha un prezzo vivo noto in
+ * questo momento (mercato sospeso, riga del feed assente): mai un numero
+ * inventato. Tipo dichiarato qui per `useControlRoom.ts` (fuori dal
+ * perimetro di questa modifica, in preparazione da un altro costruttore):
+ * la card la accetta come prop opzionale, vedi `SchedaPropostaOpportunita`.
+ */
+export type PrezziViviGambe = Record<number, number | null>;
+
+/**
+ * PIAZZA una proposta di opportunità (18/09) — «il prezzo può muoversi, io
+ * devo vedere la tab aggiornata e quando clicco prendiamo QUEL NUMERO CHE
+ * VEDO»: manda alla RPC `safe_request_approve` il prezzo (o i prezzi, per
+ * una combo) che la scheda stava mostrando nell'ISTANTE del clic, non quello
+ * congelato nella proposta. Retrocompatibile: senza `opts`, si comporta
+ * come `approvaProposta` di ieri (nessun parametro nuovo alla RPC — utile
+ * finche' `migrations/safe_request_approve_prezzo_visto_2026-09-18.sql` non
+ * e' applicata, o per l'approvazione di una proposta a gamba singola senza
+ * il prezzo vivo disponibile).
+ *
+ * `legsPricesVisti`: mappa indice-gamba → prezzo, la STESSA forma di
+ * `PrezziViviGambe` — la funzione la traduce nell'oggetto con chiavi
+ * stringa che la RPC/`_request_place_combo` si aspettano.
+ */
+export async function approvaPropostaOpportunita(
+    id: number,
+    opts?: {
+        prezzoVisto?: number | null;
+        legsPricesVisti?: PrezziViviGambe | null;
+        slippagePct?: number | null;
+    },
+): Promise<void> {
+    const params: Record<string, unknown> = { p_id: id };
+    if (typeof opts?.prezzoVisto === 'number' && Number.isFinite(opts.prezzoVisto)) {
+        params.p_price = opts.prezzoVisto;
+    }
+    if (opts?.legsPricesVisti != null) {
+        const pulite: Record<string, number> = {};
+        for (const [k, v] of Object.entries(opts.legsPricesVisti)) {
+            if (typeof v === 'number' && Number.isFinite(v)) pulite[String(k)] = v;
+        }
+        if (Object.keys(pulite).length > 0) params.p_legs_prices = pulite;
+    }
+    if (typeof opts?.slippagePct === 'number' && Number.isFinite(opts.slippagePct) && opts.slippagePct > 0) {
+        params.p_slippage_pct = opts.slippagePct;
+    }
+    const { data, error } = await supabase.rpc('safe_request_approve', params as never);
+    if (error) throw new Error(error.message);
+    const r = data as { ok?: boolean; note?: string } | null;
+    if (!r || r.ok !== true) throw new Error(r?.note?.trim() || 'la proposta non è più in attesa di approvazione');
 }
 
 /**

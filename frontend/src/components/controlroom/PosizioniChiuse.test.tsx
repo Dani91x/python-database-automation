@@ -118,3 +118,103 @@ describe('vuoto: si dice cosa manca e dove sta il resto', () => {
         expect(screen.getByText(/Nessuna posizione ancora chiusa oggi/i)).toBeInTheDocument();
     });
 });
+
+// ============================================================================
+// 18/09 — CERTEZZA DI CHIUSURA: ogni riga dice se la posizione e' DAVVERO senza
+// esposizione, e la testata lo riassume. FALSIFICAZIONE nel referto
+// `frontend/CHECKPOINT_F4_CERTEZZA_CHIUSURA_2026-09-18.md` §5.
+// ============================================================================
+describe('certezza di chiusura: badge per riga e riepilogo in testa', () => {
+    const apertura = riga({ id: 1, pnl: 4.78, side: 'lay', price: 70, size: 2, status: 'won', bet_id: 'B1' });
+    const back = (id: number, over: Partial<TradeChiudibile> = {}) => riga({
+        id, closes_trade_id: 1, side: 'back', price: 9.6, size: 4.78, status: 'lost', pnl: -4.6, bet_id: `B${id}`, ...over,
+    });
+
+    it('posizione regolata: badge VERDE «REGOLATA DAL MERCATO» e riepilogo senza allarme', () => {
+        monta([apertura, back(2)]);
+        const badge = screen.getByTestId('cr-chiusa-certezza-1');
+        expect(badge.dataset.stato).toBe('REGOLATA_DAL_MERCATO');
+        expect(badge).toHaveTextContent(/REGOLATA DAL MERCATO/);
+        expect(badge.className).toMatch(/emerald/);
+        const riepilogo = screen.getByTestId('cr-chiuse-certezza');
+        expect(riepilogo).toHaveTextContent(/1 chiusa confermata/);
+        expect(riepilogo.dataset.allarme).toBeUndefined();
+        expect(riepilogo).not.toHaveAttribute('role', 'alert');
+    });
+
+    it('una gamba di chiusura ANNULLATA si dichiara sulla riga, senza aprirla', () => {
+        monta([apertura, back(2), back(3, { status: 'cancelled', pnl: null, price: 12, size: 2.08 })]);
+        expect(screen.getByTestId('cr-chiusa-copertura-incompleta-1'))
+            .toHaveTextContent(/1 gamba di chiusura annullata/);
+    });
+
+    it('senza gambe annullate la nota non compare', () => {
+        monta([apertura, back(2)]);
+        expect(screen.queryByTestId('cr-chiusa-copertura-incompleta-1')).toBeNull();
+    });
+
+    it('la riga porta ingresso e chiusura: quota, stake abbinato, ora', () => {
+        monta([apertura, back(2), back(3, { size: 7.2 })]);
+        const s = screen.getByTestId('cr-chiusa-sintesi-1');
+        expect(s).toHaveTextContent('70,00');          // quota d'ingresso
+        expect(s).toHaveTextContent('2,00');           // stake d'ingresso
+        expect(s).toHaveTextContent('9,60');           // quota media di chiusura
+        expect(s).toHaveTextContent('11,98');          // 4,78 + 7,20 abbinati in chiusura
+        expect(s).toHaveTextContent('11:00');          // ingresso 09:00Z = 11:00 Europe/Rome
+    });
+
+    it('paper e live NON si sommano: il riepilogo conta solo la modalita\' mostrata', () => {
+        monta([apertura, back(2), riga({ id: 9, mode: 'paper', event_id: 'E9', event_name: 'Finta', pnl: 1 })]);
+        // filtro di default = soldi veri: 1 posizione, non 2
+        expect(screen.getByTestId('cr-chiuse-certezza')).toHaveTextContent(/1 chiusa confermata/);
+        expect(screen.getByTestId('cr-chiuse-certezza')).not.toHaveTextContent(/2 chiuse/);
+    });
+
+    it('esposizione residua: il riepilogo diventa un ALLARME con gli euro', () => {
+        // posizione costruita a mano con l'identica forma di `PosizioneChiusa`:
+        // l'apertura NON e' regolata e l'unica chiusura e' stata rifiutata.
+        const ordineBase = {
+            size_requested: null, size_matched: null, size_remaining: null,
+            avg_price_matched: null, betfair_updated_at: null, meta: null,
+        };
+        render(
+            <MemoryRouter>
+                <PosizioniChiuse sport={null} giorno={OGGI} chiuse={[{
+                    id: 50, eventId: 'E50', partita: 'Aperta per davvero', sport: 'calcio',
+                    modo: 'live', bot: 'safe', pnlGlobale: 0, esito: 'pari',
+                    chiusaAt: '2026-09-17T12:00:00.000Z', piazzataAt: '2026-09-17T09:00:00.000Z',
+                    giorno: OGGI,
+                    righe: [
+                        {
+                            id: 50, bot: 'safe', selezione: 'Rossi', lato: 'back', prezzo: 2, size: 10,
+                            pnl: null, stato: 'hedged', at: '2026-09-17T09:00:00.000Z', chiusura: false,
+                            quale: 'base', betId: 'B50',
+                            ordine: {
+                                ...ordineBase, status: 'hedged', side: 'back', price: 2, size: 10,
+                                size_requested: 10, size_matched: 10, size_remaining: 0, avg_price_matched: 2,
+                            },
+                        },
+                        {
+                            id: 51, bot: 'safe', selezione: 'Rossi', lato: 'lay', prezzo: 2, size: 0,
+                            pnl: null, stato: 'pending', at: '2026-09-17T10:00:00.000Z', chiusura: true,
+                            quale: 'base', betId: null,
+                            ordine: {
+                                ...ordineBase, status: 'pending', side: 'lay', price: 2, size: 0,
+                                size_matched: 0, size_remaining: 0, meta: { error_code: 'INSUFFICIENT_FUNDS' },
+                            },
+                        },
+                    ],
+                }]} />
+            </MemoryRouter>,
+        );
+        const badge = screen.getByTestId('cr-chiusa-certezza-50');
+        expect(badge.dataset.stato).toBe('CHIUSURA_FALLITA');
+        expect(badge.className).toMatch(/red/);
+        expect(screen.getByTestId('cr-chiusa-esposta-50')).toHaveTextContent('10,00');
+        const riepilogo = screen.getByTestId('cr-chiuse-certezza');
+        expect(riepilogo.dataset.allarme).toBe('1');
+        expect(riepilogo).toHaveAttribute('role', 'alert');
+        expect(riepilogo).toHaveTextContent(/1 con esposizione residua/);
+        expect(riepilogo).toHaveTextContent('10,00');
+    });
+});

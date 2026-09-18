@@ -62,11 +62,21 @@ PAYLOAD_VERO_CALCIO = {
     # calcolati dallo scanner e pubblicati nella riga come `pressure_index`
     "selection_hint",
     "timeline",
+    # F0 (18/09), chiavi ADDITIVE: l'istante di BETFAIR dell'ultimo cambio di
+    # prezzo (``publishTime`` del book) e il ``betDelay`` del mercato dal
+    # ``marketDefinition``. Nessuna chiave storica tolta: chi legge questa
+    # tabella (bot Safe, Mike, Omega, pagina) non cambia di una riga.
+    "odds_pt_ms", "bet_delay",
 }
 PAYLOAD_VERO_TENNIS = {
     "competition", "event_name", "games", "inplay", "media", "mo_market_id",
     "mo_status", "mo_total_matched", "odds", "odds_ts_ms", "open_date", "p1",
     "p2", "score_raw", "sets",
+    # F0 (18/09) - nel tennis erano proprio i due numeri che mancavano: senza
+    # ``odds_pt_ms`` il salto fra la pubblicazione di Betfair e la nostra
+    # lavorazione non era misurabile, e senza ``bet_delay`` il bot non sapeva a
+    # quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
+    "odds_pt_ms", "bet_delay",
 }
 OU_BLOCCO_VERO = {"bet_delay", "inplay", "line", "market_id", "market_type",
                   "seen_ms", "selections", "status", "total_matched", "ts_ms"}

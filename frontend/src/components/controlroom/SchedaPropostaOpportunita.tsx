@@ -25,7 +25,7 @@ import { useState } from 'react';
 import { Loader2, ShieldAlert, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtAge, DASH } from '@/lib/format';
-import type { PropostaOpportunita } from '@/lib/safeBot';
+import type { PropostaOpportunita, PropostaOpportunitaLeg, PrezziViviGambe } from '@/lib/safeBot';
 
 /** Oltre questa età le quote non si usano per piazzare: stessa soglia del
  *  resto della piattaforma (`safeBot.FEED_ROW_STALE_MS`). */
@@ -38,7 +38,31 @@ export interface SchedaPropostaOpportunitaProps {
     abbinabileOra?: number | null;
     /** età delle quote in secondi; null = non lo sappiamo (fail-closed) */
     etaQuoteS?: number | null;
-    onPiazza: (id: number) => Promise<void>;
+    /**
+     * 18/09 — ORDINE DELL'UTENTE: «il prezzo può muoversi, io devo vedere la
+     * tab aggiornata e quando clicco prendiamo QUEL NUMERO CHE VEDO.» Il
+     * prezzo VIVO di UNA gamba (proposta non-combo): questo è il numero che
+     * la card mostra in grande ed è ESATTAMENTE quello che PIAZZA manda
+     * all'approvazione — mai il prezzo congelato della proposta.
+     * `null`/assente = non lo si conosce ora: PIAZZA resta spento.
+     */
+    prezzoVivo?: number | null;
+    /**
+     * 18/09 — lo stesso, per OGNI gamba di una proposta COMBO, indicizzato
+     * dalla posizione della gamba in `payload.legs` (vedi `PrezziViviGambe`
+     * in `lib/safeBot.ts`). Prop preparata da `useControlRoom.ts` (fuori dal
+     * perimetro di questa modifica): finché non arriva, la card mostra i
+     * prezzi della fotografia e PIAZZA resta spento (nessun prezzo vivo
+     * noto — non si approva una combo al buio).
+     */
+    prezziViviGambe?: PrezziViviGambe | null;
+    /** Lo slippage che l'utente ha impostato a video (se la pagina lo
+     *  espone): viaggia con l'approvazione così il servizio ricontrolla la
+     *  tolleranza con LA STESSA soglia che l'utente vede, non un default
+     *  invisibile. Assente → il servizio usa il suo default. */
+    slippagePct?: number | null;
+    onPiazza: (id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe,
+              slippagePct?: number) => Promise<void>;
     onRifiuta: (id: number) => Promise<void>;
 }
 
@@ -54,10 +78,18 @@ const KIND_IT: Record<string, string> = {
     anomaly: 'anomalia', combo: 'combinazione',
 };
 
-/** Perché NON si può firmare adesso. Mai un bottone spento e muto. */
+/** Perché NON si può firmare adesso. Mai un bottone spento e muto.
+ *
+ * 18/09 — ORDINE DELL'UTENTE: PIAZZA manda il prezzo VIVO, non quello della
+ * proposta: senza un `prezzoVivo` noto e fresco non c'è NIENTE da mandare,
+ * quindi il bottone resta spento a prescindere da quanto sia valida la
+ * fotografia. `prezzo`/`size` restano controllati (dati della proposta
+ * comunque incoerenti = scheda da non firmare), ma il vero cancelletto
+ * nuovo è `prezzoVivo`. */
 export function motivoNonPiazzabile(p: {
     prezzo: unknown; size: unknown; abbinabileOra: number | null | undefined;
     etaQuoteS: number | null | undefined;
+    prezzoVivo?: number | null;
 }): string | null {
     const prezzo = Number(p.prezzo);
     if (!Number.isFinite(prezzo) || prezzo <= 1) return 'prezzo della proposta non valido';
@@ -66,6 +98,9 @@ export function motivoNonPiazzabile(p: {
     if (p.etaQuoteS == null) return 'età delle quote ignota: non si piazza al buio';
     if (p.etaQuoteS > ETA_QUOTE_MAX_S) {
         return `quote vecchie di ${Math.round(p.etaQuoteS)} s: non si piazza al buio`;
+    }
+    if (p.prezzoVivo == null || !Number.isFinite(p.prezzoVivo) || p.prezzoVivo <= 1) {
+        return 'prezzo vivo assente: non si piazza al buio';
     }
     if (p.abbinabileOra != null && p.abbinabileOra <= 0) {
         return 'nessun importo abbinabile al miglior prezzo in questo momento';
@@ -77,8 +112,49 @@ export function motivoNonPiazzabile(p: {
     return null;
 }
 
+/**
+ * Perché una proposta COMBO (18/09) NON si può firmare adesso.
+ *
+ * A differenza di una gamba sola, qui non c'è un `abbinabileOra`/`etaQuoteS`
+ * per l'INTERA combinazione: `useControlRoom.ts` (fuori dal perimetro di
+ * questa modifica) calcola quei due numeri da un solo `market_id`/
+ * `selection_id`, che una combo non ha in cima al payload. Il controllo che
+ * resta qui è quello che i dati della proposta permettono da soli: ogni
+ * gamba ha un prezzo e un importo validi.
+ *
+ * 18/09 — ORDINE DELL'UTENTE: in più, OGNI gamba deve avere un prezzo VIVO
+ * noto (`prezziViviGambe`, indicizzato dalla posizione della gamba): senza,
+ * PIAZZA manderebbe un prezzo che nessuno sta più guardando. La riprova vera
+ * (gamba sparita, prezzo fuori tolleranza, clic troppo vecchio) la fa il
+ * servizio all'approvazione (`_request_place_combo`): se una gamba non
+ * regge più, PIAZZA torna un rifiuto dichiarato.
+ */
+export function motivoNonPiazzabileCombo(p: {
+    legs: PropostaOpportunitaLeg[] | null | undefined;
+    prezziViviGambe?: PrezziViviGambe | null;
+}): string | null {
+    const legs = p.legs;
+    if (!Array.isArray(legs) || legs.length < 2) return 'proposta combo senza gambe valide';
+    for (const leg of legs) {
+        const prezzo = Number(leg.price);
+        if (!Number.isFinite(prezzo) || prezzo <= 1) return 'prezzo di una gamba non valido';
+        const size = Number(leg.size);
+        if (!Number.isFinite(size) || size <= 0) return 'importo di una gamba non valido';
+    }
+    const vivi = p.prezziViviGambe;
+    if (vivi == null) return 'prezzo vivo assente: non si piazza al buio';
+    for (let i = 0; i < legs.length; i++) {
+        const v = vivi[i];
+        if (v == null || !Number.isFinite(v) || v <= 1) {
+            return `prezzo vivo assente per la gamba ${i + 1}: non si piazza al buio`;
+        }
+    }
+    return null;
+}
+
 export function SchedaPropostaOpportunita({
-    proposta, abbinabileOra = null, etaQuoteS = null, onPiazza, onRifiuta,
+    proposta, abbinabileOra = null, etaQuoteS = null, prezzoVivo = null,
+    prezziViviGambe = null, slippagePct = null, onPiazza, onRifiuta,
 }: SchedaPropostaOpportunitaProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
@@ -86,13 +162,36 @@ export function SchedaPropostaOpportunita({
 
     const live = p.mode === 'live';
     const lato = (p.side ?? null) as 'back' | 'lay' | null;
-    const blocco = motivoNonPiazzabile({
-        prezzo: p.price, size: p.size, abbinabileOra, etaQuoteS,
-    });
+    // 18/09 — una COMBO porta N gambe in `payload.legs`, non un market_id/
+    // selection_id/side/price in cima: e' un'altra forma di scheda.
+    const isCombo = p.kind === 'combo' && Array.isArray(p.legs) && p.legs.length >= 2;
+    const blocco = isCombo
+        ? motivoNonPiazzabileCombo({ legs: p.legs, prezziViviGambe })
+        : motivoNonPiazzabile({ prezzo: p.price, size: p.size, abbinabileOra, etaQuoteS, prezzoVivo });
 
-    const azione = async (fn: (id: number) => Promise<void>) => {
+    // 18/09 — ORDINE DELL'UTENTE: PIAZZA manda ESATTAMENTE il numero che la
+    // scheda sta mostrando in quell'istante, non quello della proposta. Con
+    // `blocco` già spento (bottone disabilitato altrimenti) `prezzoVivo`/
+    // `prezziViviGambe` sono garantiti presenti e validi da `motivoNon
+    // Piazzabile(Combo)`: qui si RIUSA lo stesso valore già renderizzato,
+    // mai un ricalcolo separato — è la stessa variabile che il test verifica.
+    const piazza = async () => {
         setInCorso(true);
-        try { await fn(proposta.id); } finally { setInCorso(false); setArmato(false); }
+        try {
+            if (isCombo) {
+                const pulite: PrezziViviGambe = {};
+                for (const [k, v] of Object.entries(prezziViviGambe ?? {})) {
+                    if (v != null) pulite[Number(k)] = v;
+                }
+                await onPiazza(proposta.id, undefined, pulite, slippagePct ?? undefined);
+            } else {
+                await onPiazza(proposta.id, prezzoVivo ?? undefined, undefined, slippagePct ?? undefined);
+            }
+        } finally { setInCorso(false); setArmato(false); }
+    };
+    const rifiuta = async () => {
+        setInCorso(true);
+        try { await onRifiuta(proposta.id); } finally { setInCorso(false); setArmato(false); }
     };
 
     return (
@@ -122,29 +221,79 @@ export function SchedaPropostaOpportunita({
                 </span>
             </div>
 
-            {/* ---- l'operazione: lato, selezione, mercato, prezzo ---- */}
-            <div className="px-3 pt-2.5 pb-1 flex items-baseline gap-2.5 flex-wrap">
-                <span className={`text-[12px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${
-                    lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
-                }`} data-testid="cr-opp-lato">
-                    {lato === 'lay' ? 'Banca' : 'Punta'}
-                </span>
-                <span className="text-[13px] font-semibold" data-testid="cr-opp-selezione">
-                    {p.selection_name ?? DASH}
-                </span>
-                <span className="text-[11px] text-white/45 font-mono" data-testid="cr-opp-mercato">
-                    {p.market_type ?? DASH}
-                </span>
-                <span className="ml-auto text-right">
-                    <span className="font-mono text-lg font-bold tabular-nums" data-testid="cr-opp-prezzo">
-                        {fmtOdds(p.price)}
+            {/* ---- l'operazione: una gamba sola, o TUTTE le gambe della combo ----
+                 18/09 — ORDINE DELL'UTENTE: il numero GRANDE è il prezzo VIVO
+                 (quello che PIAZZA manderà); la fotografia della proposta resta
+                 sotto, piccola, con la differenza — mai il contrario. */}
+            {isCombo ? (
+                <div className="border-t border-white/5" data-testid="cr-opp-combo-legs">
+                    {(p.legs ?? []).map((leg, i) => {
+                        const vivo = prezziViviGambe?.[i] ?? null;
+                        return (
+                            <div key={i}
+                                className="px-3 py-1.5 flex items-baseline gap-2.5 flex-wrap border-b border-white/5 last:border-b-0"
+                                data-testid="cr-opp-combo-gamba">
+                                <span className={`text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded ${
+                                    leg.side === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                                }`}>
+                                    {leg.side === 'lay' ? 'Banca' : 'Punta'}
+                                </span>
+                                <span className="text-[12px] font-semibold">{leg.selection_name ?? DASH}</span>
+                                <span className="text-[10.5px] text-white/45 font-mono">{leg.market_type ?? DASH}</span>
+                                <span className="ml-auto text-right">
+                                    <span className="font-mono text-[13px] font-bold tabular-nums"
+                                        data-testid="cr-opp-combo-gamba-vivo">
+                                        {vivo == null
+                                            ? <span className="text-orange-400">{DASH}</span>
+                                            : fmtOdds(vivo)}
+                                    </span>
+                                    <span className="block font-mono text-[9.5px] text-white/40">
+                                        proposta {fmtOdds(leg.price)}
+                                    </span>
+                                </span>
+                                <span className="font-mono text-[11px] text-white/50 tabular-nums w-16 text-right">
+                                    {fmtMoney(leg.size)}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="px-3 pt-2.5 pb-1 flex items-baseline gap-2.5 flex-wrap">
+                    <span className={`text-[12px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${
+                        lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                    }`} data-testid="cr-opp-lato">
+                        {lato === 'lay' ? 'Banca' : 'Punta'}
                     </span>
-                    <span className="block font-mono text-[11px] text-white/40">
-                        <TrendingUp className="w-3 h-3 inline mr-0.5" />
-                        proposta a {fmtOdds(p.price_at_decision)}
+                    <span className="text-[13px] font-semibold" data-testid="cr-opp-selezione">
+                        {p.selection_name ?? DASH}
                     </span>
-                </span>
-            </div>
+                    <span className="text-[11px] text-white/45 font-mono" data-testid="cr-opp-mercato">
+                        {p.market_type ?? DASH}
+                    </span>
+                    <span className="ml-auto text-right">
+                        <span className="font-mono text-lg font-bold tabular-nums" data-testid="cr-opp-prezzo-vivo">
+                            {prezzoVivo == null
+                                ? <span className="text-orange-400">{DASH}</span>
+                                : fmtOdds(prezzoVivo)}
+                        </span>
+                        <span className="block font-mono text-[11px] text-white/40" data-testid="cr-opp-prezzo">
+                            <TrendingUp className="w-3 h-3 inline mr-0.5" />
+                            proposta a {fmtOdds(p.price_at_decision)}
+                            {prezzoVivo != null && Number.isFinite(Number(p.price_at_decision))
+                                && Number(p.price_at_decision) > 1 && (
+                                <span className={
+                                    prezzoVivo === Number(p.price_at_decision) ? 'text-white/40'
+                                        : prezzoVivo > Number(p.price_at_decision) ? 'text-emerald-400' : 'text-orange-400'
+                                }>
+                                    {' '}({prezzoVivo >= Number(p.price_at_decision) ? '+' : ''}
+                                    {fmtNum(prezzoVivo - Number(p.price_at_decision), 2)})
+                                </span>
+                            )}
+                        </span>
+                    </span>
+                </div>
+            )}
 
             {p.riproposta_perche && (
                 <div className="px-2.5 py-1.5 border-t border-secondary/30 bg-secondary/10 text-[11px] text-secondary"
@@ -199,7 +348,7 @@ export function SchedaPropostaOpportunita({
             <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5">
                 {armato ? (
                     <Button
-                        onClick={() => void azione(onPiazza)} disabled={inCorso}
+                        onClick={() => void piazza()} disabled={inCorso}
                         className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px]"
                         data-testid="cr-opp-conferma-live"
                     >
@@ -207,7 +356,7 @@ export function SchedaPropostaOpportunita({
                     </Button>
                 ) : (
                     <Button
-                        onClick={() => (live ? setArmato(true) : void azione(onPiazza))}
+                        onClick={() => (live ? setArmato(true) : void piazza())}
                         disabled={!!blocco || inCorso}
                         className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] disabled:opacity-40"
                         data-testid="cr-opp-piazza"
@@ -217,7 +366,7 @@ export function SchedaPropostaOpportunita({
                     </Button>
                 )}
                 <Button
-                    variant="ghost" onClick={() => void azione(onRifiuta)} disabled={inCorso}
+                    variant="ghost" onClick={() => void rifiuta()} disabled={inCorso}
                     className="rounded-none h-10 text-white/60 hover:text-white uppercase tracking-wider text-[12px]"
                     data-testid="cr-opp-rifiuta"
                 >
@@ -228,7 +377,10 @@ export function SchedaPropostaOpportunita({
             <div className="px-3 py-1.5 text-[10.5px] text-white/40 bg-white/[0.02]">
                 {armato
                     ? <span className="text-orange-300">Sono soldi veri: conferma per mandare l’ordine.</span>
-                    : <>Se rifiuti, questa opportunità non torna finché resta la stessa. Nessun ordine parte da solo.</>}
+                    : isCombo
+                        ? <>Se rifiuti, questa combinazione non torna finché resta la stessa. PIAZZA manda TUTTE le
+                            gambe insieme: se anche una sola non è più valida, non parte nessuna.</>
+                        : <>Se rifiuti, questa opportunità non torna finché resta la stessa. Nessun ordine parte da solo.</>}
             </div>
 
             {live && !blocco && (

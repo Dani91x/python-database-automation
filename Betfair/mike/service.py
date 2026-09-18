@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from Betfair.safe_strategy import execution as X
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
+from Betfair.stream import sveglia_canale as _SV
 
 from . import config as C
 from . import db as _real_db
@@ -1846,6 +1847,13 @@ def azzera_cache_di_processo() -> List[str]:
     if _EVENTI_LETTI_A:
         _EVENTI_LETTI_A = 0.0
         azzerati.append("_EVENTI_LETTI_A")
+    # 18/09 (F5): anche i contatori e l'istante dell'ultimo giro della sveglia
+    # sono stato di PROCESSO (difetto 37 del catalogo): il banco riparte pulito.
+    try:
+        _SVEGLIA.azzera()
+        azzerati.append("_SVEGLIA")
+    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+        pass
     return azzerati
 
 # tolleranza sotto la quale una differenza di posizione e' rumore di
@@ -2699,6 +2707,9 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         # non si abbandona. Ma il pulsante deve dirlo, o promette una cosa che
         # non fa.
         "stop_ferma_solo_aperture": True,
+        # F5: com'e' andata la sveglia del ciclo (``None`` a interruttore
+        # spento). Sta FUORI dal battito: vedi ``beat`` piu' sotto.
+        "sveglia": statistiche_sveglia(),
         "last_cycle": now.isoformat(), "dry": bool(dry), "mode": mode, "daily_stop": bool(daily_stop),
         "reconciling": sum(1 for e in tracked.values()
                            if any(str((l or {}).get("status")) == E.STATUS_RECONCILE
@@ -2723,7 +2734,13 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # parametri: 10 s per le stats, 20 s per il battito nudo. Il margine c'e':
     # ``ServiceHealthChip.SERVICE_STALE_S`` dichiara il servizio morto a 45 s,
     # quindi anche saltando un battito il badge resta verde.
-    beat = {k: v for k, v in stats.items() if k not in ("last_cycle", "scanner_age_s")}
+    # F5 (18/09): ``sveglia`` sta FUORI dal battito, esattamente come
+    # ``scanner_age_s``. Sono contatori che crescono da soli: dentro la firma
+    # renderebbero «cambiato» ogni giro e farebbero salire le PATCH su
+    # ``mike_control``, che la UI ascolta in realtime - il contrario di questa
+    # fase, che non deve far crescere una sola scrittura al minuto.
+    beat = {k: v for k, v in stats.items()
+            if k not in ("last_cycle", "scanner_age_s", "sveglia")}
     # zero = "a ogni giro": e' la valvola per tornare al comportamento di prima
     # senza toccare il codice (e la UI lo ammette, min 0 su entrambi). Da qui il
     # ``if ... is None`` invece di ``or``: con ``or`` uno zero scritto apposta
@@ -4273,6 +4290,105 @@ def _avvia_canale() -> None:
         logger.warning("[mike] canale locale KO: %s", str(ex)[:160])
 
 
+# ===========================================================================
+# LA SVEGLIA DEL CICLO (18/09/2026, fasi F5 e F6) - interruttore SPENTO di serie
+# ===========================================================================
+# Il ciclo di Mike NON si accorcia: si SVEGLIA. Con ``MIKE_SVEGLIA_CANALE=1``
+# la dormita del loop diventa ``_SVEGLIA.attendi(pausa, pavimento)``, dove il
+# pavimento e' la CADENZA ATTIVA DI OGGI (``decide_min_interval_ms``, cioe' lo
+# stesso ``interval`` che il loop calcola prima di allargarsi a vuoto). Da li'
+# la garanzia: per quante sveglie arrivino, fra l'inizio di un giro e quello
+# del successivo passa almeno il tempo che passa oggi quando Mike e' attivo, e
+# quindi le letture al minuto non crescono. Il guadagno e' sul lato lento (a
+# vuoto ``idle_cycle_s``). A interruttore spento la dormita resta
+# ``time.sleep(interval)``, la stessa istruzione di oggi.
+_SVEGLIA = _SV.Sveglia("mike")
+_ASCOLTO_SCAN: Optional[_SV.AscoltoScan] = None
+
+
+def _evento_seguito(event_id: str) -> bool:
+    """Mike sta seguendo questo evento? Si risponde SOLO con la memoria.
+
+    ``_CACHE_EVENTI`` e' la copia in RAM di ``mike_events``: sono le partite
+    che il bot ha in carico (posizione aperta, ordini vivi, osservate) piu' le
+    terminali recenti. Nessuna select per decidere se svegliarsi.
+    """
+    return str(event_id) in _CACHE_EVENTI
+
+
+def _pavimento_sveglia(params: Any) -> float:
+    """Il pavimento della sveglia = la cadenza ATTIVA di oggi.
+
+    E' lo STESSO calcolo che il loop fa per ``interval`` prima di allargarlo a
+    vuoto: non un numero nuovo, il passo al quale Mike gia' gira quando c'e'
+    movimento.
+    """
+    p = params if isinstance(params, dict) else {}
+    try:
+        ms = float(p.get("decide_min_interval_ms") or C.DEFAULTS["decide_min_interval_ms"])
+    except (TypeError, ValueError):
+        ms = float(C.DEFAULTS["decide_min_interval_ms"])
+    return max(1.0, ms / 1000.0 * 2)
+
+
+def _su_sveglia_dal_canale(params: Any) -> bool:
+    """F6: il SOLO messaggio che il canale 47333 puo' ricevere.
+
+    Alza la sveglia e NIENT'ALTRO: nessun parametro d'ordine sul canale. Il
+    comando vero resta la riga di ``mike_requests``, letta con le funzioni, le
+    guardie e l'idempotenza di oggi. Campi extra: ignorati.
+    """
+    motivo = _SV.messaggio_di_sveglia(params)
+    if motivo is None:
+        return False
+    _SVEGLIA.alza(motivo, minimo_s=_SV.MINIMO_UI_S)
+    return True
+
+
+def _avvia_sveglia() -> None:
+    """Accende l'ascolto del canale dello scanner e la sveglia da UI. Non
+    solleva MAI; a interruttore spento non apre nessun thread e nessuna porta."""
+    global _ASCOLTO_SCAN
+    if not _SV.acceso(_SV.ENV_MIKE_SVEGLIA):
+        return
+    try:
+        ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
+                                  topic=(_SV.TOPIC_SCAN_CALCIO,), nome="mike")
+        if ascolto.avvia():
+            _ASCOLTO_SCAN = ascolto
+            logger.info("[mike] sveglia dal canale ATTIVA (%s): il ciclo riparte "
+                        "quando si muove una partita che Mike segue.", ascolto.url)
+    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+        logger.warning("[mike] sveglia dal canale KO: %s", str(ex)[:160])
+    try:
+        ch = _lc.get_channel()
+        registra = getattr(ch, "set_sveglia", None) if ch is not None else None
+        if callable(registra):
+            registra(_su_sveglia_dal_canale)
+        else:
+            logger.info("[mike] il canale locale non espone 'set_sveglia': la "
+                        "sveglia dalla UI non e' collegata (resta la coda sul "
+                        "database, come oggi).")
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[mike] aggancio della sveglia da UI KO: %s", str(ex)[:160])
+
+
+def statistiche_sveglia() -> Optional[Dict[str, Any]]:
+    """I contatori della sveglia, o ``None`` a interruttore spento."""
+    if _ASCOLTO_SCAN is None:
+        return None
+    return {**_SVEGLIA.statistiche(), "canale": _ASCOLTO_SCAN.statistiche()}
+
+
+def _dormi_o_sveglia(pausa: float, params: Any) -> None:
+    """La dormita del ciclo. A interruttore SPENTO e' ``time.sleep(pausa)``,
+    la stessa identica istruzione di oggi."""
+    if _ASCOLTO_SCAN is None:
+        time.sleep(pausa)
+        return
+    _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
+
+
 # Campi PESANTI e FERMI della scheda: non servono allo schermo a ogni giro e
 # gonfierebbero il messaggio per niente (il dossier e' il modello pre-partita,
 # i markets sono gli identificativi dei mercati: non cambiano mai durante la
@@ -4340,6 +4456,9 @@ def main() -> None:
     # esattamente come prima: il canale e' un'accelerazione, non una dipendenza.
     if not args.once:
         _avvia_canale()
+        # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
+        # nessun thread e la dormita resta quella di oggi.
+        _avvia_sveglia()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Mike si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).
@@ -4381,7 +4500,10 @@ def main() -> None:
                     pass
                 if args.once:
                     break
-            time.sleep(interval)
+            # F5: stessa dormita di oggi, ma svegliabile a interruttore acceso.
+            # Il PAVIMENTO esce dai parametri dell'ultimo giro ed e' la cadenza
+            # attiva: la garanzia che i giri al minuto non crescano.
+            _dormi_o_sveglia(interval, _ULTIMI_PARAMS)
     finally:
         if lock is not None:
             try:

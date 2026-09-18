@@ -23,7 +23,21 @@ from supabase import Client, create_client
 
 from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
 
+from .. import canale_bot as _cb
+
 logger = logging.getLogger(__name__)
+
+# --- F3 (18/09): lo stato e l'armatura dei 4 bot tennis sul canale -----------
+# Il database resta il registro: si pubblica DOPO la scrittura riuscita e si
+# pubblica la riga che la scrittura ha RESTITUITO (PostgREST torna di serie la
+# rappresentazione: NESSUNA lettura in piu' - il 13/09 il budget di IO e'
+# finito). Interruttore ``TENNIS_BOT_CANALE`` nel ``.env``, DEFAULT SPENTO.
+#
+# Su quale canale escono: su quello del PROCESSO che ha scritto la riga. Nel
+# servizio dei bot avviato dall'app (``tennis_bot_service --bridge-only``,
+# ``desktop/main.js:268``) e' il 47337; dentro il runner tennis e' il 47332.
+# Sono entrambi canali del TENNIS: calcio e tennis non si mischiano comunque.
+_CANALE_ACCESO = _cb.acceso(_cb.ENV_TENNIS_BOT)
 
 _ORDER_TABLE = "tennis_live_order_queue"
 
@@ -200,9 +214,11 @@ def set_tennis_bot_status(
         upd["started_at"] = now
     if stopped:
         upd["stopped_at"] = now
-    sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
+    res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
         "bot_key", bot_key
     ).execute()
+    if _CANALE_ACCESO:          # F3: l'armatura per evento, come il DB l'ha scritta
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)
 
 
 # Marker che distingue un motivo d'ATTESA (benigno) da un errore terminale nel
@@ -425,12 +441,14 @@ def set_tennis_bot_service_state(
     if stopped:
         upd["stopped_at"] = _now_iso()
     try:
-        sb.table(_SERVICE_TABLE).update(upd).eq("bot_key", str(bot_key)).execute()
+        res = sb.table(_SERVICE_TABLE).update(upd).eq("bot_key", str(bot_key)).execute()
     except Exception as e:  # noqa: BLE001
         if not _tabella_servizi_assente(e):
             logger.warning("[tennis-db] scrittura %s KO (%s): %s",
                            _SERVICE_TABLE, bot_key, str(e)[:160])
         return False
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_stato"], res)
     return True
 
 
@@ -443,5 +461,7 @@ def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    _exec_retry(sb.table("tennis_bot_control").upsert(
+    res = _exec_retry(sb.table("tennis_bot_control").upsert(
         payload, on_conflict="event_id,bot_key"))
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)

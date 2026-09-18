@@ -73,6 +73,23 @@ class LocalChannel:
         self._started = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._hello_extra: Dict[str, Any] = {}
+        # F6 (18/09): chi va avvisato quando la pagina manda una SVEGLIA.
+        self._su_sveglia: Optional[Any] = None
+        # --- F1 (18/09), difetto D4: CONTROPRESSIONE PER CLIENT ---------------
+        # Prima il tetto degli invii in volo era UNO SOLO per tutto il canale:
+        # una Control Room aperta e lenta (browser in secondo piano, DevTools
+        # aperto) toglieva il fotogramma anche al bot, che sul suo socket non
+        # era indietro di niente. Adesso il conto e' per socket: chi e' indietro
+        # perde il giro, gli altri ricevono.
+        # ``_in_volo_ws`` e ``_client_pronti`` sono toccati SOLO dal thread del
+        # loop; ``_client_pronti`` e' un int, letto cross-thread (atomico in
+        # CPython) come gia' ``_n_clients``.
+        self._in_volo_ws: Dict[Any, int] = {}
+        self._client_pronti = 0
+        # che cosa e' successo al canale: giri saltati (nessun client poteva
+        # riceverli), push saltati per un singolo client indietro. Se si salta
+        # LO SI DICE, non lo si assorbe.
+        self._conti: Dict[str, int] = {"saltati": 0, "saltati_client": 0}
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> bool:
@@ -105,6 +122,7 @@ class LocalChannel:
     async def _handler(self, ws: Any) -> None:
         self._clients.add(ws)
         self._n_clients = len(self._clients)
+        self._ricalcola_pronti()
         try:
             await ws.send(json.dumps({"t": "hello", "d": {"sport": self.sport, **self._hello_extra}}))
             async for raw in ws:
@@ -113,7 +131,22 @@ class LocalChannel:
             pass
         finally:
             self._clients.discard(ws)
+            self._in_volo_ws.pop(ws, None)
             self._n_clients = len(self._clients)
+            self._ricalcola_pronti()
+
+    def _ricalcola_pronti(self) -> None:
+        """Quanti client possono ricevere adesso. SOLO dal thread del loop.
+
+        I client su 127.0.0.1 sono pochissimi (la Control Room e i bot): il
+        conteggio e' O(n) su una manciata di elementi e si paga una volta per
+        invio completato, non per messaggio pubblicato. Serve a far uscire
+        ``publish`` PRIMA di serializzare quando nessuno puo' ricevere, che e'
+        la protezione che c'era gia' - qui resa per client.
+        """
+        self._client_pronti = sum(
+            1 for w in self._clients if self._in_volo_ws.get(w, 0) <= _MAX_INVII_IN_VOLO
+        )
 
     def _on_message(self, ws: Any, raw: Any) -> None:
         """Parse + enqueue (nel thread del loop). MAI eseguire ordini qui."""
@@ -121,6 +154,20 @@ class LocalChannel:
             msg = json.loads(raw)
             method = str(msg.get("m") or "")
             msg_id = msg.get("id")
+            if method == "sveglia":
+                # F6 (18/09): SOLO la sveglia. Esce PRIMA della coda dei comandi,
+                # non passa da ``_ALLOWED_METHODS`` e non porta parametri d'ordine:
+                # il comando vero resta la riga sul database, con le guardie di
+                # sempre. Non puo' diventare un secondo percorso ordini.
+                cb = self._su_sveglia
+                if cb is not None:
+                    try:
+                        p = msg.get("p")
+                        cb(p if isinstance(p, dict) else {})
+                    except Exception:  # noqa: BLE001 - una sveglia non ferma il canale
+                        pass
+                self._send(ws, {"id": msg_id, "ok": cb is not None})
+                return
             if self.solo_lettura:
                 self._send(ws, {"id": msg_id, "ok": False,
                                 "e": "canale di sola lettura: nessun comando accettato"})
@@ -151,12 +198,20 @@ class LocalChannel:
 
     async def _safe_send(self, ws: Any, text: str) -> None:
         self._in_volo += 1              # solo dal thread del loop: nessuna corsa
+        self._in_volo_ws[ws] = self._in_volo_ws.get(ws, 0) + 1
+        self._ricalcola_pronti()
         try:
             await ws.send(text)
         except Exception:  # noqa: BLE001 - client andato: ignora
             pass
         finally:
             self._in_volo -= 1
+            rimasti = self._in_volo_ws.get(ws, 1) - 1
+            if rimasti <= 0:
+                self._in_volo_ws.pop(ws, None)
+            else:
+                self._in_volo_ws[ws] = rimasti
+            self._ricalcola_pronti()
 
     # ------------------------------------------------------- API thread-safe
     def is_active(self) -> bool:
@@ -166,34 +221,60 @@ class LocalChannel:
     def set_hello(self, **extra: Any) -> None:
         self._hello_extra.update(extra)
 
+    def set_sveglia(self, cb: Optional[Any]) -> None:
+        """F6: registra chi va avvisato all'arrivo di ``{"m": "sveglia"}``.
+        Senza nessuno registrato la sveglia viene rifiutata (``ok: False``)."""
+        self._su_sveglia = cb
+
+    def statistiche(self) -> Dict[str, Any]:
+        """Che cosa e' successo al canale: giri saltati perche' NESSUN client
+        poteva riceverli, push saltati per un singolo client rimasto indietro,
+        client agganciati, invii in volo. Se la coda cresce LO SI DICE, non lo
+        si assorbe: e' il numero che la prova a secco di F1 deve leggere."""
+        return {**self._conti, "client": self._n_clients,
+                "client_pronti": self._client_pronti, "in_volo": self._in_volo,
+                "porta": self.port, "solo_lettura": self.solo_lettura}
+
     def publish(self, topic: str, payload: Any) -> None:
         """Broadcast a tutti i client. No-op senza client/loop. MAI solleva.
 
-        CONTROPRESSIONE (14/09): se il consumatore rallenta, gli invii in volo si
-        accumulano DENTRO il processo che gestisce i soldi. Finche' qui passavano
-        ladder piccole non contava; ora i bot spingono la scheda intera a ogni
-        giro, quindi si mette un tetto: oltre ``_MAX_INVII_IN_VOLO`` si SALTA il
-        giro. Mostrare un fotogramma in meno e' sempre meglio che far crescere
-        la memoria del bot — e il fotogramma dopo arriva comunque, perche' si
-        pubblica lo stato corrente, non un differenziale.
+        CONTROPRESSIONE (14/09, resa PER CLIENT il 18/09 - difetto D4): se un
+        consumatore rallenta, gli invii in volo si accumulano DENTRO il processo
+        che gestisce i soldi, quindi un tetto serve. Ma il tetto era uno solo per
+        l'intero canale: un client lento faceva saltare il fotogramma anche a
+        tutti gli altri, cioe' una Control Room in secondo piano poteva togliere
+        il prezzo al bot. Adesso il conto e' per socket.
+
+        Il giro si salta - non si accumula - perche' qui passa uno STATO
+        COMPLETO: il fotogramma dopo ripara. Per un flusso DIFFERENZIALE questa
+        disciplina non andrebbe bene, ed e' per questo che il topic ``raw`` non
+        esiste in questa fase (F7 del piano, opzionale).
         """
         loop = self._loop
         if loop is None or self._n_clients == 0:
             return
-        if self._in_volo > _MAX_INVII_IN_VOLO:
+        if self._client_pronti <= 0:
+            # nessuno puo' ricevere: si esce PRIMA di serializzare, come prima
+            self._conti["saltati"] += 1
             ora = time.monotonic()
             if ora - self._ultimo_avviso > 30.0:
                 self._ultimo_avviso = ora
-                logger.warning("[local-ws] %d invii in volo sulla porta %d: salto i push "
-                               "finche' il client non recupera.", self._in_volo, self.port)
+                logger.warning("[local-ws] %d invii in volo sulla porta %d, nessun "
+                               "client pronto: salto i push finche' non recuperano.",
+                               self._in_volo, self.port)
             return
         try:
             text = json.dumps({"t": topic, "d": payload}, default=str)
         except Exception as ex:  # noqa: BLE001 - payload non serializzabile: dichiara nel log
             logger.warning("[local-ws] publish %s non serializzabile: %s", topic, str(ex)[:120])
             return
+
         def _broadcast() -> None:
             for ws in list(self._clients):
+                if self._in_volo_ws.get(ws, 0) > _MAX_INVII_IN_VOLO:
+                    # SOLO questo client perde il giro: gli altri no
+                    self._conti["saltati_client"] += 1
+                    continue
                 loop.create_task(self._safe_send(ws, text))
         try:
             loop.call_soon_threadsafe(_broadcast)
@@ -241,9 +322,24 @@ def start_channel(port: int, sport: str, solo_lettura: bool = False) -> Optional
 
     ``solo_lettura=True`` per i canali dei BOT: mostrano e basta, non accettano
     comandi. Vedi ``LocalChannel.__init__``.
+
+    18/09, difetto D1: il singleton e' per PROCESSO, e finche' un processo aveva
+    un canale solo il difetto non si vedeva. Chiedere una porta DIVERSA da
+    quella del canale gia' attivo restituiva in silenzio il canale vecchio: il
+    secondo produttore avrebbe pubblicato sul canale del primo, e se il primo
+    fosse 47331 (che ESEGUE ORDINI VERI) si sarebbe allargato il canale che
+    comanda a un produttore che doveva solo mostrare. Adesso si rifiuta e si
+    dichiara: meglio nessun canale che il canale sbagliato.
     """
     global _CHANNEL
     if _CHANNEL is not None:
+        if int(port) != _CHANNEL.port:
+            logger.error(
+                "[local-ws] canale gia' attivo sulla porta %d: RIFIUTO la richiesta "
+                "sulla porta %d (un processo, un canale). Chi chiedeva il canale "
+                "nuovo resta senza: e' la direzione giusta del guasto.",
+                _CHANNEL.port, int(port))
+            return None
         return _CHANNEL
     ch = LocalChannel(port, sport, solo_lettura=solo_lettura)
     if ch.start():
@@ -266,3 +362,9 @@ def publish(topic: str, payload: Any) -> None:
     ch = _CHANNEL
     if ch is not None:
         ch.publish(topic, payload)
+
+
+def statistiche() -> Optional[Dict[str, Any]]:
+    """Le statistiche del canale del processo, o None se non ce n'e' uno."""
+    ch = _CHANNEL
+    return ch.statistiche() if ch is not None else None

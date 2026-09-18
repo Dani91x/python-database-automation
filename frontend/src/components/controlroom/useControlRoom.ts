@@ -18,8 +18,8 @@
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    fetchScanRows, subscribeScanRows, fetchScanStatus, subscribeScanStatus,
-    type ScanRow, type ScanStatusRow, type CalcioScanPayload,
+    fetchScanRows, subscribeScanRows, fetchScanStatus, subscribeScanStatus, scanLocaleAccettabile,
+    type ScanRow, type ScanStatusRow, type CalcioScanPayload, type ScanRowLocaleMsg,
 } from '@/lib/safeStrategyScan';
 import {
     fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents,
@@ -39,7 +39,7 @@ import {
 } from '@/lib/omegaProposte';
 import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
 import { fetchMikeState, type MikeEvent, type MikeStateView } from '@/lib/mike';
-import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
+import { getLocalChannel, svegliaBot, type LocalStatus } from '@/lib/localChannel';
 import { fetchMissions } from '@/lib/omegaMissions';
 import {
     fetchTennisFollows, fetchTennisBotServices, fetchTennisBotDaily,
@@ -58,9 +58,9 @@ import {
     type DettaglioRiga, type QuotaViva, type RigaDettagliabile,
 } from '@/components/controlroom/dettaglioRiga';
 import {
-    costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
+    costruisciGiornata, soldiPerPartita, marca, marcaTennis, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
-    type ArricchimentoPartita,
+    type ArricchimentoPartita, type RigaTennisPerSoldi,
     BOT_TENNIS, isBotTennis,
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
@@ -78,8 +78,15 @@ import {
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
 import {
-    isPropostaOpportunita, type PropostaOpportunita,
+    isPropostaOpportunita, approvaPropostaOpportunita,
+    type PropostaOpportunita, type PrezziViviGambe,
 } from '@/lib/safeBot';
+import { componiObiettivo, type ComposizioneObiettivo, type RigaComponente } from '@/lib/composizioneObiettivo';
+import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
+import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
+import { updateOmegaParams } from '@/lib/omega';
+import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
+import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -88,6 +95,42 @@ export interface PropostaOppVista {
     abbinabileOra: number | null;
     /** eta' del prezzo in secondi, null = ignota (fail-closed) */
     etaQuoteS: number | null;
+    /**
+     * 18/09 — PREZZO VIVO PER GAMBA di una proposta COMBO (`payload.legs[]`,
+     * contratto in arrivo da un altro costruttore). Calcolato dagli stessi
+     * dati del feed scanner già in memoria (`lib/comboPrezzoVivo.ts`),
+     * nessuna lettura nuova. `undefined` = la proposta non ha `legs` (il caso
+     * di oggi, sempre): nessuna scheda esistente lo consuma ancora.
+     */
+    prezziGamba?: PrezzoVivo[];
+    /**
+     * 18/09 (raccordo) — LO STESSO prezzo vivo di una proposta A GAMBA SOLA
+     * (`vivo.prezzo` sopra, riletto qui col nome che la scheda si aspetta):
+     * è ESATTAMENTE il numero che `SchedaPropostaOpportunita` mostra in
+     * grande e che PIAZZA manda all'approvazione. `null` = nessun prezzo
+     * vivo trovato (mercato assente/sospeso, o proposta combo).
+     */
+    prezzoVivoGamba: number | null;
+    /**
+     * 18/09 (raccordo) — `prezziGamba` (sopra, array indicizzato per
+     * posizione) RICONCILIATO nel tipo `PrezziViviGambe` (`lib/safeBot.ts`,
+     * `Record<indice, prezzo>`) che la scheda/RPC si aspettano: UN
+     * adattatore, non una seconda formula (nessun prezzo ricalcolato qui,
+     * solo la stessa lista letta in un'altra forma). `undefined` = la
+     * proposta non ha `legs`.
+     */
+    prezziViviGambe?: PrezziViviGambe;
+}
+
+/** L'adattatore fra i due tipi che F2 e la COMBO hanno dichiarato ciascuno
+ *  per conto proprio (`PrezzoVivo[]` indicizzato per posizione vs
+ *  `PrezziViviGambe` = `Record<indice, prezzo>`): stessa lista, stessa
+ *  posizione, nessun secondo calcolo. */
+function prezziViviGambeDa(prezziGamba: PrezzoVivo[] | undefined): PrezziViviGambe | undefined {
+    if (!prezziGamba || !prezziGamba.length) return undefined;
+    const out: PrezziViviGambe = {};
+    prezziGamba.forEach((pv, i) => { out[i] = pv.prezzo; });
+    return out;
 }
 
 /** UNA lettura completa ogni 30 s. Il resto arriva in push. */
@@ -241,6 +284,43 @@ export interface OperazionePartita {
      * `null` per i quattro bot tennis, le cui righe non portano questi campi.
      */
     dettaglio: DettaglioRiga | null;
+    /**
+     * 18/09 (raccordo, R1) — `market_id`/`selection_id` della riga, quando il
+     * bot li pubblica (Omega/Safe/i 4 bot tennis con le loro chiavi vere;
+     * Mike NON li ha per riga — dichiarato, `null`). Servono a calcolare la
+     * quota di adesso e "se chiudo ora" con le STESSE `prezzoVivo()`/
+     * `chiusuraViva()` già usate per `PosizioneAperta`: nessuna seconda formula.
+     */
+    marketId: string | null;
+    selectionId: number | null;
+    /** responsabilità di QUESTA riga (colonna quando c'è; aritmetica pura per
+     *  il tennis, v. `liabilityTennis`). */
+    liability: number | null;
+    /**
+     * 18/09 (raccordo, R1) — quota d'ingresso vs quota di ADESSO sullo stesso
+     * lato, con i tick di distanza dall'ingresso: STESSA `quotaViva()` già
+     * usata da `PosizioneAperta.vivo`. `null` = nessun prezzo vivo trovato
+     * (Mike, o mercato/selezione assenti dal feed).
+     */
+    vivo: QuotaViva | null;
+    /** età del prezzo su cui si basa `vivo`, in secondi: STESSA `etaSecondi()`
+     *  già usata per `PartitaGiornata.etaFeedS`/le proposte di chiusura. */
+    etaQuoteS: number | null;
+    /**
+     * 18/09 (raccordo, R1) — quanto varrebbe chiudere questa posizione ADESSO,
+     * per intero: STESSA `chiusuraViva()` già usata per `PosizioneAperta.
+     * chiusura` ("se chiudo ora"). `null`/prezzo assente per Mike o quando il
+     * feed non porta quella selezione.
+     */
+    chiusura: PosizioneAperta['chiusura'];
+    /**
+     * 18/09 (raccordo, R3) — le righe GREZZE (`RigaOrdine`) delle chiusure
+     * collegate (`closes_trade_id`), nello stesso ordine di `dettaglio.
+     * chiusure` ma nel formato che `StrisciaEsitoChiusura`/`certezzaChiusura`
+     * si aspettano (chiesto/abbinato/residuo/prezzo medio, non il riassunto
+     * già tradotto). Vuoto per i 4 bot tennis (nessuna catena di chiusura).
+     */
+    chiusureOrdini: RigaOrdine[];
 }
 
 // ------------------------------------------------------------- posizioni
@@ -361,6 +441,39 @@ export function liabilityTennis(
     return Math.round((price - 1) * size * 100) / 100;
 }
 
+/**
+ * 18/09 (raccordo) — CHIAVE COMPOSTA bot+id, per `soldiPerPartita()`.
+ *
+ * `groupTradesIntoCicli` (`lib/eventGroups.ts`) raggruppa apertura↔chiusura
+ * con un `Map<number, T>` GLOBALE sull'`id` grezzo: `omega_trades`,
+ * `safe_strategy_trades`, `mike_trades` e `tennis_live_orders` hanno
+ * sequenze PK **indipendenti**, quindi un id numerico che coincide fra due
+ * tabelle diverse farebbe agganciare la chiusura del bot sbagliato come se
+ * chiudesse un'altra posizione — rischio segnalato dal checkpoint F3 (§
+ * "richieste fuori perimetro #1"). L'offset (1 miliardo per bot) e' enorme
+ * rispetto a qualunque PK reale e NON cambia il raggruppamento apertura→
+ * chiusura DENTRO lo stesso bot (stesso offset su entrambe le righe): serve
+ * solo a impedire la collisione FRA bot diversi. Effetto contenuto: l'id
+ * modificato qui vive SOLO dentro `soldiPerPartita` (che non lo espone,
+ * `PartitaSoldi` non porta `id`), non nel resto della pagina.
+ */
+const OFFSET_BOT: Record<Bot, number> = {
+    omega: 0, safe: 1_000_000_000, mike: 2_000_000_000,
+    tennis_scalper: 3_000_000_000, tennis_pro: 4_000_000_000,
+    tennis_flb: 5_000_000_000, tennis_swing: 6_000_000_000,
+};
+
+function chiaviComposte<T extends { id: number; closes_trade_id?: number | null }>(
+    righe: readonly T[], bot: Bot,
+): T[] {
+    const off = OFFSET_BOT[bot];
+    return righe.map((r) => ({
+        ...r,
+        id: r.id + off,
+        closes_trade_id: r.closes_trade_id == null ? r.closes_trade_id : r.closes_trade_id + off,
+    }));
+}
+
 /** Una proposta con accanto il presente: prezzo e liquidità di ADESSO. */
 export interface PropostaVista {
     proposta: PropostaChiusura;
@@ -440,9 +553,36 @@ export interface ControlRoomVM {
         vinte: number | null;
         perse: number | null;
         operazioniPaper: number | null;
+        /**
+         * 18/09 (raccordo, R5) — dichiarazione onesta quando i contatori
+         * V/P NON contano una o più fonti operazione per operazione (oggi:
+         * le due voci manuali sito/app, un aggregato-giornata senza un
+         * esito per singola giocata dal backend). `null` = nessuna
+         * dichiarazione dovuta. I 4 bot tennis NON compaiono qui: la RPC
+         * `get_tennis_bot_daily` porta `vinti`/`persi` REALI, quindi contano
+         * per intero nei contatori sopra.
+         */
+        notaContatori: string | null;
     };
     /** target per partita calcolato dal SERVIZIO (Omega). Se manca, la pagina lo dichiara. */
     targetServizio: number | null;
+
+    /**
+     * 18/09 — SCOMPOSIZIONE dell'obiettivo (Task 2): Omega · Safe calcio ·
+     * Safe tennis · Mike · bot tennis · manuale, SOLO soldi veri. Costruita
+     * con `lib/composizioneObiettivo.ts` sulle STESSE righe già lette per
+     * `realizzatoOggi`: nessuna lettura nuova.
+     */
+    composizioneOggi: ComposizioneObiettivo;
+    /** punto d'aggancio isolato per le scommesse manuali dal SITO Betfair
+     *  (fuori app): oggi sempre "non disponibile" (`lib/manualeSitoBetfair.ts`). */
+    manualeSitoBetfair: ManualeSitoBetfair;
+    /**
+     * Salva l'obiettivo di oggi (`omega_update_params({ dailyGoal })`, RPC
+     * già pronta): NON tocca `params`/`mode` di Omega (la RPC fa `coalesce`
+     * per ciascuno, verificato in `migrations/omega_daily_v2.sql:107-113`).
+     */
+    salvaObiettivo: (valore: number) => Promise<void>;
 
     bots: StatoBot[];
     posizioni: PosizioneAperta[];
@@ -515,8 +655,22 @@ export interface ControlRoomVM {
      * numeri di un'altra cosa).
      */
     proposteOpportunita: PropostaOppVista[];
-    piazzaOpportunita: (id: number) => Promise<void>;
+    /**
+     * 18/09 (raccordo, R2) — PIAZZA manda ESATTAMENTE il prezzo che la scheda
+     * sta mostrando in quell'istante (`SchedaPropostaOpportunita.onPiazza`),
+     * non quello congelato nella proposta: `approvaPropostaOpportunita`
+     * (`lib/safeBot.ts`) lo inoltra alla RPC `safe_request_approve` coi nuovi
+     * parametri opzionali. Retrocompatibile: se la migrazione che li accetta
+     * non è applicata, un SOLO ripiego automatico sul solo `p_id` (mai una
+     * doppia approvazione), con `avvisoOpportunita` che lo dichiara.
+     */
+    piazzaOpportunita: (
+        id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe, slippagePct?: number,
+    ) => Promise<void>;
     rifiutaOpportunita: (id: number) => Promise<void>;
+    /** avviso onesto quando PIAZZA è dovuto ripiegare sul solo `p_id`
+     *  (migrazione del prezzo visto non applicata): null = nessun ripiego. */
+    avvisoOpportunita: string | null;
     slippagePct: number;
     setSlippagePct: (v: number) => void;
     approva: (id: number) => Promise<void>;
@@ -554,12 +708,29 @@ export interface ControlRoomVM {
     feedSorgente: string | null;
     feedEtaS: number | null;
     feedFreschezza: Freschezza;
+    /**
+     * STADIO B2c (18/09, raccordo) — «canale locale» quando l'ultimo
+     * messaggio scanner accettato dal canale 47336 è FRESCO (stessa soglia
+     * `freschezza()` di tutta la pagina), altrimenti «database» (poll dei
+     * 30 s / Supabase realtime, come oggi). Oggi il canale è muto: resta
+     * sempre «database», nessuna differenza a schermo.
+     */
+    fonteScan: 'locale' | 'database';
 
     ricarica: () => void;
 }
 
 export function useControlRoom(): ControlRoomVM {
     const [scan, setScan] = useState<ScanRow[]>([]);
+    // specchio SINCRONO dell'ultimo `scan` per il confronto «vince il più
+    // recente» dei messaggi del canale locale scanner (v. sotto): un `useState`
+    // letto dentro una callback resterebbe alla chiusura del render in cui la
+    // callback è stata creata, non all'ultimo commit.
+    const scanRef = useRef<ScanRow[]>(scan);
+    useEffect(() => { scanRef.current = scan; }, [scan]);
+    // istante dell'ultimo messaggio scanner ACCETTATO dal canale locale
+    // 47336 (v. `fonteScan` nel VM): `null` finché il canale non parla.
+    const [ultimoScanLocaleMs, setUltimoScanLocaleMs] = useState<number | null>(null);
     const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
     const [omega, setOmega] = useState<OmegaState | null>(null);
     const [omegaTrades, setOmegaTrades] = useState<OmegaTrade[]>([]);
@@ -622,6 +793,17 @@ export function useControlRoom(): ControlRoomVM {
     const [tennisOggiPaper, setTennisOggiPaper] = useState<TennisBotDailyRow[]>([]);
     /** gli ordini di oggi dei quattro bot: posizioni aperte + scheda partita */
     const [tennisOrdini, setTennisOrdini] = useState<TennisBotOrderRow[]>([]);
+    /**
+     * 18/09 (raccordo, R4) — la riga singleton `betfair_live_account`, GIA'
+     * letta/sottoscritta da `SaldoBetfairCard` (autosufficiente, non passa da
+     * qui): serve ANCHE qui per le due colonne manuali (`manual_pnl_*`/
+     * `manual_app_pnl_*`) che entrano nella composizione dell'obiettivo.
+     * Stesse funzioni di `lib/liveOrders.ts`, nessuna tabella nuova.
+     */
+    const [liveAccount, setLiveAccount] = useState<LiveAccountRow | null>(null);
+    /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
+     *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
+    const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
 
     // ---------------------------------------------------------------- lettura
     const ricarica = useCallback(() => {
@@ -731,16 +913,67 @@ export function useControlRoom(): ControlRoomVM {
     useEffect(() => subscribeScanStatus((r) => { if (r) setScanStatus(r); }), []);
 
     // ------------------------------------------------- feed partite in realtime
-    useEffect(() => subscribeScanRows((ev) => {
-        setScan((prev) => {
-            if (ev.type === 'delete') return prev.filter((r) => r.event_id !== ev.eventId);
-            const i = prev.findIndex((r) => r.event_id === ev.row.event_id);
-            if (i < 0) return [...prev, ev.row];
-            const next = prev.slice();
-            next[i] = ev.row;
-            return next;
+    //
+    // Task 6 (18/09) — COALESCENZA: su un mercato molto attivo (o 720
+    // mercati insieme) più eventi possono arrivare nella stessa manciata di
+    // millisecondi. Prima, ognuno faceva il suo `setScan` (un render per
+    // messaggio); ora si accodano in un buffer e si applicano TUTTI INSIEME
+    // al prossimo frame (`requestAnimationFrame`, con `setTimeout` come
+    // ripiego fuori dal browser/jsdom): un commit per frame, non uno per
+    // messaggio. Il RISULTATO è identico (`lib/scanEventBuffer.ts`,
+    // `applicaLottoScan` == applicare gli eventi uno a uno, in ordine): non è
+    // una lettura in meno dal database, è un render in meno sullo schermo.
+    useEffect(() => {
+        const programma = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : (cb: () => void) => window.setTimeout(cb, 16);
+        const annulla = typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+            ? window.cancelAnimationFrame.bind(window)
+            : window.clearTimeout.bind(window);
+
+        let lotto: ScanRowEvent<ScanRow>[] = [];
+        let programmato: number | null = null;
+
+        const scarica = () => {
+            programmato = null;
+            if (!lotto.length) return;
+            const daApplicare = lotto;
+            lotto = [];
+            setScan((prev) => applicaLottoScan(prev, daApplicare));
+        };
+
+        const off = subscribeScanRows((ev) => {
+            lotto.push(ev);
+            if (programmato == null) programmato = programma(scarica) as unknown as number;
         });
-    }), []);
+
+        // STADIO B1/B2a (18/09, raccordo) — CANALE LOCALE SCANNER (47336,
+        // topic `scan_calcio`/`scan_tennis`): STESSA riga di
+        // `safe_strategy_scan` (contratto in
+        // `Betfair/safe_strategy/CHECKPOINT_AL_MS_F0_F1_2026-09-18.md`), quindi
+        // entra nello STESSO lotto/coalescenza di sopra. Oggi il canale è muto
+        // (porta chiusa lato backend): nessun messaggio arriva, quindi nessuna
+        // differenza rispetto a prima. "Vince il più recente": un messaggio
+        // più vecchio della riga già in `scan` si scarta; uno senza `payload`
+        // pure (non è una notizia, è un guasto di pubblicazione).
+        const localeScanner = getLocalChannel('scanner');
+        const accodaSeFresco = (bruto: unknown) => {
+            const row = scanLocaleAccettabile(scanRef.current, bruto as ScanRowLocaleMsg | null);
+            if (!row) return; // senza payload, o più vecchio della riga già in memoria
+            lotto.push({ type: 'upsert', row });
+            setUltimoScanLocaleMs(Date.now());
+            if (programmato == null) programmato = programma(scarica) as unknown as number;
+        };
+        const offScanCalcio = localeScanner.subscribe('scan_calcio', accodaSeFresco);
+        const offScanTennis = localeScanner.subscribe('scan_tennis', accodaSeFresco);
+
+        return () => {
+            off();
+            offScanCalcio();
+            offScanTennis();
+            if (programmato != null) annulla(programmato);
+        };
+    }, []);
 
     // ------------------------------------------------------- canali locali
     useEffect(() => {
@@ -768,6 +1001,21 @@ export function useControlRoom(): ControlRoomVM {
             }));
         });
         return () => { for (const c of chiusure) c(); };
+    }, []);
+
+    // --------------------------------------------------- conto Betfair (R4)
+    // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
+    // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
+    // aggiungere una lettura al giro pieno. Si riusa lo STESSO schema di
+    // `SaldoBetfairCard.tsx` (autosufficiente, gia' in pagina): UNA lettura
+    // ONE-SHOT al montaggio + push Realtime sulla STESSA riga singleton
+    // `betfair_live_account` — nessuna tabella nuova, nessun polling in piu'.
+    useEffect(() => {
+        let vivo = true;
+        fetchLiveAccount().then((r) => { if (vivo) setLiveAccount(r); })
+            .catch(() => { /* resta null: leggiManualeSitoBetfair dichiara "non disponibile" */ });
+        const off = subscribeLiveAccount((r) => { if (vivo) setLiveAccount(r); });
+        return () => { vivo = false; off(); };
     }, []);
 
     // -------------------------------------------------- proposte in realtime
@@ -817,12 +1065,42 @@ export function useControlRoom(): ControlRoomVM {
         return m;
     }, [scan]);
 
+    /** 18/09 — tutti i payload della giornata, per il prezzo vivo PER GAMBA
+     *  delle proposte combo (`lib/comboPrezzoVivo.ts`): una gamba non porta
+     *  un proprio event_id, quindi si cerca il suo mercato in TUTTI i payload
+     *  già in memoria. Nessuna lettura nuova (stesso `scan` di sempre). */
+    const tuttiIPayloadOggi = useMemo(
+        () => Array.from(feedPerEvento.values()).map((v) => v.payload as Parameters<typeof prezzoVivo>[0]),
+        [feedPerEvento],
+    );
+
 
     const soldi = useMemo(() => soldiPerPartita([
-        ...marca(omegaTrades as unknown as PnlTradeLike[], 'omega'),
-        ...marca((safe?.trades ?? []) as unknown as PnlTradeLike[], 'safe'),
-        ...marca((mike?.trades ?? []) as unknown as PnlTradeLike[], 'mike'),
-    ]), [omegaTrades, safe?.trades, mike?.trades]);
+        ...chiaviComposte(marca(omegaTrades as unknown as PnlTradeLike[], 'omega'), 'omega'),
+        ...chiaviComposte(marca((safe?.trades ?? []) as unknown as PnlTradeLike[], 'safe'), 'safe'),
+        ...chiaviComposte(marca((mike?.trades ?? []) as unknown as PnlTradeLike[], 'mike'), 'mike'),
+        // 18/09 (raccordo, R1/Task 3 di F3) — i 4 bot tennis nei soldi per
+        // partita: `marcaTennis`/`ORDINE_BOT` erano gia' pronti in
+        // `lib/controlRoom.ts` (F3), non ancora collegati qui (richiesta
+        // fuori perimetro #1 del suo referto). Chiave composta bot+id
+        // (sotto): `omega_trades`/`safe_strategy_trades`/`mike_trades`/
+        // `tennis_live_orders` hanno sequenze PK INDIPENDENTI — senza,
+        // un id numerico coincidente fra due tabelle diverse farebbe
+        // agganciare la chiusura del bot sbagliato (bug preesistente,
+        // segnalato da F3, ora chiuso per tutti e 7 i bot).
+        ...chiaviComposte(marcaTennis(
+            tennisOrdini.filter((o) => o.source === 'tennis_scalper') as unknown as RigaTennisPerSoldi[], 'tennis_scalper',
+        ), 'tennis_scalper'),
+        ...chiaviComposte(marcaTennis(
+            tennisOrdini.filter((o) => o.source === 'tennis_pro') as unknown as RigaTennisPerSoldi[], 'tennis_pro',
+        ), 'tennis_pro'),
+        ...chiaviComposte(marcaTennis(
+            tennisOrdini.filter((o) => o.source === 'tennis_flb') as unknown as RigaTennisPerSoldi[], 'tennis_flb',
+        ), 'tennis_flb'),
+        ...chiaviComposte(marcaTennis(
+            tennisOrdini.filter((o) => o.source === 'tennis_swing') as unknown as RigaTennisPerSoldi[], 'tennis_swing',
+        ), 'tennis_swing'),
+    ]), [omegaTrades, safe?.trades, mike?.trades, tennisOrdini]);
 
     // Omega è l'unico che pubblica obiettivo e target per partita, e li calcola
     // il SERVIZIO. La pagina li legge: non ne fa una seconda copia.
@@ -843,24 +1121,75 @@ export function useControlRoom(): ControlRoomVM {
         return m;
     }, [eventiOmega]);
 
+    /**
+     * 18/09 (raccordo, R4) — le due voci manuali FUORI dai bot (sito Betfair
+     * / terminale manuale della nostra app), dalla riga singleton
+     * `betfair_live_account` (colonne `manual_pnl_*`/`manual_app_pnl_*`,
+     * `Betfair/stream/reconcile_worker.py::_sync_manual_pnl`). Nessuna
+     * lettura nuova (`liveAccount`, sopra). Assente/migrazione non applicata
+     * → entrambe "non disponibile", comportamento IDENTICO a ieri.
+     */
+    const manualeSitoBetfair = useMemo<ManualeSitoBetfair>(
+        () => leggiManualeSitoBetfair(liveAccount, romeDay(new Date(nowMs))),
+        [liveAccount, nowMs],
+    );
+
     // ── IL REALIZZATO DI OGGI, da TUTTI E TRE i bot ──────────────────────────
     // La barra leggeva `realized_today` di Omega: una vincita del tennis (Safe)
     // non la muoveva. Qui si sommano le righe REGOLATE dei tre bot, tenendo
     // separati soldi veri e simulati e dividendo per sport.
-    const realizzatoOggi = useMemo(() => {
+    // ── righe SORGENTE per bot, filtrate a OGGI: servono sia a `realizzatoOggi`
+    // (barra, sommate) sia a `composizioneOggi` (Task 2, scomposte per bot) —
+    // UNA sola volta il filtro "e' di oggi", nessuna seconda copia. ──────────
+    const oggiRighe = useMemo(() => {
         const oggi = romeDay(new Date(nowMs));
         const delGiorno = (placedAt: string | null | undefined) =>
             !!placedAt && romeDay(new Date(placedAt)) === oggi;
-        const righe: RigaRealizzato[] = [];
-        for (const t of omegaTrades) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
-        }
-        for (const t of safe?.trades ?? []) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport });
-        }
-        for (const t of mike?.trades ?? []) {
-            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
-        }
+        const omegaRighe: RigaComponente[] = omegaTrades
+            .filter((t) => delGiorno(t.placed_at))
+            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio', origin: t.origin ?? null }));
+        const safeRighe: RigaComponente[] = (safe?.trades ?? [])
+            .filter((t) => delGiorno(t.placed_at))
+            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport, origin: t.origin ?? null }));
+        const mikeRighe: RigaComponente[] = (mike?.trades ?? [])
+            .filter((t) => delGiorno(t.placed_at))
+            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio', origin: t.origin ?? null }));
+        // I 4 BOT TENNIS DEDICATI — righe SINTETICHE (18/09, Task 2): la RPC
+        // `get_tennis_bot_daily` da' gia' il netto PER BOT PER GIORNO (non le
+        // singole operazioni), quindi qui si costruisce UNA riga per bot con
+        // `status` dedotto dal segno del netto — l'unico modo di riusare
+        // `realizzatoGiornata` (che conta righe REGOLATE) senza una seconda
+        // formula di somma. Il costo dichiarato: `vinte`/`perse` su queste
+        // righe contano "quanti bot hanno chiuso la giornata in utile", non
+        // "quanti ordini": la RPC non da' le operazioni singole. Live e paper
+        // restano SEMPRE due array separati (mai sommati).
+        const tennisBotRiga = (r: TennisBotDailyRow, mode: 'live' | 'paper'): RigaComponente | null => {
+            if (r.pnl_netto == null) return null;
+            const status = r.pnl_netto > 0 ? 'won' : r.pnl_netto < 0 ? 'lost' : 'void';
+            return { status, pnl: r.pnl_netto, mode, sport: 'tennis', origin: 'auto' };
+        };
+        const tennisBotRighe: RigaComponente[] = [
+            ...tennisOggi.map((r) => tennisBotRiga(r, 'live')),
+            ...tennisOggiPaper.map((r) => tennisBotRiga(r, 'paper')),
+        ].filter((r): r is RigaComponente => r != null);
+        // 18/09 (raccordo, R4) — le due voci MANUALI fuori dai bot (sito/app):
+        // una riga sintetica per bucket, SOLO soldi veri (la RPC del conto
+        // legge solo il LIVE), status dal segno del netto — stesso schema
+        // dei bot tennis sopra, nessuna seconda formula di somma.
+        const rigaManuale = (v: number | null): RigaComponente | null => (v == null ? null : {
+            status: v > 0 ? 'won' : v < 0 ? 'lost' : 'void', pnl: v, mode: 'live', sport: 'calcio', origin: 'manual',
+        });
+        const manualeSitoRighe = [rigaManuale(manualeSitoBetfair.pnlOggi)].filter((r): r is RigaComponente => r != null);
+        const manualeAppRighe = [rigaManuale(manualeSitoBetfair.app?.pnlOggi ?? null)].filter((r): r is RigaComponente => r != null);
+        return { omegaRighe, safeRighe, mikeRighe, tennisBotRighe, manualeSitoRighe, manualeAppRighe };
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOggi, tennisOggiPaper, nowMs, manualeSitoBetfair]);
+
+    const realizzatoOggi = useMemo(() => {
+        const { omegaRighe, safeRighe, mikeRighe, tennisBotRighe, manualeSitoRighe, manualeAppRighe } = oggiRighe;
+        const righe: RigaRealizzato[] = [
+            ...omegaRighe, ...safeRighe, ...mikeRighe, ...tennisBotRighe,
+            ...manualeSitoRighe, ...manualeAppRighe,
+        ];
         // DUE conti separati sulle STESSE righe. `realizzatoGiornata` sa gia'
         // dividere per modalita', ma il chiamante deve DECIDERE quale mostrare:
         // un numero che somma le due e' un numero che non esiste.
@@ -871,7 +1200,25 @@ export function useControlRoom(): ControlRoomVM {
             live: realizzatoGiornata(soloLive),
             paper: realizzatoGiornata(soloPaper),
         };
-    }, [omegaTrades, safe?.trades, mike?.trades, nowMs]);
+    }, [oggiRighe]);
+
+    /** Task 2 — la SCOMPOSIZIONE dell'obiettivo: stesse righe di sopra,
+     *  raggruppate per bot invece che sommate tutte insieme. */
+    const composizioneOggi = useMemo<ComposizioneObiettivo>(() => componiObiettivo({
+        omega: oggiRighe.omegaRighe,
+        safe: oggiRighe.safeRighe,
+        mike: oggiRighe.mikeRighe,
+        tennisBot: oggiRighe.tennisBotRighe,
+        manualeSito: oggiRighe.manualeSitoRighe,
+        manualeApp: oggiRighe.manualeAppRighe,
+    }), [oggiRighe]);
+
+    /** Task 2 — salva l'obiettivo di oggi (RPC gia' pronta, verificata: fa
+     *  `coalesce` su `params`/`mode`, non li tocca). */
+    const salvaObiettivo = useCallback(async (valore: number) => {
+        await updateOmegaParams({ dailyGoal: valore });
+        ricarica();
+    }, [ricarica]);
 
     // NOTA: questo blocco sta QUI, prima di `giornata`, perche' il target
     // di ripiego di ogni partita si calcola sottraendo all'obiettivo il
@@ -1274,33 +1621,78 @@ export function useControlRoom(): ControlRoomVM {
             const etaQuoteS = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
                 ? Math.max(0, Math.round((nowMs - odds) / 1000))
                 : etaSecondi(riga?.updated_at ?? null, nowMs);
-            return { proposta: pr, abbinabileOra: vivo.abbinabile, etaQuoteS };
-        }), [proposte, feedPerEvento, nowMs]);
+            // 18/09 — COMBO: se il payload porta `legs[]` (contratto in arrivo
+            // da un altro costruttore, campo opzionale), calcola il prezzo
+            // vivo di OGNI gamba dagli stessi payload della giornata già in
+            // memoria — nessuna lettura nuova. Nessun `legs` → `undefined`,
+            // nessun effetto su nulla di quello che gira oggi.
+            const legs = (p as { legs?: Parameters<typeof prezzoVivoPerGamba>[0] }).legs;
+            const prezziGamba = legs && legs.length
+                ? prezzoVivoPerGamba(legs, tuttiIPayloadOggi)
+                : undefined;
+            // 18/09 (raccordo, R2) — `prezzoVivoGamba` = LO STESSO `vivo.prezzo`
+            // di sopra (gamba sola); `prezziViviGambe` = `prezziGamba`
+            // riconciliato nel tipo che la scheda/RPC si aspettano (adattatore,
+            // nessun ricalcolo).
+            return {
+                proposta: pr, abbinabileOra: vivo.abbinabile, etaQuoteS, prezziGamba,
+                prezzoVivoGamba: vivo.prezzo, prezziViviGambe: prezziViviGambeDa(prezziGamba),
+            };
+        }), [proposte, feedPerEvento, nowMs, tuttiIPayloadOggi]);
 
     const ricaricaProposte = useCallback(async () => {
         try { setProposte(await fetchProposte()); } catch { /* il giro riprova */ }
     }, []);
 
-    const piazzaOpportunita = useCallback(async (id: number) => {
-        // PIAZZA = la proposta passa a 'pending' e la esegue il servizio, con
-        // le stesse barriere di ogni richiesta manuale. Nessuna seconda strada.
-        await approvaProposta(id);
+    /**
+     * 18/09 (raccordo, R2) — «il prezzo che l'utente vede è quello che
+     * parte»: manda ESATTAMENTE `prezzoVisto`/`legsPricesVisti` che la
+     * scheda mostrava al clic (`SchedaPropostaOpportunita.onPiazza`),
+     * inoltrati tali e quali a `approvaPropostaOpportunita` (`lib/safeBot.ts`).
+     * RETROCOMPATIBILE: se la migrazione `safe_request_approve_prezzo_
+     * visto_2026-09-18.sql` non è applicata, la RPC rifiuta i parametri
+     * nuovi (PostgREST "function ... does not exist" / PGRST202) — UN SOLO
+     * ripiego automatico sul solo `p_id` (mai una doppia approvazione),
+     * dichiarato in `avvisoOpportunita`.
+     */
+    const piazzaOpportunita = useCallback(async (
+        id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe, slippagePctVisto?: number,
+    ) => {
+        const opts = { prezzoVisto, legsPricesVisti, slippagePct: slippagePctVisto };
+        const haOptsNuovi = prezzoVisto != null
+            || (legsPricesVisti != null && Object.values(legsPricesVisti).some((v) => v != null));
+        try {
+            await approvaPropostaOpportunita(id, opts);
+            setAvvisoOpportunita(null);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (haOptsNuovi && /PGRST202|schema cache|does not exist|not find the function/i.test(msg)) {
+                await approvaPropostaOpportunita(id); // ripiego UNICO, solo p_id
+                setAvvisoOpportunita('prezzo visto non inviato: migrazione non applicata');
+            } else {
+                throw e;
+            }
+        }
+        svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
     const rifiutaOpportunita = useCallback(async (id: number) => {
         await ignoraProposta(id, 'opportunita rifiutata dall’operatore');
+        svegliaBot('safe', 'approvazione');
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
 
     const approva = useCallback(async (id: number) => {
         await approvaProposta(id);
+        svegliaBot('safe', 'approvazione');
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
     const ignora = useCallback(async (id: number) => {
         await ignoraProposta(id);
+        svegliaBot('safe', 'approvazione');
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
@@ -1316,11 +1708,13 @@ export function useControlRoom(): ControlRoomVM {
 
     const approvaOmega = useCallback(async (id: number) => {
         await approvaPropostaOmega(id);
+        svegliaBot('omega', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposteOmega();
     }, [ricaricaProposteOmega]);
 
     const ignoraOmega = useCallback(async (id: number) => {
         await ignoraPropostaOmega(id);
+        svegliaBot('omega', 'approvazione');
         await ricaricaProposteOmega();
     }, [ricaricaProposteOmega]);
 
@@ -1341,9 +1735,25 @@ export function useControlRoom(): ControlRoomVM {
             minute_at_entry?: number | null; score_at_entry?: string | null;
             closes_trade_id?: number | null; market_id?: string | null;
             selection_id?: number | null;
-        }, closes: readonly { id: number }[] = []) => {
+            // 18/09 (raccordo, R1) — presente solo su Omega/Safe (colonna vera)
+            liability?: number | null;
+        }, closes: readonly (Parameters<typeof ordineDi>[0] & { id: number })[] = []) => {
             if (isErrorRow(t.status)) return;           // non e' un'operazione
             const k = String(t.event_id);
+            // 18/09 (raccordo, R1) — quota di ADESSO sullo stesso lato
+            // dell'ingresso e "se chiudo ora": STESSE `libroVivo()`/
+            // `quotaViva()`/`chiusuraViva()` gia' usate per `PosizioneAperta`.
+            // Con `market_id`/`selection_id` assenti (Mike) queste tornano
+            // `null` da sole (`prezzoVivo` fail-closed su id mancanti):
+            // nessuna seconda condizione per bot, nessun numero inventato.
+            const book = libroVivo({ event_id: t.event_id, market_id: t.market_id ?? null, selection_id: t.selection_id ?? null });
+            const lato = latoDi(t.side);
+            const vivo = quotaViva(t.price ?? null, lato, book);
+            const chius = chiusuraViva({
+                side: t.side ?? null, price: t.price ?? null, size: t.size ?? null,
+                meta: t.meta ?? null, event_id: t.event_id,
+                market_id: t.market_id ?? null, selection_id: t.selection_id ?? null,
+            });
             const riga: OperazionePartita = {
                 bot, id: t.id,
                 selezione: t.selection_name ?? t.runner_name ?? null,
@@ -1381,9 +1791,15 @@ export function useControlRoom(): ControlRoomVM {
                         score_at_entry: t.score_at_entry ?? null,
                         closes_trade_id: t.closes_trade_id ?? null,
                     },
-                    closes as RigaDettagliabile[],
+                    closes as unknown as RigaDettagliabile[],
                     { gamba: t.strategy ?? t.phase ?? t.role ?? null },
                 ),
+                marketId: t.market_id ?? null,
+                selectionId: t.selection_id ?? null,
+                liability: t.liability ?? null,
+                vivo, etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
+                chiusura: chius,
+                chiusureOrdini: closes.map((c) => ordineDi(c)),
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
@@ -1407,6 +1823,18 @@ export function useControlRoom(): ControlRoomVM {
             if (bot == null || !isBotTennis(bot as Bot)) continue;
             const k = String(o.event_id ?? '');
             if (!k) continue;
+            // 18/09 (raccordo, R1) — STESSE `libroVivo()`/`quotaViva()`/
+            // `chiusuraViva()`: `tennis_live_orders` PORTA `market_id`/
+            // `selection_id` (colonne NOT NULL, `lib/liveOrders.ts:78-79`),
+            // quindi qui il prezzo vivo e' calcolabile per davvero (a
+            // differenza di Mike). Nessuna seconda formula.
+            const book = libroVivo({ event_id: k, market_id: o.market_id, selection_id: o.selection_id });
+            const latoO = latoDi(o.side);
+            const vivoO = quotaViva(o.price ?? null, latoO, book);
+            const chiusO = chiusuraViva({
+                side: o.side ?? null, price: o.price ?? null, size: o.size ?? null,
+                meta: null, event_id: k, market_id: o.market_id, selection_id: o.selection_id,
+            });
             const riga: OperazionePartita = {
                 bot: bot as Bot, id: o.id, selezione: null,
                 lato: latoDi(o.side), prezzo: o.price ?? null, size: o.size ?? null,
@@ -1428,17 +1856,27 @@ export function useControlRoom(): ControlRoomVM {
                 // v. `posizioni`: le righe tennis non portano `meta`, ingresso
                 // né modello. Assente si scrive, non si riempie.
                 dettaglio: null,
+                marketId: o.market_id ?? null,
+                selectionId: o.selection_id ?? null,
+                liability: liabilityTennis(o),
+                vivo: vivoO,
+                etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
+                chiusura: chiusO,
+                // nessuna catena di chiusura per un ordine tennis (audit F4,
+                // PARTE 1): ogni riga e' la propria posizione.
+                chiusureOrdini: [],
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
         }
         for (const arr of m.values()) arr.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
         return m;
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva]);
 
     const chiudi = useCallback(async (tradeId: number) => {
         // chiusura PIENA: il P&L diventa identico sui due esiti (green-up)
         await requestSafe('cashout', { trade_id: tradeId, fraction: 1 });
+        svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
@@ -1466,6 +1904,7 @@ export function useControlRoom(): ControlRoomVM {
 
     const cashOutEvento = useCallback(async (eventId: string) => {
         await cashOutEventoSafe(eventId);
+        svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         ricarica();
     }, [ricarica]);
 
@@ -1574,15 +2013,45 @@ export function useControlRoom(): ControlRoomVM {
             // come quello della giornata. Adesso numeri e contatori nascono
             // dalle stesse righe e non possono divergere; `safeOggi` resta
             // dov'è utile — la controprova (`discordanza`) e il per-sport.
-            operazioni: realizzatoOggi.live.righe,
-            vinte: realizzatoOggi.live.vinte,
-            perse: realizzatoOggi.live.perse,
-            operazioniPaper: realizzatoOggi.paper.righe || null,
+            //
+            // 18/09 (raccordo, R5) — CONTATORI VERI. `realizzatoOggi.live.*`
+            // conta le righe SINTETICHE (1 per bot tennis + 1 per voce
+            // manuale) come UNA operazione ciascuna: falso per i bot tennis
+            // (la RPC `get_tennis_bot_daily` porta `vinti`/`persi`/`ordini`
+            // REALI) e per il manuale (nessun esito per singola giocata dal
+            // backend: resta fuori dai contatori, mai finto). Si tolgono i
+            // contributi sintetici e si sommano i conteggi veri, SENZA
+            // toccare `realizzatoGiornata` (formula certificata, invariata).
+            ...(() => {
+                const sintTennisLive = oggiRighe.tennisBotRighe.filter((r) => r.mode === 'live');
+                const sintTennisPaper = oggiRighe.tennisBotRighe.filter((r) => r.mode === 'paper');
+                const sintManuale = [...oggiRighe.manualeSitoRighe, ...oggiRighe.manualeAppRighe];
+                const conta = (righe: readonly RigaComponente[], esito: 'won' | 'lost') =>
+                    righe.filter((r) => r.status === esito).length;
+                const sommaVero = (righe: readonly TennisBotDailyRow[], chiave: 'vinti' | 'persi' | 'ordini') =>
+                    righe.reduce((s, r) => s + (typeof r[chiave] === 'number' ? r[chiave] : 0), 0);
+                return {
+                    operazioni: realizzatoOggi.live.righe - sintTennisLive.length - sintManuale.length
+                        + sommaVero(tennisOggi, 'ordini'),
+                    vinte: realizzatoOggi.live.vinte - conta(sintTennisLive, 'won') - conta(sintManuale, 'won')
+                        + sommaVero(tennisOggi, 'vinti'),
+                    perse: realizzatoOggi.live.perse - conta(sintTennisLive, 'lost') - conta(sintManuale, 'lost')
+                        + sommaVero(tennisOggi, 'persi'),
+                    operazioniPaper: (realizzatoOggi.paper.righe - sintTennisPaper.length
+                        + sommaVero(tennisOggiPaper, 'ordini')) || null,
+                    notaContatori: sintManuale.length > 0
+                        ? 'le due voci manuali (sito/app) entrano nel realizzato ma non nei contatori vinte/perse: il backend non da un esito per singola giocata'
+                        : null,
+                };
+            })(),
         };
     }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
-        tennisOggi, realizzatoOggi]);
+        tennisOggi, tennisOggiPaper, realizzatoOggi, oggiRighe]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
+    const fonteScanEtaS = ultimoScanLocaleMs == null
+        ? null : Math.max(0, Math.round((nowMs - ultimoScanLocaleMs) / 1000));
+    const fonteScan: 'locale' | 'database' = freschezza(fonteScanEtaS) === 'fresca' ? 'locale' : 'database';
 
     return {
         caricamento, errore, nowMs,
@@ -1593,6 +2062,7 @@ export function useControlRoom(): ControlRoomVM {
         realizzatoOggi,
         soldiGiornata: giornataSoldi,
         targetServizio,
+        composizioneOggi, manualeSitoBetfair, salvaObiettivo,
         bots, posizioni, chiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         runner,
@@ -1603,7 +2073,7 @@ export function useControlRoom(): ControlRoomVM {
         proposte: proposteVista,
         proposteOpportunita,
         piazzaOpportunita,
-        rifiutaOpportunita,
+        rifiutaOpportunita, avvisoOpportunita,
         slippagePct, setSlippagePct, approva, ignora, chiudi,
         statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
         proposteOmega: ordinaProposteOmega(proposteOmega), erroreProposteOmega,
@@ -1611,6 +2081,7 @@ export function useControlRoom(): ControlRoomVM {
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),
+        fonteScan,
         ricarica,
     };
 }

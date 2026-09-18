@@ -15,17 +15,30 @@
 // MONEY-CRITICAL: su timeout/caduta con richieste pendenti l'esito è IGNOTO →
 // il reject dice esplicitamente "NON reinviare" (l'ordine potrebbe essere stato
 // eseguito). Il canale NON ritenta mai una richiesta da solo.
+//
+// STADIO C (18/09, raccordo) — `svegliaBot()` in coda al file importa `Bot`/
+// `isBotTennis` da `lib/controlRoom` SOLO per instradare sulla porta giusta
+// (routing, non logica di dominio): resta l'unica funzione di questo file che
+// conosce il nome dei bot, per lo stesso motivo per cui i sei bot hanno gia'
+// ciascuno il proprio `LocalSport`.
 // ============================================================================
+import { isBotTennis, type Bot } from '@/lib/controlRoom';
 
 // Ogni canale ha il SUO processo e la SUA porta. Non è una duplicazione: i
 // canali dei runner (calcio, tennis) ACCETTANO COMANDI ORDINE, quelli dei bot
 // (mike, omega, safe) sono di SOLA LETTURA — mostrano e basta. Tenere separati
 // chi comanda e chi mostra vuol dire che aggiungere uno schermo non aggiunge
 // mai una via per mandare soldi.
-export type LocalSport = 'calcio' | 'tennis' | 'mike' | 'omega' | 'safe';
+// STADIO B (18/09, raccordo) — `scanner` (47336, topic `scan_calcio`/
+// `scan_tennis`/`scanner_stato`) e `tennis_bot` (47337, topic
+// `tennis_bot_stato`/`tennis_bot_posizioni`) sono lo STESSO meccanismo di
+// connessione/riconnessione/ripiego, aggiunti in coda: oggi il backend non li
+// scrive (porta chiusa), quindi restano in stato `off` senza errori, come i
+// canali bot già esistenti prima del loro avvio.
+export type LocalSport = 'calcio' | 'tennis' | 'mike' | 'omega' | 'safe' | 'scanner' | 'tennis_bot';
 
 /** I canali di sola lettura: nessun comando viaggia su questi. */
-export const CANALI_SOLA_LETTURA: readonly LocalSport[] = ['mike', 'omega', 'safe'] as const;
+export const CANALI_SOLA_LETTURA: readonly LocalSport[] = ['mike', 'omega', 'safe', 'scanner', 'tennis_bot'] as const;
 export type LocalStatus = 'connected' | 'off';
 
 /** Ultimo hello ricevuto dal server ({sport, mode, ...}). */
@@ -46,6 +59,8 @@ export interface LocalResponse {
 const PORTS: Record<LocalSport, number> = {
     calcio: 47331, tennis: 47332,     // runner (comandi + push)
     mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
+    scanner: 47336,     // scanner unico (safe_strategy_scan): scan_calcio/scan_tennis/scanner_stato
+    tennis_bot: 47337,  // 4 bot tennis: tennis_bot_stato/tennis_bot_posizioni
 };
 
 const RECONNECT_MIN_MS = 1_000;   // backoff iniziale
@@ -254,6 +269,35 @@ export function getLocalChannel(sport: LocalSport): LocalChannel {
         instances.set(sport, c);
     }
     return c;
+}
+
+// ------------------------------------------------------------------ sveglia
+// STADIO C (18/09, raccordo, F6 lato pagina) — «LA SVEGLIA AI BOT DOPO OGNI
+// CLIC». Il comando VERO resta la scrittura sul database: la sveglia serve
+// SOLO a far leggere subito quella riga al bot invece che al prossimo giro di
+// poll. Un solo messaggio, nessun dato d'ordine (`{"id","m":"sveglia",
+// "p":{"motivo"}}`, protocollo di `Betfair/stream/local_channel.py`), sulla
+// porta del bot giusto: Mike 47333, Omega 47334, Safe 47335, i 4 bot tennis
+// insieme su 47337 (canale unico, non uno a bot). BEST-EFFORT PURO: se il
+// socket non e' connesso, o la richiesta cade, NON si rilancia e NON si
+// propaga un errore — il chiamante ha GIA' scritto sul database, quello e' il
+// comando vero e non deve mai fallire per colpa della sveglia.
+export type MotivoSveglia = 'approvazione' | 'comando';
+
+function canaleDiBot(bot: Bot): LocalSport {
+    return isBotTennis(bot) ? 'tennis_bot' : bot;
+}
+
+/**
+ * Sveglia il bot giusto DOPO che la scrittura sul database e' gia' riuscita
+ * (il chiamante lo garantisce: qui non si scrive mai niente). Non ritorna
+ * nulla da attendere: e' fuoco-e-dimentica per costruzione, mai un secondo
+ * tentativo, mai un log d'errore per una sveglia mancata.
+ */
+export function svegliaBot(bot: Bot, motivo: MotivoSveglia): void {
+    getLocalChannel(canaleDiBot(bot)).request('sveglia', { motivo }).catch(() => {
+        /* best-effort: il comando vero e' gia' scritto sul database */
+    });
 }
 
 /** SOLO PER I TEST: chiude e dimentica i singleton (mai chiamare in produzione). */

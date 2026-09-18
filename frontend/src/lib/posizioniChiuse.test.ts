@@ -65,6 +65,36 @@ describe('una posizione = apertura + le sue coperture', () => {
         ]);
         expect(p.map((x) => x.id)).toEqual([2, 1]);
     });
+
+    // 18/09, certezza di chiusura — una gamba di chiusura ANNULLATA (rifiutata
+    // da Betfair) non andrà MAI a won/lost/void: prima di questo fix bastava
+    // UNA sola gamba `cancelled` a far sparire l'intera posizione da questa
+    // tab per sempre, anche a fischio finale, con la sua stessa apertura
+    // regolarmente vinta/persa — né aperta né chiusa, in un limbo.
+    it('una gamba di chiusura ANNULLATA non impedisce più alla posizione di comparire', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, status: 'won', pnl: 4.78, side: 'lay', price: 70 }),
+            // tre back a chiudere, come Union Brescia-Treviso: due abbinati, uno annullato
+            t({ id: 2, status: 'lost', pnl: -4.6, closes_trade_id: 1, side: 'back', price: 9.6, size: 9.6 }),
+            t({ id: 3, status: 'lost', pnl: -4.6, closes_trade_id: 1, side: 'back', price: 9.6, size: 9.6 }),
+            t({ id: 4, status: 'cancelled', pnl: null, closes_trade_id: 1, side: 'back', price: 12, size: 2.08 }),
+        ]);
+        expect(p).toHaveLength(1);
+        expect(p[0].id).toBe(1);
+        // la gamba annullata resta VISIBILE nel dettaglio (trasparenza sul
+        // pezzo che non è andato a mercato), ma non conta nel P&L (pnl: null)
+        expect(p[0].righe).toHaveLength(4);
+        expect(p[0].righe.find((r) => r.id === 4)?.stato).toBe('cancelled');
+        expect(p[0].pnlGlobale).toBeCloseTo(4.78 - 4.6 - 4.6, 5);
+    });
+
+    it('ma una gamba ANCORA VIVA (non annullata, non regolata) blocca ancora tutto', () => {
+        const p = posizioniChiuse([
+            t({ id: 1, status: 'won', pnl: 4.78, side: 'lay', price: 70 }),
+            t({ id: 2, status: 'open', pnl: null, closes_trade_id: 1, side: 'back', price: 9.6, size: 9.6 }),
+        ]);
+        expect(p).toHaveLength(0);
+    });
 });
 
 describe('esito — un centesimo di arrotondamento non è una vittoria', () => {

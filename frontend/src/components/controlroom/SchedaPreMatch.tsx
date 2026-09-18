@@ -14,14 +14,26 @@
 // I LOGHI CI SONO SU CIRCA METÀ DELLE PARTITE: arrivano dall'arricchimento di
 // Omega (27 su 55 il 14/09). Dove mancano NON si mette un segnaposto grigio
 // che sembra un logo rotto: si mostrano solo i nomi, che è la verità.
+//
+// SECONDO GIRO (18/09, richiesta utente) — QUOTE PRE-MATCH VIVE, con età, e
+// gli ORDINI/POSIZIONI pre-match già piazzati, STESSA riga (`RigaOperazione`,
+// `DettaglioRigaView.tsx`) e STESSO ordine dei campi della scheda Live/Aperte
+// (mai due scritture della stessa riga in due file, vedi il commento di
+// `RigaOperazione`). `operazioni` è OPZIONALE: `ControlRoom.tsx` (fuori dal
+// mio perimetro) oggi non la passa a questo componente — vedi il referto per
+// la riga esatta da cambiare — ma la scheda è pronta a riceverla, e senza non
+// si rompe (nessuna sezione ordini, non un errore).
 // ============================================================================
 import { useState } from 'react';
 import { Clock } from 'lucide-react';
-import { fmtTime, fmtAge, DASH } from '@/lib/format';
+import { fmtTime, fmtAge, fmtOdds, DASH } from '@/lib/format';
 import { teamLogo } from '@/lib/sportsLogos';
 import { dividiNomi } from '@/components/controlroom/AzioniPartita';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
+import { QUOTE_CLS, QUOTE_TESTO } from '@/components/controlroom/SchedaPartita';
+import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
 import type { PartitaGiornata } from '@/lib/controlRoom';
+import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
 export interface SchedaPreMatchProps {
     p: PartitaGiornata;
@@ -33,13 +45,23 @@ export interface SchedaPreMatchProps {
     /** il registratore di questo sport e' vivo? Senza, REC mentirebbe. */
     registratoreVivo?: boolean | null;
     onRegistrazione?: (eventId: string, attiva: boolean) => void;
+    /**
+     * 18/09 (secondo giro) — ordini/posizioni GIÀ piazzati pre-match su
+     * questa partita (ingresso pre-KO, stato dell'ordine). `undefined`/`[]` =
+     * nessuna posizione ancora, la sezione non si monta: non è un errore, è
+     * la verità di una partita non ancora cominciata. `ControlRoom.tsx` non
+     * la passa ancora (fuori perimetro): vedi CHECKPOINT per la riga esatta.
+     */
+    operazioni?: OperazionePartita[];
 }
 
 export function SchedaPreMatch({
-    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione,
+    p, scheda, mancaS, registra, registratoreVivo = null, onRegistrazione, operazioni = [],
 }: SchedaPreMatchProps) {
     const [casa, ospite] = dividiNomi(p.nome);
     const imminente = mancaS != null && mancaS <= 15 * 60;
+    const odds = p.odds;
+    const haQuote = Boolean(odds?.home || odds?.draw || odds?.away || odds?.p1 || odds?.p2);
 
     return (
         <div
@@ -70,10 +92,44 @@ export function SchedaPreMatch({
                 )}
             </div>
 
+            {/* ── quote pre-match vive, con età (18/09, secondo giro) ── */}
+            {(haQuote || p.latenzaQuoteS != null) && (
+                <div className="flex items-center gap-2 flex-wrap mt-1 pl-[52px] text-[10px]"
+                    data-testid="cr-pre-quote">
+                    {haQuote && (
+                        <span className="font-mono tabular-nums text-white/55"
+                            title="miglior BACK / miglior LAY di adesso">
+                            {odds?.home && <>1 {fmtOdds(odds.home.back)}/{fmtOdds(odds.home.lay)}</>}
+                            {odds?.draw && <><span className="text-white/25"> · </span>X {fmtOdds(odds.draw.back)}/{fmtOdds(odds.draw.lay)}</>}
+                            {odds?.away && <><span className="text-white/25"> · </span>2 {fmtOdds(odds.away.back)}/{fmtOdds(odds.away.lay)}</>}
+                            {odds?.p1 && <>P1 {fmtOdds(odds.p1.back)}/{fmtOdds(odds.p1.lay)}</>}
+                            {odds?.p2 && <><span className="text-white/25"> · </span>P2 {fmtOdds(odds.p2.back)}/{fmtOdds(odds.p2.lay)}</>}
+                        </span>
+                    )}
+                    {p.latenzaQuoteS != null && (
+                        <span className={`font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
+                            title={p.statoQuote === 'fermo'
+                                ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE'
+                                : 'da quando il prezzo è cambiato l’ultima volta'}>
+                            {QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
+                        </span>
+                    )}
+                </div>
+            )}
+
             <div className="mt-1.5">
                 <AzioniPartita p={p} scheda={scheda} registra={registra}
                     registratoreVivo={registratoreVivo} onRegistrazione={onRegistrazione} />
             </div>
+
+            {/* ── ordini/posizioni GIÀ piazzati pre-match, stessa riga di Live/Aperte ── */}
+            {operazioni.length > 0 && (
+                <div className="mt-1.5 pt-1.5 border-t border-white/8 space-y-1" data-testid="cr-pre-operazioni">
+                    {operazioni.map((o) => (
+                        <RigaOperazione key={`${o.bot}-${o.id}`} o={o} />
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

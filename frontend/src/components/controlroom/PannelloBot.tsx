@@ -37,11 +37,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+    Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'lucide-react';
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
+import { interruttoreDi } from '@/lib/interruttori';
 import type {
-    CampoImporto, InterruttoreId, Modalita, ComandiInterruttori,
+    CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot,
 } from '@/lib/interruttori';
 
 export type { CampoImporto, Modalita } from '@/lib/interruttori';
@@ -65,6 +69,97 @@ const STATO_CLS: Record<string, string> = {
     error: 'text-red-400',
     ignoto: 'text-orange-400',
 };
+
+// ============================================================================
+// TASK 2 (18/09) — «non è immediata l'attivazione dal pulsante»: onesto, non
+// finto immediato. Al clic la riga mostra SUBITO «comando inviato — in attesa
+// del servizio», MAI «in esecuzione» prima che il servizio lo confermi (il
+// battito/stato che arriva dal prossimo giro di `vm.bots`). L'attesa TIPICA
+// dichiarata qui sotto e' letta dal codice di produzione, non inventata:
+//   Safe    `poll_interval_s` default 2 s   (Betfair/safe_strategy/bot_service.py:230)
+//   Mike    ciclo che parte da 2 s           (Betfair/mike/service.py:4351)
+//   Omega   `poll_interval_s` default 20 s, fino a `idle_cycle_s` 60 s da fermo
+//           (Betfair/omega/omega_service.py:6016-6017)
+//   4 bot tennis `ENSURE_POLL_SEC = 15 s`    (Betfair/stream/tennis_live/tennis_bot_service.py:37)
+// Non e' una promessa di consegna: e' la cadenza del ciclo. Se cambia nel
+// servizio questa mappa va aggiornata a mano — non c'e' un'unica fonte
+// frontend/backend per questo numero.
+// ============================================================================
+const ATTESA_TIPICA_S: Record<Bot, number> = {
+    omega: 20, safe: 2, mike: 2,
+    tennis_scalper: 15, tennis_pro: 15, tennis_flb: 15, tennis_swing: 15,
+};
+
+/** Oltre quanto un silenzio smette di essere onesto: 3 volte la cadenza
+ *  tipica (per Omega arriva esattamente al suo `idle_cycle_s` di 60 s), mai
+ *  sotto i 10 s per non allarmare per un giro di rete un po' lento. */
+function attesaRagionevoleS(bot: Bot): number {
+    return Math.max(10, ATTESA_TIPICA_S[bot] * 3);
+}
+
+// ============================================================================
+// TASK 3 (18/09) — «un toggle che riduca a tendina la sezione dei bot»: due
+// tendine INDIPENDENTI, Calcio e Tennis, MAI una lista mista (regola del
+// design system: «Calcio e Tennis non condividono una lista», A5 §3.3 regola
+// 4). Stato aperto/chiuso ricordato per-viewer in `localStorage` (mai sul
+// server: e' una preferenza di vista, non un dato) — provato/riparato, mai
+// un lancio a vuoto se il browser lo rifiuta (privata, quota piena, ecc.).
+//
+// ECCEZIONE alla regola 11 del design (decisione del coordinatore, 18/09): le
+// tendine le apre e chiude SOLO l'utente, mai da sole. Senza preferenza
+// salvata il default e' APERTO per entrambe (e' quello che la pagina mostra
+// oggi: lista piatta sempre visibile — nessuna regressione al primo avvio).
+// ============================================================================
+const CHIAVE_APERTO_LS = 'cr-pannello-bot-aperto-v1';
+
+function leggiApertoSalvato(): Partial<Record<SportBot, boolean>> {
+    try {
+        const raw = window.localStorage.getItem(CHIAVE_APERTO_LS);
+        if (!raw) return {};
+        const v: unknown = JSON.parse(raw);
+        if (v == null || typeof v !== 'object' || Array.isArray(v)) return {};
+        return v as Partial<Record<SportBot, boolean>>;
+    } catch {
+        return {};
+    }
+}
+
+function scriviApertoSalvato(v: Partial<Record<SportBot, boolean>>): void {
+    try {
+        window.localStorage.setItem(CHIAVE_APERTO_LS, JSON.stringify(v));
+    } catch {
+        // preferenza di vista persa: non blocca nessun comando sui bot
+    }
+}
+
+const GRUPPO_ETICHETTA: Record<SportBot, string> = { calcio: 'BOT CALCIO', tennis: 'BOT TENNIS' };
+
+/** Un pallino per riga: verde in corsa, arancione muto/errore, grigio fermo —
+ *  mai rosso (riservato a perdita/allarme distruttivo, design system §4). */
+function colorePuntoStato(r: RigaInterruttore): string {
+    if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) return 'bg-orange-400';
+    if (r.stato === 'running') return 'bg-emerald-400';
+    return 'bg-white/25';
+}
+
+/** Il riassunto di un gruppo, per l'intestazione della tendina CHIUSA (e non
+ *  solo: e' innocuo mostrarlo anche aperta). Nessun calcolo nuovo: legge solo
+ *  quello che le righe gia' dichiarano (§ Task 3, «se gia' disponibile nei
+ *  dati del pannello»). */
+function riassuntoGruppo(righeG: RigaInterruttore[]): {
+    live: boolean; paper: boolean; pnlOggi: number | null; anomalia: boolean;
+} {
+    let pnlOggi: number | null = null;
+    let vistoUnPnl = false;
+    let live = false, paper = false, anomalia = false;
+    for (const r of righeG) {
+        if (r.acceso && r.modalita === 'live') live = true;
+        if (r.acceso && r.modalita === 'paper') paper = true;
+        if (!r.statoNoto || r.stato === 'error' || (r.acceso && r.motivoBlocco)) anomalia = true;
+        if (r.pnlOggi != null) { pnlOggi = (pnlOggi ?? 0) + r.pnlOggi; vistoUnPnl = true; }
+    }
+    return { live, paper, pnlOggi: vistoUnPnl ? pnlOggi : null, anomalia };
+}
 
 /**
  * Una riga della plancia: UN interruttore, con tutto quello che il servizio
@@ -115,6 +210,15 @@ export interface PannelloBotProps {
      * volta sola per bot, sulla sua prima riga.
      */
     parametri?: Partial<Record<Bot, ReactNode>>;
+    /**
+     * 18/09 — il foglio DEDICATO di QUESTA riga/strategia: uno per Omega, uno
+     * per Mike, uno per ciascuno dei 4 bot tennis, e QUATTRO diversi per Safe
+     * (base/esatto/punta/tennis, filtrati sui SUOI campi soltanto —
+     * `BotParamsSheet` con `soloStrategia`). Compare su OGNI riga che ne ha
+     * uno, ACCANTO al foglio comune di `parametri` quando c'e' anche quello
+     * (Safe: comune + dedicato, non l'uno al posto dell'altro).
+     */
+    parametriRiga?: Partial<Record<InterruttoreId, ReactNode>>;
     comandi: ComandiInterruttori;
     /** il titolo della plancia: cambia quando la plancia e' ristretta a uno
      *  sport («Bot del tennis»), perche' «Comando dei bot» al plurale davanti
@@ -142,7 +246,7 @@ export interface PannelloBotProps {
 }
 
 export function PannelloBot({
-    righe, importi, comandi, parametri, titolo = 'Comando dei bot', nota,
+    righe, importi, comandi, parametri, parametriRiga, titolo = 'Comando dei bot', nota,
     ambito = 'tutti', serviziAccesi, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<InterruttoreId | 'tutti' | null>(null);
@@ -154,6 +258,22 @@ export function PannelloBot({
     // lasciato correre Mike e Omega.
     const accesi = serviziAccesi ?? [];
     const inLive = accesi.filter((b) => b.modalita === 'live');
+
+    // TASK 3 — due tendine INDIPENDENTI, mai una lista mista di calcio e
+    // tennis. Il raggruppamento e' PURO (da `interruttoreDi(r.id).sport`, lo
+    // stesso elenco `INTERRUTTORI` che ha gia' costruito `righe`): nessuna
+    // seconda fonte da tenere allineata.
+    const gruppi: Record<SportBot, RigaInterruttore[]> = { calcio: [], tennis: [] };
+    for (const r of righe) gruppi[interruttoreDi(r.id).sport].push(r);
+
+    const [aperti, setAperti] = useState<Partial<Record<SportBot, boolean>>>(() => leggiApertoSalvato());
+    const setGruppoAperto = (g: SportBot, v: boolean) => {
+        setAperti((prev) => {
+            const next = { ...prev, [g]: v };
+            scriviApertoSalvato(next);
+            return next;
+        });
+    };
 
     const fermaTutti = async () => {
         setInCorso('tutti'); setNonFermati([]);
@@ -212,23 +332,89 @@ export function PannelloBot({
                 </div>
             )}
 
-            <div className="divide-y divide-white/8">
-                {righe.length === 0 ? (
-                    <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
-                        Nessun bot da comandare qui.
-                    </div>
-                ) : righe.map((r) => (
-                    <RigaBot
-                        key={`${ambito}:${r.id}`} r={r}
-                        importi={importi[r.id] ?? []}
-                        parametri={r.primaDelBot ? (parametri?.[r.bot] ?? null) : null}
-                        mostraParametri={r.primaDelBot}
-                        comandi={comandi}
-                        bloccato={inCorso != null}
-                        segnalaInCorso={setInCorso}
-                    />
-                ))}
-            </div>
+            {righe.length === 0 ? (
+                <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
+                    Nessun bot da comandare qui.
+                </div>
+            ) : (
+                <div>
+                    {(['calcio', 'tennis'] as const).map((g) => {
+                        const righeG = gruppi[g];
+                        if (righeG.length === 0) return null;
+                        const riassunto = riassuntoGruppo(righeG);
+                        // Regola 11 coordinatore (18/09): SOLO l'utente apre/
+                        // chiude. Senza preferenza salvata il default e' APERTO
+                        // (comportamento di oggi: tutto visibile). `type="multiple"`
+                        // (stesso pattern gia' in uso in MatchesList/TennisMatchesList)
+                        // con un valore in array: qui l'accordion ha una riga sola,
+                        // ma il tipo evita l'ambiguita' del valore vuoto di "single".
+                        const apertoValore: string[] = (aperti[g] ?? true) ? [g] : [];
+                        return (
+                            <Accordion
+                                key={g} type="multiple"
+                                value={apertoValore}
+                                onValueChange={(v: string[]) => setGruppoAperto(g, v.includes(g))}
+                                data-testid={`${testId}-gruppo-${g}`}
+                            >
+                                <AccordionItem value={g} className="border-b-0 border-t border-white/8 first:border-t-0">
+                                    <AccordionTrigger
+                                        className="px-3 py-2 text-[11px] uppercase tracking-wider hover:no-underline hover:bg-white/[0.02] [&>svg]:text-white/40"
+                                        data-testid={`${testId}-gruppo-${g}-trigger`}
+                                    >
+                                        <span className="flex items-center gap-2 flex-1 flex-wrap normal-case">
+                                            <span className="uppercase tracking-wider">{GRUPPO_ETICHETTA[g]} ({righeG.length})</span>
+                                            <span className="flex items-center gap-1" aria-hidden>
+                                                {righeG.map((r) => (
+                                                    <span key={r.id} className={`h-1.5 w-1.5 rounded-full ${colorePuntoStato(r)}`}
+                                                        title={`${r.etichetta}: ${STATO_TESTO[r.stato] ?? r.stato}`} />
+                                                ))}
+                                            </span>
+                                            {riassunto.live && (
+                                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">
+                                                    soldi veri
+                                                </span>
+                                            )}
+                                            {!riassunto.live && riassunto.paper && (
+                                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-white/45">
+                                                    prova
+                                                </span>
+                                            )}
+                                            {riassunto.pnlOggi !== null && (
+                                                <span className="text-[10px] font-mono normal-case"
+                                                    title="somma del P&L di oggi delle righe che lo dichiarano">
+                                                    <span className="text-white/30">oggi </span>
+                                                    <span className={riassunto.pnlOggi < 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                                        {fmtMoney(riassunto.pnlOggi)}
+                                                    </span>
+                                                </span>
+                                            )}
+                                            {riassunto.anomalia && (
+                                                <AlertTriangle className="w-3 h-3 text-orange-400" aria-label="un bot del gruppo ha un'anomalia" />
+                                            )}
+                                        </span>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="pb-0" data-testid={`${testId}-gruppo-${g}-contenuto`}>
+                                        <div className="divide-y divide-white/8 border-t border-white/8">
+                                            {righeG.map((r) => (
+                                                <RigaBot
+                                                    key={`${ambito}:${r.id}`} r={r}
+                                                    importi={importi[r.id] ?? []}
+                                                    parametri={r.primaDelBot ? (parametri?.[r.bot] ?? null) : null}
+                                                    parametriRiga={parametriRiga?.[r.id] ?? null}
+                                                    mostraParametri={r.primaDelBot}
+                                                    comandi={comandi}
+                                                    bloccato={inCorso != null}
+                                                    segnalaInCorso={setInCorso}
+                                                />
+                                            ))}
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            </Accordion>
+                        );
+                    })}
+                </div>
+            )}
 
             {nonFermati.length > 0 && (
                 <div className="px-3 py-2 border-t border-red-500/40 bg-red-500/10 text-[11px] text-red-200"
@@ -260,10 +446,21 @@ export function PannelloBot({
  */
 const ATTESA_CONFERMA_MS = 400;
 
-function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, segnalaInCorso }: {
+/** Che cosa ci aspettiamo dopo un comando: l'esito onesto con cui confrontare
+ *  la riga quando arriva un nuovo `r` (dal prossimo giro di `vm.bots`). */
+interface ComandoInAttesa {
+    accesoAtteso: boolean;
+    modalitaAttesa: Modalita | null;
+    dalMs: number;
+}
+
+function RigaBot({
+    r, importi, parametri, parametriRiga, mostraParametri, comandi, bloccato, segnalaInCorso,
+}: {
     r: RigaInterruttore;
     importi: CampoImporto[];
     parametri: ReactNode;
+    parametriRiga: ReactNode;
     mostraParametri: boolean;
     comandi: ComandiInterruttori;
     bloccato: boolean;
@@ -282,14 +479,45 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
         return () => window.clearTimeout(t);
     }, [armatoDa]);
 
+    // TASK 2 — «non è immediata l'attivazione dal pulsante»: onesto, non
+    // finto. `inAttesa` e' locale a QUESTA riga: appena il comando parte si
+    // mostra «comando inviato — in attesa del servizio»; appena `r` (dal
+    // prossimo giro di ricarica) mostra ESATTAMENTE l'esito atteso, sparisce
+    // da sola. Se scade l'attesa ragionevole senza conferma, un avviso
+    // arancione lo dice — mai silenzio.
+    const [inAttesa, setInAttesa] = useState<ComandoInAttesa | null>(null);
+    const [, ticAttesa] = useState(0);
+
+    useEffect(() => {
+        if (!inAttesa) return;
+        if (r.acceso === inAttesa.accesoAtteso && r.modalita === inAttesa.modalitaAttesa) {
+            setInAttesa(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inAttesa, r.acceso, r.modalita]);
+
+    useEffect(() => {
+        if (!inAttesa) return;
+        const t = window.setInterval(() => ticAttesa((n) => n + 1), 1000);
+        return () => window.clearInterval(t);
+    }, [inAttesa]);
+
     const live = r.modalita === 'live';
     const occupato = bloccato || mio;
     /** la conferma è ancora inerte? (finestra del doppio clic) */
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
 
-    const esegui = async (f: () => Promise<void>) => {
+    const esegui = async (f: () => Promise<void>, atteso: { acceso: boolean; modalita: Modalita | null } | null = null) => {
+        if (atteso) setInAttesa({ accesoAtteso: atteso.acceso, modalitaAttesa: atteso.modalita, dalMs: Date.now() });
         setMio(true); segnalaInCorso(r.id);
-        try { await f(); } finally { setMio(false); segnalaInCorso(null); setArmatoDa(null); }
+        try {
+            await f();
+        } catch (e) {
+            // un errore e' gia' chiaro (la card rossa della pagina): il
+            // «comando inviato» non deve restare li' a confondere.
+            setInAttesa(null);
+            throw e;
+        } finally { setMio(false); segnalaInCorso(null); setArmatoDa(null); }
     };
 
     return (
@@ -334,18 +562,50 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                     </span>
                 )}
 
-                {mostraParametri && (
+                {(parametriRiga != null || (mostraParametri && parametri != null)) ? (
+                    <span className="ml-auto flex items-center gap-1.5"
+                        data-testid={`cr-parametri-${r.bot}`}>
+                        {parametriRiga}
+                        {mostraParametri && parametri}
+                    </span>
+                ) : mostraParametri ? (
                     <span className="ml-auto flex items-center gap-1"
                         data-testid={`cr-parametri-${r.bot}`}>
-                        {parametri ?? (
-                            <span className="text-[10px] text-white/25 flex items-center gap-1"
-                                title="questo bot non espone una scheda parametri: si modifica dalla sua pagina">
-                                <SlidersHorizontal className="w-3 h-3" />dalla sua pagina
-                            </span>
-                        )}
+                        <span className="text-[10px] text-white/25 flex items-center gap-1"
+                            title="questo bot non espone una scheda parametri: si modifica dalla sua pagina">
+                            <SlidersHorizontal className="w-3 h-3" />dalla sua pagina
+                        </span>
                     </span>
-                )}
+                ) : null}
             </div>
+
+            {/* TASK 2 — «l'attivazione non e' immediata»: onesto, non finto.
+                Mai «in esecuzione» qui: solo «comando inviato» finche' `r` non
+                conferma, poi sparisce da sola (l'useEffect sopra). Se scade
+                l'attesa ragionevole, avviso arancione col motivo. */}
+            {inAttesa && (() => {
+                const secondi = Math.max(0, Math.floor((Date.now() - inAttesa.dalMs) / 1000));
+                const tipica = ATTESA_TIPICA_S[r.bot];
+                const ragionevole = attesaRagionevoleS(r.bot);
+                const scaduto = secondi >= ragionevole;
+                return scaduto ? (
+                    <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
+                        data-testid={`cr-comando-non-confermato-${r.id}`}>
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        <span>
+                            il servizio non ha ancora confermato dopo {fmtAge(secondi)}: puo' essere
+                            lento (fino a ~{fmtAge(ragionevole)}) o non aver ricevuto il comando —
+                            ricontrolla fra poco o riprova
+                        </span>
+                    </div>
+                ) : (
+                    <div className="mt-1.5 text-[10px] text-white/45 flex items-center gap-1.5"
+                        data-testid={`cr-comando-inviato-${r.id}`}>
+                        <Loader2 className="w-2.5 h-2.5 shrink-0 animate-spin" />
+                        <span>comando inviato — in attesa del servizio (tipica ~{fmtAge(tipica)})</span>
+                    </div>
+                );
+            })()}
 
             {/* PERCHÉ NON STA APRENDO — dichiarato dal servizio, non dedotto
                 qui. ⚠️ 15/09: il trader ha visto Mike «fermo» mentre era
@@ -411,7 +671,7 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                         <Button
                             type="button" size="sm" variant="outline"
                             disabled={occupato}
-                            onClick={() => void esegui(() => comandi.spegni(r.id))}
+                            onClick={() => void esegui(() => comandi.spegni(r.id), { acceso: false, modalita: null })}
                             data-testid={`cr-ferma-${r.id}`}
                             // ⚠️ 15/09 — FERMA toglie le APERTURE, non le
                             // uscite: coperture, green-up, cash-out e
@@ -436,7 +696,7 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                                 <Button
                                     type="button" size="sm" variant="ghost"
                                     disabled={occupato}
-                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'paper'))}
+                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'paper'), { acceso: true, modalita: 'paper' })}
                                     data-testid={`cr-a-paper-${r.id}`}
                                     className="h-6 px-2 text-[10px]"
                                     title="torna a operare in prova: nessun ordine reale"
@@ -446,7 +706,7 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                                     type="button" size="sm"
                                     disabled={occupato || troppoPresto}
                                     title={troppoPresto ? 'attendi un istante: sono soldi veri' : undefined}
-                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'live'))}
+                                    onClick={() => void esegui(() => comandi.cambiaModalita(r.id, 'live'), { acceso: true, modalita: 'live' })}
                                     data-testid={`cr-conferma-live-${r.id}`}
                                     className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
                                 >confermi? sono soldi veri</Button>
@@ -466,7 +726,7 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                         <Button
                             type="button" size="sm" variant="outline"
                             disabled={occupato}
-                            onClick={() => void esegui(() => comandi.accendi(r.id, 'paper'))}
+                            onClick={() => void esegui(() => comandi.accendi(r.id, 'paper'), { acceso: true, modalita: 'paper' })}
                             data-testid={`cr-avvia-paper-${r.id}`}
                             className="h-6 px-2 text-[10px] uppercase tracking-wider"
                         ><Power className="w-3 h-3 mr-1" />avvia in prova</Button>
@@ -476,7 +736,7 @@ function RigaBot({ r, importi, parametri, mostraParametri, comandi, bloccato, se
                                 type="button" size="sm"
                                 disabled={occupato || troppoPresto}
                                 title={troppoPresto ? 'attendi un istante: sono ordini reali' : undefined}
-                                onClick={() => void esegui(() => comandi.accendi(r.id, 'live'))}
+                                onClick={() => void esegui(() => comandi.accendi(r.id, 'live'), { acceso: true, modalita: 'live' })}
                                 data-testid={`cr-conferma-avvio-live-${r.id}`}
                                 className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
                             >confermi? ordini reali su Betfair</Button>

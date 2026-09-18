@@ -21,46 +21,22 @@
 // del trader, e un valore che non c'è è `—`, mai `0,00 €`.
 // ============================================================================
 import { useState } from 'react';
-import { ChevronRight, Circle } from 'lucide-react';
+import { Circle } from 'lucide-react';
 import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { CashOutPartita } from '@/components/controlroom/CashOutPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { isErrorRow, isSettled } from '@/lib/eventGroups';
-import { comeLabel, marcatoreRiga, type StatoChiusuraEvento } from '@/lib/chiusuraUtente';
+import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
 import { pnlClass } from '@/lib/tradeStatus';
-import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
+import { RigaOperazione } from '@/components/controlroom/DettaglioRigaView';
+import { trovaEsitoCashOut } from '@/components/controlroom/trovaEsitoUscita';
 import {
-    BadgeStato, Ingresso, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
-} from '@/components/controlroom/DettaglioRigaView';
-import { BOT_LABEL, BOT_TENNIS, type Bot, type PartitaGiornata, type Sport, type StatoQuote } from '@/lib/controlRoom';
+    BOT_LABEL, BOT_TENNIS, isBotTennis, type Bot, type Freschezza, type PartitaGiornata, type Sport, type StatoQuote,
+} from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 import { SchedaMike } from '@/components/controlroom/SchedaMike';
-import type { MikeEvent } from '@/lib/mike';
-
-/**
- * Le chiavi del database NON si mostrano al trader.
- *
- * ⚠️ REVIEW 15/09 — `ht_cs` e `ft_cs` finivano a schermo come «HT_CS» e
- * «FT_CS» perché la stringa veniva solo messa in maiuscolo. Sono nomi di
- * colonne, non parole: qui vivono le loro traduzioni, e quello che non è
- * tradotto si mostra com'è (minuscolo, non urlato).
- */
-const STRATEGIA_LABEL: Record<string, string> = {
-    ht_cs: 'risultato esatto 1° tempo',
-    ft_cs: 'risultato esatto finale',
-    base: 'base',
-    esatto: 'risultato esatto',
-    punta: 'punta',
-    tennis: 'tennis',
-    under_entry: 'ingresso Under 3.5',
-    over_cover: 'copertura Over 4.5',
-    under_green: 'green-up Under',
-    ko_green: 'green-up al fischio',
-};
-
-function etichettaStrategia(k: string): string {
-    return STRATEGIA_LABEL[k.toLowerCase()] ?? k.toLowerCase().replace(/_/g, ' ');
-}
+import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
+import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
 
 const BOT_SIGLA: Record<Bot, string> = {
     omega: 'Ω', safe: 'S', mike: 'M',
@@ -89,19 +65,150 @@ export function botDiSport(sport: Sport): Bot[] {
 }
 
 /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
- *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione. */
-const QUOTE_CLS: Record<StatoQuote, string> = {
+ *  quello corrente. Solo «vecchio» e «ignoto» meritano l'arancione.
+ *  Esportate (18/09, secondo giro): `SchedaPreMatch.tsx` le riusa per le
+ *  quote pre-match — stesso concetto, stessa parola, stesso colore. */
+export const QUOTE_CLS: Record<StatoQuote, string> = {
     fresco: 'text-emerald-400',
     fermo: 'text-white/50',
     vecchio: 'text-orange-400',
     ignoto: 'text-orange-400',
 };
-const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
+export const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
     fresco: (s) => s,
     fermo: (s) => `fermo ${s}`,
     vecchio: (s) => `vecchio ${s}`,
     ignoto: () => 'età ignota',
 };
+
+/** Stessa palette di `QUOTE_CLS` (colore solo come segnale, §3.3 regola 5):
+ *  `fresca` non merita nessun accento, `lenta`/`vecchia`/`ignota` sì. */
+const FRESCHEZZA_CLS: Record<Freschezza, string> = {
+    fresca: 'text-emerald-400',
+    lenta: 'text-white/50',
+    vecchia: 'text-orange-400',
+    ignota: 'text-orange-400',
+};
+
+/**
+ * TASK 2 (18/09) — IL TENNIS VIVO della partita: punto, chi serve, tie-break,
+ * stato del mercato e l'età del dato, dalla STESSA `tennis_live_now` che la
+ * pagina tennis già usa (`useTennisVivo`, una sottoscrizione condivisa per
+ * evento). Monta SOLO quando c'è una posizione aperta su questa partita
+ * (`abilitato`): niente sottoscrizione, niente rendering, per non aprire un
+ * canale su ogni card tennis del giorno (regola del respiro DB, 13/09).
+ *
+ * SECONDO GIRO (18/09, REPERTO 1 del coordinatore) — CORREZIONE. `sets`/`games`
+ * sono GIÀ nella testata (`p.punteggio`, via `StatoPill`): NON è un dato
+ * "calcio-centrico" ereditato per sbaglio, è il punteggio TENNIS vero,
+ * scritto dallo stesso scanner Safe Strategy nel campo tennis-nativo
+ * `ev["sets"]`/`ev["games"]` (`Betfair/safe_strategy/service.py:1425-1426`,
+ * `parse_tennis_scores`, la STESSA funzione che alimenta `tennis_live_now`).
+ * Il commento precedente lo chiamava erroneamente "calcio-centrico": corretto
+ * qui. Questa barra NON ripete set/game (sarebbe la stessa cosa scritta due
+ * volte in due posti): aggiunge solo ciò che la testata non ha — punto,
+ * servizio, tie-break, stato mercato, età — dalla fonte più ricca
+ * (`tennis_live_now`), che però copre SOLO gli eventi che il runner tennis
+ * segue (`tennis_live_follow`, vedi `tennis_runner.py:1541-1542`): una
+ * posizione di Safe Strategy tennis su un evento non seguito dal runner non
+ * avrà MAI questa riga. Non è un guasto («punto e servizio: evento non
+ * seguito dal runner tennis», grigio, mai arancione: non è un allarme).
+ *
+ * REPERTO 2 — il servizio si etichetta col NOME del giocatore quando il feed
+ * lo dichiara (`p.giocatori.p1`/`.p2`, dal payload `p1`/`p2` — split di
+ * `event_name`, `scanner.split_event_name`). Verificato sul codice Python
+ * (non a intuito): `tennis_score_state()`/`server` (`tennis_runner.py:284`,
+ * `1 = IPS "home"`) e `PartitaFeedLike.sets/games` (`service.py:1024-1033`,
+ * STESSA base `parse_tennis_scores`) condividono la stessa convenzione
+ * home=p1/away=p2 — INTERNAMENTE COERENTI fra loro. Ma NESSUN codice trovato
+ * lega quella base (IPS "home"/"away") all'ORDINE del nome nell'`event_name`
+ * (`p1`/`p2` del payload): è una convenzione già assunta altrove nel software
+ * (`lib/tennis.ts:294`, commento "p1 = home (sortPriority 1)"), non
+ * dimostrata da un test o da una funzione che le mette in relazione. Uso
+ * `p.giocatori` quando c'è (eredita quell'assunzione preesistente, dichiarata
+ * qui); quando manca — o per la correlazione con `row.state.markets[]`
+ * (nessun campo lega neppure QUELLA all'ordine home/away: le selezioni
+ * arrivano nell'ordine del dizionario `book.get("runners")`, mai ordinate
+ * per `sortPriority`, `tennis_runner.py:993-1005`) — resto su "P1"/"P2"
+ * letterali, come richiesto: un nome sbagliato è peggio di un trattino.
+ */
+function TennisVivoBar({ eventId, abilitato, giocatori }: {
+    eventId: string; abilitato: boolean;
+    giocatori?: { p1: string | null; p2: string | null } | null;
+}) {
+    const vivo = useTennisVivo(abilitato ? eventId : null);
+    if (!abilitato) return null;
+    const score = vivo.row?.score ?? null;
+    const nomeServer = (n: 1 | 2): string => {
+        const nome = n === 1 ? giocatori?.p1 : giocatori?.p2;
+        return nome && nome.trim() ? nome.trim() : `P${n}`;
+    };
+    return (
+        <div className="px-2.5 pt-1.5 flex items-center gap-2 flex-wrap text-[11px]"
+            data-testid="cr-tennis-vivo">
+            {score ? (
+                <>
+                    {/* punto: chi appartiene ogni numero è dichiarato, non intuito */}
+                    <span className="font-mono tabular-nums text-white/85" data-testid="cr-tennis-vivo-punteggio"
+                        title="punto corrente, dal punteggio live tennis (set e game sono già in testata)">
+                        <span className={score.server === 1 ? 'text-secondary font-semibold' : 'text-white/50'}>
+                            P1 {score.points.p1}
+                        </span>
+                        <span className="text-white/25"> · </span>
+                        <span className={score.server === 2 ? 'text-secondary font-semibold' : 'text-white/50'}>
+                            P2 {score.points.p2}
+                        </span>
+                        {score.tiebreak && <span className="text-secondary"> TB</span>}
+                    </span>
+                    {score.server != null && (
+                        <span className="text-[10px] text-white/40" data-testid="cr-tennis-vivo-server"
+                            title="chi è al servizio ora">
+                            servizio <Circle className="inline w-1.5 h-1.5 fill-secondary text-secondary" />{' '}
+                            {nomeServer(score.server)}
+                        </span>
+                    )}
+                </>
+            ) : (
+                <span className="text-[10px] text-white/40" data-testid="cr-tennis-vivo-punteggio">
+                    {!vivo.loaded
+                        ? 'caricamento punteggio…'
+                        : vivo.row
+                            ? 'punto e servizio: in attesa del primo aggiornamento'
+                            : 'punto e servizio: evento non seguito dal runner tennis'}
+                </span>
+            )}
+            {vivo.statoMercato && (
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${vivo.statoMercato.cls} border-current/40`}
+                    data-testid="cr-tennis-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
+                    {vivo.statoMercato.label}
+                </span>
+            )}
+            {/* Match Odds vivo (18/09, richiesta utente "quote vive principali del
+                mercato"): il NOME viaggia CON il prezzo nella stessa selezione
+                (`TennisNowSelection`), quindi qui non serve nessuna assunzione
+                sull'ordine p1/p2 — a differenza del servizio sopra, dove
+                l'assunzione è dichiarata e circoscritta. */}
+            {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).length > 0 && (
+                <span className="font-mono tabular-nums text-[10px] text-white/50"
+                    data-testid="cr-tennis-vivo-quote" title="Match Odds: miglior BACK / miglior LAY di adesso, per selezione">
+                    {(vivo.row?.state?.markets ?? []).flatMap((m) => m.selections ?? []).map((s, i) => (
+                        <span key={s.selection_id}>
+                            {i > 0 && <span className="text-white/25"> · </span>}
+                            {s.name ?? `#${s.selection_id}`} {fmtOdds(s.back)}/{fmtOdds(s.lay)}
+                        </span>
+                    ))}
+                </span>
+            )}
+            {vivo.row && (
+                <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[vivo.freschezza]}`}
+                    data-testid="cr-tennis-vivo-eta"
+                    title="età del punteggio/mercato tennis: sopra 20 s il dato è vecchio">
+                    {vivo.etaS == null ? 'età ignota' : fmtAge(vivo.etaS)}
+                </span>
+            )}
+        </div>
+    );
+}
 
 export interface SchedaPartitaProps {
     p: PartitaGiornata;
@@ -136,6 +243,18 @@ export function SchedaPartita({
     p, operazioni, scheda = 'live', registra = null, registratoreVivo = null, safe, mike = null,
 }: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
+
+    // TASK A2 (18/09, raccordo) — nome della selezione per i 4 bot tennis, che
+    // non lo pubblicano nella riga (`o.selezione` sempre `null`): si risolve
+    // dallo STESSO canale condiviso `useTennisVivo(eventId)` che la barra
+    // tennis già apre (una sottoscrizione per evento, mai una seconda). GATE
+    // su `aperto` (pannello del bot tennis aperto): senza, si aprirebbe una
+    // sottoscrizione su OGNI card tennis del giorno anche senza posizione né
+    // pannello aperto — la stessa regressione che il "respiro DB" (13/09)
+    // vieta (falsificato dal test "NESSUNA sottoscrizione, nessuna barra").
+    const vivoSelezioniTennis = useTennisVivo(
+        p.sport === 'tennis' && aperto != null && isBotTennis(aperto) ? p.event_id : null,
+    );
 
     // posizioni del bot SAFE ancora a mercato su questa partita: sono quelle
     // che un cash-out globale chiuderebbe. Regolate ed `error` non contano.
@@ -192,6 +311,67 @@ export function SchedaPartita({
                 )}
             </div>
 
+            {/* ── calcio vivo (18/09, secondo giro, REPERTO 3): stato del
+                mercato Match Odds quando NON è OPEN, volume abbinato, età del
+                PUNTEGGIO (`etaFeedS`/`freschezza`) distinta da quella delle
+                QUOTE (`cr-latenza` sopra, da `odds_ts_ms`) — sono due fatti
+                diversi (§ commento su `odds_ts_ms`, `lib/controlRoom.ts`).
+                Tutto da campi GIÀ nel payload (`mo_status`/`mo_total_matched`,
+                `Betfair/safe_strategy/service.py:1369,1386`): nessuna lettura
+                nuova. NON sommato nessun +3 s a mano: `IPS_SCORE_LAG_SEC`
+                (`scan_feed.py:67`) è una costante SOLO lato Python, mai
+                scritta nella riga — dichiarato come limite noto, non stimato. */}
+            {p.sport === 'calcio' && p.stato === 'live' && (() => {
+                const statoMercato = marketStatusMeta(p.statoMercato ?? null);
+                const volume = p.volumeMercato ?? null;
+                const odds = p.odds;
+                const haQuote = Boolean(odds?.home || odds?.draw || odds?.away);
+                if (!statoMercato && volume == null && p.etaFeedS == null && !haQuote) return null;
+                return (
+                    <div className="px-2.5 pt-1 flex items-center gap-2 flex-wrap text-[11px]"
+                        data-testid="cr-calcio-vivo">
+                        {statoMercato && (
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded border ${statoMercato.cls} border-current/40`}
+                                data-testid="cr-calcio-vivo-mercato" title="stato del mercato Match Odds, da Betfair">
+                                {statoMercato.label}
+                            </span>
+                        )}
+                        {haQuote && (
+                            <span className="font-mono tabular-nums text-[10px] text-white/60"
+                                data-testid="cr-calcio-vivo-quote"
+                                title="Match Odds: miglior BACK / miglior LAY di adesso, 1 · X · 2">
+                                1 {fmtOdds(odds?.home?.back ?? null)}/{fmtOdds(odds?.home?.lay ?? null)}
+                                <span className="text-white/25"> · </span>
+                                X {fmtOdds(odds?.draw?.back ?? null)}/{fmtOdds(odds?.draw?.lay ?? null)}
+                                <span className="text-white/25"> · </span>
+                                2 {fmtOdds(odds?.away?.back ?? null)}/{fmtOdds(odds?.away?.lay ?? null)}
+                            </span>
+                        )}
+                        {volume != null && (
+                            <span className="text-[10px] text-white/40 font-mono tabular-nums"
+                                data-testid="cr-calcio-vivo-volume" title="euro già scambiati sul Match Odds">
+                                vol. {fmtMoney(volume)}
+                            </span>
+                        )}
+                        {p.etaFeedS != null && (
+                            <span className={`ml-auto font-mono text-[10px] ${FRESCHEZZA_CLS[p.freschezza]}`}
+                                data-testid="cr-calcio-vivo-eta-punteggio"
+                                title="età del PUNTEGGIO (non delle quote): quanto è vecchia la riga del feed. Nota: non include il ritardo IPS dichiarato (2-3 s), che qui non si somma a mano">
+                                punteggio {fmtAge(p.etaFeedS)}
+                            </span>
+                        )}
+                    </div>
+                );
+            })()}
+
+            {/* ── tennis vivo: AGGIUNGE punto/servizio/tie-break/stato mercato/età
+                a quello che la testata mostra già (set/game, dal feed scanner
+                tennis-nativo — vedi il commento di TennisVivoBar) ── */}
+            {p.sport === 'tennis' && (
+                <TennisVivoBar eventId={p.event_id} abilitato={apertaLive || apertaPaper}
+                    giocatori={p.giocatori} />
+            )}
+
             {/* ── il gesto dell'utente: chiudo io TUTTA la partita, o la riprendo ── */}
             {safe && (
                 <div className="px-2.5 pt-1.5">
@@ -203,6 +383,7 @@ export function SchedaPartita({
                         onCashOut={safe.onCashOut}
                         onRiprendi={safe.onRiprendi}
                         compatto
+                        esito={trovaEsitoCashOut(operazioni, 'safe')}
                     />
                 </div>
             )}
@@ -290,78 +471,20 @@ export function SchedaPartita({
                         <div className="mb-1.5"><SchedaMike ev={mike} /></div>
                     )}
                     <div className="space-y-1">
+                        {/* 18/09 (secondo giro) — riga condivisa con `SchedaPreMatch.tsx`
+                            (`RigaOperazione`, `DettaglioRigaView.tsx`): stesso ordine dei
+                            campi in ogni tab, per costruzione, non per convenzione. */}
                         {perBot(aperto).map((o) => (
-                            <div key={`${o.bot}-${o.id}`} className="flex items-baseline gap-1.5 text-[11px] flex-wrap">
-                                <ChevronRight className="w-2.5 h-2.5 text-white/25 shrink-0" />
-                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                                    o.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
-                                }`}>{o.lato === 'lay' ? 'banca' : 'punta'}</span>
-                                <span className="text-white/75 truncate max-w-[9rem]">{o.selezione ?? DASH}</span>
-                                <span className="font-mono text-white/60">{fmtOdds(o.prezzo)}</span>
-                                <span className="font-mono text-white/45">{fmtMoney(o.size)}</span>
-                                {/* C.12b (16/09) — chiesto / abbinato / residuo, compatti.
-                                    La plancia mostrava SOLO `size`, che dopo la conferma e'
-                                    l'abbinato: «tutto o parziale?» non era leggibile. */}
-                                <StatoOrdineCompatto riga={o.ordine} testId="cr-stato-ordine" />
-                                {o.quale && (
-                                    <span className="text-[9px] text-white/30 uppercase"
-                                        title="la regola che ha prodotto questa operazione">
-                                        {etichettaStrategia(o.quale)}
-                                    </span>
-                                )}
-                                {o.modalita === 'live'
-                                    ? <span className="text-[9px] px-1 rounded bg-orange-500/20 text-orange-300">live</span>
-                                    : <span className="text-[9px] px-1 rounded bg-white/8 text-white/35">paper</span>}
-                                {/* 16/09 — la RIGA porta il marcatore scritto dal
-                                    servizio: questa posizione l'hai chiusa TU. */}
-                                <MarcatoreRiga meta={o.ordine.meta ?? null} />
-                                {/* ⚠️ REVIEW 15/09 — il colore era rifatto a mano:
-                                    `>= 0` dipingeva di VERDE anche lo zero, e un
-                                    valore assente restava in grassetto come se
-                                    fosse un numero. `pnlClass` è la regola unica
-                                    del design system. */}
-                                <span className={`ml-auto font-mono font-semibold ${pnlClass(o.pnl)}`}>
-                                    {o.pnl == null ? DASH : fmtMoney(o.pnl, { signed: true })}
-                                </span>
-                                <span className="text-[9px] text-white/25 font-mono">{fmtTime(o.at)}</span>
-                                {/* ── IL DETTAGLIO DELLA SCHEDA ORIGINALE (17/09) ──
-                                    stato ricco, ingresso (minuto e punteggio), P&L VIVO
-                                    (non solo a regolamento), green-up, modello. Stessa
-                                    riga già in memoria, stesse funzioni delle pagine dei
-                                    bot: qui non si ricalcola niente. */}
-                                {o.dettaglio && (
-                                    <div className="basis-full pl-4 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
-                                        data-testid="cr-op-dettaglio">
-                                        <BadgeStato d={o.dettaglio} testId="cr-op-stato" />
-                                        <Greenup d={o.dettaglio} testId="cr-op-greenup" />
-                                        <Uscita d={o.dettaglio} testId="cr-op-uscita" />
-                                        <Ingresso d={o.dettaglio} testId="cr-op-ingresso" />
-                                        <Copertura d={o.dettaglio} testId="cr-op-copertura" />
-                                        <PnlVivo d={o.dettaglio} testId="cr-op-pnl-vivo" />
-                                        <ModelloP d={o.dettaglio} testId="cr-op-modello" />
-                                    </div>
-                                )}
-                            </div>
+                            <RigaOperazione key={`${o.bot}-${o.id}`} o={o}
+                                nomeSelezioneRisolto={isBotTennis(o.bot)
+                                    ? nomeSelezioneTennis(vivoSelezioniTennis.row, o.selectionId)
+                                    : undefined}
+                            />
                         ))}
                     </div>
                 </div>
             )}
         </div>
-    );
-}
-
-/** Il badge «chiusa da te» di UNA riga: lo accende il marcatore che il
- *  servizio ha scritto nel `meta`, mai una deduzione della pagina. */
-function MarcatoreRiga({ meta }: { meta: Record<string, unknown> | null }) {
-    const m = marcatoreRiga({ meta });
-    if (!m) return null;
-    return (
-        <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300"
-            data-testid="cr-riga-chiusa-da-te"
-            title={[comeLabel(m.come) ?? 'chiusa da te',
-                m.quando ? `alle ${fmtTime(m.quando)}` : 'istante non dichiarato'].join(' · ')}>
-            chiusa da te
-        </span>
     );
 }
 

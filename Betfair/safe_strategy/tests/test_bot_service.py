@@ -2796,6 +2796,13 @@ def test_anomalie_valutate_a_ogni_ciclo_solo_se_le_quote_cambiano_e_fuse_nelle_o
     kinds = [o["kind"] for o in body["opportunities"]]
     assert sorted(kinds) == ["anomaly", "model"] and body["kinds"] == {"model": 1, "anomaly": 1, "combo": 0, "tennis": 0}
     assert r["stats"]["opps"] == {"model": 1, "anomaly": 1, "combo": 0, "tennis": 0}
+    # 18/09 — l'anomalia trovata diventa una proposta (chiave STABILE, senza
+    # epoch: e' la stessa forma della chiave del modello); qui propone anche
+    # il modello (stesso ciclo, stesso evento) -> 2 proposte, una per kind.
+    assert r["opportunities"]["proposte"] == 2
+    props = {q["payload"]["kind"]: q["payload"] for q in db.requests if q["status"] == "proposed"}
+    assert set(props) == {"model", "anomaly"}
+    assert props["anomaly"]["opp_key"] == "1.1|anomaly:OVER_UNDER_25:47972:back"
     # stesso odds_ts_ms: nessuna rivalutazione; cambia -> rivalutata
     r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
              opps_state=st, extra_mods={"anomaly": an})
@@ -2804,54 +2811,100 @@ def test_anomalie_valutate_a_ogni_ciclo_solo_se_le_quote_cambiano_e_fuse_nelle_o
     r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
              opps_state=st, extra_mods={"anomaly": an})
     assert r["anomalies"]["events"] == 1 and an.calls == 2
-    assert db.trades == [], "auto_trade_anomalies spento per default"
+    assert db.trades == [], "l'anomalia non piazza mai da sola, nemmeno rivalutata"
 
 
-def test_anomalie_piazzate_subito_come_cecchino_con_dedupe_120s():
+def test_anomalie_non_piazzano_piu_ma_propongono_con_chiave_stabile():
+    """18/09 — ORDINE DELL'UTENTE: il cecchino non spara piu' da solo, propone.
+
+    Prima questo test si chiamava ``..._piazzate_subito_come_cecchino_con_
+    dedupe_120s`` e pretendeva una RIGA a mercato IMMEDIATA con
+    ``auto_trade_anomalies=True`` e un dedupe di 120 s sulla chiave (che
+    portava il timestamp). Da oggi quell'interruttore non piazza piu': nasce
+    una PROPOSTA a chiave STABILE (nessun timestamp, come il modello), e resta
+    la STESSA scheda finche' l'anomalia non sparisce dal feed — il vecchio
+    dedupe a tempo e' superato dal write-on-change della coda.
+
+    ⚠️ DIVERGENZA (da portare all'utente, non decisa qui): la SCRITTURA della
+    proposta vive in ``process_opportunities`` e quindi segue la SUA cadenza
+    (``opps_interval_s``, 10 s di default), non piu' il ciclo immediato del
+    cecchino. La RILEVAZIONE (``process_anomalies``/``detect``) resta ad OGNI
+    ciclo (non e' throttlata: e' cosi' sotto, con ``last_ts=0`` per isolare la
+    proposta dal throttle e verificarla senza aspettare 10 s veri)."""
     db = FakeDB(status="running", params={"auto_trade_anomalies": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
     an = FakeAnomaly([_anomaly()])
-    st = {"last_ts": NOW.timestamp(), "hashes": {}}   # opportunita' throttlate: il cecchino no
+    st = {"last_ts": 0.0, "hashes": {}}
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
              opps_state=st, extra_mods={"anomaly": an})
-    assert r["anomalies"]["traded"] == 1 and len(db.trades) == 1
-    t = db.trades[0]
-    assert t["strategy"] == "model" and t["size"] == 5 and t["status"] == "open"
-    assert t["meta"]["kind"] == "anomaly" and t["meta"]["sniper"] is True
-    assert t["signal_key"].startswith("anomaly:OVER_UNDER_25:47972:back:")
-    assert t["meta"]["p_lose_entry"] == 0.45
-    # quote cambiate entro 120 s: stessa (evento, mercato, selezione, lato) -> dedupe
+    assert r["anomalies"]["traded"] == 0 and db.trades == []
+    assert r["opportunities"]["proposte"] == 1
+    prop = [q for q in db.requests if q["status"] == "proposed"][0]
+    p = prop["payload"]
+    assert prop["kind"] == "place" and p["kind"] == "anomaly"
+    assert p["opp_key"] == "1.1|anomaly:OVER_UNDER_25:47972:back", \
+        "la chiave NON deve portare il tempo: altrimenti il rifiuto non terrebbe"
+    assert p["signal_key"] == "anomaly:OVER_UNDER_25:47972:back"
+    assert p["strategy"] == "model" and p["size"] == 5 and p["mode"] == "paper"
+    assert p["p_model"] == 0.55 and p["rule"] == "ou_ladder"
+    # STESSA anomalia al giro dopo (throttle riazzerato apposta): NON e' una
+    # seconda proposta (write-on-change sulla sostanza).
     at = NOW + timedelta(seconds=60)
     db.scan_rows = [_feed_odds_row(ts=2, updated_at=at)]
+    st["last_ts"] = 0.0
     r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
                    opp_mod=FAKE_OPP_MOD, opps_state=st, extra_mods={"anomaly": an}, now=at)
-    assert r["anomalies"]["traded"] == 0 and len(db.trades) == 1
-    # dopo 120 s: si puo' rientrare (anche con lo stato in memoria perso)
-    at = NOW + timedelta(seconds=121)
-    db.scan_rows = [_feed_odds_row(ts=3, updated_at=at)]
-    st2 = {"last_ts": at.timestamp(), "hashes": {}}
+    assert r["anomalies"]["traded"] == 0 and db.trades == []
+    assert r["opportunities"]["proposte"] == 0 and len(db.requests) == 1
+    # l'anomalia SPARISCE dal feed (detect() non la trova piu'): la proposta DECADE
+    at2 = NOW + timedelta(seconds=121)
+    db.scan_rows = [_feed_odds_row(ts=3, updated_at=at2)]
+    st2 = {"last_ts": 0.0, "hashes": {}}
     r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
-                   opp_mod=FAKE_OPP_MOD, opps_state=st2, extra_mods={"anomaly": an}, now=at)
-    assert r["anomalies"]["traded"] == 1 and len(db.trades) == 2
-    # a bot fermo mai
+                   opp_mod=FAKE_OPP_MOD, opps_state=st2, extra_mods={"anomaly": FakeAnomaly([])}, now=at2)
+    assert [q for q in db.requests if q["status"] == "proposed"] == []
+    assert "opportunita_decaduta" in [k for k, _ in db.activity]
+    # con l'interruttore SPENTO (default) si propone allo STESSO modo: la
+    # "stessa semantica" data ieri a auto_trade_opportunities/auto_trade_tennis
+    # (l'interruttore resta leggibile ma non governa piu' la proposta).
+    db = FakeDB(status="running")
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"anomaly": FakeAnomaly([_anomaly()])})
+    assert r["opportunities"]["proposte"] == 1 and db.trades == []
+    # a bot FERMO la proposta parte lo STESSO (stessa scelta di ieri per il
+    # modello: ``status`` governa solo la Strategia S/``scan_and_place``, non
+    # le proposte di opportunita' — un bot fermo non impedisce all'utente di
+    # decidere a mano dalla scheda). Cio' che resta vietato a bot fermo e'
+    # SOLO ``_execute`` (nessuna riga a mercato).
     db = FakeDB(status="stopped", params={"auto_trade_anomalies": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
              opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"anomaly": FakeAnomaly([_anomaly()])})
     assert r["anomalies"]["found"] == 1 and db.trades == []
+    assert r["opportunities"]["proposte"] == 1
 
 
-def test_anomalie_rispettano_il_rischio_e_lo_stake_di_modello():
+def test_anomalie_propongono_con_lo_stake_di_modello_e_rispettano_il_cap_operazione():
+    """18/09 — ADATTATO: il gate ``risk`` (giornaliero) non si valuta piu' alla
+    PROPOSTA (cade, come per il modello: si valuta al momento vero
+    dell'approvazione, ``_request_place``). Cio' che resta alla proposta e' lo
+    STAKE di modello e il cap PER OPERAZIONE (``max_liability_per_trade``),
+    esattamente come per un'opportunita' di modello."""
     S._SKIP_LOG_STATE.clear()
-    db = FakeDB(status="running", params={"auto_trade_anomalies": True,
-                                          "risk": {"model_stake": 8, "model_daily_liability_cap": 10}})
+    db = FakeDB(status="running", params={"risk": {"model_stake": 8},
+                                          "max_liability_per_trade": 7.0})
     db.scan_rows = [_feed_odds_row(ts=1)]
-    st = {"last_ts": NOW.timestamp(), "hashes": {}}
+    st = {"last_ts": 0.0, "hashes": {}}
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD, opps_state=st,
              extra_mods={"anomaly": FakeAnomaly([_anomaly(), _anomaly(selection_id=47973,
-                                                                       selection_name="Under 2.5 Goals")])})
-    assert r["anomalies"]["traded"] == 1 and db.trades[0]["size"] == 8
-    assert _blocks(db, "model_daily_liability_cap")
+                                                                       selection_name="Under 2.5 Goals",
+                                                                       side="lay", price=1.5)])})
+    # back 2.2 x 8 = liability 8 > cap 7 -> scartata; lay 1.5 x 8 = liability 4 <= 7 -> proposta
+    assert r["opportunities"]["proposte"] == 1
+    p = [q for q in db.requests if q["status"] == "proposed"][0]["payload"]
+    assert p["size"] == 8 and p["selection_id"] == 47973 and p["side"] == "lay"
+    assert db.trades == []
 
 
 def _combo(legs=None, **kw):
@@ -2876,43 +2929,49 @@ class FakeCombos:
         return list(self.combos)
 
 
-def test_combo_tutte_le_gambe_o_nessuna():
+def test_combo_propone_una_sola_proposta_con_tutte_le_gambe_dentro():
+    """18/09 — ORDINE DELL'UTENTE: la combinazione NON piazza piu' da sola.
+
+    Prima questo test si chiamava ``..._tutte_le_gambe_o_nessuna`` e pretendeva
+    2 RIGHE a mercato con ``auto_trade_combos=True``. Da oggi quell'interruttore
+    non piazza piu': nasce UNA proposta con TUTTE le gambe dentro
+    (``payload.legs``), e i soldi si muovono solo dalla scheda."""
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
     st = {"last_ts": 0.0, "hashes": {}}
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD, opps_state=st,
              extra_mods={"combos": FakeCombos([_combo()])})
-    assert r["opportunities"]["traded"] == 1 and len(db.trades) == 2
-    assert {t["meta"]["combo_id"] for t in db.trades} == {"c1"}
-    assert [t["signal_key"] for t in db.trades] == ["combo:c1:0", "combo:c1:1"]
-    assert all(t["strategy"] == "model" and t["meta"]["kind"] == "combo" and t["size"] == 5.0
-               and t["status"] == "open" for t in db.trades)
+    assert r["opportunities"]["traded"] == 0 and db.trades == [], \
+        "l'interruttore ha piazzato da solo: NON deve piu'"
+    assert r["opportunities"]["proposte"] == 1
+    prop = [q for q in db.requests if q["status"] == "proposed"][0]
+    p = prop["payload"]
+    assert prop["kind"] == "place" and p["kind"] == "combo"
+    assert p["opp_key"].startswith("1.1|combo:")
+    legs = p["legs"]
+    assert len(legs) == 2 and {l["side"] for l in legs} == {"back"}
+    assert [l["size"] for l in legs] == [5.0, 5.0]
+    assert [l["liability"] for l in legs] == [5.0, 5.0]
+    assert p["size"] == 10.0 and p["liability"] == 10.0
     assert db.opportunities[-1][0]["payload"]["kinds"]["combo"] == 1
-    # L4 (16/09, decisione dell'utente): la liquidita' dichiarata
-    # dall'OPPORTUNITA' non e' piu' una guardia che gira solo in paper. La
-    # combinazione si piazza in tutte e due le modalita' e l'abbinamento lo
-    # decide il motore di simulazione sul libro del FEED (in live: Betfair).
-    S._SKIP_LOG_STATE.clear()
-    db = FakeDB(status="running", params={"auto_trade_combos": True})
-    db.scan_rows = [_feed_odds_row(ts=1)]
-    legs = _combo()["legs"]
-    legs[1]["size_available"] = 1.0
-    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
-             opps_state={"last_ts": 0.0, "hashes": {}},
-             extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
-    assert r["opportunities"]["traded"] == 1 and len(db.trades) == 2
-    assert not _skips(db, "combo_gamba_non_abbinabile")
+    # STESSA combo al giro dopo: non si duplica (write-on-change sulla sostanza,
+    # ``legs`` compreso: la funzione di ``sostanza`` la confronta per intero)
+    r2 = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state=st, extra_mods={"combos": FakeCombos([_combo()])})
+    assert r2["opportunities"]["proposte"] == 0 and len(db.requests) == 1
     # proporzioni di dutching rispettate: 0.7/0.3 su 2 gambe da 5 medi -> 7 e 3
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
-    legs = _combo()["legs"]
-    legs[0]["stake_ratio"], legs[1]["stake_ratio"] = 0.7, 0.3
+    legs_in = _combo()["legs"]
+    legs_in[0]["stake_ratio"], legs_in[1]["stake_ratio"] = 0.7, 0.3
     _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
-         opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
-    assert [t["size"] for t in db.trades] == [7.0, 3.0]
+         opps_state={"last_ts": 0.0, "hashes": {}},
+         extra_mods={"combos": FakeCombos([_combo(legs=legs_in)])})
+    p2 = [q for q in db.requests if q["status"] == "proposed"][0]["payload"]
+    assert [l["size"] for l in p2["legs"]] == [7.0, 3.0]
 
 
-def test_combo_gamba_sotto_il_minimo_di_giurisdizione_SI_PIAZZA():
+def test_combo_gamba_sotto_il_minimo_di_giurisdizione_SI_PROPONE():
     """CERT. 13/09 — 0.85/0.15 su 2 gambe da 5 medi -> 8,50 e 1,50.
 
     La seconda gamba sta SOTTO il minimo di giurisdizione (2 EUR sul BACK .it)
@@ -2921,8 +2980,8 @@ def test_combo_gamba_sotto_il_minimo_di_giurisdizione_SI_PIAZZA():
     che in questo progetto e' implementato e collegato. Prima veniva scartata e
     si portava via l'intera combo: era la regola sbagliata, non l'ordine.
 
-    (Sostituisce ``test_combo_gamba_sotto_il_minimo_betfair_ferma_tutta_la_combo``,
-    che certificava il rifiuto a 2 EUR.)"""
+    18/09 — ADATTATO: la combo si PROPONE (non piazza piu'), ma gli stake
+    verificati restano quelli di sempre."""
     S._SKIP_LOG_STATE.clear()
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
@@ -2931,15 +2990,17 @@ def test_combo_gamba_sotto_il_minimo_di_giurisdizione_SI_PIAZZA():
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
              opps_state={"last_ts": 0.0, "hashes": {}},
              extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
-    assert r["opportunities"]["traded"] == 1
-    assert [t["size"] for t in db.trades] == [8.5, 1.5]
+    assert r["opportunities"]["proposte"] == 1 and db.trades == []
+    p = [q for q in db.requests if q["status"] == "proposed"][0]["payload"]
+    assert [l["size"] for l in p["legs"]] == [8.5, 1.5]
     assert not _skips(db, "combo_gamba_sotto_minimo")
 
 
-def test_combo_gamba_sotto_il_pavimento_assoluto_ferma_tutta_la_combo():
+def test_combo_gamba_sotto_il_pavimento_assoluto_non_si_propone():
     """Sotto 0,01 EUR non esiste ordine Betfair con nessuna tecnica: li' la
-    combo si ferma ancora PRIMA della riserva ("tutte o nessuna"), altrimenti
-    la prima gamba resterebbe piazzata e nuda."""
+    combo NON si propone nemmeno ("tutte o nessuna" vale anche prima di
+    scrivere la scheda), altrimenti l'utente vedrebbe PIAZZA su una gamba che
+    non e' un ordine."""
     S._SKIP_LOG_STATE.clear()
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
@@ -2951,9 +3012,16 @@ def test_combo_gamba_sotto_il_pavimento_assoluto_ferma_tutta_la_combo():
              opps_state={"last_ts": 0.0, "hashes": {}},
              extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
     assert r["opportunities"]["traded"] == 0 and db.trades == []
+    assert r["opportunities"]["proposte"] == 0 and db.requests == []
 
 
-def test_combo_riserva_incompleta_libera_le_riserve():
+def test_combo_riserva_incompleta_alla_approvazione_libera_le_riserve():
+    """18/09 — ADATTATO: la riserva delle gambe non avviene piu' nel ciclo
+    automatico (che ora propone soltanto), ma SOLO all'approvazione
+    (``_esegui_combo_riservata``, estratta da ``_auto_trade_combos`` e
+    riusata da ``_request_place_combo``). Qui si esercita direttamente la
+    macchina di riserva con la stessa HalfDB di ieri: una gamba fallisce a
+    riservarsi, l'ALTRA (gia' riservata) viene liberata."""
     class HalfDB(FakeDB):
         def insert_trade(self, trade):
             if str(trade.get("signal_key") or "").endswith(":1"):
@@ -2963,9 +3031,19 @@ def test_combo_riserva_incompleta_libera_le_riserve():
     S._SKIP_LOG_STATE.clear()
     db = HalfDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
-    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
-             opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"combos": FakeCombos([_combo()])})
-    assert r["opportunities"]["traded"] == 0
+    params = S.resolve_params({"auto_trade_combos": True})
+    corpi = S._proponi_combo(db=db, payload=_feed_odds_row(ts=1)["payload"], event_id="1.1",
+                             combos=[_combo()], params=params, mode="paper",
+                             now=NOW, rows_by_event={"1.1": _feed_odds_row(ts=1)})
+    assert len(corpi) == 1
+    corpo = corpi[0]
+    esito = S._esegui_combo_riservata(
+        db=db, market=FakeMarket(), event_id="1.1", event_name=corpo.get("event_name"),
+        cid=corpo["combo_id"], legs_esecuzione=corpo["legs"], sport="calcio", mode="paper",
+        commission=0.05, minute=corpo.get("minute"), score=corpo.get("score"),
+        rationale=corpo.get("rationale"), params=params, now=NOW,
+        rows_by_event={"1.1": _feed_odds_row(ts=1)}, risk_ctx=None)
+    assert esito["placed"] == 0 and esito["motivo"] == "combo_riserva_incompleta"
     assert db.trades == [], "la riserva della prima gamba e' stata liberata"
     assert _skips(db, "combo_riserva_incompleta")
 

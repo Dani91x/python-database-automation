@@ -5,7 +5,7 @@
 // ============================================================================
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-    getLocalChannel, __resetLocalChannels, LOCAL_REQUEST_TIMEOUT_MS,
+    getLocalChannel, __resetLocalChannels, LOCAL_REQUEST_TIMEOUT_MS, svegliaBot,
 } from './localChannel';
 
 // ---- mock WebSocket globale (jsdom non lo implementa) ----
@@ -81,6 +81,62 @@ describe('localChannel — connessione e hello', () => {
         vi.advanceTimersByTime(1000); // riconnessione
         lastWs().serverOpen();
         expect(seen).toEqual(['connected', 'off']); // dopo unsub: nessuna notifica
+    });
+});
+
+describe('localChannel — porte STADIO B (18/09, raccordo): scanner 47336, bot tennis 47337', () => {
+    it('scanner e tennis_bot usano le nuove porte, sola lettura, stesso meccanismo', () => {
+        expect(getLocalChannel('scanner')).toBeDefined();
+        expect(lastWs().url).toBe('ws://127.0.0.1:47336');
+        expect(getLocalChannel('tennis_bot')).toBeDefined();
+        expect(lastWs().url).toBe('ws://127.0.0.1:47337');
+    });
+
+    it('porta chiusa (nessun server dietro, mai un serverOpen): nessuna eccezione, resta "off"', () => {
+        expect(() => getLocalChannel('scanner')).not.toThrow();
+        const ch = getLocalChannel('scanner');
+        expect(ch.getStatus()).toBe('off');
+        // il ripiego (retry con backoff) non deve lanciare da solo
+        expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+        expect(ch.getStatus()).toBe('off');
+    });
+});
+
+describe('svegliaBot — STADIO C (18/09, raccordo): la sveglia dopo il clic', () => {
+    it('canale connesso: manda {m:"sveglia", p:{motivo}} sulla porta del bot giusto', () => {
+        const ch = getLocalChannel('mike');
+        ch.onStatus(() => {}); // solo per tenere vivo il riferimento, nessun effetto
+        lastWs().serverOpen();
+        svegliaBot('mike', 'approvazione');
+        const inviato = JSON.parse(lastWs().sent[0]) as { m: string; p: { motivo: string } };
+        expect(inviato.m).toBe('sveglia');
+        expect(inviato.p).toEqual({ motivo: 'approvazione' });
+    });
+
+    it('i 4 bot tennis condividono il canale 47337, non uno a bot', () => {
+        const chTennisBot = getLocalChannel('tennis_bot');
+        const wsTennisBot = lastWs();
+        wsTennisBot.serverOpen();
+        svegliaBot('tennis_scalper', 'comando');
+        svegliaBot('tennis_pro', 'comando');
+        expect(wsTennisBot.sent.length).toBe(2);
+        expect(chTennisBot.getStatus()).toBe('connected');
+    });
+
+    it('socket NON connesso: nessuna eccezione, nessun invio, nessun retry', () => {
+        // 'safe' non e' mai stato aperto in questo test: resta "off" di default
+        expect(() => svegliaBot('safe', 'comando')).not.toThrow();
+        expect(getLocalChannel('safe').getStatus()).toBe('off');
+    });
+
+    it('richiesta di trasporto rifiutata (timeout): nessuna eccezione visibile al chiamante', async () => {
+        const ch = getLocalChannel('omega');
+        lastWs().serverOpen();
+        expect(() => svegliaBot('omega', 'comando')).not.toThrow();
+        // la richiesta e' partita ma non arriva mai risposta: allo scadere del
+        // timeout il reject interno viene assorbito da svegliaBot, non da qui
+        await vi.advanceTimersByTimeAsync(LOCAL_REQUEST_TIMEOUT_MS + 100);
+        expect(ch.getStatus()).toBe('connected'); // nessuna caduta indotta dalla sveglia
     });
 });
 

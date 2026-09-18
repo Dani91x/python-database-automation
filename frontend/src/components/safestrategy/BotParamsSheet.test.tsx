@@ -7,7 +7,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { BotParamsSheet, mergeExits, EXITS_DEFAULTS } from './BotParamsSheet';
+import {
+    BotParamsSheet, mergeExits, EXITS_DEFAULTS, gruppiDellaStrategia,
+    type StrategiaFiltro,
+} from './BotParamsSheet';
+import type { ParamGroup } from '@/components/trading/ParamsSheetBase';
 import { mergeBotParams, type SafeParamsEffective } from '@/lib/safeBot';
 
 // Questi test montano la pagina/sheet INTERI (decine di campi, Radix, portali):
@@ -57,14 +61,42 @@ describe('BotParamsSheet — gruppi e valori', () => {
         expect((screen.getByLabelText('Cap liability per evento €') as HTMLInputElement).value).toBe('150'); // default
     });
 
-    it('Auto-trade: quattro interruttori con nota di rischio, stato dal DB', async () => {
+    it('«Auto-trade» non ha più una vista: nessuno di quei quattro piazza più da solo', async () => {
         await openSheet();
-        expect(group('Auto-trade')).toBeInTheDocument();
-        expect(screen.getByRole('checkbox', { name: /MODELLO \(calcio\) — NON piazza più da sola/ })).not.toBeChecked();
-        expect(screen.getByRole('checkbox', { name: /ANOMALIE di prezzo/ })).not.toBeChecked();
-        expect(screen.getByRole('checkbox', { name: /COMBINAZIONI/ })).toBeChecked();
-        expect(screen.getByRole('checkbox', { name: /MODELLO tennis — NON piazza più da sola/ })).not.toBeChecked();
-        expect(screen.getByText(/se una gamba non si abbina/)).toBeInTheDocument();
+        expect(group('Auto-trade')).toBeNull();
+        expect(screen.queryByRole('checkbox', { name: /NON piazza più da sola/ })).toBeNull();
+    });
+
+    it('Proponimi...: quattro rubinetti NUOVI, default ACCESO, stato dal DB', async () => {
+        await openSheet();
+        expect(group('Proponimi...')).toBeInTheDocument();
+        // RAW non porta nessuna chiave `proponi_*`: devono risultare ACCESE
+        // (default TRUE, comportamento di oggi), non spente come farebbe
+        // un `Boolean(undefined)`.
+        expect(screen.getByRole('checkbox', { name: /Proponimi le opportunità di MODELLO calcio/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Proponimi le opportunità di MODELLO tennis/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Proponimi le COMBINAZIONI/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Proponimi le ANOMALIE di prezzo/ })).toBeChecked();
+    });
+
+    it('Proponimi...: un rubinetto spento sul DB si mostra spento', async () => {
+        await openSheet(vi.fn(), { ...RAW, proponi_combo: false });
+        expect(screen.getByRole('checkbox', { name: /Proponimi le COMBINAZIONI/ })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Proponimi le opportunità di MODELLO calcio/ })).toBeChecked();
+    });
+
+    it('salvare non tocca gli auto_trade_* storici: restano quelli del DB, invariati', async () => {
+        const onSave = vi.fn();
+        const { user } = await openSheet(onSave, RAW);
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const salvato = onSave.mock.calls[0][0] as Record<string, unknown>;
+        // RAW aveva SOLO auto_trade_combos=true: nessuna casella per questi
+        // quattro e' a schermo, ma il salvataggio non li deve azzerare.
+        expect(salvato.auto_trade_combos).toBe(true);
+        expect(salvato.auto_trade_opportunities).toBe(false);
+        expect(salvato.auto_trade_anomalies).toBe(false);
+        expect(salvato.auto_trade_tennis).toBe(false);
     });
 
     it('Uscite modello e Tennis/Anomalie: campi presenti con i valori DB', async () => {
@@ -79,7 +111,9 @@ describe('BotParamsSheet — gruppi e valori', () => {
 
     it('salvataggio: chiavi ignote preservate, toggles/risk/exits/variants espliciti', async () => {
         const { user, onSave } = await openSheet();
-        await user.click(screen.getByRole('checkbox', { name: /MODELLO tennis — NON piazza più da sola/ }));
+        // 18/09 — l'unico interruttore interattivo di questo tipo, ora, è un
+        // rubinetto NUOVO (`proponi_*`): nasce acceso, il clic lo spegne.
+        await user.click(screen.getByRole('checkbox', { name: /Proponimi le opportunità di MODELLO tennis/ }));
         const cap = screen.getByLabelText('Cap liability giornaliera €');
         await user.clear(cap);
         await user.type(cap, '600');
@@ -90,7 +124,9 @@ describe('BotParamsSheet — gruppi e valori', () => {
         await waitFor(() => expect(onSave).toHaveBeenCalled());
         const saved = onSave.mock.calls[0][0] as Record<string, unknown>;
         expect(saved.unknown_key_from_service).toEqual({ keep: 'me' });
-        expect(saved.auto_trade_tennis).toBe(true);
+        expect(saved.proponi_tennis).toBe(false);
+        // gli auto_trade_* storici non hanno più una casella: passano INVARIATI
+        expect(saved.auto_trade_tennis).toBe(false);
         expect(saved.auto_trade_combos).toBe(true);
         expect(saved.auto_trade_anomalies).toBe(false);
         expect(saved.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
@@ -298,6 +334,163 @@ describe('BotParamsSheet — modalita per strategia', () => {
         expect(payload.strategy_modes).toEqual({ base: 'paper', esatto: 'paper', tennis: 'live' });
         // le chiavi ignote del servizio restano intatte: safe_update_params
         // SOSTITUISCE l'intero oggetto, un salvataggio parziale le cancellerebbe
+        expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
+    });
+});
+
+// ===========================================================================
+// 18/09 — «ogni bot deve avere i suoi parametri DEDICATI A LUI» (utente).
+// `soloStrategia` filtra la VISTA a una riga sola (base/esatto/punta/tennis):
+// stesse chiavi, stesso salvataggio (l'intero `draft`), solo meno campi a
+// video. `gruppiDellaStrategia` e' pura e testata a parte; qui si verifica
+// che il FOGLIO VERO la usi davvero e non perda la semantica al salvataggio.
+// ===========================================================================
+describe('BotParamsSheet — gruppiDellaStrategia (funzione pura)', () => {
+    const GRUPPI_FINTI: ParamGroup[] = [
+        { label: 'Bot', fields: [{ key: 'poll_interval_s', label: 'Cadenza', type: 'number' }] },
+        {
+            label: 'Strategie abilitate',
+            fields: [
+                { key: 'variants.base', label: 'Base', type: 'boolean' },
+                { key: 'variants.tennis', label: 'Tennis', type: 'boolean' },
+            ],
+        },
+        {
+            label: 'Condizioni delle strategie',
+            fields: [
+                { key: 'base.minuteMin', label: 'BASE · dal minuto', type: 'number' },
+                { key: 'tennis.setsLeadMin', label: 'TENNIS · set di vantaggio', type: 'number' },
+                { key: 'tennis.excludeDoubles', label: 'TENNIS: escludi i doppi', type: 'boolean' },
+                { key: 'tennis_exit_approval', label: 'TENNIS: le chiusure le approvo io', type: 'boolean' },
+            ],
+        },
+        {
+            label: 'Uscite automatiche',
+            fields: [
+                { key: 'exits.enabled', label: 'Uscite automatiche attive', type: 'boolean' },
+                { key: 'exits.base_exit_minute', label: 'BASE · uscita a tempo', type: 'number' },
+                { key: 'exits.tennis_take_profit_min_odds', label: 'TENNIS · incassa da quota', type: 'number' },
+                { key: 'exits.red_card_fav_exit', label: 'Rosso alla favorita', type: 'boolean' },
+            ],
+        },
+        { label: 'Rischio', fields: [{ key: 'risk.daily_liability_cap', label: 'Cap €', type: 'number' }] },
+    ];
+
+    it('tennis: SOLO i suoi campi + le uscite condivise; nessun gruppo di servizio', () => {
+        const filtrati = gruppiDellaStrategia(GRUPPI_FINTI, 'tennis');
+        const etichette = filtrati.map((g) => g.label);
+        expect(etichette).not.toContain('Bot');
+        expect(etichette).not.toContain('Rischio');
+        expect(etichette).toEqual(['Strategie abilitate', 'Condizioni delle strategie', 'Uscite automatiche']);
+
+        const strategie = filtrati.find((g) => g.label === 'Strategie abilitate')!;
+        expect(strategie.fields.map((f) => f.key)).toEqual(['variants.tennis']);
+
+        const condizioni = filtrati.find((g) => g.label === 'Condizioni delle strategie')!;
+        expect(condizioni.fields.map((f) => f.key)).toEqual([
+            'tennis.setsLeadMin', 'tennis.excludeDoubles', 'tennis_exit_approval',
+        ]);
+        expect(condizioni.fields.some((f) => f.key === 'base.minuteMin')).toBe(false);
+
+        const uscite = filtrati.find((g) => g.label === 'Uscite automatiche')!;
+        // condivise (SEMPRE) + quella specifica del tennis, MAI quella di base
+        expect(uscite.fields.map((f) => f.key)).toEqual([
+            'exits.enabled', 'exits.tennis_take_profit_min_odds', 'exits.red_card_fav_exit',
+        ]);
+    });
+
+    it('base: le condizioni SONO diverse da quelle del tennis, stesso gruppo', () => {
+        const filtrati = gruppiDellaStrategia(GRUPPI_FINTI, 'base');
+        const condizioni = filtrati.find((g) => g.label === 'Condizioni delle strategie')!;
+        expect(condizioni.fields.map((f) => f.key)).toEqual(['base.minuteMin']);
+        const uscite = filtrati.find((g) => g.label === 'Uscite automatiche')!;
+        expect(uscite.fields.map((f) => f.key)).toEqual(['exits.enabled', 'exits.base_exit_minute', 'exits.red_card_fav_exit']);
+    });
+
+    it('FALSIFICAZIONE — un campo tolto dalla whitelist condivisa sparisce da OGNI strategia', () => {
+        // mutazione: `exits.enabled` non e' piu' dichiarato condiviso ne'
+        // pertinente a "esatto": deve sparire dal foglio di ESATTO.
+        const mutati: ParamGroup[] = GRUPPI_FINTI.map((g) => (g.label === 'Uscite automatiche'
+            ? { ...g, fields: g.fields.filter((f) => f.key !== 'exits.enabled') }
+            : g));
+        const prima = gruppiDellaStrategia(GRUPPI_FINTI, 'esatto')
+            .find((g) => g.label === 'Uscite automatiche')!.fields.map((f) => f.key);
+        const dopo = gruppiDellaStrategia(mutati, 'esatto')
+            .find((g) => g.label === 'Uscite automatiche')!.fields.map((f) => f.key);
+        expect(prima).toContain('exits.enabled');
+        expect(dopo).not.toContain('exits.enabled');
+    });
+
+    it('nessuna strategia inventata: solo base/esatto/punta/tennis passano il filtro', () => {
+        const tutte: StrategiaFiltro[] = ['base', 'esatto', 'punta', 'tennis'];
+        for (const s of tutte) {
+            const filtrati = gruppiDellaStrategia(GRUPPI_FINTI, s);
+            // ogni campo filtrato o e' condiviso o parla ESPLICITAMENTE di `s`
+            for (const g of filtrati) {
+                for (const f of g.fields) {
+                    const condiviso = ['exits.enabled', 'exits.loss_settle_delay_s', 'exits.exit_max_retries', 'exits.red_card_fav_exit'].includes(f.key);
+                    const suo = f.key.includes(s) || f.key === `variants.${s}` || f.key === `strategy_modes.${s}`;
+                    expect(condiviso || suo).toBe(true);
+                }
+            }
+        }
+    });
+});
+
+describe('BotParamsSheet — `soloStrategia` nel foglio vero', () => {
+    const RAW_QUATTRO: Record<string, unknown> = {
+        ...RAW,
+        strategy_modes: { base: 'paper', esatto: 'live', punta: 'paper', tennis: 'live' },
+        base: { minuteMin: 60 },
+        tennis: { setsLeadMin: 1 },
+        tennis_exit_approval: true,
+    };
+
+    async function openSheetFiltrato(soloStrategia: StrategiaFiltro, onSave = vi.fn()) {
+        const user = userEvent.setup();
+        render(
+            <BotParamsSheet
+                params={mergeBotParams(RAW_QUATTRO)}
+                rawParams={RAW_QUATTRO}
+                onSave={onSave}
+                soloStrategia={soloStrategia}
+                triggerTestId={`cr-safe-${soloStrategia}-params-trigger`}
+            />,
+        );
+        await user.click(screen.getByTestId(`cr-safe-${soloStrategia}-params-trigger`));
+        await screen.findByTestId('params-sheet');
+        return { user, onSave };
+    }
+
+    it('mostra SOLO i campi del tennis: niente Rischio, niente Auto-trade, niente Base', async () => {
+        await openSheetFiltrato('tennis');
+        const sheet = screen.getByTestId('params-sheet');
+        expect(sheet.textContent).toMatch(/TENNIS · set di vantaggio/);
+        expect(sheet.textContent).not.toMatch(/BASE · dal minuto/);
+        expect(sheet.textContent).not.toMatch(/Cap liability giornaliera/);
+        expect(sheet.textContent).not.toMatch(/Opportunità di MODELLO/);
+        // titolo dedicato, testid dedicato (niente collisione con altri fogli
+        // montati sulle altre righe di Safe nello stesso pannello)
+        expect(sheet.textContent).toMatch(/Parametri Safe · Tennis/);
+    });
+
+    it('salvare dal foglio del tennis NON tocca variants/modi delle altre tre', async () => {
+        const { user, onSave } = await openSheetFiltrato('tennis');
+        const sheet = screen.getByTestId('params-sheet');
+        // tocca un campo del tennis (una condizione visibile in questo foglio)
+        const campo = within(sheet).getByLabelText('TENNIS · set di vantaggio') as HTMLInputElement;
+        await user.clear(campo);
+        await user.type(campo, '2');
+        await user.click(within(sheet).getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const payload = onSave.mock.calls[0][0] as Record<string, unknown>;
+        // le variants/modi delle ALTRE strategie restano quelle di RAW_QUATTRO:
+        // il foglio filtrato non le mostra, ma il salvataggio parte dal
+        // draft INTERO, non da un sottoinsieme
+        expect(payload.variants).toEqual(expect.arrayContaining(['base', 'esatto', 'punta', 'tennis']));
+        expect(payload.strategy_modes).toEqual({ base: 'paper', esatto: 'live', punta: 'paper', tennis: 'live' });
+        expect((payload.tennis as Record<string, unknown>).setsLeadMin).toBe(2);
+        // e la chiave che il registro non conosce resta intatta
         expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
     });
 });

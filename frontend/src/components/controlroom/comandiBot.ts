@@ -20,11 +20,57 @@
 import {
     creaInterruttori, interruttoreDi,
     type ComandiInterruttori, type InterruttoreId, type Modalita,
-    type SorgenteInterruttori,
+    type SorgenteInterruttori, type StatoServizio,
 } from '@/lib/interruttori';
 import {
     accensioniSoloTennis, extraSoloTennis,
 } from '@/components/controlroom/soloTennis';
+import { fetchSafeState } from '@/lib/safeBot';
+
+// ============================================================================
+// REPERTO A (18/09) — LA RILETTURA FRESCA DI SAFE PER LA CONTROL ROOM.
+//
+// `interruttori.ts` sa comporre una scrittura da uno stato fresco quando il
+// chiamante gliene passa uno (`SorgenteInterruttori.rileggiSafe`), ma non sa
+// COME leggerlo: quello e' un dettaglio di CHI usa i comandi. Qui, per la
+// Control Room, "fresco" vuol dire "dal database", non da `vm.bots` (che il
+// refetch di pagina aggiorna in modo fire-and-forget — il cuore del reperto:
+// due comandi ravvicinati su righe DIVERSE di Safe leggevano lo stesso
+// `vm.bots` vecchio, e il secondo dimenticava l'effetto del primo).
+//
+// Non e' un refetch atteso: e' UNA LETTURA IN PIU', fatta apposta al momento
+// di scrivere. Il secondo click legge quello che il primo ha appena scritto
+// sul database (la RPC del primo click e' gia' tornata quando parte questo
+// comando, essendo i due comandi sequenziali sulla stessa riga del pannello),
+// non quello che React non ha ancora ricevuto.
+// ============================================================================
+async function rileggiSafeDalDatabase(): Promise<{
+    params: Record<string, unknown> | null;
+    servizio: StatoServizio | null;
+}> {
+    const stato = await fetchSafeState();
+    const c = stato.control;
+    if (c == null) return { params: null, servizio: null };
+    const params = (c.params ?? null) as Record<string, unknown> | null;
+    const varianti = Array.isArray(params?.variants)
+        ? (params!.variants as unknown[]).map(String) : null;
+    const modiRaw = params?.strategy_modes;
+    const modiStrategia = (modiRaw != null && typeof modiRaw === 'object' && !Array.isArray(modiRaw))
+        ? Object.fromEntries(
+            Object.entries(modiRaw as Record<string, unknown>).map(
+                ([k, v]) => [k, String(v ?? '').toLowerCase() === 'live' ? 'live' as const : 'paper' as const],
+            ),
+        )
+        : null;
+    return {
+        params,
+        servizio: {
+            inCorsa: String(c.status ?? '').toLowerCase() === 'running',
+            modalita: c.mode === 'live' || c.mode === 'paper' ? c.mode : null,
+            varianti, modiStrategia,
+        },
+    };
+}
 
 export {
     INTERRUTTORI, interruttoriDiSport, interruttoreDi, statoInterruttore,
@@ -54,7 +100,15 @@ export type {
 export function creaComandiControlRoom(
     sorgente: SorgenteInterruttori, dopo: () => void, sport?: string | null,
 ): ComandiInterruttori {
-    const base = creaInterruttori(sorgente, dopo);
+    // ⚠️ REPERTO A — si aggancia la rilettura FRESCA di Safe dal database,
+    // a meno che il chiamante non ne abbia gia' fornita una sua (le pagine
+    // dei singoli bot passano `sorgente` diretto a `creaInterruttori`, non da
+    // qui: per loro questo ramo non e' mai attraversato).
+    const sorgenteConRilettura: SorgenteInterruttori = {
+        ...sorgente,
+        rileggiSafe: sorgente.rileggiSafe ?? rileggiSafeDalDatabase,
+    };
+    const base = creaInterruttori(sorgenteConRilettura, dopo);
     if (sport !== 'tennis') return base;
 
     /** `puoAccendere`: solo il gesto di ACCENSIONE puo' portare il servizio da

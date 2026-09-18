@@ -435,15 +435,30 @@ def test_l4_la_guardia_combo_decide_UGUALE_in_paper_e_in_live():
 
     Qui si confrontano le due modalita' CAMPO PER CAMPO sullo stesso ingresso,
     come ``test_paper_e_live_accodano_lo_STESSO_ordine``: la sola differenza
-    ammessa e' la modalita' stessa (e il ``bet_id``, che solo il live ha)."""
+    ammessa e' la modalita' stessa (e il ``bet_id``, che solo il live ha).
+
+    18/09 — ADATTATO: ``_auto_trade_combos`` non esiste piu' (la combo si
+    PROPONE, non piazza da sola). Qui si esercita la stessa macchina
+    "tutte o nessuna", estratta e mai riscritta, in ``_esegui_combo_riservata``:
+    la si chiama con le gambe che ``_proponi_combo`` avrebbe messo nella
+    proposta (stesso calcolo di stake), esattamente come fa
+    ``_request_place_combo`` all'approvazione."""
     def gira(mode):
         db = FakeDB(status="running", mode=mode)
         row = _combo_feed_row()
         params = S.resolve_params({"strategy_modes": {"model": mode}})
-        n = S._auto_trade_combos(db=db, market=FakeMarket(), payload=row["payload"],
-                                 event_id="1.1", combos=[_combo(avail2=0.0)],
-                                 params=params, mode=mode, now=NOW,
-                                 rows_by_event={"1.1": row})
+        corpi = S._proponi_combo(db=db, payload=row["payload"], event_id="1.1",
+                                 combos=[_combo(avail2=0.0)], params=params, mode=mode,
+                                 now=NOW, rows_by_event={"1.1": row})
+        assert len(corpi) == 1, "la combo non e' stata proposta"
+        corpo = corpi[0]
+        esito = S._esegui_combo_riservata(
+            db=db, market=FakeMarket(), event_id="1.1", event_name=corpo.get("event_name"),
+            cid=corpo["combo_id"], legs_esecuzione=corpo["legs"], sport="calcio", mode=mode,
+            commission=0.05, minute=corpo.get("minute"), score=corpo.get("score"),
+            rationale=corpo.get("rationale"), params=params, now=NOW,
+            rows_by_event={"1.1": row}, risk_ctx=None)
+        n = 1 if esito["placed"] == esito["total"] else 0
         return n, db
 
     n_pap, db_pap = gira("paper")
@@ -486,7 +501,11 @@ def _combo(avail2=500.0):
 
 def test_h20_combo_incompleta_dopo_il_fill_chiude_subito_la_gamba_fillata():
     """H-20: in LIVE la prima gamba si abbina, la seconda viene rifiutata
-    dall'exchange: la posizione NUDA non resta aperta un ciclo di piu'."""
+    dall'exchange: la posizione NUDA non resta aperta un ciclo di piu'.
+
+    18/09 — ADATTATO: stessa macchina di ``_esegui_combo_riservata`` (estratta
+    da ``_auto_trade_combos``, non riscritta), invocata come farebbe
+    ``_request_place_combo`` all'approvazione."""
     class HalfMarket(FakeMarket):
         def place_order_live(self, **kw):
             if kw["market_id"] == "m1" and kw["size"] >= 5.0:
@@ -497,13 +516,21 @@ def test_h20_combo_incompleta_dopo_il_fill_chiude_subito_la_gamba_fillata():
     db = FakeDB(status="running")
     row = _combo_feed_row()
     mk = HalfMarket()
-    n = S._auto_trade_combos(db=db, market=mk, payload=row["payload"],
-                             event_id="1.1", combos=[_combo()],
-                             # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
-                             # altrimenti questo test collauderebbe il ramo paper.
-                             params=S.resolve_params({"strategy_modes": {"model": "live"}}),
-                             mode="live", now=NOW,
-                             rows_by_event={"1.1": row})
+    # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
+    # altrimenti questo test collauderebbe il ramo paper.
+    params = S.resolve_params({"strategy_modes": {"model": "live"}})
+    corpi = S._proponi_combo(db=db, payload=row["payload"], event_id="1.1",
+                             combos=[_combo()], params=params, mode="live",
+                             now=NOW, rows_by_event={"1.1": row})
+    assert len(corpi) == 1
+    corpo = corpi[0]
+    esito = S._esegui_combo_riservata(
+        db=db, market=mk, event_id="1.1", event_name=corpo.get("event_name"),
+        cid=corpo["combo_id"], legs_esecuzione=corpo["legs"], sport="calcio", mode="live",
+        commission=0.05, minute=corpo.get("minute"), score=corpo.get("score"),
+        rationale=corpo.get("rationale"), params=params, now=NOW,
+        rows_by_event={"1.1": row}, risk_ctx=None)
+    n = 1 if esito["placed"] == esito["total"] else 0
     assert n == 0, "la combo non e' andata"
     assert _kinds(db, "combo_incomplete")
     # la gamba fillata (ou25) e' stata CHIUSA subito, non e' rimasta nuda
@@ -1359,7 +1386,11 @@ def test_rev_h6_combo_in_coda_svolta_appena_il_fill_e_confermato():
 
 def test_rev_h6_marker_scritto_su_tutte_le_gambe_vive():
     """Combo incompleta in LIVE con una gamba in CODA: il marker c'e' anche su
-    quella (il fill arrivera' dopo)."""
+    quella (il fill arrivera' dopo).
+
+    18/09 — ADATTATO: stessa macchina di ``_esegui_combo_riservata`` (estratta
+    da ``_auto_trade_combos``, non riscritta), invocata come farebbe
+    ``_request_place_combo`` all'approvazione."""
     class QueueMarket(FakeMarket):
         def place_order_live(self, **kw):
             if kw["market_id"] == "m1":
@@ -1370,13 +1401,20 @@ def test_rev_h6_marker_scritto_su_tutte_le_gambe_vive():
     db = FakeDB(status="running")
     db.follow = "STREAMING"          # gate flumine APERTO: la gamba va in coda
     row = _combo_feed_row()
-    S._auto_trade_combos(db=db, market=QueueMarket(), payload=row["payload"],
-                         event_id="1.1", combos=[_combo()],
-                         # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
-                         # altrimenti questo test collauderebbe il ramo paper.
-                         params=S.resolve_params({"strategy_modes": {"model": "live"}}),
-                         mode="live", now=NOW,
-                         rows_by_event={"1.1": row})
+    # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
+    # altrimenti questo test collauderebbe il ramo paper.
+    params = S.resolve_params({"strategy_modes": {"model": "live"}})
+    corpi = S._proponi_combo(db=db, payload=row["payload"], event_id="1.1",
+                             combos=[_combo()], params=params, mode="live",
+                             now=NOW, rows_by_event={"1.1": row})
+    assert len(corpi) == 1
+    corpo = corpi[0]
+    S._esegui_combo_riservata(
+        db=db, market=QueueMarket(), event_id="1.1", event_name=corpo.get("event_name"),
+        cid=corpo["combo_id"], legs_esecuzione=corpo["legs"], sport="calcio", mode="live",
+        commission=0.05, minute=corpo.get("minute"), score=corpo.get("score"),
+        rationale=corpo.get("rationale"), params=params, now=NOW,
+        rows_by_event={"1.1": row}, risk_ctx=None)
     assert _kinds(db, "combo_incomplete"), "combo incompleta non segnalata"
     marcate = [t for t in db.trades
                if (t.get("meta") or {}).get("combo_incomplete")]

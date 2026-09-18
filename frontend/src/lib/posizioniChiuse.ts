@@ -20,7 +20,8 @@ import { isSettled, isErrorRow } from '@/lib/eventGroups';
 import type { Bot, Modo } from '@/lib/controlRoom';
 import { modoDi } from '@/lib/controlRoom';
 import { romeDay } from '@/lib/dailyHistory';
-import type { RigaOrdine } from '@/lib/statoOrdine';
+import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
+import { certezzaChiusura, type RisultatoCertezzaChiusura } from '@/lib/certezzaChiusura';
 
 export type Esito = 'vinta' | 'persa' | 'pari';
 
@@ -45,6 +46,9 @@ export interface RigaChiusa {
      * arrivano dalla RPC: a leggerli e' `lib/statoOrdine`, uno per tutti i bot.
      */
     ordine: RigaOrdine;
+    /** 18/09 — bet_id della gamba: prova che Betfair ha accettato un ordine
+     *  reale (`lib/certezzaChiusura.ts`, mai dentro `RigaOrdine`). */
+    betId: string | null;
 }
 
 export interface PosizioneChiusa {
@@ -114,6 +118,10 @@ export interface TradeChiudibile {
     size_remaining?: number | null;
     avg_price_matched?: number | null;
     betfair_updated_at?: string | null;
+    /** 18/09 — presente = un ordine reale è stato accettato da Betfair per
+     *  questa gamba: la certezza di chiusura (`lib/certezzaChiusura.ts`) lo
+     *  richiede in LIVE prima di dire «confermata». */
+    bet_id?: string | null;
     meta?: Record<string, unknown> | null;
     __bot: Bot;
 }
@@ -224,7 +232,21 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
         // regolate darebbe un P&L parziale mostrato come definitivo: su un
         // green-up a metà è il numero dell'apertura da solo, cioè il profitto
         // pieno di una posizione che invece è coperta.
-        if (gambe.some((g) => !isSettled(String(g.status ?? '')))) continue;
+        //
+        // ECCEZIONE (18/09, certezza di chiusura): una gamba `cancelled` NON
+        // ANDRÀ MAI a `won`/`lost`/`void` — un ordine annullato non ha un
+        // esito di mercato da attendere, è morto e basta, senza aver mai
+        // portato rischio. Prima di questa riga, UNA SOLA gamba di chiusura
+        // annullata (es. la terza di tre back a chiudere un lay, rifiutata da
+        // Betfair) faceva sparire l'INTERA posizione da «Posizioni chiuse»
+        // PER SEMPRE, anche dopo il fischio finale: né aperta né chiusa, in
+        // un limbo. Le altre gambe morte senza rischio (`error`, mai andate a
+        // mercato) sono già escluse a monte da `isErrorRow` in `aperture`/
+        // `coperture`, quindi non arrivano nemmeno qui.
+        if (gambe.some((g) => {
+            const s = String(g.status ?? '').toLowerCase();
+            return !isSettled(s) && s !== 'cancelled';
+        })) continue;
 
         const tutte = [a, ...gambe];
 
@@ -247,6 +269,7 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
                 at: testo(r.settled_at) ?? testo(r.placed_at) ?? '',
                 chiusura: numero(r.closes_trade_id) != null,
                 quale: testo(r.strategy),
+                betId: testo(r.bet_id),
                 ordine: {
                     status: String(r.status ?? ''), side: r.side ?? null,
                     price: numero(r.price), size: numero(r.size),
@@ -361,5 +384,96 @@ export function riepilogoChiuse(righe: readonly PosizioneChiusa[]): RiepilogoChi
         n: righe.length, vinte, perse, pari,
         totale: righe.length ? Math.round(totale * 100) / 100 : null,
         percentualeVinte: conEsito > 0 ? vinte / conEsito : null,
+    };
+}
+
+// ============================================================================
+// 18/09 — CERTEZZA DI CHIUSURA di una posizione della scheda.
+//
+// Il GIUDIZIO non vive qui: e' `lib/certezzaChiusura.ts`, lo stesso della
+// striscia di esito delle schede di uscita. Qui si fa solo il ponte fra una
+// `PosizioneChiusa` e la sua forma d'ingresso, senza una seconda regola.
+// ============================================================================
+
+/** L'apertura di una posizione: la riga con l'id della posizione. Su una
+ *  copertura ORFANA e' la copertura stessa (e' lei a identificare la riga). */
+function aperturaDi(p: PosizioneChiusa): RigaChiusa | null {
+    return p.righe.find((r) => r.id === p.id) ?? p.righe[0] ?? null;
+}
+
+function statoMorto(stato: string): boolean {
+    return String(stato).toLowerCase() === 'cancelled';
+}
+
+/**
+ * Il giudizio «effettivamente chiusa» di UNA posizione.
+ *
+ * `regolataDalMercato` si RICAVA dagli stati delle righe (apertura regolata e
+ * ogni gamba regolata oppure annullata, cioe' morta senza rischio): non e' un
+ * `true` cablato. Se un giorno il criterio d'ingresso della scheda cambiasse,
+ * una posizione non regolata verrebbe giudicata per quello che e', non
+ * dichiarata verde per costruzione.
+ */
+export function certezzaDiPosizione(p: PosizioneChiusa): RisultatoCertezzaChiusura {
+    const a = aperturaDi(p);
+    const chiusure = p.righe.filter((r) => r !== a);
+    const regolata = a != null && isSettled(a.stato)
+        && chiusure.every((r) => isSettled(r.stato) || statoMorto(r.stato));
+    return certezzaChiusura({
+        apertura: a?.ordine ?? {},
+        chiusure: chiusure.map((r) => r.ordine),
+        regolataDalMercato: regolata,
+        modo: p.modo,
+    });
+}
+
+/** Quante gambe di chiusura sono state ANNULLATE: la posizione e' regolata lo
+ *  stesso, ma la copertura non e' stata quella chiesta e il trader lo deve
+ *  vedere senza aprire il dettaglio. */
+export function gambeAnnullate(p: PosizioneChiusa): number {
+    const a = aperturaDi(p);
+    return p.righe.filter((r) => r !== a && statoMorto(r.stato)).length;
+}
+
+export interface SintesiPosizione {
+    ingresso: { lato: 'back' | 'lay' | null; prezzo: number | null; stake: number | null; at: string };
+    /** quota media PESATA sull'abbinato e stake abbinato delle gambe di
+     *  chiusura; `null` = nessuna gamba ha abbinato qualcosa (mai zero) */
+    chiusura: { prezzoMedio: number | null; stake: number | null; at: string } | null;
+}
+
+/**
+ * Ingresso e chiusura in una riga: quota, stake ABBINATO, ora.
+ *
+ * I numeri sono quelli di `statoOrdine` (colonna, poi nota). Solo se mancano
+ * si ripiega su `size`/`price` della riga — e solo per righe REGOLATE, dove
+ * per costruzione del servizio `size`/`price` portano l'abbinato
+ * (`migrations/trades_consapevolezza_ordine_2026-09-16.sql:11-13`).
+ */
+export function sintesiPosizione(p: PosizioneChiusa): SintesiPosizione {
+    const abbinatoDi = (r: RigaChiusa): { stake: number | null; prezzo: number | null } => {
+        const s = statoOrdine(r.ordine);
+        const regolata = isSettled(r.stato);
+        return {
+            stake: s.abbinato.valore ?? (regolata ? r.size : null),
+            prezzo: s.prezzoMedio.valore ?? (regolata ? r.prezzo : null),
+        };
+    };
+    const a = aperturaDi(p);
+    const ing = a ? abbinatoDi(a) : { stake: null, prezzo: null };
+    let stake = 0, pesato = 0, ultimo = '';
+    for (const r of p.righe) {
+        if (r === a || statoMorto(r.stato)) continue;
+        const g = abbinatoDi(r);
+        if (g.stake == null || g.stake <= 0 || g.prezzo == null) continue;
+        stake += g.stake;
+        pesato += g.stake * g.prezzo;
+        if (r.at > ultimo) ultimo = r.at;
+    }
+    return {
+        ingresso: { lato: a?.lato ?? null, prezzo: ing.prezzo, stake: ing.stake, at: p.piazzataAt },
+        chiusura: stake > 0
+            ? { prezzoMedio: pesato / stake, stake: Math.round(stake * 100) / 100, at: ultimo }
+            : null,
     };
 }

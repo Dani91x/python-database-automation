@@ -213,6 +213,39 @@ export interface PartitaFeedLike {
      * due etichette diverse — non due verità sulla stessa cosa.
      */
     odds_ts_ms?: number | null;
+    /**
+     * 18/09 (secondo giro, REPERTO 3) — stato del mercato Match Odds da
+     * Betfair (OPEN/SUSPENDED/CLOSED/INACTIVE), calcio E tennis: lo scrive
+     * `Betfair/safe_strategy/service.py:758` (`ev["mo_status"] =
+     * getattr(book, "status", None)`, letteralmente `MarketBook.status`) e
+     * finisce nella riga di `safe_strategy_scan` per entrambi gli sport
+     * (`service.py:1369` calcio, `:1423` tennis). Il campo VIVE GIÀ nell'oggetto
+     * a runtime (il cast `as PartitaFeedLike` lo espone, non lo ricalcola):
+     * nessuna lettura nuova, nessuna mappatura da toccare in `useControlRoom.ts`.
+     */
+    mo_status?: string | null;
+    /**
+     * 18/09 (secondo giro, REPERTO 3) — euro già scambiati sul Match Odds
+     * (`ev["mo_total_matched"]`, `service.py:759,1386,1429`). Stessa origine
+     * di `mo_status`: già nel payload, non una lettura nuova.
+     */
+    mo_total_matched?: number | null;
+    /**
+     * 18/09 (secondo giro, richiesta utente "quote vive principali back/lay
+     * del mercato") — il Match Odds vivo: `home/draw/away` sul calcio,
+     * `p1/p2` sul tennis. STESSA chiave `odds` del payload vero
+     * (`CalcioScanPayload.odds`/`TennisScanPayload.odds`,
+     * `frontend/src/lib/safeStrategyScan.ts:91,250`; scritto da
+     * `service.py`, letto dallo stream): non una lettura nuova, solo un
+     * campo in più esposto dal cast `as PartitaFeedLike`.
+     */
+    odds?: {
+        home?: { back: number | null; lay: number | null } | null;
+        draw?: { back: number | null; lay: number | null } | null;
+        away?: { back: number | null; lay: number | null } | null;
+        p1?: { back: number | null; lay: number | null } | null;
+        p2?: { back: number | null; lay: number | null } | null;
+    } | null;
 }
 
 /**
@@ -439,6 +472,118 @@ export function marca<T extends PnlTradeLike>(trades: readonly T[], bot: Bot): T
     return trades.map((t) => ({ ...t, __bot: bot }));
 }
 
+// ------------------------------------------- P&L per partita, i 4 bot tennis
+//
+// `MikeTrade`/`SafeTrade`/`OmegaTrade` soddisfano già `PnlTradeLike` (status
+// won/lost/void, `pnl` netto scritto dal servizio). Le righe ordine tennis
+// (`TennisBotOrderRow`, `lib/tennis.ts:980`) NO: portano lo stato FLUMINE
+// dell'ordine (`EXECUTION_COMPLETE`…, non un esito), il P&L LORDO e la
+// commissione separati, e nessun `closes_trade_id` (un ordine tennis non ha
+// apertura/chiusura concatenate come un ciclo Omega/Safe/Mike: ogni riga è la
+// propria posizione). Questo adattatore traduce quella riga nella stessa
+// forma `PnlTradeLike`, così la STESSA matematica di `soldiPerPartita`
+// (gamba→ciclo→partita) si applica anche al tennis — mai una seconda verità.
+//
+// Le regole di riferimento sono le stesse già scritte per la plancia bot in
+// `useControlRoom.ts`: "un ordine è ancora a mercato" (`ordineTennisAperto`,
+// riga 1671), "il netto è pnl − commissione" (`pnlNettoTennis`, riga 1685) e
+// "la responsabilità è aritmetica pura BACK=stake / LAY=(quota−1)×stake"
+// (`liabilityTennis`, riga 351). Sono ripetute qui invece che importate
+// perché `useControlRoom.ts` importa GIA' da questo modulo (importare al
+// contrario creerebbe un ciclo, e questo file resta puro/senza I/O): la
+// stessa regola, scritta due volte con lo stesso numero, non una seconda.
+
+/**
+ * Il sottoinsieme di `TennisBotOrderRow` (`lib/tennis.ts`) che serve ai soldi
+ * di partita. Stesse chiavi e stessi tipi del vero (mai un adattamento a
+ * scatola nera): un finto nei test è un oggetto letterale con queste stesse
+ * chiavi, non una stringa a caso.
+ */
+export interface RigaTennisPerSoldi {
+    id: number;
+    event_id: string | null;
+    side?: 'back' | 'lay' | null;
+    mode: 'paper' | 'live';
+    price: number | null;
+    size: number | null;
+    status: string;
+    placed_at: string | null;
+    settled_at?: string | null;
+    /** P&L LORDO al regolamento; `null` = non ancora regolato (≠ zero) */
+    pnl?: number | null;
+    commission?: number | null;
+    size_matched: number;
+    size_remaining: number;
+}
+
+/** Responsabilità di UN ordine tennis: aritmetica pura dell'exchange, stessa
+ *  regola di `liabilityTennis` (`useControlRoom.ts:351`). */
+function liabilitaOrdineTennis(o: { side?: string | null; price: number | null; size: number | null }): number | null {
+    const size = typeof o.size === 'number' && Number.isFinite(o.size) ? o.size : null;
+    if (size == null) return null;
+    if (o.side === 'back') return Math.round(size * 100) / 100;
+    if (o.side !== 'lay') return null;
+    const price = typeof o.price === 'number' && Number.isFinite(o.price) ? o.price : null;
+    if (price == null || price <= 1) return null;
+    return Math.round((price - 1) * size * 100) / 100;
+}
+
+/** Un ordine tennis è ancora a mercato? Stessa regola di `ordineTennisAperto`
+ *  (`useControlRoom.ts:1671`): non lo stato flumine, il regolamento. */
+function tennisAncoraAMercato(o: RigaTennisPerSoldi): boolean {
+    if (isErrorRow(o.status)) return false;
+    if (o.settled_at != null) return false;
+    const abbinato = Number(o.size_matched ?? 0);
+    const residuo = Number(o.size_remaining ?? 0);
+    return (Number.isFinite(abbinato) && abbinato > 0) || (Number.isFinite(residuo) && residuo > 0);
+}
+
+/**
+ * Adatta le righe ordine di UN bot tennis alla forma `PnlTradeLike` che
+ * `soldiPerPartita` già usa per Omega/Safe/Mike.
+ *
+ * Un ordine tennis non ha catena apertura→chiusura: ogni riga regolata è il
+ * proprio ciclo, con esito sintetico 'won'/'lost'/'void' dal SEGNO del netto
+ * (mai un quarto stato inventato: sono gli stessi tre che `isSettled` conosce
+ * già). Una riga REGOLATA senza `pnl` calcolabile NON ENTRA — non si inventa
+ * un esito che il servizio non ha ancora scritto. Una riga senza `event_id`
+ * non è assegnabile a nessuna scheda e non entra.
+ */
+export function marcaTennis(righe: readonly RigaTennisPerSoldi[], bot: BotTennis): TradeConBot[] {
+    const out: TradeConBot[] = [];
+    for (const o of righe) {
+        const eventId = o.event_id;
+        if (!eventId) continue;
+        const liability = liabilitaOrdineTennis(o);
+        // `placed_at` è NOT NULL a database (`lib/liveOrders.ts:93` lo dichiara
+        // opzionale solo per compatibilità di tipo con righe "conto"): un
+        // ordine senza istante di piazzamento non dovrebbe mai arrivare qui.
+        // `''` fa ordinare la riga come la più vecchia (mai la più recente),
+        // fail-safe e non un crash — comportamento ereditato da `eventGroups`.
+        const placedAt = o.placed_at ?? o.settled_at ?? '';
+        if (o.settled_at != null) {
+            const lordo = typeof o.pnl === 'number' && Number.isFinite(o.pnl) ? o.pnl : null;
+            if (lordo == null) continue; // riga senza pnl non entra
+            const comm = typeof o.commission === 'number' && Number.isFinite(o.commission) ? o.commission : 0;
+            const netto = Math.round((lordo - comm) * 100) / 100;
+            out.push({
+                id: o.id, event_id: eventId, side: o.side ?? null, mode: o.mode,
+                price: o.price, size: o.size, liability,
+                status: netto > 0 ? 'won' : netto < 0 ? 'lost' : 'void',
+                pnl: netto, placed_at: placedAt, __bot: bot,
+            });
+            continue;
+        }
+        if (!tennisAncoraAMercato(o)) continue; // mai abbinato e non regolato: nessuna posizione reale
+        out.push({
+            id: o.id, event_id: eventId, side: o.side ?? null, mode: o.mode,
+            price: o.price, size: o.size, liability,
+            status: 'open', pnl: null, placed_at: placedAt, __bot: bot,
+        });
+    }
+    return out;
+}
+
 /** I soldi di UNA modalità su una partita. */
 export interface SoldiModo {
     /** netto di commissione delle righe REGOLATE; `null` = nessun risultato ancora */
@@ -481,12 +626,21 @@ export function modoDi(t: { mode?: string | null }): Modo {
     return String(t?.mode ?? '').toLowerCase() === 'live' ? 'live' : 'paper';
 }
 
-const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike'];
+/**
+ * 18/09 — estesa ai QUATTRO bot tennis (Task 3, A2 §4.3): erano esclusi
+ * dall'aggregato PER PARTITA non perché mancasse il dato (il P&L giornaliero
+ * per bot tennis esisteva già altrove, `pnlTennisDi` in `useControlRoom.ts`),
+ * ma perché questa lista li ignorava. `soldiPerPartita`/`marca` sono già
+ * generici su `Bot` (che include `BotTennis` dal 17/09): bastava includerli
+ * qui perché comparissero nella scheda della partita, nell'ordine fisso in
+ * cui la Control Room mostra i simboli (calcio prima, poi tennis).
+ */
+const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike', ...BOT_TENNIS];
 
 /**
- * Soldi per partita, sommando i tre bot. Usa `eventGroups` così com'è — la
- * stessa matematica gamba→ciclo→partita delle tre pagine — e ci aggiunge solo
- * l'elenco dei bot coinvolti.
+ * Soldi per partita, sommando tutti i bot passati (calcio + tennis). Usa
+ * `eventGroups` così com'è — la stessa matematica gamba→ciclo→partita delle
+ * pagine dei bot — e ci aggiunge solo l'elenco dei bot coinvolti.
  */
 export function soldiPerPartita(trades: readonly TradeConBot[]): Map<string, PartitaSoldi> {
     // DUE raggruppamenti sulle stesse righe, uno per modalità. Si riusa la
@@ -566,6 +720,41 @@ export interface PartitaGiornata {
     soldi: PartitaSoldi | null;
     target: TargetPartita | null;
     avanzamento: number | null;
+    /**
+     * 18/09 (secondo giro, REPERTO 3) — stato GREZZO del mercato Match Odds da
+     * Betfair (`mo_status` del payload: OPEN/SUSPENDED/CLOSED/INACTIVE).
+     * Volutamente NON tradotto qui (questo modulo resta puro, senza il
+     * vocabolario italiano che vive in `lib/mike.ts::marketStatusMeta`): chi
+     * monta la scheda applica la STESSA funzione già usata per il tennis
+     * (`useTennisVivo.ts`), mai un secondo vocabolario.
+     *
+     * OPZIONALE (non `| null`, ma `?`): i fixture di `ControlRoom.test.tsx` e
+     * `StatoOrdine.montaggio.test.tsx` (fuori dal mio perimetro) costruiscono
+     * `PartitaGiornata` letterali senza questo campo. Renderlo obbligatorio
+     * avrebbe rotto la compilazione di file che non tocco — l'istruzione del
+     * secondo giro lo chiede esplicitamente ("campi OPZIONALI così la scheda
+     * non si rompe finché la mappatura non arriva"). Chi legge tratta
+     * `undefined` come `null` (assente).
+     */
+    statoMercato?: string | null;
+    /** euro già scambiati sul Match Odds (`mo_total_matched`), calcio e tennis.
+     *  Opzionale per lo stesso motivo di `statoMercato`. */
+    volumeMercato?: number | null;
+    /**
+     * 18/09 (secondo giro, REPERTO 2) — i nomi dei due giocatori/selezioni
+     * (tennis: `p1`/`p2` del payload, split di `event_name`). Servono a
+     * etichettare CHI SERVE nella barra tennis vivo invece del solo "P1"/"P2"
+     * posizionale. `null`/assente sul calcio (il payload non porta `p1`/`p2`).
+     *  Opzionale per lo stesso motivo di `statoMercato`.
+     */
+    giocatori?: { p1: string | null; p2: string | null } | null;
+    /**
+     * 18/09 (secondo giro, richiesta utente) — le quote back/lay principali
+     * del Match Odds, per la testata della scheda. Stessa forma di
+     * `PartitaFeedLike.odds`, non tradotta qui (nessun calcolo, solo
+     * esposizione). Opzionale per lo stesso motivo di `statoMercato`.
+     */
+    odds?: PartitaFeedLike['odds'];
 }
 
 export interface GruppoCampionato {
@@ -638,6 +827,11 @@ export function costruisciGiornata(args: {
             // il target di giornata si insegue con i SOLDI VERI: una vincita
             // simulata non deve riempire la barra di un pixel.
             avanzamento: avanzamentoPartita(s?.live.netPnl ?? null, target?.valore ?? null),
+            statoMercato: p?.mo_status ?? null,
+            volumeMercato: typeof p?.mo_total_matched === 'number' && Number.isFinite(p.mo_total_matched)
+                ? p.mo_total_matched : null,
+            giocatori: p ? { p1: p.p1 ?? null, p2: p.p2 ?? null } : null,
+            odds: p?.odds ?? null,
         };
     });
 

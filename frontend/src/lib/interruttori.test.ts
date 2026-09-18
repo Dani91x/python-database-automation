@@ -36,6 +36,9 @@ vi.mock('@/lib/tennis', () => ({
     stopTennisBotService: vi.fn(async () => ({})),
     updateTennisBotService: vi.fn(async () => ({})),
 }));
+// STADIO C (18/09) — la sveglia e' un dettaglio di TRASPORTO: qui si controlla
+// SOLO che parta (o non parta) al momento giusto, mai il canale vero.
+vi.mock('@/lib/localChannel', () => ({ svegliaBot: vi.fn() }));
 
 import {
     INTERRUTTORI, interruttoriDiSport, interruttoreDi, statoInterruttore,
@@ -52,6 +55,7 @@ import { activateMike, stopMike, updateMikeParams } from '@/lib/mike';
 import {
     activateTennisBotService, stopTennisBotService, updateTennisBotService,
 } from '@/lib/tennis';
+import { svegliaBot } from '@/lib/localChannel';
 
 const mActOmega = vi.mocked(activateOmega);
 const mStopOmega = vi.mocked(stopOmega);
@@ -65,6 +69,7 @@ const mUpdMike = vi.mocked(updateMikeParams);
 const mActTennis = vi.mocked(activateTennisBotService);
 const mStopTennis = vi.mocked(stopTennisBotService);
 const mUpdTennis = vi.mocked(updateTennisBotService);
+const mSveglia = vi.mocked(svegliaBot);
 
 beforeEach(() => { vi.clearAllMocks(); });
 
@@ -638,5 +643,47 @@ describe('i quattro bot tennis: ognuno parla solo con la SUA riga di control', (
         await c.accendi('tennis_swing', 'paper');
         expect(mUpdSafe).not.toHaveBeenCalled();
         expect(mActSafe).not.toHaveBeenCalled();
+    });
+});
+
+// ============================================================================
+// STADIO C (18/09, raccordo) — LA SVEGLIA AI BOT DOPO OGNI CLIC.
+//
+// Il comando vero resta la scrittura sul database: la sveglia (`svegliaBot`,
+// `lib/localChannel.ts`) serve solo a far leggere subito la riga al bot. Qui
+// si verifica SOLO l'ORDINE (dopo, mai prima, mai al posto di) e IL BOT GIUSTO
+// — il trasporto vero e' testato altrove (`localChannel.test.ts`).
+//
+// FALSIFICAZIONE (verificata a mano): spostare `svegliaBot('safe', 'comando')`
+// PRIMA di `await stopSafe()` in `fermaBot` fa fallire il primo test di questo
+// blocco (l'ordine delle chiamate si inverte) — rosso; ripristinato.
+// ============================================================================
+describe('STADIO C — la sveglia parte DOPO la scrittura riuscita, mai prima', () => {
+    it('fermare Safe: sveglia "safe"/"comando" DOPO che stopSafe e tornato', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.fermaBot('safe');
+        expect(mSveglia).toHaveBeenCalledWith('safe', 'comando');
+        expect(mSveglia.mock.invocationCallOrder[0])
+            .toBeGreaterThan(mStopSafe.mock.invocationCallOrder[0]);
+    });
+
+    it('se la scrittura fallisce, NESSUNA sveglia parte', async () => {
+        mStopSafe.mockRejectedValueOnce(new Error('rpc rifiutata'));
+        const c = creaInterruttori(sorgente(), () => {});
+        await expect(c.fermaBot('safe')).rejects.toThrow('rpc rifiutata');
+        expect(mSveglia).not.toHaveBeenCalled();
+    });
+
+    it('un bot tennis sveglia il canale condiviso dei 4 bot tennis, non "safe"', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.fermaBot('tennis_pro');
+        expect(mSveglia).toHaveBeenCalledWith('tennis_pro', 'comando');
+    });
+
+    it('accendere Omega sveglia "omega", non "safe" ne un altro bot', async () => {
+        const c = creaInterruttori(sorgente(), () => {});
+        await c.accendi('omega', 'paper');
+        expect(mSveglia).toHaveBeenCalledWith('omega', 'comando');
+        expect(mSveglia).not.toHaveBeenCalledWith('safe', expect.anything());
     });
 });

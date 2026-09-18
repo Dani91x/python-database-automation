@@ -43,6 +43,7 @@ import {
     type TennisBotKey,
 } from '@/lib/tennis';
 import { isBotTennis, BOT_TENNIS, BOT_LABEL, type Bot, type BotTennis } from '@/lib/controlRoom';
+import { svegliaBot } from '@/lib/localChannel';
 
 export type { Bot };
 
@@ -416,6 +417,37 @@ export interface SorgenteInterruttori {
     /** solo Omega: l'obiettivo del giorno vive fuori da `params` e
      *  `omega_activate` lo pretende */
     obiettivoOmega: () => number | null;
+    /**
+     * ⚠️ REPERTO A (18/09) — OPZIONALE. Una rilettura FRESCA della riga di
+     * Safe (params + stato), ignara dello snapshot React che `params()`/
+     * `servizio()` restituiscono.
+     *
+     * IL DIFETTO: `dopo()` (il refetch di pagina, tipicamente `vm.ricarica`)
+     * viene chiamato SENZA essere atteso — verificato riga per riga: sia qui
+     * sia in `comandiBot.ts` il parametro si chiama `dopo: () => void`, non
+     * `Promise<void>`. Un comando su Safe risolve quindi SUBITO dopo la RPC,
+     * PRIMA che il refetch completo abbia riportato lo stato nuovo. Se in
+     * quella finestra l'utente clicca un'ALTRA riga di Safe (base/esatto/
+     * punta/tennis condividono la stessa colonna `variants`+`strategy_modes`),
+     * il secondo comando ricostruisce l'intero array da uno snapshot React
+     * VECCHIO, e la strategia appena accesa dal primo clic sparisce dalla
+     * scrittura — si "spegne da sola" agli occhi dell'utente.
+     *
+     * LA CORREZIONE: quando questa funzione c'e' (la Control Room la aggancia
+     * a una lettura vera dal database, `comandiBot.ts::rileggiSafeDalDatabase`
+     * -> `fetchSafeState`), i comandi su Safe la usano AL POSTO di
+     * `params('safe')`/`servizio('safe')` per COMPORRE la scrittura: il
+     * secondo clic legge quello che il primo ha appena scritto sul database,
+     * non quello che React non ha ancora ricevuto. Se assente (le pagine dei
+     * singoli bot, dove questa finestra non si e' mai presentata: una pagina
+     * mostra UNA strategia alla volta, mai due comandi ravvicinati su righe
+     * diverse), si ricade sullo snapshot passato — compatibilita' con chi non
+     * la fornisce, comportamento identico a prima.
+     */
+    rileggiSafe?: () => Promise<{
+        params: Record<string, unknown> | null;
+        servizio: StatoServizio | null;
+    }>;
 }
 
 export interface ComandiInterruttori {
@@ -464,6 +496,38 @@ export function creaInterruttori(
     };
 
     /**
+     * ⚠️ REPERTO A (18/09) — LA CORREZIONE ALLA RADICE.
+     *
+     * Una lettura di Safe (params + stato) FRESCA quanto lo permette
+     * `sorgente.rileggiSafe` (se il chiamante l'ha agganciata; altrimenti lo
+     * snapshot passato, comportamento identico a prima). Ogni comando su Safe
+     * che COMPONE una scrittura (`conCambio`, `scriviSafe`, il cambio del
+     * `mode` del servizio) passa da qui invece di leggere `sorgente.params
+     * ('safe')`/`sorgente.servizio('safe')` direttamente: e' l'UNICO punto che
+     * decide "qual e' lo stato di Safe adesso", cosi' i due letture (quella
+     * che sceglie CHI e' acceso e quella che sceglie CON CHE PARAMETRI si
+     * scrive) non possono mai vedere due istantanee diverse nello stesso
+     * comando.
+     */
+    const statoSafeFresco = async (): Promise<{ correnti: Record<string, unknown>; servizio: StatoServizio | null }> => {
+        const fresco = sorgente.rileggiSafe
+            ? await sorgente.rileggiSafe()
+            : { params: sorgente.params('safe'), servizio: sorgente.servizio('safe') };
+        if (fresco.params == null || Object.keys(fresco.params).length === 0) {
+            throw new ParametriNonLetti('safe');
+        }
+        return { correnti: fresco.params, servizio: fresco.servizio };
+    };
+
+    /** Come sopra, ma solo lo STATO (per i gesti che non compongono `params`,
+     *  es. il gate di `cambiaModalitaServizio`): non pretende che i parametri
+     *  siano stati letti, perche' non li scrive. */
+    const servizioSafeFresco = async (): Promise<StatoServizio | null> => {
+        if (sorgente.rileggiSafe) return (await sorgente.rileggiSafe()).servizio;
+        return sorgente.servizio('safe');
+    };
+
+    /**
      * Scrive UNA configurazione di accensioni su Safe. Tre casi, e uno solo
      * per ciascuno:
      *   · nessuna accesa      -> `safe_stop`. NON si scrive `variants: []`:
@@ -474,12 +538,23 @@ export function creaInterruttori(
      *     con i parametri espliciti: e' l'unico modo di armare il `mode`.
      *   · gia' in corsa nella modalita' giusta -> `safe_update_params`, che non
      *     azzera `started_at` ne' interrompe niente.
+     *
+     * `frescoGia'` e' un'ottimizzazione facoltativa: quando il chiamante
+     * (`conCambio`) ha GIA' fatto la lettura fresca per costruire `acc`, la
+     * passa qui per evitare un secondo giro di rete — la firma pubblica
+     * (`scriviAccensioni: (acc, opzioni?) => Promise<void>`, usata da
+     * `soloTennis.ts`/`comandiBot.ts`) resta identica: e' un parametro in piu',
+     * facoltativo, non visibile a chi chiama con la forma vecchia.
      */
-    const scriviSafe = async (acc: Accensioni, opzioni: OpzioniAccensioni = {}) => {
+    const scriviSafe = async (
+        acc: Accensioni, opzioni: OpzioniAccensioni = {},
+        frescoGia?: { correnti: Record<string, unknown>; servizio: StatoServizio | null },
+    ) => {
         const { altre = 'conserva', extra, puoAccendere = true } = opzioni;
-        const correnti = paramsLetti('safe');
+        const { correnti, servizio: s } = frescoGia ?? await statoSafeFresco();
         if (nessunaAccesa(acc)) {
             await stopSafe();
+            svegliaBot('safe', 'comando'); // STADIO C — DOPO la scrittura, mai prima
             dopo();
             return;
         }
@@ -487,7 +562,6 @@ export function creaInterruttori(
             ? extra(paramsAccensioni(correnti, acc, altre))
             : paramsAccensioni(correnti, acc, altre);
         const voluta = modalitaServizio(acc);
-        const s = sorgente.servizio('safe');
         if (s?.inCorsa && s.modalita === voluta) {
             await updateSafeParams(params as Partial<SafeBotParams>);
         } else {
@@ -498,13 +572,20 @@ export function creaInterruttori(
             if (!s?.inCorsa && !puoAccendere) throw new BotFermoNonCambiaModalita('safe');
             await activateSafe(voluta, params as Partial<SafeBotParams>);
         }
+        svegliaBot('safe', 'comando'); // STADIO C — DOPO la scrittura, mai prima
         dopo();
     };
 
-    /** le accensioni di adesso con UNA strategia cambiata: il resto non si tocca */
-    const conCambio = (strategia: StrategiaSafe, valore: Modalita | null): Accensioni => {
-        const acc = accensioniCorrenti(sorgente.servizio('safe'));
-        return { ...acc, [strategia]: valore };
+    /**
+     * Le accensioni di ADESSO (lettura FRESCA, non lo snapshot React) con UNA
+     * strategia cambiata: il resto non si tocca. Ritorna anche la lettura
+     * fresca stessa, cosi' `accendi`/`spegni`/`cambiaModalita` la passano a
+     * `scriviSafe` senza rileggere una seconda volta.
+     */
+    const conCambio = async (strategia: StrategiaSafe, valore: Modalita | null) => {
+        const fresco = await statoSafeFresco();
+        const acc: Accensioni = { ...accensioniCorrenti(fresco.servizio), [strategia]: valore };
+        return { acc, fresco };
     };
 
     const avviaBot = async (bot: Bot, modalita: Modalita) => {
@@ -513,14 +594,15 @@ export function creaInterruttori(
         // sempre, ed e' quella che l'utente ha appena scelto col pulsante.
         if (isBotTennis(bot)) {
             await activateTennisBotService(bot as TennisBotKey, modalita);
-            dopo(); return;
+            svegliaBot(bot, 'comando'); dopo(); return;
         }
-        if (bot === 'mike') { await activateMike(modalita); dopo(); return; }
+        if (bot === 'mike') { await activateMike(modalita); svegliaBot(bot, 'comando'); dopo(); return; }
         const obiettivo = sorgente.obiettivoOmega();
         if (obiettivo == null) throw new ObiettivoOmegaIgnoto();
         const correnti = sorgente.params('omega');
         if (correnti == null || Object.keys(correnti).length === 0) throw new ParametriOmegaIgnoti();
         await activateOmega(modalita, obiettivo, correnti as Partial<OmegaParams>);
+        svegliaBot(bot, 'comando');
         dopo();
     };
 
@@ -532,25 +614,29 @@ export function creaInterruttori(
         else if (bot === 'safe') await stopSafe();
         else if (bot === 'mike') await stopMike();
         else await stopOmega();
+        svegliaBot(bot, 'comando'); // STADIO C — DOPO la scrittura, mai prima
         dopo();
     };
 
     const accendi = async (id: InterruttoreId, modalita: Modalita) => {
         const i = interruttoreDi(id);
         if (i.strategia == null) return avviaBot(i.bot, modalita);
-        await scriviSafe(conCambio(i.strategia, modalita));
+        const { acc, fresco } = await conCambio(i.strategia, modalita);
+        await scriviSafe(acc, {}, fresco);
     };
 
     const spegni = async (id: InterruttoreId) => {
         const i = interruttoreDi(id);
         if (i.strategia == null) return fermaBot(i.bot);
-        await scriviSafe(conCambio(i.strategia, null));
+        const { acc, fresco } = await conCambio(i.strategia, null);
+        await scriviSafe(acc, {}, fresco);
     };
 
     const cambiaModalita = async (id: InterruttoreId, modalita: Modalita) => {
         const i = interruttoreDi(id);
         if (i.strategia != null) {
-            await scriviSafe(conCambio(i.strategia, modalita), { puoAccendere: false });
+            const { acc, fresco } = await conCambio(i.strategia, modalita);
+            await scriviSafe(acc, { puoAccendere: false }, fresco);
             return;
         }
         // `update_params` di Omega e Mike accetta il mode e NON tocca `status`:
@@ -572,14 +658,23 @@ export function creaInterruttori(
                     params: scriviChiave(paramsLetti(i.bot), chiave, importo),
                 });
             }
-            dopo(); return;
+            svegliaBot(i.bot, 'comando'); dopo(); return;
+        }
+        if (i.bot === 'safe') {
+            // ⚠️ REPERTO A — anche un cambio d'importo su Safe compone da uno
+            // snapshot: due cambi ravvicinati su due stake DIVERSI (es. base
+            // poi esatto) devono vedersi a vicenda, non solo le accensioni.
+            const { correnti } = await statoSafeFresco();
+            const nuovi = scriviChiave(correnti, chiave, importo);
+            await updateSafeParams(nuovi as Partial<SafeBotParams>);
+            svegliaBot('safe', 'comando'); dopo(); return;
         }
         // si riparte SEMPRE dai parametri correnti: mandare la sola chiave
         // cambiata cancellerebbe tutto il resto.
         const nuovi = scriviChiave(paramsLetti(i.bot), chiave, importo);
-        if (i.bot === 'safe') await updateSafeParams(nuovi as Partial<SafeBotParams>);
-        else if (i.bot === 'mike') await updateMikeParams(nuovi as MikeParams);
+        if (i.bot === 'mike') await updateMikeParams(nuovi as MikeParams);
         else await updateOmegaParams({ params: nuovi as Partial<OmegaParams> });
+        svegliaBot(i.bot, 'comando');
         dopo();
     };
 
@@ -595,15 +690,25 @@ export function creaInterruttori(
         // passa dalla gemella che `status` non lo tocca.
         if (isBotTennis(bot)) {
             await updateTennisBotService(bot as TennisBotKey, { mode: modalita });
-            dopo(); return;
+            svegliaBot(bot, 'comando'); dopo(); return;
         }
-        if (bot === 'omega') { await updateOmegaParams({ mode: modalita }); dopo(); return; }
-        if (bot === 'mike') { await updateMikeParams(paramsLetti('mike') as MikeParams, modalita); dopo(); return; }
-        const s = sorgente.servizio('safe');
+        if (bot === 'omega') {
+            await updateOmegaParams({ mode: modalita });
+            svegliaBot(bot, 'comando'); dopo(); return;
+        }
+        if (bot === 'mike') {
+            await updateMikeParams(paramsLetti('mike') as MikeParams, modalita);
+            svegliaBot(bot, 'comando'); dopo(); return;
+        }
+        // ⚠️ REPERTO A — lettura FRESCA anche qui: un `inCorsa` letto da uno
+        // snapshot vecchio potrebbe rifiutare un comando appena diventato
+        // legittimo (o il contrario) nella stessa finestra di razza.
+        const s = await servizioSafeFresco();
         if (!s?.inCorsa) throw new BotFermoNonCambiaModalita('safe');
         // niente `p_params`: `safe_activate` fa `coalesce(p_params, params)` e li
         // CONSERVA. Qui si cambia solo il tetto, non la configurazione.
         await activateSafe(modalita);
+        svegliaBot('safe', 'comando');
         dopo();
     };
 

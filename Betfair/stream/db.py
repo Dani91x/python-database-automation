@@ -656,6 +656,69 @@ def upsert_live_account(available: Optional[float], exposure: Optional[float]) -
     ))
 
 
+def upsert_live_account_manual_pnl(
+    *,
+    pnl_eur: float,
+    is_net: bool,
+    orders: int,
+    excluded: int,
+    day: str,
+    app_pnl_eur: float,
+    app_is_net: bool,
+    app_orders: int,
+) -> None:
+    """P&L di OGGI (giorno Rome) di TUTTO cio' che non e' bot — DUE totali
+    SEPARATI (ordine esplicito dell'utente, terzo giro 18/09 sera: "tutto cio'
+    che non e' bot: dal sito Betfair O DALLA NOSTRA APP"):
+
+      * ``manual_pnl_*``     — dal SITO Betfair (``listClearedOrders`` senza
+        alcun ``customerStrategyRef``/``customerOrderRef`` leggibile);
+      * ``manual_app_pnl_*`` — dal TERMINALE DI TRADING MANUALE della nostra
+        app (calcio ``customerStrategyRef="live"`` + tennis
+        ``customerStrategyRef="tennis"`` — MAI un bot: censimento in
+        ``reconcile_worker._classify_cleared_order``).
+
+    → ``betfair_live_account`` (STESSA riga singleton id=1, colonne ADDITIVE,
+    migrazione ``migrations/betfair_live_account_manual_pnl.sql``).
+
+    Colonne SEPARATE da ``available``/``exposure`` (Parte B): un upsert
+    PostgREST scrive SOLO le colonne presenti nel payload — questa chiamata e
+    ``upsert_live_account`` (saldo) non si pestano mai i piedi anche se
+    corrono in momenti diversi sulla stessa riga.
+
+    Prima che la migrazione sia applicata, PostgREST rifiuta colonne
+    inesistenti: la funzione SOLLEVA in quel caso (colonna reale) — il
+    CHIAMANTE (``reconcile_worker._sync_manual_pnl``) la logga come WARNING e
+    NON aggiorna la firma write-on-change, così ritenta al giro dopo, senza
+    mai far fallire il saldo (funzione separata, upsert separato).
+
+    ``is_net``/``app_is_net``: True se il rispettivo ``pnl_eur`` è netto di
+    commissione (leggibile su TUTTI gli ordini di quel bucket), False se è
+    LORDO (commissione non ricavabile per almeno un ordine) — dichiarato
+    esplicitamente al chiamante, mai finto netto. ``excluded`` conta gli
+    ordini 'ambiguous' (ref presente ma irriconoscibile): NON stanno in
+    nessuno dei due totali, e' un contatore UNICO condiviso (diagnostico).
+    """
+    sb = get_supabase_client()
+    _exec_retry(sb.table("betfair_live_account").upsert(
+        {
+            "id": 1,
+            "manual_pnl_eur": round(float(pnl_eur), 2),
+            "manual_pnl_is_net": bool(is_net),
+            "manual_pnl_orders": int(orders),
+            "manual_pnl_excluded": int(excluded),
+            "manual_pnl_day": str(day),
+            "manual_pnl_updated_at": _now_iso(),
+            "manual_app_pnl_eur": round(float(app_pnl_eur), 2),
+            "manual_app_pnl_is_net": bool(app_is_net),
+            "manual_app_pnl_orders": int(app_orders),
+            "manual_app_pnl_day": str(day),
+            "manual_app_pnl_updated_at": _now_iso(),
+        },
+        on_conflict="id",
+    ))
+
+
 def upsert_live_heartbeat(*, runner: bool, pid: int, mode: Optional[str] = None) -> None:
     """Heartbeat del runner (``runner=True``: ts/pid/mode) o del watchdog
     (``runner=False``: watchdog_ts/watchdog_pid) → singleton id=1."""

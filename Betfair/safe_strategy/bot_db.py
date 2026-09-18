@@ -19,8 +19,31 @@ from db_client import get_supabase_client
 
 from Betfair.safe_strategy import risk as _risk
 from Betfair.safe_strategy.execution import residual_liability as _residual_liability
+from Betfair.stream import canale_bot as _cb
 
 logger = logging.getLogger("safe.bot.db")
+
+# --- F3 (18/09): le righe che Safe scrive escono ANCHE sul canale 47335 ------
+# Il database resta il registro: si pubblica DOPO la scrittura riuscita e si
+# pubblica la riga che la scrittura ha RESTITUITO (PostgREST torna di serie la
+# rappresentazione: nessuna lettura in piu'). Interruttore
+# ``SAFE_CANALE_POSIZIONI`` nel ``.env``, DEFAULT SPENTO.
+# Safe e' l'unico bot su DUE sport: calcio e tennis hanno topic SEPARATI e il
+# topic lo decide il campo ``sport`` DELLA RIGA (invariante B12).
+_CANALE_ACCESO = _cb.acceso(_cb.ENV_SAFE)
+
+#: Dallo sport della riga al topic. Uno sport assente o sconosciuto non esce su
+#: nessun topic: meglio nessun messaggio che il messaggio sul topic sbagliato.
+_TOPIC_PER_SPORT = {
+    "calcio": _cb.TOPIC["safe_posizioni_calcio"],
+    "tennis": _cb.TOPIC["safe_posizioni_tennis"],
+}
+
+
+def _topic_posizione(riga: dict[str, Any]) -> Optional[str]:
+    """Il topic di UNA riga di trade, deciso dal suo ``sport``."""
+    return _TOPIC_PER_SPORT.get(str(riga.get("sport") or "").strip().lower())
+
 
 CONTROL_ID = 1
 
@@ -53,9 +76,11 @@ def set_control(**fields: Any) -> None:
 
 def log(kind: str, payload: Optional[dict[str, Any]] = None) -> None:
     try:
-        _sb().table("safe_strategy_activity").insert(
+        res = _sb().table("safe_strategy_activity").insert(
             {"kind": kind, "payload": payload or {}}
         ).execute()
+        if _CANALE_ACCESO:      # F3: DOPO la scrittura riuscita, mai prima
+            _cb.pubblica_scritte(_cb.TOPIC["safe_attivita"], res)
     except Exception as ex:  # noqa: BLE001 — il log non deve mai fermare il bot
         logger.warning("[safe.db] log '%s' fallito: %s", kind, str(ex)[:120])
 
@@ -65,6 +90,8 @@ def log(kind: str, payload: Optional[dict[str, Any]] = None) -> None:
 # ---------------------------------------------------------------------------
 def insert_trade(trade: dict[str, Any]) -> Optional[int]:
     res = _sb().table("safe_strategy_trades").insert(trade).execute()
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte_per(_topic_posizione, res)
     rows = res.data or []
     return rows[0].get("id") if rows else None
 
@@ -72,7 +99,9 @@ def insert_trade(trade: dict[str, Any]) -> Optional[int]:
 def update_trade(trade_id: int, **fields: Any) -> None:
     if not fields:
         return
-    _sb().table("safe_strategy_trades").update(fields).eq("id", int(trade_id)).execute()
+    res = _sb().table("safe_strategy_trades").update(fields).eq("id", int(trade_id)).execute()
+    if _CANALE_ACCESO:          # F3: la riga INTERA come il database l'ha scritta
+        _cb.pubblica_scritte_per(_topic_posizione, res)
 
 
 def delete_trade(trade_id: int) -> None:
@@ -137,6 +166,29 @@ def open_trades(mode: Optional[str] = None) -> list[dict[str, Any]]:
     q = (
         _sb().table("safe_strategy_trades").select("*")
         .in_("status", ["open", "hedged"])
+    )
+    m = _norm_mode(mode)
+    if m:
+        q = q.eq("mode", m)
+    return q.order("placed_at", desc=False).execute().data or []
+
+
+def trades_pending_o_aperti(mode: Optional[str] = None) -> list[dict[str, Any]]:
+    """Trade 'pending' o 'open' (QUALUNQUE origine, anche 'manual'): sono gli
+    ordini ancora vivi sul mercato. 18/09 — ORDINE DELL'UTENTE («se ho
+    approvato o rifiutato un segnale deve essere coerente con gli ordini»):
+    una proposta di opportunita' (modello/tennis/anomalia/combo) approvata e
+    ancora viva (in coda o abbinata, non ancora regolata) NON deve tornare a
+    proporsi — vedi ``bot_service._opp_keys_con_ordine_vivo``, che filtra
+    queste righe per ``meta.opp_key``.
+
+    Diversa da ``open_trades()`` (che torna SOLO 'open'/'hedged', per il
+    contesto di rischio): qui serve anche 'pending' — un ordine mandato in
+    coda flumine e non ancora confermato e' vivo a tutti gli effetti, e
+    ``open_trades()`` non lo vedrebbe."""
+    q = (
+        _sb().table("safe_strategy_trades").select("*")
+        .in_("status", ["pending", "open"])
     )
     m = _norm_mode(mode)
     if m:
@@ -575,16 +627,20 @@ def scrivi_proposta_di_chiusura(trade_id: int, payload: dict[str, Any]) -> Optio
     corpo = {**payload, "trade_id": int(trade_id)}
     viva = proposta_di_chiusura_viva(trade_id)
     if viva is not None:
-        (
+        res = (
             _sb().table("safe_strategy_requests")
             .update({"payload": corpo, "updated_at": _now_iso()})
             .eq("id", int(viva["id"])).execute()
         )
+        if _CANALE_ACCESO:      # F3: la proposta VIVA, aggiornata, sullo schermo
+            _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
         return int(viva["id"])
     res = (
         _sb().table("safe_strategy_requests")
         .insert({"kind": "cashout", "status": "proposed", "payload": corpo}).execute()
     )
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
     dati = getattr(res, "data", None) or []
     return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
 
@@ -598,7 +654,7 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
     viva = proposta_di_chiusura_viva(trade_id)
     if viva is None:
         return
-    (
+    res = (
         _sb().table("safe_strategy_requests")
         .update({"status": "rejected",
                  "result": {**(viva.get("result") or {}), "decaduta": True,
@@ -606,6 +662,8 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
                  "updated_at": _now_iso()})
         .eq("id", int(viva["id"])).execute()
     )
+    if _CANALE_ACCESO:          # F3: la proposta decaduta sparisce anche a video
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
 
 
 # ---------------------------------------------------------------------------
@@ -647,16 +705,20 @@ def scrivi_proposta_opportunita(opp_key: str, payload: dict[str, Any],
     deve raccontare il contrario."""
     corpo = {**payload, "opp_key": str(opp_key)}
     if req_id is not None:
-        (
+        res = (
             _sb().table("safe_strategy_requests")
             .update({"payload": corpo, "updated_at": _now_iso()})
             .eq("id", int(req_id)).eq("status", "proposed").execute()
         )
+        if _CANALE_ACCESO:      # F3: la proposta VIVA, aggiornata, sullo schermo
+            _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
         return int(req_id)
     res = (
         _sb().table("safe_strategy_requests")
         .insert({"kind": "place", "status": "proposed", "payload": corpo}).execute()
     )
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
     dati = getattr(res, "data", None) or []
     return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
 
@@ -668,13 +730,15 @@ def chiudi_proposta_opportunita(req_id: int, motivo: str) -> None:
     Non e' un rifiuto dell'utente — e' il mercato che e' cambiato. Si marca
     'rejected' con ``decaduta``, cosi' resta la traccia di un ordine PROPOSTO e
     mai partito: senza, sparirebbe e nessuno saprebbe che era stato offerto."""
-    (
+    res = (
         _sb().table("safe_strategy_requests")
         .update({"status": "rejected",
                  "result": {"decaduta": True, "motivo": str(motivo)[:200]},
                  "updated_at": _now_iso()})
         .eq("id", int(req_id)).eq("status", "proposed").execute()
     )
+    if _CANALE_ACCESO:          # F3: la proposta decaduta sparisce anche a video
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
 
 
 def marca_proposta_opportunita_annotata(req_id: int,

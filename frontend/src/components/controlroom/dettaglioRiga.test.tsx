@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { dettaglioDi, eGambaDiChiusura, quotaViva } from '@/components/controlroom/dettaglioRiga';
 import {
-    BadgeStato, Ingresso, QuotaOra, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
+    BadgeStato, Ingresso, QuotaOra, PnlVivo, Copertura, Greenup, ModelloP, Uscita, Chiusure,
 } from '@/components/controlroom/DettaglioRigaView';
 import { SchedaMike } from '@/components/controlroom/SchedaMike';
 import { liabilityTennis } from '@/components/controlroom/useControlRoom';
@@ -291,5 +291,68 @@ describe('eGambaDiChiusura — il back che chiude un lay non e una posizione ape
     it('l apertura (closes_trade_id nullo o assente) resta una posizione', () => {
         expect(eGambaDiChiusura({ closes_trade_id: null })).toBe(false);
         expect(eGambaDiChiusura({})).toBe(false);
+    });
+});
+
+// ------------------------------------------------ Task 4 (18/09): chiusure ANNIDATE
+
+describe('dettaglioDi — le gambe di chiusura ANNIDATE (Task 4)', () => {
+    it('una chiusura REGOLATA porta lato/prezzo/size/pnl, dalla piu vecchia', () => {
+        const apertura = rigaOmega({ status: 'hedged' });
+        const chiusura1 = rigaOmega({
+            id: 201, closes_trade_id: 101, side: 'back', price: 24, size: 1,
+            status: 'won', pnl: 5.5, placed_at: '2026-09-17T19:10:00Z',
+            meta: { exit_kind: 'greenup' },
+        });
+        const chiusura2 = rigaOmega({
+            id: 202, closes_trade_id: 101, side: 'back', price: 22, size: 1,
+            status: 'won', pnl: 3.1, placed_at: '2026-09-17T19:05:00Z',
+            meta: null,
+        });
+        const d = dettaglioDi(apertura, [chiusura1, chiusura2]);
+        expect(d.chiusure).toHaveLength(2);
+        // dalla PIU' VECCHIA: chiusura2 (19:05) prima di chiusura1 (19:10)
+        expect(d.chiusure[0]).toMatchObject({ lato: 'back', prezzo: 22, size: 1, pnl: 3.1 });
+        expect(d.chiusure[1]).toMatchObject({ lato: 'back', prezzo: 24, size: 1, pnl: 5.5, uscita: 'greenup' });
+    });
+
+    // FALSIFICAZIONE
+    it('una chiusura NON ANCORA REGOLATA (open) ha pnl IGNOTO, mai 0', () => {
+        const apertura = rigaOmega({ status: 'open' });
+        const chiusura = rigaOmega({
+            id: 203, closes_trade_id: 101, side: 'back', status: 'open', pnl: 0,
+        });
+        const d = dettaglioDi(apertura, [chiusura]);
+        expect(d.chiusure[0].pnl).toBeNull();
+    });
+
+    // FALSIFICAZIONE
+    it('nessuna chiusura collegata: array vuoto, non assente/undefined', () => {
+        const d = dettaglioDi(rigaOmega());
+        expect(d.chiusure).toEqual([]);
+    });
+});
+
+describe('<Chiusure> — il montaggio delle gambe di chiusura', () => {
+    it('mostra lato, prezzo, size, stato e P&L NETTO di ogni chiusura', () => {
+        const apertura = rigaOmega({ status: 'hedged' });
+        const chiusura = rigaOmega({
+            id: 204, closes_trade_id: 101, side: 'back', price: 24, size: 1,
+            status: 'won', pnl: 5.5, meta: { exit_kind: 'greenup' },
+        });
+        const d = dettaglioDi(apertura, [chiusura]);
+        render(<Chiusure d={d} />);
+        const riga = screen.getByTestId('cr-chiusure-riga');
+        expect(riga).toHaveTextContent('punta');
+        expect(riga).toHaveTextContent('24,00');
+        expect(riga).toHaveTextContent('+5,50 €');
+        expect(riga).toHaveTextContent('green-up');
+    });
+
+    // FALSIFICAZIONE
+    it('senza chiusure NON monta nulla (niente contenitore vuoto)', () => {
+        const d = dettaglioDi(rigaOmega());
+        const { container } = render(<Chiusure d={d} />);
+        expect(container).toBeEmptyDOMElement();
     });
 });

@@ -27,6 +27,7 @@ import {
     scostamento, motivoNonApprovabile, abbinabileSufficiente, stakeDiChiusura,
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
+import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 
 /** Oltre questa età le quote non si usano per piazzare. Stessa soglia del
  *  resto della piattaforma (`safeBot.FEED_ROW_STALE_MS`): non se ne inventano. */
@@ -55,11 +56,20 @@ export interface SchedaChiusuraProps {
     /** in LIVE serve la doppia conferma: sono soldi veri */
     onApprova: (id: number) => Promise<void>;
     onIgnora: (id: number) => Promise<void>;
+    /**
+     * LA STRISCIA DI ESITO (18/09, additiva): dopo l'approvazione, segue la
+     * chiusura fino alla verità («inviata → a mercato → abbinata → CHIUSA
+     * CONFERMATA»). OPZIONALE: senza questa prop la scheda resta ESATTAMENTE
+     * com'era. Il chiamante la passa già calcolata da `certezzaChiusura()`
+     * sulle righe che ha GIA' in memoria/realtime di questa proposta —
+     * nessuna lettura nuova qui dentro.
+     */
+    esito?: StrisciaEsitoChiusuraProps;
 }
 
 export function SchedaChiusura({
     proposta, vivo, etaQuoteS, etaScannerS = null, bloccabileOra = null,
-    slippagePct, onApprova, onIgnora,
+    slippagePct, onApprova, onIgnora, esito,
 }: SchedaChiusuraProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
@@ -254,6 +264,8 @@ export function SchedaChiusura({
                     <span>Uscita del manuale: non approvarla ha un costo, non è una scelta neutra.</span>
                 </div>
             )}
+
+            {esito && <StrisciaEsitoChiusura {...esito} testId={esito.testId ?? 'cr-proposta-esito'} />}
         </article>
     );
 }

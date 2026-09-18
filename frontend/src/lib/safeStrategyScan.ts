@@ -261,6 +261,44 @@ export interface ScanRow {
     updated_at: string | null;
 }
 
+/** un messaggio del canale locale scanner (47336): STESSA riga di
+ *  `safe_strategy_scan` + i campi di consegna del canale (`_pubblicato_ms`,
+ *  `_seq`, `fonte`) dichiarati nel contratto (F0/F1). */
+export type ScanRowLocaleMsg = ScanRow & { _pubblicato_ms?: number; _seq?: number; fonte?: string };
+
+/**
+ * STADIO B2a (18/09, raccordo) — istante di UN messaggio scanner, per la
+ * regola «vince il più recente»: `_pubblicato_ms` se il canale lo porta,
+ * altrimenti `updated_at` (la stessa colonna, sia da Postgres sia dal canale
+ * locale che rispecchia la stessa riga). `null` = non giudicabile.
+ */
+export function istanteScanMsg(r: { updated_at?: string | null; _pubblicato_ms?: number } | null | undefined): number | null {
+    if (!r) return null;
+    if (typeof r._pubblicato_ms === 'number' && Number.isFinite(r._pubblicato_ms)) return r._pubblicato_ms;
+    if (r.updated_at) { const t = Date.parse(r.updated_at); return Number.isNaN(t) ? null : t; }
+    return null;
+}
+
+/**
+ * PURA: il messaggio del canale locale scanner va applicato? `null` = NO
+ * (scartato: senza `event_id`/`payload`, o più vecchio della riga già in
+ * `attuale`). Altrimenti la riga da mettere nel lotto (`applicaLottoScan`).
+ * Un messaggio senza timestamp giudicabile passa comunque (si preferisce
+ * applicare piuttosto che perdere un aggiornamento per un dato assente).
+ */
+export function scanLocaleAccettabile(
+    attuale: readonly ScanRow[], msg: ScanRowLocaleMsg | null | undefined,
+): ScanRow | null {
+    if (!msg || !msg.event_id || !msg.payload) return null;
+    const nuovo = istanteScanMsg(msg);
+    const riga = attuale.find((r) => r.event_id === msg.event_id);
+    if (riga) {
+        const vecchio = istanteScanMsg(riga);
+        if (nuovo != null && vecchio != null && nuovo < vecchio) return null;
+    }
+    return msg;
+}
+
 export interface ScanStatusPayload {
     calcio_inplay?: number;
     tennis_inplay?: number;

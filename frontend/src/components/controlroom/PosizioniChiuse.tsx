@@ -37,8 +37,25 @@ import { BOT_LABEL, type Bot, type Modo } from '@/lib/controlRoom';
 import { dayLabel } from '@/lib/dailyHistory';
 import {
     filtraChiuse, riepilogoChiuse, fuoriGiornata,
+    certezzaDiPosizione, gambeAnnullate, sintesiPosizione,
     type PosizioneChiusa, type Esito,
 } from '@/lib/posizioniChiuse';
+import { eCertezzaVerde, type StatoCertezzaChiusura } from '@/lib/certezzaChiusura';
+
+const CERTEZZA_LABEL: Record<StatoCertezzaChiusura, string> = {
+    CHIUSA_CONFERMATA: 'CHIUSA · CONFERMATA',
+    REGOLATA_DAL_MERCATO: 'REGOLATA DAL MERCATO',
+    CHIUSA_PARZIALE: 'PARZIALE · ESPOSIZIONE RESIDUA',
+    CHIUSURA_IN_ATTESA: 'IN ATTESA DI ABBINAMENTO',
+    CHIUSURA_FALLITA: 'CHIUSURA FALLITA · ANCORA APERTA',
+    NON_VERIFICABILE: 'NON VERIFICABILE',
+};
+
+function certezzaCls(stato: StatoCertezzaChiusura): string {
+    if (eCertezzaVerde(stato)) return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50';
+    if (stato === 'CHIUSURA_FALLITA') return 'bg-red-500/20 text-red-300 border-red-500/60';
+    return 'bg-amber-500/20 text-amber-300 border-amber-500/50'; // parziale/attesa/non verificabile
+}
 
 const ESITO_TESTO: Record<Esito, string> = { vinta: 'vinte', persa: 'perse', pari: 'pari' };
 const ESITO_CLS: Record<Esito, string> = {
@@ -70,6 +87,30 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
         [chiuse, esito, modo, bot, sport, giorno],
     );
     const r = useMemo(() => riepilogoChiuse(righe), [righe]);
+
+    // LA CERTEZZA DI CHIUSURA (18/09): un giudizio per riga, con LA STESSA
+    // funzione usata dopo un'approvazione. Il riepilogo ha senso solo per UNA
+    // modalità alla volta (paper e live non si sommano MAI): col filtro
+    // «entrambi» si mostra solo il badge di riga, non il totale misto — le
+    // righe qui dentro sono comunque già di UNA sola modalità per volta,
+    // perché `righe` viene filtrato PRIMA da `filtraChiuse`.
+    const certezze = useMemo(() => righe.map((p) => ({ p, c: certezzaDiPosizione(p) })), [righe]);
+    const riepilogoCert = useMemo(() => {
+        if (modo === 'tutte' || certezze.length === 0) return null;
+        let confermate = 0;
+        let conEsposizione = 0;
+        let nonVerificabili = 0;
+        let esposizioneTotale = 0;
+        for (const { c } of certezze) {
+            if (eCertezzaVerde(c.stato)) confermate += 1;
+            else if (c.stato === 'NON_VERIFICABILE') nonVerificabili += 1;
+            else conEsposizione += 1;
+            if (c.esposizione.stake != null && c.esposizione.stake > 0.005) {
+                esposizioneTotale = Math.round((esposizioneTotale + c.esposizione.stake) * 100) / 100;
+            }
+        }
+        return { n: certezze.length, confermate, conEsposizione, nonVerificabili, esposizioneTotale };
+    }, [certezze, modo]);
     // quante restano FUORI da oggi: si dice, non si fanno sparire
     const fuori = useMemo(
         () => fuoriGiornata(
@@ -114,6 +155,41 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                     <StoricoLink sport={sport} compatto testId="cr-chiuse-storico" />
                 </span>
             </div>
+
+            {/* LA CERTEZZA DI CHIUSURA (18/09) — «N chiuse confermate · M con
+                esposizione residua (X €) · K non verificabili»: se M o K sono
+                > 0 questa riga è un ALLARME visibile, non una statistica in
+                più. Solo con UNA modalità scelta (paper e live non si sommano). */}
+            {riepilogoCert && riepilogoCert.n > 0 && (() => {
+                const allarme = riepilogoCert.conEsposizione > 0 || riepilogoCert.nonVerificabili > 0;
+                return (
+                    <div
+                        className={`px-3 py-1.5 border-b flex items-center gap-3 flex-wrap text-[10.5px] ${
+                            allarme ? 'border-orange-500/30 bg-orange-500/10' : 'border-white/10'
+                        }`}
+                        data-testid="cr-chiuse-certezza"
+                        data-allarme={allarme ? '1' : undefined}
+                        role={allarme ? 'alert' : undefined}
+                    >
+                        <span className="text-emerald-300 font-semibold" data-testid="cr-chiuse-certezza-confermate">
+                            {riepilogoCert.confermate} {riepilogoCert.confermate === 1 ? 'chiusa confermata' : 'chiuse confermate'}
+                        </span>
+                        {riepilogoCert.conEsposizione > 0 && (
+                            <span className="text-orange-300 font-bold" data-testid="cr-chiuse-certezza-esposte">
+                                ⚠ {riepilogoCert.conEsposizione} con esposizione residua
+                                {riepilogoCert.esposizioneTotale > 0 && (
+                                    <> ({fmtMoney(riepilogoCert.esposizioneTotale)})</>
+                                )}
+                            </span>
+                        )}
+                        {riepilogoCert.nonVerificabili > 0 && (
+                            <span className="text-amber-300 font-semibold" data-testid="cr-chiuse-certezza-non-verificabili">
+                                {riepilogoCert.nonVerificabili} non {riepilogoCert.nonVerificabili === 1 ? 'verificabile' : 'verificabili'}
+                            </span>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* «ce ne sono altre, e so dove sono»: il numero dei giorni
                 precedenti non sparisce, diventa un invito allo Storico. */}
@@ -187,7 +263,7 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                     </div>
                 )}
 
-                {righe.map((p) => (
+                {certezze.map(({ p, c }) => (
                     <div key={`${p.bot}-${p.id}`} data-testid="cr-chiusa" data-event-id={p.eventId}>
                         <button
                             type="button"
@@ -202,6 +278,28 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                                     : <ChevronRight className="w-3 h-3 text-white/30 shrink-0" />}
                                 <span className="text-[10px]" aria-hidden="true">{p.sport === 'tennis' ? '🎾' : '⚽'}</span>
                                 <span className="text-[12px] truncate flex-1 min-w-0">{p.partita}</span>
+
+                                {/* IL BADGE DI CERTEZZA (18/09): verde pieno SOLO per
+                                    confermata/regolata, arancione per parziale/attesa/non
+                                    verificabile (importo esposto in evidenza), rosso per
+                                    fallita — mai un colore come decorazione, sempre un fatto. */}
+                                <span
+                                    className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${certezzaCls(c.stato)}`}
+                                    data-testid={`cr-chiusa-certezza-${p.id}`}
+                                    data-stato={c.stato}
+                                    title={c.motivo}
+                                >
+                                    {CERTEZZA_LABEL[c.stato]}
+                                </span>
+                                {c.esposizione.stake != null && c.esposizione.stake > 0.005 && (
+                                    <span
+                                        className="font-mono text-[10.5px] font-bold text-orange-300 tabular-nums"
+                                        data-testid={`cr-chiusa-esposta-${p.id}`}
+                                        title="quanto resta esposto a mercato su questa posizione (stake abbinato non ancora compensato)"
+                                    >
+                                        {fmtMoney(c.esposizione.stake)}
+                                    </span>
+                                )}
 
                                 <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
                                     p.modo === 'live' ? 'bg-red-500/20 text-red-300' : 'bg-white/10 text-white/35'
@@ -220,6 +318,41 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                                     {p.chiusaAt ? fmtTime(p.chiusaAt) : DASH}
                                 </span>
                             </div>
+
+                            {/* SINTESI ingresso→chiusura, SEMPRE visibile (18/09): quota e
+                                stake d'ingresso, quota MEDIA e stake ABBINATO in chiusura,
+                                ora d'ingresso — senza dover aprire il dettaglio. */}
+                            {(() => {
+                                const s = sintesiPosizione(p);
+                                return (
+                                    <div
+                                        className="pl-6 text-[9.5px] text-white/35 mt-0.5 flex flex-wrap gap-x-2"
+                                        data-testid={`cr-chiusa-sintesi-${p.id}`}
+                                    >
+                                        <span>ingresso <span className="font-mono text-white/55">{fmtOdds(s.ingresso.prezzo)}</span>{' '}
+                                            per <span className="font-mono text-white/55">{fmtMoney(s.ingresso.stake)}</span></span>
+                                        {s.chiusura != null && (
+                                            <span>· chiusura media <span className="font-mono text-white/55">{fmtOdds(s.chiusura.prezzoMedio)}</span>{' '}
+                                                abbinati <span className="font-mono text-white/55">{fmtMoney(s.chiusura.stake)}</span></span>
+                                        )}
+                                        <span>· entrata <span className="font-mono text-white/55">{s.ingresso.at ? fmtTime(s.ingresso.at) : DASH}</span></span>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* UNA GAMBA ANNULLATA (rifiutata/annullata da Betfair) resta
+                                visibile SENZA aprire il dettaglio: e' il pezzo di una
+                                chiusura a piu' pezzi che non e' andato a mercato. */}
+                            {gambeAnnullate(p) > 0 && (
+                                <div
+                                    className="pl-6 text-[9.5px] text-amber-300 mt-0.5"
+                                    data-testid={`cr-chiusa-copertura-incompleta-${p.id}`}
+                                >
+                                    ⚠ {gambeAnnullate(p)} {gambeAnnullate(p) === 1
+                                        ? 'gamba di chiusura annullata'
+                                        : 'gambe di chiusura annullate'}: non {gambeAnnullate(p) === 1 ? 'è andata' : 'sono andate'} a mercato.
+                                </div>
+                            )}
 
                             {p.righe.length > 1 && aperta !== p.id && (
                                 <div className="pl-6 text-[9.5px] text-white/30 mt-0.5">

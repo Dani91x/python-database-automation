@@ -12,7 +12,18 @@ from typing import Any, Optional
 
 from db_client import get_supabase_client
 
+from Betfair.stream import canale_bot as _cb
+
 logger = logging.getLogger("omega.db")
+
+# --- F3 (18/09): le righe che Omega scrive escono ANCHE sul canale 47334 -----
+# Il database resta il registro: si pubblica DOPO la scrittura riuscita e si
+# pubblica la riga che la scrittura ha RESTITUITO (PostgREST torna di serie la
+# rappresentazione: nessuna lettura in piu'). Interruttore
+# ``OMEGA_CANALE_POSIZIONI`` nel ``.env``, DEFAULT SPENTO: a interruttore spento
+# il percorso e' quello di prima, istruzione per istruzione.
+# Nessuna decisione di Omega cambia: si aggiunge PUBBLICAZIONE, nient'altro.
+_CANALE_ACCESO = _cb.acceso(_cb.ENV_OMEGA)
 
 CONTROL_ID = 1
 
@@ -49,9 +60,11 @@ def set_control(**fields: Any) -> None:
 
 def log(kind: str, payload: Optional[dict[str, Any]] = None) -> None:
     try:
-        _sb().table("omega_activity").insert(
+        res = _sb().table("omega_activity").insert(
             {"kind": kind, "payload": payload or {}}
         ).execute()
+        if _CANALE_ACCESO:      # F3: DOPO la scrittura riuscita, mai prima
+            _cb.pubblica_scritte(_cb.TOPIC["omega_attivita"], res)
     except Exception as ex:  # noqa: BLE001 - il log non deve mai fermare il bot
         logger.warning("[omega.db] log '%s' fallito: %s", kind, str(ex)[:120])
 
@@ -61,6 +74,8 @@ def log(kind: str, payload: Optional[dict[str, Any]] = None) -> None:
 # ---------------------------------------------------------------------------
 def insert_trade(trade: dict[str, Any]) -> Optional[int]:
     res = _sb().table("omega_trades").insert(trade).execute()
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["omega_posizioni"], res)
     rows = res.data or []
     return rows[0].get("id") if rows else None
 
@@ -68,7 +83,9 @@ def insert_trade(trade: dict[str, Any]) -> Optional[int]:
 def update_trade(trade_id: int, **fields: Any) -> None:
     if not fields:
         return
-    _sb().table("omega_trades").update(fields).eq("id", trade_id).execute()
+    res = _sb().table("omega_trades").update(fields).eq("id", trade_id).execute()
+    if _CANALE_ACCESO:          # F3: la riga INTERA come il database l'ha scritta
+        _cb.pubblica_scritte(_cb.TOPIC["omega_posizioni"], res)
 
 
 def delete_trade(trade_id: int) -> None:
@@ -366,16 +383,20 @@ def scrivi_proposta_di_chiusura(trade_id: int, payload: dict[str, Any]) -> Optio
     corpo = {**payload, "trade_id": int(trade_id)}
     viva = proposta_di_chiusura_viva(trade_id)
     if viva is not None:
-        (
+        res = (
             _sb().table("omega_manual_requests")
             .update({"payload": corpo, "updated_at": _now_iso()})
             .eq("id", int(viva["id"])).execute()
         )
+        if _CANALE_ACCESO:      # F3: la proposta VIVA, aggiornata, sullo schermo
+            _cb.pubblica_scritte(_cb.TOPIC["omega_proposta"], res)
         return int(viva["id"])
     res = (
         _sb().table("omega_manual_requests")
         .insert({"kind": "cashout", "status": "proposed", "payload": corpo}).execute()
     )
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["omega_proposta"], res)
     dati = getattr(res, "data", None) or []
     return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
 
@@ -389,7 +410,7 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
     viva = proposta_di_chiusura_viva(trade_id)
     if viva is None:
         return
-    (
+    res = (
         _sb().table("omega_manual_requests")
         .update({"status": "rejected",
                  "result": {**(viva.get("result") or {}), "decaduta": True,
@@ -397,6 +418,8 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
                  "updated_at": _now_iso()})
         .eq("id", int(viva["id"])).execute()
     )
+    if _CANALE_ACCESO:          # F3: la proposta decaduta sparisce anche a video
+        _cb.pubblica_scritte(_cb.TOPIC["omega_proposta"], res)
 
 
 def _now_iso() -> str:

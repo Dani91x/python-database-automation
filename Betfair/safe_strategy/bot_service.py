@@ -13,9 +13,15 @@ Un unico processo locale (lock 127.0.0.1:47318) che, come ``omega_service``:
      UNICO (``safe_strategy_scan``) e piazza con pattern RESERVE-FIRST;
   e) calcola le OPPORTUNITÀ di modello per la UI (throttled) — fuse con le
      ANOMALIE (``anomaly``), le COMBO (``combos``) e le opportunità TENNIS
-     (``tennis_opportunity``), moduli opzionali importati in modo guardato — e,
-     solo se esplicitamente abilitato per tipo, le tratta; le anomalie sono
-     valutate a OGNI ciclo (cecchino) sulle righe con quote cambiate;
+     (``tennis_opportunity``), moduli opzionali importati in modo guardato.
+     18/09 — ORDINE DELL'UTENTE: NESSUNA di queste (modello, tennis, anomalie,
+     combo) piazza piu' da sola. Ognuna diventa una PROPOSTA nella coda
+     (``safe_strategy_requests``, kind='place', status='proposed'): parte solo
+     dalla scheda, col tasto PIAZZA (``_request_place``). Gli interruttori
+     ``auto_trade_*`` restano leggibili (e descritti in UI) ma non piazzano
+     piu' nulla — vedi ``CHECKPOINT_COMBOS_ANOMALIE_PROPOSTE_2026-09-18.md``.
+     Le anomalie restano valutate a OGNI ciclo (cecchino) sulle righe con
+     quote cambiate, ma solo per essere proposte, mai per piazzare subito.
   f) scrive stats + heartbeat.
 
 RISCHIO: ogni piazzamento (segnali, modello, anomalie, combo, tennis) passa da
@@ -36,7 +42,9 @@ import difflib
 import hashlib
 import json
 import logging
+import math
 import re
+import threading
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -91,6 +99,16 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "auto_trade_anomalies": False,
     "auto_trade_combos": False,
     "auto_trade_tennis": False,
+    # 18/09 — RUBINETTI DELLE PROPOSTE (decisione «B» dell'utente): spengono la
+    # VISTA di un tipo di proposta, non un tetto numerico (quello l'utente non
+    # lo vuole). NON sono gli `auto_trade_*` di sopra (quelli oggi non piazzano
+    # più nulla e valgono false: riusarli avrebbe nascosto in silenzio le
+    # proposte che l'utente vuole vedere). Default TRUE = comportamento di
+    # oggi invariato: chi non tocca mai questi parametri vede tutto come ieri.
+    "proponi_model": True,
+    "proponi_tennis": True,
+    "proponi_combo": True,
+    "proponi_anomaly": True,
     "opps_min_confidence": 0.7,
     "opps_min_edge": 0.03,
     "opps_stake": 5,
@@ -264,6 +282,13 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
     for k in ("auto_trade_opportunities", "auto_trade_anomalies", "auto_trade_combos",
               "auto_trade_tennis"):
         out[k] = bool(out.get(k))
+    # 18/09 — i rubinetti nascono TRUE: un valore mancante o non booleano non
+    # deve spegnere una vista che l'utente non ha mai toccato. ``bool(None)``
+    # sarebbe False: qui una chiave assente eredita il default (True), non
+    # False come per gli ``auto_trade_*`` sopra (che nascono spenti).
+    for k in ("proponi_model", "proponi_tennis", "proponi_combo", "proponi_anomaly"):
+        v = out.get(k, DEFAULT_PARAMS[k])
+        out[k] = bool(v) if isinstance(v, bool) else bool(DEFAULT_PARAMS[k])
     return out
 
 
@@ -361,6 +386,8 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
     for k in ("auto_trade_opportunities", "auto_trade_anomalies",
               "auto_trade_combos", "auto_trade_tennis", "omega_live_via_flumine"):
         out[k] = bool(resolved.get(k))
+    for k in ("proponi_model", "proponi_tennis", "proponi_combo", "proponi_anomaly"):
+        out[k] = bool(resolved.get(k, DEFAULT_PARAMS[k]))
     out["exits"] = dict(resolved.get("exits") or {})
     out["risk"] = dict(resolved.get("risk") or {})
     # CERT. 14/09 — la mappa delle modalita' va DICHIARATA alla UI: e' quella
@@ -2104,11 +2131,42 @@ _MANUAL_STRATEGIES = ("manual", "model")
 _MANUAL_OPP_KINDS = ("model", "anomaly", "combo", "tennis")
 
 
+def _verifica_modalita_proposta(*, db, event_id: str, mode: str, opp_key: str,
+                                control_mode: str, params: dict) -> Optional[dict]:
+    """Controllo comune a QUALUNQUE approvazione nata da una proposta (una
+    gamba sola o una combo): l'autorita' della modalita' NON e' ``control.mode``
+    nudo, e' ``modalita_di_strategia('model', control.mode, params)`` (17/09).
+    Estratto da ``_request_place`` il 18/09 perche' l'approvazione di una
+    combo (``_request_place_combo``) lo rifa' identico: stessa regola, non una
+    copia. Ritorna il dict di rifiuto pronto per il chiamante, o ``None`` se
+    la modalita' torna."""
+    atteso = (modalita_di_strategia("model", str(control_mode).lower(), params)
+              if (opp_key and control_mode) else str(control_mode).lower())
+    if control_mode and mode != atteso:
+        _log(db, "skip", {"event_id": event_id, "origin": "manual",
+                          "reason": "modalita_non_corrispondente",
+                          "richiesta": mode, "attiva": atteso})
+        return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
+                            f"attiva {atteso}",
+                "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
+                           f"servizio e' in {atteso.upper()}"}
+    return None
+
+
 def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                    now: datetime, risk_ctx: Optional[dict] = None,
                    control_mode: str = "") -> dict:
     """Piazzamento MANUALE dalla UI: reserve-first, stesse barriere dell'automatico
-    più il controllo MORBIDO del rischio (solo i cap di esposizione)."""
+    più il controllo MORBIDO del rischio (solo i cap di esposizione).
+
+    18/09 — una proposta COMBO (``payload.kind == 'combo'`` con ``payload.legs``,
+    N gambe) non ha un solo market_id/selection_id/side da leggere qui: la
+    approvazione atomica vive in ``_request_place_combo``, richiamata SUBITO,
+    prima di qualunque controllo pensato per una gamba sola."""
+    if str(payload.get("kind") or "").lower() == "combo" and isinstance(payload.get("legs"), list):
+        return _request_place_combo(db=db, market=market, rows_by_event=rows_by_event,
+                                    payload=payload, params=params, now=now,
+                                    risk_ctx=risk_ctx, control_mode=control_mode)
     event_id = str(payload.get("event_id") or "")
     market_id = str(payload.get("market_id") or "")
     market_type = str(payload.get("market_type") or "").upper()
@@ -2141,16 +2199,11 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # La direzione dell'errore resta la stessa di sempre: i soldi veri si
     # raggiungono solo scrivendolo.
     opp_key = str(payload.get("opp_key") or "").strip()
-    atteso = (modalita_di_strategia("model", str(control_mode).lower(), params)
-              if (opp_key and control_mode) else str(control_mode).lower())
-    if control_mode and mode != atteso:
-        _log(db, "skip", {"event_id": event_id, "origin": "manual",
-                          "reason": "modalita_non_corrispondente",
-                          "richiesta": mode, "attiva": atteso})
-        return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
-                            f"attiva {atteso}",
-                "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
-                           f"servizio e' in {atteso.upper()}"}
+    rifiuto_modalita = _verifica_modalita_proposta(db=db, event_id=event_id, mode=mode,
+                                                   opp_key=opp_key, control_mode=control_mode,
+                                                   params=params)
+    if rifiuto_modalita is not None:
+        return rifiuto_modalita
     try:
         price = float(payload.get("price"))
         size = float(payload.get("size"))
@@ -2158,6 +2211,15 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"error": "price/size non numerici"}
     if price <= 1.0 or size <= 0:
         return {"error": "price/size fuori range"}
+    # ORDINE DEL COORDINATORE (18/09, 3o giro) — FAIL-CLOSED su nan/inf, ma
+    # SOLO per le richieste con ``opp_key`` (proposte approvate): il ramo
+    # sopra e' CONDIVISO col manuale storico ("Investi" dalla tabella grezza,
+    # senza opp_key, che esiste da prima del 17/09) e resta cosi' com'era —
+    # ``price<=1.0``/``size<=0`` non intercettano nan (IEEE 754: ogni
+    # confronto con nan e' falso), ma qui si stringe SOLO cio' che questa
+    # conversione ha scritto.
+    if opp_key and (not math.isfinite(price) or not math.isfinite(size)):
+        return {"error": "price/size non finiti"}
     # CERTIFICAZIONE 12/09 — FRESCHEZZA DEL FEED anche sul MANUALE.
     # L'automatico la controlla (``_row_is_fresh``), il manuale no: una richiesta
     # accodata con lo scanner fermo veniva eseguita su quote vecchie (in paper
@@ -2186,6 +2248,59 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                         market_id=market_id, market_type=market_type,
                         selection_id=selection_id, allow_rest=True)
     best_size = (prices or {}).get(f"{side}_size")
+    # 18/09 — ORDINE DELL'UTENTE: «il prezzo può muoversi, io devo vedere la
+    # tab aggiornata e quando clicco prendiamo QUEL NUMERO CHE VEDO.» Se la
+    # scheda ha mandato ``price_visto`` (il numero che l'utente stava
+    # guardando al clic — scritto da ``safe_request_approve`` se il client lo
+    # passa: prima o senza la migrazione non c'e' MAI, e questo blocco si
+    # comporta come ieri), quello — non la fotografia congelata — diventa il
+    # prezzo dell'ordine, per QUALUNQUE kind (model/tennis/anomaly): un clic
+    # troppo vecchio o un prezzo mosso oltre tolleranza dal numero visto è un
+    # rifiuto dichiarato, PRIMA di riservare qualunque cosa.
+    prezzo_ordine = price
+    if opp_key:
+        price_visto_raw = payload.get("price_visto")
+        if price_visto_raw is not None:
+            pv = PO.prezzo_visto_valido(price_visto_raw)
+            if pv is None:
+                return {"error": "prezzo_visto_non_valido"}
+            if PO.clic_troppo_vecchio(payload.get("price_visto_at"), now.timestamp()):
+                _log(db, "skip", {"event_id": event_id, "reason": "clic_troppo_vecchio",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id})
+                return {"error": "clic_troppo_vecchio"}
+            prezzo_attuale = (prices or {}).get(side)
+            if not prices or prezzo_attuale is None:
+                _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_sparito",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id})
+                return {"error": "prezzo_visto_sparito"}
+            soglia = PO.slippage_pct_effettivo(payload)
+            if PO.prezzo_fuori_tolleranza(pv, prezzo_attuale, side, soglia_pct=soglia):
+                _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_fuori_tolleranza",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id, "price_visto": pv,
+                                  "price_attuale": prezzo_attuale, "soglia_pct": soglia})
+                return {"error": "prezzo_visto_fuori_tolleranza"}
+            prezzo_ordine = pv
+        elif str(payload.get("kind") or "").lower() == "anomaly":
+            # NESSUN ``price_visto`` (client vecchio, o prima della
+            # migrazione): comportamento di ieri, invariato — l'anomalia
+            # resta effimera, si ricontrolla solo che sia ancora nei paraggi
+            # del mercato attuale rispetto alla fotografia congelata.
+            prezzo_attuale = (prices or {}).get(side)
+            if not prices or prezzo_attuale is None:
+                _log(db, "skip", {"event_id": event_id, "reason": "anomalia_sparita",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id})
+                return {"error": "anomalia_sparita"}
+            if PO.prezzo_fuori_tolleranza(price, prezzo_attuale, side):
+                _log(db, "skip", {"event_id": event_id, "reason": "anomalia_fuori_tolleranza",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id, "price_at_decision": price,
+                                  "price_attuale": prezzo_attuale})
+                return {"error": "anomalia_fuori_tolleranza"}
+    price = prezzo_ordine
     liability = X.liability_of(side, size, price)
     cap = float(params.get("max_liability_per_trade") or 0.0)
     if cap > 0 and liability > cap:
@@ -2275,6 +2390,148 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     return {"ok": True, "trade_id": trade_id, "status": out.status,
             "price": out.price, "size": out.size,
             "pending_fill": out.status == "pending"}
+
+
+def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: dict,
+                         now: datetime, risk_ctx: Optional[dict] = None,
+                         control_mode: str = "") -> dict:
+    """APPROVAZIONE ATOMICA di una proposta COMBO (18/09, ordine dell'utente):
+    PIAZZA manda TUTTE le gambe o NESSUNA, mai una combo rotta perche' una
+    gamba e' sparita o si e' mossa troppo dal momento della proposta.
+
+    A differenza del modello/anomalia a una gamba, qui non c'e' un motore che
+    rivaluta la condizione al momento dell'approvazione (le combo nascono da
+    ``find_combos``, che gira solo nel ciclo del servizio): si ricontrolla,
+    gamba per gamba, che un prezzo CORRENTE esista ancora sul lato proposto e
+    che non si sia mosso oltre tolleranza dalla fotografia. Se anche UNA sola
+    gamba non supera questi controlli, l'INTERA proposta e' rifiutata PRIMA di
+    riservare qualunque cosa: nessuna gamba nuda in giro.
+
+    La riserva/esecuzione/rollback vera e propria (tutte le gambe o nessuna,
+    svolgimento di quelle fillate se una fallisce a valle) e' la STESSA di
+    ``_auto_trade_combos`` di ieri: vive ora in ``_esegui_combo_riservata``,
+    riusata qui e non riscritta."""
+    event_id = str(payload.get("event_id") or "")
+    cid = str(payload.get("combo_id") or "")
+    legs = payload.get("legs")
+    if not event_id or not cid or not isinstance(legs, list) or len(legs) < 2:
+        return {"error": "payload_incompleto"}
+    mode = str(payload.get("mode") or "paper").lower()
+    if mode not in ("paper", "live"):
+        return {"error": f"mode_non_valido:{mode}"}
+    opp_key = str(payload.get("opp_key") or "").strip()
+    rifiuto_modalita = _verifica_modalita_proposta(db=db, event_id=event_id, mode=mode,
+                                                   opp_key=opp_key, control_mode=control_mode,
+                                                   params=params)
+    if rifiuto_modalita is not None:
+        return rifiuto_modalita
+    row_feed = (rows_by_event or {}).get(event_id)
+    if not _row_is_fresh(row_feed, now.timestamp(), _scanner_ts(db, now.timestamp())):
+        motivo = _stale_reason(row_feed)
+        _log(db, "skip", {"event_id": event_id, "reason": motivo, "origin": "manual",
+                          "combo_id": cid})
+        return {"error": motivo}
+    cap = float(params.get("max_liability_per_trade") or 0.0)
+    # 18/09 — ORDINE DELL'UTENTE: «un prezzo per OGNI gamba». Se la scheda ha
+    # mandato ``legs_prices_visti`` (dict indicizzato dalla POSIZIONE della
+    # gamba nell'array, come lo mostra la card), l'INSIEME e' o completo o
+    # rifiutato prima di guardare le singole gambe: una combo approvata a
+    # meta' con prezzi vecchi sulle altre gambe sarebbe peggio di non
+    # approvarla. Assente -> comportamento di ieri (invariato): ogni gamba
+    # resta al suo prezzo congelato, tolleranza col default.
+    legs_prezzi_visti = payload.get("legs_prices_visti")
+    if isinstance(legs_prezzi_visti, dict) and legs_prezzi_visti:
+        if PO.clic_troppo_vecchio(payload.get("price_visto_at"), now.timestamp()):
+            _log(db, "skip", {"event_id": event_id, "reason": "clic_troppo_vecchio",
+                              "origin": "manual", "combo_id": cid})
+            return {"error": "clic_troppo_vecchio"}
+        if len(legs_prezzi_visti) < len(legs):
+            return {"error": "combo_prezzi_visti_incompleti"}
+    else:
+        legs_prezzi_visti = None
+    soglia_pct = PO.slippage_pct_effettivo(payload)
+    legs_validate: list[dict[str, Any]] = []
+    for i, leg in enumerate(legs):
+        if not isinstance(leg, dict):
+            return {"error": f"combo_gamba_{i}_dati_non_validi"}
+        try:
+            price = float(leg.get("price"))
+            size = float(leg.get("size"))
+            sid = int(leg.get("selection_id"))
+        except (TypeError, ValueError):
+            return {"error": f"combo_gamba_{i}_dati_non_validi"}
+        side = str(leg.get("side") or "").lower()
+        market_id = leg.get("market_id")
+        market_type = str(leg.get("market_type") or "").upper()
+        # ORDINE DEL COORDINATORE (18/09, 3o giro) — FAIL-CLOSED su valori NON
+        # FINITI: ramo scritto da me (non condiviso col manuale storico), a
+        # differenza del controllo equivalente dentro _request_place (riga
+        # ~2187-2192, quello si', condiviso con "Investi" manuale da prima
+        # del 17/09 — NON toccato, dichiarato nel checkpoint). Senza
+        # ``math.isfinite`` una gamba con prezzo/size nan o infinito supera
+        # ``price<=1.0``/``size<=0`` (per IEEE 754 ogni confronto con nan e'
+        # falso) e finirebbe riservata ed eseguita con un numero senza senso.
+        if side not in ("back", "lay") or not math.isfinite(price) or price <= 1.0 \
+                or not math.isfinite(size) or size <= 0 or not market_id:
+            return {"error": f"combo_gamba_{i}_dati_non_validi"}
+        prezzo_ordine = price
+        if legs_prezzi_visti is not None:
+            pv = PO.prezzo_visto_valido(legs_prezzi_visti.get(str(i)))
+            if pv is None:
+                return {"error": f"combo_gamba_{i}_prezzo_visto_non_valido"}
+            prezzo_ordine = pv
+        # NESSUNA GAMBA PIAZZATA se anche una sola e' sparita o fuori
+        # tolleranza: si esce SUBITO, prima di riservare qualsiasi cosa.
+        prices = prices_for(market=market, rows_by_event=rows_by_event, event_id=event_id,
+                            market_id=str(market_id), market_type=market_type,
+                            selection_id=sid, allow_rest=True)
+        prezzo_attuale = (prices or {}).get(side)
+        if not prices or prezzo_attuale is None:
+            _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_sparita",
+                              "origin": "manual", "combo_id": cid, "gamba": i,
+                              "market_id": market_id, "selection_id": sid})
+            return {"error": "combo_gamba_sparita", "gamba": i}
+        if PO.prezzo_fuori_tolleranza(prezzo_ordine, prezzo_attuale, side, soglia_pct=soglia_pct):
+            _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_fuori_tolleranza",
+                              "origin": "manual", "combo_id": cid, "gamba": i,
+                              "price_at_decision": prezzo_ordine, "price_attuale": prezzo_attuale,
+                              "soglia_pct": soglia_pct})
+            return {"error": "combo_gamba_fuori_tolleranza", "gamba": i}
+        price = prezzo_ordine
+        liability = X.liability_of(side, size, price)
+        if cap > 0 and liability > cap:
+            return {"error": "max_liability_per_trade_superato", "gamba": i,
+                    "liability": liability}
+        legs_validate.append({"market_id": str(market_id), "market_type": market_type,
+                              "selection_id": sid, "selection_name": leg.get("selection_name"),
+                              "side": side, "price": price, "size": size,
+                              "liability": round(liability, 2)})
+    mt_combo = _combo_market_type(legs_validate, [l["size"] for l in legs_validate])
+    total_liab = round(sum(l["liability"] for l in legs_validate), 2)
+    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params, mode=mode)
+    blocked = _risk_gate(db, now, params, risk_ctx,
+                         {"event_id": event_id, "market_type": mt_combo,
+                          "liability": total_liab, "strategy": "model"},
+                         soft=True, signal_key=f"combo:{cid}")
+    if blocked:
+        return {"error": "risk_block", "reason": blocked, "liability": total_liab}
+    esito = _esegui_combo_riservata(
+        db=db, market=market, event_id=event_id, event_name=payload.get("event_name"),
+        cid=cid, legs_esecuzione=legs_validate, sport=str(payload.get("sport") or "calcio"),
+        mode=mode, commission=float(params.get("commission_pct", 5.0)) / 100.0,
+        minute=payload.get("minute"), score=payload.get("score"),
+        rationale=payload.get("rationale"), params=params, now=now,
+        rows_by_event=rows_by_event, risk_ctx=risk_ctx)
+    if esito["placed"] == 0:
+        return {"error": "non_eseguito", "detail": esito.get("motivo") or "combo_non_piazzata"}
+    _log(db, "opportunita_piazzata", {
+        "event_id": event_id, "event_name": payload.get("event_name"),
+        "opp_key": opp_key, "kind": "combo", "combo_id": cid,
+        "trade_ids": esito["trade_ids"], "placed_legs": esito["placed"],
+        "total_legs": esito["total"], "mode": mode})
+    return {"ok": True, "trade_ids": esito["trade_ids"], "placed_legs": esito["placed"],
+            "total_legs": esito["total"],
+            "pending_fill": esito["placed"] < esito["total"]}
 
 
 def _traded_keys(db, mode: Optional[str] = None) -> set[tuple[str, str]]:
@@ -5798,6 +6055,10 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     # lettura sola per ciclo di cio' che il DB sa gia' (vive, rifiutate,
     # decadute); ``None`` = non leggibile, e allora non si propone niente.
     note_proposte = _leggi_proposte_opp(db)
+    # 18/09 — ORDINE DELL'UTENTE: coerenza col mercato. UNA lettura per ciclo
+    # (non per evento) degli opp_key con un ordine ANCORA vivo (qualunque
+    # origine, anche 'manual'): vedi ``_opp_keys_con_ordine_vivo``.
+    vivi_ordine = _opp_keys_con_ordine_vivo(db)
     corpi_proposte: list[dict] = []
     eventi_in_gioco: set[str] = set()
     eventi_valutati: set[str] = set()
@@ -5843,11 +6104,12 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             # PROPOSTE e partono solo dalla scheda. L'interruttore resta nei
             # parametri (e nella UI lo dice) ma non manda piu' ordini.
             eventi_valutati.add(event_id)
-            if note_proposte is not None and t_opps:
+            if (params.get("proponi_tennis", True) and note_proposte is not None
+                    and vivi_ordine is not None and t_opps):
                 corpi_proposte.extend(_proponi_opps(
                     db=db, payload=payload, event_id=event_id, opps=t_opps,
                     params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
-                    sport="tennis", kind="tennis",
+                    sport="tennis", kind="tennis", vivi_ordine=vivi_ordine,
                     scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
             continue
         if sport != "calcio" or model is None or opp_mod is None:
@@ -5909,28 +6171,64 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                              "payload": body, "updated_at": now.isoformat()})
         # 17/09 — come per il tennis: ``kinds['model']``
         # (auto_trade_opportunities) non piazza piu'. Si PROPONE.
+        # 18/09 — ORDINE DELL'UTENTE: la STESSA cosa vale ora per ANOMALIE e
+        # COMBO. ``kinds['combo']``/``kinds['anomaly']`` (auto_trade_combos/
+        # auto_trade_anomalies) restano leggibili (descritti in UI) ma non
+        # governano piu' nessun piazzamento: si propone SEMPRE, come gia'
+        # per modello e tennis (nessun ramo diverso da mantenere).
+        # 18/09 (2) — RUBINETTI: ``proponi_model``/``proponi_anomaly``/
+        # ``proponi_combo`` decidono se si GENERA la proposta (non se si
+        # piazza: quello non lo fa piu' nessuno). A false, semplicemente non
+        # si chiama ``_proponi_opps``/``_proponi_combo`` per quel tipo: le
+        # eventuali proposte gia' vive di quel tipo decadono da sole via
+        # ``_riconcilia_proposte`` (``tipi_disabilitati``, motivo dichiarato).
         eventi_valutati.add(event_id)
-        if note_proposte is not None and opps:
+        if (params.get("proponi_model", True) and note_proposte is not None
+                and vivi_ordine is not None and opps):
             corpi_proposte.extend(_proponi_opps(
                 db=db, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
-                rows_by_event=rows_by_event or {},
+                rows_by_event=rows_by_event or {}, vivi_ordine=vivi_ordine,
                 scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
-        if kinds.get("combo") and combos:
-            out["traded"] += _auto_trade_combos(
-                db=db, market=market, payload=payload, event_id=event_id, combos=combos,
+        if (params.get("proponi_anomaly", True) and note_proposte is not None
+                and vivi_ordine is not None and anomalies):
+            # ``_proponi_opps`` e' generico: un'anomalia ha la STESSA forma di
+            # un'opportunita' di modello (market_type/selection_id/side/price),
+            # e la sua ``signal_key`` (senza timestamp) e' gia' la chiave
+            # STABILE voluta per le anomalie — a differenza della chiave del
+            # vecchio cecchino (``anomaly:...:<epoch>``, pensata per il dedupe
+            # di un piazzamento immediato che non esiste piu').
+            corpi_proposte.extend(_proponi_opps(
+                db=db, payload=payload, event_id=event_id, opps=anomalies,
+                params=params, mode=mode, now=now,
+                rows_by_event=rows_by_event or {}, sport="calcio", kind="anomaly",
+                vivi_ordine=vivi_ordine,
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+        if (params.get("proponi_combo", True) and note_proposte is not None
+                and vivi_ordine is not None and combos):
+            corpi_proposte.extend(_proponi_combo(
+                db=db, payload=payload, event_id=event_id, combos=combos,
                 params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
-                risk_ctx=risk_ctx,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
+                vivi_ordine=vivi_ordine,
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
     st["counts"] = counts
     # PROPOSTE: si scrivono/aggiornano/fanno decadere DOPO aver visto tutte le
     # partite del ciclo — la decadenza ha senso solo con il quadro completo.
     # Con un feed VUOTO non si tocca niente: un giro a vuoto per un errore non
     # deve cancellare le schede che l'utente ha davanti.
     if note_proposte is not None and rows:
+        # 18/09 (2) — i tipi col rubinetto chiuso decadono con un motivo
+        # DICHIARATO ("disattivato dall'interruttore"), non con quello
+        # generico "sparita dal feed": l'opportunita' e' spesso ancora li',
+        # solo che l'utente non la vuole vedere.
+        tipi_disabilitati = {kind for kind, chiave in (
+            ("model", "proponi_model"), ("tennis", "proponi_tennis"),
+            ("anomaly", "proponi_anomaly"), ("combo", "proponi_combo"))
+            if not params.get(chiave, True)}
         out["proposte"] = _riconcilia_proposte(
             db=db, note=note_proposte, corpi=corpi_proposte,
-            eventi_in_gioco=eventi_in_gioco, eventi_valutati=eventi_valutati, now=now)
+            eventi_in_gioco=eventi_in_gioco, eventi_valutati=eventi_valutati, now=now,
+            tipi_disabilitati=tipi_disabilitati)
     if to_write:
         try:
             db.upsert_opportunities(to_write)
@@ -5991,6 +6289,7 @@ def _score_of(payload: dict, sport: str) -> Optional[str]:
 def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
                   params: dict, mode: str, now: datetime,
                   rows_by_event: dict, sport: str = "calcio", kind: str = "model",
+                  vivi_ordine: Optional[set[str]] = None,
                   scanner_ts: Optional[float] = None,
                   scanner_ts_known: bool = False) -> list[dict]:
     """LE OPPORTUNITA' DI MODELLO NON SI PIAZZANO PIU' DA SOLE: si PROPONGONO.
@@ -6053,6 +6352,12 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
         key = f"{kind}:{market_type}:{selection_id}:{side}"
         if (event_id, key) in traded:
             continue
+        # 18/09 — ORDINE DELL'UTENTE: un ordine nato da un'approvazione
+        # precedente e ancora vivo (pending/open, qualunque origine) blocca
+        # la RIPROPOSTA della stessa chiave. Vedi ``_opp_keys_con_ordine_
+        # vivo``: qui basta un confronto diretto sull'``opp_key`` completo.
+        if vivi_ordine and PO.opp_key(event_id, kind, market_type, selection_id, side) in vivi_ordine:
+            continue
         if not o.get("market_id"):
             _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
                                         "reason": "market_o_selezione_mancante"})
@@ -6099,13 +6404,70 @@ def _leggi_proposte_opp(db) -> Optional[dict[str, Any]]:
     return {"vive": vive, "rifiutate": rifiutate}
 
 
+def _opp_keys_con_ordine_vivo(db) -> Optional[set[str]]:
+    """``opp_key`` (di una gamba sola o di una COMBO intera) con ALMENO un
+    trade ancora 'pending'/'open', QUALUNQUE origine.
+
+    18/09 — ORDINE DELL'UTENTE, con permesso esplicito («se ho approvato o
+    rifiutato un segnale deve essere coerente con gli ordini»): un segnale
+    (modello, tennis, anomalia o combo) approvato dalla scheda diventa un
+    trade ``origin='manual'`` (mai ``'auto'``: vedi ``_request_place``/
+    ``_esegui_combo_riservata``), quindi ``_traded_keys`` — che filtra SOLO
+    ``origin='auto'`` — non lo vede: senza questo controllo lo stesso segnale
+    poteva tornare a proporsi mentre l'ordine che ne era nato era ancora
+    IN CODA o ABBINATO sul mercato. Ogni trade nato da un'approvazione porta
+    ``meta.opp_key`` (scritto da ``_request_place``/``_esegui_combo_
+    riservata``): PER UNA COMBO e' lo STESSO valore su OGNI gamba (il
+    ``combo_key`` dell'insieme), quindi basta un semplice controllo di
+    appartenenza a un set per avere la coerenza "sull'INSIEME" richiesta —
+    se anche una sola gamba e' ancora pending/open, il ``combo_key`` finisce
+    nel set e l'intera combo non si ripropone.
+
+    Stati che bloccano: SOLO ``pending``/``open`` (letti dalla tabella, non
+    inventati: sono gli stessi due che ``execution.PlaceOutcome.is_live``
+    usa per dire "l'ordine e' vivo"). Un trade chiuso/annullato/scaduto SENZA
+    abbinamento (``error``) o gia' regolato (``hedged``/``won``/``lost``/
+    ``void``) NON blocca: il segnale e' di nuovo un segnale nuovo.
+
+    UNA lettura per ciclo (``trades_pending_o_aperti``, filtrata dal DB per
+    stato — non e' ``list_trades()``, che tornerebbe l'intera tabella):
+    chiamata una sola volta in ``process_opportunities``, riusata per OGNI
+    evento del ciclo. ``None`` = lettura fallita: FAIL-CLOSED, stessa scelta
+    di ``_leggi_proposte_opp`` — senza sapere quali ordini sono vivi, non si
+    propone NIENTE in questo ciclo (si preferisce un trader che vede una
+    scheda in meno a uno che ne vede una duplicata su un ordine gia' suo)."""
+    fn = getattr(db, "trades_pending_o_aperti", None)
+    if not callable(fn):
+        return set()  # db senza l'accessor (fakes vecchi): nessun blocco extra, non un guasto
+    try:
+        righe = list(fn() or [])
+    except Exception:  # noqa: BLE001 — FAIL-CLOSED
+        return None
+    vivi: set[str] = set()
+    for t in righe:
+        if not isinstance(t, dict):
+            continue
+        chiave = str((t.get("meta") or {}).get("opp_key") or "")
+        if chiave:
+            vivi.add(chiave)
+    return vivi
+
+
 def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
                          eventi_in_gioco: set, eventi_valutati: set,
-                         now: datetime) -> int:
+                         now: datetime,
+                         tipi_disabilitati: Optional[set] = None) -> int:
     """Scrive le proposte nuove, aggiorna quelle vive, fa DECADERE quelle che
     non hanno piu' un'opportunita' sotto, e annota in attivita' i rifiuti che
     l'utente ha dato dalla scheda (la RPC scrive la riga, l'attivita' la scrive
-    il servizio al primo ciclo utile). Ritorna il numero di proposte NUOVE."""
+    il servizio al primo ciclo utile). Ritorna il numero di proposte NUOVE.
+
+    18/09 (2) — ``tipi_disabilitati``: i ``kind`` col rubinetto chiuso
+    (``proponi_*=False``). Il chiamante non genera piu' corpi per quei tipi,
+    quindi la loro assenza da ``chiavi_vive`` li farebbe decadere comunque —
+    ma con QUESTO parametro il motivo dichiarato e' quello vero
+    ("disattivato dall'interruttore"), non "sparita dal feed" (falso: spesso
+    l'opportunita' e' ancora li', e' solo che l'utente non la vuole vedere)."""
     vive: dict[str, dict] = note.get("vive") or {}
     rifiutate: dict[str, dict] = note.get("rifiutate") or {}
     scrivi = getattr(db, "scrivi_proposta_opportunita", None)
@@ -6165,7 +6527,10 @@ def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
                 continue
             corpo = riga.get("payload") or {}
             eid = str(corpo.get("event_id") or "")
-            if eid not in eventi_in_gioco:
+            kind = str(corpo.get("kind") or "")
+            if kind in (tipi_disabilitati or set()):
+                motivo = "tipo di proposta disattivato dall'interruttore"
+            elif eid not in eventi_in_gioco:
                 motivo = "partita non piu' in gioco"
             elif eid in eventi_valutati:
                 motivo = "opportunita' sparita dal feed"
@@ -6263,44 +6628,54 @@ def _combo_market_type(legs: list, leg_stakes: list) -> str:
     return mt or "COMBO"
 
 
-def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list,
-                       params: dict, mode: str, now: datetime, rows_by_event: dict,
-                       risk_ctx: Optional[dict] = None,
-                       scanner_ts: Optional[float] = None,
-                       scanner_ts_known: bool = False) -> int:
-    """Piazza ogni combo con TUTTE le gambe o NESSUNA: soglie su confidenza/edge
-    della combo, gate ``risk`` sulla liability complessiva, riserva di tutte le
-    gambe (una qualunque fallita → le riserve fatte si liberano), in paper una
-    gamba non abbinabile → combo saltata. STAKE: ``risk.model_stake`` per gamba
-    in media, ripartito secondo le proporzioni di dutching della combo
-    (``stake_ratio``: gamba = model_stake × n_gambe × ratio; senza ratio, uguale
-    per tutte). Ritorna il numero di combo piazzate."""
+def _proponi_combo(*, db, payload: dict, event_id: str, combos: list,
+                   params: dict, mode: str, now: datetime, rows_by_event: dict,
+                   vivi_ordine: Optional[set[str]] = None,
+                   scanner_ts: Optional[float] = None,
+                   scanner_ts_known: bool = False) -> list[dict]:
+    """18/09 — ORDINE DELL'UTENTE: LE COMBINAZIONI NON SI PIAZZANO PIU' DA
+    SOLE, si PROPONGONO. Sostituisce ``_auto_trade_combos`` (rimossa, non
+    affiancata: stessa scelta fatta il 17/09 per ``_auto_trade_opps`` ->
+    ``_proponi_opps``).
+
+    Stesse soglie e lo stesso calcolo degli stake per gamba di ieri
+    (confidenza/edge della combo, pavimento assoluto 0,01 EUR,
+    ``book_supports_min``/``min_total_stake``, stake pubblicati scalati sul
+    totale voluto — mai i ``stake_ratio`` ri-arrotondati): quello che cambia
+    e' il traguardo. Prima di riservare/eseguire QUALSIASI cosa costruisce
+    SOLO il corpo della proposta (``PO.corpo_proposta_combo``, con TUTTE le
+    gambe dentro) e lo ritorna: non tocca ne' ``insert_trade`` ne'
+    ``_execute``. A scrivere la riga 'proposed' (e a farla decadere se una
+    gamba sola sparisce) pensa ``_riconcilia_proposte``, come per il modello.
+
+    L'esecuzione vera, tutte le gambe o nessuna, vive ora in
+    ``_esegui_combo_riservata`` e parte SOLO dall'approvazione
+    (``_request_place`` -> ``_request_place_combo``)."""
     min_conf = float(params.get("opps_min_confidence") or 0.0)
     min_edge = float(params.get("opps_min_edge") or 0.0)
     stake = float(RK.risk_params(params).get("model_stake") or 0.0)
     cap = float(params.get("max_liability_per_trade") or 0.0)
-    commission = float(params.get("commission_pct", 5.0)) / 100.0
     # CERT. 13/09 — come per le aperture singole: il pavimento e' quello
     # ASSOLUTO dell'exchange, non il minimo di giurisdizione. Una gamba da
     # 1,20 EUR e' piazzabile col place-and-trim, quindi non deve piu' far
     # scartare l'intera combo.
     min_stake = X.ABS_MIN_SIZE
     if stake <= 0:
-        return 0
+        return []
     if not scanner_ts_known:
         scanner_ts = _scanner_ts(db, now.timestamp())
     feed_row = (rows_by_event or {}).get(str(event_id))
     if not _row_is_fresh(feed_row, now.timestamp(), scanner_ts):
         _log_skip(db, now, params, {"event_id": event_id, "signal_key": "combo:*",
                                     "reason": _stale_reason(feed_row)})
-        return 0
+        return []
     try:
         traded = set(_traded_keys(db, mode))
-    except Exception:  # noqa: BLE001
-        return 0
-    if risk_ctx is None:
-        risk_ctx = build_risk_ctx(db, now, params, mode=mode)
-    n = 0
+    except Exception:  # noqa: BLE001 — FAIL-CLOSED
+        return []
+    modo = modalita_di_strategia("model", mode, params)
+    now_iso = now.isoformat()
+    fuori: list[dict] = []
     for c in combos:
         if not isinstance(c, dict):
             continue
@@ -6312,38 +6687,37 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
                 continue
         except (TypeError, ValueError):
             continue
+        # cid: hash STABILE (mai il prezzo) di (market_id, selection_id, side)
+        # di ogni gamba — la stessa identita' che l'automatico di ieri usava
+        # per non ripiazzare due volte la stessa combo. Qui diventa la chiave
+        # della PROPOSTA: finche' le gambe restano le stesse, un RIFIUTA tiene.
         cid = str(c.get("id") or _hash([(l.get("market_id"), l.get("selection_id"), l.get("side"))
                                         for l in legs])[:12])
-        keys = [f"combo:{cid}:{i}" for i in range(len(legs))]
-        if any((event_id, k) in traded for k in keys):
+        key = f"combo:{cid}"
+        if (event_id, key) in traded:
             continue
-        if any(place_allowed(db, now, params, event_id, k) for k in keys):
-            continue   # H-21: una gamba ha esaurito il budget → combo ferma
-        rows: list[dict] = []
-        total_liab = 0.0
-        ok = True
-        # CERTIFICAZIONE 12/09 — SI ESEGUONO GLI STAKE VERIFICATI.
+        # 18/09 — ORDINE DELL'UTENTE: coerenza SULL'INSIEME. ``combo_key`` e'
+        # lo STESSO valore scritto in ``meta.opp_key`` su OGNI gamba della
+        # combo approvata (``_esegui_combo_riservata``): se anche una sola
+        # gamba e' ancora pending/open, la chiave e' nel set e l'INTERA
+        # combo non si ripropone — nessuna logica per-gamba in piu' qui.
+        if vivi_ordine and PO.combo_key(event_id, cid) in vivi_ordine:
+            continue
+        # CERTIFICAZIONE 12/09 — SI PROPONGONO GLI STAKE VERIFICATI.
         # Prima la gamba veniva ricalcolata da ``stake_ratio`` e ri-arrotondata
         # al centesimo: su una quota alta mezzo centesimo vale piu' del profitto
         # bloccato, quindi il lock CERTIFICATO da combos.py non era quello
-        # eseguito e il "rischio zero" poteva uscire negativo. Ora si parte
-        # dagli stake pubblicati (gia' verificati anche contro il ri-arrotondamento)
-        # e li si scala sul totale voluto.
-        # ``book_supports_min`` = il book regge la combinazione al totale MINIMO.
-        # Se non lo regge NESSUNO stake la rende intera: si salta. Se invece lo
-        # regge, si controlla soltanto che il totale che stiamo per usare superi
-        # ``min_total_stake`` (il flag ``executable_whole`` riguarda gli stake
-        # PUBBLICATI, che sono quasi sempre piu' bassi del nostro totale: usarlo
-        # come veto scartava anche le combinazioni buone).
+        # proposto. Ora si parte dagli stake pubblicati (gia' verificati anche
+        # contro il ri-arrotondamento) e li si scala sul totale voluto.
         if c.get("book_supports_min") is False:
-            _log_skip(db, now, params, {"event_id": event_id, "signal_key": keys[0],
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
                                         "reason": "combo_book_non_regge_il_minimo",
                                         "min_total_stake": c.get("min_total_stake")})
             continue
         want_total = round(float(stake) * len(legs), 2)
         min_total = _f(c.get("min_total_stake"), 0.0)
         if min_total > 0 and want_total + 1e-9 < min_total:
-            _log_skip(db, now, params, {"event_id": event_id, "signal_key": keys[0],
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
                                         "reason": "combo_totale_sotto_minimo",
                                         "size": want_total, "min_stake": min_total})
             continue
@@ -6357,7 +6731,9 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
             if any(r <= 0 for r in ratios) or abs(sum(ratios) - 1.0) > 0.05:
                 ratios = [1.0 / len(legs)] * len(legs)
             leg_stakes = [round(want_total * r, 2) for r in ratios]
-        for leg, key, leg_stake in zip(legs, keys, leg_stakes):
+        legs_out: list[dict] = []
+        ok = True
+        for leg, leg_stake in zip(legs, leg_stakes):
             side = str(leg.get("side") or "").lower()
             try:
                 price = float(leg.get("price"))
@@ -6365,125 +6741,125 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
             except (TypeError, ValueError):
                 ok = False
                 break
-            if side not in ("back", "lay") or price <= 1.0 or not leg.get("market_id")                     or leg_stake <= 0:
+            if side not in ("back", "lay") or price <= 1.0 or not leg.get("market_id") \
+                    or leg_stake <= 0:
                 ok = False
                 break
-            # Una gamba non piazzabile fa fallire _execute DOPO che le altre
-            # sono gia' state piazzate -> combo rotta e posizione nuda da
-            # svolgere. "Tutte o nessuna" si decide PRIMA della riserva, non
-            # davanti al rifiuto dell'exchange. Dal 13/09 la soglia e' il
-            # pavimento assoluto (0,01 EUR): sotto il minimo di giurisdizione
-            # ci pensa il place-and-trim.
+            # "Tutte o nessuna" si decide PRIMA della proposta: una gamba
+            # sotto il pavimento assoluto (0,01 EUR, nessuna tecnica la rende
+            # un ordine) porta via l'intera combo, non solo quella gamba.
             if leg_stake < min_stake - 1e-9:
                 _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
                                             "reason": "combo_gamba_sotto_minimo",
                                             "size": leg_stake, "min_stake": min_stake})
                 ok = False
                 break
-            # L4 — GUARDIA DI ABBINABILITA' DELLE COMBO: RIMOSSA il 16/09.
-            # DECISIONE DELL'UTENTE (PIANO_CERTIFICAZIONE_DEFINITIVA §5.4,
-            # «guardia combo Safe: uniformare»), non una scelta di chi scrive.
-            # Qui girava ``_leg_matchable`` SOLO in paper: il paper SALTAVA la
-            # combinazione se una gamba non sembrava abbinabile, mentre il live
-            # la piazzava e, se una gamba falliva, la svolgeva (H-20/H6). Due
-            # comportamenti diversi sullo stesso segnale = il paper non era piu'
-            # lo specchio del live (catalogo §7 punto 14) e i suoi numeri sulle
-            # combo non potevano valere come prova.
-            # Ora le due modalita' fanno la STESSA COSA, e la cosa e' quella del
-            # LIVE — il live e' la realta': si piazza, e se una gamba non si
-            # abbina si svolge subito quella gia' abbinata (``_mark_combo_
-            # incomplete`` + ``_unwind_combo``, piu' sotto). L'ABBINAMENTO LO
-            # DECIDE IL MOTORE DI SIMULAZIONE, non una guardia: in paper
-            # ``_execute`` costruisce il libro dal feed (``_paper_ladder``) e
-            # ``paper_fill`` abbina solo quello che il book regge davvero, col
-            # FOK che uccide il parziale esattamente come in live.
-            # ⚠️ Da qui in avanti i NUMERI PAPER DELLE COMBO CAMBIANO: entrano
-            # combinazioni che prima venivano saltate, alcune delle quali
-            # finiranno in 'error' e in svolgimento come farebbero in live.
             liab = X.liability_of(side, leg_stake, price)
             if cap > 0 and liab > cap:
                 ok = False
                 break
-            total_liab += liab
-            rows.append(_reserve_row(
-                event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
-                strategy="model", market_id=leg.get("market_id"),
-                market_type=str(leg.get("market_type") or ""), selection_id=sid,
-                selection_name=leg.get("selection_name"), side=side,
-                mode=modalita_di_strategia("model", mode, params), price=price,
-                size=leg_stake, liability=liab, commission=commission, minute=payload.get("minute"),
-                score=_score_of(payload, "calcio"), origin="auto", signal_key=key,
-                meta={**_model_meta(leg, "combo", side), "combo_id": cid,
-                      "combo_legs": len(legs), "combo_rationale": c.get("rationale")}))
+            legs_out.append({"market_type": str(leg.get("market_type") or ""),
+                             "market_id": leg.get("market_id"), "selection_id": sid,
+                             "selection_name": leg.get("selection_name"), "side": side,
+                             "price": price, "size": leg_stake, "liability": round(liab, 2)})
         if not ok:
             continue
-        # CERT. 13/09 — il gate di rischio deve vedere il mercato VERO delle
-        # gambe, non l'etichetta "COMBO". ``risk.event_exposure`` confronta
-        # ``market_type`` per decidere se una posizione e' CORRELATA (stesso
-        # mercato = pesa 100%) o no (pesa ``correlated_cap``, 0,7). Nessuna
-        # posizione ha mai ``market_type == "COMBO"``, quindi TUTTE risultavano
-        # non correlate e pesavano il 70%: con un cap per evento di 150 EUR si
-        # arrivava a ~179 EUR reali sullo stesso mercato, cioe' il 19% oltre.
-        # Si usa il mercato della gamba piu' pesante: e' quello che determina
-        # davvero la correlazione dell'esposizione.
-        mt_combo = _combo_market_type(legs, leg_stakes)
-        if _risk_gate(db, now, params, risk_ctx,
-                      {"event_id": event_id, "market_type": mt_combo,
-                       "liability": round(total_liab, 2), "strategy": "model"},
-                      signal_key=f"combo:{cid}"):
-            continue
-        ids: list[int] = []
-        for row in rows:
+        fuori.append(PO.corpo_proposta_combo(
+            event_id=str(event_id), event_name=payload.get("event_name"), sport="calcio",
+            cid=cid, combo=c, legs=legs_out, mode=modo,
+            minute=payload.get("minute"), score=_score_of(payload, "calcio"),
+            now_iso=now_iso, decided_at=now_iso,
+            feed_updated_at=(feed_row or {}).get("updated_at")))
+    return fuori
+
+
+def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: str,
+                            legs_esecuzione: list[dict[str, Any]], sport: str, mode: str,
+                            commission: float, minute: Any, score: Any, rationale: Any,
+                            params: dict, now: datetime, rows_by_event: Optional[dict],
+                            risk_ctx: Optional[dict]) -> dict[str, Any]:
+    """TUTTE le gambe o NESSUNA — estratta da ``_auto_trade_combos`` il 18/09
+    perche' la usano sia l'approvazione di una proposta combo
+    (``_request_place_combo``) sia, in futuro, un eventuale altro chiamante:
+    estratta, non duplicata.
+
+    ``legs_esecuzione`` e' gia' validata dal chiamante (prezzo, size,
+    market_id, tolleranza): qui si riserva ogni gamba (una qualunque fallita
+    -> si liberano TUTTE le riserve fatte, nessuna resta a meta'), poi si
+    esegue ogni gamba riservata; se non tutte piazzano, le gambe GIA' FILLATE
+    vengono marcate ``combo_incomplete`` e SVOLTE SUBITO (H-20/H6, stessa
+    logica di ieri, bit per bit).
+
+    Ritorna {'placed': gambe senza errore, 'total': gambe totali,
+    'trade_ids': id di tutte le gambe riservate, 'filled_ids': gambe aperte,
+    'motivo': None o il motivo del fallimento di RISERVA}."""
+    keys = [f"combo:{cid}:{i}" for i in range(len(legs_esecuzione))]
+    rows: list[dict[str, Any]] = []
+    for leg, key in zip(legs_esecuzione, keys):
+        rows.append(_reserve_row(
+            event_id=event_id, event_name=event_name, sport=sport,
+            strategy="model", market_id=leg.get("market_id"),
+            market_type=str(leg.get("market_type") or ""),
+            selection_id=int(leg.get("selection_id")),
+            selection_name=leg.get("selection_name"), side=str(leg.get("side") or "").lower(),
+            mode=mode, price=float(leg.get("price")), size=float(leg.get("size")),
+            liability=float(leg.get("liability") or 0.0), commission=commission,
+            minute=minute, score=score, origin="manual", signal_key=key,
+            meta={**_model_meta({"p_model": leg.get("p_model"), "p_implied": leg.get("p_implied"),
+                                 "edge": leg.get("edge"), "ev": leg.get("ev"),
+                                 "confidence": leg.get("confidence"), "rationale": rationale},
+                                "combo", str(leg.get("side") or "").lower()),
+                  "combo_id": cid, "combo_legs": len(legs_esecuzione),
+                  "combo_rationale": rationale, "da_proposta": True,
+                  "opp_key": PO.combo_key(event_id, cid)}))
+    ids: list[int] = []
+    for row in rows:
+        try:
+            tid = db.insert_trade(row)
+        except Exception:  # noqa: BLE001
+            tid = None
+        if not tid:
+            break
+        ids.append(int(tid))
+    if len(ids) != len(rows):
+        for tid in ids:   # tutte o nessuna: si liberano le riserve fatte
             try:
-                tid = db.insert_trade(row)
+                db.delete_trade(tid)
             except Exception:  # noqa: BLE001
-                tid = None
-            if not tid:
-                break
-            ids.append(int(tid))
-        if len(ids) != len(rows):
-            for tid in ids:   # tutte o nessuna: si liberano le riserve fatte
-                try:
-                    db.delete_trade(tid)
-                except Exception:  # noqa: BLE001
-                    pass
-            _log_skip(db, now, params, {"event_id": event_id, "signal_key": f"combo:{cid}",
-                                       "reason": "combo_riserva_incompleta"})
-            for k in keys:
-                traded.add((event_id, k))
-            continue
-        for k in keys:
-            traded.add((event_id, k))
-        placed_legs = 0
-        live_ids: list[int] = []
-        filled_ids: list[int] = []
-        for row, tid in zip(rows, ids):
-            _risk_commit(risk_ctx, {**row, "id": tid})
-            out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
-                           now=now, best_size=row.get("size"), ladder=(),
-                           feed_prices=_feed_prices_of(rows_by_event, event_id, row))
-            if out.status != "error":
-                placed_legs += 1
-                live_ids.append(int(tid))
-                if out.status == "open":
-                    filled_ids.append(int(tid))
-        if placed_legs == len(rows):
-            n += 1
-        elif placed_legs:
-            # H-20: tutto-o-niente ANCHE dopo il fill — una gamba in errore con
-            # un'altra viva lascia una posizione NUDA: si chiude subito quella
-            # già abbinata e si MARCA quella in coda (H6: il fill arriva dopo,
-            # la svolge ``unwind_incomplete_combos`` appena è confermato).
-            pending_ids = [i for i in live_ids if i not in filled_ids]
-            _mark_combo_incomplete(db, live_ids, cid)
-            _log(db, "combo_incomplete", {"event_id": event_id, "combo_id": cid,
-                                          "placed": placed_legs, "legs": len(rows),
-                                          "filled_ids": filled_ids,
-                                          "pending_ids": pending_ids, "critical": True})
-            _unwind_combo(db=db, market=market, ids=filled_ids,
-                          rows_by_event=rows_by_event, event_id=event_id,
-                          params=params, now=now)
-    return n
+                pass
+        _log_skip(db, now, params, {"event_id": event_id, "signal_key": f"combo:{cid}",
+                                   "reason": "combo_riserva_incompleta"})
+        return {"placed": 0, "total": len(rows), "trade_ids": [], "filled_ids": [],
+               "motivo": "combo_riserva_incompleta"}
+    placed_legs = 0
+    live_ids: list[int] = []
+    filled_ids: list[int] = []
+    for row, tid in zip(rows, ids):
+        _risk_commit(risk_ctx, {**row, "id": tid})
+        out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
+                       now=now, best_size=row.get("size"), ladder=(),
+                       feed_prices=_feed_prices_of(rows_by_event, event_id, row))
+        if out.status != "error":
+            placed_legs += 1
+            live_ids.append(int(tid))
+            if out.status == "open":
+                filled_ids.append(int(tid))
+    if placed_legs and placed_legs < len(rows):
+        # H-20: tutto-o-niente ANCHE dopo il fill — una gamba in errore con
+        # un'altra viva lascia una posizione NUDA: si chiude subito quella
+        # già abbinata e si MARCA quella in coda (H6: il fill arriva dopo,
+        # la svolge ``unwind_incomplete_combos`` appena è confermato).
+        pending_ids = [i for i in live_ids if i not in filled_ids]
+        _mark_combo_incomplete(db, live_ids, cid)
+        _log(db, "combo_incomplete", {"event_id": event_id, "combo_id": cid,
+                                      "placed": placed_legs, "legs": len(rows),
+                                      "filled_ids": filled_ids,
+                                      "pending_ids": pending_ids, "critical": True})
+        _unwind_combo(db=db, market=market, ids=filled_ids,
+                      rows_by_event=rows_by_event, event_id=event_id,
+                      params=params, now=now)
+    return {"placed": placed_legs, "total": len(rows), "trade_ids": ids,
+           "filled_ids": filled_ids, "motivo": None}
 
 
 COMBO_INCOMPLETE_KEY = "combo_incomplete"
@@ -6561,26 +6937,19 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
 
 
 # ---------------------------------------------------------------------------
-# ANOMALIE: cecchino a OGNI ciclo (righe con quote cambiate), FOK, dedupe 120 s
+# ANOMALIE: cecchino a OGNI ciclo (righe con quote cambiate)
 # ---------------------------------------------------------------------------
-ANOMALY_DEDUPE_S = 120.0
-
-
-def _anomaly_recent(traded: set, event_id: str, prefix: str, now_ts: float) -> bool:
-    """Chiave 'anomaly:...:<epoch>' già tradata negli ultimi ANOMALY_DEDUPE_S
-    (regge anche al riavvio: il dedupe in memoria si perde, il DB no)."""
-    for eid, k in traded:
-        if eid != event_id or not str(k).startswith(prefix):
-            continue
-        try:
-            ts = float(str(k)[len(prefix):])
-        except ValueError:
-            continue
-        if now_ts - ts < ANOMALY_DEDUPE_S:
-            return True
-    return False
-
-
+# 18/09 — ORDINE DELL'UTENTE: il cecchino NON piazza piu' da solo. Questa
+# funzione torna a fare UNA cosa sola: rilevare (``detect``) e tenere lo stato
+# per evento in ``state['anomalies']``, che ``process_opportunities`` legge
+# per fondere le anomalie nella vista delle opportunita' E per proporle
+# (``_proponi_opps`` con ``kind='anomaly'``, chiave STABILE senza tempo — vedi
+# CHECKPOINT_COMBOS_ANOMALIE_PROPOSTE_2026-09-18.md). Il dedupe a 120 s e la
+# chiave con l'epoch (``anomaly:...:<epoch>``) servivano SOLO a non ripetere un
+# piazzamento immediato: senza piazzamento non servono piu' e sono stati tolti
+# (nessun uso rimasto altrove nel modulo). ``auto_trade`` resta nella firma —
+# stessa scelta di ``auto_trade_opportunities``/``auto_trade_tennis`` ieri —
+# ma non governa piu' nulla: e' vestigiale, letto e basta.
 def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
                       opp_mod: Any, anomaly_mod: Any, mode: str, now: datetime,
                       state: Optional[dict] = None, auto_trade: bool = False,
@@ -6591,24 +6960,16 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
     """Valuta ``anomaly.detect(payload, book, params=)`` per ogni in-play calcio
     il cui ``odds_ts_ms`` è cambiato dall'ultima valutazione (ogni ciclo, non
     sulla cadenza delle opportunità); l'ultimo esito per evento resta in
-    ``state['anomalies']`` (la UI lo vede fuso nelle opportunità). Con
-    ``auto_trade``: piazzamento IMMEDIATO come cecchino (FOK di execution.place),
-    stake ``risk.model_stake``, dedupe per (evento, mercato, selezione, lato)
-    per 120 s. Ritorna {'events','found','traded'}."""
+    ``state['anomalies']`` (la UI lo vede fuso nelle opportunità, e
+    ``process_opportunities`` lo propone). NON piazza piu' nulla (18/09):
+    ``traded`` nel ritorno resta a 0 per compatibilita' di forma con chi legge
+    questo dict. Ritorna {'events','found','traded'}."""
     out = {"events": 0, "found": 0, "traded": 0}
     if anomaly_mod is None or model is None or opp_mod is None:
         return out
     st = state if state is not None else _OPPS_STATE
     seen_ts = st.setdefault("anomaly_ts", {})
     found_by_event = st.setdefault("anomalies", {})
-    dedupe = st.setdefault("anomaly_dedupe", {})
-    now_ts = now.timestamp()
-    for k in [k for k, v in dedupe.items() if now_ts - float(v) >= ANOMALY_DEDUPE_S]:
-        dedupe.pop(k, None)
-    stake = float(RK.risk_params(params).get("model_stake") or 0.0)
-    cap = float(params.get("max_liability_per_trade") or 0.0)
-    commission = float(params.get("commission_pct", 5.0)) / 100.0
-    traded: Optional[set] = None
     live_ids: set[str] = set()
     for row in rows:
         if str(row.get("sport") or "") != "calcio":
@@ -6636,77 +6997,6 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
             continue
         found_by_event[event_id] = found
         out["found"] += len(found)
-        if not auto_trade or not found or stake <= 0:
-            continue
-        # 12/09: il CECCHINO non spara su quote vecchie. Il gate ``odds_ts_ms``
-        # non basta: al primo giro dopo un riavvio ``seen_ts`` e' vuoto e una
-        # riga ferma da minuti verrebbe valutata come nuova. Stessa regola dei
-        # segnali/opportunita'/combo (``_row_is_fresh``).
-        if not scanner_ts_known:
-            scanner_ts = _scanner_ts(db, now_ts)
-            scanner_ts_known = True
-        if not _row_is_fresh(row, now_ts, scanner_ts):
-            _log_skip(db, now, params, {"event_id": event_id, "signal_key": "anomaly:*",
-                                        "reason": _stale_reason(row)})
-            continue
-        if traded is None:
-            try:
-                traded = set(_traded_keys(db, mode))
-            except Exception:  # noqa: BLE001 — FAIL-CLOSED
-                return out
-        if risk_ctx is None:
-            risk_ctx = build_risk_ctx(db, now, params, mode=mode)
-        for o in found:
-            try:
-                price = float(o.get("price"))
-                sid = int(o.get("selection_id"))
-            except (TypeError, ValueError):
-                continue
-            side = str(o.get("side") or "").lower()
-            mt = str(o.get("market_type") or "")
-            mid = o.get("market_id")
-            if side not in ("back", "lay") or price <= 1.0 or not mid:
-                continue
-            dkey = (event_id, str(mid), sid, side)
-            prefix = f"anomaly:{mt}:{sid}:{side}:"
-            if dkey in dedupe or _anomaly_recent(traded, event_id, prefix, now_ts):
-                continue
-            liability = X.liability_of(side, stake, price)
-            if cap > 0 and liability > cap:
-                continue
-            key = f"{prefix}{int(now_ts)}"
-            if _risk_gate(db, now, params, risk_ctx,
-                          {"event_id": event_id, "market_type": mt,
-                           "liability": liability, "strategy": "model"}, signal_key=key):
-                continue
-            # NB: ``res_row`` (riserva), non ``row`` (riga del FEED di questa
-            # partita): schiacciarla qui dentro renderebbe cieco ogni controllo
-            # sul feed a valle del ciclo delle anomalie.
-            res_row = _reserve_row(
-                event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
-                strategy="model", market_id=mid, market_type=mt, selection_id=sid,
-                selection_name=o.get("selection_name"), side=side,
-                mode=modalita_di_strategia("model", mode, params), price=price,
-                size=stake, liability=liability, commission=commission,
-                minute=payload.get("minute"), score=_score_of(payload, "calcio"),
-                origin="auto", signal_key=key,
-                meta={**_model_meta(o, "anomaly", side), "sniper": True,
-                      "anomaly_type": o.get("anomaly_type") or o.get("type")})
-            try:
-                trade_id = db.insert_trade(res_row)
-            except Exception:  # noqa: BLE001
-                dedupe[dkey] = now_ts
-                continue
-            if not trade_id:
-                continue
-            dedupe[dkey] = now_ts
-            traded.add((event_id, key))
-            _risk_commit(risk_ctx, {**res_row, "id": trade_id})
-            res = _execute(db=db, market=market, trade_id=trade_id, row=res_row, params=params,
-                           now=now, best_size=o.get("size_available"), ladder=(),
-                           feed_prices=_feed_prices_of(rows_by_event, event_id, res_row))
-            if res.status != "error":
-                out["traded"] += 1
     if rows:
         for eid in [k for k in list(found_by_event) if k not in live_ids]:
             found_by_event.pop(eid, None)
@@ -6740,6 +7030,174 @@ _BLOCCO: dict[str, Any] = {"motivo": None, "tetto": None, "aperte": None}
 # un ``run_once`` chiamato da un test o da un banco di replay non e' un avvio
 # dell'app e non cambia niente.
 _GUARDIA_AVVIO = AA.Guardia("safe")
+
+
+# ===========================================================================
+# F4 (18/09) — LE RIGHE DELLO SCANNER DAL CANALE LOCALE, INVECE CHE DAL SOLO DB
+# ===========================================================================
+# Che cosa cambia: SOLO DA DOVE ARRIVA LA RIGA e ogni quanto si rilegge il
+# database. Nessuna soglia, nessuno stake, nessun tetto, nessuna gamba, nessuna
+# regola di selezione o di uscita e' toccata. La riga fusa passa da
+# ``_row_is_fresh`` e da tutte le guardie di oggi senza sapere da dove viene.
+#
+# Interruttori (``.env``, default SPENTO, accesi solo se scritti davvero):
+#   · ``SAFE_BOT_LEGGE_CANALE``  le righe di scan dal canale 47336;
+#   · ``SAFE_BOT_SVEGLIA_CANALE`` il canale del bot (47335) accetta la SOLA
+#     sveglia dalla UI.
+# Spenti, il percorso e' quello di oggi riga per riga: nessun client aperto,
+# nessuna sveglia installata, ``fetch_scan_rows`` a ogni ciclo come sempre.
+#
+# LETTURE DEL DATABASE, il conto che conta (regola del 13/09: possono solo
+# DIMINUIRE). Il feed intero (``fetch_scan_rows``) oggi si legge a ogni ciclo,
+# cioe' 30 volte al minuto con ``poll_interval_s``=2. Con il canale SANO si
+# rilegge come RIALLINEAMENTO ogni ``_RISINC_DB_S`` secondi: 6 volte al minuto.
+# Tutte le altre letture del ciclo (control, richieste, trade aperti,
+# aggregati) restano ESATTAMENTE quelle di oggi, perche' il numero di cicli al
+# minuto non cambia: la sveglia del canale sostituisce un'attesa che gia'
+# esisteva (``_attesa_interrompibile``), non ne aggiunge una.
+_RISINC_DB_S = 10.0
+#: Stato del client di canale, per processo. ``righe_db`` e' l'ULTIMA lettura
+#: del feed riuscita: e' quella che dice QUALI partite esistono (il canale non
+#: puo' aggiungerne nessuna) fra un riallineamento e il successivo.
+_CANALE_SCAN: dict[str, Any] = {"client": None, "cache": None, "righe_db": [],
+                                "ultima_db_mono": 0.0, "fonte": "db",
+                                "dal_canale": 0, "avviato": False}
+#: La sveglia del ciclo. La alza la UI con un messaggio di sola sveglia sul
+#: canale 47335 (nessun parametro d'ordine: il comando resta la riga sul DB).
+_SVEGLIA = threading.Event()
+#: Quante sveglie sono arrivate e quante ne sono state rifiutate.
+_CONTI_SVEGLIA: dict[str, Any] = {"sveglie": 0, "rifiutate": 0, "installata": False}
+#: Intervallo MINIMO fra due giri, anche con la sveglia alzata. Un ciclo a
+#: raffica e' la forma esatta del guasto del 13/09 (budget IO esaurito): la
+#: sveglia anticipa un giro, non ne moltiplica il numero.
+_MIN_GIRO_S = 0.25
+#: Istante monotono dell'inizio dell'ultimo giro, per il minimo qui sopra.
+_ULTIMO_GIRO: dict[str, float] = {"mono": 0.0}
+
+
+def _canale_scan_acceso() -> bool:
+    """L'interruttore di F4, letto a ogni chiamata (mai memorizzato)."""
+    from Betfair.safe_strategy import canale_scan as CS
+
+    return CS.acceso(CS.ENV_LEGGE_CANALE)
+
+
+def avvia_client_scan() -> bool:
+    """Accende il client del canale dello scanner. Non solleva MAI.
+
+    Torna ``True`` se il client e' stato avviato. Con l'interruttore spento non
+    apre niente e non importa nemmeno ``websockets``.
+    """
+    if _CANALE_SCAN.get("avviato"):
+        return True
+    if not _canale_scan_acceso():
+        return False
+    try:
+        from Betfair.safe_strategy import canale_scan as CS
+
+        cache = CS.CacheScan()
+        client = CS.ClientScan(CS.porta_scan(), cache)
+        client.avvia()
+        _CANALE_SCAN["cache"] = cache
+        _CANALE_SCAN["client"] = client
+        _CANALE_SCAN["avviato"] = True
+        logger.info("[safe.bot] F4 accesa: righe di scan dal canale locale %d "
+                    "(il database resta il registro e il ripiego)", client.porta)
+        return True
+    except Exception as ex:  # noqa: BLE001 - senza canale si lavora come oggi
+        logger.warning("[safe.bot] client del canale scan NON avviato: %s", str(ex)[:160])
+        return False
+
+
+def installa_sveglia_canale() -> bool:
+    """Il canale 47335 accetta la SOLA sveglia. Non solleva MAI.
+
+    Il canale resta ``solo_lettura=True``: nessun comando, nessun parametro
+    d'ordine. La richiesta vera si continua a leggere dal database.
+    """
+    from Betfair.safe_strategy import canale_scan as CS
+
+    if not CS.acceso(CS.ENV_SVEGLIA):
+        return False
+    try:
+        from Betfair.stream import local_channel as _lc
+
+        ok = CS.installa_sveglia(_lc.get_channel(), _SVEGLIA, _CONTI_SVEGLIA)
+    except Exception as ex:  # noqa: BLE001 - senza sveglia si lavora come oggi
+        logger.warning("[safe.bot] sveglia dal canale NON installata: %s", str(ex)[:160])
+        return False
+    _CONTI_SVEGLIA["installata"] = bool(ok)
+    if ok:
+        logger.info("[safe.bot] sveglia dal canale ATTIVA: un'approvazione "
+                    "sveglia il ciclo invece di aspettare il giro dopo")
+    return ok
+
+
+def azzera_canale_scan() -> None:
+    """Spegne e dimentica il client. Per i test e per il riavvio."""
+    client = _CANALE_SCAN.get("client")
+    if client is not None:
+        try:
+            client.ferma()
+        except Exception:  # noqa: BLE001
+            pass
+    _CANALE_SCAN.update({"client": None, "cache": None, "righe_db": [],
+                         "ultima_db_mono": 0.0, "fonte": "db",
+                         "dal_canale": 0, "avviato": False})
+    _CONTI_SVEGLIA.update({"sveglie": 0, "rifiutate": 0, "installata": False})
+    _SVEGLIA.clear()
+    _ULTIMO_GIRO["mono"] = 0.0
+
+
+def _leggi_righe_scan(db: Any, now_ts: float) -> tuple[list[dict[str, Any]], str]:
+    """Le righe di scan del ciclo, e da dove sono arrivate (``canale``/``db``).
+
+    Con l'interruttore SPENTO (o senza client) e' la lettura di oggi, identica:
+    una ``fetch_scan_rows`` per ciclo.
+
+    Con l'interruttore acceso e il canale SANO (almeno una riga fresca secondo
+    ``exits.FEED_FRESH_S``, la stessa soglia di ``_row_is_fresh``):
+      · il feed intero si rilegge ogni ``_RISINC_DB_S`` secondi — e' il
+        riallineamento, ed e' anche cio' che dice QUALI partite esistono;
+      · fra un riallineamento e l'altro si riusa l'ultima lista letta, con le
+        righe del canale al posto di quelle piu' vecchie.
+    Se il canale non ha righe fresche si rilegge il database come oggi: il
+    ripiego non e' un'alternativa, e' sempre attivo.
+    """
+    cache = _CANALE_SCAN.get("cache")
+    acceso = bool(_CANALE_SCAN.get("avviato")) and cache is not None \
+        and _canale_scan_acceso()
+    fresche: dict[str, Any] = {}
+    if acceso:
+        try:
+            fresche = cache.righe_recenti(XE.FEED_FRESH_S, ora=now_ts)
+        except Exception as ex:  # noqa: BLE001 - il canale non ferma mai il bot
+            logger.debug("[safe.bot] righe dal canale KO: %s", str(ex)[:120])
+            fresche = {}
+    mono = time.monotonic()
+    scaduto = (mono - float(_CANALE_SCAN.get("ultima_db_mono") or 0.0)) >= _RISINC_DB_S
+    rileggi = (not acceso) or (not fresche) or scaduto or not _CANALE_SCAN.get("righe_db")
+    if rileggi:
+        try:
+            righe_db = list(db.fetch_scan_rows() or [])
+        except Exception as ex:  # noqa: BLE001
+            _log(db, "error", {"reason": "feed_failed", "err": str(ex)[:160]})
+            righe_db = []
+        _CANALE_SCAN["righe_db"] = righe_db
+        _CANALE_SCAN["ultima_db_mono"] = mono
+    else:
+        righe_db = list(_CANALE_SCAN.get("righe_db") or [])
+    if not acceso:
+        _CANALE_SCAN["fonte"] = "db"
+        _CANALE_SCAN["dal_canale"] = 0
+        return righe_db, "db"
+    from Betfair.safe_strategy import canale_scan as CS
+
+    righe, dal_canale = CS.fondi(righe_db, fresche)
+    fonte = "canale" if dal_canale else "db"
+    _CANALE_SCAN["fonte"] = fonte
+    _CANALE_SCAN["dal_canale"] = dal_canale
+    return righe, fonte
 
 
 def strategy_modes_a_paper(params_grezzi: Any) -> tuple[Optional[dict[str, Any]], list[str]]:
@@ -6879,11 +7337,14 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     # feed unico: UNA sola lettura per ciclo, condivisa da TUTTE le fasi —
     # letta per PRIMA perché anche il settlement la usa per decidere se vale la
     # pena chiamare Betfair (H-19).
-    try:
-        rows = list(db.fetch_scan_rows() or [])
-    except Exception as ex:  # noqa: BLE001
-        _log(db, "error", {"reason": "feed_failed", "err": str(ex)[:160]})
-        rows = []
+    #
+    # F4 (18/09): e' il PUNTO UNICO in cui il ciclo prende le righe di scan, ed
+    # e' l'unico che cambia. Con l'interruttore ``SAFE_BOT_LEGGE_CANALE`` spento
+    # ``_leggi_righe_scan`` fa esattamente questa ``fetch_scan_rows`` e niente
+    # altro; acceso, mette le righe del canale al posto di quelle piu' vecchie e
+    # rilegge il database come riallineamento. Le righe che escono di qui sono
+    # indistinguibili: stesse chiavi, stessi tipi, stesse guardie a valle.
+    rows, fonte_scan = _leggi_righe_scan(db, now.timestamp())
     # CERT. 14/09 — t2 DELLA CATENA DEI TEMPI: l'istante in cui il bot ha in
     # mano la riga. Fra t1 (il feed l'ha scritta) e t2 c'e' il ritardo del
     # database piu' la cadenza del ciclo, che e' un pezzo di latenza invisibile
@@ -7069,6 +7530,11 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         # vitalità con la cadenza VERA del servizio, non con una costante
         # scritta nel frontend (che sarebbe una seconda verità).
         "cadenza_battito_s": _cadenza_battito(params),
+        # F4 (18/09) — DA DOVE sono arrivate le righe di scan di QUESTO giro:
+        # ``canale`` se almeno una riga del canale locale era piu' recente di
+        # quella del database, ``db`` altrimenti. Sta dentro ``stats``, che si
+        # scrive gia' una volta per ciclo: zero scritture in piu'.
+        "fonte_scan": fonte_scan,
         # FERMARE toglie le APERTURE, non le uscite: coperture, cash out e
         # regolamento continuano. Il pulsante deve dirlo, o promette una cosa
         # che non fa.
@@ -7273,7 +7739,22 @@ _SBIRCIATA_S = 0.25
 _SVEGLIA_FATTA: dict[str, int] = {"req_id": 0}
 
 
-def _attesa_interrompibile(interval: float, aperte: int) -> bool:
+def _minimo_fra_due_giri() -> None:
+    """Fa passare almeno ``_MIN_GIRO_S`` dall'inizio del giro precedente.
+
+    La sveglia ANTICIPA un giro, non ne moltiplica il numero: senza questo
+    pavimento una raffica di sveglie (una UI che riprova, un client che
+    ripubblica) diventerebbe un ciclo completo ogni pochi millisecondi contro il
+    database. E' la forma esatta del guasto del 13/09 (budget IO esaurito), e va
+    resa impossibile, non improbabile.
+    """
+    passato = time.monotonic() - float(_ULTIMO_GIRO.get("mono") or 0.0)
+    if 0.0 <= passato < _MIN_GIRO_S:
+        time.sleep(_MIN_GIRO_S - passato)
+
+
+def _attesa_interrompibile(interval: float, aperte: int,
+                           evento: Optional[threading.Event] = None) -> bool:
     """Dorme fino a ``interval``, ma si sveglia appena arriva una richiesta.
 
     Il ciclo a 2 secondi e' giusto per il lavoro di fondo e va lasciato com'e':
@@ -7285,8 +7766,29 @@ def _attesa_interrompibile(interval: float, aperte: int) -> bool:
     piu' piccola possibile (una riga, un indice) e si rientra subito nel ciclo.
     Senza posizioni aperte non c'e' niente da chiudere, quindi si dorme e basta:
     zero letture in piu'. Ritorna True se si e' usciti in anticipo.
+
+    F4 (18/09) — ``evento`` e' la SVEGLIA del canale (``SAFE_BOT_SVEGLIA_CANALE``,
+    spento di default). Con la sveglia si dorme sull'evento invece che
+    sull'orologio: la sbirciata resta ESATTAMENTE quella di oggi (stessa
+    cadenza, stessa query, stesso ripiego), e la sveglia si limita ad
+    accorciare l'attesa. Le letture al minuto non crescono di una: con
+    posizioni aperte si sbircia come oggi, senza posizioni aperte non si
+    sbircia ne' oggi ne' domani — ed e' proprio li' che la sveglia vale, perche'
+    oggi un'approvazione a banco vuoto aspetta l'intero ``poll_interval_s``.
     """
+    if evento is not None and evento.is_set():
+        # una sveglia arrivata mentre girava il ciclo: la si onora subito, ma
+        # non prima del minimo fra due giri.
+        evento.clear()
+        _minimo_fra_due_giri()
+        return True
     if aperte <= 0 or interval <= _SBIRCIATA_S:
+        if evento is not None:
+            if evento.wait(timeout=max(interval, 0.0)):
+                evento.clear()
+                _minimo_fra_due_giri()
+                return True
+            return False
         time.sleep(max(interval, 0.0))
         return False
     scaduta = time.monotonic() + interval
@@ -7294,7 +7796,13 @@ def _attesa_interrompibile(interval: float, aperte: int) -> bool:
         restante = scaduta - time.monotonic()
         if restante <= 0:
             return False
-        time.sleep(min(_SBIRCIATA_S, restante))
+        if evento is not None:
+            if evento.wait(timeout=min(_SBIRCIATA_S, restante)):
+                evento.clear()
+                _minimo_fra_due_giri()
+                return True
+        else:
+            time.sleep(min(_SBIRCIATA_S, restante))
         try:
             righe = _real_db.pending_requests(limit=1) or []
         except Exception as ex:  # noqa: BLE001 — sbirciare non deve mai fermare il bot
@@ -7331,6 +7839,12 @@ def main() -> None:
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
     _avvia_canale()
+    # F4 (18/09), entrambi dietro il proprio interruttore SPENTO di default:
+    # il client che legge le righe dello scanner dal canale 47336, e la sveglia
+    # che la UI puo' mandare sul canale del bot 47335 (sola sveglia, nessun
+    # comando: la richiesta vera resta la riga sul database).
+    avvia_client_scan()
+    installa_sveglia_canale()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, il bot Safe
     # si ferma (e le 4 strategie tornano tutte in prova). Da qui in poi la
     # guardia e' attiva: finche' il controllo non riesce, ``run_once`` non apre
@@ -7344,6 +7858,7 @@ def main() -> None:
     try:
         while True:
             interval = 2.0
+            _ULTIMO_GIRO["mono"] = time.monotonic()
             try:
                 # controllo d'avvio non concluso (DB muto): si riprova a ogni
                 # giro, e fino ad allora nessuna apertura.
@@ -7399,7 +7914,9 @@ def main() -> None:
                 _pulisci_errore_di_ciclo()
             # l'attesa si interrompe appena il trader clicca: il ciclo dopo
             # parte dalla corsia preferenziale delle chiusure.
-            if _attesa_interrompibile(max(interval, 1.0), _APERTE.get("n", 0)):
+            sveglia = _SVEGLIA if _CONTI_SVEGLIA.get("installata") else None
+            if _attesa_interrompibile(max(interval, 1.0), _APERTE.get("n", 0),
+                                      evento=sveglia):
                 logger.info("[safe.bot] richiesta in coda: ciclo anticipato")
     finally:
         try:

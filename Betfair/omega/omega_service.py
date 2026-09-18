@@ -26,6 +26,7 @@ from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
+from Betfair.stream import sveglia_canale as _SV
 from Betfair.stream.scores import scan_feed as _scan_feed
 from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
 
@@ -268,6 +269,13 @@ def svuota_le_cache() -> None:
         pass
     # V3: le tarature lette da file (parametri del modello, tabella di k)
     _CACHE_V3_TARATURE.clear()
+    # 18/09 (F5): anche i contatori e l'istante dell'ultimo giro della sveglia
+    # sono stato di PROCESSO (difetto 37 del catalogo): il banco deve ripartire
+    # pulito, o il pavimento di uno scenario morderebbe in quello dopo.
+    try:
+        _SVEGLIA.azzera()
+    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+        pass
 
 
 def _fase_dovuta(nome: str, ora: float, ogni: float) -> bool:
@@ -6529,6 +6537,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         # vitalità con la cadenza VERA, non con una costante scritta nel
         # frontend (che sarebbe una seconda verità).
         "cadenza_battito_s": _cadenza_battito(params),
+        # F5: com'e' andata la sveglia del ciclo (``None`` a interruttore
+        # spento). Un pavimento che trattiene troppe sveglie lo si LEGGE.
+        "sveglia": statistiche_sveglia(),
         # FERMARE toglie le APERTURE, non le uscite: settlement, green-up,
         # chiusure manuali e missioni continuano anche a bot fermo (vedi il
         # ramo `status != "running"` di `run_once`). Il pulsante deve dirlo.
@@ -6634,6 +6645,119 @@ def _avvia_canale() -> None:
         logger.warning("[omega] canale locale KO: %s", str(ex)[:160])
 
 
+# ===========================================================================
+# LA SVEGLIA DEL CICLO (18/09/2026, fasi F5 e F6) - interruttore SPENTO di serie
+# ===========================================================================
+# Il ciclo di Omega NON si accorcia: si SVEGLIA. Con
+# ``OMEGA_SVEGLIA_CANALE=1`` la dormita del loop principale diventa
+# ``_SVEGLIA.attendi(pausa, pavimento)``, che torna appena qualcosa e' cambiato
+# su un evento che Omega sta seguendo - ma mai prima del PAVIMENTO, che e' la
+# cadenza attiva di oggi (``poll_interval_s``, minimo 5 di configurazione).
+# Quindi i giri al minuto, e con loro le letture, restano al massimo quelli del
+# caso peggiore di oggi; il guadagno e' tutto sul lato lento (a vuoto Omega
+# dorme ``idle_cycle_s``, 60 s di serie: li' la sveglia arriva subito).
+# Senza interruttore la dormita resta ``time.sleep(pausa)``, identica.
+_SVEGLIA = _SV.Sveglia("omega")
+_ASCOLTO_SCAN: Optional[_SV.AscoltoScan] = None
+
+
+def _evento_seguito(event_id: str) -> bool:
+    """Omega sta seguendo questo evento? Si risponde SOLO con la memoria.
+
+    ``_CACHE_FEED_CHIESTO_A`` tiene gli eventi per cui questo processo ha
+    chiesto il feed di recente: sono le partite con una posizione aperta da
+    sorvegliare (settlement, uscite, risultati) e le candidate che il ciclo sta
+    valutando. Nessuna select per decidere se svegliarsi: una sveglia che costa
+    una lettura sarebbe il contrario di quello che questa fase deve ottenere.
+    """
+    return str(event_id) in _CACHE_FEED_CHIESTO_A
+
+
+def _pavimento_sveglia(params: Any) -> float:
+    """Il pavimento della sveglia = la CADENZA ATTIVA DI OGGI.
+
+    E' il numero che rende dimostrabile «le letture al minuto non crescono»:
+    per quante sveglie arrivino, fra l'inizio di un giro e l'inizio del
+    successivo passano almeno ``poll_interval_s`` secondi, cioe' esattamente il
+    passo al quale Omega gia' gira quando c'e' movimento. Non e' una costante
+    inventata: e' il parametro dell'utente, e se lui lo abbassa scende con lui.
+    """
+    p = params if isinstance(params, dict) else {}
+    try:
+        passo = float(p.get("poll_interval_s") or 0.0)
+    except (TypeError, ValueError):
+        passo = 0.0
+    if passo <= 0.0:
+        passo = 20.0          # il default dichiarato in omega_config
+    # 5 s e' il minimo di configurazione di ``poll_interval_s``: sotto quel
+    # numero Omega non gira oggi, e non deve girare nemmeno svegliato.
+    return max(5.0, passo)
+
+
+def _su_sveglia_dal_canale(params: Any) -> bool:
+    """F6: il SOLO messaggio che il canale 47334 puo' ricevere.
+
+    Alza la sveglia e NIENT'ALTRO. Nessun parametro d'ordine viaggia sul
+    canale: il comando vero resta la riga sul database, che ``process_manual``
+    legge con le funzioni, le guardie e l'idempotenza di oggi. Campi extra nel
+    messaggio: ignorati.
+    """
+    motivo = _SV.messaggio_di_sveglia(params)
+    if motivo is None:
+        return False
+    _SVEGLIA.alza(motivo, minimo_s=_SV.MINIMO_UI_S)
+    return True
+
+
+def _avvia_sveglia() -> None:
+    """Accende l'ascolto del canale dello scanner e la sveglia da UI.
+
+    Non solleva MAI e, a interruttore spento, non apre nessun thread e nessuna
+    porta: e' il ramo in cui Omega esegue esattamente le istruzioni di oggi.
+    """
+    global _ASCOLTO_SCAN
+    if not _SV.acceso(_SV.ENV_OMEGA_SVEGLIA):
+        return
+    try:
+        ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
+                                  topic=(_SV.TOPIC_SCAN_CALCIO,), nome="omega")
+        if ascolto.avvia():
+            _ASCOLTO_SCAN = ascolto
+            logger.info("[omega] sveglia dal canale ATTIVA (%s): il ciclo riparte "
+                        "quando si muove una partita che Omega segue.", ascolto.url)
+    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+        logger.warning("[omega] sveglia dal canale KO: %s", str(ex)[:160])
+    try:
+        ch = _lc.get_channel()
+        registra = getattr(ch, "set_sveglia", None) if ch is not None else None
+        if callable(registra):
+            registra(_su_sveglia_dal_canale)
+        else:
+            logger.info("[omega] il canale locale non espone 'set_sveglia': la "
+                        "sveglia dalla UI non e' collegata (resta la coda sul "
+                        "database, come oggi).")
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] aggancio della sveglia da UI KO: %s", str(ex)[:160])
+
+
+def statistiche_sveglia() -> Optional[dict[str, Any]]:
+    """I contatori della sveglia per lo stato che Omega gia' scrive, o ``None``
+    a interruttore spento (nessuna chiave nuova inventata quando la fase e'
+    ferma)."""
+    if _ASCOLTO_SCAN is None:
+        return None
+    return {**_SVEGLIA.statistiche(), "canale": _ASCOLTO_SCAN.statistiche()}
+
+
+def _dormi_o_sveglia(pausa: float, params: Any) -> None:
+    """La dormita del ciclo. A interruttore SPENTO e' ``time.sleep(pausa)``,
+    la stessa identica istruzione di oggi."""
+    if _ASCOLTO_SCAN is None:
+        time.sleep(pausa)
+        return
+    _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
+
+
 def _pubblica_stato(stats: dict, now_iso: str) -> None:
     """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
 
@@ -6657,6 +6781,9 @@ def main() -> None:
         return
     logger.info("[omega] servizio avviato")
     _avvia_canale()
+    # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
+    # nessun thread e la dormita resta quella di oggi.
+    _avvia_sveglia()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Omega si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).
@@ -6701,7 +6828,11 @@ def main() -> None:
                     _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
                 except Exception:  # noqa: BLE001
                     pass
-            time.sleep(max(interval, 5))
+            # F5: stessa dormita di oggi, ma svegliabile quando l'interruttore
+            # e' acceso. ``params`` e' quello del giro appena concluso: da li'
+            # esce il PAVIMENTO (``poll_interval_s``), cioe' la garanzia che i
+            # giri al minuto non superino quelli di oggi.
+            _dormi_o_sveglia(max(interval, 5), _ULTIMI_PARAMS)
     finally:
         try:
             lock.close()  # rilascia esplicitamente il lock socket 47313

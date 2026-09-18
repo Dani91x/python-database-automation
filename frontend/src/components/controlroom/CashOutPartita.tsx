@@ -29,6 +29,7 @@ import {
     comeLabel, motivoCashoutSpento, motivoRiprendiSpento,
     type StatoChiusuraEvento,
 } from '@/lib/chiusuraUtente';
+import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 
 export interface CashOutPartitaProps {
     eventId: string;
@@ -41,10 +42,18 @@ export interface CashOutPartitaProps {
     onRiprendi: (eventId: string) => Promise<void>;
     /** riga compatta dentro la scheda partita della Control Room */
     compatto?: boolean;
+    /**
+     * LA STRISCIA DI ESITO (18/09, additiva): dopo il cash out globale, segue
+     * la gamba più recente che lo sta eseguendo fino alla verità. OPZIONALE:
+     * senza questa prop il componente resta ESATTAMENTE com'era. Il chiamante
+     * la passa già calcolata da `certezzaChiusura()` sulle righe che ha GIA'
+     * in memoria/realtime — nessuna lettura nuova qui dentro.
+     */
+    esito?: StrisciaEsitoChiusuraProps;
 }
 
 export function CashOutPartita({
-    eventId, modalita, posizioniVive, stato, onCashOut, onRiprendi, compatto = false,
+    eventId, modalita, posizioniVive, stato, onCashOut, onRiprendi, compatto = false, esito,
 }: CashOutPartitaProps) {
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
@@ -158,6 +167,12 @@ export function CashOutPartita({
                 <span className="text-[10px] text-red-300 w-full" data-testid="cr-cashout-partita-errore">
                     ⛔ il servizio ha rifiutato: {errore}
                 </span>
+            )}
+
+            {esito && (
+                <div className="w-full">
+                    <StrisciaEsitoChiusura {...esito} testId={esito.testId ?? 'cr-cashout-partita-esito'} />
+                </div>
             )}
         </div>
     );

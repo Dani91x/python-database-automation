@@ -9,9 +9,9 @@ import { describe, it, expect } from 'vitest';
 import {
     freschezza, freschezzaBattito, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
     haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
-    marca, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili, realizzatoGiornata,
+    marca, marcaTennis, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili, realizzatoGiornata,
     SENZA_CAMPIONATO, TARGET_MIN_EUR,
-    type PartitaFeedLike,
+    type PartitaFeedLike, type RigaTennisPerSoldi,
 } from './controlRoom';
 import type { PnlTradeLike } from './eventGroups';
 
@@ -284,6 +284,105 @@ describe('soldiPerPartita — tre bot, una riga per partita', () => {
     });
 });
 
+// ------------------------------------------------------- marcaTennis (18/09)
+
+function ordineTennis(over: Partial<RigaTennisPerSoldi> & { id: number; event_id: string }): RigaTennisPerSoldi {
+    return {
+        side: 'back', mode: 'paper', price: 2, size: 10, status: 'EXECUTION_COMPLETE',
+        placed_at: '2026-09-18T14:00:00Z', settled_at: null, pnl: null, commission: null,
+        size_matched: 10, size_remaining: 0, ...over,
+    };
+}
+
+describe('marcaTennis — le righe ordine tennis parlano la stessa lingua di Omega/Safe/Mike', () => {
+    it('una riga REGOLATA vinta entra con esito won e netto = pnl - commission', () => {
+        const righe = marcaTennis([
+            ordineTennis({ id: 1, event_id: 'T1', settled_at: '2026-09-18T15:00:00Z', pnl: 9.5, commission: 0.5 }),
+        ], 'tennis_scalper');
+        expect(righe).toHaveLength(1);
+        expect(righe[0]).toMatchObject({ status: 'won', pnl: 9, __bot: 'tennis_scalper', event_id: 'T1' });
+    });
+
+    it('una riga REGOLATA senza pnl calcolabile NON ENTRA (non si inventa un esito)', () => {
+        const righe = marcaTennis([
+            ordineTennis({ id: 1, event_id: 'T1', settled_at: '2026-09-18T15:00:00Z', pnl: null }),
+        ], 'tennis_pro');
+        expect(righe).toHaveLength(0);
+    });
+
+    it('un ordine mai abbinato e mai regolato (cancellato) non è una posizione: non entra', () => {
+        const righe = marcaTennis([
+            ordineTennis({ id: 1, event_id: 'T1', status: 'EXPIRED', size_matched: 0, size_remaining: 0, settled_at: null }),
+        ], 'tennis_flb');
+        expect(righe).toHaveLength(0);
+    });
+
+    it('un ordine ABBINATO e non ancora regolato resta APERTO con la liability aritmetica pura', () => {
+        const back = marcaTennis([
+            ordineTennis({ id: 1, event_id: 'T1', side: 'back', price: 2, size: 10 }),
+        ], 'tennis_scalper');
+        expect(back[0]).toMatchObject({ status: 'open', pnl: null, liability: 10 }); // BACK = stake
+
+        const lay = marcaTennis([
+            ordineTennis({ id: 2, event_id: 'T1', side: 'lay', price: 3, size: 10 }),
+        ], 'tennis_scalper');
+        expect(lay[0]).toMatchObject({ status: 'open', liability: 20 }); // LAY = (quota-1)*stake = 2*10
+    });
+
+    it('una riga senza event_id non è assegnabile a nessuna scheda: non entra', () => {
+        const righe = marcaTennis([
+            ordineTennis({ id: 1, event_id: null as unknown as string }),
+        ], 'tennis_swing');
+        expect(righe).toHaveLength(0);
+    });
+});
+
+describe('ORDINE_BOT esteso — i 4 bot tennis nella scheda della partita (A2 §4.3)', () => {
+    it('soldiPerPartita separa MAI live e paper anche per i bot tennis, sulla STESSA partita', () => {
+        const righe = [
+            ...marcaTennis([
+                ordineTennis({ id: 1, event_id: 'T1', mode: 'live', settled_at: '2026-09-18T15:00:00Z', pnl: 10, commission: 0 }),
+            ], 'tennis_scalper'),
+            ...marcaTennis([
+                ordineTennis({ id: 2, event_id: 'T1', mode: 'paper', settled_at: '2026-09-18T15:00:00Z', pnl: 999, commission: 0 }),
+            ], 'tennis_scalper'),
+        ];
+        const m = soldiPerPartita(righe);
+        expect(m.get('T1')?.live.netPnl).toBe(10);
+        expect(m.get('T1')?.paper.netPnl).toBe(999);
+        // MAI sommati in un unico numero
+        expect(m.get('T1')?.live.netPnl).not.toBe(1009);
+    });
+
+    it('un bot tennis compare in "bots" nell\'ordine fisso, dopo i tre del calcio', () => {
+        const righe = [
+            ...marca([tradeLive({ id: 1, event_id: 'T1', status: 'won', pnl: 1 })], 'omega'),
+            ...marcaTennis([
+                ordineTennis({ id: 2, event_id: 'T1', mode: 'live', settled_at: '2026-09-18T15:00:00Z', pnl: 1, commission: 0 }),
+            ], 'tennis_swing'),
+            ...marcaTennis([
+                ordineTennis({ id: 3, event_id: 'T1', mode: 'live', settled_at: '2026-09-18T15:00:00Z', pnl: 1, commission: 0 }),
+            ], 'tennis_scalper'),
+        ];
+        const m = soldiPerPartita(righe);
+        // ordine fisso di ORDINE_BOT: omega, safe, mike, poi scalper/pro/flb/swing —
+        // MAI l'ordine di inserimento delle righe.
+        expect(m.get('T1')?.bots).toEqual(['omega', 'tennis_scalper', 'tennis_swing']);
+    });
+
+    it('calcio e tennis sulla stessa scheda non si mischiano nei soldi: due bot, due contributi separati', () => {
+        const righe = [
+            ...marca([tradeLive({ id: 1, event_id: 'X1', status: 'won', pnl: 4 })], 'safe'),
+            ...marcaTennis([
+                ordineTennis({ id: 2, event_id: 'X1', mode: 'live', settled_at: '2026-09-18T15:00:00Z', pnl: 6, commission: 0 }),
+            ], 'tennis_pro'),
+        ];
+        const m = soldiPerPartita(righe);
+        expect(m.get('X1')?.live.netPnl).toBe(10); // 4 (safe) + 6 (tennis_pro), nessuna doppia verita'
+        expect(m.get('X1')?.bots).toEqual(['safe', 'tennis_pro']);
+    });
+});
+
 // ---------------------------------------------------------------- giornata
 
 describe('costruisciGiornata — campionati e orologio', () => {
@@ -334,6 +433,48 @@ describe('costruisciGiornata — campionati e orologio', () => {
         const senzaOrario = g[0].partite[2];
         expect(senzaOrario.etaFeedS).toBeNull();
         expect(senzaOrario.freschezza).toBe('ignota');
+    });
+});
+
+// -------------------------------------------- REPERTO 3 (secondo giro, 18/09)
+// stato mercato / volume / giocatori: gia' nel payload, nessuna lettura nuova.
+describe('costruisciGiornata — mo_status/mo_total_matched/p1-p2 (REPERTO 3)', () => {
+    it('espone mo_status/mo_total_matched grezzi su PartitaGiornata (nessuna traduzione qui)', () => {
+        const righe = [{
+            event_id: 'E1',
+            payload: feed({ event_name: 'Milan – Inter', mo_status: 'SUSPENDED', mo_total_matched: 4321.5 } as never),
+            updated_at: '2026-09-14T14:59:59Z',
+        }];
+        const g = costruisciGiornata({ righe, soldi: new Map(), nowMs: T0 });
+        expect(g[0].partite[0].statoMercato).toBe('SUSPENDED');
+        expect(g[0].partite[0].volumeMercato).toBe(4321.5);
+    });
+
+    it('mo_status/mo_total_matched assenti (riga vecchia): null, non inventati', () => {
+        const righe = [{ event_id: 'E1', payload: feed({ event_name: 'Milan – Inter' }), updated_at: '2026-09-14T14:59:59Z' }];
+        const g = costruisciGiornata({ righe, soldi: new Map(), nowMs: T0 });
+        expect(g[0].partite[0].statoMercato).toBeNull();
+        expect(g[0].partite[0].volumeMercato).toBeNull();
+    });
+
+    it('i nomi p1/p2 del feed tennis passano in "giocatori"', () => {
+        const righe = [{
+            event_id: 'T1',
+            payload: { event_name: 'Federer R. v Nadal R.', p1: 'Federer R.', p2: 'Nadal R.', inplay: true } as never,
+            updated_at: '2026-09-14T14:59:59Z',
+        }];
+        const g = costruisciGiornata({ righe, soldi: new Map(), nowMs: T0 });
+        expect(g[0].partite[0].giocatori).toEqual({ p1: 'Federer R.', p2: 'Nadal R.' });
+    });
+
+    it('un volume NON numerico (guasto/tipo inatteso) resta null, mai un crash o uno zero', () => {
+        const righe = [{
+            event_id: 'E1',
+            payload: feed({ event_name: 'Milan – Inter', mo_total_matched: 'n/d' } as never),
+            updated_at: '2026-09-14T14:59:59Z',
+        }];
+        const g = costruisciGiornata({ righe, soldi: new Map(), nowMs: T0 });
+        expect(g[0].partite[0].volumeMercato).toBeNull();
     });
 });
 

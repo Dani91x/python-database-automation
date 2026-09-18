@@ -25,9 +25,12 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .. import avvio_app as AA
+from .. import canale_bot as _cb
+from .. import local_channel as _lc
+from .. import sveglia_canale as _SV
 from ..single_instance import acquire_single_instance_lock
 from . import tennis_db
 
@@ -186,6 +189,121 @@ _BOT_KEYS = ("tennis_scalper", "tennis_pro", "tennis_flb", "tennis_swing")
 CADENZA_BATTITO_S = ENSURE_POLL_SEC
 
 
+# ===========================================================================
+# IL CANALE LOCALE DEI QUATTRO BOT TENNIS (18/09/2026, fase F3)
+# ===========================================================================
+# Porta 47337, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+# (Mike), 47334 (Omega), 47335 (Safe), 47336 (scanner). Era l'asimmetria piu'
+# grossa fra i due sport: i quattro bot tennis non avevano nessun canale e la
+# pagina li vedeva con un poll da 30 secondi.
+#
+# NESSUN PROCESSO NUOVO: il canale vive dentro questo servizio, che l'app
+# desktop avvia gia' (``desktop/main.js:268``, ``--bridge-only``).
+#
+# E vive SOLO nel ramo ``--bridge-only``. In ``run()`` questo modulo ospita il
+# runner tennis, che ha gia' il suo canale 47332: un processo ha un canale solo
+# e ``start_channel`` su una porta diversa RIFIUTA (difetto D1, corretto in F1).
+# Chiederlo li' vorrebbe dire far rifiutare il canale e scrivere un errore per
+# niente.
+#
+# Il canale e' di SOLA LETTURA: mostrare non e' comandare. I comandi sul canale
+# sono la fase F6, non questa.
+def _avvia_canale() -> None:
+    """Accende il canale locale dei bot tennis. Non solleva MAI: senza canale
+    il servizio fa esattamente quello che fa oggi."""
+    if not _cb.acceso(_cb.ENV_TENNIS_BOT):
+        return
+    try:
+        porta = int((os.environ.get(_cb.ENV_PORTA_TENNIS_BOT) or "").strip()
+                    or _cb.PORTA_TENNIS_BOT)
+    except ValueError:
+        porta = _cb.PORTA_TENNIS_BOT
+    try:
+        ch = _lc.start_channel(porta, "tennis-bot", solo_lettura=True)
+        if ch is None:
+            logger.warning("[tennis-bot-svc] canale locale NON attivo su %d (porta "
+                           "occupata?): la pagina continuera' a leggere dal database.",
+                           porta)
+            return
+        # la cadenza la DICHIARA chi batte, non la indovina la pagina
+        # (difetto 33 del catalogo): chi consuma calcola da qui quando dirsi
+        # "muto", invece di cablare una costante propria.
+        ch.set_hello(topic=[_cb.TOPIC["tennis_bot_stato"],
+                            _cb.TOPIC["tennis_bot_posizioni"]],
+                     cadenza_battito_s=CADENZA_BATTITO_S)
+        logger.info("[tennis-bot-svc] canale locale attivo su 127.0.0.1:%d "
+                    "(sola lettura; topic: %s, %s)", porta,
+                    _cb.TOPIC["tennis_bot_stato"], _cb.TOPIC["tennis_bot_posizioni"])
+    except Exception as ex:  # noqa: BLE001 - il canale e' opzionale, sempre
+        logger.warning("[tennis-bot-svc] canale locale KO: %s", str(ex)[:160])
+
+
+# ===========================================================================
+# LA SVEGLIA DEL PONTE (18/09/2026, fasi F5 e F6) - interruttore SPENTO di serie
+# ===========================================================================
+# I QUATTRO BOT decidono dentro flumine, sul book: sono gia' al millisecondo e
+# qui non si tocca niente di loro. Cio' che e' lento e' il PONTE: l'utente arma
+# un bot dalla Control Room, la riga va su ``tennis_bot_control``, e questo
+# ciclo se ne accorge al poll di 15 s. Con ``TENNIS_BOT_SVEGLIA_CANALE=1`` la
+# dormita del ponte diventa svegliabile dal SOLO messaggio di sveglia che arriva
+# sul canale 47337: nessun dato d'ordine sul canale, il comando resta la riga
+# sul database, letta con le stesse funzioni e le stesse guardie di oggi.
+# Il ponte NON ascolta lo scan: le quote non gli servono.
+#
+# Pavimento: 1 s. La sorgente e' UMANA (un clic su «avvia»/«ferma»/«approva»),
+# non una macchina che pubblica quattro volte al secondo; ogni clic costa gia'
+# oggi una scrittura sul database e una lettura del ponte al giro dopo.
+MINIMO_SVEGLIA_S = 1.0
+_SVEGLIA = _SV.Sveglia("tennis-bot")
+_SVEGLIA_ATTIVA = False
+
+
+def _su_sveglia_dal_canale(params: Any) -> bool:
+    """F6: il SOLO messaggio che il canale 47337 puo' ricevere. Alza la sveglia
+    e NIENT'ALTRO. Campi extra (prezzo, taglia, selezione): ignorati."""
+    motivo = _SV.messaggio_di_sveglia(params)
+    if motivo is None:
+        return False
+    _SVEGLIA.alza(motivo, minimo_s=MINIMO_SVEGLIA_S)
+    return True
+
+
+def _avvia_sveglia() -> None:
+    """Aggancia la sveglia al canale del ponte. Non solleva MAI; a interruttore
+    spento non cambia una sola istruzione (``stop.wait`` come oggi)."""
+    global _SVEGLIA_ATTIVA
+    if not _SV.acceso(_SV.ENV_TENNIS_SVEGLIA):
+        return
+    try:
+        ch = _lc.get_channel()
+        registra = getattr(ch, "set_sveglia", None) if ch is not None else None
+        if callable(registra):
+            registra(_su_sveglia_dal_canale)
+            _SVEGLIA_ATTIVA = True
+            logger.info("[tennis-bot-svc] sveglia dal canale ATTIVA: l'armamento "
+                        "di un bot non aspetta piu' il poll di %.0fs.", ENSURE_POLL_SEC)
+        else:
+            logger.info("[tennis-bot-svc] il canale locale non espone 'set_sveglia': "
+                        "la sveglia dalla UI non e' collegata (resta il poll di "
+                        "%.0fs, come oggi).", ENSURE_POLL_SEC)
+    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+        logger.warning("[tennis-bot-svc] aggancio della sveglia KO: %s", str(ex)[:160])
+
+
+def statistiche_sveglia() -> Optional[Dict[str, Any]]:
+    """I contatori della sveglia, o ``None`` a interruttore spento."""
+    return _SVEGLIA.statistiche() if _SVEGLIA_ATTIVA else None
+
+
+def _dormi_o_sveglia(stop: threading.Event) -> None:
+    """La dormita del ponte. A interruttore SPENTO e'
+    ``stop.wait(ENSURE_POLL_SEC)``, la stessa identica istruzione di oggi."""
+    if not _SVEGLIA_ATTIVA:
+        stop.wait(ENSURE_POLL_SEC)
+        return
+    _SVEGLIA.attendi(ENSURE_POLL_SEC, MINIMO_SVEGLIA_S, interrompi=stop)
+
+
 def _modalita_dichiarata(riga: Dict[str, Any]) -> str:
     """`paper` | `live`. MAI ereditata: una modalita' assente o storta vale
     `paper`. Ai soldi veri si arriva solo scrivendolo (regola del 14/09)."""
@@ -232,6 +350,11 @@ def _stats_battito(desiderio: Dict[str, Any], eventi: int,
     # Il pulsante deve dirlo, o promette una cosa che non succede.
     out["stop_ferma_solo_aperture"] = True
     out["motivo_blocco"] = motivo_blocco
+    # F5: i contatori della sveglia compaiono SOLO a interruttore acceso: a
+    # fase ferma lo stato non cambia di una chiave.
+    sveglia = statistiche_sveglia()
+    if sveglia is not None:
+        out["sveglia"] = sveglia
     return out
 
 
@@ -333,7 +456,8 @@ def _ensure_loop(stop: threading.Event) -> None:
             riconcilia_interruttori()
         except Exception as e:  # noqa: BLE001 - il ponte non ferma il servizio
             logger.warning("[tennis-bot-svc] ponte interruttori KO: %s", e)
-        stop.wait(ENSURE_POLL_SEC)
+        # F5: stessa dormita di oggi, svegliabile a interruttore acceso.
+        _dormi_o_sveglia(stop)
 
 
 def run() -> None:
@@ -402,6 +526,10 @@ def _main() -> None:
         # FASE A — anche il ponte lo fa, e per primo: e' lui che rimette sullo
         # stream gli eventi dei bot ancora attivi.
         ferma_bot_al_nuovo_avvio()
+        # F3: il canale 47337 vive QUI e solo qui (vedi ``_avvia_canale``).
+        _avvia_canale()
+        # F5/F6: la sveglia del ponte, agganciata a quello stesso canale.
+        _avvia_sveglia()
         stop = threading.Event()
         try:
             _ensure_loop(stop)

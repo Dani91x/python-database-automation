@@ -549,6 +549,39 @@ def num_or_none(v: Any) -> Optional[float]:
     return float(v) if isinstance(v, (int, float)) else None
 
 
+def publish_time_ms(book: Any) -> Optional[int]:
+    """F0 (18/09) - istante in cui BETFAIR ha pubblicato questo book, in ms.
+
+    E' l'unico istante della catena che non viene dal nostro orologio, ed e' per
+    questo che va tenuto: ``odds_ts_ms`` dice quando NOI abbiamo lavorato il
+    book, non quando il prezzo si e' mosso sul mercato. Fra i due c'e' il
+    conflate (1.000 ms) e la cadenza del tick dello scanner, cioe' il salto che
+    fino a oggi non si poteva misurare perche' mancava il campo.
+
+    ``publish_time_epoch`` (ms interi, dallo stream: ``MarketBookCache.serialise``
+    mette ``publishTime`` e ``MarketBook.__init__`` lo tiene grezzo) ha la
+    precedenza su ``publish_time`` (datetime): e' lo stesso numero senza andata
+    e ritorno per una data. I book che arrivano dal **poll REST** non hanno ne'
+    l'uno ne' l'altro: si torna None - dato assente, mai zero.
+
+    ATTENZIONE: e' l'orologio di BETFAIR. Non si sottrae da uno dei nostri senza
+    passare da ``Betfair.stream.orologio`` (l'orologio di questa macchina e'
+    indietro di ~2,08 s: misura del 17/09).
+
+    ``bool`` non e' un numero: senza la guardia ``isinstance(True, int)`` e' vero
+    in Python e un flag diventerebbe l'istante 1 ms.
+    """
+    if book is None:
+        return None
+    epoch = getattr(book, "publish_time_epoch", None)
+    if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
+        return int(epoch)
+    from Betfair.stream import orologio as _oro
+
+    ms = _oro.ms_da_betfair(getattr(book, "publish_time", None))
+    return int(ms) if ms is not None else None
+
+
 def media_flags(broadcasts: Optional[Dict[str, Any]]) -> Dict[str, Optional[bool]]:
     """Disponibilità media Betfair per l'evento dal blocco `broadcasts` dell'IPS
     scoresAndBroadcast (lo stesso che usa il sito per mostrare/nascondere le

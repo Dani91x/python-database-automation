@@ -154,6 +154,8 @@ describe('CONTROL ROOM — SchedaPartita', () => {
             status: 'pending', side: 'back', price: 2.4, size: 2, meta: null, ...CONSAPEVOLEZZA,
         },
         dettaglio: null,
+        marketId: null, selectionId: null, liability: null, vivo: null, etaQuoteS: null,
+        chiusura: null, chiusureOrdini: [],
     };
 
     it('aprendo il bot, l operazione porta chiesto / abbinato / residuo compatti', async () => {

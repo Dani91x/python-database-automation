@@ -880,13 +880,57 @@ _FILLED = ("open", "won", "lost", "void")
 HEDGE_EPS = 0.01
 
 
+def _num_finito(v: Any) -> Optional[float]:
+    """``float`` finito oppure ``None`` (mai nan/inf, mai bool)."""
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f not in (float("inf"), float("-inf")) else None
+
+
+def chiusura_abbinata(c: dict[str, Any]) -> dict[str, Any]:
+    """La gamba di CHIUSURA vista per cio' che e' stato ABBINATO, non chiesto.
+
+    18/09 (ordine dell'utente) - prima l'hedge sommava ``size``/``price`` CHIESTI:
+    una chiusura da 12 EUR abbinata per 5 copriva «12» e l'apertura passava a
+    'hedged' con 7 EUR di copertura mai avvenuta. Se la riga porta la
+    consapevolezza dell'ordine (``size_matched``, colonne del 16/09) conta
+    QUELLA, col prezzo medio abbinato quando c'e'; dove la colonna e' vuota
+    (righe vecchie, migrazione non applicata) resta il comportamento di sempre.
+    La direzione e' una sola: mai dichiarare coperto cio' che non e' abbinato.
+    """
+    matched = _num_finito(c.get("size_matched"))
+    if matched is None or matched < 0:
+        return c
+    out = dict(c)
+    out["size"] = matched
+    avg = _num_finito(c.get("avg_price_matched"))
+    if avg is not None and avg > 1.0:
+        out["price"] = avg
+    return out
+
+
+def chiusura_con_residuo_vivo(c: dict[str, Any]) -> bool:
+    """Una chiusura 'open' con residuo ancora A MERCATO: puo' abbinarsi da un
+    momento all'altro, quindi BLOCCA nuove chiusure come una 'pending' (una
+    seconda chiusura sopra la prima porterebbe a sovracopertura)."""
+    if str(c.get("status")) != "open":
+        return False
+    rem = _num_finito(c.get("size_remaining"))
+    return rem is not None and rem > HEDGE_EPS
+
+
 def net_exposures(trade: dict[str, Any],
                   closings: Optional[list[dict[str, Any]]]) -> "tuple[float, float]":
-    """Esposizioni NETTE (win, lose) dell'apertura più le chiusure FILLATE."""
+    """Esposizioni NETTE (win, lose) dell'apertura più le chiusure FILLATE
+    (contate per l'ABBINATO: vedi ``chiusura_abbinata``)."""
     win, lose = exposures(trade)
     for c in closings or []:
         if str(c.get("status")) in _FILLED:
-            w, lo = exposures(c)
+            w, lo = exposures(chiusura_abbinata(c))
             win += w
             lose += lo
     return win, lose
@@ -929,7 +973,8 @@ def hedge_state(trade: dict[str, Any],
     hedged = 0.0
     for c in filled:
         if price > 1.0:
-            hedged += float(c.get("size") or 0.0) * float(c.get("price") or 0.0) / price
+            ca = chiusura_abbinata(c)
+            hedged += float(ca.get("size") or 0.0) * float(ca.get("price") or 0.0) / price
     hedged = round(hedged, 2)
     residual = round(max(size - hedged, 0.0), 2)
     win, lose = net_exposures(trade, filled)
@@ -957,7 +1002,7 @@ def hedge_state(trade: dict[str, Any],
         "best_case": round(max(win, lose), 2) if filled else None,
         "filled_ids": [c.get("id") for c in filled],
         "pending_ids": [c.get("id") for c in pending],
-        "blocked": bool(pending),
+        "blocked": bool(pending) or any(chiusura_con_residuo_vivo(c) for c in filled),
         "complete": complete,
     }
 

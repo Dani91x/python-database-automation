@@ -19,33 +19,34 @@
 // LAYOUT: testata con la giornata · partite per campionato in ordine
 // cronologico · nastro dei segnali · posizioni aperte.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Radio, ShieldAlert, Target, Circle, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, Radio, ShieldAlert, Circle, SlidersHorizontal } from 'lucide-react';
 import { PageShell } from '@/components/trading/PageShell';
 import { EmptyState } from '@/components/trading/EmptyState';
-import { DayBar } from '@/components/trading/DayBar';
+import type { DayBarProps } from '@/components/trading/DayBar';
 import { ModeBanner } from '@/components/trading/ModeBanner';
 import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
 import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+import { ObiettivoHero } from '@/components/controlroom/ObiettivoHero';
+import { SaldoBetfairCard } from '@/components/controlroom/SaldoBetfairCard';
+import { UsciteColonna } from '@/components/controlroom/UsciteColonna';
+import { OpportunitaColonna } from '@/components/controlroom/OpportunitaColonna';
 import { pnlClass } from '@/lib/tradeStatus';
 import { dayLabel as etichettaGiorno } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
-    BOT_LABEL, affidabilePerPiazzare,
-    type Bot, type GruppoCampionato, type Freschezza,
+    BOT_LABEL, affidabilePerPiazzare, BOT_TENNIS,
+    type Bot, type GruppoCampionato, type Freschezza, type PartitaGiornata,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import type { StatoChiusuraEvento } from '@/lib/chiusuraUtente';
-import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
-import { SchedaPropostaOpportunita } from '@/components/controlroom/SchedaPropostaOpportunita';
-import { SchedaChiusuraOmega } from '@/components/controlroom/SchedaChiusuraOmega';
 import {
     useControlRoom,
     type StatoBot, type PosizioneAperta, type Modalita,
@@ -64,11 +65,20 @@ import { StoricoLink } from '@/components/trading/StoricoLink';
 import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
 import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
 import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
-import { interruttoriDiSport, importiInterruttori } from '@/lib/interruttori';
-import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
+import {
+    interruttoriDiSport, importiInterruttori, type InterruttoreId,
+} from '@/lib/interruttori';
+import { BotParamsSheet, type StrategiaFiltro } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { mergeBotParams, updateSafeParams } from '@/lib/safeBot';
 import { mergeMikeParams, updateMikeParams } from '@/lib/mike';
+// 18/09 — TASK 4: parametri DEDICATI per bot. `OmegaParamsSheet` riusa
+// `ParamsSheetBase` esattamente come `pages/Omega.tsx` (stesse costanti di
+// `lib/omega.ts`); `TennisBotServiceParamsSheet` costruisce il foglio sui
+// campi che il SERVIZIO legge davvero (`TENNIS_BOT_REGISTRY`, verificato in
+// sola lettura contro `Betfair/stream/tennis_scalper/*_bot.py`).
+import { OmegaParamsSheet } from '@/components/omega/OmegaParamsSheet';
+import { TennisBotServiceParamsSheet } from '@/components/tennis/TennisBotServiceParamsSheet';
 
 // --------------------------------------------------------------- vocabolario
 // Le parole del trader, in italiano, in un posto solo.
@@ -360,6 +370,63 @@ export default function ControlRoom() {
         };
     }, [paramsDi, vm.ricarica]);
 
+    // TASK 4 (18/09) — «ogni bot deve avere i suoi parametri DEDICATI A LUI».
+    // Un foglio per RIGA (non per bot): Omega (gap A1 piu' piccolo, riusa
+    // `ParamsSheetBase` come la sua pagina), le QUATTRO strategie di Safe
+    // (stesso `BotParamsSheet` di sopra, filtrato con `soloStrategia`: stesse
+    // chiavi, stesso salvataggio, SOLO i campi di quella strategia — vedi
+    // `gruppiDellaStrategia`), i quattro bot tennis (nessun foglio esisteva:
+    // costruito sui campi che il SERVIZIO legge davvero, `TENNIS_BOT_REGISTRY`
+    // verificato contro il codice Python dei quattro bot). Stesso cancello
+    // "parametri non letti" di sopra: qui si scrive l'INTERA colonna, aprirlo
+    // prima che il servizio l'abbia dichiarata la sostituirebbe con i default.
+    const fogliParametriPerRiga = useMemo(() => {
+        const safeParams = paramsDi('safe');
+        const omegaParams = paramsDi('omega');
+        const letto = (p: Record<string, unknown> | null) => p != null && Object.keys(p).length > 0;
+        const out: Partial<Record<InterruttoreId, ReactNode>> = {};
+
+        out.omega = letto(omegaParams) ? (
+            <OmegaParamsSheet
+                rawParams={omegaParams}
+                dailyGoal={vm.bots.find((x) => x.bot === 'omega')?.obiettivoGiorno ?? vm.obiettivo}
+                onSaved={() => vm.ricarica()}
+                triggerTestId="cr-omega-params-trigger"
+            />
+        ) : <ParametriNonLetti bot="Omega" />;
+
+        // chiave tipizzata esplicita: un template `safe-${s}` in valore si
+        // allarga a `string`, e `out` vuole le chiavi vere di `InterruttoreId`.
+        const rigaDiStrategia: Record<StrategiaFiltro, InterruttoreId> = {
+            base: 'safe-base', esatto: 'safe-esatto', punta: 'safe-punta', tennis: 'safe-tennis',
+        };
+        (['base', 'esatto', 'punta', 'tennis'] as const).forEach((s: StrategiaFiltro) => {
+            out[rigaDiStrategia[s]] = letto(safeParams) ? (
+                <BotParamsSheet
+                    params={mergeBotParams(safeParams)}
+                    rawParams={safeParams}
+                    soloStrategia={s}
+                    triggerTestId={`cr-safe-${s}-params-trigger`}
+                    onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
+                />
+            ) : <ParametriNonLetti bot="Safe" />;
+        });
+
+        for (const bot of BOT_TENNIS) {
+            const rawParams = paramsDi(bot);
+            out[bot] = letto(rawParams) ? (
+                <TennisBotServiceParamsSheet
+                    botKey={bot}
+                    rawParams={rawParams}
+                    onSaved={() => vm.ricarica()}
+                />
+            ) : <ParametriNonLetti bot={BOT_LABEL[bot]} />;
+        }
+
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paramsDi, vm.bots, vm.obiettivo, vm.ricarica]);
+
     return (
         <PageShell
             title="Control Room"
@@ -380,29 +447,47 @@ export default function ControlRoom() {
                 paperText="Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live."
             />
 
-            {/* LA GIORNATA — la barra vera: obiettivo, contatori, liability.
+            {/* ═══ ZONA 1 — L'OBIETTIVO (hero, una volta sola) + SALDO ═══════
                 ⚠️ REVIEW 15/09 — `live` riceve le POSIZIONI aperte con soldi
                 veri, non le partite in gioco: in tutta la piattaforma quella
                 etichetta significa «posizioni ancora vive, non regolate», e
                 Mike, Omega e Safe passano tutti quel conteggio.
                 role="progressbar". Il realizzato viene dagli AGGREGATI dei tre
                 servizi: prima leggeva solo Omega, e una vincita del tennis non
-                la muoveva di un pixel. */}
-            <DayBar
-                testId="cr-giornata"
-                dayLabel={etichettaGiorno(giornoOperativo)}
-                realized={vm.soldiGiornata.realizzato}
-                goal={vm.obiettivo}
-                matches={vm.totali.partite}
-                operations={vm.soldiGiornata.operazioni}
-                won={vm.soldiGiornata.vinte}
-                lost={vm.soldiGiornata.perse}
-                live={vm.totali.conPosizioneLive}
-                openLiability={vm.totali.letti ? vm.totali.liability : null}
-                note={vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
-                countsNote="Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot. «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato."
-                ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
-            />
+                la muoveva di un pixel.
+                18/09 — l'obiettivo E' modificabile da qui (Task 2): la matita
+                apre `ObiettivoEditor`, che scrive con `vm.salvaObiettivo`
+                (RPC `omega_update_params({ dailyGoal })`, verificato che NON
+                tocca `params`/`mode`). L'AVVISO sul motore non si nasconde:
+                Omega legge `daily_goal` a OGNI ciclo (`omega_service.py`), un
+                bot in corsa vede il nuovo target dal ciclo successivo. */}
+            <div className="grid gap-4 lg:grid-cols-[1.9fr_1fr] items-start">
+                <ObiettivoHero
+                    dayBar={{
+                        dayLabel: etichettaGiorno(giornoOperativo),
+                        realized: vm.soldiGiornata.realizzato,
+                        goal: vm.obiettivo,
+                        matches: vm.totali.partite,
+                        operations: vm.soldiGiornata.operazioni,
+                        won: vm.soldiGiornata.vinte,
+                        lost: vm.soldiGiornata.perse,
+                        live: vm.totali.conPosizioneLive,
+                        openLiability: vm.totali.letti ? vm.totali.liability : null,
+                        note: vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio',
+                        countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
+                        ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
+                    } satisfies DayBarProps}
+                    composizione={vm.composizioneOggi}
+                    manualeSito={vm.manualeSitoBetfair}
+                    onSalvaObiettivo={vm.salvaObiettivo}
+                    avvisoMotore={
+                        vm.bots.find((b) => b.bot === 'omega')?.inCorsa
+                            ? 'Omega è IN CORSA: il nuovo obiettivo cambia da subito il target per partita che il servizio calcola (letto a ogni ciclo).'
+                            : null
+                    }
+                />
+                <SaldoBetfairCard testId="cr-saldo" />
+            </div>
 
             {/* I GIORNI PRECEDENTI HANNO UNA CASA. Tutta questa pagina parla
                 della giornata di oggi (ordine dell'utente, 17/09): lo Storico
@@ -456,7 +541,8 @@ export default function ControlRoom() {
             />
 
             <PannelloBot
-                righe={righeBot} importi={importi} parametri={fogliParametri} comandi={comandi}
+                righe={righeBot} importi={importi} parametri={fogliParametri}
+                parametriRiga={fogliParametriPerRiga} comandi={comandi}
                 titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
                 ambito={sport ?? 'tutti'}
                 serviziAccesi={serviziAccesi}
@@ -508,8 +594,6 @@ export default function ControlRoom() {
                 </Card>
             )}
 
-            <Catena vm={vm} />
-
             {vm.mikeRestingLive === false && (
                 <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-3 flex items-start gap-3" data-testid="cr-mike-resting">
                     <ShieldAlert className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
@@ -529,11 +613,16 @@ export default function ControlRoom() {
                 </Card>
             )}
 
-            {/* IL BANCO — quattro schede, e a destra il nastro delle uscite che
-                NON si nasconde mai: una chiusura matura su soldi veri mentre il
-                trader sta guardando un'altra scheda, e deve vederla lo stesso. */}
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
-                <Tabs value={scheda} onValueChange={setScheda} className="min-w-0">
+            {/* ═══ ZONA 4 — IL BANCO, tre colonne fisse ═══════════════════════
+                Sinistra (larga): le tab. Centro: «Uscite — decidi tu». Destra:
+                «Opportunità di modello». Le due colonne di decisione NON si
+                nascondono mai, qualunque tab sia aperta a sinistra e qualunque
+                sport sia filtrato (ognuna lo dichiara). Su schermi meno larghi
+                si impilano: uscite sopra (più urgenti), poi opportunità. */}
+            <div className="grid gap-4 items-start
+                lg:grid-cols-[minmax(0,1fr)_340px]
+                xl:grid-cols-[minmax(0,1fr)_340px_340px]">
+                <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1]">
                     <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
                         <Scheda valore="live" conta={contaLive} testId="cr-tab-live">Live</Scheda>
@@ -570,8 +659,25 @@ export default function ControlRoom() {
                         />
                     </TabsContent>
 
+                    {/* TASK 5 (18/09) — STESSA GEOMETRIA DI «LIVE»: `SchedaPartita`
+                        per ogni partita con una posizione (live o paper), invece
+                        della card povera `ColonnaPosizioni`. Il comando "Chiudi"
+                        per SINGOLA posizione (che `SchedaPartita` non espone: solo
+                        cash-out AGGREGATO di partita via `safe.onCashOut`) resta
+                        raggiungibile sotto, per le posizioni che non sono su una
+                        partita nota al programma di oggi (fail-open, mai perse). */}
                     <TabsContent value="aperte" className="mt-3">
-                        <ColonnaPosizioni posizioni={posizioni} onChiudi={vm.chiudi} sport={sport} />
+                        <AperteTab
+                            giornata={giornata} posizioni={posizioni} onChiudi={vm.chiudi} sport={sport}
+                            registrazioni={vm.registrazioni} registratori={registratori}
+                            operazioni={vm.operazioni} mikeEventi={vm.mikeEventi}
+                            safe={{
+                                modalita: vm.bots.find((b) => b.bot === 'safe')?.modalita ?? null,
+                                statoChiusura: vm.statoChiusura,
+                                onCashOut: vm.cashOutEvento,
+                                onRiprendi: vm.riprendiEvento,
+                            }}
+                        />
                     </TabsContent>
 
                     <TabsContent value="chiuse" className="mt-3">
@@ -579,8 +685,29 @@ export default function ControlRoom() {
                     </TabsContent>
                 </Tabs>
 
-                <NastroSegnali vm={vm} filtroSport={sport} />
+                {/* le due colonne di decisione: su schermi < xl si impilano in
+                    un'unica colonna di griglia (uscite sopra, poi opportunità);
+                    da xl in su diventano due colonne reali (`xl:contents`). */}
+                <div className="flex flex-col gap-4 xl:contents">
+                    <UsciteColonna vm={vm} filtroSport={sport} />
+                    <OpportunitaColonna vm={vm} filtroSport={sport} />
+                </div>
             </div>
+
+            {/* ═══ ZONA 5 — DIAGNOSTICA, richiudibile, chiusa di default ═════
+                Riassunto a una riga SEMPRE visibile (il `<summary>` nativo non
+                si nasconde mai): il dettaglio salto-per-salto si apre solo se
+                serve. Logica della Catena INVARIATA. */}
+            <details className="glass-card border border-white/10 rounded-xl" data-testid="cr-catena-dettagli">
+                <summary className="cursor-pointer select-none px-3 py-2 text-[11px] uppercase tracking-wider text-white/50 flex items-center gap-2">
+                    <span>Da Betfair al tuo schermo</span>
+                    <span className="font-mono text-[12px] text-white/70">{fmtMs(vm.schermo.schermoMs)}</span>
+                    <span className="text-white/30 normal-case tracking-normal">— dettagli ▸</span>
+                </summary>
+                <div className="px-0 pb-0">
+                    <Catena vm={vm} />
+                </div>
+            </details>
         </PageShell>
     );
 }
@@ -721,32 +848,11 @@ function Tratto({ etichetta, ms }: { etichetta: string; ms: number | null }) {
 // ------------------------------------------------------------------ testata
 
 function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive: boolean }) {
-    const obiettivo = vm.obiettivo;
-    /**
-     * ⚠️ REVIEW 14/09 — QUI C'ERA `vm.realizzato`, e sommava paper e live.
-     *
-     * `vm.realizzato` è `realized_today` di Omega, che nasce da
-     * `omega_aggregates_sql()` SENZA filtro sulla modalità: somma in un numero
-     * solo le righe con soldi veri e quelle simulate. Venti pixel più sotto la
-     * DayBar mostrava `soldiGiornata.realizzato`, che è solo live — due
-     * «realizzato» diversi nella stessa schermata, contro lo stesso obiettivo,
-     * e quello in alto (sempre a schermo, `sticky`) conteneva denaro che non
-     * esiste.
-     *
-     * Adesso testata e DayBar leggono LO STESSO numero, quello certificato:
-     * `realizzatoOggi.live.totale`. Il paper resta visibile nella sua riga, che
-     * dichiara «non entra nell'obiettivo».
-     *
-     * NON si tocca `omega_aggregates_sql`: quel `realized_today` alimenta anche
-     * il target dinamico e le guardie giornaliere del servizio, quindi
-     * filtrarlo lato server cambierebbe la strategia.
-     */
-    const fatto = vm.soldiGiornata.realizzato;
-    const resta = obiettivo != null && fatto != null ? obiettivo - fatto : null;
-    const pct = obiettivo != null && obiettivo > 0 && fatto != null
-        ? Math.max(0, Math.min(100, (fatto / obiettivo) * 100))
-        : 0;
-
+    // ── ZONA 0 (18/09, riordino) — BARRA DI STATO GLOBALE RIDOTTA ────────────
+    // L'obiettivo (numero + barra + storicizzazione) ora vive UNA SOLA VOLTA,
+    // nella Zona 1 (`ObiettivoHero`, testid `cr-obiettivo`): qui restano SOLO
+    // identità, modalità, salute feed, runner, freni, ricarica — grigio se
+    // sano, colore solo per anomalie (checklist A5 §3.3 regole 1 e 5).
     return (
         <header
             className={`sticky top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
@@ -759,25 +865,6 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     </Link>
                     <span className="font-semibold tracking-wide">CONTROL ROOM</span>
                     <span className="text-xs text-white/50">{dayLabel(romeDay(new Date(vm.nowMs)))}</span>
-                </div>
-
-                {/* obiettivo di giornata — lo stesso di Omega, non un secondo numero */}
-                <div className="flex-1 min-w-[230px]" data-testid="cr-obiettivo">
-                    <div className="flex items-baseline gap-2 text-sm">
-                        <Target className="w-3.5 h-3.5 text-secondary" />
-                        <span className="font-mono font-semibold tabular-nums">{fmtMoney(fatto)}</span>
-                        <span className="text-xs text-white/50">
-                            di {fmtMoney(obiettivo)}
-                            {resta != null && resta > 0 && <> · restano <span className="font-mono">{fmtMoney(resta)}</span></>}
-                            {resta != null && resta <= 0 && <> · <span className="text-emerald-400">obiettivo centrato</span></>}
-                        </span>
-                    </div>
-                    <div className="h-1.5 mt-1 rounded-sm bg-white/10 overflow-hidden">
-                        <div className="h-full bg-secondary transition-[width] duration-500" style={{ width: `${pct}%` }} />
-                    </div>
-                    {!vm.obiettivoStoricizzato && obiettivo != null && (
-                        <div className="text-[10px] text-white/40 mt-0.5">obiettivo non ancora storicizzato per oggi: è quello corrente del servizio</div>
-                    )}
                 </div>
 
                 {/* ESPOSIZIONE = SOLDI VERI IMPEGNATI. Prima sommava anche la
@@ -814,6 +901,13 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     <span className="font-mono">{vm.feedSorgente ?? DASH}</span>
                     <span className={FRESCHEZZA_CLS[vm.feedFreschezza]}>
                         {vm.feedEtaS == null ? FRESCHEZZA_TESTO.ignota : fmtAge(vm.feedEtaS)}
+                    </span>
+                    {/* STADIO B2c (18/09, raccordo) — sobrio, mai vistoso: quale
+                        canale sta parlando ADESSO. Oggi i canali locali sono
+                        muti, quindi qui resta sempre "database". */}
+                    <span className="text-white/30" data-testid="cr-fonte-scan"
+                        title="da dove arriva l'aggiornamento dello scanner: canale locale (push, ~0 latenza) o database (poll/realtime)">
+                        · {vm.fonteScan === 'locale' ? 'canale locale' : 'database'}
                     </span>
                 </div>
 
@@ -1091,135 +1185,59 @@ function ElencoPartite({
     );
 }
 
-// ---------------------------------------------------------- nastro dei segnali
+// ------------------------------------------------------------- tab «Aperte»
 
 /**
- * IL NASTRO. Qui arrivano le proposte dei tre bot e da qui si approva o si
- * ignora. Il cancelletto vero — i bot che PROPONGONO invece di piazzare —
- * richiede lo stato `proposed` nelle tre code, che i proprietari dei bot
- * stanno aggiungendo: finché non c'è, la pagina lo DICHIARA invece di
- * mostrare un nastro vuoto che sembrerebbe «nessun segnale».
+ * TASK 5 (18/09) — «Aperte» con la STESSA geometria di «Live»: `SchedaPartita`
+ * per ogni partita del programma di oggi che ha una posizione (live o paper),
+ * conservando ogni comando che offriva `ColonnaPosizioni`. Una posizione su
+ * un evento SCONOSCIUTO al programma (fail-open: non deve MAI sparire) resta
+ * visibile in fondo con la vecchia riga compatta, «Chiudi» compreso — perché
+ * `SchedaPartita`/`AzioniPartita`/`CashOutPartita` offrono solo il cash-out
+ * AGGREGATO di partita (`safe.onCashOut`), non la chiusura di UNA SOLA
+ * posizione (`onChiudi(tradeId)`, che quindi resta qui, non perso).
  */
-function NastroSegnali({ vm, filtroSport }: {
-    vm: ReturnType<typeof useControlRoom>;
-    /** serve SOLO a dirlo a schermo: il nastro non si filtra mai. */
-    filtroSport: SportKey | null;
-}) {
-    const bloccati = vm.bots.filter((b) => b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush));
-    const urgenti = vm.proposte.filter((p) => p.proposta.payload?.urgente === true).length;
-
-    return (
-        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-nastro">
-            <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">Uscite — decidi tu</span>
-                <span className="text-[11px] text-white/40">
-                    {vm.proposte.length + vm.proposteOmega.length} in attesa
-                    {urgenti > 0 && <span className="text-orange-300 font-semibold"> · {urgenti} urgenti</span>}
-                </span>
-            </div>
-
-            {/* IL NASTRO NON SI FILTRA MAI. Un'uscita matura su una posizione
-                con soldi veri: nasconderla perché il trader sta guardando
-                l'altro sport sarebbe il modo piu' veloce di perdere un
-                profitto. Qui si DICHIARA che restano tutte. */}
-            {filtroSport != null && (
-                <div className="px-3 py-1.5 border-b border-white/10 text-[10.5px] text-white/45"
-                    data-testid="cr-nastro-non-filtrato">
-                    Il filtro <span className="text-white/70">{filtroSport}</span> non tocca questo nastro:
-                    le uscite compaiono da entrambi gli sport.
-                </div>
-            )}
-
-            {bloccati.length > 0 && (
-                <div className="px-3 py-2 border-b border-white/10 text-[11px] text-orange-300" data-testid="cr-bot-muti">
-                    {bloccati.map((b) => BOT_LABEL[b.bot]).join(', ')}: nessuna spinta recente.
-                    I numeri di {bloccati.length > 1 ? 'questi bot' : 'questo bot'} potrebbero essere vecchi —
-                    non si piazza su dati di cui non conosciamo l&apos;età.
-                </div>
-            )}
-
-            {/* tolleranza: oltre questo scostamento dal prezzo della proposta
-                l&apos;approvazione si spegne. È una leva del trader, non una
-                costante sepolta. */}
-            <div className="px-3 py-1.5 border-b border-white/10 flex items-center gap-2 text-[11px] text-white/50">
-                <label htmlFor="cr-slippage">scostamento massimo dal prezzo della proposta</label>
-                <input
-                    id="cr-slippage" type="number" step="0.5" min="0.5" max="20"
-                    value={vm.slippagePct}
-                    onChange={(e) => vm.setSlippagePct(Math.max(0.5, Number(e.target.value) || 2))}
-                    className="w-16 px-1.5 py-0.5 rounded border border-white/15 bg-white/5 font-mono text-right text-white/90"
-                />
-                <span>%</span>
-            </div>
-
-            <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2.5">
-                {/* OMEGA — in v3 nessuna chiusura parte da sola: il servizio
-                    PROPONE e decide l'utente (ordine del 16/09). Se la
-                    migrazione non e' applicata la RPC non esiste: si dice
-                    perche' l'elenco e' vuoto, invece di un nastro muto. */}
-                {vm.erroreProposteOmega && (
-                    <div className="rounded border border-orange-500/30 bg-orange-500/10 px-2.5 py-1.5 text-[11px] text-orange-200"
-                        data-testid="cr-proposte-omega-errore">
-                        <strong className="text-orange-300">Proposte di uscita di Omega non leggibili:</strong>{' '}
-                        {vm.erroreProposteOmega}. Finché non si legge, qui non compare nessuna uscita di Omega —
-                        e non vuol dire che non ce ne siano.
-                    </div>
-                )}
-                {vm.proposteOmega.map((pr) => (
-                    <SchedaChiusuraOmega
-                        key={`omega-${pr.id}`}
-                        proposta={pr}
-                        onApprova={vm.approvaOmega}
-                        onIgnora={vm.ignoraOmega}
-                    />
-                ))}
-                {vm.proposte.length === 0 && vm.proposteOmega.length === 0 && (
-                    <EmptyState>
-                        <span className="font-semibold block mb-1">Nessuna uscita da decidere</span>
-                        Il bot apre da solo. Quando matura un&apos;uscita non la esegue: la propone qui, con il prezzo
-                        che si aggiorna da solo, l&apos;importo davvero abbinabile e il confronto fra chiudere e tenere.
-                        Le urgenti stanno in cima.
-                    </EmptyState>
-                )}
-                {vm.proposte.map((pv) => (
-                    <SchedaChiusura
-                        key={pv.proposta.id}
-                        proposta={pv.proposta}
-                        vivo={pv.vivo}
-                        etaQuoteS={pv.etaQuoteS}
-                        etaScannerS={vm.feedEtaS}
-                        bloccabileOra={pv.bloccabileOra}
-                        slippagePct={vm.slippagePct}
-                        onApprova={vm.approva}
-                        onIgnora={vm.ignora}
-                    />
-                ))}
-                {/* 17/09 — LE OPPORTUNITA' DI MODELLO (calcio e tennis) non si
-                    piazzano piu' da sole: arrivano qui, SOTTO le chiusure, una
-                    scheda per proposta, con i due tasti PIAZZA e RIFIUTA. */}
-                {vm.proposteOpportunita.map((po) => (
-                    <SchedaPropostaOpportunita
-                        key={`opp-${po.proposta.id}`}
-                        proposta={po.proposta}
-                        abbinabileOra={po.abbinabileOra}
-                        etaQuoteS={po.etaQuoteS}
-                        onPiazza={vm.piazzaOpportunita}
-                        onRifiuta={vm.rifiutaOpportunita}
-                    />
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-// ------------------------------------------------------- colonna posizioni
-
-function ColonnaPosizioni({ posizioni, onChiudi, sport }: {
+function AperteTab({
+    giornata, posizioni, onChiudi, sport, registrazioni, registratori, operazioni, mikeEventi, safe,
+}: {
+    giornata: GruppoCampionato[];
     posizioni: PosizioneAperta[];
     onChiudi: (tradeId: number) => Promise<void>;
     sport: SportKey | null;
+    registrazioni: Set<string>;
+    registratori: { calcio: boolean | null; tennis: boolean | null };
+    operazioni: ReturnType<typeof useControlRoom>['operazioni'];
+    mikeEventi?: ReturnType<typeof useControlRoom>['mikeEventi'];
+    safe: {
+        modalita: 'paper' | 'live' | null;
+        statoChiusura: (eventId: string) => StatoChiusuraEvento;
+        onCashOut: (eventId: string) => Promise<void>;
+        onRiprendi: (eventId: string) => Promise<void>;
+    };
 }) {
+    // `vm.posizioni` resta l'UNICA fonte di verità di "che cosa è aperto"
+    // (stessa lista che alimenta il contatore della linguetta): qui si
+    // raggruppa per partita SOLO per scegliere la geometria — una card
+    // `SchedaPartita` se l'evento è nel programma di oggi, altrimenti la
+    // riga compatta di sempre. Derivarla da `giornata.soldi.aperta` invece
+    // di `posizioni` creerebbe una SECONDA fonte di verità, che può
+    // divergere (es. la riga cambia prima che il programma la rilegga).
+    const { partiteConPosizione, orfane } = useMemo(() => {
+        const partiteMap = new Map<string, PartitaGiornata>();
+        for (const g of giornata) for (const p of g.partite) partiteMap.set(p.event_id, p);
+        const eventiUnici = Array.from(new Set(posizioni.map((p) => p.eventId)));
+        const partite = eventiUnici
+            .map((id) => partiteMap.get(id))
+            .filter((p): p is PartitaGiornata => p != null);
+        // posizioni «orfane»: non su nessuna partita nota al programma di
+        // oggi — MAI nascoste (una con soldi veri su un evento sconosciuto è
+        // comunque una posizione vera, fail-open).
+        const senzaScheda = posizioni.filter((p) => !partiteMap.has(p.eventId));
+        return { partiteConPosizione: partite, orfane: senzaScheda };
+    }, [giornata, posizioni]);
     const live = posizioni.filter((p) => p.modalita === 'live');
+    const vuoto = partiteConPosizione.length === 0 && orfane.length === 0;
+
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-posizioni">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
@@ -1236,94 +1254,134 @@ function ColonnaPosizioni({ posizioni, onChiudi, sport }: {
             )}
 
             <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2">
-                {posizioni.length === 0 && (
+                {vuoto && (
                     <EmptyState>{sport
                         ? `Nessuna posizione aperta sul ${sport}. Clicca di nuovo la tessera per rivedere tutti gli sport.`
                         : 'Nessuna posizione aperta. Quando un bot va a mercato, compare qui.'}</EmptyState>
                 )}
-                {posizioni.map((p) => (
-                    <div key={`${p.bot}-${p.id}`} className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2" data-testid="cr-posizione">
-                        <div className="flex items-baseline gap-2">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${BOT_CLS[p.bot]}`}>{BOT_LABEL[p.bot]}</span>
-                            {p.modalita === 'live'
-                                ? <Badge variant="outline" className="h-4 px-1 text-[9px] border-orange-500/40 text-orange-300">live</Badge>
-                                : <Badge variant="outline" className="h-4 px-1 text-[9px] border-white/20 text-white/40">paper</Badge>}
-                            <span className="ml-auto font-mono text-[11px] text-white/40">{fmtTime(p.piazzataAt)}</span>
-                        </div>
-                        <div className="text-[12px] mt-1 leading-tight">{p.partita}</div>
-                        <div className="flex items-baseline gap-2 mt-1 text-[11px] text-white/60">
-                            {p.lato && (
-                                <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider ${LATO_CLS[p.lato]}`}>
-                                    {LATO_LABEL[p.lato]}
-                                </span>
-                            )}
-                            <span className="truncate">{p.selezione ?? DASH}</span>
-                            <span className="font-mono ml-auto">{fmtOdds(p.prezzo)}</span>
-                        </div>
-                        <div className="text-[11px] text-white/40 mt-0.5">
-                            importo <span className="font-mono">{fmtMoney(p.size)}</span>
-                            {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
-                        </div>
-                        {/* ── IL DETTAGLIO CHE LA SCHEDA DEL BOT MOSTRA GIÀ (17/09) ──
-                            chiesto/abbinato/residuo, quota di adesso e tick, minuto e
-                            punteggio d'ingresso, stato ricco, P&L vivo, green-up, modello.
-                            Tutto dalle stesse righe già in memoria: nessuna lettura in più. */}
-                        <div className="mt-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
-                            <StatoOrdineCompatto riga={p.ordine} testId="cr-pos-stato-ordine" />
-                            {p.vivo && <QuotaOra v={p.vivo} testId="cr-pos-quota-viva" />}
-                        </div>
-                        {p.dettaglio && (
-                            <div className="mt-0.5 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
-                                data-testid="cr-pos-dettaglio">
-                                <BadgeStato d={p.dettaglio} testId="cr-pos-stato" />
-                                <Greenup d={p.dettaglio} testId="cr-pos-greenup" />
-                                <Uscita d={p.dettaglio} testId="cr-pos-uscita" />
-                                <Ingresso d={p.dettaglio} testId="cr-pos-ingresso" />
-                                <Copertura d={p.dettaglio} testId="cr-pos-copertura" />
-                                <PnlVivo d={p.dettaglio} testId="cr-pos-pnl-vivo" />
-                                <ModelloP d={p.dettaglio} testId="cr-pos-modello" />
-                            </div>
-                        )}
-                        {/* QUANTO VALE CHIUDERE ADESSO — il bot propone solo quando la
-                            regola del manuale scatta, e fa bene. Ma una posizione può
-                            essere in profitto molto prima, e va VISTO in continuo invece
-                            che scoperto per caso. Mostrarlo non cambia la strategia. */}
-                        {p.chiusura && (
-                            <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 flex-wrap"
-                                data-testid="cr-chiusura-viva">
-                                <span className="text-[10px] uppercase tracking-wider text-white/40">chiudi ora</span>
-                                {p.chiusura.prezzo == null ? (
-                                    <span className="text-[11px] text-orange-400">prezzo non disponibile</span>
-                                ) : (
-                                    <>
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                                            p.chiusura.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
-                                        }`}>{p.chiusura.lato === 'lay' ? 'banca' : 'punta'}</span>
-                                        <span className="font-mono text-[12px]">{fmtOdds(p.chiusura.prezzo)}</span>
-                                        <span className={`font-mono text-[13px] tabular-nums ${pnlClass(p.chiusura.bloccabile)}`}
-                                            data-testid="cr-bloccabile"
-                                            title="P&L garantito chiudendo per intero adesso: identico sui due esiti">
-                                            {fmtMoney(p.chiusura.bloccabile, { signed: true })}
-                                        </span>
-                                        {p.chiusura.abbinabile != null && (
-                                            <span className="text-[10px] text-white/35">
-                                                {fmtMoney(p.chiusura.abbinabile)} abbinabili
-                                            </span>
-                                        )}
-                                        <Button
-                                            size="sm" variant="ghost"
-                                            onClick={() => void onChiudi(p.id)}
-                                            className="ml-auto h-6 px-2 text-[10px] uppercase tracking-wider border border-white/15 text-white/70 hover:text-white hover:border-emerald-500/50"
-                                            data-testid="cr-chiudi"
-                                        >Chiudi</Button>
-                                    </>
-                                )}
-                            </div>
-                        )}
-                    </div>
+
+                {partiteConPosizione.map((p) => (
+                    <SchedaPartita
+                        key={p.event_id} p={p} scheda="aperte"
+                        operazioni={operazioni.get(p.event_id) ?? []}
+                        mike={mikeEventi?.get(p.event_id) ?? null}
+                        registra={registrazioni.has(p.event_id)}
+                        registratoreVivo={registratori[p.sport === 'tennis' ? 'tennis' : 'calcio']}
+                        safe={{
+                            modalita: safe.modalita,
+                            chiusa: safe.statoChiusura(p.event_id),
+                            onCashOut: safe.onCashOut,
+                            onRiprendi: safe.onRiprendi,
+                        }}
+                    />
                 ))}
+
+                {orfane.length > 0 && (
+                    <div className="pt-1">
+                        <div className="text-[10px] uppercase tracking-wider text-white/35 px-0.5 pb-1"
+                            title="una posizione su un evento non presente nel programma di oggi: mai nascosta">
+                            posizioni su una partita fuori dal programma di oggi
+                        </div>
+                        <div className="space-y-2">
+                            {orfane.map((p) => (
+                                <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} onChiudi={onChiudi} />
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </Card>
+    );
+}
+
+/** la vecchia card compatta di `ColonnaPosizioni` (18/09): sopravvive SOLO
+ *  per le posizioni orfane (vedi `AperteTab`) — stesso markup, stessi
+ *  testid, stesso comando "Chiudi" per singola posizione: nessuna
+ *  regressione sul contenuto, solo sul quando compare. */
+function RigaPosizioneOrfana({ p, onChiudi }: {
+    p: PosizioneAperta;
+    onChiudi: (tradeId: number) => Promise<void>;
+}) {
+    return (
+        <div className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2" data-testid="cr-posizione">
+            <div className="flex items-baseline gap-2">
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${BOT_CLS[p.bot]}`}>{BOT_LABEL[p.bot]}</span>
+                {p.modalita === 'live'
+                    ? <Badge variant="outline" className="h-4 px-1 text-[9px] border-orange-500/40 text-orange-300">live</Badge>
+                    : <Badge variant="outline" className="h-4 px-1 text-[9px] border-white/20 text-white/40">paper</Badge>}
+                <span className="ml-auto font-mono text-[11px] text-white/40">{fmtTime(p.piazzataAt)}</span>
+            </div>
+            <div className="text-[12px] mt-1 leading-tight">{p.partita}</div>
+            <div className="flex items-baseline gap-2 mt-1 text-[11px] text-white/60">
+                {p.lato && (
+                    <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider ${LATO_CLS[p.lato]}`}>
+                        {LATO_LABEL[p.lato]}
+                    </span>
+                )}
+                <span className="truncate">{p.selezione ?? DASH}</span>
+                <span className="font-mono ml-auto">{fmtOdds(p.prezzo)}</span>
+            </div>
+            <div className="text-[11px] text-white/40 mt-0.5">
+                importo <span className="font-mono">{fmtMoney(p.size)}</span>
+                {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
+            </div>
+            {/* ── IL DETTAGLIO CHE LA SCHEDA DEL BOT MOSTRA GIÀ (17/09) ──
+                chiesto/abbinato/residuo, quota di adesso e tick, minuto e
+                punteggio d'ingresso, stato ricco, P&L vivo, green-up, modello.
+                Tutto dalle stesse righe già in memoria: nessuna lettura in più. */}
+            <div className="mt-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+                <StatoOrdineCompatto riga={p.ordine} testId="cr-pos-stato-ordine" />
+                {p.vivo && <QuotaOra v={p.vivo} testId="cr-pos-quota-viva" />}
+            </div>
+            {p.dettaglio && (
+                <div className="mt-0.5 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
+                    data-testid="cr-pos-dettaglio">
+                    <BadgeStato d={p.dettaglio} testId="cr-pos-stato" />
+                    <Greenup d={p.dettaglio} testId="cr-pos-greenup" />
+                    <Uscita d={p.dettaglio} testId="cr-pos-uscita" />
+                    <Ingresso d={p.dettaglio} testId="cr-pos-ingresso" />
+                    <Copertura d={p.dettaglio} testId="cr-pos-copertura" />
+                    <PnlVivo d={p.dettaglio} testId="cr-pos-pnl-vivo" />
+                    <ModelloP d={p.dettaglio} testId="cr-pos-modello" />
+                </div>
+            )}
+            {/* QUANTO VALE CHIUDERE ADESSO — il bot propone solo quando la
+                regola del manuale scatta, e fa bene. Ma una posizione può
+                essere in profitto molto prima, e va VISTO in continuo invece
+                che scoperto per caso. Mostrarlo non cambia la strategia. */}
+            {p.chiusura && (
+                <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 flex-wrap"
+                    data-testid="cr-chiusura-viva">
+                    <span className="text-[10px] uppercase tracking-wider text-white/40">chiudi ora</span>
+                    {p.chiusura.prezzo == null ? (
+                        <span className="text-[11px] text-orange-400">prezzo non disponibile</span>
+                    ) : (
+                        <>
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
+                                p.chiusura.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                            }`}>{p.chiusura.lato === 'lay' ? 'banca' : 'punta'}</span>
+                            <span className="font-mono text-[12px]">{fmtOdds(p.chiusura.prezzo)}</span>
+                            <span className={`font-mono text-[13px] tabular-nums ${pnlClass(p.chiusura.bloccabile)}`}
+                                data-testid="cr-bloccabile"
+                                title="P&L garantito chiudendo per intero adesso: identico sui due esiti">
+                                {fmtMoney(p.chiusura.bloccabile, { signed: true })}
+                            </span>
+                            {p.chiusura.abbinabile != null && (
+                                <span className="text-[10px] text-white/35">
+                                    {fmtMoney(p.chiusura.abbinabile)} abbinabili
+                                </span>
+                            )}
+                            <Button
+                                size="sm" variant="ghost"
+                                onClick={() => void onChiudi(p.id)}
+                                className="ml-auto h-6 px-2 text-[10px] uppercase tracking-wider border border-white/15 text-white/70 hover:text-white hover:border-emerald-500/50"
+                                data-testid="cr-chiudi"
+                            >Chiudi</Button>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
 

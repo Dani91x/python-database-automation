@@ -26,14 +26,17 @@ import {
     motivoNonApprovabileOmega, motivoUscitaOmegaLabel, eUnaProtezioneOmega,
     type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
+import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 
 export interface SchedaChiusuraOmegaProps {
     proposta: PropostaUscitaOmega;
     onApprova: (id: number) => Promise<void>;
     onIgnora: (id: number) => Promise<void>;
+    /** LA STRISCIA DI ESITO (18/09, additiva): v. `SchedaChiusura.tsx`. OPZIONALE. */
+    esito?: StrisciaEsitoChiusuraProps;
 }
 
-export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChiusuraOmegaProps) {
+export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: SchedaChiusuraOmegaProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
@@ -196,6 +199,8 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora }: SchedaChi
                     ⛔ il servizio ha rifiutato: {errore}
                 </div>
             )}
+
+            {esito && <StrisciaEsitoChiusura {...esito} testId={esito.testId ?? 'cr-proposta-omega-esito'} />}
         </article>
     );
 }

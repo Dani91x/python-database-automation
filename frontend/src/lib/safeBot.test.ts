@@ -27,6 +27,7 @@ import {
     tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind, SAFE_RISK_DEFAULTS,
     groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
     runnerStateFrom, executionRoute, runnerPhase, RUNNER_HB_MAX_AGE_S,
+    approvaPropostaOpportunita,
     type SafeTrade,
 } from './safeBot';
 import { DEFAULT_PARAMS } from './safeStrategy';
@@ -677,6 +678,75 @@ describe('parametri bot — rischio e auto-trade', () => {
         expect(p.auto_trade_tennis).toBe(false);
         expect(p.risk).toEqual({ ...SAFE_RISK_DEFAULTS, daily_loss_stop: -20 });
         expect(mergeBotParams(null).risk).toEqual(SAFE_RISK_DEFAULTS);
+    });
+
+    it('mergeBotParams: rubinetti delle proposte — assenti = TRUE (18/09)', () => {
+        // CRITERIO DI ACCETTAZIONE ESPLICITO: default assente -> true.
+        const p = mergeBotParams({});
+        expect(p.proponi_model).toBe(true);
+        expect(p.proponi_tennis).toBe(true);
+        expect(p.proponi_combo).toBe(true);
+        expect(p.proponi_anomaly).toBe(true);
+    });
+
+    it('mergeBotParams: un rubinetto spento resta spento, gli altri restano accesi', () => {
+        const p = mergeBotParams({ proponi_combo: false });
+        expect(p.proponi_combo).toBe(false);
+        expect(p.proponi_model).toBe(true);
+        expect(p.proponi_tennis).toBe(true);
+        expect(p.proponi_anomaly).toBe(true);
+    });
+
+    it('mergeBotParams: un valore sporco sul rubinetto ripiega su TRUE, non su false', () => {
+        expect(mergeBotParams({ proponi_anomaly: null }).proponi_anomaly).toBe(true);
+        expect(mergeBotParams({ proponi_anomaly: 'no' as unknown as boolean }).proponi_anomaly).toBe(true);
+    });
+});
+
+describe('approvaPropostaOpportunita — 18/09, il prezzo che l’utente vede', () => {
+    it('senza opts, chiama la RPC col solo p_id — retrocompatibile con ieri', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(77);
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve', { p_id: 77 });
+    });
+
+    it('con un prezzo visto, lo manda come p_price', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(77, { prezzoVisto: 1.35 });
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve', { p_id: 77, p_price: 1.35 });
+    });
+
+    it('con i prezzi delle gambe di una combo, li manda come p_legs_prices (chiavi stringa)', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(88, { legsPricesVisti: { 0: 2.22, 1: 1.91 } });
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve',
+            { p_id: 88, p_legs_prices: { '0': 2.22, '1': 1.91 } });
+    });
+
+    it('un prezzo di una gamba non finito (null) non entra nella mappa mandata', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(88, { legsPricesVisti: { 0: 2.22, 1: null } });
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve',
+            { p_id: 88, p_legs_prices: { '0': 2.22 } });
+    });
+
+    it('lo slippage viaggia come p_slippage_pct, solo se valido', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(77, { prezzoVisto: 1.3, slippagePct: 5 });
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve', { p_id: 77, p_price: 1.3, p_slippage_pct: 5 });
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        await approvaPropostaOpportunita(77, { prezzoVisto: 1.3, slippagePct: -1 });
+        expect(rpc).toHaveBeenLastCalledWith('safe_request_approve', { p_id: 77, p_price: 1.3 });
+    });
+
+    it('la RPC che ritorna ok:false lancia con la nota del servizio', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: false, note: 'gia approvata' }, error: null });
+        await expect(approvaPropostaOpportunita(77)).rejects.toThrow('gia approvata');
+    });
+
+    it('un errore di rete lancia con il messaggio della RPC', async () => {
+        rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+        await expect(approvaPropostaOpportunita(77)).rejects.toThrow('boom');
     });
 });
 

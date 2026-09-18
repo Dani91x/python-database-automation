@@ -365,3 +365,143 @@ describe('fermato all\'avvio dell\'app (FASE A, 16/09)', () => {
         expect(s.queryByTestId('cr-fermato-avvio-mike')).toBeNull();
     });
 });
+
+// ===========================================================================
+// TASK 2 (18/09) — «non è immediata l'attivazione dal pulsante»: la riga deve
+// dire SUBITO «comando inviato — in attesa del servizio», MAI «in esecuzione»
+// prima che il servizio confermi, e un avviso arancione se il tempo
+// ragionevole passa senza conferma.
+// ===========================================================================
+describe('TASK 2 — stato onesto dopo un clic, mai finto immediato', () => {
+    it('subito dopo il clic compare «comando inviato», non uno stato finto', async () => {
+        const c = comandiFinti();
+        const s = mostra([riga()], c);
+        await act(async () => { fireEvent.click(s.getByTestId('cr-avvia-paper-safe-base')); });
+        expect(s.getByTestId('cr-comando-inviato-safe-base').textContent)
+            .toMatch(/comando inviato — in attesa del servizio/i);
+        // mai una parola che promette un esito non ancora confermato
+        expect(s.getByTestId('cr-comando-inviato-safe-base').textContent).not.toMatch(/in esecuzione/i);
+        // l'attesa TIPICA di Safe (2 s, letta da bot_service.py) e' dichiarata
+        expect(s.getByTestId('cr-comando-inviato-safe-base').textContent).toMatch(/tipica/i);
+    });
+
+    it('appena la riga conferma (nuovo giro di ricarica) il «comando inviato» sparisce da solo', async () => {
+        const c = comandiFinti();
+        const s = mostra([riga()], c);
+        await act(async () => { fireEvent.click(s.getByTestId('cr-avvia-paper-safe-base')); });
+        expect(s.getByTestId('cr-comando-inviato-safe-base')).toBeTruthy();
+
+        // il prossimo giro di `vm.bots` porta la riga confermata: acceso=true,
+        // modalita='paper', esattamente quello che il clic aveva chiesto
+        s.rerender(
+            <PannelloBot
+                righe={[riga({ acceso: true, stato: 'running', modalita: 'paper' })]}
+                importi={SENZA_IMPORTI} comandi={c}
+            />,
+        );
+        expect(s.queryByTestId('cr-comando-inviato-safe-base')).toBeNull();
+        expect(s.queryByTestId('cr-comando-non-confermato-safe-base')).toBeNull();
+    });
+
+    it('senza conferma entro l\'attesa ragionevole: avviso arancione, non silenzio', () => {
+        vi.useFakeTimers();
+        const c = comandiFinti();
+        const s = mostra([riga()], c);
+        fireEvent.click(s.getByTestId('cr-avvia-paper-safe-base'));
+        // Safe: tipica 2 s, ragionevole = max(10, 2*3) = 10 s. La riga NON
+        // conferma mai (stessa `riga()` di sempre, nessun rerender): dopo 10 s
+        // e' disonesto restare zitti.
+        act(() => { vi.advanceTimersByTime(10_500); });
+        const avviso = s.getByTestId('cr-comando-non-confermato-safe-base');
+        expect(avviso.textContent).toMatch(/non ha ancora confermato/i);
+        expect(s.queryByTestId('cr-comando-inviato-safe-base')).toBeNull();
+        vi.useRealTimers();
+    });
+
+    it('un errore del comando toglie subito il «comando inviato»: l\'errore e\' gia\' chiaro altrove', async () => {
+        // `esegui` ripropaga l'errore (lo gestisce chi chiama i comandi veri,
+        // `ControlRoom.tsx::avvolgi`): il clic del test lo lascia come
+        // rifiuto NON gestito a livello di runtime, esattamente come in
+        // produzione (il bottone non e' mai `await`-ato dal DOM). Qui si
+        // sopprime SOLO il rumore del test runner (Node, non il `window` di
+        // jsdom: e' li' che vitest ascolta), non l'errore stesso: la riga di
+        // sotto verifica comunque che il comando sia stato chiamato e che il
+        // «comando inviato» sia sparito.
+        const acchiappa = () => { /* atteso: vedi commento sopra */ };
+        process.on('unhandledRejection', acchiappa);
+        try {
+            const c = comandiFinti();
+            (c.accendi as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('RPC fallita'));
+            const s = mostra([riga()], c);
+            await act(async () => {
+                fireEvent.click(s.getByTestId('cr-avvia-paper-safe-base'));
+                await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+            });
+            expect(c.accendi).toHaveBeenCalledWith('safe-base', 'paper');
+            expect(s.queryByTestId('cr-comando-inviato-safe-base')).toBeNull();
+        } finally {
+            process.removeListener('unhandledRejection', acchiappa);
+        }
+    });
+});
+
+// ===========================================================================
+// TASK 3 (18/09) — due tendine indipendenti, Calcio e Tennis: mai una lista
+// mista. Stato aperto/chiuso in localStorage, comandato SOLO dall'utente.
+// ===========================================================================
+describe('TASK 3 — due tendine, Calcio e Tennis, mai una lista mista', () => {
+    beforeEach(() => { window.localStorage.clear(); });
+
+    function rigaTennis(over: Partial<RigaInterruttore> = {}): RigaInterruttore {
+        return riga({
+            id: 'tennis_scalper', bot: 'tennis_scalper', etichetta: 'Scalper tennis', ...over,
+        });
+    }
+
+    it('calcio e tennis stanno in DUE tendine separate, mai nella stessa lista', () => {
+        const s = mostra([riga(), rigaTennis()], comandiFinti());
+        expect(s.getByTestId('cr-pannello-bot-gruppo-calcio-trigger').textContent).toMatch(/BOT CALCIO \(1\)/);
+        expect(s.getByTestId('cr-pannello-bot-gruppo-tennis-trigger').textContent).toMatch(/BOT TENNIS \(1\)/);
+        // la riga di calcio e' nel contenuto del SUO gruppo, non nell'altro
+        const contenutoCalcio = s.getByTestId('cr-pannello-bot-gruppo-calcio-contenuto');
+        const contenutoTennis = s.getByTestId('cr-pannello-bot-gruppo-tennis-contenuto');
+        expect(within(contenutoCalcio).getByTestId('cr-bot-riga-safe-base')).toBeTruthy();
+        expect(within(contenutoCalcio).queryByTestId('cr-bot-riga-tennis_scalper')).toBeNull();
+        expect(within(contenutoTennis).getByTestId('cr-bot-riga-tennis_scalper')).toBeTruthy();
+        expect(within(contenutoTennis).queryByTestId('cr-bot-riga-safe-base')).toBeNull();
+    });
+
+    it('di default (nessuna preferenza salvata) sono APERTE: nessuna regressione al primo avvio', () => {
+        const s = mostra([riga(), rigaTennis()], comandiFinti());
+        expect(s.getByTestId('cr-bot-riga-safe-base')).toBeTruthy();
+        expect(s.getByTestId('cr-bot-riga-tennis_scalper')).toBeTruthy();
+    });
+
+    it('chiudere una tendina la ricorda in localStorage, e SOLO quella cambia', () => {
+        const s = mostra([riga(), rigaTennis()], comandiFinti());
+        fireEvent.click(s.getByTestId('cr-pannello-bot-gruppo-tennis-trigger'));
+        expect(s.queryByTestId('cr-bot-riga-tennis_scalper')).toBeNull();
+        // calcio resta aperta: le due tendine sono INDIPENDENTI
+        expect(s.getByTestId('cr-bot-riga-safe-base')).toBeTruthy();
+        const salvato = JSON.parse(window.localStorage.getItem('cr-pannello-bot-aperto-v1') ?? '{}');
+        expect(salvato.tennis).toBe(false);
+        expect(salvato.calcio).not.toBe(false);
+    });
+
+    it('la preferenza salvata sopravvive a un nuovo montaggio (persistenza per-viewer)', () => {
+        window.localStorage.setItem('cr-pannello-bot-aperto-v1', JSON.stringify({ tennis: false }));
+        const s = mostra([riga(), rigaTennis()], comandiFinti());
+        expect(s.queryByTestId('cr-bot-riga-tennis_scalper')).toBeNull();
+        expect(s.getByTestId('cr-bot-riga-safe-base')).toBeTruthy();
+    });
+
+    it('REGOLA 11 (eccezione del coordinatore): un\'anomalia nel gruppo chiuso non lo riapre da sola', () => {
+        window.localStorage.setItem('cr-pannello-bot-aperto-v1', JSON.stringify({ tennis: false }));
+        const s = mostra([riga(), rigaTennis({
+            acceso: true, stato: 'running', motivoBlocco: 'tetto raggiunto',
+        })], comandiFinti());
+        // il pallino nell'intestazione segnala l'anomalia, ma la tendina resta
+        // chiusa finche' non e' l'utente a cliccarla
+        expect(s.queryByTestId('cr-bot-riga-tennis_scalper')).toBeNull();
+    });
+});

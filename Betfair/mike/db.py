@@ -17,7 +17,17 @@ from typing import Any, Optional
 
 from db_client import get_supabase_client
 
+from Betfair.stream import canale_bot as _cb
+
 logger = logging.getLogger("mike.db")
+
+# --- F3 (18/09): le righe che Mike scrive escono ANCHE sul canale 47333 ------
+# Il database resta il registro: si pubblica DOPO la scrittura riuscita e si
+# pubblica la riga che la scrittura ha RESTITUITO (PostgREST torna di serie la
+# rappresentazione: nessuna lettura in piu'). Interruttore ``MIKE_CANALE_POSIZIONI``
+# nel ``.env``, DEFAULT SPENTO: a interruttore spento il percorso e' quello di
+# prima, istruzione per istruzione. Vedi ``Betfair/stream/canale_bot.py``.
+_CANALE_ACCESO = _cb.acceso(_cb.ENV_MIKE)
 
 CONTROL_ID = 1
 T_CONTROL = "mike_control"
@@ -63,7 +73,9 @@ def log(kind: str, payload: Optional[dict[str, Any]] = None, event_id: Optional[
         row = {"kind": kind, "payload": payload or {}}
         if event_id is not None:
             row["event_id"] = str(event_id)
-        _sb().table(T_ACTIVITY).insert(row).execute()
+        res = _sb().table(T_ACTIVITY).insert(row).execute()
+        if _CANALE_ACCESO:      # F3: DOPO la scrittura riuscita, mai prima
+            _cb.pubblica_scritte(_cb.TOPIC["mike_attivita"], res)
     except Exception as ex:  # noqa: BLE001 — il log non deve mai fermare il bot
         logger.warning("[mike.db] log '%s' fallito: %s", kind, str(ex)[:120])
 
@@ -143,6 +155,8 @@ def delete_events(event_ids: list[str]) -> None:
 # ---------------------------------------------------------------------------
 def insert_trade(trade: dict[str, Any]) -> Optional[int]:
     res = _sb().table(T_TRADES).insert(trade).execute()
+    if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
+        _cb.pubblica_scritte(_cb.TOPIC["mike_posizioni"], res)
     rows = res.data or []
     return rows[0].get("id") if rows else None
 
@@ -150,7 +164,9 @@ def insert_trade(trade: dict[str, Any]) -> Optional[int]:
 def update_trade(trade_id: int, **fields: Any) -> None:
     if not fields:
         return
-    _sb().table(T_TRADES).update(fields).eq("id", int(trade_id)).execute()
+    res = _sb().table(T_TRADES).update(fields).eq("id", int(trade_id)).execute()
+    if _CANALE_ACCESO:          # F3: la riga INTERA come il database l'ha scritta
+        _cb.pubblica_scritte(_cb.TOPIC["mike_posizioni"], res)
 
 
 def get_trade(trade_id: int) -> Optional[dict[str, Any]]:

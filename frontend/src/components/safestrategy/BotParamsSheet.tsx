@@ -239,11 +239,30 @@ const STRATEGY_FIELDS: Num[] = [
     { key: 'punta.controlMin', label: 'PUNTA · soglia controllo del gioco', step: 0.05, min: 0, max: 1, hint: 'quanto la favorita deve continuare a spingere' },
 ];
 
+// 18/09 (decisione «B» dell'utente) — questi QUATTRO non governano più nessun
+// piazzamento (dal 17/09 il modello, dal 18/09 anomalie e combo): restano
+// leggibili sul DB per compatibilità ma NON hanno più una vista dedicata in
+// questo pannello. Il rubinetto vero (vista sì/no di un tipo di proposta) è
+// `PROPONI_TOGGLES` qui sotto — chiavi NUOVE, non queste.
 const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
     { key: 'auto_trade_opportunities', label: 'Opportunità di MODELLO (calcio) — NON piazza più da sola', note: 'dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA): questo interruttore resta per compatibilità e non manda più ordini' },
-    { key: 'auto_trade_anomalies', label: 'Trada le ANOMALIE di prezzo in automatico', note: 'rischio: una quota "sbagliata" può essere un punteggio in ritardo sul feed — attesa conferma consigliata' },
-    { key: 'auto_trade_combos', label: 'Trada le COMBINAZIONI in automatico', note: 'rischio: se una gamba non si abbina il profitto bloccato salta e resta una posizione scoperta' },
+    { key: 'auto_trade_anomalies', label: 'ANOMALIE di prezzo — NON piazza più da sola', note: 'dal 18/09 le anomalie si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA), a una gamba sola; questo interruttore resta per compatibilità e non manda più ordini' },
+    { key: 'auto_trade_combos', label: 'COMBINAZIONI — NON piazza più da sola', note: 'dal 18/09 una combinazione si propone con TUTTE le gambe in una scheda sola; PIAZZA le manda tutte o nessuna (approvazione atomica); questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — oggi in paper finché strategy_modes.model resta paper' },
+];
+
+// 18/09 — RUBINETTI DELLE PROPOSTE (decisione «B»): spengono la VISTA di un
+// tipo di proposta, NON un tetto numerico (l'utente non ne vuole uno). Nomi
+// NUOVI (`proponi_*`), default TRUE: riusare gli `auto_trade_*` di sopra
+// avrebbe nascosto in silenzio, col loro vecchio "false", le proposte che
+// l'utente vuole vedere. Spento: il motore non genera PIÙ proposte di quel
+// tipo, e quelle già in vista decadono (attività "tipo di proposta
+// disattivato dall'interruttore"). Nessun effetto su un ordine già approvato.
+const PROPONI_TOGGLES: { key: string; label: string; note: string }[] = [
+    { key: 'proponi_model', label: 'Proponimi le opportunità di MODELLO calcio', note: 'a spento, il motore non genera più schede di modello (calcio); quelle già in vista decadono. Non tocca gli ordini già approvati.' },
+    { key: 'proponi_tennis', label: 'Proponimi le opportunità di MODELLO tennis', note: 'secondo motore tennis (non la Strategia S tennis, quella resta in "Varianti attive"). A spento decadono solo le schede di questo tipo.' },
+    { key: 'proponi_combo', label: 'Proponimi le COMBINAZIONI', note: 'a spento, nessuna nuova scheda con tutte le gambe della combinazione; quelle già in vista decadono (nessuna gamba viene toccata se già approvata).' },
+    { key: 'proponi_anomaly', label: 'Proponimi le ANOMALIE di prezzo', note: 'a spento, il cecchino smette di generare schede (continua comunque a rilevarle per la tabella delle opportunità); quelle già in vista decadono.' },
 ];
 
 const VARIANTS: { id: VariantId; label: string }[] = [
@@ -345,6 +364,69 @@ function numFields(
 /** {chiave: {stored, effective}} - payload di `params_clamped` del servizio */
 export type ParamCorrections = Record<string, { stored?: unknown; effective?: unknown }>;
 
+/** Le quattro strategie che il pannello di comando (`interruttori.ts`) mostra
+ *  come RIGHE separate. `model`/`manual` non hanno una riga e restano fuori:
+ *  i loro campi vivono solo nel foglio comune (`soloStrategia` assente). */
+export type StrategiaFiltro = 'base' | 'esatto' | 'punta' | 'tennis';
+
+/** I gruppi mostrati in un foglio filtrato per strategia, NELL'ORDINE in cui
+ *  compaiono nel foglio completo. Gli altri (Bot/Rischio/Auto-trade/
+ *  Opportunita' di modello/Tennis-Anomalie/Uscite modello) restano SOLO nel
+ *  foglio comune: non sono di UNA strategia, sono del servizio intero. */
+const GRUPPI_FILTRABILI = new Set([
+    'Strategie abilitate', 'Modalità per strategia (paper / live)',
+    'Condizioni delle strategie', 'Uscite automatiche',
+]);
+
+/** Uscite SEMPRE visibili in un foglio per strategia: non sono di una
+ *  strategia sola, sono l'interruttore e le regole comuni a tutte e quattro
+ *  (attesa di conferma, tentativi, rosso alla favorita). Le uscite SPECIFICHE
+ *  (a tempo, soglie tennis) restano filtrate come il resto del gruppo. */
+const USCITE_CONDIVISE = new Set([
+    'exits.enabled', 'exits.loss_settle_delay_s', 'exits.exit_max_retries',
+    'exits.red_card_fav_exit',
+]);
+
+/** Un campo e' DI QUESTA strategia? Le chiavi del manuale sono sempre
+ *  `<strategia>.qualcosa` (condizioni), `variants.<strategia>` /
+ *  `strategy_modes.<strategia>` (accensione/modalita'), o
+ *  `exits.<strategia>_qualcosa` (uscita a tempo / soglie tennis). L'unica
+ *  eccezione nominata e' `tennis_exit_approval`, che vive fuori da `exits.*`
+ *  ma riguarda solo il tennis (approvazione delle SUE chiusure). */
+function campoDellaStrategia(chiave: string, strategia: StrategiaFiltro): boolean {
+    if (chiave === VARIANT_KEY(strategia) || chiave === MODE_KEY(strategia)) return true;
+    if (chiave.startsWith(`${strategia}.`)) return true;
+    if (chiave.startsWith(`exits.${strategia}_`)) return true;
+    if (strategia === 'tennis' && chiave === 'tennis_exit_approval') return true;
+    return false;
+}
+
+/**
+ * Filtra i gruppi gia' costruiti a UNA sola strategia (funzione pura, testata
+ * a parte): NESSUNA chiave e NESSUN default cambia, si nasconde solo quello
+ * che non e' pertinente a quella riga del pannello. Il salvataggio
+ * (`BotParamsSheet.save` -> `fromValues`) riparte SEMPRE dall'intero
+ * `draft`/`values`, che contiene TUTTI i campi (anche quelli qui nascosti,
+ * mai toccati dall'utente): filtrare la VISTA non tocca la SEMANTICA di quel
+ * che si scrive.
+ */
+export function gruppiDellaStrategia(groups: ParamGroup[], strategia: StrategiaFiltro): ParamGroup[] {
+    const out: ParamGroup[] = [];
+    for (const g of groups) {
+        if (!GRUPPI_FILTRABILI.has(g.label)) continue;
+        const fields = g.fields.filter(
+            (f) => USCITE_CONDIVISE.has(f.key) || campoDellaStrategia(f.key, strategia),
+        );
+        if (fields.length > 0) out.push({ ...g, fields });
+    }
+    return out;
+}
+
+const STRATEGIA_TITOLO: Record<StrategiaFiltro, string> = {
+    base: 'Safe · Base', esatto: 'Safe · Risultato Esatto',
+    punta: 'Safe · Punta', tennis: 'Safe · Tennis',
+};
+
 export interface BotParamsSheetProps {
     params: SafeBotParams;
     /** control.params grezzi dal DB: sorgente di `exits` e di ogni chiave che
@@ -358,11 +440,20 @@ export interface BotParamsSheetProps {
     persisted?: string[] | null;
     busy?: boolean;
     onSave: (p: Partial<SafeBotParams>) => Promise<void> | void;
+    /**
+     * 18/09 — «ogni bot con i SUOI parametri dedicati» (utente): quando
+     * presente, il foglio mostra SOLO i campi di questa strategia (base/
+     * esatto/punta/tennis), stesso pannello, stesse chiavi, stesso
+     * salvataggio — vedi `gruppiDellaStrategia`. Assente = il foglio
+     * completo di sempre (SafeStrategy.tsx, invariato).
+     */
+    soloStrategia?: StrategiaFiltro;
+    triggerTestId?: string;
 }
 
 export function BotParamsSheet({
     params, rawParams = null, effective = null, corrections = null, persisted = null,
-    busy = false, onSave,
+    busy = false, onSave, soloStrategia, triggerTestId = 'params-trigger',
 }: BotParamsSheetProps) {
     const [refused, setRefused] = useState<string | null>(null);
 
@@ -434,9 +525,18 @@ export function BotParamsSheet({
             fields: numFields(RISK_FIELDS, flat, effective, corrections),
         },
         {
-            label: 'Auto-trade',
-            note: 'Ogni tipo di opportunità si accende da solo. Spento = le card restano manuali («Piazza»). Ogni riga dice qual è il suo rischio specifico.',
-            fields: AUTO_TRADE_TOGGLES.map((t) => ({
+            // 18/09 (decisione «B») — il vecchio gruppo «Auto-trade»
+            // (`AUTO_TRADE_TOGGLES`) non ha più una vista qui: dal 17/09 (modello)
+            // e dal 18/09 (anomalie, combo) NESSUNO di quei quattro piazza più da
+            // solo, quindi un interruttore "auto-trade" a schermo mentirebbe.
+            // Le chiavi restano leggibili/scrivibili sul DB (`toValues`/
+            // `fromValues` le portano avanti invariate: vedi righe qui sotto),
+            // solo non hanno più una casella da spuntare. Il rubinetto VERO è
+            // questo: spegne la VISTA di un tipo di proposta, non il piazzamento
+            // (che nessuno di questi fa più).
+            label: 'Proponimi...',
+            note: 'Ogni tipo di opportunità genera una scheda in Control Room (PIAZZA / RIFIUTA): nessuna piazza mai da sola. Spegni qui solo se non vuoi VEDERE quel tipo di scheda — le proposte già in vista decadono, gli ordini già approvati restano intatti. Nessun tetto sul numero di proposte.',
+            fields: PROPONI_TOGGLES.map((t) => ({
                 key: t.key,
                 label: t.label,
                 type: 'boolean' as const,
@@ -545,6 +645,12 @@ export function BotParamsSheet({
         },
     ];
 
+    // 18/09 — SOLO i campi pertinenti a QUESTA strategia, quando la riga del
+    // pannello ne chiede uno. Filtra la VISTA (`gruppiDellaStrategia`, sopra):
+    // nessuna chiave e nessun default cambiano, `save` sotto riparte sempre
+    // dall'intero `v` (che contiene anche i campi qui nascosti).
+    const gruppiMostrati = soloStrategia ? gruppiDellaStrategia(groups, soloStrategia) : groups;
+
     async function save(v: ParamValues) {
         const variants = VARIANTS.filter((x) => v[VARIANT_KEY(x.id)] === true).map((x) => x.id);
         if (variants.length === 0) {
@@ -559,14 +665,17 @@ export function BotParamsSheet({
 
     return (
         <ParamsSheetBase
-            title="Parametri bot Safe Strategy"
+            title={soloStrategia ? `Parametri ${STRATEGIA_TITOLO[soloStrategia]}` : 'Parametri bot Safe Strategy'}
             symbol={<span aria-hidden>🛡️</span>}
-            description="Salvati sul database (safe_update_params): valgono per il servizio e per questa schermata. I limiti mostrati sono quelli applicati dal servizio."
-            groups={groups}
+            description={soloStrategia
+                ? 'Solo i campi di questa strategia. Il resto (cadenza, rischio, auto-trade, opportunita’ di modello) e’ nel foglio "parametri comuni di Safe": un solo servizio, un solo set di limiti condivisi.'
+                : 'Salvati sul database (safe_update_params): valgono per il servizio e per questa schermata. I limiti mostrati sono quelli applicati dal servizio.'}
+            groups={gruppiMostrati}
             values={flat}
             busy={busy}
             onSave={save}
             onReset={() => toValues(SAFE_BOT_DEFAULTS, EXITS_DEFAULTS, null)}
+            triggerTestId={triggerTestId}
             footer={
                 <>
                     {refused && (
@@ -630,6 +739,13 @@ export function toValues(
         out[k] = k in src && Number.isFinite(v) ? v : d;
     }
     for (const t of AUTO_TRADE_TOGGLES) out[t.key] = Boolean(getPath(src, t.key));
+    // 18/09 — i rubinetti nascono TRUE: una chiave assente sul DB (mai
+    // salvata) deve mostrarsi ACCESA (comportamento di oggi), non spenta come
+    // farebbe `Boolean(undefined)`.
+    for (const t of PROPONI_TOGGLES) {
+        const raw2 = getPath(src, t.key);
+        out[t.key] = typeof raw2 === 'boolean' ? raw2 : true;
+    }
     for (const v of VARIANTS) out[VARIANT_KEY(v.id)] = p.variants.includes(v.id);
     // mappa PARZIALE: la chiave assente si mostra come «Non dichiarata», che
     // e' esattamente quello che fa il servizio — e che in live vale PAPER.

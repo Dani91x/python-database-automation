@@ -68,6 +68,51 @@ from .stream import MarketStreamPool
 logger = logging.getLogger("safe_strategy")
 
 _LOCK_PORT = int(os.getenv("SAFE_STRATEGY_LOCK_PORT", "47315"))
+# ===========================================================================
+# F1 (18/09) - IL CANALE LOCALE DELLO SCANNER, IN SOLA PUBBLICAZIONE
+# ===========================================================================
+# Porta 47336, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+# (Mike), 47334 (Omega), 47335 (bot Safe). Nessun processo nuovo: il canale
+# nasce DENTRO il processo dello scanner, che gira gia'.
+#   · ``scan_calcio``   la riga di scan del CALCIO, identica a quella del DB;
+#   · ``scan_tennis``   la riga di scan del TENNIS, identica a quella del DB;
+#   · ``scanner_stato`` la stessa riga che va su ``safe_strategy_status``.
+# Due topic separati e non uno con un campo ``sport``: calcio e tennis non si
+# mischiano mai, nemmeno dentro un payload (invariante B12 del piano). Il campo
+# ``sport`` resta comunque dentro il messaggio, cosi' un consumatore che
+# sbagliasse topic se ne accorgerebbe lo stesso.
+# ``solo_lettura=True`` come tutti i canali dei bot: si mostra, non si comanda.
+# Il canale del RUNNER, che esegue ordini veri, resta un'altra cosa e non si
+# allarga (``local_channel`` §SICUREZZA).
+_PORTA_CANALE_SCAN = 47336
+_PORTA_CANALE_ENV = "SAFE_SCAN_WS_PORT"
+_TOPIC_SCAN = {"calcio": "scan_calcio", "tennis": "scan_tennis"}
+_TOPIC_SCANNER_STATO = "scanner_stato"
+# INTERRUTTORE DI FASE, default SPENTO. Acceso SOLO se qualcuno lo scrive
+# davvero: variabile assente, vuota o con qualunque altro valore = spento.
+# Il verso conta piu' del valore. Il `.env` arriva allo scanner per la catena
+# di import di testa (`stream/auth.py` -> `config.load_dotenv()`), che non e'
+# garantita da nulla: se un domani quell'import diventasse pigro - cioe'
+# esattamente la cura applicata il 17/09 a `stream/scalper/__init__.py` - ogni
+# costante di modulo prenderebbe il proprio default in silenzio. Con questo
+# verso il guasto silenzioso e' "il canale resta spento"; col verso opposto
+# sarebbe "il canale si accende da solo, senza che nessuno l'abbia chiesto".
+_CANALE_ENV = "SAFE_SCAN_CANALE"
+_CANALE_VALORI_ACCESI = ("1", "true", "si", "yes")
+
+
+def _letto_acceso() -> bool:
+    """L'interruttore del canale, letto dall'ambiente ADESSO.
+
+    Sta in una funzione perche' la regola vada provata senza ricaricare il
+    modulo; il valore che conta in esercizio resta la COSTANTE qui sotto,
+    valutata una volta sola all'import - cioe' dopo che la catena di import di
+    testa ha chiamato ``load_dotenv()`` (Appendice H del piano).
+    """
+    return (os.getenv(_CANALE_ENV) or "").strip().lower() in _CANALE_VALORI_ACCESI
+
+
+_CANALE_ACCESO = _letto_acceso()
 _CATALOGUE_TTL_SEC = 300.0
 # catalogo Correct Score: la chiamata parte SOLO se c'è un candidato senza
 # mercato in cache (refresh_cs_catalogue esce subito altrimenti), quindi il
@@ -226,7 +271,8 @@ class SportState:
 
 class Scanner:
     def __init__(self, api_client: Any, dry: bool, use_stream: bool = False,
-                 orologio: Optional[Any] = None) -> None:
+                 orologio: Optional[Any] = None,
+                 canale: Optional[bool] = None) -> None:
         self.client = api_client
         self.dry = dry
         # OROLOGIO INIETTABILE — esiste SOLO per il banco di prova (replay sulle
@@ -245,6 +291,17 @@ class Scanner:
         # REST resta come fallback per i mercati che il pool non copre.
         self.stream: Optional[MarketStreamPool] = (
             MarketStreamPool(api_client) if use_stream else None
+        )
+        # F1 (18/09) - CANALE LOCALE, in sola pubblicazione. Nasce solo col
+        # pool stream acceso (cioe' nel servizio vero): nel BANCO di replay
+        # ``use_stream=False`` e il canale non esiste proprio, cosi' la
+        # certificazione misura la stessa identica condotta di prima.
+        # ``canale=None`` (il caso normale) legge l'interruttore di fase; un
+        # booleano esplicito serve ai test, che non possono contare su un
+        # valore d'ambiente.
+        canale_voluto = _CANALE_ACCESO if canale is None else bool(canale)
+        self.canale: Optional[Any] = (
+            self._avvia_canale() if (use_stream and canale_voluto) else None
         )
         # indice market_id → (sport, meta) per applicare i book (stream E rest)
         self.market_meta: Dict[str, "tuple[str, Dict[str, Any]]"] = {}
@@ -757,6 +814,21 @@ class Scanner:
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
         ev["mo_total_matched"] = scanner.num_or_none(getattr(book, "total_matched", None))
+        # F0 (18/09) - BET DELAY DI QUESTO MERCATO, dal ``marketDefinition`` che
+        # il book ha gia' in mano: zero chiamate, zero migrazioni, chiave
+        # ADDITIVA nel payload. Prima lo leggeva solo ``_apply_opp_book`` (i
+        # mercati a gol del calcio, per Mike): i blocchi MATCH_ODDS e TUTTO il
+        # tennis passavano senza, quindi il bot non sapeva a quale ritardo era
+        # soggetto e la certificazione doveva ASSUMERE 3 s invece di leggerlo.
+        # STA SOPRA LA GUARDIA ``has_any_price`` DI PROPOSITO: viene dalla
+        # DEFINIZIONE del mercato, non dai prezzi, ed e' informazione buona
+        # anche su un book che di prezzi non ne porta nemmeno uno - esattamente
+        # come ``inplay``, ``mo_status`` e ``mo_total_matched`` qui sopra.
+        # Assente non e' zero: un ``bet_delay: 0`` inventato direbbe "nessun
+        # ritardo" a chi non lo sa, quindi si scrive solo quando c'e' davvero.
+        bd = scanner.num_or_none(getattr(book, "bet_delay", None))
+        if bd is not None:
+            ev["bet_delay"] = int(bd)
         ora_ms = int(self._ora() * 1000)
         # 17/09 - UN BOOK SENZA PREZZI NON E' UN AGGIORNAMENTO DI QUOTE.
         # betfairlightweight, su un messaggio di sola ``marketDefinition``, crea
@@ -777,6 +849,18 @@ class Scanner:
         # opportunità penalizza i prezzi fermi, il write-on-change resta pulito
         if ev.get("odds") != odds:
             ev["odds_ts_ms"] = ora_ms
+            # F0 (18/09) - accanto al NOSTRO istante, quello di BETFAIR: il
+            # ``publishTime`` del book che ha portato questo cambio. Fra i due
+            # c'e' il conflate (1 s) piu' la cadenza del tick, cioe' il salto
+            # che nessuno poteva misurare perche' mancava il campo. Chiave
+            # ADDITIVA: ``odds_ts_ms`` resta esattamente com'era.
+            # STA QUI SOTTO, DENTRO LA GUARDIA, PERCHE' E' UN ISTANTE DI
+            # PREZZO: sopra la guardia un book di sola ``marketDefinition``
+            # farebbe avanzare l'istante di un prezzo che non esiste, cioe'
+            # esattamente l'incidente del 17/09 con un campo in piu'.
+            # ATTENZIONE: e' l'orologio di BETFAIR, non il nostro. Si sottrae
+            # solo passando da ``Betfair.stream.orologio``.
+            ev["odds_pt_ms"] = scanner.publish_time_ms(book)
         ev["odds"] = odds
         ev["odds_seen_ms"] = ora_ms          # ultima osservazione CON prezzi
         self._segna_prezzi(meta["market_id"], dallo_stream)
@@ -1342,6 +1426,96 @@ class Scanner:
             logger.warning("[safe-scan] opportunita KO: %s", str(e)[:140])
             return []
 
+    # ------------------------------------------------------------- canale locale
+    def _avvia_canale(self) -> Optional[Any]:
+        """Accende il canale locale dello scanner. Non solleva MAI.
+
+        Senza canale (porta occupata, ``websockets`` assente, qualunque altro
+        guasto) lo scanner lavora esattamente come prima: i bot leggono dal
+        database e la pagina pure. E' la direzione giusta del ripiego - un
+        guasto del TRASPORTO non puo' fermare il feed unico di tutti i bot.
+        """
+        try:
+            from Betfair.stream import local_channel as _lc
+
+            try:
+                porta = int((os.environ.get(_PORTA_CANALE_ENV) or "").strip()
+                            or _PORTA_CANALE_SCAN)
+            except ValueError:
+                porta = _PORTA_CANALE_SCAN
+            ch = _lc.start_channel(porta, "safe-scan", solo_lettura=True)
+            if ch is None:
+                logger.warning("[safe-scan] canale locale NON attivo su %d (porta "
+                               "occupata?): tutto resta sul database.", porta)
+                return None
+            # la cadenza attesa la DICHIARA il produttore: chi consuma calcola
+            # da qui quando dirsi "muto", invece di cablare una costante propria
+            # (difetto §7.33 del catalogo: la costante duplicata nel frontend).
+            ch.set_hello(topic=sorted(_TOPIC_SCAN.values()) + [_TOPIC_SCANNER_STATO],
+                         cadenza_scan_s=_PUBLISH_MIN_INTERVAL_SEC,
+                         cadenza_stato_s=_STATUS_PERIOD_SEC)
+            logger.info("[safe-scan] canale locale attivo su 127.0.0.1:%d "
+                        "(sola lettura; topic: %s, %s, %s)", porta,
+                        _TOPIC_SCAN["calcio"], _TOPIC_SCAN["tennis"], _TOPIC_SCANNER_STATO)
+            return ch
+        except Exception as ex:  # noqa: BLE001 - il canale e' opzionale, sempre
+            logger.warning("[safe-scan] canale locale KO: %s", str(ex)[:160])
+            return None
+
+    def _spingi_riga(self, sport: str, riga: Dict[str, Any]) -> None:
+        """La riga di scan sul canale, nel punto in cui e' pronta e COMPLETA.
+
+        Sta PRIMA del freno di scrittura (``_PUBLISH_MIN_INTERVAL_SEC``): il
+        freno esiste per proteggere l'IO di Supabase (lezione del 13/09, budget
+        esaurito) e li' resta; sul canale non c'e' nessun budget da proteggere,
+        quindi il prezzo esce a ogni cambiamento invece di aspettare fino a
+        2,5 s. Il DATABASE continua a ricevere la stessa identica riga: il push
+        e' un'ACCELERAZIONE, non una sostituzione.
+
+        La riga spinta e' LO STESSO OGGETTO che finisce in ``rows``, non una sua
+        proiezione: un consumatore deve poter mettere la riga del canale al
+        posto della riga del database senza sapere da dove viene (difetto D3 del
+        piano: spingendola prima del blocco ``opportunities`` la riga del canale
+        sarebbe stata monca proprio dove il prezzo si muove).
+
+        Topic separato per sport: calcio e tennis non si mischiano mai.
+        Non solleva e non blocca: ``publish`` esce senza client, serializza dopo
+        il controllo e ingoia qualunque errore. Se il canale e' morto, lo
+        scanner fa esattamente quello che farebbe senza canale.
+        """
+        canale = self.canale
+        if canale is None:
+            return
+        topic = _TOPIC_SCAN.get(sport)
+        if topic is None:
+            return
+        try:
+            canale.publish(topic, riga)
+        except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai lo scanner
+            logger.debug("[safe-scan] push della riga KO: %s", str(ex)[:120])
+
+    def _spingi_stato(self, payload: Dict[str, Any]) -> None:
+        """Lo stato dello scanner sul canale: gli STESSI campi della riga di
+        ``safe_strategy_status``, zero campi nuovi, zero scritture in piu'."""
+        canale = self.canale
+        if canale is None:
+            return
+        try:
+            canale.publish(_TOPIC_SCANNER_STATO, payload)
+        except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai lo scanner
+            logger.debug("[safe-scan] push dello stato KO: %s", str(ex)[:120])
+
+    def canale_statistiche(self) -> Optional[Dict[str, Any]]:
+        """Che cosa sta facendo il canale (None se non c'e'): e' il numero che
+        la prova a secco legge per dire se qualcuno ha perso un fotogramma."""
+        canale = self.canale
+        if canale is None:
+            return None
+        try:
+            return canale.statistiche()
+        except Exception:  # noqa: BLE001 - una misura non ferma mai lo scanner
+            return None
+
     # ------------------------------------------------------------- pubblicazione
     def build_rows(self, now: datetime) -> "tuple[List[Dict[str, Any]], List[str]]":
         rows: List[Dict[str, Any]] = []
@@ -1386,6 +1560,13 @@ class Scanner:
                         "mo_total_matched": ev.get("mo_total_matched"),
                         # ts dell'ultimo CAMBIO delle quote 1X2 (freschezza prezzo)
                         "odds_ts_ms": ev.get("odds_ts_ms"),
+                        # F0 (18/09), chiavi ADDITIVE: l'istante di BETFAIR dello
+                        # stesso cambio (``publishTime`` del book) e il ritardo
+                        # che l'exchange impone su QUESTO mercato. Nessuna
+                        # chiamata in piu': entrambi vengono dal book gia' in
+                        # mano. Nessuna chiave storica tolta.
+                        "odds_pt_ms": ev.get("odds_pt_ms"),
+                        "bet_delay": ev.get("bet_delay"),
                         # MERCATI A GOL del motore opportunità (chiavi ADDITIVE):
                         # ou = [{line, market_id, status, selections…}], btts, ht_result
                         **scanner.split_opportunity_blocks(self._prune_opp_blocks(ev, eid, now)),
@@ -1430,6 +1611,13 @@ class Scanner:
                         # ts dell'ultimo CAMBIO delle quote (freschezza prezzo),
                         # come per il calcio: chiave additiva
                         "odds_ts_ms": ev.get("odds_ts_ms"),
+                        # F0 (18/09) - nel tennis erano proprio i due numeri che
+                        # mancavano: senza ``odds_pt_ms`` il salto fra la
+                        # pubblicazione di Betfair e la nostra lavorazione non
+                        # era misurabile, e senza ``bet_delay`` il bot non sapeva
+                        # a quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
+                        "odds_pt_ms": ev.get("odds_pt_ms"),
+                        "bet_delay": ev.get("bet_delay"),
                     }
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
@@ -1441,28 +1629,47 @@ class Scanner:
                 # la realtà mostrata deve coincidere con quella di Betfair.
                 crit = scanner.critical_signature(sport, payload)
                 mono = self._ora_mono()
-                if (
+                # throttle per-evento SOLO per le quote (vedi sopra). Da qui in
+                # avanti la decisione e' una VARIABILE e non un ``continue``,
+                # perche' il canale deve ricevere anche la riga che il freno del
+                # database trattiene: e' tutto il senso della fase.
+                frenata = (
                     self.written_crit.get(eid) == crit
                     and mono - self.last_pub_mono.get(eid, 0.0) < _PUBLISH_MIN_INTERVAL_SEC
-                ):
+                )
+                if frenata and self.canale is None:
+                    # SENZA CANALE il percorso e' identico a quello di prima,
+                    # istruzione per istruzione: si esce qui e non si calcola
+                    # niente. E' la garanzia che a interruttore spento lo scanner
+                    # sia quello di sempre.
                     continue
-                self.last_pub_mono[eid] = mono
-                self.written_sig[eid] = sig
-                self.written_crit[eid] = crit
                 # le OPPORTUNITA' sono un DERIVATO dei fatti e vivono in
                 # bot_service.py (tabella safe_strategy_opportunities): qui restano
                 # SPENTE salvo SAFE_SCAN_OPPORTUNITIES=1. Quando accese si calcolano
                 # DOPO la firma (la confidenza dipende anche dall'orologio: dentro
-                # la firma riscriverebbe la riga a ogni tick) e solo per le righe
-                # che vengono davvero pubblicate.
+                # la firma riscriverebbe la riga a ogni tick) e PRIMA del push,
+                # perche' la riga del canale deve essere identica a quella del
+                # database anche nel blocco ``opportunities``: spingerla prima
+                # (difetto D3) l'avrebbe lasciata monca proprio nell'istante in
+                # cui il prezzo si muove, e chi fonde per payload intero sarebbe
+                # diventato cieco su quel blocco.
                 if sport == "calcio" and _opportunities_enabled():
                     payload["opportunities"] = self.opportunities(payload)
-                rows.append({
+                riga = {
                     "event_id": eid,
                     "sport": sport,
                     "payload": payload,
                     "updated_at": self._ora_iso(),
-                })
+                }
+                # LO STESSO OGGETTO va sul canale e nel database: chiavi, tipi e
+                # valori non possono divergere perche' non ci sono due oggetti.
+                self._spingi_riga(sport, riga)
+                if frenata:
+                    continue
+                self.last_pub_mono[eid] = mono
+                self.written_sig[eid] = sig
+                self.written_crit[eid] = crit
+                rows.append(riga)
         return rows, wanted
 
     def hydrate_pre_ko(self) -> int:
@@ -1593,6 +1800,14 @@ class Scanner:
             "stream_mercati_allarme_n": len(self.mercati_allarme),
             # flumine nel processo del feed = ladder a dizionari (17/09)
             "flumine_caricato": self.flumine_caricato(),
+            # F1 (18/09) - l'INTERRUTTORE non si deduce dai log, si legge. Sta
+            # qui accanto a ``flumine_caricato`` per la stessa ragione: e' un
+            # fatto del processo, e uno stato onesto lo dichiara. Costa zero
+            # letture e zero scritture (viaggia sulla riga che si scrive
+            # comunque). ``canale`` porta i conti del canale - se qualcuno ha
+            # perso un fotogramma LO SI DICE.
+            "canale_acceso": self.canale is not None,
+            "canale": self.canale_statistiche(),
             "stream_shards": self.stream.stato_shard() if self.stream else [],
             # mercati a gol sotto quote per il motore opportunità (peso sul pool)
             "opp_events": len(self.opp_markets),
@@ -1606,6 +1821,10 @@ class Scanner:
             # che si scrive comunque.
             "tick": self.crono.riassunto(),
         }
+        # lo STESSO payload che va (o andrebbe) sul database: nessuna proiezione,
+        # nessun campo inventato per il canale. Anche in ``dry``, perche' in dry
+        # l'unica differenza deve restare "non si scrive sul database".
+        self._spingi_stato(payload)
         if self.dry:
             logger.info("[safe-scan] status: %s", payload)
         else:
