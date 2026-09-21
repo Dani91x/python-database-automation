@@ -543,6 +543,127 @@ def _load_model_cached(path: str) -> Dict:
     return payload
 
 
+# Colonne provenienti dalla tabella `standings`, prefissate dal feature_pipeline.
+# NON sono feature dei modelli: il trainer le elimina da X (seriea_model_export.py,
+# "C1 fix": la classifica e' uno snapshot di FINE stagione => leak del risultato).
+_STANDINGS_PREFIXES = ("home_standings_", "away_standings_")
+# Colonne di gruppo usate per rendere DETERMINISTICA la riga tenuta dopo il
+# fan-out (fetch_standings_by_league_seasons non ordina le righe).
+_STANDINGS_GROUP_COLS = ("home_standings_standing_group", "away_standings_standing_group")
+
+
+def _e_nullo(valore: Any) -> bool:
+    """True solo per i NULL SCALARI (NaN, NaT, None, pd.NA). Un valore contenitore
+    (list/ndarray/dict), per cui pd.isna restituirebbe un array, non e' un nullo."""
+    try:
+        esito = pd.isna(valore)
+    except (TypeError, ValueError):
+        return False
+    if isinstance(esito, (bool, np.bool_)):
+        return bool(esito)
+    return False
+
+
+def _valori_uguali(a: Any, b: Any) -> bool:
+    """Uguaglianza robusta fra due celle di qualunque dtype (numerico, object,
+    datetime64, categorical, Int64 nullable, dict/list da raw_json_odds).
+    Due nulli sono considerati UGUALI (NaN == NaN), un nullo e un non-nullo no."""
+    a_nullo, b_nullo = _e_nullo(a), _e_nullo(b)
+    if a_nullo or b_nullo:
+        return a_nullo and b_nullo
+    if a is b:
+        return True
+    try:
+        esito = a == b
+    except Exception:  # noqa: BLE001 - tipi non confrontabili => non uguali
+        return False
+    if isinstance(esito, (bool, np.bool_)):
+        return bool(esito)
+    try:
+        return bool(np.all(esito))  # array/Series: uguali solo se lo sono tutti
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _collapse_standings_fanout(features_df: pd.DataFrame, fixture_id: int) -> pd.DataFrame:
+    """Riporta a 1 riga le feature di una fixture moltiplicate dal merge standings.
+
+    `standings` ha una riga per (lega, stagione, squadra, GRUPPO/classifica): nelle
+    leghe con piu' classifiche per stagione (Argentina "Apertura, Group A" + "Anual"
+    + "Promedios", Uruguay "Apertura" + "Promedios", gironi e fasi finali) il merge
+    di feature_pipeline moltiplica la riga della fixture per
+    n_gruppi_casa * n_gruppi_trasferta (3*3 = 9, 2*2 = 4). predict_ensemble accetta
+    esattamente 1 riga e sollevava ValueError => quelle fixture restavano SENZA
+    predizioni ML nel DB, ogni giorno.
+
+    GUARDIA (cosa confronta): TUTTE le colonne del DataFrame tranne
+    home_standings_*/away_standings_*, qualunque sia il dtype (numerico, bool,
+    object, datetime64, categorical, Int64 nullable, dict/list). Le numeriche sono
+    confrontate in blocco, le altre cella per cella con `_valori_uguali`
+    (due nulli = uguali). Se anche una sola di quelle colonne differisce tra le
+    righe, la moltiplicazione NON viene dalle classifiche: si solleva, cosi'
+    l'anomalia resta VISIBILE com'era prima del fix e nessun dato sparisce in
+    silenzio. Se dopo l'esclusione non resta nessuna colonna, non c'e' nulla che
+    possa differire: si collassa lo stesso, ma il caso viene loggato.
+
+    RIGA TENUTA (determinismo): le righe vengono ordinate in modo stabile per
+    `home_standings_standing_group` e `away_standings_standing_group` (nulli in
+    coda) e si tiene la prima. Le probabilita' non dipendono da questa scelta (le
+    colonne standings_* non sono feature dei modelli), ma le standings_* finiscono
+    in `build_coverage_report`: senza ordinamento il contenuto del report
+    cambierebbe da un run all'altro, perche' la fetch delle standings non ordina.
+    """
+    cols_standings = [c for c in features_df.columns if c.startswith(_STANDINGS_PREFIXES)]
+    cols_da_confrontare = [c for c in features_df.columns if c not in set(cols_standings)]
+
+    if not cols_da_confrontare:
+        logger.warning(
+            "Fixture %s: %d righe di feature con le SOLE colonne standings_*: "
+            "nessuna colonna da confrontare, le righe sono identiche per definizione.",
+            fixture_id, len(features_df),
+        )
+    else:
+        resto = features_df[cols_da_confrontare]
+        num = resto.select_dtypes(include=["number", "bool"])
+        if num.shape[1] > 0:
+            arr = num.to_numpy(dtype="float64", na_value=np.nan)
+            if not np.array_equal(arr, np.broadcast_to(arr[0], arr.shape), equal_nan=True):
+                raise RuntimeError(
+                    f"features_df ha {len(features_df)} righe per la fixture {fixture_id} "
+                    "con feature numeriche DIVERSE tra loro: non e' il fan-out delle "
+                    "classifiche, la predizione sarebbe ambigua"
+                )
+        for col in [c for c in cols_da_confrontare if c not in set(num.columns)]:
+            valori = resto[col].tolist()
+            primo = valori[0]
+            if not all(_valori_uguali(primo, v) for v in valori[1:]):
+                raise RuntimeError(
+                    f"features_df ha {len(features_df)} righe per la fixture {fixture_id} "
+                    f"con la colonna '{col}' DIVERSA tra le righe: non e' il fan-out "
+                    "delle classifiche, la predizione sarebbe ambigua"
+                )
+
+    chiavi_ordine = [c for c in _STANDINGS_GROUP_COLS if c in features_df.columns]
+    ordinato = (
+        features_df.sort_values(chiavi_ordine, kind="stable", na_position="last")
+        if chiavi_ordine else features_df
+    )
+    tenuta = ordinato.head(1).reset_index(drop=True)
+
+    _gruppi = sorted({
+        str(g) for c in chiavi_ordine for g in features_df[c].dropna().tolist()
+    })
+    _scelti = [f"{c}={tenuta[c].iloc[0]!r}" for c in chiavi_ordine]
+    logger.warning(
+        "Fixture %s: la pipeline ha prodotto %d righe di feature identiche "
+        "(fan-out del merge standings, classifiche multiple: %s). Se ne usa 1 "
+        "(%s): le colonne standings_* non sono feature dei modelli.",
+        fixture_id, len(features_df), ", ".join(_gruppi) or "n/d",
+        "; ".join(_scelti) or "nessuna colonna di gruppo",
+    )
+    return tenuta
+
+
 def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None) -> Dict[str, Any]:
     """
     Full prediction pipeline for a single fixture.
@@ -600,6 +721,11 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     )
     if features_df.empty:
         raise RuntimeError("No features produced for fixture")
+    # Le leghe con piu' classifiche per stagione (gironi/Apertura/Promedios) fanno
+    # uscire dal merge standings N righe identiche per la stessa fixture: si torna
+    # a 1 riga (vedi _collapse_standings_fanout). Con 1 sola riga e' un no-op.
+    if len(features_df) > 1:
+        features_df = _collapse_standings_fanout(features_df, fixture_id)
 
     # Load models from registry (cache in-process con TTL corto)
     sb = get_supabase_client()
