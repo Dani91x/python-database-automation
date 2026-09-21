@@ -47,8 +47,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from db_client import get_supabase_client
 
 _RPC = "refresh_analytics_bets_range"
-_HTTP_TIMEOUT = 240.0   # secondi per finestra (il server non ha statement_timeout)
-_RETRY = 3              # tentativi su errori TRANSITORI
+_HTTP_TIMEOUT = 600.0   # secondi per finestra (il server non ha statement_timeout)
+_RETRY = 3              # tentativi su errori TRANSITORI (MAI sul timeout del client)
 _PAUSA = 1.0            # pausa fra finestre: il DB respira
 
 # Errori TRANSITORI (si ritentano). Gli errori LOGICI non si ritentano.
@@ -57,9 +57,24 @@ _TRANSIENT_CODES = {"57014", "53300", "53400", "55P03", "40001", "40P01",
                     "PGRST002", "408", "500", "502", "503", "504"}
 
 
+def _timeout_client(e: Exception) -> bool:
+    """Timeout/interruzione LATO CLIENT: la richiesta e' partita e la risposta non
+    e' arrivata, ma le due RPC hanno statement_timeout=0, quindi lo statement puo'
+    essere ANCORA VIVO sul server. Questo NON si ritenta MAI: una seconda chiamata
+    sulla stessa finestra farebbe delete+insert in concorrenza sulle stesse righe
+    (lock, deadlock 40P01, violazioni di chiave)."""
+    if isinstance(e, httpx.ConnectTimeout):
+        return False      # la connessione non si e' aperta: lo statement non e' mai partito
+    return isinstance(e, (httpx.TimeoutException, httpx.RemoteProtocolError,
+                          httpx.ReadError, httpx.WriteError))
+
+
 def _is_transient(e: Exception) -> bool:
-    """True solo per gli errori che ha senso ritentare."""
-    if isinstance(e, httpx.TransportError):   # ReadTimeout, ConnectError, PoolTimeout...
+    """True solo per gli errori che ha senso ritentare. ATTENZIONE: esclude i
+    timeout del client (vedi _timeout_client), che NON si ritentano."""
+    if _timeout_client(e):
+        return False
+    if isinstance(e, httpx.TransportError):   # ConnectError, ConnectTimeout gia' escluso, PoolTimeout...
         return True
     code = getattr(e, "code", None)
     if code is not None and str(code) in _TRANSIENT_CODES:
@@ -69,8 +84,8 @@ def _is_transient(e: Exception) -> bool:
 
 
 def _sleep_backoff(attempt: int) -> None:
-    """Attesa LUNGA con jitter: su ReadTimeout lo statement puo' essere ancora in
-    esecuzione sul server, quindi non gli si accavalla subito una seconda chiamata."""
+    """Attesa LUNGA con jitter: il DB e' fragile e la finestra appena fallita puo'
+    aver lasciato lavoro in corso."""
     time.sleep(min(60.0, 10.0 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
 
 
@@ -95,13 +110,21 @@ def finestre_da_intervallo(p_from: date, p_to: date) -> list[tuple[date, date]]:
 
 
 def rinfresca_finestra(sb, p_from: date, p_to: date) -> tuple[bool, int]:
-    """Chiama la RPC per UNA finestra. Ritorna (riuscita, righe_scritte)."""
+    """Chiama la RPC per UNA finestra. Ritorna (riuscita, righe_scritte).
+    Sul TIMEOUT DEL CLIENT non ritenta: vedi _timeout_client."""
     for attempt in range(_RETRY):
         try:
             res = sb.rpc(_RPC, {"p_from": p_from.isoformat(),
                                 "p_to": p_to.isoformat()}).execute()
             return True, (res.data if isinstance(res.data, int) else 0)
         except Exception as e:  # noqa: BLE001
+            if _timeout_client(e):
+                print(f"  [ERR] {p_from} -> {p_to}: {type(e).__name__} dopo "
+                      f"{_HTTP_TIMEOUT:.0f}s: NON ritento. Lo statement PUO' ESSERE "
+                      f"ANCORA IN ESECUZIONE sul server (le RPC hanno "
+                      f"statement_timeout=0): NON rilanciare a mano subito, "
+                      f"verifica prima che non stia ancora girando.")
+                return False, 0
             if not _is_transient(e) or attempt == _RETRY - 1:
                 print(f"  [ERR] {p_from} -> {p_to}: {type(e).__name__}: {str(e)[:140]}")
                 return False, 0

@@ -15,19 +15,19 @@ storico, delay_avg = media ritardi. Tutto sulle partite settlate a 90'.
 
 ──────────────────────────────────────────────────────────────────────────────
 SCRITTURA BULK A FETTE (veloce + poco stressante per il DB):
-  Niente UPDATE riga-per-riga (46k round-trip → I/O-bound), ma nemmeno UN SOLO
+  Niente UPDATE riga-per-riga (46k round-trip -> I/O-bound), ma nemmeno UN SOLO
   UPDATE per l'intera lega (sulle leghe grandi supera lo statement_timeout di 8s
-  → 57014 → lega intera NON aggiornata, in silenzio). Ora, per FETTE di poche
+  -> 57014 -> lega intera NON aggiornata, in silenzio). Ora, per FETTE di poche
   centinaia di righe:
     1) calcola gli snapshot in Python (compute_market_snapshots, INVARIATO),
     2) carica la FETTA in `analytics_snap_staging` (un upsert),
     3) UPDATE ... FROM scopato alla lega (RPC flush_analytics_snap_staging), che
        aggiorna e poi CANCELLA dalla staging le chiavi appena flushate,
     4) fetta successiva (staging di nuovo vuota per quella lega).
-  → stato finale IDENTICO al flush unico: le fette sono disgiunte, ogni chiave è
+  -> stato finale IDENTICO al flush unico: le fette sono disgiunte, ogni chiave e'
   aggiornata una volta sola e la somma delle righe aggiornate coincide. I numeri
   scritti sono IDENTICI, riga-per-riga, a quelli del metodo riga-per-riga (lo
-  staging è solo trasporto + JOIN set-based).
+  staging e' solo trasporto + JOIN set-based).
 
 MODO INCREMENTALE (--days N / --today, per le partite del GIORNO, pre-match):
   Enrichisce SOLO le fixture recenti presenti in analytics_signals. ATTENZIONE
@@ -69,6 +69,8 @@ _MATCH_COLS = ("fixture_id,fixture_date,status_short,goals_home,goals_away,"
 _STAGE_BATCH = 500      # tetto massimo di righe in UNA richiesta di upsert
 _FLUSH_SLICE = 400      # righe per FETTA carica->flush (adattiva: dimezza sui transitori)
 _FLUSH_MIN = 50         # fetta minima
+_PAGE = 1000            # righe per pagina RICHIESTE in lettura
+_PAGE_MIN = 100         # pagina minima dopo i dimezzamenti sui transitori
 _RETRY = 5              # tentativi su errori TRANSITORI
 
 # Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
@@ -95,37 +97,64 @@ def _sleep_backoff(attempt: int) -> None:
     time.sleep(min(8.0, 0.5 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
 
 
-def _fetch_matches(sb, league_id: int) -> list[dict]:
-    """Tutte le partite settlate (status 90') della lega, per la serie cronologica."""
-    off, out = 0, []
+def _leggi_pagine(fai_query, what: str, page: int = _PAGE) -> list[dict]:
+    """Legge TUTTE le pagine di una query.
+
+    Tre regole, contro la perdita silenziosa di righe:
+      1) ORDINE TOTALE server-side (lo mette il chiamante su una colonna UNICA):
+         senza ordine l'ordine di ritorno non e' garantito fra una pagina e
+         l'altra e le righe si saltano o si duplicano;
+      2) l'offset avanza di quanto RICEVUTO e si esce SOLO a pagina VUOTA: una
+         pagina piu' corta di quanto chiesto puo' essere il cap del server
+         (PostgREST max-rows), non la fine dei dati;
+      3) retry sui soli errori transitori, con pagina dimezzata: se non si riesce
+         a leggere, l'errore ESCE (mai una storia troncata scambiata per completa).
+    """
+    out: list[dict] = []
+    off, size = 0, page
     while True:
-        r = (sb.table("matches").select(_MATCH_COLS)
-             .eq("league_id", league_id).in_("status_short", ["FT", "AET", "PEN"])
-             .range(off, off + 999).execute().data)
-        if not r:
-            break
-        out += r
-        if len(r) < 1000:
-            break
-        off += 1000
-    return out
+        righe = None
+        for attempt in range(_RETRY):
+            try:
+                righe = fai_query(off, size).execute().data or []
+                break
+            except Exception as e:  # noqa: BLE001
+                if not _is_transient(e) or attempt == _RETRY - 1:
+                    raise RuntimeError(
+                        f"lettura {what} (offset {off}, blocco {size}) fallita dopo "
+                        f"{attempt + 1} tentativi: {type(e).__name__}: {str(e)[:120]}") from e
+                _sleep_backoff(attempt)
+                size = max(_PAGE_MIN, size // 2)
+        if not righe:
+            return out
+        out.extend(righe)
+        off += len(righe)
+
+
+def _fetch_matches(sb, league_id: int) -> list[dict]:
+    """Tutte le partite settlate (status 90') della lega, per la serie cronologica.
+    ORDER BY fixture_id: e' UNICO in matches (matches_fixture_unique), quindi
+    l'ordine e' totale e le pagine non si sovrappongono. Una storia partite
+    TRONCATA darebbe freq/ritardi FALSI scritti come se fossero buoni."""
+    return _leggi_pagine(
+        lambda off, size: (sb.table("matches").select(_MATCH_COLS)
+                           .eq("league_id", league_id)
+                           .in_("status_short", ["FT", "AET", "PEN"])
+                           .order("fixture_id").range(off, off + size - 1)),
+        f"matches lega {league_id}")
 
 
 def _fetch_signal_targets(sb, league_id: int) -> dict[tuple[str, str], set[int]]:
     """{(market, selection): {fixture presenti}} per i SOLI (fixture×market×selection)
-    in analytics_signals della lega — così non si fanno UPDATE a vuoto."""
-    off = 0
+    in analytics_signals della lega -- cosi' non si fanno UPDATE a vuoto.
+    ORDER BY id (chiave primaria, unica) = ordine totale."""
     by_ms: dict[tuple[str, str], set[int]] = defaultdict(set)
-    while True:
-        r = (sb.table("analytics_signals").select("fixture_id,market,selection")
-             .eq("league_id", league_id).range(off, off + 999).execute().data)
-        if not r:
-            break
-        for x in r:
-            by_ms[(x["market"], x["selection"])].add(x["fixture_id"])
-        if len(r) < 1000:
-            break
-        off += 1000
+    for x in _leggi_pagine(
+            lambda off, size: (sb.table("analytics_signals").select("id,fixture_id,market,selection")
+                               .eq("league_id", league_id)
+                               .order("id").range(off, off + size - 1)),
+            f"analytics_signals lega {league_id}"):
+        by_ms[(x["market"], x["selection"])].add(x["fixture_id"])
     return by_ms
 
 
@@ -163,7 +192,7 @@ def _upsert_stage(sb, rows: list[dict], counters: dict) -> bool:
 
 def _flush_league(sb, league_id: int) -> tuple[bool, int]:
     """UN UPDATE ... FROM (RPC) sulle righe ATTUALMENTE in staging per la lega.
-    La RPC cancella dalla staging le sole chiavi flushate → le fette successive
+    La RPC cancella dalla staging le sole chiavi flushate -> le fette successive
     partono da una staging vuota. Ritorna (riuscito, righe_aggiornate)."""
     for attempt in range(_RETRY):
         try:
@@ -182,7 +211,7 @@ def _flush_league(sb, league_id: int) -> tuple[bool, int]:
 def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
                    slice_state: Optional[dict] = None) -> int:
     """Scrive gli snapshot A FETTE: per ogni fetta di poche centinaia di righe
-    → upsert in staging + UNA RPC di flush. Ritorna le righe aggiornate.
+    -> upsert in staging + UNA RPC di flush. Ritorna le righe aggiornate.
 
     PERCHE' A FETTE: la RPC fa UN SOLO UPDATE ... FROM per tutta la staging della
     lega; sulle leghe grandi (migliaia di righe) supera lo statement_timeout di 8s
@@ -194,7 +223,7 @@ def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
     Se un flush non riesce dopo i retry, le sue righe restano in staging (le
     riprendera' il run successivo, che le sovrascrive) e la LEGA viene abbandonata:
     caricarne altre renderebbe l'UPDATE ancora piu' pesante. Le righe non scritte
-    sono contate in counters['failed'] → exit != 0 a fine script.
+    sono contate in counters['failed'] -> exit != 0 a fine script.
     """
     if not stage_rows:
         return 0
@@ -277,19 +306,17 @@ def _recent_targets(sb, days: int) -> dict[int, set[int]]:
     kickoff negli ultimi `days` giorni. Serve al modo incrementale: enrichisce
     SOLO queste leghe, e tratta i loro fixture non-settlati come stato corrente."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    off = 0
     out: dict[int, set[int]] = defaultdict(set)
-    while True:
-        r = (sb.table("analytics_signals").select("league_id,fixture_id")
-             .gte("kickoff", since).range(off, off + 999).execute().data)
-        if not r:
-            break
-        for x in r:
-            if x.get("league_id") is not None:
-                out[x["league_id"]].add(x["fixture_id"])
-        if len(r) < 1000:
-            break
-        off += 1000
+    # ORDER BY kickoff,id: kickoff e' gia' l'ordine dell'indice usato dal filtro
+    # (idx_as_kickoff) e id lo rende TOTALE; il piano resta lo stesso con un
+    # Incremental Sort (misurato: 26.076 contro 25.031, +4%).
+    for x in _leggi_pagine(
+            lambda off, size: (sb.table("analytics_signals").select("league_id,fixture_id,kickoff,id")
+                               .gte("kickoff", since)
+                               .order("kickoff").order("id").range(off, off + size - 1)),
+            f"analytics_signals recenti (da {since[:10]})"):
+        if x.get("league_id") is not None:
+            out[x["league_id"]].add(x["fixture_id"])
     return out
 
 

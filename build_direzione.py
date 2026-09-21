@@ -62,6 +62,19 @@ def _sleep_backoff(attempt: int) -> None:
     time.sleep(min(8.0, 0.5 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
 
 
+def _con_retry(call, what: str):
+    """Esegue una chiamata al DB ritentando i SOLI errori transitori (backoff con
+    jitter). Se non riesce, l'errore ESCE: nessuna scrittura data per fatta."""
+    for attempt in range(RETRY):
+        try:
+            return call()
+        except Exception as e:  # noqa: BLE001
+            if not _is_transient(e) or attempt == RETRY - 1:
+                raise RuntimeError(f"{what}: fallito dopo {attempt + 1} tentativi: "
+                                   f"{type(e).__name__}: {str(e)[:120]}") from e
+            _sleep_backoff(attempt)
+
+
 def _base_query(sb):
     return (sb.table("bet_features").select(COLS)
             .eq("settled", True).in_("market", CAL_MARKETS).order("fixture_id"))
@@ -89,12 +102,16 @@ def _fetch_block(sb, cursor, limit: int) -> tuple[list[dict], int]:
 
 def _fetch_one_fixture(sb, fixture_id: int) -> list[dict]:
     """Tutte le righe di UNA fixture (caso limite: un solo fixture_id riempie il
-    blocco). Poche righe: 1 mercato x selezione, ~16 nei 7 mercati calibrati."""
+    blocco). Poche righe: 1 mercato x selezione, ~16 nei 7 mercati calibrati.
+    ORDER BY fixture_id,market,selection = chiave primaria di analytics_bets,
+    quindi ordine TOTALE; si esce solo a pagina vuota; retry sui transitori."""
     out, off = [], 0
     while True:
-        d = (_base_query(sb).eq("fixture_id", fixture_id)
-             .order("market").order("selection")      # ordine totale: pagine stabili
-             .range(off, off + 999).execute().data or [])
+        d = _con_retry(
+            lambda off=off: (_base_query(sb).eq("fixture_id", fixture_id)
+                             .order("market").order("selection")
+                             .range(off, off + 999).execute().data or []),
+            f"bet_features fixture {fixture_id} (offset {off})")
         if not d:
             break
         out.extend(d)
@@ -107,12 +124,12 @@ def load() -> pd.DataFrame:
     sb = get_supabase_client()
     # PAGINAZIONE KEYSET (non OFFSET): l'OFFSET profondo rilegge e scarta tutte le
     # righe precedenti a ogni blocco (misurato: offset 45.000 = 3,65 s contro 0,12 s
-    # del keyset) e a fine storico supera lo statement_timeout di 8s → 57014 → la
+    # del keyset) e a fine storico supera lo statement_timeout di 8s -> 57014 -> la
     # pagella resta quella del giorno prima. `fixture_id >= cursore` diventa invece
     # una Index Cond sulla pkey di analytics_bets (costo costante per blocco).
     # CONFINE: fixture_id NON e' unico nella vista (piu' mercati/selezioni per
     # fixture) e l'ordine FRA PARI non e' garantito; percio' l'ultimo gruppo di ogni
-    # blocco viene SCARTATO e RILETTO INTERO dal blocco successivo → nessuna riga
+    # blocco viene SCARTATO e RILETTO INTERO dal blocco successivo -> nessuna riga
     # saltata ne' duplicata, stesso identico insieme di righe dell'OFFSET corretto.
     rows: list[dict] = []
     cursor, limit = None, PAGE
@@ -200,12 +217,20 @@ def main():
     for r in rows:
         r["generated_at"] = run_ts
     pk = "engine,market,selection,league_id,prob_bucket"
+    # ORDINE OBBLIGATORIO: prima TUTTI gli upsert, poi il delete degli stale. Se un
+    # upsert non riesce (anche dopo i retry) l'eccezione esce QUI e il delete NON
+    # viene eseguito: la pagella resta quella del giorno prima, mai mezza nuova e
+    # mezza cancellata.
     for i in range(0, len(rows), 500):
-        res = sb.table("direction_pagella").upsert(rows[i:i + 500], on_conflict=pk).execute()
+        res = _con_retry(
+            lambda i=i: sb.table("direction_pagella").upsert(rows[i:i + 500], on_conflict=pk).execute(),
+            f"upsert direction_pagella blocco {i // 500}")
         if not res.data:
             raise RuntimeError(f"Upsert batch {i // 500} fallito: risposta vuota dal DB.")
-    sb.table("direction_pagella").delete().lt("generated_at", run_ts).execute()  # rimuove gli stale
-    tot = sb.table("direction_pagella").select("engine", count="exact").limit(1).execute()
+    _con_retry(lambda: sb.table("direction_pagella").delete().lt("generated_at", run_ts).execute(),
+               "delete righe stale")  # rimuove gli stale SOLO dopo tutti gli upsert
+    tot = _con_retry(lambda: sb.table("direction_pagella").select("engine", count="exact").limit(1).execute(),
+                     "conteggio direction_pagella")
     print(f"Scritte. Totale in DB: {tot.count} righe.  ({dt.datetime.now():%H:%M:%S})")
 
 

@@ -72,8 +72,9 @@ def err_23505() -> APIError:
 
 # ------------------------------------------------------------- finto PostgREST
 class FakeResp:
-    def __init__(self, data):
+    def __init__(self, data, count=None):
         self.data = data
+        self.count = count
 
 
 class _Not:
@@ -95,11 +96,18 @@ class FakeQuery:
         self._limit = None
         self._range = None
         self._upsert = None
+        self._delete = False
+        self._count = None
         self.not_ = _Not(self)
 
     # ---- costruzione query
-    def select(self, cols="*", **kw):
+    def select(self, cols="*", count=None, **kw):
         self.cols = cols
+        self._count = count
+        return self
+
+    def delete(self, **kw):
+        self._delete = True
         return self
 
     def eq(self, c, v):
@@ -150,10 +158,13 @@ class FakeQuery:
     def execute(self):
         if self._upsert is not None:
             return self._esegui_upsert()
+        if self._delete:
+            return self._esegui_delete()
         self.db.n_select += 1
         if self.db.select_hook:
             self.db.select_hook(self)
         rows = [dict(r) for r in self.db.tables.get(self.table, []) if self._match(r)]
+        totale = len(rows)
         rows = self.db.ordina(rows, self.orders)
         if self._range is not None:
             rows = rows[self._range[0]:self._range[1] + 1]
@@ -164,7 +175,20 @@ class FakeQuery:
         if self.cols != "*":
             keys = [c.strip() for c in self.cols.split(",")]
             rows = [{k: r.get(k) for k in keys} for r in rows]
-        return FakeResp(rows)
+        return FakeResp(rows, count=totale if self._count == "exact" else None)
+
+    def _esegui_delete(self):
+        """DELETE con i filtri applicati (PostgREST cancella le righe che
+        combaciano). Conta le esecuzioni: serve a provare che il delete degli
+        stale NON parte se un upsert e' fallito."""
+        self.db.n_delete += 1
+        if self.db.delete_hook:
+            self.db.delete_hook(self.table, self.filters)
+        resta, tolte = [], []
+        for r in self.db.tables.get(self.table, []):
+            (tolte if self._match(r) else resta).append(r)
+        self.db.tables[self.table] = resta
+        return FakeResp(tolte)
 
     def _esegui_upsert(self):
         rows, conflict = self._upsert
@@ -220,11 +244,12 @@ class FakeDB:
         self.tables = tables or {}
         self.cap = cap                 # PostgREST max-rows (None = nessun cap)
         self.max_flush = max_flush     # righe in staging oltre cui l'UPDATE va in 57014
-        self.n_select = self.n_upsert = self.n_rpc = 0
+        self.n_select = self.n_upsert = self.n_rpc = self.n_delete = 0
         self.upsert_sizes = []
         self.rpc_calls = []
         self.select_hook = None
         self.upsert_hook = None
+        self.delete_hook = None
         self.rpc_impl = {"flush_analytics_snap_staging": flush_analytics_snap_staging}
         self.postgrest = _Postgrest()
 
@@ -661,14 +686,16 @@ def test_finestre_giornaliere_danno_lo_stesso_stato_finale_della_chiamata_unica(
     assert fette["analytics_bets"] == unico["analytics_bets"]
 
 
-def test_rinfresca_finestra_ritenta_il_read_timeout():
+def test_rinfresca_finestra_ritenta_il_transitorio_del_server():
+    """Gli errori TRANSITORI del server si ritentano (il ReadTimeout del client
+    NO: vedi test_refresh_non_ritenta_il_timeout_del_client)."""
     db = FakeDB()
     stato = {"n": 0}
 
     def impl(d, p):
         stato["n"] += 1
         if stato["n"] == 1:
-            raise httpx.ReadTimeout("timed out")
+            raise api_error("PGRST002", "Could not query the database for the schema cache")
         return 77
 
     db.rpc_impl[rab._RPC] = impl
@@ -693,7 +720,10 @@ def test_main_esce_non_zero_se_una_finestra_fallisce(monkeypatch, capsys):
     db = FakeDB()
     chiamate = []
 
-    fallisce = (date.today() + timedelta(days=1)).isoformat()
+    # STESSA data che usa lo script (UTC): con date.today() il test sarebbe
+    # ballerino fra le 22:00 e le 24:00 UTC (fuso locale avanti).
+    oggi_utc = datetime.now(timezone.utc).date()
+    fallisce = (oggi_utc + timedelta(days=1)).isoformat()
 
     def impl(d, p):
         chiamate.append(p["p_from"])
@@ -813,3 +843,310 @@ def test_upsert_ritenta_il_transitorio():
     righe = [{"signal_uid": "poisson|1|1x2|H", "market": "1x2", "selection": "H"}]
     assert bas._upsert(db, righe, False, c) == 1
     assert c["failed_rows"] == 0 and tentativi["n"] == 3
+
+
+# ============================================================================
+# 5) GIRO 2 - letture di enrich (storia partite e target), eventi, scritture
+# ============================================================================
+def _righe_matches(n: int, league_id: int = 129):
+    """Righe reali di `matches` (fixture_id e' UNICO: matches_fixture_unique)."""
+    return [{"fixture_id": 1500000 + i, "league_id": league_id,
+             "fixture_date": f"2026-{1 + (i % 9):02d}-15T18:00:00+00:00",
+             "status_short": "FT", "goals_home": i % 4, "goals_away": (i + 1) % 3,
+             "fulltime_home": i % 4, "fulltime_away": (i + 1) % 3,
+             "halftime_home": 0, "halftime_away": 1} for i in range(n)]
+
+
+def _vecchio_leggi_offset(sb, table: str, cols: str, filtri, page: int = 1000):
+    """LA VECCHIA lettura (pre-giro-2): OFFSET senza ORDER BY, uscita a pagina
+    CORTA, nessun retry. Serve come falsificazione."""
+    off, out = 0, []
+    while True:
+        q = sb.table(table).select(cols)
+        for f in filtri:
+            q = f(q)
+        r = q.range(off, off + page - 1).execute().data
+        if not r:
+            break
+        out += r
+        if len(r) < page:
+            break
+        off += page
+    return out
+
+
+def test_fetch_matches_legge_tutta_la_storia_anche_se_il_server_tronca():
+    """Una storia partite TRONCATA produrrebbe freq/ritardi FALSI scritti con
+    failed=0: qui il server cappa a 500 righe su 2500 partite."""
+    righe = _righe_matches(2500)
+    db = FakeDB({"matches": righe}, cap=500)
+    letti = en._fetch_matches(db, 129)
+    assert len(letti) == 2500
+    assert len({m["fixture_id"] for m in letti}) == 2500      # nessun doppione
+    # falsificazione: il vecchio si fermava alla prima pagina corta -> 500 partite
+    db2 = FakeDB({"matches": _righe_matches(2500)}, cap=500)
+    vecchio = _vecchio_leggi_offset(
+        db2, "matches", en._MATCH_COLS,
+        [lambda q: q.eq("league_id", 129), lambda q: q.in_("status_short", ["FT", "AET", "PEN"])])
+    assert len(vecchio) == 500
+
+
+def test_fetch_matches_non_perde_righe_con_ordine_fisico_instabile():
+    righe = _righe_matches(120)
+    db = FakeDB({"matches": righe})
+    letti = en._fetch_matches(db, 129)
+    assert [m["fixture_id"] for m in letti] == sorted(r["fixture_id"] for r in righe)
+    # falsificazione: senza ORDER BY, con pagine da 50, l'insieme non e' lo stesso
+    db2 = FakeDB({"matches": _righe_matches(120)})
+    vecchio = _vecchio_leggi_offset(
+        db2, "matches", en._MATCH_COLS,
+        [lambda q: q.eq("league_id", 129), lambda q: q.in_("status_short", ["FT", "AET", "PEN"])],
+        page=50)
+    assert sorted(m["fixture_id"] for m in vecchio) != [m["fixture_id"] for m in letti]
+
+
+def _righe_signals_lega(n_fixture: int, league_id: int = 129):
+    out, rid = [], 1
+    for i in range(n_fixture):
+        fid = 1500000 + i
+        for market, selection in MERCATI:
+            for eng in MOTORI:
+                out.append({"id": rid, "signal_uid": f"{eng}|{fid}|{market}|{selection}",
+                            "engine": eng, "fixture_id": fid, "league_id": league_id,
+                            "market": market, "selection": selection,
+                            "kickoff": f"2026-09-{18 + (i % 3):02d}T18:00:00+00:00"})
+                rid += 1
+    return out
+
+
+def test_fetch_signal_targets_legge_tutti_i_target_col_server_che_tronca():
+    righe = _righe_signals_lega(100)        # 100 x 4 mercati x 3 motori = 1200 righe
+    db = FakeDB({"analytics_signals": righe}, cap=500)
+    by_ms = en._fetch_signal_targets(db, 129)
+    assert sum(len(v) for v in by_ms.values()) == 100 * len(MERCATI)
+    # falsificazione: il vecchio si fermava a 500 righe -> target incompleti
+    db2 = FakeDB({"analytics_signals": _righe_signals_lega(100)}, cap=500)
+    vecchio = _vecchio_leggi_offset(db2, "analytics_signals", "fixture_id,market,selection",
+                                    [lambda q: q.eq("league_id", 129)])
+    target_vecchi = {(x["market"], x["selection"], x["fixture_id"]) for x in vecchio}
+    assert len(target_vecchi) < 100 * len(MERCATI)
+
+
+def test_recent_targets_legge_tutto_col_server_che_tronca():
+    righe = _righe_signals_lega(60)
+    db = FakeDB({"analytics_signals": righe}, cap=250)
+    out = en._recent_targets(db, 4)
+    assert sum(len(v) for v in out.values()) == 60          # tutte le fixture
+    assert set(out) == {129}
+
+
+def test_letture_enrich_errore_non_transitorio_esce():
+    db = FakeDB({"matches": _righe_matches(10)})
+    db.select_hook = lambda q: (_ for _ in ()).throw(api_error("42703", 'column "x" does not exist'))
+    with pytest.raises(RuntimeError, match="matches lega 129"):
+        en._fetch_matches(db, 129)
+
+
+def test_letture_enrich_ritentano_il_transitorio_e_dimezzano():
+    righe = _righe_matches(300)
+    db = FakeDB({"matches": righe})
+    usate = []
+
+    def hook(q):
+        if q.table != "matches":
+            return
+        usate.append(q._range)
+        lung = q._range[1] - q._range[0] + 1
+        if lung > 500:
+            raise err_57014()
+
+    db.select_hook = hook
+    letti = en._fetch_matches(db, 129)
+    assert len(letti) == 300
+    assert min(r[1] - r[0] + 1 for r in usate) <= 500        # pagina dimezzata
+
+
+def _eventi_gol(fids, per_fixture: int):
+    out, rid = [], 1
+    for f in fids:
+        for k in range(per_fixture):
+            out.append({"id": rid, "fixture_id": f, "minute": 10 + k * 5,
+                        "detail": "Normal Goal", "comments": None,
+                        "event_type": "Goal"})
+            rid += 1
+    return out
+
+
+def test_fetch_first_goals_pagina_e_non_perde_i_gol_in_coda():
+    """Con 100 fixture x 9 gol = 900 righe e cap del server a 300, il primo gol
+    delle fixture in coda spariva: first_goal_minute sbagliato in silenzio."""
+    fids = [1600000 + i for i in range(100)]
+    eventi = _eventi_gol(fids, 9)
+    db = FakeDB({"match_events": eventi}, cap=300)
+    out = bas._fetch_first_goals(db, fids)
+    assert len(out) == 100                       # TUTTE le fixture hanno il loro gol
+    assert set(out.values()) == {10}             # il primo gol e' sempre il minuto 10
+    # falsificazione: senza paginazione si fermava alle prime 300 righe
+    db2 = FakeDB({"match_events": _eventi_gol(fids, 9)}, cap=300)
+    vecchio = _vecchio_leggi_offset(db2, "match_events", "fixture_id,minute,detail,comments",
+                                    [lambda q: q.in_("fixture_id", fids),
+                                     lambda q: q.eq("event_type", "Goal")])
+    assert len({e["fixture_id"] for e in vecchio}) < 100
+
+
+def test_fetch_first_goals_usa_blocchi_da_100_fixture():
+    fids = [1600000 + i for i in range(250)]
+    db = FakeDB({"match_events": _eventi_gol(fids, 2)})
+    blocchi = []
+    db.select_hook = lambda q: blocchi.append([f for f in q.filters if f[0] == "in"][0][2])
+    bas._fetch_first_goals(db, fids)
+    assert bas._EVENTI_CHUNK == 100
+    assert max(len(b) for b in blocchi) <= bas._EVENTI_CHUNK
+
+
+def _prepara_direzione(monkeypatch, db):
+    monkeypatch.setattr(db_client, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(bd, "PAGE", 18)
+    monkeypatch.setattr(bd, "CAL_MARKETS", ["1x2", "btts"])
+    monkeypatch.setattr(bd, "MIN_GLOBAL", 1)
+    monkeypatch.setattr(bd, "MIN_LEAGUE", 1)
+
+
+def test_direzione_upsert_fallito_non_cancella_le_righe_stale(monkeypatch):
+    """La pagella non deve mai restare meta' nuova e meta' cancellata: il delete
+    delle righe stale avviene SOLO dopo che TUTTI gli upsert sono riusciti."""
+    vecchia = [{"engine": "poisson", "market": "1x2", "selection": "H", "league_id": 0,
+                "prob_bucket": ".40-.50", "n": 10, "hits": 5, "hit_rate": 0.5,
+                "base_rate": 0.5, "generated_at": "2026-09-20T03:30:00+00:00"}]
+    db = FakeDB({"bet_features": _righe_bet_features(40), "direction_pagella": vecchia})
+    _prepara_direzione(monkeypatch, db)
+    db.upsert_hook = lambda table, rows: (_ for _ in ()).throw(err_57014())
+    with pytest.raises(RuntimeError, match="upsert direction_pagella"):
+        bd.main()
+    assert db.tables["direction_pagella"] == vecchia      # pagella intatta
+    assert db.n_delete == 0                                # nessun delete eseguito
+
+
+def test_direzione_upsert_ritenta_il_transitorio_poi_cancella_gli_stale(monkeypatch):
+    vecchia = [{"engine": "poisson", "market": "vecchio", "selection": "H", "league_id": 0,
+                "prob_bucket": ".40-.50", "n": 10, "hits": 5, "hit_rate": 0.5,
+                "base_rate": 0.5, "generated_at": "2026-09-20T03:30:00+00:00"}]
+    db = FakeDB({"bet_features": _righe_bet_features(40), "direction_pagella": list(vecchia)})
+    _prepara_direzione(monkeypatch, db)
+    tent = {"n": 0}
+
+    def hook(table, rows):
+        tent["n"] += 1
+        if tent["n"] == 1:
+            raise err_503()
+
+    db.upsert_hook = hook
+    bd.main()
+    assert tent["n"] >= 2                                  # ha ritentato
+    assert db.n_delete == 1                                # stale rimossi DOPO
+    assert all(r["market"] != "vecchio" for r in db.tables["direction_pagella"])
+    assert db.tables["direction_pagella"]
+
+
+def test_merge_codici_non_mappati_fanno_uscire_non_zero(monkeypatch):
+    righe = [{"signal_uid": "poisson|1600000|XYZ|2026-09-20", "run_date": "2026-09-20",
+              "fixture_id": 1600000, "engine": "poisson", "market": "XYZ",
+              "market_label": "?", "status": "PLACED", "prob_calibrated": 0.55,
+              "result": "PENDING", "league_id": 135, "league_name": "Serie A",
+              "season_year": 2026, "home_team": "A", "away_team": "B",
+              "kickoff": "2026-09-20T18:00:00+00:00", "emitted_at": "2026-09-20T09:00:00+00:00",
+              "direction": "back"}]
+    db = FakeDB({"engine_signals": righe, "analytics_decisions": [], "matches": [],
+                 "analytics_signals": []})
+    monkeypatch.setattr(mes, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["merge_engine_signals.py"])
+    with pytest.raises(SystemExit) as ex:
+        mes.main()
+    assert "XYZ" in str(ex.value.code) and "previsioni perse" in str(ex.value.code)
+
+
+def test_merge_senza_codici_ignoti_esce_zero(monkeypatch):
+    righe = [{"signal_uid": "poisson|1600000|O25|2026-09-20", "run_date": "2026-09-20",
+              "fixture_id": 1600000, "engine": "poisson", "market": "O25",
+              "market_label": "Over 2.5", "status": "PLACED", "prob_calibrated": 0.55,
+              "result": "PENDING", "league_id": 135, "league_name": "Serie A",
+              "season_year": 2026, "home_team": "A", "away_team": "B",
+              "kickoff": "2026-09-20T18:00:00+00:00", "emitted_at": "2026-09-20T09:00:00+00:00",
+              "direction": "back"}]
+    db = FakeDB({"engine_signals": righe, "analytics_decisions": [], "matches": [],
+                 "analytics_signals": []})
+    monkeypatch.setattr(mes, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["merge_engine_signals.py"])
+    mes.main()          # nessuna SystemExit
+
+
+def test_refresh_non_ritenta_il_timeout_del_client():
+    """Lo statement puo' essere ancora vivo sul server (statement_timeout=0):
+    rilanciarlo significa due delete+insert in concorrenza sulle stesse righe."""
+    db = FakeDB()
+    n = {"c": 0}
+
+    def impl(d, p):
+        n["c"] += 1
+        raise httpx.ReadTimeout("timed out")
+
+    db.rpc_impl[rab._RPC] = impl
+    ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
+    assert ok is False and righe == 0
+    assert n["c"] == 1                      # UNA sola chiamata, nessun retry
+
+
+def test_refresh_ritenta_gli_altri_transitori():
+    db = FakeDB()
+    n = {"c": 0}
+
+    def impl(d, p):
+        n["c"] += 1
+        if n["c"] == 1:
+            raise err_503()
+        return 42
+
+    db.rpc_impl[rab._RPC] = impl
+    ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
+    assert ok and righe == 42 and n["c"] == 2
+
+
+def test_refresh_timeout_client_avvisa_di_non_rilanciare(capsys):
+    db = FakeDB()
+    db.rpc_impl[rab._RPC] = lambda d, p: (_ for _ in ()).throw(httpx.ReadTimeout("t"))
+    rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
+    out = capsys.readouterr().out
+    assert "NON ritento" in out and "NON rilanciare a mano subito" in out
+
+
+def test_refresh_connect_timeout_si_ritenta():
+    """La connessione non si e' aperta: lo statement non e' mai partito."""
+    db = FakeDB()
+    n = {"c": 0}
+
+    def impl(d, p):
+        n["c"] += 1
+        if n["c"] == 1:
+            raise httpx.ConnectTimeout("no connect")
+        return 7
+
+    db.rpc_impl[rab._RPC] = impl
+    ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
+    assert ok and righe == 7 and n["c"] == 2
+
+
+def test_refresh_timeout_client_alzato_a_600s():
+    assert rab._HTTP_TIMEOUT >= 600.0
+
+
+def test_snapshot_non_cambiano_con_l_ordine_di_lettura():
+    """EQUIVALENZA dei NUMERI: compute_market_snapshots riordina da se' con
+    chrono_key=(fixture_date,fixture_id), quindi l'ORDER BY aggiunto alla lettura
+    di `matches` non puo' cambiare nessun freq_*/delay_* scritto."""
+    from analytics_market_stats import compute_market_snapshots
+    partite = _righe_matches(40)
+    mescolate = partite[7:] + partite[:7]
+    a = compute_market_snapshots("over_2_5", "Over", partite)
+    b = compute_market_snapshots("over_2_5", "Over", mescolate)
+    assert a and a == b
+

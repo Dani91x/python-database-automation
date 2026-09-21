@@ -37,7 +37,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from db_client import get_supabase_client
 from analytics_settlement import ft_score_90, ht_score, hit
 
-_RETRY = 5   # tentativi su errori TRANSITORI
+_RETRY = 5          # tentativi su errori TRANSITORI
+_PAGE = 1000        # righe per pagina RICHIESTE in lettura
+_PAGE_MIN = 100     # pagina minima dopo i dimezzamenti sui transitori
+_EVENTI_CHUNK = 100  # fixture per blocco su match_events (piu' righe per fixture)
 
 # Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
 # deadlock, connessione persa, 5xx del gateway, PGRST002 (schema cache).
@@ -75,6 +78,32 @@ def _read_retry(call, what: str):
                 raise RuntimeError(f"lettura {what} fallita dopo {attempt + 1} tentativi: "
                                    f"{type(e).__name__}: {str(e)[:120]}") from e
             _sleep_backoff(attempt)
+
+
+def _leggi_pagine(fai_query, what: str, page: int = _PAGE) -> list[dict]:
+    """Legge TUTTE le pagine: ORDINE TOTALE (lo mette il chiamante su una colonna
+    UNICA), offset che avanza di quanto RICEVUTO, uscita SOLO a pagina VUOTA (una
+    pagina corta puo' essere il cap del server, non la fine dei dati), retry sui
+    soli transitori con pagina dimezzata."""
+    out: list[dict] = []
+    off, size = 0, page
+    while True:
+        righe = None
+        for attempt in range(_RETRY):
+            try:
+                righe = fai_query(off, size).execute().data or []
+                break
+            except Exception as e:  # noqa: BLE001
+                if not _is_transient(e) or attempt == _RETRY - 1:
+                    raise RuntimeError(
+                        f"lettura {what} (offset {off}, blocco {size}) fallita dopo "
+                        f"{attempt + 1} tentativi: {type(e).__name__}: {str(e)[:120]}") from e
+                _sleep_backoff(attempt)
+                size = max(_PAGE_MIN, size // 2)
+        if not righe:
+            return out
+        out.extend(righe)
+        off += len(righe)
 
 # Mercati canonici (market, [(selection_canonica, ...)]) — i 7 certificati.
 # Selezioni canoniche: 1x2/ht_1x2 → H|D|A ; over_* → Over|Under ; btts → Yes|No.
@@ -284,8 +313,8 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
 def _fetch_fixtures(sb, league_id: Optional[int], days: Optional[int], page=500):
     """Pagina fixture_predictions in KEYSET su fixture_id (chiave PRIMARIA, quindi
     unica): `fixture_id > cursore` + ORDER BY fixture_id. L'OFFSET precedente era
-    SENZA ORDER BY — l'ordine di ritorno non e' garantito fra una pagina e l'altra,
-    quindi poteva saltare o duplicare fixture in silenzio — e si fermava a
+    SENZA ORDER BY -- l'ordine di ritorno non e' garantito fra una pagina e l'altra,
+    quindi poteva saltare o duplicare fixture in silenzio -- e si fermava a
     `len(batch) < page`, cosa NON vera se il server cappa la pagina. Ora si termina
     solo a pagina VUOTA e ogni fixture e' letta una volta sola."""
     sel = ("fixture_id,league_id,league_name,season_year,fixture_date,home_team_name,away_team_name,"
@@ -328,15 +357,23 @@ def _fetch_matches(sb, fids: list[int]) -> dict[int, dict]:
 
 def _fetch_first_goals(sb, fids: list[int]) -> dict[int, int]:
     """Minuto del PRIMO gol per fixture (timing), da match_events. Copertura ~90%
-    nelle leghe reali; assente in alcune minori → first_goal_minute resta NULL."""
+    nelle leghe reali; assente in alcune minori -> first_goal_minute resta NULL.
+
+    PAGINATA: un blocco di fixture produce PIU' righe di quante fixture contiene
+    (un gol per riga). Con 300 fixture si sfiorano/superano le 1000 righe del cap
+    PostgREST: i gol in coda sparivano e first_goal_minute usciva sbagliato in
+    silenzio. Ora blocchi da 100 fixture + paginazione con ORDER BY id (chiave
+    primaria di match_events, unica) e uscita SOLO a pagina vuota."""
     out: dict[int, int] = {}
-    for i in range(0, len(fids), 300):
-        chunk = fids[i:i + 300]
-        r = _read_retry(
-            lambda chunk=chunk: (sb.table("match_events").select("fixture_id,minute,detail,comments")
-                                 .in_("fixture_id", chunk).eq("event_type", "Goal").execute()),
+    for i in range(0, len(fids), _EVENTI_CHUNK):
+        chunk = fids[i:i + _EVENTI_CHUNK]
+        eventi = _leggi_pagine(
+            lambda off, size, chunk=chunk: (
+                sb.table("match_events").select("id,fixture_id,minute,detail,comments")
+                .in_("fixture_id", chunk).eq("event_type", "Goal")
+                .order("id").range(off, off + size - 1)),
             f"match_events ({len(chunk)} fixture)")
-        for e in r.data or []:
+        for e in eventi:
             mn = e.get("minute")
             # FIX H1: primo gol nei 90' REGOLAMENTARI. Esclusi: 'Missed Penalty'
             # (rigori sbagliati), 'Penalty Shootout' (lotteria finale), e minute>90

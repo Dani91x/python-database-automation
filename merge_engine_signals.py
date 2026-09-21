@@ -91,8 +91,8 @@ _VALUE_FIELDS = ("prob_raw", "edge", "score", "implied_prob", "fair_odds", "odds
 def _fetch_engine_signals(sb, since: Optional[str], page=1000):
     """Pagina engine_signals in KEYSET su signal_uid (chiave PRIMARIA, quindi
     unica): `signal_uid > cursore` + ORDER BY signal_uid. L'OFFSET precedente era
-    SENZA ORDER BY — l'ordine non e' garantito fra una pagina e l'altra, quindi
-    poteva saltare o duplicare segnali in silenzio — e avanzava di `page` fermandosi
+    SENZA ORDER BY -- l'ordine non e' garantito fra una pagina e l'altra, quindi
+    poteva saltare o duplicare segnali in silenzio -- e avanzava di `page` fermandosi
     a `len(batch) < page`: se il server cappa la pagina si perdeva il resto. Ora si
     termina solo a pagina VUOTA e ogni segnale e' letto una volta sola."""
     cursor = None
@@ -255,10 +255,19 @@ def main() -> None:
         print(f"  ...engine_signals {n_es} | decisioni {counters['decisions']} | previsioni {counters['predictions']} | err {counters['errors']}", end="\r")
     print(f"\n{'[DRY-RUN] ' if args.dry_run else ''}engine_signals {n_es} | decisioni {counters['decisions']} | "
           f"previsioni {counters['predictions']} | errori {counters['errors']}")
+    # Un codice-mercato non mappato = PREVISIONE PERSA (la decisione entra, la
+    # previsione no): e' una perdita di dati come una riga non scritta, quindi
+    # deve far uscire lo script con codice != 0, non solo stampare un avviso.
     if unknown_codes:
         print(f"⚠️ CODICI-MERCATO NON MAPPATI (previsione persa, aggiungere a DECODE): {unknown_codes}")
-    if counters["errors"]:
-        raise SystemExit(f"ATTENZIONE: {counters['errors']} righe non scritte.")
+    if counters["errors"] or unknown_codes:
+        motivi = []
+        if counters["errors"]:
+            motivi.append(f"{counters['errors']} righe non scritte")
+        if unknown_codes:
+            persi = sum(unknown_codes.values())
+            motivi.append(f"{persi} previsioni perse per codici non mappati {unknown_codes}")
+        raise SystemExit("ATTENZIONE: " + "; ".join(motivi) + ".")
 
 
 if __name__ == "__main__":
