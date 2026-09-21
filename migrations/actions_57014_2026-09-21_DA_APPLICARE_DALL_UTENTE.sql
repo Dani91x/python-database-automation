@@ -1,0 +1,94 @@
+-- =============================================================================
+-- actions_57014_2026-09-21_DA_APPLICARE_DALL_UTENTE.sql
+--
+-- Interventi sul DB che il coordinatore NON ha eseguito (regola dell'utente:
+-- il database non si tocca senza suo ordine esplicito; le migrazioni le applica
+-- l'utente). Ogni blocco e' INDIPENDENTE e ha: perche', prova (misura in sola
+-- lettura del 21/09/2026), come si annulla. Applicare SOLO i blocchi scelti,
+-- uno alla volta, dallo SQL Editor di Supabase.
+--
+-- Contesto: il ruolo PostgREST (authenticator) ha statement_timeout = 8 s.
+-- Istanza piccola: shared_buffers ~224 MB, match_odds 19 GB / 92M righe.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- BLOCCO A  [CONSIGLIATO: serve perche' il fix del flush a fette sia efficace]
+-- Svuota la staging degli snapshot (avanzi di flush falliti).
+--
+-- PERCHE': `analytics_snap_staging` e' solo un mezzo di trasporto (i valori
+--   freq_*/delay_* vengono ricalcolati e riscritti a ogni run di
+--   enrich_analytics_snapshots.py). Oggi contiene ~96.004 righe residue
+--   (2.428 fixture, es. lega 667) lasciate dai flush andati in 57014. La RPC
+--   flush_analytics_snap_staging(lega) aggiorna TUTTE le righe della lega presenti
+--   in staging: le righe residue verrebbero riflushate (con valori potenzialmente
+--   vecchi) e allungano ogni UPDATE (Seq Scan di 96k righe), quindi le leghe
+--   grandi (es. 129: 8.711 righe) continuerebbero ad andare in timeout anche con
+--   le fette.
+-- PROVA (sola lettura): select count(*) from analytics_snap_staging;  -> ~96.004
+-- DA FARE QUANDO: nessun enrich e' in corso (le 03:23 UTC il workflow
+--   Predictions Results Backfill lo lancia: fuori da quell'orario).
+-- ANNULLAMENTO: non serve, non si perde nulla (i valori si ricalcolano).
+-- -----------------------------------------------------------------------------
+-- select count(*) from public.analytics_snap_staging;          -- prima
+-- delete from public.analytics_snap_staging;
+-- select count(*) from public.analytics_snap_staging;          -- dopo: 0
+
+
+-- -----------------------------------------------------------------------------
+-- BLOCCO B  [OPZIONALE: rete di sicurezza lato server per le RPC di scrittura]
+-- Timeout proprio (120 s) sulle RPC che oggi ereditano gli 8 s del ruolo.
+--
+-- PERCHE': flush_analytics_snap_staging e bulk_update_prediction_results non
+--   hanno `SET statement_timeout` (pg_proc.proconfig = {search_path=...}),
+--   quindi valgono gli 8 s. Altre funzioni del repo (refresh_analytics_bets*)
+--   hanno gia' statement_timeout = 0. Con il fix a fette/chunk piccoli del codice
+--   non sono piu' indispensabili, ma evitano che un picco di carico riporti il
+--   problema. leagues_needing_retrain (usata dal planner del retrain) e' andata
+--   in timeout una volta.
+-- ANNULLAMENTO: alter function ... reset statement_timeout;
+-- -----------------------------------------------------------------------------
+-- alter function public.flush_analytics_snap_staging(bigint)      set statement_timeout = '120s';
+-- alter function public.bulk_update_prediction_results(jsonb)     set statement_timeout = '120s';
+-- alter function public.leagues_needing_retrain(integer)          set statement_timeout = '120s';
+
+
+-- -----------------------------------------------------------------------------
+-- BLOCCO C  [OPZIONALE: meno costo di scrittura su fixture_predictions]
+-- Elimina indici mai usati / duplicati.
+--
+-- PERCHE': ogni UPDATE/UPSERT su fixture_predictions (righe JSON ~14 KB) riscrive
+--   tutti gli indici; le scritture arrivano a ~0,21 s per riga e sono la causa dei
+--   57014 sugli update dei risultati e delle odds. Prova (pg_stat_user_indexes,
+--   stats mai azzerate: pg_stat_database.stats_reset = NULL):
+--     idx_fixture_predictions_raw_json_gin        133 MB   idx_scan = 0
+--     idx_fixture_predictions_flat_summary_gin     21 MB   idx_scan = 0
+--     idx_fixture_predictions_date                2568 kB  idx_scan = 0  (DUPLICATO di
+--                                                   idx_fixture_predictions_fixture_date, 2853 scan)
+--     idx_fixture_predictions_league_season       1144 kB  idx_scan = 0
+--   NB: `idx_scan = 0` vale per il periodo in cui il DB ha raccolto statistiche.
+--   Prima di eliminare i GIN verificare con l'utente che nessuna query di UI
+--   rara (ricerca dentro raw_json / flat_summary) li usi.
+-- ANNULLAMENTO: ricreare l'indice (la definizione e' sotto).
+-- -----------------------------------------------------------------------------
+-- drop index concurrently if exists public.idx_fixture_predictions_date;              -- duplicato
+-- drop index concurrently if exists public.idx_fixture_predictions_league_season;
+-- drop index concurrently if exists public.idx_fixture_predictions_raw_json_gin;
+-- drop index concurrently if exists public.idx_fixture_predictions_flat_summary_gin;
+-- Definizioni per ricreare:
+--   create index idx_fixture_predictions_date on public.fixture_predictions using btree (fixture_date);
+--   create index idx_fixture_predictions_league_season on public.fixture_predictions using btree (league_id, season_year);
+--   create index idx_fixture_predictions_raw_json_gin on public.fixture_predictions using gin (raw_json);
+--   create index idx_fixture_predictions_flat_summary_gin on public.fixture_predictions using gin (flat_summary);
+-- (DROP INDEX CONCURRENTLY non puo' stare in una transazione: eseguirli uno alla volta.)
+
+
+-- -----------------------------------------------------------------------------
+-- BLOCCO D  [OPZIONALE: statistiche fresche su match_odds]
+-- PERCHE': l'ultimo autoanalyze di match_odds e' del 2026-09-07 e la tabella non
+--   ha mai avuto autovacuum: il planner lavora su statistiche vecchie di 14 giorni
+--   (92M righe, ~4.300 per fixture). E' una scrittura leggera sul catalogo ma legge
+--   un campione della tabella (I/O): eseguirlo quando il DB e' libero
+--   (non durante retrain/backfill).
+-- -----------------------------------------------------------------------------
+-- analyze public.match_odds;
