@@ -24,15 +24,57 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from db_client import get_supabase_client
 from analytics_settlement import ft_score_90, ht_score, hit
+
+_RETRY = 5   # tentativi su errori TRANSITORI
+
+# Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
+# deadlock, connessione persa, 5xx del gateway, PGRST002 (schema cache).
+# Gli errori LOGICI (violazioni di vincolo, 4xx di validazione) NON si ritentano:
+# ritentarli non li risolve e ritarda soltanto la segnalazione.
+_TRANSIENT_CODES = {"57014", "53300", "53400", "55P03", "40001", "40P01",
+                    "08006", "08003", "08000", "57P01", "57P02", "57P03",
+                    "PGRST002", "408", "500", "502", "503", "504"}
+
+
+def _is_transient(e: Exception) -> bool:
+    """True solo per gli errori che ha senso ritentare."""
+    if isinstance(e, httpx.TransportError):   # ReadTimeout, ConnectError, PoolTimeout...
+        return True
+    code = getattr(e, "code", None)
+    if code is not None and str(code) in _TRANSIENT_CODES:
+        return True
+    msg = str(getattr(e, "message", "") or "").lower()
+    return "timeout" in msg or "temporarily unavailable" in msg
+
+
+def _sleep_backoff(attempt: int) -> None:
+    """Attesa crescente con jitter (0,7x-1,3x)."""
+    time.sleep(min(8.0, 0.5 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
+
+
+def _read_retry(call, what: str):
+    """Esegue una LETTURA ritentando i soli errori transitori. Se non riesce,
+    l'errore ESCE (niente dati mancanti in silenzio)."""
+    for attempt in range(_RETRY):
+        try:
+            return call()
+        except Exception as e:  # noqa: BLE001
+            if not _is_transient(e) or attempt == _RETRY - 1:
+                raise RuntimeError(f"lettura {what} fallita dopo {attempt + 1} tentativi: "
+                                   f"{type(e).__name__}: {str(e)[:120]}") from e
+            _sleep_backoff(attempt)
 
 # Mercati canonici (market, [(selection_canonica, ...)]) — i 7 certificati.
 # Selezioni canoniche: 1x2/ht_1x2 → H|D|A ; over_* → Over|Under ; btts → Yes|No.
@@ -240,35 +282,45 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
 
 
 def _fetch_fixtures(sb, league_id: Optional[int], days: Optional[int], page=500):
+    """Pagina fixture_predictions in KEYSET su fixture_id (chiave PRIMARIA, quindi
+    unica): `fixture_id > cursore` + ORDER BY fixture_id. L'OFFSET precedente era
+    SENZA ORDER BY — l'ordine di ritorno non e' garantito fra una pagina e l'altra,
+    quindi poteva saltare o duplicare fixture in silenzio — e si fermava a
+    `len(batch) < page`, cosa NON vera se il server cappa la pagina. Ora si termina
+    solo a pagina VUOTA e ogni fixture e' letta una volta sola."""
     sel = ("fixture_id,league_id,league_name,season_year,fixture_date,home_team_name,away_team_name,"
            "db_json_analisi,model_predictions_json,tactical_engine_json")
-    off = 0
+    cursor = None
     since = None
     if days:
         since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
     while True:
-        q = sb.table("fixture_predictions").select(sel).not_.is_("db_json_analisi", "null")
-        if league_id:
-            q = q.eq("league_id", league_id)
-        if since:
-            q = q.gte("fixture_date", f"{since}T00:00:00+00:00")
-        r = q.range(off, off + page - 1).execute()
-        batch = r.data or []
+        def _page(cursor=cursor):
+            q = sb.table("fixture_predictions").select(sel).not_.is_("db_json_analisi", "null")
+            if league_id:
+                q = q.eq("league_id", league_id)
+            if since:
+                q = q.gte("fixture_date", f"{since}T00:00:00+00:00")
+            if cursor is not None:
+                q = q.gt("fixture_id", cursor)
+            return q.order("fixture_id").limit(page).execute().data or []
+
+        batch = _read_retry(_page, f"fixture_predictions (cursore {cursor})")
         if not batch:
             break
         yield batch
-        if len(batch) < page:
-            break
-        off += page
+        cursor = batch[-1]["fixture_id"]
 
 
 def _fetch_matches(sb, fids: list[int]) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for i in range(0, len(fids), 300):
         chunk = fids[i:i + 300]
-        r = (sb.table("matches")
-             .select("fixture_id,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
-             .in_("fixture_id", chunk).execute())
+        r = _read_retry(
+            lambda chunk=chunk: (sb.table("matches")
+                                 .select("fixture_id,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
+                                 .in_("fixture_id", chunk).execute()),
+            f"matches ({len(chunk)} fixture)")
         for m in r.data or []:
             out[m["fixture_id"]] = m
     return out
@@ -280,8 +332,10 @@ def _fetch_first_goals(sb, fids: list[int]) -> dict[int, int]:
     out: dict[int, int] = {}
     for i in range(0, len(fids), 300):
         chunk = fids[i:i + 300]
-        r = (sb.table("match_events").select("fixture_id,minute,detail,comments")
-             .in_("fixture_id", chunk).eq("event_type", "Goal").execute())
+        r = _read_retry(
+            lambda chunk=chunk: (sb.table("match_events").select("fixture_id,minute,detail,comments")
+                                 .in_("fixture_id", chunk).eq("event_type", "Goal").execute()),
+            f"match_events ({len(chunk)} fixture)")
         for e in r.data or []:
             mn = e.get("minute")
             # FIX H1: primo gol nei 90' REGOLAMENTARI. Esclusi: 'Missed Penalty'
@@ -302,17 +356,18 @@ def _upsert(sb, rows: list[dict], dry: bool, counters: dict) -> int:
     n = 0
     for i in range(0, len(rows), 500):
         chunk = rows[i:i + 500]
-        for attempt in range(3):
+        for attempt in range(_RETRY):
             try:
                 sb.table("analytics_signals").upsert(chunk, on_conflict="signal_uid").execute()
                 n += len(chunk)
                 break
             except Exception as e:  # noqa: BLE001
-                if attempt == 2:
+                # solo i transitori si ritentano; gli altri si segnalano subito
+                if not _is_transient(e) or attempt == _RETRY - 1:
                     counters["failed_rows"] += len(chunk)
                     print(f"\n  [ERRORE PERMANENTE] chunk {len(chunk)} righe perse: {type(e).__name__}: {str(e)[:120]}")
-                else:
-                    time.sleep(0.5 * (attempt + 1))
+                    break
+                _sleep_backoff(attempt)
     return n
 
 

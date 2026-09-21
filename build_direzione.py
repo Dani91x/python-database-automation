@@ -11,8 +11,9 @@ Idempotente: ricalcola e fa upsert (sovrascrive le righe per chiave). Rilanciabi
 
 Uso: python build_direzione.py
 """
-import sys, datetime as dt
+import random, sys, time, datetime as dt
 sys.stdout.reconfigure(encoding="utf-8")
+import httpx
 import numpy as np, pandas as pd
 
 ENGINES = {"poisson": "poisson_prob", "ml": "ml_prob", "tacticai": "tacticai_prob"}
@@ -28,30 +29,111 @@ def bucket_series(p: pd.Series) -> pd.Series:
     return pd.cut(p, BINS, labels=LBL, include_lowest=True, right=False).astype("object")
 
 
-PAGE = 5000  # page size RICHIESTA per la paginazione (il server puo' capparla, es. a 1000)
+PAGE = 5000      # righe per blocco RICHIESTE (il server puo' restituirne meno)
+PAGE_MIN = 250   # blocco minimo dopo i dimezzamenti sui transitori
+RETRY = 5        # tentativi su errori TRANSITORI
+
+# Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
+# deadlock, connessione persa, 5xx del gateway, PGRST002 (schema cache).
+# Gli errori LOGICI (4xx di validazione, colonna inesistente) NON si ritentano.
+_TRANSIENT_CODES = {"57014", "53300", "53400", "55P03", "40001", "40P01",
+                    "08006", "08003", "08000", "57P01", "57P02", "57P03",
+                    "PGRST002", "408", "500", "502", "503", "504"}
+
+# SOLO le colonne usate dal calcolo: league_id/market/selection (groupby), hit
+# (esito), poisson_prob/ml_prob/tacticai_prob (ENGINES). fixture_id serve come
+# CURSORE della paginazione keyset e viene scartato prima del calcolo.
+COLS = "fixture_id,league_id,market,selection,hit,poisson_prob,ml_prob,tacticai_prob"
+
+
+def _is_transient(e: Exception) -> bool:
+    """True solo per gli errori che ha senso ritentare."""
+    if isinstance(e, httpx.TransportError):   # ReadTimeout, ConnectError, PoolTimeout...
+        return True
+    code = getattr(e, "code", None)
+    if code is not None and str(code) in _TRANSIENT_CODES:
+        return True
+    msg = str(getattr(e, "message", "") or "").lower()
+    return "timeout" in msg or "temporarily unavailable" in msg
+
+
+def _sleep_backoff(attempt: int) -> None:
+    """Attesa crescente con jitter (0,7x-1,3x)."""
+    time.sleep(min(8.0, 0.5 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
+
+
+def _base_query(sb):
+    return (sb.table("bet_features").select(COLS)
+            .eq("settled", True).in_("market", CAL_MARKETS).order("fixture_id"))
+
+
+def _fetch_block(sb, cursor, limit: int) -> tuple[list[dict], int]:
+    """UN blocco keyset (fixture_id >= cursor), con retry sui transitori e blocco
+    ADATTIVO: su 57014/timeout attende e dimezza. Ritorna (righe, limite usato).
+    Se non ce la fa, l'errore ESCE (nessun dato perso in silenzio)."""
+    for attempt in range(RETRY):
+        try:
+            q = _base_query(sb)
+            if cursor is not None:
+                q = q.gte("fixture_id", cursor)
+            return (q.limit(limit).execute().data or []), limit
+        except Exception as e:  # noqa: BLE001
+            if not _is_transient(e) or attempt == RETRY - 1:
+                raise RuntimeError(
+                    f"bet_features: blocco da {limit} righe (cursore {cursor}) non letto "
+                    f"dopo {attempt + 1} tentativi: {type(e).__name__}: {str(e)[:120]}") from e
+            _sleep_backoff(attempt)
+            limit = max(PAGE_MIN, limit // 2)
+    raise RuntimeError("bet_features: retry esauriti")   # irraggiungibile
+
+
+def _fetch_one_fixture(sb, fixture_id: int) -> list[dict]:
+    """Tutte le righe di UNA fixture (caso limite: un solo fixture_id riempie il
+    blocco). Poche righe: 1 mercato x selezione, ~16 nei 7 mercati calibrati."""
+    out, off = [], 0
+    while True:
+        d = (_base_query(sb).eq("fixture_id", fixture_id)
+             .order("market").order("selection")      # ordine totale: pagine stabili
+             .range(off, off + 999).execute().data or [])
+        if not d:
+            break
+        out.extend(d)
+        off += len(d)
+    return out
 
 
 def load() -> pd.DataFrame:
     from db_client import get_supabase_client
     sb = get_supabase_client()
-    # SOLO le colonne usate dal calcolo: league_id/market/selection (groupby),
-    # hit (esito), poisson_prob/ml_prob/tacticai_prob (ENGINES). fixture_id
-    # serve solo come ORDER BY server-side per paginazione stabile, non si scarica.
-    cols = "league_id,market,selection,hit,poisson_prob,ml_prob,tacticai_prob"
-    rows, start = [], 0
+    # PAGINAZIONE KEYSET (non OFFSET): l'OFFSET profondo rilegge e scarta tutte le
+    # righe precedenti a ogni blocco (misurato: offset 45.000 = 3,65 s contro 0,12 s
+    # del keyset) e a fine storico supera lo statement_timeout di 8s → 57014 → la
+    # pagella resta quella del giorno prima. `fixture_id >= cursore` diventa invece
+    # una Index Cond sulla pkey di analytics_bets (costo costante per blocco).
+    # CONFINE: fixture_id NON e' unico nella vista (piu' mercati/selezioni per
+    # fixture) e l'ordine FRA PARI non e' garantito; percio' l'ultimo gruppo di ogni
+    # blocco viene SCARTATO e RILETTO INTERO dal blocco successivo → nessuna riga
+    # saltata ne' duplicata, stesso identico insieme di righe dell'OFFSET corretto.
+    rows: list[dict] = []
+    cursor, limit = None, PAGE
     while True:
-        d = (sb.table("bet_features").select(cols)
-             .eq("settled", True).in_("market", CAL_MARKETS)
-             .order("fixture_id").range(start, start + PAGE - 1).execute().data)
-        rows.extend(d)
-        # Termina SOLO a pagina vuota: il server puo' restituire meno di PAGE
-        # righe anche a meta' storico (cap PostgREST max-rows), quindi
-        # len(d) < PAGE NON implica fine dati. Si avanza di quanto RICEVUTO:
-        # nessuna riga saltata o duplicata, stesso set di righe di prima.
-        if not d:
+        block, limit = _fetch_block(sb, cursor, limit)
+        if not block:
             break
-        start += len(d)
+        last_fid = block[-1]["fixture_id"]
+        keep = [r for r in block if r["fixture_id"] < last_fid]
+        if keep:
+            rows.extend(keep)
+            cursor = last_fid
+            continue
+        # il blocco contiene UNA sola fixture: leggila tutta e passa alla successiva
+        # (fixture_id e' intero, quindi +1 non salta nulla).
+        rows.extend(_fetch_one_fixture(sb, last_fid))
+        cursor = last_fid + 1
     df = pd.DataFrame(rows)
+    if df.empty:
+        return df                      # main() lo intercetta e si ferma
+    df = df.drop(columns=["fixture_id"])
     # scarta righe senza esito (hit NULL): astype(bool) su NaN darebbe True -> falserebbe l'hit_rate
     df = df[df["hit"].notna()].copy()
     df["hit"] = df["hit"].astype(bool).astype(int)

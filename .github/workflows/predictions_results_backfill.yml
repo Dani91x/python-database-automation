@@ -25,6 +25,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run script
+        id: risultati
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -38,6 +39,7 @@ jobs:
       # in arrivo sia le partite appena concluse. Un errore qui NON deve far fallire
       # la pipeline risultati (critica).
       - name: Aggiorna analytics_signals (incrementale)
+        id: signals
         if: always()
         continue-on-error: true
         env:
@@ -49,6 +51,7 @@ jobs:
       # (+ previsioni in analytics_signals): porta piazzate/scartate/no_signal +
       # valore/motivo nel centro di controllo. Additivo, non-fatale, idempotente.
       - name: Sync decisioni (engine_signals → analytics_decisions)
+        id: merge
         if: always()
         continue-on-error: true
         env:
@@ -65,6 +68,7 @@ jobs:
       # l'enrich STORICO completo (46k): quello è on-demand dall'utente. Un errore
       # qui NON deve far fallire la pipeline risultati.
       - name: Enrich freq/ritardi (incrementale, BULK)
+        id: enrich
         if: always()
         continue-on-error: true
         env:
@@ -77,13 +81,14 @@ jobs:
       # veloce e scalabile. Va DOPO build/merge/enrich così le scommesse riflettono
       # previsioni, decisioni+quote e snapshot aggiornati. Un errore qui NON blocca.
       - name: Refresh analytics_bets (motore strategie, incrementale)
+        id: bets
         if: always()
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python -c "from db_client import get_supabase_client; print('analytics_bets refresh:', get_supabase_client().rpc('refresh_analytics_bets', {'p_days': 5}).execute().data)"
+          python refresh_analytics_bets.py --days 5
 
       # ADDITIVO E NON-FATALE: rinfresca la PAGELLA (direction_pagella) DOPO il refresh
       # di analytics_bets — da cui dipende via la vista bet_features. Ricalcola l'hit-rate
@@ -92,9 +97,34 @@ jobs:
       # Un errore qui NON deve far fallire la pipeline risultati: la pagella resta quella
       # del giorno precedente.
       - name: Refresh pagella Direzione
+        id: pagella
         if: always()
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python build_direzione.py
+
+      # GATE ERRORI NASCOSTI (21/09/2026). Gli step qui sopra sono continue-on-error
+      # (additivi: uno che fallisce non deve impedire agli altri di girare), ma in
+      # passato fallivano ogni giorno senza che il run diventasse rosso (dati di analisi
+      # e pagella vecchi in silenzio). Questo step gira sempre e, se un qualsiasi step
+      # e' fallito, rende il run ROSSO: cosi' verde = nessun dato perso. Non cambia
+      # cosa viene eseguito ne' i dati scritti, solo la visibilita' dell'esito.
+      - name: Gate errori nascosti (rosso se uno step non-fatale e' fallito)
+        if: always()
+        env:
+          ESITI: "risultati=${{ steps.risultati.outcome }} signals=${{ steps.signals.outcome }} merge=${{ steps.merge.outcome }} enrich=${{ steps.enrich.outcome }} bets=${{ steps.bets.outcome }} pagella=${{ steps.pagella.outcome }}"
+        run: |
+          echo "Esiti step: $ESITI"
+          ko=0
+          for kv in $ESITI; do
+            v="${kv#*=}"
+            # Solo "success" e' un esito buono: un valore vuoto (id rinominato o tolto),
+            # sconosciuto, skipped, cancelled o failure rende il run ROSSO.
+            if [ "$v" != "success" ]; then
+              echo "::error::Step '${kv%%=*}' con esito '${v:-<vuoto>}': i dati corrispondenti NON sono stati aggiornati (o l'esito e' ignoto)."
+              ko=1
+            fi
+          done
+          exit $ko
