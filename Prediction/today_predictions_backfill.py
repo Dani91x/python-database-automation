@@ -7,10 +7,12 @@ import logging
 import sys
 import json
 import os
+import random
+import time
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import math
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Callable, Dict, List, Optional, Tuple, Set, TypeVar
 
 import numpy as np
 from scipy.stats import poisson
@@ -68,6 +70,216 @@ def _safe_get(d: Any, path: List[str]) -> Any:
     return cur
 
 
+# ==============================
+# Accesso DB resiliente (statement_timeout 57014 e affini)
+# ==============================
+#
+# Il ruolo PostgREST ha statement_timeout = 8 s: su questa tabella (righe JSON da
+# ~14 KB e molti indici) un upsert/update puo' essere abortito dal server con
+# SQLSTATE 57014. Fino a oggi un solo 57014 sull'UPDATE delle odds risaliva fino
+# a main() e uccideva l'INTERO run, lasciando senza predizioni tutte le fixture
+# successive. Qui c'e' UN SOLO punto d'ingresso per le chiamate al DB:
+#   - ritenta SOLO gli errori transitori (57014, PGRST002, 502/503/504, timeout e
+#     errori di connessione HTTP), con backoff esponenziale + jitter;
+#   - NON ritenta mai gli errori logici (violazioni di vincoli, 4xx di validazione):
+#     rifallirebbero identici e mascherebbero il problema vero;
+#   - non ingoia nulla: l'ultima eccezione risale SEMPRE al chiamante.
+
+_T = TypeVar("_T")
+
+# Codici (SQLSTATE / PostgREST / HTTP) considerati transitori.
+_TRANSIENT_DB_CODES = frozenset({"57014", "PGRST002", "502", "503", "504"})
+
+# Nomi di eccezioni httpx/urllib3 considerati transitori.
+_TRANSIENT_EXC_NAMES = (
+    "readtimeout",
+    "readerror",
+    "writetimeout",
+    "connecttimeout",
+    "connecterror",
+    "connectionerror",
+    "pooltimeout",
+    "remoteprotocolerror",
+)
+
+# Marcatori testuali (minuscolo) di errori transitori.
+_TRANSIENT_DB_MARKERS = (
+    "statement timeout",
+    "canceling statement due to",
+    "pgrst002",
+    "connection reset",
+    "connection aborted",
+    "server disconnected",
+    "timed out",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+)
+
+_MAX_CAUSE_DEPTH = 8  # difensivo: catene __cause__/__context__ cicliche
+
+# Retry: 6 tentativi totali, backoff 1, 2, 4, 8, 16 s (tetto 20 s) con jitter +/-30%.
+_DB_RETRY_ATTEMPTS = 6
+# Sui blocchi multi-riga bastano meno tentativi: il recupero vero e' il
+# dimezzamento del blocco (_DeferredWriter._upsert_rows), non l'insistere.
+_DB_RETRY_ATTEMPTS_BATCH = 3
+_DB_RETRY_BASE_DELAY = 1.0
+_DB_RETRY_MAX_DELAY = 20.0
+
+# Tetto al tempo TOTALE speso in attese di retry in un processo: se il DB e'
+# davvero giu' il run non deve restare appeso per ore. Esaurito il budget non si
+# ritenta piu', ma NON si ingoia nulla: ogni fallimento resta registrato in
+# _RUN_FAILURES e il processo esce comunque != 0.
+_DB_RETRY_BUDGET_S = 600.0
+_DB_RETRY_SPENT_S = 0.0
+
+
+def _reset_retry_budget() -> None:
+    """Azzera il budget di attesa dei retry (una volta per processo)."""
+    global _DB_RETRY_SPENT_S  # noqa: PLW0603 - contatore di processo
+    _DB_RETRY_SPENT_S = 0.0
+
+
+def _db_sleep(seconds: float) -> None:
+    """Attesa tra due tentativi (isolata per poter essere sostituita nei test)."""
+    time.sleep(seconds)
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    """True SOLO per gli errori DB/rete ritentabili (vedi elenco sopra).
+
+    Percorre anche la catena delle cause: httpx incapsula spesso l'errore reale.
+    """
+    seen = 0
+    current: Optional[BaseException] = exc
+    while current is not None and seen < _MAX_CAUSE_DEPTH:
+        code = getattr(current, "code", None)
+        if code is not None and str(code).strip().upper() in _TRANSIENT_DB_CODES:
+            return True
+
+        status = getattr(getattr(current, "response", None), "status_code", None)
+        if status in (502, 503, 504):
+            return True
+
+        if type(current).__name__.lower() in _TRANSIENT_EXC_NAMES:
+            return True
+
+        try:
+            text = str(current).lower()
+        except Exception:  # noqa: BLE001 - __str__ esotici
+            text = ""
+        if any(marker in text for marker in _TRANSIENT_DB_MARKERS):
+            return True
+
+        nxt = current.__cause__ if current.__cause__ is not None else current.__context__
+        current = nxt if nxt is not current else None
+        seen += 1
+    return False
+
+
+def _db_execute(
+    fn: Callable[[], _T],
+    *,
+    what: str,
+    attempts: int = _DB_RETRY_ATTEMPTS,
+) -> _T:
+    """Esegue una chiamata al DB ritentando SOLO gli errori transitori.
+
+    ``what`` serve solo al log. L'ultima eccezione viene ri-sollevata: decide il
+    chiamante se registrarla in `write_failures` o lasciarla propagare.
+    """
+    global _DB_RETRY_SPENT_S  # noqa: PLW0603 - contatore di processo
+    total = max(1, int(attempts))
+    for attempt in range(1, total + 1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - filtrato subito sotto
+            if attempt >= total or not _is_transient_db_error(exc):
+                raise
+            if _DB_RETRY_SPENT_S >= _DB_RETRY_BUDGET_S:
+                logger.error(
+                    "Budget di retry DB esaurito (%.0fs): %s NON ritentato.",
+                    _DB_RETRY_BUDGET_S, what,
+                )
+                raise
+            delay = min(_DB_RETRY_MAX_DELAY, _DB_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+            delay *= 0.7 + random.random() * 0.6  # jitter +/-30%
+            logger.warning(
+                "DB transitorio su %s (tentativo %s/%s): %s - ritento tra %.1fs",
+                what, attempt, total, str(exc)[:200], delay,
+            )
+            _DB_RETRY_SPENT_S += delay
+            _db_sleep(delay)
+    raise RuntimeError("unreachable")  # pragma: no cover - difensivo
+
+
+# ------------------------------------------------------------------
+# Registro delle anomalie NON recuperate (nessun errore ingoiato in silenzio)
+# ------------------------------------------------------------------
+# Ci finisce tutto cio' che, dopo i retry, non e' stato possibile fare:
+#   - "prediction(...)" / "odds" / "analisi" : scrittura persa;
+#   - "coverage-read" / "coverage-read-odds" : copertura non leggibile, quindi
+#     la fixture NON e' stata toccata (scrivere 'no_coverage' sarebbe FALSO);
+#   - "analisi-calcolo" / "calibrazione"     : dato non prodotto o non calibrato.
+# Niente di tutto cio' ferma il run: le altre fixture vengono comunque
+# elaborate. A fine run il riepilogo elenca ogni voce e main() esce con codice
+# != 0, cosi' il workflow e' rosso e l'anomalia e' visibile.
+
+_RUN_FAILURES: List[Dict[str, Any]] = []
+
+
+def _reset_failures() -> None:
+    """Azzera il registro (una volta per processo, all'avvio di main)."""
+    _RUN_FAILURES.clear()
+
+
+def _record_failure(fixture_id: Any, operation: str, exc: BaseException) -> None:
+    """Registra un'anomalia non recuperata e la rende visibile nel log."""
+    _RUN_FAILURES.append({
+        "fixture_id": fixture_id,
+        "operation": operation,
+        "error": str(exc)[:500],
+    })
+    logger.error(
+        "ANOMALIA NON RECUPERATA fixture_id=%s operazione=%s: %s",
+        fixture_id, operation, str(exc)[:500],
+    )
+
+
+def _log_failures_summary(target_date: str) -> int:
+    """Stampa il riepilogo delle anomalie. Ritorna quante ne sono rimaste."""
+    if not _RUN_FAILURES:
+        return 0
+    logger.error(
+        "ANOMALIE NON RECUPERATE per %s: %s (dati MANCANTI o NON PRODOTTI)",
+        target_date, len(_RUN_FAILURES),
+    )
+    for item in _RUN_FAILURES:
+        logger.error(
+            "   - fixture_id=%s operazione=%s errore=%s",
+            item.get("fixture_id"), item.get("operation"), item.get("error"),
+        )
+    return len(_RUN_FAILURES)
+
+
+class CoverageReadError(Exception):
+    """api_coverage_by_season non leggibile per (lega, stagione) dopo i retry.
+
+    NON si degrada mai a 'nessuna copertura': quel valore finirebbe sul DB come
+    status='no_coverage', indistinguibile da un'assenza VERA di copertura, cioe'
+    un dato FALSO. Chi chiama salta la fixture senza scrivere nulla.
+    """
+
+    def __init__(self, campo: str, league_id: Any, season_year: Any, cause: BaseException) -> None:
+        super().__init__(
+            "coverage '%s' non leggibile per league_id=%s season=%s: %s"
+            % (campo, league_id, season_year, cause)
+        )
+        self.campo = campo
+        self.league_id = league_id
+        self.season_year = season_year
+        self.cause = cause
+
 
 def _fetch_all_table(
     table: str,
@@ -94,7 +306,10 @@ def _fetch_all_table(
                 else:
                     raise ValueError(f"Unsupported filter op: {op}")
 
-        resp = query.range(offset, offset + page_size - 1).execute()
+        resp = _db_execute(
+            lambda: query.range(offset, offset + page_size - 1).execute(),
+            what="select %s offset=%s" % (table, offset),
+        )
         data = getattr(resp, "data", None) or []
         results.extend(data)
         if len(data) < page_size:
@@ -154,12 +369,15 @@ def get_league_trust_scores() -> Dict[int, float]:
     offset = 0
     page_size = 1000
     while True:
-        resp = sb.table("matches") \
-            .select("fixture_id, league_id, goals_home, goals_away, halftime_home, halftime_away") \
-            .in_("status_short", ["FT", "AET", "PEN"]) \
-            .gte("fixture_date", cutoff_date) \
-            .range(offset, offset + page_size - 1) \
-            .execute()
+        resp = _db_execute(
+            lambda: sb.table("matches")
+            .select("fixture_id, league_id, goals_home, goals_away, halftime_home, halftime_away")
+            .in_("status_short", ["FT", "AET", "PEN"])
+            .gte("fixture_date", cutoff_date)
+            .range(offset, offset + page_size - 1)
+            .execute(),
+            what="select matches trust_scores offset=%s" % offset,
+        )
         batch = getattr(resp, "data", []) or []
         matches.extend(batch)
         if len(batch) < page_size:
@@ -177,10 +395,13 @@ def get_league_trust_scores() -> Dict[int, float]:
     elite_with_odds = []
     for i in range(0, len(match_ids), 500):
         batch = match_ids[i:i+500]
-        p_res = sb.table("fixture_predictions") \
-            .select("fixture_id, ht_predictions, raw_json_odds") \
-            .in_("fixture_id", batch) \
-            .execute()
+        p_res = _db_execute(
+            lambda: sb.table("fixture_predictions")
+            .select("fixture_id, ht_predictions, raw_json_odds")
+            .in_("fixture_id", batch)
+            .execute(),
+            what="select fixture_predictions trust_scores (%s id)" % len(batch),
+        )
         for p in getattr(p_res, "data", []) or []:
             ht = p.get("ht_predictions")
             if not ht:
@@ -338,6 +559,13 @@ def predictions_coverage_true(
     """
     Legge da api_coverage_by_season la colonna 'predictions' per (league_id, season_year).
     Cache per evitare query ripetute.
+
+    Tre casi distinti:
+      (a) riga presente  -> True/False secondo la colonna;
+      (b) riga ASSENTE   -> False (maybe_single() ritorna None: copertura
+          davvero mancante, e' l'unico 'no_coverage' legittimo);
+      (c) ERRORE di lettura dopo i retry -> CoverageReadError. NON si degrada a
+          False e NON si memoizza: 'no_coverage' sarebbe un dato FALSO.
     """
     key = (league_id, season_year)
     if key in cache:
@@ -345,23 +573,25 @@ def predictions_coverage_true(
 
     sb = get_supabase_client()
     try:
-        resp = (
-            sb.table("api_coverage_by_season")
+        resp = _db_execute(
+            lambda: sb.table("api_coverage_by_season")
             .select("predictions")
             .eq("league_id", league_id)
             .eq("season_year", season_year)
             .maybe_single()
-            .execute()
+            .execute(),
+            what="select coverage predictions league_id=%s season=%s" % (league_id, season_year),
         )
-        row = getattr(resp, "data", None) or {}
-        flag = bool(row.get("predictions"))
     except Exception as e:
         logger.error(
             "❌ Errore nel leggere coverage predictions (league_id=%s season=%s): %s",
             league_id, season_year, e
         )
-        flag = False
+        raise CoverageReadError("predictions", league_id, season_year, e) from e
 
+    # (b) maybe_single() su 0 righe ritorna None -> {} -> False, come sempre.
+    row = getattr(resp, "data", None) or {}
+    flag = bool(row.get("predictions"))
     cache[key] = flag
     return flag
 
@@ -374,6 +604,10 @@ def odds_coverage_true(
     """
     Legge da api_coverage_by_season la colonna 'odds' per (league_id, season_year).
     Cache per evitare query ripetute.
+
+    Stessi tre casi di predictions_coverage_true: un errore di lettura NON
+    diventa False (scriverebbe raw_json_odds=NULL, cioe' "niente quote" quando
+    in realta' non lo sappiamo) ma solleva CoverageReadError.
     """
     key = (league_id, season_year)
     if key in cache:
@@ -381,24 +615,26 @@ def odds_coverage_true(
 
     sb = get_supabase_client()
     try:
-        resp = (
-            sb.table("api_coverage_by_season")
+        resp = _db_execute(
+            lambda: sb.table("api_coverage_by_season")
             .select("odds")
             .eq("league_id", league_id)
             .eq("season_year", season_year)
             .maybe_single()
-            .execute()
+            .execute(),
+            what="select coverage odds league_id=%s season=%s" % (league_id, season_year),
         )
-        row = getattr(resp, "data", None) or {}
-        flag = bool(row.get("odds"))
     except Exception as e:
         # 406 can happen if column doesn't exist or view doesn't expose it
         logger.error(
             "❌ Errore nel leggere coverage odds (league_id=%s season=%s): %s",
             league_id, season_year, e
         )
-        flag = False
+        raise CoverageReadError("odds", league_id, season_year, e) from e
 
+    # (b) maybe_single() su 0 righe ritorna None -> {} -> False, come sempre.
+    row = getattr(resp, "data", None) or {}
+    flag = bool(row.get("odds"))
     cache[key] = flag
     return flag
 
@@ -492,7 +728,10 @@ def upsert_odds_row(fixture_id: int, raw_json_odds: Optional[Dict[str, Any]]) ->
     """
     sb = get_supabase_client()
     row = _build_odds_row(raw_json_odds)
-    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+    resp = _db_execute(
+        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+        what="update odds fixture_id=%s" % fixture_id,
+    )
     updated = getattr(resp, "data", None)
     if not updated:
         logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
@@ -536,6 +775,7 @@ def _build_analysis_row(fixture_id: int, db_json_analisi: Optional[Dict[str, Any
                 db_json_analisi["calibration_source"] = cal.source
             except Exception as e:
                 logger.warning("calibrazione markets fallita fixture_id=%s: %s", fixture_id, e)
+                _record_failure(fixture_id, "calibrazione", e)
 
     return {
         "db_json_analisi": db_json_analisi,
@@ -550,7 +790,10 @@ def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, An
     """
     sb = get_supabase_client()
     row = _build_analysis_row(fixture_id, db_json_analisi, ht_predictions)
-    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+    resp = _db_execute(
+        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+        what="update analisi fixture_id=%s" % fixture_id,
+    )
     updated = getattr(resp, "data", None)
     if not updated:
         logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
@@ -567,12 +810,13 @@ def prediction_already_done(fixture_id: int) -> bool:
     """
     sb = get_supabase_client()
     try:
-        resp = (
-            sb.table("fixture_predictions")
+        resp = _db_execute(
+            lambda: sb.table("fixture_predictions")
             .select("fixture_id,status,ht_predictions")
             .eq("fixture_id", fixture_id)
             .maybe_single()
-            .execute()
+            .execute(),
+            what="select prediction_already_done fixture_id=%s" % fixture_id,
         )
         row = getattr(resp, "data", None) or None
         if not row:
@@ -609,11 +853,12 @@ def prefetch_predictions_done(fixture_ids: List[int]) -> Set[int]:
     for i in range(0, len(fixture_ids), chunk_size):
         chunk = fixture_ids[i : i + chunk_size]
         try:
-            resp = (
-                sb.table("fixture_predictions")
+            resp = _db_execute(
+                lambda: sb.table("fixture_predictions")
                 .select("fixture_id,status,ht_predictions")
                 .in_("fixture_id", chunk)
-                .execute()
+                .execute(),
+                what="select prefetch predictions (%s id)" % len(chunk),
             )
             for row in getattr(resp, "data", None) or []:
                 # Stessa logica di prediction_already_done, riga per riga.
@@ -1466,7 +1711,10 @@ def build_promoted_and_summary(pred_obj: Dict[str, Any]) -> Tuple[Dict[str, Any]
 
 def upsert_prediction_row(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
-    sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute()
+    _db_execute(
+        lambda: sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute(),
+        what="upsert fixture_predictions fixture_id=%s" % row.get("fixture_id"),
+    )
 
 
 # ==============================
@@ -1528,8 +1776,9 @@ class _DeferredWriter:
     ridurre i round-trip verso Supabase, A PARITA' di valori scritti:
 
     - le righe di fixture_predictions (upsert on_conflict=fixture_id) vengono
-      scritte in UN upsert batch per blocco (fallback riga-per-riga se il
-      batch fallisce, replicando la semantica per-fixture odierna);
+      scritte in UN upsert batch per blocco; se il batch fallisce anche dopo i
+      retry viene DIMEZZATO fino alla singola riga, replicando su quest'ultima
+      la semantica per-fixture odierna;
     - odds e analisi restano UPDATE riga-per-riga (colonne diverse, un UPDATE
       batch non e' esprimibile in PostgREST senza cambiarne la semantica),
       ma vengono eseguiti DOPO l'upsert batch del blocco cosi' l'ordine
@@ -1540,6 +1789,10 @@ class _DeferredWriter:
     Nota: se la stessa fixture viene ri-accodata prima del flush (caso
     duplicati / ramo ok->error), si flusha prima, preservando l'ordine di
     scrittura odierno.
+
+    Nessuna scrittura puo' piu' interrompere il run: cio' che non si recupera
+    nemmeno dopo i retry finisce in _RUN_FAILURES (riepilogo a fine run +
+    exit code != 0 da main()).
     """
 
     def __init__(self, chunk_size: int = 100) -> None:
@@ -1580,57 +1833,135 @@ class _DeferredWriter:
 
         sb = get_supabase_client()
 
-        # 1) Predizioni: upsert batch; se il batch fallisce, fallback
-        #    riga-per-riga replicando la semantica per-fixture di oggi.
+        # 1) Predizioni: upsert batch con retry; se il batch non passa lo si
+        #    dimezza fino alla singola riga (vedi _upsert_rows).
         for group in _group_rows_by_keys(pred_rows):
-            try:
-                sb.table("fixture_predictions").upsert(group, on_conflict="fixture_id").execute()
-            except Exception as batch_err:
-                logger.warning(
-                    "⚠️ Upsert batch fixture_predictions fallito (%s righe): %s — fallback riga-per-riga.",
-                    len(group), batch_err,
-                )
-                for row in group:
-                    try:
-                        sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute()
-                    except Exception as e:
-                        if row.get("status") == "ok":
-                            # Oggi un errore di scrittura nel ramo ok viene
-                            # catturato dall'except del loop, che riscrive la
-                            # fixture con status='error': replichiamo.
-                            # (I contatori ok/err del riepilogo, solo di log,
-                            # restano quelli conteggiati all'accodamento.)
-                            logger.exception("❌ error fixture_id=%s: %s", row.get("fixture_id"), e)
-                            sb.table("fixture_predictions").upsert(
-                                _error_row_from_ok_row(row, e), on_conflict="fixture_id"
-                            ).execute()
-                        else:
-                            # Oggi un errore di scrittura nei rami
-                            # no_coverage/empty/error propaga e ferma la run.
-                            raise
+            self._upsert_rows(sb, group)
 
         # 2) Odds e analisi: UPDATE riga-per-riga nell'ordine di accodamento
         #    (per ogni fixture: dopo la sua riga di prediction, come oggi).
         for kind, fixture_id, row in post_ops:
             if kind == "odds":
-                # Come upsert_odds_row: eventuali eccezioni propagano (come oggi).
-                resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
-                if not getattr(resp, "data", None):
-                    logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
+                try:
+                    resp = _db_execute(
+                        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+                        what="update odds fixture_id=%s" % fixture_id,
+                    )
+                    if not getattr(resp, "data", None):
+                        logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
+                except Exception as e:
+                    # Prima un solo 57014 qui risaliva fino a main() e uccideva
+                    # il run intero: ora la fixture viene registrata e tutte le
+                    # altre vengono comunque scritte.
+                    _record_failure(fixture_id, "odds", e)
             else:
                 # Come il blocco try/except del loop attorno a upsert_analysis_data:
                 # un errore di scrittura dell'analisi NON blocca le altre fixture.
                 try:
-                    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+                    resp = _db_execute(
+                        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+                        what="update analisi fixture_id=%s" % fixture_id,
+                    )
                     if not getattr(resp, "data", None):
                         logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                    _record_failure(fixture_id, "analisi", e)
+
+    # ------------------------------------------------------------------
+    # Scrittura delle righe di prediction: batch -> meta' -> riga singola
+    # ------------------------------------------------------------------
+
+    def _upsert_rows(self, sb: Any, rows: List[Dict[str, Any]]) -> None:
+        """Upsert di un blocco di righe, con retry sugli errori transitori.
+
+        Se il blocco non passa nemmeno dopo i retry viene DIMEZZATO e i due
+        mezzi ritentati (blocchi piu' piccoli costano meno di 8 s di
+        statement_timeout), fino alla singola riga. Ogni tentativo scrive gli
+        STESSI valori con lo stesso on_conflict: e' idempotente, un blocco
+        gia' passato in parte non crea duplicati.
+        """
+        if not rows:
+            return
+        if len(rows) == 1:
+            self._upsert_single(sb, rows[0])
+            return
+
+        try:
+            _db_execute(
+                lambda: sb.table("fixture_predictions").upsert(rows, on_conflict="fixture_id").execute(),
+                what="upsert fixture_predictions (%s righe)" % len(rows),
+                attempts=_DB_RETRY_ATTEMPTS_BATCH,
+            )
+            return
+        except Exception as batch_err:
+            logger.warning(
+                "⚠️ Upsert batch fixture_predictions fallito (%s righe): %s — ritento a blocchi piu' piccoli.",
+                len(rows), batch_err,
+            )
+
+        half = len(rows) // 2
+        self._upsert_rows(sb, rows[:half])
+        self._upsert_rows(sb, rows[half:])
+
+    def _upsert_single(self, sb: Any, row: Dict[str, Any]) -> None:
+        """Upsert di UNA riga con retry; semantica per-fixture invariata."""
+        fixture_id = row.get("fixture_id")
+        try:
+            _db_execute(
+                lambda: sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute(),
+                what="upsert fixture_predictions fixture_id=%s" % fixture_id,
+            )
+            return
+        except Exception as e:
+            if row.get("status") != "ok":
+                # Prima un errore di scrittura nei rami no_coverage/empty/error
+                # propagava e fermava il run: ora si registra e si prosegue.
+                _record_failure(fixture_id, "prediction(%s)" % row.get("status"), e)
+                return
+
+            # Ramo ok: semantica odierna invariata - la fixture viene riscritta
+            # con status='error'. I dati della predizione restano comunque
+            # PERSI, quindi la fixture entra lo stesso nel registro.
+            logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
+            _record_failure(fixture_id, "prediction(ok)", e)
+            err_row = _error_row_from_ok_row(row, e)
+            try:
+                _db_execute(
+                    lambda: sb.table("fixture_predictions").upsert(err_row, on_conflict="fixture_id").execute(),
+                    what="upsert riga di errore fixture_id=%s" % fixture_id,
+                )
+            except Exception as e2:
+                _record_failure(fixture_id, "prediction(error_row)", e2)
 
 
 # ==============================
 # Runner
 # ==============================
+
+def _queue_odds_for_fixture(
+    writer: "_DeferredWriter",
+    api: APIFootballClient,
+    fixture_id: int,
+    league_id: int,
+    season_year: int,
+    odds_coverage_cache: Dict[Tuple[int, int], bool],
+    odds_cache: Dict[Tuple[int, int], Dict[str, Any]],
+) -> None:
+    """Accoda le odds della fixture: identica ai 4 rami del loop di prima.
+
+    Se la coverage delle odds non e' leggibile propaga CoverageReadError senza
+    accodare nulla: raw_json_odds=NULL sarebbe un dato falso.
+    """
+    if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+        odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+        odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+        writer.queue_odds(fixture_id, _build_odds_row(odds_item))
+        logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+    else:
+        writer.queue_odds(fixture_id, _build_odds_row(None))
+        logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
 
 def run_for_date(target_date: str) -> None:
     # Reset cache blacklist per ogni run: evita blacklist stantia in processi multi-data
@@ -1656,6 +1987,7 @@ def run_for_date(target_date: str) -> None:
     err_count = 0
     skipped_count = 0
     skipped_existing_count = 0
+    coverage_unreadable_count = 0  # fixture NON toccate: coverage illeggibile
 
     # ✅ PREFETCH BATCH: una query (a chunk) al posto di ~1 SELECT per fixture.
     # Stessa condizione di prediction_already_done (status='ok' E ht_predictions
@@ -1698,7 +2030,17 @@ def run_for_date(target_date: str) -> None:
             now_iso = datetime.now(timezone.utc).isoformat()
 
             # Coverage check
-            has_predictions = predictions_coverage_true(league_id, season_year, coverage_cache)
+            try:
+                has_predictions = predictions_coverage_true(league_id, season_year, coverage_cache)
+            except CoverageReadError as e:
+                # La copertura non si e' potuta leggere: la fixture NON viene
+                # toccata. Scrivere 'no_coverage' qui sarebbe un dato FALSO,
+                # indistinguibile da un'assenza vera di copertura. Non avendo
+                # scritto alcuno status, il rilancio sulla stessa data la
+                # riprende (il prefetch salta solo gli status='ok').
+                coverage_unreadable_count += 1
+                _record_failure(fixture_id, "coverage-read", e)
+                continue
 
             if not has_predictions:
                 row = {
@@ -1727,14 +2069,12 @@ def run_for_date(target_date: str) -> None:
                 no_cov_count += 1
                 logger.info("⏭️ no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
                 # dopo prediction, inserisco odds per questo fixture
-                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
-                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-                else:
-                    writer.queue_odds(fixture_id, _build_odds_row(None))
-                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                try:
+                    _queue_odds_for_fixture(writer, api, fixture_id, league_id,
+                                            season_year, odds_coverage_cache, odds_cache)
+                except CoverageReadError as e:
+                    # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
+                    _record_failure(fixture_id, "coverage-read-odds", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -1744,6 +2084,7 @@ def run_for_date(target_date: str) -> None:
                         writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                    _record_failure(fixture_id, "analisi-calcolo", e)
                 continue
 
             # Call predictions
@@ -1779,14 +2120,12 @@ def run_for_date(target_date: str) -> None:
                 empty_count += 1
                 logger.warning("⚠️ empty fixture_id=%s", fixture_id)
                 # dopo prediction, inserisco odds per questo fixture
-                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
-                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-                else:
-                    writer.queue_odds(fixture_id, _build_odds_row(None))
-                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                try:
+                    _queue_odds_for_fixture(writer, api, fixture_id, league_id,
+                                            season_year, odds_coverage_cache, odds_cache)
+                except CoverageReadError as e:
+                    # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
+                    _record_failure(fixture_id, "coverage-read-odds", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -1796,6 +2135,7 @@ def run_for_date(target_date: str) -> None:
                         writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                    _record_failure(fixture_id, "analisi-calcolo", e)
                 continue
 
             try:
@@ -1819,14 +2159,12 @@ def run_for_date(target_date: str) -> None:
                 logger.info("✅ ok fixture_id=%s", fixture_id)
 
                 # dopo prediction, inserisco odds per questo fixture
-                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
-                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-                else:
-                    writer.queue_odds(fixture_id, _build_odds_row(None))
-                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                try:
+                    _queue_odds_for_fixture(writer, api, fixture_id, league_id,
+                                            season_year, odds_coverage_cache, odds_cache)
+                except CoverageReadError as e:
+                    # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
+                    _record_failure(fixture_id, "coverage-read-odds", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -1840,6 +2178,7 @@ def run_for_date(target_date: str) -> None:
                         done_fixture_ids.add(fixture_id)
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                    _record_failure(fixture_id, "analisi-calcolo", e)
 
             except Exception as e:
                 row = {
@@ -1869,14 +2208,12 @@ def run_for_date(target_date: str) -> None:
                 logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
 
                 # dopo prediction (errore), inserisco odds per questo fixture
-                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
-                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-                else:
-                    writer.queue_odds(fixture_id, _build_odds_row(None))
-                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                try:
+                    _queue_odds_for_fixture(writer, api, fixture_id, league_id,
+                                            season_year, odds_coverage_cache, odds_cache)
+                except CoverageReadError as e:
+                    # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
+                    _record_failure(fixture_id, "coverage-read-odds", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -1886,6 +2223,7 @@ def run_for_date(target_date: str) -> None:
                         writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                    _record_failure(fixture_id, "analisi-calcolo", e)
     finally:
         # Flush finale garantito: anche se la run si interrompe, quanto gia'
         # accodato viene scritto (oggi a quel punto sarebbe gia' su DB).
@@ -1895,6 +2233,16 @@ def run_for_date(target_date: str) -> None:
         "🏁 RIEPILOGO %s → ok=%s empty=%s no_coverage=%s error=%s skipped=%s skipped_existing=%s",
         target_date, ok_count, empty_count, no_cov_count, err_count, skipped_count, skipped_existing_count
     )
+
+    if coverage_unreadable_count:
+        logger.error(
+            "Fixture NON elaborate per coverage illeggibile: %s "
+            "(nessuno status scritto: il rilancio sulla stessa data le recupera)",
+            coverage_unreadable_count,
+        )
+
+    # Anomalie non recuperate: elenco esplicito (main() esce != 0).
+    _log_failures_summary(target_date)
 
     # --- SECONDO MOTORE: ML ensemble, aggiunta ADDITIVA e NON-FATALE ---
     # Popola `model_predictions_json` per le partite del giorno (come Poisson->
@@ -1941,7 +2289,18 @@ def main() -> None:
     args = parser.parse_args()
 
     target_date = args.date or datetime.now(timezone.utc).date().isoformat()
+    _reset_failures()
+    _reset_retry_budget()
     run_for_date(target_date)
+
+    # Nessun successo dichiarato con dati mancanti: se qualche scrittura non e'
+    # stata recuperata il processo esce in errore (workflow rosso e visibile).
+    if _RUN_FAILURES:
+        logger.error(
+            "Uscita con codice 1: %s scritture non recuperate su %s.",
+            len(_RUN_FAILURES), target_date,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
