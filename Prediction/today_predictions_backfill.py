@@ -126,18 +126,42 @@ _DB_RETRY_ATTEMPTS_BATCH = 3
 _DB_RETRY_BASE_DELAY = 1.0
 _DB_RETRY_MAX_DELAY = 20.0
 
-# Tetto al tempo TOTALE speso in attese di retry in un processo: se il DB e'
-# davvero giu' il run non deve restare appeso per ore. Esaurito il budget non si
-# ritenta piu', ma NON si ingoia nulla: ogni fallimento resta registrato in
-# _RUN_FAILURES e il processo esce comunque != 0.
-_DB_RETRY_BUDGET_S = 600.0
+# FRENI ASSOLUTI del processo. Se il DB e' davvero in difficolta' il run non
+# deve ne' restare appeso per ore ne' martellare il database con centinaia di
+# richieste destinate a fallire. Scatta il primo dei tre che si esaurisce;
+# quando uno scatta si smette di ritentare E di dimezzare i blocchi, ma NON si
+# ingoia nulla: tutto finisce in _RUN_FAILURES e il processo esce != 0.
+_DB_RETRY_BUDGET_S = 600.0        # somma delle attese fra un tentativo e l'altro
+_DB_RETRY_DEADLINE_S = 900.0      # tempo di PARETE dal primo retry (15 minuti)
+_DB_MAX_FAILED_REQUESTS = 60      # richieste fallite totali nel processo
+
 _DB_RETRY_SPENT_S = 0.0
+_DB_RETRY_DEADLINE_AT: Optional[float] = None
+_DB_FAILED_REQUESTS = 0
+
+
+def _db_monotonic() -> float:
+    """Orologio di parete monotono (isolato per poter essere sostituito nei test)."""
+    return time.monotonic()
 
 
 def _reset_retry_budget() -> None:
-    """Azzera il budget di attesa dei retry (una volta per processo)."""
-    global _DB_RETRY_SPENT_S  # noqa: PLW0603 - contatore di processo
+    """Azzera i tre freni (una volta per processo)."""
+    global _DB_RETRY_SPENT_S, _DB_RETRY_DEADLINE_AT, _DB_FAILED_REQUESTS  # noqa: PLW0603
     _DB_RETRY_SPENT_S = 0.0
+    _DB_RETRY_DEADLINE_AT = None
+    _DB_FAILED_REQUESTS = 0
+
+
+def _db_retry_exhausted() -> Optional[str]:
+    """Motivo per cui non si deve piu' ritentare, oppure None se si puo'."""
+    if _DB_FAILED_REQUESTS >= _DB_MAX_FAILED_REQUESTS:
+        return "limite di richieste fallite raggiunto (%d)" % _DB_MAX_FAILED_REQUESTS
+    if _DB_RETRY_SPENT_S >= _DB_RETRY_BUDGET_S:
+        return "budget di attesa esaurito (%.0fs)" % _DB_RETRY_BUDGET_S
+    if _DB_RETRY_DEADLINE_AT is not None and _db_monotonic() >= _DB_RETRY_DEADLINE_AT:
+        return "scadenza di parete superata (%.0fs)" % _DB_RETRY_DEADLINE_S
+    return None
 
 
 def _db_sleep(seconds: float) -> None:
@@ -181,27 +205,30 @@ def _db_execute(
     fn: Callable[[], _T],
     *,
     what: str,
-    attempts: int = _DB_RETRY_ATTEMPTS,
+    attempts: Optional[int] = None,
 ) -> _T:
     """Esegue una chiamata al DB ritentando SOLO gli errori transitori.
 
-    ``what`` serve solo al log. L'ultima eccezione viene ri-sollevata: decide il
-    chiamante se registrarla in `write_failures` o lasciarla propagare.
+    ``attempts=None`` legge _DB_RETRY_ATTEMPTS A RUNTIME, cosi' la costante
+    resta regolabile (e falsificabile nei test). ``what`` serve solo al log.
+    L'ultima eccezione viene ri-sollevata: decide il chiamante se registrarla
+    in _RUN_FAILURES o lasciarla propagare.
     """
-    global _DB_RETRY_SPENT_S  # noqa: PLW0603 - contatore di processo
-    total = max(1, int(attempts))
+    global _DB_RETRY_SPENT_S, _DB_RETRY_DEADLINE_AT, _DB_FAILED_REQUESTS  # noqa: PLW0603
+    total = max(1, int(attempts if attempts is not None else _DB_RETRY_ATTEMPTS))
     for attempt in range(1, total + 1):
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001 - filtrato subito sotto
+            _DB_FAILED_REQUESTS += 1
             if attempt >= total or not _is_transient_db_error(exc):
                 raise
-            if _DB_RETRY_SPENT_S >= _DB_RETRY_BUDGET_S:
-                logger.error(
-                    "Budget di retry DB esaurito (%.0fs): %s NON ritentato.",
-                    _DB_RETRY_BUDGET_S, what,
-                )
+            motivo = _db_retry_exhausted()
+            if motivo is not None:
+                logger.error("Freno DB attivo (%s): %s NON ritentato.", motivo, what)
                 raise
+            if _DB_RETRY_DEADLINE_AT is None:
+                _DB_RETRY_DEADLINE_AT = _db_monotonic() + _DB_RETRY_DEADLINE_S
             delay = min(_DB_RETRY_MAX_DELAY, _DB_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
             delay *= 0.7 + random.random() * 0.6  # jitter +/-30%
             logger.warning(
@@ -227,23 +254,51 @@ def _db_execute(
 
 _RUN_FAILURES: List[Dict[str, Any]] = []
 
+# Oltre questo numero di voci si smette di loggarle una per una (un DB giu'
+# produrrebbe migliaia di righe identiche): resta il contatore, e il riepilogo
+# finale stampa comunque TUTTI gli id.
+_MAX_FAILURE_LOG_LINES = 50
+
 
 def _reset_failures() -> None:
     """Azzera il registro (una volta per processo, all'avvio di main)."""
     _RUN_FAILURES.clear()
 
 
-def _record_failure(fixture_id: Any, operation: str, exc: BaseException) -> None:
-    """Registra un'anomalia non recuperata e la rende visibile nel log."""
+def _record_failure(
+    fixture_id: Any,
+    operation: str,
+    exc: BaseException,
+    payload: Optional[Dict[str, Any]] = None,
+    manuale: bool = False,
+) -> None:
+    """Registra un'anomalia non recuperata e la rende visibile nel log.
+
+    ``payload`` (opzionale) conserva la riga da riscrivere, cosi' il secondo
+    giro di fine run puo' ritentarla (_retry_failed_post_ops).
+    ``manuale`` marca le anomalie che un semplice rilancio NON recupera.
+    """
     _RUN_FAILURES.append({
         "fixture_id": fixture_id,
         "operation": operation,
         "error": str(exc)[:500],
+        "payload": payload,
+        "manuale": bool(manuale),
     })
-    logger.error(
-        "ANOMALIA NON RECUPERATA fixture_id=%s operazione=%s: %s",
-        fixture_id, operation, str(exc)[:500],
-    )
+    quante = len(_RUN_FAILURES)
+    if quante <= _MAX_FAILURE_LOG_LINES:
+        logger.error(
+            "ANOMALIA NON RECUPERATA fixture_id=%s operazione=%s: %s",
+            fixture_id, operation, str(exc)[:500],
+        )
+        if quante == _MAX_FAILURE_LOG_LINES:
+            logger.error(
+                "... oltre %s anomalie: le successive non vengono piu' loggate una "
+                "per una, l'elenco completo e' nel riepilogo finale.",
+                _MAX_FAILURE_LOG_LINES,
+            )
+    elif quante % 100 == 0:
+        logger.error("... anomalie accumulate finora: %s", quante)
 
 
 def _log_failures_summary(target_date: str) -> int:
@@ -259,7 +314,81 @@ def _log_failures_summary(target_date: str) -> int:
             "   - fixture_id=%s operazione=%s errore=%s",
             item.get("fixture_id"), item.get("operation"), item.get("error"),
         )
+
+    manuali = [v for v in _RUN_FAILURES if v.get("manuale")]
+    if manuali:
+        logger.error(
+            "DA RECUPERARE A MANO (%s): la riga di prediction e' gia' scritta come "
+            "status='ok', quindi il rilancio sulla stessa data le SALTA.",
+            len(manuali),
+        )
+        for item in manuali:
+            logger.error(
+                "   - DA RECUPERARE A MANO: fixture_id=%s, operazione=%s",
+                item.get("fixture_id"), item.get("operation"),
+            )
     return len(_RUN_FAILURES)
+
+
+def _retry_failed_post_ops() -> int:
+    """Secondo giro sulle sole post_ops (odds/analisi) rimaste indietro.
+
+    Serve perche' a quel punto la riga di prediction della fixture e' gia' su
+    DB con status='ok' e ht_predictions valorizzato: il prefetch del RILANCIO
+    la salterebbe per sempre, lasciando `raw_json_odds` NULL in eterno. Qui si
+    ritenta una volta sola, con gli stessi retry e sotto gli stessi freni di
+    _db_execute. Cio' che riesce ESCE dal registro; cio' che resta va nel
+    riepilogo come "DA RECUPERARE A MANO". Ritorna quante ne ha recuperate.
+    """
+    ripetibili = [v for v in _RUN_FAILURES if v.get("payload")]
+    if not ripetibili:
+        return 0
+
+    motivo = _db_retry_exhausted()
+    if motivo is not None:
+        logger.error(
+            "Secondo giro sulle scritture post-prediction SALTATO (%s): "
+            "%s voci restano da recuperare.", motivo, len(ripetibili),
+        )
+        return 0
+
+    logger.info(
+        "Secondo giro: ritento %s scritture post-prediction rimaste indietro.",
+        len(ripetibili),
+    )
+    sb = get_supabase_client()
+    recuperate: Set[int] = set()
+    for voce in ripetibili:
+        fixture_id = voce.get("fixture_id")
+        riga = (voce.get("payload") or {}).get("row")
+        if not riga:
+            continue
+        try:
+            resp = _db_execute(
+                lambda: sb.table("fixture_predictions").update(riga).eq("fixture_id", fixture_id).execute(),
+                what="secondo giro %s fixture_id=%s" % (voce.get("operation"), fixture_id),
+            )
+        except Exception as e:  # noqa: BLE001 - resta nel registro
+            voce["error"] = str(e)[:500]
+            logger.error(
+                "Secondo giro fallito fixture_id=%s (%s): %s",
+                fixture_id, voce.get("operation"), str(e)[:200],
+            )
+            continue
+        if not getattr(resp, "data", None):
+            logger.warning(
+                "Secondo giro: nessuna riga fixture_predictions per fixture_id=%s (%s)",
+                fixture_id, voce.get("operation"),
+            )
+            continue
+        recuperate.add(id(voce))
+        logger.info(
+            "Secondo giro: recuperata fixture_id=%s (%s)", fixture_id, voce.get("operation")
+        )
+
+    if recuperate:
+        _RUN_FAILURES[:] = [v for v in _RUN_FAILURES if id(v) not in recuperate]
+    return len(recuperate)
 
 
 class CoverageReadError(Exception):
@@ -836,13 +965,19 @@ def prefetch_predictions_done(fixture_ids: List[int]) -> Set[int]:
     """
     Versione BATCH di prediction_already_done: una query (a chunk da 200 id,
     per non superare i limiti di lunghezza URL di PostgREST) invece di una
-    SELECT per fixture. Stessa identica condizione della funzione originale,
-    applicata in Python sulle stesse colonne: riga esistente per fixture_id
-    con status='ok' E ht_predictions non nullo.
+    SELECT per fixture.
+
+    La condizione e' la STESSA di prediction_already_done (riga esistente per
+    fixture_id con status='ok' E ht_predictions non nullo) ma e' applicata dal
+    SERVER, e si seleziona il solo `fixture_id`: prima si scaricavano i JSON
+    pesanti di `ht_predictions` per 200 fixture solo per controllare che non
+    fossero nulli (decine di MB per run, e un ottimo modo per prendersi un
+    57014 sulla lettura).
 
     Fail-open come l'originale: se un chunk fallisce, le sue fixture NON
     entrano nel set (=> verranno riprocessate, meglio chiamare l'API che
-    perdere dati).
+    perdere dati). A differenza di prima pero' l'errore NON viene ingoiato:
+    finisce nel registro e il processo esce != 0.
     """
     done: Set[int] = set()
     if not fixture_ids:
@@ -855,17 +990,14 @@ def prefetch_predictions_done(fixture_ids: List[int]) -> Set[int]:
         try:
             resp = _db_execute(
                 lambda: sb.table("fixture_predictions")
-                .select("fixture_id,status,ht_predictions")
+                .select("fixture_id")
                 .in_("fixture_id", chunk)
+                .eq("status", "ok")
+                .not_.is_("ht_predictions", "null")
                 .execute(),
                 what="select prefetch predictions (%s id)" % len(chunk),
             )
             for row in getattr(resp, "data", None) or []:
-                # Stessa logica di prediction_already_done, riga per riga.
-                if row.get("status") != "ok":
-                    continue
-                if row.get("ht_predictions") is None:
-                    continue
                 fid = row.get("fixture_id")
                 if fid is not None:
                     done.add(int(fid))
@@ -874,6 +1006,9 @@ def prefetch_predictions_done(fixture_ids: List[int]) -> Set[int]:
                 "⚠️ Errore prefetch prediction_already_done (chunk %s..%s): %s",
                 chunk[0], chunk[-1], e
             )
+            # Fail-open invariato (le 200 fixture vengono rielaborate), ma
+            # l'anomalia resta visibile: il run esce != 0.
+            _record_failure("%s..%s" % (chunk[0], chunk[-1]), "prefetch", e)
     return done
 
 
@@ -1735,6 +1870,20 @@ _PROMOTED_NULL_KEYS: Tuple[str, ...] = (
 )
 
 
+def _error_row_from_ctx(ctx: Dict[str, Any], now_iso: str, exc: BaseException) -> Dict[str, Any]:
+    """Riga status='error' IDENTICA (stesse chiavi, stessi valori) a quella che
+    il ramo `except` del loop principale costruisce a mano."""
+    err_row: Dict[str, Any] = dict(ctx)
+    err_row["status"] = "error"
+    err_row["error_message"] = str(exc)[:500]
+    err_row["raw_json"] = None
+    err_row["flat_summary"] = None
+    for k in _PROMOTED_NULL_KEYS:
+        err_row[k] = None
+    err_row["updated_at"] = now_iso
+    return err_row
+
+
 def _error_row_from_ok_row(row: Dict[str, Any], exc: Exception) -> Dict[str, Any]:
     """
     Replica ESATTA della riga costruita dal ramo `except` del loop principale
@@ -1852,8 +2001,12 @@ class _DeferredWriter:
                 except Exception as e:
                     # Prima un solo 57014 qui risaliva fino a main() e uccideva
                     # il run intero: ora la fixture viene registrata e tutte le
-                    # altre vengono comunque scritte.
-                    _record_failure(fixture_id, "odds", e)
+                    # altre vengono comunque scritte. La riga viene conservata:
+                    # il secondo giro di fine run la ritenta, perche' un
+                    # semplice rilancio NON la recupererebbe (la prediction e'
+                    # gia' 'ok', il prefetch la salta).
+                    _record_failure(fixture_id, "odds", e,
+                                    payload={"kind": "odds", "row": row}, manuale=True)
             else:
                 # Come il blocco try/except del loop attorno a upsert_analysis_data:
                 # un errore di scrittura dell'analisi NON blocca le altre fixture.
@@ -1866,7 +2019,11 @@ class _DeferredWriter:
                         logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
                 except Exception as e:
                     logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
-                    _record_failure(fixture_id, "analisi", e)
+                    # Conservata per il secondo giro come le odds. Qui pero'
+                    # ht_predictions resta NULL, quindi il rilancio riprende
+                    # comunque la fixture: non e' "da recuperare a mano".
+                    _record_failure(fixture_id, "analisi", e,
+                                    payload={"kind": "analysis", "row": row})
 
     # ------------------------------------------------------------------
     # Scrittura delle righe di prediction: batch -> meta' -> riga singola
@@ -1899,6 +2056,25 @@ class _DeferredWriter:
                 "⚠️ Upsert batch fixture_predictions fallito (%s righe): %s — ritento a blocchi piu' piccoli.",
                 len(rows), batch_err,
             )
+            # Python cancella `batch_err` all'uscita dell'except: va conservato.
+            errore = batch_err
+
+        # Freno: a DB in ginocchio il dimezzamento ricorsivo genererebbe
+        # centinaia di richieste destinate a fallire. Si smette qui e l'intero
+        # blocco viene registrato come perso (nulla di ingoiato: exit != 0).
+        motivo = _db_retry_exhausted()
+        if motivo is not None:
+            logger.error(
+                "Freno DB attivo (%s): blocco di %s righe NON dimezzato, "
+                "registrato come perso.", motivo, len(rows),
+            )
+            for riga in rows:
+                _record_failure(
+                    riga.get("fixture_id"),
+                    "prediction(%s)" % riga.get("status"),
+                    errore,
+                )
+            return
 
         half = len(rows) // 2
         self._upsert_rows(sb, rows[:half])
@@ -2075,6 +2251,12 @@ def run_for_date(target_date: str) -> None:
                 except CoverageReadError as e:
                     # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
                     _record_failure(fixture_id, "coverage-read-odds", e)
+                except Exception as e:
+                    # Errore dell'API-Football sulle quote (rete, 429, JSON
+                    # malformato): prima risaliva fuori dal for e uccideva il
+                    # run. La riga di prediction e' gia' accodata, quindi la
+                    # fixture prosegue e l'anomalia resta visibile.
+                    _record_failure(fixture_id, "odds-fetch", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -2089,7 +2271,20 @@ def run_for_date(target_date: str) -> None:
 
             # Call predictions
             logger.info("🔮 /predictions fixture_id=%s", fixture_id)
-            data = api.call("/predictions", params={"fixture": str(fixture_id)})
+            try:
+                data = api.call("/predictions", params={"fixture": str(fixture_id)})
+            except Exception as e:
+                # Prima un errore dell'API-Football qui (rete, 429, JSON
+                # malformato) risaliva fuori dal for e UCCIDEVA il run: tutte
+                # le fixture successive restavano senza predizioni. Ora la
+                # fixture prende la semantica di errore GIA' esistente per
+                # questo ramo (status='error', promoted azzerati) e il run
+                # prosegue. status != 'ok' => il rilancio la riprende.
+                writer.queue_prediction(_error_row_from_ctx(ctx, now_iso, e))
+                err_count += 1
+                logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
+                _record_failure(fixture_id, "predictions-fetch", e)
+                continue
 
             resp_list = (data or {}).get("response") or []
 
@@ -2126,6 +2321,12 @@ def run_for_date(target_date: str) -> None:
                 except CoverageReadError as e:
                     # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
                     _record_failure(fixture_id, "coverage-read-odds", e)
+                except Exception as e:
+                    # Errore dell'API-Football sulle quote (rete, 429, JSON
+                    # malformato): prima risaliva fuori dal for e uccideva il
+                    # run. La riga di prediction e' gia' accodata, quindi la
+                    # fixture prosegue e l'anomalia resta visibile.
+                    _record_failure(fixture_id, "odds-fetch", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -2214,6 +2415,12 @@ def run_for_date(target_date: str) -> None:
                 except CoverageReadError as e:
                     # Coverage odds illeggibile: NON si scrive raw_json_odds=NULL.
                     _record_failure(fixture_id, "coverage-read-odds", e)
+                except Exception as e:
+                    # Errore dell'API-Football sulle quote (rete, 429, JSON
+                    # malformato): prima risaliva fuori dal for e uccideva il
+                    # run. La riga di prediction e' gia' accodata, quindi la
+                    # fixture prosegue e l'anomalia resta visibile.
+                    _record_failure(fixture_id, "odds-fetch", e)
 
                 # db_json_analisi (sempre)
                 try:
@@ -2228,6 +2435,12 @@ def run_for_date(target_date: str) -> None:
         # Flush finale garantito: anche se la run si interrompe, quanto gia'
         # accodato viene scritto (oggi a quel punto sarebbe gia' su DB).
         writer.flush()
+
+    # SECONDO GIRO sulle sole scritture post-prediction rimaste indietro
+    # (odds/analisi): la loro fixture ha gia' la prediction 'ok' a DB, quindi
+    # il rilancio di domani la salterebbe e le odds resterebbero NULL per
+    # sempre. Va fatto PRIMA del riepilogo, cosi' il riepilogo dice il vero.
+    _retry_failed_post_ops()
 
     logger.info(
         "🏁 RIEPILOGO %s → ok=%s empty=%s no_coverage=%s error=%s skipped=%s skipped_existing=%s",
@@ -2293,11 +2506,11 @@ def main() -> None:
     _reset_retry_budget()
     run_for_date(target_date)
 
-    # Nessun successo dichiarato con dati mancanti: se qualche scrittura non e'
-    # stata recuperata il processo esce in errore (workflow rosso e visibile).
+    # Nessun successo dichiarato con dati mancanti: se resta anche una sola
+    # anomalia non recuperata il processo esce in errore (workflow rosso).
     if _RUN_FAILURES:
         logger.error(
-            "Uscita con codice 1: %s scritture non recuperate su %s.",
+            "Uscita con codice 1: %s anomalie non recuperate su %s.",
             len(_RUN_FAILURES), target_date,
         )
         sys.exit(1)

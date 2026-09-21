@@ -66,6 +66,7 @@ class FakeQuery:
         self._columns: Optional[str] = None
         self._single = False
         self._range: Optional[Any] = None
+        self._negato = False
 
     # --- verbi
     def upsert(self, rows: Any, on_conflict: Optional[str] = None, **_kw: Any) -> "FakeQuery":
@@ -104,6 +105,17 @@ class FakeQuery:
 
     def in_(self, col: str, vals: Any) -> "FakeQuery":
         self._filters.append(("in", col, tuple(vals)))
+        return self
+
+    @property
+    def not_(self) -> "FakeQuery":
+        """Come postgrest: nega il filtro SUCCESSIVO."""
+        self._negato = True
+        return self
+
+    def is_(self, col: str, val: Any) -> "FakeQuery":
+        self._filters.append(("not.is" if self._negato else "is", col, val))
+        self._negato = False
         return self
 
     def maybe_single(self) -> "FakeQuery":
@@ -177,12 +189,34 @@ class FakeSupabase:
     def table(self, name: str) -> FakeQuery:
         return FakeQuery(self, name)
 
+    def _righe_filtrate(self, descr: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Applica i filtri LATO SERVER, come farebbe PostgREST, e proietta le
+        colonne richieste. Serve a provare che spostare il predicato dal Python
+        al server non cambia l'insieme restituito."""
+        righe = list(self.select_data)
+        for op, col, val in descr["filters"]:
+            if op == "in":
+                righe = [r for r in righe if r.get(col) in val]
+            elif op == "eq":
+                righe = [r for r in righe if r.get(col) == val]
+            elif op == "is" and val == "null":
+                righe = [r for r in righe if r.get(col) is None]
+            elif op == "not.is" and val == "null":
+                righe = [r for r in righe if r.get(col) is not None]
+        colonne = [c.strip() for c in (descr["columns"] or "*").split(",")]
+        if colonne == ["*"]:
+            return righe
+        return [{c: r.get(c) for c in colonne} for r in righe]
+
     def response_for(self, descr: Dict[str, Any]) -> Any:
         if descr["table"] == "api_coverage_by_season" and descr["verb"] == "select":
             chiave = tuple(v for (op, col, v) in descr["filters"] if op == "eq")
             return self.coverage_rows.get(chiave)
         if descr["verb"] == "select":
-            return self.select_data
+            righe = self._righe_filtrate(descr)
+            if descr["single"]:
+                return righe[0] if righe else None
+            return righe
         if descr["verb"] == "update":
             fid = None
             for op, col, val in descr["filters"]:
@@ -557,12 +591,25 @@ def test_retry_esaurito_solleva_e_non_ingoia():
 # 5) Equivalenza col codice originale quando NON ci sono errori
 # ==============================================================
 
+# Commit BASE del lavoro (origin/master prima di ogni fix 57014): e' il
+# riferimento fisso dell'equivalenza. NON usare HEAD: appena i fix vengono
+# committati HEAD diventa il codice nuovo e il confronto non prova piu' nulla.
+COMMIT_BASE = "2f1c549"
+
+
 def _carica_modulo_originale(tmp_path) -> Any:
-    """Importa la versione di today_predictions_backfill presente in git HEAD."""
-    sorgente = subprocess.run(
-        ["git", "show", "HEAD:Prediction/today_predictions_backfill.py"],
-        cwd=str(PROJECT_ROOT), capture_output=True, check=True,
-    ).stdout.decode("utf-8")
+    """Importa today_predictions_backfill come era nel commit base COMMIT_BASE."""
+    riferimento = "%s:Prediction/today_predictions_backfill.py" % COMMIT_BASE
+    esito = subprocess.run(
+        ["git", "show", riferimento],
+        cwd=str(PROJECT_ROOT), capture_output=True,
+    )
+    if esito.returncode != 0:
+        pytest.skip(
+            "commit base %s non disponibile (clone shallow?): equivalenza NON "
+            "verificata. git: %s" % (COMMIT_BASE, esito.stderr.decode("utf-8", "replace")[:200])
+        )
+    sorgente = esito.stdout.decode("utf-8")
     percorso = tmp_path / "today_predictions_backfill_originale.py"
     percorso.write_text(sorgente, encoding="utf-8")
 
@@ -896,8 +943,338 @@ def test_run_for_date_senza_errori_e_identico_alloriginale(tmp_path, monkeypatch
     client_nuovo = FakeSupabase(coverage_rows=dict(coverage))
     api_nuovo = _esegui_run_for_date(tpb, monkeypatch, client_nuovo, list(fixtures))
 
-    assert client_nuovo.executed == client_orig.executed
-    assert client_nuovo.attempts == client_orig.attempts
+    assert _senza_query_di_prefetch(client_nuovo.executed) == _senza_query_di_prefetch(client_orig.executed)
+    assert _senza_query_di_prefetch(client_nuovo.attempts) == _senza_query_di_prefetch(client_orig.attempts)
     assert api_nuovo.calls == api_orig.calls
     assert client_nuovo.failed == [] and client_orig.failed == []
     assert tpb._RUN_FAILURES == []
+    # la query di prefetch c'e' in entrambi, una sola volta, ed e' l'unica
+    # esclusa dal confronto (equivalenza dell'insieme provata a parte)
+    assert len(client_nuovo.executed) == len(client_orig.executed)
+
+
+# ==============================================================
+# 8) TERZO GIRO
+# ==============================================================
+
+def _senza_query_di_prefetch(seq: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Esclude la SELECT di prefetch dal confronto di equivalenza.
+
+    E' l'unica query cambiata DI PROPOSITO (M8: predicato spostato sul server,
+    niente piu' ht_predictions in rete). Che l'INSIEME restituito sia lo stesso
+    e' provato da test_prefetch_predicato_lato_server_stesso_insieme.
+    """
+    return [
+        d for d in seq
+        if not (d["verb"] == "select" and d["table"] == "fixture_predictions"
+                and any(op == "in" and col == "fixture_id" for op, col, _v in d["filters"]))
+    ]
+
+
+# ---------- M8: prefetch leggero, stesso insieme ----------
+
+def _prefetch_vecchia_logica(righe: List[Dict[str, Any]], ids: List[int]) -> set:
+    """La logica ORIGINALE, applicata in Python (commit base 2f1c549)."""
+    done = set()
+    for row in righe:
+        if row.get("fixture_id") not in ids:
+            continue
+        if row.get("status") != "ok":
+            continue
+        if row.get("ht_predictions") is None:
+            continue
+        done.add(int(row["fixture_id"]))
+    return done
+
+
+RIGHE_PREFETCH = [
+    {"fixture_id": 9001, "status": "ok", "ht_predictions": {"is_elite": True}},
+    {"fixture_id": 9002, "status": "ok", "ht_predictions": None},
+    {"fixture_id": 9003, "status": "no_coverage", "ht_predictions": None},
+    {"fixture_id": 9004, "status": "empty", "ht_predictions": {"is_elite": False}},
+    {"fixture_id": 9005, "status": "error", "ht_predictions": None},
+    {"fixture_id": 9006, "status": "ok", "ht_predictions": {"is_elite": False}},
+    # 9007 non ha alcuna riga
+]
+
+
+def test_prefetch_predicato_lato_server_stesso_insieme(monkeypatch):
+    """Il predicato spostato sul server deve dare lo STESSO set di prima."""
+    ids = [9001, 9002, 9003, 9004, 9005, 9006, 9007]
+    client = FakeSupabase(select_data=[dict(r) for r in RIGHE_PREFETCH])
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+
+    nuovo = tpb.prefetch_predictions_done(ids)
+    atteso = _prefetch_vecchia_logica(RIGHE_PREFETCH, ids)
+    assert nuovo == atteso == {9001, 9006}
+
+
+def test_prefetch_non_scarica_piu_il_json_pesante(monkeypatch):
+    """M8: si seleziona il solo fixture_id, il predicato lo applica il server."""
+    client = FakeSupabase(select_data=[dict(r) for r in RIGHE_PREFETCH])
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+    tpb.prefetch_predictions_done([9001, 9002])
+
+    q = [d for d in client.executed if d["verb"] == "select"][0]
+    assert q["columns"] == "fixture_id", "ht_predictions non deve piu' viaggiare in rete"
+    assert ("eq", "status", "ok") in q["filters"]
+    assert ("not.is", "ht_predictions", "null") in q["filters"]
+
+
+def test_prefetch_in_errore_resta_fail_open_ma_finisce_nel_registro(monkeypatch):
+    """Comportamento invariato (rielabora), ma non piu' ingoiato."""
+    def policy(descr, _attempts):
+        if descr["verb"] == "select" and descr["table"] == "fixture_predictions":
+            return timeout_57014()
+        return None
+
+    client = FakeSupabase(fail_policy=policy)
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+
+    done = tpb.prefetch_predictions_done([9001, 9002, 9003])
+    assert done == set(), "fail-open: tutte rielaborate, come prima"
+    assert [g["operation"] for g in tpb._RUN_FAILURES] == ["prefetch"]
+    assert tpb._RUN_FAILURES[0]["fixture_id"] == "9001..9003"
+
+
+# ---------- ALTO-5: freni assoluti ----------
+
+def test_57014_permanente_non_martella_il_db_e_registra_tutte_le_righe(monkeypatch):
+    """100 righe, 57014 permanente: poche richieste, zero righe perse in silenzio."""
+    monkeypatch.setattr(tpb, "_DB_MAX_FAILED_REQUESTS", 12)
+
+    client = FakeSupabase(fail_policy=lambda d, a: timeout_57014() if d["verb"] == "upsert" else None)
+    writer = _writer_con_client(monkeypatch, client)
+
+    ids = list(range(9100, 9200))  # 100 righe
+    for fid in ids:
+        writer.queue_prediction(prediction_row(fid, status="no_coverage"))
+    writer.flush()
+
+    richieste = len(client.attempts)
+    assert richieste <= 40, "il freno deve fermare il dimezzamento: %s richieste" % richieste
+    registrate = {g["fixture_id"] for g in tpb._RUN_FAILURES}
+    assert registrate == set(ids), "tutte e 100 devono restare tracciate"
+
+
+def test_scadenza_di_parete_ferma_i_retry(monkeypatch):
+    """Superata la deadline non si ritenta piu', anche con budget di attese intatto."""
+    orologio = {"t": 1000.0}
+    monkeypatch.setattr(tpb, "_db_monotonic", lambda: orologio["t"])
+    monkeypatch.setattr(tpb, "_DB_RETRY_DEADLINE_S", 60.0)
+    monkeypatch.setattr(tpb, "_db_sleep", lambda _s: orologio.__setitem__("t", orologio["t"] + 30.0))
+
+    chiamate = {"n": 0}
+
+    def fn():
+        chiamate["n"] += 1
+        raise timeout_57014()
+
+    with pytest.raises(APIError):
+        tpb._db_execute(fn, what="test")
+    # 1o fallimento -> arma la deadline (t=1000+60=1060), dorme 30 (t=1030);
+    # 2o fallimento -> t=1030 < 1060 quindi ritenta, dorme 30 (t=1060);
+    # 3o fallimento -> t=1060 >= 1060: freno, niente altri tentativi.
+    assert chiamate["n"] == 3, "la deadline deve tagliare i 6 tentativi a 3"
+    assert tpb._db_retry_exhausted() is not None
+
+
+def test_limite_di_richieste_fallite_blocca_i_retry(monkeypatch):
+    monkeypatch.setattr(tpb, "_DB_MAX_FAILED_REQUESTS", 2)
+    chiamate = {"n": 0}
+
+    def fn():
+        chiamate["n"] += 1
+        raise timeout_57014()
+
+    with pytest.raises(APIError):
+        tpb._db_execute(fn, what="test")
+    assert chiamate["n"] == 2
+
+
+def test_numero_di_tentativi_letto_a_runtime(monkeypatch):
+    """B5: _DB_RETRY_ATTEMPTS regolabile (e quindi falsificabile)."""
+    monkeypatch.setattr(tpb, "_DB_RETRY_ATTEMPTS", 2)
+    chiamate = {"n": 0}
+
+    def fn():
+        chiamate["n"] += 1
+        raise timeout_57014()
+
+    with pytest.raises(APIError):
+        tpb._db_execute(fn, what="test")
+    assert chiamate["n"] == 2
+
+
+# ---------- ALTO-2: secondo giro sulle post_ops ----------
+
+def test_secondo_giro_recupera_le_odds_che_il_rilancio_non_riprenderebbe(monkeypatch):
+    """Le odds falliscono nel flush ma passano al secondo giro: registro pulito."""
+    stato = {"fallisci": True}
+
+    def policy(descr, _attempts):
+        if descr["verb"] == "update" and ("eq", "fixture_id", 9301) in descr["filters"]:
+            if any("raw_json_odds" in k for k in descr["row_keys"]) and stato["fallisci"]:
+                return timeout_57014()
+        return None
+
+    client = FakeSupabase(
+        fail_policy=policy,
+        coverage_rows={(135, 2026): {"predictions": True, "odds": True}},
+    )
+
+    # il secondo giro parte dopo il flush: da li' in poi il DB "guarisce"
+    vero_retry = tpb._retry_failed_post_ops
+
+    def retry_con_db_guarito():
+        stato["fallisci"] = False
+        return vero_retry()
+
+    monkeypatch.setattr(tpb, "_retry_failed_post_ops", retry_con_db_guarito)
+    _esegui_run_for_date(tpb, monkeypatch, client, [fixture_api(9301, 135)])
+
+    assert tpb._RUN_FAILURES == [], "il secondo giro deve svuotare il registro"
+    odds = [d for d in client.executed
+            if d["verb"] == "update" and any("raw_json_odds" in k for k in d["row_keys"])]
+    assert len(odds) == 1 and ("eq", "fixture_id", 9301) in odds[0]["filters"]
+
+
+def test_secondo_giro_fallito_lascia_la_voce_da_recuperare_a_mano(monkeypatch, caplog):
+    def policy(descr, _attempts):
+        if descr["verb"] == "update" and any("raw_json_odds" in k for k in descr["row_keys"]):
+            return timeout_57014()
+        return None
+
+    client = FakeSupabase(
+        fail_policy=policy,
+        coverage_rows={(135, 2026): {"predictions": True, "odds": True}},
+    )
+    _esegui_run_for_date(tpb, monkeypatch, client, [fixture_api(9302, 135)])
+
+    assert [g["operation"] for g in tpb._RUN_FAILURES] == ["odds"]
+    assert tpb._RUN_FAILURES[0]["manuale"] is True
+
+    caplog.clear()
+    with caplog.at_level("ERROR"):
+        tpb._log_failures_summary("2026-09-20")
+    righe = [r.getMessage() for r in caplog.records]
+    assert any("DA RECUPERARE A MANO: fixture_id=9302, operazione=odds" in r for r in righe)
+
+
+def test_secondo_giro_saltato_se_il_freno_e_attivo(monkeypatch):
+    """A freno attivo non si ritenta nulla: niente martellamento."""
+    tpb._record_failure(9303, "odds", timeout_57014(),
+                        payload={"kind": "odds", "row": odds_row()}, manuale=True)
+    monkeypatch.setattr(tpb, "_DB_MAX_FAILED_REQUESTS", 0)
+
+    client = FakeSupabase()
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+    assert tpb._retry_failed_post_ops() == 0
+    assert client.attempts == [], "nessuna richiesta al DB a freno attivo"
+    assert len(tpb._RUN_FAILURES) == 1
+
+
+# ---------- ALTO-4: eccezioni dell'API non uccidono piu' il run ----------
+
+@pytest.mark.parametrize("coverage,attesa", [
+    ({"predictions": False, "odds": True}, "no_coverage"),
+    ({"predictions": True, "odds": True}, "ok"),
+])
+def test_errore_api_sulle_odds_non_uccide_il_run(monkeypatch, coverage, attesa):
+    """Ramo no_coverage: l'eccezione dell'API sulle quote non ferma piu' il for."""
+    client = FakeSupabase(coverage_rows={(135, 2026): dict(coverage)})
+
+    api = FakeAPI()
+    vero_call = api.call
+
+    def call_con_odds_rotte(path, params=None):
+        if path == "/odds":
+            raise RuntimeError("API-Football 429 Too Many Requests")
+        return vero_call(path, params)
+
+    api.call = call_con_odds_rotte  # type: ignore[method-assign]
+
+    fixtures = [fixture_api(9401, 135), fixture_api(9402, 135)]
+    if attesa == "no_coverage":
+        _esegui_run_for_date(tpb, monkeypatch, client, fixtures, api=api)
+        scritte = [f for d in client.executed if d["verb"] == "upsert" for f in d["fixture_ids"]]
+        assert 9401 in scritte and 9402 in scritte, "il run deve arrivare in fondo"
+        assert [g["operation"] for g in tpb._RUN_FAILURES] == ["odds-fetch", "odds-fetch"]
+    else:
+        # ramo ok: semantica ESISTENTE invariata (la fixture diventa 'error')
+        _esegui_run_for_date(tpb, monkeypatch, client, fixtures, api=api)
+        stati = {f: s for d in client.executed if d["verb"] == "upsert"
+                 for f, s in zip(d["fixture_ids"], d["statuses"])}
+        assert stati.get(9401) == "error" and stati.get(9402) == "error"
+
+
+def test_errore_api_su_predictions_non_uccide_il_run(monkeypatch):
+    """L'eccezione su /predictions diventa una riga status='error', non una morte."""
+    client = FakeSupabase(coverage_rows={(135, 2026): {"predictions": True, "odds": True}})
+
+    api = FakeAPI()
+    vero_call = api.call
+
+    def call_rotta(path, params=None):
+        if path == "/predictions" and params and params.get("fixture") == "9502":
+            raise RuntimeError("Connessione API-Football interrotta")
+        return vero_call(path, params)
+
+    api.call = call_rotta  # type: ignore[method-assign]
+
+    fixtures = [fixture_api(9501, 135), fixture_api(9502, 135), fixture_api(9503, 135)]
+    _esegui_run_for_date(tpb, monkeypatch, client, fixtures, api=api)
+
+    stati = {f: s for d in client.executed if d["verb"] == "upsert"
+             for f, s in zip(d["fixture_ids"], d["statuses"])}
+    assert stati == {9501: "ok", 9502: "error", 9503: "ok"}, (
+        "le fixture dopo quella rotta devono essere comunque predette"
+    )
+    assert [g["operation"] for g in tpb._RUN_FAILURES] == ["predictions-fetch"]
+    assert tpb._RUN_FAILURES[0]["fixture_id"] == 9502
+
+
+def test_riga_di_errore_da_ctx_ha_le_stesse_chiavi_del_ramo_error():
+    """_error_row_from_ctx deve produrre ESATTAMENTE le chiavi del ramo error."""
+    ctx = {k: prediction_row(1)[k] for k in tpb._CTX_KEYS}
+    riga = tpb._error_row_from_ctx(ctx, "2026-09-20T12:00:00+00:00", ValueError("x"))
+    attese = set(tpb._CTX_KEYS) | set(tpb._PROMOTED_NULL_KEYS) | {
+        "status", "error_message", "raw_json", "flat_summary", "updated_at"}
+    assert set(riga.keys()) == attese
+    assert riga["status"] == "error" and riga["raw_json"] is None
+    assert all(riga[k] is None for k in tpb._PROMOTED_NULL_KEYS)
+
+
+# ---------- B2: eccezioni httpx VERE ----------
+
+def test_errori_httpx_veri_sono_transitori():
+    """B2: non classi locali omonime, le classi vere di httpx."""
+    import httpx
+
+    assert tpb._is_transient_db_error(httpx.ReadTimeout("timed out")) is True
+    assert tpb._is_transient_db_error(httpx.ConnectError("connection refused")) is True
+    assert tpb._is_transient_db_error(httpx.ConnectTimeout("timed out")) is True
+    assert tpb._is_transient_db_error(httpx.PoolTimeout("pool")) is True
+    # un errore httpx NON transitorio resta tale
+    assert tpb._is_transient_db_error(httpx.InvalidURL("url")) is False
+
+
+# ---------- B8: il registro non allaga il log ----------
+
+def test_il_registro_non_logga_una_riga_per_ogni_voce_all_infinito(caplog):
+    caplog.clear()
+    with caplog.at_level("ERROR"):
+        for i in range(120):
+            tpb._record_failure(10000 + i, "odds", timeout_57014())
+    righe = [r.getMessage() for r in caplog.records]
+    per_voce = [r for r in righe if r.startswith("ANOMALIA NON RECUPERATA")]
+    assert len(per_voce) == tpb._MAX_FAILURE_LOG_LINES, "dopo 50 voci si smette"
+    assert any("anomalie accumulate finora: 100" in r for r in righe)
+
+    # ma il riepilogo finale stampa COMUNQUE tutti gli id
+    caplog.clear()
+    with caplog.at_level("ERROR"):
+        assert tpb._log_failures_summary("2026-09-20") == 120
+    dettagli = [r for r in [x.getMessage() for x in caplog.records]
+                if r.strip().startswith("- fixture_id=")]
+    assert len(dettagli) == 120
