@@ -20,7 +20,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -101,59 +100,73 @@ def check_result(cal_key: str, h: int, a: int,
 # FETCH DB
 # ---------------------------------------------------------------------------
 def fetch_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
+    """Legge le fixture completate con db_json_analisi + i risultati HT.
+
+    Paginazione KEYSET su fixture_id (PRIMARY KEY) con pagine adattive e retry:
+    stessa identica meccanica di lettura di master_backtest.py (unica fonte), la
+    sola che dimezza la pagina sul 57014 e riprende dallo stesso cursore. Il
+    ciclo esce SOLO a pagina vuota: fermarsi su "meno righe del limite"
+    darebbe per finita la scansione anche quando e' il server a troncare la
+    pagina (max-rows), perdendo righe in silenzio.
+    """
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
+    from master_backtest import (
+        DB_HT_BLOCK_SIZE, DB_PAGE_SIZE, _leggi_con_retry, _risalita_pagina,
+    )
     sb = get_supabase_client()
 
+    def costruisci_fixture(cursore: Optional[int], limite: int):
+        q = (
+            sb.table("fixture_predictions")
+            .select("fixture_id,result_home_goals,result_away_goals,db_json_analisi,league_id,raw_json_odds")
+            .in_("result_status_short", ["FT", "AET", "PEN"])
+            .not_.is_("db_json_analisi", "null")
+        )
+        if cursore is not None:
+            q = q.gt("fixture_id", cursore)
+        return q.order("fixture_id").limit(limite)
+
     rows: List[dict] = []
-    page_size = 1000
-    last_fid = 0  # cursore keyset (fixture_id crescente)
+    cursore: Optional[int] = None
+    dimensione = DB_PAGE_SIZE
+    letture_ok = 0
 
     print("Fetching fixture_predictions con db_json_analisi...")
-    # Paginazione KEYSET (non offset): filtra fixture_id > ultimo visto e ordina.
-    # Costo O(page_size) per pagina grazie all'indice su fixture_id -> niente
-    # rallentamento crescente sui deep offset che causava lo statement timeout (57014)
-    # su ~18-19k righe con colonne JSON pesanti (db_json_analisi/raw_json_odds).
     while True:
-        batch = None
-        for attempt in range(1, 4):  # retry difensivo su timeout/lock transitorio
-            try:
-                resp = (
-                    sb.table("fixture_predictions")
-                    .select("fixture_id,result_home_goals,result_away_goals,db_json_analisi,league_id,raw_json_odds")
-                    .in_("result_status_short", ["FT", "AET", "PEN"])
-                    .not_.is_("db_json_analisi", "null")
-                    .gt("fixture_id", last_fid)
-                    .order("fixture_id")
-                    .limit(page_size)
-                    .execute()
-                )
-                batch = resp.data or []
-                break
-            except Exception as ex:  # noqa: BLE001
-                if "57014" in str(ex) and attempt < 3:
-                    print(f"\n  [retry {attempt}/3] timeout DB su fixture_id>{last_fid}, ritento...")
-                    time.sleep(2 * attempt)
-                    continue
-                raise
+        batch, dimensione = _leggi_con_retry(
+            lambda limite, _c=cursore: costruisci_fixture(_c, limite),
+            dimensione,
+            f"fixture_predictions (fixture_id>{cursore})",
+        )
         if not batch:
             break
         rows.extend(batch)
-        last_fid = batch[-1]["fixture_id"]
+        cursore = batch[-1]["fixture_id"]
         print(f"  {len(rows)} righe...", end="\r")
-        if len(batch) < page_size:
-            break
+        dimensione, letture_ok = _risalita_pagina(dimensione, DB_PAGE_SIZE, letture_ok)
     print(f"\n  Totale: {len(rows)}")
 
     # HT data
     print("Fetching halftime data...")
     fids = [r["fixture_id"] for r in rows if r.get("fixture_id")]
     ht_map: Dict[int, Tuple[int, int]] = {}
-    for i in range(0, len(fids), 300):
-        resp2 = sb.table("matches").select("fixture_id,halftime_home,halftime_away").in_(
-            "fixture_id", fids[i:i + 300]
-        ).execute()
-        for row in (resp2.data or []):
+
+    def costruisci_ht(blocco: List[int]):
+        return sb.table("matches").select(
+            "fixture_id,halftime_home,halftime_away"
+        ).in_("fixture_id", blocco)
+
+    i = 0
+    dim_ht = DB_HT_BLOCK_SIZE
+    letture_ok_ht = 0
+    while i < len(fids):
+        righe, dim_ht = _leggi_con_retry(
+            lambda limite, _i=i: costruisci_ht(fids[_i : _i + limite]),
+            dim_ht,
+            f"matches halftime (blocco da {i})",
+        )
+        for row in righe:
             hh = row.get("halftime_home")
             ha = row.get("halftime_away")
             if hh is not None and ha is not None:
@@ -161,6 +174,10 @@ def fetch_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
                     ht_map[row["fixture_id"]] = (int(hh), int(ha))
                 except (ValueError, TypeError):
                     pass
+        # Avanza del blocco CHIESTO: le fixture senza riga in matches non
+        # devono far slittare il cursore e saltare id.
+        i += dim_ht
+        dim_ht, letture_ok_ht = _risalita_pagina(dim_ht, DB_HT_BLOCK_SIZE, letture_ok_ht)
     print(f"  HT data: {len(ht_map)} fixture\n")
     return rows, ht_map
 
@@ -462,6 +479,15 @@ def main() -> None:
 
     # 1. Fetch
     rows, ht_map = fetch_data()
+    # Lettura vuota = lettura non riuscita (il DB ha sempre decine di migliaia di
+    # fixture completate con db_json_analisi). Senza questo freno dynamic_cal.json
+    # verrebbe riscritto senza nessuna lega, il workflow lo committerebbe e
+    # pusherebbe, e money_management userebbe la sola tabella statica: una
+    # degradazione silenziosa con il run verde.
+    if not rows:
+        print("  ERRORE: nessuna fixture letta dal DB - dynamic_cal.json NON "
+              "rigenerato (file esistente lasciato intatto).")
+        sys.exit(1)
     total = len(rows)
 
     # 2. Accumula

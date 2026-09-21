@@ -125,41 +125,75 @@ def check_result(cal_key: str, h: int, a: int, hh: Optional[int], ha: Optional[i
 # FETCH DATI
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_all_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
+    """Legge le fixture completate con db_json_analisi + i risultati HT.
+
+    Paginazione KEYSET su fixture_id (PRIMARY KEY) con pagine adattive e retry:
+    stesso identico insieme di righe della vecchia paginazione a OFFSET, ma in
+    ordine deterministico e senza il costo crescente che porta al 57014
+    (statement_timeout 8 s) sulle ultime pagine. Se la lettura non riesce,
+    l'eccezione arriva fino al chiamante: mai una calibrazione su dati parziali.
+    """
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
+    # Stessa identica meccanica di lettura di master_backtest.py (unica fonte).
+    from master_backtest import (
+        DB_HT_BLOCK_SIZE, DB_PAGE_SIZE, _leggi_con_retry, _risalita_pagina,
+    )
     sb = get_supabase_client()
 
-    rows: List[dict] = []
-    page_size = 1000
-    offset = 0
-
-    print("Fetching fixture_predictions con db_json_analisi...")
-    while True:
-        resp = (
+    def costruisci_fixture(cursore: Optional[int], limite: int):
+        q = (
             sb.table("fixture_predictions")
             .select("fixture_id,result_home_goals,result_away_goals,db_json_analisi,league_id")
             .in_("result_status_short", ["FT", "AET", "PEN"])
             .not_.is_("db_json_analisi", "null")
-            .range(offset, offset + page_size - 1)
-            .execute()
         )
-        batch = resp.data or []
-        rows.extend(batch)
-        print(f"  {len(rows)} righe...", end="\r")
-        if len(batch) < page_size:
+        if cursore is not None:
+            q = q.gt("fixture_id", cursore)
+        return q.order("fixture_id").limit(limite)
+
+    rows: List[dict] = []
+    cursore: Optional[int] = None
+    dimensione = DB_PAGE_SIZE
+    letture_ok = 0
+
+    print("Fetching fixture_predictions con db_json_analisi...")
+    while True:
+        batch, dimensione = _leggi_con_retry(
+            lambda limite, _c=cursore: costruisci_fixture(_c, limite),
+            dimensione,
+            f"fixture_predictions (fixture_id>{cursore})",
+        )
+        # Si esce solo a pagina vuota: fermarsi su "meno righe del limite"
+        # nasconderebbe un troncamento lato server.
+        if not batch:
             break
-        offset += page_size
+        rows.extend(batch)
+        cursore = batch[-1]["fixture_id"]
+        print(f"  {len(rows)} righe...", end="\r")
+        dimensione, letture_ok = _risalita_pagina(dimensione, DB_PAGE_SIZE, letture_ok)
     print(f"\n  Totale: {len(rows)}")
 
     # HT data (per HT05 market)
     print("Fetching halftime data...")
     fids = [r["fixture_id"] for r in rows if r.get("fixture_id")]
     ht_map: Dict[int, Tuple[int, int]] = {}
-    for i in range(0, len(fids), 300):
-        resp2 = sb.table("matches").select("fixture_id,halftime_home,halftime_away").in_(
-            "fixture_id", fids[i:i+300]
-        ).execute()
-        for row in (resp2.data or []):
+
+    def costruisci_ht(blocco: List[int]):
+        return sb.table("matches").select(
+            "fixture_id,halftime_home,halftime_away"
+        ).in_("fixture_id", blocco)
+
+    i = 0
+    dim_ht = DB_HT_BLOCK_SIZE
+    letture_ok_ht = 0
+    while i < len(fids):
+        righe, dim_ht = _leggi_con_retry(
+            lambda limite, _i=i: costruisci_ht(fids[_i : _i + limite]),
+            dim_ht,
+            f"matches halftime (blocco da {i})",
+        )
+        for row in righe:
             hh = row.get("halftime_home")
             ha = row.get("halftime_away")
             if hh is not None and ha is not None:
@@ -167,6 +201,10 @@ def fetch_all_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
                     ht_map[row["fixture_id"]] = (int(hh), int(ha))
                 except (ValueError, TypeError):
                     pass
+        # Avanza del blocco CHIESTO: le fixture senza riga in matches non
+        # devono far slittare il cursore e saltare id.
+        i += dim_ht
+        dim_ht, letture_ok_ht = _risalita_pagina(dim_ht, DB_HT_BLOCK_SIZE, letture_ok_ht)
     print(f"  HT data: {len(ht_map)} fixture\n")
     return rows, ht_map
 
@@ -493,6 +531,14 @@ def main() -> None:
 
     # 1. Fetch
     rows, ht_map = fetch_all_data()
+    # Lettura vuota = lettura non riuscita (il DB ha sempre decine di migliaia di
+    # fixture completate con db_json_analisi). Senza questo freno ogni bin
+    # resterebbe sotto min_n e --apply riscriverebbe la CALIBRATION_TABLE viva
+    # con tutti 1.0: degradazione silenziosa dei soldi veri, con il run verde.
+    if not rows:
+        print("  ERRORE: nessuna fixture letta dal DB - nessuna calibrazione "
+              "calcolata e money_management.py NON toccato.")
+        sys.exit(1)
 
     # 2. Calcola calibrazione
     print("Calcolando statistiche per bin...")

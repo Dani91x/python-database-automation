@@ -161,11 +161,37 @@ def estimate_league_rho(samples: List[Tuple[float, float, int, int]]) -> Tuple[f
     return rho_final, rho_mle, n
 
 
+def _leghe_nel_file_esistente(path: Path) -> int:
+    """Quante leghe contiene il dc_rho_by_league.json gia' presente (0 se assente).
+
+    Serve solo a decidere se un nuovo risultato VUOTO puo' sovrascrivere un file
+    buono: non entra in nessun calcolo.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            precedente = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    if not isinstance(precedente, dict):
+        return 0
+    rho = precedente.get("rho_by_league")
+    return len(rho) if isinstance(rho, dict) else 0
+
+
 def main() -> None:
     from master_backtest import fetch_completed_fixtures
 
     print("=== generate_dc_rho.py — per-league Dixon-Coles ρ ===")
+    target_path = PROJECT_ROOT / "dc_rho_by_league.json"
+    leghe_precedenti = _leghe_nel_file_esistente(target_path)
+
     rows = fetch_completed_fixtures()
+    # Lettura vuota = lettura non riuscita (il DB ha sempre decine di migliaia di
+    # fixture completate). Errore VISIBILE e file esistente NON toccato.
+    if not rows:
+        print("ERRORE: nessuna fixture letta dal DB, dc_rho_by_league.json NON viene "
+              "rigenerato (file esistente lasciato intatto).")
+        sys.exit(1)
     by_league = _extract_samples(rows)
     print(f"Leagues with data: {len(by_league)}")
 
@@ -189,6 +215,17 @@ def main() -> None:
         estimated += 1
         print(f"  league {league_id:>6}: n={n:>5}  ρ_mle={rho_mle:+.4f}  ρ_final={rho_final:+.4f}")
 
+    # Un risultato VUOTO non puo' cancellare un file buono: sarebbe una
+    # degradazione silenziosa al rho globale con il run verde.
+    if estimated == 0 and leghe_precedenti > 0:
+        print(f"ERRORE: 0 leghe stimate ma dc_rho_by_league.json ne contiene "
+              f"{leghe_precedenti}: dati insufficienti o lettura incompleta, "
+              f"file NON sovrascritto.")
+        sys.exit(1)
+    if 0 < estimated < leghe_precedenti:
+        print(f"ATTENZIONE: {estimated} leghe stimate contro le "
+              f"{leghe_precedenti} del file precedente, verificare la lettura.")
+
     output = {
         "rho_by_league": rho_by_league,
         "global_fallback": DC_RHO,
@@ -200,7 +237,6 @@ def main() -> None:
         "diagnostics": diagnostics,
     }
 
-    target_path = PROJECT_ROOT / "dc_rho_by_league.json"
     tmp_path = None
     try:
         fd, tmp_path = _tempfile.mkstemp(suffix=".tmp", dir=str(PROJECT_ROOT))

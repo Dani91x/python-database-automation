@@ -30,10 +30,12 @@ import csv
 import json
 import math
 import os
+import random
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -467,7 +469,189 @@ def ml_score_passes(edge: float, odds: float, model_prob: float) -> bool:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 3 — DB FETCH
+#
+# LETTURA RESILIENTE (fix 21/09/2026). Il ruolo PostgREST ha statement_timeout
+# di 8 s. La vecchia paginazione a OFFSET profondo su fixture_predictions e'
+# un Seq Scan con colonne JSON pesanti: EXPLAIN dell'ultima pagina
+# (OFFSET 77000 LIMIT 1000) = "Limit (cost=20326.12..20590.09)" perche' ogni
+# pagina ri-scansiona da capo tutte le righe gia' lette -> costo quadratico e
+# 57014 sull'ultima pagina (run del lunedi' persa, dc_rho non rigenerato).
+# La paginazione KEYSET su fixture_id (PRIMARY KEY, UNICO) usa l'indice:
+# "Index Scan using fixture_predictions_pkey ... Index Cond: (fixture_id > N)"
+# = "Limit (cost=0.42..302.73)", costante a ogni pagina. Misurato con EXPLAIN
+# ANALYZE (21/09, DB reale): pagina keyset da 1000 righe = 0,73 s a cache calda
+# e 3,08 s a cache fredda, contro gli 8 s di statement_timeout; la pagina da 500
+# costa 0,62 s. Il margine c'e' ma non e' enorme: per questo la pagina si
+# DIMEZZA da sola al primo 57014 invece di far fallire il run. L'ORDER BY rende
+# inoltre l'insieme letto DETERMINISTICO: con OFFSET senza ORDER BY il piano
+# puo' restituire la stessa riga due volte e saltarne un'altra (righe perse in
+# silenzio).
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Pagine adattive + retry su errori TRANSITORI (mai su errori logici).
+DB_PAGE_SIZE: int = 1000          # righe per pagina (valore di partenza)
+DB_PAGE_SIZE_MIN: int = 50        # sotto questa soglia non si dimezza oltre
+DB_HT_BLOCK_SIZE: int = 300       # fixture_id per blocco su matches (halftime)
+DB_MAX_TENTATIVI: int = 6         # tentativi per pagina prima di arrendersi
+DB_ATTESA_BASE: float = 1.5       # secondi: raddoppia a ogni tentativo + jitter
+DB_PAGINE_PER_RISALITA: int = 3   # letture OK consecutive prima di riallargare
+
+# Codici ritentabili: timeout dello statement, connessione/DB sotto stress,
+# gateway Supabase. Gli errori logici (42xxx colonna/sintassi, 23xxx vincoli,
+# 4xx di validazione) NON sono qui: devono fallire subito e restare visibili.
+# NB: "500" NON e' in elenco di proposito. Quando la risposta non e' JSON,
+# postgrest mette lo status HTTP in "code" e il motivo VERO in "details"
+# (es. code=500 + details="canceling statement due to statement timeout"):
+# un 500 si ritenta SOLO se il testo conferma che e' transitorio, mai da solo.
+_DB_CODICI_TRANSITORI = frozenset({
+    "57014",     # canceling statement due to statement timeout
+    "57P01",     # terminating connection due to administrator command
+    "40001",     # serialization failure
+    "53300",     # too many connections
+    "08006", "08003",  # connessione persa
+    "PGRST002",  # PostgREST non riesce a leggere lo schema (DB sotto stress)
+    "502", "503", "504",  # gateway/servizio non disponibile: sempre transitori
+})
+
+# Eccezioni di trasporto httpx/urllib3 (nessun "code"): nome della classe.
+_DB_ECCEZIONI_TRANSITORIE = frozenset({
+    "ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout",
+    "TimeoutException", "ConnectError", "ReadError", "WriteError",
+    "RemoteProtocolError", "ProtocolError", "CloseError", "NetworkError",
+    "RemoteDisconnected", "ServerDisconnectedError",
+})
+
+# Timeout veri e propri: oltre ad attendere conviene CHIEDERE MENO RIGHE.
+_DB_ECCEZIONI_TIMEOUT = frozenset({
+    "ReadTimeout", "WriteTimeout", "PoolTimeout", "TimeoutException",
+})
+
+# Riconoscimento per TESTO: e' l'unico modo di vedere il 57014 quando arriva
+# mascherato da 500 non-JSON (il codice dice solo "500", il motivo sta nel
+# testo). Stesso criterio di _is_statement_timeout in
+# Prediction/predictions_results_backfill.py.
+_DB_TESTI_TIMEOUT = (
+    "57014", "statement timeout", "canceling statement", "cancelling statement",
+)
+_DB_TESTI_TRANSITORI = (
+    "pgrst002", "connection reset", "connection aborted", "connection error",
+    "connection refused", "server disconnected", "remotedisconnected",
+    "read timeout", "readtimeout", "connecttimeout", "connecterror",
+    "temporarily unavailable", "bad gateway", "gateway timeout",
+    "service unavailable", "timed out", "timeout expired",
+)
+
+
+def _codice_errore_db(exc: BaseException) -> str:
+    """Codice dell'errore PostgREST/Postgres, "" se non disponibile.
+
+    postgrest.exceptions.APIError espone .code: stringa SQLSTATE per gli errori
+    JSON ("57014"), int con lo status HTTP quando la risposta non e' JSON.
+    """
+    codice = getattr(exc, "code", None)
+    if codice is None and exc.args:
+        primo = exc.args[0]
+        if isinstance(primo, dict):
+            codice = primo.get("code")
+    return "" if codice is None else str(codice).strip().upper()
+
+
+def _testo_errore_db(exc: BaseException) -> str:
+    """Testo completo dell'errore in minuscolo: str(exc) piu' message/details/hint.
+
+    Su APIError str(exc) contiene gia' il dict intero (verificato su postgrest
+    2.28), ma i campi si leggono comunque per non dipendere dal formato.
+    """
+    pezzi = [str(exc)]
+    for attributo in ("message", "details", "hint"):
+        valore = getattr(exc, attributo, None)
+        if valore:
+            pezzi.append(str(valore))
+    return " | ".join(pezzi).lower()
+
+
+def _errore_db_timeout(exc: BaseException) -> bool:
+    """True se l'errore e' un timeout: si ritenta con una pagina piu' piccola."""
+    if _codice_errore_db(exc) == "57014":
+        return True
+    if isinstance(exc, TimeoutError):
+        return True
+    if type(exc).__name__ in _DB_ECCEZIONI_TIMEOUT:
+        return True
+    testo = _testo_errore_db(exc)
+    return any(marcatore in testo for marcatore in _DB_TESTI_TIMEOUT)
+
+
+def _errore_db_transitorio(exc: BaseException) -> bool:
+    """True SOLO per errori ritentabili. Un errore logico non si ritenta mai."""
+    if _errore_db_timeout(exc):
+        return True
+    if isinstance(exc, ConnectionError):
+        return True
+    if type(exc).__name__ in _DB_ECCEZIONI_TRANSITORIE:
+        return True
+    if _codice_errore_db(exc) in _DB_CODICI_TRANSITORI:
+        return True
+    # Ultima rete: il testo. Un 500 non-JSON con causa logica non lo attraversa.
+    testo = _testo_errore_db(exc)
+    return any(marcatore in testo for marcatore in _DB_TESTI_TRANSITORI)
+
+
+def _attesa_retry(tentativo: int) -> float:
+    """Backoff esponenziale con jitter (evita di ripartire tutti insieme)."""
+    return DB_ATTESA_BASE * (2 ** (tentativo - 1)) + random.uniform(0.0, DB_ATTESA_BASE)
+
+
+def _leggi_con_retry(
+    costruisci_query: Callable[[int], Any],
+    dimensione: int,
+    descrizione: str,
+) -> Tuple[List[Dict], int]:
+    """Esegue UNA lettura paginata con retry e pagina adattiva.
+
+    `costruisci_query(limite)` ricostruisce la query dallo STESSO cursore a ogni
+    tentativo: dopo un timeout si riprende dal punto esatto, mai da capo e mai
+    saltando righe. Su timeout la pagina viene DIMEZZATA (min DB_PAGE_SIZE_MIN).
+    Ritorna (righe, dimensione effettivamente usata).
+
+    Se i tentativi si esauriscono, o l'errore non e' transitorio, l'eccezione
+    originale viene RILANCIATA: nessun errore ingoiato, nessuna lettura parziale
+    spacciata per completa.
+    """
+    attuale = max(1, dimensione)
+    for tentativo in range(1, DB_MAX_TENTATIVI + 1):
+        try:
+            resp = costruisci_query(attuale).execute()
+            return list(resp.data or []), attuale
+        except Exception as exc:  # noqa: BLE001 - rilanciata sotto se non recuperabile
+            if tentativo >= DB_MAX_TENTATIVI or not _errore_db_transitorio(exc):
+                raise
+            prossima = attuale
+            if _errore_db_timeout(exc):
+                prossima = max(DB_PAGE_SIZE_MIN, attuale // 2)
+            attesa = _attesa_retry(tentativo)
+            print(f"\n  [retry {tentativo}/{DB_MAX_TENTATIVI}] {descrizione}: "
+                  f"{type(exc).__name__} {_codice_errore_db(exc)} - "
+                  f"pagina {attuale}->{prossima}, attendo {attesa:.1f}s")
+            time.sleep(attesa)
+            attuale = prossima
+    # Difensivo: il ciclo esce solo via return o via raise.
+    raise RuntimeError(f"{descrizione}: lettura non riuscita")
+
+
+def _risalita_pagina(dimensione: int, massima: int, letture_ok: int) -> Tuple[int, int]:
+    """Riallarga la pagina dopo DB_PAGINE_PER_RISALITA letture consecutive OK.
+
+    Serve a non restare a pagine minuscole per tutto il resto della scansione
+    dopo un singolo timeout (piu' richieste = piu' carico sul DB).
+    """
+    if dimensione >= massima:
+        return dimensione, 0
+    letture_ok += 1
+    if letture_ok >= DB_PAGINE_PER_RISALITA:
+        return min(massima, dimensione * 2), 0
+    return dimensione, letture_ok
+
 
 def fetch_completed_fixtures(
     date_from: Optional[str] = None,
@@ -479,6 +663,10 @@ def fetch_completed_fixtures(
     - raw_json_odds (opzionale)
     - model_predictions_json (opzionale)
     - risultati reali (goals FT)
+
+    Paginazione KEYSET su fixture_id (PRIMARY KEY): stesso identico insieme di
+    righe della vecchia paginazione a OFFSET, ma in ordine deterministico e
+    senza il costo crescente che faceva scattare il 57014 sull'ultima pagina.
     """
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
@@ -491,12 +679,7 @@ def fetch_completed_fixtures(
         "db_json_analisi,raw_json_odds,model_predictions_json"
     )
 
-    all_rows: List[Dict] = []
-    page_size = 1000
-    offset = 0
-
-    print("Fetching fixture_predictions (FT/AET/PEN)...")
-    while True:
+    def costruisci(cursore: Optional[int], limite: int) -> Any:
         q = (
             sb.table("fixture_predictions")
             .select(select_cols)
@@ -506,14 +689,31 @@ def fetch_completed_fixtures(
             q = q.gte("fixture_date", date_from)
         if league_ids:
             q = q.in_("league_id", league_ids)
-        q = q.range(offset, offset + page_size - 1)
-        resp = q.execute()
-        batch = resp.data or []
-        all_rows.extend(batch)
-        print(f"  {len(all_rows)} righe...", end="\r")
-        if len(batch) < page_size:
+        if cursore is not None:
+            q = q.gt("fixture_id", cursore)
+        return q.order("fixture_id").limit(limite)
+
+    all_rows: List[Dict] = []
+    cursore: Optional[int] = None
+    dimensione = DB_PAGE_SIZE
+    letture_ok = 0
+
+    print("Fetching fixture_predictions (FT/AET/PEN)...")
+    while True:
+        batch, dimensione = _leggi_con_retry(
+            lambda limite, _c=cursore: costruisci(_c, limite),
+            dimensione,
+            f"fixture_predictions (fixture_id>{cursore})",
+        )
+        # Unica condizione di uscita: pagina vuota. Fermarsi su
+        # "len(batch) < limite" darebbe per finita la scansione anche quando e'
+        # il server a troncare la pagina (max-rows) -> righe perse in silenzio.
+        if not batch:
             break
-        offset += page_size
+        all_rows.extend(batch)
+        cursore = batch[-1]["fixture_id"]
+        print(f"  {len(all_rows)} righe...", end="\r")
+        dimensione, letture_ok = _risalita_pagina(dimensione, DB_PAGE_SIZE, letture_ok)
 
     print(f"\n  Totale: {len(all_rows)} fixture completate")
     return all_rows
@@ -524,14 +724,22 @@ def fetch_halftime_results(fixture_ids: List[int]) -> Dict[int, Tuple[int, int]]
     from db_client import get_supabase_client
     sb = get_supabase_client()
 
-    ht_map: Dict[int, Tuple[int, int]] = {}
-    batch_size = 300
-    for i in range(0, len(fixture_ids), batch_size):
-        batch = fixture_ids[i : i + batch_size]
-        resp = sb.table("matches").select(
+    def costruisci(blocco: List[int]) -> Any:
+        return sb.table("matches").select(
             "fixture_id,halftime_home,halftime_away"
-        ).in_("fixture_id", batch).execute()
-        for row in resp.data or []:
+        ).in_("fixture_id", blocco)
+
+    ht_map: Dict[int, Tuple[int, int]] = {}
+    i = 0
+    dimensione = DB_HT_BLOCK_SIZE
+    letture_ok = 0
+    while i < len(fixture_ids):
+        righe, dimensione = _leggi_con_retry(
+            lambda limite, _i=i: costruisci(fixture_ids[_i : _i + limite]),
+            dimensione,
+            f"matches halftime (blocco da {i})",
+        )
+        for row in righe:
             hh = row.get("halftime_home")
             ha = row.get("halftime_away")
             if hh is not None and ha is not None:
@@ -539,6 +747,11 @@ def fetch_halftime_results(fixture_ids: List[int]) -> Dict[int, Tuple[int, int]]
                     ht_map[row["fixture_id"]] = (int(hh), int(ha))
                 except (ValueError, TypeError):
                     pass
+        # Si avanza della dimensione del BLOCCO CHIESTO (non delle righe
+        # tornate): le fixture senza riga in matches non devono far slittare
+        # il cursore e saltare id.
+        i += dimensione
+        dimensione, letture_ok = _risalita_pagina(dimensione, DB_HT_BLOCK_SIZE, letture_ok)
     print(f"  Halftime data: {len(ht_map)} fixture")
     return ht_map
 

@@ -43,6 +43,7 @@ jobs:
         run: python update_poisson_calibration.py --apply
 
       - name: Step 3 — Rigenera dc_rho_by_league.json (ρ Dixon-Coles per-lega)
+        id: rho
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -86,4 +87,19 @@ jobs:
               # il rebase aborta con "cannot pull with rebase: You have unstaged changes".
               git pull --rebase --autostash origin master
             done
+          fi
+
+      # GATE ERRORI NASCOSTI (21/09/2026): lo Step 3 e' continue-on-error (il motore
+      # degrada al rho globale se il file manca), ma in passato falliva per timeout DB
+      # quasi ogni settimana con il run VERDE. Gira sempre, DOPO il commit delle
+      # calibrazioni: se lo Step 3 e' fallito il run diventa ROSSO e l'errore e' visibile.
+      - name: Gate errori nascosti (rosso se lo Step 3 e' fallito)
+        if: always()
+        env:
+          ESITO_RHO: ${{ steps.rho.outcome }}
+        run: |
+          echo "Esito Step 3 (rho per lega): $ESITO_RHO"
+          if [ "$ESITO_RHO" = "failure" ]; then
+            echo "::error::Step 3 fallito: dc_rho_by_league.json NON rigenerato (il motore usa il file precedente / rho globale)."
+            exit 1
           fi
