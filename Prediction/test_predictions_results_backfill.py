@@ -16,8 +16,10 @@ Cosa certifica:
     NON si ferma su una pagina corta (server con max-rows) e che riconosce il
     troncamento da --limit;
   * idempotenza: il secondo giro non riscrive nulla;
-  * percorso senza errori: stesse identiche scritture del codice originale
-    (recuperato con ``git show``), campi ``hit_*`` identici riga per riga.
+  * percorso senza errori: stesse identiche scritture del codice PRIMA del fix
+    (recuperato con ``git show`` dal commit base fisso ``COMMIT_BASE``, mai da
+    HEAD: dopo il commit del fix HEAD sarebbe il codice nuovo e il confronto
+    passerebbe a vuoto), campi ``hit_*`` identici riga per riga.
 """
 from __future__ import annotations
 
@@ -376,16 +378,33 @@ def _match(fixture_id: int, gh: int = 2, ga: int = 1, status: str = "FT") -> Dic
     }
 
 
+# Combinazioni di dati: PRODOTTO CARTESIANO, non cicli modulari.
+# (Con i cicli modulari usati prima i pareggi capitavano solo con
+# win_or_draw=False: il ramo "pareggio -> hit_win_or_draw=True" non veniva mai
+# eseguito e una mutazione di quel ramo NON faceva diventare rosso il test.)
+# Tutti i match sono FINISHED: i casi non valutabili sono coperti a parte.
+_PUNTEGGI = [(2, 1, "FT"), (0, 0, "FT"), (1, 3, "AET"), (4, 4, "PEN"),
+             (0, 2, "FT"), (3, 3, "FT")]
+_WINNERS = [100, 200, None]
+_WOD = [True, False]
+# linee .5 (come dall'endpoint) + linee intere, che mettono alla prova il
+# CONFINE di hit_under_over (total esattamente uguale alla linea: 2-1 -> 3).
+_LINEE = ["-3.5", "+2.5", None, "+0.5", "-3", "+3"]
+
+_COMBINAZIONI = [
+    (punteggio, winner, wod, uo)
+    for punteggio in _PUNTEGGI
+    for winner in _WINNERS
+    for wod in _WOD
+    for uo in _LINEE
+]
+
+
 def _dataset(n: int, first_id: int = 1600000):
     preds, matches = [], []
     for k in range(n):
         fx = first_id + k
-        # varieta' sufficiente a coprire tutti i rami di evaluate()
-        winner = [100, 200, None][k % 3]
-        wod = (k % 2 == 0)
-        uo = ["-3.5", "+2.5", None, "+0.5"][k % 4]
-        gh, ga = [(2, 1), (0, 0), (1, 3), (4, 4)][k % 4]
-        status = ["FT", "FT", "AET", "PEN"][k % 4]
+        (gh, ga, status), winner, wod, uo = _COMBINAZIONI[k % len(_COMBINAZIONI)]
         preds.append(_pred(fx, winner=winner, wod=wod, uo=uo))
         matches.append(_match(fx, gh=gh, ga=ga, status=status))
     return preds, matches
@@ -796,19 +815,32 @@ def test_rilancio_dopo_successo_non_riscrive_nulla(monkeypatch):
 
 
 # =========================================================================
-# 5) equivalenza con il codice ORIGINALE (git show HEAD:...)
+# 5) equivalenza con il codice ORIGINALE (git show <COMMIT_BASE>:...)
 # =========================================================================
+
+# Commit BASE del ramo di fix: l'ultima versione dello script PRIMA di questo
+# lavoro. Deve restare fisso: ancorarlo a HEAD non avrebbe senso, perche' una
+# volta committato il fix HEAD E' il codice nuovo e il confronto diventerebbe
+# nuovo-contro-nuovo, cioe' verde a vuoto.
+COMMIT_BASE = "2f1c549"
+
 
 @pytest.fixture(scope="module")
 def modulo_originale(tmp_path_factory):
-    """Carica la versione a HEAD dello script (prima del fix) per confrontare."""
+    """Carica lo script com'era al commit base (prima del fix) per confrontare."""
     try:
-        src = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "show", "HEAD:Prediction/predictions_results_backfill.py"],
+        esito = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "show",
+             f"{COMMIT_BASE}:Prediction/predictions_results_backfill.py"],
             capture_output=True, check=True,
-        ).stdout.decode("utf-8")
-    except Exception as exc:  # git non disponibile: il confronto non e' eseguibile
-        pytest.skip(f"git show non disponibile: {exc}")
+        )
+        src = esito.stdout.decode("utf-8")
+    except Exception as exc:  # commit/git non disponibili: il confronto non e' eseguibile
+        pytest.skip(
+            f"impossibile leggere Prediction/predictions_results_backfill.py al commit "
+            f"base {COMMIT_BASE} (git show fallito: {exc}): il confronto di equivalenza "
+            f"NON e' stato eseguito."
+        )
 
     path = tmp_path_factory.mktemp("orig") / "orig_backfill.py"
     path.write_text(src, encoding="utf-8")
@@ -817,6 +849,22 @@ def modulo_originale(tmp_path_factory):
     orig = importlib.util.module_from_spec(spec)
     sys.modules["orig_backfill"] = orig
     spec.loader.exec_module(orig)
+
+    # SANITA' DEL RIFERIMENTO: se per sbaglio si confrontasse il codice nuovo
+    # con se stesso, il test deve dichiararsi rotto invece di passare a vuoto.
+    assert not hasattr(orig, "_recupera_chunk_non_confermato"), (
+        f"{COMMIT_BASE} non e' il codice PRIMA del fix: contiene gia' le novita'."
+    )
+    assert not hasattr(orig, "RPC_MIN_CHUNK"), (
+        f"{COMMIT_BASE} non e' il codice PRIMA del fix: contiene gia' RPC_MIN_CHUNK."
+    )
+    assert orig.RPC_BULK_CHUNK == 500, (
+        f"{COMMIT_BASE} non e' il codice PRIMA del fix: RPC_BULK_CHUNK="
+        f"{orig.RPC_BULK_CHUNK} invece di 500."
+    )
+    # ...e il modulo nuovo deve essere davvero un altro: se fossero lo stesso
+    # oggetto o la stessa versione, il confronto non proverebbe nulla.
+    assert orig is not mod and mod.RPC_BULK_CHUNK != orig.RPC_BULK_CHUNK
     return orig
 
 
