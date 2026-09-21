@@ -92,3 +92,22 @@
 --   (non durante retrain/backfill).
 -- -----------------------------------------------------------------------------
 -- analyze public.match_odds;
+
+
+-- -----------------------------------------------------------------------------
+-- BLOCCO E  [OPZIONALE, DA MISURARE PRIMA: indice composito per il flush a fette]
+-- PERCHE': flush_analytics_snap_staging fa `UPDATE analytics_signals s ... FROM
+--   analytics_snap_staging st WHERE s.league_id = p AND s.fixture_id = st.fixture_id
+--   AND s.market = st.market AND s.selection = st.selection`. Su analytics_signals
+--   esistono idx_as_fixture (fixture_id) e idx_as_market_selection, ma NON un indice
+--   composito (fixture_id, market, selection) (migrations/analytics_signals.sql
+--   ~96-107): con fette piccole il planner sceglie di norma il nested loop su
+--   idx_as_fixture, ma l'indice composito lo renderebbe certo.
+-- COME: misurare PRIMA con EXPLAIN (senza ANALYZE) della RPC su una lega grande (es. 129)
+--   dopo aver svuotato la staging (blocco A). Creare solo se il piano non usa gia'
+--   un nested loop con Index Scan. Costo: scrittura extra su ogni UPDATE di
+--   analytics_signals (tabella ~12k righe/lega): valutare.
+-- ANNULLAMENTO: drop index concurrently public.idx_as_fixture_market_selection;
+-- -----------------------------------------------------------------------------
+-- create index concurrently if not exists idx_as_fixture_market_selection
+--     on public.analytics_signals (fixture_id, market, selection);
