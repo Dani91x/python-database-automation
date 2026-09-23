@@ -4,6 +4,16 @@ on:
   schedule:
     - cron: '18 2 * * *'   # 02:18 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'Data YYYY-MM-DD da processare (vuoto = oggi UTC, comportamento di default)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: today-predictions-backfill
+  cancel-in-progress: false
 
 jobs:
   run-predictions:
@@ -28,4 +38,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-        run: python -m Prediction.today_predictions_backfill
+          BACKFILL_DATE: ${{ github.event.inputs.date }}
+        run: |
+          if [ -n "$BACKFILL_DATE" ]; then
+            python -m Prediction.today_predictions_backfill --date "$BACKFILL_DATE"
+          else
+            python -m Prediction.today_predictions_backfill
+          fi

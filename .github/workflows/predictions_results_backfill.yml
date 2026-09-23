@@ -5,6 +5,16 @@ on:
     # Esegue ogni giorno alle 03:23 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
     - cron: '23 3 * * *'
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'Data YYYY-MM-DD da rivalutare (vuoto = ieri UTC, comportamento di default)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: predictions-results-backfill
+  cancel-in-progress: false
 
 jobs:
   run-results-backfill:
@@ -12,6 +22,33 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Calcola la finestra incrementale per gli step additivi qui sotto (--days).
+      # Con input 'date' vuoto: GIORNI_FINESTRA=4, IDENTICO al comportamento di oggi.
+      # Con 'date' valorizzata (backfill nel passato): gli step additivi ancorano la
+      # loro finestra a now() UTC (non alla data target, vedi build_analytics_signals.py
+      # riga 325, merge_engine_signals.py riga 234, enrich_analytics_snapshots.py riga 308,
+      # refresh_analytics_bets.py riga 162), quindi allarghiamo la finestra a
+      # (oggi - data target) + 1 giorni, con un minimo di 4 (mai piu' stretta di oggi).
+      - name: Calcola finestra incrementale (GIORNI_FINESTRA)
+        env:
+          BACKFILL_DATE: ${{ github.event.inputs.date }}
+        run: |
+          if [ -z "$BACKFILL_DATE" ]; then
+            echo "GIORNI_FINESTRA=4" >> "$GITHUB_ENV"
+          else
+            TARGET_EPOCH=$(date -u -d "$BACKFILL_DATE" +%s 2>/dev/null)
+            if [ -z "$TARGET_EPOCH" ]; then
+              echo "::error::Data non valida per l'input 'date': '$BACKFILL_DATE' (atteso formato YYYY-MM-DD)"
+              exit 1
+            fi
+            OGGI_EPOCH=$(date -u +%s)
+            DIFF_GIORNI=$(( (OGGI_EPOCH - TARGET_EPOCH) / 86400 + 1 ))
+            if [ "$DIFF_GIORNI" -lt 4 ]; then
+              DIFF_GIORNI=4
+            fi
+            echo "GIORNI_FINESTRA=$DIFF_GIORNI" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,7 +67,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-        run: python -m Prediction.predictions_results_backfill
+          BACKFILL_DATE: ${{ github.event.inputs.date }}
+        run: |
+          if [ -n "$BACKFILL_DATE" ]; then
+            python -m Prediction.predictions_results_backfill --date "$BACKFILL_DATE"
+          else
+            python -m Prediction.predictions_results_backfill
+          fi
 
       # ADDITIVO E NON-FATALE: dopo che i risultati sono settlati, aggiorna la
       # tabella analytics_signals (centro di controllo) per le partite recenti —
@@ -45,7 +88,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python build_analytics_signals.py --days 4
+        run: python build_analytics_signals.py --days "$GIORNI_FINESTRA"
 
       # Sincronizza il firehose engine_signals → layer decisioni analytics_decisions
       # (+ previsioni in analytics_signals): porta piazzate/scartate/no_signal +
@@ -57,7 +100,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python merge_engine_signals.py --days 4
+        run: python merge_engine_signals.py --days "$GIORNI_FINESTRA"
 
       # ADDITIVO E NON-FATALE: arricchisce freq/ritardi (snapshot contesto mercato)
       # SOLO sulle partite recenti presenti in analytics_signals (modo INCREMENTALE).
@@ -74,7 +117,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python enrich_analytics_snapshots.py --days 4
+        run: python enrich_analytics_snapshots.py --days "$GIORNI_FINESTRA"
 
       # ADDITIVO E NON-FATALE: rinfresca la tabella materializzata analytics_bets
       # (motore strategie) per i giorni recenti — incrementale per intervallo di date,
@@ -88,7 +131,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python refresh_analytics_bets.py --days 5
+          python refresh_analytics_bets.py --days "$((GIORNI_FINESTRA + 1))"
 
       # ADDITIVO E NON-FATALE: rinfresca la PAGELLA (direction_pagella) DOPO il refresh
       # di analytics_bets — da cui dipende via la vista bet_features. Ricalcola l'hit-rate
