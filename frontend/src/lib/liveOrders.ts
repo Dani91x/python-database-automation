@@ -781,7 +781,7 @@ export async function fetchLiveRiskState(): Promise<LiveRiskState | null> {
 // Sottoscrizione realtime alla riga singleton dello stato rischio (top bar).
 export function subscribeLiveRiskState(cb: (row: LiveRiskState | null) => void): () => void {
     const channel = supabase
-        .channel('betfair_live_risk_state:1')
+        .channel(nomeCanaleUnico('betfair_live_risk_state:1'))
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'betfair_live_risk_state', filter: 'id=eq.1' },
