@@ -1247,12 +1247,23 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         leg.avg_price = float(res.avg_price_matched or leg.price)
         if matched >= float(leg.size) - 1e-9:
             leg.status = "open"
-        _aggiorna_riga_resting(db, eid, leg, "live_resting_immediato",
-                               residuo=getattr(res, "size_remaining", None),
-                               aggiornato_al=getattr(res, "betfair_updated_at", None))
     residuo_iniziale = getattr(res, "size_remaining", None)
     if residuo_iniziale is None:
         residuo_iniziale = round(max(0.0, float(leg.size) - matched), 2)
+    # ⚠️ CONSAPEVOLEZZA DELL'ORDINE (replay del banco, mike-t2/t3/t4, CP1 x3,
+    # residuo 10,12) — la riga si aggiorna SEMPRE qui, non solo `if matched > 0`.
+    # L'ordine appoggiato SENZA abbinamento immediato e' il caso NORMALE (resta
+    # sul book): prima, in quel caso, `_aggiorna_riga_resting` non veniva mai
+    # chiamata e la riga restava 'pending' senza `size_matched`/`size_remaining`
+    # leggibili finche' l'ordine era vivo. Qui si scrive SEMPRE chiesto/abbinato
+    # (0 se non c'e' stato abbinamento)/residuo (= chiesto, se abbinato e' 0)/
+    # prezzo medio, come fa `execution.place` (`Betfair/safe_strategy/
+    # execution.py`) per il percorso Safe/Omega — nessuna decisione di
+    # STRATEGIA cambia, solo la tracciatura.
+    _aggiorna_riga_resting(db, eid, leg,
+                           "live_resting_immediato" if matched > 0 else "live_resting_piazzato",
+                           residuo=residuo_iniziale,
+                           aggiornato_al=getattr(res, "betfair_updated_at", None))
     db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
                              "size": leg.size, "matched": round(matched, 2),
                              "live": True,

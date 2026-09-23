@@ -167,6 +167,34 @@ def test_l_ordine_live_viene_piazzato_SENZA_fill_or_kill():
     assert "place_resting" in db.kinds()
 
 
+def test_l_uscita_appoggiata_SENZA_abbinamento_scrive_subito_chiesto_e_residuo():
+    """Reperto del banco (replay, mike-t2/t3/t4, CP1 x3, residuo 10,12): un
+    ordine appoggiato che resta sul book SENZA abbinamento immediato è il caso
+    NORMALE, non un'eccezione. Prima `_aggiorna_riga_resting` girava solo dentro
+    `if matched > 0:` e la riga restava 'pending' senza `size_matched`/
+    `size_remaining` leggibili finche' l'ordine era vivo: chi guardava la riga
+    non sapeva quanto fosse ancora chiesto a mercato.
+
+    Qui `MercatoFinto.place_order_live` risponde `size_matched=0.0` (nessun
+    abbinamento immediato): la riga deve comunque portare chiesto/abbinato=0/
+    residuo=chiesto, come fa `execution.place` per Safe/Omega."""
+    db, mk, leg = DbFinto(), MercatoFinto(), _gamba()
+    S._piazza_resting_live(db=db, market=mk, info=InfoFinta(), leg=leg, mode="live",
+                           params=C.merge_params(None), minuto=None, score=None,
+                           chiude=None, motivo=None, ev={"event_id": "E1"})
+    # X.aggiorna_trade scrive via db.update_trade(id, **campi, **consapevolezza):
+    # tutto arriva appiattito nello stesso dizionario, non annidato.
+    righe = [a for a in db.aggiornate if a.get("id") == 1 and "size_requested" in a]
+    assert righe, ("nessuna scrittura con `size_requested` sulla riga: la "
+                   "consapevolezza dell'ordine non e' stata tracciata")
+    r = righe[-1]
+    assert r["size_requested"] == pytest.approx(10.14)
+    assert r["size_matched"] == pytest.approx(0.0)
+    assert r["size_remaining"] == pytest.approx(10.14)
+    assert r["size"] == pytest.approx(0.0)
+    assert r["status"] == "pending"
+
+
 def test_la_riga_si_scrive_PRIMA_di_piazzare():
     """Se il processo muore in mezzo deve restare una riga 'pending' che la
     riconciliazione ritrova. L'ordine contrario lascerebbe su Betfair un ordine
