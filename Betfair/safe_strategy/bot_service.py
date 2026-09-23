@@ -4614,13 +4614,27 @@ def _persist_exit_request(db, trade: dict[str, Any], req: dict[str, Any],
                           extra: Optional[dict[str, Any]] = None) -> None:
     """Riscrive ``meta.exit_requested`` (+ ``extra``, es. exit_kind/exit_reason)
     leggendo il meta CORRENTE della riga: close_trade ha già aggiornato la
-    stessa riga (cashout_at, hedge…). A uscita inviata ``meta.exit_hold`` sparisce."""
+    stessa riga (cashout_at, hedge…). A uscita inviata ``meta.exit_hold`` sparisce.
+
+    REPERTO 23/09 (replay, scenario 'chiusura-abbinata-in-parte'): un'uscita
+    DOVUTA (``kind`` non in ``XE.PROFIT_KINDS`` = 'loss'/'red_card'/'mandatory')
+    salta il gate di modello (``_model_gate`` esce subito per quei kind, senza
+    toccare ``meta.exit_hold``): se un vecchio hold "a modello" era rimasto
+    sulla riga da un ciclo precedente (kind profit/time), e l'uscita
+    obbligatoria viene TENTATA ma l'ordine e' ucciso (``last_error``
+    valorizzato, come nel ramo 'if err:' che segue), l'hold vecchio restava e
+    T7 lo leggeva come una trattenuta illegittima. Un tentativo REALE si
+    riconosce da ``last_error`` (le attese 'niente_da_chiudere'/
+    'chiusura_in_corso' non lo impostano e non consumano un tentativo). Non
+    cambia QUANDO si esce ne' come si decide: solo il tracciamento qui."""
     try:
         cur = db.get_trade(int(trade["id"])) or trade
     except Exception:  # noqa: BLE001
         cur = trade
     meta = {**(cur.get("meta") or {}), XE.REQUEST_KEY: req, **(extra or {})}
-    if req.get("sent"):
+    dovuta_tentata = (req.get("last_error") is not None
+                      and str(req.get("kind") or "") not in XE.PROFIT_KINDS)
+    if req.get("sent") or dovuta_tentata:
         meta.pop(HOLD_KEY, None)
     try:
         db.update_trade(int(trade["id"]), meta=meta)
