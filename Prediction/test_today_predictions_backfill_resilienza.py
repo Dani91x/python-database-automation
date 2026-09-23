@@ -17,6 +17,7 @@ Nessun accesso al DB vero: il client Supabase e' un finto in memoria.
 """
 from __future__ import annotations
 
+import copy
 import importlib.util
 import subprocess
 import sys
@@ -227,6 +228,107 @@ class FakeSupabase:
         return [{"fixture_id": f} for f in descr["fixture_ids"]]
 
 
+# Colonne NOT NULL di fixture_predictions note dal repo
+# (migrations/predictions_results_bulk_update_rpc.sql: "non puo' violare NOT
+# NULL (es. status)"). Il finto con tabella le fa rispettare come Postgres.
+NOT_NULL_FIXTURE_PREDICTIONS = ("fixture_id", "status")
+
+
+class FakeQueryConTabella(FakeQuery):
+    """Come FakeQuery, ma upsert/update su fixture_predictions MODIFICANO una
+    tabella in memoria con la semantica di PostgREST + Postgres:
+
+    - upsert (merge-duplicates, on_conflict=fixture_id): riga presente ->
+      aggiorna SOLO le colonne del payload; assente -> inserisce la riga;
+    - i NOT NULL della riga proposta si controllano PRIMA del conflitto (come
+      Postgres in INSERT ... ON CONFLICT): una riga monca e' rifiutata con
+      23502 anche se la riga esiste gia';
+    - bulk con chiavi diverse fra gli oggetti -> PGRST102 (come PostgREST);
+    - update ... eq(fixture_id): aggiorna solo se la riga c'e', ritorna [] se no;
+    - una richiesta fallita non scrive nulla (statement atomico).
+    """
+
+    def _vincoli(self) -> Optional[APIError]:
+        if self._table != "fixture_predictions" or self._verb != "upsert":
+            return None
+        righe = self._payload if isinstance(self._payload, list) else [self._payload]
+        chiavi = {frozenset(r.keys()) for r in righe}
+        if len(chiavi) > 1:
+            return api_error("PGRST102", "All object keys must match")
+        for r in righe:
+            for col in NOT_NULL_FIXTURE_PREDICTIONS:
+                if r.get(col) is None:
+                    return api_error(
+                        "23502",
+                        'null value in column "%s" of relation "fixture_predictions" '
+                        "violates not-null constraint" % col,
+                    )
+        return None
+
+    def _applica(self) -> List[Dict[str, Any]]:
+        tabella = self._c.tabella
+        if self._verb == "upsert":
+            righe = self._payload if isinstance(self._payload, list) else [self._payload]
+            out = []
+            for r in righe:
+                r = copy.deepcopy(r)
+                fid = r["fixture_id"]
+                if fid in tabella:
+                    tabella[fid].update(r)
+                else:
+                    tabella[fid] = r
+                out.append(copy.deepcopy(tabella[fid]))
+            return out
+        fid = None
+        for op, col, val in self._filters:
+            if op == "eq" and col == "fixture_id":
+                fid = val
+        if fid not in tabella:
+            return []
+        tabella[fid].update(copy.deepcopy(self._payload))
+        return [copy.deepcopy(tabella[fid])]
+
+    def execute(self) -> Optional[FakeResponse]:
+        descr = self._descr()
+        exc = None
+        if self._c.fail_policy is not None:
+            exc = self._c.fail_policy(descr, self._c.attempts)
+        if exc is None:
+            exc = self._vincoli()
+        self._c.attempts.append(descr)
+        if exc is not None:
+            self._c.failed.append(descr)
+            raise exc
+        self._c.executed.append(descr)
+        if self._table == "fixture_predictions" and self._verb in ("upsert", "update"):
+            return FakeResponse(self._applica())
+        dati = self._c.response_for(descr)
+        if self._single and dati is None:
+            return None
+        return FakeResponse(dati)
+
+
+class FakeSupabaseConTabella(FakeSupabase):
+    """FakeSupabase con lo STATO di fixture_predictions (fixture_id -> riga)."""
+
+    def __init__(self, *args: Any, tabella: Optional[Dict[int, Dict[str, Any]]] = None, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.tabella: Dict[int, Dict[str, Any]] = copy.deepcopy(tabella) if tabella else {}
+
+    def table(self, name: str) -> FakeQuery:
+        return FakeQueryConTabella(self, name)
+
+
+def _scritture(client: FakeSupabase) -> List[Dict[str, Any]]:
+    """Richieste di scrittura su fixture_predictions riuscite."""
+    return [d for d in client.executed
+            if d["table"] == "fixture_predictions" and d["verb"] in ("upsert", "update", "insert")]
+
+
+def _ha_colonna(descr: Dict[str, Any], col: str) -> bool:
+    return any(col in k for k in descr["row_keys"])
+
+
 # ==============================================================
 # Dati finti con le colonne reali di fixture_predictions
 # ==============================================================
@@ -370,19 +472,15 @@ def test_57014_transitorio_sul_batch_passa_al_secondo_tentativo(monkeypatch):
 # 2) 57014 sull'UPDATE delle odds -> ritenta e riesce
 # ==============================================================
 
-def test_57014_su_update_odds_viene_ritentato_e_riesce(monkeypatch):
+def test_57014_sulla_scrittura_delle_odds_viene_ritentato_e_riesce(monkeypatch):
+    """Le odds viaggiano nell'upsert a blocchi: due 57014, poi passa."""
     def policy(descr, attempts):
-        if descr["verb"] != "update":
+        if not _ha_colonna(descr, "raw_json_odds"):
             return None
-        if ("eq", "fixture_id", 4002) not in descr["filters"]:
-            return None
-        precedenti = sum(
-            1 for a in attempts
-            if a["verb"] == "update" and ("eq", "fixture_id", 4002) in a["filters"]
-        )
+        precedenti = sum(1 for a in attempts if _ha_colonna(a, "raw_json_odds"))
         return timeout_57014() if precedenti < 2 else None
 
-    client = FakeSupabase(fail_policy=policy)
+    client = FakeSupabaseConTabella(fail_policy=policy)
     writer = _writer_con_client(monkeypatch, client)
 
     for fid in (4001, 4002, 4003):
@@ -390,15 +488,32 @@ def test_57014_su_update_odds_viene_ritentato_e_riesce(monkeypatch):
         writer.queue_odds(fid, odds_row())
     writer.flush()
 
-    odds_ok = [
-        d["filters"] for d in client.executed if d["verb"] == "update"
-    ]
-    assert odds_ok == [
-        (("eq", "fixture_id", 4001),),
-        (("eq", "fixture_id", 4002),),
-        (("eq", "fixture_id", 4003),),
-    ], "tutte e tre le odds devono essere scritte, nell'ordine di accodamento"
+    for fid in (4001, 4002, 4003):
+        assert client.tabella[fid]["raw_json_odds"] == odds_row()["raw_json_odds"], (
+            "tutte e tre le odds devono essere scritte"
+        )
     assert len(client.failed) == 2, "due tentativi falliti prima del successo"
+    assert tpb._RUN_FAILURES == []
+
+
+def test_57014_su_update_odds_singola_viene_ritentato_e_riesce(monkeypatch):
+    """Percorso UPDATE di sempre (fixture senza riga di prediction nel flush)."""
+    def policy(descr, attempts):
+        if descr["verb"] != "update":
+            return None
+        precedenti = sum(1 for a in attempts if a["verb"] == "update")
+        return timeout_57014() if precedenti < 2 else None
+
+    esistente = prediction_row(4101)
+    client = FakeSupabaseConTabella(fail_policy=policy, tabella={4101: esistente})
+    writer = _writer_con_client(monkeypatch, client)
+    writer.queue_odds(4101, odds_row())
+    writer.flush()
+
+    assert [d["filters"] for d in client.executed if d["verb"] == "update"] == [
+        (("eq", "fixture_id", 4101),)]
+    assert client.tabella[4101]["raw_json_odds"] == odds_row()["raw_json_odds"]
+    assert len(client.failed) == 2
     assert tpb._RUN_FAILURES == []
 
 
@@ -408,11 +523,13 @@ def test_57014_su_update_odds_viene_ritentato_e_riesce(monkeypatch):
 
 def test_fallimento_permanente_su_odds_non_ferma_le_altre_fixture(monkeypatch):
     def policy(descr, _attempts):
-        if descr["verb"] == "update" and ("eq", "fixture_id", 5002) in descr["filters"]:
+        if not _ha_colonna(descr, "raw_json_odds"):
+            return None
+        if 5002 in descr["fixture_ids"] or ("eq", "fixture_id", 5002) in descr["filters"]:
             return timeout_57014()
         return None
 
-    client = FakeSupabase(fail_policy=policy)
+    client = FakeSupabaseConTabella(fail_policy=policy)
     writer = _writer_con_client(monkeypatch, client)
 
     ids = [5001, 5002, 5003, 5004]
@@ -421,12 +538,11 @@ def test_fallimento_permanente_su_odds_non_ferma_le_altre_fixture(monkeypatch):
         writer.queue_odds(fid, odds_row())
     writer.flush()  # NON deve sollevare
 
-    aggiornate = [
-        f for d in client.executed if d["verb"] == "update"
-        for (op, col, f) in d["filters"] if col == "fixture_id"
-    ]
-    assert aggiornate == [5001, 5003, 5004], "le altre fixture restano scritte"
-    assert [d["fixture_ids"] for d in client.executed if d["verb"] == "upsert"] == [
+    con_odds = sorted(f for f, r in client.tabella.items() if "raw_json_odds" in r)
+    assert con_odds == [5001, 5003, 5004], "le altre fixture restano scritte"
+    assert client.tabella[5002] == prediction_row(5002), "la prediction resta, le odds no"
+    assert [d["fixture_ids"] for d in client.executed
+            if d["verb"] == "upsert" and not _ha_colonna(d, "raw_json_odds")] == [
         (5001, 5002, 5003, 5004)
     ]
     assert len(tpb._RUN_FAILURES) == 1
@@ -597,25 +713,26 @@ def test_retry_esaurito_solleva_e_non_ingoia():
 COMMIT_BASE = "2f1c549"
 
 
-def _carica_modulo_originale(tmp_path) -> Any:
-    """Importa today_predictions_backfill come era nel commit base COMMIT_BASE."""
-    riferimento = "%s:Prediction/today_predictions_backfill.py" % COMMIT_BASE
+def _carica_modulo_originale(tmp_path, commit: str = COMMIT_BASE) -> Any:
+    """Importa today_predictions_backfill come era nel commit dato."""
+    riferimento = "%s:Prediction/today_predictions_backfill.py" % commit
     esito = subprocess.run(
         ["git", "show", riferimento],
         cwd=str(PROJECT_ROOT), capture_output=True,
     )
     if esito.returncode != 0:
         pytest.skip(
-            "commit base %s non disponibile (clone shallow?): equivalenza NON "
-            "verificata. git: %s" % (COMMIT_BASE, esito.stderr.decode("utf-8", "replace")[:200])
+            "commit %s non disponibile (clone shallow?): equivalenza NON "
+            "verificata. git: %s" % (commit, esito.stderr.decode("utf-8", "replace")[:200])
         )
     sorgente = esito.stdout.decode("utf-8")
-    percorso = tmp_path / "today_predictions_backfill_originale.py"
+    nome = "_tpb_originale_%s" % commit
+    percorso = tmp_path / ("today_predictions_backfill_%s.py" % commit)
     percorso.write_text(sorgente, encoding="utf-8")
 
-    spec = importlib.util.spec_from_file_location("_tpb_originale", str(percorso))
+    spec = importlib.util.spec_from_file_location(nome, str(percorso))
     modulo = importlib.util.module_from_spec(spec)
-    sys.modules["_tpb_originale"] = modulo
+    sys.modules[nome] = modulo
     spec.loader.exec_module(modulo)
     return modulo
 
@@ -632,22 +749,33 @@ def _scenario(modulo: Any, client: FakeSupabase) -> None:
     writer.flush()
 
 
-def test_senza_errori_la_sequenza_di_chiamate_e_identica_alloriginale(tmp_path, monkeypatch):
+def _solo_predizioni(seq: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Le scritture delle righe di prediction (esclusi odds/analisi)."""
+    return [d for d in seq if d["verb"] == "upsert"
+            and not _ha_colonna(d, "raw_json_odds") and not _ha_colonna(d, "db_json_analisi")]
+
+
+def test_senza_errori_stesse_righe_finali_dell_originale(tmp_path, monkeypatch):
+    """Le predizioni: STESSA sequenza di upsert dell'originale. Odds e
+    analisi: cambia il modo (upsert a blocchi al posto di una UPDATE per
+    fixture), ma la TABELLA finale e' identica, colonna per colonna."""
     originale = _carica_modulo_originale(tmp_path)
     # Sanita' del confronto: il modulo di HEAD deve essere DAVVERO quello vecchio.
     assert not hasattr(originale._DeferredWriter, "_upsert_rows")
     assert not hasattr(originale, "_db_execute")
     assert hasattr(tpb._DeferredWriter, "_upsert_rows")
 
-    client_orig = FakeSupabase()
+    client_orig = FakeSupabaseConTabella()
     _scenario(originale, client_orig)
 
-    client_nuovo = FakeSupabase()
+    client_nuovo = FakeSupabaseConTabella()
     monkeypatch.setattr(tpb, "get_supabase_client", lambda: client_nuovo)
     _scenario(tpb, client_nuovo)
 
-    assert client_nuovo.executed == client_orig.executed
-    assert client_nuovo.attempts == client_orig.attempts
+    assert _solo_predizioni(client_nuovo.executed) == _solo_predizioni(client_orig.executed)
+    assert client_nuovo.tabella == client_orig.tabella
+    assert len(client_orig.tabella) == 5
+    assert [d for d in client_nuovo.executed if d["verb"] == "update"] == []
     assert client_nuovo.failed == [] and client_orig.failed == []
     assert tpb._RUN_FAILURES == []
 
@@ -804,6 +932,24 @@ def _esegui_run_for_date(
     return api
 
 
+def _ferma_orologio(monkeypatch, modulo: Any) -> None:
+    """datetime.now() del modulo scandisce un orologio finto che avanza di un
+    secondo a ogni lettura: timestamp DISTINTI (un updated_at sbagliato si
+    vede) ma riproducibili fra due moduli che leggono l'ora lo stesso numero
+    di volte nello stesso ordine."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    passi = {"n": 0}
+
+    class _Orologio(_dt):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            passi["n"] += 1
+            return _dt(2026, 9, 20, 12, 0, 0, tzinfo=tz or _tz.utc) + _td(seconds=passi["n"])
+
+    monkeypatch.setattr(modulo, "datetime", _Orologio)
+
+
 def _fixture_ids_toccate(client: FakeSupabase) -> set:
     tocc = set()
     for d in client.executed:
@@ -876,8 +1022,9 @@ def test_coverage_odds_illeggibile_non_azzera_le_quote(monkeypatch):
     assert any(7201 in d["fixture_ids"] and d["statuses"] == ("ok",) for d in upserts), (
         "la predizione, che e' un dato VERO, va comunque scritta"
     )
+    # qualunque verbo di scrittura: le odds oggi viaggiano anche in upsert
     odds_scritte = [d for d in client.executed
-                    if d["verb"] == "update" and any("raw_json_odds" in k for k in d["row_keys"])]
+                    if d["verb"] in ("update", "upsert") and _ha_colonna(d, "raw_json_odds")]
     assert odds_scritte == [], "nessun raw_json_odds scritto se la coverage e' ignota"
     assert [g["operation"] for g in tpb._RUN_FAILURES] == ["coverage-read-odds"]
 
@@ -926,7 +1073,8 @@ def test_calibrazione_fallita_viene_registrata(monkeypatch):
 
 
 def test_run_for_date_senza_errori_e_identico_alloriginale(tmp_path, monkeypatch):
-    """Equivalenza end-to-end: stessa sequenza DB e stesse chiamate API di HEAD."""
+    """Equivalenza end-to-end col commit base: stesse chiamate API, stesse
+    letture, stessa TABELLA finale (timestamp inclusi)."""
     originale = _carica_modulo_originale(tmp_path)
     assert not hasattr(originale, "CoverageReadError")
 
@@ -937,20 +1085,30 @@ def test_run_for_date_senza_errori_e_identico_alloriginale(tmp_path, monkeypatch
         (140, 2026): {"predictions": False, "odds": False},
     }
 
-    client_orig = FakeSupabase(coverage_rows=dict(coverage))
+    # Orologio fermo: i timestamp (updated_at) sono calcolati con
+    # datetime.now(), cosi' le due tabelle si possono confrontare per intero.
+    _ferma_orologio(monkeypatch, originale)
+    _ferma_orologio(monkeypatch, tpb)
+
+    client_orig = FakeSupabaseConTabella(coverage_rows=dict(coverage))
     api_orig = _esegui_run_for_date(originale, monkeypatch, client_orig, list(fixtures))
 
-    client_nuovo = FakeSupabase(coverage_rows=dict(coverage))
+    client_nuovo = FakeSupabaseConTabella(coverage_rows=dict(coverage))
     api_nuovo = _esegui_run_for_date(tpb, monkeypatch, client_nuovo, list(fixtures))
 
-    assert _senza_query_di_prefetch(client_nuovo.executed) == _senza_query_di_prefetch(client_orig.executed)
-    assert _senza_query_di_prefetch(client_nuovo.attempts) == _senza_query_di_prefetch(client_orig.attempts)
+    def _letture(seq: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [d for d in _senza_query_di_prefetch(seq) if d["verb"] == "select"]
+
+    # letture e chiamate API identiche; predizioni con la stessa sequenza;
+    # odds e analisi: stesso contenuto finale della tabella, meno richieste.
+    assert _letture(client_nuovo.executed) == _letture(client_orig.executed)
+    assert _solo_predizioni(client_nuovo.executed) == _solo_predizioni(client_orig.executed)
+    assert client_nuovo.tabella == client_orig.tabella
+    assert sorted(client_orig.tabella) == [8101, 8102, 8103, 8104]
     assert api_nuovo.calls == api_orig.calls
     assert client_nuovo.failed == [] and client_orig.failed == []
     assert tpb._RUN_FAILURES == []
-    # la query di prefetch c'e' in entrambi, una sola volta, ed e' l'unica
-    # esclusa dal confronto (equivalenza dell'insieme provata a parte)
-    assert len(client_nuovo.executed) == len(client_orig.executed)
+    assert len(_scritture(client_nuovo)) < len(_scritture(client_orig))
 
 
 # ==============================================================
@@ -1113,12 +1271,13 @@ def test_secondo_giro_recupera_le_odds_che_il_rilancio_non_riprenderebbe(monkeyp
     stato = {"fallisci": True}
 
     def policy(descr, _attempts):
-        if descr["verb"] == "update" and ("eq", "fixture_id", 9301) in descr["filters"]:
-            if any("raw_json_odds" in k for k in descr["row_keys"]) and stato["fallisci"]:
+        tocca = 9301 in descr["fixture_ids"] or ("eq", "fixture_id", 9301) in descr["filters"]
+        if descr["verb"] in ("update", "upsert") and tocca:
+            if _ha_colonna(descr, "raw_json_odds") and stato["fallisci"]:
                 return timeout_57014()
         return None
 
-    client = FakeSupabase(
+    client = FakeSupabaseConTabella(
         fail_policy=policy,
         coverage_rows={(135, 2026): {"predictions": True, "odds": True}},
     )
@@ -1134,18 +1293,21 @@ def test_secondo_giro_recupera_le_odds_che_il_rilancio_non_riprenderebbe(monkeyp
     _esegui_run_for_date(tpb, monkeypatch, client, [fixture_api(9301, 135)])
 
     assert tpb._RUN_FAILURES == [], "il secondo giro deve svuotare il registro"
-    odds = [d for d in client.executed
-            if d["verb"] == "update" and any("raw_json_odds" in k for k in d["row_keys"])]
+    odds = [d for d in client.executed if _ha_colonna(d, "raw_json_odds")]
     assert len(odds) == 1 and ("eq", "fixture_id", 9301) in odds[0]["filters"]
+    assert "raw_json_odds" in client.tabella[9301]
+    assert client.tabella[9301]["db_json_analisi"] == {"model": "finto"}, (
+        "l'analisi, caduta sulla UPDATE singola, deve essere scritta subito"
+    )
 
 
 def test_secondo_giro_fallito_lascia_la_voce_da_recuperare_a_mano(monkeypatch, caplog):
     def policy(descr, _attempts):
-        if descr["verb"] == "update" and any("raw_json_odds" in k for k in descr["row_keys"]):
+        if descr["verb"] in ("update", "upsert") and _ha_colonna(descr, "raw_json_odds"):
             return timeout_57014()
         return None
 
-    client = FakeSupabase(
+    client = FakeSupabaseConTabella(
         fail_policy=policy,
         coverage_rows={(135, 2026): {"predictions": True, "odds": True}},
     )
@@ -1278,3 +1440,408 @@ def test_il_registro_non_logga_una_riga_per_ogni_voce_all_infinito(caplog):
     dettagli = [r for r in [x.getMessage() for x in caplog.records]
                 if r.strip().startswith("- fixture_id=")]
     assert len(dettagli) == 120
+
+
+# ==============================================================
+# 9) QUARTO GIRO: odds e analisi a blocchi, stessi dati
+# ==============================================================
+# Riferimento: il commit subito PRIMA di questo intervento (odds e analisi
+# con una UPDATE per fixture). Stesso scenario sui due moduli, tabella finale
+# confrontata colonna per colonna, registro delle anomalie confrontato voce
+# per voce.
+COMMIT_PRIMA_DEI_BLOCCHI = "16d8d2f"
+
+
+def _prepara_modulo(monkeypatch, modulo: Any, client: FakeSupabase) -> None:
+    monkeypatch.setattr(modulo, "get_supabase_client", lambda: client)
+    monkeypatch.setattr(modulo, "_db_sleep", lambda _s: None)
+    modulo._reset_failures()
+    modulo._reset_retry_budget()
+
+
+def _odds_distinte(fid: int) -> Dict[str, Any]:
+    """Riga di odds con valori propri della fixture (chiavi del vero)."""
+    return {
+        "raw_json_odds": {"fixture": {"id": fid}, "bookmakers": [{"id": 8, "bets": [fid % 7]}]},
+        "updated_at": "2026-09-20T12:00:%02d.111111+00:00" % (fid % 60),
+    }
+
+
+def _analisi_distinta(fid: int) -> Dict[str, Any]:
+    return {
+        "db_json_analisi": {"model": "poisson_xg_hybrid_dc", "markets": {"o25": fid / 1e5}},
+        "ht_predictions": {"is_elite": bool(fid % 2)},
+        "updated_at": "2026-09-20T12:01:%02d.222222+00:00" % (fid % 60),
+    }
+
+
+_STATI = ("ok", "no_coverage", "empty", "error")
+
+
+def _scenario_grande(modulo: Any, ids: List[int]) -> None:
+    """Il loop del runner in miniatura: prediction -> odds -> analisi per
+    fixture, maybe_flush fra una fixture e l'altra, chunk da 100. Alcune
+    fixture senza odds (coverage illeggibile), alcune senza analisi (calcolo
+    fallito), alcune senza nessuna delle due."""
+    writer = modulo._DeferredWriter(chunk_size=100)
+    for i, fid in enumerate(ids):
+        writer.maybe_flush()
+        riga = prediction_row(fid, status=_STATI[i % 4])
+        riga["updated_at"] = "2026-09-20T11:59:%02d.000000+00:00" % (fid % 60)
+        writer.queue_prediction(riga)
+        if i % 7 != 3:
+            writer.queue_odds(fid, _odds_distinte(fid))
+        if i % 5 != 2:
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+    writer.flush()
+
+
+def _righe_preesistenti(ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Righe gia' sul DB da un run precedente, con colonne che NESSUNA delle
+    scritture di oggi tocca (risultati) e vecchie odds/analisi: le colonne non
+    riscritte devono restare intatte, come con la UPDATE."""
+    out = {}
+    for fid in ids:
+        r = prediction_row(fid, status="error")
+        r["result_home_goals"] = 2
+        r["result_outcome"] = "1"
+        r["raw_json_odds"] = {"vecchie": True}
+        r["db_json_analisi"] = {"vecchia": True}
+        r["ht_predictions"] = {"vecchie": True}
+        out[fid] = r
+    return out
+
+
+def _registro(modulo: Any) -> List[Any]:
+    return [(v["fixture_id"], v["operation"], v["manuale"], v["payload"])
+            for v in modulo._RUN_FAILURES]
+
+
+def test_post_ops_a_blocchi_stesse_tabelle_e_meno_chiamate(tmp_path, monkeypatch):
+    """300 fixture: stessa tabella finale del percorso a UPDATE singole, con
+    una frazione delle richieste. Stampa i conteggi (pytest -s)."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    assert not hasattr(prima._DeferredWriter, "_write_post_ops"), "riferimento sbagliato"
+
+    ids = list(range(20001, 20301))
+    gia_su_db = _righe_preesistenti(ids[::10])
+
+    client_prima = FakeSupabaseConTabella(tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    _scenario_grande(prima, ids)
+
+    client_ora = FakeSupabaseConTabella(tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    _scenario_grande(tpb, ids)
+
+    assert client_ora.tabella == client_prima.tabella, "stessi dati, riga per riga"
+    assert sorted(client_ora.tabella) == ids
+    # le colonne che nessuno scrive oggi restano intatte
+    for fid in ids[::10]:
+        assert client_ora.tabella[fid]["result_home_goals"] == 2
+
+    n_odds = sum(1 for i in range(len(ids)) if i % 7 != 3)
+    n_analisi = sum(1 for i in range(len(ids)) if i % 5 != 2)
+    w_prima = _scritture(client_prima)
+    w_ora = _scritture(client_ora)
+    assert len(w_prima) == 3 + n_odds + n_analisi
+    assert [d for d in w_ora if d["verb"] == "update"] == []
+    assert len(w_ora) <= 3 + 3 * 4 * 3, "al piu' 3 gruppi di chiavi x 4 blocchi da 25 per flush"
+    assert client_ora.failed == [] and client_prima.failed == []
+    assert tpb._RUN_FAILURES == [] and prima._RUN_FAILURES == []
+    print("\nRICHIESTE DI SCRITTURA per %d fixture: prima %d (upsert %d + update %d), ora %d"
+          % (len(ids), len(w_prima),
+             sum(1 for d in w_prima if d["verb"] == "upsert"),
+             sum(1 for d in w_prima if d["verb"] == "update"), len(w_ora)))
+
+
+def test_post_ops_riga_assente_nessun_insert_monco(tmp_path, monkeypatch, caplog):
+    """Odds/analisi di una fixture SENZA riga di prediction nel flush: resta
+    la UPDATE di sempre. Riga assente -> non si scrive nulla (mai un insert
+    monco); riga gia' presente -> aggiornata come prima."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    gia_su_db = _righe_preesistenti([12002])
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        writer.queue_prediction(prediction_row(12003))
+        writer.queue_odds(12003, _odds_distinte(12003))
+        for fid in (12001, 12002):
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    client_prima = FakeSupabaseConTabella(tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    with caplog.at_level("WARNING"):
+        caplog.clear()
+        scenario(tpb)
+
+    assert 12001 not in client_ora.tabella, "nessuna riga monca inserita"
+    assert client_ora.tabella == client_prima.tabella
+    # nemmeno TENTATO un upsert per le fixture senza riga appena scritta
+    tentati = {f for d in client_ora.attempts if d["verb"] == "upsert" for f in d["fixture_ids"]}
+    assert tentati == {12003}
+    assert client_ora.failed == []
+    aggiornate = sorted(val for d in client_ora.executed if d["verb"] == "update"
+                        for (op, col, val) in d["filters"] if col == "fixture_id")
+    assert aggiornate == [12001, 12001, 12002, 12002]
+    avvisi = [r.getMessage() for r in caplog.records]
+    assert any("fixture_id=12001 (odds non salvate)" in a for a in avvisi)
+    assert any("fixture_id=12001 (dati non salvati)" in a for a in avvisi)
+    assert tpb._RUN_FAILURES == []
+
+
+def test_post_ops_riga_ok_riscritta_come_error_riceve_le_update_di_sempre(tmp_path, monkeypatch):
+    """La riga ok che non passa diventa 'error' (semantica storica): le sue
+    odds/analisi vanno con la UPDATE di sempre, sulla riga di errore."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+
+    def policy(descr, _attempts):
+        if descr["verb"] != "upsert" or _ha_colonna(descr, "raw_json_odds") or _ha_colonna(descr, "db_json_analisi"):
+            return None
+        if 13001 in descr["fixture_ids"] and "ok" in descr["statuses"]:
+            return timeout_57014()
+        return None
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        for fid in (13001, 13002, 13003):
+            writer.queue_prediction(prediction_row(fid))
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    client_prima = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    assert client_ora.tabella[13001]["status"] == "error"
+    assert client_ora.tabella[13001]["raw_json_odds"] == _odds_distinte(13001)["raw_json_odds"]
+    assert client_ora.tabella == client_prima.tabella
+    assert _registro(tpb) == _registro(prima)
+    aggiornate = sorted(val for d in client_ora.executed if d["verb"] == "update"
+                        for (op, col, val) in d["filters"] if col == "fixture_id")
+    assert aggiornate == [13001, 13001], "solo la fixture non confermata usa la UPDATE"
+
+
+def test_57014_sul_blocco_post_ops_dimezza_e_stesse_righe(tmp_path, monkeypatch):
+    """57014 sui blocchi di odds/analisi oltre 3 righe: 10 -> 5+5 -> 2+3+2+3."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    ids = list(range(14001, 14011))
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        for fid in ids:
+            writer.queue_prediction(prediction_row(fid))
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    def policy(descr, _attempts):
+        if _ha_colonna(descr, "raw_json_odds") and len(descr["fixture_ids"]) > 3:
+            return timeout_57014()
+        return None
+
+    client_prima = FakeSupabaseConTabella()
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    blocchi = [d["fixture_ids"] for d in client_ora.executed if _ha_colonna(d, "raw_json_odds")]
+    assert blocchi == [tuple(ids[0:2]), tuple(ids[2:5]), tuple(ids[5:7]), tuple(ids[7:10])]
+    assert client_ora.tabella == client_prima.tabella
+    assert tpb._RUN_FAILURES == []
+    assert [d for d in client_ora.executed if d["verb"] == "update"] == []
+
+
+def test_post_ops_riga_singola_fallita_ricade_sulle_update_e_registro_identico(tmp_path, monkeypatch):
+    """Odds di 15002 non scrivibili: il blocco si dimezza fino alla riga,
+    la riga ricade sulle UPDATE di sempre. Tabella e registro (operazione,
+    manuale, payload del secondo giro) identici al percorso storico."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    ids = [15001, 15002, 15003, 15004]
+
+    def policy(descr, _attempts):
+        tocca = 15002 in descr["fixture_ids"] or ("eq", "fixture_id", 15002) in descr["filters"]
+        if tocca and _ha_colonna(descr, "raw_json_odds"):
+            return timeout_57014()
+        return None
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        for fid in ids:
+            writer.queue_prediction(prediction_row(fid))
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    client_prima = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    assert client_ora.tabella == client_prima.tabella
+    assert "raw_json_odds" not in client_ora.tabella[15002]
+    assert client_ora.tabella[15002]["db_json_analisi"] == _analisi_distinta(15002)["db_json_analisi"]
+    assert _registro(tpb) == _registro(prima)
+    assert _registro(tpb) == [(15002, "odds", True, {"kind": "odds", "row": _odds_distinte(15002)})]
+
+
+def test_freno_attivo_sui_blocchi_post_ops_ricade_sulle_update(tmp_path, monkeypatch):
+    """Freno DB: niente dimezzamento, le UPDATE di sempre (un tentativo
+    ciascuna) registrano le stesse fixture del percorso storico."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    ids = list(range(16001, 16013))
+
+    def policy(descr, _attempts):
+        if _ha_colonna(descr, "raw_json_odds"):
+            return timeout_57014()
+        return None
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        for fid in ids:
+            writer.queue_prediction(prediction_row(fid))
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    for modulo in (prima, tpb):
+        monkeypatch.setattr(modulo, "_DB_MAX_FAILED_REQUESTS", 5)
+
+    client_prima = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    assert client_ora.tabella == client_prima.tabella
+    assert _registro(tpb) == _registro(prima)
+    assert {v[0] for v in _registro(tpb)} == set(ids)
+    assert len(client_ora.attempts) <= len(client_prima.attempts) + 5
+
+
+def test_run_for_date_stessa_tabella_del_percorso_a_update_singole(tmp_path, monkeypatch):
+    """End-to-end sul runner vero: stessa tabella finale (timestamp inclusi)
+    del commit precedente, stesse chiamate API, meno richieste di scrittura."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    _ferma_orologio(monkeypatch, prima)
+    _ferma_orologio(monkeypatch, tpb)
+
+    fixtures = [fixture_api(17000 + i, 135 if i % 3 else 140) for i in range(1, 31)]
+    coverage = {
+        (135, 2026): {"predictions": True, "odds": True},
+        (140, 2026): {"predictions": False, "odds": True},
+    }
+    gia_su_db = _righe_preesistenti([17003, 17010])
+
+    client_prima = FakeSupabaseConTabella(coverage_rows=dict(coverage), tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    api_prima = _esegui_run_for_date(prima, monkeypatch, client_prima, list(fixtures))
+
+    client_ora = FakeSupabaseConTabella(coverage_rows=dict(coverage), tabella=gia_su_db)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    api_ora = _esegui_run_for_date(tpb, monkeypatch, client_ora, list(fixtures))
+
+    assert client_ora.tabella == client_prima.tabella
+    assert len(client_ora.tabella) == 30
+    assert api_ora.calls == api_prima.calls
+    assert tpb._RUN_FAILURES == [] and prima._RUN_FAILURES == []
+    assert len(_scritture(client_prima)) == 1 + 30 + 30
+    assert len(_scritture(client_ora)) <= 3
+
+
+def test_post_ops_fixture_duplicata_nel_flush_usa_le_update_di_sempre(tmp_path, monkeypatch):
+    """Stessa fixture DUE volte nello stesso flush (riga ok, poi riga error).
+
+    queue_prediction lo impedisce flushando prima, quindi il caso si
+    costruisce accodando direttamente in _pred_rows: e' la difesa in
+    profondita' di _write_post_ops. Postgres rifiuta un upsert che tocca la
+    stessa riga due volte (21000): il blocco si dimezza fino alle righe
+    singole. La riga ok passa, la riga error NO: sul DB resta la riga ok e le
+    UPDATE di odds/analisi si applicano su quella. Se il percorso a blocchi
+    accettasse la fixture duplicata, fonderebbe odds/analisi con l'ULTIMA
+    riga accodata (la error, mai scritta) e la tabella cambierebbe."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+
+    riga_ok = prediction_row(18001, status="ok")
+    riga_err = prediction_row(18001, status="error")
+    riga_err["error_message"] = "seconda scrittura"
+    riga_err["updated_at"] = "2026-09-20T12:30:00.000000+00:00"
+
+    def policy(descr, _attempts):
+        if descr["verb"] != "upsert":
+            return None
+        ids = descr["fixture_ids"]
+        if len(ids) != len(set(ids)):
+            return api_error("21000", "ON CONFLICT DO UPDATE command cannot affect row a second time")
+        # solo la scrittura della riga di prediction 'error' e' rifiutata
+        # (non le righe con odds/analisi: cosi' un percorso a blocchi
+        # sbagliato scriverebbe davvero la riga error e si vedrebbe)
+        solo_pred = not _ha_colonna(descr, "raw_json_odds") and not _ha_colonna(descr, "db_json_analisi")
+        if solo_pred and any(f == 18001 and s == "error" for f, s in zip(ids, descr["statuses"])):
+            return api_error("23514", "new row violates check constraint")
+        return None
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        writer._pred_rows.extend([dict(riga_ok), dict(riga_err), prediction_row(18002)])
+        writer._post_ops.extend([
+            ("odds", 18001, _odds_distinte(18001)),
+            ("analysis", 18001, _analisi_distinta(18001)),
+            ("odds", 18002, _odds_distinte(18002)),
+            ("analysis", 18002, _analisi_distinta(18002)),
+        ])
+        writer.flush()
+
+    client_prima = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    assert client_ora.tabella[18001]["status"] == "ok"
+    assert client_ora.tabella == client_prima.tabella
+    assert _registro(tpb) == _registro(prima)
+    # la fixture duplicata non passa MAI dal percorso a blocchi
+    unite = [d for d in client_ora.attempts
+             if d["verb"] == "upsert" and _ha_colonna(d, "raw_json_odds")]
+    assert all(18001 not in d["fixture_ids"] for d in unite)
+    assert [d["fixture_ids"] for d in unite] == [(18002,)]
+    aggiornate = sorted(val for d in client_ora.executed if d["verb"] == "update"
+                        for (op, col, val) in d["filters"] if col == "fixture_id")
+    assert aggiornate == [18001, 18001]
+
+
+def test_il_finto_rifiuta_la_riga_monca_come_postgres():
+    """Sanita' del finto: senza status la riga proposta viola il NOT NULL
+    anche se la riga esiste (Postgres controlla prima del conflitto)."""
+    client = FakeSupabaseConTabella(tabella={1: prediction_row(1)})
+    with pytest.raises(APIError) as ex:
+        client.table("fixture_predictions").upsert(
+            {"fixture_id": 1, **odds_row()}, on_conflict="fixture_id").execute()
+    assert ex.value.code == "23502"
+    assert client.tabella[1] == prediction_row(1), "richiesta fallita: nulla scritto"
+    with pytest.raises(APIError) as ex2:
+        client.table("fixture_predictions").upsert(
+            [prediction_row(2), {**prediction_row(3), **odds_row()}], on_conflict="fixture_id").execute()
+    assert ex2.value.code == "PGRST102"

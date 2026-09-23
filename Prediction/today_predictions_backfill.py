@@ -1919,6 +1919,24 @@ def _group_rows_by_keys(rows: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]
     return [groups[k] for k in order]
 
 
+# Righe per richiesta nell'upsert di odds/analisi (_write_post_ops). Ogni
+# riga porta raw_json + raw_json_odds + db_json_analisi, quindi e' piu'
+# pesante di una riga di prediction: blocchi piu' piccoli di chunk_size per
+# restare lontani dallo statement_timeout. Se un blocco non passa comunque,
+# viene dimezzato come quelli delle predizioni.
+_POST_OPS_CHUNK_SIZE = 25
+
+
+def _segna_confermate(confermate: Optional[Set[int]], rows: List[Dict[str, Any]]) -> None:
+    """Annota i fixture_id delle righe di prediction scritte tali e quali."""
+    if confermate is None:
+        return
+    for riga in rows:
+        fid = riga.get("fixture_id")
+        if fid is not None:
+            confermate.add(int(fid))
+
+
 class _DeferredWriter:
     """
     Accumula le scritture del loop principale e le esegue a blocchi per
@@ -1928,12 +1946,15 @@ class _DeferredWriter:
       scritte in UN upsert batch per blocco; se il batch fallisce anche dopo i
       retry viene DIMEZZATO fino alla singola riga, replicando su quest'ultima
       la semantica per-fixture odierna;
-    - odds e analisi restano UPDATE riga-per-riga (colonne diverse, un UPDATE
-      batch non e' esprimibile in PostgREST senza cambiarne la semantica),
-      ma vengono eseguiti DOPO l'upsert batch del blocco cosi' l'ordine
-      relativo per la stessa fixture (prediction -> odds -> analysis) resta
-      identico a oggi. I payload sono costruiti al momento dell'accodamento,
-      quindi i VALORI (timestamp inclusi) sono identici al percorso storico.
+    - odds e analisi vengono scritte DOPO l'upsert delle predizioni del
+      blocco (ordine per fixture prediction -> odds -> analysis invariato).
+      Per le fixture la cui riga di prediction e' stata APPENA scritta tale e
+      quale in questo flush, odds e analisi viaggiano in upsert a blocchi
+      (vedi _write_post_ops): riga = riga di prediction + colonne delle
+      UPDATE, applicate nello stesso ordine. Per tutte le altre (riga non
+      confermata, riscritta come 'error', assente) resta la UPDATE singola di
+      sempre. I payload sono costruiti al momento dell'accodamento, quindi i
+      VALORI (timestamp inclusi) sono identici al percorso storico.
 
     Nota: se la stessa fixture viene ri-accodata prima del flush (caso
     duplicati / ramo ok->error), si flusha prima, preservando l'ordine di
@@ -1983,53 +2004,207 @@ class _DeferredWriter:
         sb = get_supabase_client()
 
         # 1) Predizioni: upsert batch con retry; se il batch non passa lo si
-        #    dimezza fino alla singola riga (vedi _upsert_rows).
+        #    dimezza fino alla singola riga (vedi _upsert_rows). `confermate`
+        #    raccoglie le fixture la cui riga e' stata scritta TALE E QUALE.
+        confermate: Set[int] = set()
         for group in _group_rows_by_keys(pred_rows):
-            self._upsert_rows(sb, group)
+            self._upsert_rows(sb, group, confermate)
 
-        # 2) Odds e analisi: UPDATE riga-per-riga nell'ordine di accodamento
-        #    (per ogni fixture: dopo la sua riga di prediction, come oggi).
+        # 2) Odds e analisi (per ogni fixture: dopo la sua riga di prediction).
+        self._write_post_ops(sb, pred_rows, post_ops, confermate)
+
+    # ------------------------------------------------------------------
+    # Odds e analisi: upsert a blocchi dove e' equivalente, UPDATE altrove
+    # ------------------------------------------------------------------
+
+    def _write_post_ops(
+        self,
+        sb: Any,
+        pred_rows: List[Dict[str, Any]],
+        post_ops: List[Tuple[str, int, Dict[str, Any]]],
+        confermate: Set[int],
+    ) -> None:
+        """Scrive odds e analisi con MENO richieste e gli STESSI dati.
+
+        Prima: una UPDATE ... eq(fixture_id) per ogni post_op (2 round-trip per
+        fixture). Ora, per una fixture F la cui riga di prediction R e' stata
+        appena scritta TALE E QUALE in questo flush (F in `confermate`), la
+        sequenza storica
+
+            upsert(R) ; update(odds) where F ; update(analisi) where F
+
+        lascia sulla riga: le colonne di R, poi quelle delle due UPDATE nello
+        stesso ordine (updated_at = quello dell'ultima), e tutte le ALTRE
+        colonne intatte. Un upsert on_conflict=fixture_id (merge-duplicates)
+        della riga U = R | odds | analisi (dict.update nello stesso ordine)
+        scrive ESATTAMENTE le stesse colonne con gli stessi valori e lascia
+        intatte le altre. Si reinvia R per intero, e NON le sole colonne delle
+        UPDATE, perche' Postgres controlla i NOT NULL della riga proposta
+        (es. status) PRIMA di risolvere il conflitto: una riga monca verrebbe
+        rifiutata anche con la riga gia' presente. R pero' e' appena passata,
+        quindi U li soddisfa; e la riga esiste gia', quindi l'upsert non puo'
+        inserire una riga monca.
+
+        Restano sulla UPDATE singola di sempre (stesso codice, stessi log,
+        stesso registro): le post_ops di fixture senza riga di prediction nel
+        flush, con la riga non confermata (fallita o riscritta come 'error'),
+        o presenti piu' volte; e, come ricaduta, quelle di un blocco che non
+        passa nemmeno alla riga singola o che si ferma per il freno DB.
+        """
+        if not post_ops:
+            return
+
+        conteggio: Dict[int, int] = {}
+        for row in pred_rows:
+            fid = row.get("fixture_id")
+            if fid is not None:
+                conteggio[int(fid)] = conteggio.get(int(fid), 0) + 1
+        righe_pred: Dict[int, Dict[str, Any]] = {}
+        for row in pred_rows:
+            fid = row.get("fixture_id")
+            if fid is None:
+                continue
+            chiave = int(fid)
+            if conteggio.get(chiave) == 1 and chiave in confermate:
+                righe_pred[chiave] = row
+
+        unite: Dict[int, Dict[str, Any]] = {}
+        ops_per_fixture: Dict[int, List[Tuple[str, int, Dict[str, Any]]]] = {}
+        singole: List[Tuple[str, int, Dict[str, Any]]] = []
         for kind, fixture_id, row in post_ops:
-            if kind == "odds":
-                try:
-                    resp = _db_execute(
-                        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
-                        what="update odds fixture_id=%s" % fixture_id,
-                    )
-                    if not getattr(resp, "data", None):
-                        logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
-                except Exception as e:
-                    # Prima un solo 57014 qui risaliva fino a main() e uccideva
-                    # il run intero: ora la fixture viene registrata e tutte le
-                    # altre vengono comunque scritte. La riga viene conservata:
-                    # il secondo giro di fine run la ritenta, perche' un
-                    # semplice rilancio NON la recupererebbe (la prediction e'
-                    # gia' 'ok', il prefetch la salta).
-                    _record_failure(fixture_id, "odds", e,
-                                    payload={"kind": "odds", "row": row}, manuale=True)
-            else:
-                # Come il blocco try/except del loop attorno a upsert_analysis_data:
-                # un errore di scrittura dell'analisi NON blocca le altre fixture.
-                try:
-                    resp = _db_execute(
-                        lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
-                        what="update analisi fixture_id=%s" % fixture_id,
-                    )
-                    if not getattr(resp, "data", None):
-                        logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
-                except Exception as e:
-                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
-                    # Conservata per il secondo giro come le odds. Qui pero'
-                    # ht_predictions resta NULL, quindi il rilancio riprende
-                    # comunque la fixture: non e' "da recuperare a mano".
-                    _record_failure(fixture_id, "analisi", e,
-                                    payload={"kind": "analysis", "row": row})
+            chiave = int(fixture_id) if fixture_id is not None else None
+            if chiave is None or chiave not in righe_pred:
+                # GUARDIA: nessuna riga appena scritta -> UPDATE di sempre
+                # (su riga assente non scrive nulla: mai un insert monco).
+                singole.append((kind, fixture_id, row))
+                continue
+            if chiave not in unite:
+                unite[chiave] = dict(righe_pred[chiave])
+                ops_per_fixture[chiave] = []
+            unite[chiave].update(row)
+            ops_per_fixture[chiave].append((kind, fixture_id, row))
+
+        for group in _group_rows_by_keys(list(unite.values())):
+            for i in range(0, len(group), _POST_OPS_CHUNK_SIZE):
+                self._upsert_post_ops(sb, group[i:i + _POST_OPS_CHUNK_SIZE], ops_per_fixture)
+
+        for kind, fixture_id, row in singole:
+            self._update_post_op(sb, kind, fixture_id, row)
+
+    def _upsert_post_ops(
+        self,
+        sb: Any,
+        rows: List[Dict[str, Any]],
+        ops_per_fixture: Dict[int, List[Tuple[str, int, Dict[str, Any]]]],
+    ) -> None:
+        """Upsert di un blocco di righe unite (prediction + odds + analisi).
+
+        Stessa scala di _upsert_rows: retry, poi DIMEZZAMENTO fino alla riga
+        singola. Se la riga singola non passa, o il freno DB e' attivo, le
+        post_ops delle fixture coinvolte ricadono sulla UPDATE di sempre
+        (_update_post_op): stessi retry, stesso registro, stesso payload per
+        il secondo giro, esattamente come prima di questo intervento.
+        """
+        if not rows:
+            return
+
+        def _ricaduta(blocco: List[Dict[str, Any]]) -> None:
+            for riga in blocco:
+                for kind, fixture_id, row in ops_per_fixture.get(int(riga["fixture_id"]), []):
+                    self._update_post_op(sb, kind, fixture_id, row)
+
+        if len(rows) == 1:
+            fixture_id = rows[0].get("fixture_id")
+            try:
+                _db_execute(
+                    lambda: sb.table("fixture_predictions").upsert(rows[0], on_conflict="fixture_id").execute(),
+                    what="upsert odds/analisi fixture_id=%s" % fixture_id,
+                )
+                return
+            except Exception as e:  # noqa: BLE001 - ricaduta sulla UPDATE di sempre
+                logger.warning(
+                    "Upsert odds/analisi fixture_id=%s fallito (%s): ricado sulle UPDATE singole.",
+                    fixture_id, str(e)[:200],
+                )
+            _ricaduta(rows)
+            return
+
+        try:
+            _db_execute(
+                lambda: sb.table("fixture_predictions").upsert(rows, on_conflict="fixture_id").execute(),
+                what="upsert odds/analisi (%s righe)" % len(rows),
+                attempts=_DB_RETRY_ATTEMPTS_BATCH,
+            )
+            return
+        except Exception as batch_err:  # noqa: BLE001 - si dimezza sotto
+            logger.warning(
+                "Upsert odds/analisi a blocco fallito (%s righe): %s - ritento a blocchi piu' piccoli.",
+                len(rows), str(batch_err)[:200],
+            )
+
+        motivo = _db_retry_exhausted()
+        if motivo is not None:
+            # Freno attivo: niente dimezzamento. Si torna alle UPDATE di
+            # sempre, che sotto il freno fanno un solo tentativo ciascuna e
+            # registrano cio' che non passa (come prima di questo intervento).
+            logger.error(
+                "Freno DB attivo (%s): blocco odds/analisi di %s righe NON dimezzato, "
+                "ricado sulle UPDATE singole.", motivo, len(rows),
+            )
+            _ricaduta(rows)
+            return
+
+        half = len(rows) // 2
+        self._upsert_post_ops(sb, rows[:half], ops_per_fixture)
+        self._upsert_post_ops(sb, rows[half:], ops_per_fixture)
+
+    def _update_post_op(self, sb: Any, kind: str, fixture_id: int, row: Dict[str, Any]) -> None:
+        """UPDATE singola di odds o analisi: il percorso storico, invariato."""
+        if kind == "odds":
+            try:
+                resp = _db_execute(
+                    lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+                    what="update odds fixture_id=%s" % fixture_id,
+                )
+                if not getattr(resp, "data", None):
+                    logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
+            except Exception as e:
+                # Prima un solo 57014 qui risaliva fino a main() e uccideva
+                # il run intero: ora la fixture viene registrata e tutte le
+                # altre vengono comunque scritte. La riga viene conservata:
+                # il secondo giro di fine run la ritenta, perche' un
+                # semplice rilancio NON la recupererebbe (la prediction e'
+                # gia' 'ok', il prefetch la salta).
+                _record_failure(fixture_id, "odds", e,
+                                payload={"kind": "odds", "row": row}, manuale=True)
+        else:
+            # Come il blocco try/except del loop attorno a upsert_analysis_data:
+            # un errore di scrittura dell'analisi NON blocca le altre fixture.
+            try:
+                resp = _db_execute(
+                    lambda: sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute(),
+                    what="update analisi fixture_id=%s" % fixture_id,
+                )
+                if not getattr(resp, "data", None):
+                    logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
+            except Exception as e:
+                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                # Conservata per il secondo giro come le odds. Qui pero'
+                # ht_predictions resta NULL, quindi il rilancio riprende
+                # comunque la fixture: non e' "da recuperare a mano".
+                _record_failure(fixture_id, "analisi", e,
+                                payload={"kind": "analysis", "row": row})
 
     # ------------------------------------------------------------------
     # Scrittura delle righe di prediction: batch -> meta' -> riga singola
     # ------------------------------------------------------------------
 
-    def _upsert_rows(self, sb: Any, rows: List[Dict[str, Any]]) -> None:
+    def _upsert_rows(
+        self,
+        sb: Any,
+        rows: List[Dict[str, Any]],
+        confermate: Optional[Set[int]] = None,
+    ) -> None:
         """Upsert di un blocco di righe, con retry sugli errori transitori.
 
         Se il blocco non passa nemmeno dopo i retry viene DIMEZZATO e i due
@@ -2037,11 +2212,14 @@ class _DeferredWriter:
         statement_timeout), fino alla singola riga. Ogni tentativo scrive gli
         STESSI valori con lo stesso on_conflict: e' idempotente, un blocco
         gia' passato in parte non crea duplicati.
+
+        ``confermate`` (se dato) riceve i fixture_id delle righe scritte TALE
+        E QUALE (non quelle riscritte come 'error' ne' quelle perse).
         """
         if not rows:
             return
         if len(rows) == 1:
-            self._upsert_single(sb, rows[0])
+            self._upsert_single(sb, rows[0], confermate)
             return
 
         try:
@@ -2050,6 +2228,7 @@ class _DeferredWriter:
                 what="upsert fixture_predictions (%s righe)" % len(rows),
                 attempts=_DB_RETRY_ATTEMPTS_BATCH,
             )
+            _segna_confermate(confermate, rows)
             return
         except Exception as batch_err:
             logger.warning(
@@ -2077,10 +2256,15 @@ class _DeferredWriter:
             return
 
         half = len(rows) // 2
-        self._upsert_rows(sb, rows[:half])
-        self._upsert_rows(sb, rows[half:])
+        self._upsert_rows(sb, rows[:half], confermate)
+        self._upsert_rows(sb, rows[half:], confermate)
 
-    def _upsert_single(self, sb: Any, row: Dict[str, Any]) -> None:
+    def _upsert_single(
+        self,
+        sb: Any,
+        row: Dict[str, Any],
+        confermate: Optional[Set[int]] = None,
+    ) -> None:
         """Upsert di UNA riga con retry; semantica per-fixture invariata."""
         fixture_id = row.get("fixture_id")
         try:
@@ -2088,6 +2272,7 @@ class _DeferredWriter:
                 lambda: sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute(),
                 what="upsert fixture_predictions fixture_id=%s" % fixture_id,
             )
+            _segna_confermate(confermate, [row])
             return
         except Exception as e:
             if row.get("status") != "ok":
