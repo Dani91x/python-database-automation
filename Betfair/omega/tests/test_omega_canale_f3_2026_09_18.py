@@ -43,6 +43,11 @@ class TabellaFinta:
         self._diario.append(("update", self._nome, payload))
         return self
 
+    def delete(self):  # noqa: ANN201
+        self._verbo = "delete"
+        self._diario.append(("delete", self._nome, None))
+        return self
+
     def eq(self, *a, **k):  # noqa: ANN001, ANN201, ARG002
         return self
 
@@ -166,6 +171,19 @@ def test_la_proposta_decaduta_esce_sul_canale(banco):
     assert msg["status"] == "rejected"
 
 
+# --------------------------------------------------- C6(c): cancellazione (23/09)
+def test_la_cancellazione_di_una_riserva_esce_sul_canale(banco):
+    """checkpoint F3 par.7: "delete_trade... non pubblica: la sparizione la vede
+    il poll" - qui la sparizione esce SUBITO, stesso topic, azione='cancellata'."""
+    banco["risposte"]["omega_trades"] = RispostaFinta([{**RIGA_TRADE, "status": "pending"}])
+    D.delete_trade(512)
+    assert banco["diario"][-1][:2] == ("execute", "omega_trades")
+    topic, msg = banco["canale"].inviati[0]
+    assert topic == CB.TOPIC["omega_posizioni"]
+    assert msg["id"] == 512
+    assert msg[CB.CHIAVE_AZIONE] == CB.AZIONE_CANCELLATA
+
+
 def test_una_scrittura_senza_rappresentazione_non_pubblica_niente(banco):
     banco["risposte"]["omega_trades"] = RispostaFinta([])
     D.update_trade(512, status="won")
@@ -184,8 +202,10 @@ def test_con_linterruttore_spento_non_esce_niente(banco, monkeypatch):
     banco["risposte"]["omega_activity"] = RispostaFinta([RIGA_ATTIVITA])
     banco["risposte"]["omega_manual_requests:select"] = RispostaFinta([])
     banco["risposte"]["omega_manual_requests:insert"] = RispostaFinta([RIGA_PROPOSTA])
+    banco["risposte"]["omega_trades:delete"] = RispostaFinta([{**RIGA_TRADE, "status": "pending"}])
     D.insert_trade(dict(RIGA_TRADE))
     D.update_trade(512, status="won")
+    D.delete_trade(512)
     D.log("skip", {})
     D.scrivi_proposta_di_chiusura(512, {})
     assert banco["canale"].inviati == []

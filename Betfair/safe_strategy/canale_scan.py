@@ -456,57 +456,45 @@ def installa_sveglia(canale: Any, evento: Optional[threading.Event],
     COMANDO vero resta la riga su ``safe_strategy_requests``, che il bot legge
     con la funzione di oggi, con le stesse guardie e la stessa idempotenza.
 
-    Qualunque altro messaggio - compreso un ``sveglia`` con un ``motivo`` che
-    non si conosce - prosegue verso il comportamento di oggi, cioe' il rifiuto
-    del canale di sola lettura. Fail-closed.
+    Un ``sveglia`` con un ``motivo`` che non si conosce NON alza l'evento: si
+    conta in ``rifiutate`` e basta. Fail-closed, come oggi.
 
-    NOTA PER CHI CERTIFICA: qui si sostituisce ``_on_message`` sull'ISTANZA del
-    canale, e non si tocca ``local_channel.py``. E' il perimetro imposto dal
-    brief. La modifica minima che renderebbe questo pulito e' scritta nel
-    referto di F4 (un aggancio ``on_sveglia`` in
-    ``Betfair/stream/local_channel.py:155``, dentro ``_on_message``, PRIMA del
-    rifiuto di sola lettura).
+    Usa il meccanismo pulito gia' in ``local_channel.LocalChannel``
+    (F6, 18/09): ``set_sveglia(cb)`` registra ``cb`` come ``_su_sveglia``, e
+    ``_on_message`` (``local_channel.py:157``) chiama ``cb(p)`` PRIMA della
+    coda dei comandi per qualunque messaggio ``{"m": "sveglia"}``, qualunque
+    sia il canale (``solo_lettura`` o no). Qui non si sostituisce piu'
+    ``_on_message`` sull'ISTANZA del canale: la riga che mancava in
+    ``local_channel.py`` e' stata applicata, ed e' quella che fa il lavoro.
     """
     if canale is None or evento is None:
         return False
-    if getattr(canale, "_sveglia_f4", False):
-        return True
-    originale = getattr(canale, "_on_message", None)
-    if not callable(originale):
+    set_sveglia = getattr(canale, "set_sveglia", None)
+    if not callable(set_sveglia):
         return False
     numeri = conti if isinstance(conti, dict) else {}
     numeri.setdefault("sveglie", 0)
     numeri.setdefault("rifiutate", 0)
 
-    def _con_sveglia(ws: Any, grezzo: Any) -> Any:
-        try:
-            msg = json.loads(grezzo)
-        except (ValueError, TypeError):
-            return originale(ws, grezzo)
-        if not isinstance(msg, dict) or str(msg.get("m") or "") != MSG_SVEGLIA:
-            return originale(ws, grezzo)
-        params = msg.get("p")
+    def _su_sveglia(payload: Any) -> None:
+        """Chiamata da ``LocalChannel._on_message`` con SOLO ``p`` (un dict,
+        mai altro: il canale garantisce gia' ``p if isinstance(p, dict) else
+        {}``). Di questo messaggio non si legge nient'altro che ``motivo``."""
         motivo = ""
-        if isinstance(params, dict):
-            grezzo_motivo = params.get("motivo")
+        if isinstance(payload, dict):
+            grezzo_motivo = payload.get("motivo")
             if isinstance(grezzo_motivo, str):
                 motivo = grezzo_motivo.strip().lower()
         if motivo not in MOTIVI_SVEGLIA:
-            # sveglia senza un motivo che si conosce: si tratta come qualunque
-            # altro messaggio, cioe' si rifiuta. Non si indovina.
             numeri["rifiutate"] = int(numeri.get("rifiutate", 0)) + 1
-            return originale(ws, grezzo)
-        # DI QUESTO MESSAGGIO NON SI LEGGE NIENT'ALTRO: nessun campo d'ordine
-        # esiste per il bot, nemmeno se la UI ne mandasse.
+            return
         numeri["sveglie"] = int(numeri.get("sveglie", 0)) + 1
         numeri["ultimo_motivo"] = motivo
         evento.set()
         logger.info("[safe.bot] sveglia dal canale (%s): ciclo anticipato", motivo)
-        return None
 
     try:
-        canale._on_message = _con_sveglia   # noqa: SLF001 - vedi la nota sopra
-        canale._sveglia_f4 = True           # noqa: SLF001
+        set_sveglia(_su_sveglia)
     except Exception as ex:  # noqa: BLE001 - senza sveglia si lavora come oggi
         logger.warning("[safe.bot] sveglia sul canale NON installata: %s", str(ex)[:160])
         return False

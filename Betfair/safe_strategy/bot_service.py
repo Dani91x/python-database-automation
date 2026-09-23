@@ -7927,3 +7927,89 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# svuota_le_cache - d2 (24/09). APPEND-ONLY: nessuna riga sopra e' stata
+# toccata (un altro delegato lavora su ``run_once`` nello stesso file).
+# Stesso stile di ``omega_service.py:240`` / ``mike/service.py:329``: elenco
+# ESPLICITO, mai un azzeramento per riflessione (`dir()` butterebbe via anche
+# cio' che non e' una cache, per esempio ``_FEED_BLOCK_BY_TYPE`` che e'
+# configurazione statica). Test di contratto e falsificazione:
+# ``Betfair/safe_strategy/tests/test_svuota_le_cache_d2_2026_09_24.py``.
+# ---------------------------------------------------------------------------
+def svuota_le_cache() -> None:
+    """Butta via tutto il letto di PROCESSO di questo modulo: la prossima
+    lettura va al database. Come un riavvio.
+
+    Serve al banco di replay (uno scenario non deve ereditare lo stato del
+    precedente nello stesso interprete - difetto 37 del catalogo, gia' visto
+    sulla pool che non isolava i replay fra scenari) e a chi vuole forzare un
+    riallineamento immediato mentre il servizio gira.
+
+    Due gruppi, e la differenza non e' un dettaglio: le prime nascono vuote
+    (``.clear()`` basta); le seconde hanno CHIAVI FISSE lette senza ``.get``
+    in giro per il modulo (``_APERTE["n"]``, ``_LOG_MODE["value"]``...): un
+    ``.clear()`` nudo produrrebbe un ``KeyError`` al primo giro dopo
+    l'azzeramento, quindi si RIPRISTINA il valore iniziale di modulo.
+    """
+    # -- cache che nascono vuote -------------------------------------------
+    _OPTIONAL_MODS.clear()
+    _CONSAPEVOLEZZA_SCRITTA.clear()
+    _MARKET_MISSING.clear()
+    _CONTO_LETTO_A.clear()
+    _EVENTI_CHIUSI.clear()
+    _EXIT_WAIT_AT.clear()
+    _FEED_BLIND_LOG.clear()
+    _DATO_MANCANTE_LOG.clear()
+    _PLACE_ATTEMPTS.clear()
+    _SKIP_LOG_STATE.clear()
+    _EVENT_NAMES.clear()
+    _PENDING_CICLO.clear()
+    _AGG_ULTIMO_BUONO.clear()
+    _AGG_LOG_TS.clear()
+    _LAST_CONTROL.clear()
+    # -- cache a CHIAVI FISSE: si ripristina il valore iniziale -------------
+    _REST_STATE.clear()
+    _REST_STATE.update({"last": {}, "cycle_ts": 0.0, "used": 0})
+    _SCANNER_TS_CACHE.clear()
+    _SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
+    _EXIT_MODEL.clear()
+    _EXIT_MODEL.update({"model": None, "mod": None})
+    _LETTURA_FEED.clear()
+    _LETTURA_FEED.update({"ms": 0.0})
+    _PLACE_SEED.clear()
+    _PLACE_SEED.update({"ts": 0.0})
+    _EREDITA_LOG.clear()
+    _EREDITA_LOG.update({"ts": 0.0})
+    _COPERTURA_LOG.clear()
+    _COPERTURA_LOG.update({"ts": 0.0})
+    _OPPS_STATE.clear()
+    _OPPS_STATE.update({"last_ts": 0.0, "hashes": {}})
+    _APERTE.clear()
+    _APERTE.update({"n": 0})
+    _BLOCCO.clear()
+    _BLOCCO.update({"motivo": None, "tetto": None, "aperte": None})
+    _LOG_MODE.clear()
+    _LOG_MODE.update({"value": ""})
+    _CICLO_IN_ERRORE.clear()
+    _CICLO_IN_ERRORE.update({"value": False})
+    _SVEGLIA_FATTA.clear()
+    _SVEGLIA_FATTA.update({"req_id": 0})
+    # -- cache di un ALTRO modulo dello stesso servizio: elenco esplicito ---
+    try:
+        _real_db._AGG_RPC.clear()
+        _real_db._AGG_RPC.update({"ko_ts": 0.0})
+    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+        pass
+    try:
+        from Betfair.safe_strategy import selezione as _sel
+
+        _sel._HINT_CACHE.clear()
+    except Exception:  # noqa: BLE001
+        pass
+    # -- F4/F6 (18/09): _CANALE_SCAN, _SVEGLIA, _CONTI_SVEGLIA, _ULTIMO_GIRO
+    # sono le quattro cache di processo del canale locale. Azzeramento gia'
+    # scritto e testato in azzera_canale_scan() (sopra, prima di main()): qui
+    # si RIUSA quella funzione, non se ne duplica la logica.
+    azzera_canale_scan()

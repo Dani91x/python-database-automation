@@ -91,7 +91,12 @@ def update_trade(trade_id: int, **fields: Any) -> None:
 def delete_trade(trade_id: int) -> None:
     # GUARD su status='pending': se nel frattempo un operatore ha corretto a mano la
     # riga (es. a 'open' con bet_id reale dopo l'allarme CRITICAL), NON la cancella.
-    _sb().table("omega_trades").delete().eq("id", trade_id).eq("status", "pending").execute()
+    res = _sb().table("omega_trades").delete().eq("id", trade_id).eq("status", "pending").execute()
+    # C6(c): la sparizione di una riserva 'pending' cancellata esce SUBITO sul
+    # canale (prima la vedeva solo il poll a 30s): stesso topic delle posizioni
+    # vive, azione='cancellata'. DOPO la DELETE riuscita, mai prima.
+    if _CANALE_ACCESO:
+        _cb.pubblica_cancellazione(_cb.TOPIC["omega_posizioni"], res)
 
 
 def list_trades(status: Optional[str] = None) -> list[dict[str, Any]]:

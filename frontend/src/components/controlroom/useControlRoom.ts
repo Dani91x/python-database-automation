@@ -1446,8 +1446,11 @@ export function useControlRoom(): ControlRoomVM {
     /**
      * 17/09 — IL LIBRO DI ADESSO sulla selezione di una riga, dal feed di
      * scansione GIÀ caricato per le partite: nessuna lettura in più, nessuna
-     * chiamata a Betfair. Mike non pubblica `market_id`/`selection_id` sulle
-     * righe: per lui i due prezzi restano `null`, e la riga lo dice.
+     * chiamata a Betfair. 23/09 — anche Mike porta `market_id`/`selection_id`
+     * sulla riga (come Omega/Safe): una riga STORICA senza i due campi (scritta
+     * prima dell'11/09, o di un bot che non li pubblica) torna `back`/`lay`
+     * `null` da sola — `prezzoVivo` è fail-closed su id mancanti — mai un
+     * prezzo indovinato.
      */
     const libroVivo = useCallback((t: {
         event_id: string; market_id?: string | null; selection_id?: number | null;
@@ -1514,21 +1517,25 @@ export function useControlRoom(): ControlRoomVM {
         }
         for (const t of mike?.trades ?? []) {
             if (!aMercato(t) || eGambaDiChiusura(t)) continue;
+            // 23/09 — «se chiudo ora» anche per Mike, STESSO meccanismo di
+            // Omega/Safe (`libroVivo`/`chiusuraViva`/`quotaViva`), nessuna
+            // formula duplicata. Una riga STORICA senza `market_id`/
+            // `selection_id` (scritta prima dell'11/09) torna qui `null` da
+            // sola: `prezzoVivo` e' fail-closed su id mancanti, mai una quota
+            // indovinata da un'altra selezione.
+            const book = libroVivo(t);
             out.push({
                 bot: 'mike', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.selection_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
-                chiusura: null,
+                chiusura: chiusuraViva(t),
                 ordine: ordineDi(t),
                 dettaglio: dettaglioDi(
                     { ...t, pnl: t.pnl ?? 0 } as RigaDettagliabile,
                     (closesMike.get(t.id) ?? []).map((c) => ({ ...c, pnl: c.pnl ?? 0 })) as RigaDettagliabile[],
                     { gamba: t.role ?? t.strategy ?? null },
                 ),
-                // `mike_trades` non porta `market_id`/`selection_id`: senza
-                // selezione non esiste un prezzo vivo da mostrare, e non si
-                // inventa quello di un'altra riga.
-                vivo: null,
+                vivo: quotaViva(t.price, latoDi(t.side), book),
             });
         }
         // ── LE POSIZIONI APERTE DEI QUATTRO BOT TENNIS ──────────────────────
@@ -1743,9 +1750,10 @@ export function useControlRoom(): ControlRoomVM {
             // 18/09 (raccordo, R1) — quota di ADESSO sullo stesso lato
             // dell'ingresso e "se chiudo ora": STESSE `libroVivo()`/
             // `quotaViva()`/`chiusuraViva()` gia' usate per `PosizioneAperta`.
-            // Con `market_id`/`selection_id` assenti (Mike) queste tornano
-            // `null` da sole (`prezzoVivo` fail-closed su id mancanti):
-            // nessuna seconda condizione per bot, nessun numero inventato.
+            // 23/09 — Mike porta `market_id`/`selection_id` come Omega/Safe;
+            // su una riga STORICA senza i due campi queste tornano `null` da
+            // sole (`prezzoVivo` fail-closed su id mancanti): nessuna seconda
+            // condizione per bot, nessun numero inventato.
             const book = libroVivo({ event_id: t.event_id, market_id: t.market_id ?? null, selection_id: t.selection_id ?? null });
             const lato = latoDi(t.side);
             const vivo = quotaViva(t.price ?? null, lato, book);

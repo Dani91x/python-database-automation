@@ -65,6 +65,15 @@ CHIAVE_SEQ = "_seq"
 CHIAVE_PUBBLICATO_MS = "_pubblicato_ms"
 CHIAVI_META = frozenset({CHIAVE_FONTE, CHIAVE_SEQ, CHIAVE_PUBBLICATO_MS})
 
+# --- C6(c) (23/09): la cancellazione di una riga e' un evento, non un update ---
+# ``pubblica_cancellazione*`` aggiungono UNA chiave in piu' alla busta normale:
+# senza di essa un messaggio di DELETE sarebbe indistinguibile da un update (la
+# riga che PostgREST restituisce da una DELETE e' l'ULTIMO STATO NOTO della
+# riga, non un marcatore di sparizione). Nessun topic nuovo: stesso topic delle
+# righe vive, stesso schema busta+riga di ``pubblica_scritte``.
+CHIAVE_AZIONE = "_azione"
+AZIONE_CANCELLATA = "cancellata"
+
 #: I nomi dei topic stanno in UN POSTO SOLO: produttore e consumatore non
 #: possono divergere su una stringa scritta due volte (difetto 33 del catalogo).
 #: Calcio e tennis hanno topic SEPARATI: non si mischiano nemmeno dentro un
@@ -151,20 +160,21 @@ def busta(riga: Mapping[str, Any]) -> Dict[str, Any]:
     return msg
 
 
-def pubblica(topic: str, riga: Mapping[str, Any]) -> bool:
-    """Un messaggio sul canale del processo. NON SOLLEVA MAI, non blocca mai.
+def _invia(topic: str, msg: Dict[str, Any]) -> bool:
+    """Consegna un messaggio GIA' PRONTO (riga + busta) al canale del processo.
 
-    Torna ``True`` se il messaggio e' stato consegnato al canale (che a sua
-    volta e' best-effort: senza client esce prima ancora di serializzare).
-    Ogni eccezione viene inghiottita e CONTATA: un canale rotto non puo'
-    fermare il ciclo che gestisce i soldi, ma non puo' nemmeno sparire in
-    silenzio.
+    NON SOLLEVA MAI, non blocca mai. Torna ``True`` se il messaggio e' stato
+    consegnato al canale (che a sua volta e' best-effort: senza client esce
+    prima ancora di serializzare). Ogni eccezione viene inghiottita e CONTATA:
+    un canale rotto non puo' fermare il ciclo che gestisce i soldi, ma non puo'
+    nemmeno sparire in silenzio. Condivisa da ``pubblica`` e dai publisher di
+    cancellazione: stessa consegna, buste diverse.
     """
     canale = _canale()
     if canale is None:
         return False
     try:
-        canale.publish(str(topic), busta(riga))
+        canale.publish(str(topic), msg)
     except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il bot
         with _lock:
             _conti["errori"] = int(_conti["errori"]) + 1
@@ -174,6 +184,18 @@ def pubblica(topic: str, riga: Mapping[str, Any]) -> bool:
     with _lock:
         _conti["pubblicati"] = int(_conti["pubblicati"]) + 1
     return True
+
+
+def pubblica(topic: str, riga: Mapping[str, Any]) -> bool:
+    """Un messaggio sul canale del processo. NON SOLLEVA MAI, non blocca mai.
+
+    Torna ``True`` se il messaggio e' stato consegnato al canale (che a sua
+    volta e' best-effort: senza client esce prima ancora di serializzare).
+    Ogni eccezione viene inghiottita e CONTATA: un canale rotto non puo'
+    fermare il ciclo che gestisce i soldi, ma non puo' nemmeno sparire in
+    silenzio.
+    """
+    return _invia(str(topic), busta(riga))
 
 
 def righe_scritte(res: Any) -> List[Dict[str, Any]]:
@@ -236,6 +258,62 @@ def pubblica_scritte_per(scegli_topic: Callable[[Dict[str, Any]], Optional[str]]
         if not topic:
             continue
         if pubblica(topic, riga):
+            usciti += 1
+    return usciti
+
+
+def pubblica_cancellazione(topic: str, res: Any) -> int:
+    """Pubblica la SPARIZIONE di ogni riga cancellata da una ``DELETE``.
+
+    Stesso schema delle altre pubblicazioni (``righe_scritte(res)`` + busta),
+    con UNA chiave in piu': ``CHIAVE_AZIONE=AZIONE_CANCELLATA``. Una ``DELETE``
+    PostgREST torna di serie la rappresentazione (l'ultimo stato noto della
+    riga, ``return=representation``, stesso ``ReturnMethod`` di insert/update):
+    senza il marcatore d'azione chi legge non potrebbe distinguere questo
+    messaggio da un update della stessa riga. Nessun topic nuovo: esce sullo
+    STESSO topic delle righe vive di quella tabella.
+    """
+    righe = righe_scritte(res)
+    if not righe:
+        if res is not None:
+            with _lock:
+                _conti["senza_riga"] = int(_conti["senza_riga"]) + 1
+        return 0
+    usciti = 0
+    for riga in righe:
+        msg = busta(riga)
+        msg[CHIAVE_AZIONE] = AZIONE_CANCELLATA
+        if _invia(str(topic), msg):
+            usciti += 1
+    return usciti
+
+
+def pubblica_cancellazione_per(scegli_topic: Callable[[Dict[str, Any]], Optional[str]],
+                               res: Any) -> int:
+    """Come ``pubblica_cancellazione``, ma il topic lo sceglie la RIGA cancellata
+    (Safe: calcio e tennis su due topic separati, stessa regola di
+    ``pubblica_scritte_per``). Una riga di cui non si sa il topic non esce
+    (fail-closed)."""
+    righe = righe_scritte(res)
+    if not righe:
+        if res is not None:
+            with _lock:
+                _conti["senza_riga"] = int(_conti["senza_riga"]) + 1
+        return 0
+    usciti = 0
+    for riga in righe:
+        try:
+            topic = scegli_topic(riga)
+        except Exception as ex:  # noqa: BLE001
+            with _lock:
+                _conti["errori"] = int(_conti["errori"]) + 1
+                _conti["ultimo_errore"] = str(ex)[:200]
+            continue
+        if not topic:
+            continue
+        msg = busta(riga)
+        msg[CHIAVE_AZIONE] = AZIONE_CANCELLATA
+        if _invia(str(topic), msg):
             usciti += 1
     return usciti
 

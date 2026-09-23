@@ -195,6 +195,105 @@ def test_local_dispatch_error_responds_and_records_error(env, monkeypatch):
     assert env["journal"] == []  # mai journal su comando fallito
 
 
+
+# ---------------------------------------------------------------------------
+# d3 (23/09) - il ramo "sveglia" di _on_message (local_channel.py:157), F6
+# 18/09: l'unico messaggio che il canale accetta anche in sola lettura, esce
+# PRIMA della coda dei comandi, non porta mai un parametro d'ordine.
+# ---------------------------------------------------------------------------
+def _canale_senza_socket(solo_lettura: bool = True) -> LocalChannel:
+    """Il canale VERO, mai avviato: nessun socket, ``_on_message`` testabile
+    senza rete (stesso schema di
+    ``test_canale_scan_f4_2026_09_18.py::_canale_finto``). ``_send`` e' un
+    no-op quando ``_loop`` e' None: qui si cattura la risposta prima.
+    """
+    ch = LocalChannel(_free_port(), sport="calcio", solo_lettura=solo_lettura)
+    ch.risposte: List[Dict[str, Any]] = []
+    vero_send = ch._send
+    ch._send = lambda ws, payload: ch.risposte.append(payload) or vero_send(ws, payload)
+    return ch
+
+
+def test_sveglia_chiama_su_sveglia_col_payload_e_non_tocca_i_topic():
+    """method == 'sveglia' chiama ``_su_sveglia`` col SOLO ``p``; non entra
+    mai nella coda dei comandi (nessuno stato di richieste/topic toccato)."""
+    ch = _canale_senza_socket()
+    ricevuti: List[Dict[str, Any]] = []
+    ch.set_sveglia(lambda p: ricevuti.append(p))
+    ch._on_message(object(), json.dumps({"id": 9, "m": "sveglia",
+                                         "p": {"motivo": "approvazione"}}))
+    assert ricevuti == [{"motivo": "approvazione"}]
+    assert ch.pop_requests() == []                  # niente in coda dei comandi
+    assert ch.risposte == [{"id": 9, "ok": True}]    # ok = (cb is not None)
+
+
+def test_sveglia_funziona_anche_su_canale_NON_di_sola_lettura():
+    """Il ramo sveglia esce PRIMA del controllo ``solo_lettura``: deve
+    funzionare identico sia sul canale dei bot (solo_lettura=True) sia su
+    quello del runner (solo_lettura=False)."""
+    ch = _canale_senza_socket(solo_lettura=False)
+    ricevuti: List[Dict[str, Any]] = []
+    ch.set_sveglia(lambda p: ricevuti.append(p))
+    ch._on_message(object(), json.dumps({"m": "sveglia", "p": {"motivo": "comando"}}))
+    assert ricevuti == [{"motivo": "comando"}]
+    assert ch.pop_requests() == []
+
+
+def test_sveglia_con_p_non_dict_passa_un_dict_vuoto():
+    """Un ``p`` che non e' un dict (o assente) non deve arrivare cosi' com'e'
+    al callback: il canale lo normalizza a ``{}`` (local_channel.py:165-166)."""
+    ch = _canale_senza_socket()
+    ricevuti: List[Any] = []
+    ch.set_sveglia(lambda p: ricevuti.append(p))
+    ch._on_message(object(), json.dumps({"id": 1, "m": "sveglia", "p": "boh"}))
+    ch._on_message(object(), json.dumps({"id": 2, "m": "sveglia"}))  # "p" assente
+    assert ricevuti == [{}, {}]
+
+
+def test_sveglia_senza_set_sveglia_nessun_errore_messaggio_ignorato():
+    """Senza nessuno registrato con ``set_sveglia``: nessuna eccezione, la
+    sveglia e' ignorata (nessun comando in coda) e la risposta dichiara
+    ``ok: False`` (``cb is None``, local_channel.py:169)."""
+    ch = _canale_senza_socket()
+    ch._on_message(object(), json.dumps({"id": 2, "m": "sveglia", "p": {"motivo": "comando"}}))
+    assert ch.pop_requests() == []
+    assert ch.risposte == [{"id": 2, "ok": False}]
+
+
+def test_sveglia_con_callback_che_solleva_non_ferma_il_canale():
+    """Una sveglia non puo' MAI fermare il canale (docstring
+    local_channel.py:158-161): un callback che solleva viene inghiottito."""
+    ch = _canale_senza_socket()
+
+    def _boom(_p):
+        raise RuntimeError("bug nel callback")
+
+    ch.set_sveglia(_boom)
+    ch._on_message(object(), json.dumps({"id": 3, "m": "sveglia", "p": {"motivo": "comando"}}))
+    # nessuna eccezione propagata fin qui: la callback E' installata quindi
+    # risponde comunque ok=True (cb is not None), come una sveglia normale.
+    assert ch.risposte == [{"id": 3, "ok": True}]
+
+
+def test_sveglia_ignora_messaggio_malformato_senza_sollevare():
+    """JSON non valido su ``_on_message`` non deve sollevare ne' alterare lo
+    stato del canale.
+
+    NOTA (d3, divergenza dal brief da riportare al coordinatore): il codice
+    attuale di ``_on_message`` (local_channel.py:183-187) NON tiene un
+    contatore dedicato ai messaggi malformati, solo un log a ``debug``;
+    ``self._conti`` resta quello di ``publish``/contropressione ("saltati" /
+    "saltati_client", vedi ``statistiche()``). Qui si verifica il
+    comportamento VERO, senza inventare un contatore che non c'e'.
+    """
+    ch = _canale_senza_socket()
+    prima_conti = dict(ch._conti)
+    ch._on_message(object(), "{questo non e' json valido")
+    assert ch.pop_requests() == []
+    assert ch.risposte == []           # nessun id leggibile: nessuna risposta
+    assert ch._conti == prima_conti    # nessun contatore dedicato: stato invariato
+
+
 def test_local_snapshot_from_blotter(env, monkeypatch):
     order = SimpleNamespace(lookup=("1.1", 111, 0.0))
 

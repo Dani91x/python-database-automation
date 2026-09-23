@@ -329,6 +329,13 @@ export interface MikeTrade {
     role: string | null;
     cycle_no: number;
     market_type: string | null;
+    /** mercato/selezione Betfair della riga (23/09): la colonna esiste dal
+     *  11/09 (`service.py::_trade_row`) e viaggia gia' su `get_mike_state()`
+     *  (`to_jsonb(t.*)`, nessuna proiezione esplicita) — mancava solo qui il
+     *  tipo. Righe storiche scritte prima di quella data possono averla
+     *  `null`: si scrive «—», mai una selezione indovinata. */
+    market_id?: string | null;
+    selection_id?: number | null;
     selection_name: string | null;
     side: 'back' | 'lay';
     mode: MikeMode;

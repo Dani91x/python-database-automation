@@ -106,10 +106,15 @@ def update_trade(trade_id: int, **fields: Any) -> None:
 
 def delete_trade(trade_id: int) -> None:
     """Elimina SOLO una riserva ancora 'pending' (mai una posizione reale)."""
-    (
+    res = (
         _sb().table("safe_strategy_trades").delete()
         .eq("id", int(trade_id)).eq("status", "pending").execute()
     )
+    # C6(c): la sparizione della riserva esce SUBITO sul canale (prima la
+    # vedeva solo il poll a 30s). Lo sport della riga decide il topic, come
+    # per insert/update (invariante B12: calcio e tennis non si mischiano).
+    if _CANALE_ACCESO:
+        _cb.pubblica_cancellazione_per(_topic_posizione, res)
 
 
 def get_trade(trade_id: int) -> Optional[dict[str, Any]]:

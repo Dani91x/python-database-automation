@@ -46,6 +46,11 @@ class TabellaFinta:
         self._diario.append(("update", self._nome, payload))
         return self
 
+    def delete(self):  # noqa: ANN201
+        self._verbo = "delete"
+        self._diario.append(("delete", self._nome, None))
+        return self
+
     def eq(self, *a, **k):  # noqa: ANN001, ANN201, ARG002
         return self
 
@@ -236,6 +241,27 @@ def test_la_proposta_di_opportunita_decaduta_esce_sul_canale(banco):
     assert banco["canale"].inviati[0][1]["status"] == "rejected"
 
 
+# --------------------------------------------------- C6(c): cancellazione (23/09)
+def test_la_cancellazione_di_una_riserva_calcio_esce_sul_topic_del_calcio(banco):
+    """checkpoint F3 par.7: "delete_trade... non pubblica: la sparizione la vede
+    il poll" - qui la sparizione esce SUBITO, topic deciso dallo sport DELLA
+    riga cancellata, azione='cancellata'."""
+    banco["risposte"]["safe_strategy_trades"] = RispostaFinta([{**RIGA_CALCIO, "status": "pending"}])
+    D.delete_trade(771)
+    topic, msg = banco["canale"].inviati[0]
+    assert topic == CB.TOPIC["safe_posizioni_calcio"]
+    assert msg["id"] == 771
+    assert msg[CB.CHIAVE_AZIONE] == CB.AZIONE_CANCELLATA
+
+
+def test_la_cancellazione_di_una_riserva_tennis_esce_sul_topic_del_tennis(banco):
+    banco["risposte"]["safe_strategy_trades"] = RispostaFinta([{**RIGA_TENNIS, "status": "pending"}])
+    D.delete_trade(772)
+    topic, msg = banco["canale"].inviati[0]
+    assert topic == CB.TOPIC["safe_posizioni_tennis"]
+    assert msg[CB.CHIAVE_AZIONE] == CB.AZIONE_CANCELLATA
+
+
 # ------------------------------------------------------------ database registro
 def test_una_scrittura_senza_rappresentazione_non_pubblica_niente(banco):
     banco["risposte"]["safe_strategy_trades"] = RispostaFinta([])
@@ -250,8 +276,10 @@ def test_con_linterruttore_spento_non_esce_niente(banco, monkeypatch):
     banco["risposte"]["safe_strategy_activity"] = RispostaFinta([RIGA_ATTIVITA])
     banco["risposte"]["safe_strategy_requests:select"] = RispostaFinta([])
     banco["risposte"]["safe_strategy_requests:insert"] = RispostaFinta([RIGA_PROPOSTA])
+    banco["risposte"]["safe_strategy_trades:delete"] = RispostaFinta([{**RIGA_CALCIO, "status": "pending"}])
     D.insert_trade(dict(RIGA_CALCIO))
     D.update_trade(771, status="won")
+    D.delete_trade(771)
     D.log("skip", {})
     D.scrivi_proposta_di_chiusura(771, {})
     D.scrivi_proposta_opportunita("o1", {})

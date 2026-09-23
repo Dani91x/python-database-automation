@@ -412,7 +412,15 @@ def test_la_sveglia_alza_l_evento_e_non_porta_nessun_ordine():
     assert ev.is_set() is True
     assert conti["sveglie"] == 1 and conti["ultimo_motivo"] == "approvazione"
     assert ch.pop_requests() == []              # niente in coda: nessun comando
-    assert ch.risposte == []                    # nessuna risposta: non e' un metodo
+    # ADATTATO (23/09, d1): prima si sostituiva ``_on_message`` sull'ISTANZA e
+    # una sveglia riconosciuta non rispondeva affatto. Da d1 si usa il
+    # meccanismo pulito ``set_sveglia``: e' ``LocalChannel._on_message``
+    # (local_channel.py:157-169) a rispondere SEMPRE {"ok": cb is not None}
+    # per un messaggio "sveglia" - installata la callback, ok e' sempre True,
+    # come dichiarato dal checkpoint F5/F6 SS5 ("Risposta attesa: ok: true").
+    # Non e' un metodo che porta un ordine: la coda resta vuota, il canale
+    # resta di sola lettura.
+    assert ch.risposte == [{"id": None, "ok": True}]
     assert ch.solo_lettura is True              # il canale resta di sola lettura
 
 
@@ -423,7 +431,13 @@ def test_una_sveglia_con_motivo_sconosciuto_e_rifiutata():
     CS.installa_sveglia(ch, ev, conti)
     ch._on_message(object(), json.dumps({"m": "sveglia", "p": {"motivo": "piazza"}}))
     assert ev.is_set() is False and conti["rifiutate"] == 1
-    assert ch.risposte and ch.risposte[0]["ok"] is False
+    # ADATTATO (23/09, d1): local_channel.py:169 risponde ok=(cb is not None),
+    # non ok=(motivo valido): la callback E' installata, quindi il canale
+    # risponde ok=True anche per un motivo sconosciuto. Cio' che conta per il
+    # bot - l'evento NON si alza, la riga finisce in "rifiutate" - e' identico
+    # a prima: il rifiuto avviene dentro il callback di canale_scan, non piu'
+    # nella risposta del canale.
+    assert ch.risposte and ch.risposte[0]["ok"] is True
 
 
 def test_un_comando_vero_resta_rifiutato_dal_canale_di_sola_lettura():
@@ -441,3 +455,24 @@ def test_un_comando_vero_resta_rifiutato_dal_canale_di_sola_lettura():
 def test_senza_interruttore_la_sveglia_non_si_installa(monkeypatch):
     assert S.installa_sveglia_canale() is False
     assert S._CONTI_SVEGLIA.get("installata") is False
+
+
+def test_installa_sveglia_non_sostituisce_piu_on_message(monkeypatch):
+    """d1 (23/09): il chiamante deve usare ``set_sveglia``, non sostituire
+    ``_on_message`` sull'ISTANZA. ``_on_message`` resta quello della CLASSE
+    (stesso oggetto funzione di ``LocalChannel``, nessun wrapper agganciato
+    sopra), e una sveglia arriva UGUALMENTE al callback registrato."""
+    ev = threading.Event()
+    ch = _canale_finto()
+    conti = {}
+    prima = ch._on_message
+    assert CS.installa_sveglia(ch, ev, conti) is True
+    # _on_message e' ancora il metodo BOUND della classe: nessuna sostituzione
+    # sull'istanza. Confronto sul metodo non-bound (__func__) perche' due
+    # bound method dello stesso oggetto non sono "is" identici in Python.
+    assert ch._on_message.__func__ is LC.LocalChannel._on_message
+    assert ch._on_message.__func__ is prima.__func__
+    # la sveglia deve comunque arrivare al callback, tramite set_sveglia
+    ch._on_message(object(), json.dumps({"m": "sveglia", "p": {"motivo": "comando"}}))
+    assert ev.is_set() is True
+    assert conti["sveglie"] == 1

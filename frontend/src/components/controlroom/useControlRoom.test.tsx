@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { TennisBotOrderRow } from '@/lib/tennis';
+import type { ScanRow, CalcioScanPayload } from '@/lib/safeStrategyScan';
 import { romeDay } from '@/lib/dailyHistory';
 
 // ------------------------------------------------------------------- finti
@@ -423,6 +424,85 @@ function tradeMike(over: Partial<MikeTrade> = {}): MikeTrade {
         ...over,
     } as MikeTrade;
 }
+
+// ============================================================================
+// 23/09 — «SE CHIUDO ORA» ANCHE PER MIKE (Task f, market_id/selection_id).
+//
+// Fino a oggi `mike_trades` scriveva `market_id`/`selection_id` sulla riga
+// (`service.py::_trade_row`, dall'11/09) ma il tipo `MikeTrade` non li
+// dichiarava e la scheda della Control Room scriveva `chiusura: null,
+// vivo: null` a mano per OGNI riga di Mike, qualunque cosa dicesse il feed:
+// una posizione in profitto restava invisibile finche' il bot non proponeva.
+// Omega/Safe usano lo STESSO meccanismo (`libroVivo`/`chiusuraViva`/
+// `quotaViva`, con il feed dello scanner GIA' in memoria): qui si verifica che
+// Mike lo condivida davvero, non che esista una sua propria formula.
+// ============================================================================
+
+/** payload minimo dello scanner con UN blocco Over/Under (la forma che Mike
+ *  usa: `market_type`/`market_id`/`selections[]`, la stessa di `ScanMarketBlock`). */
+function payloadConMercatoOU(marketId: string, selectionId: number, back: number, lay: number): CalcioScanPayload {
+    return {
+        event_name: 'Finto v Finto', home: 'Finto', away: 'Finto', competition: null,
+        open_date: null, inplay: true, mo_market_id: null, mo_status: null, odds: null,
+        minute: 10, score_home: 0, score_away: 0, red_home: 0, red_away: 0, pre_ko: null,
+        cs: null, ht: null,
+        ou: [{
+            market_id: marketId, status: 'OPEN',
+            selections: [{ selection_id: selectionId, name: 'Under 3.5', back, lay, back_size: 50, lay_size: 40 }],
+        }],
+    };
+}
+
+function scanRowMike(eventId: string, payload: CalcioScanPayload): ScanRow {
+    return { event_id: eventId, sport: 'calcio', payload, updated_at: PIAZZATO };
+}
+
+describe('«chiudi ora» di Mike usa market_id/selection_id come Omega/Safe (23/09)', () => {
+    it('con market_id/selection_id sulla riga e il mercato nel feed, chiusura e vivo si calcolano', async () => {
+        vi.mocked(fetchScanRows).mockResolvedValue([
+            scanRowMike('E2', payloadConMercatoOU('1.2', 2, 1.90, 1.92)),
+        ]);
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [tradeMike({ id: 801, status: 'open', price: 1.85, settled_at: null })],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const p = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === 801);
+        expect(p).toBeDefined();
+        // lato back: si chiude con un lay, al prezzo LAY vivo del feed (1,92)
+        expect(p!.chiusura?.prezzo).toBe(1.92);
+        expect(p!.chiusura?.bloccabile).not.toBeNull();
+        expect(p!.vivo?.back).toBe(1.90);
+        expect(p!.vivo?.lay).toBe(1.92);
+    });
+
+    it('una riga STORICA senza market_id/selection_id resta "—": null, mai un numero indovinato', async () => {
+        vi.mocked(fetchScanRows).mockResolvedValue([
+            scanRowMike('E2', payloadConMercatoOU('1.2', 2, 1.90, 1.92)),
+        ]);
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [tradeMike({
+                id: 802, status: 'open', price: 1.85, settled_at: null,
+                market_id: null, selection_id: null,
+            })],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const p = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === 802);
+        expect(p).toBeDefined();
+        expect(p!.chiusura?.prezzo ?? null).toBeNull();
+        expect(p!.vivo).toBeNull();
+    });
+
+    // FALSIFICAZIONE (provata a mano, 23/09): nel primo test, rimettendo
+    // `chiusura: null, vivo: null` a mano nel ramo Mike di `posizioni`
+    // (`useControlRoom.ts`) invece di `chiusuraViva(t)`/`quotaViva(...)`, il
+    // primo test sopra torna ROSSO (`p!.chiusura?.prezzo` e `p!.vivo?.back`
+    // tornano `undefined`/`null` invece dei prezzi del feed). Verificato e
+    // ripristinato.
+});
 
 describe('bot tennis live entrano nel realizzato, paper mai (Task 2)', () => {
     it('il realizzato LIVE della barra include i 4 bot tennis dedicati', async () => {
