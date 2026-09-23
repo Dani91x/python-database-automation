@@ -83,6 +83,7 @@ from .. import engine as E
 from .. import exits as XE
 from .. import risk as RK
 from ...stream.backtest import chiusura_parziale as CP
+from ...stream.backtest import proposte_modello as PM
 from ...stream.backtest.banco_comune import DbMemoria, replay_evento
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ EVENTO_DI_RIFERIMENTO = "35790650"
 # ---------------------------------------------------------------------------
 # il database in memoria, con le firme di `safe_strategy/bot_db.py`
 # ---------------------------------------------------------------------------
-class DbMemoriaSafe(DbMemoria):
+class DbMemoriaSafe(PM.ProposteDb, DbMemoria):
     """Le tabelle di Safe in RAM, con le FIRME e i TIPI DI RITORNO del vero.
 
     `Betfair/safe_strategy/bot_db.py` e' l'accessor che `bot_service.run_once`
@@ -386,6 +387,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # uscite della Safe tennis sono l'unica chiusura che nasce su queste
     # registrazioni) piu' il guasto del banco comune.
     CP.SCENARIO: "posizione iniettata come `posizione-iniettata`, ma " + CP.DESCRIZIONE,
+    # 23/09 (cancello C6 e): IL MODELLO TENNIS MONTATO, in CODA (gli scenari di
+    # prima girano nello stesso ordine). Anomalie e combo esistono solo sul
+    # calcio (`bot_service.process_anomalies`/`process_opportunities`): qui no.
+    **{sc: PM.DESCRIZIONI[sc] for sc in PM.SCENARI_TENNIS},
 }
 
 QUANTI_GUASTI = 3
@@ -469,6 +474,8 @@ def parametri_scenario(scenario: str) -> Dict[str, Any]:
     }
     if scenario in ("approvata-subito", "mai-approvata"):
         par["tennis_exit_approval"] = True
+    if scenario in PM.SCENARI_TENNIS:
+        par = PM.parametri(scenario, par)
     return par
 
 
@@ -514,6 +521,13 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     if scenario == "feed-stantio":
         db.scanner_vecchio_s = float(XE.FEED_HARD_MAX_S) * 3.0
     firma.db = db
+    if scenario in PM.SCENARI_TENNIS:
+        # C6 e: il MODELLO TENNIS montato (finto deterministico), il trader e i
+        # controlli PM. Negli altri scenari resta None e `run_once` riceve gli
+        # stessi argomenti di prima.
+        PM.azzera_cache_lambda()
+        firma.proposte = PM.BancoProposte(
+            scenario, "tennis", lambda: orologio["now"].timestamp())
     firma.invecchia_s = (float(XE.FEED_HARD_MAX_S) * 3.0
                          if scenario == "feed-stantio" else 0.0)
     firma.guasti = QUANTI_GUASTI if scenario in ("esiti-ignoti",
@@ -727,6 +741,8 @@ class _Stato:
         # piazzamento (`market.motore` esiste solo dentro `replay_evento`)
         self.guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
         self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
+        # scenari PM (C6 e): il modello montato; None negli altri
+        self.proposte: Optional[PM.BancoProposte] = None
 
     # ------------------------------------------------------------- un giro
     def giro(self, *, db, market, now, row, banco, strategia) -> None:
@@ -789,10 +805,22 @@ class _Stato:
         # i monitor dell'ultimo giro non devono sopravvivere a questo: se il bot
         # e' fermo e non valuta niente, leggerli sarebbe leggere il giro prima
         self.engine._last_monitors = []
+        pm = self.proposte
+        if pm is not None:
+            # IL TRADER della Control Room firma/rifiuta le schede PRIMA del giro
+            pm.trader.agisci(db, row, now.timestamp())
         try:
-            BS.run_once(db=db, market=market, engine=self.engine, opp_model=None,
-                        opp_mod=None, engine_mod=E, now=now, opps_state={},
-                        extra_mods={"anomaly": None, "combos": None, "tennis": None})
+            if pm is None:
+                BS.run_once(db=db, market=market, engine=self.engine, opp_model=None,
+                            opp_mod=None, engine_mod=E, now=now, opps_state={},
+                            extra_mods={"anomaly": None, "combos": None, "tennis": None})
+            else:
+                # lo stato delle opportunita' PERSISTE fra i giri (in produzione
+                # `_OPPS_STATE` vive quanto il processo): con `{}` a ogni giro il
+                # throttle `opps_interval_s` non esisterebbe
+                BS.run_once(db=db, market=market, engine=self.engine, opp_model=None,
+                            opp_mod=pm.opp_mod, engine_mod=E, now=now,
+                            opps_state=pm.opps_state, extra_mods=pm.extra_mods())
         except Exception as ex:  # noqa: BLE001 - un'eccezione del servizio E' un referto
             errore = f"{type(ex).__name__}: {ex}"
         self.ref.decisioni += 1
@@ -865,6 +893,11 @@ class _Stato:
         if self.sorveglianza_cp is not None:
             for cod, reg, det in self.sorveglianza_cp.verifica(
                     CP.credenze_da_righe(db.trades), self.ref.sollecitati):
+                self.ref.violazioni.append(CERT.Violazione(cod, reg, det, oss.quando))
+        # I CONTROLLI PM (scenari del modello montato)
+        if pm is not None:
+            for cod, reg, det in pm.sorveglianza.verifica(
+                    db=db, mercato=market, riga=row, sollecitati=self.ref.sollecitati):
                 self.ref.violazioni.append(CERT.Violazione(cod, reg, det, oss.quando))
         CERT.osserva(self.ref.andamento, oss)
         if valutazione is not None:
@@ -1132,6 +1165,8 @@ class _Stato:
         note.append(f"scenario: {self.scenario} — {SCENARI_DESCRITTI.get(self.scenario, '')}")
         if self.guasto_cp is not None:
             note.append(self.guasto_cp.riepilogo())
+        if self.proposte is not None and db is not None:
+            note.extend(self.proposte.riepilogo(db))
         note.append(f"competizione dichiarata: {self.competizione!r} "
                     f"(il raw dello stream NON la contiene: limite 1 del banco)")
         if db is not None:

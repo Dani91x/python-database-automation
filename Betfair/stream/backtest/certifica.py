@@ -578,6 +578,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
             if not n:
                 mai.append((cod, reg))
+    # I CONTROLLI DEL MODELLO MONTATO (famiglia PM, scenari delle proposte di
+    # Safe, C6 e): stessa regola, contati solo se almeno uno di quegli scenari
+    # e' stato eseguito.
+    from . import proposte_modello as PMZ
+
+    scenari_pm = [sc for sc in scelti if sc in PMZ.TUTTI]
+    if scenari_pm:
+        print("  -- controlli del banco comune, scenari del modello montato "
+              f"({', '.join(scenari_pm)}):")
+        for cod, reg in PMZ.controlli_per(scenari_pm):
+            n = sollecitati_tot.get(cod, 0)
+            segno = "  " if n else "??"
+            print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
+            if not n:
+                mai.append((cod, reg))
     if mai:
         print()
         print(f"?? MAI SOLLECITATI: {len(mai)} controlli su "

@@ -75,6 +75,7 @@ from ...stream.backtest.banco_comune import (
     nomi_dal_punteggio, simulazione_flumine,
 )
 from ...stream.backtest import chiusura_parziale as CP
+from ...stream.backtest import proposte_modello as PM
 from . import validate_opportunity as VO
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,12 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # REST senza `minFillSize` (`execution.place` -> `place_order_live`), cioe'
     # tutto o niente: il 40 % non basta e la chiusura muore per intero.
     CP.SCENARIO: {},
+    # 23/09 (cancello C6 e) - IL MODELLO MONTATO: proposte di opportunita',
+    # anomalie e combo (`Betfair/stream/backtest/proposte_modello.py`). I
+    # parametri li aggiunge `proposte_modello.parametri` (una voce
+    # `strategy_modes.model` e, per le combo, `auto_trade_combos`): vedi
+    # `_params_di_scenario`.
+    **{sc: {} for sc in PM.SCENARI_CALCIO},
 }
 
 SCENARIO_BOT_FERMO = "bot-fermo"
@@ -249,13 +256,15 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                         "+ difesa avversaria gira davvero e il controllo E10 ha "
                         "i suoi casi. Con i dati storici assenti il verdetto e' "
                         "n/d e la variante NON entra: e' la regola del motore",
+    # 23/09 (C6 e): in CODA, cosi' gli scenari di prima girano nello stesso ordine
+    **{sc: PM.DESCRIZIONI[sc] for sc in PM.SCENARI_CALCIO},
 }
 
 
 # ---------------------------------------------------------------------------
 # il database in memoria, con le FIRME di `bot_db.py` e `db.py`
 # ---------------------------------------------------------------------------
-class DbSafeMemoria(DbMemoria):
+class DbSafeMemoria(PM.ProposteDb, DbMemoria):
     """Le tabelle della Safe in RAM, funzione per funzione come il DB vero.
 
     ⚠️ Ogni metodo ha la firma E IL TIPO DI RITORNO del vero
@@ -985,6 +994,13 @@ def _crea_strategia():
             # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
             # banco comune (None in tutti gli altri scenari)
             self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
+            # scenari PM (C6 e): il MODELLO montato - finti, trader,
+            # sorveglianza. None in tutti gli altri scenari: `run_once` riceve
+            # allora ESATTAMENTE gli argomenti di prima.
+            scenario_pm = kw.pop("scenario_proposte", None)
+            self.proposte: Optional[PM.BancoProposte] = (
+                PM.BancoProposte(str(scenario_pm), "calcio", lambda: self.banco.ora)
+                if scenario_pm else None)
             super().__init__(**kw)
 
         # ---------------------------------------------------------- flumine
@@ -1052,13 +1068,28 @@ def _crea_strategia():
             self.aperture_nel_giro = 0
             self._attivita_a_inizio_giro = len(self.db.attivita)
             adesso = datetime.fromtimestamp(pt_ms / 1000.0, tz=timezone.utc)
+            pm = self.proposte
+            if pm is not None:
+                # IL TRADER della Control Room preme PIAZZA / RIFIUTA sulle
+                # schede, PRIMA del giro: le RPC vere scrivono sul DB, il
+                # servizio le legge al giro (come in produzione)
+                pm.trader.agisci(self.db, righe[0] if righe else None,
+                                 pt_ms / 1000.0)
             try:
-                esito = BS.run_once(db=self.db, market=self.mercato,
-                                    engine=self.motore_segnali,
-                                    opp_model=None, opp_mod=None, engine_mod=E,
-                                    now=adesso, opps_state=self.opps_state,
-                                    extra_mods={"anomaly": None, "combos": None,
-                                                "tennis": None})
+                if pm is None:
+                    esito = BS.run_once(db=self.db, market=self.mercato,
+                                        engine=self.motore_segnali,
+                                        opp_model=None, opp_mod=None, engine_mod=E,
+                                        now=adesso, opps_state=self.opps_state,
+                                        extra_mods={"anomaly": None, "combos": None,
+                                                    "tennis": None})
+                else:
+                    esito = BS.run_once(db=self.db, market=self.mercato,
+                                        engine=self.motore_segnali,
+                                        opp_model=pm.modello, opp_mod=pm.opp_mod,
+                                        engine_mod=E, now=adesso,
+                                        opps_state=pm.opps_state,
+                                        extra_mods=pm.extra_mods())
             except Exception as ex:  # noqa: BLE001 - un'eccezione del servizio E' un referto
                 self.referto.violazioni.append(CERT.Violazione(
                     "SERVIZIO", "il giro del servizio non deve mai sollevare",
@@ -1090,6 +1121,13 @@ def _crea_strategia():
             if self.sorveglianza_cp is not None:
                 for cod, reg, det in self.sorveglianza_cp.verifica(
                         CP.credenze_da_righe(self.db.trades), self.referto.sollecitati):
+                    self.referto.violazioni.append(CERT.Violazione(cod, reg, det))
+            # 4-quater) I CONTROLLI PM (scenari del modello montato)
+            if pm is not None:
+                for cod, reg, det in pm.sorveglianza.verifica(
+                        db=self.db, mercato=self.mercato,
+                        riga=righe[0] if righe else None,
+                        sollecitati=self.referto.sollecitati):
                     self.referto.violazioni.append(CERT.Violazione(cod, reg, det))
             # 5) i controlli TRASVERSALI, a fine giro
             ciclo = CERT.Ciclo(db=self.db, market=self.mercato, params=self.params,
@@ -1330,6 +1368,8 @@ def _params_di_scenario(scenario: str, strategie: Tuple[str, ...],
         "execution_mode": "rest",
     }
     par.update(SCENARI.get(scenario, {}))
+    if scenario in PM.SCENARI_CALCIO:
+        par = PM.parametri(scenario, par)
     return par
 
 
@@ -1350,9 +1390,13 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       mode: str = "live",
                       status: str = "running",
                       scenario: str = "base",
-                      chiusura_parziale: bool = False) -> CERT.Referto:
+                      chiusura_parziale: bool = False,
+                      scenario_proposte: Optional[str] = None) -> CERT.Referto:
     """Fa rivivere a Safe calcio una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
+
+    if scenario_proposte:
+        PM.azzera_cache_lambda()
 
     # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
     # coppie evento x scenario girano nello STESSO processo figlio, una dopo
@@ -1387,6 +1431,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         ordine_manuale=ordine_manuale, doppia_lay=doppia_lay,
         manuale_sul_bot=manuale_sul_bot, cashout_globale=cashout_globale,
         timeout_accettato=timeout_accettato, fuori_app=fuori_app,
+        scenario_proposte=scenario_proposte,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: il rischio lo governa la Safe coi suoi
         # parametri (`max_liability_per_trade`, `max_open_trades`, i cap di
@@ -1666,9 +1711,17 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
     out.note.append("[NON ESERCITABILE] minimo di giurisdizione .it e "
                     "place-and-trim: flumine non ha un minimo, quindi "
                     "`place_submin_live` piazza diretto (controllo T11)")
-    out.note.append("[FUORI PERIMETRO C.3] opportunita' a modello, combo e "
-                    "anomalie: altro motore, non le tre strategie della SPEC "
-                    "(controllo T5)")
+    pm = getattr(strategia, "proposte", None)
+    if pm is None:
+        out.note.append("[FUORI PERIMETRO C.3] opportunita' a modello, combo e "
+                        "anomalie: altro motore, non le tre strategie della SPEC "
+                        "(controllo T5)")
+    else:
+        out.note.append("[MODELLO MONTATO, C6 e] opportunita' a modello, anomalie e "
+                        "combo da finti DETERMINISTICI con l'interfaccia del vero "
+                        "(`Betfair/stream/backtest/proposte_modello.py`); il trader "
+                        "firma le schede con le RPC vere; controlli PM1-PM8")
+        out.note.extend(pm.riepilogo(db))
     if strategia.ordine_manuale:
         out.note.append(
             "[SCENARIO] ordine MANUALE dalla UI: la richiesta e' passata da "
@@ -1774,7 +1827,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         fuori_app=("intera" if scenario == SCENARIO_FUORI_APP else
                    ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
         mode=mode, status=status, scenario=scenario,
-        chiusura_parziale=(scenario == CP.SCENARIO))
+        chiusura_parziale=(scenario == CP.SCENARIO),
+        scenario_proposte=(scenario if scenario in PM.SCENARI_CALCIO else None))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
