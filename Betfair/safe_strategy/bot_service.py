@@ -8121,6 +8121,28 @@ def _pubblica_stato(stats: dict, now_iso: str) -> None:
         logger.debug("[safe.bot] publish stato KO: %s", str(ex)[:120])
 
 
+def _avvia_esiti_ordini() -> bool:
+    """23/09 (``ESITI_ORDINI_CANALE``, spento di serie): il lettore degli esiti
+    degli ordini in coda. E' QUELLO di Omega (``omega_service.
+    avvia_esiti_ordini``): Safe risolve la coda con lo stesso
+    ``poll_flumine_pending``. Non solleva mai."""
+    os_mod = _omega_service()
+    if os_mod is None:
+        return False
+    try:
+        return bool(os_mod.avvia_esiti_ordini())
+    except Exception as ex:  # noqa: BLE001 - senza canale si lavora come prima
+        logger.warning("[safe.bot] esiti dal canale NON avviati: %s", str(ex)[:160])
+        return False
+
+
+def _esiti_ciclo() -> Any:
+    """Il lucchetto del ciclo degli esiti; contesto vuoto a interruttore spento."""
+    from Betfair.stream import esiti_ordini_canale as _EO
+
+    return _EO.ciclo()
+
+
 #: Ogni quanto si sbircia la coda mentre si aspetta il prossimo ciclo.
 #: Vale SOLO quando ci sono posizioni aperte, cioe' quando un clic e'
 #: davvero possibile: a banco vuoto non parte nemmeno una query in piu'.
@@ -8330,6 +8352,10 @@ def main() -> None:
     # comando: la richiesta vera resta la riga sul database).
     avvia_client_scan()
     installa_sveglia_canale()
+    # 23/09: gli esiti degli ordini in coda dal canale del runner (47331), con
+    # lo stesso lettore di Omega (stesso poll della coda). Interruttore
+    # ``ESITI_ORDINI_CANALE`` spento: non parte niente.
+    _avvia_esiti_ordini()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, il bot Safe
     # si ferma (e le 4 strategie tornano tutte in prova). Da qui in poi la
     # guardia e' attiva: finche' il controllo non riesce, ``run_once`` non apre
@@ -8372,8 +8398,11 @@ def main() -> None:
                         logger.warning("[safe.bot] update_params KO: %s", str(ex)[:160])
                 if model is None:
                     model = _build_model(opp_mod, params)
-                res = run_once(engine=engine, opp_model=model, opp_mod=opp_mod,
-                               engine_mod=engine_mod)
+                # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
+                # (lucchetto; contesto vuoto a interruttore spento).
+                with _esiti_ciclo():
+                    res = run_once(engine=engine, opp_model=model, opp_mod=opp_mod,
+                                   engine_mod=engine_mod)
                 if res.get("placed") or res.get("settled") or res.get("requests") \
                         or res.get("exits"):
                     logger.info("[safe.bot] ciclo: %s",

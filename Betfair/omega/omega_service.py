@@ -25,6 +25,7 @@ from Betfair.omega import omega_v3 as V3
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.stream import avvio_app as AA
+from Betfair.stream import esiti_ordini_canale as _EO
 from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
 from Betfair.stream.scores import scan_feed as _scan_feed
@@ -645,6 +646,59 @@ def avvia_client_scan() -> bool:
     except Exception as ex:  # noqa: BLE001 - senza canale si lavora come prima
         logger.warning("[omega] client del canale scan NON avviato: %s", str(ex)[:160])
         return False
+
+
+def _applica_esiti_dal_canale(rids: frozenset) -> int:
+    """L'applicatore degli esiti (``esiti_ordini_canale``): lo STESSO
+    ``poll_flumine_pending`` del ciclo, con gli stessi ``db``/``params``/
+    ``market`` dell'ultimo giro, ristretto alle richieste ``rids`` il cui esito
+    TERMINALE e' appena arrivato sul canale. Gira col lucchetto del ciclo."""
+    esiti = _EO.attiva()
+    ctx = esiti.contesto() if esiti is not None else None
+    if not ctx:
+        return 0       # nessun giro ancora fatto: ci pensa il primo poll
+    return poll_flumine_pending(db=ctx["db"], params=ctx.get("params"), now=_now(),
+                                market=ctx.get("market"), solo_rid=frozenset(rids))
+
+
+def avvia_esiti_ordini() -> bool:
+    """Accende il lettore degli esiti degli ordini (canale del runner 47331,
+    ``/lettore/order``). Interruttore ``ESITI_ORDINI_CANALE`` SPENTO di serie:
+    spento non apre niente, non parte nessun thread e il poll resta identico.
+    Non solleva MAI. Lo usano Omega e Safe (stesso poll della coda)."""
+    if _EO.istanza() is not None:
+        return True
+    if not _EO.acceso(_EO.ENV_ESITI):
+        return False
+    try:
+        esiti = _EO.EsitiOrdini(_applica_esiti_dal_canale)
+        if not esiti.avvia():
+            return False
+        _EO.registra(esiti)
+        logger.info("[omega] esiti degli ordini dal canale ATTIVI (%s): lo specchio "
+                    "terminale arriva dal runner, il database resta il ripiego.",
+                    esiti.client.url)
+        return True
+    except Exception as ex:  # noqa: BLE001 - senza canale si lavora come prima
+        logger.warning("[omega] esiti dal canale NON avviati: %s", str(ex)[:160])
+        return False
+
+
+def ferma_esiti_ordini() -> None:
+    """Spegne e dimentica il lettore degli esiti. Per i test e per il riavvio."""
+    esiti = _EO.istanza()
+    if esiti is not None:
+        try:
+            esiti.ferma()
+        except Exception:  # noqa: BLE001
+            pass
+    _EO.registra(None)
+
+
+def esiti_ciclo() -> Any:
+    """Il lucchetto del ciclo degli esiti (contesto vuoto a interruttore
+    spento): il loop lo tiene per tutto ``run_once``."""
+    return _EO.ciclo()
 
 
 def ferma_client_scan() -> None:
@@ -2552,6 +2606,7 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
             raise RuntimeError("enqueue rifiutato (rid nullo)")
         meta = dict(pre)
         meta["flumine_request_id"] = int(rid)
+        _EO.ricorda_richiesta(rid)  # 23/09: no-op a interruttore spento
         db.update_trade(trade_id, meta=meta)  # se fallisce: recovery via client_ref
         db.log("flumine_enqueue", {"trade_id": trade_id, "event_id": event_id,
                                    "request_id": int(rid), "price": price,
@@ -3025,7 +3080,8 @@ def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
 
 
 def poll_flumine_pending(*, db, params: Optional[dict[str, Any]] = None,
-                         now: datetime, market=None) -> int:
+                         now: datetime, market=None,
+                         solo_rid: Optional[frozenset] = None) -> int:
     """Risolve i trade 'pending' in attesa dell'esito dalla coda flumine
     (PAPER e LIVE). Ritorna quanti ne ha risolti (open/error/fallback/free).
 
@@ -3038,18 +3094,34 @@ def poll_flumine_pending(*, db, params: Optional[dict[str, Any]] = None,
     LIVE — il FOK vero lo esegue Betfair: qui si legge l'esito dallo specchio
     (order stream) e oltre ``live_fill_deadline_s`` si riconcilia via REST
     (bet_id) / si revoca la richiesta mai presa in carico. I pending LIVE SENZA
-    marker flumine restano territorio di ``reconcile_pending`` (legacy)."""
+    marker flumine restano territorio di ``reconcile_pending`` (legacy).
+
+    ESITI DAL CANALE (23/09, ``ESITI_ORDINI_CANALE``, SPENTO di serie): acceso,
+    lo specchio TERMINALE arriva dal canale del runner (47331, topic ``order``)
+    invece che da ``get_live_order_mirror`` - stesse funzioni a valle, una
+    lettura in meno; ogni altro caso legge il database come oggi. ``solo_rid``
+    lo passa SOLO l'applicatore degli esiti (``esiti_ordini_canale``): fa
+    avanzare soltanto le righe di quelle richieste, cosi' TTL e scadenze delle
+    altre restano alla cadenza del ciclo. Spento: nessuna istruzione diversa."""
     params = params or {}
+    esiti = _EO.attiva()
+    if esiti is not None and solo_rid is None:
+        esiti.ricorda_contesto(db=db, params=params, market=market)
     try:
         pendings = db.list_trades("pending")
     except Exception:  # noqa: BLE001 — lettura KO: riprova al prossimo ciclo
         return 0
+    if esiti is not None:
+        esiti.aggiorna_nostri(pendings)
+        db = esiti.db_con_specchio(db, pendings)
     n = 0
     for tr in pendings:
         meta = tr.get("meta") or {}
         mode = str(tr.get("mode"))
         if mode not in ("paper", "live"):
             continue
+        if solo_rid is not None and _EO.rid_del_trade(tr) not in solo_rid:
+            continue  # applicatore degli esiti: solo le richieste arrivate
         if mode == "live" and not (meta.get("flumine_request_id")
                                    or meta.get("flumine_client_ref")):
             continue  # pending live LEGACY: lo riconcilia reconcile_pending
@@ -7114,6 +7186,9 @@ def main() -> None:
     # 23/09: le righe dello scanner dal canale 47336. A interruttore
     # ``OMEGA_LEGGE_CANALE`` spento non parte niente e il feed resta sul DB.
     avvia_client_scan()
+    # 23/09: gli esiti degli ordini in coda dal canale del runner (47331). A
+    # interruttore ``ESITI_ORDINI_CANALE`` spento non parte niente.
+    avvia_esiti_ordini()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Omega si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).
@@ -7138,7 +7213,10 @@ def main() -> None:
                 # quando non ce ne sono ancora, valgono i default.
                 params = _ULTIMI_PARAMS or omega_config.resolve_params(None)
                 interval = int(params["poll_interval_s"])
-                result = run_once(score_lookup=score_lookup)
+                # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
+                # (lucchetto; contesto vuoto a interruttore spento).
+                with esiti_ciclo():
+                    result = run_once(score_lookup=score_lookup)
                 params = _ULTIMI_PARAMS or params
                 # RITMO ADATTIVO: il ciclo pieno solo quando qualcosa si muove da
                 # solo (posizione aperta, riconciliazione in sospeso, gamba ancora

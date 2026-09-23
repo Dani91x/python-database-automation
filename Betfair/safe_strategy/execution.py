@@ -744,6 +744,18 @@ def _gate(event_id: str, *, db, mode: str, params: dict[str, Any],
         return False, f"gate_error:{str(ex)[:80]}"
 
 
+def _ricorda_esito_atteso(rid: Any) -> None:
+    """23/09 (``ESITI_ORDINI_CANALE``): la richiesta appena accodata e' di
+    QUESTO bot, cosi' il suo esito terminale dal canale del runner viene
+    applicato subito. No-op a interruttore spento; non solleva mai."""
+    try:
+        from Betfair.stream import esiti_ordini_canale as _EO
+
+        _EO.ricorda_richiesta(rid)
+    except Exception:  # noqa: BLE001 - ricordare non ferma mai l'enqueue
+        pass
+
+
 def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_id: str,
                   selection_id: int, side: str, price: float, size: float,
                   base_meta: Optional[dict], now: datetime,
@@ -827,6 +839,7 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
             raise RuntimeError("enqueue rifiutato (rid nullo)")
         meta = dict(pre)
         meta["flumine_request_id"] = int(rid)
+        _ricorda_esito_atteso(rid)  # 23/09: no-op a interruttore spento
         db.update_trade(trade_id, meta=meta)
         db.log("flumine_enqueue", {"trade_id": trade_id, "event_id": event_id,
                                    "request_id": int(rid), "price": price,

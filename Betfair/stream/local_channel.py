@@ -31,6 +31,26 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_METHODS = frozenset({"order", "snapshot"})
 _MAX_QUEUE = 200  # anti-runaway: mai accumulare comandi all'infinito
+# LETTORI (23/09, esiti degli ordini): un client che si collega al percorso
+# ``/lettore/<topic>[,<topic>...]`` e' un LETTORE. Riceve SOLO i topic che ha
+# dichiarato, NON conta come "desktop collegato" (``is_active``) e non puo'
+# mandare comandi. Serve ai bot (Omega, Safe) che leggono gli esiti dei loro
+# ordini dal canale del runner: senza questa distinzione il loro socket
+# avrebbe acceso nel runner il ramo "desktop presente" (ladder su DB ogni 2 s,
+# board_worker con chiamate REST a Betfair, coda letta ogni secondo), cioe'
+# cambiato il comportamento del processo che gestisce i soldi solo per averlo
+# ascoltato. Un client su qualunque altro percorso resta quello di sempre.
+PREFISSO_LETTORE = "/lettore/"
+
+
+def topic_del_lettore(percorso: Any) -> Optional[frozenset]:
+    """I topic dichiarati da un lettore, o ``None`` se il percorso non e' da
+    lettore (client di sempre). ``/lettore/`` senza topic = lettore che non
+    riceve niente (frozenset vuoto): mai "tutto" per difetto."""
+    if not isinstance(percorso, str) or not percorso.startswith(PREFISSO_LETTORE):
+        return None
+    coda = percorso[len(PREFISSO_LETTORE):].split("?", 1)[0]
+    return frozenset(t.strip() for t in coda.split(",") if t.strip())
 # invii non ancora completati oltre i quali si smette di pubblicare: con pochi
 # client su 127.0.0.1 non ci si arriva mai, e se ci si arriva vuol dire che il
 # consumatore e' fermo — mandargli altra roba non lo aiuta.
@@ -90,6 +110,17 @@ class LocalChannel:
         # riceverli), push saltati per un singolo client indietro. Se si salta
         # LO SI DICE, non lo si assorbe.
         self._conti: Dict[str, int] = {"saltati": 0, "saltati_client": 0}
+        # LETTORI (23/09): ws -> topic dichiarati. Toccato SOLO dal thread del
+        # loop; ``_n_lettori`` (int) e ``_topic_lettori`` (frozenset, sostituito
+        # per intero) sono letti cross-thread, atomici in CPython come
+        # ``_n_clients``.
+        self._lettori: Dict[Any, frozenset] = {}
+        self._n_lettori = 0
+        self._topic_lettori: frozenset = frozenset()
+        # i client che NON sono lettori (desktop), in UNA sola assegnazione:
+        # ``is_active`` letto da un altro thread non vede mai uno stato a meta'
+        # fra l'aggiornamento dei client e quello dei lettori.
+        self._n_desktop = 0
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> bool:
@@ -120,7 +151,11 @@ class LocalChannel:
             self._started.set()
 
     async def _handler(self, ws: Any) -> None:
+        filtro = topic_del_lettore(getattr(getattr(ws, "request", None), "path", None))
         self._clients.add(ws)
+        if filtro is not None:
+            self._lettori[ws] = filtro
+        self._ricalcola_lettori()
         self._n_clients = len(self._clients)
         self._ricalcola_pronti()
         try:
@@ -132,8 +167,17 @@ class LocalChannel:
         finally:
             self._clients.discard(ws)
             self._in_volo_ws.pop(ws, None)
+            self._lettori.pop(ws, None)
+            self._ricalcola_lettori()
             self._n_clients = len(self._clients)
             self._ricalcola_pronti()
+
+    def _ricalcola_lettori(self) -> None:
+        """Conti dei lettori e dei desktop. SOLO dal thread del loop."""
+        self._topic_lettori = frozenset().union(*self._lettori.values()) \
+            if self._lettori else frozenset()
+        self._n_lettori = len(self._lettori)
+        self._n_desktop = sum(1 for w in self._clients if w not in self._lettori)
 
     def _ricalcola_pronti(self) -> None:
         """Quanti client possono ricevere adesso. SOLO dal thread del loop.
@@ -154,6 +198,13 @@ class LocalChannel:
             msg = json.loads(raw)
             method = str(msg.get("m") or "")
             msg_id = msg.get("id")
+            if ws in self._lettori:
+                # un LETTORE ascolta e basta: nessun comando, nessuna sveglia.
+                # Aggiungere un ascoltatore non deve mai aggiungere una via per
+                # mandare soldi.
+                self._send(ws, {"id": msg_id, "ok": False,
+                                "e": "lettore: nessun comando accettato"})
+                return
             if method == "sveglia":
                 # F6 (18/09): SOLO la sveglia. Esce PRIMA della coda dei comandi,
                 # non passa da ``_ALLOWED_METHODS`` e non porta parametri d'ordine:
@@ -215,8 +266,12 @@ class LocalChannel:
 
     # ------------------------------------------------------- API thread-safe
     def is_active(self) -> bool:
-        """True se almeno un client desktop è collegato."""
-        return self._n_clients > 0
+        """True se almeno un client desktop è collegato.
+
+        I LETTORI (23/09) non contano: un bot che ascolta gli esiti dei suoi
+        ordini non e' un desktop, e non deve accendere nel runner i rami
+        riservati al desktop presente."""
+        return self._n_desktop > 0
 
     def set_hello(self, **extra: Any) -> None:
         self._hello_extra.update(extra)
@@ -232,6 +287,7 @@ class LocalChannel:
         client agganciati, invii in volo. Se la coda cresce LO SI DICE, non lo
         si assorbe: e' il numero che la prova a secco di F1 deve leggere."""
         return {**self._conti, "client": self._n_clients,
+                "lettori": self._n_lettori,
                 "client_pronti": self._client_pronti, "in_volo": self._in_volo,
                 "porta": self.port, "solo_lettura": self.solo_lettura}
 
@@ -253,6 +309,10 @@ class LocalChannel:
         loop = self._loop
         if loop is None or self._n_clients == 0:
             return
+        if self._n_clients <= self._n_lettori and topic not in self._topic_lettori:
+            # solo lettori collegati e nessuno ha chiesto questo topic: niente
+            # da serializzare (23/09).
+            return
         if self._client_pronti <= 0:
             # nessuno puo' ricevere: si esce PRIMA di serializzare, come prima
             self._conti["saltati"] += 1
@@ -271,6 +331,9 @@ class LocalChannel:
 
         def _broadcast() -> None:
             for ws in list(self._clients):
+                filtro = self._lettori.get(ws)
+                if filtro is not None and topic not in filtro:
+                    continue          # lettore: solo i topic che ha chiesto
                 if self._in_volo_ws.get(ws, 0) > _MAX_INVII_IN_VOLO:
                     # SOLO questo client perde il giro: gli altri no
                     self._conti["saltati_client"] += 1
