@@ -319,7 +319,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                     {o.chiusura.prezzo == null ? (
                         <span className="text-orange-400">{DASH}</span>
                     ) : (
-                        <span className="font-mono font-semibold">
+                        <span className={`font-mono font-semibold ${pnlClass(o.chiusura.bloccabile)}`}>
                             {fmtMoney(o.chiusura.bloccabile, { signed: true })}
                         </span>
                     )}
