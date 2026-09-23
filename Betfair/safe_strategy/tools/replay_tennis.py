@@ -82,6 +82,7 @@ from .. import certificazione_tennis as CERT
 from .. import engine as E
 from .. import exits as XE
 from .. import risk as RK
+from ...stream.backtest import chiusura_parziale as CP
 from ...stream.backtest.banco_comune import DbMemoria, replay_evento
 
 logger = logging.getLogger(__name__)
@@ -381,6 +382,10 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                   "posizione: il bot lo DICHIARA "
                                   "(`ridotta_dall_utente`) e continua a proteggere "
                                   "il resto",
+    # 23/09 (cancello C3): posizione iniettata come `posizione-iniettata` (le
+    # uscite della Safe tennis sono l'unica chiusura che nasce su queste
+    # registrazioni) piu' il guasto del banco comune.
+    CP.SCENARIO: "posizione iniettata come `posizione-iniettata`, ma " + CP.DESCRIZIONE,
 }
 
 QUANTI_GUASTI = 3
@@ -494,7 +499,8 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     inietta = scenario in ("posizione-iniettata", "approvata-subito", "mai-approvata",
                            "bot-fermo", "riavvio", "esiti-ignoti",
                            "paper-iniettata", "uscita-ignota", "rifiuti-betfair",
-                           "chiusura-fuori-app", "chiusura-fuori-app-ridotta")
+                           "chiusura-fuori-app", "chiusura-fuori-app-ridotta",
+                           CP.SCENARIO)
     firma = _Stato(ref=ref, scenario=scenario, competizione=comp, inietta=inietta,
                    approva=(scenario == "approvata-subito"),
                    riavvia=(scenario == "riavvio"))
@@ -517,6 +523,11 @@ def certifica_evento(event_id: str, *, data_dir: str, scenario: str = "base",
     firma.fuori_app = ("intera" if scenario == "chiusura-fuori-app" else
                        ("ridotta" if scenario == "chiusura-fuori-app-ridotta"
                         else None))
+    if scenario == CP.SCENARIO:
+        # il RUOLO dell'ordine dalla riga che lo ha chiesto (`safe-t<id>`)
+        firma.guasto_cp = CP.GuastoChiusuraParziale(
+            ruolo=CP.ruolo_da_righe(lambda: db.trades))
+        firma.sorveglianza_cp = CP.Sorveglianza(firma.guasto_cp)
 
     def servizio(*, db, market, now, row, banco, strategia):  # noqa: A002
         orologio["now"] = now
@@ -711,6 +722,11 @@ class _Stato:
         self.fuori_app_fatta: Optional[Dict[str, Any]] = None
         # {event_id: istante} saputo dal REPLAY, non dal bot
         self.chiuso_dall_utente: Dict[str, float] = {}
+        # scenario `chiusura-abbinata-in-parte` (None in tutti gli altri): il
+        # guasto si aggancia al MOTORE del banco al primo giro, prima di ogni
+        # piazzamento (`market.motore` esiste solo dentro `replay_evento`)
+        self.guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
+        self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
 
     # ------------------------------------------------------------- un giro
     def giro(self, *, db, market, now, row, banco, strategia) -> None:
@@ -723,6 +739,10 @@ class _Stato:
                                      or self.settlement_abilitato)
         self._ora = now.timestamp()
         self.ref.tick += 1
+        if (self.guasto_cp is not None
+                and getattr(market, "motore", None) is not None
+                and market.motore.guasto_chiusure is None):
+            market.motore.guasto_chiusure = self.guasto_cp
         if self.guasti and not self._guasti_messi and not self.guasti_sull_uscita:
             market.guasti["place_exception"] = int(self.guasti)
             self._guasti_messi = True
@@ -841,6 +861,11 @@ class _Stato:
             {ref: market._riga(ref, o) for ref, o in market.ordini.items()},
             [str(x.get("ref") or "") for x in market.rifiutati],
             self.ref.sollecitati, oss.quando))
+        # I CONTROLLI CP (scenario chiusura-abbinata-in-parte)
+        if self.sorveglianza_cp is not None:
+            for cod, reg, det in self.sorveglianza_cp.verifica(
+                    CP.credenze_da_righe(db.trades), self.ref.sollecitati):
+                self.ref.violazioni.append(CERT.Violazione(cod, reg, det, oss.quando))
         CERT.osserva(self.ref.andamento, oss)
         if valutazione is not None:
             self.motivi[self._motivo(valutazione)] += 1
@@ -1105,6 +1130,8 @@ class _Stato:
         ref.azioni = len(self._refs_visti)
         note = ref.note
         note.append(f"scenario: {self.scenario} — {SCENARI_DESCRITTI.get(self.scenario, '')}")
+        if self.guasto_cp is not None:
+            note.append(self.guasto_cp.riepilogo())
         note.append(f"competizione dichiarata: {self.competizione!r} "
                     f"(il raw dello stream NON la contiene: limite 1 del banco)")
         if db is not None:

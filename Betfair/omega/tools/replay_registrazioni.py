@@ -98,6 +98,7 @@ from ...stream.backtest.banco_comune import (
     assicura_middleware_simulato, carica_punteggi, cliente_simulato,
     nomi_dal_punteggio, simulazione_flumine,
 )
+from ...stream.backtest import chiusura_parziale as CP
 from ...stream.scores import scan_feed as SF
 
 logger = logging.getLogger(__name__)
@@ -1052,6 +1053,17 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # il replay — quindi nessun controllo puo' accorgersi se qualcuno smettesse
     # di leggerlo. E' la condizione che K2 esiste per giudicare.
     "rifiuti-betfair": dict(_APRE),
+    # ---- CHIUSURA ABBINATA IN PARTE (23/09, cancello C3) -------------------
+    # Stessi parametri di `cashout-globale`, che su queste registrazioni e'
+    # l'unico scenario in cui Omega ha una gamba di CHIUSURA vera (la lay del
+    # 1T chiusa con una back dal percorso `cashout` del servizio): col green-up
+    # automatico in `hold` e le proposte che non nascono, altrove non si chiude
+    # mai. In piu' il guasto del banco comune
+    # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima chiusura su
+    # ogni selezione trova il mercato sottile. La chiusura di Omega e' un FOK
+    # REST senza `minFillSize` (`execution.close_trade` -> `place_order_live`):
+    # tutto o niente, quindi il 40 % non basta e muore per intero.
+    CP.SCENARIO: dict(_APRE),
 }
 
 SCENARI_DESCRITTI: Dict[str, str] = {
@@ -1114,6 +1126,8 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                         "(ordine con un ref suo, fuori dall'app): il bot lo "
                         "scopre dalla POSIZIONE DI CONTO e smette di gestire "
                         "quella partita (E5, reperto R9)",
+    CP.SCENARIO: "CONDOTTA (motore di DEFAULT): come `cashout-globale` (l'utente "
+                 "chiude a mano tutte le gambe), ma " + CP.DESCRIZIONE,
 }
 
 QUANTI_GUASTI = 2
@@ -1213,6 +1227,9 @@ def _crea_strategia():
             self.fuori_app_giro: Optional[int] = None
             self.fuori_app_dettaglio: Dict[str, Any] = {}
             self.fuori_app_ordini: List[Any] = []
+            # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
+            # banco comune (None in tutti gli altri scenari)
+            self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
             # LE PROPOSTE DI USCITA (17/09): il trader firma, e si tiene conto
             # di che fine fa ogni firma (G3).
             self.firma_proposte = bool(firma_proposte)
@@ -1430,6 +1447,13 @@ def _crea_strategia():
             rifiutati = {str(x.get("ref") or "") for x in self.mercato.rifiutati}
             self.referto.violazioni.extend(CERT.verifica_consapevolezza(
                 self.db.trades, ordini, rifiutati, self.referto.sollecitati))
+            # I CONTROLLI CP (scenario chiusura-abbinata-in-parte): Omega copre
+            # con `execution.apply_hedge_state`, lo schema delle righe e' quello
+            # di `omega_trades` (stesse colonne della Safe)
+            if self.sorveglianza_cp is not None:
+                for cod, reg, det in self.sorveglianza_cp.verifica(
+                        CP.credenze_da_righe(self.db.trades), self.referto.sollecitati):
+                    self.referto.violazioni.append(CERT.Violazione(cod, reg, det))
 
         def _osserva(self, m: CERT.Momento) -> None:
             self.referto.violazioni.extend(CERT.verifica(m, self.referto.sollecitati))
@@ -1951,7 +1975,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       chiude_fuori_app: bool = False, firma_proposte: bool = False,
                       ogni_ms: int = 0, invecchia_s: float = 0.0,
                       guasti: int = 0, rifiuti: int = 0,
-                      riavvia: bool = False) -> CERT.Referto:
+                      riavvia: bool = False,
+                      chiusura_parziale: bool = False) -> CERT.Referto:
     """Fa rivivere a Omega una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -2017,6 +2042,14 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
+    if chiusura_parziale:
+        # il RUOLO dell'ordine si legge dalla riga che lo ha chiesto
+        # (`omega-t<id>` / `omega-m<id>`, `closes_trade_id` sulle chiusure)
+        guasto_cp = CP.GuastoChiusuraParziale(
+            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades))
+        motore.guasto_chiusure = guasto_cp
+        strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
     with AmbienteOmega(strategia.mercato, feed, banco), Sonde(strategia):
         motore.esegui(strategia)
         # a partita finita il servizio NON si ferma: e' li' che regola (§6, I3)
@@ -2029,6 +2062,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     out.violazioni.extend(CERT.difetti_di_progettazione(
         out.andamento, ordini_piazzati=out.ordini_piazzati,
         righe_scritte=out.righe_scritte))
+    if guasto_cp is not None:
+        out.note.append(guasto_cp.riepilogo())
     return out
 
 
@@ -2304,13 +2339,14 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         event_id, data_dir=data_dir, params=par, mode=mode, status=status,
         goal=goal, ferma_su_posizione=(scenario in ("bot-fermo", "v4-bot-fermo")),
         lay_manuale=(scenario == "manuale-e-bot"),
-        cashout_globale=(scenario == "cashout-globale"),
+        cashout_globale=(scenario in ("cashout-globale", CP.SCENARIO)),
         chiude_fuori_app=(scenario == "chiuso-fuori-app"),
         firma_proposte=(scenario == "proposta-approvata"),
         ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
         guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),
         rifiuti=(QUANTI_GUASTI if scenario == "rifiuti-betfair" else 0),
-        riavvia=(scenario in ("riavvio", "v4-riavvio")))
+        riavvia=(scenario in ("riavvio", "v4-riavvio")),
+        chiusura_parziale=(scenario == CP.SCENARIO))
     ref.note.insert(0, f"scenario '{scenario}': {SCENARI_DESCRITTI.get(scenario, '-')}")
     if scenario == "manuale-e-bot":
         quante = int(ref.sollecitati.get("E3") or 0)

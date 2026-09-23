@@ -69,9 +69,54 @@ def esito_del_banco(referti: List[Any]) -> Tuple[int, int, int, int]:
     """
     tot = sum(len(violazioni_effettive(r)) for r in referti)
     pulite = sum(1 for r in referti if r.pulita and r.decisioni > 0)
-    mute = sum(1 for r in referti if r.decisioni == 0)
+    # MUTA = nessuna decisione E nessuna violazione. Un replay ESPLOSO ha zero
+    # decisioni ma porta la sua violazione `BANCO-ESPLOSO`: non e' muto, e' rotto
+    # (23/09), e va contato fra quelli con violazioni.
+    mute = sum(1 for r in referti if r.decisioni == 0 and not violazioni_effettive(r))
     exit_code = 0 if tot == 0 else 1
     return tot, pulite, mute, exit_code
+
+
+# ---------------------------------------------------------------------------
+# il replay ESPLOSO non e' un replay muto (23/09)
+# ---------------------------------------------------------------------------
+# Fino al 23/09 un replay che sollevava diventava in `_lavora` un referto VUOTO
+# con una nota, cioe' zero decisioni: `esito_del_banco` lo contava fra i «muti»
+# e l'exit code restava 0. Stessa cosa per la registrazione mai letta (il replay
+# lanciato da un worktree senza `--data-dir`: NO_RAW, tick 0, «OK» falso — la
+# lezione del 18/09 in CRONOSTORIA). Adesso sono una VIOLAZIONE esplicita, con
+# il suo codice, la sua riga nel referto e nel diario, ed exit code 1.
+CODICE_ESPLOSO = "BANCO-ESPLOSO"
+REGOLA_ESPLOSO = ("un replay che esplode (eccezione) o che non legge nemmeno un tick "
+                  "(registrazione assente o illeggibile, NO_RAW) non e' un replay: e' "
+                  "un guasto del banco, mai un OK muto (lezione del 18/09)")
+_NOTE_DI_REGISTRAZIONE_MANCANTE = ("registrazione assente", "non si e' istanziato",
+                                   "nessun MATCH_ODDS nel raw")
+
+
+def diagnosi_esplosione(r: Any) -> Optional[str]:
+    """Il MOTIVO per cui un referto e' di un replay esploso, o None."""
+    note = [str(n) for n in (getattr(r, "note", None) or [])]
+    for n in note:
+        if n.startswith("replay fallito:"):
+            return n
+    if int(getattr(r, "tick", 0) or 0) == 0 and int(getattr(r, "decisioni", 0) or 0) == 0:
+        causa = next((n for n in note if any(k in n for k in _NOTE_DI_REGISTRAZIONE_MANCANTE)),
+                     None)
+        return ("nessun tick e nessuna decisione: la registrazione non e' stata letta "
+                "(NO_RAW / --data-dir sbagliato?)" + (f" - {causa}" if causa else ""))
+    return None
+
+
+def segna_esplosione(r: Any, cert: Any) -> Optional[str]:
+    """Se il replay e' esploso, lo DICE: aggiunge UNA violazione `BANCO-ESPLOSO`
+    (con la `Violazione` del modulo di controlli del bot: le prime tre chiavi
+    sono le stesse in tutti) e torna il motivo."""
+    motivo = diagnosi_esplosione(r)
+    if motivo and not any(getattr(v, "codice", "") == CODICE_ESPLOSO
+                          for v in r.violazioni):
+        r.violazioni.append(cert.Violazione(CODICE_ESPLOSO, REGOLA_ESPLOSO, motivo))
+    return motivo
 
 
 # ---------------------------------------------------------------------------
@@ -178,8 +223,15 @@ def _lavora(compito: tuple) -> Any:
         r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
                              ogni_ms=ogni_ms, campioni_diff=campioni_diff)
     except Exception as ex:  # noqa: BLE001 — un replay che esplode E' un referto
+        import traceback
+
         r = CERT.Referto(event_id=ev)
-        r.note.append(f"replay fallito: {type(ex).__name__}: {ex}")
+        dove = traceback.extract_tb(ex.__traceback__)[-1] if ex.__traceback__ else None
+        r.note.append(f"replay fallito: {type(ex).__name__}: {ex}"
+                      + (f" (in {os.path.basename(dove.filename)}:{dove.lineno})"
+                         if dove else ""))
+        # la violazione la mette `main` (`segna_esplosione`), una volta sola:
+        # anche un replay che NON solleva ma non legge niente e' esploso
     # la memoria viaggia A PARTE, non dentro il referto: il referto deve restare
     # IDENTICO a quello in serie, e il picco di un processo cambia da giro a giro
     return r, picco_memoria_mb()
@@ -437,12 +489,16 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"resta nello stesso ordine)")
         print()
     picchi: List[float] = []
+    esplosi: List[str] = []
     risultati = _esegui_compiti(compiti, processi, picchi)
     for sc in scelti:
         for ev in eventi:
             r = next(risultati)
             if len(scelti) > 1:
                 r.event_id = f"{ev} [{sc}]"
+            esploso = segna_esplosione(r, CERT)
+            if esploso:
+                esplosi.append(f"{r.event_id}: {esploso}")
             referti.append(r)
             for cod, n in r.sollecitati.items():
                 sollecitati_tot[cod] = sollecitati_tot.get(cod, 0) + n
@@ -495,13 +551,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"ESITO: {pulite} partite senza violazioni, "
           f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
     print(f"       {tot} violazioni totali")
+    if esplosi:
+        print(f"!! REPLAY ESPLOSI: {len(esplosi)} (contati come violazioni "
+              f"{CODICE_ESPLOSO}, exit code 1):")
+        for riga in esplosi:
+            print(f"     {riga}")
     print()
     print("COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:")
     for cod, reg in CERT.elenco_controlli():
         n = sollecitati_tot.get(cod, 0)
         segno = "  " if n else "??"
         print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
-    mai = CERT.mai_sollecitati(sollecitati_tot)
+    mai = list(CERT.mai_sollecitati(sollecitati_tot))
+    # I CONTROLLI DEL BANCO COMUNE (famiglia CP, scenario
+    # `chiusura-abbinata-in-parte`): non stanno nel modulo di controlli del bot
+    # perche' valgono per TUTTI; si contano qui, con la stessa regola del «non
+    # lo so», solo se lo scenario e' stato eseguito.
+    from . import chiusura_parziale as CPZ
+
+    if CPZ.SCENARIO in scelti:
+        print("  -- controlli del banco comune, scenario "
+              f"{CPZ.SCENARIO}:")
+        for cod, reg in CPZ.elenco_controlli():
+            n = sollecitati_tot.get(cod, 0)
+            segno = "  " if n else "??"
+            print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
+            if not n:
+                mai.append((cod, reg))
     if mai:
         print()
         print(f"?? MAI SOLLECITATI: {len(mai)} controlli su "

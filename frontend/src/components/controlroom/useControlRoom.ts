@@ -28,7 +28,7 @@ import {
 import {
     fetchSafeState, fetchRunnerState, requestSafe, tradeExposureNow,
     cashOutEvento as cashOutEventoSafe, riprendiEventoSafe,
-    type SafeState, type SafeRiskStats, type RunnerState,
+    type SafeState, type SafeRiskStats, type RunnerState, type SafeTrade,
 } from '@/lib/safeBot';
 import {
     eventiChiusiDalleRighe, type StatoChiusuraEvento,
@@ -38,7 +38,12 @@ import {
     ignoraPropostaOmega, ordinaProposteOmega, type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
 import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
-import { fetchMikeState, type MikeEvent, type MikeStateView } from '@/lib/mike';
+import { fetchMikeState, type MikeEvent, type MikeStateView, type MikeTrade } from '@/lib/mike';
+import {
+    mappaVuota, applicaBloccoDb, applicaMessaggioCanale, leggiMessaggioRiga,
+    righeDi, etaRiga as etaRigaDi, ultimeNotizie,
+    type MappaRighe, type FonteRiga,
+} from '@/lib/righeCanale';
 import { getLocalChannel, svegliaBot, type LocalStatus } from '@/lib/localChannel';
 import { fetchMissions } from '@/lib/omegaMissions';
 import {
@@ -474,6 +479,40 @@ function chiaviComposte<T extends { id: number; closes_trade_id?: number | null 
     }));
 }
 
+// ------------------------------------------ C6 b: righe per riga dal canale
+
+/** Una riga di posizione di Omega/Safe/Mike (la riga della SUA tabella). */
+type RigaPosizioneBot = OmegaTrade | SafeTrade | MikeTrade;
+/** Una proposta di Safe (`safe_strategy_requests`) o di Omega (`get_omega_proposte`). */
+type RigaPropostaBot = PropostaChiusura | PropostaUscitaOmega;
+
+/**
+ * Una proposta e' ancora da mostrare? Le letture del database portano SOLO le
+ * 'proposed' (Safe: filtro della SELECT; Omega: la RPC non porta nemmeno la
+ * colonna `status`). Un messaggio del canale porta invece la riga intera, e
+ * una proposta decaduta ('rejected') o approvata ('pending') deve sparire.
+ */
+function propostaViva(p: RigaPropostaBot): boolean {
+    const st = (p as { status?: unknown }).status;
+    return st === undefined || st === null || st === 'proposed';
+}
+
+/**
+ * I topic per riga dei tre canali dei bot, copiati da
+ * `Betfair/stream/canale_bot.py` (`TOPIC`). Safe ha DUE topic di posizione:
+ * lo sport della riga deve coincidere con quello del topic (fail-closed).
+ */
+const TOPIC_POSIZIONI: readonly { bot: 'omega' | 'safe' | 'mike'; topic: string; sport?: 'calcio' | 'tennis' }[] = [
+    { bot: 'omega', topic: 'omega_posizioni' },
+    { bot: 'safe', topic: 'safe_posizioni_calcio', sport: 'calcio' },
+    { bot: 'safe', topic: 'safe_posizioni_tennis', sport: 'tennis' },
+    { bot: 'mike', topic: 'mike_posizioni' },
+];
+const TOPIC_PROPOSTE: readonly { bot: 'omega' | 'safe'; topic: string }[] = [
+    { bot: 'omega', topic: 'omega_proposta' },
+    { bot: 'safe', topic: 'safe_proposta' },
+];
+
 /** Una proposta con accanto il presente: prezzo e liquidità di ADESSO. */
 export interface PropostaVista {
     proposta: PropostaChiusura;
@@ -716,6 +755,21 @@ export interface ControlRoomVM {
      * sempre «database», nessuna differenza a schermo.
      */
     fonteScan: 'locale' | 'database';
+    /**
+     * C6 b (23/09) - per Omega, Safe e Mike: da dove arriva ADESSO l'ultima
+     * notizia sulle loro righe (posizioni e proposte) e quanti secondi ha.
+     * "locale" = un messaggio per riga del canale, piu' fresco dell'ultima
+     * lettura del database, sta sovrapponendo almeno una riga; altrimenti
+     * "database" con l'eta' dell'ultima lettura. `etaS` null = mai letto.
+     * Con i canali muti (interruttori `*_CANALE_POSIZIONI` spenti) resta
+     * sempre "database".
+     */
+    fonteRighe: Record<'omega' | 'safe' | 'mike', { fonte: FonteRiga; etaS: number | null }>;
+    /**
+     * C6 b - eta' e fonte di UNA posizione (chiave bot+id). `null` = riga
+     * sconosciuta alla mappa (mai letta dal database).
+     */
+    etaRiga: (bot: 'omega' | 'safe' | 'mike', id: number) => { fonte: FonteRiga; etaS: number } | null;
 
     ricarica: () => void;
 }
@@ -733,14 +787,19 @@ export function useControlRoom(): ControlRoomVM {
     const [ultimoScanLocaleMs, setUltimoScanLocaleMs] = useState<number | null>(null);
     const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
     const [omega, setOmega] = useState<OmegaState | null>(null);
-    const [omegaTrades, setOmegaTrades] = useState<OmegaTrade[]>([]);
-    const [safe, setSafe] = useState<SafeState | null>(null);
+    // C6 b (23/09) - LE RIGHE DEI BOT IN UNA MAPPA PER RIGA (`lib/righeCanale.ts`),
+    // chiave composta bot+id. La alimentano i blocchi del database (come prima,
+    // stesso giro di 30 s, nessuna lettura in piu') e i messaggi per riga dei
+    // canali locali (`*_posizioni`, `*_proposta`), solo se piu' freschi. Con il
+    // canale muto la mappa restituisce le STESSE righe del blocco: parita'.
+    // `safeDb`/`mikeDb` restano il blocco intero (control, aggregati...): le
+    // loro `trades` si leggono dalla mappa (v. `safe`/`mike` piu' sotto).
+    const [righePos, setRighePos] = useState<MappaRighe<RigaPosizioneBot>>(() => mappaVuota());
+    const [safeDb, setSafe] = useState<SafeState | null>(null);
     const [runner, setRunner] = useState<RunnerState | null>(null);
-    const [proposte, setProposte] = useState<PropostaChiusura[]>([]);
-    /** le proposte di uscita di OMEGA (migrazione `omega_proposte_uscita`):
-     *  finche' non e' applicata la RPC non esiste e l'elenco resta vuoto,
-     *  con il motivo dichiarato in `erroreProposteOmega`. */
-    const [proposteOmega, setProposteOmega] = useState<PropostaUscitaOmega[]>([]);
+    /** le proposte di Safe (`safe_strategy_requests`) e di Omega
+     *  (`get_omega_proposte`), nella stessa mappa per riga: chiave bot+id. */
+    const [righeProp, setRigheProp] = useState<MappaRighe<RigaPropostaBot>>(() => mappaVuota());
     const [erroreProposteOmega, setErroreProposteOmega] = useState<string | null>(null);
     /** istante dell'ultima lettura completa dal database: serve a dire al
      *  trader quanto è vecchio quello che vede, non quanto è vecchio il feed. */
@@ -769,7 +828,29 @@ export function useControlRoom(): ControlRoomVM {
      *  una spia che mente e peggio di una spia assente. */
     const [registrazioni, setRegistrazioni] = useState<Set<string>>(new Set());
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
-    const [mike, setMike] = useState<MikeStateView | null>(null);
+    const [mikeDb, setMike] = useState<MikeStateView | null>(null);
+
+    // C6 b - LE VISTE DALLA MAPPA PER RIGA, con i nomi di sempre: tutto cio'
+    // che sta sotto (soldi, posizioni, operazioni, chiuse, proposte) legge
+    // queste, senza sapere se la riga e' arrivata dal database o dal canale.
+    const omegaTrades = useMemo(
+        () => righeDi(righePos, 'omega') as OmegaTrade[], [righePos]);
+    const safe = useMemo<SafeState | null>(
+        () => (safeDb ? { ...safeDb, trades: righeDi(righePos, 'safe') as SafeTrade[] } : null),
+        [safeDb, righePos]);
+    const mike = useMemo<MikeStateView | null>(
+        () => (mikeDb ? { ...mikeDb, trades: righeDi(righePos, 'mike') as MikeTrade[] } : null),
+        [mikeDb, righePos]);
+    // una proposta resta in elenco finche' e' 'proposed': le righe del
+    // database lo sono per costruzione (filtro della lettura; quelle di Omega
+    // non portano `status`), un messaggio del canale con la proposta decaduta
+    // o approvata la toglie subito, senza aspettare la rilettura.
+    const proposte = useMemo(
+        () => (righeDi(righeProp, 'safe') as PropostaChiusura[]).filter(propostaViva),
+        [righeProp]);
+    const proposteOmega = useMemo(
+        () => (righeDi(righeProp, 'omega') as PropostaUscitaOmega[]).filter(propostaViva),
+        [righeProp]);
 
     const [caricamento, setCaricamento] = useState(true);
     const [errore, setErrore] = useState<string | null>(null);
@@ -814,6 +895,10 @@ export function useControlRoom(): ControlRoomVM {
         // risposta vecchia non sovrascriva una nuova.
         giroCorrente.current += 1;
         const mioGiro = giroCorrente.current;
+        // C6 b - l'istante in cui la lettura PARTE: un messaggio del canale
+        // pubblicato prima e' gia' dentro il blocco (il bot pubblica DOPO la
+        // scrittura), uno pubblicato dopo puo' essere piu' fresco del blocco.
+        const lettoMs = Date.now();
         Promise.allSettled([
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
@@ -847,11 +932,25 @@ export function useControlRoom(): ControlRoomVM {
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
-            if (rOmegaT.status === 'fulfilled') setOmegaTrades(rOmegaT.value);
-            if (rSafe.status === 'fulfilled') setSafe(rSafe.value);
-            if (rMike.status === 'fulfilled') setMike(rMike.value);
+            if (rOmegaT.status === 'fulfilled') {
+                const v = rOmegaT.value;
+                setRighePos((p) => applicaBloccoDb(p, 'omega', v ?? [], lettoMs));
+            }
+            if (rSafe.status === 'fulfilled') {
+                const v = rSafe.value;
+                setSafe(v);
+                setRighePos((p) => applicaBloccoDb(p, 'safe', v.trades ?? [], lettoMs));
+            }
+            if (rMike.status === 'fulfilled') {
+                const v = rMike.value;
+                setMike(v);
+                setRighePos((p) => applicaBloccoDb(p, 'mike', v.trades ?? [], lettoMs));
+            }
             if (rRunner.status === 'fulfilled') setRunner(rRunner.value);
-            if (rProp.status === 'fulfilled') setProposte(rProp.value);
+            if (rProp.status === 'fulfilled') {
+                const v = rProp.value;
+                setRigheProp((p) => applicaBloccoDb(p, 'safe', v ?? [], lettoMs));
+            }
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
@@ -1003,6 +1102,34 @@ export function useControlRoom(): ControlRoomVM {
         return () => { for (const c of chiusure) c(); };
     }, []);
 
+    // ------------------------------------------- C6 b: righe dai canali locali
+    // I MESSAGGI PER RIGA di Omega (47334), Safe (47335) e Mike (47333): la
+    // riga appena scritta dal bot, con la busta `fonte`/`_seq`/`_pubblicato_ms`
+    // (`Betfair/stream/canale_bot.py`). Stesso singleton `getLocalChannel` gia'
+    // usato sopra per `*_stato` e da `svegliaBot`: nessun socket nuovo. Un
+    // messaggio si applica SOLO a una riga gia' nota al database e SOLO se piu'
+    // fresco (`lib/righeCanale.ts`); scartato = stesso stato, nessun render.
+    useEffect(() => {
+        const chiusure: (() => void)[] = [];
+        for (const { bot, topic, sport } of TOPIC_POSIZIONI) {
+            chiusure.push(getLocalChannel(bot).subscribe(topic, (d) => {
+                const msg = leggiMessaggioRiga(d);
+                if (!msg) return;
+                const ricevutoMs = Date.now();
+                setRighePos((p) => applicaMessaggioCanale(p, bot, msg, ricevutoMs, sport));
+            }));
+        }
+        for (const { bot, topic } of TOPIC_PROPOSTE) {
+            chiusure.push(getLocalChannel(bot).subscribe(topic, (d) => {
+                const msg = leggiMessaggioRiga(d);
+                if (!msg) return;
+                const ricevutoMs = Date.now();
+                setRigheProp((p) => applicaMessaggioCanale(p, bot, msg, ricevutoMs));
+            }));
+        }
+        return () => { for (const c of chiusure) c(); };
+    }, []);
+
     // --------------------------------------------------- conto Betfair (R4)
     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
     // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
@@ -1022,7 +1149,10 @@ export function useControlRoom(): ControlRoomVM {
     // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
     // prezzo su cui il bot ha deciso non c'e' piu'.
     useEffect(() => subscribeProposte(() => {
-        fetchProposte().then(setProposte).catch(() => { /* il giro di ricarica riprova */ });
+        const lettoMs = Date.now();
+        fetchProposte()
+            .then((v) => setRigheProp((p) => applicaBloccoDb(p, 'safe', v ?? [], lettoMs)))
+            .catch(() => { /* il giro di ricarica riprova */ });
     }), []);
 
     // ------------------------------------------ proposte di OMEGA in realtime
@@ -1031,10 +1161,14 @@ export function useControlRoom(): ControlRoomVM {
     // (la RPC non esiste): il motivo si DICHIARA, non si nasconde.
     useEffect(() => {
         const leggi = () => {
+            const lettoMs = Date.now();
             fetchProposteOmega()
-                .then((r) => { setProposteOmega(r); setErroreProposteOmega(null); })
+                .then((r) => {
+                    setRigheProp((p) => applicaBloccoDb(p, 'omega', r ?? [], lettoMs));
+                    setErroreProposteOmega(null);
+                })
                 .catch((e: unknown) => {
-                    setProposteOmega([]);
+                    setRigheProp((p) => applicaBloccoDb(p, 'omega', [], lettoMs));
                     setErroreProposteOmega(e instanceof Error ? e.message : String(e));
                 });
         };
@@ -1648,7 +1782,11 @@ export function useControlRoom(): ControlRoomVM {
         }), [proposte, feedPerEvento, nowMs, tuttiIPayloadOggi]);
 
     const ricaricaProposte = useCallback(async () => {
-        try { setProposte(await fetchProposte()); } catch { /* il giro riprova */ }
+        const lettoMs = Date.now();
+        try {
+            const v = await fetchProposte();
+            setRigheProp((p) => applicaBloccoDb(p, 'safe', v ?? [], lettoMs));
+        } catch { /* il giro riprova */ }
     }, []);
 
     /**
@@ -1704,11 +1842,13 @@ export function useControlRoom(): ControlRoomVM {
     }, [ricaricaProposte]);
 
     const ricaricaProposteOmega = useCallback(async () => {
+        const lettoMs = Date.now();
         try {
-            setProposteOmega(await fetchProposteOmega());
+            const v = await fetchProposteOmega();
+            setRigheProp((p) => applicaBloccoDb(p, 'omega', v ?? [], lettoMs));
             setErroreProposteOmega(null);
         } catch (e) {
-            setProposteOmega([]);
+            setRigheProp((p) => applicaBloccoDb(p, 'omega', [], lettoMs));
             setErroreProposteOmega(e instanceof Error ? e.message : String(e));
         }
     }, []);
@@ -2061,6 +2201,23 @@ export function useControlRoom(): ControlRoomVM {
         ? null : Math.max(0, Math.round((nowMs - ultimoScanLocaleMs) / 1000));
     const fonteScan: 'locale' | 'database' = freschezza(fonteScanEtaS) === 'fresca' ? 'locale' : 'database';
 
+    // C6 b - fonte ed eta' delle righe per bot (posizioni + proposte)
+    const fonteRighe = useMemo(() => {
+        const di = (bot: 'omega' | 'safe' | 'mike'): { fonte: FonteRiga; etaS: number | null } => {
+            const { canaleMs, dbMs } = ultimeNotizie([righePos, righeProp], bot);
+            const locale = canaleMs != null && (dbMs == null || canaleMs > dbMs);
+            const at = locale ? canaleMs : dbMs;
+            return {
+                fonte: locale ? 'locale' : 'database',
+                etaS: at == null ? null : Math.max(0, Math.round((nowMs - at) / 1000)),
+            };
+        };
+        return { omega: di('omega'), safe: di('safe'), mike: di('mike') };
+    }, [righePos, righeProp, nowMs]);
+    const etaRiga = useCallback(
+        (bot: 'omega' | 'safe' | 'mike', id: number) => etaRigaDi(righePos, bot, id, nowMs),
+        [righePos, nowMs]);
+
     return {
         caricamento, errore, nowMs,
         giornata, totali,
@@ -2090,6 +2247,8 @@ export function useControlRoom(): ControlRoomVM {
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),
         fonteScan,
+        fonteRighe,
+        etaRiga,
         ricarica,
     };
 }

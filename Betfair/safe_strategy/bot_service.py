@@ -38,6 +38,7 @@ iniettati → ciclo verificabile con fake, senza Betfair né Supabase.
 """
 from __future__ import annotations
 
+import copy
 import difflib
 import hashlib
 import json
@@ -7096,7 +7097,15 @@ def avvia_client_scan() -> bool:
         from Betfair.safe_strategy import canale_scan as CS
 
         cache = CS.CacheScan()
-        client = CS.ClientScan(CS.porta_scan(), cache)
+        # C6 a (23/09): con ``SAFE_BOT_GIRO_VELOCE`` acceso la riga nuova di
+        # una partita con posizione viva alza la sveglia del PREZZO (giro
+        # veloce, solo memoria). Spento, il client e' quello di F4: nessuna
+        # riga sveglia nessuno.
+        sveglia_prezzo: dict[str, Any] = {}
+        if _giro_veloce_acceso():
+            sveglia_prezzo = {"evento": _PREZZO_NUOVO,
+                              "interessa": interessa_al_giro_veloce}
+        client = CS.ClientScan(CS.porta_scan(), cache, **sveglia_prezzo)
         client.avvia()
         _CANALE_SCAN["cache"] = cache
         _CANALE_SCAN["client"] = client
@@ -7198,6 +7207,353 @@ def _leggi_righe_scan(db: Any, now_ts: float) -> tuple[list[dict[str, Any]], str
     _CANALE_SCAN["fonte"] = fonte
     _CANALE_SCAN["dal_canale"] = dal_canale
     return righe, fonte
+
+
+# ===========================================================================
+# C6 a (23/09) - IL GIRO VELOCE: si valuta la riga fresca, si agisce nel lento
+# ===========================================================================
+# IL PROBLEMA (referto F4, par.8): un giro svegliato dal canale era un
+# ``run_once`` INTERO. Con una sveglia a ogni quota diventava fino a 8 volte le
+# letture di oggi: la forma esatta del guasto del 13/09 (budget IO esaurito).
+#
+# LA DIVISIONE, in due giri:
+#   * GIRO LENTO = ``run_once``, alla cadenza di oggi, con le 12 sotto-fasi
+#     nello STESSO ordine e con le STESSE letture. E' l'unico che legge il
+#     database e l'unico che AGISCE (ordini, cash out, proposte, scritture).
+#     Alla fine lascia in memoria una FOTOGRAFIA di cio' che ha visto
+#     (``_fotografa_giro_lento``): posizioni vive, righe di scan, parametri.
+#   * GIRO VELOCE = ``run_giro_veloce``, a ogni sveglia dal canale (quota
+#     nuova su una partita con una posizione viva). NON riceve nemmeno un
+#     ``db`` o un ``market``: per costruzione non puo' leggere ne' scrivere ne'
+#     piazzare. Confronta le righe fresche del canale con la fotografia e
+#     risponde a UNA domanda: "il giro lento, se girasse adesso, avrebbe
+#     qualcosa di NUOVO da fare?" (un'uscita diventata dovuta, un punteggio
+#     cambiato su una partita con posizione: la corsia calda). Se si', il
+#     giro lento si ANTICIPA; se no, non succede niente.
+#
+# PERCHE' IL VELOCE NON AGISCE MAI DA SOLO (il vincolo del commento sulla
+# corsia preferenziale in ``run_once``): ogni azione su una posizione passa da
+# letture che la rendono VERA - ``poll_flumine`` e ``reconcile_pending`` prima
+# di tutto, poi ``close_trade`` (che rilegge la riga e le chiusure in volo),
+# ``_persist_exit_request`` (``get_trade``), ``_traded_keys`` (il doppio
+# ingresso si rilegge SEMPRE). Un veloce che agisse sulla fotografia agirebbe
+# su righe il cui ordine puo' essere gia' cambiato a mercato; un veloce che
+# rifacesse quelle letture sarebbe di nuovo il giro intero. Quindi: rimanda al
+# lento, sempre. Le DECISIONI restano quelle del codice di oggi, a parita' di
+# dati: il veloce cambia solo QUANDO il lento parte, mai che cosa decide.
+#
+# FRENI (tecnici, NON strategia: nessuna soglia, stake, tetto di rischio o
+# regola d'ingresso/uscita e' toccata):
+#   * ``_GIRI_VELOCI_MAX_AL_S`` - al massimo 4 giri veloci al secondo; le
+#     sveglie arrivate nel frattempo si FONDONO (N sveglie in coda = 1 giro);
+#   * ``_ANTICIPI_MAX_AL_MIN`` - al massimo 6 giri lenti anticipati al minuto,
+#     cioe' nel caso peggiore 36 giri al minuto invece di 30 (+20%), non 240;
+#   * ogni novita' anticipa UNA volta sola (firma): una condizione che resta
+#     vera (uscita trattenuta, prezzo assente) torna alla cadenza di oggi;
+#   * fotografia piu' vecchia di ``canale_scan.MAX_ETA_CONTESTO_S`` (5 s,
+#     decisione dell'utente del 18/09) o giro lento degradato: il veloce non
+#     fa niente, ci pensa il lento alla sua cadenza.
+#
+# INTERRUTTORE ``SAFE_BOT_GIRO_VELOCE``, default SPENTO: spento, ``run_once``
+# non fotografa niente, il client del canale non sveglia nessuno e l'attesa fra
+# due giri e' ``_attesa_interrompibile`` di oggi. Serve anche
+# ``SAFE_BOT_LEGGE_CANALE`` acceso: senza canale non ci sono righe fresche.
+ENV_GIRO_VELOCE = "SAFE_BOT_GIRO_VELOCE"
+#: Tetto dei giri veloci al secondo (freno tecnico, non strategia).
+_GIRI_VELOCI_MAX_AL_S = 4.0
+#: Tetto dei giri lenti ANTICIPATI dal veloce in 60 s (freno tecnico).
+_ANTICIPI_MAX_AL_MIN = 6
+#: La sveglia del prezzo: la alza il client del canale (``ClientScan.evento``)
+#: solo per le partite in ``_CORSIA['eventi']``. Un ``Event`` alzato N volte
+#: resta UNO: e' la coalescenza.
+_PREZZO_NUOVO = threading.Event()
+#: La fotografia dell'ultimo giro lento. Scritta SOLO da ``run_once`` (thread
+#: principale), letta SOLO da ``run_giro_veloce`` (stesso thread, fra due giri).
+_GIRO_LENTO: dict[str, Any] = {"mono": 0.0, "now_ts": None, "params": None,
+                               "open_all": None, "righe": [], "visti": {},
+                               "degradato": True}
+#: Contatori e memoria della corsia. ``eventi`` e' un frozenset riassegnato in
+#: blocco: il thread del client lo legge senza lock.
+_CORSIA: dict[str, Any] = {"eventi": frozenset(), "ultimo_mono": 0.0,
+                           "sveglie": 0, "coalescenti": 0, "giri": 0,
+                           "fermati_dal_tetto": 0, "anticipi": 0,
+                           "anticipi_negati": 0, "firme": {}, "anticipi_mono": []}
+_LOCK_CORSIA = threading.Lock()
+
+
+def _giro_veloce_acceso() -> bool:
+    """L'interruttore di C6 a, letto a ogni chiamata (mai memorizzato)."""
+    from Betfair.safe_strategy import canale_scan as CS
+
+    return CS.acceso(ENV_GIRO_VELOCE)
+
+
+def azzera_giro_veloce() -> None:
+    """Dimentica fotografia, sveglia e contatori. Per i test e per il riavvio."""
+    _PREZZO_NUOVO.clear()
+    _GIRO_LENTO.update({"mono": 0.0, "now_ts": None, "params": None,
+                        "open_all": None, "righe": [], "visti": {},
+                        "degradato": True})
+    with _LOCK_CORSIA:
+        _CORSIA.update({"eventi": frozenset(), "ultimo_mono": 0.0,
+                        "sveglie": 0, "coalescenti": 0, "giri": 0,
+                        "fermati_dal_tetto": 0, "anticipi": 0,
+                        "anticipi_negati": 0, "firme": {}, "anticipi_mono": []})
+
+
+def stato_giro_veloce() -> dict[str, Any]:
+    """Numeri della corsia, per diagnosi. Nessuna lettura, nessuna scrittura."""
+    with _LOCK_CORSIA:
+        return {k: (len(v) if isinstance(v, (dict, list, frozenset)) else v)
+                for k, v in _CORSIA.items()}
+
+
+def _sport_di(trade: dict[str, Any]) -> str:
+    return "tennis" if XE.is_tennis(trade) else "calcio"
+
+
+def _fotografa_giro_lento(*, now: datetime, params: dict[str, Any],
+                          rows: list[dict[str, Any]], risk_ctx: Any,
+                          degradato: bool) -> None:
+    """Fine del giro lento: che cosa ha visto, per il giro veloce. Non solleva.
+
+    Nessuna lettura e nessuna scrittura sul database: si riusano le liste gia'
+    in mano al ciclo. ``open_all`` sono gli STESSI dizionari che
+    ``process_exits`` ha appena aggiornato (``trade['meta']``): un'uscita
+    inviata in questo giro e' gia' visibile qui.
+    """
+    try:
+        ctx = risk_ctx if isinstance(risk_ctx, dict) else {}
+        utilizzabile = not degradato and not ctx.get("unavailable")
+        open_all = ctx.get("open_all") if utilizzabile else None
+        if not isinstance(open_all, list):
+            open_all = None
+        visti: dict[str, tuple[Any, Optional[str]]] = {}
+        for r in rows or []:
+            if not isinstance(r, dict) or not r.get("event_id"):
+                continue
+            pl = r.get("payload") if isinstance(r.get("payload"), dict) else {}
+            sport = "tennis" if str(r.get("sport") or "") == "tennis" else "calcio"
+            visti[str(r.get("event_id"))] = (r.get("updated_at"), _score_of(pl, sport))
+        candidati = _exit_candidates(open_all) if open_all else []
+        eventi = frozenset(str(t.get("event_id")) for t in candidati if t.get("event_id"))
+        _GIRO_LENTO.update({"mono": time.monotonic(), "now_ts": now.timestamp(),
+                            "params": params, "open_all": open_all,
+                            "righe": list(rows or []), "visti": visti,
+                            "degradato": not utilizzabile})
+        vivi_t = {str(t.get("id")) for t in candidati}
+        with _LOCK_CORSIA:
+            _CORSIA["eventi"] = eventi
+            # una firma vive finche' vive la sua posizione o la sua partita
+            _CORSIA["firme"] = {f: m for f, m in _CORSIA["firme"].items()
+                                if f.split("|")[1] in (eventi if f.startswith("p|")
+                                                       else vivi_t)}
+    except Exception as ex:  # noqa: BLE001 - la fotografia non ferma mai il ciclo
+        logger.debug("[safe.bot] fotografia del giro lento KO: %s", str(ex)[:120])
+        _GIRO_LENTO.update({"now_ts": None, "open_all": None, "degradato": True})
+
+
+def interessa_al_giro_veloce(event_id: Any) -> bool:
+    """Per ``ClientScan(interessa=...)``, gira nel thread del client.
+
+    ``True`` solo per le partite con una posizione viva gestita dalle uscite
+    automatiche. Conta le sveglie e quante si sono fuse con una gia' in coda.
+    """
+    eid = str(event_id or "")
+    if not eid or eid not in _CORSIA["eventi"]:
+        return False
+    with _LOCK_CORSIA:
+        _CORSIA["sveglie"] += 1
+        if _PREZZO_NUOVO.is_set():
+            _CORSIA["coalescenti"] += 1
+    return True
+
+
+def segnala_prezzo_nuovo() -> None:
+    """Sveglia del prezzo alzata a mano (test, o un produttore diverso dal
+    client). Stessa coalescenza del client: N chiamate = 1 giro."""
+    with _LOCK_CORSIA:
+        _CORSIA["sveglie"] += 1
+        if _PREZZO_NUOVO.is_set():
+            _CORSIA["coalescenti"] += 1
+    _PREZZO_NUOVO.set()
+
+
+def _righe_fresche_del_canale(now_ts: float) -> dict[str, Any]:
+    """Le righe fresche nella cache del canale (memoria, nessuna rete)."""
+    cache = _CANALE_SCAN.get("cache")
+    if cache is None:
+        return {}
+    try:
+        return dict(cache.righe_recenti(XE.FEED_FRESH_S, ora=now_ts) or {})
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[safe.bot] righe fresche dal canale KO: %s", str(ex)[:120])
+        return {}
+
+
+def _novita_per_il_lento(trade: dict[str, Any], row: dict[str, Any],
+                         visto: Optional[tuple[Any, Optional[str]]],
+                         xp: dict[str, Any], now_ts: float) -> Optional[str]:
+    """La firma della novita' che il giro lento deve trattare SUBITO, o None.
+
+    Due novita', entrambe valutate in memoria con le funzioni PURE del
+    percorso delle uscite (nessuna funzione che riceve ``db``):
+      * ``p|evento|punteggio`` - la corsia calda: il punteggio della partita
+        e' cambiato rispetto a quello visto dal lento (gol, game);
+      * ``u|trade|tipo|motivo`` - un'uscita di regola (base/esatto/punta/
+        tennis) che con la riga fresca e' dovuta ADESSO: stesse funzioni
+        ``XE.track``/``XE.decide``/``XE.feed_is_fresh``/``XE.market_open``/
+        ``prices_from_row``/``_exit_due`` di ``_process_exit_one``, su una
+        COPIA della posizione (niente si scrive).
+    Le posizioni di MODELLO decidono con letture (``_decide_model_exit``):
+    per loro vale solo la corsia del punteggio. Il residuo di un'uscita gia'
+    inviata ha una cadenza sua (``residual_retry_s``): resta al lento.
+    """
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    punteggio = _score_of(payload, _sport_di(trade))
+    if visto is not None and punteggio is not None and visto[1] is not None \
+            and punteggio != visto[1]:
+        return f"p|{trade.get('event_id')}|{punteggio}"
+    if str(trade.get("strategy") or "") not in XE.EXIT_STRATEGIES:
+        return None
+    req = (trade.get("meta") or {}).get(XE.REQUEST_KEY)
+    if isinstance(req, dict) and req.get("sent"):
+        return None
+    copia = copy.deepcopy(trade)
+    meta = XE.track(copia, payload, now_ts)
+    copia["meta"] = meta
+    decisione = XE.decide(copia, payload, meta, now_ts, xp)
+    if decisione is None or now_ts < float(decisione.not_before_ts or 0.0):
+        return None
+    if not XE.feed_is_fresh(row, now_ts, None):
+        return None
+    if XE.market_open(copia, payload) is False:
+        return None
+    prezzi = prices_from_row(row, market_type=str(copia.get("market_type") or ""),
+                             selection_id=int(copia.get("selection_id") or 0),
+                             market_id=copia.get("market_id"))
+    if not prezzi or not (prezzi.get("back") or prezzi.get("lay")):
+        return None
+    if not _exit_due(copia, now_ts, decisione):
+        return None
+    return f"u|{trade.get('id')}|{decisione.kind}|{decisione.reason}"
+
+
+def run_giro_veloce(*, now: Optional[datetime] = None,
+                    fresche: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """IL GIRO VELOCE. Nessun ``db``, nessun ``market``: solo memoria.
+
+    Torna ``{"anticipa": bool, "motivo": str, "valutate": int, "firme": [...]}``.
+    ``anticipa=True`` vuol dire: parta ADESSO il giro lento (``run_once``), che
+    rifara' tutte le sue letture e decidera' con il codice di oggi. Il veloce
+    non piazza, non chiude, non cancella, non propone, non scrive.
+
+    ``fresche`` (per i test e per chi cabla): righe per ``event_id``; assente,
+    si prendono dalla cache del canale.
+    """
+    now = now or _now()
+    now_ts = now.timestamp()
+    foto = _GIRO_LENTO
+    esito: dict[str, Any] = {"anticipa": False, "motivo": "", "valutate": 0, "firme": []}
+    from Betfair.safe_strategy import canale_scan as CS
+
+    if foto.get("now_ts") is None:
+        esito["motivo"] = "nessun_giro_lento"
+        return esito
+    eta = now_ts - float(foto["now_ts"])
+    if eta < 0.0 or eta > float(CS.MAX_ETA_CONTESTO_S):
+        # contratto di eta' (decisione dell'utente, 18/09): oltre 5 s la
+        # fotografia non e' piu' "adesso". Non si indovina: aspetta il lento.
+        esito["motivo"] = "contesto_scaduto"
+        return esito
+    if foto.get("degradato") or foto.get("open_all") is None:
+        esito["motivo"] = "contesto_non_utilizzabile"
+        return esito
+    xp = XE.exit_params(foto.get("params") or {})
+    if not xp.get("enabled", True):
+        esito["motivo"] = "uscite_spente"
+        return esito
+    candidati = _exit_candidates(foto["open_all"])
+    if not candidati:
+        esito["motivo"] = "nessuna_posizione"
+        return esito
+    if fresche is None:
+        fresche = _righe_fresche_del_canale(now_ts)
+    # STESSA fusione del giro lento (``_leggi_righe_scan``): il canale non
+    # aggiunge partite, vince solo se strettamente piu' recente e con
+    # ``odds_ts_ms`` vero.
+    righe, _ = CS.fondi(foto.get("righe") or [], fresche or {})
+    per_evento = {str(r.get("event_id")): r for r in righe if r.get("event_id")}
+    visti = foto.get("visti") or {}
+    nuove: list[str] = []
+    for tr in candidati:
+        eid = str(tr.get("event_id"))
+        row = per_evento.get(eid)
+        if not isinstance(row, dict):
+            continue      # posizione senza riga: e' cecita', la tratta il lento
+        visto = visti.get(eid)
+        if visto is not None and row.get("updated_at") == visto[0]:
+            continue      # la stessa riga che il lento ha gia' valutato
+        esito["valutate"] += 1
+        try:
+            firma = _novita_per_il_lento(tr, row, visto, xp, now_ts)
+        except Exception as ex:  # noqa: BLE001 - nel dubbio decide il lento
+            logger.debug("[safe.bot] giro veloce, trade %s: %s", tr.get("id"), str(ex)[:120])
+            firma = f"e|{tr.get('id')}|errore"
+        if firma and firma not in nuove:
+            nuove.append(firma)
+    mono = time.monotonic()
+    with _LOCK_CORSIA:
+        nuove = [f for f in nuove if f not in _CORSIA["firme"]]
+        if not nuove:
+            esito["motivo"] = "niente_di_nuovo"
+            return esito
+        recenti = [m for m in _CORSIA["anticipi_mono"] if mono - m < 60.0]
+        _CORSIA["anticipi_mono"] = recenti
+        if len(recenti) >= int(_ANTICIPI_MAX_AL_MIN):
+            # freno: la novita' NON si segna, la vedra' il lento alla sua cadenza
+            _CORSIA["anticipi_negati"] += 1
+            esito["motivo"] = "tetto_anticipi"
+            return esito
+        for f in nuove:
+            _CORSIA["firme"][f] = mono
+        _CORSIA["anticipi_mono"].append(mono)
+        _CORSIA["anticipi"] += 1
+    esito.update({"anticipa": True, "motivo": "novita", "firme": nuove})
+    logger.info("[safe.bot] giro veloce: %s -> giro lento anticipato", ", ".join(nuove)[:200])
+    return esito
+
+
+def giro_veloce_se_dovuto(*, now: Optional[datetime] = None,
+                          mono: Optional[float] = None) -> Optional[dict[str, Any]]:
+    """Un giro veloce se c'e' una sveglia in coda e il tetto lo consente.
+
+    ``None`` = nessun giro (niente in coda, oppure troppo presto: la sveglia
+    RESTA alzata e si fonde con le prossime, non si perde).
+    """
+    if not _PREZZO_NUOVO.is_set():
+        return None
+    ora = time.monotonic() if mono is None else float(mono)
+    passo = 1.0 / max(float(_GIRI_VELOCI_MAX_AL_S), 0.1)
+    with _LOCK_CORSIA:
+        if 0.0 <= ora - float(_CORSIA["ultimo_mono"] or 0.0) < passo \
+                and _CORSIA["ultimo_mono"]:
+            _CORSIA["fermati_dal_tetto"] += 1
+            return None
+        _CORSIA["ultimo_mono"] = ora
+        _CORSIA["giri"] += 1
+        _PREZZO_NUOVO.clear()
+    return run_giro_veloce(now=now)
+
+
+def _attesa_prima_del_prossimo_veloce(mono: Optional[float] = None) -> float:
+    """Quanto manca perche' il tetto consenta il prossimo giro veloce."""
+    ora = time.monotonic() if mono is None else float(mono)
+    passo = 1.0 / max(float(_GIRI_VELOCI_MAX_AL_S), 0.1)
+    ultimo = float(_CORSIA.get("ultimo_mono") or 0.0)
+    if not ultimo:
+        return 0.0
+    return max(0.0, passo - (ora - ultimo))
 
 
 def strategy_modes_a_paper(params_grezzi: Any) -> tuple[Optional[dict[str, Any]], list[str]]:
@@ -7587,6 +7943,12 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         db.set_control(stats=_GUARDIA_AVVIO.timbra(stats), heartbeat_at=now.isoformat())
     except Exception as ex:  # noqa: BLE001
         logger.warning("[safe.bot] set_control KO: %s", str(ex)[:160])
+    # C6 a (23/09) - la FOTOGRAFIA per il giro veloce, DOPO tutte le fasi e
+    # tutte le scritture: nessuna lettura, nessuna scrittura, nessuna decisione.
+    # Con ``SAFE_BOT_GIRO_VELOCE`` spento non si fa nemmeno questa.
+    if _giro_veloce_acceso():
+        _fotografa_giro_lento(now=now, params=params, rows=rows, risk_ctx=risk_ctx,
+                              degradato=control_degradato)
     return {"status": status, "placed": n_placed, "settled": n_settled,
             "requests": n_requests, "polled": n_polled, "reconciled": n_reconciled,
             "exits": n_exits, "signals": n_signals, "opportunities": opps,
@@ -7803,9 +8165,8 @@ def _attesa_interrompibile(interval: float, aperte: int,
                 return True
         else:
             time.sleep(min(_SBIRCIATA_S, restante))
-        try:
-            righe = _real_db.pending_requests(limit=1) or []
-        except Exception as ex:  # noqa: BLE001 — sbirciare non deve mai fermare il bot
+        esito = _sbircia_la_coda()
+        if esito is None:
             # ⚠️ REVIEW 15/09 — QUI C'ERA `return False`, e accorciava l'attesa.
             # Uscire dal sonno fa ripartire SUBITO il ciclo completo: con il
             # database in difficolta' (che e' la ragione per cui la sbirciata
@@ -7813,20 +8174,108 @@ def _attesa_interrompibile(interval: float, aperte: int,
             # otto volte il carico proprio mentre il DB e' in ginocchio. E' il
             # guasto del 13/09 riprodotto dalla sua stessa difesa.
             # Adesso si smette di sbirciare e si finisce di dormire.
-            logger.debug("[safe.bot] sbirciata coda KO, resto in attesa: %s", str(ex)[:120])
             restante = scaduta - time.monotonic()
             if restante > 0:
                 time.sleep(restante)
             return False
-        if not righe:
+        if not esito:
             continue
-        rid = int(righe[0].get("id") or 0)
-        if rid and rid == _SVEGLIA_FATTA["req_id"]:
-            # gia' anticipato per questa richiesta e sta ancora li': il ciclo
-            # normale se ne occupera'. Si dorme, non si martella.
-            continue
-        _SVEGLIA_FATTA["req_id"] = rid
         return True
+
+
+def _sbircia_la_coda() -> Optional[bool]:
+    """UNA sbirciata della coda richieste (la query piu' piccola possibile).
+
+    ``True`` = richiesta nuova, si anticipa il ciclo; ``False`` = niente (o
+    richiesta gia' anticipata); ``None`` = sbirciata fallita. Estratta da
+    ``_attesa_interrompibile`` (C6 a, 23/09) SENZA cambiarne una riga di
+    logica, perche' la stessa sbirciata serve identica anche all'attesa con il
+    giro veloce: una sola verita', non due copie.
+    """
+    try:
+        righe = _real_db.pending_requests(limit=1) or []
+    except Exception as ex:  # noqa: BLE001 - sbirciare non deve mai fermare il bot
+        logger.debug("[safe.bot] sbirciata coda KO, resto in attesa: %s", str(ex)[:120])
+        return None
+    if not righe:
+        return False
+    rid = int(righe[0].get("id") or 0)
+    if rid and rid == _SVEGLIA_FATTA["req_id"]:
+        # gia' anticipato per questa richiesta e sta ancora li': il ciclo
+        # normale se ne occupera'. Si dorme, non si martella.
+        return False
+    _SVEGLIA_FATTA["req_id"] = rid
+    return True
+
+
+def _attesa_con_giro_veloce(interval: float, aperte: int,
+                            evento: Optional[threading.Event] = None) -> bool:
+    """L'attesa fra due giri LENTI quando il giro veloce e' acceso (C6 a).
+
+    E' ``_attesa_interrompibile`` piu' una cosa sola: se nel frattempo il
+    canale ha alzato la sveglia del PREZZO, si fa un giro veloce (memoria, zero
+    letture) e, se questo trova una novita', si esce subito per far partire il
+    giro lento. Tutto il resto e' IDENTICO:
+      * la sveglia della UI (``evento``) esce subito, col minimo fra due giri;
+      * la sbirciata della coda si fa con la STESSA cadenza (``_SBIRCIATA_S``,
+        un orario fisso che una sveglia del prezzo non puo' accorciare), con la
+        STESSA funzione e lo STESSO ripiego se fallisce; senza posizioni
+        aperte non si sbircia, come oggi;
+      * il tetto dei giri veloci al secondo tiene la sveglia alzata finche' non
+        e' il momento (coalescenza), e intanto si DORME, non si gira a vuoto.
+    Ritorna True se si e' usciti in anticipo.
+    """
+    inizio = time.monotonic()
+    scaduta = inizio + max(interval, 0.0)
+    sbircia = aperte > 0 and interval > _SBIRCIATA_S
+    prossima_sbirciata = inizio + _SBIRCIATA_S
+    passo = 1.0 / max(float(_GIRI_VELOCI_MAX_AL_S), 0.1)
+    while True:
+        ora = time.monotonic()
+        restante = scaduta - ora
+        if restante <= 0:
+            return False
+        if evento is not None and evento.is_set():
+            evento.clear()
+            _minimo_fra_due_giri()
+            return True
+        fetta = min(restante, passo)
+        if sbircia:
+            fetta = min(fetta, max(prossima_sbirciata - ora, 0.0))
+        if _PREZZO_NUOVO.is_set():
+            # sveglia gia' in coda ma tetto non ancora libero: si dorme fino al
+            # prossimo giro consentito (mai un ciclo a vuoto)
+            fetta = min(fetta, _attesa_prima_del_prossimo_veloce())
+            if evento is not None:
+                evento.wait(timeout=fetta)
+            elif fetta > 0:
+                time.sleep(fetta)
+        elif evento is not None:
+            evento.wait(timeout=fetta)
+        else:
+            _PREZZO_NUOVO.wait(timeout=fetta)
+        if evento is not None and evento.is_set():
+            continue   # la gestisce la cima del giro, identica a oggi
+        try:
+            veloce = giro_veloce_se_dovuto()
+        except Exception as ex:  # noqa: BLE001 - il veloce non ferma mai il bot
+            logger.debug("[safe.bot] giro veloce KO: %s", str(ex)[:120])
+            veloce = None
+        if veloce and veloce.get("anticipa"):
+            _minimo_fra_due_giri()
+            return True
+        if sbircia and time.monotonic() >= prossima_sbirciata:
+            esito = _sbircia_la_coda()
+            # dalla FINE della sbirciata: due sbirciate non stanno mai piu'
+            # vicine di ``_SBIRCIATA_S``, quindi mai piu' letture di oggi
+            prossima_sbirciata = time.monotonic() + _SBIRCIATA_S
+            if esito is None:
+                restante = scaduta - time.monotonic()
+                if restante > 0:
+                    time.sleep(restante)
+                return False
+            if esito:
+                return True
 
 
 def main() -> None:
@@ -7915,8 +8364,12 @@ def main() -> None:
             # l'attesa si interrompe appena il trader clicca: il ciclo dopo
             # parte dalla corsia preferenziale delle chiusure.
             sveglia = _SVEGLIA if _CONTI_SVEGLIA.get("installata") else None
-            if _attesa_interrompibile(max(interval, 1.0), _APERTE.get("n", 0),
-                                      evento=sveglia):
+            # C6 a (23/09): con ``SAFE_BOT_GIRO_VELOCE`` acceso l'attesa fa
+            # anche i giri veloci (memoria, zero letture); spento, e' quella di
+            # oggi, riga per riga.
+            attesa = (_attesa_con_giro_veloce if _giro_veloce_acceso()
+                      else _attesa_interrompibile)
+            if attesa(max(interval, 1.0), _APERTE.get("n", 0), evento=sveglia):
                 logger.info("[safe.bot] richiesta in coda: ciclo anticipato")
     finally:
         try:
@@ -8013,3 +8466,6 @@ def svuota_le_cache() -> None:
     # scritto e testato in azzera_canale_scan() (sopra, prima di main()): qui
     # si RIUSA quella funzione, non se ne duplica la logica.
     azzera_canale_scan()
+    # C6 a (23/09): le cache del giro veloce (_GIRO_LENTO, _CORSIA, _PREZZO_NUOVO)
+    # si azzerano con la loro funzione, senza duplicarne la logica.
+    azzera_giro_veloce()

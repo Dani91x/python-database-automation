@@ -909,6 +909,21 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                         title="da dove arriva l'aggiornamento dello scanner: canale locale (push, ~0 latenza) o database (poll/realtime)">
                         · {vm.fonteScan === 'locale' ? 'canale locale' : 'database'}
                     </span>
+                    {/* C6 b (23/09) - lo stesso indicatore per le RIGHE dei tre
+                        bot (posizioni e proposte): fonte ed eta' dell'ultima
+                        notizia. Canali muti = sempre "database". */}
+                    <span className="text-white/30" data-testid="cr-fonte-righe"
+                        title="righe dei bot: canale locale (messaggio per riga, piu' fresco del database) o database (poll dei 30 s), con l'eta' dell'ultima notizia">
+                        {'·'} righe{(['omega', 'safe', 'mike'] as const).map((b) => {
+                            const f = vm.fonteRighe[b];
+                            return (
+                                <span key={b} data-testid={`cr-fonte-righe-${b}`}>
+                                    {' '}{BOT_LABEL[b]} {f.fonte === 'locale' ? 'canale' : 'db'}{' '}
+                                    {f.etaS == null ? DASH : fmtAge(f.etaS)}
+                                </span>
+                            );
+                        })}
+                    </span>
                 </div>
 
                 <Button size="sm" variant="ghost" onClick={vm.ricarica} className="h-7 px-2 text-white/60" data-testid="cr-ricarica">

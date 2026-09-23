@@ -130,6 +130,13 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         proposteOmega: [], erroreProposteOmega: null,
         approvaOmega: vi.fn(), ignoraOmega: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
+        // C6 b (23/09) - fonte ed eta' delle righe dei tre bot: stesso tipo del vero
+        fonteRighe: {
+            omega: { fonte: 'database', etaS: 4 },
+            safe: { fonte: 'database', etaS: 4 },
+            mike: { fonte: 'database', etaS: 4 },
+        },
+        etaRiga: () => null,
         ricarica: vi.fn(),
         ...over,
     } as ReturnType<typeof useControlRoom>;
@@ -1437,5 +1444,31 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         fireEvent.click(within(col).getByTestId('cr-chiudi'));
         expect(chiudi).toHaveBeenCalledWith(55);
+    });
+});
+
+// ------------------------------------------------ C6 b (23/09): fonte righe
+
+describe('C6 b - la testata dice da dove arrivano le righe dei bot, e quanto sono vecchie', () => {
+    it('canali muti: tre voci "db" con l\'eta\' della lettura', () => {
+        mVm.mockReturnValue(vm());
+        mostra();
+        expect(screen.getByTestId('cr-fonte-righe').textContent).toContain('· righe');
+        expect(screen.getByTestId('cr-fonte-righe-omega').textContent).toMatch(/db\s+4 s/);
+        expect(screen.getByTestId('cr-fonte-righe-mike').textContent).toMatch(/db\s+4 s/);
+    });
+
+    it('un bot sul canale locale lo dice, gli altri restano "db"', () => {
+        mVm.mockReturnValue(vm({
+            fonteRighe: {
+                omega: { fonte: 'database', etaS: 12 },
+                safe: { fonte: 'locale', etaS: 1 },
+                mike: { fonte: 'database', etaS: null },
+            },
+        }));
+        mostra();
+        expect(screen.getByTestId('cr-fonte-righe-safe').textContent).toMatch(/canale\s+1 s/);
+        expect(screen.getByTestId('cr-fonte-righe-omega').textContent).toMatch(/db\s+12 s/);
+        expect(screen.getByTestId('cr-fonte-righe-mike').textContent).not.toMatch(/\d/);
     });
 });

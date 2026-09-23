@@ -939,6 +939,10 @@ class MercatoFlumine:
                                   persistence_type="LAPSE"),
         )
         ordine.notes["bot_ref"] = str(customer_ref)[:32]
+        # marcato come dell'UTENTE: il guasto dello scenario
+        # «chiusura-abbinata-in-parte» non lo colpisce e non lo conta nella
+        # posizione del bot (le note non entrano nel matching di flumine)
+        ordine.notes["utente"] = True
         if mercato.place_order(ordine) is False:
             return None
         self.ordini_utente[str(customer_ref)[:32]] = ordine
@@ -1385,6 +1389,15 @@ class MotoreReplay:
         # 120 ms si dichiara insieme a quanto ha pesato
         self.tempo_letture: float = 0.0
         self.book_letture: int = 0
+        # IL GUASTO DELLO SCENARIO «chiusura-abbinata-in-parte»
+        # (`chiusura_parziale.GuastoChiusuraParziale`). None = nessun guasto:
+        # tutti gli altri scenari restano identici, riga per riga.
+        self.guasto_chiusure: Any = None
+
+    def _prepara_pacchi(self, pacchi: Sequence[Any]) -> None:
+        """Passa al guasto (se c'e') i pacchetti PRIMA che flumine li esegua."""
+        if self.guasto_chiusure is not None and pacchi:
+            self.guasto_chiusure.prepara(self.quadro, list(pacchi))
 
     # ------------------------------------------------------------- flumine
     def _a_flumine(self, market_book: Any):
@@ -1402,6 +1415,9 @@ class MotoreReplay:
         self._ora_mercato = adesso
         quadro.simulated_datetime(adesso)
         if quadro.handler_queue:
+            if self.guasto_chiusure is not None:
+                self._prepara_pacchi([p for p in quadro.handler_queue
+                                      if str(getattr(p, "market_id", "")) == str(market_id)])
             quadro._check_pending_packages(market_id)
         if market_book.status == "CLOSED":
             quadro._process_close_market(event=fevents.CloseMarketEvent(market_book))
@@ -1639,6 +1655,7 @@ class MotoreReplay:
     def _esegui_adesso(self, pacchi: Sequence[Any]) -> None:
         """Esegue i pacchetti e li toglie dalla coda, come farebbe
         `_check_pending_packages` (`simulation.py:185-195`)."""
+        self._prepara_pacchi(list(pacchi))
         for pacco in list(pacchi):
             pacco.client.execution.handler(pacco)
             try:

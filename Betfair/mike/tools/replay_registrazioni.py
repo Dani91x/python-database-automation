@@ -79,6 +79,7 @@ from .. import config as C
 from .. import engine as E
 from .. import service as S
 from ...stream.backtest import banco_comune as BANCO
+from ...stream.backtest import chiusura_parziale as CP
 from ...stream.backtest.banco_comune import (
     DbMemoria, MercatoFlumine, MotoreReplay, ScannerReplay,
     assicura_middleware_simulato, carica_punteggi, cliente_simulato,
@@ -416,6 +417,9 @@ def _crea_strategia():
             # che ne sono uscite (devono essere zero).
             self.giri_terminali: int = 0
             self.azioni_dopo_terminale: int = 0
+            # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
+            # banco comune (None in tutti gli altri scenari)
+            self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
 
             # i mercati flumine, per market_id: servono per piazzare davvero
             self.mercati: Dict[str, Any] = {}
@@ -634,6 +638,13 @@ def _crea_strategia():
             # il rapporto fra cio' che il bot crede e cio' che c'e' a mercato —
             # ed e' li' che vivevano tutti e cinque i difetti del 15/09.
             self._verifica_consapevolezza()
+            # -- I CONTROLLI CP (scenario chiusura-abbinata-in-parte) --------
+            if self.sorveglianza_cp is not None:
+                for cod, reg, det in self.sorveglianza_cp.verifica(
+                        credenze_mike(self.db, self.event_id), self.referto.sollecitati):
+                    self.referto.violazioni.append(CERT.Violazione(
+                        cod, reg, det,
+                        str(self.db.events[self.event_id].get("state") or "")))
 
             if terminale:
                 self.giri_terminali += 1
@@ -735,7 +746,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       campioni_diff: int = 0,
                       riavvia: bool = False,
                       cashout_utente: bool = False,
-                      chiuso_fuori_app: bool = False) -> CERT.Referto:
+                      chiuso_fuori_app: bool = False,
+                      chiusura_parziale: bool = False) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -850,6 +862,14 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # Betfair, non su quello di t.
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
+    if chiusura_parziale:
+        # il RUOLO dell'ordine si legge dalla riga di `mike_trades` che lo ha
+        # chiesto (ref `mike-t<id>`, `closes_trade_id` sulle chiusure, H4)
+        guasto_cp = CP.GuastoChiusuraParziale(
+            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades))
+        motore.guasto_chiusure = guasto_cp
+        strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
     E.decide = decide_sorvegliata          # type: ignore[assignment]
     try:
         motore.esegui(strategia)
@@ -857,6 +877,12 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         E.decide = decide_vero             # type: ignore[assignment]
 
     out = strategia.chiudi()
+    if guasto_cp is not None:
+        out.note.append(guasto_cp.riepilogo())
+        out.note.append("CP2 (copertura dichiarata sull'abbinato) NON APPLICABILE a "
+                        "Mike: non scrive una copertura per riga (`meta.hedged_size`), "
+                        "la posizione la ricalcola dalle gambe; la consapevolezza "
+                        "dell'abbinato la guardano CP1 e i controlli K")
     if strategia.db.mancanti:
         out.note.append("metodi di database chiamati dal servizio e assenti dal banco: "
                         f"{sorted(strategia.db.mancanti)}")
@@ -1017,7 +1043,61 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     SCENARIO_RIFIUTI: "Betfair RIFIUTA i primi piazzamenti (`ok=False`): l'esito si legge "
                       "e nessuna gamba rifiutata diventa una posizione (difetto 2 del "
                       "catalogo del 15/09)",
+    # 23/09 (cancello C3) — parametri di `base`, un solo guasto del banco comune
+    # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima gamba di
+    # chiusura su ogni selezione si abbina al piu' per il 40 %.
+    CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
 }
+
+
+def credenze_mike(db: Any, event_id: str) -> List[Dict[str, Any]]:
+    """Le posizioni che MIKE crede di avere, una per selezione, per i controlli
+    CP dello scenario `chiusura-abbinata-in-parte`.
+
+    Mike non dichiara una copertura per riga (non usa `apply_hedge_state`):
+    `coperto` resta None e CP2 non ha un caso (dichiarato nel referto). CHIUSA =
+    lo stato della macchina `FLAT`, oppure un ciclo pre-match le cui gambe
+    d'apertura sono tutte ARCHIVIATE (cioe' chiuse in green, `Leg.archived`).
+    Le righe sono quelle di `mike_trades` (chiavi snake_case del vero); la
+    posizione a mercato si misura su TUTTI gli ordini del bot sulla selezione.
+    """
+    ev = db.events.get(str(event_id))
+    if not ev:
+        return []
+    ctx = S._ctx_from_row(ev, db)
+    gambe = {str(g.ref): g for g in ctx.legs}
+    per_chiave: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+    for r in db.trades_for_event(str(event_id)) or []:
+        try:
+            k = (str(r.get("market_id") or ""), int(r.get("selection_id") or 0))
+        except (TypeError, ValueError):
+            continue
+        per_chiave.setdefault(k, []).append(r)
+    out: List[Dict[str, Any]] = []
+    for k, righe in per_chiave.items():
+        aperture = [r for r in righe if str(r.get("role")) in E.OPENING_ROLES]
+        chiusure = [r for r in righe if str(r.get("role")) in E.CLOSING_ROLES]
+        g_ap = [gambe.get(str(r.get("signal_key"))) for r in aperture]
+        g_ap = [g for g in g_ap if g is not None and float(g.matched or 0.0) > 0]
+        archiviate = bool(g_ap) and all(bool(g.archived) for g in g_ap)
+        out.append({
+            "id": f"mike{k}",
+            "chiave": k,
+            "chiusa": ctx.state == "FLAT" or archiviate,
+            "coperto": None,
+            "apertura": None,
+            "ingressi": [{"bet_id": r.get("bet_id")} for r in aperture],
+            "chiusure": [{"bet_id": c.get("bet_id"), "id_riga": c.get("id"),
+                          "status": c.get("status"),
+                          "size": c.get("size"), "price": c.get("price"),
+                          "size_matched": c.get("size_matched"),
+                          "size_remaining": c.get("size_remaining"),
+                          "avg_price_matched": c.get("avg_price_matched")}
+                         for c in chiusure],
+            "per_selezione": True,
+            "tolleranza": 0.0,
+        })
+    return out
 
 
 def cadenza_ms(params: Dict[str, Any]) -> int:
@@ -1066,7 +1146,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         campioni_diff=campioni_diff,
         riavvia=(scenario == SCENARIO_RIAVVIO),
         cashout_utente=(scenario == SCENARIO_CASHOUT_GLOBALE),
-        chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP))
+        chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
+        chiusura_parziale=(scenario == CP.SCENARIO))
     if scenario == SCENARIO_GOL_PRECOCE:
         # Lo scenario DICHIARA se il caso e' capitato davvero. Un referto
         # "zero violazioni" su una registrazione senza gol precoce non dice

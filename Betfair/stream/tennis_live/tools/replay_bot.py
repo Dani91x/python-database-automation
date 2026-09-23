@@ -82,6 +82,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .. import certificazione_bot as CERT
+from ...backtest import chiusura_parziale as CP
 from ..tennis_recorder import default_record_dir
 
 logger = logging.getLogger(__name__)
@@ -135,12 +136,16 @@ SCENARI_DESCRITTI: Dict[str, str] = {
         "gira su `FlumineSimulation`), ma i parametri sono quelli del percorso "
         "live — minimi e granularita' .it compresi — cosi' la blindatura di "
         "giurisdizione e' davvero verificata e la parita' paper/live misurabile"),
+    # 23/09 (cancello C3): i gate di `gate-aperto` (senza, scalper e swing non
+    # aprono mai su queste partite e non esisterebbe una chiusura da colpire)
+    # piu' il guasto del banco comune.
+    CP.SCENARIO: "i gate di `gate-aperto`, ma " + CP.DESCRIZIONE,
 }
 
 
 def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
     """I parametri che lo scenario cambia. SOLO numeri gia' esposti dalla UI."""
-    if scenario in ("rifiuti-betfair", "live"):
+    if scenario in ("rifiuti-betfair", "live", CP.SCENARIO):
         # ⚠️ IL CASO VA PROVOCATO, non sperato. Con i parametri di produzione
         # lo scalper e lo swing non tentano MAI un ingresso su questa partita:
         # il rifiuto non sarebbe nemmeno possibile e K2 resterebbe «non lo so»
@@ -181,6 +186,54 @@ def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
         # parte. Si cambia UN numero, quello che l'utente sceglie dalla UI.
         return {"stake": 400.0}
     return {}
+
+
+def credenze_cp(cred: List[Dict[str, Any]],
+                specchio: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Le credenze del bot tennis nella forma dei controlli CP.
+
+    CHIUSA = lo stato che il bot dichiara chiuso (`STATI_CREDUTI_CHIUSI`, i nomi
+    VERI dei quattro bot). I numeri di ogni uscita sono quelli della riga che la
+    UI vedrebbe (`tennis_live_orders`, costruita da `_mirror_order` vero: chiave
+    `average_price_matched`, non `avg_price_matched`). In coda una voce con TUTTE
+    le righe dello specchio: un'uscita che il bot ha gia' smesso di seguire deve
+    restare riconoscibile per CP1 (mai chiusa, mai coperta: CP2/CP3 la saltano).
+    """
+    per_id = {str(r.get("order_id") or ""): r for r in specchio or []}
+
+    def _riga(o: Any) -> Dict[str, Any]:
+        r = per_id.get(str(getattr(o, "id", "") or "")) or {}
+        return {"ordine_id": str(getattr(o, "id", "") or ""), "bet_id": r.get("bet_id"),
+                "size": r.get("size"), "price": r.get("price"),
+                "status": r.get("status"),
+                "size_matched": r.get("size_matched") if r else None,
+                "size_remaining": r.get("size_remaining") if r else None,
+                "avg_price_matched": r.get("average_price_matched") if r else None}
+
+    out: List[Dict[str, Any]] = []
+    for c in cred or []:
+        out.append({
+            "id": "%s%s" % (c.get("stato"), c.get("chiave")),
+            "chiave": tuple(c.get("chiave") or ()),
+            "chiusa": str(c.get("stato") or "") in CERT.STATI_CREDUTI_CHIUSI,
+            "coperto": None, "apertura": None, "ingressi": [],
+            "chiusure": [_riga(o) for o in (c.get("uscite") or ())],
+            "per_selezione": True,
+            "tolleranza": float(c.get("tolleranza") or 0.0),
+        })
+    out.append({
+        "id": "specchio", "chiave": (), "chiusa": False, "coperto": None,
+        "apertura": None, "ingressi": [],
+        "chiusure": [{"ordine_id": str(r.get("order_id") or ""), "bet_id": r.get("bet_id"),
+                      "size": r.get("size"), "price": r.get("price"),
+                      "status": r.get("status"),
+                      "size_matched": r.get("size_matched"),
+                      "size_remaining": r.get("size_remaining"),
+                      "avg_price_matched": r.get("average_price_matched")}
+                     for r in specchio or []],
+        "per_selezione": True, "tolleranza": 0.0,
+    })
+    return out
 
 
 def stake_scenario(scenario: str, stake: float) -> float:
@@ -488,6 +541,18 @@ class _Ponte:
         self._meta_ms: Optional[int] = None
         self._fine_ms: Optional[int] = None
         self._ultimo_book: Any = None
+        # scenario `chiusura-abbinata-in-parte` (None negli altri)
+        self.sorveglianza_cp: Optional[Any] = None
+
+    def ruolo_ordine(self, ordine: Any) -> Optional[str]:
+        """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
+        (`credenze`: ingressi e uscite che il bot sta seguendo)."""
+        for c in CERT.credenze(self.s, self.bot_key):
+            if any(x is ordine for x in (c.get("uscite") or ())):
+                return "uscita"
+            if any(x is ordine for x in (c.get("ingressi") or ())):
+                return "ingresso"
+        return None
 
     # ------------------------------------------------------------- contratto
     @property
@@ -662,6 +727,7 @@ class _Ponte:
 
     def giro(self, market: Any, market_book: Any, prima: int) -> None:
         ordini_veri = self.ordini_del_bot(market)
+        specchio = self.specchio(ordini_veri)
         righe = [CERT.riga_ordine(o) for o in ordini_veri]
         cred = CERT.credenze(self.s, self.bot_key)
         ids_ingresso = set()
@@ -688,12 +754,18 @@ class _Ponte:
             credenze=cred,
             attivita=self.attivita[prima:],
             stats=dict(getattr(self.s, "stats", None) or {}),
-            specchio=self.specchio(ordini_veri),
+            specchio=specchio,
             esposizioni=self.esposizioni(market, ordini_veri),
             ids_ingresso=ids_ingresso,
             ordini_nuovi=nuovi,
         )
         self.ref.violazioni.extend(CERT.verifica(oss, self.ref.sollecitati))
+        # I CONTROLLI CP (scenario chiusura-abbinata-in-parte)
+        if self.sorveglianza_cp is not None:
+            for cod, reg, det in self.sorveglianza_cp.verifica(
+                    credenze_cp(cred, specchio), self.ref.sollecitati):
+                self.ref.violazioni.append(CERT.Violazione(
+                    cod, reg, det, oss.quando))
         for c in cred:
             stato = str(c.get("stato") or "")
             if stato and stato not in self.ref.stati_visti:
@@ -870,7 +942,15 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                                     "arrivare dopo il primo terzo (blackout IPS)")
 
             motore = BC.MotoreReplay(quadro)
+            guasto_cp = None
+            if scenario == CP.SCENARIO:
+                # il RUOLO dell'ordine dalla credenza del bot (ingresso/uscita)
+                guasto_cp = CP.GuastoChiusuraParziale(ruolo=ponte.ruolo_ordine)
+                motore.guasto_chiusure = guasto_cp
+                ponte.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
             motore.esegui(ponte)
+            if guasto_cp is not None:
+                ref.note.append(guasto_cp.riepilogo())
             ref.note.append(
                 "book attesi durante i piazzamenti: %d; lapse al fischio: %d; "
                 "lapse alla sospensione: %d"
@@ -879,7 +959,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             mercato = quadro.markets.markets.get(market_id)
             ponte.chiudi(mercato)
 
-    if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live"):
+    if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO):
         ref.note.append("SCENARIO DICHIARATO: cambiati SOLO i parametri %s "
                         "(numeri che l'utente puo' gia' cambiare dalla UI). La "
                         "strategia e' quella di produzione."

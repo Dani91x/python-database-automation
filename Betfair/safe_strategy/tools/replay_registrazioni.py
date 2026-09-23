@@ -74,6 +74,7 @@ from ...stream.backtest.banco_comune import (
     assicura_middleware_simulato, carica_punteggi, cliente_simulato,
     nomi_dal_punteggio, simulazione_flumine,
 )
+from ...stream.backtest import chiusura_parziale as CP
 from . import validate_opportunity as VO
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,15 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # quel difetto: lo scenario `esiti-ignoti` solleva PRIMA del piazzamento,
     # quindi li' un ordine da ritrovare non esiste proprio.
     "timeout-dopo-accettazione": {},
+    # 23/09 (cancello C3) — CHIUSURA ABBINATA IN PARTE. Non tocca un parametro:
+    # e' il percorso di `ordini-manuali` (il trader apre e poi chiede il
+    # cash-out, cosi' una chiusura VERA esiste anche dove le tre strategie non
+    # entrano) piu' il guasto del banco comune
+    # (`Betfair/stream/backtest/chiusura_parziale.py`): la prima chiusura su
+    # ogni selezione trova il mercato sottile. Le chiusure della Safe sono FOK
+    # REST senza `minFillSize` (`execution.place` -> `place_order_live`), cioe'
+    # tutto o niente: il 40 % non basta e la chiusura muore per intero.
+    CP.SCENARIO: {},
 }
 
 SCENARIO_BOT_FERMO = "bot-fermo"
@@ -187,7 +197,8 @@ GIRI_PRIMA_DEL_CASHOUT = 60
 # ordine VERO su flumine anche quando nessuna delle tre strategie entra.
 SCENARI_CON_ORDINE_MANUALE = ("cap-stretto", "bot-fermo", "esiti-ignoti",
                               "feed-stantio", "riavvio", "paper",
-                              "ordini-manuali", "due-lay", "manuale-e-bot")
+                              "ordini-manuali", "due-lay", "manuale-e-bot",
+                              CP.SCENARIO)
 
 SCENARI_DESCRITTI: Dict[str, str] = {
     "base": "le tre strategie calcio accese in LIVE, come girerebbero in produzione",
@@ -231,6 +242,8 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                 "la riga torna in riconciliazione senza bet_id e "
                                 "l'ordine vero resta a mercato. Si ritrova solo col "
                                 "ref con cui e' stato CHIESTO (difetto 4 del 15/09)",
+    CP.SCENARIO: "come `ordini-manuali` (il trader apre e chiede il cash-out), ma "
+                 + CP.DESCRIZIONE,
     SCENARIO_SELEZIONE: "la «selezione aggiuntiva» della SPEC §2 ACCESA "
                         "(`esatto.requireSelection`): il filtro scontri diretti "
                         "+ difesa avversaria gira davvero e il controllo E10 ha "
@@ -880,6 +893,11 @@ def _riavvia_processo() -> List[str]:
     # LA GUARDIA D'AVVIO non e' un dizionario ma e' stato di PROCESSO identico:
     # ereditata, il secondo replay crede di essere gia' partito e non riapplica
     # il freno delle aperture al primo giro (difetto 22 del catalogo).
+    # C6 d2 (23/09): UNA funzione di produzione enumera TUTTE le cache di
+    # bot_service (incluse le 4 del canale F4/F6 e le 3 del giro veloce C6 a):
+    # il banco la riusa, cosi' un nome nuovo non puo' piu' sfuggire a queste liste.
+    BS.svuota_le_cache()
+    azzerati.append("svuota_le_cache (tutte le cache di bot_service, canale F4/F6 e giro veloce inclusi)")
     guardia = getattr(BS, "_GUARDIA_AVVIO", None)
     if guardia is not None and hasattr(guardia, "azzera"):
         guardia.azzera()
@@ -964,6 +982,9 @@ def _crea_strategia():
             self.uscite_osservate = 0
             self.aperture_nel_giro = 0
             self.segnali_di_variante_spenta = 0
+            # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
+            # banco comune (None in tutti gli altri scenari)
+            self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
             super().__init__(**kw)
 
         # ---------------------------------------------------------- flumine
@@ -1065,6 +1086,11 @@ def _crea_strategia():
             #    guardano il rapporto fra cio' che il bot crede e cio' che c'e'
             #    a mercato - ed e' li' che vivevano i cinque difetti del 15/09.
             self._verifica_consapevolezza()
+            # 4-ter) I CONTROLLI CP (scenario chiusura-abbinata-in-parte)
+            if self.sorveglianza_cp is not None:
+                for cod, reg, det in self.sorveglianza_cp.verifica(
+                        CP.credenze_da_righe(self.db.trades), self.referto.sollecitati):
+                    self.referto.violazioni.append(CERT.Violazione(cod, reg, det))
             # 5) i controlli TRASVERSALI, a fine giro
             ciclo = CERT.Ciclo(db=self.db, market=self.mercato, params=self.params,
                                mode=self.mode, now_ts=pt_ms / 1000.0,
@@ -1323,7 +1349,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       fuori_app: Optional[str] = None,
                       mode: str = "live",
                       status: str = "running",
-                      scenario: str = "base") -> CERT.Referto:
+                      scenario: str = "base",
+                      chiusura_parziale: bool = False) -> CERT.Referto:
     """Fa rivivere a Safe calcio una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
 
@@ -1458,6 +1485,14 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     motore = MotoreReplay(quadro, su_book=_scanner_durante_attesa)
     strategia.mercato.motore = motore
+    guasto_cp: Optional[CP.GuastoChiusuraParziale] = None
+    if chiusura_parziale:
+        # il RUOLO dell'ordine si legge dalla riga che lo ha chiesto
+        # (`safe-t<id>`, `closes_trade_id` / `meta.cashout` sulle chiusure)
+        guasto_cp = CP.GuastoChiusuraParziale(
+            ruolo=CP.ruolo_da_righe(lambda: strategia.db.trades))
+        motore.guasto_chiusure = guasto_cp
+        strategia.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
 
     # I NOMI DEL CORRECT SCORE: lo stream non li ha, e senza di loro la variante
     # ESATTO non vede un prezzo. Si dichiarano al banco PRIMA di partire,
@@ -1478,6 +1513,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     out = strategia.chiudi()
     _componi_note(out, strategia, banco, motore, scenario, mode, status)
+    if guasto_cp is not None:
+        out.note.append(guasto_cp.riepilogo())
     return out
 
 
@@ -1736,7 +1773,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         cashout_globale=(scenario == SCENARIO_CASHOUT_GLOBALE),
         fuori_app=("intera" if scenario == SCENARIO_FUORI_APP else
                    ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
-        mode=mode, status=status, scenario=scenario)
+        mode=mode, status=status, scenario=scenario,
+        chiusura_parziale=(scenario == CP.SCENARIO))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
