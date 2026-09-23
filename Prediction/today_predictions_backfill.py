@@ -1965,7 +1965,12 @@ class _DeferredWriter:
     exit code != 0 da main()).
     """
 
-    def __init__(self, chunk_size: int = 100) -> None:
+    # 25 righe (~5s a 0,2s/riga): sotto lo statement_timeout PostgREST di 8s.
+    # Prima era 100 (~20s): andava in 57014 anche a DB poco carico (run
+    # 35837269470), e persino il dimezzamento a 50 restava sopra la soglia.
+    # 25 e' la stessa dimensione gia' scelta per i blocchi uniti delle
+    # post_ops (_POST_OPS_CHUNK_SIZE).
+    def __init__(self, chunk_size: int = 25) -> None:
         self.chunk_size = chunk_size
         self._pred_rows: List[Dict[str, Any]] = []
         self._post_ops: List[Tuple[str, int, Dict[str, Any]]] = []  # (kind, fixture_id, row)
@@ -2204,6 +2209,7 @@ class _DeferredWriter:
         sb: Any,
         rows: List[Dict[str, Any]],
         confermate: Optional[Set[int]] = None,
+        _primo_livello: bool = True,
     ) -> None:
         """Upsert di un blocco di righe, con retry sugli errori transitori.
 
@@ -2215,6 +2221,10 @@ class _DeferredWriter:
 
         ``confermate`` (se dato) riceve i fixture_id delle righe scritte TALE
         E QUALE (non quelle riscritte come 'error' ne' quelle perse).
+
+        ``_primo_livello`` (uso interno, non passare dal chiamante esterno)
+        distingue il blocco appena arrivato da flush() dai suoi discendenti
+        gia' dimezzati: vedi il commento sul freno qui sotto.
         """
         if not rows:
             return
@@ -2239,10 +2249,18 @@ class _DeferredWriter:
             errore = batch_err
 
         # Freno: a DB in ginocchio il dimezzamento ricorsivo genererebbe
-        # centinaia di richieste destinate a fallire. Si smette qui e l'intero
+        # centinaia di richieste destinate a fallire. Si smette qui e il
         # blocco viene registrato come perso (nulla di ingoiato: exit != 0).
+        # ECCEZIONE: il blocco appena arrivato da flush() (_primo_livello)
+        # ha SEMPRE diritto ad almeno un dimezzamento, anche se il freno e'
+        # gia' attivo per l'esaurimento di un blocco precedente nello stesso
+        # run. Senza questa eccezione un freno scattato a meta' giornata
+        # perderebbe INTERO ogni blocco successivo (anche uno da 25 righe,
+        # 5s, che probabilmente passerebbe dimezzato a 12+13) senza mai
+        # provare a rimpicciolirlo. Solo un discendente che ha GIA' avuto la
+        # sua occasione (_primo_livello=False) si arrende subito, come prima.
         motivo = _db_retry_exhausted()
-        if motivo is not None:
+        if motivo is not None and not _primo_livello:
             logger.error(
                 "Freno DB attivo (%s): blocco di %s righe NON dimezzato, "
                 "registrato come perso.", motivo, len(rows),
@@ -2254,10 +2272,16 @@ class _DeferredWriter:
                     errore,
                 )
             return
+        if motivo is not None:
+            logger.warning(
+                "Freno DB attivo (%s) ma il blocco di %s righe non ha ancora "
+                "avuto un dimezzamento: si prova UNA volta prima di arrendersi.",
+                motivo, len(rows),
+            )
 
         half = len(rows) // 2
-        self._upsert_rows(sb, rows[:half], confermate)
-        self._upsert_rows(sb, rows[half:], confermate)
+        self._upsert_rows(sb, rows[:half], confermate, _primo_livello=False)
+        self._upsert_rows(sb, rows[half:], confermate, _primo_livello=False)
 
     def _upsert_single(
         self,
@@ -2364,7 +2388,8 @@ def run_for_date(target_date: str) -> None:
 
     # Writer differito: batcha gli upsert di fixture_predictions a blocchi,
     # mantenendo per ogni fixture l'ordine prediction -> odds -> analysis.
-    writer = _DeferredWriter(chunk_size=100)
+    # chunk_size = default di _DeferredWriter (25 righe, vedi li' il motivo).
+    writer = _DeferredWriter()
 
     try:
         for fx in fixtures:

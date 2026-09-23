@@ -446,6 +446,43 @@ def test_57014_su_upsert_batch_usa_i_blocchi_intermedi_non_solo_la_riga_singola(
     assert tpb._RUN_FAILURES == []
 
 
+def test_dimensione_blocco_iniziale_predizioni_e_25() -> None:
+    """Il blocco iniziale dell'upsert delle predizioni e' sceso da 100 a 25
+    righe (~5s a 0,2s/riga, sotto lo statement_timeout PostgREST di 8s): un
+    blocco da 100 (~20s) andava in 57014 anche a DB poco carico, e persino
+    il dimezzamento a 50 restava sopra la soglia (run 35837269470, 23/09).
+    25 e' la stessa dimensione gia' scelta per i blocchi uniti delle
+    post_ops (_POST_OPS_CHUNK_SIZE). Falsifica: rimettendo il default a 100
+    in _DeferredWriter.__init__ questa assert va rossa."""
+    assert tpb._DeferredWriter().chunk_size == 25
+
+
+def test_57014_su_blocco_di_25_dimezza_a_12_e_13(monkeypatch):
+    """Il nuovo blocco di partenza (25 righe): un 57014 sul batch intero
+    deve dimezzare UNA volta a 12+13 e scrivere le STESSE righe finali,
+    senza fixture perse ne' righe singole necessarie."""
+    def policy(descr, _attempts):
+        if descr["verb"] == "upsert" and len(descr["fixture_ids"]) == 25:
+            return timeout_57014()
+        return None
+
+    client = FakeSupabaseConTabella(fail_policy=policy)
+    writer = _writer_con_client(monkeypatch, client, chunk_size=25)
+
+    ids = list(range(5001, 5026))  # 25 righe
+    for fid in ids:
+        writer.queue_prediction(prediction_row(fid))
+    writer.flush()
+
+    scritte = [d["fixture_ids"] for d in client.executed if d["verb"] == "upsert"]
+    assert scritte == [tuple(ids[:12]), tuple(ids[12:])], (
+        "25 righe: un 57014 sul blocco intero deve dimezzare a 12+13, non oltre"
+    )
+    assert tpb._RUN_FAILURES == [], "nessuna fixture persa"
+    attese = {fid: prediction_row(fid) for fid in ids}
+    assert client.tabella == attese, "stesse righe finali di prediction_row(), nessuna alterata"
+
+
 def test_57014_transitorio_sul_batch_passa_al_secondo_tentativo(monkeypatch):
     """Un solo 57014: il batch stesso viene ritentato e passa, senza split."""
     stato = {"n": 0}
@@ -1215,6 +1252,36 @@ def test_57014_permanente_non_martella_il_db_e_registra_tutte_le_righe(monkeypat
     assert registrate == set(ids), "tutte e 100 devono restare tracciate"
 
 
+def test_freno_gia_attivo_concede_comunque_un_dimezzamento_al_blocco_nuovo(monkeypatch):
+    """Il freno di parete, gia' scattato per un blocco precedente nello
+    stesso run, non deve far perdere INTERO un blocco appena arrivato da
+    flush() senza avergli dato almeno un dimezzamento (misurato il 23/09,
+    run 35837269470: un blocco da 100 dimezzato una volta a 50+50, poi il
+    freno bloccava OGNI ulteriore dimezzamento e perdeva l'intero blocco).
+    Il blocco intero E i suoi due mezzi devono essere tentati; solo i mezzi,
+    gia' dimezzati una volta, si arrendono subito se falliscono anche loro."""
+    monkeypatch.setattr(tpb, "_DB_FAILED_REQUESTS", tpb._DB_MAX_FAILED_REQUESTS)  # freno gia' esaurito
+
+    client = FakeSupabase(fail_policy=lambda d, a: timeout_57014() if d["verb"] == "upsert" else None)
+    writer = _writer_con_client(monkeypatch, client, chunk_size=25)
+
+    ids = list(range(6001, 6026))  # 25 righe, il nuovo blocco iniziale
+    for fid in ids:
+        writer.queue_prediction(prediction_row(fid))
+    writer.flush()
+
+    assert [d["fixture_ids"] for d in client.executed if d["verb"] == "upsert"] == [], (
+        "permanente: nessun upsert riesce"
+    )
+    tentativi = [d["fixture_ids"] for d in client.attempts if d["verb"] == "upsert"]
+    assert tuple(ids) in tentativi, "il blocco intero da 25 deve essere tentato"
+    assert tuple(ids[:12]) in tentativi, "la prima meta' (12) deve essere tentata"
+    assert tuple(ids[12:]) in tentativi, "la seconda meta' (13) deve essere tentata"
+    assert len(tentativi) == 3, "solo il primo dimezzamento: i mezzi non si dimezzano oltre a freno attivo"
+    registrate = {g["fixture_id"] for g in tpb._RUN_FAILURES}
+    assert registrate == set(ids), "tutte e 25 restano tracciate, nessuna persa in silenzio"
+
+
 def test_scadenza_di_parete_ferma_i_retry(monkeypatch):
     """Superata la deadline non si ritenta piu', anche con budget di attese intatto."""
     orologio = {"t": 1000.0}
@@ -1480,10 +1547,12 @@ _STATI = ("ok", "no_coverage", "empty", "error")
 
 def _scenario_grande(modulo: Any, ids: List[int]) -> None:
     """Il loop del runner in miniatura: prediction -> odds -> analisi per
-    fixture, maybe_flush fra una fixture e l'altra, chunk da 100. Alcune
+    fixture, maybe_flush fra una fixture e l'altra, chunk al DEFAULT di
+    produzione del modulo passato (cosi' il test resta legato alla vera
+    costante: 100 per 'prima', 25 per 'tpb' dopo la riduzione). Alcune
     fixture senza odds (coverage illeggibile), alcune senza analisi (calcolo
     fallito), alcune senza nessuna delle due."""
-    writer = modulo._DeferredWriter(chunk_size=100)
+    writer = modulo._DeferredWriter()
     for i, fid in enumerate(ids):
         writer.maybe_flush()
         riga = prediction_row(fid, status=_STATI[i % 4])
@@ -1545,8 +1614,27 @@ def test_post_ops_a_blocchi_stesse_tabelle_e_meno_chiamate(tmp_path, monkeypatch
     w_prima = _scritture(client_prima)
     w_ora = _scritture(client_ora)
     assert len(w_prima) == 3 + n_odds + n_analisi
+
+    # Upsert "puri" delle sole predizioni (colonne senza odds/analisi): uno
+    # per flush, quindi 300/chunk_size. 'prima' e' rimasto a 100 (3 flush);
+    # 'tpb' e' sceso a 25 (nuovo default produzione, 12 flush). Falsifica:
+    # rimettendo 100 come default di _DeferredWriter in today_predictions_
+    # backfill.py, pred_pure_ora torna a 3 e questa assert va rossa.
+    def _predizioni_pure(scritture: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [d for d in scritture if d["verb"] == "upsert"
+                and not _ha_colonna(d, "raw_json_odds")
+                and not _ha_colonna(d, "db_json_analisi")]
+
+    pred_pure_prima = _predizioni_pure(w_prima)
+    pred_pure_ora = _predizioni_pure(w_ora)
+    assert len(pred_pure_prima) == 3, "300 / 100 (default di 'prima') = 3 upsert di predizioni pure"
+    assert len(pred_pure_ora) == 12, "300 / 25 (nuovo default di produzione) = 12 upsert di predizioni pure"
+
     assert [d for d in w_ora if d["verb"] == "update"] == []
-    assert len(w_ora) <= 3 + 3 * 4 * 3, "al piu' 3 gruppi di chiavi x 4 blocchi da 25 per flush"
+    # 12 flush da 25 predizioni: ogni flush sta sotto _POST_OPS_CHUNK_SIZE
+    # (25), quindi al piu' 1 blocco di post_ops per gruppo di chiavi x flush
+    # (al piu' 3 gruppi di chiavi possibili) + le 12 predizioni pure.
+    assert len(w_ora) <= 12 + 3 * 1 * 12, "al piu' 3 gruppi di chiavi x 1 blocco da 25 per flush"
     assert client_ora.failed == [] and client_prima.failed == []
     assert tpb._RUN_FAILURES == [] and prima._RUN_FAILURES == []
     print("\nRICHIESTE DI SCRITTURA per %d fixture: prima %d (upsert %d + update %d), ora %d"
@@ -1765,7 +1853,10 @@ def test_run_for_date_stessa_tabella_del_percorso_a_update_singole(tmp_path, mon
     assert api_ora.calls == api_prima.calls
     assert tpb._RUN_FAILURES == [] and prima._RUN_FAILURES == []
     assert len(_scritture(client_prima)) == 1 + 30 + 30
-    assert len(_scritture(client_ora)) <= 3
+    # 30 righe, blocco iniziale ora 25 (prima 100): 2 flush (25 + 5) invece
+    # di 1, quindi 2 upsert di predizioni pure + 2 upsert di post_ops uniti
+    # (uno per flush, tutti sotto _POST_OPS_CHUNK_SIZE=25) = 4, non piu' <=3.
+    assert len(_scritture(client_ora)) <= 4
 
 
 def test_post_ops_fixture_duplicata_nel_flush_usa_le_update_di_sempre(tmp_path, monkeypatch):
