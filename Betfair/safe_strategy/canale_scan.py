@@ -340,6 +340,12 @@ class ClientScan:
         self.ultimo_errore: Optional[str] = None
         self.svegliate = 0
         self._detto_niente_websockets = False
+        #: PUNTEGGI_CANALE (23/09): istante monotono dell'ultimo battito dello
+        #: scanner (topic ``scanner_stato``) arrivato su questo client. 0.0 =
+        #: mai arrivato. Serve ai lettori dei punteggi per sapere se lo
+        #: scanner e' VIVO senza rileggere ``safe_strategy_status`` dal DB.
+        #: Il battito NON e' una riga: ``incassa`` continua a tornare False.
+        self.stato_mono = 0.0
 
     # ------------------------------------------------------------- ciclo vita
     def avvia(self) -> None:
@@ -407,6 +413,16 @@ class ClientScan:
                     return
                 self.incassa(grezzo)
 
+    def eta_stato_s(self) -> Optional[float]:
+        """Da quanti secondi non arriva il battito dello scanner su QUESTO
+        client. ``None`` = mai arrivato (che non e' "zero secondi fa") oppure
+        client non collegato adesso: un battito vecchio su un socket caduto
+        non dice niente dello scanner di adesso."""
+        ultimo = self.stato_mono
+        if not ultimo or not self.collegato:
+            return None
+        return max(0.0, time.monotonic() - ultimo)
+
     # ------------------------------------------------------------- un messaggio
     def incassa(self, grezzo: Any) -> bool:
         """Un messaggio del canale. NON SOLLEVA MAI. ``True`` se e' entrato.
@@ -420,8 +436,14 @@ class ClientScan:
             return False
         if not isinstance(msg, dict):
             return False
+        if msg.get("t") == TOPIC_SCANNER_STATO:
+            # il battito dello scanner: si annota QUANDO e' arrivato (lo
+            # scanner lo emette ogni ``_STATUS_PERIOD_SEC``) e basta. Non e' una
+            # riga e non entra nella cache delle righe.
+            self.stato_mono = time.monotonic()
+            return False
         if msg.get("t") not in TOPIC_SCAN_NOMI:
-            # ``scanner_stato`` e ``hello`` passano di qui e non sono righe:
+            # ``hello`` e gli altri topic passano di qui e non sono righe:
             # si ignorano senza contarli come scarti.
             return False
         riga = msg.get("d")

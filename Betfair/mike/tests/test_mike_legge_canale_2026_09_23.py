@@ -68,11 +68,21 @@ def _spingi(riga: Dict[str, Any]) -> bool:
     return client.incassa(json.dumps({"t": "scan_calcio", "d": riga}, default=str))
 
 
+ENV_SVEGLIA = S._SV.ENV_MIKE_SVEGLIA
+
+
 @pytest.fixture
 def canale(monkeypatch):
     """Interruttore ACCESO e client avviato con ``avvia_client_scan`` (il
-    thread del socket neutralizzato)."""
+    thread del socket neutralizzato).
+
+    ``MIKE_SVEGLIA_CANALE`` e' FORZATO spento: il file ``.env`` alla radice
+    del repo lo tiene a ``1`` per il servizio vero, e senza questa riga il
+    client di questo fixture (23/09, fusione) partirebbe ANCHE con la sveglia
+    agganciata - questo fixture vuole la SOLA lettura, come il suo nome dice.
+    """
     monkeypatch.setenv(ENV, "1")
+    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
     monkeypatch.setattr(CS.ClientScan, "avvia", lambda self: None)
     S.azzera_canale_scan()
     assert S.avvia_client_scan() is True
@@ -307,3 +317,148 @@ def test_la_sveglia_resta_quella_di_prima(canale):
     """Il client delle righe non porta la sveglia: e' ``MIKE_SVEGLIA_CANALE``."""
     client = S._CANALE_FEED["client"]
     assert client.evento is None and client.interessa is None
+
+
+# ============================== (F5xF6, 23/09) fusione righe + sveglia sul 47336
+# Con MIKE_SVEGLIA_CANALE ANCHE acceso, avvia_client_scan() diventa l'UNICO
+# client verso il canale 47336 (regola dell'utente: una fonte, un client):
+# porta le righe in cache come sempre E alza _SVEGLIA con lo STESSO filtro
+# (_evento_seguito) e gli STESSI contatori di AscoltoScan. _avvia_sveglia()
+# allora non apre il suo client separato: lo si dimostra sostituendo
+# AscoltoScan con un finto che si conterebbe se venisse istanziato.
+class _AscoltoFinto:
+    """Sostituisce ``_SV.AscoltoScan``: se ``_avvia_sveglia()`` lo istanzia
+    (caso NON fuso) il test lo scopre in ``creati``, senza aprire un socket."""
+
+    creati: List["_AscoltoFinto"] = []
+
+    def __init__(self, sveglia: Any, interessa: Any,
+                topic: Any = (), nome: str = "mike") -> None:
+        self.sveglia = sveglia
+        self.interessa = interessa
+        self.topic = topic
+        self.nome = nome
+        self.url = "ws://finto"
+        type(self).creati.append(self)
+
+    def avvia(self) -> bool:
+        return True
+
+
+@pytest.fixture
+def _ascolto_finto(monkeypatch):
+    monkeypatch.setattr(S._SV, "AscoltoScan", _AscoltoFinto)
+    _AscoltoFinto.creati = []
+    yield _AscoltoFinto
+    _AscoltoFinto.creati = []
+
+
+@pytest.fixture
+def canale_e_sveglia(monkeypatch, _ascolto_finto):
+    """Entrambi gli interruttori accesi: il caso della fusione."""
+    monkeypatch.setenv(ENV, "1")
+    monkeypatch.setenv(ENV_SVEGLIA, "1")
+    monkeypatch.setattr(CS.ClientScan, "avvia", lambda self: None)
+    S.azzera_canale_scan()
+    S._SVEGLIA.azzera()
+    S._ASCOLTO_SCAN = None
+    S._avvia_sveglia()
+    assert S.avvia_client_scan() is True
+    yield S._CANALE_FEED
+    S.azzera_canale_scan()
+    S._SVEGLIA.azzera()
+    S._ASCOLTO_SCAN = None
+
+
+def test_un_solo_client_quando_entrambi_accesi(canale_e_sveglia, _ascolto_finto):
+    """(1) del brief: entrambi accesi -> un solo client, non due."""
+    assert S._ASCOLTO_SCAN is None, "un secondo client su 47336: vietato"
+    assert _ascolto_finto.creati == [], (
+        "AscoltoScan e' stato istanziato: due client sullo stesso canale 47336")
+    client = S._CANALE_FEED["client"]
+    assert client.evento is not None
+    assert client.interessa is S._evento_seguito
+
+
+def test_fuso_sveglia_su_seguita_non_su_altra_righe_in_cache(canale_e_sveglia):
+    """(1) del brief: sveglia SOLO sulla partita seguita, righe di entrambe
+    in cache."""
+    S._CACHE_EVENTI.clear()
+    S._CACHE_EVENTI["E1"] = {}      # E1 e' la partita che Mike segue
+    quando = NOW
+
+    altra = _riga(payload(), quando)
+    altra["event_id"] = "E2"        # non seguita
+    assert _spingi(altra)
+    stats = S._SVEGLIA.statistiche()
+    assert stats["sveglie"] == 0, "una riga non seguita ha svegliato Mike"
+    assert S._CANALE_FEED["cache"].riga("E2") is not None, "riga non entrata in cache"
+
+    seguita = _riga(payload(), quando + timedelta(seconds=1))  # event_id "E1"
+    assert _spingi(seguita)
+    stats = S._SVEGLIA.statistiche()
+    assert stats["sveglie"] == 1 and stats["da_scan"] == 1
+    assert S._CANALE_FEED["cache"].riga("E1") is not None
+    assert S._CANALE_FEED["client"].svegliate == 1
+
+    stato = S.statistiche_sveglia()
+    assert stato is not None and stato["sveglie"] == 1
+    assert stato["canale"]["svegliate"] == 1
+
+
+def test_dormi_o_sveglia_usa_attendi_nel_caso_fuso(monkeypatch, canale_e_sveglia):
+    """Falsificazione 'sveglia persa': senza il fixup di ``_dormi_o_sveglia``
+    (che guardava solo ``_ASCOLTO_SCAN``) questo test va rosso, perche' il
+    caso fuso lascia ``_ASCOLTO_SCAN`` a ``None``."""
+    chiamate: List[str] = []
+    monkeypatch.setattr(S._SVEGLIA, "attendi",
+                        lambda *a, **k: chiamate.append("attendi") or "cadenza")
+    monkeypatch.setattr(S.time, "sleep", lambda s: chiamate.append("sleep"))
+    S._dormi_o_sveglia(0.01, {})
+    assert chiamate == ["attendi"], "il ciclo fuso non si sveglia piu': dorme e basta"
+
+
+def test_solo_sveglia_apre_ascolto_scan_come_prima(monkeypatch, _ascolto_finto):
+    """(2) del brief: solo MIKE_SVEGLIA_CANALE -> come oggi (AscoltoScan)."""
+    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.setenv(ENV_SVEGLIA, "1")
+    S.azzera_canale_scan()
+    S._ASCOLTO_SCAN = None
+    try:
+        S._avvia_sveglia()
+        assert isinstance(S._ASCOLTO_SCAN, _AscoltoFinto)
+        assert _ascolto_finto.creati == [S._ASCOLTO_SCAN]
+        assert S.avvia_client_scan() is False
+        assert S._CANALE_FEED["client"] is None
+    finally:
+        S._ASCOLTO_SCAN = None
+        S.azzera_canale_scan()
+
+
+def test_entrambi_spenti_nessun_client(monkeypatch, _ascolto_finto):
+    """(2) del brief: entrambi spenti -> nessun client, nessuna sveglia."""
+    monkeypatch.delenv(ENV, raising=False)
+    monkeypatch.delenv(ENV_SVEGLIA, raising=False)
+    S.azzera_canale_scan()
+    S._ASCOLTO_SCAN = None
+    S._avvia_sveglia()
+    assert S._ASCOLTO_SCAN is None
+    assert _ascolto_finto.creati == []
+    assert S.avvia_client_scan() is False
+    assert S._CANALE_FEED["client"] is None
+
+
+def test_azzera_canale_scan_toglie_anche_la_sveglia_fusa(canale_e_sveglia):
+    """(3) del brief: l'azzeramento copre il nuovo stato fuso."""
+    assert S._client_scan_alza_sveglia() is True
+    S.azzera_canale_scan()
+    assert S._client_scan_alza_sveglia() is False
+    assert S.statistiche_sveglia() is None
+
+
+def test_svuota_le_cache_toglie_anche_la_sveglia_fusa(canale_e_sveglia):
+    """(3) del brief: idem passando da ``svuota_le_cache`` (usato dai test e
+    dal riallineamento)."""
+    assert S._client_scan_alza_sveglia() is True
+    S.svuota_le_cache()
+    assert S._client_scan_alza_sveglia() is False

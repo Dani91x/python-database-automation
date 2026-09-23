@@ -4330,6 +4330,28 @@ _SVEGLIA = _SV.Sveglia("mike")
 _ASCOLTO_SCAN: Optional[_SV.AscoltoScan] = None
 
 
+class _AlzaSveglia:
+    """Adatta ``Sveglia.alza`` all'interfaccia ``.set()`` che ``CS.ClientScan``
+    si aspetta da un ``threading.Event`` (23/09, fusione dei due client sul
+    canale 47336: regola dell'utente, una fonte un client).
+
+    Con ``MIKE_SVEGLIA_CANALE`` e ``MIKE_LEGGE_CANALE`` insieme il client che
+    porta le righe (``avvia_client_scan``) e' lo STESSO che alza la sveglia:
+    passargli direttamente l'``Event`` privato di ``_SVEGLIA`` scavalcherebbe i
+    suoi contatori (``sveglie``/``da_scan``/``usate``/pavimento). Con questo
+    adattatore la chiamata e' IDENTICA a quella che fa gia' ``AscoltoScan.
+    tratta()`` (``sveglia.alza("scan")``): stessi numeri, stessa sveglia.
+    """
+
+    __slots__ = ("_sveglia",)
+
+    def __init__(self, sveglia: "_SV.Sveglia") -> None:
+        self._sveglia = sveglia
+
+    def set(self) -> None:
+        self._sveglia.alza("scan")
+
+
 def _evento_seguito(event_id: str) -> bool:
     """Mike sta seguendo questo evento? Si risponde SOLO con la memoria.
 
@@ -4371,19 +4393,30 @@ def _su_sveglia_dal_canale(params: Any) -> bool:
 
 def _avvia_sveglia() -> None:
     """Accende l'ascolto del canale dello scanner e la sveglia da UI. Non
-    solleva MAI; a interruttore spento non apre nessun thread e nessuna porta."""
+    solleva MAI; a interruttore spento non apre nessun thread e nessuna porta.
+
+    23/09: con ANCHE ``MIKE_LEGGE_CANALE`` acceso non si apre un secondo
+    client verso il canale 47336 (regola dell'utente: una fonte, un client).
+    La sveglia la porta allora il ``ClientScan`` che ``avvia_client_scan()``
+    avvia per le righe (righe + sveglia fuse, vedi ``_AlzaSveglia``); qui
+    resta solo la sveglia da UI (canale 47333, indipendente da questa).
+    """
     global _ASCOLTO_SCAN
     if not _SV.acceso(_SV.ENV_MIKE_SVEGLIA):
         return
-    try:
-        ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
-                                  topic=(_SV.TOPIC_SCAN_CALCIO,), nome="mike")
-        if ascolto.avvia():
-            _ASCOLTO_SCAN = ascolto
-            logger.info("[mike] sveglia dal canale ATTIVA (%s): il ciclo riparte "
-                        "quando si muove una partita che Mike segue.", ascolto.url)
-    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
-        logger.warning("[mike] sveglia dal canale KO: %s", str(ex)[:160])
+    if _canale_feed_acceso():
+        logger.info("[mike] sveglia dal canale scan affidata al client unico delle "
+                    "righe (MIKE_LEGGE_CANALE acceso): nessun secondo client su 47336.")
+    else:
+        try:
+            ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
+                                      topic=(_SV.TOPIC_SCAN_CALCIO,), nome="mike")
+            if ascolto.avvia():
+                _ASCOLTO_SCAN = ascolto
+                logger.info("[mike] sveglia dal canale ATTIVA (%s): il ciclo riparte "
+                            "quando si muove una partita che Mike segue.", ascolto.url)
+        except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+            logger.warning("[mike] sveglia dal canale KO: %s", str(ex)[:160])
     try:
         ch = _lc.get_channel()
         registra = getattr(ch, "set_sveglia", None) if ch is not None else None
@@ -4397,17 +4430,34 @@ def _avvia_sveglia() -> None:
         logger.warning("[mike] aggancio della sveglia da UI KO: %s", str(ex)[:160])
 
 
+def _client_scan_alza_sveglia() -> bool:
+    """Il client unico delle righe (``avvia_client_scan``) sta ANCHE alzando
+    la sveglia? (fusione 23/09, ``MIKE_SVEGLIA_CANALE`` + ``MIKE_LEGGE_CANALE``
+    insieme). Guarda l'oggetto vero, non un flag duplicato: niente di nuovo da
+    tenere allineato a mano."""
+    client = _CANALE_FEED.get("client")
+    return client is not None and getattr(client, "evento", None) is not None
+
+
 def statistiche_sveglia() -> Optional[Dict[str, Any]]:
-    """I contatori della sveglia, o ``None`` a interruttore spento."""
-    if _ASCOLTO_SCAN is None:
-        return None
-    return {**_SVEGLIA.statistiche(), "canale": _ASCOLTO_SCAN.statistiche()}
+    """I contatori della sveglia, o ``None`` a interruttore spento.
+
+    Con AscoltoScan attivo le stat del canale sono le sue; nel caso fuso
+    (client unico) sono quelle dello stesso ``ClientScan`` che alza la
+    sveglia - i contatori della ``Sveglia`` (``_SVEGLIA.statistiche()``) sono
+    gli STESSI in entrambi i casi: e' l'oggetto che ``alza()`` chiama sempre.
+    """
+    if _ASCOLTO_SCAN is not None:
+        return {**_SVEGLIA.statistiche(), "canale": _ASCOLTO_SCAN.statistiche()}
+    if _client_scan_alza_sveglia():
+        return {**_SVEGLIA.statistiche(), "canale": _CANALE_FEED["client"].stato()}
+    return None
 
 
 def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     """La dormita del ciclo. A interruttore SPENTO e' ``time.sleep(pausa)``,
     la stessa identica istruzione di oggi."""
-    if _ASCOLTO_SCAN is None:
+    if _ASCOLTO_SCAN is None and not _client_scan_alza_sveglia():
         time.sleep(pausa)
         return
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
@@ -4465,8 +4515,15 @@ def avvia_client_scan() -> bool:
     """Accende il client del canale dello scanner. Non solleva MAI.
 
     A interruttore spento non apre niente e non importa ``websockets``. Il
-    client e' quello di Safe, senza sveglia (``evento``/``interessa`` assenti):
-    la sveglia di Mike resta ``MIKE_SVEGLIA_CANALE``, non si tocca.
+    client e' quello di Safe.
+
+    23/09: con ANCHE ``MIKE_SVEGLIA_CANALE`` acceso questo e' l'UNICO client
+    verso il canale 47336 (regola dell'utente: una fonte, un client): porta le
+    righe in cache come sempre E alza la sveglia di Mike (``_SVEGLIA``, stesso
+    filtro ``_evento_seguito`` di ``_avvia_sveglia``/``AscoltoScan``, che in
+    quel caso non apre il suo client separato). Con la sola sveglia accesa
+    (``MIKE_LEGGE_CANALE`` spento) il client resta quello di sempre, senza
+    ``evento``/``interessa``.
     """
     if _CANALE_FEED.get("avviato"):
         return True
@@ -4476,11 +4533,19 @@ def avvia_client_scan() -> bool:
         from Betfair.safe_strategy import canale_scan as CS
 
         cache = CS.CacheScan()
-        client = CS.ClientScan(CS.porta_scan(), cache)
+        sveglia_kw: Dict[str, Any] = {}
+        if _SV.acceso(_SV.ENV_MIKE_SVEGLIA):
+            sveglia_kw = {"evento": _AlzaSveglia(_SVEGLIA), "interessa": _evento_seguito}
+        client = CS.ClientScan(CS.porta_scan(), cache, **sveglia_kw)
         client.avvia()
         _CANALE_FEED.update({"client": client, "cache": cache, "avviato": True})
-        logger.info("[mike] righe dello scanner dal canale locale %d (il database "
-                    "resta la lista e il ripiego)", client.porta)
+        if sveglia_kw:
+            logger.info("[mike] righe E sveglia dal canale locale %d (un solo client "
+                        "per il 47336, il database resta la lista e il ripiego)",
+                        client.porta)
+        else:
+            logger.info("[mike] righe dello scanner dal canale locale %d (il database "
+                        "resta la lista e il ripiego)", client.porta)
         return True
     except Exception as ex:  # noqa: BLE001 - senza canale si lavora come oggi
         logger.warning("[mike] client del canale scan NON avviato: %s", str(ex)[:160])
@@ -4630,10 +4695,13 @@ def main() -> None:
         from Betfair.omega import omega_market as _om_saldo
         _om_saldo.attiva_saldo_su_evento("mike")
         # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
-        # nessun thread e la dormita resta quella di oggi.
+        # nessun thread e la dormita resta quella di oggi. Con MIKE_LEGGE_CANALE
+        # ANCHE acceso non apre il suo client: lo fa avvia_client_scan() qui
+        # sotto (un solo client per il canale 47336, righe + sveglia fuse).
         _avvia_sveglia()
         # 23/09: righe dello scanner dal canale 47336 (``MIKE_LEGGE_CANALE``).
-        # Spento: nessun client, la lettura del feed resta quella di oggi.
+        # Spento: nessun client, la lettura del feed resta quella di oggi. Con
+        # MIKE_SVEGLIA_CANALE ANCHE acceso questo client alza pure la sveglia.
         avvia_client_scan()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Mike si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
