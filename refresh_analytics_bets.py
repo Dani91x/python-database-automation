@@ -27,6 +27,22 @@ PERCHE' A FINESTRE DI UN GIORNO IL RISULTATO E' LO STESSO (letto dal SQL)
      nell'ultima insert; qui si sommano le finestre, quindi un fixture con segnali
      in piu' giorni e' contato piu' volte. E' un numero di log, non un dato.
 
+5xx DEL GATEWAY: NON SI RITENTA (run 35837906029, 23/09)
+  Il gateway ha risposto 'JSON could not be generated' / code 504 / "upstream
+  request timeout" sulle finestre 18/09, 20/09, 22/09. Prima si ritentava (504
+  era in _TRANSIENT_CODES): il secondo tentativo trovava lo statement PRECEDENTE
+  ancora in esecuzione sul server (entrambe le RPC hanno statement_timeout=0) e
+  sbatteva contro le sue righe -> 'duplicate key value violates unique
+  constraint "book_odds_cache_pkey"' (23505) oppure 55P03 (lock timeout). Il
+  docstring di _timeout_client descriveva gia' questo rischio, ma copriva solo
+  le eccezioni httpx (timeout/interruzione lato CLIENT), non il 5xx del gateway
+  (che arriva come postgrest.exceptions.APIError con code 500/502/504 o quei
+  messaggi). Ora _timeout_client copre anche questo caso (vedi
+  _gateway_timeout_dopo_invio): NESSUN retry, finestra fallita con lo stesso
+  avviso "NON rilanciare a mano subito". Restano ritentabili: 57014, 55P03,
+  53300, 40001/40P01, PGRST002, 503, e gli errori di CONNESSIONE (la richiesta
+  non e' mai partita, es. httpx.ConnectTimeout/ConnectError).
+
 Uso (equivalente a `refresh_analytics_bets(p_days=5)`):
   python refresh_analytics_bets.py --days 5
   python refresh_analytics_bets.py --from 2026-09-01 --to 2026-10-01   # backfill
@@ -52,26 +68,66 @@ _RETRY = 3              # tentativi su errori TRANSITORI (MAI sul timeout del cl
 _PAUSA = 1.0            # pausa fra finestre: il DB respira
 
 # Errori TRANSITORI (si ritentano). Gli errori LOGICI non si ritentano.
+# ATTENZIONE: 500/502/504 NON sono qui (vedi _GATEWAY_TIMEOUT_CODES sotto): un
+# 5xx del GATEWAY (non del client) e' la risposta arrivata a una richiesta gia'
+# partita, quindi va trattato come _timeout_client, non ritentato.
 _TRANSIENT_CODES = {"57014", "53300", "53400", "55P03", "40001", "40P01",
                     "08006", "08003", "08000", "57P01", "57P02", "57P03",
-                    "PGRST002", "408", "500", "502", "503", "504"}
+                    "PGRST002", "408", "503"}
+
+# 5xx del GATEWAY osservati in produzione (run 35837906029, 23/09) sulle finestre
+# 18/09, 20/09, 22/09: 'JSON could not be generated' / code 504, "b'upstream
+# request timeout'". Il gateway ha risposto (anche se con un corpo troncato o
+# malformato): la richiesta e' PARTITA verso il server, quindi lo statement puo'
+# essere ANCORA IN ESECUZIONE (statement_timeout=0). Ritentare la stessa finestra
+# fa partire un secondo delete+insert in CONCORRENZA col primo -> il secondo
+# tentativo trova lo statement precedente ancora vivo e sbatte contro le sue
+# righe: duplicate key su book_odds_cache_pkey (23505) oppure lock timeout
+# (55P03). Per questo questi codici/messaggi si trattano come _timeout_client:
+# NESSUN retry, finestra fallita, stesso avviso di "non rilanciare a mano".
+_GATEWAY_TIMEOUT_CODES = {"500", "502", "504"}
+_GATEWAY_TIMEOUT_MSGS = ("json could not be generated", "upstream request timeout",
+                         "bad gateway")
+
+
+def _gateway_timeout_dopo_invio(e: Exception) -> bool:
+    """True se `e` e' un errore del GATEWAY (APIError con code 500/502/504, o con
+    uno dei messaggi osservati in produzione) arrivato DOPO che la richiesta e'
+    stata inviata. Non riguarda gli errori di CONNESSIONE (la richiesta non e'
+    mai partita): quelli restano in _is_transient/_timeout_client via httpx.
+
+    Il CODE, quando c'e', e' AUTORITATIVO (un 503 resta un 503 ritentabile anche
+    se il messaggio fosse lo stesso di un 504: e' PostgREST che decide il code,
+    non va riletto dal testo). Il messaggio e' solo un fallback per gli errori
+    SENZA code affidabile."""
+    code = getattr(e, "code", None)
+    if code is not None:
+        return str(code) in _GATEWAY_TIMEOUT_CODES
+    msg = str(getattr(e, "message", "") or "").lower()
+    details = str(getattr(e, "details", "") or "").lower()
+    return any(s in msg or s in details for s in _GATEWAY_TIMEOUT_MSGS)
 
 
 def _timeout_client(e: Exception) -> bool:
-    """Timeout/interruzione LATO CLIENT: la richiesta e' partita e la risposta non
-    e' arrivata, ma le due RPC hanno statement_timeout=0, quindi lo statement puo'
-    essere ANCORA VIVO sul server. Questo NON si ritenta MAI: una seconda chiamata
-    sulla stessa finestra farebbe delete+insert in concorrenza sulle stesse righe
-    (lock, deadlock 40P01, violazioni di chiave)."""
+    """Timeout/interruzione LATO CLIENT (o del gateway, DOPO l'invio): la
+    richiesta e' partita e la risposta buona non e' arrivata, ma le due RPC
+    hanno statement_timeout=0, quindi lo statement puo' essere ANCORA VIVO sul
+    server. Questo NON si ritenta MAI: una seconda chiamata sulla stessa
+    finestra farebbe delete+insert in concorrenza sulle stesse righe (lock,
+    deadlock 40P01, violazioni di chiave -- vedi _gateway_timeout_dopo_invio per
+    il caso, osservato in produzione, del 504/502/500 del gateway)."""
     if isinstance(e, httpx.ConnectTimeout):
         return False      # la connessione non si e' aperta: lo statement non e' mai partito
-    return isinstance(e, (httpx.TimeoutException, httpx.RemoteProtocolError,
-                          httpx.ReadError, httpx.WriteError))
+    if isinstance(e, (httpx.TimeoutException, httpx.RemoteProtocolError,
+                      httpx.ReadError, httpx.WriteError)):
+        return True
+    return _gateway_timeout_dopo_invio(e)
 
 
 def _is_transient(e: Exception) -> bool:
     """True solo per gli errori che ha senso ritentare. ATTENZIONE: esclude i
-    timeout del client (vedi _timeout_client), che NON si ritentano."""
+    timeout del client E i 5xx del gateway dopo l'invio (vedi _timeout_client),
+    che NON si ritentano."""
     if _timeout_client(e):
         return False
     if isinstance(e, httpx.TransportError):   # ConnectError, ConnectTimeout gia' escluso, PoolTimeout...

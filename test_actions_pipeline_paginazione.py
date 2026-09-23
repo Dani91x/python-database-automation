@@ -70,6 +70,15 @@ def err_23505() -> APIError:
                               '"analytics_signals_signal_uid_key"')
 
 
+def err_504() -> APIError:
+    """FORMA REALE (run 35837906029, 23/09, finestre 18/09/20/09/22/09):
+    postgrest mette lo STATUS INT in 'code', il messaggio e' quello generico di
+    PostgREST quando il gateway non riesce a generare la risposta."""
+    return APIError({"message": "JSON could not be generated", "code": 504,
+                     "hint": "Refer to full message for details",
+                     "details": "b'upstream request timeout'"})
+
+
 # ------------------------------------------------------------- finto PostgREST
 class FakeResp:
     def __init__(self, data, count=None):
@@ -1153,4 +1162,147 @@ def test_snapshot_non_cambiano_con_l_ordine_di_lettura():
     a = compute_market_snapshots("over_2_5", "Over", partite)
     b = compute_market_snapshots("over_2_5", "Over", mescolate)
     assert a and a == b
+
+
+# ============================================================================
+# 6) run 35837906029 (23/09): lega 929 in 57014 aveva ucciso l'intero script
+#    (enrich_analytics_snapshots), e il 504 del gateway ritentato aveva prodotto
+#    23505/55P03 su refresh_analytics_bets. Vedi log righe ~605-671.
+# ============================================================================
+def test_fetch_signal_targets_dimezza_il_blocco_su_57014_e_legge_la_lega():
+    """IL DIFETTO VERO: _PAGE_MIN era 100, IDENTICO al blocco iniziale della
+    lettura per lega (_PAGE_LEGA=100): il blocco non si dimezzava MAI davvero,
+    5 tentativi sullo STESSO blocco da 100 -> 57014 ripetuto -> RuntimeError.
+    Ora la prima lettura (blocco 100) va in 57014, la seconda (dimezzata a 50)
+    risponde: la lega si legge lo stesso, senza perdere righe."""
+    righe = _righe_signals_lega(30, league_id=929)     # 30 fix x 4 mercati = 120 righe
+    db = FakeDB({"analytics_signals": righe})
+    usati = []
+
+    def hook(q):
+        if q.table != "analytics_signals":
+            return
+        lung = q._range[1] - q._range[0] + 1
+        usati.append(lung)
+        if lung >= en._PAGE_LEGA:     # 100: va SEMPRE in 57014 -> deve dimezzare per passare
+            raise err_57014()
+
+    db.select_hook = hook
+    by_ms = en._fetch_signal_targets(db, 929)
+    assert sum(len(v) for v in by_ms.values()) == 30 * len(MERCATI)   # nessuna riga persa
+    assert usati[0] == en._PAGE_LEGA == 100      # la prima lettura usa il blocco iniziale
+    assert min(usati) < en._PAGE_LEGA            # e si e' DAVVERO dimezzata per riuscire
+
+
+def test_fetch_signal_targets_57014_persistente_esce_dopo_5_tentativi_al_minimo():
+    """Se il 57014 persiste anche al blocco minimo (25), _leggi_pagine esce con
+    RuntimeError dopo i 5 tentativi (non resta appesa, non finge un successo)."""
+    righe = _righe_signals_lega(10, league_id=929)
+    db = FakeDB({"analytics_signals": righe})
+    db.select_hook = lambda q: (_ for _ in ()).throw(err_57014()) if q.table == "analytics_signals" else None
+    with pytest.raises(RuntimeError, match="analytics_signals lega 929") as ex:
+        en._fetch_signal_targets(db, 929)
+    assert "5 tentativi" in str(ex.value)
+    assert en._is_retry_esauriti(ex.value)      # e' un 57014 esaurito: la lega si puo' saltare
+
+
+def test_main_lega_57014_persistente_non_ferma_le_altre_leghe(monkeypatch, capsys):
+    """IL FIX: prima, una lega in 57014 persistente faceva morire l'INTERO
+    script (RuntimeError non gestito, vedi run 35837906029, lega 929: le leghe
+    dopo la 929 non venivano mai elaborate). Ora la lega fallita si registra e
+    si salta; le ALTRE leghe (qui la 331) vengono elaborate regolarmente e lo
+    script esce comunque != 0 col riepilogo."""
+    sig_929 = _righe_signals_lega(5, league_id=929)
+    sig_331 = _righe_signals_lega(5, league_id=331)
+    matches_331 = _righe_matches(5, league_id=331)
+    db = FakeDB({"analytics_signals": sig_929 + sig_331, "matches": matches_331,
+                 "analytics_snap_staging": []})
+
+    def hook(q):
+        if q.table == "analytics_signals" and ("eq", "league_id", 929) in q.filters:
+            raise err_57014()          # SEMPRE in 57014 per la lega 929, mai per la 331
+
+    db.select_hook = hook
+    monkeypatch.setattr(en, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["enrich_analytics_snapshots.py", "--days", "4"])
+    with pytest.raises(SystemExit) as ex:
+        en.main()
+    out = capsys.readouterr().out
+    assert "[ERR lega 929]" in out
+    assert "929" in str(ex.value.code) and "leghe fallite" in str(ex.value.code)
+    # la lega 331 E' STATA elaborata comunque: il flush l'ha davvero toccata
+    # (updated_at scritto dalla RPC -- freq_current puo' restare None qui, serve
+    # mm10 su >=10 partite precedenti, ma la RIGA e' stata aggiornata lo stesso)
+    righe_331 = [s for s in db.tables["analytics_signals"] if s["league_id"] == 331]
+    assert righe_331 and any(s.get("updated_at") is not None for s in righe_331)
+    # la lega 929 NON e' stata toccata (mai arrivata al flush)
+    righe_929 = [s for s in db.tables["analytics_signals"] if s["league_id"] == 929]
+    assert all(s.get("updated_at") is None for s in righe_929)
+
+
+def test_main_errore_logico_in_una_lega_propaga_subito_e_non_salta(monkeypatch):
+    """Un errore LOGICO (colonna inesistente, vincolo...) NON e' un DB sotto
+    pressione: deve fermare lo script SUBITO, non essere inghiottito come le
+    leghe in 57014 persistente (altrimenti un difetto di schema/query
+    sparirebbe silenziosamente nel riepilogo delle "leghe fallite")."""
+    sig_929 = _righe_signals_lega(5, league_id=929)
+    db = FakeDB({"analytics_signals": sig_929, "matches": []})
+
+    def hook(q):
+        if q.table == "analytics_signals" and ("eq", "league_id", 929) in q.filters:
+            raise api_error("42703", 'column "pippo" does not exist')
+
+    db.select_hook = hook
+    monkeypatch.setattr(en, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["enrich_analytics_snapshots.py", "--days", "4"])
+    with pytest.raises(RuntimeError, match="analytics_signals lega 929"):
+        en.main()
+
+
+def test_timeout_client_riconosce_il_504_del_gateway_dopo_l_invio():
+    """IL BUG VERO (run 35837906029): un 504 del gateway ARRIVATO (la richiesta
+    e' partita, la risposta no) veniva ritentato come i transitori del server
+    -> il secondo tentativo trovava lo statement PRECEDENTE ancora in esecuzione
+    (statement_timeout=0 su entrambe le RPC) e sbatteva contro le sue righe
+    (23505 duplicate key / 55P03 lock timeout, vedi log 18/09, 20/09, 22/09)."""
+    assert rab._timeout_client(err_504())
+    assert not rab._is_transient(err_504())
+    # il CODE resta autoritativo: un 503 (diverso dal 504 osservato) NON e'
+    # trattato come gateway-timeout anche se il messaggio fosse lo stesso
+    assert not rab._timeout_client(err_503())
+    assert rab._is_transient(err_503())
+
+
+def test_rinfresca_finestra_504_gateway_nessun_secondo_tentativo(capsys):
+    db = FakeDB()
+    n = {"c": 0}
+
+    def impl(d, p):
+        n["c"] += 1
+        raise err_504()
+
+    db.rpc_impl[rab._RPC] = impl
+    ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 18), date(2026, 9, 19))
+    assert ok is False and righe == 0
+    assert n["c"] == 1                          # UNA sola chiamata: nessun retry sul 504
+    out = capsys.readouterr().out
+    assert "NON ritento" in out and "NON rilanciare a mano subito" in out
+
+
+def test_rinfresca_finestra_55P03_si_ritenta():
+    """55P03 (lock timeout) resta RITENTABILE: e' l'errore che si vede quando la
+    finestra precedente e' finita ma ha lasciato un lock, non un 5xx del
+    gateway arrivato a meta' di una richiesta ancora in corso."""
+    db = FakeDB()
+    n = {"c": 0}
+
+    def impl(d, p):
+        n["c"] += 1
+        if n["c"] == 1:
+            raise api_error("55P03", "canceling statement due to lock timeout")
+        return 15
+
+    db.rpc_impl[rab._RPC] = impl
+    ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
+    assert ok and righe == 15 and n["c"] == 2
 

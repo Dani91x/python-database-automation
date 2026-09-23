@@ -37,6 +37,16 @@ MODO INCREMENTALE (--days N / --today, per le partite del GIORNO, pre-match):
   giocata, freq_current = mm10 corrente). Le fixture recenti GIÀ settlate ricevono
   invece il loro snapshot point-in-time normale. Vedi compute_current_state.
 
+  Una LEGA che non si riesce a leggere (57014 & co. anche dopo i tentativi ed i
+  dimezzamenti di blocco, vedi _PAGE_LEGA/_PAGE_MIN) NON ferma le altre: si
+  registra in counters['leghe_fallite'] con il motivo, si logga [ERR lega N] e
+  si passa alla lega successiva; il riepilogo delle leghe fallite si stampa a
+  fine run e lo script esce con SystemExit != 0 (vedi run 35837906029: la lega
+  929 in 57014 aveva fatto morire lo script PRIMA di elaborare le leghe dopo).
+  Un errore LOGICO (colonna inesistente, vincolo, ...) propaga SUBITO: non è un
+  DB sotto pressione, è un difetto da vedere e basta, non da inghiottire lega
+  per lega.
+
 Uso:
   python enrich_analytics_snapshots.py --league 256              # storico lega
   python enrich_analytics_snapshots.py --league 256 --dry-run
@@ -69,8 +79,15 @@ _MATCH_COLS = ("fixture_id,fixture_date,status_short,goals_home,goals_away,"
 _STAGE_BATCH = 500      # tetto massimo di righe in UNA richiesta di upsert
 _FLUSH_SLICE = 400      # righe per FETTA carica->flush (adattiva: dimezza sui transitori)
 _FLUSH_MIN = 50         # fetta minima
-_PAGE = 1000            # righe per pagina RICHIESTE in lettura
-_PAGE_MIN = 100         # pagina minima dopo i dimezzamenti sui transitori
+_PAGE = 1000            # righe per pagina RICHIESTE in lettura (storico/incrementale)
+_PAGE_LEGA = 100        # blocco INIZIALE per la lettura analytics_signals di UNA lega
+                        # (la lettura "per lega" e' la piu' delicata: e' quella che ha
+                        # dato 57014 in produzione sulla lega 929, vedi run 35837906029)
+_PAGE_MIN = 25          # blocco minimo dopo i dimezzamenti sui transitori (100 -> 50 -> 25).
+                        # PRIMA era 100: il floor coincideva col blocco iniziale della
+                        # lettura per lega, quindi quella lettura non si dimezzava MAI
+                        # davvero e restava a riprovare 5 volte lo STESSO blocco -> 57014
+                        # ripetuto, RuntimeError, intero script morto (vedi _leggi_pagine).
 _RETRY = 5              # tentativi su errori TRANSITORI
 
 # Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
@@ -90,6 +107,22 @@ def _is_transient(e: Exception) -> bool:
         return True
     msg = str(getattr(e, "message", "") or "").lower()
     return "timeout" in msg or "temporarily unavailable" in msg
+
+
+def _is_retry_esauriti(err: RuntimeError) -> bool:
+    """True se il RuntimeError arriva da `_leggi_pagine` per TENTATIVI ESAURITI su
+    un errore TRANSITORIO (57014 & co. dopo _RETRY prove). In questo caso la lega
+    puo' essere saltata e le altre leghe proseguono.
+
+    False per un errore LOGICO (colonna inesistente, vincolo, 4xx di validazione):
+    `_leggi_pagine` lo rilancia SUBITO (al primo tentativo, non esaurisce i retry)
+    ed e' un difetto del codice/schema, non del DB sotto pressione -> deve
+    propagare e fermare lo script, non essere inghiottito lega per lega.
+
+    `_leggi_pagine` fa sempre `raise RuntimeError(...) from e`: la causa originale
+    resta in `__cause__` ed e' li' che si legge se era transitoria."""
+    causa = err.__cause__
+    return causa is not None and _is_transient(causa)
 
 
 def _sleep_backoff(attempt: int) -> None:
@@ -153,7 +186,7 @@ def _fetch_signal_targets(sb, league_id: int) -> dict[tuple[str, str], set[int]]
             lambda off, size: (sb.table("analytics_signals").select("id,fixture_id,market,selection")
                                .eq("league_id", league_id)
                                .order("id").range(off, off + size - 1)),
-            f"analytics_signals lega {league_id}"):
+            f"analytics_signals lega {league_id}", page=_PAGE_LEGA):
         by_ms[(x["market"], x["selection"])].add(x["fixture_id"])
     return by_ms
 
@@ -336,7 +369,7 @@ def main() -> None:
         raise SystemExit("Specificare --league N | --days N | --today")
 
     sb = get_supabase_client()
-    counters = {"failed": 0}
+    counters = {"failed": 0, "leghe_fallite": []}  # leghe_fallite: [(league_id, motivo)]
     # dimensione della fetta di flush, condivisa fra le leghe: si dimezza dopo un
     # flush fallito e resta ridotta per le leghe successive (DB sotto pressione).
     slice_state = {"size": _FLUSH_SLICE}
@@ -364,15 +397,35 @@ def main() -> None:
           f"{sum(len(v) for v in recent.values())} fixture-target.")
     tot_target = tot_upd = 0
     for league_id, fids in recent.items():
-        n_target, updated = _enrich_league(sb, league_id, args.dry_run, counters,
-                                           current_fids=fids, slice_state=slice_state)
+        try:
+            n_target, updated = _enrich_league(sb, league_id, args.dry_run, counters,
+                                               current_fids=fids, slice_state=slice_state)
+        except RuntimeError as e:
+            if not _is_retry_esauriti(e):
+                raise  # errore LOGICO (colonna inesistente, vincolo, ...): propaga SUBITO
+            motivo = str(e)
+            counters["leghe_fallite"].append((league_id, motivo))
+            print(f"\n  [ERR lega {league_id}] lettura fallita dopo i tentativi, "
+                  f"salto la lega e proseguo: {motivo}")
+            continue
         tot_target += n_target
         tot_upd += updated
         print(f"  lega {league_id}: target {n_target} | aggiornate {updated}", end="\r")
     print(f"\nIncrementale: target {tot_target} | aggiornate {tot_upd} (BULK) | "
-          f"falliti {counters['failed']}")
-    if counters["failed"]:
-        raise SystemExit(f"ATTENZIONE: {counters['failed']} righe non scritte.")
+          f"falliti {counters['failed']} | leghe fallite {len(counters['leghe_fallite'])}")
+    if counters["leghe_fallite"]:
+        print(f"\nLeghe FALLITE ({len(counters['leghe_fallite'])}), NON elaborate in "
+              f"questo run (le altre leghe SONO state aggiornate regolarmente):")
+        for league_id, motivo in counters["leghe_fallite"]:
+            print(f"  - lega {league_id}: {motivo}")
+    if counters["failed"] or counters["leghe_fallite"]:
+        msg = []
+        if counters["failed"]:
+            msg.append(f"{counters['failed']} righe non scritte")
+        if counters["leghe_fallite"]:
+            leghe_id = [lid for lid, _ in counters["leghe_fallite"]]
+            msg.append(f"{len(counters['leghe_fallite'])} leghe fallite: {leghe_id}")
+        raise SystemExit("ATTENZIONE: " + "; ".join(msg) + ".")
 
 
 if __name__ == "__main__":
