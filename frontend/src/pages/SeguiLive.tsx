@@ -39,6 +39,8 @@ import {
     type LivePositionRow,
 } from '@/lib/liveOrders';
 import { sorgenteLadderAlMs, localOrderApi, subscribeLocalNow, useLocalStatus } from '@/lib/localTransport';
+import { vistaPosizioni } from '@/lib/canaleRunner';
+import { usePosizioniCanale } from '@/lib/usePosizioniCanale';
 import { eventExposure, eventMtm } from '@/lib/eventPnl';
 import { heartbeatState, heartbeatAgeSec } from '@/lib/runnerHealth';
 import { countLapseResting, countdownToOff, formatMinute, formatScore, secondsToOff } from '@/lib/matchClock';
@@ -211,7 +213,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
 
     // E35/A3: posizioni dell'EVENTO (specchio, poll 10s) — alimentano l'esposizione
     // aggregata in top bar E il P&L bloccabile mostrato sui bottoni di cash-out.
-    const [eventPositions, setEventPositions] = useState<LivePositionRow[] | null>(null);
+    const [eventPositionsDb, setEventPositions] = useState<LivePositionRow[] | null>(null);
     useEffect(() => {
         let alive = true;
         const load = () => {
@@ -223,6 +225,15 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
         const t = setInterval(load, 10_000);
         return () => { alive = false; clearInterval(t); };
     }, [eventId, mode]);
+    // CANALE LOCALE (23/09): push `position` del runner calcio (47331) sovrapposti
+    // alle righe del poll a 10 s (lib/canaleRunner.ts: il canale non aggiunge
+    // righe, vince solo se piu' fresco per `updated_at` del produttore). Il poll
+    // resta con la stessa cadenza: e' la rete di sicurezza se il canale tace.
+    const sovrPos = usePosizioniCanale('calcio', eventPositionsDb);
+    const eventPositions = useMemo(
+        () => (eventPositionsDb == null ? null : vistaPosizioni(eventPositionsDb, sovrPos)),
+        [eventPositionsDb, sovrPos],
+    );
     const eventExp = useMemo(
         () => (eventPositions == null ? null : eventExposure(eventPositions)),
         [eventPositions],

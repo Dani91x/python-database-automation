@@ -25,6 +25,16 @@ import {
 } from '@/lib/tennis';
 import { eventMtm, eventExposure } from '@/lib/eventPnl';
 import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
+import { getLocalChannel } from '@/lib/localChannel';
+import { leggiPushNow, nowPiuRecente, vistaPosizioni } from '@/lib/canaleRunner';
+import { usePosizioniCanale } from '@/lib/usePosizioniCanale';
+
+// CANALE LOCALE (23/09): `now` e `position` arrivano per primi dal runner
+// (calcio 47331, tennis 47332) e si SOVRAPPONGONO a cio' che il database ha
+// gia' portato (lib/canaleRunner.ts: il canale non aggiunge righe, vince solo
+// se piu' fresco per `updated_at` del produttore). Il poll e il realtime del
+// database restano con la STESSA cadenza di prima: sono la rete di sicurezza
+// quando il canale tace. `follows` non ha un topic sul canale: resta a poll.
 
 // ---------------------------------------------------------------- helper puri UI
 // Mappa selection_id → best back/lay dai mercati pubblicati in *_live_now.state.
@@ -113,7 +123,7 @@ export default function MarketWatch() {
     // ------------------------------------------------------------- ⚽ CALCIO
     const [follows, setFollows] = useState<LiveFollow[] | null>(null);
     const [nowBy, setNowBy] = useState<Record<string, LiveNowRow | null>>({});
-    const [posBy, setPosBy] = useState<Record<string, LivePositionRow[]>>({});
+    const [posDbBy, setPosBy] = useState<Record<string, LivePositionRow[]>>({});
     const [busyEvent, setBusyEvent] = useState<string | null>(null);
     const [rowMsg, setRowMsg] = useState<Record<string, string>>({});
     // guardia anti-doppio-invio (MONEY-CRITICAL: un secondo click non deve accodare
@@ -144,11 +154,22 @@ export default function MarketWatch() {
         const unsubs: Array<() => void> = [];
         for (const id of ids) {
             fetchLiveNow(id)
-                .then(row => { if (alive) setNowBy(p => ({ ...p, [id]: row })); })
+                .then(row => { if (alive) setNowBy(p => ({ ...p, [id]: row ? nowPiuRecente(p[id], row) : (p[id] ?? null) })); })
                 .catch(e => console.warn('[MarketWatch] liveNow:', e));
-            unsubs.push(subscribeLiveNow(id, row => { if (alive && row) setNowBy(p => ({ ...p, [id]: row })); }));
+            unsubs.push(subscribeLiveNow(id, row => { if (alive && row) setNowBy(p => ({ ...p, [id]: nowPiuRecente(p[id], row) })); }));
         }
         return () => { alive = false; unsubs.forEach(u => u()); };
+    }, [idsKey]);
+
+    // canale locale calcio: push `now` degli eventi seguiti ("piu' recente vince").
+    useEffect(() => {
+        const ids = new Set(idsKey ? idsKey.split(',') : []);
+        if (!ids.size) return undefined;
+        return getLocalChannel('calcio').subscribe('now', (d) => {
+            const row = leggiPushNow<LiveNowRow>(d);
+            if (!row || !ids.has(row.event_id)) return;
+            setNowBy(p => ({ ...p, [row.event_id]: nowPiuRecente(p[row.event_id], row) }));
+        });
     }, [idsKey]);
 
     // posizioni per evento: polling ogni 10s (nessuna tabella realtime dedicata).
@@ -167,6 +188,16 @@ export default function MarketWatch() {
         const t = setInterval(load, 10_000);
         return () => { alive = false; clearInterval(t); };
     }, [idsKey]);
+
+    // canale locale calcio: push `position` sovrapposti alle righe del poll.
+    const posDbTutte = useMemo(() => Object.values(posDbBy).flat(), [posDbBy]);
+    const sovrCalcio = usePosizioniCanale('calcio', posDbTutte);
+    const posBy = useMemo(() => {
+        if (sovrCalcio.size === 0) return posDbBy;
+        const m: Record<string, LivePositionRow[]> = {};
+        for (const [id, rows] of Object.entries(posDbBy)) m[id] = vistaPosizioni(rows, sovrCalcio);
+        return m;
+    }, [posDbBy, sovrCalcio]);
 
     // modalità ordini: dall'order_mode del PRIMO evento attivo che la pubblica
     // (fail-safe 'off': senza runner NIENTE bottoni attivi).
@@ -228,11 +259,22 @@ export default function MarketWatch() {
         const unsubs: Array<() => void> = [];
         for (const id of ids) {
             fetchTennisNow(id)
-                .then(row => { if (alive) setTNowBy(p => ({ ...p, [id]: row })); })
+                .then(row => { if (alive) setTNowBy(p => ({ ...p, [id]: row ? nowPiuRecente(p[id], row) : (p[id] ?? null) })); })
                 .catch(e => console.warn('[MarketWatch] tennisNow:', e));
-            unsubs.push(subscribeTennisNow(id, row => { if (alive && row) setTNowBy(p => ({ ...p, [id]: row })); }));
+            unsubs.push(subscribeTennisNow(id, row => { if (alive && row) setTNowBy(p => ({ ...p, [id]: nowPiuRecente(p[id], row) })); }));
         }
         return () => { alive = false; unsubs.forEach(u => u()); };
+    }, [tIdsKey]);
+
+    // canale locale tennis (47332): push `now` dei match seguiti.
+    useEffect(() => {
+        const ids = new Set(tIdsKey ? tIdsKey.split(',') : []);
+        if (!ids.size) return undefined;
+        return getLocalChannel('tennis').subscribe('now', (d) => {
+            const row = leggiPushNow<TennisLiveNowRow>(d);
+            if (!row || !ids.has(row.event_id)) return;
+            setTNowBy(p => ({ ...p, [row.event_id]: nowPiuRecente(p[row.event_id], row) }));
+        });
     }, [tIdsKey]);
 
     // posizioni tennis: TUTTE in una chiamata (get_tennis_live_positions_all), poll 10s.
@@ -248,14 +290,21 @@ export default function MarketWatch() {
         return () => { alive = false; clearInterval(t); };
     }, []);
 
+    // canale locale tennis: push `position` sovrapposti alle righe del poll.
+    const sovrTennis = usePosizioniCanale('tennis', tPositions);
+    const tPositionsVista = useMemo(
+        () => (tPositions == null ? null : vistaPosizioni(tPositions, sovrTennis)),
+        [tPositions, sovrTennis],
+    );
+
     const tPosBy = useMemo(() => {
         const m: Record<string, LivePositionRow[]> = {};
-        for (const p of tPositions ?? []) {
+        for (const p of tPositionsVista ?? []) {
             if (!p.event_id) continue;
             (m[p.event_id] ??= []).push(p);
         }
         return m;
-    }, [tPositions]);
+    }, [tPositionsVista]);
 
     // ------------------------------------------------------------------ render
     return (

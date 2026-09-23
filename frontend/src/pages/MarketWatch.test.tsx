@@ -81,6 +81,9 @@ const TENNIS_NOW = {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    // 23/09: la pagina apre il canale locale; qui niente socket (test ermetico:
+    // mai collegarsi a un runner vero sulla macchina che esegue i test).
+    vi.stubGlobal('WebSocket', undefined);
     mFollows.mockResolvedValue([CALCIO_FOLLOW] as never);
     mNow.mockResolvedValue(CALCIO_NOW as never);
     mPositions.mockResolvedValue([{
