@@ -24,7 +24,7 @@ import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
 import { XHedgePanel } from '@/components/live/XHedgePanel';
 import { ScalperPanel } from '@/components/live/ScalperPanel';
 import { HabitatCard } from '@/components/live/HabitatCard';
-import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
+import { LadderView, type LadderOrderApi } from '@/components/live/LadderView';
 import { GridView } from '@/components/live/GridView';
 import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
 import { DepthPanel } from '@/components/live/DepthPanel';
@@ -38,7 +38,7 @@ import {
     type LiveOrderMode, type LiveRiskState, type LiveAccountRow, type LiveHeartbeatRow,
     type LivePositionRow,
 } from '@/lib/liveOrders';
-import { localLadderSource, localOrderApi, subscribeLocalNow, useLocalStatus } from '@/lib/localTransport';
+import { sorgenteLadderAlMs, localOrderApi, subscribeLocalNow, useLocalStatus } from '@/lib/localTransport';
 import { eventExposure, eventMtm } from '@/lib/eventPnl';
 import { heartbeatState, heartbeatAgeSec } from '@/lib/runnerHealth';
 import { countLapseResting, countdownToOff, formatMinute, formatScore, secondsToOff } from '@/lib/matchClock';
@@ -49,7 +49,6 @@ import {
 } from '@/lib/workspace';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow, subscribeLiveFollowEvent,
-    fetchLiveLadder, subscribeLiveLadder,
     fetchLiveSignals, subscribeLiveSignals,
     type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
@@ -59,10 +58,8 @@ import { setFollowRecord } from '@/lib/omegaMissions';
 // Wrapper dei DEFAULT calcio (le stesse funzioni di LadderView): quando il canale
 // ws://127.0.0.1:47331 è connesso, ladder e ordini viaggiano in locale; quando è
 // off NON passiamo i prop → LadderView/GridView usano i default DB (path invariato).
-const CALCIO_DB_LADDER_SOURCE: LadderSource = {
-    fetch: fetchLiveLadder,
-    subscribe: subscribeLiveLadder,
-};
+// (23/09: il LADDER non segue piu' questa regola: usa sempre sorgenteLadderAlMs,
+// canale al tick con ricaduta DB interna. Resta valida per gli ORDINI.)
 const CALCIO_DB_ORDER_API: LadderOrderApi = {
     send: sendLiveOrderCommand,
     fetchOrders: fetchLiveOrders,
@@ -179,7 +176,10 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     // Connesso → ladder/ordini via ws://127.0.0.1 (latenza ~0). Off → prop NON passati
     // ai componenti: usano i loro default DB, comportamento byte-identico a prima.
     const localStatus = useLocalStatus('calcio');
-    const localLadder = useMemo(() => localLadderSource('calcio', CALCIO_DB_LADDER_SOURCE), []);
+    // ladder: canale locale al tick come via principale, realtime DB solo a canale
+    // assente/muto (ordine utente 23/09). Singleton per sport: MAI alternato con
+    // isLocal, cosi' il componente non rifa' il fetch a ogni cambio di via.
+    const ladderAlMs = sorgenteLadderAlMs('calcio');
     const localOrders = useMemo(() => localOrderApi('calcio', CALCIO_DB_ORDER_API), []);
     const isLocal = localStatus === 'connected';
 
@@ -742,7 +742,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                                 marketName={market.market_name || market.market_type}
                                 orderMode={mode}
                                 sport="calcio"
-                                ladderSource={isLocal ? localLadder : undefined}
+                                ladderSource={ladderAlMs}
                                 orderApi={isLocal ? localOrders : undefined}
                             />
                         ) : (
@@ -753,7 +753,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                                 orderMode={mode}
                                 fallbackSelections={panelSelections}
                                 signals={signalsRow}
-                                ladderSource={isLocal ? localLadder : undefined}
+                                ladderSource={ladderAlMs}
                                 orderApi={isLocal ? localOrders : undefined}
                                 popout={{ sport: 'calcio', eventId, eventName }}
                                 multiSlot={{
@@ -826,7 +826,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                             <SelectionChartPanel key={`chart:${market.market_id}`} marketId={market.market_id} />
                         )}
                         {tool === 'depth' && (
-                            <DepthPanel key={`depth:${market.market_id}`} marketId={market.market_id} />
+                            <DepthPanel key={`depth:${market.market_id}`} marketId={market.market_id} ladderSource={ladderAlMs} />
                         )}
                     </div>
                 </div>

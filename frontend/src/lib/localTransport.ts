@@ -16,7 +16,10 @@
 // ============================================================================
 import { useEffect, useState } from 'react';
 import type { LadderSource, LadderOrderApi, LadderGreenupArgs } from '@/components/live/LadderView';
-import type { LiveLadderRow } from '@/lib/live';
+import {
+    fetchLiveLadder, subscribeLiveLadder, type LiveLadderRow, type LiveLadderSelection,
+} from '@/lib/live';
+import { fetchTennisLadder, subscribeTennisLadder } from '@/lib/tennis';
 import {
     buildGreenupParams,
     type LiveOrderCommand, type LiveOrderMode, type LiveOrderResult,
@@ -110,6 +113,7 @@ function getStore(sport: LocalSport): SportStore {
 /** SOLO PER I TEST: dimentica gli store (da usare insieme a __resetLocalChannels). */
 export function __resetLocalTransport(): void {
     stores.clear();
+    sorgentiAlMs.clear();
 }
 
 // ------------------------------------------------------------- LadderSource locale
@@ -162,6 +166,218 @@ export function localLadderSource(sport: LocalSport, dbSource: LadderSource): La
             };
         },
     };
+}
+
+// ------------------------------------------------------ LadderSource "al ms"
+// ORDINE DELL'UTENTE (23/09): il ladder passa dal CANALE LOCALE come via
+// principale; il realtime DB (live_ladder / tennis_live_ladder) si usa SOLO se il
+// canale e' assente (off) o muto (nessun push da > mutoMs). Appena il canale
+// riprende a parlare si torna al canale e la sottoscrizione DB viene chiusa.
+//
+// Formato del push (ladder_worker di Betfair/stream/runner.py e di
+// Betfair/stream/tennis_live/tennis_runner.py, busta di local_channel.py):
+//   {"t": "ladder", "d": {"event_id": str, "market_id": str,
+//     "market_type": str|null, "market_name": str|null, "status": str|null,
+//     "ladder": {"updated_ms": int, "selections": [...]}}}
+// La riga DB e' la STESSA dict + "updated_at" (_now_iso() al momento della
+// scrittura) + "id" (bigserial). Il timestamp del PRODUTTORE e' ladder.updated_ms,
+// identico nelle due vie per lo stesso book: e' la chiave della freschezza.
+
+/** Chi ha consegnato l'ultima riga del mercato. */
+export type LadderFonte = 'canale' | 'db';
+
+/** 2 x LADDER_PUBLISH_SEC (Betfair/stream/config_stream.py: 2.0 s). */
+export const LADDER_MUTO_MS_DEFAULT = 4_000;
+
+// segni di vita del processo runner sul canale (lo stesso processo del ladder)
+const TOPIC_VITA = ['ladder', 'now'] as const;
+
+/** Il minimo del LocalChannel che serve alla sorgente (iniettabile nei test). */
+export type CanaleLadder = Pick<LocalChannel, 'getStatus' | 'onStatus' | 'subscribe'>;
+
+export interface DipendenzeLadderAlMs {
+    canale?: CanaleLadder;          // default: getLocalChannel(sport)
+    db?: LadderSource;              // default: live_ladder (calcio) / tennis_live_ladder
+    mutoMs?: number;                // default: LADDER_MUTO_MS_DEFAULT
+    adesso?: () => number;          // default: Date.now
+}
+
+/** LadderSource con in piu' la fonte dell'ultima riga consegnata per mercato. */
+export interface LadderSourceAlMs extends LadderSource {
+    fonte: (marketId: string) => LadderFonte | null;
+}
+
+const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+/**
+ * Push 'ladder' del canale -> riga con la forma di `live_ladder` (LiveLadderRow).
+ * Pura. null se il messaggio non e' un ladder valido (mai una riga inventata).
+ * updated_at: sul DB e' l'ora della scrittura; qui l'ora del produttore
+ * (ladder.updated_ms), l'unica che il push porta.
+ */
+export function ladderDaCanale(msg: unknown): LiveLadderRow | null {
+    if (!msg || typeof msg !== 'object') return null;
+    const m = msg as Record<string, unknown>;
+    if (typeof m.market_id !== 'string' || !m.market_id) return null;
+    if (typeof m.event_id !== 'string') return null;
+    const lad = m.ladder;
+    if (!lad || typeof lad !== 'object') return null;
+    const { updated_ms: ms, selections } = lad as Record<string, unknown>;
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+    if (!Array.isArray(selections)) return null;
+    return {
+        event_id: m.event_id,
+        market_id: m.market_id,
+        market_type: strOrNull(m.market_type),
+        market_name: strOrNull(m.market_name),
+        status: strOrNull(m.status),
+        ladder: { updated_ms: ms, selections: selections as LiveLadderSelection[] },
+        updated_at: new Date(ms).toISOString(),
+    };
+}
+
+const msDi = (r: LiveLadderRow | null | undefined): number | null => {
+    const ms = r?.ladder?.updated_ms;
+    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
+};
+
+/** true se `nuova` e' STRETTAMENTE piu' fresca di `vecchia` (updated_ms del produttore). */
+export function piuFresca(nuova: LiveLadderRow | null | undefined, vecchia: LiveLadderRow | null | undefined): boolean {
+    const n = msDi(nuova);
+    if (n == null) return false;
+    const v = msDi(vecchia);
+    return v == null || n > v;
+}
+
+const DB_LADDER: Record<'calcio' | 'tennis', LadderSource> = {
+    calcio: { fetch: fetchLiveLadder, subscribe: subscribeLiveLadder },
+    tennis: { fetch: fetchTennisLadder, subscribe: subscribeTennisLadder },
+};
+
+function creaSorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip: DipendenzeLadderAlMs): LadderSourceAlMs {
+    const canale = dip.canale ?? getLocalChannel(sport);
+    const db = dip.db ?? DB_LADDER[sport];
+    const mutoMs = dip.mutoMs ?? LADDER_MUTO_MS_DEFAULT;
+    const adesso = dip.adesso ?? Date.now;
+
+    // riga piu' fresca nota per mercato (da canale o da DB) e chi l'ha portata
+    const ultima = new Map<string, LiveLadderRow>();
+    const fonti = new Map<string, LadderFonte>();
+    let ultimoSegno: number | null = null;   // adesso() dell'ultimo push ricevuto
+
+    const registra = (row: LiveLadderRow, fonte: LadderFonte): boolean => {
+        if (!piuFresca(row, ultima.get(row.market_id))) return false;
+        ultima.set(row.market_id, row);
+        fonti.set(row.market_id, fonte);
+        return true;
+    };
+    const canaleVivo = (): boolean => canale.getStatus() === 'connected'
+        && ultimoSegno != null && adesso() - ultimoSegno <= mutoMs;
+
+    for (const t of TOPIC_VITA) {
+        canale.subscribe(t, (d) => {
+            ultimoSegno = adesso();
+            if (t !== 'ladder') return;
+            const row = ladderDaCanale(d);
+            if (row) registra(row, 'canale');
+        });
+    }
+    // canale caduto: niente segni di vita, nessuna riga del canale tenuta per viva
+    canale.onStatus((st) => {
+        if (st !== 'off') return;
+        ultimoSegno = null;
+        for (const [mid, f] of fonti) {
+            if (f === 'canale') { fonti.delete(mid); ultima.delete(mid); }
+        }
+    });
+
+    const passoControllo = Math.max(250, Math.min(1_000, Math.floor(mutoMs / 4)));
+
+    return {
+        // UNA sola lettura DB al massimo: se il canale e' vivo e ha gia' il mercato
+        // nessuna lettura; altrimenti una, e si restituisce la piu' fresca tra la
+        // riga letta e quella arrivata nel frattempo.
+        fetch: async (marketId: string): Promise<LiveLadderRow | null> => {
+            const nota = ultima.get(marketId);
+            if (nota && canaleVivo()) return nota;
+            const letta = await db.fetch(marketId);
+            if (letta && letta.market_id === marketId) registra(letta, 'db');
+            const dopo = ultima.get(marketId);
+            return dopo && !piuFresca(letta, dopo) ? dopo : letta;
+        },
+        subscribe: (marketId: string, cb: (row: LiveLadderRow | null) => void): (() => void) => {
+            let attivo = true;
+            let consegnatoMs: number | null = null;
+            let dbUnsub: (() => void) | null = null;
+
+            const consegna = (row: LiveLadderRow) => {
+                const ms = msDi(row);
+                if (ms == null || (consegnatoMs != null && ms <= consegnatoMs)) return;
+                consegnatoMs = ms;
+                cb(row);
+            };
+            // gettone della sottoscrizione DB corrente: una notifica tardiva di una
+            // sottoscrizione gia' chiusa non arriva mai al componente
+            let dbTok: object | null = null;
+            const chiudiDb = () => {
+                dbTok = null;
+                if (dbUnsub) { dbUnsub(); dbUnsub = null; }
+            };
+            const riallinea = () => {
+                if (!attivo) return;
+                if (canaleVivo()) { chiudiDb(); return; }
+                if (dbUnsub) return;
+                const mio = {};
+                dbTok = mio;
+                dbUnsub = db.subscribe(marketId, (row) => {
+                    if (!attivo || dbTok !== mio) return;
+                    if (row == null) { cb(null); return; }   // come il path DB di sempre
+                    if (row.market_id !== marketId) return;
+                    registra(row, 'db');
+                    consegna(row);
+                });
+            };
+
+            const offLadder = canale.subscribe('ladder', (d) => {
+                if (!attivo) return;
+                const row = ladderDaCanale(d);
+                if (row && row.market_id === marketId) consegna(row);
+                riallinea();   // il canale ha parlato: si torna al canale
+            });
+            const offNow = canale.subscribe('now', () => { riallinea(); });
+            const offStatus = canale.onStatus(() => { riallinea(); });
+            const timer = setInterval(riallinea, passoControllo);
+
+            const nota = ultima.get(marketId);
+            if (nota && canaleVivo()) consegna(nota);
+            riallinea();
+
+            return () => {
+                attivo = false;
+                clearInterval(timer);
+                offLadder();
+                offNow();
+                offStatus();
+                chiudiDb();
+            };
+        },
+        fonte: (marketId: string): LadderFonte | null => fonti.get(marketId) ?? null,
+    };
+}
+
+const sorgentiAlMs = new Map<'calcio' | 'tennis', LadderSourceAlMs>();
+
+/**
+ * Sorgente ladder composita: canale locale al tick come via principale, realtime
+ * DB solo a canale assente/muto. Senza `dip` e' un singleton per sport (stabile
+ * tra i render: il componente non rifa' mai il fetch per un cambio di via).
+ * Con `dip` crea un'istanza nuova (test).
+ */
+export function sorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip?: DipendenzeLadderAlMs): LadderSourceAlMs {
+    if (dip) return creaSorgenteLadderAlMs(sport, dip);
+    let s = sorgentiAlMs.get(sport);
+    if (!s) { s = creaSorgenteLadderAlMs(sport, {}); sorgentiAlMs.set(sport, s); }
+    return s;
 }
 
 // ------------------------------------------------------------ LadderOrderApi locale

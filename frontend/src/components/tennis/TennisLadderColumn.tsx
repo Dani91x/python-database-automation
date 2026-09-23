@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
 import { GridView } from '@/components/live/GridView';
 import { loadLayout, saveLayout, setCenterView, type CenterView } from '@/lib/workspace';
-import { localLadderSource, localOrderApi, useLocalStatus } from '@/lib/localTransport';
+import { sorgenteLadderAlMs, localOrderApi, useLocalStatus } from '@/lib/localTransport';
 // SOLO la validazione pura condivisa (nessun accesso a tabelle calcio: la regola d'oro
 // tennis≠calcio riguarda i DATI; buildGreenupParams è matematica di validazione).
 import { buildGreenupParams } from '@/lib/liveOrders';
@@ -94,7 +94,8 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
     // Connesso → ladder/ordini via push locali (wrap di TENNIS_LADDER_SOURCE/TENNIS_ORDER_API,
     // fallback DB integrato). Off → injection tennis INVARIATA (solo tabelle tennis_*).
     const localStatus = useLocalStatus('tennis');
-    const localLadder = useMemo(() => localLadderSource('tennis', TENNIS_LADDER_SOURCE), []);
+    // ladder: canale 47332 al tick, tennis_live_ladder realtime solo a canale assente/muto.
+    const ladderAlMs = sorgenteLadderAlMs('tennis');
     const localOrders = useMemo(() => localOrderApi('tennis', TENNIS_ORDER_API), []);
     const isLocal = localStatus === 'connected';
 
@@ -193,7 +194,7 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                         marketName={marketName}
                         orderMode={orderMode}
                         sport="tennis"
-                        ladderSource={isLocal ? localLadder : TENNIS_LADDER_SOURCE}
+                        ladderSource={ladderAlMs}
                         orderApi={isLocal ? localOrders : TENNIS_ORDER_API}
                     />
                 ) : (
@@ -204,7 +205,7 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                         orderMode={orderMode}
                         fallbackSelections={fallbackSelections}
                         enableDragMove
-                        ladderSource={isLocal ? localLadder : TENNIS_LADDER_SOURCE}
+                        ladderSource={ladderAlMs}
                         orderApi={isLocal ? localOrders : TENNIS_ORDER_API}
                         popout={{ sport: 'tennis', eventId, eventName: `${p1} — ${p2}`, p1, p2 }}
                         multiSlot={{

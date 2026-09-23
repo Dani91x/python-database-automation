@@ -10,6 +10,7 @@ import {
 import { TennisMatchStats } from '@/components/tennis/TennisMatchStats';
 import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
 import { DepthPanel } from '@/components/live/DepthPanel';
+import { sorgenteLadderAlMs } from '@/lib/localTransport';
 import { countdownToOff } from '@/lib/matchClock';
 import {
     followTennisEvent, fetchTennisFollows, fetchTennisNow, subscribeTennisNow,
@@ -267,7 +268,7 @@ export default function TennisTerminal() {
                             />
                         )}
                         {rightTab === 'depth' && (
-                            <DepthPanel key={`depth:${marketId}`} marketId={marketId} ladderSource={TENNIS_LADDER_SOURCE} />
+                            <DepthPanel key={`depth:${marketId}`} marketId={marketId} ladderSource={sorgenteLadderAlMs('tennis')} />
                         )}
                     </section>
                 </div>

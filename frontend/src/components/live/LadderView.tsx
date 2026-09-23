@@ -78,6 +78,9 @@ import {
 export interface LadderSource {
     fetch: (marketId: string) => Promise<LiveLadderRow | null>;
     subscribe: (marketId: string, cb: (row: LiveLadderRow | null) => void) => () => void;
+    // opzionale (23/09): chi ha portato l'ultima riga del mercato (canale locale o DB).
+    // Serve solo al testo dell'indicatore "Aggiornato" gia' esistente.
+    fonte?: (marketId: string) => 'canale' | 'db' | null;
 }
 export interface LadderGreenupArgs {
     marketId: string;
@@ -2139,6 +2142,9 @@ export function LadderView({
 
     const status = row?.status ?? null;
     const updatedMs = row?.ladder?.updated_ms ?? null;
+    // fonte della riga mostrata (solo se la sorgente la dichiara): letta al render,
+    // che avviene a ogni riga nuova, quindi coerente con la riga a schermo.
+    const fonteLadder = marketId && ladderSource.fonte ? ladderSource.fonte(marketId) : null;
     const isOpen = (status ?? '').toUpperCase() === 'OPEN';
     const canTrade = mode !== 'off' && isOpen;
     // fix audit #11: Betfair accetta i CANCEL anche a mercato SOSPESO — solo i place
@@ -2851,7 +2857,7 @@ export function LadderView({
                             ? (armed ? '1-click REALE attivo' : 'Clic = ordine REALE con conferma e proiezione P&L')
                             : (armed ? '1-click SIMULATO attivo' : 'Clic = ordine simulato con conferma e proiezione P&L (specchio del vivo)')}
                 </span>
-                {updatedMs && <span className="tabular-nums">Aggiornato: {new Date(updatedMs).toLocaleTimeString('it')}</span>}
+                {updatedMs && <span className="tabular-nums">Aggiornato: {new Date(updatedMs).toLocaleTimeString('it')}{fonteLadder ? ` (${fonteLadder === 'canale' ? 'canale' : 'DB'})` : ''}</span>}
             </div>
         </Card>
     );
