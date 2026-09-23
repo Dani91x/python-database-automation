@@ -14,13 +14,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { fmtMoney, fmtAge, ageSeconds, DASH } from '@/lib/format';
+import { fmtMoney, fmtAge, fmtTime, ageSeconds, DASH } from '@/lib/format';
 import {
     fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
     type LiveAccountRow, type LiveHeartbeatRow,
 } from '@/lib/liveOrders';
-import { statoSaldoBetfair } from '@/lib/saldoBetfair';
-import { getLocalChannel, type LocalChannel } from '@/lib/localChannel';
+import {
+    statoSaldoBetfair, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare, type SaldoDalCanale,
+} from '@/lib/saldoBetfair';
+import { getLocalChannel, type LocalChannel, type LocalSport } from '@/lib/localChannel';
+
+/** 23/09 — i canali dei processi che piazzano ordini VERI e pubblicano il
+ *  topic "account" dopo ogni ordine/regolazione (`stream/saldo_evento.py`):
+ *  runner calcio, runner tennis, Mike, Omega, Safe. Sono gli stessi singleton
+ *  già aperti dalla Control Room: nessuna porta nuova. */
+export const CANALI_SALDO: readonly LocalSport[] = ['calcio', 'tennis', 'mike', 'omega', 'safe'] as const;
 
 const CHIAVE_NASCOSTO = 'cr-saldo-nascosto';
 
@@ -43,6 +51,9 @@ export interface SaldoBetfairCardProps {
          *  47331): di default `getLocalChannel('calcio')`, iniettabile per i
          *  test senza aprire un vero WebSocket. */
         getCanale?: () => LocalChannel;
+        /** 23/09 — tutti i canali che portano il topic "account" (di default
+         *  `CANALI_SALDO`). Se il test passa solo `getCanale`, si usa quello. */
+        getCanali?: () => LocalChannel[];
     };
 }
 
@@ -67,17 +78,20 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
     /** ultimo "checked_at" ricevuto dal canale locale; null = mai ricevuto
      *  (app non desktop, o canale non connesso). */
     const [checkedAt, setCheckedAt] = useState<string | null>(null);
+    /** 23/09 — ultimo SALDO ricevuto dai canali (il più recente vince). */
+    const [saldoCanale, setSaldoCanale] = useState<SaldoDalCanale | null>(null);
 
     const fnFetchAccount = deps?.fetchAccount ?? fetchLiveAccount;
     const fnSubscribeAccount = deps?.subscribeAccount ?? subscribeLiveAccount;
     const fnFetchHeartbeat = deps?.fetchHeartbeat ?? fetchLiveHeartbeat;
     const fnSubscribeHeartbeat = deps?.subscribeHeartbeat ?? subscribeLiveHeartbeat;
-    const fnGetCanale = deps?.getCanale ?? (() => getLocalChannel('calcio'));
+    const fnGetCanali = deps?.getCanali
+        ?? (deps?.getCanale ? (() => [deps.getCanale!()]) : (() => CANALI_SALDO.map((s) => getLocalChannel(s))));
 
     // ref: evita di ricreare le sottoscrizioni se qualcuno passa `deps` come
     // oggetto letterale nuovo a ogni render (comodo per i test)
-    const depsRef = useRef({ fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanale });
-    depsRef.current = { fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanale };
+    const depsRef = useRef({ fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanali });
+    depsRef.current = { fnFetchAccount, fnSubscribeAccount, fnFetchHeartbeat, fnSubscribeHeartbeat, fnGetCanali };
 
     useEffect(() => {
         let vivo = true;
@@ -86,15 +100,19 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
         depsRef.current.fnFetchHeartbeat().then((r) => { if (vivo) setHeartbeat(r); }).catch(() => { /* non critico: si mostra "battito non letto" */ });
         const offAccount = depsRef.current.fnSubscribeAccount((r) => { if (vivo) setConto(r); });
         const offHeartbeat = depsRef.current.fnSubscribeHeartbeat((r) => { if (vivo) setHeartbeat(r); });
-        // canale locale (47331, topic "account"): SOLO per la freschezza
-        // (`checked_at`), mai per sostituire il valore letto dal database
-        // (regola 1 della Control Room: il socket accelera, non sostituisce).
-        const canale = depsRef.current.fnGetCanale();
-        const offCanale = canale.subscribe('account', (d) => {
+        // canali locali, topic "account" (23/09): la freschezza (`checked_at`)
+        // E il valore. Il valore del canale è la STESSA lettura REST che il
+        // processo scrive anche sul database: il socket la anticipa, non la
+        // inventa. Vince il più recente; un messaggio vecchio è ignorato; a
+        // canali muti resta il database, come prima.
+        const offCanali = depsRef.current.fnGetCanali().map((canale) => canale.subscribe('account', (d) => {
+            if (!vivo) return;
             const c = checkedAtDiMessaggioAccount(d);
-            if (vivo && c) setCheckedAt(c);
-        });
-        return () => { vivo = false; offAccount(); offHeartbeat(); offCanale(); };
+            if (c) setCheckedAt((prev) => (prev && Date.parse(prev) >= Date.parse(c) ? prev : c));
+            const s = leggiSaldoDalCanale(d);
+            if (s) setSaldoCanale((prev) => saldoPiuRecente(prev, s));
+        }));
+        return () => { vivo = false; offAccount(); offHeartbeat(); offCanali.forEach((off) => off()); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -103,7 +121,15 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
         return () => window.clearInterval(t);
     }, []);
 
-    const etaSaldoS = ageSeconds(conto?.updated_at ?? null, nowMs);
+    // 23/09: il dato mostrato è il più recente fra riga del database e canale.
+    const mostrato = saldoDaMostrare(conto, saldoCanale);
+    const etaSaldoS = ageSeconds(mostrato.istante, nowMs);
+    // l'ultimo istante in cui QUALCUNO ha davvero letto il conto (il più
+    // recente fra `checked_at` del canale e l'istante del dato mostrato):
+    // è l'ora del «non aggiornato da HH:MM», mai un numero muto.
+    const ultimaVerifica = [checkedAt, mostrato.istante]
+        .filter((x): x is string => typeof x === 'string' && Number.isFinite(Date.parse(x)))
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
     // il battito RUNNER (non il watchdog): dice se qualcuno sta davvero
     // guardando il conto in questo momento.
     const etaHeartbeatS = ageSeconds(heartbeat?.ts ?? null, nowMs);
@@ -118,8 +144,8 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
         setNascosto((prev) => { const next = !prev; scriviPreferenzaNascosto(next); return next; });
     };
 
-    const testoValore = nascosto ? '••••,•• €' : fmtMoney(conto?.available ?? null);
-    const testoEsposizione = nascosto ? '••••,•• €' : fmtMoney(conto?.exposure ?? null);
+    const testoValore = nascosto ? '••••,•• €' : fmtMoney(mostrato.available);
+    const testoEsposizione = nascosto ? '••••,•• €' : fmtMoney(mostrato.exposure);
 
     return (
         <Card className="glass-card border-white/10 p-4 flex flex-col gap-2.5" data-testid={testId}>
@@ -138,7 +164,7 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
             </div>
 
             <div className="font-display font-extrabold text-2xl tabular-nums" data-testid={`${testId}-valore`}>
-                {conto == null && !erroreLettura ? DASH : testoValore}
+                {conto == null && saldoCanale == null && !erroreLettura ? DASH : testoValore}
             </div>
 
             <div className="flex items-baseline justify-between text-[11.5px] pt-2 border-t border-white/10">
@@ -154,7 +180,9 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
                 <span className={`w-1.5 h-1.5 rounded-full ${stato.attenzione ? 'bg-orange-400' : 'bg-emerald-400'}`} aria-hidden />
                 {etaSaldoS == null
                     ? (erroreLettura ? 'saldo non leggibile' : 'saldo non ancora letto')
-                    : <>ultimo cambio: {fmtAge(etaSaldoS)}{stato.attenzione ? ' · saldo non verificato di recente' : ''}</>}
+                    : stato.attenzione
+                        ? <>non aggiornato da {fmtTime(ultimaVerifica)}</>
+                        : <>{mostrato.fonte === 'canale' ? 'controllato' : 'ultimo cambio'}: {fmtAge(etaSaldoS)}</>}
             </div>
         </Card>
     );

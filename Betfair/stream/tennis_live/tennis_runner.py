@@ -1483,6 +1483,18 @@ def _cleanup_orphan_bot_controls(max_hb_age_s: float = 600.0) -> int:
     return n
 
 
+def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
+    """Rilettura del saldo su evento d'ordine (``stream/saldo_evento.py``) con
+    il client Betfair di QUESTO processo. Mai solleva."""
+    try:
+        from .. import saldo_evento
+
+        saldo_evento.attiva(lambda: trading.account.get_account_funds(), nome="tennis")
+        framework.add_logging_control(saldo_evento.controllo_flumine())
+    except Exception as e:  # noqa: BLE001 - il runner lavora comunque
+        logger.warning("[tennis-runner] rilettura saldo su evento NON attiva: %s", e)
+
+
 def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) -> List[str]:
     trading = build_client(login=True)
     session = TennisLiveSession(trading)
@@ -1559,6 +1571,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             )
             framework = Flumine(client=client)
             _wire_paper_execution(framework, mode)
+            # 23/09 - saldo del conto riletto dopo ogni ordine REALE confermato
+            # (ladder tennis e 4 bot) e ogni regolazione: una chiamata per
+            # evento, ordini simulati ignorati, SOLO in LIVE.
+            if str(mode).strip().upper() == "LIVE":
+                _attiva_saldo_su_evento(framework, trading)
 
             # UNA capture per TUTTI gli eventi (stream unico cross-evento, vedi
             # _make_capture): mappata sotto ogni event_id per i consumer esistenti

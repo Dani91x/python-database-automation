@@ -1,5 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { statoSaldoBetfair, SALDO_HEARTBEAT_STALE_S } from './saldoBetfair';
+import {
+    statoSaldoBetfair, SALDO_HEARTBEAT_STALE_S, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare,
+} from './saldoBetfair';
+
+// 23/09 — il valore dal canale "account": regole pure.
+describe('saldo dal canale "account" (23/09)', () => {
+    const t0 = '2026-09-23T10:00:00.000000+00:00';
+    const t1 = '2026-09-23T10:00:05.000000+00:00';
+
+    it('un messaggio di saldo con le chiavi vere del backend si legge', () => {
+        const s = leggiSaldoDalCanale({ available: 812.37, exposure: -41.5, checked_at: t0, fonte: 'omega:ordine' });
+        expect(s).toMatchObject({ available: 812.37, exposure: -41.5, checkedAt: t0 });
+    });
+
+    it('messaggio manuale (senza available), checked_at illeggibile o malformato: null', () => {
+        expect(leggiSaldoDalCanale({ manual_pnl_eur: 3, checked_at: t0 })).toBeNull();
+        expect(leggiSaldoDalCanale({ available: 3, checked_at: 'ieri' })).toBeNull();
+        expect(leggiSaldoDalCanale({ available: Number.NaN, checked_at: t0 })).toBeNull();
+        expect(leggiSaldoDalCanale(null)).toBeNull();
+    });
+
+    it('vince il checked_at più recente; uno vecchio o uguale è ignorato', () => {
+        const a = leggiSaldoDalCanale({ available: 1, exposure: 0, checked_at: t1 });
+        const b = leggiSaldoDalCanale({ available: 2, exposure: 0, checked_at: t0 });
+        const c = leggiSaldoDalCanale({ available: 3, exposure: 0, checked_at: t1 });
+        expect(saldoPiuRecente(a, b)).toBe(a);
+        expect(saldoPiuRecente(a, c)).toBe(a);
+        expect(saldoPiuRecente(b, a)).toBe(a);
+        expect(saldoPiuRecente(null, b)).toBe(b);
+    });
+
+    it('fra database e canale vince l’istante più recente; canale muto = database', () => {
+        const db = { available: 100, exposure: -1, updated_at: t0 };
+        const nuovo = leggiSaldoDalCanale({ available: 90, exposure: -2, checked_at: t1 });
+        expect(saldoDaMostrare(db, nuovo)).toMatchObject({ available: 90, fonte: 'canale', istante: t1 });
+        expect(saldoDaMostrare({ ...db, updated_at: t1 }, leggiSaldoDalCanale({ available: 5, exposure: 0, checked_at: t0 })))
+            .toMatchObject({ available: 100, fonte: 'database' });
+        expect(saldoDaMostrare(db, null)).toEqual({ available: 100, exposure: -1, istante: t0, fonte: 'database' });
+        expect(saldoDaMostrare(null, null)).toEqual({ available: null, exposure: null, istante: null, fonte: 'database' });
+    });
+});
 
 describe('statoSaldoBetfair', () => {
     it('saldo mai letto: ignoto, con attenzione', () => {

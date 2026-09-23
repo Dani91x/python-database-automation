@@ -56,13 +56,47 @@ def call_mutating(fn: Callable[[Any], Any]) -> Any:
     from Betfair.odds_refresh import get_shared_client, reset_shared_client
 
     try:
-        return fn(get_shared_client())
+        esito = fn(get_shared_client())
     except Exception as ex:  # noqa: BLE001
         if _is_session_error(ex):
             logger.warning("[omega] sessione non valida su chiamata mutante, re-login: %s", str(ex)[:160])
             reset_shared_client()
-            return fn(get_shared_client())
-        raise
+            esito = fn(get_shared_client())
+        else:
+            raise
+    # 23/09 (saldo in Control Room): una chiamata che CAMBIA STATO sul conto
+    # vero e' tornata da Betfair (place/cancel/replace) -> UNA rilettura del
+    # saldo, in un thread a parte (mai sul percorso d'ordine). No-op se il
+    # processo non ha acceso ``saldo_evento`` (test, banco, paper).
+    _segnala_saldo("ordine")
+    return esito
+
+
+def _segnala_saldo(motivo: str) -> None:
+    try:
+        from Betfair.stream import saldo_evento
+
+        saldo_evento.segnala(motivo)
+    except Exception:  # noqa: BLE001 - mai rompere il percorso d'ordine
+        pass
+
+
+def get_account_funds() -> Any:
+    """UNA chiamata ``getAccountFunds`` col client condiviso del processo
+    (Account API JSON-RPC, risposta dict ``availableToBetBalance``/``exposure``).
+    Usata SOLO da ``saldo_evento`` dopo un evento d'ordine: mai a cadenza."""
+    return call(lambda c: c.account_rpc("AccountAPING/v1.0/getAccountFunds", {}))
+
+
+def attiva_saldo_su_evento(nome: str) -> None:
+    """Accende nel processo del bot la rilettura del saldo dopo ogni ordine
+    reale e ogni regolazione nuova (``Betfair/stream/saldo_evento.py``)."""
+    try:
+        from Betfair.stream import saldo_evento
+
+        saldo_evento.attiva(get_account_funds, nome=nome)
+    except Exception as ex:  # noqa: BLE001 - il bot lavora comunque
+        logger.warning("[%s] rilettura saldo su evento NON attiva: %s", nome, str(ex)[:160])
 
 
 def keep_alive() -> None:
@@ -1396,6 +1430,17 @@ def list_cleared_orders(
             )
         ) or {}
         out.extend(_riga_regolata(o) for o in (resp.get("clearedOrders", []) or []))
+    # 23/09 (saldo in Control Room): un regolato MAI visto prima in questo
+    # processo = una chiusura avvenuta -> UNA rilettura del saldo. Solo sulla
+    # vista INTERA della strategia (senza filtro mercati): una vista parziale
+    # farebbe sembrare "nuovi" regolati vecchi. La prima lettura semina soltanto.
+    if market_ids is None:
+        try:
+            from Betfair.stream import saldo_evento
+
+            saldo_evento.nota_regolati([r.get("bet_id") for r in out])
+        except Exception:  # noqa: BLE001 - mai rompere la riconciliazione
+            pass
     return out
 
 

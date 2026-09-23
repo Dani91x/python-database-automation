@@ -8288,6 +8288,10 @@ def main() -> None:
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
     _avvia_canale()
+    # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione nuova
+    # (una chiamata per evento, nessun polling; vedi stream/saldo_evento.py).
+    from Betfair.omega import omega_market as _om_saldo
+    _om_saldo.attiva_saldo_su_evento("safe")
     # F4 (18/09), entrambi dietro il proprio interruttore SPENTO di default:
     # il client che legge le righe dello scanner dal canale 47336, e la sveglia
     # che la UI puo' mandare sul canale del bot 47335 (sola sveglia, nessun

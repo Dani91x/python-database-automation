@@ -918,9 +918,25 @@ export async function fetchLiveAccount(): Promise<LiveAccountRow | null> {
     return (data as LiveAccountRow | null) ?? null;
 }
 
+/**
+ * 23/09 — NOME DI CANALE UNICO PER SOTTOSCRIZIONE (bug del saldo fermo).
+ * supabase-js/realtime-js 2.95: `supabase.channel(nome)` con un nome GIA'
+ * usato restituisce lo STESSO canale (`RealtimeClient.channel`). In Control
+ * Room `subscribeLiveAccount` è chiamata DUE volte (SaldoBetfairCard e
+ * useControlRoom): il secondo `.on('postgres_changes')` si aggiungeva a un
+ * canale il cui join era già partito con UN filtro; alla risposta del server
+ * (1 filtro contro 2 binding) realtime-js dichiara «mismatch between server
+ * and client bindings», fa `unsubscribe()` e il canale resta in errore: il
+ * saldo in pagina restava quello letto all'apertura. Stessa forma già usata
+ * per ordini/posizioni qui sopra (suffisso casuale).
+ */
+export function nomeCanaleUnico(base: string): string {
+    return `${base}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function subscribeLiveAccount(cb: (row: LiveAccountRow | null) => void): () => void {
     const channel = supabase
-        .channel('betfair_live_account:1')
+        .channel(nomeCanaleUnico('betfair_live_account:1'))
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'betfair_live_account', filter: 'id=eq.1' },
@@ -957,7 +973,7 @@ export async function fetchLiveHeartbeat(): Promise<LiveHeartbeatRow | null> {
 
 export function subscribeLiveHeartbeat(cb: (row: LiveHeartbeatRow | null) => void): () => void {
     const channel = supabase
-        .channel('betfair_live_heartbeat:1')
+        .channel(nomeCanaleUnico('betfair_live_heartbeat:1'))
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'betfair_live_heartbeat', filter: 'id=eq.1' },

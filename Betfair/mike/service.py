@@ -4467,6 +4467,10 @@ def main() -> None:
     # esattamente come prima: il canale e' un'accelerazione, non una dipendenza.
     if not args.once:
         _avvia_canale()
+        # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione
+        # nuova (una chiamata per evento, nessun polling; stream/saldo_evento.py).
+        from Betfair.omega import omega_market as _om_saldo
+        _om_saldo.attiva_saldo_su_evento("mike")
         # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
         # nessun thread e la dormita resta quella di oggi.
         _avvia_sveglia()

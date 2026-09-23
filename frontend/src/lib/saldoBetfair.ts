@@ -96,6 +96,77 @@ export function statoSaldoBetfair(input: {
     };
 }
 
+// ============================================================================
+// 23/09 — IL VALORE dal canale locale (topic "account").
+//
+// Bug dell'utente: «il saldo non si aggiorna, né quando partono gli ordini, né
+// quando vengono chiusi». Da oggi ogni processo che piazza ordini veri (runner
+// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+// rilegge il saldo DOPO ogni ordine e ogni regolazione e lo pubblica sul
+// PROPRIO canale col topic "account" (`Betfair/stream/saldo_evento.py`); il
+// runner calcio lo pubblica anche a ogni giro di 20 s. La stessa lettura va
+// anche sul database, quindi il canale non sostituisce la verità: la ANTICIPA.
+// Regole (pure, testate):
+//   * un messaggio è un SALDO solo se ha `available` numerico e `checked_at`
+//     leggibile (i messaggi del P&L manuale viaggiano sullo stesso topic);
+//   * fra due messaggi vince il `checked_at` più recente: uno vecchio o uguale
+//     è IGNORATO (più canali, ordine d'arrivo non garantito);
+//   * fra canale e database vince l'istante più recente (`checked_at` contro
+//     `updated_at`): a canale muto resta esattamente il comportamento di prima.
+// ============================================================================
+
+export interface SaldoDalCanale {
+    available: number;
+    exposure: number | null;
+    /** ISO dell'istante della lettura REST (UTC) */
+    checkedAt: string;
+    checkedMs: number;
+}
+
+/** Un messaggio del topic "account" → saldo, o null se non è un saldo. */
+export function leggiSaldoDalCanale(d: unknown): SaldoDalCanale | null {
+    const m = d as { available?: unknown; exposure?: unknown; checked_at?: unknown } | null;
+    if (!m || typeof m !== 'object') return null;
+    if (typeof m.available !== 'number' || !Number.isFinite(m.available)) return null;
+    if (typeof m.checked_at !== 'string') return null;
+    const ms = Date.parse(m.checked_at);
+    if (!Number.isFinite(ms)) return null;
+    const exp = typeof m.exposure === 'number' && Number.isFinite(m.exposure) ? m.exposure : null;
+    return { available: m.available, exposure: exp, checkedAt: m.checked_at, checkedMs: ms };
+}
+
+/** Il più recente dei due; a parità o se `nuovo` è più vecchio resta `corrente`. */
+export function saldoPiuRecente(corrente: SaldoDalCanale | null, nuovo: SaldoDalCanale | null): SaldoDalCanale | null {
+    if (!nuovo) return corrente;
+    if (!corrente) return nuovo;
+    return nuovo.checkedMs > corrente.checkedMs ? nuovo : corrente;
+}
+
+export interface SaldoMostrato {
+    available: number | null;
+    exposure: number | null;
+    /** istante del dato mostrato (ISO) — null se non c'è nessun dato */
+    istante: string | null;
+    fonte: 'canale' | 'database';
+}
+
+/** Cosa mostrare: vince l'istante più recente fra riga del database e canale. */
+export function saldoDaMostrare(
+    db: { available: number | null; exposure: number | null; updated_at: string } | null,
+    canale: SaldoDalCanale | null,
+): SaldoMostrato {
+    const dbMs = db ? Date.parse(db.updated_at) : NaN;
+    if (canale && (!db || !Number.isFinite(dbMs) || canale.checkedMs > dbMs)) {
+        return { available: canale.available, exposure: canale.exposure, istante: canale.checkedAt, fonte: 'canale' };
+    }
+    return {
+        available: db?.available ?? null,
+        exposure: db?.exposure ?? null,
+        istante: db?.updated_at ?? null,
+        fonte: 'database',
+    };
+}
+
 /** un formattatore MINIMO e locale, solo per il messaggio di questa funzione
  *  pura (che non può importare `lib/format.ts`/React): la UI che la consuma
  *  usa comunque `fmtAge` per il numero mostrato a schermo, questa stringa

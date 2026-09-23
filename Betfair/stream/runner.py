@@ -82,7 +82,12 @@ from .config_stream import (
 from . import local_channel as _lc
 from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
-from .reconcile_worker import reconcile_worker, run_account_sync_if_due, sync_account_worker
+from .reconcile_worker import (
+    attiva_saldo_su_evento,
+    reconcile_worker,
+    run_account_sync_if_due,
+    sync_account_worker,
+)
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from .risk_engine_worker import risk_engine_worker
@@ -1785,6 +1790,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     "le righe 'paper' della coda NON toccano mai l'Exchange",
                     paper_companion.username,
                 )
+                # 23/09 - saldo riletto dopo ogni ordine REALE / regolazione
+                # (una chiamata per evento, ordini simulati ignorati).
+                attiva_saldo_su_evento(framework, session)
             framework.add_strategy(recorder)
             # Live trading (PAPER/LIVE): strategia specchio + worker coda ordini. In OFF
             # NON vengono registrati → comportamento storico invariato. Ri-registrati ad

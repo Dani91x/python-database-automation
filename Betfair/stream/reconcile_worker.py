@@ -223,6 +223,37 @@ def run_account_sync_if_due(session: Any) -> None:
     _run_manual_pnl_if_due(session, force=changed)
 
 
+def annota_lettura_esterna(sig: Tuple[Optional[float], Optional[float]]) -> None:
+    """23/09 - una lettura del saldo fatta DOPO UN EVENTO D'ORDINE in questo
+    stesso processo (``saldo_evento``) ha gia' scritto e pubblicato ``sig``:
+    la cadenza fissa riparte da adesso (niente seconda chiamata a pochi
+    secondi) e la firma write-on-change si allinea (niente riscrittura
+    identica al giro dopo)."""
+    global _LAST_ACCOUNT_SIG, _LAST_ACCOUNT_TS
+    _LAST_ACCOUNT_SIG = sig
+    _LAST_ACCOUNT_TS = time.monotonic()
+
+
+def attiva_saldo_su_evento(framework: Any, session: Any) -> None:
+    """23/09 - runner in LIVE: saldo riletto dopo ogni ordine REALE confermato
+    da Betfair e dopo ogni regolazione (``OrderEvent``/``ClearedOrdersEvent`` di
+    flumine), con lo STESSO client e lo stesso ``_rest`` di ``_sync_account``.
+    Mai solleva: senza questo il runner lavora come prima (cadenza 20 s)."""
+    try:
+        from . import saldo_evento
+
+        if session is None or getattr(session, "context_api_client", None) is None:
+            return
+        saldo_evento.attiva(
+            lambda: _rest(lambda: session.context_api_client.account.get_account_funds()),
+            nome="calcio",
+            dopo_lettura=annota_lettura_esterna,
+        )
+        framework.add_logging_control(saldo_evento.controllo_flumine())
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[reconcile] rilettura saldo su evento NON attiva: %s", str(ex)[:200])
+
+
 def sync_account_worker(context: Any, flumine: Any, session: Any = None, strategy: Any = None) -> None:
     """BackgroundWorker SEMPRE registrato (OFF/PAPER/LIVE, vedi runner.py, 18/09).
 
