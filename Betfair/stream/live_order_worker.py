@@ -755,8 +755,10 @@ def _audit(sb: Any, rid: int, result: Dict[str, Any], status: str) -> None:
             "request_id": rid,
             "detail": {"note": result.get("detail"), "bet_id": result.get("bet_id")},
         }).execute()
-    except Exception:  # noqa: BLE001 - l'audit è best-effort, mai bloccante
-        pass
+    except Exception as ex:  # noqa: BLE001 - l'audit è best-effort, mai bloccante
+        # 23/09 - mai in silenzio: un ordine senza riga di audit va DETTO.
+        logger.warning("[live-order] audit NON scritto (richiesta %s, esito %s, bet %s): %s",
+                       rid, status, result.get("bet_id"), str(ex)[:200])
 
 
 # ---------------------------------------------------------------------------
@@ -3007,8 +3009,9 @@ def _record_local_request(
                     f"({str(ex)[:100]}): follow-through NON attivo — VERIFICARE il fill "
                     f"dell'hedge su {row.get('market_id')} manualmente.",
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as ex_alert:  # noqa: BLE001
+                logger.error("[local] alert CRITICAL LOCAL_RECORD NON scritto (%s su %s): %s",
+                             row.get("action"), row.get("market_id"), str(ex_alert)[:200])
         return None
 
 
@@ -3076,8 +3079,9 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -
             except Exception as ex:  # noqa: BLE001 - errore del comando, worker vivo
                 try:
                     _write_error(lsb, rid, row, req_mode, ex)  # cattura esito + audit reale
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as ex_w:  # noqa: BLE001
+                    logger.error("[local] esito 'error' della richiesta %s NON scritto: %s",
+                                 rid, str(ex_w)[:200])
                 ch.respond(req, False, lsb.captured.get("result"), error=str(ex))
                 _local_dedup_put(client_ref, False, lsb.captured.get("result"))
                 _record_local_request(sb, row, lsb.captured, req_mode)
@@ -3176,8 +3180,9 @@ def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any)
             logger.exception("[live-order] avanzamento submin %s fallito", rid)
             try:
                 _write_error(sb, rid, r, mode_l, ex)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as ex_w:  # noqa: BLE001
+                logger.error("[live-order] esito 'error' del submin %s NON scritto: %s",
+                             rid, str(ex_w)[:200])
         handled += 1
     return handled
 
@@ -3303,8 +3308,9 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
             logger.exception("[live-order] richiesta %s fallita", rid)
             try:
                 _write_error(sb, rid, r, row_mode or mode_l, ex)
-            except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
-                pass
+            except Exception as ex_w:  # noqa: BLE001 - perfino la scrittura errore è best-effort
+                logger.error("[live-order] esito 'error' della richiesta %s NON scritto: %s",
+                             rid, str(ex_w)[:200])
         else:
             # E37 — trade journal AUTOMATICO: contesto al momento dell'esecuzione
             # (minuto/score, book, segnali attivi). SOLO dopo un dispatch riuscito;

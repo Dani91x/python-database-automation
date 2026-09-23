@@ -82,6 +82,7 @@ from .config_stream import (
 from . import local_channel as _lc
 from . import ladder_canale as _lcad
 from .config_stream import LADDER_CANALE_MS
+from . import avvio_app as AA
 from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
 from .reconcile_worker import (
@@ -1586,6 +1587,84 @@ def _announce_order_mode(mode: str, orders_enabled: bool) -> None:
         logger.warning("[runner] insert_alert modalita' ordini KO (ignorato): %s", e)
 
 
+# 23/09 - (5) la modalita' ordini del client si decide all'AVVIO con
+# ``live_order_mode()`` (come il worker), non con la costante letta all'import.
+_RANGO_MODO = {"OFF": 0, "PAPER": 1, "LIVE": 2}
+
+
+def _modo_ordini_client(modo_avvio: str) -> str:
+    """Modalita' con cui (ri)costruire client ordini e worker a ogni giro dello
+    stream: SEMPRE quella d'avvio. Un client non si costruisce mai a caldo.
+
+    Se ``live_order_mode()`` e' SALITO dopo l'avvio (PAPER->LIVE, OFF->...):
+    errore "serve il riavvio" (il worker, che rilegge il modo a ogni giro, non
+    trova il client della modalita' nuova e rifiuta le righe). Se e' SCESO
+    (LIVE->PAPER/OFF): avviso, il worker declassa gia' a caldo gli ordini."""
+    avvio = (modo_avvio or "OFF").strip().upper()
+    ora = live_order_mode().strip().upper()
+    if ora != avvio:
+        if _RANGO_MODO.get(ora, 0) > _RANGO_MODO.get(avvio, 0):
+            logger.error("[runner] LIVE_ORDER_MODE cambiato a caldo da %s a %s: il client "
+                         "ordini NON si costruisce a caldo, resta %s - serve il riavvio "
+                         "del runner", avvio, ora, avvio)
+        else:
+            logger.warning("[runner] LIVE_ORDER_MODE sceso a caldo da %s a %s: il worker "
+                           "declassa gli ordini a ogni giro; il client resta %s fino al "
+                           "riavvio", avvio, ora, avvio)
+    return avvio
+
+
+# 23/09 - (6) GUARDIA D'AVVIO del runner calcio (``Betfair/stream/avvio_app.py``).
+# Il runner non ha una riga di controllo per-bot: la guardia sta sul CLIENT
+# ORDINI. Finche' la ripresa d'avvio (specchio paper pulito + richieste
+# ereditate stantie marcate error) non e' riuscita, il worker della coda non
+# esegue NULLA - fail-closed: prima la ripresa era best-effort e, se il DB non
+# rispondeva, la coda ereditata veniva eseguita lo stesso.
+_GUARDIA_AVVIO = AA.Guardia("runner_calcio")
+_RIPRESA_RIPROVA_S = 10.0
+_RIPRESA_STATO: dict = {"ultimo": 0.0}
+
+
+def _ripresa_all_avvio() -> bool:
+    """Ripresa dopo crash/riavvio (A6). True = riuscita, guardia disarmata."""
+    try:
+        n_ord, n_pos = db.cleanup_paper_mirror()
+        n_stale = db.fail_stale_pending_requests(120.0)
+    except Exception as ex:  # noqa: BLE001 - la guardia resta armata, si riprova
+        logger.error("[runner] pulizia di ripresa KO: coda ordini FERMA (guardia "
+                     "d'avvio armata) finche' non riesce: %s", str(ex)[:200])
+        return False
+    _GUARDIA_AVVIO.fatto = True
+    if n_ord or n_pos or n_stale:
+        logger.info(
+            "[runner] ripresa: specchio paper pulito (%d ordini, %d posizioni), "
+            "%d richieste stantie marcate error", n_ord, n_pos, n_stale,
+        )
+        try:
+            db.insert_alert(
+                "INFO", "RUNNER_RESUME",
+                f"riavvio runner: specchio paper pulito ({n_ord} ordini, {n_pos} "
+                f"posizioni), {n_stale} richieste stantie scartate",
+            )
+        except Exception as ex:  # noqa: BLE001 - l'alert non blocca l'avvio
+            logger.warning("[runner] alert di ripresa KO: %s", str(ex)[:200])
+    return True
+
+
+def _live_order_worker_guardato(context: dict, flumine: Any, session: Any = None,
+                                strategy: Any = None) -> None:
+    """``live_order_worker`` dietro la guardia d'avvio: guardia armata e ripresa
+    non riuscita -> nessun ordine (riprova la ripresa ogni ``_RIPRESA_RIPROVA_S``)."""
+    if _GUARDIA_AVVIO.blocca_aperture:
+        adesso = time.monotonic()
+        if adesso - _RIPRESA_STATO["ultimo"] >= _RIPRESA_RIPROVA_S:
+            _RIPRESA_STATO["ultimo"] = adesso
+            _ripresa_all_avvio()
+        if _GUARDIA_AVVIO.blocca_aperture:
+            return
+    live_order_worker(context, flumine, session=session, strategy=strategy)
+
+
 # ----------------------------------------------------------------------------
 # Supervisore: costruisce e (ri)avvia lo stream finché ci sono partite
 # ----------------------------------------------------------------------------
@@ -1617,14 +1696,17 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     session.only_event = only_event  # type: ignore[attr-defined]
     # A7 — canale LOCALE per l'app desktop (bind SOLO 127.0.0.1). Best-effort:
     # se la porta è occupata il runner vive comunque (path DB invariato).
+    # 23/09 - modalita' ordini letta ADESSO (live_order_mode, come il worker), non
+    # la costante dell'import: e' quella con cui si costruisce il client.
+    modo_avvio = live_order_mode().strip().upper()
     ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
     if ch is not None:
-        ch.set_hello(mode=LIVE_ORDER_MODE)
+        ch.set_hello(mode=modo_avvio)
     interrupted = False
 
     # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
     # I restart F3 ricostruiscono il framework ma non ri-annunciano (niente spam alert).
-    _announce_order_mode(LIVE_ORDER_MODE, LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"))
+    _announce_order_mode(modo_avvio, modo_avvio in ("PAPER", "LIVE"))
 
     # A6 — RIPRESA dopo crash/riavvio (una volta per processo, PRIMA del framework):
     #   * specchio PAPER stantio → pulito (il blotter paper riparte vuoto: le righe
@@ -1633,22 +1715,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     #     comando accodato prima di un crash NON va eseguito minuti dopo a un
     #     mercato completamente diverso (money-critical, mai comandi stantii).
     # La ricostruzione LIVE dal conto (listCurrentOrders) è del reconcile_worker.
-    if LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"):
-        try:
-            n_ord, n_pos = db.cleanup_paper_mirror()
-            n_stale = db.fail_stale_pending_requests(120.0)
-            if n_ord or n_pos or n_stale:
-                logger.info(
-                    "[runner] ripresa: specchio paper pulito (%d ordini, %d posizioni), "
-                    "%d richieste stantie marcate error", n_ord, n_pos, n_stale,
-                )
-                db.insert_alert(
-                    "INFO", "RUNNER_RESUME",
-                    f"riavvio runner: specchio paper pulito ({n_ord} ordini, {n_pos} "
-                    f"posizioni), {n_stale} richieste stantie scartate",
-                )
-        except Exception as ex:  # noqa: BLE001 - la ripresa non blocca l'avvio
-            logger.warning("[runner] pulizia ripresa KO: %s", str(ex)[:200])
+    # 23/09 - guardia d'avvio: armata qui, disarmata SOLO da una ripresa riuscita
+    # (se fallisce, il worker della coda non esegue nulla e la riprova).
+    if modo_avvio in ("PAPER", "LIVE"):
+        _GUARDIA_AVVIO.attiva = True
+        _GUARDIA_AVVIO.boot_id = AA.boot_id_ambiente()
+        _ripresa_all_avvio()
 
     try:
         while not interrupted:
@@ -1785,7 +1857,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # (i book parsati servono a live_now + segnali). Il raw nativo è comunque
             # registrato dal tee nel listener. Il client ordini dipende da LIVE_ORDER_MODE:
             # OFF (default) = order_stream=False, identico ad oggi → nessuna regressione.
-            client, orders_enabled = build_order_client(api_client, LIVE_ORDER_MODE)
+            modo_client = _modo_ordini_client(modo_avvio)  # 23/09: mai client a caldo
+            client, orders_enabled = build_order_client(api_client, modo_client)
             framework = Flumine(client=client)
             # F0 (16/09) - UN SOLO processo serve paper E live. In LIVE si affianca al
             # client reale un client SIMULATO: flumine instrada per ORDINE
@@ -1794,7 +1867,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # client reale NON viene costruito affatto: la separazione dei soldi veri
             # e' FISICA, non una convenzione (vedi live_order_worker._client_for_mode).
             paper_companion = None
-            if LIVE_ORDER_MODE.strip().upper() == "LIVE":
+            if modo_client == "LIVE":
                 paper_companion = build_paper_companion_client(api_client)
                 framework.add_client(paper_companion)
                 logger.info(
@@ -1822,7 +1895,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 # tutte le strategie a prescindere dal filtro) → lo specchio funziona sempre.
                 live_strategy = LiveTradingStrategy(
                     market_filter=streaming_market_filter(market_ids=market_ids),
-                    session=session, mode=LIVE_ORDER_MODE.lower())
+                    session=session, mode=modo_client.lower())
                 framework.add_strategy(live_strategy)
                 # F0: una strategy PER MODALITA'. In flumine il blotter e' per-strategia
                 # (blotter.strategy_orders / get_exposures(strategy, ...)), quindi due
@@ -1833,7 +1906,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 # nomi uguali si sovrascriverebbero nel recupero ordini dallo stream.
                 # Stesso market_filter -> flumine RIUSA lo stream esistente
                 # (Streams.add_stream): zero connessioni e zero mercati in piu'.
-                strategies_by_mode = {LIVE_ORDER_MODE.lower(): live_strategy}
+                strategies_by_mode = {modo_client.lower(): live_strategy}
                 if paper_companion is not None:
                     paper_strategy = LiveTradingStrategy(
                         market_filter=streaming_market_filter(market_ids=market_ids),
@@ -1854,7 +1927,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 # riga); gli altri worker (risk/xhedge/daily stop/reconcile) restano sulla
                 # strategy della modalita' del processo, come prima.
                 framework.add_worker(BackgroundWorker(
-                    framework, function=live_order_worker, interval=LIVE_ORDER_QUEUE_POLL_SEC or 1.0,
+                    framework, function=_live_order_worker_guardato,  # 23/09: guardia d'avvio
+                    interval=LIVE_ORDER_QUEUE_POLL_SEC or 1.0,
                     func_kwargs={"session": session, "strategy": strategies_by_mode},
                     name="live_order_worker"))
                 # Risk engine (Fase 3): monitora le regole armate (offset/stop-loss/take-profit/

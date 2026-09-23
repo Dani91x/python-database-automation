@@ -1744,11 +1744,7 @@ def _commission_rate(value: Any, fallback: float) -> float:
 _REQUEST_MAX_AGE_S = 120.0
 
 
-def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
-    """Secondi trascorsi dalla creazione della richiesta; None se non databile
-    (una richiesta senza data NON viene scartata: meglio eseguirla che perderla
-    per un campo mancante)."""
-    raw = row.get("created_at") or row.get("requested_at") or row.get("ts")
+def _parse_ts_richiesta(raw: Any) -> Optional[datetime]:
     if not raw:
         return None
     try:
@@ -1757,6 +1753,28 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
         return None
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
+def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
+    """Secondi trascorsi dalla creazione della richiesta; None se non databile
+    (una richiesta senza data NON viene scartata: meglio eseguirla che perderla
+    per un campo mancante).
+
+    23/09 (PM7 del banco) - una PROPOSTA approvata porta nel payload
+    ``approved_at``, scritto dalla RPC ``safe_request_approve`` nell'istante
+    del CLIC (la RPC non tocca ``created_at``, che resta la nascita della
+    proposta). Per queste l'eta' si misura dal clic: una proposta nata 180 s
+    prima e approvata ora e' una richiesta fresca. Se ``approved_at`` manca o
+    non e' leggibile si ricade su ``created_at`` come prima (le richieste
+    dirette del trader non lo hanno e restano come erano)."""
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    ts = _parse_ts_richiesta(payload.get("approved_at"))
+    if ts is None:
+        ts = _parse_ts_richiesta(row.get("created_at") or row.get("requested_at")
+                                 or row.get("ts"))
+    if ts is None:
+        return None
     return max(0.0, (now - ts).total_seconds())
 
 

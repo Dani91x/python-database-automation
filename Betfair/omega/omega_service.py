@@ -2133,6 +2133,20 @@ def _confirm_open_trade(
         pass
 
 
+def _e_violazione_unica(ex: BaseException) -> bool:
+    """La riserva e' stata rifiutata dall'INDICE UNICO (= gia' riservato)?
+
+    23/09 - prima QUALSIASI eccezione di ``insert_trade`` valeva "gia'
+    riservato": un timeout (57014) o un errore di rete diventavano uno skip
+    silenzioso. Vale "gia' riservato" solo la violazione dell'unico: codice
+    postgrest ``23505`` oppure il messaggio di PostgreSQL (``duplicate key`` /
+    ``unique``), che e' anche quello dei finti del banco (replay_registrazioni)."""
+    if str(getattr(ex, "code", "") or "") == "23505":
+        return True
+    testo = str(ex).lower()
+    return "23505" in testo or "duplicate key" in testo or "unique" in testo
+
+
 def _place_one(
     *, ev, cs, sel, snapshot, size, price, target, minute, score_str, mode,
     commission, market, db, now, requested_size: Optional[float] = None,
@@ -2196,7 +2210,19 @@ def _place_one(
     try:
         trade_id = db.insert_trade(reserve)
     except Exception as ex:  # noqa: BLE001
-        db.log("skip", {"event_id": ev.event_id, "reason": "already_reserved", "err": str(ex)[:120]})
+        if _e_violazione_unica(ex):
+            db.log("skip", {"event_id": ev.event_id, "reason": "already_reserved",
+                            "err": str(ex)[:120]})
+            return 0
+        # 23/09 - NON e' "gia' riservato": la riserva non e' stata scritta per
+        # un altro motivo. Fail-closed: nessun ordine senza riserva, e si dice.
+        logger.error("[omega] riserva NON scritta (event=%s, gamba=%s): %s",
+                     ev.event_id, phase, str(ex)[:200])
+        try:
+            db.log("error", {"event_id": ev.event_id, "reason": "reserve_failed",
+                             "phase": phase, "err": str(ex)[:160]})
+        except Exception as ex_log:  # noqa: BLE001
+            logger.error("[omega] log reserve_failed non scritto: %s", str(ex_log)[:160])
         return 0
     if not trade_id:
         db.log("skip", {"event_id": ev.event_id, "reason": "reserve_no_id"})
@@ -4422,7 +4448,13 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     try:
         trade_id = db.insert_trade(reserve)
     except Exception as ex:  # noqa: BLE001
-        return {"error": "gia_piazzato_su_evento", "detail": str(ex)[:120]}
+        if _e_violazione_unica(ex):
+            return {"error": "gia_piazzato_su_evento", "detail": str(ex)[:120]}
+        # 23/09 - riserva non scritta per un motivo che NON e' l'unico: nessun
+        # ordine parte, e il trader legge il motivo vero (non "gia' piazzato").
+        logger.error("[omega] riserva manuale NON scritta (event=%s): %s",
+                     event_id, str(ex)[:200])
+        return {"error": "riserva_non_scritta", "detail": str(ex)[:120]}
     if not trade_id:
         return {"error": "reserve_no_id"}
 

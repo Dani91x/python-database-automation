@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
@@ -649,6 +650,10 @@ class CancelResult:
     # assenza placedDate): il "quando l'ho saputo" che accompagna l'abbinato.
     betfair_updated_at: Optional[str] = None
     raw: dict = field(default_factory=dict)
+    # 23/09 - True quando, anche dopo le riletture di riserva, l'abbinato
+    # nell'intervallo fra decisione e annullo resta IGNOTO (rete KO): il
+    # chiamante NON deve trattarlo come "tutto annullato".
+    abbinato_ignoto: bool = False
 
 
 def place_order_live(
@@ -1143,6 +1148,12 @@ def place_submin_live(
     )
 
 
+# 23/09 - riletture di RISERVA dello stato dell'ordine dopo cancelOrders, se la
+# prima cade per rete, e attesa fra l'una e l'altra (breve: siamo nel ciclo).
+_RILETTURE_RISERVA = 2
+_RILETTURA_ATTESA_S = 0.3
+
+
 def cancel_order_live(bet_id: str, market_id: str,
                       size_reduction: Optional[float] = None) -> CancelResult:
     """ANNULLA DAVVERO un ordine su Betfair (``cancelOrders``), e rilegge l'esito.
@@ -1208,8 +1219,17 @@ def cancel_order_live(bet_id: str, market_id: str,
     # rilettura: quanto si e' abbinato nel frattempo?
     riletto, matched, medio, residuo = False, None, None, None
     quando: Optional[str] = None
-    try:
-        stato_ordine = order_state_by_bet_id(bid)
+    # 23/09 - una rilettura + fino a _RILETTURE_RISERVA di riserva (attesa
+    # breve fra l'una e l'altra). Se la prima riesce non parte nient'altro.
+    for tentativo in range(1 + _RILETTURE_RISERVA):
+        if tentativo:
+            time.sleep(_RILETTURA_ATTESA_S)
+        try:
+            stato_ordine = order_state_by_bet_id(bid)
+        except Exception as ex:  # noqa: BLE001 — rete KO: l'abbinato resta IGNOTO
+            logger.warning("[omega] cancel bet %s: rilettura %d/%d KO (%s)",
+                           bid, tentativo + 1, 1 + _RILETTURE_RISERVA, str(ex)[:120])
+            continue
         riletto = True
         if stato_ordine.get("found"):
             matched = float(stato_ordine.get("size_matched") or 0.0)
@@ -1219,9 +1239,11 @@ def cancel_order_live(bet_id: str, market_id: str,
         else:
             # Betfair non lo conosce in nessuna lista: mai abbinato.
             matched, medio, residuo = 0.0, None, 0.0
-    except Exception as ex:  # noqa: BLE001 — rete KO: l'abbinato resta IGNOTO
-        logger.warning("[omega] cancel bet %s: rilettura KO (%s) — esito abbinamento IGNOTO",
-                       bid, str(ex)[:120])
+        break
+    if not riletto:
+        logger.error("[omega] cancel bet %s: abbinato IGNOTO dopo %d riletture - "
+                     "NON e' un annullo completo, serve la riconciliazione",
+                     bid, 1 + _RILETTURE_RISERVA)
     if not ok:
         logger.warning("[omega] cancelOrders NON confermato bet=%s codice=%s", bid, codice)
     return CancelResult(
@@ -1230,6 +1252,7 @@ def cancel_order_live(bet_id: str, market_id: str,
         riletto=riletto, size_matched=matched, avg_price_matched=medio,
         size_remaining=residuo, betfair_updated_at=quando,
         raw=report if isinstance(report, dict) else {},
+        abbinato_ignoto=not riletto,
     )
 
 
