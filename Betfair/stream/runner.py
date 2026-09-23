@@ -80,6 +80,8 @@ from .config_stream import (
     XHEDGE_POLL_SEC,
 )
 from . import local_channel as _lc
+from . import ladder_canale as _lcad
+from .config_stream import LADDER_CANALE_MS
 from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
 from .reconcile_worker import (
@@ -633,13 +635,17 @@ def build_ladder_payload(
     names: Dict[str, str],
     max_levels: int = LADDER_MAX_LEVELS,
 ) -> Dict[str, Any]:
-    """Costruisce { updated_ms, selections:[...] } da un book serializzato (latest_books)."""
+    """Costruisce { updated_ms, selections:[...] } da un book serializzato (latest_books).
+
+    ``updated_ms`` = istante del book di flumine (``pt`` = publish_time_epoch, ms) se
+    presente, altrimenti adesso (23/09: prima era sempre l'ora del worker).
+    """
     selections = [
         build_ladder_selection(sel_id, r, names.get(str(sel_id)), max_levels)
         for sel_id, r in (book.get("runners") or {}).items()
     ]
     return {
-        "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+        "updated_ms": _lcad.updated_ms_del_book(book),
         "selections": selections,
     }
 
@@ -652,9 +658,20 @@ def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None
     (firma back/lay/trd/ltp) → non stressa il DB. Best-effort: un errore su un mercato non
     deve far cadere il runner. Registrato SEMPRE quando si streamma (a prescindere da
     LIVE_ORDER_MODE), come score_worker/finalize_worker.
+
+    23/09 - DUE CADENZE nello stesso worker (ladder_canale.py): il CANALE locale
+    riceve il ladder ogni LIVE_LADDER_CANALE_MS (default 200 ms, 0 = a ogni book
+    nuovo) e SOLO se ha client; il DB (live_ladder) resta a LADDER_PUBLISH_SEC
+    (2 s) write-on-change. Firme separate: il canale non marca mai il DB come
+    scritto (prima, col desktop collegato, un cambio caduto nella finestra dei 2 s
+    poteva non arrivare mai al DB se il book poi restava fermo).
     """
     if session.recorder is None:
         return
+    st = _lcad.stato_della_sessione(session, LADDER_PUBLISH_SEC, LADDER_CANALE_MS)
+    fare_canale, fare_db = st.giro(_lc.channel_active())
+    if not (fare_canale or fare_db):
+        return  # nessun client e DB non ancora dovuto: giro a costo zero
     latest = session.recorder.latest_books()
     for event_id, markets in list(session.markets_by_event.items()):
         if event_id in session.finished_events:
@@ -664,18 +681,24 @@ def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None
             book = latest.get(mid)
             if not book:
                 continue
-            try:
+
+            def _costruisci(book: Dict[str, Any] = book, mid: str = mid) -> Any:
                 payload = build_ladder_payload(
                     book, session.selection_names.get(mid, {}), LADDER_MAX_LEVELS
                 )
-                # lo STATUS entra nella firma: un OPEN→SUSPENDED→CLOSED deve pubblicarsi
+                # lo STATUS entra nella firma: un OPEN->SUSPENDED->CLOSED deve pubblicarsi
                 # (la UI sbiadisce sospeso/chiuso) anche se i livelli non cambiano.
                 sig = (book.get("status") or "") + "|" + ladder_signature(payload["selections"])
+                return payload, sig
+            try:
+                sig, payload = st.versione(mid, book, _costruisci)
             except Exception as e:  # noqa: BLE001 - un mercato malformato non blocca gli altri
                 logger.debug("[ladder-worker] build KO %s: %s", mid, e)
                 continue
-            if session._last_ladder_sig.get(mid) == sig:
-                continue  # write-on-change: book invariato → nessuna scrittura
+            al_canale = fare_canale and st.canale_cambiato(mid, sig)
+            al_db = fare_db and session._last_ladder_sig.get(mid) != sig
+            if not (al_canale or al_db):
+                continue  # write-on-change: book invariato -> nessuna pubblicazione
             row = {
                 "event_id": event_id,
                 "market_id": mid,
@@ -684,22 +707,11 @@ def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None
                 "status": book.get("status"),
                 "ladder": payload,
             }
-            # A7: push locale IMMEDIATO su ogni cambio del book (il desktop vede il
-            # tick alla velocità del worker); il DB resta il fallback remoto e viene
-            # scritto al massimo ogni 2s per mercato quando il desktop è collegato
-            # (write-on-change invariato quando il desktop NON c'è).
-            local_on = _lc.channel_active()
-            if local_on:
+            if al_canale:
                 _lc.publish("ladder", row)
-                now_m = time.monotonic()
-                ts_map = getattr(session, "_last_ladder_db_ts", None)
-                if ts_map is None:
-                    ts_map = {}
-                    session._last_ladder_db_ts = ts_map
-                if now_m - ts_map.get(mid, 0.0) < 2.0:
-                    session._last_ladder_sig[mid] = sig
-                    continue
-                ts_map[mid] = now_m
+                st.segna_canale(mid, sig)
+            if not al_db:
+                continue
             try:
                 db.upsert_live_ladder(row)
                 session._last_ladder_sig[mid] = sig
@@ -1881,8 +1893,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # SOLA LETTURA). Registrato SEMPRE (come score_worker), a prescindere da
             # LIVE_ORDER_MODE: usa solo i book in cache → nessuna API Betfair aggiuntiva.
             # interval FLOAT (sub-secondo possibile): BackgroundWorker lo passa a time.sleep.
+            # 23/09: il worker gira alla cadenza del CANALE (LIVE_LADDER_CANALE_MS,
+            # mai < 20 ms); il DB resta a LADDER_PUBLISH_SEC dentro il worker.
             framework.add_worker(BackgroundWorker(
-                framework, function=ladder_worker, interval=LADDER_PUBLISH_SEC or 1.0,
+                framework, function=ladder_worker,
+                interval=_lcad.stato_della_sessione(
+                    session, LADDER_PUBLISH_SEC, LADDER_CANALE_MS).intervallo_worker(),
                 func_kwargs={"session": session}, name="ladder_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,

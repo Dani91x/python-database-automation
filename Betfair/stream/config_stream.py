@@ -58,6 +58,20 @@ UPLOAD_CHUNK: int = int(os.getenv("LIVE_UPLOAD_CHUNK", "500"))
 # ogni tick → con molti eventi simultanei 1.0s satura le scritture (storia I/O Supabase).
 # Abbassa a 1.0 solo con pochi mercati; alza a 3.0+ per molte partite contemporanee.
 LADDER_PUBLISH_SEC: float = float(os.getenv("LIVE_LADDER_PUBLISH_SEC", "2.0"))
+# Cadenza (MILLISECONDI) della pubblicazione del ladder sul CANALE LOCALE
+# (127.0.0.1, local_channel.py) - 23/09, regola dell'utente: cio' che il trader
+# vede passa dal canale al ms, come Bet Angel/Fairbot (20-200 ms). Governa SOLO il
+# canale: la scrittura su live_ladder/tennis_live_ladder resta a LADDER_PUBLISH_SEC
+# (write-on-change). Si pubblica solo il mercato la cui firma e' cambiata (un
+# mercato fermo non genera traffico) e solo se il canale ha client.
+#   200 (default) = al massimo 5 pubblicazioni/s per mercato;
+#   0             = a ogni book nuovo visto dal worker (che gira ogni 20 ms);
+#   vuoto/illeggibile/negativo -> 200. Il tennis ha la sua variabile dedicata
+#   (TENNIS_LADDER_CANALE_MS, stesso significato, tennis_runner.py).
+# Logica in ladder_canale.py.
+from .ladder_canale import canale_ms_env  # noqa: E402 - parsing condiviso col tennis
+
+LADDER_CANALE_MS: int = canale_ms_env("LIVE_LADDER_CANALE_MS", 200)
 # Livelli back/lay conservati per selezione nella ladder pubblicata. Default = LADDER_DEPTH
 # (stessa profondita' sottoscritta dallo stream): non ha senso pubblicare piu' livelli di
 # quelli ricevuti. Il volume tradato per-prezzo (trd) resta sempre FULL.

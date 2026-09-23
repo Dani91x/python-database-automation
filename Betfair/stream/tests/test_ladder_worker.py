@@ -189,12 +189,19 @@ def test_worker_rewrites_when_book_changes(captured):
     sess = _FakeSession(books)
     sess.markets_by_event["31.1"] = [{"market_id": "1.1", "market_type": "MATCH_ODDS"}]
     sess.selection_names["1.1"] = {"11": "Home"}
+    # 23/09: il worker gira alla cadenza del canale e scrive il DB ogni
+    # LADDER_PUBLISH_SEC -> orologio finto, avanzato di un giro DB fra le due chiamate.
+    from Betfair.stream import ladder_canale
+    orologio = [0.0]
+    sess._stato_ladder = ladder_canale.StatoLadder(
+        runner.LADDER_PUBLISH_SEC, runner.LADDER_CANALE_MS, orologio=lambda: orologio[0])
 
     runner.ladder_worker({}, None, sess)
     assert len(captured) == 1
 
     # il book cambia (size al back) → nuova firma → nuova scrittura
     books["1.1"]["runners"]["11"]["b"] = [[2.0, 75.0]]
+    orologio[0] += runner.LADDER_PUBLISH_SEC
     runner.ladder_worker({}, None, sess)
     assert len(captured) == 2
 

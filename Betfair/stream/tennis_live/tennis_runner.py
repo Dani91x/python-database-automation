@@ -43,6 +43,7 @@ from flumine import config as flumine_config
 from flumine.worker import BackgroundWorker
 
 from .. import avvio_app as _aa
+from .. import ladder_canale as _lcad
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
@@ -74,6 +75,10 @@ LADDER_DEPTH = int(os.getenv("TENNIS_LADDER_DEPTH", "10"))
 LADDER_MAX_LEVELS = int(os.getenv("TENNIS_LADDER_MAX_LEVELS", str(LADDER_DEPTH)))
 LADDER_WOM_LEVELS = int(os.getenv("TENNIS_LADDER_WOM_LEVELS", "3"))
 LADDER_PUBLISH_SEC = float(os.getenv("TENNIS_LADDER_PUBLISH_SEC", "2.0"))
+# 23/09: cadenza (ms) del ladder sul CANALE locale 47332 (0 = a ogni book nuovo,
+# vuoto/illeggibile/negativo -> 200). Il DB resta a LADDER_PUBLISH_SEC. Vedi
+# ladder_canale.py e LIVE_LADDER_CANALE_MS (calcio) in config_stream.py.
+LADDER_CANALE_MS = _lcad.canale_ms_env("TENNIS_LADDER_CANALE_MS", 200)
 SCORE_POLL_SEC = float(os.getenv("TENNIS_SCORE_POLL_SEC", "2.0"))
 BOT_CONTROL_POLL_SEC = float(os.getenv("TENNIS_BOT_CONTROL_POLL_SEC", "3.0"))
 RECORD_POLL_SEC = float(os.getenv("TENNIS_RECORD_POLL_SEC", "5.0"))
@@ -217,7 +222,8 @@ def build_ladder_payload(book: Dict[str, Any], names: Dict[str, str],
         for sel_id, r in (book.get("runners") or {}).items()
     ]
     return {
-        "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+        # 23/09: istante del book di flumine (pt) se presente, altrimenti adesso
+        "updated_ms": _lcad.updated_ms_del_book(book),
         "selections": selections,
     }
 
@@ -944,19 +950,34 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
 # Worker: ladder LIVE (write-on-change) → tennis_live_ladder
 # ---------------------------------------------------------------------------
 def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
+    """Ladder tennis: CANALE locale ogni TENNIS_LADDER_CANALE_MS (solo con client),
+    DB (tennis_live_ladder) ogni LADDER_PUBLISH_SEC write-on-change. Firme separate:
+    il canale non marca mai il DB come scritto. Stesso schema del calcio (23/09,
+    ladder_canale.py)."""
+    from .. import local_channel as _lc
+    st = _lcad.stato_della_sessione(session, LADDER_PUBLISH_SEC, LADDER_CANALE_MS)
+    fare_canale, fare_db = st.giro(_lc.channel_active())
+    if not (fare_canale or fare_db):
+        return  # nessun client e DB non ancora dovuto: giro a costo zero
     for event_id, cap in list(session.capture.items()):
         meta = session.market_meta.get(event_id) or {}
         names = meta.get("selection_names", {})
         for mid, book in cap.latest_for(str(meta.get("market_id"))).items():
             if not book:
                 continue
-            try:
+
+            def _costruisci(book: Dict[str, Any] = book, names: Dict[str, str] = names) -> Any:
                 payload = build_ladder_payload(book, names, LADDER_MAX_LEVELS)
                 sig = (book.get("status") or "") + "|" + ladder_signature(payload["selections"])
+                return payload, sig
+            try:
+                sig, payload = st.versione(mid, book, _costruisci)
             except Exception as e:  # noqa: BLE001
                 logger.debug("[tennis-ladder] build KO %s: %s", mid, e)
                 continue
-            if session._ladder_sig.get(mid) == sig:
+            al_canale = fare_canale and st.canale_cambiato(mid, sig)
+            al_db = fare_db and session._ladder_sig.get(mid) != sig
+            if not (al_canale or al_db):
                 continue
             row = {
                 "event_id": event_id,
@@ -966,20 +987,11 @@ def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
                 "status": book.get("status"),
                 "ladder": payload,
             }
-            # A7: push locale immediato; DB throttled a 2s/mercato col desktop attivo
-            # (write-on-change invariato senza desktop) — stesso schema del calcio.
-            from .. import local_channel as _lc
-            if _lc.channel_active():
+            if al_canale:
                 _lc.publish("ladder", row)
-                now_m = time.monotonic()
-                ts_map = getattr(session, "_ladder_db_ts", None)
-                if ts_map is None:
-                    ts_map = {}
-                    session._ladder_db_ts = ts_map
-                if now_m - ts_map.get(mid, 0.0) < 2.0:
-                    session._ladder_sig[mid] = sig
-                    continue
-                ts_map[mid] = now_m
+                st.segna_canale(mid, sig)
+            if not al_db:
+                continue
             try:
                 tennis_db.upsert_tennis_ladder(row)
                 session._ladder_sig[mid] = sig
@@ -1613,8 +1625,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                     session.hosted[(event_id, bot_key)] = bot
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "running", started=True)
 
+            # 23/09: il worker gira alla cadenza del CANALE (mai < 20 ms); il DB
+            # resta a LADDER_PUBLISH_SEC dentro il worker (ladder_canale.py).
             framework.add_worker(BackgroundWorker(
-                framework, function=ladder_worker, interval=LADDER_PUBLISH_SEC or 1.0,
+                framework, function=ladder_worker,
+                interval=_lcad.stato_della_sessione(
+                    session, LADDER_PUBLISH_SEC, LADDER_CANALE_MS).intervallo_worker(),
                 func_kwargs={"session": session}, name="tennis_ladder"))
             from ..board_worker import board_worker as _board
             framework.add_worker(BackgroundWorker(
