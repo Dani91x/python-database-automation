@@ -4479,6 +4479,24 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         params=params, origin="manual", table_prefix="omega", extra_row=extra,
     )
     if res.get("error"):
+        # CORREZIONE 23/09 (reperto banco: G1 su 35797769 e 35777617, scenario
+        # 'chiusura-abbinata-in-parte'). Prima di questa riga la funzione
+        # tornava QUI senza scrivere nessuna attivita': se `close_trade` aveva
+        # gia' piazzato l'ordine di chiusura prima di fallire (es.
+        # 'chiusura_non_eseguita' porta comunque `closing_trade_id`), quel BACK
+        # restava senza firma umana agli occhi del banco: G1 lo scambiava per
+        # una chiusura automatica. Si scrive SEMPRE l'attivita' `cashout_manual`
+        # (stesse chiavi del ramo riuscito piu' esito/motivo), NESSUNA decisione
+        # nuova e NESSUN retry: il bot riapre esattamente come prima (invariato).
+        db.log("cashout_manual", {
+            "trade_id": tid, "event_id": tr.get("event_id"),
+            "closing_trade_id": res.get("closing_trade_id"), "exit_kind": None,
+            "exit_reason": None, "fraction": fraction, "amount": amount,
+            "partial": None, "price": None, "size": None, "locked_pnl": None,
+            "planned_lock": None, "residual_size": None, "mode": tr.get("mode"),
+            "esito": "fallito", "motivo": res.get("error"),
+            "detail": res.get("detail"),
+        })
         return res
     # AUDIT 11/09 (M-19 + H-01): la chiusura da CASH OUT MANUALE si riconosce —
     # exit_kind='manual' ed exit_reason su apertura E gamba di chiusura (prima
