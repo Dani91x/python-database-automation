@@ -198,6 +198,15 @@ _CACHE_FEED_CHIESTO_A: dict[str, float] = {}
 _FEED_DIMENTICA_DOPO_S = 120.0
 # eta' dell'heartbeat dello scanner: {"eta": float|None, "letto_a": float}
 _CACHE_SCANNER: dict[str, Any] = {}
+# 23/09 - LE RIGHE DELLO SCANNER DAL CANALE LOCALE 47336 (interruttore
+# ``OMEGA_LEGGE_CANALE``, SPENTO di serie). Il client e la sua memoria sono
+# quelli di Safe (``safe_strategy.canale_scan``), importati e non copiati. Qui
+# stanno il client (una connessione, non una cache: sopravvive a
+# ``svuota_le_cache``, che pero' ne svuota la memoria delle righe) e i conti del
+# giro: quante righe sono arrivate dal canale e quante dal database, per
+# ``stats.fonte_scan``. Vedi il blocco "IL CANALE DELLO SCANNER" piu' sotto.
+_CLIENT_SCAN: dict[str, Any] = {"client": None, "cache": None}
+_CACHE_FONTE_SCAN: dict[str, int] = {}
 # RPC degli aggregati (scorre tutta omega_trades)
 _CACHE_AGGREGATI = _Cache()
 # insiemi di "che cosa ho gia' fatto io" (gambe, eventi, tentativi falliti)
@@ -250,6 +259,16 @@ def svuota_le_cache() -> None:
     _CACHE_FEED_LETTO_A.clear()
     _CACHE_FEED_CHIESTO_A.clear()
     _CACHE_SCANNER.clear()
+    # 23/09: i conti della fonte del giro e la MEMORIA delle righe del canale.
+    # Il client (la connessione) resta: la prossima lettura va al database,
+    # e il canale si rifa' le righe da solo al primo messaggio.
+    _CACHE_FONTE_SCAN.clear()
+    try:
+        memoria = _CLIENT_SCAN.get("cache")
+        if memoria is not None:
+            memoria.azzera()
+    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+        pass
     _CACHE_AGGREGATI.svuota()
     _CACHE_INSIEMI.clear()
     _FASE_ESEGUITA_A.clear()
@@ -368,8 +387,24 @@ def _feed_riga_cached(cache: Any, event_id: str) -> Any:
     _CACHE_FEED_CHIESTO_A[event_id] = ora
     ttl = _cadenza("feed_cache_s")
     letto_a = _CACHE_FEED_LETTO_A.get(event_id)
+    # 23/09 - IL CANALE DELLO SCANNER (``OMEGA_LEGGE_CANALE``). Spento, o senza
+    # client, ``canale`` e' None e da qui in giu' le istruzioni sono quelle di
+    # prima, una per una. Acceso, la riga del canale (eta' <= 5 s) prende il
+    # posto di quella del database SOLO se e' strettamente piu' recente e porta
+    # ``odds_ts_ms`` (``canale_scan.fondi``, la regola di Safe), e il database
+    # si rilegge come RIALLINEAMENTO ogni ``_RISINC_DB_S``: e' anche cio' che
+    # dice quali partite esistono (il canale non ne aggiunge nessuna).
+    canale = _canale_scan_attivo()
+    dal_canale = _riga_dal_canale(canale, event_id) if canale is not None else None
+    if dal_canale is not None and letto_a is not None and (ora - letto_a) < _RISINC_DB_S:
+        riga, dal_c = _fondi_riga(canale, event_id, _CACHE_FEED_RIGHE.get(event_id), dal_canale)
+        if dal_c:
+            _conta_fonte_scan("canale")
+            return riga
     if letto_a is not None and ttl > 0.0 and (ora - letto_a) < ttl:
-        return _CACHE_FEED_RIGHE.get(event_id)
+        if canale is None:
+            return _CACHE_FEED_RIGHE.get(event_id)
+        return _riga_del_giro(canale, event_id, _CACHE_FEED_RIGHE.get(event_id), dal_canale)
     for eid in [e for e, t in _CACHE_FEED_CHIESTO_A.items() if ora - t > _FEED_DIMENTICA_DOPO_S]:
         _CACHE_FEED_CHIESTO_A.pop(eid, None)
         _CACHE_FEED_RIGHE.pop(eid, None)
@@ -383,7 +418,9 @@ def _feed_riga_cached(cache: Any, event_id: str) -> Any:
         else:
             _CACHE_FEED_RIGHE.pop(eid, None)
         _CACHE_FEED_LETTO_A[eid] = ora
-    return _CACHE_FEED_RIGHE.get(event_id)
+    if canale is None:
+        return _CACHE_FEED_RIGHE.get(event_id)
+    return _riga_del_giro(canale, event_id, _CACHE_FEED_RIGHE.get(event_id), dal_canale)
 
 
 def _scanner_eta_cached(cache: Any) -> Optional[float]:
@@ -405,6 +442,221 @@ def _scanner_eta_cached(cache: Any) -> Optional[float]:
     eta = cache.scanner_age_sec()
     _CACHE_SCANNER["eta"], _CACHE_SCANNER["letto_a"] = eta, ora
     return eta
+
+
+# ===========================================================================
+# IL CANALE DELLO SCANNER (23/09/2026) - interruttore SPENTO di serie
+# ===========================================================================
+# REGOLA PERMANENTE DELL'UTENTE: tutto cio' che opera live legge dal canale
+# locale al tick; il database e' SOLO il ripiego quando il canale tace.
+#
+# Lo scanner, dal 18/09 (F1), pubblica la STESSA riga che scrive su
+# ``safe_strategy_scan`` anche sul canale locale 47336 (topic ``scan_calcio``).
+# Safe la legge da li' dal 18/09 (F4) con ``safe_strategy.canale_scan``; Omega
+# usa lo STESSO modulo - ``ClientScan``, ``CacheScan``, ``fondi`` e
+# ``MAX_ETA_CONTESTO_S`` - importato, non copiato.
+#
+# Che cosa cambia: SOLO da dove arriva la riga del feed. Il punto unico e'
+# ``_feed_riga_cached`` (tutte le dieci letture del feed passano da li'); la
+# riga che ne esce ha le stesse chiavi e passa dalle stesse guardie di prima
+# (``fresh_payload``, ``hard_max_age``, ``DECISION_MAX_AGE_S`` ...) senza sapere
+# da dove viene. Nessuna soglia, stake, gamba o regola di Omega e' toccata.
+#
+# Le regole (quelle di Safe, qui applicate alla riga per evento):
+#   1. il database resta la LISTA: una partita che il database non ha mai
+#      restituito non esiste, anche se il canale la porta;
+#   2. la riga del canale vince solo se ``updated_at`` e' STRETTAMENTE piu'
+#      recente di quella del database e ``payload.odds_ts_ms`` e' un numero;
+#      a parita', e nel dubbio, vince il database (``canale_scan.fondi``);
+#   3. dal canale si prendono solo righe di eta' <= ``MAX_ETA_CONTESTO_S``
+#      (5 s, decisione dell'utente del 18/09): un canale muto oltre quella
+#      soglia vale come assente, e si torna alla lettura del database di prima;
+#   4. mentre il canale vince, il database si rilegge ogni ``_RISINC_DB_S``
+#      (10 s, lo stesso numero di Safe) come riallineamento; fuori da quella
+#      finestra, o quando il canale non vince, la lettura e' quella di prima:
+#      le letture del database possono solo DIMINUIRE, mai crescere;
+#   5. il client non solleva mai verso il bot: canale giu', porta chiusa,
+#      ``websockets`` assente = Omega lavora identica a prima (ripiego sul DB).
+#
+# LA SVEGLIA DEL CICLO SULLE RIGHE FRESCHE (stesso interruttore). Il ciclo di
+# Omega dorme ``poll_interval_s`` (20 s) o ``idle_cycle_s`` (60 s a vuoto): con
+# le righe al tick ma il giro ogni 20 s, Omega resterebbe lontana dal tick.
+# Con ``OMEGA_LEGGE_CANALE`` acceso il client del canale ALZA la sveglia che
+# Omega ha gia' (``_SVEGLIA``, F5: ``Sveglia.attendi`` con coalescenza e
+# pavimento) quando arriva una riga di una partita che Omega SEGUE
+# (``_evento_seguito``: solo memoria, nessuna lettura). Nessun freno nuovo:
+#   * coalescenza = quella di ``Sveglia`` (un ``threading.Event``): N righe
+#     arrivate durante la dormita = UN giro;
+#   * tetto = il PAVIMENTO della sveglia: fra l'inizio di un giro e l'inizio del
+#     successivo passano almeno ``OMEGA_CANALE_GIRO_MINIMO_S`` secondi (default
+#     5 s = al massimo 12 giri al minuto; mai sotto 5 s, il minimo di
+#     configurazione di ``poll_interval_s``, cioe' il passo piu' veloce al quale
+#     Omega gira gia' oggi). Il giro e' lo STESSO ``run_once``: le decisioni
+#     non cambiano, cambia solo quando si guardano.
+# Con il client del canale attivo l'``AscoltoScan`` di F5 non parte (sarebbe una
+# seconda connessione allo stesso canale per la stessa cosa): la sveglia dalla
+# UI (canale 47334) resta com'e'.
+ENV_LEGGE_CANALE = "OMEGA_LEGGE_CANALE"
+#: Ogni quanto, con il canale che vince, si rilegge comunque il database
+#: (riallineamento). Stesso numero di ``safe_strategy.bot_service._RISINC_DB_S``.
+_RISINC_DB_S = 10.0
+#: Il tetto dei giri svegliati dal canale: secondi MINIMI fra l'inizio di due
+#: giri. Default 5 s (12 giri/min), mai sotto 5 s. Si cambia dal ``.env``.
+ENV_GIRO_MINIMO = "OMEGA_CANALE_GIRO_MINIMO_S"
+GIRO_MINIMO_CANALE_S = 5.0
+
+
+def giro_minimo_canale_s() -> float:
+    """Il pavimento dei giri svegliati dal canale (``.env``, default 5 s).
+
+    Vuoto, illeggibile o non finito vale il default; sotto 5 s vale 5 s (il
+    minimo di configurazione di ``poll_interval_s``: Omega non gira piu' veloce
+    di cosi' nemmeno oggi)."""
+    import math
+    import os
+
+    grezzo = (os.getenv(ENV_GIRO_MINIMO) or "").strip()
+    if not grezzo:
+        return GIRO_MINIMO_CANALE_S
+    try:
+        v = float(grezzo)
+    except ValueError:
+        return GIRO_MINIMO_CANALE_S
+    if not math.isfinite(v):
+        return GIRO_MINIMO_CANALE_S
+    return max(GIRO_MINIMO_CANALE_S, v)
+
+
+class _SvegliaDalCanale:
+    """L'``evento`` che ``ClientScan`` alza su una riga fresca di una partita
+    seguita. ``ClientScan`` chiama solo ``set()``: qui diventa
+    ``_SVEGLIA.alza("scan", minimo_s=<tetto>)``. ``_SVEGLIA`` si risolve a ogni
+    chiamata (i test e il banco la sostituiscono). Non solleva mai."""
+
+    def set(self) -> None:  # noqa: A003 - l'interfaccia e' quella di threading.Event
+        try:
+            _SVEGLIA.alza("scan", minimo_s=giro_minimo_canale_s())
+        except Exception as ex:  # noqa: BLE001 - svegliare non ferma il bot
+            logger.debug("[omega] sveglia dal canale scan KO: %s", str(ex)[:120])
+
+
+def _sveglia_dal_client_scan() -> bool:
+    """Il client del canale dello scanner e' attivo (e quindi la dormita del
+    ciclo deve essere svegliabile)? Falso a interruttore spento."""
+    return _CLIENT_SCAN.get("client") is not None and _SV.acceso(ENV_LEGGE_CANALE)
+
+
+def _canale_scan_attivo() -> Any:
+    """Il modulo ``canale_scan`` se l'interruttore e' acceso E il client e'
+    stato avviato, altrimenti ``None``. L'interruttore si rilegge a ogni
+    chiamata (mai memorizzato), come in Safe."""
+    if _CLIENT_SCAN.get("cache") is None:
+        return None
+    if not _SV.acceso(ENV_LEGGE_CANALE):
+        return None
+    from Betfair.safe_strategy import canale_scan as CS
+
+    return CS
+
+
+def _riga_dal_canale(CS: Any, event_id: str) -> Optional[dict[str, Any]]:
+    """La riga del canale per ``event_id`` se ha al massimo
+    ``MAX_ETA_CONTESTO_S`` secondi, altrimenti ``None``. Mai solleva."""
+    try:
+        fresche = _CLIENT_SCAN["cache"].righe_recenti(float(CS.MAX_ETA_CONTESTO_S))
+        return fresche.get(str(event_id))
+    except Exception as ex:  # noqa: BLE001 - il canale non ferma mai il bot
+        logger.debug("[omega] riga dal canale KO per %s: %s", event_id, str(ex)[:120])
+        return None
+
+
+def _fondi_riga(CS: Any, event_id: str, dal_db: Any,
+                dal_canale: Optional[dict[str, Any]]) -> "tuple[Any, bool]":
+    """La riga fra database e canale secondo ``canale_scan.fondi`` (la stessa
+    regola di Safe). Torna ``(riga, viene_dal_canale)``. Senza riga del
+    database il canale NON aggiunge la partita: torna ``(None, False)``."""
+    if not isinstance(dal_db, dict):
+        return dal_db, False
+    if dal_canale is None:
+        return dal_db, False
+    righe, dal_c = CS.fondi([dal_db], {str(event_id): dal_canale})
+    return (righe[0] if righe else dal_db), bool(dal_c)
+
+
+def _riga_del_giro(CS: Any, event_id: str, dal_db: Any,
+                   dal_canale: Optional[dict[str, Any]]) -> Any:
+    """Riga del giro a canale ACCESO dopo la strada del database: fusione e
+    conto della fonte (``canale`` se ha vinto la riga del canale)."""
+    riga, dal_c = _fondi_riga(CS, event_id, dal_db, dal_canale)
+    _conta_fonte_scan("canale" if dal_c else "db")
+    return riga
+
+
+def _conta_fonte_scan(fonte: str) -> None:
+    _CACHE_FONTE_SCAN[fonte] = int(_CACHE_FONTE_SCAN.get(fonte, 0)) + 1
+
+
+def fonte_scan_del_giro() -> Optional[str]:
+    """Da dove sono arrivate le righe del feed in QUESTO giro: ``canale`` se
+    almeno una e' arrivata dal canale, ``db`` altrimenti; ``None`` a
+    interruttore spento (nessuna chiave nuova nelle ``stats``: a interruttore
+    spento la scrittura di ``omega_control`` e' identica a prima)."""
+    if _canale_scan_attivo() is None:
+        return None
+    return "canale" if int(_CACHE_FONTE_SCAN.get("canale", 0)) > 0 else "db"
+
+
+def _con_fonte_scan(stats: dict[str, Any]) -> dict[str, Any]:
+    """``stats`` con ``fonte_scan`` dentro quando l'interruttore e' acceso; le
+    stesse ``stats`` (lo stesso oggetto) quando e' spento. Zero scritture in
+    piu': ``stats`` si scrive gia' una volta per giro."""
+    fonte = fonte_scan_del_giro()
+    if fonte is not None:
+        stats["fonte_scan"] = fonte
+    return stats
+
+
+def avvia_client_scan() -> bool:
+    """Accende il client del canale dello scanner. Non solleva MAI.
+
+    Con l'interruttore spento non apre niente e non importa nemmeno il modulo
+    del canale. Il client e' ``ClientScan`` di Safe, con la sveglia del ciclo
+    collegata come in Safe (``evento``/``interessa``): una riga di una partita
+    che Omega segue alza ``_SVEGLIA`` con il pavimento ``giro_minimo_canale_s``.
+    """
+    if _CLIENT_SCAN.get("client") is not None:
+        return True
+    if not _SV.acceso(ENV_LEGGE_CANALE):
+        return False
+    try:
+        from Betfair.safe_strategy import canale_scan as CS
+
+        memoria = CS.CacheScan()
+        client = CS.ClientScan(CS.porta_scan(), memoria,
+                               evento=_SvegliaDalCanale(), interessa=_evento_seguito)
+        client.avvia()
+        _CLIENT_SCAN["cache"] = memoria
+        _CLIENT_SCAN["client"] = client
+        logger.info("[omega] righe dello scanner dal canale locale %d ATTIVE (il "
+                    "database resta la lista e il ripiego); sveglia del ciclo "
+                    "sulle partite seguite, al massimo un giro ogni %.1f s",
+                    client.porta, giro_minimo_canale_s())
+        return True
+    except Exception as ex:  # noqa: BLE001 - senza canale si lavora come prima
+        logger.warning("[omega] client del canale scan NON avviato: %s", str(ex)[:160])
+        return False
+
+
+def ferma_client_scan() -> None:
+    """Spegne e dimentica il client. Per i test e per il riavvio."""
+    client = _CLIENT_SCAN.get("client")
+    if client is not None:
+        try:
+            client.ferma()
+        except Exception:  # noqa: BLE001
+            pass
+    _CLIENT_SCAN.update({"client": None, "cache": None})
+    _CACHE_FONTE_SCAN.clear()
 
 
 def cs_snapshot_from_payload(
@@ -6067,7 +6319,9 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     def _v(key: str, default: Any = 0) -> Any:
         return agg.get(key, prev.get(key, default))
     realized_today = float(_v("realized_today", 0.0) or 0.0)
-    return {
+    # 23/09: ``fonte_scan`` solo a ``OMEGA_LEGGE_CANALE`` acceso (a bot fermo
+    # settlement e green-up leggono il feed lo stesso).
+    return _con_fonte_scan({
         **prev,
         "events_total": 0, "matches_remaining": 0, "legs_remaining": 0,
         "target_match": 0.0, "target_leg": 0.0,
@@ -6098,7 +6352,7 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
         "goal": goal,
         "goal_pct": round(min(realized_today / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
         "last_cycle": now.isoformat(),
-    }
+    })
 
 
 def _c_e_fretta(stats: Optional[dict[str, Any]], mossa: bool) -> bool:
@@ -6203,6 +6457,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     # seconda volta solo per sapere quanto aspettare.
     global _ULTIMI_PARAMS
     _ULTIMI_PARAMS = params
+    # 23/09: i conti della fonte del feed ripartono a ogni giro (vuoti e
+    # inutilizzati a interruttore ``OMEGA_LEGGE_CANALE`` spento).
+    _CACHE_FONTE_SCAN.clear()
     ora_ts = now.timestamp()
 
     # 0) RICONCILIAZIONE dei 'pending' orfani con la realtà Betfair (I3) — SEMPRE e
@@ -6564,6 +6821,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         "stop_ferma_solo_aperture": True,
         "last_cycle": now.isoformat(),
     }
+    # 23/09: da dove sono arrivate le righe del feed di QUESTO giro (solo a
+    # ``OMEGA_LEGGE_CANALE`` acceso; spento, nessuna chiave nuova).
+    _con_fonte_scan(stats)
     # LO SCHERMO PRIMA DEL DISCO (14/09). Spingere sul socket locale non costa
     # un byte di IO, quindi si fa SEMPRE e per primo: se la scrittura su
     # ``omega_control`` fallisse o fosse lenta, il trader vedrebbe comunque i
@@ -6736,15 +6996,20 @@ def _avvia_sveglia() -> None:
     global _ASCOLTO_SCAN
     if not _SV.acceso(_SV.ENV_OMEGA_SVEGLIA):
         return
-    try:
-        ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
-                                  topic=(_SV.TOPIC_SCAN_CALCIO,), nome="omega")
-        if ascolto.avvia():
-            _ASCOLTO_SCAN = ascolto
-            logger.info("[omega] sveglia dal canale ATTIVA (%s): il ciclo riparte "
-                        "quando si muove una partita che Omega segue.", ascolto.url)
-    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
-        logger.warning("[omega] sveglia dal canale KO: %s", str(ex)[:160])
+    # 23/09: con ``OMEGA_LEGGE_CANALE`` la sveglia sulle righe dello scanner la
+    # alza il client del canale (``avvia_client_scan``): una seconda
+    # connessione allo stesso canale per la stessa cosa non serve. Resta la
+    # sveglia dalla UI, qui sotto. Spento, il ramo e' quello di F5, identico.
+    if not _SV.acceso(ENV_LEGGE_CANALE):
+        try:
+            ascolto = _SV.AscoltoScan(_SVEGLIA, _evento_seguito,
+                                      topic=(_SV.TOPIC_SCAN_CALCIO,), nome="omega")
+            if ascolto.avvia():
+                _ASCOLTO_SCAN = ascolto
+                logger.info("[omega] sveglia dal canale ATTIVA (%s): il ciclo riparte "
+                            "quando si muove una partita che Omega segue.", ascolto.url)
+        except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+            logger.warning("[omega] sveglia dal canale KO: %s", str(ex)[:160])
     try:
         ch = _lc.get_channel()
         registra = getattr(ch, "set_sveglia", None) if ch is not None else None
@@ -6763,14 +7028,22 @@ def statistiche_sveglia() -> Optional[dict[str, Any]]:
     a interruttore spento (nessuna chiave nuova inventata quando la fase e'
     ferma)."""
     if _ASCOLTO_SCAN is None:
+        if _sveglia_dal_client_scan():
+            # 23/09: la sveglia la alza il client del canale dello scanner
+            try:
+                stato = _CLIENT_SCAN["client"].stato()
+            except Exception:  # noqa: BLE001 - lo stato non ferma il bot
+                stato = None
+            return {**_SVEGLIA.statistiche(), "canale": stato,
+                    "giro_minimo_s": giro_minimo_canale_s()}
         return None
     return {**_SVEGLIA.statistiche(), "canale": _ASCOLTO_SCAN.statistiche()}
 
 
 def _dormi_o_sveglia(pausa: float, params: Any) -> None:
-    """La dormita del ciclo. A interruttore SPENTO e' ``time.sleep(pausa)``,
+    """La dormita del ciclo. A interruttori SPENTI e' ``time.sleep(pausa)``,
     la stessa identica istruzione di oggi."""
-    if _ASCOLTO_SCAN is None:
+    if _ASCOLTO_SCAN is None and not _sveglia_dal_client_scan():
         time.sleep(pausa)
         return
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
@@ -6806,6 +7079,9 @@ def main() -> None:
     # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
     # nessun thread e la dormita resta quella di oggi.
     _avvia_sveglia()
+    # 23/09: le righe dello scanner dal canale 47336. A interruttore
+    # ``OMEGA_LEGGE_CANALE`` spento non parte niente e il feed resta sul DB.
+    avvia_client_scan()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Omega si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).

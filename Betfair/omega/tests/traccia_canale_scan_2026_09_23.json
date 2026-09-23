@@ -1,0 +1,707 @@
+{
+ "feed": [
+  [
+   "select",
+   [
+    [
+     "rows_for",
+     5000.0,
+     [
+      "E1"
+     ]
+    ],
+    [
+     "scanner_age_sec",
+     5000.0
+    ],
+    [
+     "rows_for",
+     5000.0,
+     [
+      "E1",
+      "E2"
+     ]
+    ],
+    [
+     "rows_for",
+     5001.0,
+     [
+      "E1",
+      "E2",
+      "E3"
+     ]
+    ],
+    [
+     "rows_for",
+     5001.0,
+     [
+      "E1",
+      "E2",
+      "E3",
+      "E4"
+     ]
+    ],
+    [
+     "rows_for",
+     5006.0,
+     [
+      "E1",
+      "E2",
+      "E3",
+      "E4"
+     ]
+    ],
+    [
+     "rows_for",
+     5011.0,
+     [
+      "E1",
+      "E2",
+      "E3",
+      "E4"
+     ]
+    ],
+    [
+     "scanner_age_sec",
+     5011.0
+    ],
+    [
+     "rows_for",
+     5013.0,
+     [
+      "E1",
+      "E2",
+      "E3",
+      "E4"
+     ]
+    ],
+    [
+     "rows_for",
+     5015.0,
+     [
+      "E1",
+      "E2",
+      "E3",
+      "E4"
+     ]
+    ],
+    [
+     "rows_for",
+     5200.0,
+     [
+      "E1"
+     ]
+    ],
+    [
+     "scanner_age_sec",
+     5200.0
+    ],
+    [
+     "rows_for",
+     5201.0,
+     [
+      "E1",
+      "E4"
+     ]
+    ]
+   ]
+  ],
+  [
+   "uscite",
+   [
+    [
+     "feed_row",
+     5000.0,
+     "E1",
+     null,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5000.0,
+     "E2",
+     25.0,
+     null,
+     true
+    ],
+    [
+     "feed_row",
+     5000.0,
+     "E1",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5001.0,
+     "E1",
+     null,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5001.0,
+     "E3",
+     null,
+     null,
+     false
+    ],
+    [
+     "feed_row",
+     5001.0,
+     "E4",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 12,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5002.5,
+     "E1",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5002.5,
+     "E2",
+     null,
+     {
+      "inplay": true,
+      "minute": 55,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5006.0,
+     "E1",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5011.0,
+     "E4",
+     null,
+     {
+      "inplay": true,
+      "minute": 12,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5013.0,
+     "E1",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5015.0,
+     "E3",
+     25.0,
+     null,
+     false
+    ],
+    [
+     "feed_row",
+     5200.0,
+     "E1",
+     25.0,
+     {
+      "inplay": true,
+      "minute": 31,
+      "odds_ts_ms": 1790000000000,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ],
+    [
+     "feed_row",
+     5201.0,
+     "E4",
+     null,
+     {
+      "inplay": true,
+      "minute": 12,
+      "score_away": 0,
+      "score_home": 0
+     },
+     true
+    ]
+   ]
+  ]
+ ],
+ "run_once": [
+  [
+   "read_control",
+   [],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "hedged_trades",
+   [],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "positions_for_results",
+   [
+    "2026-09-22T08:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "pending_manual_requests",
+   [],
+   {}
+  ],
+  [
+   "log",
+   [
+    "events_refresh_vuoto",
+    {
+     "critical": true,
+     "reason": "nessun evento dal catalogo: cache CONSERVATA"
+    }
+   ],
+   {}
+  ],
+  [
+   "active_missions",
+   [],
+   {}
+  ],
+  [
+   "failed_legs",
+   [
+    "2026-09-20T20:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "manual_event_ids",
+   [
+    "2026-09-20T20:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "mission_event_ids",
+   [],
+   {}
+  ],
+  [
+   "traded_legs",
+   [
+    "2026-09-20T20:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "upsert_daily_goal",
+   [
+    "2026-09-23",
+    250.0
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "set_control",
+   [],
+   {
+    "heartbeat_at": "2026-09-23T20:00:00+00:00",
+    "stats": {
+     "bot_running": true,
+     "cadenza_battito_s": 20.0,
+     "eventi_chiusi_dall_utente": [],
+     "events_today": 0,
+     "events_today_bot": 0,
+     "events_total": 0,
+     "goal": 250.0,
+     "goal_pct": 0.0,
+     "last_cycle": "2026-09-23T20:00:00+00:00",
+     "legs_remaining": 0,
+     "legs_today": 0,
+     "live_now": 0,
+     "locked_pnl_open": 0.0,
+     "locked_pnl_open_today": 0.0,
+     "lost_today": 0,
+     "matches_open": 0,
+     "matches_remaining": 0,
+     "matches_traded": 0,
+     "matches_traded_today": 0,
+     "open_liability": 0.0,
+     "open_liability_bot": 0.0,
+     "open_liability_effective": 0.0,
+     "realized_effective": 0.0,
+     "realized_profit": 0.0,
+     "realized_today": 0.0,
+     "realized_today_bot": 0.0,
+     "reconciling_liability": 0.0,
+     "stop_ferma_solo_aperture": true,
+     "sveglia": null,
+     "target_leg": 0.0,
+     "target_match": 0.0,
+     "won_today": 0
+    }
+   }
+  ],
+  [
+   "read_control",
+   [],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "hedged_trades",
+   [],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "positions_for_results",
+   [
+    "2026-09-22T08:00:30+00:00"
+   ],
+   {}
+  ],
+  [
+   "pending_manual_requests",
+   [],
+   {}
+  ],
+  [
+   "active_missions",
+   [],
+   {}
+  ],
+  [
+   "failed_legs",
+   [
+    "2026-09-20T20:00:30+00:00"
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "manual_event_ids",
+   [
+    "2026-09-20T20:00:30+00:00"
+   ],
+   {}
+  ],
+  [
+   "mission_event_ids",
+   [],
+   {}
+  ],
+  [
+   "traded_legs",
+   [
+    "2026-09-20T20:00:30+00:00"
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "set_control",
+   [],
+   {
+    "heartbeat_at": "2026-09-23T20:00:30+00:00",
+    "stats": {
+     "bot_running": true,
+     "cadenza_battito_s": 20.0,
+     "eventi_chiusi_dall_utente": [],
+     "events_today": 0,
+     "events_today_bot": 0,
+     "events_total": 0,
+     "goal": 250.0,
+     "goal_pct": 0.0,
+     "last_cycle": "2026-09-23T20:00:30+00:00",
+     "legs_remaining": 0,
+     "legs_today": 0,
+     "live_now": 0,
+     "locked_pnl_open": 0.0,
+     "locked_pnl_open_today": 0.0,
+     "lost_today": 0,
+     "matches_open": 0,
+     "matches_remaining": 0,
+     "matches_traded": 0,
+     "matches_traded_today": 0,
+     "open_liability": 0.0,
+     "open_liability_bot": 0.0,
+     "open_liability_effective": 0.0,
+     "realized_effective": 0.0,
+     "realized_profit": 0.0,
+     "realized_today": 0.0,
+     "realized_today_bot": 0.0,
+     "reconciling_liability": 0.0,
+     "stop_ferma_solo_aperture": true,
+     "sveglia": null,
+     "target_leg": 0.0,
+     "target_match": 0.0,
+     "won_today": 0
+    }
+   }
+  ],
+  [
+   "read_control",
+   [],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "list_trades",
+   [
+    "pending"
+   ],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "hedged_trades",
+   [],
+   {}
+  ],
+  [
+   "open_trades",
+   [],
+   {}
+  ],
+  [
+   "positions_for_results",
+   [
+    "2026-09-22T08:01:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "pending_manual_requests",
+   [],
+   {}
+  ],
+  [
+   "active_missions",
+   [],
+   {}
+  ],
+  [
+   "failed_legs",
+   [
+    "2026-09-20T20:01:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "manual_event_ids",
+   [
+    "2026-09-20T20:01:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "mission_event_ids",
+   [],
+   {}
+  ],
+  [
+   "traded_legs",
+   [
+    "2026-09-20T20:01:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "aggregates",
+   [
+    "2026-09-22T22:00:00+00:00"
+   ],
+   {}
+  ],
+  [
+   "set_control",
+   [],
+   {
+    "heartbeat_at": "2026-09-23T20:01:00+00:00",
+    "stats": {
+     "bot_running": true,
+     "cadenza_battito_s": 20.0,
+     "eventi_chiusi_dall_utente": [],
+     "events_today": 0,
+     "events_today_bot": 0,
+     "events_total": 0,
+     "goal": 250.0,
+     "goal_pct": 0.0,
+     "last_cycle": "2026-09-23T20:01:00+00:00",
+     "legs_remaining": 0,
+     "legs_today": 0,
+     "live_now": 0,
+     "locked_pnl_open": 0.0,
+     "locked_pnl_open_today": 0.0,
+     "lost_today": 0,
+     "matches_open": 0,
+     "matches_remaining": 0,
+     "matches_traded": 0,
+     "matches_traded_today": 0,
+     "open_liability": 0.0,
+     "open_liability_bot": 0.0,
+     "open_liability_effective": 0.0,
+     "realized_effective": 0.0,
+     "realized_profit": 0.0,
+     "realized_today": 0.0,
+     "realized_today_bot": 0.0,
+     "reconciling_liability": 0.0,
+     "stop_ferma_solo_aperture": true,
+     "sveglia": null,
+     "target_leg": 0.0,
+     "target_match": 0.0,
+     "won_today": 0
+    }
+   }
+  ]
+ ]
+}
