@@ -300,7 +300,7 @@ class _DB:
     def insert_trade(self, trade):
         if any(t["event_id"] == trade["event_id"] and (t.get("phase") or "") == (trade.get("phase") or "")
                and t.get("origin", "auto") == "auto" and not trade.get("closes_trade_id") for t in self.trades):
-            raise Exception("unique auto leg")
+            raise Exception('duplicate key value violates unique constraint "uq_omega_trades_auto_leg"')
         self._id += 1
         row = dict(trade); row["id"] = self._id
         self.trades.append(row)

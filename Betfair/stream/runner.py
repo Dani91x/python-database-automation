@@ -93,6 +93,7 @@ from .reconcile_worker import (
 )
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
+from . import live_order_worker as _LOW
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -1651,16 +1652,61 @@ def _ripresa_all_avvio() -> bool:
     return True
 
 
+_MOTIVO_GUARDIA_LOCALE = "runner in ripresa: comando NON eseguito, riprova"
+
+
+def _rispondi_comandi_locali_in_guardia(flumine: Any, strategy: Any) -> int:
+    """23/09 (B-1, revisore B): a guardia d'avvio ARMATA il worker della coda non
+    gira, ma il canale locale 47331 e' gia' aperto e accetta i comandi del desktop.
+    Prima restavano in coda in RAM (fino a 200) senza risposta e partivano TUTTI
+    al disarmo, minuti dopo (anche doppi: il trader riprova con client_ref nuovi).
+    Adesso a ogni giro la coda si DRENA per intero e ogni comando riceve subito
+    ``ok=False`` con il motivo: nessun comando resta in coda per dopo.
+
+    Scelta documentata: passa SOLO ``cancel`` (ritira un ordine, riduce
+    l'esposizione e non ne crea), con le stesse regole del giro normale (il
+    kill-switch oggi lo lascia sempre passare, ``_CLOSING_ACTIONS``). greenup e
+    cashout NO: piazzano ordini nuovi (hedge) prima che la ripresa sia riuscita.
+    Anche ``snapshot`` riceve il rifiuto (nessuna lettura del blotter a ripresa
+    non fatta). Ritorna quante richieste ha gestito."""
+    ch = _lc.get_channel()
+    if ch is None:
+        return 0
+    annulli: list = []
+    gestite = 0
+    while True:
+        reqs = ch.pop_requests()
+        if not reqs:
+            break
+        for req in reqs:
+            gestite += 1
+            params = req.params if isinstance(req.params, dict) else {}
+            if req.method == "order" and str(params.get("action") or "") == "cancel":
+                annulli.append(req)
+                continue
+            ch.respond(req, False, error=_MOTIVO_GUARDIA_LOCALE)
+    if annulli:
+        try:
+            _LOW.esegui_richieste_locali_scelte(flumine, strategy, annulli)
+        except Exception as ex:  # noqa: BLE001 - mai lasciare un annullo senza risposta
+            logger.warning("[runner] annulli locali in guardia KO: %s", str(ex)[:200])
+            for req in annulli:
+                ch.respond(req, False, error=f"annullo NON eseguito: {str(ex)[:120]}")
+    return gestite
+
+
 def _live_order_worker_guardato(context: dict, flumine: Any, session: Any = None,
                                 strategy: Any = None) -> None:
     """``live_order_worker`` dietro la guardia d'avvio: guardia armata e ripresa
-    non riuscita -> nessun ordine (riprova la ripresa ogni ``_RIPRESA_RIPROVA_S``)."""
+    non riuscita -> nessun ordine (riprova la ripresa ogni ``_RIPRESA_RIPROVA_S``);
+    i comandi del canale locale ricevono subito il rifiuto (B-1), salvo ``cancel``."""
     if _GUARDIA_AVVIO.blocca_aperture:
         adesso = time.monotonic()
         if adesso - _RIPRESA_STATO["ultimo"] >= _RIPRESA_RIPROVA_S:
             _RIPRESA_STATO["ultimo"] = adesso
             _ripresa_all_avvio()
         if _GUARDIA_AVVIO.blocca_aperture:
+            _rispondi_comandi_locali_in_guardia(flumine, strategy)
             return
     live_order_worker(context, flumine, session=session, strategy=strategy)
 

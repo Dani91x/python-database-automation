@@ -201,8 +201,31 @@ describe('SaldoBetfairCard — valore dal canale "account" (23/09)', () => {
     it('saldo non verificato: «non aggiornato da HH:MM» con l’ora dell’ultima lettura, mai un numero muto', async () => {
         const ora = new Date(Date.now() - 45 * 60 * 1000);
         const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ora.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
-        const atteso = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false }).format(ora);
+        const hhmm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false }).format(ora);
+        // F2: a cavallo della mezzanotte di Roma (fra le 00:00 e le 00:45) i 45
+        // minuti fa sono di IERI e il testo porta anche la data.
+        const giorno = (d: Date) => new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(d);
+        const atteso = giorno(ora) === giorno(new Date()) ? hhmm : `${giorno(ora)} ${hhmm}`;
         await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toContain(`non aggiornato da ${atteso}`));
+    });
+
+    it('F2: ultimo controllo di un altro giorno -> "non aggiornato da GG/MM HH:MM", mai un\'ora che sembra di oggi', async () => {
+        const ieri = new Date(Date.now() - 30 * 3600 * 1000);
+        const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ieri.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
+        const gm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(ieri);
+        const hhmm = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false }).format(ieri);
+        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toContain(`non aggiornato da ${gm} ${hhmm}`));
+    });
+
+    it('F2: ultimo controllo di oggi -> solo HH:MM, senza data', async () => {
+        // 1 minuto fa (sempre oggi, salvo il minuto dopo la mezzanotte) e battito vecchio
+        const ora = new Date(Date.now() - 60 * 1000);
+        const s = render(<SaldoBetfairCard deps={depsCanali(account({ updated_at: ora.toISOString() }), heartbeat({ ts: vecchio(3600) }), canaliFinti(1).canali)} />);
+        const giorno = (d: Date) => new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit' }).format(d);
+        await waitFor(() => expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da /));
+        if (giorno(ora) === giorno(new Date())) {
+            expect(s.getByTestId('saldo-betfair-nota').textContent).toMatch(/non aggiornato da \d\d:\d\d$/);
+        }
     });
 
     it('di default ascolta i 5 canali dei processi che piazzano ordini veri (porte esistenti)', async () => {

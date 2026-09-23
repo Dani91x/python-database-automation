@@ -47,6 +47,7 @@ class _Registro:
     def __init__(self) -> None:
         self.letture = 0
         self.scritture: List[tuple] = []
+        self.istanti: List[Any] = []       # updated_at passato alla scrittura DB
         self.pubblicazioni: List[tuple] = []
 
 
@@ -56,7 +57,11 @@ def reg(monkeypatch: pytest.MonkeyPatch) -> _Registro:
     se.azzera()
     from Betfair.stream import db, local_channel
 
-    monkeypatch.setattr(db, "upsert_live_account", lambda a, e: r.scritture.append((a, e)))
+    def scrivi(a: Any, e: Any, **kw: Any) -> None:
+        r.scritture.append((a, e))
+        r.istanti.append(kw.get("updated_at"))
+
+    monkeypatch.setattr(db, "upsert_live_account", scrivi)
     monkeypatch.setattr(local_channel, "publish", lambda t, p: r.pubblicazioni.append((t, p)))
     yield r
     se.azzera()
@@ -85,6 +90,51 @@ def test_un_evento_una_lettura_una_scrittura_una_publish(reg: _Registro) -> None
     assert payload["available"] == 812.37 and payload["exposure"] == -41.5
     assert isinstance(payload["checked_at"], str) and payload["checked_at"].endswith("+00:00")
     assert payload["fonte"] == "test:ordine"
+
+
+def test_db_e_canale_portano_lo_stesso_istante_della_lettura(reg: _Registro) -> None:
+    """F1 revisore A (23/09): ``betfair_live_account.updated_at`` = ``checked_at``
+    del canale (istante della LETTURA), non l'istante di scrittura: il frontend
+    (saldoDaMostrare) confronta i due come la stessa grandezza."""
+    _attiva_con(reg)
+    se.segnala("ordine")
+    se.attendi()
+    assert len(reg.istanti) == 1 and len(reg.pubblicazioni) == 1
+    assert reg.istanti[0] == reg.pubblicazioni[0][1]["checked_at"]
+
+
+class _TabellaFinta:
+    """Builder PostgREST minimo: registra il payload dell'upsert."""
+
+    def __init__(self, registro: List[Dict[str, Any]]) -> None:
+        self._registro = registro
+
+    def upsert(self, payload: Dict[str, Any], on_conflict: str = "") -> "_TabellaFinta":
+        self._registro.append({"payload": dict(payload), "on_conflict": on_conflict})
+        return self
+
+    def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=[self._registro[-1]["payload"]])
+
+
+def test_upsert_live_account_scrive_l_istante_dato_e_di_default_l_ora(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from Betfair.stream import db
+
+    scritte: List[Dict[str, Any]] = []
+    client = SimpleNamespace(table=lambda nome: _TabellaFinta(scritte))
+    monkeypatch.setattr(db, "get_supabase_client", lambda: client)
+    monkeypatch.setattr(db, "_now_iso", lambda: "2026-09-23T10:00:05+00:00")
+
+    db.upsert_live_account(812.37, -41.5, updated_at="2026-09-23T10:00:00.123456+00:00")
+    db.upsert_live_account(812.37, -41.5)
+    assert [s["payload"] for s in scritte] == [
+        {"id": 1, "available": 812.37, "exposure": -41.5,
+         "updated_at": "2026-09-23T10:00:00.123456+00:00"},
+        {"id": 1, "available": 812.37, "exposure": -41.5,
+         "updated_at": "2026-09-23T10:00:05+00:00"},
+    ]
+    assert all(s["on_conflict"] == "id" for s in scritte)
 
 
 def test_nessun_evento_nessuna_chiamata(reg: _Registro) -> None:

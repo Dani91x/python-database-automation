@@ -189,6 +189,10 @@ export type LadderFonte = 'canale' | 'db';
 /** 2 x LADDER_PUBLISH_SEC (Betfair/stream/config_stream.py: 2.0 s). */
 export const LADDER_MUTO_MS_DEFAULT = 4_000;
 
+/** F3 revisore A (23/09): una voce di mercato senza sottoscrittori attivi e
+ *  senza aggiornamenti da piu' di cosi' si scarta dalla memoria. */
+export const LADDER_POTATURA_MS_DEFAULT = 10 * 60_000;
+
 // segni di vita del processo runner sul canale (lo stesso processo del ladder)
 const TOPIC_VITA = ['ladder', 'now'] as const;
 
@@ -199,6 +203,7 @@ export interface DipendenzeLadderAlMs {
     canale?: CanaleLadder;          // default: getLocalChannel(sport)
     db?: LadderSource;              // default: live_ladder (calcio) / tennis_live_ladder
     mutoMs?: number;                // default: LADDER_MUTO_MS_DEFAULT
+    potaturaMs?: number;            // default: LADDER_POTATURA_MS_DEFAULT
     adesso?: () => number;          // default: Date.now
 }
 
@@ -259,16 +264,42 @@ function creaSorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip: DipendenzeLadde
     const db = dip.db ?? DB_LADDER[sport];
     const mutoMs = dip.mutoMs ?? LADDER_MUTO_MS_DEFAULT;
     const adesso = dip.adesso ?? Date.now;
+    const potaturaMs = dip.potaturaMs ?? LADDER_POTATURA_MS_DEFAULT;
 
     // riga piu' fresca nota per mercato (da canale o da DB) e chi l'ha portata
     const ultima = new Map<string, LiveLadderRow>();
     const fonti = new Map<string, LadderFonte>();
     let ultimoSegno: number | null = null;   // adesso() dell'ultimo push ricevuto
 
+    // F3 (23/09): memoria limitata. Per mercato: sottoscrittori attivi e
+    // l'ultimo istante in cui la voce e' stata toccata (riga registrata o
+    // ultimo consumatore uscito). Senza sottoscrittori e ferma da piu' di
+    // potaturaMs la voce si scarta; il controllo gira al piu' ogni
+    // passoPotatura, agganciato agli arrivi (nessun timer in piu').
+    const iscritti = new Map<string, number>();
+    const toccato = new Map<string, number>();
+    const passoPotatura = Math.max(1, Math.min(60_000, Math.floor(potaturaMs / 4)));
+    let ultimaPotatura = adesso();
+    const pota = (forza = false): void => {
+        const t = adesso();
+        if (!forza && t - ultimaPotatura < passoPotatura) return;
+        ultimaPotatura = t;
+        for (const mid of ultima.keys()) {
+            if ((iscritti.get(mid) ?? 0) > 0) continue;
+            const tt = toccato.get(mid);
+            if (tt != null && t - tt <= potaturaMs) continue;
+            ultima.delete(mid);
+            fonti.delete(mid);
+            toccato.delete(mid);
+        }
+    };
+
     const registra = (row: LiveLadderRow, fonte: LadderFonte): boolean => {
+        pota();
         if (!piuFresca(row, ultima.get(row.market_id))) return false;
         ultima.set(row.market_id, row);
         fonti.set(row.market_id, fonte);
+        toccato.set(row.market_id, adesso());
         return true;
     };
     const canaleVivo = (): boolean => canale.getStatus() === 'connected'
@@ -287,7 +318,7 @@ function creaSorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip: DipendenzeLadde
         if (st !== 'off') return;
         ultimoSegno = null;
         for (const [mid, f] of fonti) {
-            if (f === 'canale') { fonti.delete(mid); ultima.delete(mid); }
+            if (f === 'canale') { fonti.delete(mid); ultima.delete(mid); toccato.delete(mid); }
         }
     });
 
@@ -309,6 +340,7 @@ function creaSorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip: DipendenzeLadde
             let attivo = true;
             let consegnatoMs: number | null = null;
             let dbUnsub: (() => void) | null = null;
+            iscritti.set(marketId, (iscritti.get(marketId) ?? 0) + 1);
 
             const consegna = (row: LiveLadderRow) => {
                 const ms = msDi(row);
@@ -353,12 +385,22 @@ function creaSorgenteLadderAlMs(sport: 'calcio' | 'tennis', dip: DipendenzeLadde
             riallinea();
 
             return () => {
+                if (!attivo) return;   // unsubscribe doppio: contato una volta sola
                 attivo = false;
                 clearInterval(timer);
                 offLadder();
                 offNow();
                 offStatus();
                 chiudiDb();
+                const resto = (iscritti.get(marketId) ?? 1) - 1;
+                if (resto > 0) {
+                    iscritti.set(marketId, resto);
+                } else {
+                    // l'ultimo consumatore se ne va: da qui si contano potaturaMs
+                    iscritti.delete(marketId);
+                    if (ultima.has(marketId)) toccato.set(marketId, adesso());
+                    pota(true);
+                }
             };
         },
         fonte: (marketId: string): LadderFonte | null => fonti.get(marketId) ?? null,

@@ -193,7 +193,7 @@ def test_1_acceso_si_avvia_il_client_di_safe_e_si_ferma(monkeypatch):
         assert isinstance(client, CS.ClientScan) and avviati == [client]
         assert client.porta == CS.porta_scan()
         assert isinstance(client.evento, S._SvegliaDalCanale)
-        assert client.interessa is S._evento_seguito
+        assert client.interessa is S._evento_con_posizione_viva   # B-2 (23/09)
         assert isinstance(S._CLIENT_SCAN["cache"], CS.CacheScan)
         assert S._canale_scan_attivo() is CS
         assert S.avvia_client_scan() is True and len(avviati) == 1   # idempotente
@@ -588,10 +588,15 @@ def sveglia(monkeypatch):
     monkeypatch.setattr(S.time, "sleep", _vietato)
     assert S.avvia_client_scan() is True
     client = S._CLIENT_SCAN["client"]
-    S._CACHE_FEED_CHIESTO_A["E1"] = 0.0          # Omega segue E1, non E2
+    # B-2 (23/09): Omega segue E1 ed E2, ma solo E1 ha una POSIZIONE VIVA:
+    # solo E1 sveglia il ciclo (E2 e' una candidata, resta a poll_interval_s)
+    S._CACHE_FEED_CHIESTO_A["E1"] = 0.0
+    S._CACHE_FEED_CHIESTO_A["E2"] = 0.0
+    S._ricorda_posizioni_vive("open", [{"event_id": "E1", "status": "open"}])
     yield client, orol
     S.ferma_client_scan()
     S._CACHE_FEED_CHIESTO_A.clear()
+    S._CACHE_POSIZIONI_VIVE.clear()
 
 
 def _msg(eid: str) -> str:

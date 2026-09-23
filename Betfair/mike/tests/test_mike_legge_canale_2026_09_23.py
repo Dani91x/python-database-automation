@@ -253,13 +253,14 @@ def test_4_il_canale_riprende_e_si_torna_al_canale(canale):
     assert fonte == "canale"
     assert righe[0]["payload"]["ou"][0]["selections"][0]["lay"] == 1.48
     assert db.conta("fetch_scan_rows") == 2      # nessuna lettura in piu'
-    # entro il riallineamento niente DB
-    assert S._righe_del_feed(db, p, t0 + 8)[1] == "canale"
+    # entro il riallineamento niente DB (23/09 M-1: la riga del canale conta
+    # finche' ha al piu' 5 s, ``CS.MAX_ETA_CONTESTO_S`` come Omega)
+    assert S._righe_del_feed(db, p, t0 + 6.5)[1] == "canale"
     assert db.conta("fetch_scan_rows") == 2
     # passato il riallineamento (10 s dall'ultima lettura) la lista si rilegge
     S._righe_del_feed(db, p, t0 + 11.5)
     assert db.conta("fetch_scan_rows") == 3
-    # il canale torna muto (riga oltre 20 s): cadenza di oggi, di nuovo DB
+    # il canale torna muto (riga oltre 5 s): cadenza di oggi, di nuovo DB
     righe, fonte = S._righe_del_feed(db, p, t0 + 30)
     assert fonte == "db" and db.conta("fetch_scan_rows") == 4
     assert righe[0]["payload"]["ou"][0]["selections"][0]["lay"] == 1.52

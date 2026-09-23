@@ -153,6 +153,35 @@ def residuo(ordine: Any) -> float:
     return float(_f(getattr(ordine, "size_remaining", None)) or 0.0)
 
 
+def chiesto(ordine: Any) -> Optional[float]:
+    """Il CHIESTO dell'ordine per flumine (``order_type.size``), None se ignoto."""
+    return _f(getattr(getattr(ordine, "order_type", None), "size", None))
+
+
+def _chiesto_non_coerente(creduto: Optional[float], ordine: Any,
+                          m: float, rem: float) -> Optional[str]:
+    """23/09 (B-3): il chiesto scritto dal bot contro quello di flumine.
+
+    Accettati: ``order_type.size`` (il chiesto piazzato) OPPURE abbinato +
+    residuo (il chiesto dopo le riduzioni: il place-and-trim piazza al minimo
+    di Betfair e taglia al centesimo, quindi ``order_type.size`` resta il
+    piazzato mentre la riga porta il chiesto vero). Non scritto con abbinato o
+    residuo a mercato = violazione (assente NON e' zero, catalogo par.7.21)."""
+    if creduto is None:
+        if m > EPS or rem > EPS:
+            return f"chiesto NON scritto (abbinato {m:.2f}, residuo {rem:.2f})"
+        return None
+    piazzato = chiesto(ordine)
+    candidati = [x for x in (piazzato, m + rem if (m > EPS or rem > EPS) else None)
+                 if x is not None]
+    if not candidati:
+        return None
+    if all(abs(creduto - x) > EPS for x in candidati):
+        vero = piazzato if piazzato is not None else m + rem
+        return f"chiesto creduto {creduto:.2f} contro {vero:.2f} di flumine"
+    return None
+
+
 def vivo(ordine: Any) -> bool:
     """Vivo a mercato: stato (letto come `.value`, catalogo §7.10) fra quelli
     che su Betfair tengono un residuo, e un residuo che c'e'."""
@@ -603,6 +632,7 @@ def credenze_da_righe(righe: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "chiusure": [{"bet_id": c.get("bet_id"), "id_riga": c.get("id"),
                           "status": c.get("status"),
                           "size": _f(c.get("size")), "price": _f(c.get("price")),
+                          "size_requested": _f(c.get("size_requested")),
                           "size_matched": _f(c.get("size_matched")),
                           "size_remaining": _f(c.get("size_remaining")),
                           "avg_price_matched": _f(c.get("avg_price_matched"))}
@@ -710,10 +740,29 @@ class Sorveglianza:
                                      f"residuo {rem:.2f})")
                 elif abs(cm - m) > EPS:
                     pezzi.append(f"abbinato creduto {cm:.2f} contro {m:.2f} a mercato")
-                if cr is not None and abs(cr - rem) > EPS:
+                # 23/09 (B-3, revisore B): un residuo o un prezzo medio NON
+                # scritti mentre a mercato ci sono sono una violazione (prima
+                # si confrontavano solo se scritti: falso verde), e il CHIESTO
+                # si confronta con quello di flumine.
+                if cr is None:
+                    if rem > EPS:
+                        pezzi.append(f"residuo NON scritto (a mercato {rem:.2f})")
+                elif abs(cr - rem) > EPS:
                     pezzi.append(f"residuo creduto {cr:.2f} contro {rem:.2f} a mercato")
-                if m > EPS and ca is not None and avg is not None and abs(ca - avg) > 0.011:
+                if ca is None:
+                    if m > EPS:
+                        pezzi.append(f"prezzo medio NON scritto (abbinato {m:.2f}"
+                                     + (f" a {avg:.2f})" if avg is not None else ")"))
+                elif m > EPS and avg is not None and abs(ca - avg) > 0.011:
                     pezzi.append(f"prezzo medio creduto {ca:.2f} contro {avg:.2f}")
+                # il chiesto: ``size_requested`` (la colonna della consapevolezza)
+                # se la credenza la porta, altrimenti ``size`` (specchio tennis)
+                cs = _f(c.get("size_requested"))
+                if cs is None:
+                    cs = _f(c.get("size"))
+                problema_chiesto = _chiesto_non_coerente(cs, o, m, rem)
+                if problema_chiesto:
+                    pezzi.append(problema_chiesto)
                 if pezzi:
                     problema = f"chiusura colpita {self.g._ref(o)}: " + "; ".join(pezzi)
             self._persiste("CP1", str(getattr(o, "id", "")), problema, out)

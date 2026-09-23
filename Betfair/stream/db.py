@@ -646,12 +646,19 @@ def insert_live_journal(row: Dict[str, Any]) -> None:
 # ----------------------------------------------------------------------------
 # A2/A5/A6 — conto Betfair, heartbeat, pulizia specchio al riavvio
 # ----------------------------------------------------------------------------
-def upsert_live_account(available: Optional[float], exposure: Optional[float]) -> None:
+def upsert_live_account(available: Optional[float], exposure: Optional[float],
+                        updated_at: Optional[str] = None) -> None:
     """Saldo/exposure del CONTO Betfair (fonte REST getAccountFunds) →
-    ``betfair_live_account`` (singleton id=1, realtime → top bar)."""
+    ``betfair_live_account`` (singleton id=1, realtime -> top bar).
+
+    ``updated_at`` (ISO UTC, facoltativo): istante della LETTURA del saldo.
+    saldo_evento passa lo stesso ``checked_at`` che pubblica sul canale, cosi'
+    DB e canale portano la stessa grandezza (F1 revisore A, 23/09); senza,
+    resta l'istante di scrittura di sempre."""
     sb = get_supabase_client()
     _exec_retry(sb.table("betfair_live_account").upsert(
-        {"id": 1, "available": available, "exposure": exposure, "updated_at": _now_iso()},
+        {"id": 1, "available": available, "exposure": exposure,
+         "updated_at": updated_at or _now_iso()},
         on_conflict="id",
     ))
 

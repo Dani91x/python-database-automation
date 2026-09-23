@@ -387,6 +387,8 @@ def analysis_row() -> Dict[str, Any]:
 def _ambiente_pulito(monkeypatch):
     """Nessuna attesa reale, registro e budget azzerati a ogni test."""
     monkeypatch.setattr(tpb, "_db_sleep", lambda _s: None)
+    # paracadute assoluto (23/09): contatore del PROCESSO, azzerato a ogni test
+    monkeypatch.setattr(tpb, "_DB_FAILED_REQUESTS_TOTALE", 0, raising=False)
     tpb._reset_failures()
     tpb._reset_retry_budget()
     yield
@@ -1403,6 +1405,154 @@ def test_secondo_giro_saltato_se_il_freno_e_attivo(monkeypatch):
     assert len(tpb._RUN_FAILURES) == 1
 
 
+# ---------- P1 revisore A (23/09): freni a finestra scorrevole ----------
+
+def _orologio_finto(monkeypatch) -> Dict[str, float]:
+    orologio = {"t": 0.0}
+    monkeypatch.setattr(tpb, "_db_monotonic", lambda: orologio["t"])
+    monkeypatch.setattr(tpb, "_db_sleep", lambda s: orologio.__setitem__("t", orologio["t"] + s))
+    return orologio
+
+
+def _fallisce_la_prima_volta() -> Any:
+    n = {"k": 0}
+
+    def fn():
+        n["k"] += 1
+        if n["k"] == 1:
+            raise timeout_57014()
+        return "ok"
+
+    fn.chiamate = n  # type: ignore[attr-defined]
+    return fn
+
+
+def test_un_57014_isolato_iniziale_non_spegne_i_retry_per_il_resto_del_run(monkeypatch):
+    """Adattato dal test usa-e-getta del revisore A (test_scadenza_parete.py).
+
+    Minuto 1: un 57014 recuperato al 2o tentativo. 20 minuti dopo (il run dura
+    41-82 min) un altro 57014 isolato DEVE essere ritentato e recuperato: prima
+    la scadenza di parete armata al minuto 1 non si azzerava mai e il secondo
+    errore veniva sollevato senza retry.
+    """
+    orologio = _orologio_finto(monkeypatch)
+    primo = _fallisce_la_prima_volta()
+    assert tpb._db_execute(primo, what="blip") == "ok"
+    assert primo.chiamate["k"] == 2
+
+    orologio["t"] += 20 * 60
+    secondo = _fallisce_la_prima_volta()
+    assert tpb._db_execute(secondo, what="isolato") == "ok"
+    assert secondo.chiamate["k"] == 2, "l'errore isolato deve essere ritentato"
+    assert tpb._db_retry_exhausted() is None
+
+
+def test_il_limite_di_richieste_fallite_conta_solo_quelle_consecutive(monkeypatch):
+    """61 errori isolati, ognuno seguito da un successo, non spengono i retry."""
+    _orologio_finto(monkeypatch)
+    for _ in range(tpb._DB_MAX_FAILED_REQUESTS + 1):
+        fn = _fallisce_la_prima_volta()
+        assert tpb._db_execute(fn, what="isolato") == "ok"
+        assert fn.chiamate["k"] == 2
+    assert tpb._db_retry_exhausted() is None
+
+
+def test_secondo_giro_non_eredita_il_freno_del_run(monkeypatch):
+    """Freno del run esaurito da un periodo di guai finito: il secondo giro
+    ha il suo freno e ritenta comunque le odds rimaste indietro."""
+    orologio = _orologio_finto(monkeypatch)
+    # guai continui oltre la scadenza di parete, poi il run finisce
+    monkeypatch.setattr(tpb, "_DB_FAILED_REQUESTS", tpb._DB_MAX_FAILED_REQUESTS)
+    monkeypatch.setattr(tpb, "_DB_RETRY_DEADLINE_AT", orologio["t"])
+    assert tpb._db_retry_exhausted() is not None
+
+    tpb._record_failure(9304, "odds", timeout_57014(),
+                        payload={"kind": "odds", "row": odds_row()}, manuale=True)
+    client = FakeSupabase()
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+    assert tpb._retry_failed_post_ops() == 1
+    assert tpb._RUN_FAILURES == []
+    assert [d["verb"] for d in client.attempts] == ["update"]
+
+
+def test_secondo_giro_si_ferma_se_i_guai_continuano_dentro_il_giro(monkeypatch):
+    """Il freno proprio del secondo giro scatta sui SUOI guai continui:
+    niente martellamento, le voci non tentate restano nel registro."""
+    _orologio_finto(monkeypatch)
+    monkeypatch.setattr(tpb, "_DB_MAX_FAILED_REQUESTS", 4)
+    for fid in range(9310, 9320):
+        tpb._record_failure(fid, "odds", timeout_57014(),
+                            payload={"kind": "odds", "row": odds_row()}, manuale=True)
+    client = FakeSupabase(fail_policy=lambda d, a: timeout_57014())
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+    assert tpb._retry_failed_post_ops() == 0
+    assert len(client.attempts) <= 5, "freno proprio: %s richieste" % len(client.attempts)
+    assert len(tpb._RUN_FAILURES) == 10
+
+
+# ---------- P1 rimando del coordinatore (23/09): paracadute ASSOLUTO ----------
+# La finestra scorrevole da sola lascia un buco: un guasto persistente sulle
+# sole odds, con le analisi che riescono, azzera il freno a ogni fixture e il
+# run paga 6 tentativi (~31 s di attese) PER fixture. Il tetto totale del
+# processo (300 fallimenti) non si azzera mai.
+
+def _odds_sempre_ko():
+    n = {"k": 0}
+
+    def fn():
+        n["k"] += 1
+        raise timeout_57014()
+
+    fn.chiamate = n  # type: ignore[attr-defined]
+    return fn
+
+
+def test_tetto_totale_vale_300():
+    assert tpb._DB_MAX_FAILED_REQUESTS_TOTALE == 300
+
+
+def test_odds_sempre_ko_e_analisi_ok_dopo_il_tetto_totale_non_si_ritenta_piu(monkeypatch):
+    _orologio_finto(monkeypatch)
+    tentativi = []
+    for _ in range(60):                                   # 60 fixture
+        odds = _odds_sempre_ko()
+        with pytest.raises(APIError):
+            tpb._db_execute(odds, what="update odds")
+        tentativi.append(odds.chiamate["k"])
+        assert tpb._db_execute(lambda: "ok", what="update analisi") == "ok"  # azzera il consecutivo
+    # 50 fixture x 6 tentativi = 300: da li' in poi un tentativo solo
+    assert tentativi[:50] == [tpb._DB_RETRY_ATTEMPTS] * 50
+    assert tentativi[50:] == [1] * 10
+    motivo = tpb._db_retry_exhausted()
+    assert motivo is not None and "totali" in motivo
+
+
+def test_tetto_totale_non_scatta_sotto_300_fallimenti_sparsi(monkeypatch):
+    _orologio_finto(monkeypatch)
+    for _ in range(299):
+        fn = _fallisce_la_prima_volta()
+        assert tpb._db_execute(fn, what="isolato") == "ok"
+    assert tpb._db_retry_exhausted() is None              # 299 sparsi: nessun paracadute
+    fn = _fallisce_la_prima_volta()                       # il 300esimo: il paracadute scatta
+    with pytest.raises(APIError):
+        tpb._db_execute(fn, what="isolato")
+    assert fn.chiamate["k"] == 1, "a 300 fallimenti totali (>=) non si ritenta piu'"
+    assert tpb._db_retry_exhausted() is not None
+
+
+def test_secondo_giro_non_azzera_il_tetto_totale(monkeypatch):
+    _orologio_finto(monkeypatch)
+    monkeypatch.setattr(tpb, "_DB_FAILED_REQUESTS_TOTALE", tpb._DB_MAX_FAILED_REQUESTS_TOTALE)
+    tpb._record_failure(9330, "odds", timeout_57014(),
+                        payload={"kind": "odds", "row": odds_row()}, manuale=True)
+    client = FakeSupabase()
+    monkeypatch.setattr(tpb, "get_supabase_client", lambda: client)
+    assert tpb._retry_failed_post_ops() == 0
+    assert client.attempts == [], "a paracadute scattato il secondo giro non tocca il DB"
+    assert tpb._DB_FAILED_REQUESTS_TOTALE == tpb._DB_MAX_FAILED_REQUESTS_TOTALE
+    assert len(tpb._RUN_FAILURES) == 1
+
+
 # ---------- ALTO-4: eccezioni dell'API non uccidono piu' il run ----------
 
 @pytest.mark.parametrize("coverage,attesa", [
@@ -1792,9 +1942,52 @@ def test_post_ops_riga_singola_fallita_ricade_sulle_update_e_registro_identico(t
 
 def test_freno_attivo_sui_blocchi_post_ops_ricade_sulle_update(tmp_path, monkeypatch):
     """Freno DB: niente dimezzamento, le UPDATE di sempre (un tentativo
-    ciascuna) registrano le stesse fixture del percorso storico."""
+    ciascuna) registrano le stesse fixture del percorso storico.
+
+    Dal 23/09 (P1 revisore A) il freno conta i fallimenti CONSECUTIVI: per
+    tenerlo attivo qui falliscono TUTTE le post_ops (odds E analisi). Con
+    un'analisi riuscita fra due odds fallite il freno si azzera, ed e' voluto
+    (vedi test_errori_isolati_fra_successi_hanno_ciascuno_i_loro_retry)."""
     prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
     ids = list(range(16001, 16013))
+
+    def policy(descr, _attempts):
+        if _ha_colonna(descr, "raw_json_odds") or _ha_colonna(descr, "db_json_analisi"):
+            return timeout_57014()
+        return None
+
+    def scenario(modulo: Any) -> None:
+        writer = modulo._DeferredWriter(chunk_size=100)
+        for fid in ids:
+            writer.queue_prediction(prediction_row(fid))
+            writer.queue_odds(fid, _odds_distinte(fid))
+            writer.queue_analysis(fid, _analisi_distinta(fid))
+        writer.flush()
+
+    for modulo in (prima, tpb):
+        monkeypatch.setattr(modulo, "_DB_MAX_FAILED_REQUESTS", 5)
+
+    client_prima = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, prima, client_prima)
+    scenario(prima)
+
+    client_ora = FakeSupabaseConTabella(fail_policy=policy)
+    _prepara_modulo(monkeypatch, tpb, client_ora)
+    scenario(tpb)
+
+    assert client_ora.tabella == client_prima.tabella
+    assert _registro(tpb) == _registro(prima)
+    assert {v[0] for v in _registro(tpb)} == set(ids)
+    assert len(client_ora.attempts) <= len(client_prima.attempts) + 5
+
+
+def test_errori_isolati_fra_successi_hanno_ciascuno_i_loro_retry(tmp_path, monkeypatch):
+    """P1 (23/09): odds in 57014 permanente, analisi sane. Ogni analisi
+    riuscita chiude la finestra di guai, quindi OGNI update delle odds riceve
+    i suoi tentativi (prima: il contatore cumulativo le tagliava a 1 dopo le
+    prime 5 richieste fallite). Stessa tabella finale, stesso registro."""
+    prima = _carica_modulo_originale(tmp_path, COMMIT_PRIMA_DEI_BLOCCHI)
+    ids = list(range(16101, 16113))
 
     def policy(descr, _attempts):
         if _ha_colonna(descr, "raw_json_odds"):
@@ -1822,8 +2015,24 @@ def test_freno_attivo_sui_blocchi_post_ops_ricade_sulle_update(tmp_path, monkeyp
 
     assert client_ora.tabella == client_prima.tabella
     assert _registro(tpb) == _registro(prima)
-    assert {v[0] for v in _registro(tpb)} == set(ids)
-    assert len(client_ora.attempts) <= len(client_prima.attempts) + 5
+    def tentativi_odds(client: Any) -> Dict[int, int]:
+        return {
+            fid: len([d for d in client.attempts
+                      if d["verb"] == "update" and _ha_colonna(d, "raw_json_odds")
+                      and ("eq", "fixture_id", fid) in d["filters"]])
+            for fid in ids
+        }
+
+    # La prima UPDATE di ogni ricaduta arriva subito dopo i blocchi falliti
+    # (guai ancora continui, freno attivo: un tentativo); ogni altra ha
+    # un'analisi riuscita appena prima e riceve i suoi tentativi (tetto: 5
+    # fallimenti CONSECUTIVI impostato sopra, su 6 tentativi).
+    ora = tentativi_odds(client_ora)
+    pieni = [fid for fid, n in ora.items() if n == min(tpb._DB_RETRY_ATTEMPTS, 5)]
+    assert len(pieni) >= len(ids) // 2, "tentativi per fixture: %s" % ora
+    assert sum(1 for n in tentativi_odds(client_prima).values() if n > 1) < len(pieni), (
+        "prima il contatore cumulativo tagliava i retry a quasi tutte"
+    )
 
 
 def test_run_for_date_stessa_tabella_del_percorso_a_update_singole(tmp_path, monkeypatch):

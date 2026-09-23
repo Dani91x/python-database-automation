@@ -467,6 +467,110 @@ def test_flush_ritenta_il_transitorio_e_poi_riesce():
     assert stato["n"] == 3           # due tentativi falliti, il terzo passa
 
 
+# ---- P2 revisore A (23/09): residui in staging ----------------------------
+def _residuo(fid, market, selection, valore=0.11):
+    """Riga di staging lasciata da un run precedente fallito (chiavi del vero)."""
+    return {"fixture_id": fid, "market": market, "selection": selection,
+            "freq_baseline": valore, "freq_current": valore, "freq_deviation": 0.0,
+            "delay_current": 99, "delay_record": 99, "delay_avg": 9.9}
+
+
+def test_residui_in_staging_non_toccano_analytics_signals():
+    """Chiavi della lega NON ricalcolate in questo run, rimaste in staging da
+    un run fallito: il flush non deve riscriverle con i valori vecchi. Le righe
+    di staging di un'ALTRA lega restano intatte."""
+    sig, stage = _dati_lega(129, 20)
+    altra, _ = _dati_lega(140, 1, primo_id=900000)
+    for r in altra:
+        r["fixture_id"] = 1600000
+    fid_vecchio = stage[-1]["fixture_id"]            # fixture della lega fuori dal run
+    calcolate = [r for r in stage if r["fixture_id"] != fid_vecchio]
+    residui = [_residuo(fid_vecchio, m, s) for m, s in MERCATI]
+    residuo_altra = _residuo(1600000, "btts", "Yes")
+    db = FakeDB({"analytics_signals": sig + altra,
+                 "analytics_snap_staging": [dict(r) for r in residui] + [dict(residuo_altra)]})
+    c = {"failed": 0}
+    fids_lega = {s["fixture_id"] for s in sig}
+    upd = en._flush_staging(db, 129, calcolate, c, league_fids=fids_lega)
+
+    assert c["failed"] == 0
+    assert upd == len(calcolate) * len(MOTORI)
+    for s in db.tables["analytics_signals"]:
+        if s["fixture_id"] == fid_vecchio:
+            assert s["freq_current"] is None, "valore vecchio della staging riscritto"
+        elif s["league_id"] == 129:
+            assert s["freq_current"] == 0.6
+    assert db.tables["analytics_snap_staging"] == [residuo_altra], (
+        "la staging della lega va ripulita, quella delle altre leghe no")
+
+
+def test_residui_in_staging_non_appesantiscono_il_primo_flush():
+    """I residui (oggi ~67.000 righe) facevano andare in 57014 il PRIMO flush di
+    una lega ogni giorno: ripuliti prima, la fetta passa."""
+    sig, stage = _dati_lega(131, 60)                  # 240 chiavi
+    residui = [_residuo(r["fixture_id"], r["market"], r["selection"])
+               for r in stage] * 1
+    residui += [_residuo(1500000 + i, m, "vecchia") for i in range(60) for m in ("a", "b", "c")]
+    db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": residui},
+                max_flush=en._FLUSH_SLICE)
+    c = {"failed": 0}
+    upd = en._flush_staging(db, 131, stage, c,
+                            league_fids={s["fixture_id"] for s in sig})
+    assert c["failed"] == 0
+    assert upd == len(stage) * len(MOTORI)
+    assert all(s["freq_current"] == 0.6 for s in db.tables["analytics_signals"])
+    assert db.tables["analytics_snap_staging"] == []
+
+
+def test_flush_fallito_non_lascia_la_fetta_in_staging():
+    sig, stage = _dati_lega(129, 50)
+    db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": []}, max_flush=0)
+    c = {"failed": 0}
+    assert en._flush_staging(db, 129, stage, c) == 0
+    assert c["failed"] == len(stage)
+    assert db.tables["analytics_snap_staging"] == [], "la fetta fallita e' rimasta in staging"
+
+
+def test_pulizia_staging_fallita_abbandona_la_lega_senza_flush():
+    """Se i residui non si riescono a togliere NON si flusha (riscriverebbe
+    valori vecchi): lega abbandonata, righe contate, nessuna RPC."""
+    sig, stage = _dati_lega(129, 5)
+    residui = [_residuo(stage[0]["fixture_id"], "over_2_5", "Over")]
+    db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": list(residui)})
+
+    def rompi(table, filters):
+        raise err_57014()
+
+    db.delete_hook = rompi
+    c = {"failed": 0}
+    assert en._flush_staging(db, 129, stage, c) == 0
+    assert c["failed"] == len(stage)
+    assert db.n_rpc == 0 and db.n_upsert == 0
+    assert all(s["freq_current"] is None for s in db.tables["analytics_signals"])
+
+
+def test_enrich_league_ripulisce_i_residui_di_tutti_i_fixture_della_lega(monkeypatch):
+    """_enrich_league passa TUTTI i fixture della lega in analytics_signals: un
+    residuo su un fixture che il run non ricalcola (es. uscito dalla finestra)
+    non finisce in analytics_signals."""
+    sig, stage = _dati_lega(253, 4)
+    fuori = stage[-1]["fixture_id"]
+    calcolate = [r for r in stage if r["fixture_id"] != fuori]
+    db = FakeDB({"analytics_signals": sig,
+                 "analytics_snap_staging": [_residuo(fuori, "btts", "Yes")]})
+    by_ms = {}
+    for s in sig:
+        by_ms.setdefault((s["market"], s["selection"]), set()).add(s["fixture_id"])
+    monkeypatch.setattr(en, "_fetch_signal_targets", lambda _sb, _l: by_ms)
+    monkeypatch.setattr(en, "_fetch_matches", lambda _sb, _l: [{"fixture_id": 1}])
+    monkeypatch.setattr(en, "_build_stage_rows", lambda *_a, **_k: list(calcolate))
+    c = {"failed": 0}
+    n_target, upd = en._enrich_league(db, 253, False, c)
+    assert c["failed"] == 0 and n_target == len(calcolate)
+    assert all(s["freq_current"] is None for s in sig if s["fixture_id"] == fuori)
+    assert db.tables["analytics_snap_staging"] == []
+
+
 def test_upsert_staging_errore_logico_non_si_ritenta():
     db = FakeDB({"analytics_signals": [], "analytics_snap_staging": []})
     tentativi = {"n": 0}

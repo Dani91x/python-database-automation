@@ -13,6 +13,7 @@
 // freschezza migliore, questa funzione decide UN'UNICA regola onesta, e il
 // futuro aggancio (contratto nuovo) cambia SOLO l'input, mai questa funzione.
 // ============================================================================
+import { fmtTime, DASH } from './format';
 
 export type StatoSaldo = 'ok' | 'non-verificato' | 'ignoto';
 
@@ -175,4 +176,28 @@ function formatoEta(s: number): string {
     if (s < 60) return `${Math.max(0, Math.round(s))} s fa`;
     const min = Math.round(s / 60);
     return `${min} min fa`;
+}
+
+// ============================================================================
+// F2 revisore A (23/09) - l'istante del "non aggiornato da ...".
+// Solo HH:MM se l'ultimo controllo e' di OGGI (giorno di Roma); altrimenti
+// GG/MM HH:MM: un'ora di ieri non deve sembrare di oggi (o nel futuro).
+// ============================================================================
+const TZ_ROMA = 'Europe/Rome';
+
+function giornoDiRoma(ms: number): string {
+    return new Intl.DateTimeFormat('it-IT', {
+        timeZone: TZ_ROMA, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(ms);
+}
+
+export function testoUltimaVerifica(iso: string | null | undefined, nowMs: number): string {
+    const ms = typeof iso === 'string' ? Date.parse(iso) : NaN;
+    if (!Number.isFinite(ms)) return DASH;
+    const ora = fmtTime(ms);
+    if (giornoDiRoma(ms) === giornoDiRoma(nowMs)) return ora;
+    const giornoMese = new Intl.DateTimeFormat('it-IT', {
+        timeZone: TZ_ROMA, day: '2-digit', month: '2-digit',
+    }).format(ms);
+    return `${giornoMese} ${ora}`;
 }

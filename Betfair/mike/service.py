@@ -4480,8 +4480,10 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
 #     di una riga che il database sta gia' elencando, non ne aggiunge nessuna;
 #   * la riga del canale vince solo se il suo ``updated_at`` e' STRETTAMENTE
 #     piu' recente e dichiara ``payload.odds_ts_ms``; a parita' vince il DB;
-#   * dal canale entrano solo righe con eta' <= ``exits.FEED_FRESH_S`` (20 s),
-#     la stessa soglia di Safe (``CacheScan.righe_recenti`` di serie);
+#   * dal canale entrano solo righe con eta' <= ``CS.MAX_ETA_CONTESTO_S`` (5 s,
+#     la soglia di Omega; 23/09 M-1: prima 20 s, ``exits.FEED_FRESH_S``);
+#   * il passo lento del DB vale solo se OGNI partita della lista e' coperta
+#     da una riga fresca del canale (23/09 M-1, come Omega e ``ScanRowCache``);
 #   * il client non solleva mai verso il bot.
 #
 # LETTURE DEL DATABASE (regola del 13/09: possono solo DIMINUIRE). Con il
@@ -4568,6 +4570,36 @@ def azzera_canale_scan() -> bool:
     return c_era
 
 
+def _canale_copre_tutte(righe_db: Any, fresche: Dict[str, Any]) -> bool:
+    """23/09 (M-1): ogni partita della LISTA (le righe del DB dell'ultima
+    lettura) ha una riga fresca del canale che la COPRE: esiste, dichiara
+    ``payload.odds_ts_ms`` numerico ed e' recente almeno quanto quella del DB
+    (la regola di ``scan_feed.copre``). Lista vuota o mai letta = non coperta
+    (si resta alla cadenza di oggi). Non solleva mai."""
+    try:
+        from Betfair.safe_strategy import canale_scan as CS
+
+        righe = [r for r in (righe_db or []) if isinstance(r, dict) and r.get("event_id")]
+        if not righe:
+            return False
+        for r in righe:
+            cand = fresche.get(str(r.get("event_id")))
+            if not isinstance(cand, dict):
+                return False
+            payload = cand.get("payload")
+            ots = payload.get("odds_ts_ms") if isinstance(payload, dict) else None
+            if not isinstance(ots, (int, float)) or isinstance(ots, bool):
+                return False
+            a = CS.parse_ts(r.get("updated_at"))
+            b = CS.parse_ts(cand.get("updated_at"))
+            if a is None or b is None or b < a:
+                return False
+        return True
+    except Exception as ex:  # noqa: BLE001 - nel dubbio: cadenza di oggi
+        logger.debug("[mike] copertura del canale KO: %s", str(ex)[:120])
+        return False
+
+
 def _righe_del_feed(db: Any, params: Dict[str, Any], now_ts: float
                     ) -> "tuple[List[Dict[str, Any]], str]":
     """Le righe del feed del giro, e da dove arrivano (``canale``/``db``).
@@ -4581,14 +4613,23 @@ def _righe_del_feed(db: Any, params: Dict[str, Any], now_ts: float
         and _canale_feed_acceso()
     fresche: Dict[str, Any] = {}
     if acceso:
+        from Betfair.safe_strategy import canale_scan as CS
+
         try:
-            fresche = cache.righe_recenti(ora=now_ts)
+            # 23/09 (M-1): eta' massima delle righe del canale = quella di
+            # Omega (``CS.MAX_ETA_CONTESTO_S``, 5 s), non 20 s.
+            fresche = cache.righe_recenti(max_eta_s=CS.MAX_ETA_CONTESTO_S, ora=now_ts)
         except Exception as ex:  # noqa: BLE001 - il canale non ferma mai il bot
             logger.debug("[mike] righe dal canale KO: %s", str(ex)[:120])
             fresche = {}
     # canale sano: la lista si riallinea ogni _RISINC_FEED_S (mai piu' spesso
-    # di oggi); canale muto: la cadenza di oggi, identica.
-    ttl = max(ttl_feed, _RISINC_FEED_S) if (acceso and fresche) else ttl_feed
+    # di oggi); canale muto: la cadenza di oggi, identica. 23/09 (M-1, revisore
+    # B): "sano" si decide PARTITA PER PARTITA come Omega e ``ScanRowCache``:
+    # il passo lento solo se OGNI partita della lista ha una riga fresca del
+    # canale che la copre. Prima bastava una riga fresca qualsiasi in memoria
+    # (anche di tennis: ``ClientScan`` riceve entrambi i topic).
+    coperte = acceso and bool(fresche) and _canale_copre_tutte(_CACHE_FEED.valore, fresche)
+    ttl = max(ttl_feed, _RISINC_FEED_S) if coperte else ttl_feed
     if _CACHE_FEED.fresco(now_ts, ttl):
         righe_db = _CACHE_FEED.valore
     else:

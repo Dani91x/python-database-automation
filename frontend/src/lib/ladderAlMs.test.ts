@@ -22,7 +22,7 @@ import type { LiveLadderRow } from '@/lib/live';
 import { __resetLocalChannels, getLocalChannel } from './localChannel';
 import {
     ladderDaCanale, piuFresca, sorgenteLadderAlMs, __resetLocalTransport,
-    LADDER_MUTO_MS_DEFAULT,
+    LADDER_MUTO_MS_DEFAULT, LADDER_POTATURA_MS_DEFAULT,
 } from './localTransport';
 
 class MockWebSocket {
@@ -257,5 +257,110 @@ describe('sorgenteLadderAlMs - canale principale, DB solo a canale assente/muto'
         pushLadder(ws, rigaRunner(10, 1.5));
         expect(bestBack(ultimaRiga(cb))).toBe(1.5);
         expect(getLocalChannel('tennis').getStatus()).toBe('connected');
+    });
+});
+
+// ================================================================ memoria (F3)
+// F3 revisore A (23/09): le mappe interne tenevano l'ultimo ladder di OGNI
+// mercato passato sul canale e non si svuotavano mai (solo a canale caduto).
+// Ora una voce senza sottoscrittori attivi e senza aggiornamenti da piu' di
+// LADDER_POTATURA_MS_DEFAULT si scarta; osservabile da fuori: fonte() -> null
+// e fetch() torna a leggere il DB.
+describe('sorgenteLadderAlMs - potatura dei mercati abbandonati (F3)', () => {
+    const MID2 = '1.999999999';
+    const rigaAltro = (ms: number) => ({ ...rigaRunner(ms, 4.4), market_id: MID2 });
+
+    it('default: 10 minuti', () => {
+        expect(LADDER_POTATURA_MS_DEFAULT).toBe(10 * 60_000);
+    });
+
+    it('mercato visto sul canale, mai sottoscritto, fermo da piu\' di N: la voce si scarta', async () => {
+        const { db } = dbFinto(rigaDb(5, 2.5));
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        pushLadder(ws, rigaRunner(10, 2.88));
+        expect(src.fonte(MID)).toBe('canale');
+        ora += LADDER_POTATURA_MS_DEFAULT + 1;
+        pushLadder(ws, rigaAltro(20));                     // il canale continua con altri mercati
+        expect(src.fonte(MID)).toBeNull();
+        expect(src.fonte(MID2)).toBe('canale');
+        await src.fetch(MID);                              // voce scartata: si rilegge il DB
+        expect(db.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('entro N la voce resta (fetch dal canale, nessuna lettura DB)', async () => {
+        const { db } = dbFinto(rigaDb(5, 2.5));
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        pushLadder(ws, rigaRunner(10, 2.88));
+        ora += LADDER_POTATURA_MS_DEFAULT - 1;
+        pushLadder(ws, rigaAltro(20));
+        expect(src.fonte(MID)).toBe('canale');
+        expect(bestBack(await src.fetch(MID))).toBe(2.88);
+        expect(db.fetch).not.toHaveBeenCalled();
+    });
+
+    it('mercato con un sottoscrittore attivo non si scarta mai, anche fermo da ore', () => {
+        const { db } = dbFinto();
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        pushLadder(ws, rigaRunner(10, 2.88));
+        const off = src.subscribe(MID, vi.fn());
+        for (let i = 1; i <= 30; i += 1) {                 // 30 x 5 minuti = 2 ore e mezza
+            ora += 5 * 60_000;
+            pushLadder(ws, rigaAltro(20 + i));
+        }
+        expect(src.fonte(MID)).toBe('canale');
+        off();
+    });
+
+    it('dopo l\'unsubscribe dell\'ULTIMO consumatore, passati N, la voce si scarta', () => {
+        const { db } = dbFinto();
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        pushLadder(ws, rigaRunner(10, 2.88));
+        const off1 = src.subscribe(MID, vi.fn());
+        const off2 = src.subscribe(MID, vi.fn());
+        ora += LADDER_POTATURA_MS_DEFAULT + 1;
+        off1();                                            // ne resta uno
+        pushLadder(ws, rigaAltro(20));
+        expect(src.fonte(MID)).toBe('canale');
+        off2();                                            // l'ultimo se ne va: da qui si contano N
+        ora += LADDER_POTATURA_MS_DEFAULT - 1;
+        pushLadder(ws, rigaAltro(21));
+        expect(src.fonte(MID)).toBe('canale');
+        ora += 60_000;                                     // oltre N (il controllo gira al piu' ogni minuto)
+        pushLadder(ws, rigaAltro(22));
+        expect(src.fonte(MID)).toBeNull();
+    });
+
+    it('un mercato che continua a ricevere push resta, anche senza sottoscrittori', () => {
+        const { db } = dbFinto();
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        for (let i = 0; i < 20; i += 1) {                  // un push al minuto per 20 minuti
+            pushLadder(ws, rigaRunner(10 + i, 2.88));
+            ora += 60_000;
+        }
+        pushLadder(ws, rigaAltro(99));
+        expect(src.fonte(MID)).toBe('canale');
+    });
+
+    it('una giornata di mercati chiusi non resta in memoria', () => {
+        const { db } = dbFinto();
+        const src = sorgenteLadderAlMs('calcio', { db, adesso });
+        const ws = wsDi(47331);
+        ws.serverOpen();
+        const mids = Array.from({ length: 300 }, (_, i) => `1.${100000000 + i}`);
+        mids.forEach((m, i) => pushLadder(ws, { ...rigaRunner(10 + i, 2.0), market_id: m }));
+        expect(mids.every((m) => src.fonte(m) === 'canale')).toBe(true);
+        ora += LADDER_POTATURA_MS_DEFAULT + 1;
+        pushLadder(ws, rigaAltro(1_000));
+        expect(mids.filter((m) => src.fonte(m) !== null)).toEqual([]);
     });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     statoSaldoBetfair, SALDO_HEARTBEAT_STALE_S, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare,
+    testoUltimaVerifica,
 } from './saldoBetfair';
 
 // 23/09 — il valore dal canale "account": regole pure.
@@ -107,5 +108,32 @@ describe('statoSaldoBetfair', () => {
         // canale fresco (3s) ma battito vecchissimo: deve vincere il canale (piu' preciso)
         const r = statoSaldoBetfair({ etaSaldoS: 8, etaHeartbeatS: 99999, etaCanaleS: 3 });
         expect(r.stato).toBe('ok');
+    });
+});
+
+// F2 revisore A (23/09): "non aggiornato da ..." con la DATA quando l'ultimo
+// controllo non e' di oggi (giorno di Roma), altrimenti un'ora di ieri sembra
+// di oggi (anche nel futuro).
+describe('testoUltimaVerifica (F2)', () => {
+    const adesso = Date.parse('2026-09-23T08:00:00Z'); // 10:00 a Roma, 23/09
+
+    it('stesso giorno di Roma: solo HH:MM', () => {
+        expect(testoUltimaVerifica('2026-09-23T06:15:00Z', adesso)).toBe('08:15');
+    });
+
+    it('giorno prima: GG/MM HH:MM', () => {
+        expect(testoUltimaVerifica('2026-09-22T13:51:00Z', adesso)).toBe('22/09 15:51');
+    });
+
+    it('il confine e\x27 la mezzanotte di ROMA, non quella UTC', () => {
+        // 22:30 UTC del 22/09 = 00:30 a Roma del 23/09 -> oggi
+        expect(testoUltimaVerifica('2026-09-22T22:30:00Z', adesso)).toBe('00:30');
+        // 21:30 UTC del 22/09 = 23:30 a Roma del 22/09 -> ieri
+        expect(testoUltimaVerifica('2026-09-22T21:30:00Z', adesso)).toBe('22/09 23:30');
+    });
+
+    it('istante assente o illeggibile: il trattino', () => {
+        expect(testoUltimaVerifica(null, adesso)).toBe('\u2014');
+        expect(testoUltimaVerifica('non-una-data', adesso)).toBe('\u2014');
     });
 });

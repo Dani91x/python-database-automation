@@ -167,7 +167,7 @@ class FakeDB:
             and not (t.get("meta") or {}).get("leg_failed")
             for t in self.trades
         ):
-            raise Exception("unique auto event_id")
+            raise Exception('duplicate key value violates unique constraint "uq_omega_trades_auto_event"')
         # unique per-gamba PARZIALE (WHERE status <> 'error', audit H1 16/07):
         # una gamba fallita NON blocca il ripiazzamento della stessa gamba
         leg = (trade["event_id"], trade.get("market_id"), trade.get("selection_id"), trade.get("side"))
@@ -175,7 +175,7 @@ class FakeDB:
             (t["event_id"], t.get("market_id"), t.get("selection_id"), t.get("side")) == leg
             for t in self.trades if t.get("status") != "error"
         ):
-            raise Exception("unique leg")
+            raise Exception('duplicate key value violates unique constraint "uq_omega_trades_leg"')
         self._id += 1
         row = dict(trade)
         row["id"] = self._id

@@ -280,6 +280,44 @@ def test_memoria_tiene_la_piu_fresca_e_ignora_le_vecchie():
     assert m.esito_terminale("awlq1", "live") is None, "mai letture cross-mode"
 
 
+def test_memoria_terminale_allo_stesso_istante_della_intermedia_entra():
+    """23/09 M-2 (revisore B, sonda ``test_esiti_terminale_stesso_istante_scartato``
+    INVERTITA): un FOK pubblica EXECUTABLE ed EXECUTION_COMPLETE nello stesso ms.
+    La terminale a parita' di ``updated_at`` entra (prima era scartata: esito
+    perso dalla memoria, ripiego sul DB)."""
+    m = EO.MemoriaEsiti()
+    istante = "2026-09-23T18:00:00.123+00:00"
+    intermedia = _riga_vera(rid=7, status="EXECUTABLE", size_matched=0.0, size=2.0,
+                            remaining=2.0, updated_at=istante)
+    finale = _riga_vera(rid=7, status="EXECUTION_COMPLETE", size_matched=2.0, size=2.0,
+                        updated_at=istante)
+    assert m.ricevi(intermedia) is True
+    assert m.ricevi(finale) is True
+    esito = m.esito_terminale("awlq7", "paper")
+    assert esito is not None and esito["size_matched"] == 2.0
+
+
+def test_memoria_intermedia_allo_stesso_istante_della_terminale_non_entra():
+    """Mai il contrario: a parita' di istante una intermedia non scalza la terminale."""
+    m = EO.MemoriaEsiti()
+    istante = "2026-09-23T18:00:00.123+00:00"
+    finale = _riga_vera(rid=8, status="EXECUTION_COMPLETE", size_matched=2.0, size=2.0,
+                        updated_at=istante)
+    intermedia = _riga_vera(rid=8, status="EXECUTABLE", size_matched=0.0, size=2.0,
+                            remaining=2.0, updated_at=istante)
+    assert m.ricevi(finale) is True
+    assert m.ricevi(intermedia) is False
+    assert m.esito_terminale("awlq8", "paper")["size_matched"] == 2.0
+
+
+def test_memoria_intermedia_ripetuta_allo_stesso_istante_non_entra():
+    m = EO.MemoriaEsiti()
+    riga = _riga_vera(rid=9, status="EXECUTABLE", size_matched=0.0, size=2.0,
+                      remaining=2.0, updated_at="2026-09-23T18:00:00.123+00:00")
+    assert m.ricevi(riga) is True
+    assert m.ricevi(dict(riga)) is False
+
+
 def test_memoria_scarta_righe_senza_chiave_o_istante():
     m = EO.MemoriaEsiti()
     riga = _riga_vera(rid=2, size_matched=1.0, size=1.0)

@@ -24,6 +24,14 @@ SCRITTURA BULK A FETTE (veloce + poco stressante per il DB):
     3) UPDATE ... FROM scopato alla lega (RPC flush_analytics_snap_staging), che
        aggiorna e poi CANCELLA dalla staging le chiavi appena flushate,
     4) fetta successiva (staging di nuovo vuota per quella lega).
+  STAGING PULITA IN PARTENZA (23/09, revisore A - P2): la RPC aggiorna TUTTE le
+  righe della lega presenti in staging, quindi prima della PRIMA fetta si
+  cancellano dalla staging le righe dei fixture della lega (residui di run
+  andati in errore: oggi ~67.000). Altrimenti il primo flush se li porta
+  dietro: UPDATE pesante (57014 ogni giorno sulle leghe 131/253) e chiavi non
+  ricalcolate in questo run riscritte con valori VECCHI. E se un flush fallisce
+  si cancellano le chiavi della fetta appena caricata: i residui non si
+  accumulano piu'.
   -> stato finale IDENTICO al flush unico: le fette sono disgiunte, ogni chiave e'
   aggiornata una volta sola e la somma delle righe aggiornate coincide. I numeri
   scritti sono IDENTICI, riga-per-riga, a quelli del metodo riga-per-riga (lo
@@ -89,6 +97,7 @@ _PAGE_MIN = 25          # blocco minimo dopo i dimezzamenti sui transitori (100 
                         # davvero e restava a riprovare 5 volte lo STESSO blocco -> 57014
                         # ripetuto, RuntimeError, intero script morto (vedi _leggi_pagine).
 _RETRY = 5              # tentativi su errori TRANSITORI
+_CLEAN_FIXTURES = 100   # fixture per richiesta di DELETE sulla staging (URL corto)
 
 # Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
 # deadlock/serializzazione, connessione persa, 5xx del gateway, PGRST002 (schema
@@ -241,8 +250,33 @@ def _flush_league(sb, league_id: int) -> tuple[bool, int]:
     return False, 0
 
 
+def _delete_stage_fixtures(sb, fids: set[int], what: str) -> bool:
+    """Cancella dalla staging le righe dei fixture `fids` (a blocchi di
+    _CLEAN_FIXTURES, retry sui transitori). True se TUTTE le richieste sono
+    riuscite. La staging non ha league_id: la RPC scopa alla lega con il JOIN
+    su analytics_signals, e un fixture appartiene a una sola lega, quindi
+    cancellare per fixture_id toglie esattamente cio' che il flush della lega
+    toccherebbe (e niente delle altre leghe)."""
+    ordinati = sorted(fids)
+    for i in range(0, len(ordinati), _CLEAN_FIXTURES):
+        blocco = ordinati[i:i + _CLEAN_FIXTURES]
+        for attempt in range(_RETRY):
+            try:
+                (sb.table("analytics_snap_staging").delete()
+                 .in_("fixture_id", blocco).execute())
+                break
+            except Exception as e:  # noqa: BLE001
+                if not _is_transient(e) or attempt == _RETRY - 1:
+                    print(f"    [ERR pulizia staging {what}] "
+                          f"{type(e).__name__}: {str(e)[:100]}")
+                    return False
+                _sleep_backoff(attempt)
+    return True
+
+
 def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
-                   slice_state: Optional[dict] = None) -> int:
+                   slice_state: Optional[dict] = None,
+                   league_fids: Optional[set[int]] = None) -> int:
     """Scrive gli snapshot A FETTE: per ogni fetta di poche centinaia di righe
     -> upsert in staging + UNA RPC di flush. Ritorna le righe aggiornate.
 
@@ -253,12 +287,27 @@ def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
     fette sono sequenziali e disgiunte, ogni chiave viene aggiornata UNA volta, e
     la somma delle righe aggiornate e' identica a quella del flush unico.
 
-    Se un flush non riesce dopo i retry, le sue righe restano in staging (le
-    riprendera' il run successivo, che le sovrascrive) e la LEGA viene abbandonata:
-    caricarne altre renderebbe l'UPDATE ancora piu' pesante. Le righe non scritte
-    sono contate in counters['failed'] -> exit != 0 a fine script.
+    STAGING PULITA (P2, 23/09): prima della PRIMA fetta si cancellano dalla
+    staging le righe dei fixture della lega (`league_fids`: tutti i fixture
+    della lega in analytics_signals; se manca, quelli di `stage_rows`), cosi'
+    il flush tocca SOLO le chiavi calcolate in questo run. Se la pulizia non
+    riesce la lega viene abbandonata SENZA flush (flushare i residui
+    riscriverebbe valori vecchi): righe contate in counters['failed'].
+
+    Se un flush non riesce dopo i retry la LEGA viene abbandonata (caricarne
+    altre renderebbe l'UPDATE ancora piu' pesante) e le chiavi della fetta
+    appena caricata si cancellano dalla staging: nessun residuo resta per il
+    run successivo. Le righe non scritte sono contate in counters['failed']
+    -> exit != 0 a fine script.
     """
     if not stage_rows:
+        return 0
+    fids_lega = set(league_fids) if league_fids is not None else set()
+    fids_lega |= {r["fixture_id"] for r in stage_rows}
+    if not _delete_stage_fixtures(sb, fids_lega, f"lega {league_id}"):
+        counters["failed"] += len(stage_rows)
+        print(f"    [ERR lega {league_id}] staging non ripulita: abbandono la lega "
+              f"senza flush, {len(stage_rows)} righe NON scritte")
         return 0
     state = slice_state if slice_state is not None else {"size": _FLUSH_SLICE}
     updated = 0
@@ -276,6 +325,9 @@ def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
         state["size"] = max(_FLUSH_MIN, size // 2)   # fetta adattiva
         persi = len(part) + (len(stage_rows) - i)
         counters["failed"] += persi
+        # la fetta caricata non deve restare in staging come residuo
+        _delete_stage_fixtures(sb, {r["fixture_id"] for r in part},
+                               f"fetta fallita lega {league_id}")
         print(f"    [ERR flush lega {league_id}] abbandono la lega: {persi} righe "
               f"NON scritte (fetta ridotta a {state['size']})")
         return updated
@@ -330,7 +382,9 @@ def _enrich_league(sb, league_id: int, dry: bool, counters: dict,
         for line in (dry_examples or [])[:20]:
             print(line)
         return n_target, 0
-    updated = _flush_staging(sb, league_id, stage, counters, slice_state)
+    league_fids: set[int] = set().union(*by_ms.values())
+    updated = _flush_staging(sb, league_id, stage, counters, slice_state,
+                             league_fids=league_fids)
     return n_target, updated
 
 

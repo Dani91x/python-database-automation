@@ -116,7 +116,8 @@ def rileggi_saldo(motivo: str) -> Optional[Tuple[Optional[float], Optional[float
     try:
         from . import db
 
-        db.upsert_live_account(sig[0], sig[1])
+        # stesso istante della lettura su DB e canale (F1 revisore A, 23/09)
+        db.upsert_live_account(sig[0], sig[1], updated_at=checked_at)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[saldo-evento] upsert saldo KO (%s): %s", motivo, str(ex)[:200])
     try:

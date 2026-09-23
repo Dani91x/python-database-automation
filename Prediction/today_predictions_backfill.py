@@ -126,18 +126,32 @@ _DB_RETRY_ATTEMPTS_BATCH = 3
 _DB_RETRY_BASE_DELAY = 1.0
 _DB_RETRY_MAX_DELAY = 20.0
 
-# FRENI ASSOLUTI del processo. Se il DB e' davvero in difficolta' il run non
-# deve ne' restare appeso per ore ne' martellare il database con centinaia di
-# richieste destinate a fallire. Scatta il primo dei tre che si esaurisce;
-# quando uno scatta si smette di ritentare E di dimezzare i blocchi, ma NON si
-# ingoia nulla: tutto finisce in _RUN_FAILURES e il processo esce != 0.
-_DB_RETRY_BUDGET_S = 600.0        # somma delle attese fra un tentativo e l'altro
-_DB_RETRY_DEADLINE_S = 900.0      # tempo di PARETE dal primo retry (15 minuti)
-_DB_MAX_FAILED_REQUESTS = 60      # richieste fallite totali nel processo
+# FRENI del DB. Se il DB e' davvero in difficolta' il run non deve ne' restare
+# appeso per ore ne' martellare il database con centinaia di richieste
+# destinate a fallire. Scatta il primo dei tre che si esaurisce; quando uno
+# scatta si smette di ritentare E di dimezzare i blocchi, ma NON si ingoia
+# nulla: tutto finisce in _RUN_FAILURES e il processo esce != 0.
+# FINESTRA SCORREVOLE (23/09, revisore A - P1): i tre freni misurano un
+# periodo di guai CONTINUI. Ogni chiamata riuscita li azzera
+# (_azzera_freno_dopo_successo): prima la scadenza di parete, armata al primo
+# retry del processo, non veniva mai azzerata, e un solo 57014 al minuto 1
+# spegneva i retry e il secondo giro per tutto il resto del run (41-82 min).
+# PARACADUTE ASSOLUTO (23/09, rimando del coordinatore): la finestra
+# scorrevole da sola lascia un buco. Un guasto persistente sulle sole odds,
+# con le analisi che riescono, azzererebbe il freno a ogni fixture: 6
+# tentativi (~31 s di attese) PER fixture per tutto il run. Il quarto freno
+# conta le richieste fallite di TUTTO il processo e NON si azzera mai (ne'
+# dopo un successo, ne' al secondo giro): solo all'avvio del processo
+# (_reset_totale_processo). Scattato, vale come gli altri tre.
+_DB_RETRY_BUDGET_S = 600.0        # somma delle attese dall'ultimo successo
+_DB_RETRY_DEADLINE_S = 900.0      # PARETE dal primo retry dopo l'ultimo successo (15 minuti)
+_DB_MAX_FAILED_REQUESTS = 60      # richieste fallite CONSECUTIVE (dall'ultimo successo)
+_DB_MAX_FAILED_REQUESTS_TOTALE = 300  # richieste fallite TOTALI nel processo (50 fixture x 6)
 
 _DB_RETRY_SPENT_S = 0.0
 _DB_RETRY_DEADLINE_AT: Optional[float] = None
 _DB_FAILED_REQUESTS = 0
+_DB_FAILED_REQUESTS_TOTALE = 0
 
 
 def _db_monotonic() -> float:
@@ -146,15 +160,33 @@ def _db_monotonic() -> float:
 
 
 def _reset_retry_budget() -> None:
-    """Azzera i tre freni (una volta per processo)."""
+    """Azzera i tre freni (all'avvio, dopo ogni successo, al secondo giro)."""
     global _DB_RETRY_SPENT_S, _DB_RETRY_DEADLINE_AT, _DB_FAILED_REQUESTS  # noqa: PLW0603
     _DB_RETRY_SPENT_S = 0.0
     _DB_RETRY_DEADLINE_AT = None
     _DB_FAILED_REQUESTS = 0
 
 
+def _reset_totale_processo() -> None:
+    """Azzera il paracadute assoluto: SOLO all'avvio del processo (main)."""
+    global _DB_FAILED_REQUESTS_TOTALE  # noqa: PLW0603
+    _DB_FAILED_REQUESTS_TOTALE = 0
+
+
+def _azzera_freno_dopo_successo() -> None:
+    """Una chiamata al DB e' riuscita: la finestra di guai si chiude.
+
+    Azzera scadenza di parete, attese spese e richieste fallite, cosi' un
+    errore isolato piu' avanti nel run ha di nuovo i suoi retry.
+    """
+    _reset_retry_budget()
+
+
 def _db_retry_exhausted() -> Optional[str]:
     """Motivo per cui non si deve piu' ritentare, oppure None se si puo'."""
+    if _DB_FAILED_REQUESTS_TOTALE >= _DB_MAX_FAILED_REQUESTS_TOTALE:
+        return ("richieste fallite totali nel processo >= %d (paracadute assoluto)"
+                % _DB_MAX_FAILED_REQUESTS_TOTALE)
     if _DB_FAILED_REQUESTS >= _DB_MAX_FAILED_REQUESTS:
         return "limite di richieste fallite raggiunto (%d)" % _DB_MAX_FAILED_REQUESTS
     if _DB_RETRY_SPENT_S >= _DB_RETRY_BUDGET_S:
@@ -215,12 +247,14 @@ def _db_execute(
     in _RUN_FAILURES o lasciarla propagare.
     """
     global _DB_RETRY_SPENT_S, _DB_RETRY_DEADLINE_AT, _DB_FAILED_REQUESTS  # noqa: PLW0603
+    global _DB_FAILED_REQUESTS_TOTALE  # noqa: PLW0603
     total = max(1, int(attempts if attempts is not None else _DB_RETRY_ATTEMPTS))
     for attempt in range(1, total + 1):
         try:
-            return fn()
+            risultato = fn()
         except Exception as exc:  # noqa: BLE001 - filtrato subito sotto
             _DB_FAILED_REQUESTS += 1
+            _DB_FAILED_REQUESTS_TOTALE += 1   # paracadute: mai azzerato nel processo
             if attempt >= total or not _is_transient_db_error(exc):
                 raise
             motivo = _db_retry_exhausted()
@@ -237,6 +271,9 @@ def _db_execute(
             )
             _DB_RETRY_SPENT_S += delay
             _db_sleep(delay)
+        else:
+            _azzera_freno_dopo_successo()
+            return risultato
     raise RuntimeError("unreachable")  # pragma: no cover - difensivo
 
 
@@ -344,6 +381,9 @@ def _retry_failed_post_ops() -> int:
     if not ripetibili:
         return 0
 
+    # Freno PROPRIO del secondo giro: non eredita quello del run (P1, 23/09).
+    # Da qui in poi i tre freni contano solo i guai di questo giro.
+    _reset_retry_budget()
     motivo = _db_retry_exhausted()
     if motivo is not None:
         logger.error(
@@ -359,6 +399,14 @@ def _retry_failed_post_ops() -> int:
     sb = get_supabase_client()
     recuperate: Set[int] = set()
     for voce in ripetibili:
+        motivo = _db_retry_exhausted()
+        if motivo is not None:
+            # Guai continui DENTRO il secondo giro: si smette, niente
+            # martellamento; le voci non tentate restano nel registro.
+            logger.error(
+                "Secondo giro interrotto (%s): le voci rimaste restano da recuperare.", motivo,
+            )
+            break
         fixture_id = voce.get("fixture_id")
         riga = (voce.get("payload") or {}).get("row")
         if not riga:
@@ -2714,6 +2762,7 @@ def main() -> None:
     target_date = args.date or datetime.now(timezone.utc).date().isoformat()
     _reset_failures()
     _reset_retry_budget()
+    _reset_totale_processo()
     run_for_date(target_date)
 
     # Nessun successo dichiarato con dati mancanti: se resta anche una sola

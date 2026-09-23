@@ -14,13 +14,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { fmtMoney, fmtAge, fmtTime, ageSeconds, DASH } from '@/lib/format';
+import { fmtMoney, fmtAge, ageSeconds, DASH } from '@/lib/format';
 import {
     fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
     type LiveAccountRow, type LiveHeartbeatRow,
 } from '@/lib/liveOrders';
 import {
-    statoSaldoBetfair, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare, type SaldoDalCanale,
+    statoSaldoBetfair, leggiSaldoDalCanale, saldoPiuRecente, saldoDaMostrare, testoUltimaVerifica, type SaldoDalCanale,
 } from '@/lib/saldoBetfair';
 import { getLocalChannel, type LocalChannel, type LocalSport } from '@/lib/localChannel';
 
@@ -127,6 +127,7 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
     // l'ultimo istante in cui QUALCUNO ha davvero letto il conto (il più
     // recente fra `checked_at` del canale e l'istante del dato mostrato):
     // è l'ora del «non aggiornato da HH:MM», mai un numero muto.
+    // F2 revisore A 23/09: GG/MM HH:MM se non e' di oggi (testoUltimaVerifica).
     const ultimaVerifica = [checkedAt, mostrato.istante]
         .filter((x): x is string => typeof x === 'string' && Number.isFinite(Date.parse(x)))
         .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
@@ -181,7 +182,7 @@ export function SaldoBetfairCard({ testId = 'saldo-betfair', deps }: SaldoBetfai
                 {etaSaldoS == null
                     ? (erroreLettura ? 'saldo non leggibile' : 'saldo non ancora letto')
                     : stato.attenzione
-                        ? <>non aggiornato da {fmtTime(ultimaVerifica)}</>
+                        ? <>non aggiornato da {testoUltimaVerifica(ultimaVerifica, nowMs)}</>
                         : <>{mostrato.fonte === 'canale' ? 'controllato' : 'ultimo cambio'}: {fmtAge(etaSaldoS)}</>}
             </div>
         </Card>

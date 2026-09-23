@@ -1090,6 +1090,7 @@ def credenze_mike(db: Any, event_id: str) -> List[Dict[str, Any]]:
             "chiusure": [{"bet_id": c.get("bet_id"), "id_riga": c.get("id"),
                           "status": c.get("status"),
                           "size": c.get("size"), "price": c.get("price"),
+                          "size_requested": c.get("size_requested"),
                           "size_matched": c.get("size_matched"),
                           "size_remaining": c.get("size_remaining"),
                           "avg_price_matched": c.get("avg_price_matched")}

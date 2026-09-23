@@ -377,8 +377,24 @@ def test_una_novita_anticipa_una_volta_sola(monkeypatch):
     assert seconda["anticipa"] is False and seconda["motivo"] == "niente_di_nuovo"
 
 
+#: nessun tetto vero e' plausibile sopra questo numero: se qualcuno toglie il
+#: tetto (es. ``_ANTICIPI_MAX_AL_MIN`` a 999999) il test qui sotto leggeva la
+#: costante dal vivo per decidere quanti trade finti costruire e quanti giri
+#: veloci lanciare - risultato, un milione di iterazioni e il processo pytest
+#: restava fermo per ore (reperto del 23/09: 10 h ferme, 8 h di CPU). La
+#: guardia sotto ferma il test PRIMA di costruire un solo trade: fallisce
+#: pulito e in pochi secondi invece di bloccarsi.
+_LIMITE_DI_SICUREZZA_TETTO = 50
+
+
 def test_tetto_degli_anticipi_al_minuto(monkeypatch):
     _accendi(monkeypatch)
+    if S._ANTICIPI_MAX_AL_MIN > _LIMITE_DI_SICUREZZA_TETTO:
+        pytest.fail(
+            f"S._ANTICIPI_MAX_AL_MIN = {S._ANTICIPI_MAX_AL_MIN}, oltre il "
+            f"limite di sicurezza del test ({_LIMITE_DI_SICUREZZA_TETTO}): il "
+            "tetto degli anticipi al minuto sembra rimosso o troppo alto"
+        )
     db = FakeDB(status="running")
     n = S._ANTICIPI_MAX_AL_MIN + 1
     for i in range(n):
@@ -386,7 +402,13 @@ def test_tetto_degli_anticipi_al_minuto(monkeypatch):
     db.scan_rows = [_exit_feed_row(60, 1, 0, event_id=f"1.{i}") for i in range(n)]
     S.run_once(db=db, market=FakeMarket(), engine=None, now=NOW)
     esiti = []
+    t0 = time.monotonic()
     for i in range(n):
+        if time.monotonic() - t0 > 5.0:
+            pytest.fail(
+                "tetto degli anticipi al minuto: non e' scattato entro 5 s "
+                f"({i} giri veloci fatti su {n} previsti)"
+            )
         riga = _dal_canale(_exit_feed_row(61, 2, 0, event_id=f"1.{i}"), 1)
         esiti.append(S.run_giro_veloce(now=NOW + timedelta(seconds=1),
                                        fresche={f"1.{i}": riga}))

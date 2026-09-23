@@ -6,7 +6,8 @@ leggeva QUALSIASI errore (timeout 57014, rete, schema) come "gia' riservato":
 ciclo automatico -> skip 'already_reserved' silenzioso; manuale -> errore
 'gia_piazzato_su_evento' (falso: sull'evento non c'e' niente). Adesso solo la
 violazione dell'unico (``code='23505'`` di postgrest / messaggio ``duplicate
-key``/``unique``) e' "gia' riservato"; ogni altro errore si scrive come ERRORE
+key``; dal 23/09 M-3 non piu' la sola parola ``unique``) e'
+"gia' riservato"; ogni altro errore si scrive come ERRORE
 (reason 'reserve_failed' / 'riserva_non_scritta') e nessun ordine parte.
 
 Gli errori finti sono ``postgrest.exceptions.APIError`` VERI, costruiti con il
@@ -72,6 +73,20 @@ def test_riconosce_solo_la_violazione_dell_unico():
     # i finti storici del banco (replay_registrazioni) parlano col messaggio
     assert S._e_violazione_unica(RuntimeError(
         'duplicate key value violates unique constraint "uq_x"'))
+
+
+def test_la_parola_unique_da_sola_non_basta():
+    """23/09 M-3 (revisore B): ``"unique" in testo`` era troppo largo: un errore
+    qualunque che contiene la parola diventava "gia' riservato" (skip
+    silenzioso, il difetto che il fix voleva chiudere). Valgono solo ``23505``
+    e ``duplicate key``."""
+    assert not S._e_violazione_unica(RuntimeError("unique auto event_id"))
+    assert not S._e_violazione_unica(APIError({
+        "message": 'column "unique_key" does not exist', "code": "42703",
+        "hint": None, "details": None}))
+    assert not S._e_violazione_unica(ValueError("could not create unique index: timeout"))
+    assert S._e_violazione_unica(APIError({"message": "x", "code": "23505",
+                                           "hint": None, "details": None}))
 
 
 def test_auto_duplicato_resta_gia_riservato():

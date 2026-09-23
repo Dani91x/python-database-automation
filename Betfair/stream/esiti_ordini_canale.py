@@ -177,7 +177,13 @@ class MemoriaEsiti:
             chiave = (str(mode), str(ref))
             prima = self._righe.get(chiave)
             if prima is not None:
-                if quando <= float(prima["_istante"]):
+                istante_prima = float(prima["_istante"])
+                # 23/09 (M-2, revisore B): a PARITA' di ``updated_at`` entra una
+                # riga TERMINALE sopra una intermedia (FOK: EXECUTABLE ed
+                # EXECUTION_COMPLETE nello stesso ms), mai il contrario.
+                a_pari_terminale = (quando == istante_prima and terminale(riga)
+                                    and not terminale(prima))
+                if quando <= istante_prima and not a_pari_terminale:
                     self._conta("vecchie")
                     return False
                 if terminale(prima) and not terminale(riga):

@@ -3015,14 +3015,19 @@ def _record_local_request(
         return None
 
 
-def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> int:
-    """Esegue i comandi arrivati dal canale locale (drain nel thread del worker)."""
+def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
+                            reqs: Optional[List[Any]] = None) -> int:
+    """Esegue i comandi arrivati dal canale locale (drain nel thread del worker).
+
+    ``reqs`` (23/09, B-1): richieste GIA' drenate dal chiamante (la guardia
+    d'avvio del runner, che lascia passare i soli ``cancel``); None = drena qui."""
     from . import local_channel
 
     ch = local_channel.get_channel()
     if ch is None:
         return 0
-    reqs = ch.pop_requests()
+    if reqs is None:
+        reqs = ch.pop_requests()
     if not reqs:
         return 0
     handled = 0
@@ -3328,6 +3333,35 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     # 4) F0: NIENTE piu' strage cross-mode. Le righe dell'altra modalita' sono
     # servite al punto (2) oppure chiuse in 'error' con il motivo esplicito.
     return handled
+
+
+def esegui_richieste_locali_scelte(flumine: Any, strategy: Any, reqs: List[Any]) -> int:
+    """23/09 (B-1): esegue SOLO le richieste locali passate (gia' drenate dal
+    chiamante) con le stesse regole del giro normale (mode della richiesta,
+    kill-switch, dedup per client_ref, risposta al desktop). La usa la guardia
+    d'avvio del runner per i soli ``cancel``. Modalita' OFF o client DB non
+    costruibile: ogni richiesta riceve ``ok=False`` (mai lasciata senza risposta)."""
+    from . import local_channel
+
+    ch = local_channel.get_channel()
+    if ch is None or not reqs:
+        return 0
+    mode = _live_order_mode()
+    motivo: Optional[str] = None
+    sb: Any = None
+    if mode not in ("PAPER", "LIVE"):
+        motivo = "modalita' ordini OFF: comando NON eseguito"
+    else:
+        try:
+            from db_client import get_supabase_client
+            sb = get_supabase_client()
+        except Exception as ex:  # noqa: BLE001 - DB non costruibile: rifiuto esplicito
+            motivo = f"client DB non disponibile: comando NON eseguito ({str(ex)[:80]})"
+    if motivo is not None:
+        for req in reqs:
+            ch.respond(req, False, error=motivo)
+        return len(reqs)
+    return _process_local_requests(sb, flumine, mode.lower(), strategy, reqs=list(reqs))
 
 
 def live_order_worker(

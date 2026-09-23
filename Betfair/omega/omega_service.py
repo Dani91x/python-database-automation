@@ -208,6 +208,12 @@ _CACHE_SCANNER: dict[str, Any] = {}
 # ``stats.fonte_scan``. Vedi il blocco "IL CANALE DELLO SCANNER" piu' sotto.
 _CLIENT_SCAN: dict[str, Any] = {"client": None, "cache": None}
 _CACHE_FONTE_SCAN: dict[str, int] = {}
+# 23/09 (B-2, revisore B): le partite con una POSIZIONE VIVA del bot, come le ha
+# viste l'ultimo giro (``settle_open`` -> 'open', ``poll_flumine_pending`` ->
+# 'pending'): {"open": frozenset(event_id), "pending": frozenset(event_id)}. Si
+# riempie con le righe che il giro legge GIA' (nessuna lettura in piu') e serve
+# SOLO a decidere se una riga del canale merita di svegliare il ciclo.
+_CACHE_POSIZIONI_VIVE: dict[str, frozenset] = {}
 # RPC degli aggregati (scorre tutta omega_trades)
 _CACHE_AGGREGATI = _Cache()
 # insiemi di "che cosa ho gia' fatto io" (gambe, eventi, tentativi falliti)
@@ -264,6 +270,7 @@ def svuota_le_cache() -> None:
     # Il client (la connessione) resta: la prossima lettura va al database,
     # e il canale si rifa' le righe da solo al primo messaggio.
     _CACHE_FONTE_SCAN.clear()
+    _CACHE_POSIZIONI_VIVE.clear()
     try:
         memoria = _CLIENT_SCAN.get("cache")
         if memoria is not None:
@@ -484,8 +491,10 @@ def _scanner_eta_cached(cache: Any) -> Optional[float]:
 # le righe al tick ma il giro ogni 20 s, Omega resterebbe lontana dal tick.
 # Con ``OMEGA_LEGGE_CANALE`` acceso il client del canale ALZA la sveglia che
 # Omega ha gia' (``_SVEGLIA``, F5: ``Sveglia.attendi`` con coalescenza e
-# pavimento) quando arriva una riga di una partita che Omega SEGUE
-# (``_evento_seguito``: solo memoria, nessuna lettura). Nessun freno nuovo:
+# pavimento) quando arriva una riga di una partita su cui Omega ha una
+# POSIZIONE VIVA ('open'/'pending', ``_evento_con_posizione_viva``: solo
+# memoria, nessuna lettura; B-2 del 23/09: le candidate solo valutate NON
+# svegliano, restano a ``poll_interval_s``). Nessun freno nuovo:
 #   * coalescenza = quella di ``Sveglia`` (un ``threading.Event``): N righe
 #     arrivate durante la dormita = UN giro;
 #   * tetto = il PAVIMENTO della sveglia: fra l'inizio di un giro e l'inizio del
@@ -539,6 +548,37 @@ class _SvegliaDalCanale:
             _SVEGLIA.alza("scan", minimo_s=giro_minimo_canale_s())
         except Exception as ex:  # noqa: BLE001 - svegliare non ferma il bot
             logger.debug("[omega] sveglia dal canale scan KO: %s", str(ex)[:120])
+
+
+def _ricorda_posizioni_vive(stato: str, righe: Any) -> None:
+    """Annota le partite con righe ``stato`` ('open'/'pending') lette dal giro.
+
+    Le righe sono quelle che il giro ha GIA' letto (nessuna lettura in piu');
+    l'insieme si RIMPIAZZA a ogni lettura, quindi una posizione chiusa smette di
+    svegliare al giro dopo. Solo righe con quello stato: un finto o un
+    chiamante che passa righe miste non allarga l'insieme. Non solleva mai."""
+    try:
+        eventi = frozenset(
+            str(r.get("event_id")) for r in (righe or [])
+            if isinstance(r, dict) and r.get("event_id")
+            and str(r.get("status") or stato) == stato)
+        _CACHE_POSIZIONI_VIVE[str(stato)] = eventi
+    except Exception as ex:  # noqa: BLE001 - la sveglia e' un'accelerazione
+        logger.debug("[omega] posizioni vive non annotate: %s", str(ex)[:120])
+
+
+def _evento_con_posizione_viva(event_id: str) -> bool:
+    """23/09 (B-2, revisore B, decisione del coordinatore da portare all'utente):
+    la riga del canale sveglia il ciclo SOLO se la partita ha una posizione VIVA
+    del bot ('open' o 'pending' nell'ultimo giro). Le candidate che il ciclo sta
+    solo valutando NON svegliano: prima (``_evento_seguito``) ogni riga di una
+    partita chiesta negli ultimi 120 s faceva partire un ``run_once`` completo
+    ogni ``OMEGA_CANALE_GIRO_MINIMO_S`` (5 s), scavalcando il pavimento F5
+    ``poll_interval_s`` (20 s): da 3 a 12 giri al minuto con le loro letture.
+    Senza posizioni vive nessun anticipo: il ciclo resta a ``poll_interval_s``.
+    Solo memoria, nessuna lettura."""
+    eid = str(event_id)
+    return any(eid in insieme for insieme in list(_CACHE_POSIZIONI_VIVE.values()))
 
 
 def _sveglia_dal_client_scan() -> bool:
@@ -623,7 +663,8 @@ def avvia_client_scan() -> bool:
     Con l'interruttore spento non apre niente e non importa nemmeno il modulo
     del canale. Il client e' ``ClientScan`` di Safe, con la sveglia del ciclo
     collegata come in Safe (``evento``/``interessa``): una riga di una partita
-    che Omega segue alza ``_SVEGLIA`` con il pavimento ``giro_minimo_canale_s``.
+    con una posizione viva di Omega alza ``_SVEGLIA`` con il pavimento
+    ``giro_minimo_canale_s`` (B-2, 23/09).
     """
     if _CLIENT_SCAN.get("client") is not None:
         return True
@@ -634,13 +675,14 @@ def avvia_client_scan() -> bool:
 
         memoria = CS.CacheScan()
         client = CS.ClientScan(CS.porta_scan(), memoria,
-                               evento=_SvegliaDalCanale(), interessa=_evento_seguito)
+                               evento=_SvegliaDalCanale(),
+                               interessa=_evento_con_posizione_viva)
         client.avvia()
         _CLIENT_SCAN["cache"] = memoria
         _CLIENT_SCAN["client"] = client
         logger.info("[omega] righe dello scanner dal canale locale %d ATTIVE (il "
                     "database resta la lista e il ripiego); sveglia del ciclo "
-                    "sulle partite seguite, al massimo un giro ogni %.1f s",
+                    "sulle partite con posizione viva, al massimo un giro ogni %.1f s",
                     client.porta, giro_minimo_canale_s())
         return True
     except Exception as ex:  # noqa: BLE001 - senza canale si lavora come prima
@@ -2193,12 +2235,15 @@ def _e_violazione_unica(ex: BaseException) -> bool:
     23/09 - prima QUALSIASI eccezione di ``insert_trade`` valeva "gia'
     riservato": un timeout (57014) o un errore di rete diventavano uno skip
     silenzioso. Vale "gia' riservato" solo la violazione dell'unico: codice
-    postgrest ``23505`` oppure il messaggio di PostgreSQL (``duplicate key`` /
-    ``unique``), che e' anche quello dei finti del banco (replay_registrazioni)."""
+    postgrest ``23505`` oppure il messaggio di PostgreSQL (``duplicate key value
+    violates unique constraint``), che e' anche quello dei finti del banco
+    (replay_registrazioni). 23/09 (M-3, revisore B): NON piu' la sola parola
+    ``unique`` (troppo larga: un errore qualunque che la contiene diventava uno
+    skip silenzioso)."""
     if str(getattr(ex, "code", "") or "") == "23505":
         return True
     testo = str(ex).lower()
-    return "23505" in testo or "duplicate key" in testo or "unique" in testo
+    return "23505" in testo or "duplicate key" in testo
 
 
 def _place_one(
@@ -3111,6 +3156,7 @@ def poll_flumine_pending(*, db, params: Optional[dict[str, Any]] = None,
         pendings = db.list_trades("pending")
     except Exception:  # noqa: BLE001 — lettura KO: riprova al prossimo ciclo
         return 0
+    _ricorda_posizioni_vive("pending", pendings)   # B-2: chi sveglia il ciclo dal canale
     if esiti is not None:
         esiti.aggiorna_nostri(pendings)
         db = esiti.db_con_specchio(db, pendings)
@@ -3839,6 +3885,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     settled = 0
     fallback_commission = params["commission_pct"] / 100.0
     open_rows = list(db.open_trades() or [])
+    _ricorda_posizioni_vive("open", open_rows)   # B-2: chi sveglia il ciclo dal canale
     # R9 (16/09) — PRIMA di qualunque altra cosa sulle posizioni aperte: la
     # posizione di CONTO le contiene ancora? Una chiusura fatta dall'utente sul
     # sito Betfair non passa da nessun'altra parte (le righe 'open' non vanno in
