@@ -310,7 +310,10 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                                 {/* IL NUMERO CHE CONTA: la posizione INTERA */}
                                 <span className={`font-mono text-[14px] font-bold tabular-nums ${ESITO_CLS[p.esito]}`}
                                     data-testid={`cr-chiusa-pnl-${p.id}`}
-                                    title="P&L della POSIZIONE intera: apertura e coperture insieme">
+                                    data-orfana={p.orfana ? 'true' : undefined}
+                                    title={p.orfana
+                                        ? "CHIUSURA ORFANA: la sua apertura non e' fra le righe lette. Questo e' il P&L della sola gamba di chiusura, non il netto dell'operazione"
+                                        : 'P&L della POSIZIONE intera: apertura e coperture insieme'}>
                                     {fmtMoney(p.pnlGlobale, { signed: true })}
                                 </span>
 

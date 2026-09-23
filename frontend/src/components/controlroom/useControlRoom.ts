@@ -72,7 +72,7 @@ import {
 } from '@/lib/controlRoom';
 import { fmtMoney } from '@/lib/format';
 import { romeDay, fetchSafeDaily, type DailyRow, type DailyBreakdown } from '@/lib/dailyHistory';
-import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
+import { isSettled, isErrorRow, nettoCicloChiuso, type PnlTradeLike } from '@/lib/eventGroups';
 import {
     catenaOperazione, catenaSchermo,
     type Salto, type CatenaSchermo, type TempiTrade, type EsecuzioneTrade,
@@ -86,7 +86,10 @@ import {
     isPropostaOpportunita, approvaPropostaOpportunita,
     type PropostaOpportunita, type PrezziViviGambe,
 } from '@/lib/safeBot';
-import { componiObiettivo, type ComposizioneObiettivo, type RigaComponente } from '@/lib/composizioneObiettivo';
+import {
+    componiObiettivo, righeRealizzatoPerCiclo,
+    type ComposizioneObiettivo, type RigaComponente, type RigaTradeCiclo,
+} from '@/lib/composizioneObiettivo';
 import { leggiManualeSitoBetfair, type ManualeSitoBetfair } from '@/lib/manualeSitoBetfair';
 import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
@@ -395,14 +398,38 @@ function chiusureCollegate<T extends { id: number; closes_trade_id?: number | nu
     righe: readonly T[],
 ): Map<number, T[]> {
     const m = new Map<number, T[]>();
+    const perId = new Map<number, T>();
+    for (const r of righe) perId.set(Number(r.id), r);
     for (const r of righe) {
         const p = r.closes_trade_id;
         if (p == null) continue;
-        const k = Number(p);
+        // 23/09 - si risale alla RADICE presente (catena A <- B <- C): la terza
+        // gamba sta sotto l'apertura, non sotto una chiusura che non e' una riga.
+        let k = Number(p);
+        const visti = new Set<number>([Number(r.id), k]);
+        for (;;) {
+            const padre = perId.get(k);
+            const su = padre?.closes_trade_id;
+            if (padre == null || su == null || visti.has(Number(su)) || !perId.has(Number(su))) break;
+            k = Number(su);
+            visti.add(k);
+        }
         const a = m.get(k);
         if (a) a.push(r); else m.set(k, [r]);
     }
     return m;
+}
+
+/**
+ * 23/09 - UNA GAMBA DI CHIUSURA NON E' UN'OPERAZIONE PROPRIA quando la sua
+ * apertura e' fra le righe lette: vive annidata sotto di lei (`dettaglio.
+ * chiusure`, `chiusureOrdini`) e il suo P&L entra nel netto del ciclo. Resta
+ * una riga sua SOLO se ORFANA (apertura fuori dal set): euro veri, mai nascosti.
+ */
+function chiusuraConApertura<T extends { id: number; closes_trade_id?: number | null }>(
+    t: T, ids: ReadonlySet<number>,
+): boolean {
+    return t.closes_trade_id != null && ids.has(Number(t.closes_trade_id));
 }
 
 /** I campi grezzi dell'ORDINE di una riga: gli stessi tre numeri che leggono
@@ -1279,15 +1306,17 @@ export function useControlRoom(): ControlRoomVM {
         const oggi = romeDay(new Date(nowMs));
         const delGiorno = (placedAt: string | null | undefined) =>
             !!placedAt && romeDay(new Date(placedAt)) === oggi;
-        const omegaRighe: RigaComponente[] = omegaTrades
-            .filter((t) => delGiorno(t.placed_at))
-            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio', origin: t.origin ?? null }));
-        const safeRighe: RigaComponente[] = (safe?.trades ?? [])
-            .filter((t) => delGiorno(t.placed_at))
-            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport, origin: t.origin ?? null }));
-        const mikeRighe: RigaComponente[] = (mike?.trades ?? [])
-            .filter((t) => delGiorno(t.placed_at))
-            .map((t) => ({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio', origin: t.origin ?? null }));
+        // 23/09 - UNA riga per OPERAZIONE (ciclo apertura + chiusure), non per
+        // gamba: netto del ciclo, esito dal suo segno, giornata/origine/sport
+        // dell'APERTURA (`righeRealizzatoPerCiclo`). Per gamba, un cash out
+        // contava 1 vinta + 1 persa e la sua chiusura (origin 'manual') finiva
+        // sotto 'Manuale', lasciando al bot l'apertura intera.
+        const omegaRighe: RigaComponente[] = righeRealizzatoPerCiclo(
+            omegaTrades as unknown as RigaTradeCiclo[], { delGiorno, sport: 'calcio' });
+        const safeRighe: RigaComponente[] = righeRealizzatoPerCiclo(
+            (safe?.trades ?? []) as unknown as RigaTradeCiclo[], { delGiorno });
+        const mikeRighe: RigaComponente[] = righeRealizzatoPerCiclo(
+            (mike?.trades ?? []) as unknown as RigaTradeCiclo[], { delGiorno, sport: 'calcio' });
         // I 4 BOT TENNIS DEDICATI — righe SINTETICHE (18/09, Task 2): la RPC
         // `get_tennis_bot_daily` da' gia' il netto PER BOT PER GIORNO (non le
         // singole operazioni), quindi qui si costruisce UNA riga per bot con
@@ -1912,8 +1941,13 @@ export function useControlRoom(): ControlRoomVM {
                 // in verde: uno zero che sembra un pareggio, mentre il
                 // risultato non esiste ancora. Prima della regolazione il P&L
                 // e' IGNOTO, e si scrive «—».
-                pnl: isSettled(String(t.status ?? '')) && typeof t.pnl === 'number'
-                    ? t.pnl : null,
+                //
+                // 23/09 - il numero della riga e' il NETTO DELL'OPERAZIONE:
+                // apertura + tutte le gambe di chiusura regolate. Prima era il
+                // P&L della sola apertura: su un cash out (+0,45 / -0,25) la
+                // riga diceva +0,45 invece di +0,20. Una gamba ancora viva =
+                // risultato non definitivo = '-' (`nettoCicloChiuso`).
+                pnl: nettoCicloChiuso(t, closes),
                 modalita: modalitaDi(t.mode), at: t.placed_at,
                 quale: t.strategy ?? t.phase ?? t.role ?? null,
                 ordine: {
@@ -1955,9 +1989,22 @@ export function useControlRoom(): ControlRoomVM {
         const closesOmega = chiusureCollegate(omegaTrades);
         const closesSafe = chiusureCollegate(safe?.trades ?? []);
         const closesMike = chiusureCollegate(mike?.trades ?? []);
-        for (const t of omegaTrades) agg('omega', t, closesOmega.get(t.id) ?? []);
-        for (const t of safe?.trades ?? []) agg('safe', t, closesSafe.get(t.id) ?? []);
+        // 23/09 - una gamba di chiusura con la sua apertura presente NON e' una
+        // riga propria (sta annidata sotto l'apertura, il suo P&L nel netto);
+        // un'orfana resta visibile come riga sua (`chiusuraConApertura`).
+        const idsOmega = new Set(omegaTrades.map((t) => Number(t.id)));
+        const idsSafe = new Set((safe?.trades ?? []).map((t) => Number(t.id)));
+        const idsMike = new Set((mike?.trades ?? []).map((t) => Number(t.id)));
+        for (const t of omegaTrades) {
+            if (chiusuraConApertura(t, idsOmega)) continue;
+            agg('omega', t, closesOmega.get(t.id) ?? []);
+        }
+        for (const t of safe?.trades ?? []) {
+            if (chiusuraConApertura(t, idsSafe)) continue;
+            agg('safe', t, closesSafe.get(t.id) ?? []);
+        }
         for (const t of mike?.trades ?? []) {
+            if (chiusuraConApertura(t, idsMike)) continue;
             agg('mike', t, (closesMike.get(t.id) ?? []).map((c) => ({ ...c, pnl: c.pnl ?? 0 })));
         }
         // ── GLI ORDINI DEI QUATTRO BOT TENNIS SULLA PARTITA ─────────────────

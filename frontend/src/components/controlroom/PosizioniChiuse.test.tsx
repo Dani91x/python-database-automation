@@ -183,7 +183,7 @@ describe('certezza di chiusura: badge per riga e riepilogo in testa', () => {
                     id: 50, eventId: 'E50', partita: 'Aperta per davvero', sport: 'calcio',
                     modo: 'live', bot: 'safe', pnlGlobale: 0, esito: 'pari',
                     chiusaAt: '2026-09-17T12:00:00.000Z', piazzataAt: '2026-09-17T09:00:00.000Z',
-                    giorno: OGGI,
+                    giorno: OGGI, orfana: false,
                     righe: [
                         {
                             id: 50, bot: 'safe', selezione: 'Rossi', lato: 'back', prezzo: 2, size: 10,

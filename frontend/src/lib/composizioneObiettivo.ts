@@ -15,6 +15,7 @@
 // tutte insieme. Se questa somma diverge, la composizione mente.
 // ============================================================================
 import { realizzatoGiornata, type RigaRealizzato } from './controlRoom';
+import { groupTradesIntoCicli, isErrorRow, type PnlTradeLike } from './eventGroups';
 
 /**
  * Una riga sorgente, con le STESSE chiavi delle tabelle vere
@@ -146,4 +147,66 @@ export function componiObiettivo(input: {
     const provaPaper = realizzatoGiornata(tutteLeRighe).paper;
 
     return { righe, totale, provaPaper };
+}
+
+// ============================================================================
+// 23/09 - LE RIGHE DELLA BARRA SONO OPERAZIONI (CICLI), NON GAMBE.
+//
+// Bug segnalato dall'utente (Safe tennis, live): un cash out e' DUE righe in
+// `safe_strategy_trades` - l'apertura (back 3,00 @1,15, won, +0,45) e la gamba
+// di chiusura (lay 3,17 @1,08, lost, -0,25, `closes_trade_id` = apertura,
+// `origin = 'manual'` perche' il cash out lo chiede la dashboard,
+// `Betfair/safe_strategy/bot_service.py:2684`). Contate per GAMBA:
+//   - i contatori della barra dicevano '1 vinta + 1 persa' per UN'operazione
+//     vinta di +0,20;
+//   - la composizione metteva +0,45 sotto 'Safe tennis' e -0,25 sotto
+//     'Manuale': la riga del bot mostrava l'apertura INTERA;
+//   - la giornata era quella del piazzamento di OGNI gamba, non dell'apertura
+//     (una chiusura dopo mezzanotte finiva nel giorno dopo).
+// Qui ogni ciclo diventa UNA riga, con il NETTO (apertura + tutte le gambe
+// regolate), l'esito dal SEGNO del netto e modalita'/sport/origine/giornata
+// dell'APERTURA: la stessa regola di `safe_aggregates_sql` e di
+// `trading_daily_history` (esito del ciclo per segno del totale, giornata =
+// piazzamento dell'apertura) e di `posizioniChiuse.ts`.
+//
+// La somma dei netti e' IDENTICA alla somma delle gambe regolate dello stesso
+// insieme: il totale non cambia, cambia a chi e a quale giorno si attribuisce.
+// Una chiusura ORFANA (apertura fuori dalle righe lette) resta una riga sua,
+// con i propri campi: i suoi euro sono veri e non si nascondono.
+// ============================================================================
+
+/** La riga sorgente minima: le STESSE chiavi di `omega_trades`/
+ *  `safe_strategy_trades`/`mike_trades`. */
+export interface RigaTradeCiclo extends PnlTradeLike {
+    sport?: string | null;
+    origin?: string | null;
+}
+
+export function righeRealizzatoPerCiclo<T extends RigaTradeCiclo>(
+    trades: readonly T[],
+    opts: {
+        /** la giornata: si giudica sul piazzamento dell'APERTURA del ciclo */
+        delGiorno: (placedAt: string | null | undefined) => boolean;
+        /** sport fisso per i bot di un solo sport (Omega, Mike: calcio) */
+        sport?: string;
+    },
+): RigaComponente[] {
+    const out: RigaComponente[] = [];
+    // `error` = mai andata a mercato: fuori prima di raggruppare
+    const vere = trades.filter((t) => !isErrorRow(t.status));
+    for (const c of groupTradesIntoCicli(vere)) {
+        const a = c.open;
+        if (!opts.delGiorno(a.placed_at)) continue;
+        const netto = c.netPnl;
+        out.push({
+            // nessuna gamba regolata: resta lo stato dell'apertura, che non e'
+            // regolato e `realizzatoGiornata` salta (mai uno zero inventato)
+            status: netto == null ? a.status : netto > 0 ? 'won' : netto < 0 ? 'lost' : 'void',
+            pnl: netto,
+            mode: a.mode ?? null,
+            sport: opts.sport ?? a.sport ?? null,
+            origin: a.origin ?? null,
+        });
+    }
+    return out;
 }

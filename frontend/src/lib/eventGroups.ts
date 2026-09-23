@@ -61,6 +61,55 @@ function cent(n: number): number {
     return Math.round(n * 100) / 100;
 }
 
+/**
+ * La RADICE di una riga: si risale `closes_trade_id` finche' il padre e' fra
+ * le righe caricate. Difesa contro un ciclo nei dati (A chiude B, B chiude A):
+ * al primo nodo gia' visto ci si ferma, mai un giro infinito.
+ */
+function radiceDi<T extends PnlTradeLike>(t: T, byId: ReadonlyMap<number, T>): T {
+    let nodo = t;
+    const visti = new Set<number>([Number(t.id)]);
+    for (;;) {
+        const p = nodo.closes_trade_id == null ? null : Number(nodo.closes_trade_id);
+        if (p == null) return nodo;
+        const padre = byId.get(p);
+        if (!padre || visti.has(p)) return nodo;
+        visti.add(p);
+        nodo = padre;
+    }
+}
+
+/**
+ * 23/09 - IL NETTO DI UN'OPERAZIONE CHIUSA: apertura + TUTTE le gambe di
+ * chiusura regolate, ed e' il numero che la riga di un'operazione deve
+ * mostrare. Prima la riga mostrava il P&L della sola gamba d'apertura: su un
+ * cash out (back 3,00 @1,15 vinto +0,45, lay di chiusura 3,17 @1,08 perso
+ * -0,25) si leggeva +0,45 invece di +0,20.
+ *
+ * `null` (= '-', mai zero) quando il risultato NON e' ancora definitivo:
+ *  - l'apertura non e' regolata, o non porta un `pnl` numerico;
+ *  - una gamba di chiusura e' ancora viva (non regolata, non annullata, non
+ *    in errore): sommare solo le regolate darebbe un parziale mostrato come
+ *    definitivo. Stesso criterio di `posizioniChiuse.ts`.
+ * Le gambe `cancelled`/`error` non sono mai andate a mercato: non pesano.
+ */
+export function nettoCicloChiuso(
+    open: { status: string; pnl?: number | null },
+    closes: readonly { status: string; pnl?: number | null }[],
+): number | null {
+    if (!isSettled(open.status)) return null;
+    const base = num(open.pnl);
+    if (base == null) return null;
+    let v = base;
+    for (const g of closes) {
+        const s = String(g.status ?? '').toLowerCase();
+        if (isSettled(s)) { v += num(g.pnl) ?? 0; continue; }
+        if (s === 'cancelled' || isErrorRow(s)) continue;
+        return null;
+    }
+    return cent(v);
+}
+
 // ------------------------------------------------------------- livello CICLO
 /** Un CICLO: l'apertura più le gambe che la chiudono. */
 export interface CicloGroup<T extends PnlTradeLike> {
@@ -89,9 +138,16 @@ export function groupTradesIntoCicli<T extends PnlTradeLike>(trades: readonly T[
         const parent = t.closes_trade_id == null ? null : Number(t.closes_trade_id);
         if (parent == null) { opens.push(t); continue; }
         if (!byId.has(parent)) { orphans.push(t); continue; }
-        const arr = closesOf.get(parent) ?? [];
+        // 23/09 - CATENA A <- B <- C (una copertura a sua volta coperta:
+        // place-and-trim, chiusura parziale richiusa). Prima C finiva sotto B,
+        // che non e' un'apertura: C spariva da OGNI ciclo e il suo P&L dal
+        // netto. Si risale fino alla RADICE presente nel set (stessa regola di
+        // `posizioniChiuse.ts::gambeDi`); se la catena si spezza, la radice e'
+        // la gamba piu' alta ancora presente, cioe' un'orfana dichiarata.
+        const radice = radiceDi(t, byId);
+        const arr = closesOf.get(Number(radice.id)) ?? [];
         arr.push(t);
-        closesOf.set(parent, arr);
+        closesOf.set(Number(radice.id), arr);
     }
     const mk = (open: T, orphan: boolean): CicloGroup<T> => {
         const closes = (closesOf.get(Number(open.id)) ?? [])

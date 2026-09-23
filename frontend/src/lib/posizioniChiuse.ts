@@ -81,6 +81,13 @@ export interface PosizioneChiusa {
      * '' solo quando non c'è proprio nessuna data.
      */
     giorno: string;
+    /**
+     * 23/09 - true = la riga e' una GAMBA DI CHIUSURA la cui apertura NON e'
+     * fra le righe lette (paginazione, giorno diverso, riga cancellata). Il
+     * suo P&L e' quello della sola gamba, non il netto del ciclo: lo si
+     * DICHIARA invece di spacciarlo per un'operazione completa.
+     */
+    orfana: boolean;
 }
 
 /**
@@ -299,6 +306,7 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
             chiusaAt,
             piazzataAt,
             giorno: giornataDi(piazzataAt) || giornataDi(chiusaAt),
+            orfana: numero(a.closes_trade_id) != null,
         });
     }
 

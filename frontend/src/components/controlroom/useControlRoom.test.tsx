@@ -376,9 +376,13 @@ describe('gambe di chiusura: il back che chiude un lay NON e una posizione apert
         await waitFor(() => expect(result.current.caricamento).toBe(false));
         const safe = result.current.posizioni.filter((p) => p.bot === 'safe');
         expect(safe.map((p) => p.id)).toEqual([321]);
-        // le tre chiusure restano visibili nella scheda della partita, sotto l apertura
+        // le tre chiusure restano visibili nella scheda della partita, ANNIDATE
+        // sotto l apertura (23/09: non piu' come righe proprie, che mostravano
+        // una chiusura come un'operazione a se')
         const op = result.current.operazioni.get('36061420') ?? [];
-        expect(op.map((o) => o.id).sort()).toEqual([321, 322, 323, 324]);
+        expect(op.map((o) => o.id)).toEqual([321]);
+        expect(op[0].dettaglio?.chiusure).toHaveLength(3);
+        expect(op[0].chiusureOrdini).toHaveLength(3);
     });
 
     // FALSIFICAZIONE: senza `closes_trade_id` la stessa riga back e una posizione
@@ -624,4 +628,97 @@ describe('piazzaOpportunita manda ESATTAMENTE il prezzo che la scheda mostra', (
     // l'inoltro di `prezzoVisto` (passato `undefined` a `approvaProposta
     // Opportunita`) -> l'asserzione sopra (`prezzoVisto: 1.87`) diventa
     // ROSSA. Verificata a mano e ripristinata, md5 del file invariato.
+});
+
+// ============================================================================
+// 23/09 - IL NETTO DEL CICLO (bug segnalato dall'utente su Safe tennis live).
+//
+// Righe VERE di `safe_strategy_trades` (lette dal coordinatore, 14-22/09): la
+// chiusura del cash out e' una riga SEPARATA con `closes_trade_id` = apertura,
+// `meta.cashout = "true"`, `exit_kind = "manual"`, `origin = 'manual'`
+// (bot_service.py:2684), stesso `settled_at` dell'apertura; `pnl` per gamba e
+// LORDO, `commission` = 0.05 e' l'aliquota.
+//   326 back 3,00 @1.15 won +0.45 + 327 lay 3,17 @1.08 lost -0.25 -> +0.20
+//   307 back 3,00 @1.12 lost -3.00 + 317 lay 3,11 @1.08 won +3.11 -> +0.11
+// ============================================================================
+function cicliVeri(): SafeTrade[] {
+    const base = {
+        event_id: 'T1', event_name: 'Rossi v Bianchi', sport: 'tennis', strategy: 'tennis',
+        market_id: '1.300', market_type: 'MATCH_ODDS', selection_id: 11, selection_name: 'Rossi',
+        mode: 'live', liability: 3, commission: 0.05, minute_at_entry: null, score_at_entry: null,
+        bet_id: 'B', settled_at: REGOLATO, signal_key: null,
+    } as const;
+    return [
+        tradeSafe({ ...base, id: 326, side: 'back', price: 1.15, size: 3, status: 'won', pnl: 0.45,
+            placed_at: `${OGGI}T12:00:00.000Z`, origin: 'auto', closes_trade_id: null, meta: {} }),
+        tradeSafe({ ...base, id: 327, side: 'lay', price: 1.08, size: 3.17, status: 'lost', pnl: -0.25,
+            placed_at: `${OGGI}T12:10:00.000Z`, origin: 'manual', closes_trade_id: 326,
+            meta: { cashout: 'true', exit_kind: 'manual' } }),
+        tradeSafe({ ...base, id: 307, side: 'back', price: 1.12, size: 3, status: 'lost', pnl: -3,
+            placed_at: `${OGGI}T11:00:00.000Z`, origin: 'auto', closes_trade_id: null, meta: {} }),
+        tradeSafe({ ...base, id: 317, side: 'lay', price: 1.08, size: 3.11, status: 'won', pnl: 3.11,
+            placed_at: `${OGGI}T11:20:00.000Z`, origin: 'manual', closes_trade_id: 307,
+            meta: { cashout: 'true', exit_kind: 'manual' } }),
+    ];
+}
+
+describe('23/09 - ogni operazione chiusa mostra il NETTO del ciclo, barra compresa', () => {
+    it('scheda partita: una riga per ciclo, col netto (+0.20 / +0.11), mai la chiusura come riga', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: cicliVeri() });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const op = result.current.operazioni.get('T1') ?? [];
+        const per = Object.fromEntries(op.map((o) => [o.id, o.pnl]));
+        expect(Object.keys(per).map(Number).sort()).toEqual([307, 326]);
+        expect(per[326]).toBe(0.2);
+        expect(per[307]).toBe(0.11);
+    });
+
+    it('posizioni chiuse: +0.20 e +0.11, nessuna orfana', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: cicliVeri() });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const per = Object.fromEntries(result.current.chiuse.map((c) => [c.id, c.pnlGlobale]));
+        expect(per).toEqual({ 326: 0.2, 307: 0.11 });
+        expect(result.current.chiuse.every((c) => !c.orfana)).toBe(true);
+    });
+
+    it('barra: realizzato = somma dei netti, contatori per OPERAZIONE (2 vinte, 0 perse)', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: cicliVeri() });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        expect(result.current.soldiGiornata.realizzato).toBe(0.31);
+        expect(result.current.soldiGiornata.operazioni).toBe(2);
+        expect(result.current.soldiGiornata.vinte).toBe(2);
+        expect(result.current.soldiGiornata.perse).toBe(0);
+    });
+
+    it('composizione: Safe tennis = +0.31 (netto dei cicli), il cash out NON finisce in Manuale', async () => {
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: cicliVeri() });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const per = Object.fromEntries(result.current.composizioneOggi.righe.map((r) => [r.chiave, r.valore]));
+        expect(per.safe_tennis).toBe(0.31);
+        expect(per.manuale).toBeNull();
+        expect(result.current.composizioneOggi.totale).toBe(0.31);
+    });
+
+    it('chiusura ORFANA (apertura fuori dalle righe lette): resta visibile, dichiarata, col suo P&L', async () => {
+        const [, chiusura] = cicliVeri();
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: [chiusura] });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        expect(result.current.chiuse.map((c) => [c.id, c.pnlGlobale, c.orfana])).toEqual([[327, -0.25, true]]);
+        expect((result.current.operazioni.get('T1') ?? []).map((o) => [o.id, o.pnl])).toEqual([[327, -0.25]]);
+        expect(result.current.soldiGiornata.realizzato).toBe(-0.25);
+    });
+
+    it('chiusura ancora VIVA su un apertura regolata: il netto non e definitivo (null, trattino)', async () => {
+        const righe = cicliVeri().slice(0, 2);
+        righe[1] = { ...righe[1], status: 'open', pnl: 0, settled_at: null };
+        vi.mocked(fetchSafeState).mockResolvedValue({ ...SAFE_VUOTO, trades: righe });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        expect((result.current.operazioni.get('T1') ?? []).map((o) => [o.id, o.pnl])).toEqual([[326, null]]);
+    });
 });
