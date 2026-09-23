@@ -340,6 +340,9 @@ def svuota_le_cache() -> None:
     _SCRITTO_A.clear()
     _LAST_HEARTBEAT.clear()
     _EVENTI_LETTI_A = 0.0
+    # 23/09: le righe arrivate dal canale 47336 sono memoria di PROCESSO come
+    # ``_CACHE_FEED`` (``_CANALE_FEED``): si buttano insieme.
+    azzera_canale_scan()
 
 
 _MALFORMED_LOGGED: Dict[str, float] = {}   # {event_id: epoch} — dedup dell'attivita' 'leg_malformata'
@@ -1865,6 +1868,13 @@ def azzera_cache_di_processo() -> List[str]:
         azzerati.append("_SVEGLIA")
     except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
         pass
+    # 23/09: il client e le righe del canale 47336. Citato nell'elenco SOLO se
+    # c'era qualcosa (a interruttore spento l'elenco resta quello di prima).
+    try:
+        if azzera_canale_scan():
+            azzerati.append("_CANALE_FEED")
+    except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+        pass
     return azzerati
 
 # tolleranza sotto la quale una differenza di posizione e' rumore di
@@ -2480,12 +2490,11 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # Lo scanner non lo aggiorna piu' in fretta di cosi', e la FRESCHEZZA delle
     # quote continua a essere giudicata sull'``updated_at`` della riga (vedi
     # ``feed.feed_fresh``): una riga vecchia resta vecchia anche rileggendola.
+    # 23/09: con ``MIKE_LEGGE_CANALE`` acceso le righe arrivano dal canale
+    # locale 47336 (fuse con quelle del DB, vince la piu' recente); spento, e'
+    # la lettura di prima (``_righe_del_feed``).
     if rows is None:
-        ttl_feed = float(params.get("feed_cache_s") or 0.0)
-        if _CACHE_FEED.fresco(now_ts, ttl_feed):
-            rows = _CACHE_FEED.valore
-        else:
-            rows = _CACHE_FEED.metti(list(db.fetch_scan_rows() or []), now_ts)
+        rows, _ = _righe_del_feed(db, params, now_ts)
     rows_by_event = {str(r.get("event_id")): r for r in rows if r.get("event_id")}
     scanner_age = _scanner_age(db, now_ts)
 
@@ -2721,6 +2730,9 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         # F5: com'e' andata la sveglia del ciclo (``None`` a interruttore
         # spento). Sta FUORI dal battito: vedi ``beat`` piu' sotto.
         "sveglia": statistiche_sveglia(),
+        # 23/09: da dove arrivano le righe dello scanner (``canale``/``db``).
+        # Chiavi presenti SOLO con ``MIKE_LEGGE_CANALE`` acceso.
+        **statistiche_canale_scan(),
         "last_cycle": now.isoformat(), "dry": bool(dry), "mode": mode, "daily_stop": bool(daily_stop),
         "reconciling": sum(1 for e in tracked.values()
                            if any(str((l or {}).get("status")) == E.STATUS_RECONCILE
@@ -2751,7 +2763,8 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # ``mike_control``, che la UI ascolta in realtime - il contrario di questa
     # fase, che non deve far crescere una sola scrittura al minuto.
     beat = {k: v for k, v in stats.items()
-            if k not in ("last_cycle", "scanner_age_s", "sveglia")}
+            if k not in ("last_cycle", "scanner_age_s", "sveglia",
+                         "fonte_scan", "righe_dal_canale", "canale_scan")}
     # zero = "a ogni giro": e' la valvola per tornare al comportamento di prima
     # senza toccare il codice (e la UI lo ammette, min 0 su entrambi). Da qui il
     # ``if ... is None`` invece di ``or``: con ``or`` uno zero scritto apposta
@@ -4400,6 +4413,151 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
 
 
+# ===========================================================================
+# LE RIGHE DELLO SCANNER DAL CANALE LOCALE 47336 (23/09) - SPENTO di serie
+# ===========================================================================
+# Regola permanente dell'utente (23/09): tutto cio' che opera live su Betfair
+# legge dal canale locale al tick; il database e' SOLO il ripiego quando il
+# canale tace. Fino a oggi Mike leggeva le righe del feed unico SOLO dalla
+# tabella ``safe_strategy_scan`` (una ``fetch_scan_rows`` ogni
+# ``feed_cache_s``); il canale lo usava soltanto in uscita (47333) e per la
+# sveglia (``MIKE_SVEGLIA_CANALE``, che resta com'e').
+#
+# Qui NON si scrive niente di nuovo: si RIUSA il client che Safe ha gia' in
+# produzione (``safe_strategy/canale_scan.py``: ``CacheScan``, ``ClientScan``,
+# ``fondi``), con le SUE regole, importate e non copiate:
+#   * il database resta la LISTA delle partite: il canale porta la freschezza
+#     di una riga che il database sta gia' elencando, non ne aggiunge nessuna;
+#   * la riga del canale vince solo se il suo ``updated_at`` e' STRETTAMENTE
+#     piu' recente e dichiara ``payload.odds_ts_ms``; a parita' vince il DB;
+#   * dal canale entrano solo righe con eta' <= ``exits.FEED_FRESH_S`` (20 s),
+#     la stessa soglia di Safe (``CacheScan.righe_recenti`` di serie);
+#   * il client non solleva mai verso il bot.
+#
+# LETTURE DEL DATABASE (regola del 13/09: possono solo DIMINUIRE). Con il
+# canale SANO il feed si rilegge ogni ``max(feed_cache_s, _RISINC_FEED_S)``
+# secondi (riallineamento della lista); con il canale muto o assente la
+# cadenza torna ESATTAMENTE quella di oggi (``feed_cache_s``): il ripiego e'
+# automatico e sempre attivo, e appena il canale riprende si torna al canale.
+#
+# Interruttore ``MIKE_LEGGE_CANALE`` (1/true/si/yes), letto a ogni giro, di
+# serie SPENTO. Spento: nessun client, nessun import di ``websockets``, la
+# lettura del feed e' riga per riga quella di prima e lo stato pubblicato non
+# cambia di una chiave.
+ENV_MIKE_LEGGE_CANALE = "MIKE_LEGGE_CANALE"
+#: Riallineamento della LISTA con il canale sano: lo STESSO numero del giro
+#: lento di Safe (``bot_service._RISINC_DB_S``; un test li confronta).
+_RISINC_FEED_S = 10.0
+#: Stato del client per processo. Azzerato da ``azzera_canale_scan``, che
+#: ``svuota_le_cache`` e ``azzera_cache_di_processo`` richiamano.
+_CANALE_FEED: Dict[str, Any] = {"client": None, "cache": None, "avviato": False,
+                                "fonte": "db", "dal_canale": 0}
+
+
+def _canale_feed_acceso() -> bool:
+    """L'interruttore, letto a ogni chiamata (mai memorizzato)."""
+    from Betfair.safe_strategy import canale_scan as CS
+
+    return CS.acceso(ENV_MIKE_LEGGE_CANALE)
+
+
+def avvia_client_scan() -> bool:
+    """Accende il client del canale dello scanner. Non solleva MAI.
+
+    A interruttore spento non apre niente e non importa ``websockets``. Il
+    client e' quello di Safe, senza sveglia (``evento``/``interessa`` assenti):
+    la sveglia di Mike resta ``MIKE_SVEGLIA_CANALE``, non si tocca.
+    """
+    if _CANALE_FEED.get("avviato"):
+        return True
+    if not _canale_feed_acceso():
+        return False
+    try:
+        from Betfair.safe_strategy import canale_scan as CS
+
+        cache = CS.CacheScan()
+        client = CS.ClientScan(CS.porta_scan(), cache)
+        client.avvia()
+        _CANALE_FEED.update({"client": client, "cache": cache, "avviato": True})
+        logger.info("[mike] righe dello scanner dal canale locale %d (il database "
+                    "resta la lista e il ripiego)", client.porta)
+        return True
+    except Exception as ex:  # noqa: BLE001 - senza canale si lavora come oggi
+        logger.warning("[mike] client del canale scan NON avviato: %s", str(ex)[:160])
+        return False
+
+
+def azzera_canale_scan() -> bool:
+    """Spegne e dimentica il client. Torna ``True`` se c'era qualcosa."""
+    c_era = bool(_CANALE_FEED.get("avviato") or _CANALE_FEED.get("cache") is not None
+                 or _CANALE_FEED.get("fonte") != "db" or _CANALE_FEED.get("dal_canale"))
+    client = _CANALE_FEED.get("client")
+    if client is not None:
+        try:
+            client.ferma()
+        except Exception:  # noqa: BLE001
+            pass
+    _CANALE_FEED.clear()
+    _CANALE_FEED.update({"client": None, "cache": None, "avviato": False,
+                         "fonte": "db", "dal_canale": 0})
+    return c_era
+
+
+def _righe_del_feed(db: Any, params: Dict[str, Any], now_ts: float
+                    ) -> "tuple[List[Dict[str, Any]], str]":
+    """Le righe del feed del giro, e da dove arrivano (``canale``/``db``).
+
+    Interruttore SPENTO (o client mai avviato): le stesse istruzioni di prima,
+    una ``fetch_scan_rows`` ogni ``feed_cache_s`` tramite ``_CACHE_FEED``.
+    """
+    ttl_feed = float(params.get("feed_cache_s") or 0.0)
+    cache = _CANALE_FEED.get("cache")
+    acceso = bool(_CANALE_FEED.get("avviato")) and cache is not None \
+        and _canale_feed_acceso()
+    fresche: Dict[str, Any] = {}
+    if acceso:
+        try:
+            fresche = cache.righe_recenti(ora=now_ts)
+        except Exception as ex:  # noqa: BLE001 - il canale non ferma mai il bot
+            logger.debug("[mike] righe dal canale KO: %s", str(ex)[:120])
+            fresche = {}
+    # canale sano: la lista si riallinea ogni _RISINC_FEED_S (mai piu' spesso
+    # di oggi); canale muto: la cadenza di oggi, identica.
+    ttl = max(ttl_feed, _RISINC_FEED_S) if (acceso and fresche) else ttl_feed
+    if _CACHE_FEED.fresco(now_ts, ttl):
+        righe_db = _CACHE_FEED.valore
+    else:
+        righe_db = _CACHE_FEED.metti(list(db.fetch_scan_rows() or []), now_ts)
+    if not acceso:
+        _CANALE_FEED["fonte"] = "db"
+        _CANALE_FEED["dal_canale"] = 0
+        return righe_db, "db"
+    from Betfair.safe_strategy import canale_scan as CS
+
+    righe, dal_canale = CS.fondi(righe_db, fresche)
+    fonte = "canale" if dal_canale else "db"
+    _CANALE_FEED["fonte"] = fonte
+    _CANALE_FEED["dal_canale"] = dal_canale
+    return righe, fonte
+
+
+def statistiche_canale_scan() -> Dict[str, Any]:
+    """Le chiavi da aggiungere allo stato pubblicato. VUOTO a interruttore
+    spento: lo stato resta, chiave per chiave, quello di prima."""
+    if not _canale_feed_acceso():
+        return {}
+    client = _CANALE_FEED.get("client")
+    stato = None
+    if client is not None:
+        try:
+            stato = client.stato()
+        except Exception:  # noqa: BLE001
+            stato = None
+    return {"fonte_scan": str(_CANALE_FEED.get("fonte") or "db"),
+            "righe_dal_canale": int(_CANALE_FEED.get("dal_canale") or 0),
+            "canale_scan": stato}
+
+
 # Campi PESANTI e FERMI della scheda: non servono allo schermo a ogni giro e
 # gonfierebbero il messaggio per niente (il dossier e' il modello pre-partita,
 # i markets sono gli identificativi dei mercati: non cambiano mai durante la
@@ -4474,6 +4632,9 @@ def main() -> None:
         # F5/F6 (18/09): la sveglia del ciclo. A interruttore spento non parte
         # nessun thread e la dormita resta quella di oggi.
         _avvia_sveglia()
+        # 23/09: righe dello scanner dal canale 47336 (``MIKE_LEGGE_CANALE``).
+        # Spento: nessun client, la lettura del feed resta quella di oggi.
+        avvia_client_scan()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Mike si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).
