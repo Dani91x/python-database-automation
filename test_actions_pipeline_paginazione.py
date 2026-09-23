@@ -914,7 +914,11 @@ def _righe_signals_lega(n_fixture: int, league_id: int = 129):
                 out.append({"id": rid, "signal_uid": f"{eng}|{fid}|{market}|{selection}",
                             "engine": eng, "fixture_id": fid, "league_id": league_id,
                             "market": market, "selection": selection,
-                            "kickoff": f"2026-09-{18 + (i % 3):02d}T18:00:00+00:00"})
+                            # kickoff RELATIVO a oggi (0/1/2 giorni fa): il test chiede
+                            # "ultimi 4 giorni" e con date fisse diventava rosso col
+                            # passare dei giorni (visto il 23/09).
+                            "kickoff": (datetime.now(timezone.utc) - timedelta(days=i % 3))
+                                       .strftime("%Y-%m-%dT18:00:00+00:00")})
                 rid += 1
     return out
 
