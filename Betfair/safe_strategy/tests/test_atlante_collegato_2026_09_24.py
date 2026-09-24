@@ -234,6 +234,51 @@ def test_atlante_si_ricarica_quando_il_file_cambia(atlante_isolato):
     assert "62000 partite" in hz["note"]
 
 
+def _atlante_squadre(squadra_id: int, nome: str, incontri: int) -> Dict[str, Any]:
+    """Atlante con le chiavi del vero per selezione: by_team{id: team_name,
+    def_goals_per_match_by_bucket} e h2h_hint{'min-max': ft_scores_a_b}.
+    La squadra 20 ("Avversario FC") c'e' sempre; l'altra cambia."""
+    def_b = {b: 0.07 for b in ("0-5", "5-10", "10-15")}
+    a, b = sorted((squadra_id, 20))
+    return {
+        "meta": {"name": "hazard_atlas_v3", "generated_at": "2026-09-24T02:00:00+00:00",
+                 "n_fixtures_used": 100},
+        "global": {}, "by_league": {},
+        "by_team": {
+            str(squadra_id): {"team_name": nome, "league_id": LEGA, "n_matches": 40,
+                              "def_goals_per_match_by_bucket": dict(def_b)},
+            "20": {"team_name": "Avversario FC", "league_id": LEGA, "n_matches": 40,
+                   "def_goals_per_match_by_bucket": dict(def_b)},
+        },
+        "h2h_hint": {f"{a}-{b}": {"n_meetings": incontri,
+                                   "ft_scores_a_b": {"2-2": 1, "1-0": incontri - 1}}},
+    }
+
+
+def test_cache_derivate_si_svuotano_quando_cambia_l_atlante(atlante_isolato):
+    """Indice dei nomi e hint sono cache DERIVATE dall'atlante: quando il file
+    cambia (atlante B al posto di A) devono rispecchiare B. Una squadra
+    presente solo in A non deve piu' risolversi, una presente solo in B si'."""
+    live, v2 = atlante_isolato
+    _scrivi(v2, _atlante_squadre(10, "Squadra X", 7), 1_700_000_000)
+    # atlante A: X risolta, indice e hint popolati
+    assert SEL.team_id("Squadra X") == "10"
+    h_a = SEL.hint("Squadra X", "Avversario FC")
+    assert h_a is not None and h_a["h2h_meetings"] == 7 and h_a["h2h_big_draws"] == 1
+    assert SEL.team_id("Squadra Y") is None
+    # atlante B: Y al posto di X, file nuovo con mtime nuovo; si forza il
+    # ricontrollo (MTIME_CHECK_S=0 nella fixture) chiedendo l'atlante
+    _scrivi(live, _atlante_squadre(30, "Squadra Y", 5), 1_700_000_100)
+    b = SEL.atlante()
+    assert "30" in b["by_team"] and "10" not in b["by_team"]
+    assert SEL.team_id("Squadra X") is None          # indice dei nomi rifatto su B
+    assert SEL.team_id("Squadra Y") == "30"
+    h_x = SEL.hint("Squadra X", "Avversario FC")     # hint di A non piu' servito
+    assert h_x is None or h_x["h2h_meetings"] is None
+    h_y = SEL.hint("Squadra Y", "Avversario FC")
+    assert h_y is not None and h_y["h2h_meetings"] == 5
+
+
 def test_cache_non_rilegge_prima_del_controllo_mtime(atlante_isolato, monkeypatch):
     live, v2 = atlante_isolato
     monkeypatch.setattr(HA, "MTIME_CHECK_S", 3600.0)
