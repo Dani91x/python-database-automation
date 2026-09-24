@@ -83,7 +83,7 @@ from analytics_market_stats import (
     compute_market_snapshots,
 )
 
-_MATCH_COLS = ("fixture_id,fixture_date,status_short,goals_home,goals_away,"
+_MATCH_COLS = ("fixture_id,fixture_date,status_short,season_year,goals_home,goals_away,"
                "fulltime_home,fulltime_away,halftime_home,halftime_away")
 _STAGE_BATCH = 500      # tetto massimo di righe in UNA richiesta di upsert
 _FLUSH_SLICE = 400      # righe per FETTA carica->flush (adattiva: dimezza sui transitori)
@@ -196,18 +196,62 @@ def _dopo(q, col: str, dopo):
     return q if dopo is None else q.gt(col, dopo)
 
 
+def _dopo_season_fixture(q, dopo):
+    """Filtro keyset sul cursore composto (season_year, fixture_id): righe DOPO
+    l'ultima letta nell'ordine `season_year, fixture_id` (24/09, fix lega 667,
+    vedi _fetch_matches)."""
+    if dopo is None:
+        return q
+    sy, fid = dopo
+    return q.or_(f'season_year.gt.{sy},and(season_year.eq.{sy},fixture_id.gt.{fid})')
+
+
 def _fetch_matches(sb, league_id: int) -> list[dict]:
-    """Tutte le partite settlate (status 90') della lega, per la serie cronologica.
-    ORDER BY fixture_id: e' UNICO in matches (matches_fixture_unique), quindi
-    l'ordine e' totale e le pagine non si sovrappongono. Una storia partite
-    TRONCATA darebbe freq/ritardi FALSI scritti come se fossero buoni."""
+    """Tutte le partite settlate (status 90') della lega, per la serie cronologica
+    (l'ordine di LETTURA non conta per i calcoli: compute_market_snapshots e
+    compute_current_state riordinano SEMPRE con chrono_key=(fixture_date,
+    fixture_id), vedi test_snapshot_non_cambiano_con_l_ordine_di_lettura -- qui
+    l'ordine serve SOLO al cursore keyset, che deve restare un ordine TOTALE
+    sulle righe restituite).
+
+    ORDINE (season_year, fixture_id), NON (fixture_id) da solo (24/09, lega 667):
+    fixture_id e' un ID GLOBALE crescente nel tempo su TUTTE le leghe (non per
+    lega). Senza un indice (league_id, fixture_id) -- su `matches` esiste solo
+    idx_matches_league_season (league_id, season_year) e idx_matches_fixture_id
+    (fixture_id) da solo, vedi sql/perf_indexes.sql -- un Index Scan ordinato per
+    fixture_id deve scorrere l'INTERA matches filtrando per lega: sulla lega 667
+    (44.533 partite, 39.750 settlate, sparse su tutto lo storico) andava in
+    57014 anche a blocco 62 (5 tentativi, dopo=None) e persino su un ORDER BY
+    fixture_id LIMIT 1 (letture di sola misura, 24/09). (season_year, fixture_id)
+    sfrutta l'indice GIA' ESISTENTE idx_matches_league_season: misurato sulla
+    STESSA lega 667, prima pagina in 0,24s (prima: timeout dopo ~40s di
+    tentativi). fixture_id resta il tie-breaker (UNICO in matches,
+    matches_fixture_unique): l'ordine totale regge lo stesso.
+
+    GUARDIA season_year NULL: vedi _cursore_matches sotto -- un NULL romperebbe
+    il filtro `season_year.gt.Y` (NULL > Y e' sconosciuto/falso in SQL) e la riga
+    sparirebbe dalle pagine successive IN SILENZIO. Oggi (24/09, misurato) matches
+    non ha righe con season_year NULL; se mai comparisse e' un difetto dei dati
+    (schema), non un DB sotto pressione, e deve fermare lo script SUBITO come gli
+    altri errori LOGICI (vedi _is_retry_esauriti), non essere inghiottito lega per
+    lega. Una storia partite TRONCATA darebbe freq/ritardi FALSI scritti come se
+    fossero buoni."""
+    def _cursore_matches(r: dict):
+        if r.get("season_year") is None:
+            raise RuntimeError(
+                f"matches lega {league_id} fixture_id={r.get('fixture_id')}: "
+                "season_year NULL, il cursore keyset (season_year, fixture_id) "
+                "non e' sicuro per questa riga (si fermerebbe la lettura o si "
+                "perderebbe la riga in silenzio).")
+        return (r["season_year"], r["fixture_id"])
+
     return _leggi_pagine(
-        lambda dopo, size: _dopo(sb.table("matches").select(_MATCH_COLS)
-                                 .eq("league_id", league_id)
-                                 .in_("status_short", ["FT", "AET", "PEN"]),
-                                 "fixture_id", dopo)
-        .order("fixture_id").limit(size),
-        f"matches lega {league_id}", cursore=lambda r: r["fixture_id"])
+        lambda dopo, size: _dopo_season_fixture(
+            sb.table("matches").select(_MATCH_COLS)
+            .eq("league_id", league_id)
+            .in_("status_short", ["FT", "AET", "PEN"]), dopo)
+        .order("season_year").order("fixture_id").limit(size),
+        f"matches lega {league_id}", cursore=_cursore_matches)
 
 
 def _fetch_signal_targets(sb, league_id: int) -> dict[tuple[str, str], set[int]]:

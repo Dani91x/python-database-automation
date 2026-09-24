@@ -1,0 +1,51 @@
+-- ============================================================================
+-- matches: indice (league_id, fixture_id) -- OPZIONALE, NON necessario dopo il
+-- fix di codice del 24/09 (enrich_analytics_snapshots.py::_fetch_matches ora
+-- ordina/pagina per (season_year, fixture_id), che sfrutta l'indice GIA'
+-- ESISTENTE idx_matches_league_season). Questa migrazione e' una difesa in
+-- profondita' per il caso raro in cui in futuro tornasse utile un ORDER BY
+-- fixture_id puro per lega (altri script, altre query). Da applicare SOLO se
+-- l'utente lo vuole; non e' richiesta per risolvere la lega 667.
+-- DA APPLICARE A CURA DELL'UTENTE, nello SQL editor, FUORI da una transazione
+-- (CREATE INDEX CONCURRENTLY non puo' stare in un blocco BEGIN/COMMIT).
+--
+-- CAUSA (run 36011159941, 24/09): la lettura storia partite per lega
+--   select fixture_id,fixture_date,status_short,... from matches
+--   where league_id = 667 and status_short in ('FT','AET','PEN')
+--   order by fixture_id limit 62
+-- andava in 57014 (statement_timeout 8s) anche a blocco 62 dopo 5 tentativi, e
+-- persino su un semplice `order by fixture_id limit 1` (letture di sola misura
+-- in produzione, in sola lettura, 24/09): fixture_id e' un ID GLOBALE crescente
+-- nel tempo su TUTTE le leghe, non per lega. Su `matches` esistono solo
+-- idx_matches_league_season (league_id, season_year) e idx_matches_fixture_id
+-- (fixture_id) da solo (sql/perf_indexes.sql): nessun indice copre insieme
+-- filtro (league_id) e ordine (fixture_id), quindi un Index Scan ordinato per
+-- fixture_id deve scorrere l'INTERA matches filtrando per lega -- sulla lega
+-- 667 (44.533 partite, 39.750 settlate, sparse su tutto lo storico, misurato in
+-- sola lettura il 24/09) questo supera abbondantemente gli 8 s del ruolo
+-- authenticator.
+--
+-- FIX APPLICATO (senza questa migrazione): enrich_analytics_snapshots.py ora
+-- legge/pagina per (season_year, fixture_id) invece che per il solo
+-- fixture_id -- sfrutta l'indice GIA' ESISTENTE idx_matches_league_season.
+-- Misurato in sola lettura sulla STESSA lega 667: prima pagina in 0,24s
+-- (prima: timeout dopo ~40s di tentativi falliti). fixture_id resta il
+-- tie-breaker (UNICO in matches, matches_fixture_unique): l'ordine totale
+-- regge lo stesso, nessuna riga persa ne' duplicata (vedi
+-- test_actions_pipeline_paginazione.py, sezione "7) 24/09 sera - fix lega 667").
+--
+-- SE si applica comunque (difesa in profondita', facoltativo):
+create index concurrently if not exists idx_matches_league_fixture
+    on public.matches (league_id, fixture_id);
+
+-- VERIFICA (sola lettura, dopo la creazione):
+--   select indexrelid::regclass, indisvalid from pg_index
+--    where indexrelid = 'public.idx_matches_league_fixture'::regclass;   -- indisvalid = true
+--   explain select fixture_id from public.matches
+--    where league_id = 667 and status_short in ('FT','AET','PEN')
+--      and fixture_id > 0 order by fixture_id limit 62;
+-- Atteso: Limit -> Index Scan using idx_matches_league_fixture
+--           Index Cond: ((league_id = 667) AND (fixture_id > 0))
+-- Se indisvalid = false (CONCURRENTLY interrotto): drop index concurrently
+-- public.idx_matches_league_fixture; e ricreare.
+-- ============================================================================

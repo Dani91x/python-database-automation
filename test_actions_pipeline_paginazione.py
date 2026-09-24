@@ -1026,11 +1026,15 @@ def test_upsert_ritenta_il_transitorio():
 # ============================================================================
 # 5) GIRO 2 - letture di enrich (storia partite e target), eventi, scritture
 # ============================================================================
-def _righe_matches(n: int, league_id: int = 129):
-    """Righe reali di `matches` (fixture_id e' UNICO: matches_fixture_unique)."""
+def _righe_matches(n: int, league_id: int = 129, season_year=2026):
+    """Righe reali di `matches` (fixture_id e' UNICO: matches_fixture_unique).
+    `season_year` costante di default: ordinare per (season_year, fixture_id)
+    con un solo valore di season_year equivale a ordinare per fixture_id -> i
+    test esistenti che si aspettano l'ordine puro per fixture_id restano validi."""
     return [{"fixture_id": 1500000 + i, "league_id": league_id,
              "fixture_date": f"2026-{1 + (i % 9):02d}-15T18:00:00+00:00",
-             "status_short": "FT", "goals_home": i % 4, "goals_away": (i + 1) % 3,
+             "status_short": "FT", "season_year": season_year,
+             "goals_home": i % 4, "goals_away": (i + 1) % 3,
              "fulltime_home": i % 4, "fulltime_away": (i + 1) % 3,
              "halftime_home": 0, "halftime_away": 1} for i in range(n)]
 
@@ -1146,6 +1150,109 @@ def test_letture_enrich_ritentano_il_transitorio_e_dimezzano():
     letti = en._fetch_matches(db, 129)
     assert len(letti) == 300
     assert min(usate) <= 500                     # pagina dimezzata
+
+
+# ============================================================================
+# 7) 24/09 sera - fix lega 667: _fetch_matches ordina per (season_year,
+#    fixture_id) invece che per il solo fixture_id (run 36011159941: lega 667,
+#    44.533 partite/39.750 settlate, 57014 anche a blocco 62 e persino a LIMIT 1
+#    sull'ordine puro per fixture_id -- misurato in sola lettura sul DB vero il
+#    24/09: fixture_id e' un ID globale crescente su TUTTE le leghe, senza un
+#    indice (league_id, fixture_id) l'Index Scan ordinato per fixture_id deve
+#    scorrere l'INTERA matches. (season_year, fixture_id) sfrutta l'indice GIA'
+#    ESISTENTE idx_matches_league_season (league_id, season_year): stessa lega
+#    667, prima pagina 0,24s invece di timeout).
+# ============================================================================
+def _righe_matches_multistagione(n_per_stagione: int, stagioni: list[int],
+                                 league_id: int = 667, primo_id: int = 1500000):
+    """Righe di `matches` sparse su piu' season_year (come la lega 667 vera),
+    fixture_id NON ordinato per stagione (mescolato) per provare che il cursore
+    composto ordina correttamente anche quando l'ordine fisico non aiuta."""
+    righe = []
+    fid = primo_id
+    for sy in stagioni:
+        for _ in range(n_per_stagione):
+            righe.append({
+                "fixture_id": fid, "league_id": league_id,
+                "fixture_date": f"{sy}-05-15T18:00:00+00:00",
+                "status_short": "FT", "season_year": sy,
+                "goals_home": fid % 4, "goals_away": (fid + 1) % 3,
+                "fulltime_home": fid % 4, "fulltime_away": (fid + 1) % 3,
+                "halftime_home": 0, "halftime_away": 1})
+            fid += 1
+    return righe
+
+
+def test_fetch_matches_ordina_per_season_year_poi_fixture_id():
+    """La query usa (season_year, fixture_id), non piu' solo fixture_id: sfrutta
+    idx_matches_league_season invece di scorrere fixture_id su tutte le leghe."""
+    righe = _righe_matches_multistagione(30, [2019, 2020, 2021, 2022, 2023])
+    db = FakeDB({"matches": righe})
+    viste = _osserva(db, "matches")
+    letti = en._fetch_matches(db, 667)
+    assert {m["fixture_id"] for m in letti} == {r["fixture_id"] for r in righe}
+    assert len(letti) == len(righe)                              # nessuna riga persa/doppia
+    assert all(v["ordini"] == [("season_year", False), ("fixture_id", False)]
+               for v in viste)
+    assert not any(f[0] in ("gt", "or") for f in viste[0]["filtri"])  # prima pagina: nessun cursore
+
+
+def test_fetch_matches_cursore_composto_non_perde_ne_duplica_sui_pari_di_stagione():
+    """Molte partite con lo STESSO season_year (i "pari" del cursore composto) e
+    un cap del server che spezza il gruppo a meta': l'insieme letto deve essere
+    ESATTAMENTE quello vero, senza buchi ne' doppioni (stesso rischio gia'
+    coperto per (kickoff,id) in test_recent_targets_keyset_composto_con_kickoff_pari_e_cap)."""
+    righe = _righe_matches_multistagione(120, [2021])             # 120 righe, tutte 2021: PARI totali
+    db = FakeDB({"matches": righe}, cap=7)                        # il server spezza ogni pagina
+    letti = en._fetch_matches(db, 667)
+    assert {m["fixture_id"] for m in letti} == {r["fixture_id"] for r in righe}
+    assert len(letti) == len(righe)
+
+
+def test_fetch_matches_legge_solo_la_lega_anche_con_fixture_id_globale_mescolato():
+    """CORRETTEZZA con fixture_id GLOBALE (come su matches vera, dove fixture_id
+    cresce nel tempo su TUTTE le leghe, non per lega): partite di ALTRE leghe
+    intercalate fra quelle della 667 con fixture_id piu' piccoli e piu' grandi.
+    Il filtro league_id + il cursore (season_year, fixture_id) devono leggere
+    ESATTAMENTE le partite della 667, nessuna delle altre, nessuna persa."""
+    lega = _righe_matches_multistagione(20, [2021], league_id=667, primo_id=1)
+    altre = [{"fixture_id": 0, "league_id": 1, "fixture_date": "2021-01-01T00:00:00+00:00",
+              "status_short": "FT", "season_year": 2021, "goals_home": 0, "goals_away": 0,
+              "fulltime_home": 0, "fulltime_away": 0, "halftime_home": 0, "halftime_away": 0}
+             for _ in range(50)]
+    tutte = lega + altre
+    for i, r in enumerate(tutte):
+        r["fixture_id"] = 100000 + i             # fixture_id GLOBALE crescente, indipendente dalla lega
+    db = FakeDB({"matches": tutte})
+    letti = en._fetch_matches(db, 667)
+    assert {m["fixture_id"] for m in letti} == {r["fixture_id"] for r in tutte if r["league_id"] == 667}
+    assert len(letti) == len(lega)                # solo le partite della lega 667, tutte
+
+
+def test_fetch_matches_season_year_null_fa_fallire_forte_non_perde_in_silenzio():
+    """GUARDIA: NULL sorta SEMPRE in coda (NULLS LAST, come in Postgres, vedi
+    FakeDB.ordina): la riga NULL diventa PRIMA O POI il cursore di qualche
+    pagina. _cursore_matches deve fermarsi RUMOROSO (RuntimeError, errore LOGICO
+    che propaga subito, come gli altri difetti di schema/dati) sulla riga NULL,
+    invece di lasciarla sparire in silenzio dal filtro `season_year.gt.Y`
+    (NULL > Y e' sconosciuto/falso in SQL: la riga verrebbe esclusa per sempre
+    dalle pagine successive, senza nessun errore)."""
+    righe = _righe_matches_multistagione(5, [2021])           # 5 righe, TUTTE season_year valido
+    righe.append({**righe[-1], "fixture_id": 999999, "season_year": None})  # in coda (NULLS LAST)
+    db = FakeDB({"matches": righe})
+    with pytest.raises(RuntimeError, match="season_year NULL"):
+        en._fetch_matches(db, 667)
+
+
+def test_dopo_season_fixture_produce_il_filtro_or_vero_di_postgrest():
+    """Il filtro va costruito dal client VERO (postgrest-py), non solo dal finto
+    (stesso controllo gia' fatto per _dopo_kickoff_id)."""
+    from postgrest import SyncPostgrestClient
+    c = SyncPostgrestClient("http://127.0.0.1:9")
+    q = c.from_("matches").select(en._MATCH_COLS)
+    q = en._dopo_season_fixture(q, (2022, 1500007))
+    assert q.request.params.get("or") == "(season_year.gt.2022,and(season_year.eq.2022,fixture_id.gt.1500007))"
+    assert en._dopo_season_fixture(q, None) is q
 
 
 def _eventi_gol(fids, per_fixture: int):
