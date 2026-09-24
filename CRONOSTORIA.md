@@ -2470,3 +2470,183 @@ Riepilogo banco 23/09 (c3h): Mike 15/15 · Omega 57/57 · Safe base/esatto/punta
 - **Worktree dei delegati di oggi** (da smontare a certificazione fatta, rmdir delle junction prima):
   `agent-acb93cc616de9f91f` (A, junction `frontend\node_modules`), `agent-a344c15c78352e59b` (B),
   `agent-a2bbe51cc9dabe48b` (test giro veloce), più quelli della mattina elencati nel punto di ripresa precedente.
+
+## 2026-09-24
+
+**h09:00 — Migrazione action: l'utente ha chiesto di applicarla io.** Letto il DB in sola lettura (staging 67.244 righe /
+1.761 fixture; 0 query attive; 3 RPC senza timeout proprio; `match_odds` senza analyze dal 07/09; `league_season` ora
+12 scan → NON più «mai usato», si tiene). Il classificatore ha NEGATO sia il DELETE di massa (A) sia l'ALTER FUNCTION
+(B): nessun aggiramento. Scritto `migrations/actions_57014_2026-09-24_DA_INCOLLARE_NELLO_SQL_EDITOR.sql` con A, B,
+C (solo doppione `idx_fixture_predictions_date`), D (a DB scarico), E solo dopo EXPLAIN. Retrain in corso dalle 06:10
+UTC: A e B applicabili subito, C e D a Retrain finita. GIN non toccati (decisione dell'utente).
+**h09:20 — Migrazione action, blocchi A e B APPLICATI dall'utente e verificati da me sul DB**: staging 0 righe;
+`flush_analytics_snap_staging`, `bulk_update_prediction_results`, `leagues_needing_retrain` con `statement_timeout=120s`
+(al primo tentativo B non era passato: rifatto). Restano C (solo doppione `idx_fixture_predictions_date`) e D
+(`ANALYZE match_odds`) a Retrain finita: promemoria attivo (watch sul run in corso). E solo dopo EXPLAIN. GIN non toccati.
+**h09:40 — Migrazione action: C (doppione tolto, `fixture_date` presente) e D (`ANALYZE match_odds` 07:20 UTC) APPLICATI
+dall'utente e verificati da me. E non applicato (solo dopo EXPLAIN).**
+**h09:45 — DECISIONI DELL'UTENTE sui 18 punti (parole sue, in sintesi):** 1) modalità paper/live va scelta DALLA UI per
+ogni bot, «funzionano i pulsanti?» → audit; 2) B28 da spiegare meglio; 3) copertura Mike Over 4.5: conversazione a
+parte; 4) SÌ: tutti i bot uniformati sulla stessa fonte dati senza sprecare risorse (Mike su coda come gli altri);
+5) strada unica verso gli ordini reali, ma «la velocità è tutto»: la più veloce e avanzata, cosa fanno i competitor →
+audit + proposta; 6) certificare TUTTI i bot dal banco, spezzettando il lavoro, mai test di giorni; 7 e 12) anomalie,
+opportunità del modello e OGNI avviso live DEVONO aggiornarsi al ms nella scheda (prezzo, valori, calcoli), niente
+rifiuto «prezzo cambiato»: decide l'utente se entrare; 8) gamba manuale della combo: LASCIA E AVVISA, il bot non
+chiude mai le gambe dell'utente ma resta informato del cash-out globale e poi non fa altro; 9) P&L delle operazioni
+PRESO DA BETFAIR, netto di tutto, mai stimato; 10) barra di giornata = operazioni di TUTTI i bot attivi + manuali
+(dall'app e dal sito Betfair); 11) GRAVISSIMO: «Chiudi» cablato PER SINGOLO BOT, deve funzionare su qualsiasi bot;
+13) DB in sicurezza: accede solo l'utente (l'app e il sistema), nessun altro, senza rompere nulla; 14) `omega_activity`
+deve avere il realtime; 15) tutto al ms (componenti sulla vecchia via → canale); 16) dispatch action: lasciamo così;
+17) codice non tracciato archiviato FUORI dal repo (`C:\Users\Admin\Desktop\ARCHIVIO_CODICE_NON_TRACCIATO_2026-09-24\`:
+`strategy_no4/`, `Betfair/stream/trading/tools/`); 18) pulizia worktree dopo C8. Ordine: «lavoro di fino, senza
+regressioni». Prima ondata di delegati lanciata (audit modalità UI, audit strade ordine, Chiudi per bot, combo lascia
+e avvisa, proposte al ms, P&L da Betfair + barra, componenti al canale, sicurezza DB, scalper calcio nel banco).
+**h10:40 — AUDIT MODALITÀ PAPER/LIVE (Sonnet, sola lettura; referto in
+`.claude/worktrees/agent-a1d65f13a5df1990a/AUDIT_MODALITA_PAPER_LIVE_2026-09-24.md`), verificato da me sui punti
+chiave:** Omega/Mike/Safe/Safe tennis/4 bot tennis hanno il pulsante in UI, il servizio legge a caldo, nessun env forza
+LIVE (gli env agiscono solo in senso fail-safe); al nuovo avvio (`APP_BOOT_ID`) Omega/Mike/Safe tornano a paper (voluto,
+14/09). REPERTI: (1) GRAVE `LIVE_ORDER_MODE` vive SOLO nel `.env` (`config_stream.py:190`), nessun pulsante, badge in sola
+lettura; è il gate del trading manuale E il freno di Safe live (`execution.py:110` `live_order_mode_non_live`) → delegato
+Opus: riga di controllo DB + RPC owner-only + interruttore in Control Room, precedenza FAIL-CLOSED (il più restrittivo
+tra env e DB, riga mancante = OFF), avvio → PAPER. (2) Safe `model`/`manual` senza interruttore per progetto
+(`interruttori.ts:58-64`) → DECISIONE utente. (3) 4 bot tennis: doppio gate (servizio live + `dry_run` per partita)
+senza test di componente → da scrivere. (4) Tutti i test sono a contratto (mock), nessuno attraversa UI→DB→servizio.
+**h11:20 — AUDIT STRADE VERSO L'ORDINE (Opus, sola lettura; referto in
+`.claude/worktrees/agent-a36e19f0375155bda/AUDIT_STRADE_ORDINE_2026-09-24.md`), reperti money-critical verificati da
+me sul codice:** le strade sono 7 (coda DB; canale 47331; canale 47332; REST diretto: Mike sempre, Safe tennis sempre,
+Omega/Safe come ripiego silenzioso; 4 bot tennis in-process; scalper; CLI/8787). Il canale 47331 NON è veloce: comando
+al runner < 1 ms, poi attesa del BackgroundWorker a 1,0 s + IO DB del giro → 0,6-2,2 s dal clic al place (tennis a
+0,15 s: 0,08-0,3 s); coda DB per Omega/Safe 1,3-3,5 s; Mike REST 0,1-0,5 s; competitor stimati 40-150 ms. Esito al bot:
+Omega poll 20-60 s, Safe 2 s, Mike REST sincrono. PROPOSTA: esecutore unico = runner dello sport (flumine in-process),
+desktop e bot sul canale, DB solo diario/ripiego; condizioni: svuotamento a evento (niente sonno 1 s), zero IO DB nel
+percorso dell'ordine (writer asincrono), diario write-ahead su file prima del place, protocollo `/comando/<attore>` con
+token+Origin e ack+eventi numerati; latenza attesa 35-100 ms. Ordine: F0 misure + F9 guardie tennis + F10a test di
+contratto → F1 diario, F4 banco (worker del runner MAI passato dal banco), F2, F3 → F5 Safe, F6 Omega, F7 Mike, F8 Safe
+tennis. REPERTI GRAVI FUORI TEMA (verificati): T1 bot tennis in PAPER + runner LIVE = ORDINI REALI
+(`tennis_bot_service.py:397` `dry_run = mode=="live"`, `tennis_runner.py:581-587`), latente perché l'env è PAPER;
+T2 tennis senza kill-switch/stop giornaliero/guardia d'avvio; C1 canali senza controllo dell'Origin
+(`local_channel.py:145`); M1 `MIKE_USE_FLUMINE_QUEUE=1` marca `error` dopo 120 s senza leggere l'esito (NON accenderlo
+prima di F7); Omega in ripiego REST senza kill-switch; ordini REST di Safe con `customerStrategyRef="omega"`. Lanciati
+due Opus: (a) T1+T2 tennis fail-closed e guardie come il calcio; (b) C1 origine+token, freno su ogni place REST, ref per
+attore. B20 superata (`test_pat_dal_vivo.py` archiviato). Piano F0-F10 da decidere con l'utente.
+**h11:30 — DECISIONE UTENTE**: «OGNI strumento che propone ingressi a mercato deve avere sia PAPER che LIVE, e in LIVE gli
+ordini devono partire davvero. Voglio una suite perfettamente funzionante e operativa.» → Opus su Safe `model`/`manual`
+con interruttore in Control Room (doppia conferma), servizio che esegue nel mode scritto (chiave assente = paper, avvio
+= paper), inventario di tutti gli strumenti che propongono ingressi (Omega proposte, anomalie/combos, xhedge,
+calcolatori/ladder, bot tennis) con paper/live verificato.
+**h11:50 — ORDINE UTENTE**: «non lanciare i replay tutti insieme, il sistema non regge: vedi fino a dove regge il PC e fai
+UN SOLO replay per bot». Misura: CPU 100 % su 8 core, RAM libera 3,5/15,8 GB, 15 processi python (13 delegati attivi).
+REGOLA da ora: i replay del banco li lancia SOLO il coordinatore, uno per bot, in sequenza (`--worker 1`), a integrazione
+finita; i delegati fanno solo test unitari con `timeout` (messaggio inviato ai 4 delegati con replay nel brief).
+Niente nuovi delegati finché il carico non scende (in attesa: F4 banco per il motore, F7 Mike, F6 Omega sulla porta).
+Approvato dall'utente il piano strada unica F0-F10; lanciati: motore ordini del runner (F1+F2+F3) e porta ordini di Safe (F5).
+**h12:30 — B25 «LASCIA E AVVISA» integrato (Opus, verificato da me).** `_unwind_combo` e `_close_combo_siblings`
+(`bot_service.py`): una gamba MANUALE di combo incompleta non viene più chiusa dal bot: `meta.combo_lasciata_al_trader`
++ attività `combo_incomplete` con `lasciata_al_trader=True`, liability e motivo, idempotente; cash-out globale (T14)
+invariato e verificato anche su questo caso. Banco: nuovo controllo T13-COMBO (`certificazione.py`); replay
+`combos-automatiche` del delegato: KO 2734 violazioni → OK 0 (T13 e T13-COMBO ×2783 conformi); T12/K6/PM4 non più
+sollecitati in quello scenario (la gamba resta open: fatto, non difetto); P&L del replay −0,68 → −6,23 (la back lasciata
+perde: è la scelta dell'utente). 22 test nuovi + 2 vecchi adattati (asserivano la chiusura ora vietata), 9 mutazioni sue
+rosse. Verifica MIA: 138 verdi nel worktree, mutazione mia «gambe manuali LIVE di nuovo chiuse» → 6 rossi; su master
+22 verdi. DA DECIDERE (utente): gamba LAY lasciata = responsabilità (quota−1)×stake scoperta fino alla sua decisione;
+chiudere a mano l'ultima riga manuale non marca la partita (ingresso bot successivo possibile). DA FARE (piccolo):
+testo UI `SafeTradesTable.tsx:172-178` («il servizio sta chiudendo le gambe» → «lasciata a te, decidi tu»).
+**h13:00 — SICUREZZA DB (Opus, sola lettura + SQL da applicare; referto `SICUREZZA_DB_2026-09-24.md` in radice,
+3 file in `migrations/sicurezza_db_2026-09-24_BLOCCO_{1,2,3}_*.sql`). Verificato da ME sul DB vero (sola lettura):**
+`service_role` BYPASSRLS = true (bot, action e edge function non si rompono); 80/98 tabelle con RLS; 169 funzioni
+SECURITY DEFINER, tutte di `postgres`; `anon` esegue 15 RPC (le 11 del referto + `omega/safe_request_approve/ignore`,
+che controllano l'owner nel corpo) e ha 90 grant di SCRITTURA su 24 tabelle + 6 viste (`matches`, `match_odds`,
+`fixture_predictions`, `injuries`, `standings`, `leads`, ...); `omega_activity` è già nella publication (manca il grant
+SELECT + policy). Il frontend NON usa anon senza login: login owner (`AuthSection.tsx:106`, `ProtectedRoute.tsx:22`) →
+ruolo `authenticated`; anon serve solo al login e a `leads.insert` della landing; bot Telegram (edge function) usa anon
+ed è già cieco su `fixture_predictions` dal 22/06. I 3 blocchi: fotografia dei permessi in `sicurezza_bk` + rollback
+`sicurezza_bk.ripristina('Bn')` + verifica `verifica_bn()`; B1 zero rischio (omega_activity realtime, anon fuori da
+tabelle/viste/15 RPC, security_invoker, GRANT ALL a service_role), B2 RLS+policy owner (guardia bloccante), B3 chiusura
+finale di anon sulle funzioni/sequenze/default. Provati su banco PGlite locale (0 KO, rollback identico, 5 mutazioni
+rosse). Da applicare l'utente, uno alla volta, con checklist manuale (§ del referto). DECISIONI utente: Telegram con
+service_role + webhook protetto; MFA owner; lead della landing (opzione 3.6).
+**h13:00 — ORDINE UTENTE: «QUESTO PER TUTTI I BOT»** (scelta per pulsante «avvisa e proponi la copertura a un clic» /
+«automatico») → Safe in costruzione (stesso delegato B25); Omega (uscite di protezione oggi SOLO proposte, ordine del
+17/09 G4) e Mike (coperture/green-up) in coda con lo stesso schema, da lanciare appena scende la CPU.
+**h13:30 — Verifica MIA sui log API Supabase (24 h, sola lettura) per la domanda dell'utente «gli automatismi e il
+popolamento continuano a funzionare come oggi?»:** 74.230 richieste; TUTTO il popolamento (matches, match_odds,
+analytics_signals, fixture_predictions, standings, storage dei modelli, RPC flush, ecc.) viaggia con `service_role`
+da `python-httpx` (bot, script, 19 riferimenti nelle action = `SUPABASE_SERVICE_ROLE_KEY`; `db_client.py:21`,
+`tennis_db.py:54`); nessun automatismo usa anon. Le uniche richieste anon: 3 raffiche (23/09 h09, h16, h18) da
+`supabase-js-web` sotto Node = VITEST LANCIATO SENZA SANDBOX che ha letto il DB vero (safe_strategy_status, heartbeat,
+get_safe_activity, omega_eventi_chiusi_dall_utente) + 1 richiesta dell'app (referer 127.0.0.1:47330). REPERTO: la
+sandbox di vitest va imposta nel setup dei test (`frontend/vitest.config`/setup: URL finto se non dichiarato), non
+lasciata alla disciplina → task piccola (Sonnet) in coda. Bot Telegram: chiave anon (o `MY_DB_KEY`), legge solo
+`fixture_predictions`, già cieco dal 22/06. Conclusione: i blocchi B1-B3 NON toccano nessun automatismo.
+**h14:00 — SCALPER CALCIO NEL BANCO integrato (Opus, verificato da me; commit `2577080`).** Registro: `scalper_calcio`
+(`run_session` vero sul banco comune, finti con le chiavi del vero, 9 scenari), `Betfair/stream/scalper/certificazione.py`
+con 22 controlli mappati sul §7 (B1-B6, K1-K7, S1-S7, P1-P2), 28 test + 1 xfail stretto; 20 mutazioni del delegato
+rosse. Replay `base` 35760084 (uno solo, ordine dell'utente): OK, 0 violazioni, tick 124.672, decisioni 23.599, azioni 0,
+paper=live (81 parametri, 0 diversi); 15/22 controlli MAI sollecitati perché lo scalper su quella partita non entra
+(MATCH_ODDS fuori banda 1,5-4,6): le registrazioni dove entra sono 35797769 e 35777617 → da ribattere io, uno scenario
+alla volta. Verifica MIA: 48 verdi + 1 xfail nel worktree e su master; mutazione mia «B1 cieco» → 1 rosso.
+REPERTI (non corretti, da decidere/fixare): A) `scalper_bot.py:2066` `_place` ignora il `False` di `place_order`
+(difetto 2 del catalogo: ordine rifiutato creduto vivo fino a 600 s) — xfail nel banco; B) dopo la morte del processo
+di sessione la sessione nuova non ritrova la posizione vecchia (orfana in live senza allarme); C) tetti orari su
+`time.time()`; D) `run_scalper_live.py:227` avvio da CLI senza controllo UI, specchio, heartbeat, lock, paper: chiusura
+fail-closed proposta (`SCALPER_LIVE_CLI=consentito` altrimenti SystemExit + lock di istanza).
+**h14:05 — ORDINE UTENTE «moviamoci»**: 11 delegati in corso da ~1 h con suite intere in parallelo su 8 core saturi →
+inviato a tutti: consegna entro 30 min (motore 45), test SOLO sui file toccati, niente suite intere né replay (le
+lancia il coordinatore all'integrazione), referto parziale ma verificato con il resto in STATO_RIPRESA.md.
+PROMEMORIA per la fine dei lavori (richiesto dall'utente): applicare i blocchi sicurezza DB B1 (subito dopo), B2 e B3
+(dopo C2 a video) con checklist; decisioni Telegram/MFA/leads.
+**h15:30 — SECONDA ONDATA INTEGRATA su master (commit da `ef7d6ec` a `13e5f29`), ognuna verificata da me (test rilanciati
+nel worktree e su master + una mutazione mia rossa + tsc 0 + vitest sui file toccati):**
+- `ef7d6ec` B25 combo: gamba manuale lasciata e avvisata (T13-COMBO nel banco, 2734 → 0 violazioni).
+- `2577080` scalper calcio nel banco (22 controlli, replay base OK; reperti A-D aperti).
+- `eccb001` tennis T1 (paper mai reale, `mode` esplicito + client paper affiancato + trading control) e T2 (kill-switch
+  env+DB, guardia d'avvio con ripresa, comandi 47332 rifiutati a guardia armata); migrazione `tennis_bot_control.mode`.
+- `b873f1b` B33: SelectionChartPanel/StandaloneLadder/TennisTerminal sulla sorgente ladder al ms, GridView al push,
+  Omega senza doppio client su 47336.
+- `112a669` B16 «Chiudi» per singolo bot: PRIMA chiudeva una riga SAFE con lo stesso id (gli id delle tabelle si
+  sovrappongono); ora coda propria per bot, guardia `richiesta_ambigua`, chiusura sull'abbinato, esito a video;
+  bot tennis non chiudibili (nessun percorso: decisione utente).
+- `1610d7b` Safe «modello» e «a mano» con interruttore paper/live; l'ordine a mano NON eredita più (chiave assente =
+  paper); migrazione `safe_request` barriera.
+- `e41cf72` LIVE_ORDER_MODE dalla Control Room (`betfair_live_settings.order_mode`, RPC owner-only, regola = il più
+  restrittivo tra .env e DB, riga assente = OFF, avvio → PAPER); migrazione da applicare PRIMA del riavvio (senza:
+  nessuna apertura, nemmeno paper).
+- `46e6667` C1 Origin+token sui canali (main.js → runner e UI), O1 kill-switch condiviso davanti a ogni place REST
+  (Omega automatico/manuale, Mike lay appoggiata, Safe), R1 `customerStrategyRef` per attore.
+- `842d7d1` P&L reale da Betfair (profit − quota commissione del mercato) per betId, barra = conto Betfair incl.
+  manuale sito, reale/stimato dichiarati; migrazione colonne `pnl_betfair` + RPC tennis. Reperto: il vecchio
+  `manual_pnl_*` era sempre LORDO.
+- `752139a` combo `combo_gamba_manuale` a due pulsanti (avvisa e proponi / automatico) + scenario del banco.
+- `13e5f29` proposte al ms: backend (rivalutazione al prezzo con gli stessi criteri, «non più valida» invece di
+  decadenza, rifiuto con i due prezzi, PM6 riconciliato, file d'oro TS); PARTE REACT (hook ladder, semaforo, scheda
+  chiusure senza blocco «prezzo cambiato», scheda Omega) NON FATTA → STATO_RIPRESA del delegato, voci A-G.
+IN FUSIONE dai delegati (conflitti con master): motore ordini del runner (F1 diario, F2 evento + zero IO DB: comando →
+place p95 1,6-4 ms contro 351-951 ms; F3 protocollo; mancano place-and-trim dal canale e customerOrderRef=ref, che il
+delegato sconsiglia: flumine riconosce i suoi ordini da name_hash+id) e porta ordini di Safe (interruttore spento di
+serie; FOK ora nel protocollo). Suite intera Python su master in corso. MIGRAZIONI NUOVE da applicare (utente, prima del
+riavvio): `live_order_mode_control_2026-09-24.sql`, `tennis_bot_control_mode_2026-09-24.sql`,
+`safe_request_modalita_manuale_2026-09-24.sql`, `pnl_betfair_reale_2026-09-24.sql`; poi sicurezza B1 (B2/B3 dopo C2).
+**h16:10 — SUITE PYTHON INTERA su master (13e5f29, 9 integrazioni): 5759 verdi, 0 rossi, 2 xfail, 1 deselezionato (il
+campione del banco dello scalper: 2 replay, li lancio a parte). Porta ordini di Safe (F5) fusa su master dal ramo del
+delegato (be12475: conflitti risolti da lui su bot_service/conftest/test_audit, 433 verdi dopo la fusione).**
+**h16:40 — VITEST INTERO su master: 3344 verdi, 30 saltati, 1 rosso (guardia del design system: `RigaOrdiniReali.tsx`
+formattava la data in locale) → corretto da me (`fmtDateTime` di lib/format), commit `aa9facc`. MERGE su master dei
+due rami dei delegati (fusioni fatte da loro con conflitti risolti e test verdi): porta ordini di Safe `aee512b`
+(360 verdi rilanciati da me) e MOTORE ORDINI del runner `0e3d4db` (72 test + canale/guardia/worker/modo/P&L/porta =
+246 verdi rilanciati da me). Motore: opt-in `MOTORE_ORDINI_CANALE` spento di serie; comando → place p95 1,6-4 ms
+(prima 351-951 ms); aperti: place-and-trim dal canale, `customerOrderRef` = ref (SCONSIGLIATO: flumine riconosce i suoi
+ordini da name_hash+id; il ref vive nel diario), `_start_submin` con ref fisso. Suite intera Python e build in corso;
+replay del banco (c3i) in sequenza in corso.
+**h17:00 — SUITE PYTHON INTERA su master dopo i due merge (0e3d4db): 5860 verdi + 1 rosso (contratto UI di Omega: i 5
+kind della porta ordini senza etichetta italiana) → etichette aggiunte in `lib/omega.ts` (`6d70ec6`), contratto 15/15,
+tsc 0. Totale: 5861 verdi, 2 xfail, 1 deselezionato. Build del frontend OK (49 s), ricostruita dopo il fix.**
+**h17:40 — REPERTO del banco (mio) e correzione:** il replay di Mike impiegava ore perché il nuovo modo ordini rileggeva
+`betfair_live_settings` dal DB a ogni apertura live (sandbox → connessione rifiutata) e solo i replay di Safe/tennis
+dichiaravano i freni «da banco». Corretto nel punto d'ingresso unico (`certifica._lavora` → `_freni_da_banco`: modo
+UI = LIVE senza kill + cache dei settings di controls, per TUTTI i bot, in casa e nei processi figli) con test di
+regressione (`7ac87fb`); Mike scenario base torna a 67 s, 0 avvisi, stessi numeri. Integrati e verificati (mutazioni
+mie rosse): sandbox vitest obbligatoria + test TennisBotPanel (`bfd4d1f`; REPERTO: il gate live per partita ha UN solo
+confirm, non due), scalper A+D (`5ea391e`: rifiuto letto, CLI fail-closed; REPERTO: senza freno ai ritentativi dopo un
+rifiuto persistente → decisione utente, come il `_freno` dei bot tennis). Replay (c3j) e suite intera in corso.
+**h18:00 — SUITE PYTHON FINALE su master (`5ea391e`): 5878 verdi, 0 rossi, 1 xfail, 1 deselezionato (campione banco
+scalper, 2 replay: da lanciare a parte). Replay c3j in corso (uno per bot, in sequenza).**

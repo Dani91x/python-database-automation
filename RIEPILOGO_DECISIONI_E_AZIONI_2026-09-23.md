@@ -102,3 +102,43 @@ Bot
 - **C5 F0/F1** fatti (criteri rispettati); F3-F6 a secco NON fatti (serve l'app viva e il tuo permesso: azione A4).
 - **NON certificato**: C2 a video, C7 giornata paper, C8 firma globale. **Niente live** finché C8 non è firmata.
 - **Voto e aspettative**: nel messaggio di chiusura.
+
+---
+# AGGIORNAMENTO 24/09/2026 (fine giornata)
+
+## A. AZIONI TUE, nell'ordine (tutte nello SQL Editor di Supabase, un file alla volta, poi riavvio dell'app)
+1. `migrations/live_order_mode_control_2026-09-24.sql` — INDISPENSABILE PRIMA del riavvio: senza, il modo ordini vale
+   OFF (nessuna apertura, nemmeno paper; le chiusure passano). Poi l'interruttore «Ordini reali OFF/PAPER/LIVE» in Control Room.
+2. `migrations/tennis_bot_control_mode_2026-09-24.sql` — colonna `mode` (default paper) per i 4 bot tennis: un bot in
+   paper non piazza mai ordini reali qualunque sia il runner.
+3. `migrations/safe_request_modalita_manuale_2026-09-24.sql` — barriera SQL allineata: senza, con Safe in LIVE e «a
+   mano» in paper l'ordine a mano viene rifiutato (blocco sicuro, ma non funziona).
+4. `migrations/pnl_betfair_reale_2026-09-24.sql` — colonne del P&L reale da Betfair + totale di giornata + RPC tennis.
+5. Sicurezza DB: `migrations/sicurezza_db_2026-09-24_BLOCCO_1_zero_rischio.sql` (subito), poi BLOCCO_2 e BLOCCO_3 dopo
+   la verifica a video, con `SELECT * FROM sicurezza_bk.verifica_bN()` e la checklist di `SICUREZZA_DB_2026-09-24.md`.
+6. Riavvio dell'app → verifica a video (C2) → prova a secco C5 → recuperi action → giornata paper (C7) → firma C8.
+   Interruttori nuovi nel `.env` (tutti SPENTI di serie, accendere solo dopo C2): `MOTORE_ORDINI_CANALE=1` (motore ordini
+   a evento nel runner calcio), `SAFE_ORDINI_VIA_CANALE=1` (Safe sul canale di comando: NON accendere finché il motore
+   non serve il sotto-minimo), `LOCAL_CHANNEL_ORIGINS` (solo se usi il dev da browser).
+
+## B. DECISIONI NUOVE (24/09)
+- D1 `customerOrderRef` uguale al ref del comando: SCONSIGLIATO dal motore (flumine riconosce i suoi ordini da
+  name_hash+id; il ref vive nel diario locale e negli eventi). Proposta = lasciare così.
+- D2 Scalper: dopo un rifiuto lo slot torna IDLE e può ritentare al book dopo (prima il TTL di 600 s frenava per
+  sbaglio). Serve un freno ai ritentativi come il `_freno` dei bot tennis? Tocca la strategia: decidi tu.
+- D3 I 4 bot tennis non hanno un percorso di chiusura manuale: il «Chiudi» è disattivato con motivo. Costruirlo tocca
+  le loro macchine a stati: decidi tu.
+- D4 Place-and-trim dal canale di comando: oggi un place sotto il minimo è rifiutato (`submin_non_percorribile`), anche
+  in paper. Da costruire come macchina a stati in RAM nel motore (F-successiva).
+- D5 Gamba LAY lasciata dalla combo: con «avvisa e proponi» resta la responsabilità (quota−1)×stake finché non
+  approvi la copertura proposta. Con «automatico» la chiude il bot come prima.
+- D6 «Avvisa e proponi / automatico» per Omega (uscite di protezione: oggi SOLO proposte, ordine del 17/09) e Mike
+  (coperture/green-up): in coda, stesso schema di Safe. Confermi che lo estendo?
+- D7 Tennis: il gate live per partita ha UN solo confirm (non due): basta o ne vuoi due?
+- D8 Telegram con chiave di servizio + webhook protetto; MFA sul login owner; lead della landing (tenere/chiudere).
+- D9 Reperti del motore aperti: place-and-trim (D4), `_start_submin` con ref fisso, latenze/concorrenza dal vivo.
+- D10 Proposte al ms: la parte React (hook sul ladder, semaforo, scheda chiusure senza blocco «prezzo cambiato», scheda
+  Omega) NON è fatta: è il primo lavoro di domani (STATO_RIPRESA del delegato, voci A-G).
+
+## C. PROMEMORIA (richiesto da te)
+- Applicare i blocchi di sicurezza DB (B1 subito, B2/B3 dopo C2) e decidere D8.
