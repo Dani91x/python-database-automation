@@ -407,6 +407,12 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     proposta_decaduta: { label: 'PROPOSTA DECADUTA · la condizione non regge più', cls: A_MUTED },
     // 24/09 — la scheda resta viva ma il bot non la proporrebbe più: decidi tu
     proposta_non_piu_valida: { label: 'USCITA NON PIÙ VALIDA · la scheda resta, decidi tu', cls: A_WARN },
+    // 24/09 — porta ordini sul canale di comando del runner (execution.py, condivisa con Safe)
+    canale_inviato: { label: 'ORDINE INVIATO SUL CANALE · attesa esito', cls: A_PLAIN },
+    canale_rifiutato: { label: 'ORDINE RIFIUTATO DAL RUNNER · nessun invio', cls: A_WARN },
+    canale_senza_ack: { label: 'CANALE SENZA RISPOSTA · esito ignoto, nessun secondo invio', cls: A_WARN },
+    canale_giu: { label: 'CANALE GIÙ · apertura non inviata', cls: A_WARN },
+    canale_giu_ripiego: { label: 'CANALE GIÙ · chiusura sul trasporto di ripiego', cls: A_WARN },
     uscita_approvata: { label: 'USCITA APPROVATA DA TE (decisa dal bot)', cls: A_CLOSE },
     // ---- regolamento
     settle: { label: 'REGOLATA', cls: A_PLAIN },
