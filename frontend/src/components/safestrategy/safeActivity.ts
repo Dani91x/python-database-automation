@@ -66,6 +66,8 @@ export const SAFE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     opportunita_piazzata: { label: 'OPPORTUNITÀ PIAZZATA', cls: GOOD },
     opportunita_rifiutata: { label: 'OPPORTUNITÀ RIFIUTATA', cls: MUTED },
     opportunita_decaduta: { label: 'OPPORTUNITÀ DECADUTA', cls: NEUTRAL },
+    // 24/09 — la scheda resta viva ma il motore non la propone più: decidi tu
+    opportunita_non_piu_valida: { label: 'OPPORTUNITÀ NON PIÙ VALIDA · decidi tu', cls: WARN },
 
     // ---- riconciliazione
     reconcile_error: { label: 'RICONCILIAZIONE FALLITA', cls: BAD, critical: true },

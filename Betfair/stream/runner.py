@@ -83,6 +83,7 @@ from . import local_channel as _lc
 from . import ladder_canale as _lcad
 from .config_stream import LADDER_CANALE_MS
 from . import avvio_app as AA
+from . import modo_ordini as _MO
 from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
 from .reconcile_worker import (
@@ -94,7 +95,7 @@ from .reconcile_worker import (
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from . import live_order_worker as _LOW
-from . import motore_ordini as _MO
+from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -292,9 +293,12 @@ class LiveSession:
             "markets": markets_out,
             # modalità ordini attiva del runner (OFF|PAPER|LIVE): la UI la legge da
             # live_now.state.order_mode per mostrare il badge giusto nel pannello Live Trading.
-            # live_order_mode() RI-LEGGE l'env ad ogni call (coerente col worker): se a runtime
-            # si declassa LIVE→OFF/PAPER, il badge segue subito invece di restare "LIVE" stale.
-            "order_mode": live_order_mode(),
+            # 24/09: e' il modo EFFETTIVO (tetto del .env x scelta dalla Control Room,
+            # ``modo_ordini``), lo STESSO che il worker applica alle aperture; accanto
+            # il tetto dell'ambiente e la scelta letta, perche' il badge dica il perche'.
+            "order_mode": _MO.modo_corrente(),
+            "order_mode_tetto": live_order_mode(),
+            "order_mode_scelto": _MO.valore_db(),
             "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
         }
 
@@ -1485,44 +1489,10 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
     return client, False
 
 
-class PaperCompanionClient(clients.BetfairClient):
-    """Client PAPER che affianca quello REALE dentro lo STESSO runner LIVE (F0, 16/09).
-
-    Perche' esiste: flumine ammette piu' client nello stesso framework
-    (``baseflumine.add_client``) e instrada l'esecuzione dal client dell'ordine
-    (``market.place_order(..., client=...)`` -> ``client.execution``), quindi un solo
-    processo puo' servire le righe 'live' (client reale) e quelle 'paper' (questo).
-    Due vincoli imposti da flumine e da Betfair, entrambi rispettati qui:
-
-      * ``Clients.add_client`` RIFIUTA due client con lo stesso ``username`` sullo
-        stesso venue: la sessione betfairlightweight e' CONDIVISA con il client reale
-        (stesso account), quindi l'username viene distinto col suffisso ``#paper``.
-        E' un'etichetta interna a flumine, non viaggia verso Betfair.
-      * la sessione e' UNA e la possiede il client reale: ``login``/``logout``/
-        ``keep_alive``/``update_account_details`` qui sono NO-OP, altrimenti i worker
-        nativi di flumine (``keep_alive``, ``poll_account_balance``) farebbero il
-        DOPPIO delle chiamate a Betfair sullo stesso account (regola del feed unico)
-        e un logout del companion chiuderebbe la sessione sotto il client reale.
-
-    I soldi veri restano separati PER COSTRUZIONE: ``paper_trade=True`` manda questo
-    client sulla ``SimulatedExecution`` di flumine, che non contatta mai l'Exchange.
-    """
-
-    @property
-    def username(self) -> str:  # type: ignore[override]
-        return f"{clients.BetfairClient.username.fget(self)}#paper"
-
-    def login(self):  # noqa: D401 - sessione gia' aperta dal client proprietario
-        return None
-
-    def logout(self):  # noqa: D401 - mai chiudere la sessione del client reale
-        return None
-
-    def keep_alive(self):  # noqa: D401 - keepAlive lo fa il client proprietario
-        return True
-
-    def update_account_details(self) -> None:  # noqa: D401 - saldo: una sola lettura
-        return None
+# F0 (16/09) - il client PAPER affiancato vive dal 24/09 in un modulo condiviso
+# (lo usa anche il runner tennis per i bot PAPER a runner LIVE, reperto T1):
+# codice SPOSTATO senza modifiche, stesso nome qui per chi importa dal runner.
+from .client_paper_affiancato import PaperCompanionClient  # noqa: E402,F401
 
 
 def build_paper_companion_client(api_client: Any) -> "PaperCompanionClient":
@@ -1656,11 +1626,38 @@ def _lista_ordini_ripresa(customer_order_refs: List[str]) -> Any:
 def _costruisci_motore(ch: Any) -> Any:
     cartella = os.getenv("MOTORE_DIARIO_DIR", "").strip() or os.path.join(
         DATA_DIR, "_diario_ordini")
-    return _MO.MotoreOrdini(
-        "calcio", canale=ch, diario=_MO.Diario(cartella),
-        scrittore=_MO.ScrittoreAsincrono(nome="scrittore-db-calcio"),
+    return _MOT.MotoreOrdini(
+        "calcio", canale=ch, diario=_MOT.Diario(cartella),
+        scrittore=_MOT.ScrittoreAsincrono(nome="scrittore-db-calcio"),
         guardia_armata=lambda: bool(_GUARDIA_AVVIO.blocca_aperture),
         motivo_guardia_order=_MOTIVO_GUARDIA_LOCALE)
+# 24/09 - MODO ORDINI DALLA UI: all'avvio dell'app la scelta torna a PAPER
+# (``modo_ordini.dichiara_avvio``, stesso schema di ``avvio_app`` per Omega/Mike/
+# Safe) e il runner dichiara il TETTO del suo .env. Finche' non riesce la scelta
+# dalla UI non vale (``modo_ordini.richiedi_avvio``): aperture OFF, chiusure si'.
+_MODO_AVVIO_STATO = {"ultimo": -1e9}
+
+
+def _dichiara_modo_ordini_all_avvio(forza: bool = False) -> bool:
+    """True = fatto (o non serviva). Riprova al massimo ogni ``_RIPRESA_RIPROVA_S``."""
+    if not _MO.avvio_in_attesa():
+        return True
+    adesso = time.monotonic()
+    if not forza and adesso - _MODO_AVVIO_STATO["ultimo"] < _RIPRESA_RIPROVA_S:
+        return False
+    _MODO_AVVIO_STATO["ultimo"] = adesso
+    try:
+        from db_client import get_supabase_client
+
+        sb = get_supabase_client()
+        riga = getattr(sb.rpc("get_live_settings", {}).execute(), "data", None)
+        _MO.dichiara_avvio(sb, riga, AA.boot_id_ambiente(), live_order_mode())
+        return True
+    except Exception as ex:  # noqa: BLE001 - si riprova: intanto aperture OFF
+        logger.error("[runner] modo ordini all'avvio NON dichiarato (aperture ferme, "
+                     "chiusure servite; migrazione live_order_mode_control applicata?): %s",
+                     str(ex)[:200])
+        return False
 
 
 def _ripresa_all_avvio() -> bool:
@@ -1754,6 +1751,7 @@ def _live_order_worker_guardato(context: dict, flumine: Any, session: Any = None
             if _motore_attivo() is None:
                 _rispondi_comandi_locali_in_guardia(flumine, strategy)
             return
+    _dichiara_modo_ordini_all_avvio()  # 24/09: no-op quando gia' fatto
     live_order_worker(context, flumine, session=session, strategy=strategy)
 
 
@@ -1791,6 +1789,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     # 23/09 - modalita' ordini letta ADESSO (live_order_mode, come il worker), non
     # la costante dell'import: e' quella con cui si costruisce il client.
     modo_avvio = live_order_mode().strip().upper()
+    # 24/09: la scelta del modo ordini dalla UI non vale finche' la riga non e'
+    # stata riportata a PAPER per QUESTO avvio (e dichiarato il tetto del .env).
+    _MO.richiedi_avvio()
+    _dichiara_modo_ordini_all_avvio(forza=True)
     ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
     if ch is not None:
         ch.set_hello(mode=modo_avvio)

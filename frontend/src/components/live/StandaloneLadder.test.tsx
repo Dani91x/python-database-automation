@@ -8,6 +8,11 @@ import { render, screen, act } from '@testing-library/react';
 vi.mock('@/lib/live', () => ({
     fetchLiveNow: vi.fn(),
     subscribeLiveNow: vi.fn(() => () => {}),
+    // fix B33 punto 1: StandaloneLadder ora inietta sorgenteLadderAlMs (lib/localTransport),
+    // che referenzia questi due come DB di ripiego del calcio — servono al mock
+    // anche se questo file non ne verifica il comportamento (LadderView è mockato sotto).
+    fetchLiveLadder: vi.fn(() => Promise.resolve(null)),
+    subscribeLiveLadder: vi.fn(() => () => {}),
 }));
 // il ladder vero non serve: catturiamo SOLO la modalità che riceve.
 vi.mock('./LadderView', () => ({

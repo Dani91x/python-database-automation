@@ -85,6 +85,42 @@ describe('BotParamsSheet — gruppi e valori', () => {
         expect(screen.getByRole('checkbox', { name: /Proponimi le opportunità di MODELLO calcio/ })).toBeChecked();
     });
 
+    it('24/09 gamba manuale della combo: DUE pulsanti, default «Avvisa e proponi» (chiave assente)', async () => {
+        await openSheet();
+        const g = group('Combinazioni incomplete');
+        expect(g).toBeInTheDocument();
+        const btn = within(g).getAllByTestId('params-choice');
+        expect(btn.map((b) => b.getAttribute('data-value'))).toEqual(['avvisa_e_proponi', 'automatico']);
+        expect(within(g).getByRole('button', { name: 'Avvisa e proponi la copertura' })).toHaveAttribute('aria-pressed', 'true');
+        expect(within(g).getByRole('button', { name: 'Automatico (se ne occupa il bot)' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('24/09 valore sconosciuto sul DB -> «Avvisa e proponi»; «automatico» sul DB -> pulsante acceso', async () => {
+        await openSheet(vi.fn(), { ...RAW, combo_gamba_manuale: 'boh' });
+        expect(within(group('Combinazioni incomplete')).getByRole('button', { name: 'Avvisa e proponi la copertura' }))
+            .toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('24/09 premere «Automatico» e salvare manda combo_gamba_manuale=automatico (e il resto invariato)', async () => {
+        const { user, onSave } = await openSheet();
+        await user.click(within(group('Combinazioni incomplete')).getByRole('button', { name: 'Automatico (se ne occupa il bot)' }));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const salvato = onSave.mock.calls[0][0] as Record<string, unknown>;
+        expect(salvato.combo_gamba_manuale).toBe('automatico');
+        expect(salvato.unknown_key_from_service).toEqual({ keep: 'me' });
+    });
+
+    it('24/09 da «automatico» si torna ad «Avvisa e proponi» con un clic', async () => {
+        const { user, onSave } = await openSheet(vi.fn(), { ...RAW, combo_gamba_manuale: 'automatico' });
+        const g = group('Combinazioni incomplete');
+        expect(within(g).getByRole('button', { name: 'Automatico (se ne occupa il bot)' })).toHaveAttribute('aria-pressed', 'true');
+        await user.click(within(g).getByRole('button', { name: 'Avvisa e proponi la copertura' }));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        expect((onSave.mock.calls[0][0] as Record<string, unknown>).combo_gamba_manuale).toBe('avvisa_e_proponi');
+    });
+
     it('salvare non tocca gli auto_trade_* storici: restano quelli del DB, invariati', async () => {
         const onSave = vi.fn();
         const { user } = await openSheet(onSave, RAW);
@@ -304,7 +340,7 @@ describe('BotParamsSheet — modalita per strategia', () => {
         expect(tendina(/Base \(banca 1X2\)/)).toHaveValue('paper');
         // una strategia non nominata resta «come il servizio», non diventa un
         // valore fisso che poi nessuno ricorda di aver messo
-        expect(tendina(/Ordini manuali/)).toHaveValue('');
+        expect(tendina(/Ordini a mano dalla scheda/)).toHaveValue('');
     });
 
     it('dichiara che il servizio in PAPER e un TETTO', async () => {

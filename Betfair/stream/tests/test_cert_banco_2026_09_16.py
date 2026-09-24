@@ -64,6 +64,17 @@ CAMPIONE = {
     "tennis_pro": ("35790407",),
     "tennis_flb": ("35790407",),
     "tennis_swing": ("35790407",),
+    # LO SCALPER CALCIO (24/09) — campione di SOLA CATENA, e va detto.
+    # 35823616: 1.208 righe, la registrazione corta del corpus (finisce 30' prima
+    # del KO). Sonda statica dei gate (`scalper_session.VALIDATED_PARAMS`: size
+    # ai best >= 300 e spread <= 2 tick) = 0 aggiornamenti utili: lo scalper NON
+    # opera. Serve a far scattare il rosso se si rompe il collegamento
+    # `run_session` -> strategia -> flumine -> specchio -> heartbeat -> fine
+    # (qui: registrazione finita = percorso CRASH di produzione, stato 'error'
+    # con l'allarme). NON certifica la condotta: quella sta nel comando, sulla
+    # registrazione in cui i gate passano (35797769, 2h30' di pre-match):
+    #   python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari tutti
+    "scalper_calcio": ("35823616",),
 }
 
 

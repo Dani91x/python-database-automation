@@ -140,6 +140,7 @@ def _flumine(market: Any) -> Any:
 @pytest.fixture(autouse=True)
 def _force_paper(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: "PAPER")
     monkeypatch.setattr(rw.low, "_kill_switch", lambda: False)
     monkeypatch.setattr(rw.low, "_db_kill_switch", lambda: False)
     monkeypatch.setattr(rw, "_alert", lambda *a, **k: None)  # niente tentativi DB per gli alert

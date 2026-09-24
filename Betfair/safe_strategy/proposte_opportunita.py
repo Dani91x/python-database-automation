@@ -118,9 +118,16 @@ def sostanza(corpo: Optional[dict[str, Any]]) -> tuple:
 
     Write-on-change come per il feed: il DB ha un budget di IO e una proposta
     riscritta a ogni ciclo e' rumore che nessuno legge (13/09, il giorno in cui
-    il database e' andato giu')."""
+    il database e' andato giu').
+
+    24/09 — entrano anche l'impronta della ``valutazione`` (valida o no, i
+    criteri che cadono, il prezzo valutato: MAI l'istante) e i ``criteri``
+    (se l'utente cambia una soglia dal pannello la scheda deve saperlo)."""
     c = corpo if isinstance(corpo, dict) else {}
-    return tuple(c.get(k) for k in _SOSTANZA)
+    criteri = c.get("criteri") if isinstance(c.get("criteri"), dict) else {}
+    return tuple(c.get(k) for k in _SOSTANZA) + (
+        impronta_valutazione(c.get("valutazione")),
+        tuple(sorted((str(k), v) for k, v in criteri.items())))
 
 
 def corpo_proposta(*, event_id: str, event_name: Any, sport: str, kind: str,
@@ -354,3 +361,223 @@ def slippage_pct_effettivo(payload: dict[str, Any]) -> float:
     if not math.isfinite(fv) or fv <= 0:
         return SLIPPAGE_PCT_DEFAULT
     return fv
+
+
+def motivo_prezzo_mosso(price_visto: float, price_attuale: Optional[float],
+                        side: str, soglia_pct: float) -> str:
+    """24/09 — il rifiuto «prezzo cambiato» dice i DUE prezzi. Ordine
+    dell'utente: la tolleranza si misura fra il prezzo VISTO al clic e quello
+    all'esecuzione (millisecondi dopo): se scatta, il trader deve leggere quali
+    erano i due numeri, non un codice."""
+    if price_attuale is None:
+        return (f"rifiutato: al clic vedevi {price_visto:g} ({side}), all'esecuzione il "
+                f"prezzo non c'era piu' sul mercato")
+    scost = abs(float(price_attuale) - float(price_visto)) / float(price_visto) * 100.0
+    return (f"rifiutato: prezzo cambiato fra il clic e l'esecuzione - visto "
+            f"{price_visto:g}, all'esecuzione {float(price_attuale):g} ({side}, "
+            f"scarto {scost:.2f}% oltre la tolleranza {float(soglia_pct):g}%)")
+
+
+# ===========================================================================
+# LA SCHEDA AL MS (24/09/2026) — ORDINE DELL'UTENTE:
+# «Anomalie, opportunita' del modello e in generale TUTTI gli avvisi che mi
+#  arrivano in live DEVONO aggiornarsi in tempo reale nella scheda [...] Tutti
+#  i valori e i calcoli devono aggiornarsi al cambiare del prezzo. La scheda
+#  delle proposte deve segnalarmi se l'opportunita', in base ai calcoli e al
+#  prezzo attuale, c'e' ancora o no: io decido se approvare o scartare.»
+#
+# Qui vive la RIVALUTAZIONE AL PREZZO di una proposta a una gamba, con gli
+# STESSI criteri del motore che l'ha generata (``opportunity._try_side``,
+# ``tennis_opportunity._try_side``, ``anomaly._Ctx.emit``) e dello stesso
+# filtro del servizio (``_proponi_opps``: ``opps_min_edge``, tetto di
+# responsabilita'). NON e' un criterio nuovo e NON cambia la strategia: il
+# motore continua a decidere cosa proporre esattamente come prima; questa
+# funzione dice soltanto se, AL PREZZO DI ADESSO e con la P dell'ultima
+# valutazione del modello, quegli stessi criteri reggono ancora.
+#
+# Cosa dipende dal prezzo e cosa no (dichiarato, non nascosto):
+#   * dal prezzo: edge, EV, P implicita, responsabilita', quota minima/massima,
+#     importo abbinabile minimo -> ricalcolati QUI a ogni tick;
+#   * dalla P del modello (minuto, punteggio, lambda, calibrazione) e dal
+#     contesto (hazard, ritiro, momentum, freschezza): NON si ricalcolano al
+#     tick. La P e' quella dell'ultima valutazione del servizio (ogni
+#     ``opps_interval_s``); la CONFIDENZA non si ricalcola affatto (dipende dal
+#     contesto del modello): quando non regge piu' e' il servizio a dirlo
+#     (``valutazione.causa == 'modello'``).
+#
+# La STESSA funzione esiste in TypeScript (``frontend/src/lib/valutaProposta.ts``)
+# per la scheda: le due sono legate da un file di vettori d'oro
+# (``frontend/src/lib/valutaProposta.golden.json``) che i test di ENTRAMBI i
+# linguaggi rileggono. Una modifica a una sola delle due fa diventare rosso un
+# test: mai una copia divergente.
+# ===========================================================================
+
+# i parametri del MOTORE che contano quando cambia il prezzo (``_try_side`` /
+# ``emit``). Si copiano dai parametri EFFETTIVI del motore (``model.params``),
+# mai riscritti a mano: chi li cambia dal pannello li vede cambiare anche qui.
+CRITERI_DEL_MOTORE = ("min_edge", "min_size", "max_lay_price", "min_back_price",
+                      "commission", "min_prob_back", "max_prob_lay")
+
+
+def _numero(v: Any) -> Optional[float]:
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return None
+    fv = float(v)
+    return fv if math.isfinite(fv) else None
+
+
+def criteri_proposta(motore: Optional[dict[str, Any]], params: Optional[dict[str, Any]],
+                     *, stake: float) -> dict[str, float]:
+    """I criteri con cui la scheda (e il servizio) rivalutano la proposta al
+    prezzo di adesso: quelli del motore che l'ha generata (``motore`` = i suoi
+    parametri effettivi) piu' i due filtri del servizio in ``_proponi_opps``
+    (``opps_min_edge``, ``max_liability_per_trade``) e lo stake della
+    proposta. Un criterio assente dai parametri del motore NON si inventa: non
+    entra, e la rivalutazione non lo applica (come il motore, che non lo ha)."""
+    m = motore if isinstance(motore, dict) else {}
+    p = params if isinstance(params, dict) else {}
+    out: dict[str, float] = {}
+    for k in CRITERI_DEL_MOTORE:
+        v = _numero(m.get(k))
+        if v is not None:
+            out[k] = v
+    ome = _numero(p.get("opps_min_edge"))
+    out["opps_min_edge"] = ome if ome is not None else 0.0
+    cap = _numero(p.get("max_liability_per_trade"))
+    out["max_liability_per_trade"] = cap if cap is not None and cap > 0 else 0.0
+    out["stake"] = float(stake)
+    return out
+
+
+def _motivo(codice: str, valore: Optional[float], soglia: Optional[float]) -> dict[str, Any]:
+    return {"codice": codice,
+            "valore": None if valore is None else round(float(valore), 6),
+            "soglia": None if soglia is None else round(float(soglia), 6)}
+
+
+def valuta_al_prezzo(*, side: str, prezzo: Any, abbinabile: Any, p_model: Any,
+                     criteri: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """La proposta regge ancora AL PREZZO DI ADESSO? Pura, nessun I/O.
+
+    Ritorna ``{prezzo, p_implicita, edge, ev, ev_eur, liability, valida,
+    motivi}``: ``motivi`` elenca TUTTI i criteri che cadono (non solo il
+    primo), ognuno con valore e soglia, cosi' la scheda puo' dire «fuori
+    criterio: edge 1,2 % contro soglia 3 %». Stesse formule del motore:
+    edge back = p - 1/q, lay = 1/q - p; EV per 1 EUR di stake netto
+    commissione (``opportunity._try_side``). Prezzo o P non validi = non
+    valida (fail-closed: non si dice «regge» al buio)."""
+    c = criteri if isinstance(criteri, dict) else {}
+    lato = str(side or "").lower()
+    q = _numero(prezzo)
+    pm = _numero(p_model)
+    size = _numero(abbinabile)
+    stake = _numero(c.get("stake")) or 0.0
+    out: dict[str, Any] = {"prezzo": q, "p_implicita": None, "edge": None, "ev": None,
+                           "ev_eur": None, "liability": None, "valida": False,
+                           "motivi": []}
+    motivi: list[dict[str, Any]] = out["motivi"]
+    if lato not in ("back", "lay"):
+        motivi.append(_motivo("lato_non_valido", None, None))
+        return out
+    if q is None or q <= 1.0:
+        motivi.append(_motivo("prezzo_assente", q, None))
+        return out
+    if pm is None or pm < 0.0 or pm > 1.0:
+        motivi.append(_motivo("probabilita_assente", pm, None))
+        return out
+    out["p_implicita"] = round(1.0 / q, 6)
+    min_size = _numero(c.get("min_size"))
+    if min_size is not None and (size if size is not None else 0.0) < min_size:
+        motivi.append(_motivo("abbinabile_sotto_minimo", size, min_size))
+    if lato == "back":
+        mpb = _numero(c.get("min_prob_back"))
+        if mpb is not None and pm < mpb:
+            motivi.append(_motivo("probabilita_sotto_minimo", pm, mpb))
+        mbp = _numero(c.get("min_back_price"))
+        if mbp is not None and q < mbp:
+            motivi.append(_motivo("quota_sotto_minimo", q, mbp))
+        edge = pm - 1.0 / q
+    else:
+        mpl = _numero(c.get("max_prob_lay"))
+        if mpl is not None and pm > mpl:
+            motivi.append(_motivo("probabilita_sopra_massimo", pm, mpl))
+        mlp = _numero(c.get("max_lay_price"))
+        if mlp is not None and q > mlp:
+            motivi.append(_motivo("quota_sopra_massimo", q, mlp))
+        edge = 1.0 / q - pm
+    out["edge"] = round(edge, 6)
+    min_edge = _numero(c.get("min_edge"))
+    if min_edge is not None and edge < min_edge:
+        motivi.append(_motivo("edge_sotto_minimo", edge, min_edge))
+    ome = _numero(c.get("opps_min_edge"))
+    if ome is not None and ome != 0.0 and edge < ome:
+        motivi.append(_motivo("edge_sotto_minimo_servizio", edge, ome))
+    comm = _numero(c.get("commission"))
+    comm = 0.05 if comm is None else comm
+    if lato == "back":
+        ev = pm * (q - 1.0) * (1.0 - comm) - (1.0 - pm)
+        liability = round(stake, 2)
+    else:
+        ev = (1.0 - pm) * (1.0 - comm) - pm * (q - 1.0)
+        liability = round(stake * (q - 1.0), 2)
+    out["ev"] = round(ev, 6)
+    out["ev_eur"] = round(ev * stake, 4)
+    out["liability"] = liability
+    if ev <= 0:
+        motivi.append(_motivo("ev_non_positivo", ev, 0.0))
+    cap = _numero(c.get("max_liability_per_trade"))
+    if cap is not None and cap > 0 and liability > cap:
+        motivi.append(_motivo("responsabilita_oltre_tetto", liability, cap))
+    out["valida"] = not motivi
+    return out
+
+
+# le cause con cui una proposta viva smette di reggere (``valutazione.causa``):
+#   'prezzo'  = al prezzo di adesso un criterio del motore cade (``motivi``);
+#   'modello' = al prezzo di adesso i criteri reggerebbero, ma il MOTORE non la
+#               propone piu' (P cambiata col minuto/punteggio, confidenza,
+#               hazard, riferimento dell'anomalia, combo non piu' trovata):
+#               lo sa solo il servizio, e la scheda lo dice cosi' com'e'.
+CAUSA_PREZZO = "prezzo"
+CAUSA_MODELLO = "modello"
+
+
+def valutazione_viva(*, ts_iso: str, al_prezzo: Optional[dict[str, Any]] = None,
+                     dal: Optional[str] = None) -> dict[str, Any]:
+    """Il blocco ``valutazione`` di una proposta che il motore PROPONE adesso."""
+    v: dict[str, Any] = {"valida": True, "causa": None, "motivi": [],
+                         "valutata_at": ts_iso, "dal": dal or ts_iso}
+    if al_prezzo:
+        v["al_prezzo"] = al_prezzo
+    return v
+
+
+def valutazione_non_valida(*, ts_iso: str, al_prezzo: Optional[dict[str, Any]],
+                           testo_modello: str, dal: Optional[str] = None) -> dict[str, Any]:
+    """Il blocco ``valutazione`` di una proposta viva che il motore NON propone
+    piu': la scheda resta (decide l'utente), ma dice perche' non regge."""
+    motivi = list((al_prezzo or {}).get("motivi") or [])
+    if motivi:
+        causa = CAUSA_PREZZO
+    else:
+        causa = CAUSA_MODELLO
+        motivi = [{"codice": "non_piu_proposta_dal_modello", "valore": None,
+                   "soglia": None, "testo": str(testo_modello)[:200]}]
+    v: dict[str, Any] = {"valida": False, "causa": causa, "motivi": motivi,
+                         "valutata_at": ts_iso, "dal": dal or ts_iso}
+    if al_prezzo:
+        v["al_prezzo"] = al_prezzo
+    return v
+
+
+def impronta_valutazione(v: Optional[dict[str, Any]]) -> tuple:
+    """Cio' che, cambiando, merita una riscrittura della proposta: lo stato
+    (valida/causa), i codici dei criteri che cadono e il prezzo su cui si e'
+    valutato. NON l'istante (``valutata_at``): riscrivere la riga a ogni giro
+    solo per l'ora sarebbe IO sprecato (13/09)."""
+    if not isinstance(v, dict):
+        return ()
+    ap = v.get("al_prezzo") if isinstance(v.get("al_prezzo"), dict) else {}
+    return (bool(v.get("valida")), v.get("causa"),
+            tuple(str((m or {}).get("codice")) for m in (v.get("motivi") or [])),
+            ap.get("prezzo"))

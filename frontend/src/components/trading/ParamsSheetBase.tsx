@@ -26,8 +26,9 @@ export interface ParamField {
     label: string;
     /** nota sotto il campo: testo o markup (es. "il servizio usa X") */
     hint?: ReactNode;
-    /** 'text' = stringa libera (es. un percorso): nessun clamp, nessun cast */
-    type: 'number' | 'boolean' | 'select' | 'text';
+    /** 'text' = stringa libera (es. un percorso): nessun clamp, nessun cast;
+     *  'choice' = uno fra `options`, mostrati come PULSANTI affiancati */
+    type: 'number' | 'boolean' | 'select' | 'text' | 'choice';
     min?: number;
     max?: number;
     step?: number;
@@ -167,9 +168,40 @@ export function ParamsSheetBase({
                             {g.fields.map((f) => {
                                 const v = draft[f.key];
                                 const cl = clamped[f.key];
+                                // 24/09 - 'choice': una scelta fra POCHI valori mostrati
+                                // come pulsanti affiancati. Dentro un <label> il clic sul
+                                // testo premerebbe il primo pulsante: qui il contenitore e'
+                                // un <div role="group">.
+                                const Wrap = f.type === 'choice' ? 'div' : 'label';
                                 return (
-                                    <label key={f.key} className={f.type === 'boolean' ? 'flex items-center gap-2 text-sm' : 'block'}>
-                                        {f.type === 'boolean' ? (
+                                    <Wrap key={f.key} className={f.type === 'boolean' ? 'flex items-center gap-2 text-sm' : 'block'}
+                                        {...(f.type === 'choice' ? { role: 'group', 'aria-label': f.label } : {})}>
+                                        {f.type === 'choice' ? (
+                                            <>
+                                                <span className="text-xs text-slate-400">{f.label}</span>
+                                                <div className="mt-1 grid grid-cols-2 gap-2">
+                                                    {(f.options ?? []).map((o) => {
+                                                        const scelto = String(v ?? '') === o.value;
+                                                        return (
+                                                            <button
+                                                                key={o.value}
+                                                                type="button"
+                                                                aria-pressed={scelto}
+                                                                data-testid="params-choice"
+                                                                data-field={f.key}
+                                                                data-value={o.value}
+                                                                onClick={() => setField(f, o.value)}
+                                                                className={`rounded-md border px-3 py-2 text-xs text-left ${scelto
+                                                                    ? 'border-sky-400/70 bg-sky-500/20 text-sky-100'
+                                                                    : 'border-white/10 bg-black/50 text-slate-300'}`}
+                                                            >
+                                                                {o.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        ) : f.type === 'boolean' ? (
                                             <>
                                                 <input
                                                     type="checkbox"
@@ -228,7 +260,7 @@ export function ParamsSheetBase({
                                                     : ''}
                                             </span>
                                         )}
-                                    </label>
+                                    </Wrap>
                                 );
                             })}
                         </section>

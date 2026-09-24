@@ -4,9 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { TennisNav } from '@/components/tennis/TennisNav';
 import { TennisBotPanel } from '@/components/tennis/TennisBotPanel';
 import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
-import {
-    TennisLadderColumn, TENNIS_LADDER_SOURCE,
-} from '@/components/tennis/TennisLadderColumn';
+import { TennisLadderColumn } from '@/components/tennis/TennisLadderColumn';
 import { TennisMatchStats } from '@/components/tennis/TennisMatchStats';
 import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
 import { DepthPanel } from '@/components/live/DepthPanel';
@@ -263,7 +261,7 @@ export default function TennisTerminal() {
                             <SelectionChartPanel
                                 key={`chart:${marketId}`}
                                 marketId={marketId}
-                                ladderSource={TENNIS_LADDER_SOURCE}
+                                ladderSource={sorgenteLadderAlMs('tennis')}
                                 defaultBucketMs={5_000}
                             />
                         )}

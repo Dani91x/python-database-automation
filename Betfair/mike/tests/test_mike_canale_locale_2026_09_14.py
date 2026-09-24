@@ -168,5 +168,9 @@ def test_il_canale_del_runner_continua_ad_accettare_i_comandi():
 
     ch = LocalChannel(47331, "calcio")
     ch._send = lambda ws, payload: None                        # type: ignore[assignment]
-    ch._on_message(object(), '{"id": 1, "m": "order", "p": {"size": 10}}')
+    # C1 (24/09): il canale del runner accetta i comandi SOLO da una connessione
+    # che si e' presentata col token di sessione (qui: gia' autorizzata).
+    ws = object()
+    ch._autorizzati.add(ws)
+    ch._on_message(ws, '{"id": 1, "m": "order", "p": {"size": 10}}')
     assert ch._requests.qsize() == 1

@@ -122,6 +122,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         proposteOpportunita: [],
         piazzaOpportunita: vi.fn(), rifiutaOpportunita: vi.fn(),
         approva: vi.fn(), ignora: vi.fn(), chiudi: vi.fn(),
+        // B16 (24/09) - l'esito del «Chiudi» per riga: stesso tipo del vero
+        statoChiusuraRiga: () => null,
         // 16/09 — il FINTO parla come il VERO: le chiavi nuove del modello di
         // vista ci sono tutte, con lo stesso tipo. Un finto piu' povero del
         // vero fa passare una pagina che dal vivo esplode (memoria 15/09).
@@ -1424,7 +1426,7 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         expect(within(col).getByTestId('cr-chiudi')).toBeTruthy();
     });
 
-    it('il comando Chiudi chiama vm.chiudi con l’id della posizione', async () => {
+    it('il comando Chiudi chiama vm.chiudi con la RIGA (bot, id, partita, modalita, stato) - B16', async () => {
         const chiudi = vi.fn(async () => {});
         mVm.mockReturnValue(vm({
             chiudi,
@@ -1443,7 +1445,11 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         }));
         const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         fireEvent.click(within(col).getByTestId('cr-chiudi'));
-        expect(chiudi).toHaveBeenCalledWith(55);
+        // B16 (24/09): non piu' il solo id (che andava a Safe per ogni bot), ma
+        // l'identita' della riga: il bot la instrada sulla SUA coda.
+        expect(chiudi).toHaveBeenCalledWith({
+            bot: 'safe', id: 55, eventId: 'IGNOTO_XYZ', modalita: 'live', stato: 'open',
+        });
     });
 });
 

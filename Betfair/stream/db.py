@@ -780,6 +780,50 @@ def upsert_live_account_manual_pnl(
     ))
 
 
+def upsert_live_account_pnl_reale(totali: Dict[str, Any]) -> None:
+    """24/09 - IL P&L REALE DI OGGI DELL'INTERO CONTO, da Betfair
+    (``listClearedOrders``: profit per ordine, commissione per mercato), per
+    voce (bot, manuale app, manuale sito) -> colonna JSONB
+    ``betfair_live_account.pnl_reale_oggi`` (riga singleton id=1, gia' in
+    realtime; migrazione ``migrations/pnl_betfair_reale_2026-09-24.sql``).
+
+    Un upsert PostgREST scrive SOLO le colonne del payload: saldo e manuali
+    (``upsert_live_account``/``upsert_live_account_manual_pnl``) restano
+    intatti. Solleva se la colonna non esiste ancora: il chiamante
+    (``reconcile_worker._sync_manual_pnl``) lo logga e ritenta."""
+    sb = get_supabase_client()
+    _exec_retry(sb.table("betfair_live_account").upsert(
+        {"id": 1, "pnl_reale_oggi": dict(totali)},
+        on_conflict="id",
+    ))
+
+
+#: le tabelle su cui il giro dei regolati scrive il P&L reale (e solo quelle)
+TABELLE_PNL_BETFAIR = frozenset({
+    "omega_trades", "safe_strategy_trades", "mike_trades",
+    "tennis_live_orders", "betfair_live_orders",
+})
+_CAMPI_PNL_BETFAIR = frozenset({"pnl_betfair", "commissione_betfair", "pnl_betfair_settled_at"})
+
+
+def update_pnl_betfair(tabella: str, riga_id: Any, campi: Dict[str, Any]) -> None:
+    """24/09 - scrive il P&L REALE di Betfair ACCANTO a quello calcolato su
+    UNA riga LIVE (``mode='live'``: una riga paper non si tocca mai, neanche
+    per sbaglio). Solo le tre colonne nuove, mai ``pnl``/``status``/
+    ``settled_at`` del bot: le decisioni di uscita non cambiano.
+    Solleva su tabella o campi fuori elenco (difesa) e sugli errori DB (il
+    chiamante ritenta al prossimo giro)."""
+    if tabella not in TABELLE_PNL_BETFAIR:
+        raise ValueError(f"tabella non ammessa per il P&L reale: {tabella}")
+    extra = set(campi) - _CAMPI_PNL_BETFAIR
+    if extra:
+        raise ValueError(f"campi non ammessi per il P&L reale: {sorted(extra)}")
+    sb = get_supabase_client()
+    _exec_retry(
+        sb.table(tabella).update(dict(campi)).eq("id", riga_id).eq("mode", "live")
+    )
+
+
 def upsert_live_heartbeat(*, runner: bool, pid: int, mode: Optional[str] = None) -> None:
     """Heartbeat del runner (``runner=True``: ts/pid/mode) o del watchdog
     (``runner=False``: watchdog_ts/watchdog_pid) → singleton id=1."""

@@ -2856,14 +2856,19 @@ def test_anomalie_non_piazzano_piu_ma_propongono_con_chiave_stabile():
                    opp_mod=FAKE_OPP_MOD, opps_state=st, extra_mods={"anomaly": an}, now=at)
     assert r["anomalies"]["traded"] == 0 and db.trades == []
     assert r["opportunities"]["proposte"] == 0 and len(db.requests) == 1
-    # l'anomalia SPARISCE dal feed (detect() non la trova piu'): la proposta DECADE
+    # l'anomalia SPARISCE dal feed (detect() non la trova piu').
+    # 24/09 — ORDINE DELL'UTENTE («decido io»): fino al 23/09 qui la proposta
+    # DECADEVA; ora resta VIVA, marcata non piu' valida col perche', e nessuna
+    # decadenza viene scritta (vedi ``_marca_non_piu_valida``).
     at2 = NOW + timedelta(seconds=121)
     db.scan_rows = [_feed_odds_row(ts=3, updated_at=at2)]
     st2 = {"last_ts": 0.0, "hashes": {}}
     r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
                    opp_mod=FAKE_OPP_MOD, opps_state=st2, extra_mods={"anomaly": FakeAnomaly([])}, now=at2)
-    assert [q for q in db.requests if q["status"] == "proposed"] == []
-    assert "opportunita_decaduta" in [k for k, _ in db.activity]
+    vive = [q for q in db.requests if q["status"] == "proposed"]
+    assert len(vive) == 1 and vive[0]["payload"]["valutazione"]["valida"] is False
+    assert "opportunita_decaduta" not in [k for k, _ in db.activity]
+    assert "opportunita_non_piu_valida" in [k for k, _ in db.activity]
     # con l'interruttore SPENTO (default) si propone allo STESSO modo: la
     # "stessa semantica" data ieri a auto_trade_opportunities/auto_trade_tennis
     # (l'interruttore resta leggibile ma non governa piu' la proposta).

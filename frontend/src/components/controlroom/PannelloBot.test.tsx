@@ -13,6 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, within, fireEvent, act } from '@testing-library/react';
 import { PannelloBot, type RigaInterruttore } from './PannelloBot';
+import { righeInterruttori, type StatoBotPlancia } from './righeBot';
 import type { CampoImporto, ComandiInterruttori, InterruttoreId } from '@/lib/interruttori';
 import type { Bot } from '@/lib/controlRoom';
 
@@ -503,5 +504,73 @@ describe('TASK 3 — due tendine, Calcio e Tennis, mai una lista mista', () => {
         // il pallino nell'intestazione segnala l'anomalia, ma la tendina resta
         // chiusa finche' non e' l'utente a cliccarla
         expect(s.queryByTestId('cr-bot-riga-tennis_scalper')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 24/09 — «OGNI strumento che propone ingressi a mercato deve avere sia la
+// versione PAPER che LIVE» (utente). Le righe `safe-model` e `safe-manual`
+// nascono dal modello condiviso (`righeInterruttori`, lo stesso della Control
+// Room) e hanno lo STESSO doppio consenso delle altre.
+// ---------------------------------------------------------------------------
+describe('24/09 — Safe modello e Safe a mano nella plancia', () => {
+    const SAFE_IN_CORSA: StatoBotPlancia = {
+        bot: 'safe', inCorsa: true, modalita: 'live',
+        varianti: ['tennis'], modiStrategia: { tennis: 'live', model: 'paper' },
+        stato: 'running', etaPushS: 1, motivoBlocco: null, tettoPartite: null,
+        partiteEsposte: null, stopFermaSoloAperture: true, fermatoAllAvvioAt: null,
+    };
+
+    it('le due righe ci sono, in prova, con le parole chiare', () => {
+        const righe = righeInterruttori([SAFE_IN_CORSA], 'calcio');
+        const s = mostra(righe, comandiFinti());
+        expect(s.getByTestId('cr-bot-riga-safe-model')).toBeTruthy();
+        expect(s.getByTestId('cr-bot-riga-safe-manual')).toBeTruthy();
+        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('prova');
+        // `manual` non scritto: prova, mai ereditato dal servizio in live
+        expect(s.getByTestId('cr-bot-modalita-safe-manual').textContent).toBe('prova');
+        expect(within(s.getByTestId('cr-bot-riga-safe-model')).getByTitle('opportunità del modello che approvo'))
+            .toBeTruthy();
+        expect(within(s.getByTestId('cr-bot-riga-safe-manual')).getByTitle('ordini a mano dalla scheda'))
+            .toBeTruthy();
+    });
+
+    it('«Safe modello» a soldi veri: doppio consenso, poi cambiaModalita(safe-model, live)', () => {
+        vi.useFakeTimers();
+        const c = comandiFinti();
+        const s = mostra(righeInterruttori([SAFE_IN_CORSA], 'calcio'), c);
+        fireEvent.click(s.getByTestId('cr-a-live-safe-model'));
+        expect(c.cambiaModalita).not.toHaveBeenCalled();
+        expect(s.getByTestId('cr-avviso-live-safe-model').textContent)
+            .toContain('opportunità del modello che approvo');
+        // doppio clic immediato: inerte
+        fireEvent.click(s.getByTestId('cr-conferma-live-safe-model'));
+        expect(c.cambiaModalita).not.toHaveBeenCalled();
+        act(() => { vi.advanceTimersByTime(500); });
+        fireEvent.click(s.getByTestId('cr-conferma-live-safe-model'));
+        expect(c.cambiaModalita).toHaveBeenCalledWith('safe-model', 'live');
+        expect(c.cambiaModalita).toHaveBeenCalledTimes(1);
+    });
+
+    it('«Safe a mano» a soldi veri: stessa difesa, chiave giusta', () => {
+        vi.useFakeTimers();
+        const c = comandiFinti();
+        const s = mostra(righeInterruttori([SAFE_IN_CORSA], 'calcio'), c);
+        fireEvent.click(s.getByTestId('cr-a-live-safe-manual'));
+        act(() => { vi.advanceTimersByTime(500); });
+        fireEvent.click(s.getByTestId('cr-conferma-live-safe-manual'));
+        expect(c.cambiaModalita).toHaveBeenCalledWith('safe-manual', 'live');
+        expect(c.cambiaModalita).not.toHaveBeenCalledWith('safe-model', expect.anything());
+    });
+
+    it('tornare in prova da «Safe modello» e immediato', () => {
+        const c = comandiFinti();
+        const live: StatoBotPlancia = {
+            ...SAFE_IN_CORSA, modiStrategia: { tennis: 'live', model: 'live' },
+        };
+        const s = mostra(righeInterruttori([live], 'calcio'), c);
+        expect(s.getByTestId('cr-bot-modalita-safe-model').textContent).toBe('soldi veri');
+        fireEvent.click(s.getByTestId('cr-a-paper-safe-model'));
+        expect(c.cambiaModalita).toHaveBeenCalledWith('safe-model', 'paper');
     });
 });

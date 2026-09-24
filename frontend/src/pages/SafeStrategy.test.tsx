@@ -520,7 +520,14 @@ describe('Safe Strategy — LIVE ereditato dal control (MEDIUM-4)', () => {
     it('banner LIVE ma nessun piazzamento senza conferma in questa sessione', async () => {
         const user = userEvent.setup();
         mState.mockResolvedValue({
-            control: { ...CONTROL, mode: 'live' } as never,
+            // 24/09 — l'ordine a mano va a soldi veri solo con
+            // `strategy_modes.manual` scritto 'live' (interruttore «Safe a
+            // mano»): qui lo si scrive, perche' il caso da certificare e' il
+            // LIVE non confermato in questa sessione.
+            control: {
+                ...CONTROL, mode: 'live',
+                params: { ...CONTROL.params, strategy_modes: { manual: 'live' } },
+            } as never,
             trades: [] as never,
             aggregates: null,
         });
@@ -532,6 +539,49 @@ describe('Safe Strategy — LIVE ereditato dal control (MEDIUM-4)', () => {
         await user.click(btn); // confermerebbe: invece chiede la conferma LIVE di sessione
         expect(mRequest).not.toHaveBeenCalled();
         expect(await screen.findByText(/Passare a LIVE \(soldi veri\)\?/)).toBeInTheDocument();
+    });
+});
+
+// 24/09 — «OGNI strumento che propone ingressi a mercato deve avere sia la
+// versione PAPER che LIVE» (utente). L'ordine A MANO dalla scheda ha la SUA
+// modalita': tetto del servizio E `strategy_modes.manual` scritto 'live'.
+// Mai quella nuda del servizio (prima del 24/09 la ereditava).
+describe('Safe Strategy — l ordine a mano ha la sua modalita (24/09)', () => {
+    it('servizio LIVE e `manual` NON scritto: l ordine a mano parte in PAPER', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: {
+                ...CONTROL, mode: 'live',
+                params: { ...CONTROL.params, strategy_modes: { tennis: 'live' } },
+            } as never,
+            trades: [] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const btn = await screen.findByTestId('invest-place');
+        expect(btn).toHaveTextContent('Piazza (PAPER)');
+        await user.click(btn);
+        expect(mRequest).toHaveBeenCalledTimes(1);
+        const [kind, payload] = mRequest.mock.calls[0];
+        expect(kind).toBe('place');
+        expect(payload).toMatchObject({ mode: 'paper', event_id: 'e1' });
+    });
+
+    it('servizio PAPER e `manual` scritto live: resta PAPER (il servizio e un tetto)', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: {
+                ...CONTROL, mode: 'paper',
+                params: { ...CONTROL.params, strategy_modes: { manual: 'live' } },
+            } as never,
+            trades: [] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const btn = await screen.findByTestId('invest-place');
+        expect(btn).toHaveTextContent('Piazza (PAPER)');
+        await user.click(btn);
+        expect(mRequest.mock.calls[0][1]).toMatchObject({ mode: 'paper' });
     });
 });
 

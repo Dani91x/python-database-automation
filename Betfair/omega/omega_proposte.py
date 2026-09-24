@@ -38,6 +38,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 from __future__ import annotations
 
 import json
+import math
 import logging
 import os
 from datetime import datetime
@@ -347,6 +348,7 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         punteggio_ingresso=_punteggio_ingresso(tr, (sh, sa)),
         minuto_ingresso=float(tr.get("minute_at_entry") or 0.0))
     cap = cap_globale or cap_di_gamba_scattato(tr, params)
+    p_lose_max = float(params.get("proposta_p_lose_max_pct", 0.0) or 0.0) / 100.0
     proposta = V3.proposta_uscita(
         posizione, minuto=float(minuto), punteggio=(sh, sa),
         back_price=back, back_size=_f(prezzi.get("back_size")),
@@ -354,7 +356,12 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         commissione=float(commissione), cap_scattato=cap,
         # la soglia arriva in PUNTI PERCENTUALI dal pannello (come `v3_p_max_pct`);
         # `proposta_uscita` ragiona in probabilita'. Zero = spenta (default).
-        p_lose_max=float(params.get("proposta_p_lose_max_pct", 0.0) or 0.0) / 100.0)
+        p_lose_max=p_lose_max)
+    # 24/09 — gli INGREDIENTI con cui la scheda ricalcola l'uscita al prezzo di
+    # adesso (``esito_uscita_al_prezzo``): gli stessi passati qui sopra a
+    # ``proposta_uscita``, mai ricopiati a mano.
+    ingredienti = {"commissione": float(commissione), "p_lose_max": p_lose_max,
+                   "margine_attesa": margine_attesa()}
 
     if not proposta.proponi:
         if str(proposta.motivo_codice) in MOTIVI_TRANSITORI:
@@ -369,12 +376,18 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
                    if proposta.motivo_codice == "nessun_prezzo_di_back"
                    else "controparte_insufficiente")
             return False
-        _decadi(db, tr, meta, f"la condizione di uscita non regge piu': "
-                              f"{proposta.motivo_codice}")
+        # 24/09 — ORDINE DELL'UTENTE («la scheda deve segnalarmi se c'e' ancora
+        # o no: io decido»): fino al 23/09 qui la proposta viva DECADEVA. Ora
+        # resta viva, coi numeri di adesso e marcata NON PIU' VALIDA col
+        # perche'; la chiude l'utente (o la firma). Restano decadenze i casi
+        # strutturali qui sopra (selezione aggregata, gamba HT finita).
+        _non_piu_valida(db=db, tr=tr, meta=meta, proposta=proposta, prezzi=prezzi,
+                        minuto=minuto, punteggio=f"{sh}-{sa}", now=now,
+                        fonte_p=fonte_p, cap=cap, ingredienti=ingredienti)
         return False
     return _scrivi(db=db, tr=tr, meta=meta, proposta=proposta, prezzi=prezzi,
                    minuto=minuto, punteggio=f"{sh}-{sa}", now=now,
-                   fonte_p=fonte_p, cap=cap, params=params)
+                   fonte_p=fonte_p, cap=cap, params=params, ingredienti=ingredienti)
 
 
 def _punteggio_ingresso(tr: dict[str, Any], adesso: tuple) -> tuple:
@@ -512,7 +525,8 @@ def _decadi(db: Any, tr: dict[str, Any], meta: dict[str, Any], motivo: str) -> N
 
 def _scrivi(*, db: Any, tr: dict[str, Any], meta: dict[str, Any], proposta: Any,
             prezzi: dict[str, Any], minuto: int, punteggio: str, now: datetime,
-            fonte_p: str, cap: Optional[str], params: dict[str, Any]) -> bool:
+            fonte_p: str, cap: Optional[str], params: dict[str, Any],
+            ingredienti: Optional[dict[str, Any]] = None) -> bool:
     """Scrive (o aggiorna) la proposta. True se la proposta esiste ed e' viva."""
     prima = meta.get(PROPOSTA_KEY) if isinstance(meta.get(PROPOSTA_KEY), dict) else {}
     prima = dict(prima or {})
@@ -569,7 +583,8 @@ def _scrivi(*, db: Any, tr: dict[str, Any], meta: dict[str, Any], proposta: Any,
     corpo = _payload(tr=tr, proposta=proposta, prezzi=prezzi, minuto=minuto,
                      punteggio=punteggio, decided_at=decided_at, now=now,
                      fonte_p=fonte_p, cap=cap,
-                     riproposta_perche=prima.get("riproposta_perche"))
+                     riproposta_perche=prima.get("riproposta_perche"),
+                     ingredienti=ingredienti)
     try:
         rid = db.scrivi_proposta_di_chiusura(int(tr["id"]), corpo)
     except Exception as ex:  # noqa: BLE001
@@ -642,14 +657,26 @@ def _ts(v: Any) -> Optional[float]:
 def _payload(*, tr: dict[str, Any], proposta: Any, prezzi: dict[str, Any],
              minuto: int, punteggio: str, decided_at: str, now: datetime,
              fonte_p: str, cap: Optional[str],
-             riproposta_perche: Optional[str] = None) -> dict[str, Any]:
+             riproposta_perche: Optional[str] = None,
+             ingredienti: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """I campi della proposta, uno per uno — quelli della migrazione, piu' i tre
     che il mandato del 17/09 esige (`liability`, `p_evento`, `motivo_codice`).
 
     Sono CODICI, non frasi: la traduzione in italiano vive in UN solo posto
     (`frontend/src/lib/omegaProposte.ts`). Due tabelle che traducono la stessa
-    cosa prima o poi dicono due cose diverse."""
+    cosa prima o poi dicono due cose diverse.
+
+    24/09 — piu' gli INGREDIENTI della scheda al ms (``commissione``,
+    ``margine_attesa``, ``p_lose_max``, ``max_attesa``) e la ``valutazione``:
+    con questi la scheda ricalcola a ogni tick il bloccabile e la decisione
+    (``esito_uscita_al_prezzo``, porta TS in ``lib/omegaProposte.ts`` legata dal
+    file d'oro) senza che il servizio riscriva la riga a ogni prezzo (§20)."""
+    ing = ingredienti or {}
     return {
+        **_ingredienti_del_payload(proposta, ing),
+        "valutazione": {"valida": bool(getattr(proposta, "proponi", False)),
+                        "motivo_codice": str(proposta.motivo_codice),
+                        "valutata_at": now.isoformat()},
         "trade_id": int(tr["id"]),
         "event_id": tr.get("event_id"),
         "event_name": tr.get("event_name"),
@@ -702,3 +729,162 @@ def _payload(*, tr: dict[str, Any], proposta: Any, prezzi: dict[str, Any],
         # situazione nuova
         **({"riproposta_perche": str(riproposta_perche)} if riproposta_perche else {}),
     }
+
+
+# ===========================================================================
+# LA SCHEDA DI USCITA AL MS (24/09/2026) — ORDINE DELL'UTENTE:
+# «Tutti i valori e i calcoli devono aggiornarsi al cambiare del prezzo. La
+#  scheda delle proposte deve segnalarmi se l'opportunita', in base ai calcoli
+#  e al prezzo attuale, c'e' ancora o no: io decido se approvare o scartare.»
+#
+# Il servizio NON riscrive la proposta a ogni prezzo (§20: il prezzo non e'
+# sostanza). La scheda ricalcola da se', a ogni tick, cio' che dipende dal
+# prezzo di back: il bloccabile (``omega_v3.profitto_bloccabile``) e la
+# DECISIONE (``omega_v3.proposta_uscita``) con gli ingredienti che non
+# dipendono dal prezzo (EV di tenere, massimo della traiettoria, P, cap, soglia
+# di rischio, commissione, margine dell'attesa), scritti nel payload.
+#
+# ``esito_uscita_al_prezzo`` e' la stessa decisione di ``proposta_uscita``,
+# ramo per ramo, a traiettoria e P gia' calcolate: il test
+# ``test_omega_scheda_al_ms_2026_09_24.py`` la confronta col VERO su una
+# griglia, e il file d'oro ``frontend/src/lib/omegaUscita.golden.json`` la lega
+# alla porta TypeScript. Non e' una regola nuova: e' la stessa, spezzata dove
+# entra il prezzo.
+# ===========================================================================
+def margine_attesa() -> float:
+    """Il premio della certezza di ``proposta_uscita``: letto dal DEFAULT della
+    funzione vera (``_una_gamba`` non lo passa), mai ricopiato."""
+    kw = getattr(V3.proposta_uscita, "__kwdefaults__", None) or {}
+    return float(kw.get("margine_attesa", 0.02))
+
+
+def _ingredienti_del_payload(proposta: Any, ing: dict[str, Any]) -> dict[str, Any]:
+    """I campi con cui la scheda rifa' la decisione al prezzo di adesso.
+    ``max_attesa`` e' None quando la traiettoria non ha punti futuri
+    (``minuto_del_massimo`` None): e' il ``-inf`` di ``proposta_uscita``."""
+    futuri = getattr(proposta, "minuto_del_massimo", None) is not None
+    return {
+        "commissione": _f(ing.get("commissione")),
+        "margine_attesa": _f(ing.get("margine_attesa")),
+        "p_lose_max": _f(ing.get("p_lose_max")),
+        "max_attesa": (round(float(proposta.bloccabile_max_atteso), 4) if futuri else None),
+    }
+
+
+def esito_uscita_al_prezzo(*, lay_price: Any, size: Any, back_price: Any, back_size: Any,
+                           ev_tenere: Any, max_attesa: Any, p_evento: Any,
+                           commissione: Any, margine_attesa: Any,
+                           cap_scattato: Optional[str] = None,
+                           p_lose_max: Any = 0.0) -> dict[str, Any]:
+    """La decisione di ``omega_v3.proposta_uscita`` al prezzo di back di ADESSO.
+
+    Ritorna ``{profitto, back_price, back_stake, attuabile, meglio_aspettare,
+    proponi, motivo_codice}``. Fail-closed: posizione o ingredienti non validi
+    -> non propone, motivo dichiarato."""
+    out: dict[str, Any] = {"profitto": None, "back_price": None, "back_stake": None,
+                           "attuabile": False, "meglio_aspettare": False,
+                           "proponi": False, "motivo_codice": "posizione_senza_numeri"}
+    def _fin(v: Any) -> Optional[float]:
+        x = _f(v) if not isinstance(v, bool) else None
+        return x if x is not None and math.isfinite(x) else None
+
+    lay, s, ev_h, pe = _fin(lay_price), _fin(size), _fin(ev_tenere), _fin(p_evento)
+    comm = _fin(commissione)
+    marg = _fin(margine_attesa)
+    if lay is None or s is None or lay <= 1.0 or s <= 0 or ev_h is None or pe is None \
+            or comm is None or marg is None:
+        return out
+    pos = V3.Posizione(periodo="ft", selection_name="", lay_price=lay, size=s)
+    b = V3.profitto_bloccabile(pos, back_price=_f(back_price), back_size=_f(back_size),
+                               commissione=comm)
+    if b is None:
+        out["motivo_codice"] = "nessun_prezzo_di_back"
+        return out
+    ma = _f(max_attesa)
+    meglio = bool(ma is not None and ma > b.profitto + marg)
+    out.update({"profitto": b.profitto, "back_price": b.back_price,
+                "back_stake": b.back_size, "attuabile": bool(b.attuabile),
+                "meglio_aspettare": meglio})
+    plm = _f(p_lose_max) or 0.0
+    if not b.attuabile:
+        motivo, proponi = "controparte_insufficiente", False
+    elif cap_scattato:
+        motivo, proponi = "cap", True
+    elif plm > 0 and pe > plm:
+        motivo, proponi = "rischio", True
+    elif b.profitto <= 0:
+        motivo, proponi = (("protezione", True) if ev_h < b.profitto
+                           else ("bloccabile_non_positivo", False))
+    elif b.profitto < ev_h:
+        motivo, proponi = "tenere_vale_di_piu", False
+    elif meglio:
+        motivo, proponi = "aspettare_vale_di_piu", False
+    else:
+        motivo, proponi = "blocca_il_profitto", True
+    out.update({"motivo_codice": motivo, "proponi": proponi})
+    return out
+
+
+def _non_piu_valida(*, db: Any, tr: dict[str, Any], meta: dict[str, Any], proposta: Any,
+                    prezzi: dict[str, Any], minuto: int, punteggio: str, now: datetime,
+                    fonte_p: str, cap: Optional[str],
+                    ingredienti: Optional[dict[str, Any]]) -> None:
+    """La condizione di uscita non regge piu': la proposta VIVA resta (decide
+    l'utente), coi numeri di adesso e ``valutazione.valida=False`` col motivo.
+
+    Il ``motivo_codice`` del payload resta quello per cui il bot l'aveva
+    PROPOSTA (il «perche'» della scheda); il motivo di adesso vive in
+    ``valutazione.motivo_codice``. I numeri della nascita (``decided_at``,
+    ``price_at_decision``) non si perdono. Write-on-change: una proposta gia'
+    marcata con la stessa sostanza non si rilegge ne' si riscrive. Se la
+    proposta non e' piu' viva (ignorata, firmata, eseguita) si fa cio' che si
+    faceva prima: il marcatore si pulisce (``_decadi``)."""
+    prima = meta.get(PROPOSTA_KEY) if isinstance(meta.get(PROPOSTA_KEY), dict) else None
+    if not prima or int(prima.get("request_id") or 0) <= 0:
+        return
+    sostanza = list(_sostanza(proposta, _f(tr.get("size")), punteggio))
+    if prima.get("non_valida") and list(prima.get("sostanza") or []) == sostanza:
+        return
+    try:
+        viva = db.proposta_di_chiusura_viva(int(tr["id"]))
+    except Exception:  # noqa: BLE001 — nel dubbio non si tocca niente: si riprova al giro dopo
+        return
+    if viva is None:
+        _decadi(db, tr, meta, f"la condizione di uscita non regge piu': "
+                              f"{proposta.motivo_codice}")
+        return
+    corpo_prima = viva.get("payload") if isinstance(viva.get("payload"), dict) else {}
+    decided_at = str(corpo_prima.get("decided_at") or prima.get("decided_at")
+                     or now.isoformat())
+    corpo = _payload(tr=tr, proposta=proposta, prezzi=prezzi, minuto=minuto,
+                     punteggio=punteggio, decided_at=decided_at, now=now,
+                     fonte_p=fonte_p, cap=cap,
+                     riproposta_perche=corpo_prima.get("riproposta_perche"),
+                     ingredienti=ingredienti)
+    for k in ("motivo_codice", "price_at_decision", "size_available_at_decision"):
+        if corpo_prima.get(k) is not None:
+            corpo[k] = corpo_prima.get(k)
+    v_prima = corpo_prima.get("valutazione") if isinstance(corpo_prima.get("valutazione"),
+                                                           dict) else {}
+    corpo["valutazione"] = {
+        "valida": False, "motivo_codice": str(proposta.motivo_codice),
+        "testo": str(getattr(proposta, "testo", "") or "")[:240],
+        "valutata_at": now.isoformat(),
+        "dal": (v_prima.get("dal") if v_prima.get("valida") is False and v_prima.get("dal")
+                else now.isoformat())}
+    try:
+        rid = db.scrivi_proposta_di_chiusura(int(tr["id"]), corpo)
+    except Exception as ex:  # noqa: BLE001
+        _guasto_di_scrittura(db, tr, ex)
+        return
+    if not rid:
+        return
+    _scrivi_meta(db, tr, meta, {**prima, "ts": now.isoformat(), "sostanza": sostanza,
+                                "motivo": str(proposta.motivo_codice), "non_valida": True,
+                                "decided_at": decided_at})
+    if not prima.get("non_valida"):
+        db.log("proposta_non_piu_valida", {
+            "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+            "request_id": int(rid), "motivo_codice": str(proposta.motivo_codice),
+            "profitto_bloccabile": corpo.get("profitto_bloccabile"),
+            "ev_tenere": corpo.get("ev_tenere"), "mode": corpo.get("mode")})

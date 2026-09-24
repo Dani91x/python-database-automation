@@ -1,0 +1,527 @@
+[
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "blocca il profitto",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.5,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "tenere vale di piu",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "tenere_vale_di_piu",
+   "profitto": 0.3167,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": 0.6,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "aspettare vale di piu",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": true,
+   "motivo_codice": "aspettare_vale_di_piu",
+   "profitto": 0.3167,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": 0.33,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "aspettare entro il margine",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 0.5,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "controparte insufficiente",
+  "uscita": {
+   "attuabile": false,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "controparte_insufficiente",
+   "profitto": 0.3167,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": "v3_max_liability_per_leg",
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "cap scattato in profitto",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "cap",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 3.0,
+   "back_size": 100.0,
+   "cap_scattato": "max_open_liability",
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "cap scattato in perdita",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 3.0,
+   "back_stake": 1.33,
+   "meglio_aspettare": false,
+   "motivo_codice": "cap",
+   "profitto": -0.3333,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.15,
+   "size": 1.0
+  },
+  "nome": "rischio oltre soglia",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "rischio",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.25,
+   "size": 1.0
+  },
+  "nome": "rischio sotto soglia",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 3.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": -0.5,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "protezione",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 3.0,
+   "back_stake": 1.33,
+   "meglio_aspettare": false,
+   "motivo_codice": "protezione",
+   "profitto": -0.3333,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 3.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.0,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "bloccabile non positivo",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 3.0,
+   "back_stake": 1.33,
+   "meglio_aspettare": false,
+   "motivo_codice": "bloccabile_non_positivo",
+   "profitto": -0.3333,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 4.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": -0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "pareggio esatto",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 4.0,
+   "back_stake": 1.0,
+   "meglio_aspettare": false,
+   "motivo_codice": "protezione",
+   "profitto": 0.0,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": null,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "nessun prezzo di back",
+  "uscita": {
+   "attuabile": false,
+   "back_price": null,
+   "back_stake": null,
+   "meglio_aspettare": false,
+   "motivo_codice": "nessun_prezzo_di_back",
+   "profitto": null,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 1.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "back 1.0",
+  "uscita": {
+   "attuabile": false,
+   "back_price": null,
+   "back_stake": null,
+   "meglio_aspettare": false,
+   "motivo_codice": "nessun_prezzo_di_back",
+   "profitto": null,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.9,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "commissione alta tagliata a 0.5",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.1667,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 5.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.0,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "commissione zero",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 5.0,
+   "back_stake": 0.8,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.2,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 2.9,
+   "back_size": 500.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.4,
+   "lay_price": 2.3,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 12.5
+  },
+  "nome": "size grande",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 2.9,
+   "back_stake": 9.91,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 2.4569,
+   "proponi": true
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": null,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "posizione senza numeri",
+  "uscita": {
+   "attuabile": false,
+   "back_price": null,
+   "back_stake": null,
+   "meglio_aspettare": false,
+   "motivo_codice": "posizione_senza_numeri",
+   "profitto": null,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 1.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "lay 1.0",
+  "uscita": {
+   "attuabile": false,
+   "back_price": null,
+   "back_stake": null,
+   "meglio_aspettare": false,
+   "motivo_codice": "posizione_senza_numeri",
+   "profitto": null,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": 6.0,
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": null,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "ev assente",
+  "uscita": {
+   "attuabile": false,
+   "back_price": null,
+   "back_stake": null,
+   "meglio_aspettare": false,
+   "motivo_codice": "posizione_senza_numeri",
+   "profitto": null,
+   "proponi": false
+  }
+ },
+ {
+  "ingresso": {
+   "back_price": "6.0",
+   "back_size": 100.0,
+   "cap_scattato": null,
+   "commissione": 0.05,
+   "ev_tenere": 0.1,
+   "lay_price": 4.0,
+   "margine_attesa": 0.02,
+   "max_attesa": null,
+   "p_evento": 0.2,
+   "p_lose_max": 0.0,
+   "size": 1.0
+  },
+  "nome": "stringhe non numeri",
+  "uscita": {
+   "attuabile": true,
+   "back_price": 6.0,
+   "back_stake": 0.67,
+   "meglio_aspettare": false,
+   "motivo_codice": "blocca_il_profitto",
+   "profitto": 0.3167,
+   "proponi": true
+  }
+ }
+]

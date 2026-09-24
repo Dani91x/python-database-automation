@@ -1414,6 +1414,11 @@ def _manuali_vive(c: "Ciclo") -> List[Dict[str, Any]]:
             Ciclo, quando=lambda o: isinstance(o, Ciclo) and bool(_manuali_vive(o)))
 def _t13(c: Ciclo) -> Optional[str]:
     manuali = {int(t.get("id") or 0) for t in _manuali_vive(c)}
+    # 24/09 (estensione B25) - con `combo_gamba_manuale='automatico'` SCRITTO
+    # dall'utente, la gamba manuale di una combo incompleta la chiude il bot
+    # PER SCELTA SUA: quelle righe escono da T13 (le giudica T13-COMBO).
+    if _modo_gamba_manuale(c.params) == "automatico":
+        manuali -= {int(t.get("id") or 0) for t in _gambe_manuali_di_combo_incompleta(c)}
     # (a) una gamba di CHIUSURA automatica su un padre manuale: e' il bot che
     #     chiude un'operazione del trader.
     for tr in getattr(c.db, "trades", []) or []:
@@ -1435,6 +1440,140 @@ def _t13(c: Ciclo) -> Optional[str]:
             continue
         return (f"attivita' '{kind}' del percorso automatico sulla riga MANUALE "
                 f"{tid}: il bot sta operando su un'operazione del trader")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# T13-COMBO - B25 (24/09): "LASCIA E AVVISA" sulla gamba manuale di una combo
+# ---------------------------------------------------------------------------
+# Decisione dell'utente (reperto T13 x2734 su `combos-automatiche`): "il bot non
+# deve MAI chiudere le mie gambe (le righe manuali del trader), ma deve essere
+# informato, come gia' succede, quando chiudo io tutte le operazioni".
+# Una combo approvata dal trader nasce con TUTTE le gambe `origin='manual'`; se
+# una gamba FOK e' uccisa, la gamba abbinata resta sua. Tre cose insieme:
+#   (a) nessuna gamba di chiusura `origin='auto'` su quella riga, MAI;
+#   (b) la riga e' MARCATA (`meta.combo_lasciata_al_trader`) e l'avviso e'
+#       SCRITTO: UNA riga di attivita' `combo_incomplete` con
+#       `lasciata_al_trader=True` e il suo `trade_id` (una sola: un avviso
+#       ripetuto a ogni giro e' rumore, non informazione);
+#   (c) nessuna attivita' del percorso d'uscita del bot su quella riga nel giro.
+# Il marcatore si scrive nello STESSO `run_once` in cui la gamba e' vista aperta
+# (`_esegui_combo_riservata` all'approvazione, `unwind_incomplete_combos` al
+# fill confermato dalla coda, entrambi prima della fine del giro): a fine giro
+# una gamba aperta senza marcatore e' un avviso MANCATO, non un avviso in volo.
+#
+# 24/09 (estensione B25, ordine dell'utente: "devo poter scegliere tramite
+# pulsanti"): il parametro `combo_gamba_manuale` decide.
+#   - 'avvisa_e_proponi' (default, anche se assente o sconosciuto): (a)-(c) come
+#     sopra, piu' (d) al massimo UNA proposta di copertura viva per gamba e
+#     (e) nessuna proposta nuova dopo che la prima ha avuto un esito
+#     (rifiutata, approvata, decaduta);
+#   - 'automatico': la chiusura automatica della gamba manuale e' CONFORME,
+#     ma deve portare la scelta dell'utente nel motivo (audit) - una chiusura
+#     senza quel motivo e' il bot che chiude di testa sua.
+COMBO_LASCIATA_KEY = "combo_lasciata_al_trader"
+_KIND_USCITA_DEL_BOT = ("exit", "exit_retry", "exit_hold", "exit_wait", "exit_failed")
+_AUDIT_AUTOMATICO = "combo_gamba_manuale=automatico"
+
+
+def _modo_gamba_manuale(params: Any) -> str:
+    """Stessa regola di `bot_service.modo_gamba_manuale` (fail-closed)."""
+    v = str((params or {}).get("combo_gamba_manuale") or "").strip().lower() \
+        if isinstance(params, dict) else ""
+    return "automatico" if v == "automatico" else "avvisa_e_proponi"
+
+
+def _proposte_vive_di(c: "Ciclo", gid: int) -> Optional[int]:
+    """Quante proposte di chiusura 'proposed' ci sono per la gamba (None se il
+    doppio non tiene la coda delle richieste)."""
+    coda = getattr(c.db, "requests", None)
+    if coda is None:
+        return None
+    return sum(1 for r in coda
+               if str(r.get("status") or "") == "proposed"
+               and str(r.get("kind") or "") == "cashout"
+               and str((r.get("payload") or {}).get("trade_id")) == str(gid))
+
+
+def _gambe_manuali_di_combo_incompleta(c: "Ciclo") -> List[Dict[str, Any]]:
+    return [t for t in (getattr(c.db, "trades", []) or [])
+            if str(t.get("origin") or "") == "manual"
+            and not t.get("closes_trade_id")
+            and (t.get("meta") or {}).get("combo_incomplete")
+            and str(t.get("status") or "") in ("pending", "open", "hedged")]
+
+
+@_controllo("T13-COMBO", "Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la "
+                         "gamba MANUALE di una combo incompleta non la chiude il bot",
+            "gamba manuale lasciata a mercato, marcata e annunciata UNA volta in "
+            "attivita'; nessuna chiusura automatica e nessuna uscita del bot su "
+            "quella riga, ne' in quel giro ne' dopo",
+            Ciclo, quando=lambda o: isinstance(o, Ciclo)
+            and bool(_gambe_manuali_di_combo_incompleta(o)))
+def _t13_combo(c: Ciclo) -> Optional[str]:
+    righe = getattr(c.db, "trades", []) or []
+    attivita = getattr(c.db, "attivita", None)
+    if _modo_gamba_manuale(c.params) == "automatico":
+        for g in _gambe_manuali_di_combo_incompleta(c):
+            gid = int(g.get("id") or 0)
+            for tr in righe:
+                padre = tr.get("closes_trade_id")
+                if padre is None or int(padre) != gid or str(tr.get("origin") or "") != "auto":
+                    continue
+                motivo = str((tr.get("meta") or {}).get("exit_reason") or "")
+                if _AUDIT_AUTOMATICO not in motivo:
+                    return (f"combo incompleta in 'automatico': la chiusura {tr.get('id')} "
+                            f"della gamba MANUALE {gid} non dice che e' una scelta "
+                            f"dell'utente (motivo: {motivo[:80]!r})")
+        return None
+    for g in _gambe_manuali_di_combo_incompleta(c):
+        gid = int(g.get("id") or 0)
+        # (d)/(e) proposta di copertura: una sola, e mai dopo un esito
+        vive = _proposte_vive_di(c, gid)
+        if vive is not None and vive > 1:
+            return (f"gamba MANUALE {gid}: {vive} proposte di copertura vive: la "
+                    f"proposta deve essere una sola")
+        cop = ((g.get("meta") or {}).get(COMBO_LASCIATA_KEY) or {})
+        cop = cop.get("copertura") if isinstance(cop, dict) else None
+        if (isinstance(cop, dict) and cop.get("stato") not in (None, "proposta")
+                and vive):
+            return (f"gamba MANUALE {gid}: proposta di copertura gia' "
+                    f"'{cop.get('stato')}', e ne e' viva un'altra: dopo un esito "
+                    f"(rifiuto compreso) non se ne propone piu'")
+        # (a) nessuna gamba di chiusura del bot sulla riga del trader
+        for tr in righe:
+            padre = tr.get("closes_trade_id")
+            if padre is not None and int(padre) == gid and str(tr.get("origin") or "") == "auto":
+                return (f"combo incompleta: il bot ha chiuso la gamba MANUALE {gid} "
+                        f"con la gamba {tr.get('id')} (origin=auto): doveva lasciarla "
+                        f"e avvisare (B25)")
+        # (c) nessuna uscita del bot su quella riga in questo giro
+        for kind, payload, _eid in (c.attivita_del_giro or []):
+            tid = (payload or {}).get("trade_id")
+            if str(kind) in _KIND_USCITA_DEL_BOT and tid is not None and int(tid) == gid:
+                return (f"attivita' '{kind}' del bot sulla gamba MANUALE {gid} di una "
+                        f"combo incompleta: la gamba e' del trader (B25)")
+        # (b) marcatura e avviso, solo per una gamba ABBINATA (in coda non c'e'
+        #     ancora niente da lasciare: l'avviso arriva al fill)
+        if str(g.get("status") or "") != "open":
+            continue
+        if not isinstance((g.get("meta") or {}).get(COMBO_LASCIATA_KEY), dict):
+            return (f"gamba MANUALE {gid} di una combo incompleta aperta a mercato "
+                    f"senza la marcatura '{COMBO_LASCIATA_KEY}': il trader non e' "
+                    f"stato avvisato")
+        if attivita is None:
+            continue                    # il doppio non tiene l'attivita': non si giudica
+        avvisi = [p for k, p, _e in attivita
+                  if str(k) == "combo_incomplete" and (p or {}).get("lasciata_al_trader")
+                  and (p or {}).get("trade_id") is not None
+                  and int((p or {}).get("trade_id")) == gid]
+        if not avvisi:
+            return (f"gamba MANUALE {gid} marcata ma NESSUNA riga di attivita' "
+                    f"'combo_incomplete' con lasciata_al_trader: l'avviso non e' "
+                    f"arrivato in Control Room")
+        if len(avvisi) > 1 and all((p or {}).get("marcata", True) for p in avvisi):
+            return (f"gamba MANUALE {gid}: {len(avvisi)} avvisi 'combo_incomplete' per "
+                    f"la stessa riga gia' marcata: l'avviso deve essere uno solo")
     return None
 
 

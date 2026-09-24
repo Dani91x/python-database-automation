@@ -42,6 +42,34 @@ const UI_PORT = 47330;
 const APP_BOOT_ID = `${Date.now().toString(36)}-${crypto.randomUUID()}`;
 
 // ---------------------------------------------------------------------------
+// C1 (24/09) - TOKEN DI SESSIONE DEI CANALI LOCALI.
+// I canali 47331 (calcio) e 47332 (tennis) ESEGUONO ORDINI VERI. Un WebSocket
+// del browser non e' soggetto a CORS: senza una chiave, qualunque pagina web
+// aperta su questa macchina poteva mandare {"m":"order"}. Il token nasce qui,
+// UNA volta per avvio (come APP_BOOT_ID), e va solo a due destinatari:
+//   - i runner, nell'ambiente (LOCAL_CHANNEL_TOKEN): il watchdog lo eredita,
+//     quindi un riavvio dopo un crash porta lo STESSO token;
+//   - la pagina dell'app, dal preload (additionalArguments -> contextBridge).
+// Il canale accetta un comando 'order' solo da una connessione che si e'
+// presentata con questo token (e da un'origine dell'app): vedi
+// Betfair/stream/local_channel.py. Il token non si scrive mai nei log.
+// ---------------------------------------------------------------------------
+const LOCAL_CHANNEL_TOKEN = crypto.randomBytes(32).toString('hex');
+const ARG_TOKEN_CANALE = '--alphascore-canale-token=';
+
+// webPreferences della UI: le stesse per la finestra principale e per le
+// finestre della UI aperte da window.open (ladder popout), che altrimenti
+// resterebbero senza token e manderebbero gli ordini sulla coda DB.
+function uiWebPreferences() {
+    return {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        additionalArguments: [`${ARG_TOKEN_CANALE}${LOCAL_CHANNEL_TOKEN}`],
+    };
+}
+
+// ---------------------------------------------------------------------------
 // RADICE REPO — fix avvio da exe PACCHETTIZZATO: __dirname punta dentro app.asar
 // (portable: scompattato in %TEMP%), quindi i path relativi si rompono. Si prova,
 // in ordine: env esplicita → cartella dell'exe (desktop/release → repo) → exe
@@ -200,6 +228,8 @@ function spawnRunner(label, args) {
         // ripartendo dopo un crash (stesso id → il bot acceso resta acceso) o
         // se l'app e' stata riaperta (id nuovo → nessun bot opera).
         APP_BOOT_ID,
+        // C1 (24/09): chiave dei comandi sui canali locali (vedi sopra).
+        LOCAL_CHANNEL_TOKEN,
         LIVE_ORDER_QUEUE_POLL_SEC: '0.15',
         LIVE_LADDER_PUBLISH_SEC: '0.3',
         TENNIS_LADDER_PUBLISH_SEC: '0.3',
@@ -613,8 +643,12 @@ function attachWindowOpenHandler(win) {
             return { action: 'deny' };
         }
         if (url.startsWith(`http://127.0.0.1:${UI_PORT}/`)) {
-            // rotte della UI (ladder popout multi-monitor): finestra Electron normale
-            return { action: 'allow' };
+            // rotte della UI (ladder popout multi-monitor): finestra Electron normale,
+            // con le STESSE webPreferences della principale (preload + token, C1).
+            return {
+                action: 'allow',
+                overrideBrowserWindowOptions: { webPreferences: uiWebPreferences() },
+            };
         }
         if (/^https?:/i.test(url)) {
             shell.openExternal(url);
@@ -631,11 +665,7 @@ function createWindow() {
         height: 900,
         backgroundColor: '#0b1220',
         title: 'AlphaScore Trading',
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-        },
+        webPreferences: uiWebPreferences(),
     });
     attachWindowOpenHandler(win);
     win.loadURL(`http://127.0.0.1:${UI_PORT}/board`);

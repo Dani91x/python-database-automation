@@ -261,6 +261,7 @@ def _cfg(monkeypatch):
 # ===========================================================================
 def test_paper_e_live_insieme_nessuna_riga_muore_e_ognuna_va_al_suo_client(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "LIVE")
     sb = _Sb([_riga(1, "paper"), _riga(2, "live")])
     fl, market, paper, reale = _scenario("LIVE")
 
@@ -292,6 +293,7 @@ def test_riga_live_in_processo_non_live_va_in_error_senza_toccare_il_reale(
     monkeypatch, proc_mode
 ):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: proc_mode)
+    monkeypatch.setattr(wk, "_modo_processo", lambda: proc_mode)
     sb = _Sb([_riga(7, "live")])
     fl, market, paper, reale = _scenario(proc_mode, con_reale=False)
 
@@ -314,6 +316,7 @@ def test_riga_live_in_processo_non_live_va_in_error_senza_toccare_il_reale(
 # ===========================================================================
 def test_riga_paper_non_raggiunge_mai_il_client_reale(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "LIVE")
     sb = _Sb([_riga(3, "paper")])
     fl, market, paper, reale = _scenario("LIVE")
     # il client reale e' il DEFAULT del framework: se il worker non passasse
@@ -332,6 +335,7 @@ def test_riga_paper_senza_client_simulato_non_si_esegue(monkeypatch):
     """Runner LIVE a cui manca il client simulato: la riga paper NON ripiega sul
     default (che li' e' il client REALE) — va in 'error' col motivo."""
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "LIVE")
     sb = _Sb([_riga(4, "paper")])
     fl, market, paper, reale = _scenario("LIVE", con_paper=False)
 
@@ -348,10 +352,13 @@ def test_riga_paper_senza_client_simulato_non_si_esegue(monkeypatch):
 # ===========================================================================
 def test_client_for_mode_e_servable_modes_sono_coerenti(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "PAPER")
     assert wk._servable_modes() == ("paper",)
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "LIVE")
     assert wk._servable_modes() == ("live", "paper")
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "OFF")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "OFF")
     assert wk._servable_modes() == ()
 
 

@@ -51,7 +51,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from Betfair.omega import omega_market as _real_market
+from Betfair.omega import omega_market as _omega_market
 from Betfair.safe_strategy import bot_db as _real_db
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
@@ -60,6 +60,62 @@ from Betfair.safe_strategy import risk as RK
 from Betfair.stream import avvio_app as AA
 
 logger = logging.getLogger("safe.bot")
+
+# ---------------------------------------------------------------------------
+# R1 (24/09) - IL MERCATO VERO DI SAFE PORTA IL REF DI SAFE.
+# Safe piazza con le funzioni REST di ``omega_market`` e fino a oggi i suoi
+# ordini uscivano con ``customerStrategyRef="omega"``: la lettura di Omega
+# (``listCurrentOrders`` filtrata "omega") vedeva anche gli ordini di Safe.
+# ``_MercatoSafe`` e' ``omega_market`` con UNA differenza: dichiara il ref di
+# Safe su ogni place e legge solo gli ordini di Safe. Tutto il resto (book,
+# annulli, posizione di conto, saldo...) passa invariato al modulo.
+# LETTURA: i ref di Safe sono "safe" e, per gli ordini nati PRIMA di oggi,
+# "omega"; di quelli si tengono SOLO gli ordini col ``customerOrderRef`` di Safe
+# (``safe-t<id>``, l'unico che ``execution`` scrive per Safe). Cosi' un ordine
+# di Safe ancora da riconciliare non sparisce, e Omega non entra mai.
+# ---------------------------------------------------------------------------
+SAFE_STRATEGY_REF = "safe"
+_SAFE_REFS_STORICI = ("omega",)
+_SAFE_PREFISSO_ORDINE = "safe-"
+
+
+def _solo_ordini_di_safe(righe: Any) -> list:
+    return [r for r in (righe or [])
+            if str((r or {}).get("customer_order_ref") or "").startswith(_SAFE_PREFISSO_ORDINE)]
+
+
+class _MercatoSafe:
+    """``omega_market`` col customerStrategyRef di Safe (R1). Ogni attributo non
+    ridefinito qui e' quello del modulo, letto al momento dell'uso."""
+
+    def __init__(self, modulo: Any) -> None:
+        object.__setattr__(self, "_modulo", modulo)
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(object.__getattribute__(self, "_modulo"), nome)
+
+    def place_order_live(self, **kw: Any) -> Any:
+        kw.setdefault("strategy_ref", SAFE_STRATEGY_REF)
+        return self._modulo.place_order_live(**kw)
+
+    def place_submin_live(self, **kw: Any) -> Any:
+        kw.setdefault("strategy_ref", SAFE_STRATEGY_REF)
+        return self._modulo.place_submin_live(**kw)
+
+    def list_current_orders(self, strategy_ref: Any = None) -> list:
+        if strategy_ref is not None:
+            return self._modulo.list_current_orders(strategy_ref)
+        return _solo_ordini_di_safe(self._modulo.list_current_orders(
+            [SAFE_STRATEGY_REF, *_SAFE_REFS_STORICI]))
+
+    def list_cleared_orders(self, strategy_ref: Any = None, **kw: Any) -> list:
+        if strategy_ref is not None:
+            return self._modulo.list_cleared_orders(strategy_ref, **kw)
+        return _solo_ordini_di_safe(self._modulo.list_cleared_orders(
+            [SAFE_STRATEGY_REF, *_SAFE_REFS_STORICI], **kw))
+
+
+_real_market = _MercatoSafe(_omega_market)
 
 _SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
 
@@ -110,6 +166,11 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "proponi_tennis": True,
     "proponi_combo": True,
     "proponi_anomaly": True,
+    # 24/09 (estensione B25, ordine dell'utente) - la gamba MANUALE di una
+    # combo incompleta: 'avvisa_e_proponi' (default: il bot non la tocca, avvisa
+    # e propone la copertura a un clic) oppure 'automatico' (la chiude il bot,
+    # come prima di B25). Vedi ``modo_gamba_manuale``.
+    "combo_gamba_manuale": "avvisa_e_proponi",
     "opps_min_confidence": 0.7,
     "opps_min_edge": 0.03,
     "opps_stake": 5,
@@ -290,6 +351,8 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
     for k in ("proponi_model", "proponi_tennis", "proponi_combo", "proponi_anomaly"):
         v = out.get(k, DEFAULT_PARAMS[k])
         out[k] = bool(v) if isinstance(v, bool) else bool(DEFAULT_PARAMS[k])
+    # 24/09 - fail-closed: solo 'automatico' scritto per esteso lo accende
+    out["combo_gamba_manuale"] = modo_gamba_manuale(out)
     return out
 
 
@@ -389,6 +452,7 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
         out[k] = bool(resolved.get(k))
     for k in ("proponi_model", "proponi_tennis", "proponi_combo", "proponi_anomaly"):
         out[k] = bool(resolved.get(k, DEFAULT_PARAMS[k]))
+    out["combo_gamba_manuale"] = modo_gamba_manuale(resolved)
     out["exits"] = dict(resolved.get("exits") or {})
     out["risk"] = dict(resolved.get("risk") or {})
     # CERT. 14/09 — la mappa delle modalita' va DICHIARATA alla UI: e' quella
@@ -2158,17 +2222,30 @@ def _verifica_modalita_proposta(*, db, event_id: str, mode: str, opp_key: str,
     Estratto da ``_request_place`` il 18/09 perche' l'approvazione di una
     combo (``_request_place_combo``) lo rifa' identico: stessa regola, non una
     copia. Ritorna il dict di rifiuto pronto per il chiamante, o ``None`` se
-    la modalita' torna."""
-    atteso = (modalita_di_strategia("model", str(control_mode).lower(), params)
-              if (opp_key and control_mode) else str(control_mode).lower())
+    la modalita' torna.
+
+    24/09 — ORDINE DELL'UTENTE: «OGNI strumento che propone ingressi a mercato
+    deve avere sia la versione PAPER che LIVE». Una richiesta SENZA
+    ``opp_key`` e' un ordine A MANO dalla scheda: la sua autorita' e'
+    ``modalita_di_strategia('manual', control.mode, params)``, con la stessa
+    regola del modello. Prima era ``control.mode`` NUDO, cioe' l'ordine a mano
+    EREDITAVA la modalita' del servizio: armare il servizio in LIVE per il solo
+    tennis mandava a soldi veri anche i clic a mano. Adesso una chiave
+    ``strategy_modes.manual`` assente o illeggibile vale PAPER, come per ogni
+    altra strategia: ai soldi veri si arriva scrivendolo, mai ereditandolo."""
+    strategia = "model" if opp_key else "manual"
+    atteso = (modalita_di_strategia(strategia, str(control_mode).lower(), params)
+              if control_mode else str(control_mode).lower())
     if control_mode and mode != atteso:
         _log(db, "skip", {"event_id": event_id, "origin": "manual",
                           "reason": "modalita_non_corrispondente",
-                          "richiesta": mode, "attiva": atteso})
+                          "richiesta": mode, "attiva": atteso,
+                          "strategia": strategia})
+        quale = "del modello" if strategia == "model" else "a mano"
         return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
                             f"attiva {atteso}",
-                "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
-                           f"servizio e' in {atteso.upper()}"}
+                "message": f"rifiutato: la richiesta era in {mode.upper()} ma per gli "
+                           f"ordini {quale} vale {atteso.upper()}"}
     return None
 
 
@@ -2217,6 +2294,9 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # la rifiuterebbe sempre, e il tasto PIAZZA non funzionerebbe mai.
     # La direzione dell'errore resta la stessa di sempre: i soldi veri si
     # raggiungono solo scrivendolo.
+    # 24/09 — e vale anche per l'ordine A MANO (senza ``opp_key``): la sua
+    # autorita' e' ``strategy_modes.manual``, non piu' ``control.mode`` nudo
+    # (vedi ``_verifica_modalita_proposta``).
     opp_key = str(payload.get("opp_key") or "").strip()
     rifiuto_modalita = _verifica_modalita_proposta(db=db, event_id=event_id, mode=mode,
                                                    opp_key=opp_key, control_mode=control_mode,
@@ -2289,18 +2369,26 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                                   "selection_id": selection_id})
                 return {"error": "clic_troppo_vecchio"}
             prezzo_attuale = (prices or {}).get(side)
+            soglia = PO.slippage_pct_effettivo(payload)
+            # 24/09 — ORDINE DELL'UTENTE: la tolleranza si misura fra il
+            # prezzo VISTO AL CLIC e quello di ADESSO (millisecondi dopo), mai
+            # rispetto al prezzo della proposta; se scatta, il rifiuto porta i
+            # DUE prezzi nel motivo (``message``, in italiano) e nei campi.
             if not prices or prezzo_attuale is None:
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_sparito",
                                   "origin": "manual", "market_id": market_id,
-                                  "selection_id": selection_id})
-                return {"error": "prezzo_visto_sparito"}
-            soglia = PO.slippage_pct_effettivo(payload)
+                                  "selection_id": selection_id, "price_visto": pv})
+                return {"error": "prezzo_visto_sparito", "price_visto": pv,
+                        "price_attuale": None,
+                        "message": PO.motivo_prezzo_mosso(pv, None, side, soglia)}
             if PO.prezzo_fuori_tolleranza(pv, prezzo_attuale, side, soglia_pct=soglia):
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_fuori_tolleranza",
                                   "origin": "manual", "market_id": market_id,
                                   "selection_id": selection_id, "price_visto": pv,
                                   "price_attuale": prezzo_attuale, "soglia_pct": soglia})
-                return {"error": "prezzo_visto_fuori_tolleranza"}
+                return {"error": "prezzo_visto_fuori_tolleranza", "price_visto": pv,
+                        "price_attuale": prezzo_attuale, "soglia_pct": soglia,
+                        "message": PO.motivo_prezzo_mosso(pv, prezzo_attuale, side, soglia)}
             prezzo_ordine = pv
         elif str(payload.get("kind") or "").lower() == "anomaly":
             # NESSUN ``price_visto`` (client vecchio, o prima della
@@ -2509,13 +2597,26 @@ def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: di
             _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_sparita",
                               "origin": "manual", "combo_id": cid, "gamba": i,
                               "market_id": market_id, "selection_id": sid})
-            return {"error": "combo_gamba_sparita", "gamba": i}
+            out_sparita: dict[str, Any] = {"error": "combo_gamba_sparita", "gamba": i}
+            if legs_prezzi_visti is not None:
+                # 24/09 — i due prezzi nel motivo (qui il secondo non c'e' piu')
+                out_sparita.update({"price_visto": prezzo_ordine, "price_attuale": None,
+                                    "message": f"gamba {i + 1}: " + PO.motivo_prezzo_mosso(
+                                        prezzo_ordine, None, side, soglia_pct)})
+            return out_sparita
         if PO.prezzo_fuori_tolleranza(prezzo_ordine, prezzo_attuale, side, soglia_pct=soglia_pct):
             _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_fuori_tolleranza",
                               "origin": "manual", "combo_id": cid, "gamba": i,
                               "price_at_decision": prezzo_ordine, "price_attuale": prezzo_attuale,
                               "soglia_pct": soglia_pct})
-            return {"error": "combo_gamba_fuori_tolleranza", "gamba": i}
+            out_fuori: dict[str, Any] = {"error": "combo_gamba_fuori_tolleranza", "gamba": i,
+                                         "price_visto": prezzo_ordine,
+                                         "price_attuale": prezzo_attuale,
+                                         "soglia_pct": soglia_pct}
+            if legs_prezzi_visti is not None:
+                out_fuori["message"] = f"gamba {i + 1}: " + PO.motivo_prezzo_mosso(
+                    prezzo_ordine, prezzo_attuale, side, soglia_pct)
+            return out_fuori
         price = prezzo_ordine
         liability = X.liability_of(side, size, price)
         if cap > 0 and liability > cap:
@@ -2598,6 +2699,29 @@ def _trade_by_idempotency_key(db, key: str,
     return None
 
 
+def _richiesta_non_di_questa_riga(payload: dict[str, Any],
+                                  trade: dict[str, Any]) -> Optional[str]:
+    """B16 (24/09) - la richiesta di chiusura e' davvero per QUESTA riga di Safe?
+
+    Il «Chiudi» della Control Room scrive nel payload il bot, la partita e la
+    modalita' della riga cliccata. Le chiavi ASSENTI non si inventano: la
+    scheda di Safe, il cash-out globale e le proposte approvate non le portano
+    e restano validi come sono. Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "safe":
+        return f"la richiesta e' per il bot '{bot}', non per Safe"
+    ev = payload.get("event_id")
+    if ev not in (None, "") and str(ev) != str(trade.get("event_id") or ""):
+        return (f"la partita della richiesta ({ev}) non e' quella della riga "
+                f"({trade.get('event_id')})")
+    modo = payload.get("mode")
+    modo_riga = str(trade.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_riga:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della riga "
+                f"({modo_riga}): paper e live non si mischiano")
+    return None
+
+
 def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
                      now: datetime, come: str = "cashout") -> dict:
     """Cash-out MANUALE di UNA riga. ``come`` dice con quale gesto l'utente
@@ -2614,6 +2738,20 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"error": "lettura_trade_fallita", "detail": str(ex)[:160]}
     if not trade:
         return {"error": "trade_inesistente"}
+    # B16 (24/09): prima di tutto l'IDENTITA' della riga. Gli id delle tabelle
+    # dei bot collidono: il «Chiudi» della Control Room mandava QUI anche le
+    # righe di Omega e di Mike, e un id di Omega poteva chiudere la riga di
+    # Safe con lo stesso numero. Una richiesta che dichiara un altro bot,
+    # un'altra partita o un'altra modalita' si rifiuta (fail-closed).
+    ambigua = _richiesta_non_di_questa_riga(payload, trade)
+    if ambigua is not None:
+        _log(db, "skip", {"reason": "richiesta_ambigua", "origin": "manual",
+                          "trade_id": int(tid), "event_id": trade.get("event_id"),
+                          "motivo": ambigua, "bot_richiesta": payload.get("bot"),
+                          "mode_richiesta": payload.get("mode"),
+                          "mode_riga": trade.get("mode")})
+        return {"rejected": "richiesta_ambigua", "trade_id": int(tid),
+                "message": f"rifiutato: {ambigua}"}
     if X.is_reconciling(trade):
         # C-03/coerenza: su una riga a esito ignoto non si chiude nulla
         return {"rejected": "in riconciliazione", "trade_id": int(tid),
@@ -3350,6 +3488,21 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                               "nota": "gamba di combo NON chiusa dal bot: la "
                                       "posizione l'ha gia' chiusa l'utente"})
             continue
+        # B25 (24/09) - "il bot non deve MAI chiudere le mie gambe". Questo e'
+        # il collo di bottiglia di OGNI chiusura di gamba di combo (svolgimento
+        # della combo incompleta E chiusura solidale): la guardia sta qui, cosi'
+        # nessun percorso puo' far nascere una gamba 'auto' su una riga del
+        # trader. Una combo mista (bot + trader) oggi non nasce: la guardia e'
+        # la cintura, l'avviso lo scrive ``_lascia_gamba_manuale``.
+        # 24/09 (estensione B25) - il PULSANTE dell'utente decide: in
+        # 'automatico' la gamba manuale si chiude come prima di B25, con la
+        # scelta dell'utente scritta nel motivo (audit); altrimenti si lascia.
+        motivo_leg = reason
+        if not e_del_bot(leg):
+            if modo_gamba_manuale(params) != GAMBA_MANUALE_AUTOMATICO:
+                _lascia_gamba_manuale(db, leg, now=now, params=params, prices=prices)
+                continue
+            motivo_leg = f"{reason} {AUDIT_AUTOMATICO}"
         extra = {"sport": leg.get("sport") or "calcio",
                  "strategy": leg.get("strategy") or "model",
                  "market_type": leg.get("market_type"),
@@ -3361,7 +3514,7 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                                 amount=None, fraction=1.0,
                                 mode=str(leg.get("mode") or "paper"), now=now,
                                 params=params, origin="auto", table_prefix="safe",
-                                extra_row=extra, exit_kind="forced", exit_reason=reason)
+                                extra_row=extra, exit_kind="forced", exit_reason=motivo_leg)
         except Exception as ex:  # noqa: BLE001
             res = {"error": "exception", "detail": str(ex)[:160]}
         if res.get("error"):
@@ -3381,9 +3534,11 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                                      "err": err, "detail": res.get("detail"),
                                      "critical": True})
             continue
-        _stamp_exit_on_parent(db, leg, "forced", reason)
+        _stamp_exit_on_parent(db, leg, "forced", motivo_leg)
         _log(db, "exit", {"trade_id": leg.get("id"), "event_id": leg.get("event_id"),
-                          "exit_kind": "forced", "exit_reason": reason,
+                          "exit_kind": "forced", "exit_reason": motivo_leg,
+                          **({"scelta_utente": "combo_gamba_manuale=automatico"}
+                             if not e_del_bot(leg) else {}),
                           "kind": "mandatory", "reason": "combo_solidale",
                           "closing_trade_id": res.get("closing_trade_id"),
                           "side": res.get("side"), "price": res.get("price"),
@@ -6143,7 +6298,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                     db=db, payload=payload, event_id=event_id, opps=t_opps,
                     params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
                     sport="tennis", kind="tennis", vivi_ordine=vivi_ordine,
-                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                    motore_params=getattr(tennis_model, "params", None)))
             continue
         if sport != "calcio" or model is None or opp_mod is None:
             continue
@@ -6222,7 +6378,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 db=db, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
                 rows_by_event=rows_by_event or {}, vivi_ordine=vivi_ordine,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                motore_params=getattr(model, "params", None)))
         if (params.get("proponi_anomaly", True) and note_proposte is not None
                 and vivi_ordine is not None and anomalies):
             # ``_proponi_opps`` e' generico: un'anomalia ha la STESSA forma di
@@ -6236,7 +6393,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 params=params, mode=mode, now=now,
                 rows_by_event=rows_by_event or {}, sport="calcio", kind="anomaly",
                 vivi_ordine=vivi_ordine,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                motore_params=_parametri_motore_anomalie(mods.get("anomaly"), params)))
         if (params.get("proponi_combo", True) and note_proposte is not None
                 and vivi_ordine is not None and combos):
             corpi_proposte.extend(_proponi_combo(
@@ -6261,7 +6419,10 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
         out["proposte"] = _riconcilia_proposte(
             db=db, note=note_proposte, corpi=corpi_proposte,
             eventi_in_gioco=eventi_in_gioco, eventi_valutati=eventi_valutati, now=now,
-            tipi_disabilitati=tipi_disabilitati)
+            tipi_disabilitati=tipi_disabilitati,
+            rows_by_event=(rows_by_event if rows_by_event is not None else
+                           {str(r.get("event_id") or ""): r for r in rows
+                            if isinstance(r, dict)}))
     if to_write:
         try:
             db.upsert_opportunities(to_write)
@@ -6319,13 +6480,38 @@ def _score_of(payload: dict, sport: str) -> Optional[str]:
     return f"{payload.get('score_home')}-{payload.get('score_away')}"
 
 
+def _parametri_motore_anomalie(mod: Any, params: Optional[dict]) -> dict[str, Any]:
+    """I parametri EFFETTIVI con cui ``anomaly.detect`` ha lavorato: la STESSA
+    espressione di ``detect`` (``{**DEFAULT_ANOMALY_PARAMS, **(params or {})}``),
+    non una copia dei numeri. Se il modulo iniettato (banco) non porta i
+    default, si prendono quelli del modulo vero."""
+    base = getattr(mod, "DEFAULT_ANOMALY_PARAMS", None)
+    if not isinstance(base, dict):
+        try:
+            from Betfair.safe_strategy import anomaly as _AN
+
+            base = _AN.DEFAULT_ANOMALY_PARAMS
+        except Exception:  # noqa: BLE001 — senza default: solo i parametri del bot
+            base = {}
+    return {**base, **(params or {})}
+
+
 def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
                   params: dict, mode: str, now: datetime,
                   rows_by_event: dict, sport: str = "calcio", kind: str = "model",
                   vivi_ordine: Optional[set[str]] = None,
                   scanner_ts: Optional[float] = None,
-                  scanner_ts_known: bool = False) -> list[dict]:
+                  scanner_ts_known: bool = False,
+                  motore_params: Optional[dict] = None) -> list[dict]:
     """LE OPPORTUNITA' DI MODELLO NON SI PIAZZANO PIU' DA SOLE: si PROPONGONO.
+
+    24/09 — ``motore_params`` = i parametri EFFETTIVI del motore che ha
+    generato ``opps`` (``model.params``, ``tennis_model.params``, i parametri
+    fusi delle anomalie): ogni corpo porta i ``criteri`` con cui la scheda (e
+    il servizio, al giro dopo) rivalutano la proposta AL PREZZO DI ADESSO
+    (``PO.valuta_al_prezzo``), e la ``valutazione`` corrente. Nessun filtro in
+    piu' e nessuno in meno: cosa si propone lo decide il codice qui sotto,
+    identico a prima.
 
     Ordine dell'utente del 17/09: ogni opportunita' di modello (calcio e
     tennis) arriva come una scheda con tutte le informazioni e due tasti,
@@ -6365,6 +6551,7 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
     # eredita': senza ``strategy_modes.model='live'`` si resta in paper.
     modo = modalita_di_strategia("model", mode, params)
     now_iso = now.isoformat()
+    criteri = PO.criteri_proposta(motore_params, params, stake=stake)
     fuori: list[dict] = []
     for o in opps:
         if not isinstance(o, dict):
@@ -6398,7 +6585,7 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
         liability = X.liability_of(side, stake, price)
         if cap > 0 and liability > cap:
             continue
-        fuori.append(PO.corpo_proposta(
+        corpo = PO.corpo_proposta(
             event_id=str(event_id), event_name=payload.get("event_name"), sport=sport,
             kind=kind, opp={**o, "price": price, "selection_id": selection_id,
                             "side": side, "market_type": market_type},
@@ -6407,7 +6594,17 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
             now_iso=now_iso, decided_at=now_iso,
             feed_updated_at=(feed_row or {}).get("updated_at"),
             odds_ts_ms=payload.get("odds_ts_ms"),
-        ))
+        )
+        # 24/09 — i criteri del motore e la valutazione al prezzo della
+        # proposta: il motore l'ha PROPOSTA adesso, quindi e' valida
+        # (``valutazione_viva``); ``al_prezzo`` sono i numeri che la scheda
+        # ricalcola a ogni tick con la stessa funzione.
+        corpo["criteri"] = dict(criteri)
+        corpo["valutazione"] = PO.valutazione_viva(
+            ts_iso=now_iso, al_prezzo=PO.valuta_al_prezzo(
+                side=side, prezzo=price, abbinabile=o.get("size_available"),
+                p_model=o.get("p_model"), criteri=criteri))
+        fuori.append(corpo)
     return fuori
 
 
@@ -6486,14 +6683,118 @@ def _opp_keys_con_ordine_vivo(db) -> Optional[set[str]]:
     return vivi
 
 
+def _nascita_della_proposta(precedente: dict[str, Any], corpo: dict[str, Any]) -> dict[str, Any]:
+    """I numeri della NASCITA di una proposta viva, che una riscrittura non deve
+    perdere (G2: «la proposta viva porta i numeri della decisione e si aggiorna
+    senza perdere l'istante»): ``decided_at`` (gia' dal 17/09), e dal 24/09 il
+    prezzo e l'abbinabile visti alla creazione — la scheda li mostra accanto a
+    quelli di adesso. ``valutazione.dal`` resta quello di prima se lo stato
+    (valida / non valida) non e' cambiato."""
+    out: dict[str, Any] = {
+        "decided_at": precedente.get("decided_at") or corpo.get("decided_at")}
+    for k in ("price_at_decision", "size_available_at_decision"):
+        if precedente.get(k) is not None:
+            out[k] = precedente.get(k)
+    v_prima = precedente.get("valutazione")
+    v_nuova = corpo.get("valutazione")
+    if isinstance(v_prima, dict) and isinstance(v_nuova, dict) \
+            and bool(v_prima.get("valida")) == bool(v_nuova.get("valida")) \
+            and v_prima.get("dal"):
+        out["valutazione"] = {**v_nuova, "dal": v_prima.get("dal")}
+    return out
+
+
+# 24/09 — perche' una proposta viva non regge piu' quando il motore smette di
+# proporla e al prezzo di adesso i criteri reggerebbero: lo sa solo il motore,
+# e la scheda lo dice con queste parole (causa 'modello'). Funzione, non dict
+# di modulo: niente stato di processo in piu' (``svuota_le_cache``).
+def _testo_non_piu_proposta(kind: str) -> str:
+    if kind == "anomaly":
+        return ("l'anomalia non e' piu' rilevata (riferimento, punteggio o veto del "
+                "modello cambiati)")
+    if kind == "combo":
+        return "la combinazione non e' piu' trovata dal motore"
+    if kind == "tennis":
+        return ("il modello tennis non la propone piu' (probabilita', confidenza o "
+                "contesto cambiati)")
+    return "il modello non la propone piu' (probabilita', confidenza o contesto cambiati)"
+
+
+def _marca_non_piu_valida(*, db, scrivi: Any, chiave: str, riga: dict[str, Any],
+                          rows_by_event: Optional[dict], now: datetime) -> None:
+    """Una proposta VIVA che il motore non propone piu': la si AGGIORNA (mai
+    chiusa) con ``valutazione.valida=False``, il perche' e i numeri al prezzo
+    di adesso dal feed del ciclo. Write-on-change: si riscrive solo se lo stato,
+    i criteri che cadono o il prezzo sono cambiati. L'attivita'
+    ``opportunita_non_piu_valida`` si scrive UNA volta, al passaggio da valida
+    a non valida."""
+    if not callable(scrivi):
+        return
+    corpo = dict(riga.get("payload") or {})
+    kind = str(corpo.get("kind") or "")
+    al_prezzo: Optional[dict[str, Any]] = None
+    if kind != "combo":
+        side = str(corpo.get("side") or "").lower()
+        try:
+            prezzi = prices_from_row(
+                (rows_by_event or {}).get(str(corpo.get("event_id") or "")),
+                market_type=str(corpo.get("market_type") or ""),
+                selection_id=int(corpo.get("selection_id")),
+                market_id=corpo.get("market_id"))
+        except (TypeError, ValueError):
+            prezzi = None
+        al_prezzo = PO.valuta_al_prezzo(
+            side=side, prezzo=(prezzi or {}).get(side),
+            abbinabile=(prezzi or {}).get(f"{side}_size"),
+            p_model=corpo.get("p_model"), criteri=corpo.get("criteri"))
+    prima = corpo.get("valutazione") if isinstance(corpo.get("valutazione"), dict) else None
+    dal = prima.get("dal") if (prima and prima.get("valida") is False) else None
+    nuova = PO.valutazione_non_valida(
+        ts_iso=now.isoformat(), al_prezzo=al_prezzo,
+        testo_modello=_testo_non_piu_proposta(kind),
+        dal=dal)
+    if prima is not None and PO.impronta_valutazione(prima) == PO.impronta_valutazione(nuova):
+        return
+    try:
+        scrivi(chiave, {**corpo, "valutazione": nuova, "proposed_at": now.isoformat()},
+               int(riga["id"]))
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "error", {"reason": "proposta_opportunita_aggiorna_fallita",
+                           "event_id": corpo.get("event_id"), "err": str(ex)[:160]})
+        return
+    if prima is None or prima.get("valida") is not False:
+        _log(db, "opportunita_non_piu_valida", {
+            "event_id": corpo.get("event_id"), "event_name": corpo.get("event_name"),
+            "request_id": int(riga["id"]), "kind": kind,
+            "signal_key": corpo.get("signal_key"), "causa": nuova.get("causa"),
+            "motivi": [m.get("codice") for m in nuova.get("motivi") or []],
+            "mode": corpo.get("mode")})
+
+
 def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
                          eventi_in_gioco: set, eventi_valutati: set,
                          now: datetime,
-                         tipi_disabilitati: Optional[set] = None) -> int:
+                         tipi_disabilitati: Optional[set] = None,
+                         rows_by_event: Optional[dict] = None) -> int:
     """Scrive le proposte nuove, aggiorna quelle vive, fa DECADERE quelle che
     non hanno piu' un'opportunita' sotto, e annota in attivita' i rifiuti che
     l'utente ha dato dalla scheda (la RPC scrive la riga, l'attivita' la scrive
     il servizio al primo ciclo utile). Ritorna il numero di proposte NUOVE.
+
+    24/09 — ORDINE DELL'UTENTE: «la scheda delle proposte deve segnalarmi se
+    l'opportunita', in base ai calcoli e al prezzo attuale, c'e' ancora o no:
+    io decido se approvare o scartare.» Una proposta viva la cui opportunita'
+    il motore NON propone piu' (partita in gioco e valutata in questo ciclo)
+    NON si chiude piu' d'autorita': resta viva, con ``valutazione.valida=False``
+    e il perche' (``causa`` 'prezzo' con i criteri che cadono al prezzo di
+    adesso, oppure 'modello'), e i numeri al prezzo attuale. Decide l'utente.
+    Restano IDENTICI i casi gia' previsti: partita non piu' in gioco (mercato
+    chiuso / partita finita) e interruttore del tipo spento -> decadenza come
+    prima; l'eta' massima dell'approvazione (120 s dal clic) vive in
+    ``process_requests`` e non e' toccata. Sulle riscritture si conservano i
+    numeri della NASCITA (``decided_at``, ``price_at_decision``,
+    ``size_available_at_decision``): la scheda mostra il prezzo visto alla
+    creazione accanto a quello di adesso.
 
     18/09 (2) — ``tipi_disabilitati``: i ``kind`` col rubinetto chiuso
     (``proponi_*=False``). Il chiamante non genera piu' corpi per quei tipi,
@@ -6545,8 +6846,7 @@ def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
         if PO.sostanza(precedente) == PO.sostanza(corpo):
             continue
         try:
-            scrivi(chiave, {**corpo, "decided_at": precedente.get("decided_at")
-                            or corpo.get("decided_at"),
+            scrivi(chiave, {**corpo, **_nascita_della_proposta(precedente, corpo),
                             **({"riproposta_perche": precedente["riproposta_perche"]}
                                if precedente.get("riproposta_perche") else {})},
                    int(esistente["id"]))
@@ -6566,7 +6866,12 @@ def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
             elif eid not in eventi_in_gioco:
                 motivo = "partita non piu' in gioco"
             elif eid in eventi_valutati:
-                motivo = "opportunita' sparita dal feed"
+                # 24/09 — ORDINE DELL'UTENTE: non si chiude d'autorita'. La
+                # scheda resta, marcata «non piu' valida» col perche' e coi
+                # numeri al prezzo di adesso; decide l'utente.
+                _marca_non_piu_valida(db=db, scrivi=scrivi, chiave=chiave, riga=riga,
+                                      rows_by_event=rows_by_event, now=now)
+                continue
             else:
                 # partita in gioco ma NON valutata in questo ciclo (quote
                 # assenti, feed non fresco): non si sa, e non sapere non e' un
@@ -6797,12 +7102,17 @@ def _proponi_combo(*, db, payload: dict, event_id: str, combos: list,
                              "price": price, "size": leg_stake, "liability": round(liab, 2)})
         if not ok:
             continue
-        fuori.append(PO.corpo_proposta_combo(
+        corpo_combo = PO.corpo_proposta_combo(
             event_id=str(event_id), event_name=payload.get("event_name"), sport="calcio",
             cid=cid, combo=c, legs=legs_out, mode=modo,
             minute=payload.get("minute"), score=_score_of(payload, "calcio"),
             now_iso=now_iso, decided_at=now_iso,
-            feed_updated_at=(feed_row or {}).get("updated_at")))
+            feed_updated_at=(feed_row or {}).get("updated_at"))
+        # 24/09 — il motore la PROPONE adesso: valida (una combo non ha un
+        # prezzo solo su cui rivalutarla; se sparisce lo dice il servizio,
+        # causa 'modello').
+        corpo_combo["valutazione"] = PO.valutazione_viva(ts_iso=now_iso)
+        fuori.append(corpo_combo)
     return fuori
 
 
@@ -6867,6 +7177,7 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
     placed_legs = 0
     live_ids: list[int] = []
     filled_ids: list[int] = []
+    non_abbinate: list[dict[str, Any]] = []
     for row, tid in zip(rows, ids):
         _risk_commit(risk_ctx, {**row, "id": tid})
         out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
@@ -6877,13 +7188,19 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
             live_ids.append(int(tid))
             if out.status == "open":
                 filled_ids.append(int(tid))
+        else:
+            non_abbinate.append(_gamba_in_breve({**row, "id": tid}))
     if placed_legs and placed_legs < len(rows):
         # H-20: tutto-o-niente ANCHE dopo il fill — una gamba in errore con
         # un'altra viva lascia una posizione NUDA: si chiude subito quella
         # già abbinata e si MARCA quella in coda (H6: il fill arriva dopo,
         # la svolge ``unwind_incomplete_combos`` appena è confermato).
+        # B25 (24/09, decisione dell'utente "LASCIA E AVVISA"): se la gamba
+        # rimasta e' una riga MANUALE del trader (e dal 18/09 ogni combo nata
+        # da un PIAZZA lo e'), il bot NON la chiude: la marca, la lascia a
+        # mercato e lo scrive in attivita' (``_lascia_gamba_manuale``).
         pending_ids = [i for i in live_ids if i not in filled_ids]
-        _mark_combo_incomplete(db, live_ids, cid)
+        _mark_combo_incomplete(db, live_ids, cid, non_abbinate=non_abbinate)
         _log(db, "combo_incomplete", {"event_id": event_id, "combo_id": cid,
                                       "placed": placed_legs, "legs": len(rows),
                                       "filled_ids": filled_ids,
@@ -6896,19 +7213,359 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
 
 
 COMBO_INCOMPLETE_KEY = "combo_incomplete"
+# B25 (24/09) - DECISIONE DELL'UTENTE "LASCIA E AVVISA": "il bot non deve MAI
+# chiudere le mie gambe (le righe manuali del trader), ma deve essere informato,
+# come gia' succede, quando chiudo io tutte le operazioni: in quel caso non deve
+# fare altro su quella partita". Una gamba MANUALE di una combo rimasta
+# incompleta non si chiude piu': porta ``meta.combo_lasciata_al_trader`` (quando,
+# motivo, gambe non abbinate) e l'attivita' ``combo_incomplete`` con
+# ``lasciata_al_trader=True`` dice al trader che la decisione e' sua. Il marker
+# sta nel ``meta`` (colonna gia' esistente), sopravvive al riavvio e rende
+# l'avviso IDEMPOTENTE: una riga sola, non una a ogni ciclo.
+COMBO_LASCIATA_KEY = "combo_lasciata_al_trader"
+COMBO_NON_ABBINATE_KEY = "combo_gambe_non_abbinate"
 
 
-def _mark_combo_incomplete(db, ids: list[int], combo_id: str) -> None:
+def _gamba_in_breve(g: dict[str, Any]) -> dict[str, Any]:
+    """Una gamba di combo in poche chiavi, per il meta e per l'avviso."""
+    return {"trade_id": g.get("id"), "selection_name": g.get("selection_name"),
+            "market_type": g.get("market_type"), "side": g.get("side"),
+            "price": g.get("price"), "size": g.get("size")}
+
+
+def _gamba_a_parole(g: dict[str, Any]) -> str:
+    lato = str(g.get("side") or "").upper()
+    nome = str(g.get("selection_name") or g.get("selection_id") or "?")
+    mercato = str(g.get("market_type") or "")
+    num = ""
+    try:
+        num = f" {float(g.get('size')):.2f} @ {float(g.get('price')):g}"
+    except (TypeError, ValueError):
+        pass
+    tid = g.get("trade_id") if g.get("trade_id") is not None else g.get("id")
+    rif = f"#{tid} " if tid is not None else ""
+    return f"{rif}{lato} {nome}{(' (' + mercato + ')') if mercato else ''}{num}".strip()
+
+
+# ---------------------------------------------------------------------------
+# 24/09 - ESTENSIONE DI B25, ORDINE DELL'UTENTE: "devo poter scegliere tramite
+# pulsanti: sia la possibilita' di avere l'avviso con PROPOSTA DI COPERTURA a
+# un click, sia la possibilita' di lasciarlo AUTOMATICO (tramite pulsante) e
+# quindi si occupa tutto lui."
+#   - 'avvisa_e_proponi' (DEFAULT, fail-closed): il bot NON tocca la gamba
+#     manuale; avviso + marcatura (B25) + UNA proposta di copertura nella coda
+#     delle proposte di chiusura (kind='cashout', status='proposed', stesso
+#     corpo di ``_proponi_chiusura``): APPROVA dalla scheda -> il percorso
+#     ``_request_cashout`` di sempre, che chiude con origin='manual'.
+#   - 'automatico': il comportamento di PRIMA di B25 (``_unwind_combo`` chiude
+#     anche la gamba manuale, 'forced', "combo incompleta"), con la scelta
+#     dell'utente scritta nel motivo della chiusura (audit).
+# Valore assente, vuoto o sconosciuto = 'avvisa_e_proponi': i soldi del trader
+# si toccano solo se lo ha SCRITTO lui.
+# ---------------------------------------------------------------------------
+GAMBA_MANUALE_AVVISA = "avvisa_e_proponi"
+GAMBA_MANUALE_AUTOMATICO = "automatico"
+GAMBA_MANUALE_MODI = (GAMBA_MANUALE_AVVISA, GAMBA_MANUALE_AUTOMATICO)
+AUDIT_AUTOMATICO = ("(gamba manuale: chiusura automatica per scelta dell'utente, "
+                    "parametro combo_gamba_manuale=automatico)")
+MOTIVO_COPERTURA = "copertura della gamba manuale lasciata dalla combo incompleta"
+#: ogni quanto si va a vedere se la proposta di copertura e' ancora in attesa
+_RICONTROLLO_COPERTURA_S = 20.0
+
+
+def modo_gamba_manuale(params: Optional[dict[str, Any]]) -> str:
+    """Il modo scelto dall'utente per la gamba manuale di una combo incompleta.
+    Fail-closed: tutto cio' che non e' esattamente 'automatico' vale
+    'avvisa_e_proponi'."""
+    v = str((params or {}).get("combo_gamba_manuale") or "").strip().lower()
+    return GAMBA_MANUALE_AUTOMATICO if v == GAMBA_MANUALE_AUTOMATICO else GAMBA_MANUALE_AVVISA
+
+
+def _proponi_copertura(db, leg: dict[str, Any], *, prices: Optional[dict[str, Any]],
+                       params: dict[str, Any], now: datetime,
+                       riga_feed: Optional[dict[str, Any]] = None) -> Optional[int]:
+    """Scrive UNA proposta di copertura della gamba manuale lasciata.
+
+    L'ordine proposto e' quello che il bot piazzerebbe in 'automatico': stesso
+    piano (``execution.close_plan`` con i tick dell'uscita 'forced', lato
+    OPPOSTO, stake sull'ABBINATO della riga meno le chiusure gia' fatte),
+    prezzo di mercato corrente dal feed. Il corpo ha le STESSE chiavi di
+    ``_proponi_chiusura`` (la scheda della Control Room le mostra gia'), piu'
+    il motivo, la combo e la responsabilita' scoperta.
+
+    Non scrive niente (ritorna None) se: prezzi assenti, piano non eseguibile,
+    chiusura gia' in corso o posizione gia' coperta. Il chiamante ritenta al
+    giro dopo (``gestisci_coperture_combo``); una proposta GIA' scritta non se
+    ne crea mai un'altra (marker ``copertura`` nel meta)."""
+    if not prices or not (prices.get("back") or prices.get("lay")):
+        return None
+    if str(leg.get("status") or "") != "open" or marcatore_utente(leg):
+        return None
+    legs = X.known_closings(db, leg)
+    if legs is None:
+        return None
+    st = X.hedge_state(leg, legs)
+    if st.get("blocked") or st.get("complete"):
+        return None
+    try:
+        plan = X.close_plan(leg, best_back=_f(prices.get("back"), 0.0) or None,
+                            best_lay=_f(prices.get("lay"), 0.0) or None,
+                            amount=None, fraction=1.0, closings=legs,
+                            place_at_ticks=X.ticks_for_exit("forced"))
+    except Exception as ex:  # noqa: BLE001 - senza piano non si propone
+        logger.warning("[safe.bot] piano copertura %s KO: %s", leg.get("id"), str(ex)[:120])
+        return None
+    if not plan.actionable:
+        return None
+    lato = str(plan.side)
+    payload = (riga_feed or {}).get("payload") if isinstance(riga_feed, dict) else None
+    payload = payload if isinstance(payload, dict) else {}
+    sit = XE.situation(leg, payload)
+    conti = _conti_di_chiusura(db, leg, prices, params)
+    scoperta = _f(leg.get("liability"), 0.0)
+    motivo = (f"{MOTIVO_COPERTURA}: gamba {_gamba_a_parole(leg)}, "
+              f"responsabilita' scoperta {scoperta:.2f} EUR")
+    corpo = {
+        "trade_id": int(leg["id"]),
+        "event_id": leg.get("event_id"),
+        "event_name": leg.get("event_name"),
+        "sport": leg.get("sport"),
+        "strategy": leg.get("strategy"),
+        "selection_name": leg.get("selection_name"),
+        "market_id": leg.get("market_id"),
+        "market_type": leg.get("market_type"),
+        "selection_id": leg.get("selection_id"),
+        "side": lato,
+        "price_at_decision": _f(prices.get(lato), None),
+        "size_available_at_decision": _f(prices.get(f"{lato}_size"), None),
+        "entry_side": str(leg.get("side") or "").lower(),
+        "entry_price": _f(leg.get("price"), None),
+        "size": _f(leg.get("size"), None),
+        "exit_kind": "forced",
+        "exit_reason": motivo,
+        "urgente": False,
+        "minute": sit.get("minute"),
+        "score": sit.get("score"),
+        "locked_at_decision": conti["locked"],
+        "hold_profit": conti["hold_profit"],
+        "loss_if_lose": conti["loss_if_lose"],
+        "mode": str(leg.get("mode") or "paper"),
+        "feed_updated_at": (riga_feed or {}).get("updated_at") if isinstance(riga_feed, dict) else None,
+        "t2_letto_ms": _LETTURA_FEED["ms"] or None,
+        "odds_ts_ms": payload.get("odds_ts_ms"),
+        "decided_at": now.isoformat(),
+        "proposed_at": now.isoformat(),
+        # chiavi PROPRIE della copertura (la scheda ignora quelle che non conosce)
+        "motivo": "copertura_combo_incompleta",
+        "combo_id": (leg.get("meta") or {}).get("combo_id"),
+        "liability_scoperta": round(scoperta, 2),
+        "piano_copertura": {"side": lato, "price": plan.price, "size": plan.size},
+    }
+    try:
+        rid = db.scrivi_proposta_di_chiusura(int(leg["id"]), corpo)
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "error", {"reason": "proposta_copertura_fallita", "trade_id": leg.get("id"),
+                           "err": str(ex)[:160], "critical": True})
+        return None
+    return int(rid) if rid else None
+
+
+def _segna_copertura(db, leg: dict[str, Any], copertura: dict[str, Any]) -> None:
+    """Aggiorna ``meta.combo_lasciata_al_trader.copertura`` (idempotenza)."""
+    meta = dict(leg.get("meta") or {})
+    lasc = dict(meta.get(COMBO_LASCIATA_KEY) or {})
+    lasc["copertura"] = copertura
+    nuovo = {**meta, COMBO_LASCIATA_KEY: lasc}
+    try:
+        db.update_trade(int(leg["id"]), meta=nuovo)
+        leg["meta"] = nuovo
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] marker copertura %s KO: %s", leg.get("id"), str(ex)[:120])
+
+
+def _esito_richiesta(db, request_id: Any) -> Optional[str]:
+    """Lo stato di una richiesta per id, se il database lo sa dire
+    (``bot_db.richiesta_per_id``). None = non si sa."""
+    fn = getattr(db, "richiesta_per_id", None)
+    if not callable(fn):
+        return None
+    try:
+        r = fn(int(request_id))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(r, dict):
+        return None
+    stato = str(r.get("status") or "")
+    if stato == "rejected":
+        return "decaduta" if (r.get("result") or {}).get("decaduta") else "rifiutata"
+    if stato in ("pending", "processing", "done", "error"):
+        return "approvata"
+    return stato or None
+
+
+def gestisci_coperture_combo(*, db, rows_by_event: dict, params: dict, now: datetime,
+                             open_rows: Optional[list[dict[str, Any]]] = None) -> int:
+    """A ogni giro, sulle gambe manuali LASCIATE (marker B25):
+
+    - la gamba non e' piu' aperta, o l'ha chiusa l'utente, o la partita e'
+      chiusa dall'utente -> la proposta di copertura ancora viva DECADE;
+    - modo 'avvisa_e_proponi' e nessuna proposta ancora scritta (prezzi assenti
+      al momento dell'avviso) -> la si scrive ora;
+    - proposta scritta e non piu' in attesa -> se ne registra l'esito
+      (rifiutata / approvata / decaduta) e NON se ne crea mai un'altra.
+    Ritorna il numero di proposte scritte in questo giro."""
+    rows = open_rows if open_rows is not None else _safe_open_trades(db)
+    scritte = 0
+    for t in rows or []:
+        meta = t.get("meta") or {}
+        lasc = meta.get(COMBO_LASCIATA_KEY)
+        if e_del_bot(t) or not isinstance(lasc, dict) or t.get("closes_trade_id"):
+            continue
+        cop = lasc.get("copertura") if isinstance(lasc.get("copertura"), dict) else None
+        tid = int(t.get("id") or 0)
+        finita = (str(t.get("status") or "") != "open" or marcatore_utente(t)
+                  or evento_chiuso_dall_utente(t.get("event_id")))
+        if finita:
+            if cop and cop.get("stato") == "proposta":
+                # la gamba puo' essersi chiusa PROPRIO per l'approvazione della
+                # proposta (la corsia preferenziale delle chiusure gira prima di
+                # qui): se non e' piu' in attesa se ne registra l'esito vero;
+                # se e' ancora viva, DECADE.
+                try:
+                    viva = db.proposta_di_chiusura_viva(tid)
+                except Exception:  # noqa: BLE001 - nel dubbio si prova a farla decadere
+                    viva = True
+                if viva is None:
+                    esito = _esito_richiesta(db, cop.get("request_id")) or "non_piu_in_attesa"
+                else:
+                    esito = "decaduta"
+                    try:
+                        db.chiudi_proposta(tid, "gamba chiusa: la copertura non serve piu'")
+                    except Exception as ex:  # noqa: BLE001
+                        logger.warning("[safe.bot] decadenza copertura %s KO: %s",
+                                       tid, str(ex)[:120])
+                _segna_copertura(db, t, {**cop, "stato": esito, "quando": now.isoformat()})
+            continue
+        if cop is None:
+            if modo_gamba_manuale(params) != GAMBA_MANUALE_AVVISA:
+                continue
+            riga = (rows_by_event or {}).get(str(t.get("event_id")))
+            prices = prices_from_row(riga, market_type=str(t.get("market_type") or ""),
+                                     selection_id=int(t.get("selection_id") or 0),
+                                     market_id=t.get("market_id"))
+            rid = _proponi_copertura(db, t, prices=prices, params=params, now=now,
+                                     riga_feed=riga)
+            if rid:
+                _segna_copertura(db, t, {"request_id": rid, "stato": "proposta",
+                                         "ts": now.isoformat(), "verificata_ts": now.isoformat()})
+                _log(db, "combo_incomplete", {
+                    "event_id": str(t.get("event_id") or ""), "trade_id": tid,
+                    "copertura_proposta": True, "request_id": rid, "mode": t.get("mode"),
+                    "reason": f"{MOTIVO_COPERTURA}: proposta in scheda (un clic)"})
+                scritte += 1
+            continue
+        if cop.get("stato") != "proposta":
+            continue            # esito gia' registrato: mai un'altra proposta
+        eta = now.timestamp() - (XE.parse_ts(cop.get("verificata_ts")) or 0.0)
+        if eta < _RICONTROLLO_COPERTURA_S:
+            continue
+        try:
+            viva = db.proposta_di_chiusura_viva(tid)
+        except Exception:  # noqa: BLE001 - nel dubbio si aspetta il giro dopo
+            continue
+        if viva is not None:
+            _segna_copertura(db, t, {**cop, "verificata_ts": now.isoformat()})
+            continue
+        esito = _esito_richiesta(db, cop.get("request_id")) or "non_piu_in_attesa"
+        _segna_copertura(db, t, {**cop, "stato": esito, "quando": now.isoformat()})
+        if esito == "rifiutata":
+            _log(db, "combo_incomplete", {
+                "event_id": str(t.get("event_id") or ""), "trade_id": tid,
+                "copertura_rifiutata": True, "request_id": cop.get("request_id"),
+                "mode": t.get("mode"),
+                "reason": "copertura rifiutata: la gamba resta tua, nessun'altra proposta"})
+    return scritte
+
+
+def _lascia_gamba_manuale(db, leg: dict[str, Any], *, now: datetime,
+                          params: Optional[dict[str, Any]] = None,
+                          prices: Optional[dict[str, Any]] = None,
+                          riga_feed: Optional[dict[str, Any]] = None) -> bool:
+    """B25 - la gamba MANUALE di una combo incompleta resta a mercato.
+
+    NIENTE ordine, niente chiusura, niente annullamento: si marca la riga
+    (``meta.combo_lasciata_al_trader``) e si scrive UNA riga di attivita'
+    ``combo_incomplete`` (kind gia' noto alla Control Room, badge critico) con
+    il motivo in chiaro. Idempotente: una riga gia' marcata non riscrive
+    niente. Ritorna True se ha scritto l'avviso.
+
+    24/09 (estensione): in 'avvisa_e_proponi' si scrive anche UNA proposta di
+    copertura (``_proponi_copertura``) PRIMA dell'avviso, cosi' l'avviso dice
+    se la scheda c'e' gia'. Senza prezzi la proposta arriva al giro dopo
+    (``gestisci_coperture_combo``).
+
+    La riga resta sotto gli occhi del servizio come ogni altra riga viva
+    (riconciliazione, regolamento, feed cieco): il bot SA cosa c'e' a mercato,
+    semplicemente non la tocca."""
+    meta = dict(leg.get("meta") or {})
+    if isinstance(meta.get(COMBO_LASCIATA_KEY), dict):
+        return False
+    rid = None
+    if modo_gamba_manuale(params) == GAMBA_MANUALE_AVVISA:
+        rid = _proponi_copertura(db, leg, prices=prices, params=params or {}, now=now,
+                                 riga_feed=riga_feed)
+    non_abbinate = [g for g in (meta.get(COMBO_NON_ABBINATE_KEY) or []) if isinstance(g, dict)]
+    if non_abbinate:
+        chi = "; ".join(_gamba_a_parole(g) for g in non_abbinate)
+        uccise = f"gamba {chi} non abbinata (uccisa)"
+    else:
+        uccise = "una gamba della combinazione non si e' abbinata"
+    motivo = (f"combo incompleta: {uccise}; gamba manuale {_gamba_a_parole(leg)} "
+              f"lasciata aperta a mercato: decidi tu")
+    if rid:
+        motivo += "; proposta di copertura in scheda (un clic)"
+    marker = {"quando": now.isoformat(), "motivo": motivo,
+              "combo_id": meta.get("combo_id"), "gambe_non_abbinate": non_abbinate}
+    if rid:
+        marker["copertura"] = {"request_id": rid, "stato": "proposta",
+                               "ts": now.isoformat(), "verificata_ts": now.isoformat()}
+    marcata = True
+    try:
+        nuovo = {**meta, COMBO_LASCIATA_KEY: marker}
+        db.update_trade(int(leg["id"]), meta=nuovo)
+        leg["meta"] = nuovo
+    except Exception as ex:  # noqa: BLE001 - l'avviso parte comunque, mai silenzio
+        marcata = False
+        logger.warning("[safe.bot] marker combo_lasciata %s KO: %s", leg.get("id"), str(ex)[:120])
+    _log(db, "combo_incomplete", {
+        "event_id": str(leg.get("event_id") or ""), "trade_id": leg.get("id"),
+        "combo_id": meta.get("combo_id"), "lasciata_al_trader": True,
+        "selection_name": leg.get("selection_name"), "side": leg.get("side"),
+        "market_type": leg.get("market_type"), "size": leg.get("size"),
+        "price": leg.get("price"), "liability": leg.get("liability"),
+        "mode": leg.get("mode"), "gambe_non_abbinate": non_abbinate,
+        "marcata": marcata, "critical": True, "reason": motivo,
+        "modo": modo_gamba_manuale(params), "copertura_request_id": rid})
+    return True
+
+
+def _mark_combo_incomplete(db, ids: list[int], combo_id: str,
+                           non_abbinate: Optional[list[dict[str, Any]]] = None) -> None:
     """``meta.combo_incomplete=True`` su ogni gamba viva di una combo rotta:
-    il marker sopravvive al riavvio e alla coda (H6)."""
+    il marker sopravvive al riavvio e alla coda (H6). B25: accanto, le gambe
+    NON abbinate (``meta.combo_gambe_non_abbinate``), cosi' l'avviso di una
+    gamba manuale che si abbina solo al giro dopo sa ancora quale gamba e'
+    stata uccisa."""
     for tid in ids:
         try:
             leg = db.get_trade(int(tid))
             if not leg or str(leg.get("status")) in ("error", "won", "lost", "void"):
                 continue
-            db.update_trade(int(tid), meta={**(leg.get("meta") or {}),
-                                            COMBO_INCOMPLETE_KEY: True,
-                                            "combo_id": combo_id})
+            meta = {**(leg.get("meta") or {}), COMBO_INCOMPLETE_KEY: True,
+                    "combo_id": combo_id}
+            if non_abbinate:
+                meta[COMBO_NON_ABBINATE_KEY] = list(non_abbinate)
+            db.update_trade(int(tid), meta=meta)
         except Exception as ex:  # noqa: BLE001
             logger.warning("[safe.bot] marker combo_incomplete %s KO: %s", tid, str(ex)[:120])
 
@@ -6920,13 +7577,20 @@ def unwind_incomplete_combos(*, db, market, rows_by_event: dict, params: dict,
 
     Una gamba accodata su flumine diventa 'open' uno o più cicli dopo: senza
     questo passaggio la posizione NUDA di una combo incompleta restava aperta
-    (in live, soldi veri scoperti). Gira a OGNI ciclo, anche a bot fermo."""
+    (in live, soldi veri scoperti). Gira a OGNI ciclo, anche a bot fermo.
+
+    B25 (24/09): una gamba MANUALE non si svolge - la prima volta che la si
+    trova aperta si AVVISA (``_lascia_gamba_manuale``); gia' avvisata, non
+    entra nemmeno nell'elenco (nessuna lettura per ciclo, nessun rumore)."""
     rows = open_rows if open_rows is not None else _safe_open_trades(db)
     todo = [t for t in rows or []
             if (t.get("meta") or {}).get(COMBO_INCOMPLETE_KEY)
             and str(t.get("status")) == "open"
             and not t.get("closes_trade_id")
-            and not X.has_closing_marker(t)]
+            and not X.has_closing_marker(t)
+            and not (not e_del_bot(t)
+                     and modo_gamba_manuale(params) != GAMBA_MANUALE_AUTOMATICO
+                     and isinstance((t.get("meta") or {}).get(COMBO_LASCIATA_KEY), dict))]
     if not todo:
         return 0
     return _unwind_combo(db=db, market=market, ids=[int(t["id"]) for t in todo],
@@ -6945,7 +7609,12 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
                   params: dict, now: datetime) -> int:
     """Chiude le gambe FILLATE di una combo rimasta incompleta (uscita 'forced',
     motivo "combo incompleta"). Un fallimento qui è CRITICO e va loggato: resta
-    una posizione scoperta che il ciclo successivo riprende."""
+    una posizione scoperta che il ciclo successivo riprende.
+
+    B25 (24/09, decisione dell'utente "LASCIA E AVVISA"): SOLO le gambe del
+    BOT (``origin`` diverso da 'manual') si chiudono. Una gamba MANUALE resta
+    a mercato, marcata e annunciata (``_lascia_gamba_manuale``): il conto
+    ``closed`` non la include."""
     closed = 0
     for tid in ids:
         try:
@@ -6958,6 +7627,14 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
                                  market_type=str(leg.get("market_type") or ""),
                                  selection_id=int(leg.get("selection_id") or 0),
                                  market_id=leg.get("market_id"))
+        # 24/09 (estensione B25) - il PULSANTE dell'utente: 'avvisa_e_proponi'
+        # (default) lascia la gamba manuale e propone la copertura a un clic;
+        # 'automatico' torna al comportamento di prima (la chiude il bot, sotto,
+        # con la scelta scritta nel motivo da ``_close_combo_siblings``).
+        if not e_del_bot(leg) and modo_gamba_manuale(params) != GAMBA_MANUALE_AUTOMATICO:
+            _lascia_gamba_manuale(db, leg, now=now, params=params, prices=prices,
+                                  riga_feed=rows_by_event.get(str(leg.get("event_id") or event_id)))
+            continue
         if not prices or not (prices.get("back") or prices.get("lay")):
             _log(db, "exit_failed", {"reason": "combo_incompleta_senza_prezzi",
                                      "trade_id": tid, "critical": True})
@@ -7804,6 +8481,14 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     n_unwound = unwind_incomplete_combos(
         db=db, market=market, rows_by_event=rows_by_event, params=params, now=now,
         open_rows=risk_ctx.get("open_all") if not risk_ctx.get("unavailable") else None)
+    # (b-quater) 24/09 - estensione B25: proposte di copertura delle gambe
+    # manuali lasciate (scrittura ritardata, esito, decadenza). Non piazza mai.
+    try:
+        gestisci_coperture_combo(
+            db=db, rows_by_event=rows_by_event, params=params, now=now,
+            open_rows=risk_ctx.get("open_all") if not risk_ctx.get("unavailable") else None)
+    except Exception as ex:  # noqa: BLE001 - una proposta non ferma il ciclo
+        _log(db, "error", {"reason": "coperture_combo_failed", "err": str(ex)[:160]})
 
     # (c) richieste della UI — SEMPRE
     n_requests = n_req_veloci + process_requests(

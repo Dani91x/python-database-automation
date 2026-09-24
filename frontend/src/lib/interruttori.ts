@@ -44,6 +44,7 @@ import {
 } from '@/lib/tennis';
 import { isBotTennis, BOT_TENNIS, BOT_LABEL, type Bot, type BotTennis } from '@/lib/controlRoom';
 import { svegliaBot } from '@/lib/localChannel';
+import { getLiveSettings, setLiveOrderMode, type LiveSettings } from '@/lib/liveOrders';
 
 export type { Bot };
 
@@ -56,28 +57,55 @@ export type StrategiaSafe = (typeof STRATEGIE_MANUALE)[number];
 
 /**
  * TUTTE le strategie che il servizio Safe conosce (`bot_service._STRATEGIES`).
- * `model` e `manual` non hanno un interruttore — non sono strategie del
- * manuale, sono le opportunita' di modello e gli ordini a mano — ma vanno
- * NOMINATE quando si scrive la mappa: una chiave assente vuol dire «eredita il
- * mode del servizio», e in live quello significa soldi veri.
+ * `model` e `manual` non sono strategie del manuale — sono le opportunita' di
+ * modello e gli ordini a mano — ma vanno NOMINATE quando si scrive la mappa:
+ * una chiave assente, per il servizio, vale PAPER (i soldi veri si
+ * raggiungono solo scrivendolo), e la mappa si scrive sempre intera.
  */
 export const STRATEGIE_SAFE_TUTTE = ['base', 'esatto', 'punta', 'tennis', 'model', 'manual'] as const;
+
+/**
+ * 24/09 — «OGNI strumento che propone ingressi a mercato deve avere sia la
+ * versione PAPER che LIVE, e in caso di LIVE gli ordini devono partire
+ * DAVVERO» (utente). Le due voci di Safe che NON sono strategie del manuale
+ * ma STRUMENTI:
+ *   · `model`  = le opportunita' del modello (anche anomalie, combo, tennis)
+ *     che l'utente APPROVA dalla scheda (PIAZZA);
+ *   · `manual` = gli ordini che l'utente fa A MANO dalla scheda di Safe.
+ * Non aprono niente da sole — non stanno in `variants` — quindi il loro
+ * interruttore sceglie SOLO con che soldi: prova o soldi veri. Seguono il
+ * servizio Safe: a servizio fermo non si arma niente (un cambio di modalita'
+ * non accende mai niente) e non si «spengono» (per non vedere proposte ci
+ * sono i rubinetti «Proponimi…» della scheda parametri).
+ */
+export const STRATEGIE_SOLO_MODALITA = ['model', 'manual'] as const;
+export type StrategiaSoloModalita = (typeof STRATEGIE_SOLO_MODALITA)[number];
+
+export function isSoloModalita(s: string | null | undefined): s is StrategiaSoloModalita {
+    return s != null && (STRATEGIE_SOLO_MODALITA as readonly string[]).includes(s);
+}
 
 export type InterruttoreId =
     | 'omega' | 'mike'
     | 'safe-base' | 'safe-esatto' | 'safe-punta' | 'safe-tennis'
+    | 'safe-model' | 'safe-manual'
     | BotTennis;
 
 export interface Interruttore {
     id: InterruttoreId;
     bot: Bot;
     /** null = l'interruttore comanda il SERVIZIO intero (Omega, Mike) */
-    strategia: StrategiaSafe | null;
+    strategia: StrategiaSafe | StrategiaSoloModalita | null;
     sport: SportBot;
     /** come si chiama davanti al trader */
     etichetta: string;
-    /** la chiave di importo di QUESTO interruttore nei parametri del servizio */
-    chiaveImporto: string;
+    /** che cosa comanda, in parole: compare accanto all'etichetta e nella
+     *  conferma dei soldi veri. Serve dove il nome da solo non basta. */
+    descrizione?: string;
+    /** la chiave di importo di QUESTO interruttore nei parametri del servizio.
+     *  `null` = questo interruttore non ha un importo suo (model/manual: lo
+     *  stake lo decide la proposta o la scheda, non l'interruttore). */
+    chiaveImporto: string | null;
     /** chiave usata prima di B.5, per LATO: resta il ripiego dichiarato */
     chiaveImportoPerLato: string | null;
     etichettaImporto: string;
@@ -113,6 +141,23 @@ export const INTERRUTTORI: readonly Interruttore[] = [
         id: 'safe-punta', bot: 'safe', strategia: 'punta', sport: 'calcio', etichetta: 'Safe punta',
         chiaveImporto: 'stake.per_strategia.punta', chiaveImportoPerLato: 'stake.backSize',
         etichettaImporto: 'stake punta',
+    },
+    // ── 24/09 — I DUE STRUMENTI DI SAFE CHE PROPONGONO INGRESSI ─────────────
+    // Solo la MODALITA': si accendono in prova o con soldi veri insieme al
+    // servizio Safe, con la stessa doppia conferma di ogni altra riga. Stanno
+    // nella scheda calcio: dalla scheda tennis il gesto «solo tennis» li porta
+    // comunque in prova (`paramsAccensioni(..., 'prova')`, ordine del 15/09).
+    {
+        id: 'safe-model', bot: 'safe', strategia: 'model', sport: 'calcio',
+        etichetta: 'Safe modello',
+        descrizione: 'opportunità del modello che approvo',
+        chiaveImporto: null, chiaveImportoPerLato: null, etichettaImporto: '',
+    },
+    {
+        id: 'safe-manual', bot: 'safe', strategia: 'manual', sport: 'calcio',
+        etichetta: 'Safe a mano',
+        descrizione: 'ordini a mano dalla scheda',
+        chiaveImporto: null, chiaveImportoPerLato: null, etichettaImporto: '',
     },
     {
         id: 'safe-tennis', bot: 'safe', strategia: 'tennis', sport: 'tennis', etichetta: 'Safe tennis',
@@ -179,6 +224,24 @@ export function statoInterruttore(i: Interruttore, s: StatoServizio | null | und
     if (i.strategia == null) {
         return { acceso: s.inCorsa, modalita: s.modalita, noto: true };
     }
+    // 24/09 — model/manual: accese col servizio, e la modalita' si dichiara
+    // SEMPRE (anche a servizio fermo: le richieste della scheda il servizio le
+    // esegue anche da fermo). Stessa regola del servizio
+    // (`modalita_di_strategia`): tetto del servizio in live E voce scritta
+    // 'live'. Con il servizio in live e la mappa non letta non lo sappiamo.
+    if (isSoloModalita(i.strategia)) {
+        // Servizio in corsa ma senza `variants`: come per le quattro, NON lo
+        // sappiamo — e il comando riscrive `variants`, quindi non si comanda.
+        if (s.inCorsa && s.varianti == null) return { acceso: false, modalita: null, noto: false };
+        if (s.modalita == null) return { acceso: s.inCorsa, modalita: null, noto: true };
+        if (s.modalita !== 'live') return { acceso: s.inCorsa, modalita: 'paper', noto: true };
+        if (s.modiStrategia == null) return { acceso: false, modalita: null, noto: false };
+        return {
+            acceso: s.inCorsa,
+            modalita: s.modiStrategia[i.strategia] === 'live' ? 'live' : 'paper',
+            noto: true,
+        };
+    }
     // Safe: servizio fermo = tutte le strategie spente, e non serve sapere altro.
     if (!s.inCorsa) return { acceso: false, modalita: null, noto: true };
     // Servizio in corsa ma senza `variants`: NON lo sappiamo. Un elenco assente
@@ -218,6 +281,23 @@ export function nessunaAccesa(acc: Accensioni): boolean {
  */
 export function modalitaServizio(acc: Accensioni): Modalita {
     return STRATEGIE_MANUALE.some((n) => acc[n] === 'live') ? 'live' : 'paper';
+}
+
+/**
+ * 24/09 — la modalita' del SERVIZIO che serve a una mappa `strategy_modes`
+ * GIA' COMPOSTA (da `paramsAccensioni`, quindi intera): basta una voce 'live'
+ * — una strategia accesa in live, oppure `model`/`manual` scritti 'live' —
+ * perche' il tetto debba essere armato in live. Le strategie spente valgono
+ * gia' 'paper' nella mappa composta, quindi non la alzano.
+ */
+export function modalitaServizioDaParams(params: Record<string, unknown>): Modalita {
+    const modi = params.strategy_modes;
+    if (modi == null || typeof modi !== 'object' || Array.isArray(modi)) return 'paper';
+    // solo le chiavi che il servizio conosce (`_STRATEGIES`): una chiave
+    // estranea il servizio la scarta, e non deve poter armare il tetto.
+    const m = modi as Record<string, unknown>;
+    return STRATEGIE_SAFE_TUTTE.some((n) => String(m[n] ?? '').toLowerCase() === 'live')
+        ? 'live' : 'paper';
 }
 
 /**
@@ -320,17 +400,21 @@ export function scriviChiave(
  * quella per LATO — che e' quella che il motore usa davvero — e lo si DICE.
  */
 export function importoDi(i: Interruttore, params: Record<string, unknown> | null): CampoImporto {
-    const proprio = leggiChiave(params, i.chiaveImporto);
+    // model/manual non hanno un importo loro: chi chiede il loro importo sta
+    // sbagliando interruttore (`importiInterruttori` li salta), mai inventarlo
+    if (i.chiaveImporto == null) throw new Error(`${i.id} non ha un importo suo`);
+    const chiave = i.chiaveImporto;
+    const proprio = leggiChiave(params, chiave);
     if (proprio != null || i.chiaveImportoPerLato == null) {
         return {
-            chiave: i.chiaveImporto, etichetta: i.etichettaImporto,
+            chiave, etichetta: i.etichettaImporto,
             valore: proprio, nota: i.notaImporto,
         };
     }
     const perLato = leggiChiave(params, i.chiaveImportoPerLato);
     const quale = i.chiaveImportoPerLato === 'stake.laySize' ? 'banca' : 'punta';
     return {
-        chiave: i.chiaveImporto, etichetta: i.etichettaImporto,
+        chiave, etichetta: i.etichettaImporto,
         valore: perLato, nota: i.notaImporto,
         ereditato: `non ha ancora un importo suo: usa quello per lato (${quale}). `
             + 'Salvando qui diventa suo.',
@@ -343,7 +427,11 @@ export function importiInterruttori(
     params: (bot: Bot) => Record<string, unknown> | null,
 ): Partial<Record<InterruttoreId, CampoImporto[]>> {
     const out: Partial<Record<InterruttoreId, CampoImporto[]>> = {};
-    for (const i of interruttori) out[i.id] = [importoDi(i, params(i.bot))];
+    for (const i of interruttori) {
+        // model/manual: nessun campo importo (lo stake lo decide la proposta
+        // o la scheda), mai uno inventato
+        out[i.id] = i.chiaveImporto == null ? [] : [importoDi(i, params(i.bot))];
+    }
     return out;
 }
 
@@ -389,6 +477,35 @@ export class BotFermoNonCambiaModalita extends Error {
             + 'operando. Accendilo scegliendo paper o soldi veri — cambiare modalita’ '
             + 'non deve mai accendere niente.');
         this.name = 'BotFermoNonCambiaModalita';
+    }
+}
+
+/**
+ * 24/09 — model/manual seguono il servizio Safe: a servizio FERMO non si
+ * arma niente. Accenderli vorrebbe dire accendere Safe, e Safe si accende
+ * scegliendo una delle sue strategie (una lista di varianti vuota, per il
+ * servizio, vuol dire «tutte e quattro»: non la si scrive mai per sbaglio).
+ */
+export class SafeFermoPerStrumento extends Error {
+    constructor(etichetta: string) {
+        super(`Safe è fermo: «${etichetta}» segue il servizio Safe. Accendi prima una `
+            + 'strategia di Safe (base, esatto, punta o tennis), poi scegli qui '
+            + 'prova o soldi veri.');
+        this.name = 'SafeFermoPerStrumento';
+    }
+}
+
+/**
+ * 24/09 — model/manual non si «spengono»: non aprono niente da soli, scelgono
+ * solo con che soldi. Il gesto sicuro e' «passa a prova»; per non vedere piu'
+ * le proposte ci sono i rubinetti «Proponimi…» della scheda parametri.
+ */
+export class StrumentoSenzaSpegnimento extends Error {
+    constructor(etichetta: string) {
+        super(`«${etichetta}» non si spegne da qui: sceglie solo con che soldi `
+            + 'opera. Usa «passa a prova» per non mandare ordini reali; per non '
+            + 'ricevere proposte usa i rubinetti «Proponimi…» nei parametri di Safe.');
+        this.name = 'StrumentoSenzaSpegnimento';
     }
 }
 
@@ -561,7 +678,13 @@ export function creaInterruttori(
         const params = extra
             ? extra(paramsAccensioni(correnti, acc, altre))
             : paramsAccensioni(correnti, acc, altre);
-        const voluta = modalitaServizio(acc);
+        // 24/09 — il TETTO si calcola dalla mappa COMPOSTA, non dalle sole
+        // quattro accensioni: se `model`/`manual` sono scritti 'live' (e
+        // `altre` li ha conservati) il servizio deve restare armato in live,
+        // o riportarlo in paper li spegnerebbe in silenzio. Con 'prova' la
+        // mappa li porta a paper e il risultato e' identico a prima.
+        const voluta: Modalita = modalitaServizio(acc) === 'live' ? 'live'
+            : modalitaServizioDaParams(params);
         if (s?.inCorsa && s.modalita === voluta) {
             await updateSafeParams(params as Partial<SafeBotParams>);
         } else {
@@ -586,6 +709,42 @@ export function creaInterruttori(
         const fresco = await statoSafeFresco();
         const acc: Accensioni = { ...accensioniCorrenti(fresco.servizio), [strategia]: valore };
         return { acc, fresco };
+    };
+
+    /**
+     * 24/09 — model/manual: si scrive SOLO la loro voce di `strategy_modes`,
+     * ripartendo dalla lettura FRESCA. Le quattro accensioni restano quelle di
+     * adesso (`paramsAccensioni` con `'conserva'` riscrive la mappa INTERA, le
+     * altre voci con il loro valore attuale), poi si sovrascrive la voce di
+     * questo strumento. Il tetto si ricalcola dalla mappa composta: in live
+     * lo si arma con `safe_activate` (a servizio GIA' in corsa, quindi non
+     * accende niente), tornando in prova lo si abbassa solo se nessun'altra
+     * voce e' in live. A servizio fermo si rifiuta: un cambio di modalita'
+     * non accende mai niente.
+     */
+    const scriviSoloModalita = async (i: Interruttore, strumento: StrategiaSoloModalita, modalita: Modalita) => {
+        const { correnti, servizio: s } = await statoSafeFresco();
+        if (!s?.inCorsa) throw new SafeFermoPerStrumento(i.etichetta);
+        // Chi e' acceso DEVE essere noto: `variants` riscritto da uno stato
+        // ignoto spegnerebbe (o, vuoto, riaccenderebbe TUTTE) le strategie.
+        const acc = accensioniCorrenti(s);
+        if (s.varianti == null || nessunaAccesa(acc)) throw new ParametriNonLetti('safe');
+        const composti = paramsAccensioni(correnti, acc, 'conserva');
+        const params: Record<string, unknown> = {
+            ...composti,
+            strategy_modes: {
+                ...(composti.strategy_modes as Record<string, string>),
+                [strumento]: modalita,
+            },
+        };
+        const voluta = modalitaServizioDaParams(params);
+        if (s.modalita === voluta) {
+            await updateSafeParams(params as Partial<SafeBotParams>);
+        } else {
+            await activateSafe(voluta, params as Partial<SafeBotParams>);
+        }
+        svegliaBot('safe', 'comando'); // STADIO C — DOPO la scrittura, mai prima
+        dopo();
     };
 
     const avviaBot = async (bot: Bot, modalita: Modalita) => {
@@ -621,6 +780,7 @@ export function creaInterruttori(
     const accendi = async (id: InterruttoreId, modalita: Modalita) => {
         const i = interruttoreDi(id);
         if (i.strategia == null) return avviaBot(i.bot, modalita);
+        if (isSoloModalita(i.strategia)) return scriviSoloModalita(i, i.strategia, modalita);
         const { acc, fresco } = await conCambio(i.strategia, modalita);
         await scriviSafe(acc, {}, fresco);
     };
@@ -628,12 +788,14 @@ export function creaInterruttori(
     const spegni = async (id: InterruttoreId) => {
         const i = interruttoreDi(id);
         if (i.strategia == null) return fermaBot(i.bot);
+        if (isSoloModalita(i.strategia)) throw new StrumentoSenzaSpegnimento(i.etichetta);
         const { acc, fresco } = await conCambio(i.strategia, null);
         await scriviSafe(acc, {}, fresco);
     };
 
     const cambiaModalita = async (id: InterruttoreId, modalita: Modalita) => {
         const i = interruttoreDi(id);
+        if (isSoloModalita(i.strategia)) return scriviSoloModalita(i, i.strategia, modalita);
         if (i.strategia != null) {
             const { acc, fresco } = await conCambio(i.strategia, modalita);
             await scriviSafe(acc, { puoAccendere: false }, fresco);
@@ -716,4 +878,82 @@ export function creaInterruttori(
         accendi, spegni, cambiaModalita, cambiaImporto, fermaBot,
         scriviAccensioni: scriviSafe, cambiaModalitaServizio,
     };
+}
+
+// ============================================================================
+// ORDINI REALI (24/09) - "devo operare dalla UI, non dal codice".
+//
+// Prima `LIVE_ORDER_MODE` (OFF/PAPER/LIVE) viveva SOLO nel .env: era il gate
+// del trading manuale dal ladder E il freno di Safe/Mike/Omega sugli ordini
+// reali. Adesso la scelta sta nella riga di controllo `betfair_live_settings`
+// (la stessa del kill-switch) e si cambia da qui.
+//
+// LA REGOLA E' UNA, ED E' QUELLA DEL RUNNER (`Betfair/stream/modo_ordini.py`):
+//   effettivo = il PIU' RESTRITTIVO fra il tetto del .env e la scelta dalla UI
+//   (OFF < PAPER < LIVE); scelta assente o illeggibile -> OFF.
+// Qui la si RIPETE solo per mostrarla: chi decide e' il runner, che pubblica
+// lo stesso valore in `live_now.state.order_mode` (il badge di MarketWatch).
+// ============================================================================
+export type ModoOrdini = 'OFF' | 'PAPER' | 'LIVE';
+export const MODI_ORDINI: readonly ModoOrdini[] = ['OFF', 'PAPER', 'LIVE'];
+const RANGO_MODO: Record<ModoOrdini, number> = { OFF: 0, PAPER: 1, LIVE: 2 };
+
+/** 'live' / ' Paper ' -> 'LIVE' / 'PAPER'. Qualunque altra cosa -> null. */
+export function normalizzaModoOrdini(v: unknown): ModoOrdini | null {
+    if (typeof v !== 'string') return null;
+    const m = v.trim().toUpperCase();
+    return (MODI_ORDINI as readonly string[]).includes(m) ? (m as ModoOrdini) : null;
+}
+
+/** La regola del runner: il piu' restrittivo; uno dei due illeggibile -> OFF. */
+export function modoOrdiniEffettivo(tetto: unknown, scelto: unknown): ModoOrdini {
+    const t = normalizzaModoOrdini(tetto);
+    const s = normalizzaModoOrdini(scelto);
+    if (t == null || s == null) return 'OFF';
+    return RANGO_MODO[t] <= RANGO_MODO[s] ? t : s;
+}
+
+export interface StatoOrdiniReali {
+    /** la riga e' stata letta */
+    letto: boolean;
+    /** riga letta ma senza `order_mode`: la migrazione non e' applicata */
+    migrazioneMancante: boolean;
+    scelto: ModoOrdini | null;
+    /** tetto dichiarato dal runner al suo avvio; null = mai dichiarato */
+    tetto: ModoOrdini | null;
+    effettivo: ModoOrdini;
+    /** la UI chiede piu' di quanto il tetto consenta */
+    limitatoDalTetto: boolean;
+    cambiatoDa: string | null;
+    cambiatoAlle: string | null;
+    tettoAlle: string | null;
+}
+
+export function statoOrdiniReali(s: LiveSettings | null | undefined): StatoOrdiniReali {
+    const letto = s != null;
+    const migrazioneMancante = letto && !('order_mode' in (s as object));
+    const scelto = letto ? normalizzaModoOrdini(s?.order_mode) : null;
+    const tetto = letto ? normalizzaModoOrdini(s?.order_mode_tetto) : null;
+    return {
+        letto,
+        migrazioneMancante,
+        scelto,
+        tetto,
+        effettivo: modoOrdiniEffettivo(tetto, scelto),
+        limitatoDalTetto: scelto != null && tetto != null && RANGO_MODO[scelto] > RANGO_MODO[tetto],
+        cambiatoDa: s?.order_mode_updated_by ?? null,
+        cambiatoAlle: s?.order_mode_updated_at ?? null,
+        tettoAlle: s?.order_mode_tetto_at ?? null,
+    };
+}
+
+/** Il gesto: scrive la scelta (RPC `set_live_order_mode`). La doppia conferma
+ *  per LIVE la fa il componente, come per i bot. */
+export async function scegliModoOrdini(m: ModoOrdini): Promise<LiveSettings | null> {
+    return setLiveOrderMode(m.toLowerCase() as 'off' | 'paper' | 'live');
+}
+
+/** La lettura (RPC `get_live_settings`, owner-only). */
+export async function leggiModoOrdini(): Promise<LiveSettings | null> {
+    return getLiveSettings();
 }

@@ -1521,6 +1521,8 @@ export const MIKE_REQUEST_CODE_MESSAGE: Record<string, string> = {
     kind_non_valido: 'comando non valido',
     errore_interno: 'errore interno del servizio',
     processing_stale: 'richiesta rimasta in lavorazione',
+    // B16 (24/09): richiesta di un altro bot / altra modalita' / riga non di questa partita
+    richiesta_ambigua: 'richiesta ambigua: non si esegue',
 };
 
 export type MikeOutcomeTone = 'ok' | 'pending' | 'warn' | 'bad';

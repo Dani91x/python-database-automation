@@ -31,7 +31,7 @@ import { positionInfo } from '@/lib/omega';
 import { ticksBetween } from '@/lib/riskMath';
 import type { CalcioScanPayload, TennisScanPayload } from '@/lib/safeStrategyScan';
 import {
-    blindSince, cappedFrom, comboIncomplete, errorFinal, exitRunState, hedgeState, isReconciling,
+    blindSince, cappedFrom, comboIncomplete, comboLasciataAlTrader, errorFinal, exitRunState, hedgeState, isReconciling,
     lastRequestFor, marketBlocked, requestOutcome, safeTradeBook, staleReason,
     tradeCommission, tradeExposureNow, FEED_ROW_STALE_MS,
     tradeHold, holdReasonLabel, holdReasonHasP, pLoseEntry, tradeOppKind,
@@ -170,6 +170,16 @@ export function safeRowStatus(
     const hedge = hedgeState(t);
     const partialPct = hedge && !hedge.complete && hedge.fraction != null ? hedge.fraction : null;
     if (comboIncomplete(t) && (t.status === 'open' || t.status === 'pending')) {
+        // 24/09 (B25 + pulsanti) — gamba MANUALE lasciata al trader
+        // (`meta.combo_lasciata_al_trader`): il servizio NON la sta chiudendo,
+        // ha scritto la proposta di copertura in scheda. Dirlo «in chiusura»
+        // sarebbe falso.
+        if (comboLasciataAlTrader(t)) {
+            return {
+                label: 'COMBO INCOMPLETA: lasciata a te', cls: CLS.red, edge: 'border-l-red-500/60',
+                title: 'lasciata a te: proposta di copertura in scheda. Una gamba della combinazione non si è abbinata; questa è tua e il bot non la tocca',
+            };
+        }
         // il profitto BLOCCATO della combinazione non esiste più: una gamba non
         // si è abbinata e il servizio sta svolgendo il resto
         return {

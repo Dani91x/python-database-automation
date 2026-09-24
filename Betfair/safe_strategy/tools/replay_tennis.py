@@ -408,11 +408,17 @@ def _freni_live_dichiarati(attivo: bool):
     if not attivo:
         yield False
         return
+    # 24/09: anche la riga di controllo del modo ordini (scelta dalla Control
+    # Room, ``Betfair/stream/modo_ordini.py``) si DICHIARA in memoria: il banco
+    # non tocca il DB.
+    from Betfair.stream import modo_ordini as _mo
+
     prima = {k: os.environ.get(k) for k in ("LIVE_ORDER_MODE", "LIVE_KILL_SWITCH")}
     os.environ["LIVE_ORDER_MODE"] = "LIVE"
     os.environ["LIVE_KILL_SWITCH"] = "false"
     try:
-        yield True
+        with _mo.dichiara_per_banco("LIVE"):
+            yield True
     finally:
         for k, v in prima.items():
             if v is None:

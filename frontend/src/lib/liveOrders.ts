@@ -638,6 +638,19 @@ export interface LiveSettings {
     /** E35: esposizione worst-case massima aggregata per CAMPIONATO. NULL = off. */
     max_exposure_per_league: number | null;
     updated_at: string;
+    /**
+     * 24/09 - MODO ORDINI DALLA UI (`migrations/live_order_mode_control_2026-09-24.sql`).
+     * Scelta dalla Control Room: 'off' | 'paper' | 'live'. ASSENTE = migrazione non
+     * applicata: il runner la tratta come OFF (fail-closed).
+     */
+    order_mode?: string | null;
+    order_mode_updated_at?: string | null;
+    /** email di chi l'ha cambiata, oppure 'avvio_app' quando l'avvio l'ha riportata a paper */
+    order_mode_updated_by?: string | null;
+    order_mode_boot_id?: string | null;
+    /** il TETTO dichiarato dal runner al suo avvio (LIVE_ORDER_MODE del suo .env) */
+    order_mode_tetto?: string | null;
+    order_mode_tetto_at?: string | null;
 }
 
 // Riga di audit (mirror get_live_audit → { rows }): traccia di ogni evento del runner
@@ -669,6 +682,15 @@ export async function getLiveSettings(): Promise<LiveSettings | null> {
 // MONEY-CRITICAL: ON = il runner smette di processare ordini. Ritorna lo stato nuovo.
 export async function setKillSwitch(on: boolean): Promise<LiveSettings | null> {
     const { data, error } = await supabase.rpc('set_live_kill_switch', { p_on: on });
+    if (error) throw new Error(error.message);
+    return (data as LiveSettings | null) ?? null;
+}
+
+// 24/09 - Sceglie il modo ordini dalla Control Room (set_live_order_mode, owner-only).
+// Il modo EFFETTIVO resta il piu' restrittivo fra questa scelta e il tetto del .env
+// (regola unica lato runner: Betfair/stream/modo_ordini.py). Ritorna la riga nuova.
+export async function setLiveOrderMode(mode: 'off' | 'paper' | 'live'): Promise<LiveSettings | null> {
+    const { data, error } = await supabase.rpc('set_live_order_mode', { p_mode: mode });
     if (error) throw new Error(error.message);
     return (data as LiveSettings | null) ?? null;
 }
@@ -906,6 +928,13 @@ export interface LiveAccountRow {
     manual_app_pnl_orders?: number | null;
     manual_app_pnl_day?: string | null;
     manual_app_pnl_updated_at?: string | null;
+    /**
+     * 24/09 (migrazione `pnl_betfair_reale_2026-09-24.sql`) - il P&L REALE di
+     * OGGI dell'intero conto, per voce, da `listClearedOrders` (runner,
+     * `reconcile_worker._sync_manual_pnl`). Forma grezza: la legge e la
+     * valida `leggiPnlRealeOggi` (`lib/composizioneObiettivo.ts`).
+     */
+    pnl_reale_oggi?: unknown;
 }
 
 export async function fetchLiveAccount(): Promise<LiveAccountRow | null> {

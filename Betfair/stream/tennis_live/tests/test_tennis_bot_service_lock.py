@@ -8,8 +8,27 @@ from __future__ import annotations
 
 import types
 
+import pytest
+
+from Betfair.stream import avvio_app as AA
 from Betfair.stream.tennis_live import tennis_bot_service as svc
 from Betfair.stream.tennis_live import tennis_runner
+
+
+@pytest.fixture(autouse=True)
+def _guardia_isolata(monkeypatch):
+    """T2 (24/09): ``run()`` arma la guardia d'avvio del ponte e fa la ripresa
+    sul DB (qui irraggiungibile: la guardia resterebbe armata e, giustamente,
+    niente follow). Questi test collaudano il LOCK: guardia isolata per test e
+    ripresa riuscita (finto con la firma vera ``ripresa_ponte(db=...)``)."""
+    g = AA.Guardia("tennis")
+    monkeypatch.setattr(svc, "_GUARDIA_AVVIO", g)
+
+    def _ripresa_ok(db=None):  # noqa: ARG001 - firma di ripresa_ponte
+        g.fatto = True
+        return True
+    monkeypatch.setattr(svc, "ripresa_ponte", _ripresa_ok)
+    monkeypatch.setattr(svc, "riconcilia_interruttori", lambda db=None: {"letto": False})
 
 
 def test_run_skips_hosting_when_lock_busy(monkeypatch):

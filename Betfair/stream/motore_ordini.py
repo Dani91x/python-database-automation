@@ -773,7 +773,9 @@ class MotoreOrdini:
             raise Rifiuto(M_AGGANCIO, "nessun framework flumine attivo (runner fermo, "
                                       "senza partite o in ripartenza)")
         mode = piano["mode"]
-        proc = LOW._live_order_mode()
+        # capacita' del processo (tetto .env): quali client esistono. Il modo
+        # EFFETTIVO scelto dalla UI governa le aperture (_blocco_apertura_modo).
+        proc = LOW._modo_processo()
         if mode not in LOW._servable_modes(proc):
             raise Rifiuto(M_MODE, f"mode '{mode}' non servibile dal runner in {proc}")
         try:
@@ -803,6 +805,13 @@ class MotoreOrdini:
                 raise Rifiuto(M_RIDUZIONE, "guardia d'avvio armata e riduzione non "
                                            "verificabile sulle esposizioni del runner")
         chiusura = azione in LOW._CLOSING_ACTIONS or (riduce and _verifica())
+        # 24/09 (fusione con master): modo EFFETTIVO dalla Control Room sulle
+        # APERTURE, PRIMA del kill-switch. Una riduzione dichiarata conta come
+        # chiusura SOLO se verificata: i params passati sono quelli verificati.
+        blocco = LOW._blocco_apertura_modo(
+            mode, azione, {"reduces_liability": True} if chiusura else {})
+        if blocco:
+            raise Rifiuto(M_MODE, blocco)
         if LOW._kill_switch() or LOW._db_kill_switch():
             if not chiusura:
                 if riduce:
@@ -988,7 +997,10 @@ class MotoreOrdini:
                                            "agganciata o ripartenza in corso): comando NON "
                                            "eseguito")
             return
-        mode = LOW._live_order_mode()
+        # capacita' del processo, come ``_process_once``/``esegui_richieste_locali_
+        # scelte`` su master: il modo effettivo lo applica per comando
+        # ``_blocco_apertura_modo`` dentro ``_process_local_requests``.
+        mode = LOW._modo_processo()
         if mode not in ("PAPER", "LIVE"):
             for r in reqs:
                 ch.respond(r, False, error="modalita' ordini OFF: comando NON eseguito")

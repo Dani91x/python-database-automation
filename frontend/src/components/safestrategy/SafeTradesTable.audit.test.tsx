@@ -176,6 +176,22 @@ describe('stati che richiedono una decisione', () => {
         expect(badge.title).toMatch(/INVALID_ODDS/);
     });
 
+    it('24/09 gamba manuale LASCIATA al trader: "lasciata a te", proposta in scheda (mai "in chiusura")', () => {
+        renderTable([trade({
+            strategy: 'model', origin: 'manual',
+            meta: {
+                kind: 'combo', combo_incomplete: true,
+                combo_lasciata_al_trader: { quando: '2026-09-24T10:00:00+00:00', motivo: 'm', combo_id: 'c1',
+                    gambe_non_abbinate: [], copertura: { request_id: 7, stato: 'proposta' } },
+            },
+        } as Partial<SafeTrade>)]);
+        const st = screen.getByTestId('safe-status');
+        expect(st).toHaveTextContent('COMBO INCOMPLETA: lasciata a te');
+        expect(st).not.toHaveTextContent('in chiusura');
+        expect(safeRowStatus(trade({ meta: { combo_incomplete: true, combo_lasciata_al_trader: { motivo: 'm' } } })).title)
+            .toMatch(/lasciata a te: proposta di copertura in scheda/);
+    });
+
     it('combinazione rotta: "COMBO INCOMPLETA: in chiusura"', () => {
         renderTable([trade({ strategy: 'model', meta: { kind: 'combo', combo_incomplete: true } })]);
         expect(screen.getByTestId('safe-status')).toHaveTextContent('COMBO INCOMPLETA: in chiusura');

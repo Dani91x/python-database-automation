@@ -124,8 +124,11 @@ def test_chi_non_e_certificato_lo_dice_e_dice_perche():
     # tennis_swing) hanno replay (`tennis_live/tools/replay_bot.py`, che passa
     # dal servizio di produzione `tennis_runner._instantiate_bot`) e controlli
     # (`tennis_live/certificazione_bot.py`, famiglie B/K/P) — tolti dall'elenco.
-    # Resta fuori solo lo scalper CALCIO, per decisione 8 del piano.
-    attesi = {"scalper_calcio"}
+    # 24/09: lo scalper CALCIO ha replay (`scalper/tools/replay_registrazioni.py`,
+    # che monta il servizio di produzione `scalper_session.run_session`) e
+    # controlli (`scalper/certificazione.py`, famiglie B/K/S/P) — tolto
+    # dall'elenco. Oggi nessun bot registrato e' senza certificazione.
+    attesi: set = set()
     assert {b.nome for b in senza} == attesi, (
         "l'elenco dei bot REGISTRATI SENZA CERTIFICAZIONE e' cambiato: "
         f"adesso e' {sorted(b.nome for b in senza)}. Se ne hai certificato uno, "
@@ -149,16 +152,22 @@ def test_mike_e_certificabile_e_le_sue_parti_esistono_davvero():
     assert os.path.isfile(os.path.join(_RADICE, scheda.spec)), scheda.spec
 
 
-def test_il_comando_unico_elenca_i_bot():
+def test_il_comando_unico_elenca_i_bot(monkeypatch):
     from Betfair.stream.backtest import certifica
 
     assert certifica.main(["--elenco"]) == 0
     # un bot inesistente non passa in silenzio
     assert certifica.main(["non_esiste_questo_bot"]) == 2
-    # un bot registrato ma senza replay dice che non e' certificabile, e perche'
-    # (16/09 sera: Omega e' diventato certificabile — con "omega" questa riga
-    # lanciava un replay INTERO di 33 minuti; si usa un bot ancora senza replay)
-    assert certifica.main(["scalper_calcio"]) == 2
+    # un bot registrato ma senza replay dice che non e' certificabile, e perche'.
+    # 24/09: anche lo scalper calcio e' certificabile e con un bot vero questa
+    # riga lancerebbe un replay intero: si registra per il solo test una scheda
+    # SENZA replay (stessa classe del registro, nessun bot nuovo in produzione).
+    finto = REG.BotRegistrato(
+        nome="finto_senza_replay", sport="calcio", descrizione="scheda di test",
+        moduli_produzione=("Betfair.stream.scalper.scalper_session",),
+        motivo_senza_controlli="scheda di test senza replay")
+    monkeypatch.setitem(REG.REGISTRO, finto.nome, finto)
+    assert certifica.main([finto.nome]) == 2
 
 
 def test_il_modello_per_un_bot_nuovo_esiste():

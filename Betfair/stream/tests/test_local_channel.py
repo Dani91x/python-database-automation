@@ -34,9 +34,12 @@ def test_ws_roundtrip_and_publish():
     from websockets.sync.client import connect
 
     port = _free_port()
-    ch = LocalChannel(port, sport="calcio")
+    # C1 (24/09): un comando 'order' passa solo da una connessione col token di
+    # sessione (vedi test_canale_origine_token_c1_2026_09_24.py per i rifiuti).
+    token = "a" * 64
+    ch = LocalChannel(port, sport="calcio", token=token)
     assert ch.start() is True
-    with connect(f"ws://127.0.0.1:{port}", open_timeout=5) as ws:
+    with connect(f"ws://127.0.0.1:{port}/?t={token}", open_timeout=5) as ws:
         hello = json.loads(ws.recv(timeout=5))
         assert hello["t"] == "hello" and hello["d"]["sport"] == "calcio"
         # il flag attivo si aggiorna alla connessione
@@ -121,6 +124,9 @@ def _req(params: Dict[str, Any], method: str = "order", msg_id: int = 1) -> Loca
 @pytest.fixture()
 def env(monkeypatch):
     state: Dict[str, Any] = {"journal": [], "kill": False}
+    # 24/09: modo EFFETTIVO dichiarato LIVE (tetto .env x scelta dalla UI): qui
+    # si prova il canale; la regola del modo ha i suoi test.
+    monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
     monkeypatch.setattr(wk, "_kill_switch", lambda: state["kill"])
     monkeypatch.setattr(wk, "_db_kill_switch", lambda: False)
     monkeypatch.setattr(wk, "_journal_done", lambda _sb, _fl, row, _m: state["journal"].append(dict(row)))

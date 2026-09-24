@@ -27,11 +27,16 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from . import guardie_tennis as _gt
 from . import tennis_db
 
 logger = logging.getLogger(__name__)
 
 CUSTOMER_STRATEGY_REF = "tennis"
+
+# T2 (24/09): motivi di rifiuto (stesse parole del calcio dove la regola e' la stessa)
+_MOTIVO_KILL_LOCALE = "kill-switch ATTIVO: solo chiusure permesse"
+_MOTIVO_KILL_CODA = "kill-switch ATTIVO: apertura RIFIUTATA - riprovare a freno spento"
 
 # Stati terminali flumine (OrderStatus.name): un ordine in questi stati non muterà più →
 # la sua firma write-on-change si può togliere dalla cache e l'ordine si può togliere dal
@@ -462,6 +467,21 @@ def _max_stake_per_order() -> Optional[float]:
         return None
 
 
+def _client_kw(flumine: Any, row_mode: Any) -> Dict[str, Any]:
+    """T1 (24/09) - il client della MODALITA' DELLA RIGA, scelto con la funzione
+    del calcio (``live_order_worker._client_for_mode``, F0): dal 24/09 il runner
+    tennis LIVE ha anche il client SIMULATO affiancato (per i bot paper), quindi
+    il "client di default" non basta piu' a dire chi esegue. ``{}`` quando il
+    framework non espone un registro client (comportamento storico: default).
+    Solleva (-> riga 'error', nessuna esecuzione) se il client manca."""
+    from .. import live_order_worker as _low
+
+    if _low._iter_clients(flumine) is None:
+        return {}
+    client = _low._client_for_mode(flumine, str(row_mode or ""), _runner_mode())
+    return {} if client is None else {"client": client}
+
+
 _VALID_PLACE_SIDES = ("BACK", "LAY")
 _VALID_PLACE_PERSISTENCE = ("LAPSE", "PERSIST", "MARKET_ON_CLOSE")
 
@@ -507,7 +527,8 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
         order_type=LimitOrder(price=price, size=round(float(size), 2),
                               persistence_type=persistence),
     )
-    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+                            **_client_kw(flumine, cmd["mode"]))
     if ok is False:
         raise ValueError(f"place RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
     _track_manual(session, cust_ref, order, cmd["mode"], _event_id_of(session, cmd.get("market_id")))
@@ -764,7 +785,8 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
         order.context["reduces_liability"] = True
     except Exception:  # noqa: BLE001 - context assente su mock: solo metadato
         pass
-    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+                            **_client_kw(flumine, cmd["mode"]))
     if ok is False:
         raise ValueError(f"greenup RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
     _track_manual(session, cust_ref, order, cmd["mode"],
@@ -901,6 +923,18 @@ def _session_mode(session: Any) -> str:
     return str(m or _runner_mode()).strip().lower()
 
 
+def _modo_strategia(strat: Any, session: Any) -> str:
+    """'paper' | 'live' degli ordini di UNA strategia per lo specchio.
+
+    I bot ospitati portano ``_tennis_modalita_esecuzione`` (scritta da
+    ``tennis_runner._instantiate_bot``): 'live' SOLO se LIVE. La capture (ordini
+    del desktop) e le istanze senza l'attributo usano la mode di BUILD."""
+    mod = getattr(strat, "_tennis_modalita_esecuzione", None)
+    if isinstance(mod, str) and mod.strip():
+        return "live" if mod.strip().upper() == "LIVE" else "paper"
+    return _session_mode(session)
+
+
 def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
     hosted = getattr(session, "hosted", None)
     if not hosted or flumine is None:
@@ -923,8 +957,10 @@ def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
             orders = blotter.strategy_orders(strat)
         except Exception:  # noqa: BLE001 - blotter mock/edge → niente ordini bot
             continue
-        # bot → paper|live (OFF non registra il worker); mode di BUILD (fix #14)
-        mode = _session_mode(session)
+        # bot → paper|live (OFF non registra il worker). T1 (24/09): la modalita'
+        # e' quella con cui IL BOT esegue (un bot paper in un runner LIVE scrive
+        # righe 'paper'); se l'istanza non la porta, la mode di BUILD (fix #14).
+        mode = _modo_strategia(strat, session)
         # IL MERCATO E' CHIUSO? Allora gli ordini terminali sono REGOLATI, e si
         # scrive il loro P&L. `market.closed` e' di flumine, non una deduzione.
         chiuso = bool(_val(market, "closed"))
@@ -1051,11 +1087,14 @@ def positions_worker(context: dict, flumine: Any, session: Any = None) -> None: 
             if sel is None:
                 continue
             lookups.add((sel, _f(_val(o, "handicap")) or 0.0))
+        # T1 (24/09): paper e live MAI sommati: la chiave porta la modalita' della
+        # strategia (un bot paper in un runner LIVE va sotto 'paper')
+        mode_s = _modo_strategia(strategy, session)
         for sel, hcap in lookups:
-            row = _position_row(market, strategy, mode, event_id, market_id, sel, hcap)
+            row = _position_row(market, strategy, mode_s, event_id, market_id, sel, hcap)
             if row is None:
                 continue
-            key = (mode, market_id, sel, hcap)
+            key = (mode_s, market_id, sel, hcap)
             cur = agg.get(key)
             if cur is None:
                 agg[key] = row
@@ -1144,17 +1183,21 @@ _LOCAL_SEEN: Dict[str, tuple] = {}
 _LOCAL_SEEN_TTL = 300.0
 
 
-def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> None:
+def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
+                            richieste: Optional[list] = None) -> None:
     """A7 — comandi dal canale locale desktop: STESSO _dispatch della coda tennis
     (greenup incluso: hedge calcolato dalle esposizioni fresche). Il comando viene poi
     REGISTRATO nella coda DB (status done/error) per storico/audit. Il drain
-    avviene nel thread di QUESTO worker (un solo thread tocca flumine)."""
+    avviene nel thread di QUESTO worker (un solo thread tocca flumine).
+
+    ``richieste``: se data, si eseguono QUELLE (gia' tolte dalla coda del canale:
+    e' il caso degli annulli a guardia d'avvio armata) invece di drenare il canale."""
     from .. import local_channel
 
     ch = local_channel.get_channel()
     if ch is None:
         return
-    for req in ch.pop_requests():
+    for req in (ch.pop_requests() if richieste is None else richieste):
         try:
             if req.method == "snapshot":
                 # tennis: snapshot iniziale via DB (le push tengono fresco il resto)
@@ -1168,6 +1211,13 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> N
             if str(cmd.get("mode") or "") != runner_mode_l:
                 ch.respond(req, False,
                            error=f"mode richiesta '{cmd.get('mode')}' diversa dal runner '{runner_mode_l}'")
+                continue
+            # T2 (24/09) - kill-switch RI-LETTO PER COMANDO, stessa regola del calcio
+            # (``live_order_worker._process_local_requests``): aperture rifiutate,
+            # chiusure (cancel, greenup, reduces_liability) sempre permesse.
+            if _gt.kill_switch_attivo() and not _gt.is_riga_di_chiusura(
+                    action, cmd.get("params")):
+                ch.respond(req, False, error=_MOTIVO_KILL_LOCALE)
                 continue
             client_ref = str(cmd.get("client_ref") or "") or None
             if client_ref:
@@ -1220,6 +1270,47 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> N
                 pass
 
 
+def _rispondi_comandi_locali_in_guardia(flumine: Any, session: Any,
+                                        runner_mode_l: str) -> int:
+    """T2 (24/09) - gemella di ``runner._rispondi_comandi_locali_in_guardia`` del
+    calcio (B-1 del 23/09 sul 47331), per il canale 47332.
+
+    A guardia d'avvio ARMATA la coda del canale si DRENA per intero a ogni giro
+    e ogni comando riceve subito ``ok=False`` col motivo: nessun comando resta in
+    RAM per partire minuti dopo, al disarmo. Passano SOLO gli annulli (``cancel``
+    ritira un ordine e non ne crea), con le regole di sempre (mode, dedup). Anche
+    ``snapshot`` riceve il rifiuto. Ritorna quante richieste ha gestito."""
+    from .. import local_channel
+
+    ch = local_channel.get_channel()
+    if ch is None:
+        return 0
+    annulli: list = []
+    gestite = 0
+    while True:
+        reqs = ch.pop_requests()
+        if not reqs:
+            break
+        for req in reqs:
+            gestite += 1
+            params = req.params if isinstance(req.params, dict) else {}
+            if req.method == "order" and str(params.get("action") or "") == "cancel":
+                annulli.append(req)
+                continue
+            ch.respond(req, False, error=_gt.MOTIVO_GUARDIA_LOCALE)
+    if annulli:
+        try:
+            _process_local_requests(flumine, session, runner_mode_l, richieste=annulli)
+        except Exception as ex:  # noqa: BLE001 - mai un annullo senza risposta
+            logger.warning("[tennis-local] annulli in guardia KO: %s", str(ex)[:200])
+            for req in annulli:
+                try:
+                    ch.respond(req, False, error=f"annullo NON eseguito: {str(ex)[:120]}")
+                except Exception:  # noqa: BLE001
+                    pass
+    return gestite
+
+
 # SPLIT-THROTTLE (audit latenza 17/07, parità col calcio): il drain del canale
 # LOCALE (desktop, in-memory) gira a OGNI tick del worker — è lui che dà la
 # reattività al click (0.15s con l'env dell'exe); la lettura della coda su DB
@@ -1235,6 +1326,18 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
     if runner_mode not in ("PAPER", "LIVE"):
         return  # OFF/ignoto: worker inerte (non dovrebbe nemmeno essere registrato)
     runner_mode_l = runner_mode.lower()
+    # T2 (24/09): snapshot di betfair_live_settings (kill-switch da UI / stop
+    # giornaliero) al massimo una volta al secondo, con la funzione del calcio.
+    try:
+        _gt.aggiorna_impostazioni(tennis_db.get_tennis_client())
+    except Exception as e:  # noqa: BLE001 - resta l'ultimo snapshot (come il calcio)
+        logger.debug("[tennis-order] impostazioni KO: %s", e)
+    # T2: guardia d'avvio ARMATA (ripresa non riuscita) -> nessuna esecuzione;
+    # i comandi del canale 47332 ricevono SUBITO il rifiuto (niente accumulo in
+    # RAM che partirebbe tutto al disarmo), salvo gli annulli.
+    if _gt.guardia_blocca():
+        _rispondi_comandi_locali_in_guardia(flumine, session, runner_mode_l)
+        return
     # A7: drain dei comandi desktop PRIMA della coda DB (stesso path _dispatch)
     _process_local_requests(flumine, session, runner_mode_l)
     now_m = time.monotonic()
@@ -1254,6 +1357,20 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
         if _declared_mode(row) != runner_mode_l:
             if tennis_db.claim_tennis_order(rid):
                 _reject_cross_mode(rid, row, runner_mode_l)
+            continue
+        # T2 - kill-switch RI-LETTO PER RIGA: un'apertura e' RIFIUTATA con esito
+        # esplicito (mai lasciata 'pending' a partire da sola a freno spento: bug
+        # visto dal vivo nel calcio il 10/07). Le chiusure passano sempre.
+        if _gt.kill_switch_attivo() and not _gt.is_riga_di_chiusura(
+                _declared_action(row), _merged_field(row, "params")):
+            if tennis_db.claim_tennis_order(rid):
+                try:
+                    tennis_db.write_tennis_order_error(
+                        rid, _result(ok=False, action=_declared_action(row),
+                                     mode=_declared_mode(row), cmd=row,
+                                     cust_ref=_cust_ref(rid), error=_MOTIVO_KILL_CODA))
+                except Exception:  # noqa: BLE001 - perfino l'errore e' best-effort
+                    logger.exception("[tennis-order] esito kill per riga %s non scritto", rid)
             continue
         if not tennis_db.claim_tennis_order(rid):
             continue  # preso da un altro poll

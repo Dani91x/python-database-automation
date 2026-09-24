@@ -42,7 +42,7 @@ from Betfair.stream import motore_ordini as MO
 
 _STRAT_PAPER = BaseStrategy(market_filter={}, name="motore_test_paper")
 _STRAT_LIVE = BaseStrategy(market_filter={}, name="motore_test_live")
-TOKEN = "tok-motore-24-09"
+TOKEN = "tok-motore-24-09-" + "0123456789abcdef" * 2   # >= 32 caratteri (C1)
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +206,8 @@ class _Canale(LC.LocalChannel):
 
     def collega(self, attore: str, token: Optional[str] = TOKEN) -> Any:
         ws = _FintoWs(f"ws-{attore}-{len(self.ws_attori)}")
-        self._comando_ws[ws] = (attore, LC._token_valido(token))
+        # stessa verifica del canale vero (UNICO token: ``self._token``)
+        self._comando_ws[ws] = (attore, self._token_valido(token))
         self.ws_attori[ws] = attore
         return ws
 
@@ -220,6 +221,8 @@ class _Canale(LC.LocalChannel):
 @pytest.fixture()
 def amb(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCAL_CHANNEL_TOKEN", TOKEN)
+    # tetto dell'ambiente e modo effettivo dalla UI (master 24/09): entrambi LIVE
+    monkeypatch.setattr(LOW, "_modo_processo", lambda: "LIVE")
     monkeypatch.setattr(LOW, "_live_order_mode", lambda: "LIVE")
     monkeypatch.setattr(LOW, "_kill_switch", lambda: False)
     monkeypatch.setattr(LOW, "_jurisdiction", lambda: "it")
@@ -348,10 +351,17 @@ def test_token_mancante_o_errato_rifiutato_senza_seq(amb):
 
 
 def test_token_non_configurato_nessun_comando(amb, monkeypatch):
+    # runner fuori dall'app (C1): nessun token nell'env -> token CASUALE che
+    # nessuno conosce; ne' un token a caso ne' quello "vecchio" passano
     monkeypatch.delenv("LOCAL_CHANNEL_TOKEN", raising=False)
-    ws = amb.ch.collega("safe", token="qualunque")
-    _manda(amb, ws, _cmd())
-    assert _ack(amb, ws)["motivo"].startswith(MO.M_TOKEN)
+    ch = _Canale()
+    amb.motore.canale = ch
+    ch.set_su_comando(amb.motore.sveglia)
+    for tok in ("qualunque", TOKEN, None):
+        ws = ch.collega("safe", token=tok)
+        ch._on_comando(ws, json.dumps({"t": "comando", "d": _cmd()}))
+        amb.motore.drena()
+        assert ch.per_ws(ws, "ack")[-1]["d"]["motivo"].startswith(MO.M_TOKEN)
     _mai_eseguito(amb)
 
 
@@ -398,10 +408,12 @@ def test_runner_non_agganciato_rifiuta_non_accoda(amb):
 
 def test_live_su_runner_paper_e_paper_senza_client_simulato(amb, monkeypatch):
     ws = amb.ch.collega("safe")
+    monkeypatch.setattr(LOW, "_modo_processo", lambda: "PAPER")
     monkeypatch.setattr(LOW, "_live_order_mode", lambda: "PAPER")
     _manda(amb, ws, _cmd(n=1, mode="live"))
     ack = _ack(amb, ws)
     assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_MODE)
+    monkeypatch.setattr(LOW, "_modo_processo", lambda: "LIVE")
     monkeypatch.setattr(LOW, "_live_order_mode", lambda: "LIVE")
     fl, market, _p, reale = _scenario(con_paper=False)
     amb.motore.aggancia(fl, {"live": _STRAT_LIVE, "paper": _STRAT_PAPER})
@@ -410,6 +422,33 @@ def test_live_su_runner_paper_e_paper_senza_client_simulato(amb, monkeypatch):
     assert ack["accettato"] is False and "paper_client_assente" in ack["motivo"]
     assert market.calls == [] and reale.eseguiti == []
     _mai_eseguito(amb)
+
+
+def test_modo_effettivo_dalla_ui_blocca_le_aperture_non_le_chiusure(amb, monkeypatch):
+    """Fusione con master (24/09): tetto .env LIVE ma scelta della Control Room
+    PAPER -> apertura live rifiutata col motivo di ``_blocco_apertura_modo``,
+    PRIMA del kill-switch; cancel e chiusura verificata passano."""
+    monkeypatch.setattr(LOW, "_live_order_mode", lambda: "PAPER")
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, mode="live"))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_MODE)
+    assert "RIFIUTATA" in ack["motivo"]
+    # paper resta servito (modo effettivo PAPER)
+    _manda(amb, ws, _cmd("mike", 2, mode="paper"))
+    assert _ack(amb, ws)["accettato"] is True
+    assert [c[2] for c in amb.market.calls] == [amb.paper]
+    # riduzione DICHIARATA ma non verificata (posizione piatta): resta un'apertura
+    _manda(amb, ws, _cmd("mike", 4, mode="live", side="LAY", reduces_liability=True))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_MODE)
+    assert len(amb.market.calls) == 1
+    # chiusura live verificata: passa (le serve il modo di processo)
+    monkeypatch.setattr(LOW, "_read_matched_exposures", lambda *a: (4.5, -3.0))
+    _manda(amb, ws, _cmd("mike", 5, mode="live", side="LAY", price=2.0,
+                         reduces_liability=True))
+    assert _ack(amb, ws)["accettato"] is True
+    assert amb.market.calls[-1][2] is amb.reale
 
 
 def test_live_col_runner_live_va_al_client_reale(amb):
@@ -1106,12 +1145,18 @@ def test_canale_percorso_comando_e_token(monkeypatch):
     assert LC.attore_del_comando("/comando/") == ""
     assert LC.attore_del_comando("/lettore/order") is None
     assert LC.attore_del_comando(None) is None
-    monkeypatch.setenv("LOCAL_CHANNEL_TOKEN", "abc")
-    assert LC.token_canale() == "abc"
-    assert LC._token_valido("abc") and not LC._token_valido("abd")
-    assert not LC._token_valido(None)
-    monkeypatch.setenv("LOCAL_CHANNEL_TOKEN", "  ")
-    assert LC.token_canale() is None and not LC._token_valido("")
+    # UNA sola sorgente del token: quella di C1 (``token_di_sessione`` al
+    # costruttore del canale), letta da ``token_canale`` sul canale attivo
+    monkeypatch.setenv("LOCAL_CHANNEL_TOKEN", TOKEN)
+    ch = LC.LocalChannel(59995, "calcio")
+    assert ch._token_valido(TOKEN) and not ch._token_valido(TOKEN[:-1] + "x")
+    assert not ch._token_valido(None) and not ch._token_valido("")
+    monkeypatch.setattr(LC, "_CHANNEL", ch)
+    assert LC.token_canale() == TOKEN
+    monkeypatch.setattr(LC, "_CHANNEL", None)
+    assert LC.token_canale() is None
+    monkeypatch.setenv("LOCAL_CHANNEL_TOKEN", "corto")
+    assert not LC.LocalChannel(59994, "calcio")._token_valido("corto")
 
 
 def test_canale_senza_motore_rifiuta_subito(monkeypatch):
@@ -1138,19 +1183,25 @@ def test_canale_coda_comandi_piena_e_sveglia(monkeypatch):
     assert ch._comandi.qsize() == LC._MAX_COMANDI
     assert len(sveglie) == LC._MAX_COMANDI
     assert ch.per_ws(ws, "ack")[-1]["d"]["motivo"].startswith("coda_piena")
-    # anche il /order di sempre sveglia il motore
-    ch._on_message(_FintoWs("desktop"), json.dumps({"id": 1, "m": "order", "p": {}}))
+    # anche il /order di sempre (connessione col token di C1) sveglia il motore
+    desktop = _FintoWs("desktop")
+    ch._autorizzati.add(desktop)
+    ch._on_message(desktop, json.dumps({"id": 1, "m": "order", "p": {}}))
+    assert len(sveglie) == LC._MAX_COMANDI + 1
+    # senza token C1 il /order e' rifiutato dal canale: nessuna sveglia
+    ch._on_message(_FintoWs("estraneo"), json.dumps({"id": 2, "m": "order", "p": {}}))
     assert len(sveglie) == LC._MAX_COMANDI + 1
 
 
 def test_socket_di_comando_non_conta_come_desktop():
     import asyncio
 
-    ch = LC.LocalChannel(59996, "calcio")
+    ch = LC.LocalChannel(59996, "calcio", token=TOKEN)
 
     class _Ws:
-        def __init__(self, path: str) -> None:
-            self.request = SimpleNamespace(path=path, headers={"X-Canale-Token": "x"})
+        def __init__(self, path: str, tok: Optional[str] = "x") -> None:
+            headers = {"X-Canale-Token": tok} if tok is not None else {}
+            self.request = SimpleNamespace(path=path, headers=headers)
             self.inviati: List[str] = []
 
         async def send(self, t: str) -> None:
@@ -1167,8 +1218,14 @@ def test_socket_di_comando_non_conta_come_desktop():
         ws = _Ws("/comando/mike")
         task = asyncio.ensure_future(ch._handler(ws))
         await asyncio.sleep(0.01)
-        assert ws in ch._comando_ws and ch._comando_ws[ws][0] == "mike"
+        assert ch._comando_ws[ws] == ("mike", False)     # token sbagliato
         assert ch.is_active() is False
         await task
         assert ws not in ch._comando_ws
+        # token giusto: dall'header oppure da ``?t=`` (C1), UNICA sorgente
+        for w in (_Ws("/comando/mike", TOKEN), _Ws(f"/comando/mike?t={TOKEN}", None)):
+            t = asyncio.ensure_future(ch._handler(w))
+            await asyncio.sleep(0.01)
+            assert ch._comando_ws[w] == ("mike", True)
+            await t
     asyncio.run(_prova())

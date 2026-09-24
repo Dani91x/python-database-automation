@@ -68,6 +68,31 @@ const RECONNECT_STEP_MS = 1_000;  // incremento lineare
 const RECONNECT_MAX_MS = 5_000;   // tetto backoff
 export const LOCAL_REQUEST_TIMEOUT_MS = 10_000;
 
+// C1 (24/09) - TOKEN DI SESSIONE. I canali del runner (47331/47332) accettano
+// un comando 'order' SOLO da una connessione presentata col token dell'app
+// (`?t=<token>`), che `desktop/preload.js` espone in sola lettura come
+// `window.alphascoreCanale.token`. Fuori dall'app (browser, test) il token non
+// c'e': il canale si usa per i push, gli ordini vanno sulla coda DB.
+const TOKEN_RE = /^[0-9a-f]{64}$/;
+
+/** Il token di sessione dei canali, o null fuori dall'app desktop. */
+export function tokenCanale(): string | null {
+    const g = globalThis as { alphascoreCanale?: { token?: unknown } };
+    const t = g.alphascoreCanale?.token;
+    return typeof t === 'string' && TOKEN_RE.test(t) ? t : null;
+}
+
+/** I canali che accettano comandi (tutti gli altri sono di sola lettura). */
+function accettaComandi(sport: LocalSport): boolean {
+    return !CANALI_SOLA_LETTURA.includes(sport);
+}
+
+/** URL del canale: col token SOLO sui canali che comandano e SOLO se c'e'. */
+export function urlCanale(sport: LocalSport, token: string | null = tokenCanale()): string {
+    const base = `ws://127.0.0.1:${PORTS[sport]}`;
+    return token && accettaComandi(sport) ? `${base}/?t=${token}` : base;
+}
+
 type TopicCallback = (d: unknown) => void;
 
 interface PendingRequest {
@@ -97,6 +122,14 @@ export class LocalChannel {
 
     // ------------------------------------------------------------- stato
     getStatus(): LocalStatus { return this.status; }
+
+    /**
+     * C1: questo client puo' mandare comandi 'order'? Solo su un canale che
+     * comanda e solo con il token dell'app. Senza, gli ordini vanno sulla coda DB.
+     */
+    puoComandare(): boolean {
+        return accettaComandi(this.sport) && tokenCanale() !== null;
+    }
 
     /** Ultimo {"t":"hello"} ricevuto (null se mai connesso / dopo una caduta). */
     getHello(): LocalHello | null { return this.hello; }
@@ -169,7 +202,7 @@ export class LocalChannel {
 
         let ws: WebSocket;
         try {
-            ws = new WS(`ws://127.0.0.1:${PORTS[this.sport]}`);
+            ws = new WS(urlCanale(this.sport));
         } catch {
             this.scheduleReconnect();
             return;

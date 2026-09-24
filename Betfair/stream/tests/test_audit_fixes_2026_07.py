@@ -50,6 +50,7 @@ from .test_live_order_worker import (  # riuso dell'infra mock esistente
 @pytest.fixture(autouse=True)
 def _cfg(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "PAPER")
     monkeypatch.setattr(wk, "_kill_switch", lambda: False)
     monkeypatch.setattr(wk, "_jurisdiction", lambda: "it")
     monkeypatch.setattr(wk, "_batch", lambda: 5)
