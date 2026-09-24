@@ -468,6 +468,14 @@ class DbSafeMemoria(PM.ProposteDb, DbMemoria):
                               "created_at": self._ora_iso(), "result": None})
         return self._req_id
 
+    def richiesta_per_id(self, request_id: int) -> Optional[Dict[str, Any]]:
+        # stessa firma e stesse colonne di `bot_db.richiesta_per_id` (24/09)
+        for r in self.requests:
+            if int(r.get("id") or 0) == int(request_id):
+                return {"id": r.get("id"), "kind": r.get("kind"),
+                        "status": r.get("status"), "result": r.get("result")}
+        return None
+
     def chiudi_proposta(self, trade_id: int, motivo: str) -> None:
         viva = self.proposta_di_chiusura_viva(trade_id)
         if viva is None:

@@ -840,10 +840,19 @@ export function hedgeState(trade: { size: number | null; meta: Record<string, un
     };
 }
 
-/** COMBINAZIONE rotta: una gamba non si è abbinata e il servizio sta chiudendo
- *  il resto (`meta.combo_incomplete`). Il profitto bloccato NON c'è più. */
+/** COMBINAZIONE rotta: una gamba non si è abbinata (`meta.combo_incomplete`).
+ *  Il profitto bloccato NON c'è più. Il resto lo chiude il servizio, SALVO la
+ *  gamba manuale lasciata al trader (vedi `comboLasciataAlTrader`). */
 export function comboIncomplete(trade: { meta: Record<string, unknown> | null }): boolean {
     return (trade.meta ?? {})['combo_incomplete'] === true;
+}
+
+/** 24/09 (B25) — gamba MANUALE di una combo incompleta LASCIATA al trader:
+ *  il servizio non la chiude, ha scritto la proposta di copertura in scheda
+ *  (`meta.combo_lasciata_al_trader`, un oggetto scritto da `bot_service`). */
+export function comboLasciataAlTrader(trade: { meta: Record<string, unknown> | null }): boolean {
+    const v = (trade.meta ?? {})['combo_lasciata_al_trader'];
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /** Stop per perdita giornaliera: il servizio legge il VALORE ASSOLUTO come

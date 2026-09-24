@@ -493,7 +493,7 @@ def test_scenari_registrati_e_scenari_vecchi_intatti():
     from Betfair.safe_strategy.tools import replay_registrazioni as RR
     from Betfair.safe_strategy.tools import replay_tennis as RT
 
-    assert list(RR.SCENARI_DESCRITTI)[-4:] == list(PM.SCENARI_CALCIO)
+    assert list(RR.SCENARI_DESCRITTI)[-len(PM.SCENARI_CALCIO):] == list(PM.SCENARI_CALCIO)
     assert list(RT.SCENARI_DESCRITTI)[-2:] == list(PM.SCENARI_TENNIS)
     # i parametri degli scenari di prima NON cambiano
     base = RR._params_di_scenario("base", ("base", "esatto", "punta"), "live")

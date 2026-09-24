@@ -134,7 +134,9 @@ def test_avviso_scritto_con_le_chiavi_giuste_e_riga_marcata():
     assert [x["trade_id"] for x in a["gambe_non_abbinate"]] == [uccisa["id"]]
     # la riga e' marcata nel meta (colonna gia' esistente, sopravvive al riavvio)
     mk = g["meta"][S.COMBO_LASCIATA_KEY]
-    assert set(mk) == {"quando", "motivo", "combo_id", "gambe_non_abbinate"}
+    # 24/09 (estensione): col modo di default la proposta di copertura e' gia'
+    # scritta e registrata nel marcatore
+    assert set(mk) == {"quando", "motivo", "combo_id", "gambe_non_abbinate", "copertura"}
     assert mk["motivo"] == a["reason"] and mk["quando"] == NOW.isoformat()
     assert g["meta"]["combo_incomplete"] is True
     assert g["meta"][S.COMBO_NON_ABBINATE_KEY][0]["selection_name"] == "Home"

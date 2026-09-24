@@ -76,8 +76,14 @@ SCENARIO_APPROVATA = "proposta-approvata"
 SCENARIO_SCADUTA = "proposta-scaduta"
 SCENARIO_ANOMALIA = "proposta-anomalia-effimera"
 SCENARIO_COMBOS = "combos-automatiche"
+# 24/09 (estensione B25): lo STESSO scenario delle combo col pulsante
+# dell'utente su 'automatico' (`combo_gamba_manuale`): la gamba manuale
+# lasciata dalla combo incompleta la chiude il bot, come prima di B25.
+SCENARIO_COMBOS_AUTO = "combos-gamba-automatica"
+SCENARI_COMBO: Tuple[str, ...] = (SCENARIO_COMBOS, SCENARIO_COMBOS_AUTO)
 SCENARI_CALCIO: Tuple[str, ...] = (SCENARIO_APPROVATA, SCENARIO_SCADUTA,
-                                   SCENARIO_ANOMALIA, SCENARIO_COMBOS)
+                                   SCENARIO_ANOMALIA, SCENARIO_COMBOS,
+                                   SCENARIO_COMBOS_AUTO)
 SCENARI_TENNIS: Tuple[str, ...] = (SCENARIO_APPROVATA, SCENARIO_SCADUTA)
 TUTTI: Tuple[str, ...] = SCENARI_CALCIO
 
@@ -106,6 +112,11 @@ DESCRIZIONI: Dict[str, str] = {
         "dal 18/09 nessuna combo parte senza approvazione anche con l'interruttore "
         "acceso (PM1); il trader approva la proposta con i prezzi visti di ogni "
         "gamba -> tutte le gambe o nessuna, stessi tetti di rischio (PM3, PM8)"),
+    SCENARIO_COMBOS_AUTO: (
+        "COMBO MONTATE come `combos-automatiche`, con combo_gamba_manuale="
+        "'automatico' SCRITTO dall'utente: la gamba MANUALE lasciata da una "
+        "combo incompleta la chiude il bot, col motivo che dichiara la scelta "
+        "dell'utente (T13-COMBO in modo automatico, PM3, PM8)"),
 }
 
 # ---------------------------------------------------------------------------
@@ -147,12 +158,14 @@ def parametri(scenario: str, par: Dict[str, Any]) -> Dict[str, Any]:
       * `combos-automatiche`: `auto_trade_combos = True`.
     Nessuna soglia, stake, tetto o gamba della strategia cambia."""
     out = dict(par)
-    if scenario in (SCENARIO_APPROVATA, SCENARIO_ANOMALIA, SCENARIO_COMBOS):
+    if scenario in (SCENARIO_APPROVATA, SCENARIO_ANOMALIA) + SCENARI_COMBO:
         sm = dict(out.get("strategy_modes") or {})
         sm["model"] = "live"
         out["strategy_modes"] = sm
-    if scenario == SCENARIO_COMBOS:
+    if scenario in SCENARI_COMBO:
         out["auto_trade_combos"] = True
+    if scenario == SCENARIO_COMBOS_AUTO:
+        out["combo_gamba_manuale"] = "automatico"
     return out
 
 
@@ -181,7 +194,7 @@ def controlli_per(scenari: Sequence[str]) -> List[Tuple[str, str]]:
     fuori = set()
     if SCENARIO_ANOMALIA not in scelti:
         fuori.add("PM6")
-    if SCENARIO_COMBOS not in scelti:
+    if not scelti & set(SCENARI_COMBO):
         fuori.add("PM8")
     return [(c, r) for c, r in _REGOLE if c not in fuori]
 
@@ -343,7 +356,7 @@ def finestre_di(scenario: str, sport: str) -> Tuple[Finestra, ...]:
             Finestra("Y", "anomaly", ("away",), "back", 200, 215, "approva",
                      "dopo_sparizione", 0),
         )
-    if scenario == SCENARIO_COMBOS and calcio:
+    if scenario in SCENARI_COMBO and calcio:
         return (Finestra("K", "combo", ("home", "draw", "away"), "back", 30, 930,
                          "approva", "eta", 20),)
     return ()
