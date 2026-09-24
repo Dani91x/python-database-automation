@@ -1156,6 +1156,12 @@ def test_h16_catalogo_dei_kind_di_attivita():
         # servizio (reperto del 17/09 sulle righe paper etichettate LIVE).
         "proposta_opportunita", "opportunita_piazzata",
         "opportunita_rifiutata", "opportunita_decaduta",
+        # 24/09 (F5): la PORTA a comandi sul canale del runner (solo a
+        # interruttore SAFE_ORDINI_VIA_CANALE acceso): inviato, rifiutato dal
+        # runner, nessun ack (esito ignoto), canale giu' (apertura non inviata
+        # / chiusura col trasporto di oggi).
+        "canale_inviato", "canale_rifiutato", "canale_senza_ack",
+        "canale_giu", "canale_giu_ripiego",
     }
     import re as _re
     from pathlib import Path
