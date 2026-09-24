@@ -72,6 +72,16 @@ export interface PropostaUscitaOmegaPayload {
     decided_at?: string | null;
     /** ultimo aggiornamento della proposta */
     proposed_at?: string | null;
+    /** 24/09 — gli ingredienti del ricalcolo al prezzo di adesso
+     *  (`omega_proposte._ingredienti_del_payload`) */
+    commissione?: number | null;
+    margine_attesa?: number | null;
+    max_attesa?: number | null;
+    p_lose_max?: number | null;
+    /** 24/09 — la valutazione del servizio: `valida=false` = il bot non la
+     *  proporrebbe piu' (la scheda resta, decide l'utente) */
+    valutazione?: { valida?: boolean | null; motivo_codice?: string | null;
+        testo?: string | null; valutata_at?: string | null; dal?: string | null } | null;
 }
 
 export interface PropostaUscitaOmega {
@@ -124,6 +134,10 @@ export function motivoUscitaOmegaLabel(codice: string | null | undefined): strin
 // -------------------------------------------------------------- il giudizio
 
 /**
+ * 24/09 — ORDINE DELL'UTENTE («me lo segnala e decido io»): da oggi il testo
+ * che torna e' un AVVISO della scheda, non un blocco (`SchedaChiusuraOmega`
+ * lascia il bottone acceso).
+ *
  * PERCHÉ non si può approvare adesso; `null` = si può.
  *
  * Fail-closed come la Safe: senza il profitto bloccabile e senza l'ordine che
@@ -139,10 +153,10 @@ export function motivoNonApprovabileOmega(p: PropostaUscitaOmegaPayload): string
         return `il servizio non propone di chiudere: ${motivoUscitaOmegaLabel(p.motivo_codice) ?? 'motivo non dichiarato'}`;
     }
     if (!Number.isFinite(back) || back <= 1) {
-        return 'prezzo di back non disponibile: non si piazza al buio';
+        return 'prezzo di back non disponibile nella proposta: guarda il prezzo di adesso';
     }
     if (!Number.isFinite(size) || size <= 0) {
-        return 'importo di chiusura non disponibile: non si piazza al buio';
+        return 'importo di chiusura non disponibile nella proposta';
     }
     // ⚠️ il numero può essere NEGATIVO: è una perdita che si blocca, ed è una
     // proposta legittima (protezione / cap). Si pretende che ci SIA, non che sia

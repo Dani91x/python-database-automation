@@ -18,14 +18,27 @@
 //
 // IN LIVE SERVE LA DOPPIA CONFERMA.
 // ============================================================================
-import { useState } from 'react';
+//
+// 24/09 — ORDINE DELL'UTENTE (visto a video): «una scheda che ricalcola al ms
+// tutto MA NON BLOCCA: me lo segnala e decido io». Il prezzo di back arriva al
+// ms (`usePrezzoAlMs`, ripiego sullo scanner dichiarato); «Blocchi adesso» e la
+// DECISIONE del bot si ricalcolano a ogni tick con `esitoUscitaAlPrezzo` (porta
+// pura di `omega_proposte.esito_uscita_al_prezzo`, legata dal file d'oro), coi
+// soli ingredienti scritti dal servizio. Nessun motivo spegne il bottone: sono
+// AVVISI. NB: `omega_request_approve` accetta solo l'id (nessun prezzo visto):
+// il servizio chiude a mercato (decisione B17 aperta).
+import { useEffect, useState } from 'react';
 import { Loader2, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fmtMoney, fmtOdds, fmtPctPoints, fmtTime, DASH } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtPctPoints, fmtTime, fmtTicks, fmtAge, DASH } from '@/lib/format';
 import {
-    motivoNonApprovabileOmega, motivoUscitaOmegaLabel, eUnaProtezioneOmega,
+    motivoNonApprovabileOmega, motivoUscitaOmegaLabel, eUnaProtezioneOmega, esitoUscitaAlPrezzo,
     type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
+import type { PrezzoVivo } from '@/lib/controlRoomProposte';
+import { tickDown } from '@/lib/matching';
+import { scarto, etaEFonte, type PrezzoScheda, type Semaforo } from '@/lib/schedaAlMs';
+import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
 import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 
 export interface SchedaChiusuraOmegaProps {
@@ -34,17 +47,71 @@ export interface SchedaChiusuraOmegaProps {
     onIgnora: (id: number) => Promise<void>;
     /** LA STRISCIA DI ESITO (18/09, additiva): v. `SchedaChiusura.tsx`. OPZIONALE. */
     esito?: StrisciaEsitoChiusuraProps;
+    /** 24/09 — sorgente del ladder al ms (assente = nessuna sottoscrizione) */
+    sorgenteLadder?: SorgenteLadder | null;
+    /** 24/09 — prezzo di back dal feed dello scanner (ripiego dichiarato) */
+    vivoScanner?: PrezzoVivo | null;
+    etaQuoteS?: number | null;
 }
 
-export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: SchedaChiusuraOmegaProps) {
+export function SchedaChiusuraOmega({
+    proposta, onApprova, onIgnora, esito, sorgenteLadder = null, vivoScanner = null, etaQuoteS = null,
+}: SchedaChiusuraOmegaProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowMs(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
 
     const live = p.mode === 'live';
-    const blocco = motivoNonApprovabileOmega(p);
-    const bloccabile = p.profitto_bloccabile == null ? null : Number(p.profitto_bloccabile);
+    // 24/09 — il prezzo di BACK (la chiusura di un lay) AL MS
+    const ripiego: PrezzoScheda | null = vivoScanner?.prezzo == null ? null : {
+        back: vivoScanner.prezzo, backSize: vivoScanner.abbinabile, lay: null, laySize: null,
+        istanteMs: etaQuoteS == null ? null : nowMs - etaQuoteS * 1000,
+        fonte: 'scanner', statoMercato: vivoScanner.statoMercato ?? null,
+    };
+    const { prezzo: alMs, ultimoNoto } = usePrezzoAlMs({
+        sorgente: sorgenteLadder, sport: 'calcio', marketId: p.market_id ?? null,
+        selectionId: p.selection_id ?? null, lato: 'back', ripiego,
+    });
+    const backOra = alMs.back;
+    const ingredienti = p.commissione != null && p.margine_attesa != null && p.ev_tenere != null
+        && p.p_evento != null;
+    const calcola = (back: number | null) => esitoUscitaAlPrezzo({
+        lay_price: p.entry_price, size: p.size, back_price: back, back_size: alMs.backSize,
+        ev_tenere: p.ev_tenere, max_attesa: p.max_attesa, p_evento: p.p_evento,
+        commissione: p.commissione, margine_attesa: p.margine_attesa,
+        cap_scattato: p.cap_scattato ?? null, p_lose_max: p.p_lose_max ?? 0,
+    });
+    const ora = ingredienti && backOra != null ? calcola(backOra) : null;
+    const semaforo: Semaforo | null = ora == null ? null
+        : !ora.proponi ? 'NO'
+            : calcola(tickDown(backOra as number)).proponi ? 'SI' : 'QUASI';
+    const sc = scarto(backOra, p.back_price ?? p.price_at_decision);
+
+    // AVVISI (mai un bottone spento)
+    const avvisi: string[] = [];
+    const strutturale = motivoNonApprovabileOmega(p);
+    if (strutturale) avvisi.push(strutturale);
+    if (backOra == null) {
+        const eta = ultimoNoto?.istanteMs == null ? null : (nowMs - ultimoNoto.istanteMs) / 1000;
+        avvisi.push(ultimoNoto
+            ? `prezzo vivo assente da ${eta == null ? 'un tempo ignoto' : fmtAge(eta)}: ultimo noto ${fmtOdds(ultimoNoto.prezzo)}`
+            : 'prezzo vivo assente: i numeri sono quelli della proposta');
+    }
+    if (sc.tick != null && sc.tick !== 0) avvisi.push(`prezzo mosso di ${fmtTicks(sc.tick)} dalla proposta`);
+    if (p.valutazione && p.valutazione.valida === false) {
+        avvisi.push(`il bot non la proporrebbe più: ${motivoUscitaOmegaLabel(p.valutazione.motivo_codice) ?? 'motivo non dichiarato'}`);
+    }
+    if (ora && !ora.proponi) {
+        avvisi.push(`al prezzo di adesso: ${motivoUscitaOmegaLabel(ora.motivo_codice) ?? ora.motivo_codice}`);
+    }
+    const bloccabile = ora?.profitto != null ? ora.profitto
+        : p.profitto_bloccabile == null ? null : Number(p.profitto_bloccabile);
     const evTenere = p.ev_tenere == null ? null : Number(p.ev_tenere);
     const aspetta = p.meglio_aspettare === true;
     // 17/09 — ORDINE DELL'UTENTE: la scheda vale «sia in profit che in loss».
@@ -65,10 +132,10 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: Sc
     return (
         <article
             className={`rounded border bg-white/[0.02] overflow-hidden ${
-                blocco ? 'border-white/10' : 'border-primary/40'
+                avvisi.length ? 'border-white/10' : 'border-primary/40'
             }`}
             data-testid="cr-proposta-omega"
-            data-approvabile={blocco ? '0' : '1'}
+            data-approvabile="1"
         >
             <div className="px-3 py-2 border-b border-white/10 flex items-baseline gap-2 flex-wrap">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
@@ -104,11 +171,16 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: Sc
                 <span className="text-[13px] font-semibold">{p.selection_name ?? DASH}</span>
                 <span className="ml-auto text-right">
                     <span className="font-mono text-lg font-bold tabular-nums" data-testid="cr-omega-back-price">
-                        {fmtOdds(p.back_price)}
+                        {fmtOdds(backOra ?? p.back_price)}
                     </span>
                     <span className="block font-mono text-[11px] text-white/45" data-testid="cr-omega-back-size">
-                        per {p.back_size == null ? DASH : fmtMoney(p.back_size)}
+                        per {(ora?.back_stake ?? p.back_size) == null ? DASH : fmtMoney(ora?.back_stake ?? p.back_size)}
                         {p.price_at_decision != null && <> · bancata a {fmtOdds(p.entry_price)}</>}
+                        {backOra != null && <> · proposta a {fmtOdds(p.back_price ?? p.price_at_decision)}</>}
+                    </span>
+                    <span className="block text-[10px] text-white/40" data-testid="cr-omega-fonte">
+                        {backOra == null ? 'numeri della proposta (prezzo vivo assente)'
+                            : etaEFonte(alMs.istanteMs, alMs.fonte, nowMs)}
                     </span>
                 </span>
             </div>
@@ -148,10 +220,22 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: Sc
                 </span>
             </div>
 
-            {blocco && (
-                <div className="px-3 py-2 bg-orange-500/10 text-orange-300 text-[12px] font-medium border-t border-orange-500/20"
-                    data-testid="cr-proposta-omega-bloccata">
-                    ⛔ {blocco}
+            {/* 24/09 — il semaforo al prezzo di adesso, con la decisione del bot */}
+            {semaforo && (
+                <div className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border-t ${
+                    semaforo === 'SI' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                        : semaforo === 'QUASI' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                            : 'bg-red-500/10 text-red-300 border-red-500/20'
+                }`} data-testid="cr-omega-semaforo" data-semaforo={semaforo}>
+                    uscita ancora valida: {semaforo === 'SI' ? 'sì' : semaforo === 'QUASI' ? 'quasi (un tick la farebbe cadere)' : 'no'}
+                </div>
+            )}
+
+            {/* 24/09 — AVVISI, non blocchi: il bottone resta acceso, decidi tu */}
+            {avvisi.length > 0 && (
+                <div className="px-3 py-2 bg-amber-500/10 text-amber-300 text-[12px] font-medium border-t border-amber-500/20"
+                    data-testid="cr-proposta-omega-avviso">
+                    {avvisi.map((a, i) => <div key={i}>⚠ {a}</div>)}
                 </div>
             )}
 
@@ -167,12 +251,12 @@ export function SchedaChiusuraOmega({ proposta, onApprova, onIgnora, esito }: Sc
                 ) : (
                     <Button
                         onClick={() => (live ? setArmato(true) : void azione(onApprova))}
-                        disabled={!!blocco || inCorso}
+                        disabled={inCorso}
                         className={`rounded-none h-10 text-white font-bold uppercase tracking-wider text-[12px] disabled:opacity-40 ${
                             protezione ? 'bg-red-600/80 hover:bg-red-600' : 'bg-emerald-600/80 hover:bg-emerald-600'
                         }`}
                         data-testid="cr-omega-approva"
-                        title={blocco ?? 'invia l’ordine di chiusura'}
+                        title={avvisi.length ? `attenzione: ${avvisi.join(' · ')}` : 'invia l’ordine di chiusura'}
                     >
                         {inCorso ? <Loader2 className="w-4 h-4 animate-spin" />
                             : protezione ? 'Chiudi in perdita' : 'Chiudi ora'}

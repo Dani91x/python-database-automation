@@ -76,11 +76,11 @@ describe('SchedaPropostaOpportunita', () => {
         expect(screen.getByTestId('cr-opp-rifiuta')).toBeTruthy();
     });
 
-    it('senza prezzo vivo, PIAZZA è spento e lo dice — CRITERIO ESPLICITO', () => {
+    it('senza prezzo vivo, PIAZZA resta ACCESO e lo dice (24/09: avviso, non blocco) — CRITERIO ESPLICITO', () => {
         render(<SchedaPropostaOpportunita proposta={proposta()} abbinabileOra={500}
             etaQuoteS={3} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('prezzo vivo assente');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('prezzo vivo assente');
         expect(screen.getByTestId('cr-opp-prezzo-vivo').textContent).toContain('—');
     });
 
@@ -92,7 +92,7 @@ describe('SchedaPropostaOpportunita', () => {
         expect(screen.getByTestId('cr-opp-prezzo-vivo').textContent).toContain('1,35');
         fireEvent.click(screen.getByTestId('cr-opp-piazza'));
         await waitFor(() => expect(onPiazza).toHaveBeenCalled());
-        expect(onPiazza).toHaveBeenCalledWith(77, 1.35, undefined, undefined);
+        expect(onPiazza).toHaveBeenCalledWith(77, 1.35, undefined, undefined, expect.objectContaining({ prezzo_vivo_assente: false, fonte: 'scanner' }));
     });
 
     it('il prezzo vivo cambia fra due render: PIAZZA manda sempre quello CORRENTE', async () => {
@@ -104,7 +104,7 @@ describe('SchedaPropostaOpportunita', () => {
         expect(screen.getByTestId('cr-opp-prezzo-vivo').textContent).toContain('1,40');
         fireEvent.click(screen.getByTestId('cr-opp-piazza'));
         await waitFor(() => expect(onPiazza).toHaveBeenCalled());
-        expect(onPiazza).toHaveBeenCalledWith(77, 1.40, undefined, undefined);
+        expect(onPiazza).toHaveBeenCalledWith(77, 1.40, undefined, undefined, expect.objectContaining({ prezzo_vivo_assente: false, fonte: 'scanner' }));
     });
 
     it('lo slippage impostato a video viaggia con l’approvazione', async () => {
@@ -112,7 +112,7 @@ describe('SchedaPropostaOpportunita', () => {
         render(<SchedaPropostaOpportunita proposta={proposta()} abbinabileOra={500}
             etaQuoteS={3} prezzoVivo={1.32} slippagePct={5} onPiazza={onPiazza} onRifiuta={vi.fn()} />);
         fireEvent.click(screen.getByTestId('cr-opp-piazza'));
-        await waitFor(() => expect(onPiazza).toHaveBeenCalledWith(77, 1.32, undefined, 5));
+        await waitFor(() => expect(onPiazza).toHaveBeenCalledWith(77, 1.32, undefined, 5, expect.objectContaining({ prezzo_vivo_assente: false, fonte: 'scanner' })));
     });
 
     it('in LIVE il primo clic ARMA e solo il secondo manda: sono soldi veri', async () => {
@@ -123,7 +123,7 @@ describe('SchedaPropostaOpportunita', () => {
         fireEvent.click(screen.getByTestId('cr-opp-piazza'));
         expect(onPiazza).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('cr-opp-conferma-live'));
-        await waitFor(() => expect(onPiazza).toHaveBeenCalledWith(77, 1.3, undefined, undefined));
+        await waitFor(() => expect(onPiazza).toHaveBeenCalledWith(77, 1.3, undefined, undefined, expect.objectContaining({ prezzo_vivo_assente: false, fonte: 'scanner' })));
     });
 
     it('RIFIUTA chiama il rifiuto con l’id della proposta', async () => {
@@ -134,25 +134,25 @@ describe('SchedaPropostaOpportunita', () => {
         await waitFor(() => expect(onRifiuta).toHaveBeenCalledWith(77));
     });
 
-    it('quote vecchie: il bottone è spento E dice perché', () => {
+    it('quote vecchie: il bottone resta acceso E dice perché', () => {
         render(<SchedaPropostaOpportunita proposta={proposta()} abbinabileOra={500}
             etaQuoteS={95} prezzoVivo={1.3} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('quote vecchie');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('quote vecchie');
     });
 
-    it('età delle quote ignota: fail-closed, non si piazza al buio', () => {
+    it('età delle quote ignota: avviso, il bottone resta acceso', () => {
         render(<SchedaPropostaOpportunita proposta={proposta()} abbinabileOra={500}
             etaQuoteS={null} prezzoVivo={1.3} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('età delle quote ignota');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('età delle quote ignota');
     });
 
     it('liquidità insufficiente: in LIVE il FOK annullerebbe tutto', () => {
         render(<SchedaPropostaOpportunita proposta={proposta()} abbinabileOra={1.2}
             etaQuoteS={3} prezzoVivo={1.3} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('FILL_OR_KILL');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('FILL_OR_KILL');
     });
 });
 
@@ -231,18 +231,18 @@ describe('SchedaPropostaOpportunita — COMBO', () => {
         expect(screen.queryByTestId('cr-opp-lato')).toBeNull();
     });
 
-    it('senza prezzi vivi delle gambe, PIAZZA è spento — CRITERIO ESPLICITO', () => {
+    it('senza prezzi vivi delle gambe, PIAZZA resta ACCESO e avvisa — CRITERIO ESPLICITO', () => {
         render(<SchedaPropostaOpportunita proposta={propostaCombo()}
             onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('prezzo vivo assente');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('prezzo vivo assente');
     });
 
-    it('con una sola gamba senza prezzo vivo, PIAZZA resta spento (dice quale gamba)', () => {
+    it('con una sola gamba senza prezzo vivo, PIAZZA resta ACCESO (l’avviso dice quale gamba)', () => {
         render(<SchedaPropostaOpportunita proposta={propostaCombo()}
             prezziViviGambe={{ 0: 2.22, 1: null }} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('gamba 2');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('gamba 2');
     });
 
     it('PIAZZA manda ESATTAMENTE i prezzi vivi mostrati per OGNI gamba — CRITERIO ESPLICITO', async () => {
@@ -251,7 +251,7 @@ describe('SchedaPropostaOpportunita — COMBO', () => {
             prezziViviGambe={PREZZI_VIVI_COMBO_OK} onPiazza={onPiazza} onRifiuta={vi.fn()} />);
         fireEvent.click(screen.getByTestId('cr-opp-piazza'));
         await waitFor(() => expect(onPiazza).toHaveBeenCalled());
-        expect(onPiazza).toHaveBeenCalledWith(88, undefined, { 0: 2.22, 1: 1.91 }, undefined);
+        expect(onPiazza).toHaveBeenCalledWith(88, undefined, { 0: 2.22, 1: 1.91 }, undefined, expect.objectContaining({ prezzo_vivo_assente: false }));
     });
 
     it('in LIVE il primo clic ARMA anche per una combo', () => {
@@ -263,7 +263,7 @@ describe('SchedaPropostaOpportunita — COMBO', () => {
         expect(screen.getByTestId('cr-opp-conferma-live')).toBeTruthy();
     });
 
-    it('una gamba con prezzo (della proposta) non valido spegne PIAZZA e lo dice', () => {
+    it('una gamba con prezzo (della proposta) non valido: avviso, PIAZZA resta acceso', () => {
         const legs = [
             { market_id: 'ou25', market_type: 'OVER_UNDER_25', selection_id: 47972,
                 selection_name: 'Over 2.5 Goals', side: 'back', price: 2.2, size: 5, liability: 5 },
@@ -272,8 +272,8 @@ describe('SchedaPropostaOpportunita — COMBO', () => {
         ];
         render(<SchedaPropostaOpportunita proposta={propostaCombo({ legs })}
             prezziViviGambe={PREZZI_VIVI_COMBO_OK} onPiazza={vi.fn()} onRifiuta={vi.fn()} />);
-        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('cr-opp-bloccata').textContent).toContain('prezzo');
+        expect((screen.getByTestId('cr-opp-piazza') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByTestId('cr-opp-avviso').textContent).toContain('prezzo');
     });
 
     it('RIFIUTA funziona anche su una combo', async () => {

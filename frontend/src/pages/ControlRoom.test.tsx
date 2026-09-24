@@ -11,7 +11,7 @@
 //   · una partita senza risultato con «—», mai «0,00 €».
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, within, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -437,27 +437,40 @@ describe('uscite — la scheda che decide un ordine vero', () => {
         expect(card.textContent).toMatch(/non approvarla ha un costo/);
     });
 
-    it('PREZZO CORRENTE ASSENTE: bottone spento e ragione scritta', () => {
+    // 24/09 — ORDINE DELL'UTENTE («me lo segnala e decido io»): i quattro test
+    // qui sotto pretendevano un bottone SPENTO (testid cr-proposta-bloccata);
+    // ora la ragione e' un AVVISO (cr-proposta-avviso) e il bottone resta acceso.
+    it('PREZZO CORRENTE ASSENTE: bottone ACCESO e ragione scritta come avviso', () => {
         mVm.mockReturnValue(vm({ proposte: [propostaVista({}, { prezzo: null, abbinabile: null })] }));
         const { getByTestId } = mostra();
-        expect(getByTestId('cr-proposta-bloccata').textContent).toMatch(/non disponibile/);
-        expect((getByTestId('cr-approva') as HTMLButtonElement).disabled).toBe(true);
+        expect(getByTestId('cr-proposta-avviso').textContent).toMatch(/non disponibile/);
+        expect((getByTestId('cr-approva') as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('ETÀ DELLE QUOTE IGNOTA: non si piazza', () => {
+    it('PREZZO ASSENTE: il clic parte lo stesso, col prezzo della proposta e prezzo_vivo_assente', async () => {
+        const approva = vi.fn(async () => {});
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({}, { prezzo: null, abbinabile: null })], approva }));
+        fireEvent.click(mostra().getByTestId('cr-approva'));
+        await waitFor(() => expect(approva).toHaveBeenCalled());
+        const [id, , ctx] = approva.mock.calls[0] as unknown as [number, number, Record<string, unknown>];
+        expect(id).toBe(1);
+        expect(ctx).toMatchObject({ prezzo_vivo_assente: true });
+    });
+
+    it('ETÀ DELLE QUOTE IGNOTA: avviso', () => {
         mVm.mockReturnValue(vm({ proposte: [propostaVista({}, {}, null)] }));
-        expect(mostra().getByTestId('cr-proposta-bloccata').textContent).toMatch(/età/);
+        expect(mostra().getByTestId('cr-proposta-avviso').textContent).toMatch(/età/);
     });
 
-    it('MERCATO CHE NON ABBINA ABBASTANZA: blocca e spiega la conseguenza', () => {
+    it('MERCATO CHE NON ABBINA ABBASTANZA: avvisa e spiega la conseguenza', () => {
         mVm.mockReturnValue(vm({ proposte: [propostaVista({ size: 50 }, { abbinabile: 4 })] }));
-        expect(mostra().getByTestId('cr-proposta-bloccata').textContent).toMatch(/annullato per intero/);
+        expect(mostra().getByTestId('cr-proposta-avviso').textContent).toMatch(/annullato per intero/);
     });
 
     it('tutto a posto: si può chiudere, e il bottone non è muto', () => {
         mVm.mockReturnValue(vm({ proposte: [propostaVista()] }));
         const { getByTestId, queryByTestId } = mostra();
-        expect(queryByTestId('cr-proposta-bloccata')).toBeNull();
+        expect(queryByTestId('cr-proposta-avviso')).toBeNull();
         expect((getByTestId('cr-approva') as HTMLButtonElement).disabled).toBe(false);
     });
 
@@ -465,7 +478,12 @@ describe('uscite — la scheda che decide un ordine vero', () => {
         const approva = vi.fn(async () => {});
         mVm.mockReturnValue(vm({ proposte: [propostaVista()], approva }));
         fireEvent.click(mostra().getByTestId('cr-approva'));
-        expect(approva).toHaveBeenCalledWith(1);
+        expect(approva).toHaveBeenCalled();
+        expect((approva.mock.calls[0] as unknown[])[0]).toBe(1);
+        // 24/09 — con la chiusura parte il prezzo A VIDEO, con eta'/fonte/flag
+        const [, visto, ctx] = approva.mock.calls[0] as unknown as [number, number, Record<string, unknown>];
+        expect(typeof visto).toBe('number');
+        expect(ctx).toMatchObject({ prezzo_vivo_assente: false, fonte: 'scanner' });
 
         cleanup();
         vi.clearAllMocks();

@@ -20,12 +20,34 @@
 // quella scheda non torna.
 //
 // In LIVE il primo clic ARMA e il secondo manda: sono soldi veri.
+//
+// 24/09 — ORDINE DELL'UTENTE (visto a video): «se il prezzo cambia ricevo
+// "prezzo vivo assente: non si piazza al buio" E NON POSSO PIAZZARE NULLA.
+// Voglio una scheda che ricalcola al ms tutto MA NON BLOCCA L'ENTRATA: me lo
+// segnala e decido io.» Da oggi:
+//   * il prezzo arriva AL MS dal ladder del mercato (`usePrezzoAlMs`:
+//     `sorgenteLadderAlMs`, sottoscritto con la scheda e staccato alla
+//     chiusura); per i mercati che il runner non segue ripiega sul feed dello
+//     scanner, e la scheda lo DICHIARA con l'eta';
+//   * EV, vantaggio, P implicita e responsabilita' si ricalcolano a ogni tick
+//     coi CRITERI del modello scritti dal servizio (`valutaAlPrezzo`); il
+//     semaforo dice SI / QUASI / NO;
+//   * NESSUN motivo spegne PIAZZA: prezzo assente o vecchio, prezzo mosso,
+//     «fuori criterio», «non piu' valida per il modello» sono AVVISI. Al clic
+//     parte il prezzo a video (o l'ultimo noto con `prezzo_vivo_assente`),
+//     col suo istante e la sua fonte: decide il servizio con la tolleranza.
 // ============================================================================
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2, ShieldAlert, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtAge, DASH } from '@/lib/format';
+import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtAge, fmtTicks, DASH } from '@/lib/format';
 import type { PropostaOpportunita, PropostaOpportunitaLeg, PrezziViviGambe } from '@/lib/safeBot';
+import type { CriteriProposta } from '@/lib/valutaProposta';
+import {
+    giudica, scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato,
+    type ContestoPrezzoVisto, type PrezzoScheda, type Semaforo, type ValutazioneServizio,
+} from '@/lib/schedaAlMs';
+import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
 
 /** Oltre questa età le quote non si usano per piazzare: stessa soglia del
  *  resto della piattaforma (`safeBot.FEED_ROW_STALE_MS`). */
@@ -61,8 +83,15 @@ export interface SchedaPropostaOpportunitaProps {
      *  tolleranza con LA STESSA soglia che l'utente vede, non un default
      *  invisibile. Assente → il servizio usa il suo default. */
     slippagePct?: number | null;
+    /**
+     * 24/09 — la sorgente del ladder AL MS (`sorgenteLadderAlMs` di
+     * `lib/localTransport.ts`). Assente = nessuna sottoscrizione: la scheda
+     * usa il feed dello scanner (`prezzoVivo`/`etaQuoteS`) e lo dichiara.
+     */
+    sorgenteLadder?: SorgenteLadder | null;
+    /** 24/09 — il contesto del prezzo al clic (eta', fonte, prezzo vivo assente). */
     onPiazza: (id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe,
-              slippagePct?: number) => Promise<void>;
+              slippagePct?: number, contesto?: ContestoPrezzoVisto) => Promise<void>;
     onRifiuta: (id: number) => Promise<void>;
 }
 
@@ -78,7 +107,8 @@ const KIND_IT: Record<string, string> = {
     anomaly: 'anomalia', combo: 'combinazione',
 };
 
-/** Perché NON si può firmare adesso. Mai un bottone spento e muto.
+/** Che cosa AVVISARE prima della firma (24/09: NON spegne più PIAZZA — ordine
+ *  dell'utente «me lo segnala e decido io»; il nome resta per compatibilità).
  *
  * 18/09 — ORDINE DELL'UTENTE: PIAZZA manda il prezzo VIVO, non quello della
  * proposta: senza un `prezzoVivo` noto e fresco non c'è NIENTE da mandare,
@@ -95,12 +125,12 @@ export function motivoNonPiazzabile(p: {
     if (!Number.isFinite(prezzo) || prezzo <= 1) return 'prezzo della proposta non valido';
     const size = Number(p.size);
     if (!Number.isFinite(size) || size <= 0) return 'importo della proposta non valido';
-    if (p.etaQuoteS == null) return 'età delle quote ignota: non si piazza al buio';
+    if (p.etaQuoteS == null) return 'età delle quote ignota: controlla il prezzo prima di firmare';
     if (p.etaQuoteS > ETA_QUOTE_MAX_S) {
-        return `quote vecchie di ${Math.round(p.etaQuoteS)} s: non si piazza al buio`;
+        return `quote vecchie di ${Math.round(p.etaQuoteS)} s: il prezzo può non essere quello di adesso`;
     }
     if (p.prezzoVivo == null || !Number.isFinite(p.prezzoVivo) || p.prezzoVivo <= 1) {
-        return 'prezzo vivo assente: non si piazza al buio';
+        return 'prezzo vivo assente: al clic parte l’ultimo prezzo noto, il servizio lo confronta col mercato';
     }
     if (p.abbinabileOra != null && p.abbinabileOra <= 0) {
         return 'nessun importo abbinabile al miglior prezzo in questo momento';
@@ -142,11 +172,11 @@ export function motivoNonPiazzabileCombo(p: {
         if (!Number.isFinite(size) || size <= 0) return 'importo di una gamba non valido';
     }
     const vivi = p.prezziViviGambe;
-    if (vivi == null) return 'prezzo vivo assente: non si piazza al buio';
+    if (vivi == null) return 'prezzo vivo assente: al clic partono i prezzi della proposta';
     for (let i = 0; i < legs.length; i++) {
         const v = vivi[i];
         if (v == null || !Number.isFinite(v) || v <= 1) {
-            return `prezzo vivo assente per la gamba ${i + 1}: non si piazza al buio`;
+            return `prezzo vivo assente per la gamba ${i + 1}: al clic parte il suo prezzo della proposta`;
         }
     }
     return null;
@@ -154,38 +184,110 @@ export function motivoNonPiazzabileCombo(p: {
 
 export function SchedaPropostaOpportunita({
     proposta, abbinabileOra = null, etaQuoteS = null, prezzoVivo = null,
-    prezziViviGambe = null, slippagePct = null, onPiazza, onRifiuta,
+    prezziViviGambe = null, slippagePct = null, sorgenteLadder = null, onPiazza, onRifiuta,
 }: SchedaPropostaOpportunitaProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
+    // l'orologio della scheda: l'eta' del prezzo scorre anche a mercato fermo
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowMs(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
 
     const live = p.mode === 'live';
     const lato = (p.side ?? null) as 'back' | 'lay' | null;
     // 18/09 — una COMBO porta N gambe in `payload.legs`, non un market_id/
     // selection_id/side/price in cima: e' un'altra forma di scheda.
     const isCombo = p.kind === 'combo' && Array.isArray(p.legs) && p.legs.length >= 2;
-    const blocco = isCombo
-        ? motivoNonPiazzabileCombo({ legs: p.legs, prezziViviGambe })
-        : motivoNonPiazzabile({ prezzo: p.price, size: p.size, abbinabileOra, etaQuoteS, prezzoVivo });
 
-    // 18/09 — ORDINE DELL'UTENTE: PIAZZA manda ESATTAMENTE il numero che la
-    // scheda sta mostrando in quell'istante, non quello della proposta. Con
-    // `blocco` già spento (bottone disabilitato altrimenti) `prezzoVivo`/
-    // `prezziViviGambe` sono garantiti presenti e validi da `motivoNon
-    // Piazzabile(Combo)`: qui si RIUSA lo stesso valore già renderizzato,
-    // mai un ricalcolo separato — è la stessa variabile che il test verifica.
+    // 24/09 — IL PREZZO AL MS: ladder del mercato se c'e', altrimenti il feed
+    // dello scanner che la scheda riceveva gia' (ripiego DICHIARATO).
+    const ripiego: PrezzoScheda | null = prezzoVivo == null ? null : {
+        back: lato === 'back' ? prezzoVivo : null, backSize: lato === 'back' ? abbinabileOra : null,
+        lay: lato === 'lay' ? prezzoVivo : null, laySize: lato === 'lay' ? abbinabileOra : null,
+        istanteMs: etaQuoteS == null ? null : nowMs - etaQuoteS * 1000,
+        fonte: 'scanner', statoMercato: null,
+    };
+    const { prezzo: alMs, ultimoNoto } = usePrezzoAlMs({
+        sorgente: isCombo ? null : sorgenteLadder,
+        sport: p.sport === 'tennis' ? 'tennis' : 'calcio',
+        marketId: p.market_id ?? null, selectionId: p.selection_id ?? null, lato, ripiego,
+    });
+    const vivo = prezzoDelLato(alMs, lato);
+    const abbinabile = sizeDelLato(alMs, lato);
+    // eta' del prezzo mostrato; senza prezzo, quella del feed (se nota)
+    const etaS = alMs.istanteMs == null ? etaQuoteS : Math.max(0, (nowMs - alMs.istanteMs) / 1000);
+
+    // i numeri AL PREZZO DI ADESSO coi criteri del modello (solo se il
+    // servizio li ha scritti: una proposta vecchia mostra i numeri di allora)
+    const criteri = (p as { criteri?: CriteriProposta | null }).criteri ?? null;
+    const valutazione = (p as { valutazione?: ValutazioneServizio | null }).valutazione ?? null;
+    const giudizio = !isCombo && criteri
+        ? giudica({ lato, prezzo: vivo, abbinabile, pModel: p.p_model, criteri, valutazione })
+        : null;
+    const semaforo: Semaforo | null = isCombo
+        ? (valutazione && valutazione.valida === false ? 'NO' : null)
+        : giudizio?.semaforo ?? null;
+    const sc = scarto(vivo, p.price_at_decision);
+    const ap = giudizio?.alPrezzo ?? null;
+
+    // GLI AVVISI (mai un bottone spento): dati/prezzo, prezzo mosso, criteri.
+    const avvisi: string[] = [];
+    const base = isCombo
+        ? motivoNonPiazzabileCombo({ legs: p.legs, prezziViviGambe })
+        : motivoNonPiazzabile({ prezzo: p.price, size: p.size, abbinabileOra: abbinabile,
+            etaQuoteS: etaS, prezzoVivo: vivo });
+    if (base) avvisi.push(base);
+    if (!isCombo && vivo == null && ultimoNoto) {
+        const eta = ultimoNoto.istanteMs == null ? null : (nowMs - ultimoNoto.istanteMs) / 1000;
+        avvisi.push(`prezzo vivo assente da ${eta == null ? 'un tempo ignoto' : fmtAge(eta)}: `
+            + `ultimo noto ${fmtOdds(ultimoNoto.prezzo)}`);
+    }
+    if (sc.tick != null && sc.tick !== 0) {
+        avvisi.push(`prezzo mosso di ${fmtTicks(sc.tick)} (${sc.tick > 0 ? '+' : '−'}`
+            + `${fmtNum(Math.abs(sc.pct ?? 0), 2)} %) dalla proposta`);
+    }
+    if (valutazione && valutazione.valida === false) {
+        avvisi.push(valutazione.causa === 'modello'
+            ? 'opportunità non più valida per il modello (lo dice il servizio)'
+            : 'opportunità non più valida al prezzo dell’ultima valutazione del servizio');
+    }
+    if (giudizio && giudizio.semaforo !== 'SI') {
+        avvisi.push(`fuori criterio: ${giudizio.motivi.join('; ')}`);
+    }
+
+    // 18/09 + 24/09 — ORDINE DELL'UTENTE: PIAZZA manda ESATTAMENTE il numero
+    // a video in quell'istante (con eta' e fonte); senza prezzo vivo manda
+    // l'ultimo noto col flag `prezzo_vivo_assente`. Mai un clic rifiutato qui.
     const piazza = async () => {
         setInCorso(true);
         try {
+            const adesso = Date.now();
             if (isCombo) {
                 const pulite: PrezziViviGambe = {};
-                for (const [k, v] of Object.entries(prezziViviGambe ?? {})) {
-                    if (v != null) pulite[Number(k)] = v;
-                }
-                await onPiazza(proposta.id, undefined, pulite, slippagePct ?? undefined);
+                let assente = false;
+                (p.legs ?? []).forEach((leg, i) => {
+                    const v = prezziViviGambe?.[i];
+                    if (v != null && Number.isFinite(v) && v > 1) { pulite[i] = v; return; }
+                    assente = true;
+                    const foto = Number(leg.price);
+                    if (Number.isFinite(foto) && foto > 1) pulite[i] = foto;
+                });
+                await onPiazza(proposta.id, undefined, pulite, slippagePct ?? undefined, {
+                    eta_ms: null, fonte: assente ? 'proposta' : 'scanner',
+                    prezzo_vivo_assente: assente, clic_ms: adesso });
             } else {
-                await onPiazza(proposta.id, prezzoVivo ?? undefined, undefined, slippagePct ?? undefined);
+                const scelto = prezzoVistoAlClic({
+                    vivo, vivoIstanteMs: alMs.istanteMs, vivoFonte: alMs.fonte,
+                    ultimoNoto: ultimoNoto?.prezzo ?? null,
+                    ultimoNotoIstanteMs: ultimoNoto?.istanteMs ?? null,
+                    ultimoNotoFonte: ultimoNoto?.fonte ?? null,
+                    prezzoProposta: p.price, nowMs: adesso,
+                });
+                await onPiazza(proposta.id, scelto.prezzo ?? undefined, undefined,
+                    slippagePct ?? undefined, scelto.contesto);
             }
         } finally { setInCorso(false); setArmato(false); }
     };
@@ -273,23 +375,31 @@ export function SchedaPropostaOpportunita({
                     </span>
                     <span className="ml-auto text-right">
                         <span className="font-mono text-lg font-bold tabular-nums" data-testid="cr-opp-prezzo-vivo">
-                            {prezzoVivo == null
+                            {vivo == null
                                 ? <span className="text-orange-400">{DASH}</span>
-                                : fmtOdds(prezzoVivo)}
+                                : fmtOdds(vivo)}
+                        </span>
+                        {/* 24/09 — punta/banca migliori di adesso, con l'importo */}
+                        <span className="block font-mono text-[10.5px] text-white/50" data-testid="cr-opp-book">
+                            punta {fmtOdds(alMs.back)} ({alMs.backSize == null ? DASH : fmtMoney(alMs.backSize)})
+                            {' · '}banca {fmtOdds(alMs.lay)} ({alMs.laySize == null ? DASH : fmtMoney(alMs.laySize)})
                         </span>
                         <span className="block font-mono text-[11px] text-white/40" data-testid="cr-opp-prezzo">
                             <TrendingUp className="w-3 h-3 inline mr-0.5" />
                             proposta a {fmtOdds(p.price_at_decision)}
-                            {prezzoVivo != null && Number.isFinite(Number(p.price_at_decision))
-                                && Number(p.price_at_decision) > 1 && (
+                            {vivo != null && sc.tick != null && (
                                 <span className={
-                                    prezzoVivo === Number(p.price_at_decision) ? 'text-white/40'
-                                        : prezzoVivo > Number(p.price_at_decision) ? 'text-emerald-400' : 'text-orange-400'
-                                }>
-                                    {' '}({prezzoVivo >= Number(p.price_at_decision) ? '+' : ''}
-                                    {fmtNum(prezzoVivo - Number(p.price_at_decision), 2)})
+                                    sc.tick === 0 ? 'text-white/40'
+                                        : sc.tick > 0 ? 'text-emerald-400' : 'text-orange-400'
+                                } data-testid="cr-opp-scarto">
+                                    {' '}({vivo >= Number(p.price_at_decision) ? '+' : ''}
+                                    {fmtNum(vivo - Number(p.price_at_decision), 2)} · {fmtTicks(sc.tick)}
+                                    {' · '}{fmtNum(sc.pct, 2)} %)
                                 </span>
                             )}
+                        </span>
+                        <span className="block text-[10px] text-white/40" data-testid="cr-opp-fonte">
+                            {etaEFonte(alMs.istanteMs, alMs.fonte, nowMs)}
                         </span>
                     </span>
                 </div>
@@ -306,41 +416,53 @@ export function SchedaPropostaOpportunita({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 mt-2 border-t border-white/5">
                 <Cella etichetta="Stake previsto" valore={fmtMoney(p.size)} testId="cr-opp-stake" />
                 <Cella etichetta="Responsabilità"
-                    valore={p.liability == null ? DASH : fmtMoney(p.liability)}
+                    valore={(ap?.liability ?? p.liability) == null ? DASH : fmtMoney(ap?.liability ?? p.liability)}
                     tono="cattivo" testId="cr-opp-liability" />
                 <Cella etichetta="Abbinabile ora"
-                    valore={abbinabileOra == null
+                    valore={abbinabile == null
                         ? (p.size_available == null ? DASH : `${fmtMoney(p.size_available)} (alla proposta)`)
-                        : fmtMoney(abbinabileOra)}
-                    tono={abbinabileOra != null && Number(p.size) <= abbinabileOra + 0.005 ? 'buono' : undefined}
+                        : fmtMoney(abbinabile)}
+                    tono={abbinabile != null && Number(p.size) <= abbinabile + 0.005 ? 'buono' : undefined}
                     testId="cr-opp-abbinabile" />
                 <Cella etichetta="Valore atteso (EV)"
-                    valore={NUM(p.ev)} tono={Number(p.ev) > 0 ? 'buono' : 'cattivo'}
+                    valore={NUM(ap?.ev ?? p.ev)} tono={Number(ap?.ev ?? p.ev) > 0 ? 'buono' : 'cattivo'}
                     testId="cr-opp-ev" />
             </div>
 
-            {/* ---- i numeri del modello ---- */}
+            {/* ---- i numeri del modello (24/09: P del mercato e vantaggio AL PREZZO DI ADESSO) ---- */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 border-t border-white/5">
                 <Cella etichetta="P modello" valore={PCT(p.p_model)} testId="cr-opp-pmodel" />
-                <Cella etichetta="P del mercato" valore={PCT(p.p_implied)} testId="cr-opp-pimplied" />
-                <Cella etichetta="Vantaggio" valore={NUM(p.edge)} testId="cr-opp-edge" />
+                <Cella etichetta="P del mercato" valore={PCT(ap?.p_implicita ?? p.p_implied)} testId="cr-opp-pimplied" />
+                <Cella etichetta="Vantaggio" valore={NUM(ap?.edge ?? p.edge)} testId="cr-opp-edge" />
                 <Cella etichetta="Confidenza" valore={PCT(p.confidence)} testId="cr-opp-confidence" />
             </div>
+
+            {/* ---- 24/09: c'e' ancora? semaforo coi criteri del modello ---- */}
+            {semaforo && (
+                <div className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border-t ${
+                    semaforo === 'SI' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                        : semaforo === 'QUASI' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                            : 'bg-red-500/10 text-red-300 border-red-500/20'
+                }`} data-testid="cr-opp-semaforo" data-semaforo={semaforo}>
+                    opportunità ancora valida: {semaforo === 'SI' ? 'sì' : semaforo === 'QUASI' ? 'quasi' : 'no'}
+                </div>
+            )}
 
             {/* ---- perché, in italiano ---- */}
             <div className="px-3 py-2 text-[12px] text-white/70 border-t border-white/5">
                 <b className="text-white">Perché:</b>{' '}
                 <span data-testid="cr-opp-rationale">{p.rationale ?? 'nessuna spiegazione dal modello'}</span>
                 <span className="block text-[11px] text-white/40 mt-0.5" data-testid="cr-opp-eta">
-                    quote {etaQuoteS == null ? <span className="text-orange-400">età ignota</span> : fmtAge(etaQuoteS)}
+                    quote {etaS == null ? <span className="text-orange-400">età ignota</span> : fmtAge(etaS)}
                     {' · '}partirebbe in <b className={live ? 'text-orange-300' : 'text-white/60'}>{String(p.mode ?? 'paper').toUpperCase()}</b>
                 </span>
             </div>
 
-            {blocco && (
-                <div className="px-3 py-2 bg-orange-500/10 text-orange-300 text-[12px] font-medium border-t border-orange-500/20"
-                    data-testid="cr-opp-bloccata">
-                    ⛔ {blocco}
+            {/* 24/09 — AVVISI, non blocchi: PIAZZA resta acceso, decide l'utente */}
+            {avvisi.length > 0 && (
+                <div className="px-3 py-2 bg-amber-500/10 text-amber-300 text-[12px] font-medium border-t border-amber-500/20"
+                    data-testid="cr-opp-avviso">
+                    {avvisi.map((a, i) => <div key={i}>⚠ {a}</div>)}
                 </div>
             )}
 
@@ -357,10 +479,10 @@ export function SchedaPropostaOpportunita({
                 ) : (
                     <Button
                         onClick={() => (live ? setArmato(true) : void piazza())}
-                        disabled={!!blocco || inCorso}
+                        disabled={inCorso}
                         className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] disabled:opacity-40"
                         data-testid="cr-opp-piazza"
-                        title={blocco ?? 'invia l’ordine di apertura'}
+                        title={avvisi.length ? `attenzione: ${avvisi.join(' · ')}` : 'invia l’ordine di apertura'}
                     >
                         {inCorso ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Piazza'}
                     </Button>
@@ -383,7 +505,7 @@ export function SchedaPropostaOpportunita({
                         : <>Se rifiuti, questa opportunità non torna finché resta la stessa. Nessun ordine parte da solo.</>}
             </div>
 
-            {live && !blocco && (
+            {live && (
                 <div className="px-3 py-1.5 flex items-start gap-2 text-[11px] text-orange-300 bg-orange-500/5">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <span>Apertura con soldi veri: la responsabilità qui sopra è quella che rischi.</span>

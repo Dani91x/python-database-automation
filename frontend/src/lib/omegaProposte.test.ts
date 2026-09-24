@@ -91,9 +91,9 @@ describe('quando si puo approvare — fail-closed', () => {
         expect(m).toMatch(/tenere vale di più/i);
     });
 
-    it('senza prezzo di back non si piazza al buio', () => {
-        expect(motivoNonApprovabileOmega(payload({ back_price: null }))).toMatch(/non si piazza al buio/);
-        expect(motivoNonApprovabileOmega(payload({ back_price: 1 }))).toMatch(/non si piazza al buio/);
+    it('senza prezzo di back: avviso (dal 24/09 non blocca più)', () => {
+        expect(motivoNonApprovabileOmega(payload({ back_price: null }))).toMatch(/prezzo di back non disponibile/);
+        expect(motivoNonApprovabileOmega(payload({ back_price: 1 }))).toMatch(/prezzo di back non disponibile/);
     });
 
     it('senza importo di chiusura non si piazza al buio', () => {

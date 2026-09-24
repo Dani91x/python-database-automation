@@ -16,13 +16,19 @@ import { organizzaOpportunita, type VoceOrdinabile } from '@/lib/opportunitaOrdi
 import { SchedaPropostaOpportunita } from './SchedaPropostaOpportunita';
 import type { SportKey } from './SplitSport';
 import type { useControlRoom, PropostaOppVista } from './useControlRoom';
+import { sorgenteLadderAlMs } from '@/lib/localTransport';
+import type { SorgenteLadder } from './usePrezzoAlMs';
 
 export interface OpportunitaColonnaProps {
     vm: ReturnType<typeof useControlRoom>;
     /** serve SOLO a dirlo a schermo: la colonna non si filtra mai. */
     filtroSport: SportKey | null;
     testId?: string;
+    /** 24/09 — la sorgente del ladder al ms delle schede (test: una finta). */
+    sorgenteLadder?: SorgenteLadder | null;
 }
+
+const SORGENTE_DI_SERIE: SorgenteLadder = (sport) => sorgenteLadderAlMs(sport);
 
 /** una proposta di opportunità come voce ordinabile: NESSUN campo di prezzo
  *  qui dentro, di proposito (vedi `lib/opportunitaOrdine.ts`). */
@@ -38,7 +44,9 @@ function comeVoce(po: PropostaOppVista): VoceOrdinabile & { po: PropostaOppVista
     };
 }
 
-export function OpportunitaColonna({ vm, filtroSport, testId = 'cr-opportunita' }: OpportunitaColonnaProps) {
+export function OpportunitaColonna({
+    vm, filtroSport, testId = 'cr-opportunita', sorgenteLadder = SORGENTE_DI_SERIE,
+}: OpportunitaColonnaProps) {
     const gruppi = organizzaOpportunita(vm.proposteOpportunita.map(comeVoce));
     const conta = vm.proposteOpportunita.length;
 
@@ -58,6 +66,21 @@ export function OpportunitaColonna({ vm, filtroSport, testId = 'cr-opportunita' 
                     {vm.avvisoOpportunita}
                 </div>
             )}
+
+            {/* 24/09 — l'ESITO delle ultime approvazioni: la scheda sparisce al
+                clic, quello che il servizio ha fatto (coi due prezzi se ha
+                rifiutato) resta qui, nello stesso riquadro degli avvisi. */}
+            {(vm.esitiOpportunita ?? []).map((e) => (
+                <div key={`esito-${e.id}`}
+                    className={`px-3 py-1.5 border-b text-[10.5px] ${
+                        e.stato === 'eseguita' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                            : e.stato === 'rifiutata' ? 'border-red-500/20 bg-red-500/10 text-red-300'
+                                : 'border-white/10 bg-white/[0.03] text-white/60'
+                    }`}
+                    data-testid="cr-opportunita-esito" data-stato={e.stato}>
+                    proposta #{e.id} · {e.stato}: {e.testo}
+                </div>
+            ))}
 
             {filtroSport != null && (
                 <div className="px-3 py-1.5 border-b border-white/10 text-[10.5px] text-white/45"
@@ -94,6 +117,7 @@ export function OpportunitaColonna({ vm, filtroSport, testId = 'cr-opportunita' 
                                 prezzoVivo={v.po.prezzoVivoGamba}
                                 prezziViviGambe={v.po.prezziViviGambe}
                                 slippagePct={vm.slippagePct}
+                                sorgenteLadder={sorgenteLadder}
                                 onPiazza={vm.piazzaOpportunita}
                                 onRifiuta={vm.rifiutaOpportunita}
                             />

@@ -20,7 +20,7 @@
 //     l'assenza di somma e il netto diventano rossi.
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import type { TennisBotOrderRow } from '@/lib/tennis';
 import type { ScanRow, CalcioScanPayload } from '@/lib/safeStrategyScan';
 import { romeDay } from '@/lib/dailyHistory';
@@ -57,6 +57,10 @@ vi.mock('@/lib/safeBot', async (orig) => ({
     cashOutEvento: vi.fn(async () => undefined),
     riprendiEventoSafe: vi.fn(async () => undefined),
     approvaPropostaOpportunita: vi.fn(async () => undefined),
+    // 24/09 - l'esito a video: stessa forma di `esitoApprovazione` (lib/safeBot.ts)
+    fetchEsitiApprovazioni: vi.fn(async (ids: number[]) => ids.map((id) => ({
+        id, stato: 'rifiutata', testo: 'rifiutato: prezzo cambiato fra il clic e l’esecuzione - visto 1.3, all’esecuzione 1.4',
+    }))),
 }));
 
 vi.mock('@/lib/mike', async (orig) => ({
@@ -676,7 +680,7 @@ describe('piazzaOpportunita manda ESATTAMENTE il prezzo che la scheda mostra', (
     it('il prezzo visto passato dalla scheda arriva IDENTICO a approvaPropostaOpportunita (mai quello della proposta)', async () => {
         const { result } = renderHook(() => useControlRoom());
         await waitFor(() => expect(result.current.caricamento).toBe(false));
-        vi.mocked(approvaPropostaOpportunita).mockClear().mockResolvedValueOnce(undefined);
+        vi.mocked(approvaPropostaOpportunita).mockReset().mockResolvedValue(undefined);
         await result.current.piazzaOpportunita(55, 1.87);
         expect(approvaPropostaOpportunita).toHaveBeenCalledWith(
             55, { prezzoVisto: 1.87, legsPricesVisti: undefined, slippagePct: undefined },
@@ -686,6 +690,52 @@ describe('piazzaOpportunita manda ESATTAMENTE il prezzo che la scheda mostra', (
     // l'inoltro di `prezzoVisto` (passato `undefined` a `approvaProposta
     // Opportunita`) -> l'asserzione sopra (`prezzoVisto: 1.87`) diventa
     // ROSSA. Verificata a mano e ripristinata, md5 del file invariato.
+
+    // 24/09 — il CONTESTO del prezzo visto (eta', fonte, flag) viaggia con la firma
+    const CTX = { eta_ms: 42000, fonte: 'scanner' as const, prezzo_vivo_assente: true, clic_ms: 1 };
+
+    it('il contesto del prezzo visto arriva alla RPC (p_contesto)', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOpportunita).mockReset().mockResolvedValue(undefined);
+        await act(async () => { await result.current.piazzaOpportunita(55, 1.3, undefined, undefined, CTX); });
+        expect(approvaPropostaOpportunita).toHaveBeenCalledTimes(1);
+        expect(approvaPropostaOpportunita).toHaveBeenCalledWith(55, expect.objectContaining({
+            prezzoVisto: 1.3, contesto: CTX }));
+        expect(result.current.avvisoOpportunita).toBeNull();
+    });
+
+    it('migrazione del 24/09 assente: UN ripiego senza contesto, col prezzo visto, e lo dice', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOpportunita).mockReset()
+            .mockRejectedValueOnce(new Error('PGRST202 function not found'))
+            .mockResolvedValueOnce(undefined);
+        await act(async () => { await result.current.piazzaOpportunita(55, 1.3, undefined, undefined, CTX); });
+        expect(approvaPropostaOpportunita).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(approvaPropostaOpportunita).mock.calls[1]).toEqual(
+            [55, { prezzoVisto: 1.3, legsPricesVisti: undefined, slippagePct: undefined }]);
+        expect(result.current.avvisoOpportunita).toMatch(/migrazione del 24\/09/);
+    });
+
+    it('un rifiuto VERO non si ripiega (mai una doppia approvazione)', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOpportunita).mockReset()
+            .mockRejectedValueOnce(new Error('la proposta non è più in attesa di approvazione'));
+        await expect(result.current.piazzaOpportunita(55, 1.3, undefined, undefined, CTX)).rejects.toThrow(/non è più/);
+        expect(approvaPropostaOpportunita).toHaveBeenCalledTimes(1);
+    });
+
+    it('l’esito dell’approvazione arriva a video: inviata, poi rifiutata coi due prezzi', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOpportunita).mockReset().mockResolvedValue(undefined);
+        await act(async () => { await result.current.piazzaOpportunita(56, 1.3, undefined, undefined, CTX); });
+        await waitFor(() => expect(result.current.esitiOpportunita[0]?.stato).toBe('rifiutata'));
+        expect(result.current.esitiOpportunita[0].id).toBe(56);
+        expect(result.current.esitiOpportunita[0].testo).toMatch(/visto 1\.3, all’esecuzione 1\.4/);
+    });
 });
 
 // ============================================================================

@@ -88,9 +88,10 @@ import {
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
 import {
-    isPropostaOpportunita, approvaPropostaOpportunita,
-    type PropostaOpportunita, type PrezziViviGambe,
+    isPropostaOpportunita, approvaPropostaOpportunita, fetchEsitiApprovazioni,
+    type PropostaOpportunita, type PrezziViviGambe, type EsitoApprovazione,
 } from '@/lib/safeBot';
+import type { ContestoPrezzoVisto } from '@/lib/schedaAlMs';
 import {
     componiObiettivo, righeRealizzatoPerCiclo, righeGiornataPerCiclo, rigaSintetica,
     leggiPnlRealeOggi, pnlRealePiuRecente, differenzaContoRighe,
@@ -849,14 +850,17 @@ export interface ControlRoomVM {
      */
     piazzaOpportunita: (
         id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe, slippagePct?: number,
+        contesto?: ContestoPrezzoVisto,
     ) => Promise<void>;
     rifiutaOpportunita: (id: number) => Promise<void>;
     /** avviso onesto quando PIAZZA è dovuto ripiegare sul solo `p_id`
      *  (migrazione del prezzo visto non applicata): null = nessun ripiego. */
     avvisoOpportunita: string | null;
+    /** 24/09 — esito a video delle ultime approvazioni (la scheda sparisce al clic) */
+    esitiOpportunita: EsitoApprovazione[];
     slippagePct: number;
     setSlippagePct: (v: number) => void;
-    approva: (id: number) => Promise<void>;
+    approva: (id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto) => Promise<void>;
     ignora: (id: number) => Promise<void>;
     /** chiusura MANUALE di una posizione, per intero: accoda una richiesta
      *  `cashout` sulla coda DEL BOT DELLA RIGA (B16, 24/09: prima andava a
@@ -886,6 +890,10 @@ export interface ControlRoomVM {
      * migrazione `omega_proposte_uscita_2026-09-16.sql` non applicata).
      */
     proposteOmega: PropostaUscitaOmega[];
+    /** 24/09 — il prezzo di BACK dal feed dello scanner per ogni proposta di
+     *  Omega (id -> prezzo, abbinabile, eta'): ripiego della scheda al ms
+     *  quando il runner non segue quel mercato. */
+    vivoOmegaScanner: Map<number, { vivo: PrezzoVivo; etaQuoteS: number | null }>;
     erroreProposteOmega: string | null;
     approvaOmega: (id: number) => Promise<void>;
     ignoraOmega: (id: number) => Promise<void>;
@@ -1078,6 +1086,8 @@ export function useControlRoom(): ControlRoomVM {
     /** avviso onesto: PIAZZA ha dovuto ripiegare sul solo `p_id` perché la
      *  RPC non accetta ancora il prezzo visto (migrazione non applicata). */
     const [avvisoOpportunita, setAvvisoOpportunita] = useState<string | null>(null);
+    /** 24/09 - gli esiti delle ultime approvazioni (inviata/eseguita/rifiutata coi prezzi) */
+    const [esitiOpportunita, setEsitiOpportunita] = useState<EsitoApprovazione[]>([]);
 
     // ---------------------------------------------------------------- lettura
     const ricarica = useCallback(() => {
@@ -2304,6 +2314,24 @@ export function useControlRoom(): ControlRoomVM {
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, chiusuraViva, libroVivo,
         scalperVista]);
 
+    // 24/09 — stesso prezzo vivo dello scanner, per le proposte di USCITA di
+    // Omega (lato di chiusura = back): nessuna lettura nuova.
+    const vivoOmegaScanner = useMemo(() => {
+        const m = new Map<number, { vivo: PrezzoVivo; etaQuoteS: number | null }>();
+        for (const pr of proposteOmega) {
+            const p = pr.payload;
+            const riga = feedPerEvento.get(String(p.event_id));
+            const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+            const vivo = prezzoVivo(payload, p.market_id ?? null, p.selection_id ?? null, p.side ?? 'back');
+            const odds = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
+            const etaQuoteS = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
+                ? Math.max(0, Math.round((nowMs - odds) / 1000))
+                : etaSecondi(riga?.updated_at ?? null, nowMs);
+            m.set(pr.id, { vivo, etaQuoteS });
+        }
+        return m;
+    }, [proposteOmega, feedPerEvento, nowMs]);
+
     const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(
         // 17/09: le proposte di OPPORTUNITA' stanno nella stessa coda ma sono
         // un'altra cosa (un'apertura). Qui restano solo le CHIUSURE.
@@ -2389,25 +2417,60 @@ export function useControlRoom(): ControlRoomVM {
      */
     const piazzaOpportunita = useCallback(async (
         id: number, prezzoVisto?: number, legsPricesVisti?: PrezziViviGambe, slippagePctVisto?: number,
+        contesto?: ContestoPrezzoVisto,
     ) => {
         const opts = { prezzoVisto, legsPricesVisti, slippagePct: slippagePctVisto };
         const haOptsNuovi = prezzoVisto != null
             || (legsPricesVisti != null && Object.values(legsPricesVisti).some((v) => v != null));
+        const manca = (e: unknown) => /PGRST202|schema cache|does not exist|not find the function/i
+            .test(e instanceof Error ? e.message : String(e));
+        // 24/09 — tre gradini, UNA sola approvazione riuscita: col contesto
+        // del prezzo (migrazione del 24/09), senza (migrazione del 18/09),
+        // solo p_id. Ogni ripiego si fa SOLO se la RPC dice che la firma non
+        // esiste (nessuna scrittura avvenuta), mai dopo un rifiuto vero.
+        let avviso: string | null = null;
         try {
-            await approvaPropostaOpportunita(id, opts);
-            setAvvisoOpportunita(null);
+            await approvaPropostaOpportunita(id, contesto ? { ...opts, contesto: { ...contesto } } : opts);
         } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            if (haOptsNuovi && /PGRST202|schema cache|does not exist|not find the function/i.test(msg)) {
-                await approvaPropostaOpportunita(id); // ripiego UNICO, solo p_id
-                setAvvisoOpportunita('prezzo visto non inviato: migrazione non applicata');
-            } else {
-                throw e;
+            if (!manca(e) || (!contesto && !haOptsNuovi)) throw e;
+            try {
+                if (!contesto) throw e;
+                await approvaPropostaOpportunita(id, opts);
+                avviso = 'età e fonte del prezzo visto non inviate: migrazione del 24/09 non applicata';
+            } catch (e2) {
+                if (!manca(e2) || !haOptsNuovi) throw e2;
+                await approvaPropostaOpportunita(id); // ripiego ULTIMO, solo p_id
+                avviso = 'prezzo visto non inviato: migrazione non applicata';
             }
         }
+        setAvvisoOpportunita(avviso);
+        // 24/09 — l'esito a video: la riga si segue finche' il servizio non la chiude
+        setEsitiOpportunita((prima) => [
+            { id, stato: 'inviata' as const, testo: 'inviata: il servizio la sta eseguendo' },
+            ...prima.filter((x) => x.id !== id),
+        ].slice(0, 5));
         svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposte();
     }, [ricaricaProposte]);
+
+    // 24/09 — gli esiti ancora 'inviata' si rileggono (una lettura, solo quegli
+    // id) a ogni ricarica delle proposte: il realtime della coda la sveglia.
+    const idsInAttesa = esitiOpportunita.filter((x) => x.stato === 'inviata').map((x) => x.id).join(',');
+    useEffect(() => {
+        const ids = idsInAttesa ? idsInAttesa.split(',').map(Number) : [];
+        if (!ids.length) return undefined;
+        let vivo = true;
+        const leggi = async () => {
+            try {
+                const nuovi = await fetchEsitiApprovazioni(ids);
+                if (!vivo) return;
+                setEsitiOpportunita((prima) => prima.map((x) => nuovi.find((n) => n.id === x.id && n.stato !== 'inviata') ?? x));
+            } catch { /* si riprova al giro dopo */ }
+        };
+        void leggi();
+        const t = setInterval(() => { void leggi(); }, 1500);
+        return () => { vivo = false; clearInterval(t); };
+    }, [idsInAttesa]);
 
     const rifiutaOpportunita = useCallback(async (id: number) => {
         await ignoraProposta(id, 'opportunita rifiutata dall’operatore');
@@ -2416,8 +2479,21 @@ export function useControlRoom(): ControlRoomVM {
     }, [ricaricaProposte]);
 
 
-    const approva = useCallback(async (id: number) => {
-        await approvaProposta(id);
+    const approva = useCallback(async (id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto) => {
+        // 24/09 — anche la CHIUSURA manda il prezzo a video (con eta', fonte e
+        // flag) per tracciarlo; il servizio la esegue ancora a mercato (B17).
+        // Se la RPC non conosce i parametri nuovi: ripiego sul solo p_id.
+        if (prezzoVisto == null && !contesto) {
+            await approvaProposta(id);
+        } else {
+            try {
+                await approvaPropostaOpportunita(id, { prezzoVisto, contesto: contesto ? { ...contesto } : null });
+            } catch (e) {
+                if (!/PGRST202|schema cache|does not exist|not find the function/i
+                    .test(e instanceof Error ? e.message : String(e))) throw e;
+                await approvaProposta(id);
+            }
+        }
         svegliaBot('safe', 'approvazione');
         await ricaricaProposte();
     }, [ricaricaProposte]);
@@ -3020,10 +3096,10 @@ export function useControlRoom(): ControlRoomVM {
         proposte: proposteVista,
         proposteOpportunita,
         piazzaOpportunita,
-        rifiutaOpportunita, avvisoOpportunita,
+        rifiutaOpportunita, avvisoOpportunita, esitiOpportunita,
         slippagePct, setSlippagePct, approva, ignora, chiudi, statoChiusuraRiga,
         statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
-        proposteOmega: ordinaProposteOmega(proposteOmega), erroreProposteOmega,
+        proposteOmega: ordinaProposteOmega(proposteOmega), vivoOmegaScanner, erroreProposteOmega,
         approvaOmega, ignoraOmega,
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,

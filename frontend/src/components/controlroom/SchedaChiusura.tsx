@@ -17,10 +17,23 @@
 // trova controparte viene annullato per intero, e il trader crederebbe di aver
 // chiuso una posizione che è ancora aperta.
 // ============================================================================
-import { useState } from 'react';
+//
+// 24/09 — ORDINE DELL'UTENTE (visto a video): «una scheda che ricalcola al ms
+// tutto MA NON BLOCCA: me lo segnala e decido io». Prezzo al ms dal ladder del
+// mercato (`usePrezzoAlMs`, ripiego sullo scanner dichiarato), e i motivi di
+// sopra diventano AVVISI: CHIUDI ORA resta acceso. Al clic parte il prezzo a
+// video con eta' e fonte (o l'ultimo noto con `prezzo_vivo_assente`). NB: per
+// le CHIUSURE il servizio esegue ancora a mercato (decisione B17 aperta).
+// ============================================================================
+import { useEffect, useState } from 'react';
 import { Loader2, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { fmtMoney, fmtOdds, fmtAge, DASH } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtAge, fmtNum, fmtTicks, DASH } from '@/lib/format';
+import {
+    scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato,
+    type ContestoPrezzoVisto, type PrezzoScheda,
+} from '@/lib/schedaAlMs';
+import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { safeExitKindLabel, safeReasonLabel } from '@/components/safestrategy/safeActivity';
 import {
@@ -54,7 +67,9 @@ export interface SchedaChiusuraProps {
     etaScannerS?: number | null;
     slippagePct: number;
     /** in LIVE serve la doppia conferma: sono soldi veri */
-    onApprova: (id: number) => Promise<void>;
+    onApprova: (id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto) => Promise<void>;
+    /** 24/09 — sorgente del ladder al ms (assente = solo feed dello scanner) */
+    sorgenteLadder?: SorgenteLadder | null;
     onIgnora: (id: number) => Promise<void>;
     /**
      * LA STRISCIA DI ESITO (18/09, additiva): dopo l'approvazione, segue la
@@ -68,15 +83,38 @@ export interface SchedaChiusuraProps {
 }
 
 export function SchedaChiusura({
-    proposta, vivo, etaQuoteS, etaScannerS = null, bloccabileOra = null,
-    slippagePct, onApprova, onIgnora, esito,
+    proposta, vivo: vivoScanner, etaQuoteS: etaScanner, etaScannerS = null, bloccabileOra = null,
+    slippagePct, onApprova, onIgnora, esito, sorgenteLadder = null,
 }: SchedaChiusuraProps) {
     const p = proposta.payload;
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowMs(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
 
     const live = p.mode === 'live';
     const lato = p.side ?? null;
+    // 24/09 — IL PREZZO AL MS: ladder del mercato se il runner lo segue,
+    // altrimenti il feed dello scanner di prima (ripiego dichiarato).
+    const ripiego: PrezzoScheda = {
+        back: lato === 'back' ? vivoScanner.prezzo : null, backSize: lato === 'back' ? vivoScanner.abbinabile : null,
+        lay: lato === 'lay' ? vivoScanner.prezzo : null, laySize: lato === 'lay' ? vivoScanner.abbinabile : null,
+        istanteMs: etaScanner == null ? null : nowMs - etaScanner * 1000,
+        fonte: 'scanner', statoMercato: vivoScanner.statoMercato ?? null,
+    };
+    const { prezzo: alMs, ultimoNoto } = usePrezzoAlMs({
+        sorgente: sorgenteLadder, sport: p.sport === 'tennis' ? 'tennis' : 'calcio',
+        marketId: p.market_id ?? null, selectionId: p.selection_id ?? null, lato, ripiego,
+    });
+    const vivo: PrezzoVivo = {
+        prezzo: prezzoDelLato(alMs, lato), abbinabile: sizeDelLato(alMs, lato),
+        statoMercato: alMs.statoMercato ?? vivoScanner.statoMercato ?? null,
+    };
+    const etaQuoteS = alMs.istanteMs == null ? null : Math.max(0, (nowMs - alMs.istanteMs) / 1000);
+    const sc = scarto(vivo.prezzo, p.price_at_decision);
     const scost = scostamento({
         prezzoDecisione: p.price_at_decision,
         prezzoCorrente: vivo.prezzo,
@@ -87,12 +125,24 @@ export function SchedaChiusura({
     // liquidità con il numero sbagliato lasciava passare un ordine che in
     // live viene annullato per intero.
     const daChiudere = stakeDiChiusura(p.size, p.entry_price, vivo.prezzo) ?? p.size ?? null;
-    const blocco = motivoNonApprovabile({
+    // 24/09 — ORDINE DELL'UTENTE: «me lo segnala e decido io». Il motivo e' un
+    // AVVISO, il bottone resta acceso (il servizio esegue a mercato: B17).
+    const avvisi: string[] = [];
+    const motivo = motivoNonApprovabile({
         scost, etaQuoteS, etaMassimaS: ETA_QUOTE_MAX_S,
         daChiudere, abbinabileOra: vivo.abbinabile,
         etaScannerS,
         statoMercato: vivo.statoMercato ?? null,
     });
+    if (motivo) avvisi.push(motivo);
+    if (vivo.prezzo == null && ultimoNoto) {
+        const eta = ultimoNoto.istanteMs == null ? null : (nowMs - ultimoNoto.istanteMs) / 1000;
+        avvisi.push(`prezzo vivo assente da ${eta == null ? 'un tempo ignoto' : fmtAge(eta)}: `
+            + `ultimo noto ${fmtOdds(ultimoNoto.prezzo)}`);
+    }
+    if (sc.tick != null && sc.tick !== 0) {
+        avvisi.push(`prezzo mosso di ${fmtTicks(sc.tick)} (${fmtNum(sc.pct, 2)} %) dalla proposta`);
+    }
     // il numero VIVO se c'e', altrimenti quello della decisione — e in quel
     // caso l'etichetta lo dice, invece di spacciare una fotografia per presente.
     const bloccato = bloccabileOra ?? p.locked_at_decision ?? null;
@@ -102,6 +152,20 @@ export function SchedaChiusura({
     const azione = async (fn: (id: number) => Promise<void>) => {
         setInCorso(true);
         try { await fn(proposta.id); } finally { setInCorso(false); setArmato(false); }
+    };
+    // 24/09 — APPROVA manda il prezzo a video (o l'ultimo noto col flag)
+    const approva = async () => {
+        setInCorso(true);
+        try {
+            const adesso = Date.now();
+            const scelto = prezzoVistoAlClic({
+                vivo: vivo.prezzo, vivoIstanteMs: alMs.istanteMs, vivoFonte: alMs.fonte,
+                ultimoNoto: ultimoNoto?.prezzo ?? null, ultimoNotoIstanteMs: ultimoNoto?.istanteMs ?? null,
+                ultimoNotoFonte: ultimoNoto?.fonte ?? null, prezzoProposta: p.price_at_decision,
+                nowMs: adesso,
+            });
+            await onApprova(proposta.id, scelto.prezzo ?? undefined, scelto.contesto);
+        } finally { setInCorso(false); setArmato(false); }
     };
 
     return (
@@ -168,7 +232,11 @@ export function SchedaChiusura({
                             : <>
                                 {scost.controDiNoi ? <TrendingDown className="w-3 h-3 inline mr-0.5" /> : <TrendingUp className="w-3 h-3 inline mr-0.5" />}
                                 proposta a {fmtOdds(p.price_at_decision)}
+                                {sc.tick != null && <> · {fmtTicks(sc.tick)}</>}
                               </>}
+                    </span>
+                    <span className="block text-[10px] text-white/40" data-testid="cr-proposta-fonte">
+                        {etaEFonte(alMs.istanteMs, alMs.fonte, nowMs)}
                     </span>
                 </span>
             </div>
@@ -214,11 +282,11 @@ export function SchedaChiusura({
                 </span>
             </div>
 
-            {/* ---- il blocco, con la RAGIONE: mai un bottone spento e muto ---- */}
-            {blocco && (
-                <div className="px-3 py-2 bg-orange-500/10 text-orange-300 text-[12px] font-medium border-t border-orange-500/20"
-                    data-testid="cr-proposta-bloccata">
-                    ⛔ {blocco}
+            {/* ---- 24/09: gli AVVISI, con la RAGIONE; il bottone resta acceso ---- */}
+            {avvisi.length > 0 && (
+                <div className="px-3 py-2 bg-amber-500/10 text-amber-300 text-[12px] font-medium border-t border-amber-500/20"
+                    data-testid="cr-proposta-avviso">
+                    {avvisi.map((a, i) => <div key={i}>⚠ {a}</div>)}
                 </div>
             )}
 
@@ -226,7 +294,7 @@ export function SchedaChiusura({
             <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5">
                 {armato ? (
                     <Button
-                        onClick={() => void azione(onApprova)} disabled={inCorso}
+                        onClick={() => void approva()} disabled={inCorso}
                         className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px]"
                         data-testid="cr-conferma-live"
                     >
@@ -234,11 +302,11 @@ export function SchedaChiusura({
                     </Button>
                 ) : (
                     <Button
-                        onClick={() => (live ? setArmato(true) : void azione(onApprova))}
-                        disabled={!!blocco || inCorso}
+                        onClick={() => (live ? setArmato(true) : void approva())}
+                        disabled={inCorso}
                         className="rounded-none h-10 bg-emerald-600/80 text-white hover:bg-emerald-600 font-bold uppercase tracking-wider text-[12px] disabled:opacity-40"
                         data-testid="cr-approva"
-                        title={blocco ?? 'invia l’ordine di chiusura'}
+                        title={avvisi.length ? `attenzione: ${avvisi.join(' · ')}` : 'invia l’ordine di chiusura'}
                     >
                         {inCorso ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Chiudi ora'}
                     </Button>
@@ -258,7 +326,7 @@ export function SchedaChiusura({
                     : <>La proposta resta viva finché non chiudi o la ignori. Se la ignori, torna alla prossima occasione.</>}
             </div>
 
-            {urgente && !blocco && (
+            {urgente && (
                 <div className="px-3 py-1.5 flex items-start gap-2 text-[11px] text-orange-300 bg-orange-500/5">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <span>Uscita del manuale: non approvarla ha un costo, non è una scelta neutra.</span>

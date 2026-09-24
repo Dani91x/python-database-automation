@@ -710,6 +710,14 @@ describe('approvaPropostaOpportunita — 18/09, il prezzo che l’utente vede', 
         expect(rpc).toHaveBeenCalledWith('safe_request_approve', { p_id: 77 });
     });
 
+    it('24/09 — il contesto del prezzo visto va come p_contesto', async () => {
+        rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
+        const ctx = { eta_ms: 12, fonte: 'canale', prezzo_vivo_assente: false, clic_ms: 3 };
+        await approvaPropostaOpportunita(77, { prezzoVisto: 1.35, contesto: ctx });
+        expect(rpc).toHaveBeenCalledWith('safe_request_approve',
+            { p_id: 77, p_price: 1.35, p_contesto: ctx });
+    });
+
     it('con un prezzo visto, lo manda come p_price', async () => {
         rpc.mockResolvedValueOnce({ data: { ok: true }, error: null });
         await approvaPropostaOpportunita(77, { prezzoVisto: 1.35 });

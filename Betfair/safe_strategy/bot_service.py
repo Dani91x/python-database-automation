@@ -2610,21 +2610,29 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
             # prezzo VISTO AL CLIC e quello di ADESSO (millisecondi dopo), mai
             # rispetto al prezzo della proposta; se scatta, il rifiuto porta i
             # DUE prezzi nel motivo (``message``, in italiano) e nei campi.
+            # 24/09 - il CONTESTO di cio' che l'utente vedeva (eta', fonte,
+            # prezzo vivo assente): solo informativo, viaggia con l'esito.
+            ctx_visto = PO.contesto_prezzo_visto(payload)
+            extra_ctx = {"prezzo_visto_ctx": ctx_visto} if ctx_visto else {}
             if not prices or prezzo_attuale is None:
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_sparito",
                                   "origin": "manual", "market_id": market_id,
-                                  "selection_id": selection_id, "price_visto": pv})
+                                  "selection_id": selection_id, "price_visto": pv,
+                                  **extra_ctx})
                 return {"error": "prezzo_visto_sparito", "price_visto": pv,
                         "price_attuale": None,
-                        "message": PO.motivo_prezzo_mosso(pv, None, side, soglia)}
+                        "message": PO.motivo_prezzo_mosso(pv, None, side, soglia),
+                        **extra_ctx}
             if PO.prezzo_fuori_tolleranza(pv, prezzo_attuale, side, soglia_pct=soglia):
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_fuori_tolleranza",
                                   "origin": "manual", "market_id": market_id,
                                   "selection_id": selection_id, "price_visto": pv,
-                                  "price_attuale": prezzo_attuale, "soglia_pct": soglia})
+                                  "price_attuale": prezzo_attuale, "soglia_pct": soglia,
+                                  **extra_ctx})
                 return {"error": "prezzo_visto_fuori_tolleranza", "price_visto": pv,
                         "price_attuale": prezzo_attuale, "soglia_pct": soglia,
-                        "message": PO.motivo_prezzo_mosso(pv, prezzo_attuale, side, soglia)}
+                        "message": PO.motivo_prezzo_mosso(pv, prezzo_attuale, side, soglia),
+                        **extra_ctx}
             prezzo_ordine = pv
         elif str(payload.get("kind") or "").lower() == "anomaly":
             # NESSUN ``price_visto`` (client vecchio, o prima della
@@ -2678,6 +2686,10 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         # risale dalla posizione alla scheda che l'ha proposta (e viceversa).
         meta["opp_key"] = opp_key
         meta["da_proposta"] = True
+        # 24/09 - che prezzo (eta', fonte, vivo o ultimo noto) l'utente ha firmato
+        if PO.contesto_prezzo_visto(payload):
+            meta["prezzo_visto_ctx"] = PO.contesto_prezzo_visto(payload)
+            meta["prezzo_visto"] = payload.get("price_visto")
         # la riga nata da una proposta porta gli STESSI numeri del modello che
         # l'automatico ci metteva (``_model_meta``): senza, la tabella dei
         # trade perderebbe P(perdita) d'ingresso, edge ed EV proprio sulle
@@ -2729,7 +2741,9 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
             "trade_id": trade_id, "opp_key": opp_key, "kind": kind,
             "signal_key": payload.get("signal_key"), "side": side,
             "price": out.price, "size_requested": size, "size": out.size,
-            "status": out.status, "mode": mode})
+            "status": out.status, "mode": mode,
+            **({"prezzo_visto_ctx": PO.contesto_prezzo_visto(payload)}
+               if PO.contesto_prezzo_visto(payload) else {})})
     return {"ok": True, "trade_id": trade_id, "status": out.status,
             "price": out.price, "size": out.size,
             "pending_fill": out.status == "pending"}

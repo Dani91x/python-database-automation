@@ -1287,9 +1287,18 @@ export async function approvaPropostaOpportunita(
         prezzoVisto?: number | null;
         legsPricesVisti?: PrezziViviGambe | null;
         slippagePct?: number | null;
+        /**
+         * 24/09 — il CONTESTO del prezzo visto (eta', fonte canale/DB/scanner,
+         * `prezzo_vivo_assente`, istante del clic): va alla RPC come
+         * `p_contesto` (migrazione `safe_request_approve_contesto_2026-09-24.sql`)
+         * e finisce nel payload come `prezzo_visto_ctx`. Il chiamante ripiega
+         * senza, se la migrazione non c'e' (PGRST202).
+         */
+        contesto?: Record<string, unknown> | null;
     },
 ): Promise<void> {
     const params: Record<string, unknown> = { p_id: id };
+    if (opts?.contesto && typeof opts.contesto === 'object') params.p_contesto = opts.contesto;
     if (typeof opts?.prezzoVisto === 'number' && Number.isFinite(opts.prezzoVisto)) {
         params.p_price = opts.prezzoVisto;
     }
@@ -1335,6 +1344,53 @@ export async function fetchSafeRequests(limit = 30): Promise<SafeRequest[]> {
     const righe = (data ?? []) as unknown as SafeRequest[];
     return righe.filter((r) => !(isPropostaOpportunita(r)
         && (r.status === 'proposed' || r.status === 'rejected')));
+}
+
+// ------------------------------------------ esito di un'approvazione (24/09)
+/**
+ * 24/09 — ORDINE DELL'UTENTE: dopo PIAZZA la scheda sparisce (la riga non e'
+ * piu' 'proposed'): l'esito deve arrivare A VIDEO — inviata, eseguita o
+ * rifiutata COI DUE PREZZI (il servizio li scrive in `result.message`,
+ * `bot_service._request_place`). Pura: dalla riga della coda al testo.
+ */
+export type StatoEsitoApprovazione = 'inviata' | 'eseguita' | 'rifiutata';
+
+export interface EsitoApprovazione {
+    id: number;
+    stato: StatoEsitoApprovazione;
+    testo: string;
+}
+
+export function esitoApprovazione(
+    r: { id: number; status?: string | null; result?: Record<string, unknown> | null } | null | undefined,
+    idChiesto: number,
+): EsitoApprovazione {
+    const st = String(r?.status ?? '');
+    const res = (r?.result ?? {}) as Record<string, unknown>;
+    const msg = typeof res.message === 'string' && res.message.trim() ? res.message.trim() : '';
+    if (st === 'done') return { id: idChiesto, stato: 'eseguita', testo: msg || 'eseguita' };
+    if (st === 'error' || st === 'rejected') {
+        const pv = typeof res.price_visto === 'number' ? res.price_visto : null;
+        const pa = typeof res.price_attuale === 'number' ? res.price_attuale : null;
+        // il messaggio del servizio porta gia' i due prezzi; i campi numerici
+        // si aggiungono comunque, nel formato della piattaforma
+        const prezzi = pv != null
+            ? ` [visto ${fmtOdds(pv)} · all’esecuzione ${pa == null ? '—' : fmtOdds(pa)}]` : '';
+        return { id: idChiesto, stato: 'rifiutata', testo: (msg || 'rifiutata') + prezzi };
+    }
+    return { id: idChiesto, stato: 'inviata', testo: 'inviata: il servizio la sta eseguendo' };
+}
+
+/** Le righe della coda per id (una lettura sola, solo gli esiti chiesti). */
+export async function fetchEsitiApprovazioni(ids: number[]): Promise<EsitoApprovazione[]> {
+    if (!ids.length) return [];
+    const { data, error } = await supabase
+        .from('safe_strategy_requests')
+        .select('id,status,result')
+        .in('id', ids);
+    if (error) throw new Error(error.message);
+    const righe = (data ?? []) as unknown as { id: number; status: string; result: Record<string, unknown> | null }[];
+    return ids.map((id) => esitoApprovazione(righe.find((x) => Number(x.id) === id), id));
 }
 
 // --------------------------------------------------------------- realtime

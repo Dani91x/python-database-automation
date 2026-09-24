@@ -15,15 +15,23 @@ import { SchedaChiusuraOmega } from './SchedaChiusuraOmega';
 import { trovaEsitoUscita } from './trovaEsitoUscita';
 import type { SportKey } from './SplitSport';
 import type { useControlRoom } from './useControlRoom';
+import { sorgenteLadderAlMs } from '@/lib/localTransport';
+import type { SorgenteLadder } from './usePrezzoAlMs';
 
 export interface UsciteColonnaProps {
     vm: ReturnType<typeof useControlRoom>;
     /** serve SOLO a dirlo a schermo: la colonna non si filtra mai. */
     filtroSport: SportKey | null;
     testId?: string;
+    /** 24/09 — la sorgente del ladder al ms delle schede (test: una finta). */
+    sorgenteLadder?: SorgenteLadder | null;
 }
 
-export function UsciteColonna({ vm, filtroSport, testId = 'cr-nastro' }: UsciteColonnaProps) {
+const SORGENTE_DI_SERIE: SorgenteLadder = (sport) => sorgenteLadderAlMs(sport);
+
+export function UsciteColonna({
+    vm, filtroSport, testId = 'cr-nastro', sorgenteLadder = SORGENTE_DI_SERIE,
+}: UsciteColonnaProps) {
     const bloccati = vm.bots.filter((b) => b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush));
     const urgenti = vm.proposte.filter((p) => p.proposta.payload?.urgente === true).length;
     const conta = vm.proposte.length + vm.proposteOmega.length;
@@ -80,6 +88,9 @@ export function UsciteColonna({ vm, filtroSport, testId = 'cr-nastro' }: UsciteC
                         proposta={pr}
                         onApprova={vm.approvaOmega}
                         onIgnora={vm.ignoraOmega}
+                        sorgenteLadder={sorgenteLadder}
+                        vivoScanner={vm.vivoOmegaScanner?.get(pr.id)?.vivo ?? null}
+                        etaQuoteS={vm.vivoOmegaScanner?.get(pr.id)?.etaQuoteS ?? null}
                         esito={trovaEsitoUscita(
                             vm.operazioni.get(pr.payload.event_id), 'omega', pr.payload.trade_id,
                         )}
@@ -104,6 +115,7 @@ export function UsciteColonna({ vm, filtroSport, testId = 'cr-nastro' }: UsciteC
                         slippagePct={vm.slippagePct}
                         onApprova={vm.approva}
                         onIgnora={vm.ignora}
+                        sorgenteLadder={sorgenteLadder}
                         esito={trovaEsitoUscita(
                             vm.operazioni.get(pv.proposta.payload.event_id), 'safe', pv.proposta.payload.trade_id,
                         )}

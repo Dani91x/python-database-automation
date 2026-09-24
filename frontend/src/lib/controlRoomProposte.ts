@@ -13,7 +13,10 @@
 //   database (lezione del 13/09) e nessuna fotografia spacciata per presente.
 //
 // E la conseguenza pratica: **non si approva mai su una fotografia.** Se il
-// prezzo si è mosso oltre la tolleranza, l'approvazione si spegne e dice perché.
+// prezzo si è mosso oltre la tolleranza, la scheda lo dice.
+// 24/09 — ORDINE DELL'UTENTE: «una scheda che ricalcola al ms tutto MA NON
+// BLOCCA L'ENTRATA: me lo segnala e decido io». `motivoNonApprovabile` resta
+// col suo nome ma produce un AVVISO: nessun bottone si spegne più per il prezzo.
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -305,8 +308,11 @@ export function motivoNonApprovabile(args: {
     if (m === 'SUSPENDED') return 'mercato sospeso: adesso Betfair non accetta ordini';
     if (m === 'CLOSED') return 'mercato chiuso: non si può più operare';
 
-    if (scost.delta == null) return 'prezzo corrente non disponibile: non si piazza al buio';
-    if (etaQuoteS == null) return 'età delle quote sconosciuta: non si piazza su un prezzo di cui non sappiamo l’età';
+    // 24/09 — ORDINE DELL'UTENTE («me lo segnala e decido io»): da oggi questo
+    // e' il testo di un AVVISO, non di un blocco (`SchedaChiusura` lascia il
+    // bottone acceso). I testi non dicono piu' «non si piazza».
+    if (scost.delta == null) return 'prezzo corrente non disponibile: al clic parte l’ultimo prezzo noto';
+    if (etaQuoteS == null) return 'età delle quote sconosciuta: controlla il prezzo prima di chiudere';
 
     // lo scanner sta guardando? Allora un prezzo fermo è il prezzo CORRENTE.
     const scannerVivo = typeof etaScannerS === 'number'

@@ -348,6 +348,34 @@ def clic_troppo_vecchio(price_visto_at: Any, now_ts: float,
     return False
 
 
+_FONTI_PREZZO_VISTO = ("canale", "db", "scanner", "proposta")
+
+
+def contesto_prezzo_visto(payload: Any) -> Optional[dict[str, Any]]:
+    """24/09 - COSA l'utente vedeva al clic (``payload.prezzo_visto_ctx``,
+    scritto da ``safe_request_approve`` con la migrazione del 24/09): eta' del
+    prezzo in ms, fonte (canale al ms / DB / feed scanner / proposta), flag
+    ``prezzo_vivo_assente`` (la scheda non aveva un prezzo vivo e ha mandato
+    l'ultimo noto) e istante del clic. SOLO informativo: non decide niente
+    (la decisione resta la tolleranza fra prezzo visto e mercato). Valori
+    sporchi -> campo a None, mai un'eccezione. None se il contesto non c'e'."""
+    ctx = payload.get("prezzo_visto_ctx") if isinstance(payload, dict) else None
+    if not isinstance(ctx, dict):
+        return None
+
+    def _n(v: Any) -> Optional[float]:
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return None
+        fv = float(v)
+        return fv if math.isfinite(fv) and fv >= 0 else None
+
+    fonte = ctx.get("fonte")
+    return {"eta_ms": _n(ctx.get("eta_ms")),
+            "fonte": fonte if fonte in _FONTI_PREZZO_VISTO else None,
+            "prezzo_vivo_assente": ctx.get("prezzo_vivo_assente") is True,
+            "clic_ms": _n(ctx.get("clic_ms"))}
+
+
 def slippage_pct_effettivo(payload: dict[str, Any]) -> float:
     """Lo slippage da usare per QUESTA approvazione: quello che l'utente ha
     impostato a video (``payload.slippage_pct``, salvato da

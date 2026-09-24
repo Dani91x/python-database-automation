@@ -430,3 +430,67 @@ def test_parita_un_giro_senza_opportunita_non_scrive_niente():
     out = _giro(db, [])
     assert out["proposte"] == 0 and db.richieste == [] and db.trades == []
     assert not [k for k in db.kinds() if "opportunita" in k or "proposta" in k]
+
+
+# ===========================================================================
+# 6. (24/09 sera) IL CONTESTO DEL PREZZO VISTO: la scheda non rifiuta piu' il
+#    clic; senza prezzo vivo manda l'ULTIMO NOTO col flag. Il servizio decide
+#    con la tolleranza, MAI per "assenza" del prezzo vivo a video.
+# ===========================================================================
+_CTX_ASSENTE = {"eta_ms": 42000, "fonte": "scanner", "prezzo_vivo_assente": True,
+                "clic_ms": 1790000000000}
+
+
+def test_ultimo_noto_col_flag_entro_tolleranza_parte_e_porta_il_contesto(esecuzione):
+    """La scheda non aveva un prezzo vivo: ha mandato l'ultimo noto (1,30, di
+    42 s prima). Il mercato adesso e' 1,31 (entro il 2 %): l'ordine PARTE al
+    prezzo visto, e la riga dice che cosa l'utente ha firmato."""
+    db = DbFinto()
+    _giro(db, [_opp_valida(1.30)])
+    corpo = _corpo_approvato(db, 1.30, extra={"prezzo_visto_ctx": dict(_CTX_ASSENTE)})
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.31)},
+                           payload=corpo, params={"commission_pct": 5.0}, now=NOW,
+                           control_mode="paper")
+    assert out.get("ok") is True, out
+    t = db.trades[0]
+    assert t["price"] == 1.30 and t["origin"] == "manual"
+    assert t["meta"]["prezzo_visto_ctx"] == {"eta_ms": 42000.0, "fonte": "scanner",
+                                             "prezzo_vivo_assente": True,
+                                             "clic_ms": 1790000000000.0}
+    att = [p for k, p in db.attivita if k == "opportunita_piazzata"]
+    assert att and att[0]["prezzo_visto_ctx"]["prezzo_vivo_assente"] is True
+
+
+def test_ultimo_noto_fuori_tolleranza_rifiuto_coi_due_prezzi_e_il_contesto(esecuzione):
+    db = DbFinto()
+    _giro(db, [_opp_valida(1.30)])
+    corpo = _corpo_approvato(db, 1.30, extra={"prezzo_visto_ctx": dict(_CTX_ASSENTE)})
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.40)},
+                           payload=corpo, params={"commission_pct": 5.0}, now=NOW,
+                           control_mode="paper")
+    assert out["error"] == "prezzo_visto_fuori_tolleranza"
+    assert out["price_visto"] == 1.30 and out["price_attuale"] == 1.40
+    assert out["prezzo_visto_ctx"]["prezzo_vivo_assente"] is True
+    assert db.trades == [] and esecuzione == []
+
+
+def test_senza_contesto_nessun_campo_nuovo(esecuzione):
+    """Retrocompatibile: senza la migrazione del 24/09 niente contesto, e la
+    riga e l'attivita' restano quelle di ieri."""
+    db = DbFinto()
+    _giro(db, [_opp_valida(1.30)])
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.31)},
+                           payload=_corpo_approvato(db, 1.30),
+                           params={"commission_pct": 5.0}, now=NOW, control_mode="paper")
+    assert out.get("ok") is True
+    assert "prezzo_visto_ctx" not in db.trades[0]["meta"]
+    assert "prezzo_visto_ctx" not in [p for k, p in db.attivita if k == "opportunita_piazzata"][0]
+
+
+def test_contesto_sporco_non_solleva_e_non_inventa():
+    assert PO.contesto_prezzo_visto({}) is None
+    assert PO.contesto_prezzo_visto({"prezzo_visto_ctx": "x"}) is None
+    c = PO.contesto_prezzo_visto({"prezzo_visto_ctx": {
+        "eta_ms": float("nan"), "fonte": "inventata", "prezzo_vivo_assente": "si",
+        "clic_ms": True}})
+    assert c == {"eta_ms": None, "fonte": None, "prezzo_vivo_assente": False, "clic_ms": None}
