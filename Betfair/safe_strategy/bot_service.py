@@ -3350,6 +3350,15 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                               "nota": "gamba di combo NON chiusa dal bot: la "
                                       "posizione l'ha gia' chiusa l'utente"})
             continue
+        # B25 (24/09) - "il bot non deve MAI chiudere le mie gambe". Questo e'
+        # il collo di bottiglia di OGNI chiusura di gamba di combo (svolgimento
+        # della combo incompleta E chiusura solidale): la guardia sta qui, cosi'
+        # nessun percorso puo' far nascere una gamba 'auto' su una riga del
+        # trader. Una combo mista (bot + trader) oggi non nasce: la guardia e'
+        # la cintura, l'avviso lo scrive ``_lascia_gamba_manuale``.
+        if not e_del_bot(leg):
+            _lascia_gamba_manuale(db, leg, now=now)
+            continue
         extra = {"sport": leg.get("sport") or "calcio",
                  "strategy": leg.get("strategy") or "model",
                  "market_type": leg.get("market_type"),
@@ -6867,6 +6876,7 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
     placed_legs = 0
     live_ids: list[int] = []
     filled_ids: list[int] = []
+    non_abbinate: list[dict[str, Any]] = []
     for row, tid in zip(rows, ids):
         _risk_commit(risk_ctx, {**row, "id": tid})
         out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
@@ -6877,13 +6887,19 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
             live_ids.append(int(tid))
             if out.status == "open":
                 filled_ids.append(int(tid))
+        else:
+            non_abbinate.append(_gamba_in_breve({**row, "id": tid}))
     if placed_legs and placed_legs < len(rows):
         # H-20: tutto-o-niente ANCHE dopo il fill — una gamba in errore con
         # un'altra viva lascia una posizione NUDA: si chiude subito quella
         # già abbinata e si MARCA quella in coda (H6: il fill arriva dopo,
         # la svolge ``unwind_incomplete_combos`` appena è confermato).
+        # B25 (24/09, decisione dell'utente "LASCIA E AVVISA"): se la gamba
+        # rimasta e' una riga MANUALE del trader (e dal 18/09 ogni combo nata
+        # da un PIAZZA lo e'), il bot NON la chiude: la marca, la lascia a
+        # mercato e lo scrive in attivita' (``_lascia_gamba_manuale``).
         pending_ids = [i for i in live_ids if i not in filled_ids]
-        _mark_combo_incomplete(db, live_ids, cid)
+        _mark_combo_incomplete(db, live_ids, cid, non_abbinate=non_abbinate)
         _log(db, "combo_incomplete", {"event_id": event_id, "combo_id": cid,
                                       "placed": placed_legs, "legs": len(rows),
                                       "filled_ids": filled_ids,
@@ -6896,19 +6912,101 @@ def _esegui_combo_riservata(*, db, market, event_id: str, event_name: Any, cid: 
 
 
 COMBO_INCOMPLETE_KEY = "combo_incomplete"
+# B25 (24/09) - DECISIONE DELL'UTENTE "LASCIA E AVVISA": "il bot non deve MAI
+# chiudere le mie gambe (le righe manuali del trader), ma deve essere informato,
+# come gia' succede, quando chiudo io tutte le operazioni: in quel caso non deve
+# fare altro su quella partita". Una gamba MANUALE di una combo rimasta
+# incompleta non si chiude piu': porta ``meta.combo_lasciata_al_trader`` (quando,
+# motivo, gambe non abbinate) e l'attivita' ``combo_incomplete`` con
+# ``lasciata_al_trader=True`` dice al trader che la decisione e' sua. Il marker
+# sta nel ``meta`` (colonna gia' esistente), sopravvive al riavvio e rende
+# l'avviso IDEMPOTENTE: una riga sola, non una a ogni ciclo.
+COMBO_LASCIATA_KEY = "combo_lasciata_al_trader"
+COMBO_NON_ABBINATE_KEY = "combo_gambe_non_abbinate"
 
 
-def _mark_combo_incomplete(db, ids: list[int], combo_id: str) -> None:
+def _gamba_in_breve(g: dict[str, Any]) -> dict[str, Any]:
+    """Una gamba di combo in poche chiavi, per il meta e per l'avviso."""
+    return {"trade_id": g.get("id"), "selection_name": g.get("selection_name"),
+            "market_type": g.get("market_type"), "side": g.get("side"),
+            "price": g.get("price"), "size": g.get("size")}
+
+
+def _gamba_a_parole(g: dict[str, Any]) -> str:
+    lato = str(g.get("side") or "").upper()
+    nome = str(g.get("selection_name") or g.get("selection_id") or "?")
+    mercato = str(g.get("market_type") or "")
+    num = ""
+    try:
+        num = f" {float(g.get('size')):.2f} @ {float(g.get('price')):g}"
+    except (TypeError, ValueError):
+        pass
+    tid = g.get("trade_id") if g.get("trade_id") is not None else g.get("id")
+    rif = f"#{tid} " if tid is not None else ""
+    return f"{rif}{lato} {nome}{(' (' + mercato + ')') if mercato else ''}{num}".strip()
+
+
+def _lascia_gamba_manuale(db, leg: dict[str, Any], *, now: datetime) -> bool:
+    """B25 - la gamba MANUALE di una combo incompleta resta a mercato.
+
+    NIENTE ordine, niente chiusura, niente annullamento: si marca la riga
+    (``meta.combo_lasciata_al_trader``) e si scrive UNA riga di attivita'
+    ``combo_incomplete`` (kind gia' noto alla Control Room, badge critico) con
+    il motivo in chiaro. Idempotente: una riga gia' marcata non riscrive
+    niente. Ritorna True se ha scritto l'avviso.
+
+    La riga resta sotto gli occhi del servizio come ogni altra riga viva
+    (riconciliazione, regolamento, feed cieco): il bot SA cosa c'e' a mercato,
+    semplicemente non la tocca."""
+    meta = dict(leg.get("meta") or {})
+    if isinstance(meta.get(COMBO_LASCIATA_KEY), dict):
+        return False
+    non_abbinate = [g for g in (meta.get(COMBO_NON_ABBINATE_KEY) or []) if isinstance(g, dict)]
+    if non_abbinate:
+        chi = "; ".join(_gamba_a_parole(g) for g in non_abbinate)
+        uccise = f"gamba {chi} non abbinata (uccisa)"
+    else:
+        uccise = "una gamba della combinazione non si e' abbinata"
+    motivo = (f"combo incompleta: {uccise}; gamba manuale {_gamba_a_parole(leg)} "
+              f"lasciata aperta a mercato: decidi tu")
+    marker = {"quando": now.isoformat(), "motivo": motivo,
+              "combo_id": meta.get("combo_id"), "gambe_non_abbinate": non_abbinate}
+    marcata = True
+    try:
+        nuovo = {**meta, COMBO_LASCIATA_KEY: marker}
+        db.update_trade(int(leg["id"]), meta=nuovo)
+        leg["meta"] = nuovo
+    except Exception as ex:  # noqa: BLE001 - l'avviso parte comunque, mai silenzio
+        marcata = False
+        logger.warning("[safe.bot] marker combo_lasciata %s KO: %s", leg.get("id"), str(ex)[:120])
+    _log(db, "combo_incomplete", {
+        "event_id": str(leg.get("event_id") or ""), "trade_id": leg.get("id"),
+        "combo_id": meta.get("combo_id"), "lasciata_al_trader": True,
+        "selection_name": leg.get("selection_name"), "side": leg.get("side"),
+        "market_type": leg.get("market_type"), "size": leg.get("size"),
+        "price": leg.get("price"), "liability": leg.get("liability"),
+        "mode": leg.get("mode"), "gambe_non_abbinate": non_abbinate,
+        "marcata": marcata, "critical": True, "reason": motivo})
+    return True
+
+
+def _mark_combo_incomplete(db, ids: list[int], combo_id: str,
+                           non_abbinate: Optional[list[dict[str, Any]]] = None) -> None:
     """``meta.combo_incomplete=True`` su ogni gamba viva di una combo rotta:
-    il marker sopravvive al riavvio e alla coda (H6)."""
+    il marker sopravvive al riavvio e alla coda (H6). B25: accanto, le gambe
+    NON abbinate (``meta.combo_gambe_non_abbinate``), cosi' l'avviso di una
+    gamba manuale che si abbina solo al giro dopo sa ancora quale gamba e'
+    stata uccisa."""
     for tid in ids:
         try:
             leg = db.get_trade(int(tid))
             if not leg or str(leg.get("status")) in ("error", "won", "lost", "void"):
                 continue
-            db.update_trade(int(tid), meta={**(leg.get("meta") or {}),
-                                            COMBO_INCOMPLETE_KEY: True,
-                                            "combo_id": combo_id})
+            meta = {**(leg.get("meta") or {}), COMBO_INCOMPLETE_KEY: True,
+                    "combo_id": combo_id}
+            if non_abbinate:
+                meta[COMBO_NON_ABBINATE_KEY] = list(non_abbinate)
+            db.update_trade(int(tid), meta=meta)
         except Exception as ex:  # noqa: BLE001
             logger.warning("[safe.bot] marker combo_incomplete %s KO: %s", tid, str(ex)[:120])
 
@@ -6920,13 +7018,19 @@ def unwind_incomplete_combos(*, db, market, rows_by_event: dict, params: dict,
 
     Una gamba accodata su flumine diventa 'open' uno o più cicli dopo: senza
     questo passaggio la posizione NUDA di una combo incompleta restava aperta
-    (in live, soldi veri scoperti). Gira a OGNI ciclo, anche a bot fermo."""
+    (in live, soldi veri scoperti). Gira a OGNI ciclo, anche a bot fermo.
+
+    B25 (24/09): una gamba MANUALE non si svolge - la prima volta che la si
+    trova aperta si AVVISA (``_lascia_gamba_manuale``); gia' avvisata, non
+    entra nemmeno nell'elenco (nessuna lettura per ciclo, nessun rumore)."""
     rows = open_rows if open_rows is not None else _safe_open_trades(db)
     todo = [t for t in rows or []
             if (t.get("meta") or {}).get(COMBO_INCOMPLETE_KEY)
             and str(t.get("status")) == "open"
             and not t.get("closes_trade_id")
-            and not X.has_closing_marker(t)]
+            and not X.has_closing_marker(t)
+            and not (not e_del_bot(t)
+                     and isinstance((t.get("meta") or {}).get(COMBO_LASCIATA_KEY), dict))]
     if not todo:
         return 0
     return _unwind_combo(db=db, market=market, ids=[int(t["id"]) for t in todo],
@@ -6945,7 +7049,12 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
                   params: dict, now: datetime) -> int:
     """Chiude le gambe FILLATE di una combo rimasta incompleta (uscita 'forced',
     motivo "combo incompleta"). Un fallimento qui è CRITICO e va loggato: resta
-    una posizione scoperta che il ciclo successivo riprende."""
+    una posizione scoperta che il ciclo successivo riprende.
+
+    B25 (24/09, decisione dell'utente "LASCIA E AVVISA"): SOLO le gambe del
+    BOT (``origin`` diverso da 'manual') si chiudono. Una gamba MANUALE resta
+    a mercato, marcata e annunciata (``_lascia_gamba_manuale``): il conto
+    ``closed`` non la include."""
     closed = 0
     for tid in ids:
         try:
@@ -6953,6 +7062,9 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
         except Exception:  # noqa: BLE001
             leg = None
         if not leg or str(leg.get("status")) != "open":
+            continue
+        if not e_del_bot(leg):
+            _lascia_gamba_manuale(db, leg, now=now)
             continue
         prices = prices_from_row(rows_by_event.get(str(leg.get("event_id") or event_id)),
                                  market_type=str(leg.get("market_type") or ""),

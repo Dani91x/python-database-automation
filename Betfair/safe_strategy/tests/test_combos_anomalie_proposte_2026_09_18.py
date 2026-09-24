@@ -415,9 +415,16 @@ def test_combo_approvazione_fallimento_alla_seconda_gamba_unwind(monkeypatch):
     assert out.get("ok") is True and out["placed_legs"] == 1 and out["total_legs"] == 2
     assert chiamate == ["ou25", "btts1"]
     ou25_leg = next(t for t in db.trades if t["market_id"] == "ou25" and not t.get("closes_trade_id"))
-    assert ou25_leg["status"] == "hedged", "la gamba fillata non e' rimasta nuda"
-    chiusura = next(t for t in db.trades if t.get("closes_trade_id") == ou25_leg["id"])
-    assert "combo incompleta" in chiusura["meta"]["exit_reason"]
+    # 24/09 - ADATTATO alla decisione dell'utente B25 ("LASCIA E AVVISA"): la
+    # gamba e' origin='manual' (nata dal PIAZZA del trader) e NON si chiude
+    # piu'. Resta aperta, marcata, e l'avviso dice quale gamba e' stata uccisa.
+    assert ou25_leg["origin"] == "manual"
+    assert ou25_leg["status"] == "open", "la gamba manuale e' del trader: resta a mercato"
+    assert [t for t in db.trades if t.get("closes_trade_id") == ou25_leg["id"]] == []
+    assert isinstance(ou25_leg["meta"].get(S.COMBO_LASCIATA_KEY), dict)
+    avvisi = [p for k, p in db.attivita if k == "combo_incomplete" and p.get("lasciata_al_trader")]
+    assert len(avvisi) == 1 and avvisi[0]["trade_id"] == ou25_leg["id"]
+    assert "btts1" not in avvisi[0]["reason"] and "Yes" in avvisi[0]["reason"]
     assert "combo_incomplete" in db.kinds()
 
 

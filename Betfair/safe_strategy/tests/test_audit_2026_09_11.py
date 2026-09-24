@@ -533,15 +533,18 @@ def test_h20_combo_incompleta_dopo_il_fill_chiude_subito_la_gamba_fillata():
     n = 1 if esito["placed"] == esito["total"] else 0
     assert n == 0, "la combo non e' andata"
     assert _kinds(db, "combo_incomplete")
-    # la gamba fillata (ou25) e' stata CHIUSA subito, non e' rimasta nuda
+    # 24/09 - ADATTATO alla decisione dell'utente B25 ("LASCIA E AVVISA"): la
+    # combo nata da un PIAZZA ha le gambe origin='manual', cioe' del TRADER.
+    # La gamba fillata (ou25) NON si chiude piu': resta aperta, marcata, e
+    # l'avviso e' scritto. Prima questo test asseriva la chiusura 'forced'.
     opened = [t for t in db.trades if not t.get("closes_trade_id")
               and t.get("market_id") == "ou25"]
-    assert len(opened) == 1
-    closings = [t for t in db.trades if t.get("closes_trade_id") == opened[0]["id"]]
-    assert closings, "gamba nuda non chiusa"
-    assert closings[0]["meta"]["exit_kind"] == "forced"
-    assert "combo incompleta" in closings[0]["meta"]["exit_reason"]
-    assert db.get_trade(opened[0]["id"])["status"] == "hedged"
+    assert len(opened) == 1 and opened[0]["origin"] == "manual"
+    assert [t for t in db.trades if t.get("closes_trade_id") == opened[0]["id"]] == []
+    assert db.get_trade(opened[0]["id"])["status"] == "open"
+    assert isinstance(opened[0]["meta"].get(S.COMBO_LASCIATA_KEY), dict)
+    assert [p for p in _kinds(db, "combo_incomplete")
+            if p.get("lasciata_al_trader") and p.get("trade_id") == opened[0]["id"]]
 
 
 def test_h20_uscita_di_una_gamba_chiude_tutta_la_combo():
