@@ -207,8 +207,12 @@ describe('canale muto: la pagina e\' quella del database', () => {
         expect(result.current.etaRiga('omega', 7)?.fonte).toBe('database');
     });
 
-    it('i topic per riga sono sottoscritti sui canali giusti, e non leggono il database', async () => {
-        await montato();
+    it('i topic per riga sono sottoscritti sui canali giusti, e (riga NOTA) non leggono il database', async () => {
+        // 24/09: una riga SCONOSCIUTA chiede ora una rilettura mirata
+        // (`useControlRoom.righeNuove.test.tsx`); una riga nota no.
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([rigaOmega(7)]);
+        const { result } = await montato();
+        await waitFor(() => expect(result.current.posizioni).toHaveLength(1));
         for (const k of ['omega:omega_posizioni', 'omega:omega_proposta',
             'safe:safe_posizioni_calcio', 'safe:safe_posizioni_tennis', 'safe:safe_proposta',
             'mike:mike_posizioni']) {

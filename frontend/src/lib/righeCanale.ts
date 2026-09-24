@@ -48,7 +48,9 @@ export type FonteRiga = 'locale' | 'database';
 
 /** Un messaggio del canale gia' validato, con la busta tolta. */
 export interface MessaggioRiga {
-    id: number;
+    /** la chiave della riga: `id` numerico, o (24/09) la colonna chiave
+     *  dichiarata dal chiamante, es. `bot_key` di `tennis_bot_service_control` */
+    id: number | string;
     /** `_pubblicato_ms` del produttore */
     ms: number;
     /** `_seq` del produttore */
@@ -95,22 +97,29 @@ export function chiaveRiga(bot: Bot, id: number | string): string {
 /**
  * Valida un push del canale. `null` = non e' una riga (busta mancante o
  * storta, id non numerico): si ignora, non si indovina.
+ *
+ * 24/09 - `campoChiave`: per le tabelle senza `id` numerico (la riga di
+ * `tennis_bot_service_control` ha per chiave `bot_key`) la chiave e' quella
+ * colonna, stringa non vuota. Di serie resta `id` numerico, come prima.
  */
-export function leggiMessaggioRiga(bruto: unknown): MessaggioRiga | null {
+export function leggiMessaggioRiga(bruto: unknown, campoChiave: string = 'id'): MessaggioRiga | null {
     if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) return null;
     const o = bruto as Record<string, unknown>;
     if (o.fonte !== 'canale') return null;
-    const id = o.id;
+    const id = o[campoChiave];
     const ms = o._pubblicato_ms;
     const seq = o._seq;
-    if (typeof id !== 'number' || !Number.isFinite(id)) return null;
+    const chiaveValida = campoChiave === 'id'
+        ? typeof id === 'number' && Number.isFinite(id)
+        : typeof id === 'string' && id.trim() !== '';
+    if (!chiaveValida) return null;
     if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
     if (typeof seq !== 'number' || !Number.isFinite(seq)) return null;
     const riga: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(o)) {
         if (!CHIAVI_BUSTA.includes(k)) riga[k] = v;
     }
-    return { id, ms, seq, riga };
+    return { id: id as number | string, ms, seq, riga };
 }
 
 /**
@@ -123,16 +132,20 @@ export function leggiMessaggioRiga(bruto: unknown): MessaggioRiga | null {
  *
  * L'ultimo blocco applicato vince, come prima di questo modulo: l'ordine fra
  * letture sovrapposte lo governa chi chiama (`giroCorrente` nel hook).
+ *
+ * 24/09 - `chiaveDi`: la colonna chiave per le righe senza `id` numerico
+ * (`bot_key` degli interruttori tennis). Di serie `r.id`, come prima.
  */
-export function applicaBloccoDb<T extends { id: number }>(
+export function applicaBloccoDb<T>(
     prev: MappaRighe<T>, bot: Bot, righe: readonly T[], lettoMs: number,
+    chiaveDi: (r: T) => number | string = (r) => (r as unknown as { id: number }).id,
 ): MappaRighe<T> {
     const voci = new Map<string, VoceRiga<T>>();
     for (const [k, v] of prev.voci) {
         if (v.bot !== bot) voci.set(k, v);
     }
     for (const r of righe) {
-        const k = chiaveRiga(bot, r.id);
+        const k = chiaveRiga(bot, chiaveDi(r));
         const vecchia = prev.voci.get(k);
         const tieni = vecchia != null && vecchia.canale != null
             && vecchia.canaleMs != null && vecchia.canaleMs > lettoMs;
@@ -156,7 +169,7 @@ export function applicaBloccoDb<T extends { id: number }>(
  * - `sportAtteso` dato e la riga dichiara un altro sport (topic sbagliato:
  *   calcio e tennis non si mischiano, fail-closed).
  */
-export function applicaMessaggioCanale<T extends { id: number }>(
+export function applicaMessaggioCanale<T>(
     prev: MappaRighe<T>, bot: Bot, msg: MessaggioRiga, ricevutoMs: number,
     sportAtteso?: 'calcio' | 'tennis',
 ): MappaRighe<T> {
@@ -200,7 +213,7 @@ export function righeDi<T>(m: MappaRighe<T>, bot: Bot): T[] {
  *  sovrappone, altrimenti inizio della lettura del database. `null` = riga
  *  sconosciuta. */
 export function etaRiga<T>(
-    m: MappaRighe<T>, bot: Bot, id: number, nowMs: number,
+    m: MappaRighe<T>, bot: Bot, id: number | string, nowMs: number,
 ): { fonte: FonteRiga; etaS: number } | null {
     const v = m.voci.get(chiaveRiga(bot, id));
     if (!v) return null;
@@ -230,4 +243,46 @@ export function ultimeNotizie(
         }
     }
     return { canaleMs, dbMs };
+}
+
+// ---------------------------------------------------------------------------
+// 24/09 - QUANDO UN MESSAGGIO DEL CANALE CHIEDE UNA RILETTURA DEL DATABASE
+// (decisione dell'utente: "righe nuove dei bot in Control Room subito, non al
+// poll dei 30 s"). Il canale continua a NON aggiungere righe: dice solo alla
+// pagina che il blocco del database di quel bot e' vecchio, e la pagina lo
+// rilegge subito (`lib/rilettureMirate.ts`, anti-tempesta 2 s per bot).
+// ---------------------------------------------------------------------------
+
+/**
+ * Stati TERMINALI di una riga di posizione/ordine: regolata (`won`/`lost`/
+ * `void` dei tre bot calcio, `lib/eventGroups.SETTLED_STATES`), annullata o
+ * decaduta (anche gli stati flumine di `tennis_live_orders`), in errore.
+ * Una riga con `settled_at` valorizzato e' terminale qualunque sia lo stato.
+ * `EXECUTION_COMPLETE` NON e' terminale: abbinato tutto, la posizione e' viva.
+ */
+const STATI_TERMINALI: ReadonlySet<string> = new Set([
+    'won', 'lost', 'void', 'voided', 'cancelled', 'canceled', 'closed', 'error',
+    'lapsed', 'expired',
+]);
+
+export function rigaTerminale(riga: unknown): boolean {
+    if (!riga || typeof riga !== 'object') return false;
+    const o = riga as Record<string, unknown>;
+    if (typeof o.settled_at === 'string' && o.settled_at.trim() !== '') return true;
+    return STATI_TERMINALI.has(String(o.status ?? '').trim().toLowerCase());
+}
+
+/**
+ * Il messaggio chiede una rilettura del blocco del database di `bot`?
+ * - riga SCONOSCIUTA alla mappa: si' (e' una posizione nuova: la porta il
+ *   database, non il canale);
+ * - riga nota che DIVENTA terminale col messaggio (prima non lo era): si'
+ *   (una posizione chiusa: il blocco del database la dice chiusa, e con lei
+ *   le righe collegate);
+ * - altrimenti no: basta la sovrapposizione.
+ */
+export function serveRilettura<T>(m: MappaRighe<T>, bot: Bot, msg: MessaggioRiga): boolean {
+    const v = m.voci.get(chiaveRiga(bot, msg.id));
+    if (!v) return true;
+    return rigaTerminale(msg.riga) && !rigaTerminale(vistaVoce(v));
 }

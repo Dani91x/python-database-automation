@@ -137,6 +137,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
             omega: { fonte: 'database', etaS: 4 },
             safe: { fonte: 'database', etaS: 4 },
             mike: { fonte: 'database', etaS: 4 },
+            // 24/09: i 4 bot tennis in una voce (canale 47337)
+            tennis: { fonte: 'database', etaS: 4 },
         },
         etaRiga: () => null,
         ricarica: vi.fn(),
@@ -1470,10 +1472,12 @@ describe('C6 b - la testata dice da dove arrivano le righe dei bot, e quanto son
                 omega: { fonte: 'database', etaS: 12 },
                 safe: { fonte: 'locale', etaS: 1 },
                 mike: { fonte: 'database', etaS: null },
+                tennis: { fonte: 'locale', etaS: 2 },
             },
         }));
         mostra();
         expect(screen.getByTestId('cr-fonte-righe-safe').textContent).toMatch(/canale\s+1 s/);
+        expect(screen.getByTestId('cr-fonte-righe-tennis').textContent).toMatch(/Tennis canale\s+2 s/);
         expect(screen.getByTestId('cr-fonte-righe-omega').textContent).toMatch(/db\s+12 s/);
         expect(screen.getByTestId('cr-fonte-righe-mike').textContent).not.toMatch(/\d/);
     });

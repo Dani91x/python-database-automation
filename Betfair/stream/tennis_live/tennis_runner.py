@@ -62,6 +62,7 @@ from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from ..runner_lifecycle import EXIT_PLANNED_RESTART
 from ..scores.betfair_inplay import BetfairInPlayProvider
 from ..scores.scan_feed import ScanFeedScoreProvider
+from . import canale_bot_tennis as _CBT
 from . import guardie_tennis as _gt
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
@@ -1199,7 +1200,52 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
 # ---------------------------------------------------------------------------
 # Worker: controllo bot (arm/disarm) + heartbeat/stat → tennis_bot_control
 # ---------------------------------------------------------------------------
+# 24/09 - LA SVEGLIA DEL WORKER DI ARMATURA (``canale_bot_tennis``). Con
+# ``TENNIS_RUNNER_SVEGLIA_CANALE=1`` il worker viene chiamato ogni
+# ``PASSO_WORKER_S`` ma LAVORA (e legge il database) solo quando il cancello lo
+# dice: ogni ``BOT_CONTROL_POLL_SEC`` come oggi, oppure appena arriva dal canale
+# del ponte (47337, ``tennis_bot_armamento``) una riga di armatura per una
+# partita seguita, con un pavimento di 1 s. Interruttore spento: ``None``, il
+# worker e' identico a prima (stessa cadenza, nessun thread, nessuna porta).
+_CANCELLO_BOT_CONTROL: Optional[_CBT.CancelloBotControl] = None
+_SESSIONE_ARMAMENTO: Dict[str, Any] = {"session": None}
+
+
+def _partita_seguita(event_id: str) -> bool:
+    """Filtro della sveglia: la riga di armatura riguarda una partita che QUESTO
+    runner segue? Legge solo la memoria (nessuna lettura al database)."""
+    sess = _SESSIONE_ARMAMENTO.get("session")
+    meta = getattr(sess, "market_meta", None) if sess is not None else None
+    return isinstance(meta, dict) and str(event_id) in meta
+
+
+def _avvia_sveglia_armamento(session: "TennisLiveSession") -> None:
+    """Accende (una volta per processo) l'ascolto del canale del ponte. Non
+    solleva mai: senza sveglia il worker gira ogni ``BOT_CONTROL_POLL_SEC``."""
+    global _CANCELLO_BOT_CONTROL
+    _SESSIONE_ARMAMENTO["session"] = session
+    if _CANCELLO_BOT_CONTROL is not None or not _CBT.sveglia_runner_accesa():
+        return
+    cancello = _CBT.CancelloBotControl(BOT_CONTROL_POLL_SEC or 3.0)
+    if _CBT.avvia_ascolto_armamento(cancello, _partita_seguita) is not None:
+        _CANCELLO_BOT_CONTROL = cancello
+        logger.info("[tennis-runner] sveglia dell'armatura ATTIVA: un bot armato dalla "
+                    "Control Room non aspetta piu' il poll di %.0fs (pavimento %.1fs).",
+                    BOT_CONTROL_POLL_SEC or 3.0, _CBT.PAVIMENTO_SVEGLIA_S)
+
+
+def _intervallo_bot_control() -> float:
+    """Cadenza del BackgroundWorker: quella di oggi, o il passo corto quando il
+    cancello decide lui quando lavorare."""
+    if _CANCELLO_BOT_CONTROL is not None:
+        return _CBT.PASSO_WORKER_S
+    return BOT_CONTROL_POLL_SEC or 3.0
+
+
 def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
+    cancello = _CANCELLO_BOT_CONTROL
+    if cancello is not None and not cancello.deve_girare():
+        return          # 24/09: ne' cadenza ne' sveglia: nessuna lettura
     need_restart = False
     now_mono = time.monotonic()
     # T2 (24/09): a guardia d'avvio armata un bot nuovo NON provoca il restart
@@ -1606,6 +1652,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
     _ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
     if _ch is not None:
         _ch.set_hello(mode=live_order_mode())
+    _avvia_sveglia_armamento(session)   # 24/09, interruttore spento di serie
     interrupted = False
     _announce_order_mode(live_order_mode())
     try:
@@ -1754,7 +1801,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 framework, function=score_and_now_worker, interval=SCORE_POLL_SEC or 2.0,
                 func_kwargs={"session": session}, name="tennis_score_now"))
             framework.add_worker(BackgroundWorker(
-                framework, function=bot_control_worker, interval=BOT_CONTROL_POLL_SEC or 3.0,
+                framework, function=bot_control_worker, interval=_intervallo_bot_control(),
                 func_kwargs={"session": session}, name="tennis_bot_control"))
             # registrazione opt-in per-partita: allinea il tee raw al flag `record`
             framework.add_worker(BackgroundWorker(

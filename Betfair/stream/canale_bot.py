@@ -92,8 +92,14 @@ TOPIC: Mapping[str, str] = MappingProxyType({
     "safe_attivita": "safe_attivita",
     "safe_proposta": "safe_proposta",
     # servizio dei 4 bot tennis (47337)
+    # 24/09: `tennis_bot_stato` = riga di `tennis_bot_service_control` (ponte);
+    # `tennis_bot_posizioni` = riga di `tennis_live_orders` di un bot (scritta dal
+    # RUNNER, inoltrata sul 47337 dal ponte: `tennis_live/canale_bot_tennis.py`);
+    # `tennis_bot_armamento` = riga di armatura per partita (`tennis_bot_control`).
+    # Prima del 24/09 l'armatura usciva col nome `tennis_bot_posizioni`.
     "tennis_bot_stato": "tennis_bot_stato",
     "tennis_bot_posizioni": "tennis_bot_posizioni",
+    "tennis_bot_armamento": "tennis_bot_armamento",
 })
 
 #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira

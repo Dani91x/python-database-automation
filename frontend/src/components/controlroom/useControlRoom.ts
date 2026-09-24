@@ -41,9 +41,10 @@ import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/Ca
 import { fetchMikeState, type MikeEvent, type MikeStateView, type MikeTrade } from '@/lib/mike';
 import {
     mappaVuota, applicaBloccoDb, applicaMessaggioCanale, leggiMessaggioRiga,
-    righeDi, etaRiga as etaRigaDi, ultimeNotizie,
-    type MappaRighe, type FonteRiga,
+    righeDi, etaRiga as etaRigaDi, ultimeNotizie, serveRilettura, chiaveRiga,
+    type MappaRighe, type FonteRiga, type MessaggioRiga,
 } from '@/lib/righeCanale';
+import { RilettureMirate } from '@/lib/rilettureMirate';
 import { getLocalChannel, svegliaBot, type LocalStatus } from '@/lib/localChannel';
 import {
     inviaChiusura, faseDaRichiesta, firmaRiga, cambiataPerChiusura, richiestaDaRileggere,
@@ -71,7 +72,7 @@ import {
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
     type ArricchimentoPartita, type RigaTennisPerSoldi,
     BOT_TENNIS, isBotTennis,
-    type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
+    type Bot, type BotTennis, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
 import { fmtMoney } from '@/lib/format';
@@ -522,8 +523,64 @@ function chiaviComposte<T extends { id: number; closes_trade_id?: number | null 
 
 // ------------------------------------------ C6 b: righe per riga dal canale
 
-/** Una riga di posizione di Omega/Safe/Mike (la riga della SUA tabella). */
-type RigaPosizioneBot = OmegaTrade | SafeTrade | MikeTrade;
+/** Una riga di posizione di Omega/Safe/Mike (la riga della SUA tabella), o
+ *  (24/09) di uno dei 4 bot tennis (`tennis_live_orders`, `source` = bot). */
+type RigaPosizioneBot = OmegaTrade | SafeTrade | MikeTrade | TennisBotOrderRow;
+
+/**
+ * 24/09 - IL CANALE DEI 4 BOT TENNIS (47337, `tennis_bot_service --bridge-only`),
+ * topic copiati da `Betfair/stream/canale_bot.py` (`TOPIC`):
+ *  - `tennis_bot_stato`: la riga di `tennis_bot_service_control` (chiave
+ *    `bot_key`), scritta dal ponte;
+ *  - `tennis_bot_posizioni`: la riga di `tennis_live_orders` di un bot (chiave
+ *    `id`, bot = `source`), scritta dal runner e inoltrata identica dal ponte.
+ * Sola lettura: i comandi tennis passano da 47332 con token.
+ */
+const TOPIC_TENNIS_STATO = 'tennis_bot_stato';
+const TOPIC_TENNIS_POSIZIONI = 'tennis_bot_posizioni';
+/** gruppo delle riletture mirate dei 4 bot tennis: UNA lettura per tutti */
+const GRUPPO_TENNIS = 'tennis';
+
+/** La chiave di un bot tennis da una riga del canale, o null (fail-closed). */
+function botTennisDi(v: unknown): BotTennis | null {
+    return typeof v === 'string' && (BOT_TENNIS as readonly string[]).includes(v)
+        ? v as BotTennis : null;
+}
+
+/** Ordine della RPC `get_tennis_bot_orders_today`: `ORDER BY placed_at` (nulli
+ *  in coda, come Postgres in ordine crescente). Stabile a parita'. */
+function perPiazzamento(a: TennisBotOrderRow, b: TennisBotOrderRow): number {
+    const ta = a.placed_at ? Date.parse(a.placed_at) : NaN;
+    const tb = b.placed_at ? Date.parse(b.placed_at) : NaN;
+    if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+    if (Number.isNaN(ta)) return 1;
+    if (Number.isNaN(tb)) return -1;
+    return ta - tb;
+}
+
+/** Il blocco `get_tennis_bot_orders_today` (tutti e 4 i bot insieme) nella
+ *  mappa per riga: un blocco per bot, `source` = bot. Una riga con un `source`
+ *  che non e' un bot tennis non entra (la RPC comunque non le porta). */
+function applicaBloccoTennis(
+    prev: MappaRighe<RigaPosizioneBot>, righe: readonly TennisBotOrderRow[], lettoMs: number,
+): MappaRighe<RigaPosizioneBot> {
+    let m = prev;
+    for (const b of BOT_TENNIS) {
+        m = applicaBloccoDb<RigaPosizioneBot>(m, b, righe.filter((o) => o.source === b), lettoMs);
+    }
+    return m;
+}
+
+/** Il blocco `get_tennis_bot_services` nella mappa per riga (chiave `bot_key`). */
+function applicaBloccoServizi(
+    prev: MappaRighe<TennisBotServiceRow>, righe: readonly TennisBotServiceRow[], lettoMs: number,
+): MappaRighe<TennisBotServiceRow> {
+    let m = prev;
+    for (const b of BOT_TENNIS) {
+        m = applicaBloccoDb(m, b, righe.filter((r) => r.bot_key === b), lettoMs, (r) => r.bot_key);
+    }
+    return m;
+}
 /** Una proposta di Safe (`safe_strategy_requests`) o di Omega (`get_omega_proposte`). */
 type RigaPropostaBot = PropostaChiusura | PropostaUscitaOmega;
 
@@ -826,12 +883,12 @@ export interface ControlRoomVM {
      * Con i canali muti (interruttori `*_CANALE_POSIZIONI` spenti) resta
      * sempre "database".
      */
-    fonteRighe: Record<'omega' | 'safe' | 'mike', { fonte: FonteRiga; etaS: number | null }>;
+    fonteRighe: Record<'omega' | 'safe' | 'mike' | 'tennis', { fonte: FonteRiga; etaS: number | null }>;
     /**
      * C6 b - eta' e fonte di UNA posizione (chiave bot+id). `null` = riga
      * sconosciuta alla mappa (mai letta dal database).
      */
-    etaRiga: (bot: 'omega' | 'safe' | 'mike', id: number) => { fonte: FonteRiga; etaS: number } | null;
+    etaRiga: (bot: Bot, id: number) => { fonte: FonteRiga; etaS: number } | null;
 
     ricarica: () => void;
 }
@@ -930,12 +987,47 @@ export function useControlRoom(): ControlRoomVM {
     // giorno e i LORO ordini. Finche' la migrazione del 17/09 non e' applicata
     // queste letture falliscono e le quattro righe restano «stato non letto»:
     // e' la verita', ed e' meglio di un «fermo» inventato.
-    const [tennisServizi, setTennisServizi] = useState<TennisBotServiceRow[] | null>(null);
+    // 24/09 - gli interruttori dei 4 bot in una MAPPA PER RIGA (chiave
+    // `bot_key`), come le posizioni: il blocco del database dice quali righe
+    // esistono, il canale 47337 (`tennis_bot_stato`) ne sovrappone le colonne
+    // se piu' fresco. `null` finche' non e' mai stato letto ("stato non letto").
+    const [righeServ, setRigheServ] = useState<MappaRighe<TennisBotServiceRow>>(() => mappaVuota());
+    const [tennisServiziLetti, setTennisServiziLetti] = useState(false);
+    const tennisServizi = useMemo<TennisBotServiceRow[] | null>(
+        () => (tennisServiziLetti
+            ? BOT_TENNIS.flatMap((b) => righeDi(righeServ, b))
+            : null),
+        [righeServ, tennisServiziLetti]);
     /** P&L di oggi per bot, dal database. Live e paper MAI nello stesso conto. */
     const [tennisOggi, setTennisOggi] = useState<TennisBotDailyRow[]>([]);
     const [tennisOggiPaper, setTennisOggiPaper] = useState<TennisBotDailyRow[]>([]);
-    /** gli ordini di oggi dei quattro bot: posizioni aperte + scheda partita */
-    const [tennisOrdini, setTennisOrdini] = useState<TennisBotOrderRow[]>([]);
+    /** gli ordini di oggi dei quattro bot: posizioni aperte + scheda partita.
+     *  24/09: dalla mappa per riga (chiave bot+id), nell'ordine della RPC. */
+    const tennisOrdini = useMemo<TennisBotOrderRow[]>(
+        () => (BOT_TENNIS.flatMap((b) => righeDi(righePos, b)) as TennisBotOrderRow[])
+            .sort(perPiazzamento),
+        [righePos]);
+
+    // -- 24/09: RIGHE NUOVE SUBITO (decisione dell'utente) -------------------
+    // Specchio SINCRONO della mappa: il callback del canale deve sapere se la
+    // riga e' gia' nota senza aspettare un render.
+    const righePosRef = useRef(righePos);
+    useEffect(() => { righePosRef.current = righePos; }, [righePos]);
+    /** per gruppo (bot, o 'tennis'): inizio dell'ultima lettura del blocco
+     *  APPLICATA. Una lettura partita prima non sovrascrive una partita dopo
+     *  (giro dei 30 s e riletture mirate si incrociano). */
+    const lettoBlocco = useRef<Record<string, number>>({});
+    const bloccoNuovo = useCallback((gruppo: string, lettoMs: number): boolean => {
+        const ultimo = lettoBlocco.current[gruppo];
+        if (ultimo != null && ultimo > lettoMs) return false;
+        lettoBlocco.current[gruppo] = lettoMs;
+        return true;
+    }, []);
+    /** righe (bot#id, per motivo) per cui una rilettura e' GIA' stata chiesta:
+     *  una riga che il blocco non porta (es. fuori dalla giornata) non puo'
+     *  chiedere riletture all'infinito. */
+    const giaChieste = useRef<Set<string>>(new Set());
+    const rilettore = useRef<RilettureMirate | null>(null);
     /**
      * 18/09 (raccordo, R4) — la riga singleton `betfair_live_account`, GIA'
      * letta/sottoscritta da `SaldoBetfairCard` (autosufficiente, non passa da
@@ -996,16 +1088,18 @@ export function useControlRoom(): ControlRoomVM {
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
-            if (rOmegaT.status === 'fulfilled') {
+            // 24/09: `bloccoNuovo` - una rilettura mirata partita DOPO questo
+            // giro e gia' applicata vince (e' piu' fresca): il giro la salta.
+            if (rOmegaT.status === 'fulfilled' && bloccoNuovo('omega', lettoMs)) {
                 const v = rOmegaT.value;
                 setRighePos((p) => applicaBloccoDb(p, 'omega', v ?? [], lettoMs));
             }
-            if (rSafe.status === 'fulfilled') {
+            if (rSafe.status === 'fulfilled' && bloccoNuovo('safe', lettoMs)) {
                 const v = rSafe.value;
                 setSafe(v);
                 setRighePos((p) => applicaBloccoDb(p, 'safe', v.trades ?? [], lettoMs));
             }
-            if (rMike.status === 'fulfilled') {
+            if (rMike.status === 'fulfilled' && bloccoNuovo('mike', lettoMs)) {
                 const v = rMike.value;
                 setMike(v);
                 setRighePos((p) => applicaBloccoDb(p, 'mike', v.trades ?? [], lettoMs));
@@ -1020,10 +1114,17 @@ export function useControlRoom(): ControlRoomVM {
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
             // `null` resta `null` se la lettura fallisce: una riga di control
             // non letta non e' una riga «ferma».
-            if (rTennisSrv.status === 'fulfilled') setTennisServizi(rTennisSrv.value ?? []);
+            if (rTennisSrv.status === 'fulfilled') {
+                const v = rTennisSrv.value ?? [];
+                setRigheServ((p) => applicaBloccoServizi(p, v, lettoMs));
+                setTennisServiziLetti(true);
+            }
             if (rTennisDaily.status === 'fulfilled') setTennisOggi(rTennisDaily.value ?? []);
             if (rTennisDailyPaper.status === 'fulfilled') setTennisOggiPaper(rTennisDailyPaper.value ?? []);
-            if (rTennisOrdini.status === 'fulfilled') setTennisOrdini(rTennisOrdini.value ?? []);
+            if (rTennisOrdini.status === 'fulfilled' && bloccoNuovo(GRUPPO_TENNIS, lettoMs)) {
+                const v = rTennisOrdini.value ?? [];
+                setRighePos((p) => applicaBloccoTennis(p, v, lettoMs));
+            }
             setSoldiLetti((prev) => prev || (rOmegaT.status === 'fulfilled'
                 && rSafe.status === 'fulfilled' && rMike.status === 'fulfilled'));
             if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled'
@@ -1060,7 +1161,7 @@ export function useControlRoom(): ControlRoomVM {
             setCaricamento(false);
         });
         return () => { vivo = false; };
-    }, []);
+    }, [bloccoNuovo]);
 
     useEffect(() => {
         const stop = ricarica();
@@ -1173,14 +1274,82 @@ export function useControlRoom(): ControlRoomVM {
     // usato sopra per `*_stato` e da `svegliaBot`: nessun socket nuovo. Un
     // messaggio si applica SOLO a una riga gia' nota al database e SOLO se piu'
     // fresco (`lib/righeCanale.ts`); scartato = stesso stato, nessun render.
+    //
+    // 24/09 (decisione dell'utente: "righe nuove dei bot in Control Room
+    // subito, non al poll dei 30 s"): un messaggio per una riga SCONOSCIUTA
+    // (posizione nuova) o che la fa DIVENTARE terminale (posizione chiusa)
+    // chiede SUBITO la rilettura del blocco del database di QUEL bot
+    // (`RilettureMirate`: al massimo una ogni 2 s per bot, coalescenza). La
+    // riga entra dal database, poi il canale la aggiorna al ms. Il canale
+    // continua a NON aggiungere righe.
+    useEffect(() => {
+        let vivo = true;
+        const r = new RilettureMirate();
+        r.registra('omega', () => {
+            const lettoMs = Date.now();
+            fetchOmegaTrades(2000).then((v) => {
+                if (!vivo || !bloccoNuovo('omega', lettoMs)) return;
+                setRighePos((p) => applicaBloccoDb(p, 'omega', v ?? [], lettoMs));
+            }).catch(() => { /* il giro dei 30 s riprova */ });
+        });
+        r.registra('safe', () => {
+            const lettoMs = Date.now();
+            fetchSafeState().then((v) => {
+                if (!vivo || !bloccoNuovo('safe', lettoMs)) return;
+                setSafe(v);
+                setRighePos((p) => applicaBloccoDb(p, 'safe', v.trades ?? [], lettoMs));
+            }).catch(() => { /* il giro dei 30 s riprova */ });
+        });
+        r.registra('mike', () => {
+            const lettoMs = Date.now();
+            fetchMikeState().then((v) => {
+                if (!vivo || !bloccoNuovo('mike', lettoMs)) return;
+                setMike(v);
+                setRighePos((p) => applicaBloccoDb(p, 'mike', v.trades ?? [], lettoMs));
+            }).catch(() => { /* il giro dei 30 s riprova */ });
+        });
+        // i 4 bot tennis hanno UNA lettura sola (`get_tennis_bot_orders_today`):
+        // un gruppo solo, quindi al massimo una rilettura ogni 2 s per tutti e 4
+        r.registra(GRUPPO_TENNIS, () => {
+            const lettoMs = Date.now();
+            fetchTennisBotOrdersToday(null).then((v) => {
+                if (!vivo || !bloccoNuovo(GRUPPO_TENNIS, lettoMs)) return;
+                setRighePos((p) => applicaBloccoTennis(p, v ?? [], lettoMs));
+            }).catch(() => { /* il giro dei 30 s riprova */ });
+        });
+        rilettore.current = r;
+        return () => { vivo = false; r.chiudi(); rilettore.current = null; };
+    }, [bloccoNuovo]);
+
+    /** Un messaggio per riga di una POSIZIONE: rilettura se serve, poi overlay. */
+    const suRigaPosizione = useCallback((
+        bot: Bot, gruppo: string, msg: MessaggioRiga, sport?: 'calcio' | 'tennis',
+    ) => {
+        if (sport != null) {
+            // topic sbagliato: ne' overlay ne' rilettura (fail-closed)
+            const sp = msg.riga.sport;
+            if (typeof sp === 'string' && sp.trim().toLowerCase() !== sport) return;
+        }
+        const ricevutoMs = Date.now();
+        const mappa = righePosRef.current;
+        if (serveRilettura(mappa, bot, msg)) {
+            const k = chiaveRiga(bot, msg.id);
+            const motivo = `${mappa.voci.has(k) ? 'chiusa' : 'nuova'}:${k}`;
+            if (!giaChieste.current.has(motivo)) {
+                giaChieste.current.add(motivo);
+                rilettore.current?.chiedi(gruppo);
+            }
+        }
+        setRighePos((p) => applicaMessaggioCanale(p, bot, msg, ricevutoMs, sport));
+    }, []);
+
     useEffect(() => {
         const chiusure: (() => void)[] = [];
         for (const { bot, topic, sport } of TOPIC_POSIZIONI) {
             chiusure.push(getLocalChannel(bot).subscribe(topic, (d) => {
                 const msg = leggiMessaggioRiga(d);
                 if (!msg) return;
-                const ricevutoMs = Date.now();
-                setRighePos((p) => applicaMessaggioCanale(p, bot, msg, ricevutoMs, sport));
+                suRigaPosizione(bot, bot, msg, sport);
             }));
         }
         for (const { bot, topic } of TOPIC_PROPOSTE) {
@@ -1192,7 +1361,52 @@ export function useControlRoom(): ControlRoomVM {
             }));
         }
         return () => { for (const c of chiusure) c(); };
-    }, []);
+    }, [suRigaPosizione]);
+
+    // ---------------------------------- 24/09: i 4 bot tennis dal canale 47337
+    // "Bot tennis dal loro canale" (decisione dell'utente). Il ponte
+    // (`tennis_bot_service --bridge-only`) pubblica gli interruttori
+    // (`tennis_bot_stato`) e inoltra le righe d'ordine dei bot scritte dal
+    // runner (`tennis_bot_posizioni`), con chiavi identiche al database.
+    // OVERLAY sul poll dei 30 s, mai unione; righe nuove/chiuse -> rilettura
+    // mirata (sopra). Canale giu': stato 'off', eta' del push azzerata, si
+    // torna al database (regola 1). Sola lettura: nessun comando passa di qui.
+    useEffect(() => {
+        const ch = getLocalChannel('tennis_bot');
+        const imposta = (st: LocalStatus) => setCanali((p) => {
+            const n = { ...p };
+            for (const b of BOT_TENNIS) n[b] = st;
+            return n;
+        });
+        imposta(ch.getStatus());
+        const offStatus = ch.onStatus((st) => {
+            imposta(st);
+            if (st !== 'connected') {
+                setUltimoPush((p) => {
+                    const n = { ...p };
+                    for (const b of BOT_TENNIS) n[b] = null;
+                    return n;
+                });
+            }
+        });
+        const offStato = ch.subscribe(TOPIC_TENNIS_STATO, (d) => {
+            const msg = leggiMessaggioRiga(d, 'bot_key');
+            if (!msg) return;
+            const bot = botTennisDi(msg.id);
+            if (!bot) return;
+            const ricevutoMs = Date.now();
+            setUltimoPush((p) => ({ ...p, [bot]: ricevutoMs }));
+            setRigheServ((p) => applicaMessaggioCanale(p, bot, msg, ricevutoMs));
+        });
+        const offPosizioni = ch.subscribe(TOPIC_TENNIS_POSIZIONI, (d) => {
+            const msg = leggiMessaggioRiga(d);
+            if (!msg) return;
+            const bot = botTennisDi(msg.riga.source);
+            if (!bot) return;
+            suRigaPosizione(bot, GRUPPO_TENNIS, msg);
+        });
+        return () => { offStatus(); offStato(); offPosizioni(); };
+    }, [suRigaPosizione]);
 
     // --------------------------------------------------- conto Betfair (R4)
     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
@@ -2484,8 +2698,15 @@ export function useControlRoom(): ControlRoomVM {
 
     // C6 b - fonte ed eta' delle righe per bot (posizioni + proposte)
     const fonteRighe = useMemo(() => {
-        const di = (bot: 'omega' | 'safe' | 'mike'): { fonte: FonteRiga; etaS: number | null } => {
-            const { canaleMs, dbMs } = ultimeNotizie([righePos, righeProp], bot);
+        const di = (...bots: Bot[]): { fonte: FonteRiga; etaS: number | null } => {
+            // 24/09: i 4 bot tennis in UNA voce (una lettura sola, un canale solo)
+            let canaleMs: number | null = null;
+            let dbMs: number | null = null;
+            for (const bot of bots) {
+                const u = ultimeNotizie([righePos, righeProp], bot);
+                if (u.canaleMs != null && (canaleMs == null || u.canaleMs > canaleMs)) canaleMs = u.canaleMs;
+                if (u.dbMs != null && (dbMs == null || u.dbMs > dbMs)) dbMs = u.dbMs;
+            }
             const locale = canaleMs != null && (dbMs == null || canaleMs > dbMs);
             const at = locale ? canaleMs : dbMs;
             return {
@@ -2493,10 +2714,12 @@ export function useControlRoom(): ControlRoomVM {
                 etaS: at == null ? null : Math.max(0, Math.round((nowMs - at) / 1000)),
             };
         };
-        return { omega: di('omega'), safe: di('safe'), mike: di('mike') };
+        return {
+            omega: di('omega'), safe: di('safe'), mike: di('mike'), tennis: di(...BOT_TENNIS),
+        };
     }, [righePos, righeProp, nowMs]);
     const etaRiga = useCallback(
-        (bot: 'omega' | 'safe' | 'mike', id: number) => etaRigaDi(righePos, bot, id, nowMs),
+        (bot: Bot, id: number) => etaRigaDi(righePos, bot, id, nowMs),
         [righePos, nowMs]);
 
     return {

@@ -32,6 +32,7 @@ from .. import canale_bot as _cb
 from .. import local_channel as _lc
 from .. import sveglia_canale as _SV
 from ..single_instance import acquire_single_instance_lock
+from . import canale_bot_tennis as _CBT
 from . import tennis_db
 
 logger = logging.getLogger(__name__)
@@ -245,11 +246,13 @@ def _avvia_canale() -> None:
         # (difetto 33 del catalogo): chi consuma calcola da qui quando dirsi
         # "muto", invece di cablare una costante propria.
         ch.set_hello(topic=[_cb.TOPIC["tennis_bot_stato"],
-                            _cb.TOPIC["tennis_bot_posizioni"]],
+                            _cb.TOPIC["tennis_bot_posizioni"],
+                            _cb.TOPIC["tennis_bot_armamento"]],
                      cadenza_battito_s=CADENZA_BATTITO_S)
         logger.info("[tennis-bot-svc] canale locale attivo su 127.0.0.1:%d "
-                    "(sola lettura; topic: %s, %s)", porta,
-                    _cb.TOPIC["tennis_bot_stato"], _cb.TOPIC["tennis_bot_posizioni"])
+                    "(sola lettura; topic: %s, %s, %s)", porta,
+                    _cb.TOPIC["tennis_bot_stato"], _cb.TOPIC["tennis_bot_posizioni"],
+                    _cb.TOPIC["tennis_bot_armamento"])
     except Exception as ex:  # noqa: BLE001 - il canale e' opzionale, sempre
         logger.warning("[tennis-bot-svc] canale locale KO: %s", str(ex)[:160])
 
@@ -371,6 +374,10 @@ def _stats_battito(desiderio: Dict[str, Any], eventi: int,
     sveglia = statistiche_sveglia()
     if sveglia is not None:
         out["sveglia"] = sveglia
+    # 24/09: i contatori dell'inoltro delle righe d'ordine, SOLO se acceso
+    inoltro = _CBT.statistiche_inoltro()
+    if inoltro is not None:
+        out["canale_inoltro"] = inoltro
     return out
 
 
@@ -616,6 +623,10 @@ def _main() -> None:
         ripresa_ponte()
         # F3: il canale 47337 vive QUI e solo qui (vedi ``_avvia_canale``).
         _avvia_canale()
+        # 24/09: le righe d'ordine dei 4 bot le scrive il RUNNER (47332): il
+        # ponte le legge come LETTORE e le inoltra identiche sul 47337
+        # (``canale_bot_tennis.InoltroPosizioni``). Nessuna lettura al database.
+        _CBT.avvia_inoltro_nel_ponte()
         # F5/F6: la sveglia del ponte, agganciata a quello stesso canale.
         _avvia_sveglia()
         stop = threading.Event()

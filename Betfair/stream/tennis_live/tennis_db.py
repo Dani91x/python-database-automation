@@ -41,6 +41,10 @@ _CANALE_ACCESO = _cb.acceso(_cb.ENV_TENNIS_BOT)
 
 _ORDER_TABLE = "tennis_live_order_queue"
 
+# 24/09: il `source` delle righe d'ordine dei 4 bot (una sola lista, nel modulo
+# puro del canale; un test la confronta con `tennis_bot_service._BOT_KEYS`).
+from .canale_bot_tennis import SORGENTI_BOT_TENNIS as _SORGENTI_BOT  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Client Supabase PER-THREAD (service_role)
 # ---------------------------------------------------------------------------
@@ -218,7 +222,9 @@ def set_tennis_bot_status(
         "bot_key", bot_key
     ).execute()
     if _CANALE_ACCESO:          # F3: l'armatura per evento, come il DB l'ha scritta
-        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)
+        # 24/09: topic `tennis_bot_armamento` (prima usciva come
+        # `tennis_bot_posizioni`, nome che ora porta le righe d'ordine dei bot)
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
 
 
 # Marker che distingue un motivo d'ATTESA (benigno) da un errore terminale nel
@@ -351,9 +357,16 @@ def upsert_tennis_order(row: Dict[str, Any]) -> None:
     from ..local_channel import publish as _lpub
 
     _lpub("order", payload)  # A7: fill realtime sul desktop
-    _exec_retry(sb.table("tennis_live_orders").upsert(
+    res = _exec_retry(sb.table("tennis_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
     ))
+    # 24/09 - le righe d'ordine dei 4 BOT anche sul topic `tennis_bot_posizioni`:
+    # DOPO la scrittura riuscita, la riga che la upsert ha RESTITUITO (con `id`,
+    # nessuna lettura in piu'). Esce sul canale di QUESTO processo (il runner,
+    # 47332); il ponte la inoltra identica sul 47337 (`canale_bot_tennis.py`).
+    # Gli ordini manuali restano sul solo topic `order`.
+    if _CANALE_ACCESO and str(payload.get("source") or "") in _SORGENTI_BOT:
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)
 
 
 def upsert_tennis_position(row: Dict[str, Any]) -> None:
@@ -483,7 +496,7 @@ def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
         res = _exec_retry(sb.table("tennis_bot_control").upsert(
             senza, on_conflict="event_id,bot_key"))
     if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
-        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
 
 
 _mode_assente_detto = False

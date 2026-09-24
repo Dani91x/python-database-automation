@@ -937,11 +937,13 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                         notizia. Canali muti = sempre "database". */}
                     <span className="text-white/30" data-testid="cr-fonte-righe"
                         title="righe dei bot: canale locale (messaggio per riga, piu' fresco del database) o database (poll dei 30 s), con l'eta' dell'ultima notizia">
-                        {'·'} righe{(['omega', 'safe', 'mike'] as const).map((b) => {
+                        {'·'} righe{(['omega', 'safe', 'mike', 'tennis'] as const).map((b) => {
                             const f = vm.fonteRighe[b];
+                            // 24/09: i 4 bot tennis in una voce (canale 47337)
+                            const nome = b === 'tennis' ? 'Tennis' : BOT_LABEL[b];
                             return (
                                 <span key={b} data-testid={`cr-fonte-righe-${b}`}>
-                                    {' '}{BOT_LABEL[b]} {f.fonte === 'locale' ? 'canale' : 'db'}{' '}
+                                    {' '}{nome} {f.fonte === 'locale' ? 'canale' : 'db'}{' '}
                                     {f.etaS == null ? DASH : fmtAge(f.etaS)}
                                 </span>
                             );

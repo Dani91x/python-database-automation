@@ -177,7 +177,9 @@ def test_larmatura_per_evento_esce_sul_canale(banco):
     banco["risposte"]["tennis_bot_control"] = RispostaFinta([RIGA_CONTROLLO])
     TDB.set_tennis_bot_status("35794049", "tennis_scalper", "armed")
     topic, msg = banco["canale"].inviati[0]
-    assert topic == CB.TOPIC["tennis_bot_posizioni"]
+    # 24/09: l'armatura ha il SUO topic; `tennis_bot_posizioni` porta le righe
+    # d'ordine dei bot (test_tennis_bot_canale_posizioni_2026_09_24.py)
+    assert topic == CB.TOPIC["tennis_bot_armamento"]
     assert set(msg) - set(CB.CHIAVI_META) == set(RIGA_CONTROLLO)
 
 
@@ -186,7 +188,7 @@ def test_larmatura_nuova_esce_sul_canale(banco):
     TDB.upsert_tennis_bot_control({"event_id": "35794049",
                                    "bot_key": "tennis_scalper",
                                    "status": "requested"})
-    assert banco["canale"].inviati[0][0] == CB.TOPIC["tennis_bot_posizioni"]
+    assert banco["canale"].inviati[0][0] == CB.TOPIC["tennis_bot_armamento"]
 
 
 def test_il_mode_e_quello_della_riga(banco):
