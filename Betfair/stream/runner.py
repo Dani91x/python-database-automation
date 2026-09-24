@@ -95,6 +95,7 @@ from .reconcile_worker import (
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from . import live_order_worker as _LOW
+from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -1596,6 +1597,40 @@ _RIPRESA_RIPROVA_S = 10.0
 _RIPRESA_STATO: dict = {"ultimo": 0.0}
 
 
+# 24/09 - MOTORE ORDINI (F1/F2/F3, ``motore_ordini.py``): esecutore a evento dei
+# comandi del canale 47331 (``/order`` di sempre e ``/comando/<attore>``), con
+# diario write-ahead e IO DB differito. SPENTO di serie: si accende con
+# ``MOTORE_ORDINI_CANALE=1`` (lavoro nuovo, da certificare prima dell'uso).
+# Spento = comportamento di prima, identico (il worker della coda drena il canale).
+_MOTORE: Dict[str, Any] = {"motore": None, "api": None}
+
+
+def _motore_abilitato() -> bool:
+    return os.getenv("MOTORE_ORDINI_CANALE", "").strip() == "1"
+
+
+def _motore_attivo() -> Optional[Any]:
+    return _MOTORE.get("motore")
+
+
+def _lista_ordini_ripresa(customer_order_refs: List[str]) -> Any:
+    """``listCurrentOrders`` per customerOrderRef (risposta lightweight, chiavi
+    Betfair). Usata SOLO dalla ripresa del motore, prima del disarmo."""
+    api = _MOTORE.get("api")
+    if api is None:
+        raise RuntimeError("client Betfair non disponibile per la ripresa")
+    return api.betting.list_current_orders(customer_order_refs=list(customer_order_refs),
+                                           lightweight=True)
+
+
+def _costruisci_motore(ch: Any) -> Any:
+    cartella = os.getenv("MOTORE_DIARIO_DIR", "").strip() or os.path.join(
+        DATA_DIR, "_diario_ordini")
+    return _MOT.MotoreOrdini(
+        "calcio", canale=ch, diario=_MOT.Diario(cartella),
+        scrittore=_MOT.ScrittoreAsincrono(nome="scrittore-db-calcio"),
+        guardia_armata=lambda: bool(_GUARDIA_AVVIO.blocca_aperture),
+        motivo_guardia_order=_MOTIVO_GUARDIA_LOCALE)
 # 24/09 - MODO ORDINI DALLA UI: all'avvio dell'app la scelta torna a PAPER
 # (``modo_ordini.dichiara_avvio``, stesso schema di ``avvio_app`` per Omega/Mike/
 # Safe) e il runner dichiara il TETTO del suo .env. Finche' non riesce la scelta
@@ -1633,6 +1668,13 @@ def _ripresa_all_avvio() -> bool:
     except Exception as ex:  # noqa: BLE001 - la guardia resta armata, si riprova
         logger.error("[runner] pulizia di ripresa KO: coda ordini FERMA (guardia "
                      "d'avvio armata) finche' non riesce: %s", str(ex)[:200])
+        return False
+    motore = _motore_attivo()
+    if motore is not None and not motore.riprendi_da_diario(_lista_ordini_ripresa):
+        # 24/09 F1: comandi in volo al riavvio non verificati su Betfair: la
+        # guardia resta ARMATA (solo cancel) e si riprova al giro dopo.
+        logger.error("[runner] ripresa dal diario del motore NON completa: guardia "
+                     "d'avvio armata")
         return False
     _GUARDIA_AVVIO.fatto = True
     if n_ord or n_pos or n_stale:
@@ -1705,7 +1747,9 @@ def _live_order_worker_guardato(context: dict, flumine: Any, session: Any = None
             _RIPRESA_STATO["ultimo"] = adesso
             _ripresa_all_avvio()
         if _GUARDIA_AVVIO.blocca_aperture:
-            _rispondi_comandi_locali_in_guardia(flumine, strategy)
+            # col motore montato il canale lo serve LUI (stessa regola B-1)
+            if _motore_attivo() is None:
+                _rispondi_comandi_locali_in_guardia(flumine, strategy)
             return
     _dichiara_modo_ordini_all_avvio()  # 24/09: no-op quando gia' fatto
     live_order_worker(context, flumine, session=session, strategy=strategy)
@@ -1752,6 +1796,19 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
     if ch is not None:
         ch.set_hello(mode=modo_avvio)
+    # 24/09 - motore ordini (opt-in): montato PRIMA della ripresa d'avvio, che
+    # rilegge il suo diario; il thread parte subito ma senza framework rifiuta.
+    _MOTORE["api"] = api_client
+    if ch is not None and modo_avvio in ("PAPER", "LIVE") and _motore_abilitato():
+        try:
+            _MOTORE["motore"] = _costruisci_motore(ch)
+            _MOTORE["motore"].avvia()
+            logger.info("[runner] motore ordini ATTIVO sul canale %d (diario %s)",
+                        ch.port, _MOTORE["motore"].diario.cartella)
+        except Exception as ex:  # noqa: BLE001 - senza motore: percorso di prima
+            logger.error("[runner] motore ordini NON avviato (%s): resta il percorso "
+                         "del worker della coda", str(ex)[:200])
+            _MOTORE["motore"] = None
     interrupted = False
 
     # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
@@ -2068,6 +2125,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # epoca dello stream corrente: serve al rilevamento "stream MAI
             # connesso" del heartbeat_worker (stallo con last_write_ms==0).
             session.stream_started_monotonic = time.monotonic()
+            motore = _motore_attivo()
+            if motore is not None and orders_enabled:
+                motore.aggancia(framework, strategies_by_mode)
             try:
                 framework.run()
             except KeyboardInterrupt:
@@ -2078,10 +2138,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 if only_event:
                     interrupted = True
                 else:
+                    if motore is not None:
+                        motore.sgancia()  # framework morto: i comandi si rifiutano
                     delay = session.backoff.next_delay()
                     logger.warning("[runner] retry tra %.0fs (backoff)...", delay)
                     time.sleep(delay)
                     continue  # ricostruisce e ritenta (multi-match)
+            finally:
+                if motore is not None:
+                    motore.sgancia()
 
             if session.shutdown_requested.is_set():
                 logger.info("[runner] auto-spegnimento: finalizzo e esco.")
@@ -2097,6 +2162,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 _finalize_event(event_id, session)
         session.close_score_files()
         close_raw()
+        motore = _motore_attivo()
+        if motore is not None:
+            # 24/09: le scritture DB differite si svuotano prima di uscire
+            try:
+                motore.scrittore.svuota(5.0)
+                motore.ferma()
+            except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
+                logger.exception("[runner] arresto del motore ordini KO")
+            _MOTORE["motore"] = None
         safe_logout(api_client)
 
     global _PLANNED_RESTART  # noqa: PLW0603 - letto da _main per l'exit code

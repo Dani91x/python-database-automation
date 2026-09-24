@@ -56,6 +56,48 @@ CUSTOMER_STRATEGY_REF = "live"
 # attivo restano le UNICHE eseguibili — il freno blocca le aperture, mai le vie di uscita.
 _CLOSING_ACTIONS = frozenset({"cancel", "greenup", "cashout_all", "cashout_event"})
 
+# ---------------------------------------------------------------------------
+# 24/09 (motore ordini F2): DUE thread possono ora toccare flumine per gli ordini
+# - il BackgroundWorker della coda DB (questo modulo, ripiego) e il thread del
+# motore ordini (``motore_ordini.py``, comandi dal canale svegliati a evento).
+# L'invariante di prima ("un solo thread alla volta piazza/annulla/sposta") si
+# conserva con UN lucchetto: chi esegue una riga (``_dispatch``), fa avanzare un
+# place-and-trim, spazza i FoK o annulla un hedge stantio lo prende per tutta
+# l'operazione. Rientrante: le funzioni si chiamano fra loro.
+# ---------------------------------------------------------------------------
+import threading as _threading
+
+LUCCHETTO_ORDINI = _threading.RLock()
+
+# Contesto PER THREAD dell'esecuzione in corso (solo il motore lo imposta; il
+# giro della coda DB lo lascia vuoto = comportamento di sempre):
+#   strategy_ref -> customerStrategyRef verso Betfair dell'ATTORE del comando
+#                   (i bot riconciliano con listCurrentOrders per strategy ref);
+#   pre_invio    -> callable(order, market, what) chiamata SUBITO PRIMA di ogni
+#                   ``market.place_order``: il DIARIO write-ahead. Se solleva,
+#                   l'ordine NON parte (rifiuto provabilmente pre-place).
+_CONTESTO = _threading.local()
+
+
+def _strategy_ref_corrente() -> str:
+    ref = getattr(_CONTESTO, "strategy_ref", None)
+    return str(ref)[:15] if ref else CUSTOMER_STRATEGY_REF
+
+
+def _chiama_pre_invio(order: Any, market: Any, what: str,
+                      info: Optional[Dict[str, Any]] = None) -> None:
+    """Diario write-ahead del motore (se impostato su questo thread). Un errore
+    qui e' un RIFIUTO pre-place: ValueError, nessuna chiamata a Betfair.
+    ``info`` = parametri quando l'ordine flumine non esiste ancora (submin)."""
+    hook = getattr(_CONTESTO, "pre_invio", None)
+    if hook is None:
+        return
+    try:
+        hook(order, market, what, info)
+    except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
+        raise ValueError(
+            f"{what}: diario_non_scrivibile - ordine NON inviato ({str(ex)[:160]})") from ex
+
 
 def _is_closing_row(action: str, params: Any) -> bool:
     """La riga CHIUDE (o riduce) una posizione?
@@ -433,12 +475,13 @@ def _refresh_settings(sb: Any) -> None:
     nuovo dict localmente e ri-leghiamo il nome globale (assegnazione atomica): ogni lettore
     osserva sempre lo stato VECCHIO o quello NUOVO completo, mai uno parziale.
     """
-    global _SETTINGS
+    global _SETTINGS, _SETTINGS_TS
     try:
         res = sb.rpc("get_live_settings", {}).execute()
         data = getattr(res, "data", None)
         if isinstance(data, dict):
             _SETTINGS = dict(data)
+            _SETTINGS_TS = time.monotonic()
             # 24/09 - la STESSA lettura porta la scelta del modo ordini dalla UI
             # (``order_mode``): nessuna lettura DB in piu' per il modo.
             from . import modo_ordini as _mo
@@ -446,6 +489,18 @@ def _refresh_settings(sb: Any) -> None:
             _mo.registra_settings(data)
     except Exception:  # noqa: BLE001 - settings opzionali; il worker resta operativo
         pass
+
+
+# 24/09 (motore ordini F2): istante (monotonic) dell'ultima lettura RIUSCITA dei
+# settings. Il motore NON li rilegge nel percorso dell'ordine (zero IO DB): usa
+# questa copia in RAM, aggiornata dal giro periodico, e ne dichiara l'eta'.
+_SETTINGS_TS: Optional[float] = None
+
+
+def eta_settings_s() -> float:
+    """Eta' (secondi) della copia in RAM dei settings; infinito se mai letti."""
+    ts = _SETTINGS_TS
+    return float("inf") if ts is None else max(0.0, time.monotonic() - ts)
 
 
 def _db_kill_switch() -> bool:
@@ -897,19 +952,66 @@ def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: st
     volta al giorno) un alert WARN, mai un'eccezione verso il chiamante.
     """
     try:
+        contesto = _journal_contesto(flumine, request_row)
+    except Exception as ex:  # noqa: BLE001 - journal best-effort: MAI bloccare l'ordine
+        contesto = None
+        _journal_ko(sb, ex)
+    if contesto is not None:
+        _journal_scrivi(sb, request_row, mode_l, contesto)
+
+
+def _journal_contesto(flumine: Any, request_row: Dict[str, Any]) -> Dict[str, Any]:
+    """24/09 (motore F2): la parte del journal che vive in MEMORIA (book, LTP,
+    miglior prezzo, evento del mercato) catturata ADESSO, al momento del click.
+    Nessun IO: il motore la chiama sul suo thread e passa il resto (letture
+    live_now/segnali + INSERT) allo scrittore asincrono."""
+    market_id = request_row.get("market_id")
+    selection_id = _int(request_row.get("selection_id"))
+    handicap = _f(request_row.get("handicap")) or 0.0
+    market = None
+    try:
+        market = flumine.markets.markets.get(market_id) if market_id else None
+    except Exception:  # noqa: BLE001
+        market = None
+    event_id = _val(market, "event_id") if market is not None else None
+    best_back = best_lay = None
+    book = None
+    ltp = None
+    if market is not None and selection_id is not None:
+        best_back, best_lay = _best_prices(market, selection_id, handicap)
+        book = _book_snapshot(market, selection_id, handicap)
+        ltp = _ltp_of(market, selection_id, handicap)
+    return {"event_id": event_id, "best_back": best_back, "best_lay": best_lay,
+            "book": book, "ltp": ltp}
+
+
+def _journal_ko(sb: Any, ex: Any) -> None:
+    logger.warning("[live-order] journal KO: %s", str(ex)[:200])
+    day = datetime.now(timezone.utc).date().isoformat()
+    if _JOURNAL_WARNED_DAY.get("ko") != day:
+        _JOURNAL_WARNED_DAY["ko"] = day
+        try:
+            # BUG FIX cert 10/07: anche l'alert passa dal ``sb`` del ciclo (mai il
+            # client reale nei test: scrivevano alert fake su live_alerts di produzione).
+            sb.table("live_alerts").insert({
+                "level": "WARN", "code": "JOURNAL",
+                "message": f"trade journal KO (ordini NON impattati): {str(ex)[:200]}",
+            }).execute()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _journal_scrivi(sb: Any, request_row: Dict[str, Any], mode_l: str,
+                    contesto: Dict[str, Any]) -> None:
+    """La parte del journal con IO (bet_id dalla riga, live_now, segnali, INSERT).
+    Best-effort dichiarato come prima."""
+    try:
         rid = request_row.get("id")
         market_id = request_row.get("market_id")
         selection_id = _int(request_row.get("selection_id"))
-        handicap = _f(request_row.get("handicap")) or 0.0
         params = request_row.get("params") or {}
         origin = "risk_rule" if isinstance(params, dict) and params.get("risk_rule_id") else "manual"
-
-        market = None
-        try:
-            market = flumine.markets.markets.get(market_id) if market_id else None
-        except Exception:  # noqa: BLE001
-            market = None
-        event_id = _val(market, "event_id") if market is not None else None
+        event_id = contesto.get("event_id")
 
         # esito scritto dalla dispatch (bet_id) — una select puntuale, best-effort
         bet_id = None
@@ -946,13 +1048,10 @@ def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: st
         except Exception:  # noqa: BLE001
             signal = None
 
-        best_back = best_lay = None
-        book = None
-        ltp = None
-        if market is not None and selection_id is not None:
-            best_back, best_lay = _best_prices(market, selection_id, handicap)
-            book = _book_snapshot(market, selection_id, handicap)
-            ltp = _ltp_of(market, selection_id, handicap)
+        best_back = contesto.get("best_back")
+        best_lay = contesto.get("best_lay")
+        book = contesto.get("book")
+        ltp = contesto.get("ltp")
 
         # BUG FIX cert 10/07: usare il ``sb`` DEL CICLO (per-thread nel runner, FAKE nei
         # test) — la vecchia dbm.insert_live_journal apriva il client REALE anche nei
@@ -984,19 +1083,7 @@ def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: st
             }
         ).execute()
     except Exception as ex:  # noqa: BLE001 - journal best-effort: MAI bloccare l'ordine
-        logger.warning("[live-order] journal KO: %s", str(ex)[:200])
-        day = datetime.now(timezone.utc).date().isoformat()
-        if _JOURNAL_WARNED_DAY.get("ko") != day:
-            _JOURNAL_WARNED_DAY["ko"] = day
-            try:
-                # BUG FIX cert 10/07: anche l'alert passa dal ``sb`` del ciclo (mai il
-                # client reale nei test: scrivevano alert fake su live_alerts di produzione).
-                sb.table("live_alerts").insert({
-                    "level": "WARN", "code": "JOURNAL",
-                    "message": f"trade journal KO (ordini NON impattati): {str(ex)[:200]}",
-                }).execute()
-            except Exception:  # noqa: BLE001
-                pass
+        _journal_ko(sb, ex)
 
 
 def _write_done(sb: Any, rid: int, result: Dict[str, Any]) -> None:
@@ -1080,9 +1167,12 @@ def _place_or_raise(market: Any, order: Any, what: str, client: Any = None) -> N
     # ``None`` = niente da specificare (framework senza registro client: vale il
     # default di flumine, comportamento storico invariato).
     extra = {"client": client} if client is not None else {}
+    # 24/09 F1: diario write-ahead del motore PRIMA della chiamata (se fallisce:
+    # ValueError pre-place, niente parte). Fuori dal motore e' un no-op.
+    _chiama_pre_invio(order, market, what)
     try:
         ok = market.place_order(
-            order, customer_strategy_ref=CUSTOMER_STRATEGY_REF, **extra)
+            order, customer_strategy_ref=_strategy_ref_corrente(), **extra)
     except Exception as ex:  # noqa: BLE001 - ambiguo per contratto, mai pre-place
         raise RuntimeError(
             f"post_place:{type(ex).__name__}: {str(ex)[:200]}") from ex
@@ -1167,7 +1257,7 @@ def _place_sub_minimum(
                 jurisdiction=juris,
                 strategy=strategy,
                 max_stake=max_stake,
-                customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+                customer_strategy_ref=_strategy_ref_corrente(),
                 # F0: anche i 3 passi del place-and-trim vanno al client della
                 # MODALITA' DELLA RIGA, mai al default del processo.
                 client=client,
@@ -1809,7 +1899,9 @@ def _check_manual_followthrough(sb: Any, flumine: Any, mode_l: str) -> int:
             if order is not None and status == "EXECUTABLE" and (rem or 0) > 0:
                 try:
                     market = _resolve_market(flumine, leg.get("market_id"))
-                    _cancel_or_raise(market, order, None, "follow-through cancel hedge stantio")
+                    with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
+                        _cancel_or_raise(market, order, None,
+                                         "follow-through cancel hedge stantio")
                 except Exception as ex:  # noqa: BLE001 - cancel KO: riprova al prossimo giro
                     logger.warning(
                         "[live-order] follow-through: cancel hedge stantio KO: %s", str(ex)[:160]
@@ -2654,6 +2746,12 @@ class _RecordingFlumineOps:
         self.last_order: Any = None
 
     def place(self, market: Any, *, side: str, price: float, size: float, customer_order_ref: str) -> Any:
+        # 24/09 F1: diario write-ahead anche per il place del place-and-trim
+        # (l'ordine flumine nasce dentro ``base.place``: qui si scrive con i
+        # parametri; order=None). Se il diario fallisce il place non parte.
+        _chiama_pre_invio(None, market, "submin place", {
+            "side": side, "price": price, "size": size,
+            "ref_interno": customer_order_ref})
         order = self._base.place(
             market, side=side, price=price, size=size, customer_order_ref=customer_order_ref
         )
@@ -3062,12 +3160,112 @@ def _record_local_request(
         return None
 
 
+# ---------------------------------------------------------------------------
+# 24/09 (motore ordini F1/F2): IO DB FUORI dal percorso dell'ordine.
+# ---------------------------------------------------------------------------
+# Con il motore montato il canale lo drena LUI (svegliato a evento) e il giro
+# della coda DB non lo tocca piu'.
+_DRENAGGIO_ESTERNO = False
+
+
+def imposta_drenaggio_esterno(attivo: bool) -> None:
+    """Il motore ordini dichiara di drenare lui il canale locale (o smette)."""
+    global _DRENAGGIO_ESTERNO
+    _DRENAGGIO_ESTERNO = bool(attivo)
+
+
+class LetturaNelPercorsoOrdine(RuntimeError):
+    """Una LETTURA DB e' stata tentata nel percorso dell'ordine differito: e' un
+    difetto (la regola e' zero IO fra ricezione e dispatch), mai da assorbire."""
+
+
+class _CatenaDifferita:
+    """Registra una catena ``sb.table(x).insert(...).eq(...).execute()`` senza
+    eseguirla. All'``execute`` la catena e' consegnata al proprietario."""
+
+    def __init__(self, owner: "_SbDifferito", passi: List[tuple]) -> None:
+        self._owner = owner
+        self._passi = passi
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+
+        def _passo(*a: Any, **k: Any) -> Any:
+            if name == "execute":
+                return self._owner._registra(self._passi)
+            return _CatenaDifferita(self._owner, self._passi + [(name, a, k)])
+        return _passo
+
+
+class _SbDifferito:
+    """``sb`` SENZA IO per il percorso dell'ordine: le scritture sono registrate
+    in ordine e rigiocate DOPO, dallo scrittore asincrono, contro il client vero
+    (``rigioca``). Una lettura (``select``) solleva ``LetturaNelPercorsoOrdine``:
+    nel percorso dell'ordine non se ne fanno, e se un giorno qualcuno la
+    aggiungesse deve diventare rosso, non lento."""
+
+    def __init__(self) -> None:
+        self.scritture: List[List[tuple]] = []
+
+    def table(self, name: str) -> Any:
+        return _CatenaDifferita(self, [("table", (name,), {})])
+
+    def rpc(self, *a: Any, **k: Any) -> Any:
+        return _CatenaDifferita(self, [("rpc", a, k)])
+
+    def _registra(self, passi: List[tuple]) -> Any:
+        from types import SimpleNamespace
+
+        if any(nome == "select" for nome, _a, _k in passi):
+            raise LetturaNelPercorsoOrdine(
+                f"lettura DB nel percorso dell'ordine: {passi[0][1]!r}")
+        self.scritture.append(list(passi))
+        return SimpleNamespace(data=[])
+
+    def rigioca(self, sb: Any) -> None:
+        """Esegue le scritture registrate sul client vero, nell'ordine. Ogni
+        catena e' best-effort come lo era dentro ``_audit``: un KO si DICE."""
+        for passi in self.scritture:
+            try:
+                obj = sb
+                for nome, a, k in passi:
+                    obj = getattr(obj, nome)(*a, **k)
+                obj.execute()
+            except Exception as ex:  # noqa: BLE001 - dichiarato, mai muto
+                logger.warning("[live-order] scrittura differita KO (%s): %s",
+                               passi[0][1][:1] if passi else "?", str(ex)[:200])
+
+
+def _job_locale(differito: "_SbDifferito", row: Dict[str, Any], captured: Dict[str, Any],
+                mode_l: str, contesto: Optional[Dict[str, Any]]) -> Any:
+    """Il lavoro DB di un comando locale, nello STESSO ordine di prima (audit
+    del dispatch, riga registrata in coda, journal col rid vero), da eseguire
+    sullo scrittore asincrono con il client vero. ``contesto`` None = nessun
+    journal (come prima per i comandi finiti in errore)."""
+    def _job(sb_vero: Any) -> None:
+        differito.rigioca(sb_vero)
+        db_id = _record_local_request(sb_vero, row, captured, mode_l)
+        if contesto is not None:
+            _journal_scrivi(sb_vero, {**row, "id": db_id or row["id"]}, mode_l, contesto)
+    return _job
+
+
 def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
-                            reqs: Optional[List[Any]] = None) -> int:
+                            reqs: Optional[List[Any]] = None,
+                            differisci: Any = None, diario: Any = None) -> int:
     """Esegue i comandi arrivati dal canale locale (drain nel thread del worker).
 
     ``reqs`` (23/09, B-1): richieste GIA' drenate dal chiamante (la guardia
-    d'avvio del runner, che lascia passare i soli ``cancel``); None = drena qui."""
+    d'avvio del runner, che lascia passare i soli ``cancel``); None = drena qui.
+
+    ``differisci`` (24/09, motore F2): callable ``(descrizione, job)`` dello
+    scrittore asincrono. Se c'e', NESSUN IO DB avviene qui: audit, registrazione
+    della riga e journal diventano un job ``job(sb_vero)`` eseguito DOPO la
+    risposta, su un altro thread (le regole e le risposte restano identiche).
+    ``diario`` (24/09, F1): oggetto con ``inviato(row, cmd)`` (write-ahead,
+    PRIMA del dispatch: se solleva il comando e' rifiutato e non parte) ed
+    ``esito(row, ok, result, errore)``."""
     from . import local_channel
 
     ch = local_channel.get_channel()
@@ -3131,9 +3329,18 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
             row["id"] = rid
             row["action"] = action
             row["mode"] = req_mode
-            lsb = _LocalSb(sb)
+            differito = _SbDifferito() if differisci is not None else None
+            lsb = _LocalSb(differito if differito is not None else sb)
+            if diario is not None:
+                try:
+                    diario.inviato(row, cmd)  # write-ahead PRIMA di qualunque chiamata
+                except Exception as ex_d:  # noqa: BLE001 - senza diario niente ordine
+                    ch.respond(req, False, error=f"diario_non_scrivibile: comando NON "
+                                                 f"eseguito ({str(ex_d)[:120]})")
+                    continue
             try:
-                _dispatch(lsb, flumine, row, req_mode, strategy)
+                with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
+                    _dispatch(lsb, flumine, row, req_mode, strategy)
             except Exception as ex:  # noqa: BLE001 - errore del comando, worker vivo
                 try:
                     _write_error(lsb, rid, row, req_mode, ex)  # cattura esito + audit reale
@@ -3142,15 +3349,32 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
                                  rid, str(ex_w)[:200])
                 ch.respond(req, False, lsb.captured.get("result"), error=str(ex))
                 _local_dedup_put(client_ref, False, lsb.captured.get("result"))
-                _record_local_request(sb, row, lsb.captured, req_mode)
+                if diario is not None:
+                    diario.esito(row, False, lsb.captured.get("result"), str(ex))
+                if differito is None:
+                    _record_local_request(sb, row, lsb.captured, req_mode)
+                else:
+                    differisci(f"local {rid} errore", _job_locale(
+                        differito, row, dict(lsb.captured), req_mode, None))
                 continue
             # esito catturato da _write_done → risposta IMMEDIATA al client
             result = lsb.captured.get("result") or {"ok": True, "action": action, "mode": req_mode}
             ch.respond(req, True, result)
             _local_dedup_put(client_ref, True, result)
-            db_id = _record_local_request(sb, row, lsb.captured, req_mode)
-            # journal E37 col rid REALE della riga registrata (contesto al click)
-            _journal_done(sb, flumine, {**row, "id": db_id or rid}, req_mode)
+            if diario is not None:
+                diario.esito(row, True, result, None)
+            if differito is None:
+                db_id = _record_local_request(sb, row, lsb.captured, req_mode)
+                # journal E37 col rid REALE della riga registrata (contesto al click)
+                _journal_done(sb, flumine, {**row, "id": db_id or rid}, req_mode)
+            else:
+                # contesto del journal catturato ADESSO (memoria), il resto dopo
+                try:
+                    contesto = _journal_contesto(flumine, row)
+                except Exception:  # noqa: BLE001 - journal best-effort
+                    contesto = None
+                differisci(f"local {rid} {action}", _job_locale(
+                    differito, row, dict(lsb.captured), req_mode, contesto))
         except Exception as ex:  # noqa: BLE001 - mai far cadere il worker per un comando locale
             logger.exception("[local] comando locale KO")
             try:
@@ -3230,10 +3454,11 @@ def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any)
             break
         rid = r.get("id")
         try:
-            _advance_submin_row(
-                sb, flumine, r, mode_l, _strategy_for_mode(strategy, mode_l),
-                client=_client_for_mode(flumine, mode_l),
-            )
+            with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
+                _advance_submin_row(
+                    sb, flumine, r, mode_l, _strategy_for_mode(strategy, mode_l),
+                    client=_client_for_mode(flumine, mode_l),
+                )
         except Exception as ex:  # noqa: BLE001 - scrivi error, non cadere
             logger.exception("[live-order] avanzamento submin %s fallito", rid)
             try:
@@ -3284,7 +3509,10 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     if not _throttled("settings_refresh", 1.0):
         _refresh_settings(sb)
     # A7: comandi dal canale LOCALE (desktop) — drenati SEMPRE, ad ogni giro.
-    handled_local = _process_local_requests(sb, flumine, mode.lower(), strategy)
+    # 24/09 (F2): con il MOTORE ORDINI montato il canale lo drena lui, svegliato
+    # a evento: qui niente (un solo drenatore, mai due thread sulla stessa coda).
+    handled_local = 0 if _DRENAGGIO_ESTERNO else _process_local_requests(
+        sb, flumine, mode.lower(), strategy)
     # #15 velocità runtime: poll DB al target esplicito, oppure 1s di default quando
     # il canale locale è attivo (i comandi passano dal locale; la coda DB resta per
     # uso remoto/fallback e per il follow-through).
@@ -3295,7 +3523,8 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
         return handled_local
     # C22: Fill-or-Kill software — cancella gli ordini col timer scaduto non abbinati.
     # PRIMA del gate kill-switch: il cancel è un'azione di CHIUSURA (sempre permessa).
-    _sweep_fok_ttls(flumine)
+    with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
+        _sweep_fok_ttls(flumine)
     # Kill-switch (ENV *o* DB/UI): blocca le APERTURE ma NON le CHIUSURE. Col freno tirato
     # l'utente deve comunque poter cancellare resting e cash-outare le posizioni aperte —
     # bloccare anche le uscite sarebbe l'opposto della protezione (posizione che sanguina
@@ -3380,7 +3609,10 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
         if not _claim(sb, rid):
             continue
         try:
-            _dispatch(sb, flumine, r, row_mode, strategy)
+            # 24/09: il lucchetto copre l'intera riga (anche l'IO di _write_done
+            # dentro il dispatch: la coda DB e' il RIPIEGO e resta com'era).
+            with LUCCHETTO_ORDINI:
+                _dispatch(sb, flumine, r, row_mode, strategy)
         except Exception as ex:  # noqa: BLE001 - errore della riga, worker vivo
             logger.exception("[live-order] richiesta %s fallita", rid)
             try:

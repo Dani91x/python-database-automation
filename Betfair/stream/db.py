@@ -545,15 +545,62 @@ def upsert_live_order(row: Dict[str, Any]) -> None:
     (``idx_blo_order_key`` su (mode, client_order_ref)). PostgREST/Postgres NON può usare un
     indice PARZIALE come arbitro di ON CONFLICT → errore 42P10 e specchio mai scritto.
     """
-    sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
     from .local_channel import publish as _lpub
 
     _lpub("order", payload)  # A7: fill realtime sul desktop
+    _avvisa_osservatori(payload)  # 24/09 F3: eventi per attore del motore ordini
+    scr = _SCRITTORE
+    if scr is not None:
+        # 24/09 F2: nessun IO DB sul thread PRINCIPALE di flumine (chi chiama e'
+        # ``process_orders``): l'upsert idempotente va allo scrittore asincrono,
+        # in ordine (FIFO, un solo thread) e con i suoi tentativi.
+        scr.accoda("specchio ordine", lambda sb: sb.table("betfair_live_orders").upsert(
+            payload, on_conflict="mode,client_order_ref").execute(), tentativi=5)
+        return
+    sb = get_supabase_client()
     _exec_retry(sb.table("betfair_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
     ))
+
+
+# ----------------------------------------------------------------------------
+# 24/09 (motore ordini F1/F2/F3) - scrittore asincrono dello specchio e
+# osservatori degli ordini. Entrambi SPENTI di serie: li accende il runner
+# quando monta il motore (``motore_ordini.MotoreOrdini.avvia``). Spenti =
+# comportamento di sempre (upsert sincrono con retry).
+# ----------------------------------------------------------------------------
+_SCRITTORE: Optional[Any] = None
+_OSSERVATORI_ORDINI: List[Any] = []
+
+
+def imposta_scrittore(scrittore: Optional[Any]) -> None:
+    """Installa (o toglie, con None) lo scrittore asincrono dello specchio:
+    oggetto con ``accoda(descrizione, job, tentativi=...)``, ``job(sb)``."""
+    global _SCRITTORE  # noqa: PLW0603 - un solo scrittore per processo
+    _SCRITTORE = scrittore
+
+
+def aggiungi_osservatore_ordini(cb: Any) -> None:
+    """``cb(riga_specchio)`` chiamata a ogni riga dello specchio ordini, DOPO il
+    publish e PRIMA della scrittura DB. Deve essere velocissima (gira sul thread
+    principale di flumine) e non sollevare."""
+    if cb not in _OSSERVATORI_ORDINI:
+        _OSSERVATORI_ORDINI.append(cb)
+
+
+def rimuovi_osservatore_ordini(cb: Any) -> None:
+    if cb in _OSSERVATORI_ORDINI:
+        _OSSERVATORI_ORDINI.remove(cb)
+
+
+def _avvisa_osservatori(payload: Dict[str, Any]) -> None:
+    for cb in list(_OSSERVATORI_ORDINI):
+        try:
+            cb(payload)
+        except Exception as ex:  # noqa: BLE001 - un osservatore non ferma lo specchio
+            logger.warning("[db] osservatore ordini KO: %s", str(ex)[:160])
 
 
 def find_live_order_ref(mode: str, bet_id: str) -> Optional[str]:
@@ -591,12 +638,19 @@ def upsert_live_position(row: Dict[str, Any]) -> None:
     quelli restituiti da ``blotter.get_exposures`` / ``selection_exposure`` (flumine),
     mai ricalcolati a mano. ``updated_at`` forzato ad ogni scrittura.
     """
-    sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
     from .local_channel import publish as _lpub
 
     _lpub("position", payload)  # A7: esposizioni realtime sul desktop
+    scr = _SCRITTORE
+    if scr is not None:
+        # 24/09 F2: come lo specchio ordini, niente IO sul thread di flumine.
+        scr.accoda("specchio posizione", lambda sb: sb.table("betfair_live_positions").upsert(
+            payload, on_conflict="mode,market_id,selection_id,handicap").execute(),
+            tentativi=5)
+        return
+    sb = get_supabase_client()
     _exec_retry(sb.table("betfair_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
     ))
