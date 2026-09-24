@@ -4857,6 +4857,11 @@ def main() -> None:
                 # aspettare prima del prossimo.
                 params = _ULTIMI_PARAMS or C.merge_params(None)
                 interval = max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2)
+                # 24/09: l'atlante e' l'istanza CONDIVISA (hazard_atlas): la si
+                # richiede a ogni giro (costa un confronto, l'mtime si guarda al
+                # piu' una volta al minuto) cosi' un atlante rigenerato arriva a
+                # Mike senza riavvio. Se non c'e' piu', resta l'ultimo buono.
+                atlas = D.load_atlas() or atlas
                 res = run_once(atlas=atlas, dry=args.dry)
                 params = _ULTIMI_PARAMS or params
                 # RITMO ADATTIVO: col ciclo pieno solo quando qualcosa si muove

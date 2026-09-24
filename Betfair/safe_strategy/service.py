@@ -1387,17 +1387,19 @@ class Scanner:
             return self._opp_model
         self._opp_atlas_loaded = True
         try:
-            from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
-
             from .opportunity import OpportunityModel
         except Exception as e:  # noqa: BLE001
             logger.warning("[safe-scan] motore opportunita non disponibile: %s", str(e)[:120])
             return None
-        try:
-            atlas = load_hazard_atlas()
-        except Exception as e:  # noqa: BLE001 - senza atlante il controincrocio salta
-            logger.warning("[safe-scan] atlante hazard non caricato: %s", str(e)[:120])
-            atlas = None
+        # 24/09: UN solo caricamento dell'atlante in tutta Safe. Prima qui si
+        # leggeva hazard_atlas_v1 (default del loader) e in selezione il v2:
+        # due file, due istanze, e un aggiornamento avrebbe toccato solo meta'
+        # dei consumatori. Ora il modello riceve il FORNITORE di selezione
+        # (v2, ricarica per mtime). Le griglie usate dal controincrocio
+        # (global/by_league/by_team) sono identiche in v1 e v2 (verificato).
+        atlas = _selezione.atlante
+        if not atlas():
+            logger.warning("[safe-scan] atlante hazard non caricato: controincrocio assente")
         self._opp_model = OpportunityModel(atlas=atlas)
         return self._opp_model
 
@@ -2205,6 +2207,16 @@ def main() -> None:
             time.sleep(_REQ_DELAY)
         scan.score_worker = ScoreFeedWorker(scan)
         scan.score_worker.start()
+        # 24/09 - ATLANTE HAZARD dal DB al file dei bot (hazard_atlas_sync):
+        # SPENTO finche' HAZARD_ATLAS_SYNC=1 non e' nel .env. Un thread demone
+        # in QUESTO processo (nessun processo nuovo), una GET da una riga ogni
+        # 30'. Il modulo non importa flumine (incidente 17/09).
+        try:
+            from Betfair.stream.scalper import hazard_atlas_sync as _atl_sync
+
+            _atl_sync.avvia_se_abilitato()
+        except Exception as e:  # noqa: BLE001 - il feed non muore per l'atlante
+            logger.warning("[safe-scan] sync atlante non avviato: %s", str(e)[:120])
         while True:
             scan.tick()
             time.sleep(0.5)

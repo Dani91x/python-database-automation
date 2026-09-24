@@ -8923,11 +8923,30 @@ def _build_engine(engine_mod: Any, params: dict) -> Any:
         return None
 
 
+def _atlante_hazard() -> Any:
+    """Fornitore dell'Atlante Hazard per il controincrocio del modello.
+
+    24/09 (ordine dell'utente, "hazard non verificato (atlante assente)" visto
+    in Control Room): ``_hazard_check`` era scritto ma MORTO perche' qui il
+    modello nasceva senza atlante. Si riusa lo STESSO caricamento di
+    ``selezione`` (una sola istanza per processo, ricarica per mtime): il
+    fornitore e' la funzione, non il dict, cosi' un atlante rigenerato sul
+    disco arriva al modello senza riavviare il bot. None = modulo non
+    importabile: il controllo resta dichiarato assente, come prima."""
+    try:
+        from Betfair.safe_strategy import selezione as _sel
+
+        return _sel.atlante
+    except Exception as ex:  # noqa: BLE001 - senza atlante il controincrocio salta
+        logger.warning("[safe.bot] atlante hazard non disponibile: %s", str(ex)[:120])
+        return None
+
+
 def _build_model(opp_mod: Any, params: dict) -> Any:
     if opp_mod is None:
         return None
     try:
-        return opp_mod.OpportunityModel(params)
+        return opp_mod.OpportunityModel(params, atlas=_atlante_hazard())
     except Exception as ex:  # noqa: BLE001
         logger.error("[safe.bot] costruzione modello opportunita' KO: %s", str(ex)[:200])
         return None

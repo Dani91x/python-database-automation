@@ -59,17 +59,19 @@ _ANALYSIS_CACHE: dict[int, Optional[dict]] = {}       # fixture_id -> db_json_an
 _FREQ_CACHE: dict[tuple, Optional[dict]] = {}         # (league, market, sel) -> freq
 _ADVISOR_CACHE: dict[tuple, Optional[dict]] = {}      # (event, mtype, runner) -> advisor
 _H2H_CACHE: Optional[dict] = None                     # h2h_hint dell'atlante (lazy)
+_H2H_SRC: Optional[dict] = None                       # atlante da cui viene (identita')
 _CACHE_MAX = 512
 
 
 def reset_caches() -> None:
     """Svuota tutte le cache (test / riavvio logico)."""
-    global _H2H_CACHE
+    global _H2H_CACHE, _H2H_SRC
     _MATCH_CACHE.clear()
     _ANALYSIS_CACHE.clear()
     _FREQ_CACHE.clear()
     _ADVISOR_CACHE.clear()
     _H2H_CACHE = None
+    _H2H_SRC = None
 
 
 def _bound(cache: dict) -> None:
@@ -199,15 +201,26 @@ def _league_frequency(db: Any, league_id: int, market: str, selection: str) -> O
 #    punteggi orientati come gol_A-gol_B)
 # ---------------------------------------------------------------------------
 def _h2h_atlas() -> dict:
-    """Carica (una volta) il blocco h2h_hint dell'atlante. {} se assente/rotto."""
-    global _H2H_CACHE
-    if _H2H_CACHE is None:
-        try:
-            with open(_ATLAS_PATH, "r", encoding="utf-8") as f:
-                _H2H_CACHE = json.load(f).get("h2h_hint") or {}
-        except Exception as ex:  # noqa: BLE001 — l'atlante non deve mai bloccare
-            logger.warning("[advisor] hazard_atlas_v2 non leggibile: %s", str(ex)[:120])
-            _H2H_CACHE = {}
+    """Il blocco h2h_hint dell'atlante CORRENTE. {} se assente/rotto.
+
+    24/09: l'atlante e' l'istanza condivisa di ``hazard_atlas`` (live
+    rigenerato se c'e', altrimenti il v2 committato), ricaricata quando il
+    file cambia: qui si segue l'IDENTITA' dell'oggetto e il blocco si
+    riprende quando cambia. Un ``_H2H_CACHE`` impostato a mano (test) senza
+    sorgente resta quello."""
+    global _H2H_CACHE, _H2H_SRC
+    if _H2H_CACHE is not None and _H2H_SRC is None:
+        return _H2H_CACHE
+    try:
+        from Betfair.stream.scalper.hazard_atlas import atlante_condiviso
+
+        corrente = atlante_condiviso()
+    except Exception as ex:  # noqa: BLE001 — l'atlante non deve mai bloccare
+        logger.warning("[advisor] atlante hazard non leggibile: %s", str(ex)[:120])
+        return _H2H_CACHE or {}
+    if corrente is not _H2H_SRC or _H2H_CACHE is None:
+        _H2H_CACHE = (corrente or {}).get("h2h_hint") or {}
+        _H2H_SRC = corrente
     return _H2H_CACHE
 
 

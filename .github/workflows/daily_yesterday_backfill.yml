@@ -29,3 +29,36 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python daily_yesterday_backfill.py
+
+  # 24/09/2026 - ATLANTE HAZARD INCREMENTALE (Betfair/stream/scalper/genera_atlante.py).
+  # Gira DOPO il backfill (gli eventi di ieri sono appena entrati) e anche se il
+  # backfill fallisce (!cancelled: si aggiorna con quello che c'e'). Legge solo
+  # gli eventi oltre la filigrana (match_events.id), aggiorna SOLO le leghe
+  # toccate, da' lo storico ad al massimo 10 leghe nuove per notte e scrive la
+  # versione nuova in hazard_atlas (le ultime 7). Solo libreria standard: niente
+  # pip install. Prerequisiti: migrations/hazard_atlas_2026-09-24.sql applicata
+  # e bootstrap iniziale fatto una volta (vedi referto del 24/09).
+  hazard-atlas:
+    needs: run-backfill
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Rigenera l'atlante hazard (incrementale per lega)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONIOENCODING: utf-8
+        run: >
+          python -m Betfair.stream.scalper.genera_atlante
+          --stato-db --incrementale
+          --bootstrap-nuove 10 --stagioni-indietro 10
+          --scrivi-db

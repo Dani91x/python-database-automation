@@ -55,9 +55,12 @@ PAREGGI_ALTI: Tuple[str, ...] = ("2-2", "3-3")
 
 FONTE = "hazard_atlas_v2"
 
-# cache di processo: l'atlante (4 MB) si legge UNA volta, gli indici si
-# costruiscono una volta, e ogni coppia di nomi si risolve una volta sola.
-_ATLAS: Optional[Dict[str, Any]] = None
+# cache di processo. L'atlante vive UNA volta sola in tutto il processo, nella
+# cache CONDIVISA di ``hazard_atlas.atlante_condiviso`` (la stessa che usano il
+# modello opportunita', Omega, Mike e theta): qui restano solo le cache
+# DERIVATE (indice dei nomi, hint per coppia), che si svuotano da sole quando
+# l'atlante condiviso cambia oggetto (file rigenerato sul disco).
+_ATLAS: Optional[Dict[str, Any]] = None      # l'ultimo oggetto visto (identita')
 _INDICE_NOMI: Optional[Dict[str, str]] = None
 _HINT_CACHE: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
 _CACHE_MAX = 512
@@ -69,6 +72,12 @@ def reset_cache() -> None:
     _ATLAS = None
     _INDICE_NOMI = None
     _HINT_CACHE.clear()
+    try:
+        from Betfair.stream.scalper.hazard_atlas import reset_atlante_condiviso
+
+        reset_atlante_condiviso()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _normalizza(nome: Any) -> str:
@@ -78,16 +87,24 @@ def _normalizza(nome: Any) -> str:
 
 
 def atlante() -> Dict[str, Any]:
-    """L'atlante, caricato una volta sola. {} se manca o e' illeggibile."""
-    global _ATLAS
-    if _ATLAS is None:
-        try:
-            from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
+    """L'atlante CORRENTE (condiviso). {} se manca o e' illeggibile.
 
-            _ATLAS = load_hazard_atlas(ATLAS_PATH) or {}
-        except Exception as ex:  # noqa: BLE001 - l'atlante non deve mai fermare lo scanner
-            logger.warning("[safe-selezione] atlante non leggibile: %s", str(ex)[:120])
-            _ATLAS = {}
+    24/09 (ordine dell'utente: i sistemi di supporto "DEVONO aggiornarsi"):
+    se il file cambia sul disco la cache condivisa lo rilegge (mtime, al piu'
+    un controllo al minuto) e qui le cache derivate si svuotano. Mai
+    eccezioni: l'atlante non deve mai fermare lo scanner."""
+    global _ATLAS, _INDICE_NOMI
+    try:
+        from Betfair.stream.scalper.hazard_atlas import atlante_condiviso
+
+        corrente = atlante_condiviso()
+    except Exception as ex:  # noqa: BLE001 - l'atlante non deve mai fermare lo scanner
+        logger.warning("[safe-selezione] atlante non leggibile: %s", str(ex)[:120])
+        corrente = _ATLAS if _ATLAS is not None else {}
+    if corrente is not _ATLAS:
+        _ATLAS = corrente
+        _INDICE_NOMI = None
+        _HINT_CACHE.clear()
     return _ATLAS
 
 

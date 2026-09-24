@@ -640,13 +640,26 @@ class OpportunityModel:
         out: Dict[str, Any] = {"ok": True, "drop": False, "penalty": 1.0,
                                "note": "hazard non verificato (atlante assente)",
                                "divergence": None, "source": "none"}
-        if not self.atlas:
+        # 24/09: l'atlante puo' essere il dict o il suo FORNITORE (callable,
+        # es. ``selezione.atlante``: una sola istanza per processo, ricaricata
+        # quando il file cambia). Un fornitore che esplode = atlante assente.
+        atlas: Any = self.atlas
+        if callable(atlas):
+            try:
+                atlas = atlas()
+            except Exception:  # noqa: BLE001
+                atlas = None
+        if not atlas:
             return out
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard
-            from Betfair.stream.scalper.hazard_atlas import hazard_lookup
+            from Betfair.stream.scalper.hazard_atlas import etichetta_atlante, hazard_lookup
         except Exception:  # noqa: BLE001
             return out
+        # eta' DICHIARATA: "atlante del GG/MM, n partite" (+ VECCHIO se lo e').
+        # Solo informazione: nessuna soglia nuova, le regole restano warn/drop.
+        eta = etichetta_atlante(atlas)
+        out["atlas_label"] = eta
         sh = int(payload.get("score_home") or 0)
         sa = int(payload.get("score_away") or 0)
         horizon = float(self.params["hazard_horizon_min"])
@@ -659,24 +672,42 @@ class OpportunityModel:
             horizon_min=horizon,
         )
         p_atlas, source = hazard_lookup(
-            self.atlas, minute, sh + sa, league_id,
+            atlas, minute, sh + sa, league_id,
             home_team=payload.get("home"), away_team=payload.get("away"),
         )
+        # 24/09: la lega e' nell'atlante? Se no, il confronto e' contro lo
+        # storico GLOBALE (catena di hazard_lookup) e la nota lo dichiara:
+        # "lega non coperta" non e' "atlante assente".
+        coperta = (league_id is not None
+                   and str(league_id) in (atlas.get("by_league") or {}))
+        prefisso = "" if coperta else (
+            f"atlante: lega non coperta ({league_id if league_id is not None else 'n/d'}), "
+            f"confronto con lo storico globale; ")
         if model is None or p_atlas is None or p_atlas <= 0:
+            # atlante presente ma nessuna cella per lo stato: e' un'altra cosa
+            # dall'atlante assente, e va detta per quello che e'.
+            out.update(note=f"{prefisso}hazard non verificato (nessun dato "
+                            f"{'storico' if model is not None else 'del modello'} per lo stato; "
+                            f"{eta})")
             return out
         p_model = float(model.get("p_next") or 0.0)
         div = abs(p_model - float(p_atlas)) / float(p_atlas)
         out["divergence"] = div
         out["source"] = source
+        out["p_model"] = p_model
+        out["p_atlas"] = float(p_atlas)
+        numeri = (f"modello {p_model * 100:.1f}% vs storico {float(p_atlas) * 100:.1f}% "
+                  f"[{source}], divergenza {div * 100:.0f}%; {eta}")
         if div > float(self.params["hazard_drop"]):
             out.update(ok=False, drop=True, penalty=0.0,
-                       note=f"hazard modello {p_model * 100:.1f}% vs atlante "
-                            f"{float(p_atlas) * 100:.1f}%: divergenza {div * 100:.0f}%")
+                       note=f"{prefisso}hazard modello {p_model * 100:.1f}% vs atlante "
+                            f"{float(p_atlas) * 100:.1f}%: divergenza {div * 100:.0f}% ({eta})")
         elif div > float(self.params["hazard_warn"]):
             out.update(penalty=0.5,
-                       note=f"hazard divergente dall'atlante ({div * 100:.0f}%)")
+                       note=f"{prefisso}hazard divergente dall'atlante ({numeri}, "
+                            f"confidenza dimezzata)")
         else:
-            out.update(note="hazard coerente con l'atlante")
+            out.update(note=f"{prefisso}hazard coerente con l'atlante (verificato: {numeri})")
         return out
 
     # ------------------------------------------------------- mercati del feed

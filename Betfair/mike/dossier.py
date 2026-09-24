@@ -19,13 +19,23 @@ DEFAULT_RHO = -0.13
 MAX_GOALS = 8
 
 
+_AVVISATO = {"assente": False}
+
+
 def load_atlas() -> Optional[Dict[str, Any]]:
+    """L'atlante CORRENTE condiviso (ricaricato se il file cambia). None se
+    non c'e'. Chiamata a ogni giro dal servizio: l'avviso si scrive UNA
+    volta, non a ogni ciclo."""
     try:
         from Betfair.stream.scalper.hazard_atlas import load_hazard_atlas
 
-        return load_hazard_atlas()
+        atlas = load_hazard_atlas()
+        _AVVISATO["assente"] = False
+        return atlas
     except Exception as ex:  # noqa: BLE001 — senza atlante Mike copre subito (fail-safe)
-        logger.warning("[mike.dossier] atlante hazard non caricato: %s", str(ex)[:120])
+        if not _AVVISATO["assente"]:
+            logger.warning("[mike.dossier] atlante hazard non caricato: %s", str(ex)[:120])
+            _AVVISATO["assente"] = True
         return None
 
 
