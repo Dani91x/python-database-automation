@@ -834,7 +834,11 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                             <ScalperPanel key={eventId} eventId={eventId} eventName={eventName} />
                         )}
                         {tool === 'chart' && (
-                            <SelectionChartPanel key={`chart:${market.market_id}`} marketId={market.market_id} />
+                            <SelectionChartPanel
+                                key={`chart:${market.market_id}`}
+                                marketId={market.market_id}
+                                ladderSource={ladderAlMs}
+                            />
                         )}
                         {tool === 'depth' && (
                             <DepthPanel key={`depth:${market.market_id}`} marketId={market.market_id} ladderSource={ladderAlMs} />
