@@ -181,17 +181,21 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
     BotRegistrato(
         nome="scalper_calcio",
         sport="calcio",
-        descrizione="scalper calcio in-play (sessione per evento)",
+        descrizione="scalper calcio pre-match (maker, una sessione-processo per evento)",
+        # 24/09: il replay monta il SERVIZIO di produzione intero
+        # (`scalper_session.run_session`: parametri, client paper/live,
+        # heartbeat, stop, cap globale, fine vita, crash) con la strategia vera
+        # (`scalper_bot.ScalperStrategy`) sul banco comune; i finti iniettati
+        # sono elencati in testa al modulo del replay. `scalper_bot` sta qui
+        # perche' l'impronta del referto deve cambiare se cambia la strategia.
         moduli_produzione=("Betfair.stream.scalper.scalper_service",
-                           "Betfair.stream.scalper.scalper_session"),
-        mercati=("MATCH_ODDS",),
-        replay=None,
-        controlli=None,
-        spec="SCALPER_CALCIO_DOSSIER.md",
-        motivo_senza_controlli=(
-            "fuori dal perimetro dichiarato della certificazione del 16/09 "
-            "(decisione 8 del piano: gli scalper legacy entrano solo se l'utente "
-            "li nomina). Registrato per non poter essere dimenticato."),
+                           "Betfair.stream.scalper.scalper_session",
+                           "Betfair.stream.scalper.scalper_bot"),
+        mercati=("MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35"),
+        replay="Betfair.stream.scalper.tools.replay_registrazioni:certifica_scenario",
+        scenari="Betfair.stream.scalper.tools.replay_registrazioni:SCENARI_DESCRITTI",
+        controlli="Betfair.stream.scalper.certificazione",
+        spec="Betfair/stream/scalper/BIBBIA_SCALPER_CALCIO.md",
     ),
     # ------------------------------------------------------------------
     # I QUATTRO BOT TENNIS (17/09/2026)
