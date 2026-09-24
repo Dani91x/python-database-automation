@@ -1,20 +1,34 @@
 // ============================================================================
-// posizioniChiuse.ts — LE POSIZIONI GIÀ CHIUSE, vinte e perse.
+// posizioniChiuse.ts - LE POSIZIONI GIA' CHIUSE, vinte e perse.
 //
-// «scheda "Posizioni chiuse": qui ci andranno tutte le posizioni VINCENTI E
+// "scheda "Posizioni chiuse": qui ci andranno tutte le posizioni VINCENTI E
 // PERDENTI, filtrabili chiaramente, PNL GLOBALE DELLA POSIZIONE, pnl
-// dettaglio» (utente, 14/09).
+// dettaglio" (utente, 14/09).
 //
-// DUE LIVELLI DI P&L, e la differenza è tutto il punto:
-//   · **globale** = quanto ha reso la POSIZIONE, apertura e chiusure sommate.
-//     È il numero che dice se quell'operazione è andata bene.
-//   · **dettaglio** = le singole righe. Su una posizione coperta l'apertura
+// DUE LIVELLI DI P&L, e la differenza e' tutto il punto:
+//   - globale = quanto ha reso la POSIZIONE (il ciclo), apertura e chiusure
+//     sommate. E' il numero che dice se quell'operazione e' andata bene.
+//   - dettaglio = le singole righe. Su una posizione coperta l'apertura
 //     vince e la copertura perde: guardare solo le righe fa sembrare un
-//     green-up riuscito una sconfitta a metà.
+//     green-up riuscito una sconfitta a meta'.
 //
-// LA REGOLA DI SEMPRE: **paper e live non si sommano.** Una posizione è
-// dell'una o dell'altra modalità; due modalità sulla stessa partita sono due
-// posizioni diverse, e questa pagina non le mette mai nella stessa riga.
+// LA REGOLA DI SEMPRE: paper e live non si sommano. Una posizione e'
+// dell'una o dell'altra modalita'; la scheda ne mostra UNA alla volta.
+//
+// 24/09 (ordine dell'utente: "i dati sono mischiati per giornata, sono
+// confusionari, il trader non capisce nulla: IL TRADER DEVE FIDARSI DI QUELLO
+// CHE VEDE"). Tre cambi, tutti qui dentro e tutti testati:
+//   1. GIORNATA = giorno di REGOLAMENTO (fuso Europe/Rome), come la barra di
+//      giornata e come il conto Betfair (`settledDate`): una posizione aperta
+//      ieri sera e regolata stamattina e' di OGGI. Prima era il giorno di
+//      piazzamento e la scheda contraddiceva la barra.
+//   2. UNA REGOLA DI RAGGRUPPAMENTO per calcio e tennis:
+//      giornata -> bot -> partita -> ciclo (`raggruppaGiornata`), con il netto
+//      di ogni livello e la sua FONTE (Betfair / stimato / paper).
+//   3. VELOCITA': il vecchio costruttore creava un `Intl.DateTimeFormat` per
+//      ogni posizione e ordinava con `localeCompare`: 240 ms su 2400 righe,
+//      rifatti a ogni battito del feed. Ora gli istanti si leggono UNA volta
+//      (ms) e il confronto e' numerico.
 // ============================================================================
 import { isSettled, isErrorRow, pnlDiRiga, fonteDiRiga, fonteDiRighe, type FontePnl } from '@/lib/eventGroups';
 import type { Bot, Modo } from '@/lib/controlRoom';
@@ -22,6 +36,7 @@ import { modoDi } from '@/lib/controlRoom';
 import { romeDay } from '@/lib/dailyHistory';
 import { statoOrdine, type RigaOrdine } from '@/lib/statoOrdine';
 import { certezzaChiusura, type RisultatoCertezzaChiusura } from '@/lib/certezzaChiusura';
+import type { TennisBotOrderRow } from '@/lib/tennis';
 
 export type Esito = 'vinta' | 'persa' | 'pari';
 
@@ -40,22 +55,35 @@ export interface RigaChiusa {
     fontePnl?: FontePnl;
     stato: string;
     at: string;
-    /** è la gamba di copertura di un'altra riga? */
+    /** e' la gamba di copertura di un'altra riga? (false sul ripiego B13:
+     *  li' il legame non esiste e nessuna riga si puo' dire "copertura") */
     chiusura: boolean;
     quale: string | null;
     /**
-     * C.12b (16/09) — i campi grezzi dell'ORDINE (chiesto/abbinato/residuo/
-     * prezzo medio/ultimo aggiornamento da Betfair). Si passano cosi' come
-     * arrivano dalla RPC: a leggerli e' `lib/statoOrdine`, uno per tutti i bot.
+     * C.12b (16/09) - i campi grezzi dell'ORDINE (chiesto/abbinato/residuo/
+     * prezzo medio/ultimo aggiornamento da Betfair). A leggerli e'
+     * `lib/statoOrdine`, uno per tutti i bot.
      */
     ordine: RigaOrdine;
-    /** 18/09 — bet_id della gamba: prova che Betfair ha accettato un ordine
+    /** 18/09 - bet_id della gamba: prova che Betfair ha accettato un ordine
      *  reale (`lib/certezzaChiusura.ts`, mai dentro `RigaOrdine`). */
     betId: string | null;
 }
 
+/**
+ * 24/09 - come si sa che le righe di una posizione stanno insieme:
+ *   - `catena`  = `closes_trade_id` scritto dal bot (Omega, Safe, Mike);
+ *   - `ripiego` = i 4 bot tennis NON scrivono il legame ingresso-uscita
+ *     (reperto B13): le loro righe si raggruppano per (bot, mercato,
+ *     selezione), e la pagina lo DICHIARA sulla riga.
+ */
+export type Legame = 'catena' | 'ripiego';
+
+/** 24/09 - da quale istante viene la giornata della posizione */
+export type GiornoDa = 'regolamento' | 'piazzamento' | 'nessuno';
+
 export interface PosizioneChiusa {
-    /** id della riga di APERTURA: identifica la posizione */
+    /** id della riga di APERTURA: identifica la posizione (con il bot) */
     id: number;
     eventId: string;
     partita: string;
@@ -66,30 +94,34 @@ export interface PosizioneChiusa {
     pnlGlobale: number;
     /**
      * 24/09 - da dove viene `pnlGlobale`: `betfair` solo se TUTTE le gambe
-     * regolate hanno il netto di Betfair; altrimenti `stimato` (la pagina lo
-     * scrive) o `paper`. Opzionale nel tipo per i fixture scritti prima.
+     * regolate hanno il netto di Betfair; altrimenti `stimato` o `paper`.
+     * Opzionale nel tipo per i fixture scritti prima.
      */
     fontePnl?: FontePnl;
+    /** 24/09 - di `pnlGlobale`, la parte regolata da Betfair e quella stimata
+     *  (solo soldi veri; paper = entrambe null). Opzionali per i fixture di prima. */
+    pnlReale?: number | null;
+    pnlStimato?: number | null;
     /** vinta / persa / pari, dal P&L globale */
     esito: Esito;
     /** le righe che la compongono, in ordine di tempo */
     righe: RigaChiusa[];
-    /** quando si è chiusa (l'ultima riga regolata) */
+    /** quando si e' chiusa (l'ultima riga regolata) */
     chiusaAt: string;
-    /** quando è stata PIAZZATA l'apertura (ISO); '' se il dato manca */
+    /** quando e' stata PIAZZATA l'apertura (ISO); '' se il dato manca */
     piazzataAt: string;
     /**
-     * GIORNATA OPERATIVA della posizione: 'YYYY-MM-DD' nel fuso Europe/Rome,
-     * dal giorno di **PIAZZAMENTO** dell'apertura — la stessa attribuzione
-     * dello storico dei tre bot (`p_day_by = 'placed'`, `attributionOf` in
-     * `lib/dailyHistory`). Una posizione aperta alle 23:50 e regolata alle
-     * 00:10 appartiene al giorno in cui è stata APERTA, non al successivo.
+     * GIORNATA della posizione: 'YYYY-MM-DD' nel fuso Europe/Rome.
      *
-     * Se il piazzamento manca si ripiega sul regolamento: una posizione senza
-     * giornata sparirebbe dal filtro «oggi», e quelli sono soldi veri.
-     * '' solo quando non c'è proprio nessuna data.
+     * 24/09 - e' il giorno di REGOLAMENTO (l'ultima gamba regolata: l'istante
+     * di Betfair `pnl_betfair_settled_at` se c'e', altrimenti `settled_at` del
+     * bot), la stessa regola della barra di giornata e del conto Betfair.
+     * Senza nessun istante di regolamento si ripiega sul piazzamento
+     * dell'apertura (`giornoDa = 'piazzamento'`, la scheda lo dice).
+     * '' solo quando non c'e' proprio nessuna data.
      */
     giorno: string;
+    giornoDa?: GiornoDa;
     /**
      * 23/09 - true = la riga e' una GAMBA DI CHIUSURA la cui apertura NON e'
      * fra le righe lette (paginazione, giorno diverso, riga cancellata). Il
@@ -97,18 +129,37 @@ export interface PosizioneChiusa {
      * DICHIARA invece di spacciarlo per un'operazione completa.
      */
     orfana: boolean;
+    /** 24/09 - vedi `Legame`. Assente = `catena` (fixture di prima). */
+    legame?: Legame;
+    /** 24/09 - mercato e selezione dell'APERTURA, in chiaro quando si sa */
+    mercato?: string | null;
+    selezione?: string | null;
+    lato?: 'back' | 'lay' | null;
+    /** 24/09 - origine dell'apertura ('auto' | 'manual'), per la controprova con la barra */
+    origine?: string | null;
 }
 
 /**
- * La giornata operativa (Europe/Rome) di un istante ISO. '' se non c'è o non
- * è leggibile: mai una data inventata.
+ * La giornata (Europe/Rome) di un istante ISO. '' se non c'e' o non e'
+ * leggibile: mai una data inventata.
  */
 export function giornataDi(iso: string | null | undefined): string {
     if (!iso) return '';
     const ms = Date.parse(iso);
     if (!Number.isFinite(ms)) return '';
-    return romeDay(new Date(ms));
+    // 24/09 - VELOCITA': il fuso di Roma ha scarti di ORE intere (UTC+1/+2),
+    // quindi la mezzanotte di Roma cade sempre all'inizio di un'ora UTC e
+    // tutti gli istanti della stessa ora UTC hanno la stessa giornata. Si
+    // chiede al formattatore UNA volta per ora, non una per riga.
+    const ora = Math.floor(ms / 3_600_000);
+    const noto = giornoPerOra.get(ora);
+    if (noto !== undefined) return noto;
+    const g = romeDay(new Date(ora * 3_600_000));
+    if (giornoPerOra.size > 20_000) giornoPerOra.clear();
+    giornoPerOra.set(ora, g);
+    return g;
 }
+const giornoPerOra = new Map<number, string>();
 
 export interface TradeChiudibile {
     id: number;
@@ -125,28 +176,36 @@ export interface TradeChiudibile {
     price?: number | null;
     size?: number | null;
     selection_name?: string | null;
+    /** Omega porta il nome della selezione qui, non in `selection_name` */
+    runner_name?: string | null;
+    /** Safe / Mike: tipo di mercato; Omega: `phase` */
+    market_type?: string | null;
+    phase?: string | null;
+    market_id?: string | null;
+    selection_id?: number | string | null;
+    origin?: string | null;
     placed_at?: string | null;
     settled_at?: string | null;
     closes_trade_id?: number | null;
     strategy?: string | null;
-    // C.12b — colonne della migrazione `trades_consapevolezza_ordine_2026-09-16`
-    // (assenti finche' non e' applicata) e il `meta`, che porta le stesse cose
-    // sotto forma di nota. La pagina deve reggere con e senza.
+    // C.12b - colonne della migrazione `trades_consapevolezza_ordine_2026-09-16`
+    // (assenti finche' non e' applicata) e il `meta`.
     size_requested?: number | null;
     size_matched?: number | null;
     size_remaining?: number | null;
     avg_price_matched?: number | null;
     betfair_updated_at?: string | null;
-    /** 18/09 — presente = un ordine reale è stato accettato da Betfair per
-     *  questa gamba: la certezza di chiusura (`lib/certezzaChiusura.ts`) lo
-     *  richiede in LIVE prima di dire «confermata». */
+    /** 18/09 - presente = un ordine reale e' stato accettato da Betfair */
     bet_id?: string | null;
     meta?: Record<string, unknown> | null;
     __bot: Bot;
+    /** 24/09 - marcatore del CLIENT (come `__bot`): la riga non porta il
+     *  legame ingresso-uscita (i 4 bot tennis, B13). */
+    __senzaLegame?: boolean;
 }
 
-/** Sotto questa soglia in valore assoluto una posizione è «pari»: un centesimo
- *  di arrotondamento non è una vittoria né una sconfitta. */
+/** Sotto questa soglia in valore assoluto una posizione e' "pari": un
+ *  centesimo di arrotondamento non e' una vittoria ne' una sconfitta. */
 export const SOGLIA_PARI = 0.005;
 
 export function esitoDi(pnl: number): Esito {
@@ -161,172 +220,371 @@ function testo(v: unknown): string | null {
 function numero(v: unknown): number | null {
     return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
+function cent(n: number): number {
+    return Math.round(n * 100) / 100;
+}
+function msDi(iso: string | null): number {
+    if (!iso) return NaN;
+    return Date.parse(iso);
+}
+function ePaper(r: { mode?: string | null }): boolean {
+    return String(r.mode ?? '').trim().toLowerCase() === 'paper';
+}
+
+/**
+ * L'istante di REGOLAMENTO di una gamba: quello di Betfair se il netto di
+ * Betfair c'e' (mai per una riga paper), altrimenti quello del bot. E' la
+ * stessa scelta della barra (`righeGiornataPerCiclo`): la giornata del reale
+ * e' quella di Betfair.
+ */
+export function regolataAlle(r: TradeChiudibile): string | null {
+    if (!ePaper(r) && numero(r.pnl_betfair) != null) {
+        return testo(r.pnl_betfair_settled_at) ?? testo(r.settled_at);
+    }
+    return testo(r.settled_at);
+}
+
+const FASE_OMEGA: Record<string, string> = {
+    ht_cs: 'Risultato esatto 1T',
+    ft_cs: 'Risultato esatto',
+    scalp: 'Scalp',
+};
+
+/** Il mercato in chiaro: tipo di mercato, fase di Omega, o l'id Betfair. */
+function mercatoDi(r: TradeChiudibile): string | null {
+    const tipo = testo(r.market_type);
+    if (tipo) return tipo;
+    const fase = testo(r.phase);
+    if (fase) return FASE_OMEGA[fase] ?? fase;
+    const mid = testo(r.market_id);
+    return mid ? `mercato ${mid}` : null;
+}
+
+/** La selezione in chiaro: nome (Safe/Mike), runner (Omega), o l'id. */
+function selezioneDi(r: TradeChiudibile): string | null {
+    const nome = testo(r.selection_name) ?? testo(r.runner_name);
+    if (nome) return nome;
+    const sid = r.selection_id;
+    return sid == null || sid === '' ? null : `selezione #${String(sid)}`;
+}
+
+function latoDi(side: unknown): 'back' | 'lay' | null {
+    return side === 'lay' ? 'lay' : side === 'back' ? 'back' : null;
+}
+
+/**
+ * La chiave di una riga: bot + id, mai l'id da solo.
+ *
+ * REVIEW 14/09, CRITICO - gli id vengono da tabelle DIVERSE (`omega_trades`,
+ * `safe_strategy_trades`, `mike_trades`, `tennis_live_orders`), ognuna con la
+ * sua sequenza. Il trade #288 di Safe e il #288 di Omega sono righe diverse.
+ */
+export function chiaveRiga(bot: Bot, id: unknown): string {
+    return `${bot}:${String(id)}`;
+}
+
+function rigaChiusa(r: TradeChiudibile, chiusura: boolean): RigaChiusa {
+    return {
+        id: r.id, bot: r.__bot,
+        selezione: selezioneDi(r),
+        lato: latoDi(r.side),
+        prezzo: numero(r.price), size: numero(r.size),
+        pnl: pnlDiRiga(r), fontePnl: fonteDiRiga(r), stato: String(r.status ?? ''),
+        at: regolataAlle(r) ?? testo(r.placed_at) ?? '',
+        chiusura,
+        quale: testo(r.strategy),
+        betId: testo(r.bet_id),
+        ordine: {
+            status: String(r.status ?? ''), side: r.side ?? null,
+            price: numero(r.price), size: numero(r.size),
+            size_requested: numero(r.size_requested),
+            size_matched: numero(r.size_matched),
+            size_remaining: numero(r.size_remaining),
+            avg_price_matched: numero(r.avg_price_matched),
+            betfair_updated_at: testo(r.betfair_updated_at),
+            meta: r.meta ?? null,
+        },
+    };
+}
+
+/**
+ * La posizione da un'apertura (o dalla prima riga di un ripiego B13) e da
+ * TUTTE le sue gambe. `null` = non ancora chiusa.
+ */
+function costruisci(
+    a: TradeChiudibile, gambe: readonly TradeChiudibile[], legame: Legame, orfana: boolean,
+): PosizioneChiusa | null {
+    if (!isSettled(String(a.status ?? ''))) return null;   // non ancora conclusa
+
+    // UNA GAMBA ANCORA VIVA = POSIZIONE NON CHIUSA. Sommare solo le righe
+    // regolate darebbe un P&L parziale mostrato come definitivo.
+    // ECCEZIONE (18/09, certezza di chiusura): una gamba `cancelled` non andra'
+    // mai a won/lost/void - e' morta senza aver portato rischio; prima faceva
+    // sparire l'INTERA posizione per sempre. Le gambe `error` sono gia' fuori.
+    for (const g of gambe) {
+        const s = String(g.status ?? '').toLowerCase();
+        if (!isSettled(s) && s !== 'cancelled') return null;
+    }
+
+    const tutte = [a, ...gambe];
+    const live = !ePaper(a);
+    // il P&L globale somma TUTTE le gambe regolate: su un green-up l'apertura
+    // vince e la copertura perde, e solo la somma dice il vero. Di ogni gamba
+    // il netto di BETFAIR se c'e', altrimenti il calcolo del bot.
+    let globale = 0;
+    let reale: number | null = null;
+    let stimato: number | null = null;
+    let regMs = NaN;
+    let regIso: string | null = null;
+    const regolate: TradeChiudibile[] = [];
+    for (const r of tutte) {
+        if (!isSettled(String(r.status ?? ''))) continue;
+        regolate.push(r);
+        const v = pnlDiRiga(r) ?? 0;
+        globale += v;
+        if (live) {
+            if (numero(r.pnl_betfair) != null) reale = (reale ?? 0) + v;
+            else stimato = (stimato ?? 0) + v;
+        }
+        const iso = regolataAlle(r);
+        const ms = msDi(iso);
+        if (Number.isFinite(ms) && !(ms <= regMs)) { regMs = ms; regIso = iso; }
+    }
+    globale = cent(globale);
+    const fontePnl = fonteDiRighe(regolate) ?? 'stimato';
+
+    const conMs = tutte.map((r) => {
+        const riga = rigaChiusa(r, legame === 'catena' && numero(r.closes_trade_id) != null);
+        return { riga, ms: msDi(riga.at || null) };
+    });
+    conMs.sort((x, y) => (Number.isFinite(x.ms) ? x.ms : 0) - (Number.isFinite(y.ms) ? y.ms : 0));
+    const righe = conMs.map((x) => x.riga);
+
+    let chiusaMs = NaN;
+    let chiusaAt = '';
+    for (const x of conMs) {
+        if (Number.isFinite(x.ms) && !(x.ms <= chiusaMs)) { chiusaMs = x.ms; chiusaAt = x.riga.at; }
+    }
+    const piazzataAt = testo(a.placed_at) ?? '';
+
+    // LA GIORNATA = regolamento; senza, il piazzamento (dichiarato)
+    let giorno = regIso ? giornataDi(regIso) : '';
+    let giornoDa: GiornoDa = giorno ? 'regolamento' : 'nessuno';
+    if (!giorno) {
+        giorno = giornataDi(piazzataAt);
+        if (giorno) giornoDa = 'piazzamento';
+    }
+
+    const nomeTennis = String(a.sport ?? '').toLowerCase() === 'tennis';
+    return {
+        id: a.id,
+        eventId: String(a.event_id ?? ''),
+        partita: testo(a.event_name) ?? `evento ${a.event_id ?? '?'}`,
+        sport: nomeTennis ? 'tennis' : 'calcio',
+        modo: modoDi(a),
+        bot: a.__bot,
+        pnlGlobale: globale,
+        fontePnl,
+        pnlReale: reale == null ? null : cent(reale),
+        pnlStimato: stimato == null ? null : cent(stimato),
+        esito: esitoDi(globale),
+        righe,
+        chiusaAt,
+        piazzataAt,
+        giorno,
+        giornoDa,
+        orfana,
+        legame,
+        mercato: mercatoDi(a),
+        selezione: selezioneDi(a),
+        lato: latoDi(a.side),
+        origine: testo(a.origin),
+    };
+}
 
 /**
  * Costruisce le posizioni chiuse dalle righe grezze dei bot.
  *
- * Una POSIZIONE è un'apertura (`closes_trade_id` vuoto) più le sue coperture.
- * Le coperture non sono posizioni proprie — è lo stesso errore che il 14/09
- * ha fatto contare due volte una chiusura a mano — ma il loro P&L entra
- * INTERAMENTE nel globale, perché sono soldi veri.
+ * Una POSIZIONE e' un'apertura (`closes_trade_id` vuoto) piu' TUTTE le gambe
+ * della sua catena (A <- B <- C). Le coperture non sono posizioni proprie, ma
+ * il loro P&L entra INTERAMENTE nel globale, perche' sono soldi veri.
  *
- * Entra qui solo ciò che è DEFINITIVO: una posizione ancora aperta o coperta
- * ma non liquidata non è «chiusa», e metterla qui con un P&L parziale
- * direbbe una cosa che non è ancora vera.
- */
-/**
- * La chiave di una riga: **bot + id**, mai l'id da solo.
+ * Entra solo cio' che e' DEFINITIVO: una posizione con una gamba ancora viva
+ * non e' "chiusa".
  *
- * ⚠️ REVIEW 14/09, CRITICO — gli id vengono da TRE TABELLE DIVERSE
- * (`omega_trades`, `safe_strategy_trades`, `mike_trades`), ognuna con la sua
- * sequenza. Il trade #288 di Safe e il #288 di Omega sono righe diverse: con
- * l'id nudo la copertura di uno si attaccava all'apertura dell'altro, e il
- * P&L della posizione diventava la somma di due operazioni scollegate.
+ * Le righe `__senzaLegame` (bot tennis, B13) si raggruppano per (bot,
+ * modalita', mercato, selezione): e' il RIPIEGO dichiarato (`legame`).
  */
-function chiave(bot: Bot, id: unknown): string {
-    return `${bot}:${String(id)}`;
-}
-
 export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneChiusa[] {
-    // indice di TUTTE le righe, per riconoscere le coperture orfane
+    // indice di TUTTE le righe vere, per riconoscere le coperture orfane
     const perChiave = new Map<string, TradeChiudibile>();
+    const vere: TradeChiudibile[] = [];
+    const senzaLegame = new Map<string, TradeChiudibile[]>();
     for (const t of trades) {
-        if (isErrorRow(String(t.status ?? ''))) continue;
-        perChiave.set(chiave(t.__bot, t.id), t);
+        if (isErrorRow(String(t.status ?? ''))) continue;   // mai andata a mercato
+        if (t.__senzaLegame) {
+            const k = [t.__bot, modoDi(t), testo(t.market_id) ?? `ev:${t.event_id ?? ''}`,
+                String(t.selection_id ?? '')].join('|');
+            const l = senzaLegame.get(k);
+            if (l) l.push(t); else senzaLegame.set(k, [t]);
+            continue;
+        }
+        vere.push(t);
+        perChiave.set(chiaveRiga(t.__bot, t.id), t);
     }
 
     const coperture = new Map<string, TradeChiudibile[]>();
-    const aperture: TradeChiudibile[] = [];
-
-    for (const t of trades) {
-        if (isErrorRow(String(t.status ?? ''))) continue;   // mai andata a mercato
+    const aperture: { t: TradeChiudibile; orfana: boolean }[] = [];
+    for (const t of vere) {
         const chiude = numero(t.closes_trade_id);
-        if (chiude == null) { aperture.push(t); continue; }
-
-        const padre = chiave(t.__bot, chiude);
+        if (chiude == null) { aperture.push({ t, orfana: false }); continue; }
+        const padre = chiaveRiga(t.__bot, chiude);
         if (!perChiave.has(padre)) {
-            // COPERTURA ORFANA — il trade che chiudeva non è fra le righe
-            // lette (paginazione, giorno diverso, riga cancellata). I suoi
-            // euro sono comunque veri: si tratta come una posizione a sé,
-            // marcata, invece di sparire in silenzio. È la stessa difesa di
-            // `eventGroups.ts:88-91`.
-            aperture.push(t);
+            // COPERTURA ORFANA - il trade che chiudeva non e' fra le righe
+            // lette. I suoi euro sono veri: una posizione a se', marcata.
+            aperture.push({ t, orfana: true });
             continue;
         }
-        const lista = coperture.get(padre) ?? [];
-        lista.push(t);
-        coperture.set(padre, lista);
+        const lista = coperture.get(padre);
+        if (lista) lista.push(t); else coperture.set(padre, [t]);
     }
 
-    /**
-     * Tutte le gambe di una posizione, seguendo la catena fino in fondo.
-     *
-     * Una copertura può essere a sua volta coperta (A ← B ← C: succede col
-     * place-and-trim e con una chiusura parziale richiusa). Fermarsi al primo
-     * livello lasciava fuori dal conto il P&L della terza gamba.
-     */
+    /** Tutte le gambe di una posizione, seguendo la catena fino in fondo. */
     const gambeDi = (radice: TradeChiudibile): TradeChiudibile[] => {
         const fuori: TradeChiudibile[] = [];
-        const daVisitare = [radice];
-        const visti = new Set<string>([chiave(radice.__bot, radice.id)]);
-        while (daVisitare.length) {
-            const nodo = daVisitare.shift() as TradeChiudibile;
-            for (const g of coperture.get(chiave(nodo.__bot, nodo.id)) ?? []) {
-                const k = chiave(g.__bot, g.id);
+        const coda = [radice];
+        const visti = new Set<string>([chiaveRiga(radice.__bot, radice.id)]);
+        for (let i = 0; i < coda.length; i++) {
+            const nodo = coda[i];
+            for (const g of coperture.get(chiaveRiga(nodo.__bot, nodo.id)) ?? []) {
+                const k = chiaveRiga(g.__bot, g.id);
                 if (visti.has(k)) continue;      // difesa contro un ciclo nei dati
                 visti.add(k);
                 fuori.push(g);
-                daVisitare.push(g);
+                coda.push(g);
             }
         }
         return fuori;
     };
 
     const out: PosizioneChiusa[] = [];
-    for (const a of aperture) {
-        if (!isSettled(String(a.status ?? ''))) continue;   // non ancora conclusa
-        const gambe = gambeDi(a);
-
-        // UNA GAMBA ANCORA VIVA = POSIZIONE NON CHIUSA. Sommare solo le righe
-        // regolate darebbe un P&L parziale mostrato come definitivo: su un
-        // green-up a metà è il numero dell'apertura da solo, cioè il profitto
-        // pieno di una posizione che invece è coperta.
-        //
-        // ECCEZIONE (18/09, certezza di chiusura): una gamba `cancelled` NON
-        // ANDRÀ MAI a `won`/`lost`/`void` — un ordine annullato non ha un
-        // esito di mercato da attendere, è morto e basta, senza aver mai
-        // portato rischio. Prima di questa riga, UNA SOLA gamba di chiusura
-        // annullata (es. la terza di tre back a chiudere un lay, rifiutata da
-        // Betfair) faceva sparire l'INTERA posizione da «Posizioni chiuse»
-        // PER SEMPRE, anche dopo il fischio finale: né aperta né chiusa, in
-        // un limbo. Le altre gambe morte senza rischio (`error`, mai andate a
-        // mercato) sono già escluse a monte da `isErrorRow` in `aperture`/
-        // `coperture`, quindi non arrivano nemmeno qui.
-        if (gambe.some((g) => {
-            const s = String(g.status ?? '').toLowerCase();
-            return !isSettled(s) && s !== 'cancelled';
-        })) continue;
-
-        const tutte = [a, ...gambe];
-
-        // il P&L globale somma TUTTE le gambe regolate: su un green-up
-        // l'apertura vince e la copertura perde, e solo la somma dice il vero.
-        // 24/09 - di ogni gamba il netto di BETFAIR se c'e' (`pnl_betfair`),
-        // altrimenti il calcolo del bot: e la posizione dice quale dei due e'.
-        let globale = 0;
-        const regolate = tutte.filter((r) => isSettled(String(r.status ?? '')));
-        for (const r of regolate) globale += pnlDiRiga(r) ?? 0;
-        globale = Math.round(globale * 100) / 100;
-        const fontePnl = fonteDiRighe(regolate) ?? 'stimato';
-
-        const righe: RigaChiusa[] = tutte
-            .map((r) => ({
-                id: r.id, bot: r.__bot,
-                selezione: testo(r.selection_name),
-                lato: r.side === 'lay' ? 'lay' as const : r.side === 'back' ? 'back' as const : null,
-                prezzo: numero(r.price), size: numero(r.size),
-                pnl: pnlDiRiga(r), fontePnl: fonteDiRiga(r), stato: String(r.status ?? ''),
-                at: testo(r.settled_at) ?? testo(r.placed_at) ?? '',
-                chiusura: numero(r.closes_trade_id) != null,
-                quale: testo(r.strategy),
-                betId: testo(r.bet_id),
-                ordine: {
-                    status: String(r.status ?? ''), side: r.side ?? null,
-                    price: numero(r.price), size: numero(r.size),
-                    size_requested: numero(r.size_requested),
-                    size_matched: numero(r.size_matched),
-                    size_remaining: numero(r.size_remaining),
-                    avg_price_matched: numero(r.avg_price_matched),
-                    betfair_updated_at: testo(r.betfair_updated_at),
-                    meta: r.meta ?? null,
-                },
-            }))
-            .sort((x, y) => x.at.localeCompare(y.at));
-
-        const chiusaAt = righe.reduce((m, r) => (r.at > m ? r.at : m), '');
-        const piazzataAt = testo(a.placed_at) ?? '';
-
-        out.push({
-            id: a.id,
-            eventId: String(a.event_id ?? ''),
-            partita: testo(a.event_name) ?? `evento ${a.event_id ?? '?'}`,
-            sport: String(a.sport ?? '').toLowerCase() === 'tennis' ? 'tennis' : 'calcio',
-            modo: modoDi(a),
-            bot: a.__bot,
-            pnlGlobale: globale,
-            fontePnl,
-            esito: esitoDi(globale),
-            righe,
-            chiusaAt,
-            piazzataAt,
-            giorno: giornataDi(piazzataAt) || giornataDi(chiusaAt),
-            orfana: numero(a.closes_trade_id) != null,
-        });
+    for (const { t, orfana } of aperture) {
+        const p = costruisci(t, gambeDi(t), 'catena', orfana);
+        if (p) out.push(p);
+    }
+    for (const gruppo of senzaLegame.values()) {
+        const ordinato = gruppo.slice().sort((x, y) => x.id - y.id);
+        const p = costruisci(ordinato[0], ordinato.slice(1), 'ripiego', false);
+        if (p) out.push(p);
     }
 
-    // le più recenti in cima: su un banco si guarda l'ultima cosa successa
-    return out.sort((x, y) => y.chiusaAt.localeCompare(x.chiusaAt));
+    // le piu' recenti in cima: su un banco si guarda l'ultima cosa successa
+    const ms = new Map<PosizioneChiusa, number>();
+    for (const p of out) { const v = msDi(p.chiusaAt || null); ms.set(p, Number.isFinite(v) ? v : 0); }
+    return out.sort((x, y) => (ms.get(y) as number) - (ms.get(x) as number));
 }
+
+// ============================================================================
+// 24/09 - I 4 BOT TENNIS: la traduzione di una riga di `tennis_live_orders`
+// nel contratto delle altre (UNA sola, usata dalla pagina e dallo storico).
+// ============================================================================
+
+/**
+ * Il P&L NETTO di un ordine tennis: il netto di Betfair quando c'e' (mai per
+ * una riga paper), altrimenti `pnl - commission` (il `pnl` della tabella e'
+ * LORDO). `null` = non ancora regolato.
+ */
+export function nettoOrdineTennis(o: Pick<TennisBotOrderRow, 'mode' | 'pnl' | 'commission' | 'pnl_betfair'>): number | null {
+    const reale = o.pnl_betfair;
+    if (String(o.mode ?? '').toLowerCase() !== 'paper'
+        && typeof reale === 'number' && Number.isFinite(reale)) return reale;
+    const lordo = o.pnl;
+    if (typeof lordo !== 'number' || !Number.isFinite(lordo)) return null;
+    const comm = o.commission;
+    const c = typeof comm === 'number' && Number.isFinite(comm) ? comm : 0;
+    return Math.round((lordo - c) * 100) / 100;
+}
+
+/**
+ * Un ordine REGOLATO di un bot tennis come riga chiudibile. `null` = non
+ * entra (non e' di un bot tennis, e' in errore, non e' regolato, o il suo P&L
+ * non e' ancora noto: "0,00" sarebbe uno zero travestito da pareggio).
+ *
+ * DUE TRADUZIONI OBBLIGATE, nessuna inventata:
+ *  1. LO STATO. `status` e' lo stato flumine (`EXECUTION_COMPLETE` = abbinato
+ *     tutto, non regolato): il regolamento lo dichiara `settled_at`, l'esito
+ *     lo dice il segno del netto.
+ *  2. IL P&L. `pnl` e' LORDO: si usa `nettoOrdineTennis`.
+ * La riga porta `__senzaLegame`: il servizio non scrive quale ordine chiude
+ * quale (B13), quindi si raggruppa per (bot, mercato, selezione).
+ */
+export function rigaDaOrdineTennis(
+    o: TennisBotOrderRow, nomePartita: string | null, isBot: (b: string) => boolean,
+): TradeChiudibile | null {
+    const bot = o.source;
+    if (bot == null || !isBot(String(bot))) return null;
+    if (isErrorRow(o.status)) return null;
+    if (o.settled_at == null) return null;
+    const netto = nettoOrdineTennis(o);
+    if (netto == null) return null;
+    return {
+        id: o.id,
+        event_id: String(o.event_id ?? ''),
+        event_name: nomePartita,
+        sport: 'tennis',
+        mode: o.mode,
+        status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
+        pnl: netto,
+        pnl_betfair: o.pnl_betfair ?? null,
+        pnl_betfair_settled_at: o.pnl_betfair_settled_at ?? null,
+        side: o.side,
+        price: o.price ?? null,
+        size: o.size ?? null,
+        // `tennis_live_orders` porta il `selection_id`, non il nome
+        selection_name: null,
+        market_id: o.market_id ?? null,
+        selection_id: o.selection_id ?? null,
+        placed_at: o.placed_at ?? null,
+        settled_at: o.settled_at,
+        closes_trade_id: null,
+        strategy: null,
+        size_requested: o.size ?? null,
+        size_matched: o.size_matched ?? null,
+        size_remaining: o.size_remaining ?? null,
+        avg_price_matched: o.average_price_matched ?? null,
+        betfair_updated_at: o.updated_at ?? null,
+        bet_id: o.bet_id ?? null,
+        meta: null,
+        __bot: bot as Bot,
+        __senzaLegame: true,
+    };
+}
+
+/**
+ * Unisce le righe in memoria (canali + lettura dei 30 s) con quelle lette per
+ * una giornata dal database. Chiave bot+id; vince la MEMORIA (e' piu'
+ * fresca). Serve a completare le catene: una chiusura "orfana" in memoria
+ * ritrova la sua apertura letta dalla giornata.
+ */
+export function unisciRighe(
+    memoria: readonly TradeChiudibile[], giornata: readonly TradeChiudibile[],
+): TradeChiudibile[] {
+    if (!giornata.length) return memoria as TradeChiudibile[];
+    const viste = new Set<string>();
+    for (const r of memoria) viste.add(chiaveRiga(r.__bot, r.id));
+    const out = memoria.slice();
+    for (const r of giornata) {
+        const k = chiaveRiga(r.__bot, r.id);
+        if (viste.has(k)) continue;
+        viste.add(k);
+        out.push(r);
+    }
+    return out;
+}
+
+// ============================================================================
+// FILTRI E RIEPILOGO
+// ============================================================================
 
 export interface FiltroChiuse {
     esito?: Esito | 'tutte';
@@ -334,18 +592,12 @@ export interface FiltroChiuse {
     modo?: Modo | 'tutte';
     bot?: Bot | 'tutti';
     /**
-     * GIORNATA OPERATIVA da mostrare, 'YYYY-MM-DD' (Europe/Rome).
-     *
-     * Ordine dell'utente del 17/09: «in "posizioni chiuse" voglio vedere SOLO
-     * le posizioni della giornata, non le precedenti; per i giorni precedenti
-     * deve esserci uno STORICO dedicato». Le righe dei bot arrivano dalle RPC
-     * di stato con un semplice `limit` (Omega: `get_omega_trades(p_limit)`),
-     * quindi contengono ANCHE i giorni passati: senza questo filtro il banco
-     * della giornata mostrava operazioni di settimane prima.
-     *
-     * `undefined` / `null` / '' = nessun filtro di giornata (lo usa lo storico).
+     * GIORNATA da mostrare, 'YYYY-MM-DD' (Europe/Rome), giorno di regolamento.
+     * `undefined` / `null` / '' = nessun filtro di giornata.
      */
     giorno?: string | null;
+    /** 24/09 - 'betfair' = solo posizioni col netto TUTTO regolato da Betfair */
+    fonte?: 'tutte' | 'betfair';
 }
 
 export function filtraChiuse(
@@ -357,7 +609,8 @@ export function filtraChiuse(
         if (f.sport && f.sport !== 'tutti' && p.sport !== f.sport) return false;
         if (f.modo && f.modo !== 'tutte' && p.modo !== f.modo) return false;
         if (f.bot && f.bot !== 'tutti' && p.bot !== f.bot) return false;
-        // una posizione SENZA giornata leggibile non è «di oggi»: lo dice la
+        if (f.fonte === 'betfair' && p.fontePnl !== 'betfair') return false;
+        // una posizione SENZA giornata leggibile non e' "di oggi": lo dice la
         // scheda con un avviso, invece di finire nel totale del giorno
         if (giorno && p.giorno !== giorno) return false;
         return true;
@@ -366,8 +619,7 @@ export function filtraChiuse(
 
 /**
  * Quante posizioni chiuse restano FUORI dalla giornata mostrata (e quante non
- * hanno proprio una data). Serve alla scheda per dire «ce ne sono altre, sono
- * nello Storico» invece di far sparire delle operazioni in silenzio.
+ * hanno proprio una data): la scheda lo dice invece di farle sparire.
  */
 export function fuoriGiornata(
     righe: readonly PosizioneChiusa[], giorno: string,
@@ -385,40 +637,135 @@ export interface RiepilogoChiuse {
     vinte: number;
     perse: number;
     pari: number;
-    /** somma dei P&L globali; `null` se non c'è nessuna posizione */
+    /** somma dei P&L globali; `null` se non c'e' nessuna posizione */
     totale: number | null;
     /** vinte su vinte+perse; `null` senza esiti */
     percentualeVinte: number | null;
+    /** 24/09 - di `totale`, la parte regolata da Betfair e quella stimata
+     *  (soldi veri). Paper: entrambe null. */
+    reale?: number | null;
+    stimato?: number | null;
+    /** quante posizioni sono orfane / a ripiego B13 (si dichiarano) */
+    orfane?: number;
+    ripiego?: number;
 }
 
-/** Il riepilogo di un insieme di posizioni **già filtrate**: quello che si
- *  vede in alto deve descrivere quello che si vede sotto, non tutto il resto. */
+/** Il riepilogo di un insieme di posizioni GIA' filtrate: quello che si vede
+ *  in alto deve descrivere quello che si vede sotto, non tutto il resto. */
 export function riepilogoChiuse(righe: readonly PosizioneChiusa[]): RiepilogoChiuse {
-    let vinte = 0, perse = 0, pari = 0, totale = 0;
+    let vinte = 0, perse = 0, pari = 0, totale = 0, orfane = 0, ripiego = 0;
+    let reale: number | null = null;
+    let stimato: number | null = null;
     for (const p of righe) {
         if (p.esito === 'vinta') vinte += 1;
         else if (p.esito === 'persa') perse += 1;
         else pari += 1;
         totale += p.pnlGlobale;
+        if (p.pnlReale != null) reale = (reale ?? 0) + p.pnlReale;
+        if (p.pnlStimato != null) stimato = (stimato ?? 0) + p.pnlStimato;
+        if (p.orfana) orfane += 1;
+        if (p.legame === 'ripiego') ripiego += 1;
     }
     const conEsito = vinte + perse;
     return {
         n: righe.length, vinte, perse, pari,
-        totale: righe.length ? Math.round(totale * 100) / 100 : null,
+        totale: righe.length ? cent(totale) : null,
         percentualeVinte: conEsito > 0 ? vinte / conEsito : null,
+        reale: reale == null ? null : cent(reale),
+        stimato: stimato == null ? null : cent(stimato),
+        orfane, ripiego,
     };
 }
 
 // ============================================================================
-// 18/09 — CERTEZZA DI CHIUSURA di una posizione della scheda.
-//
-// Il GIUDIZIO non vive qui: e' `lib/certezzaChiusura.ts`, lo stesso della
-// striscia di esito delle schede di uscita. Qui si fa solo il ponte fra una
-// `PosizioneChiusa` e la sua forma d'ingresso, senza una seconda regola.
+// 24/09 - LA REGOLA DI RAGGRUPPAMENTO, una per calcio e tennis:
+//   giornata (regolamento, Roma) -> bot -> partita -> ciclo (operazione)
+// Ogni livello porta il suo netto e la sua composizione (reale / stimato), e
+// la somma dei livelli e' IDENTICA al totale della giornata (testato).
+// Safe si divide per sport ("Safe calcio" / "Safe tennis"), come le voci della
+// barra di giornata.
 // ============================================================================
 
-/** L'apertura di una posizione: la riga con l'id della posizione. Su una
- *  copertura ORFANA e' la copertura stessa (e' lei a identificare la riga). */
+export interface GruppoPartita {
+    chiave: string;
+    eventId: string;
+    partita: string;
+    sport: 'calcio' | 'tennis';
+    cicli: PosizioneChiusa[];
+    riepilogo: RiepilogoChiuse;
+}
+
+export interface GruppoBot {
+    /** 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | chiave del bot tennis */
+    chiave: string;
+    bot: Bot;
+    sport: 'calcio' | 'tennis' | null;
+    partite: GruppoPartita[];
+    riepilogo: RiepilogoChiuse;
+}
+
+export interface GiornataChiuse {
+    giorno: string;
+    bots: GruppoBot[];
+    riepilogo: RiepilogoChiuse;
+}
+
+const ORDINE_GRUPPI = [
+    'omega', 'safe_calcio', 'mike', 'safe_tennis',
+    'tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing',
+];
+
+export function chiaveGruppoBot(p: Pick<PosizioneChiusa, 'bot' | 'sport'>): string {
+    return p.bot === 'safe' ? `safe_${p.sport}` : p.bot;
+}
+
+/**
+ * Raggruppa posizioni GIA' filtrate (una giornata, una modalita').
+ * Bot nell'ordine fisso; partite e cicli dal piu' recente.
+ */
+export function raggruppaGiornata(giorno: string, posizioni: readonly PosizioneChiusa[]): GiornataChiuse {
+    const perBot = new Map<string, Map<string, PosizioneChiusa[]>>();
+    for (const p of posizioni) {
+        const kb = chiaveGruppoBot(p);
+        let partite = perBot.get(kb);
+        if (!partite) { partite = new Map(); perBot.set(kb, partite); }
+        const kp = p.eventId || `senza-evento:${p.partita}`;
+        const l = partite.get(kp);
+        if (l) l.push(p); else partite.set(kp, [p]);
+    }
+    const bots: GruppoBot[] = [];
+    for (const [kb, partite] of perBot) {
+        const gruppi: GruppoPartita[] = [];
+        for (const [kp, cicli] of partite) {
+            const primo = cicli[0];
+            gruppi.push({
+                chiave: kp, eventId: primo.eventId, partita: primo.partita, sport: primo.sport,
+                cicli, riepilogo: riepilogoChiuse(cicli),
+            });
+        }
+        // le posizioni arrivano gia' dalla piu' recente: la partita con il
+        // ciclo piu' recente sta in cima
+        const tutte = gruppi.flatMap((g) => g.cicli);
+        const primo = tutte[0];
+        bots.push({
+            chiave: kb, bot: primo.bot,
+            sport: primo.bot === 'safe' ? primo.sport : null,
+            partite: gruppi, riepilogo: riepilogoChiuse(tutte),
+        });
+    }
+    const pos = (k: string) => { const i = ORDINE_GRUPPI.indexOf(k); return i < 0 ? 99 : i; };
+    bots.sort((a, b) => pos(a.chiave) - pos(b.chiave));
+    return { giorno, bots, riepilogo: riepilogoChiuse(posizioni) };
+}
+
+// ============================================================================
+// 18/09 - CERTEZZA DI CHIUSURA di una posizione della scheda.
+//
+// Il GIUDIZIO non vive qui: e' `lib/certezzaChiusura.ts`, lo stesso della
+// striscia di esito delle schede di uscita.
+// ============================================================================
+
+/** L'apertura di una posizione: la riga con l'id della posizione. */
 function aperturaDi(p: PosizioneChiusa): RigaChiusa | null {
     return p.righe.find((r) => r.id === p.id) ?? p.righe[0] ?? null;
 }
@@ -428,13 +775,8 @@ function statoMorto(stato: string): boolean {
 }
 
 /**
- * Il giudizio «effettivamente chiusa» di UNA posizione.
- *
- * `regolataDalMercato` si RICAVA dagli stati delle righe (apertura regolata e
- * ogni gamba regolata oppure annullata, cioe' morta senza rischio): non e' un
- * `true` cablato. Se un giorno il criterio d'ingresso della scheda cambiasse,
- * una posizione non regolata verrebbe giudicata per quello che e', non
- * dichiarata verde per costruzione.
+ * Il giudizio "effettivamente chiusa" di UNA posizione. `regolataDalMercato`
+ * si RICAVA dagli stati delle righe: non e' un `true` cablato.
  */
 export function certezzaDiPosizione(p: PosizioneChiusa): RisultatoCertezzaChiusura {
     const a = aperturaDi(p);
@@ -449,9 +791,7 @@ export function certezzaDiPosizione(p: PosizioneChiusa): RisultatoCertezzaChiusu
     });
 }
 
-/** Quante gambe di chiusura sono state ANNULLATE: la posizione e' regolata lo
- *  stesso, ma la copertura non e' stata quella chiesta e il trader lo deve
- *  vedere senza aprire il dettaglio. */
+/** Quante gambe di chiusura sono state ANNULLATE. */
 export function gambeAnnullate(p: PosizioneChiusa): number {
     const a = aperturaDi(p);
     return p.righe.filter((r) => r !== a && statoMorto(r.stato)).length;
@@ -465,12 +805,9 @@ export interface SintesiPosizione {
 }
 
 /**
- * Ingresso e chiusura in una riga: quota, stake ABBINATO, ora.
- *
- * I numeri sono quelli di `statoOrdine` (colonna, poi nota). Solo se mancano
- * si ripiega su `size`/`price` della riga — e solo per righe REGOLATE, dove
- * per costruzione del servizio `size`/`price` portano l'abbinato
- * (`migrations/trades_consapevolezza_ordine_2026-09-16.sql:11-13`).
+ * Ingresso e chiusura in una riga: quota, stake ABBINATO, ora. I numeri sono
+ * quelli di `statoOrdine`; solo se mancano si ripiega su `size`/`price` - e
+ * solo per righe REGOLATE, dove portano l'abbinato.
  */
 export function sintesiPosizione(p: PosizioneChiusa): SintesiPosizione {
     const abbinatoDi = (r: RigaChiusa): { stake: number | null; prezzo: number | null } => {

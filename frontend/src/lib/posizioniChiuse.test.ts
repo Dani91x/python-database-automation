@@ -268,8 +268,8 @@ describe('una gamba ancora viva = posizione NON chiusa', () => {
 // «in "posizioni chiuse" voglio vedere SOLO le posizioni della giornata, non
 // le precedenti; per i giorni precedenti deve esserci uno STORICO dedicato».
 //
-// La giornata e' quella di PIAZZAMENTO, nel fuso Europe/Rome — la stessa
-// attribuzione dello storico dei tre bot (`p_day_by='placed'`). Il confine e'
+// La giornata e' quella di REGOLAMENTO (24/09; fino al 23/09 era il
+// piazzamento), nel fuso Europe/Rome. Il confine e'
 // mezzanotte a ROMA, non a Londra e non nel fuso del browser: d'estate Roma e'
 // UTC+2, quindi le 22:00 UTC sono gia' il giorno dopo.
 // ============================================================================
@@ -285,28 +285,59 @@ describe('posizioni chiuse: SOLO la giornata operativa', () => {
         settled_at: '2026-09-16T12:00:00.000Z',
     });
 
-    it('la giornata viene dal PIAZZAMENTO, non dal regolamento', () => {
-        // piazzata il 16 alle 23:30 di Roma, regolata il 17: giornata = 16
+    // 24/09 - REGOLA CAMBIATA su ordine dell'utente ("i dati sono mischiati
+    // per giornata"): la giornata e' quella di REGOLAMENTO, come la barra di
+    // giornata e il conto Betfair. Prima era il piazzamento (test del 17/09).
+    it('la giornata viene dal REGOLAMENTO, non dal piazzamento', () => {
+        // piazzata il 16 alle 23:30 di Roma, regolata il 17: giornata = 17
         const p = posizioniChiuse([t({
             id: 12, pnl: 1,
             placed_at: '2026-09-16T21:30:00.000Z',   // 23:30 a Roma del 16
             settled_at: '2026-09-17T06:00:00.000Z',
         })]);
-        expect(p[0].giorno).toBe('2026-09-16');
+        expect(p[0].giorno).toBe('2026-09-17');
+        expect(p[0].giornoDa).toBe('regolamento');
     });
 
     it('il confine e\' mezzanotte a ROMA: d\'estate le 22:00 UTC sono gia\' il giorno dopo', () => {
-        const prima = posizioniChiuse([t({ id: 20, pnl: 1, placed_at: '2026-09-16T21:59:59.000Z' })]);
-        const dopo = posizioniChiuse([t({ id: 21, pnl: 1, placed_at: '2026-09-16T22:00:01.000Z' })]);
+        const prima = posizioniChiuse([t({ id: 20, pnl: 1, settled_at: '2026-09-16T21:59:59.000Z' })]);
+        const dopo = posizioniChiuse([t({ id: 21, pnl: 1, settled_at: '2026-09-16T22:00:01.000Z' })]);
         expect(prima[0].giorno).toBe('2026-09-16');   // 23:59:59 a Roma
         expect(dopo[0].giorno).toBe('2026-09-17');    // 00:00:01 a Roma
     });
 
     it('d\'inverno Roma e\' UTC+1: il confine si sposta alle 23:00 UTC', () => {
-        const prima = posizioniChiuse([t({ id: 22, pnl: 1, placed_at: '2026-01-14T22:59:59.000Z' })]);
-        const dopo = posizioniChiuse([t({ id: 23, pnl: 1, placed_at: '2026-01-14T23:00:01.000Z' })]);
+        const prima = posizioniChiuse([t({ id: 22, pnl: 1, placed_at: '2026-01-14T10:00:00.000Z', settled_at: '2026-01-14T22:59:59.000Z' })]);
+        const dopo = posizioniChiuse([t({ id: 23, pnl: 1, placed_at: '2026-01-14T10:00:00.000Z', settled_at: '2026-01-14T23:00:01.000Z' })]);
         expect(prima[0].giorno).toBe('2026-01-14');
         expect(dopo[0].giorno).toBe('2026-01-15');
+    });
+
+    it('senza nessun istante di regolamento ripiega sul piazzamento, e lo DICE', () => {
+        const p = posizioniChiuse([t({ id: 24, pnl: 1, placed_at: '2026-09-17T09:00:00.000Z', settled_at: null })]);
+        expect(p[0].giorno).toBe('2026-09-17');
+        expect(p[0].giornoDa).toBe('piazzamento');
+    });
+
+    it('una riga PAPER non eredita mai la data di Betfair, anche se il campo risulta valorizzato (verifica del coordinatore 24/09)', () => {
+        const p = posizioniChiuse([t({
+            id: 26, pnl: 1, mode: 'paper', pnl_betfair: 0.95,
+            settled_at: '2026-09-16T21:50:00.000Z',
+            pnl_betfair_settled_at: '2026-09-16T22:20:00.000Z',
+        })]);
+        expect(p[0].giorno).toBe('2026-09-16');
+        expect(p[0].modo).toBe('paper');
+    });
+
+    it('il reale di Betfair porta la SUA ora di regolamento (settledDate), non quella del bot', () => {
+        // il bot ha chiuso alle 23:50 del 16, Betfair ha regolato alle 00:20 del 17
+        const p = posizioniChiuse([t({
+            id: 25, pnl: 1, pnl_betfair: 0.95,
+            settled_at: '2026-09-16T21:50:00.000Z',
+            pnl_betfair_settled_at: '2026-09-16T22:20:00.000Z',
+        })]);
+        expect(p[0].giorno).toBe('2026-09-17');
+        expect(p[0].pnlGlobale).toBe(0.95);
     });
 
     it('il filtro di giornata tiene OGGI e lascia fuori IERI', () => {

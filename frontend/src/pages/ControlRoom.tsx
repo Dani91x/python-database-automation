@@ -702,7 +702,8 @@ export default function ControlRoom() {
                     </TabsContent>
 
                     <TabsContent value="chiuse" className="mt-3">
-                        <PosizioniChiuse chiuse={vm.chiuse} sport={sport} giorno={giornoOperativo} />
+                        <PosizioniChiuse righe={vm.righeChiuse} chiuse={vm.chiuse} sport={sport}
+                            giorno={giornoOperativo} barra={vm.composizioneOggi} />
                     </TabsContent>
                 </Tabs>
                 </ChiusuraRigaContext.Provider>

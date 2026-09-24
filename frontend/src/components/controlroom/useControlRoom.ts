@@ -58,7 +58,7 @@ import {
 } from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
 import {
-    posizioniChiuse, SOGLIA_PARI,
+    posizioniChiuse, rigaDaOrdineTennis,
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
@@ -684,6 +684,9 @@ export interface ControlRoomVM {
     /** posizioni GIA' CHIUSE: apertura + coperture, con il P&L della posizione
      *  intera. Le gambe di copertura non sono posizioni proprie. */
     chiuse: PosizioneChiusa[];
+    /** 24/09 - le righe GREZZE da cui `chiuse` e' costruita (7 bot, stesso
+     *  contratto): la scheda le unisce alle giornate lette dal database */
+    righeChiuse: TradeChiudibile[];
     /** event_id delle partite che stanno REGISTRANDO adesso */
     registrazioni: Set<string>;
 
@@ -1619,10 +1622,37 @@ export function useControlRoom(): ControlRoomVM {
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,
         tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs]);
 
-    // ── LE POSIZIONI GIA' CHIUSE, vinte e perse ──────────────────────────────
+    // -- LE POSIZIONI GIA' CHIUSE, vinte e perse -----------------------------
     // Una posizione e apertura + coperture: sul green-up del 14/09 le righe da
-    // sole dicono «una vinta e una persa», la POSIZIONE ha guadagnato +0,03.
-    const chiuse = useMemo<PosizioneChiusa[]>(() => {
+    // sole dicono "una vinta e una persa", la POSIZIONE ha guadagnato +0,03.
+    //
+    // 24/09 - VELOCITA' ("Posizioni chiuse e' LENTISSIMO", utente): il blocco
+    // dipendeva da `feedPerEvento`, che cambia a OGNI lotto del feed, e cosi'
+    // ricostruiva tutte le posizioni (2000+ righe) a ogni battito del feed
+    // anche a scheda chiusa. Dal feed serve solo il NOME della partita tennis:
+    // ora passa da una mappa che cambia solo quando cambiano i nomi.
+    const firmaNomiPartite = useMemo(() => {
+        const parti: string[] = [];
+        for (const r of scan) {
+            const p = r.payload as PartitaFeedLike | undefined;
+            const nome = p?.event_name ?? null;
+            if (nome) parti.push(`${String(r.event_id)}\u0001${nome}`);
+        }
+        return parti.join('\u0002');
+    }, [scan]);
+    const nomiPartite = useMemo(() => {
+        const m = new Map<string, string>();
+        if (!firmaNomiPartite) return m;
+        for (const coppia of firmaNomiPartite.split('\u0002')) {
+            const i = coppia.indexOf('\u0001');
+            if (i > 0) m.set(coppia.slice(0, i), coppia.slice(i + 1));
+        }
+        return m;
+    }, [firmaNomiPartite]);
+
+    /** le righe GREZZE dei 7 bot, con lo stesso contratto: la scheda le unisce
+     *  a quelle lette per giornata dal database (`lib/chiuseGiornata.ts`) */
+    const righeChiuse = useMemo<TradeChiudibile[]>(() => {
         const righe: TradeChiudibile[] = [];
         const aggiungi = (lista: readonly Record<string, unknown>[] | undefined, bot: Bot, sport?: string) => {
             for (const t of lista ?? []) {
@@ -1633,67 +1663,20 @@ export function useControlRoom(): ControlRoomVM {
         aggiungi(omegaTrades as unknown as Record<string, unknown>[], 'omega', 'calcio');
         aggiungi(safe?.trades as unknown as Record<string, unknown>[] | undefined, 'safe');
         aggiungi(mike?.trades as unknown as Record<string, unknown>[] | undefined, 'mike', 'calcio');
-        // ── GLI ORDINI GIA' REGOLATI DEI QUATTRO BOT TENNIS ─────────────────
-        // «Indipendenti come gli altri» (ordine dell'utente, 17/09): una
-        // posizione chiusa di un bot tennis entra in questa scheda con lo
-        // STESSO contratto delle righe di Omega/Safe/Mike, o il contatore
-        // mentirebbe per omissione. La giornata la filtra il meccanismo
-        // condiviso (`PosizioneChiusa.giorno`), qui non si filtra a mano.
-        //
-        // DUE TRADUZIONI OBBLIGATE, e nessuna inventata:
-        //  1. LO STATO. `tennis_live_orders.status` e' lo stato flumine, e
-        //     `EXECUTION_COMPLETE` vuol dire «abbinato tutto», non «regolato»:
-        //     `isSettled` non lo riconoscerebbe mai. Il regolamento lo dichiara
-        //     `settled_at` e l'esito lo dice il P&L.
-        //  2. IL P&L. `tennis_live_orders.pnl` e' LORDO, con la commissione in
-        //     una colonna sua; `RigaChiusa.pnl` e' NETTO per contratto. Si
-        //     sottrae quella dichiarata, mai una commissione stimata.
-        //
-        // Una riga regolata SENZA `pnl` non entra: il suo risultato non lo
-        // sappiamo ancora, e «0,00 €» sarebbe uno zero travestito da pareggio.
-        // Resta visibile fra le posizioni aperte finche' il numero non arriva.
+        // -- GLI ORDINI GIA' REGOLATI DEI QUATTRO BOT TENNIS -----------------
+        // "Indipendenti come gli altri" (ordine dell'utente, 17/09): stesso
+        // contratto delle righe di Omega/Safe/Mike. La traduzione (stato
+        // flumine -> regolato, P&L lordo -> netto, legame assente B13) e' UNA
+        // sola: `rigaDaOrdineTennis` in `lib/posizioniChiuse.ts`.
         for (const o of tennisOrdini) {
-            const bot = o.source;
-            if (bot == null || !isBotTennis(bot as Bot)) continue;
-            if (isErrorRow(o.status)) continue;
-            if (o.settled_at == null) continue;
-            const netto = pnlNettoTennis(o);
-            if (netto == null) continue;
-            const eventId = String(o.event_id ?? '');
-            const feed = feedPerEvento.get(eventId)?.payload as PartitaFeedLike | undefined;
-            righe.push({
-                id: o.id,
-                event_id: eventId,
-                event_name: feed?.event_name ?? null,
-                sport: 'tennis',
-                mode: o.mode,
-                // won / lost / void: sono gli unici stati che la piattaforma
-                // riconosce come regolati. Zero netto = niente si e' mosso.
-                status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
-                pnl: netto,
-                // 24/09 - portato avanti perche' la scheda dica "stimato" o no
-                pnl_betfair: o.pnl_betfair ?? null,
-                side: o.side,
-                price: o.price ?? null,
-                size: o.size ?? null,
-                // `tennis_live_orders` porta il `selection_id`, non il nome
-                selection_name: null,
-                placed_at: o.placed_at ?? null,
-                settled_at: o.settled_at,
-                // nessuna catena di coperture: ogni ordine e' una posizione sua
-                closes_trade_id: null,
-                strategy: null,
-                size_requested: o.size ?? null,
-                size_matched: o.size_matched ?? null,
-                size_remaining: o.size_remaining ?? null,
-                avg_price_matched: o.average_price_matched ?? null,
-                betfair_updated_at: o.updated_at ?? null,
-                meta: null,
-                __bot: bot as Bot,
-            });
+            const r = rigaDaOrdineTennis(o, nomiPartite.get(String(o.event_id ?? '')) ?? null,
+                (b) => isBotTennis(b as Bot));
+            if (r) righe.push(r);
         }
-        return posizioniChiuse(righe);
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento]);
+        return righe;
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, nomiPartite]);
+
+    const chiuse = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
 
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
@@ -2526,7 +2509,7 @@ export function useControlRoom(): ControlRoomVM {
         soldiGiornata: giornataSoldi,
         targetServizio,
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
-        bots, posizioni, chiuse, registrazioni, copertura,
+        bots, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
@@ -2611,23 +2594,6 @@ function ordineTennisAperto(o: TennisBotOrderRow): boolean {
     const residuo = Number(o.size_remaining ?? 0);
     return (Number.isFinite(abbinato) && abbinato > 0)
         || (Number.isFinite(residuo) && residuo > 0);
-}
-
-/**
- * Il P&L NETTO di UN ordine tennis: `pnl` e' lordo, la commissione sta nella
- * sua colonna. `null` = non ancora regolato, che non e' «0,00 €». Se la
- * commissione non e' dichiarata NON si stima: si prende il lordo com'e'.
- */
-function pnlNettoTennis(o: TennisBotOrderRow): number | null {
-    // 24/09 - il netto di BETFAIR quando c'e' (mai per una riga paper)
-    const reale = o.pnl_betfair;
-    if (String(o.mode ?? '').toLowerCase() !== 'paper'
-        && typeof reale === 'number' && Number.isFinite(reale)) return reale;
-    const lordo = o.pnl;
-    if (typeof lordo !== 'number' || !Number.isFinite(lordo)) return null;
-    const comm = o.commission;
-    const c = typeof comm === 'number' && Number.isFinite(comm) ? comm : 0;
-    return Math.round((lordo - c) * 100) / 100;
 }
 
 /** Il P&L NETTO di oggi di un bot tennis, dalle righe del database. `null` =

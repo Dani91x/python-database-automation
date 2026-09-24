@@ -349,6 +349,38 @@ describe('posizioni chiuse: i quattro bot tennis sono indipendenti come gli altr
         const result = await conOrdini([ordine({ source: 'runner' })]);
         expect(result.current.chiuse).toHaveLength(0);
     });
+
+    // 24/09 - VELOCITA': le chiuse NON si ricostruiscono a ogni battito del
+    // feed. Prima dipendevano da `feedPerEvento` (nuovo a ogni lotto dello
+    // scanner) e rifacevano tutte le posizioni anche a scheda chiusa.
+    it('un battito del feed con gli stessi nomi NON ricostruisce le chiuse; un nome nuovo si', async () => {
+        let spingi: ((ev: { type: 'upsert'; row: ScanRow }) => void) | null = null;
+        vi.mocked(subscribeScanRows).mockImplementation((cb) => {
+            spingi = cb as unknown as typeof spingi;
+            return () => { /* niente */ };
+        });
+        const riga = (minuto: number, nome: string): ScanRow => ({
+            event_id: 'T1', sport: 'tennis', updated_at: `${OGGI}T12:0${minuto}:00.000Z`,
+            payload: {
+                event_name: nome, p1: 'Sinner', p2: 'Alcaraz', competition: 'ATP', open_date: null,
+                inplay: true, mo_market_id: '1.77', mo_status: 'OPEN', odds: null,
+                sets: { p1: 0, p2: 0 }, games: { p1: minuto, p2: 0 },
+            },
+        });
+        const result = await conOrdini([ordine()]);
+        expect(spingi).not.toBeNull();
+        spingi!({ type: 'upsert', row: riga(1, 'Sinner - Alcaraz') });
+        await waitFor(() => expect(result.current.chiuse[0].partita).toBe('Sinner - Alcaraz'));
+        const prima = result.current.chiuse;
+        // stesso nome, games cambiati: il feed si muove, le chiuse no
+        spingi!({ type: 'upsert', row: riga(2, 'Sinner - Alcaraz') });
+        await new Promise((r) => setTimeout(r, 80));
+        await waitFor(() => expect(result.current.righeChiuse).toBeDefined());
+        expect(result.current.chiuse).toBe(prima);
+        // un nome nuovo invece si vede
+        spingi!({ type: 'upsert', row: riga(3, 'J. Sinner - C. Alcaraz') });
+        await waitFor(() => expect(result.current.chiuse[0].partita).toBe('J. Sinner - C. Alcaraz'));
+    });
 });
 
 // ================================ 3) LE GAMBE DI CHIUSURA NON SONO POSIZIONI (17/09 sera)

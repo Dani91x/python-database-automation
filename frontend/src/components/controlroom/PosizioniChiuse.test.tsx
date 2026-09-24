@@ -13,9 +13,14 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PosizioniChiuse } from './PosizioniChiuse';
-import { posizioniChiuse, type TradeChiudibile } from '@/lib/posizioniChiuse';
+import type { TradeChiudibile } from '@/lib/posizioniChiuse';
 
 const OGGI = '2026-09-17';
+
+/** 24/09 - la scheda legge la giornata dal database: qui nessuna riga in piu' */
+const nessunaLettura = async (giorno: string, modo: 'live' | 'paper') => ({
+    giorno, modo, righe: [], fonte: 'rpc' as const, avvisi: [], lettoAlle: 0,
+});
 
 function riga(over: Partial<TradeChiudibile> & { id: number }): TradeChiudibile {
     return {
@@ -30,7 +35,7 @@ function riga(over: Partial<TradeChiudibile> & { id: number }): TradeChiudibile 
 function monta(trades: TradeChiudibile[], sport: 'calcio' | 'tennis' | null = null) {
     return render(
         <MemoryRouter>
-            <PosizioniChiuse chiuse={posizioniChiuse(trades)} sport={sport} giorno={OGGI} />
+            <PosizioniChiuse righe={trades} sport={sport} giorno={OGGI} leggiGiornata={nessunaLettura} />
         </MemoryRouter>,
     );
 }
@@ -179,7 +184,7 @@ describe('certezza di chiusura: badge per riga e riepilogo in testa', () => {
         };
         render(
             <MemoryRouter>
-                <PosizioniChiuse sport={null} giorno={OGGI} chiuse={[{
+                <PosizioniChiuse sport={null} giorno={OGGI} leggiGiornata={nessunaLettura} chiuse={[{
                     id: 50, eventId: 'E50', partita: 'Aperta per davvero', sport: 'calcio',
                     modo: 'live', bot: 'safe', pnlGlobale: 0, esito: 'pari',
                     chiusaAt: '2026-09-17T12:00:00.000Z', piazzataAt: '2026-09-17T09:00:00.000Z',

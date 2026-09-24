@@ -390,12 +390,18 @@ export function isValidDay(day: string): boolean {
     return DAY_RE.test(day) && Number.isFinite(dayToMs(day)) && msToDay(dayToMs(day)) === day;
 }
 
+// 24/09 - UN SOLO formattatore, creato alla prima chiamata: costruirne uno
+// per ogni riga costava ~0,1 ms l'uno (240 ms su 2400 righe nella scheda
+// delle chiuse, rifatti a ogni battito del feed). Stesso risultato.
+let formatoRoma: Intl.DateTimeFormat | null = null;
+
 /** Giornata operativa CORRENTE (Europe/Rome) come 'YYYY-MM-DD'. */
 export function romeDay(now: Date = new Date()): string {
     try {
-        const parts = new Intl.DateTimeFormat('en-CA', {
+        formatoRoma ??= new Intl.DateTimeFormat('en-CA', {
             timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit',
-        }).formatToParts(now);
+        });
+        const parts = formatoRoma.formatToParts(now);
         const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
         const s = `${get('year')}-${get('month')}-${get('day')}`;
         if (DAY_RE.test(s)) return s;
