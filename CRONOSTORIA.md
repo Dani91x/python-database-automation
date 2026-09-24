@@ -2667,3 +2667,15 @@ controllo del gioco spento, uscite a tempo filtrate dal modello, tennis banda 1,
 in attesa di firma; trascrizioni dei video NON esistono: 63 video mai trascritti, `SPEC_STRATEGIA_S.md` non versionato);
 tab dashboard (Frequenze/Ritardi su `matches` senza realtime, Poisson/ML/TacticAI istantanee, TacticAI copertura
 4-16 % verificata da me sul DB, Direzione senza quota per `bets` rotto: verificato 185 quote su 1752 righe di oggi).
+**h15:25 — OMEGA ribattuta per partita (c3k): 35760084 19/19 e 35797769 19/19, 0 violazioni, azioni identiche al
+riferimento (scarti di 100-300 tick e ±1 decisione sui tempi di stop); 35777617 SALTATA per ordine dell'utente
+(«fai finire solo questa partita»): il riferimento c3h del 23/09 la copre (19/19). Action «Predictions Results
+Backfill» rilanciata da me alle 13:02 UTC dopo verifica delle 3 migrazioni sul DB (indice presente, piano con
+Index Scan su idx_as_league_id_id, RPC v2 con statement_timeout 600 s, doppione rimosso); esito in attesa.**
+**h15:45 — Scalper: S5 era l'ADATTATORE (silenzi veri della registrazione: due buchi da 3,7 s e 2,6 s dentro l'intervallo
+di 7,3 s; in produzione il heartbeat dorme su un thread separato con orologio reale) → banco corretto (`4f6f93b`,
+scomputo dei buchi, 2 test con i numeri veri, mutazione mia «nessun buco dichiarato» → 1 rosso); S3 è un reperto VERO
+del bot (residuo accettato non dichiarato: `_emit flatten_residual*` senza `msg`, `_strategy_flat` guarda solo lo slot)
+→ decisione D11 nel riepilogo. Test di paginazione con freno anti-blocco (63 verdi; con la mutazione `gte` 11 rossi in
+16 s invece del blocco). Action rilanciata alle 13:02 UTC: step risultati/signals/merge verdi, `enrich` in corso alle
+13:22 UTC.

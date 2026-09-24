@@ -142,3 +142,29 @@ Bot
 
 ## C. PROMEMORIA (richiesto da te)
 - Applicare i blocchi di sicurezza DB (B1 subito, B2/B3 dopo C2) e decidere D8.
+
+## D. ACTION «Predictions Results Backfill» (24/09 pomeriggio): cosa applicare e come rilanciare
+Cause trovate sul DB vero: (1) `enrich` leggeva `analytics_signals` per lega con OFFSET e il piano scorreva TUTTO
+l'indice primario (945 mila righe) → 57014 anche a blocchi di 25; (2) `bets`: la funzione `refresh_analytics_bets_range`
+aveva `statement_timeout = 0`, quindi dopo il timeout del client (600 s) continuava sul server (media 439 s per giorno,
+massimo 49 minuti) e i giorni successivi si accodavano; in più ricostruiva le quote bookmaker con un triplo unnest JSON
+per tutti i fixture del giorno e ripeteva 3 volte lo stesso sottoselect.
+1. Applica, nello SQL Editor, in quest'ordine, un file alla volta:
+   - `migrations/analytics_signals_idx_league_id_2026-09-24.sql` (CREATE INDEX CONCURRENTLY: fuori da una transazione;
+     dura qualche minuto su 945 mila righe; nessun dato cambia).
+   - `migrations/refresh_analytics_bets_range_v2_2026-09-24.sql` (nuova funzione con stessa firma, tabella di controllo
+     `book_odds_cache_fonte`, timeout server 600 s, funzione `_diag` per fase). Poi verifica di sola lettura:
+     `select * from refresh_analytics_bets_range_diag('2026-09-20','2026-09-21');` dentro `begin; ... rollback;`
+     (deve finire in pochi minuti e mostrare i tempi per fase) — la faccio io se preferisci.
+   - `migrations/fixture_predictions_drop_idx_doppione_2026-09-24.sql` (indice doppione della pkey, fuori transazione).
+2. Rilancia a mano da GitHub → Actions → «Predictions Results Backfill» → Run workflow, UNA volta, con `date` vuota
+   (finestra di 4 giorni) e `leagues` vuoto; se vuoi recuperare SOLO le 10 leghe saltate ieri: `leagues=292,293,653,251,401,164,253,489,650,243`.
+   Atteso: step `enrich` e `bets` verdi, gate verde, zero 57014 nel log. Poi io rileggo il log e i tempi in
+   `pg_stat_statements` (massimo sotto 600 s).
+3. Se `bets` dovesse ancora fallire con la v2: il log dice la fase (fixture_finestra / quote / delete / insert) e il
+   tempo: da lì si decide, senza indovinare.
+- D11 Scalper, reperto S3 del banco (verificato sul replay della partita 35797769): a fine sessione il bot chiude
+  'done' con un residuo accettato dall'anti-churn (−0,20/+0,40) SENZA dichiarare «posizione NON flat» (gli eventi
+  `flatten_residual*` non portano il messaggio; `_strategy_flat` guarda solo lo stato dello slot, non l'esposizione).
+  Correzione minima proposta: aggiungere il messaggio di dichiarazione ai due `_emit` (`scalper_bot.py:1871,1891`); più
+  robusta: calcolare l'esposizione dal blotter prima dello stato finale in `scalper_session.py:~1121`. Decidi tu.
