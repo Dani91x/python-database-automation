@@ -38,6 +38,10 @@ _CHIAMANTI_ATTESI = {
     "Betfair/safe_strategy/tools/replay_registrazioni.py",
     "Betfair/stream/backtest/banco_comune.py",
     "Betfair/stream/live_order_worker.py",
+    # 24/09 (estensione 3, decisione dell'utente): il motore ordini verifica la
+    # percorribilita' con ``start_submin`` (puro) e poi usa la macchina DEL
+    # WORKER (``_start_submin``/``_advance_submin_row``): nessuna copia.
+    "Betfair/stream/motore_ordini.py",
     "Betfair/stream/scalper/scalper_bot.py",
     "Betfair/stream/scalper/sniper_bot.py",
     "Betfair/stream/scalper_lab/scalper_bot_base.py",

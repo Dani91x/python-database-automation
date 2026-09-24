@@ -112,9 +112,13 @@ class _ClientSpia(clients.BetfairClient):
 class _Blotter:
     def __init__(self) -> None:
         self.ordini: Dict[str, Any] = {}
+        self.per_id: Dict[str, Any] = {}
 
     def get_order_bet_id(self, bet_id: str) -> Optional[Any]:
         return self.ordini.get(bet_id)
+
+    def __getitem__(self, oid: str) -> Any:        # blotter[order.id] come flumine
+        return self.per_id[oid]
 
     def strategy_orders(self, _s: Any) -> List[Any]:
         return list(self.ordini.values())
@@ -131,6 +135,13 @@ class _Market:
         self.calls: List[tuple] = []
         self._registro = registro
         self.su_place: Any = None  # sonda chiamata DENTRO place_order
+        # BORSA (place-and-trim): come Betfair, il place assegna un bet_id e rende
+        # l'ordine EXECUTABLE; il cancel parziale riduce il residuo; il replace
+        # sposta la quota. Stati e numeri si leggono dall'ordine flumine VERO
+        # (``bet_id``, ``status``, ``size_remaining``, ``order_type.price``).
+        self.borsa = False
+        self.rifiuta_replace = False
+        self._n = 0
 
     def place_order(self, order: Any, customer_strategy_ref: Any = None,
                     client: Any = None, **_k: Any) -> bool:
@@ -140,10 +151,30 @@ class _Market:
             self.su_place(order)
         self.calls.append((order, customer_strategy_ref, client))
         client.eseguiti.append(order)
+        if self.borsa:
+            self._n += 1
+            order.client = client
+            order.bet_id = f"3124260{self._n:04d}"
+            order.executable()
+            self.blotter.ordini[order.bet_id] = order
+            self.blotter.per_id[order.id] = order
         return True
 
     def cancel_order(self, order: Any, size_reduction: Optional[float] = None) -> bool:
         self.calls.append(("cancel", order, size_reduction))
+        if self.borsa and hasattr(order, "order_type"):
+            if size_reduction is None:
+                order.order_type.size = 0.0
+                order.execution_complete()
+            else:
+                order.order_type.size = round(order.order_type.size - size_reduction, 2)
+        return True
+
+    def replace_order(self, order: Any, new_price: float) -> bool:
+        self.calls.append(("replace", order, new_price))
+        if self.rifiuta_replace:
+            return False
+        order.order_type.price = new_price
         return True
 
 
@@ -511,13 +542,110 @@ def test_reduces_liability_solo_dal_comando_mai_dai_params():
     assert piano["riga"]["params"]["reduces_liability"] is True and piano["riduce"] is True
 
 
-def test_sotto_il_minimo_rifiutato_con_motivo_esplicito(amb):
-    ws = amb.ch.collega("safe")
-    _manda(amb, ws, _cmd(n=1, size=1.0))                 # BACK .it: minimo 2,00
-    assert _ack(amb, ws)["motivo"].startswith(MO.M_SUBMIN)
+def _giri_submin(amb: Any, n: int = 6) -> None:
+    for _ in range(n):
+        amb.motore.avanza_submin()
+
+
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_sotto_il_minimo_place_and_trim_in_ram_con_eventi(amb, mode):
+    """Estensione 3 (decisione dell'utente): BACK 1,00 sotto il minimo .it 2,00
+    -> park del minimo a quota non abbinabile, trim di 1,00, replace alla quota
+    chiesta; paper e live con la STESSA macchina, ognuno col suo client."""
+    amb.market.borsa = True
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=1.0, price=3.0))
+    assert _ack(amb, ws)["accettato"] is True
+    # gradino 1: UN solo place, del MINIMO, a quota non abbinabile, sul client giusto
+    ordine, sref, client = amb.market.calls[0]
+    assert client is (amb.paper if mode == "paper" else amb.reale)
+    assert sref == "mike"                         # strategy ref dell'attore anche qui
+    assert ordine.order_type.size == 2.0 and ordine.order_type.price == 1000.0
+    assert amb.motore._submin                     # in corso, in RAM
+    _giri_submin(amb)
+    assert not amb.motore._submin
+    tipi = [c[0] if isinstance(c[0], str) else "place" for c in amb.market.calls]
+    assert tipi == ["place", "cancel", "replace"]
+    assert amb.market.calls[1][2] == 1.0          # riduzione al centesimo: 2,00 -> 1,00
+    assert amb.market.calls[2][2] == 3.0          # replace alla quota chiesta
+    assert ordine.order_type.size == 1.0 and ordine.order_type.price == 3.0
+    ev = [m["d"] for m in amb.ch.per_ws(ws, "order")]
+    assert [e["fase"] for e in ev] == ["inviato", "parcheggiato", "ridotto",
+                                      "accettato_betfair"]
+    assert [e["submin_step"] for e in ev] == ["placed", "placed", "trimmed", "repriced"]
+    assert all(e["ref"] == "mike-t1" for e in ev)
+    seqs = [e["seq"] for e in ev]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
+    assert ev[-1]["size"] == 1.0 and ev[-1]["price"] == 3.0
+    # il DB lo scrive lo scrittore, a sequenza finita: riga done place_submin
+    assert amb.scrittore.svuota(5.0)
+    riga = next(p for _t, tab, op, p in amb.sb.chiamate
+                if tab == "betfair_live_order_requests" and op == "insert")
+    assert riga["action"] == "place_submin" and riga["status"] == "done"
+    # diario: comando, ordine (park) prima del place, esito
+    righe = _righe_diario(amb)
+    assert [r["tipo"] for r in righe if r.get("ref") == "mike-t1"] == [
+        "inviato", "ordine", "esito"]
+
+
+def test_place_and_trim_nessun_sonno_nel_thread_del_motore(amb, monkeypatch):
+    """Il gradino 1 torna SUBITO: la sequenza avanza a giri, mai time.sleep."""
+    amb.market.borsa = True
+    dormite: List[float] = []
+    monkeypatch.setattr(LOW.time, "sleep", lambda s: dormite.append(s))
+    monkeypatch.setattr(MO.time, "sleep", lambda s: dormite.append(s))
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    assert len(amb.market.calls) == 1 and amb.motore._submin
+    _giri_submin(amb)
+    assert dormite == []
+
+
+def test_place_and_trim_replace_rifiutato_errore_e_mai_residuo_nascosto(amb):
+    amb.market.borsa = True
+    amb.market.rifiuta_replace = True
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    _giri_submin(amb)
+    assert not amb.motore._submin
+    ev = [m["d"] for m in amb.ch.per_ws(ws, "order")]
+    assert ev[-1]["fase"] == "errore" and "replace" in ev[-1]["errore"]
+
+
+def test_place_and_trim_timeout_ritira_il_residuo(amb, monkeypatch):
+    amb.market.borsa = True
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    ordine = amb.market.calls[0][0]
+    monkeypatch.setattr(LOW, "_submin_timeout_sec", lambda: -1.0)
+    amb.motore.avanza_submin()
+    assert ("cancel", ordine, None) in amb.market.calls
+    assert amb.ch.per_ws(ws, "order")[-1]["d"]["fase"] == "errore"
+    assert not amb.motore._submin
+
+
+@pytest.mark.parametrize("modifica,parola", [
+    ({"size": 0.005}, "floor"),                         # sotto il centesimo
+    ({"time_in_force": "FILL_OR_KILL"}, "FILL_OR_KILL"),  # FOK non parcheggiabile
+])
+def test_place_and_trim_non_percorribile_rifiuto_con_motivo(amb, modifica, parola):
+    amb.market.borsa = True
+    ws = amb.ch.collega("mike")
+    d = _cmd("mike", 1, size=1.0, price=3.0)
+    d.update(modifica)
+    _manda(amb, ws, d)
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_SUBMIN)
+    assert parola in ack["motivo"]
     assert amb.market.calls == []
+
+
+def test_sopra_il_minimo_nessun_place_and_trim(amb):
+    ws = amb.ch.collega("safe")
     _manda(amb, ws, _cmd(n=2, side="LAY", size=0.6))     # LAY .it: minimo 0,50
     assert _ack(amb, ws)["accettato"] is True
+    assert amb.motore._submin == {} and len(amb.market.calls) == 1
+    assert amb.market.calls[0][0].order_type.size == 0.6
 
 
 @pytest.mark.parametrize("win,lose,side,price,size,atteso", [

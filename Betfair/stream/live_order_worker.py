@@ -137,7 +137,14 @@ def _modo_processo() -> str:
     cash-out, uscite ``reduces_liability``): un freno ferma le aperture, mai le
     vie di uscita. Le APERTURE seguono ``_live_order_mode()`` (modo effettivo).
     Usa ``config_stream.live_order_mode()``; fallback all'env. Default OFF.
+
+    24/09 (banco F4): ``_CONTESTO.modo_processo`` impostato SUL THREAD dal banco
+    (``PortaBanco``) vale al posto dell'env: nel replay il processo e' PAPER per
+    costruzione (solo client simulato), qualunque sia il .env della macchina.
     """
+    ov = getattr(_CONTESTO, "modo_processo", None)
+    if ov:
+        return str(ov).upper()
     try:
         from . import config_stream  # import lazy: evita cicli all'avvio
         if hasattr(config_stream, "live_order_mode"):
@@ -2867,7 +2874,9 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
             jurisdiction=juris,
             strategy=strategy,
             max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
-            customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+            # FIX (b) + 24/09: strategy-ref nativo Betfair = quello dell'ATTORE
+            # del comando (motore); "live" per coda DB e /order come prima.
+            customer_strategy_ref=_strategy_ref_corrente(),
             client=client,                                  # F0: client della mode DELLA RIGA
         )
     )
@@ -2930,7 +2939,7 @@ def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode
         jurisdiction=juris,
         strategy=strategy,
         max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
-        customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+        customer_strategy_ref=_strategy_ref_corrente(),  # 24/09: ref dell'attore (motore)
         client=client,                                  # F0: client della mode DELLA RIGA
     )
     # allow_place=False: questo è il percorso di SOLA-RIPRESA. Lo step1 (place) avviene

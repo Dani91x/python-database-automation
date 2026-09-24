@@ -108,7 +108,15 @@ M_SUBMIN = "submin_non_percorribile"
 MOTIVO_REF_GIA_VISTO = "ref_gia_visto"
 
 # Fasi degli eventi ``order``.
-FASI = ("inviato", "accettato_betfair", "rifiutato", "abbinato_parziale",
+# 24/09 (estensione 3, place-and-trim): passi della macchina -> fase dell'evento.
+# ``parcheggiato`` = minimo a quota non abbinabile, ``ridotto`` = trim alla size
+# chiesta, poi l'ordine e' alla quota target (``accettato_betfair``); le fasi di
+# abbinamento arrivano dallo specchio come per ogni ordine. Ogni evento del
+# place-and-trim porta anche ``submin_step`` (passo esatto della macchina).
+FASE_SUBMIN = {"placed": "parcheggiato", "trimmed": "ridotto",
+               "repriced": "accettato_betfair", "done": "accettato_betfair"}
+FASI = ("inviato", "parcheggiato", "ridotto", "accettato_betfair", "rifiutato",
+        "abbinato_parziale",
         "abbinato", "annullato", "scaduto", "errore")
 
 # Chiavi della riga dello specchio ``betfair_live_orders`` (LiveTradingStrategy
@@ -517,8 +525,21 @@ class MotoreOrdini:
                  motivo_guardia_order: str = "runner in ripresa: comando NON eseguito, riprova",
                  orologio_ms: Callable[[], int] = _ora_ms,
                  max_eta_settings_s: Optional[float] = None,
-                 attori: frozenset = ATTORI_COMANDO) -> None:
+                 attori: frozenset = ATTORI_COMANDO,
+                 modo_processo: Optional[str] = None,
+                 blocco_modo: Optional[Callable[..., Optional[str]]] = None,
+                 eta_settings: Optional[Callable[[], float]] = None) -> None:
         self.sport = sport
+        # 24/09 (banco F4): nel replay il processo e' PAPER per costruzione e non
+        # c'e' ne' DB ne' Control Room: ``modo_processo`` vale sul thread durante
+        # controlli e dispatch (``LOW._CONTESTO.modo_processo``), ``blocco_modo``
+        # e ``eta_settings`` sostituiscono le letture dei settings. In produzione
+        # restano None = funzioni del worker (nessun comportamento diverso).
+        self._modo_processo_forzato = modo_processo
+        self._blocco_modo = blocco_modo or LOW._blocco_apertura_modo
+        self._eta_settings = eta_settings or LOW.eta_settings_s
+        # place-and-trim in corso: ref interno awlq<rid> -> stato in RAM
+        self._submin: Dict[str, Dict[str, Any]] = {}
         self.canale = canale
         self.diario = diario
         self.scrittore = scrittore
@@ -611,8 +632,11 @@ class MotoreOrdini:
         self.thread_ident = threading.get_ident()
         while not self._stop.is_set():
             # timeout di sicurezza: se una sveglia andasse persa, il comando
-            # aspetta al massimo questo (mai il secondo del worker).
-            self._evento.wait(timeout=0.5)
+            # aspetta al massimo questo (mai il secondo del worker). Con un
+            # place-and-trim in corso il giro e' al passo della macchina
+            # (``_SUBMIN_POLL_SEC``): si avanza in RAM, mai un sonno sincrono.
+            attesa = LOW._SUBMIN_POLL_SEC if self._submin else 0.5
+            self._evento.wait(timeout=attesa)
             self._evento.clear()
             if self._stop.is_set():
                 return
@@ -620,6 +644,10 @@ class MotoreOrdini:
                 self.drena()
             except Exception:  # noqa: BLE001 - il motore non muore per un comando
                 logger.exception("[motore] giro KO")
+            try:
+                self.avanza_submin()
+            except Exception:  # noqa: BLE001
+                logger.exception("[motore] avanzamento place-and-trim KO")
 
     def drena(self, max_giri: int = 20) -> int:
         """Serve tutto cio' che e' in coda sul canale. Ritorna i messaggi gestiti."""
@@ -715,12 +743,15 @@ class MotoreOrdini:
                 self.canale.invia(c.ws, {"t": "ack", "d": dict(
                     prima, motivo=MOTIVO_REF_GIA_VISTO)})
             return
+        self._imposta_contesto(None, None)   # modo di processo forzato (banco) o env
         try:
             piano = valida_comando(c.attore, d)
             self._controlla(piano, c.ricevuto_ms)
         except Rifiuto as r:
             self._rifiuta_registrato(c, ref, str(r))
             return
+        finally:
+            self._pulisci_contesto()
         seq = self._prossimo_seq(c.attore)
         ack = self._ack(ref, seq, True, None, c.ricevuto_ms)
         riga = piano["riga"]
@@ -808,7 +839,7 @@ class MotoreOrdini:
         # 24/09 (fusione con master): modo EFFETTIVO dalla Control Room sulle
         # APERTURE, PRIMA del kill-switch. Una riduzione dichiarata conta come
         # chiusura SOLO se verificata: i params passati sono quelli verificati.
-        blocco = LOW._blocco_apertura_modo(
+        blocco = self._blocco_modo(
             mode, azione, {"reduces_liability": True} if chiusura else {})
         if blocco:
             raise Rifiuto(M_MODE, blocco)
@@ -819,24 +850,36 @@ class MotoreOrdini:
                                                "verificabile sulle esposizioni del runner")
                 raise Rifiuto(M_KILL, "kill-switch ATTIVO: solo chiusure permesse")
         if not chiusura:
-            eta_s = LOW.eta_settings_s()
+            eta_s = self._eta_settings()
             if eta_s > self.max_eta_settings_s:
                 raise Rifiuto(M_SETTINGS, f"copia dei settings vecchia di {eta_s:.1f} s "
                                           f"(> {self.max_eta_settings_s:.1f} s): kill-switch "
                                           f"e limiti del DB non verificabili")
         if azione == "place" and not riduce:
-            # estensione 24/09 (3): sotto il minimo di Betfair il place-and-trim
-            # NON e' ancora servito dal canale (punto di ripresa 1 in
-            # STATO_RIPRESA.md): rifiuto esplicito, mai un invio che build_order
-            # rifiuterebbe dopo l'ack.
+            # estensione 24/09 (3), decisione dell'utente: sotto il minimo di
+            # Betfair il motore usa la STESSA macchina place-and-trim del worker
+            # (``_start_submin`` + ``_advance_submin_row``), in paper E in live
+            # (paper = stessa macchina sul client simulato). Qui SOLO la verifica
+            # di percorribilita' (``start_submin``, pura): se la macchina non puo'
+            # partire -> rifiuto ``submin_non_percorribile`` col motivo suo.
             try:
                 minimo = float(LOW._sub_minimum_floor(str(riga["side"]).lower()))
             except Exception:  # noqa: BLE001 - minimo ignoto: fail-closed
-                minimo = float("inf")
+                raise Rifiuto(M_SUBMIN, "minimo di giurisdizione non determinabile")
             if float(riga["size"]) < minimo - 1e-9:
-                raise Rifiuto(M_SUBMIN, f"size {riga['size']:.2f} sotto il minimo "
-                                        f"{minimo:.2f}: place-and-trim non ancora servito "
-                                        f"dal canale")
+                if riga.get("time_in_force") == "FILL_OR_KILL":
+                    raise Rifiuto(M_SUBMIN, "FILL_OR_KILL sotto il minimo: il "
+                                            "place-and-trim parcheggia l'ordine, non "
+                                            "puo' essere un fill-or-kill")
+                from .trading.submin import start_submin
+                try:
+                    start_submin(side=str(riga["side"]).lower(),
+                                 target_price=float(riga["price"]),
+                                 target_size=float(riga["size"]),
+                                 jurisdiction=LOW._jurisdiction())  # come _start_submin
+                except ValueError as ex:
+                    raise Rifiuto(M_SUBMIN, str(ex)[:200]) from ex
+                piano["submin"] = True
 
     def _riduzione_verificata(self, flumine: Any, riga: Dict[str, Any], mode: str) -> bool:
         """Il place riduce DAVVERO la posizione abbinata del runner? Legge le
@@ -890,8 +933,12 @@ class MotoreOrdini:
         differito = LOW._SbDifferito()
         lsb = LOW._LocalSb(differito)
         ok, errore = True, None
-        LOW._CONTESTO.strategy_ref = piano["strategy_ref"]
-        LOW._CONTESTO.pre_invio = self._pre_invio(ref)
+        submin = bool(piano.get("submin"))
+        if submin:
+            # la STESSA macchina del worker: azione place_submin (step INIT->PLACED
+            # qui, gli step successivi da ``avanza_submin`` a ogni giro)
+            riga["action"] = "place_submin"
+        self._imposta_contesto(piano["strategy_ref"], self._pre_invio(ref))
         try:
             with LOW.LUCCHETTO_ORDINI:
                 LOW._dispatch(lsb, self._flumine, riga, mode, self._strategie)
@@ -902,10 +949,12 @@ class MotoreOrdini:
             except Exception as ex_w:  # noqa: BLE001
                 logger.error("[motore] esito error di %s non catturato: %s", ref, ex_w)
         finally:
-            LOW._CONTESTO.strategy_ref = None
-            LOW._CONTESTO.pre_invio = None
+            self._pulisci_contesto()
         result = lsb.captured.get("result") or {"ok": ok, "action": riga["action"],
                                                 "mode": mode, "error": errore}
+        if ok and submin:
+            self._avvia_submin(attore, ref, piano, cust, differito, lsb, result)
+            return
         try:
             self.diario.scrivi({"tipo": "esito", "ref": ref, "ok": ok, "errore": errore,
                                 "risultato": result, "ts_ms": self._ora_ms()})
@@ -934,8 +983,154 @@ class MotoreOrdini:
         self.scrittore.accoda(f"comando {ref}", LOW._job_locale(
             differito, riga, dict(lsb.captured), mode, contesto))
 
-    def _emetti(self, attore: str, ref: str, riga: Dict[str, Any], fase: str) -> None:
+    # --------------------------------------------------- contesto sul thread
+    def _imposta_contesto(self, strategy_ref: Optional[str], pre_invio: Any) -> None:
+        LOW._CONTESTO.strategy_ref = strategy_ref
+        LOW._CONTESTO.pre_invio = pre_invio
+        LOW._CONTESTO.modo_processo = self._modo_processo_forzato
+
+    @staticmethod
+    def _pulisci_contesto() -> None:
+        LOW._CONTESTO.strategy_ref = None
+        LOW._CONTESTO.pre_invio = None
+        LOW._CONTESTO.modo_processo = None
+
+    # ------------------------------------------- place-and-trim (estensione 3)
+    def _avvia_submin(self, attore: str, ref: str, piano: Dict[str, Any], cust: str,
+                      differito: Any, lsb: Any, result: Dict[str, Any]) -> None:
+        """Il gradino 1 (park al minimo) e' partito: la sequenza si registra in
+        RAM e avanza a ogni giro del motore (``avanza_submin``). Le righe dello
+        specchio restano TRATTENUTE finche' la sequenza non e' terminale: il
+        park a quota non abbinabile non e' la posizione che l'attore ha chiesto."""
+        riga = piano["riga"]
+        stato = {"attore": attore, "ref": ref, "mode": piano["mode"], "riga": riga,
+                 "differito": differito, "captured": lsb.captured,
+                 "strategy_ref": piano["strategy_ref"], "t0": time.monotonic(),
+                 "step": None}
+        self._submin[cust] = stato
+        with self._lock_seq:
+            self._emetti(attore, ref, riga_specchio_da_esito(
+                result, cust_ref=cust, rid=riga["id"], mode=piano["mode"], riga=riga),
+                "inviato", extra={"submin_step": result.get("submin_step")})
+        self._dopo_passo_submin(cust)
+
+    def avanza_submin(self) -> int:
+        """UN passo per ogni place-and-trim in corso (``_advance_submin_row`` del
+        worker, ``allow_place=False``: mai un secondo place). Nessun sonno."""
+        n = 0
+        for cust in list(self._submin):
+            s = self._submin.get(cust)
+            if s is None or self._flumine is None:
+                continue
+            n += 1
+            riga = s["riga"]
+            mode = s["mode"]
+            lsb = LOW._LocalSb(s["differito"])
+            lsb.captured = s["captured"]
+            if time.monotonic() - s["t0"] > LOW._submin_timeout_sec():
+                self._abbandona_submin(cust, lsb, "timeout della sequenza place-and-trim")
+                continue
+            riga_corrente = dict(riga)
+            riga_corrente["result"] = s["captured"].get("result")
+            self._imposta_contesto(s["strategy_ref"], self._pre_invio(s["ref"]))
+            try:
+                with LOW.LUCCHETTO_ORDINI:
+                    LOW._advance_submin_row(
+                        lsb, self._flumine, riga_corrente, mode,
+                        LOW._strategy_for_mode(self._strategie, mode),
+                        client=LOW._client_for_mode(self._flumine, mode))
+            except Exception as ex:  # noqa: BLE001 - come il worker: riga in errore
+                try:
+                    LOW._write_error(lsb, riga["id"], riga, mode, ex)
+                except Exception:  # noqa: BLE001
+                    pass
+                self._chiudi_submin(cust, False, str(ex))
+                continue
+            finally:
+                self._pulisci_contesto()
+            self._dopo_passo_submin(cust)
+        return n
+
+    def _dopo_passo_submin(self, cust: str) -> None:
+        s = self._submin.get(cust)
+        if s is None:
+            return
+        result = s["captured"].get("result") or {}
+        step = result.get("submin_step")
+        if step != s["step"]:
+            s["step"] = step
+            fase = FASE_SUBMIN.get(str(step))
+            if fase is not None and fase != s.get("fase"):
+                s["fase"] = fase
+                with self._lock_seq:
+                    self._emetti(s["attore"], s["ref"], riga_specchio_da_esito(
+                        result, cust_ref=cust, rid=s["riga"]["id"], mode=s["mode"],
+                        riga=s["riga"]), fase, extra={"submin_step": step})
+        if step == "done":
+            self._chiudi_submin(cust, True, None)
+        elif step == "aborted":
+            self._chiudi_submin(cust, False, result.get("error") or result.get("detail"))
+
+    def _abbandona_submin(self, cust: str, lsb: Any, motivo: str) -> None:
+        """Timeout: il residuo si RITIRA (mai un parcheggio lasciato a mercato
+        senza dirlo), poi errore esplicito."""
+        s = self._submin[cust]
+        result = s["captured"].get("result") or {}
+        try:
+            ordine = LOW._find_submin_order(
+                self._flumine, s["riga"].get("market_id"), result.get("submin_order_id"),
+                result.get("bet_id"), cust_ref=cust)
+            if ordine is not None:
+                with LOW.LUCCHETTO_ORDINI:
+                    LOW._resolve_market(self._flumine, s["riga"].get("market_id")) \
+                        .cancel_order(ordine)
+        except Exception:  # noqa: BLE001 - ritiro best-effort, l'errore si dice sotto
+            logger.exception("[motore] place-and-trim %s: ritiro del residuo KO", s["ref"])
+        try:
+            LOW._write_error(lsb, s["riga"]["id"], s["riga"], s["mode"], ValueError(motivo))
+        except Exception:  # noqa: BLE001
+            pass
+        self._chiudi_submin(cust, False, motivo)
+
+    def _chiudi_submin(self, cust: str, ok: bool, errore: Optional[str]) -> None:
+        s = self._submin.pop(cust, None)
+        if s is None:
+            return
+        result = s["captured"].get("result") or {}
+        try:
+            self.diario.scrivi({"tipo": "esito", "ref": s["ref"], "ok": ok, "errore": errore,
+                                "risultato": result, "ts_ms": self._ora_ms()})
+        except Exception as ex:  # noqa: BLE001
+            logger.critical("[motore] esito place-and-trim %s NON scritto nel diario: %s",
+                            s["ref"], ex)
+        with self._lock_seq:
+            if not ok:
+                self._emetti(s["attore"], s["ref"], riga_specchio_da_esito(
+                    result, cust_ref=cust, rid=s["riga"]["id"], mode=s["mode"],
+                    riga=s["riga"]), "errore",
+                    extra={"submin_step": result.get("submin_step"), "errore": errore})
+            info = self._rif_interni.get(cust)
+            if info is not None:
+                info["pronto"] = True
+                trattenuti, info["trattenuti"] = info["trattenuti"], []
+                if trattenuti:
+                    # SOLO l'ultima riga: lo stato attuale dell'ordine su Betfair
+                    ultima = trattenuti[-1]
+                    self._emetti(s["attore"], s["ref"], ultima, fase_da_riga(ultima))
+        contesto = None
+        if ok:
+            try:
+                contesto = LOW._journal_contesto(self._flumine, s["riga"])
+            except Exception:  # noqa: BLE001
+                contesto = None
+        self.scrittore.accoda(f"comando {s['ref']}", LOW._job_locale(
+            s["differito"], s["riga"], dict(s["captured"]), s["mode"], contesto))
+
+    def _emetti(self, attore: str, ref: str, riga: Dict[str, Any], fase: str,
+                extra: Optional[Dict[str, Any]] = None) -> None:
         d = dict(riga)
+        if extra:
+            d.update(extra)
         d.update({"ref": ref, "seq": self._prossimo_seq(attore), "fase": fase,
                   "esito_ms": self._ora_ms()})
         self.conti["order"] += 1
@@ -1000,18 +1195,18 @@ class MotoreOrdini:
         # capacita' del processo, come ``_process_once``/``esegui_richieste_locali_
         # scelte`` su master: il modo effettivo lo applica per comando
         # ``_blocco_apertura_modo`` dentro ``_process_local_requests``.
-        mode = LOW._modo_processo()
+        mode = (self._modo_processo_forzato or LOW._modo_processo()).upper()
         if mode not in ("PAPER", "LIVE"):
             for r in reqs:
                 ch.respond(r, False, error="modalita' ordini OFF: comando NON eseguito")
             return
-        LOW._CONTESTO.pre_invio = self._pre_invio_order()
+        self._imposta_contesto(None, self._pre_invio_order())
         try:
             LOW._process_local_requests(None, self._flumine, mode.lower(), self._strategie,
                                         reqs=list(reqs), differisci=self._differisci,
                                         diario=self)
         finally:
-            LOW._CONTESTO.pre_invio = None
+            self._pulisci_contesto()
             self._ref_corrente = None
 
     def _differisci(self, descrizione: str, job: Callable[[Any], None]) -> None:
