@@ -28,9 +28,10 @@ import argparse
 import io
 import json
 import logging
+import contextlib
 import os
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Iterator, Any, Dict, List, Optional, Tuple
 
 from . import registro_bot as REG
 
@@ -212,6 +213,30 @@ def impronta(scheda: "REG.BotRegistrato") -> Dict[str, str]:
 # Il referto NON cambia: i risultati si raccolgono e si stampano nell'ORDINE
 # CANONICO (per scenario, poi per evento) che avevano prima, e il `--diario`
 # resta una riga per evento nello stesso ordine.
+@contextlib.contextmanager
+def _freni_da_banco() -> Iterator[None]:
+    """24/09 - i freni GLOBALI degli ordini reali (modo ordini dalla UI e
+    kill-switch condiviso) leggono ``betfair_live_settings`` dal DB prima di
+    ogni apertura live. Il banco NON tocca mai il DB: qui si dichiara, per la
+    durata del replay e per TUTTI i bot (in casa e nei processi figli), la
+    riga "dalla UI" a LIVE senza kill (``modo_ordini.dichiara_per_banco``) e
+    la cache dei settings di ``controls`` a "kill spento, mai da rileggere".
+    Senza, ogni apertura live tentava una connessione rifiutata (sandbox) e il
+    replay di Mike impiegava ore invece di minuti (reperto del 24/09)."""
+    from Betfair.stream import modo_ordini as _mo
+    from Betfair.stream.trading import controls as _ctl
+
+    prima = dict(_ctl._SETTINGS_CACHE)
+    _ctl._SETTINGS_CACHE["data"] = {"kill_switch": False}
+    _ctl._SETTINGS_CACHE["ts"] = float("inf")
+    try:
+        with _mo.dichiara_per_banco("LIVE", kill=False):
+            yield
+    finally:
+        _ctl._SETTINGS_CACHE.clear()
+        _ctl._SETTINGS_CACHE.update(prima)
+
+
 def _lavora(compito: tuple) -> Any:
     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
     inviabile a un processo figlio (su Windows la pool usa `spawn`)."""
@@ -220,8 +245,9 @@ def _lavora(compito: tuple) -> Any:
     certifica_evento = scheda.funzione_replay()
     CERT = scheda.modulo_controlli()
     try:
-        r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
-                             ogni_ms=ogni_ms, campioni_diff=campioni_diff)
+        with _freni_da_banco():
+            r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
+                                 ogni_ms=ogni_ms, campioni_diff=campioni_diff)
     except Exception as ex:  # noqa: BLE001 — un replay che esplode E' un referto
         import traceback
 
