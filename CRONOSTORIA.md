@@ -2797,3 +2797,4 @@ Control Room (migrazione 2), schede proposte al ms, Chiudi tennis (migrazione 4)
 5) esito del rilancio della action (gate deve essere verde con la lega 667) e run notturna del 25/09; 6) trascrizioni →
 delegato confronto vs codice Safe; 7) test mancanti dichiarati: conclusione non flat del chiudi tennis, guardia tennis
 worker; 8) replay uno per bot su tutti i bot toccati stasera; 9) decisioni (a)-(i).
+**h19:25 — TRASCRIZIONI FINITE: 57/57 video (faster-whisper small), 0 errori, un .txt per video in `Desktop\Strategia S - Giuseppe Bentivegna\TRASCRIZIONI\` (stessa struttura di cartelle del corso). Confronto trascrizioni vs codice Safe: DOMANI con un delegato (punto 6 della ripresa). Chiudi tennis: test sulla conclusione non pari aggiunto e pushato (`c2d8826`). Action rilanciata: run 36030163506 su `551d7cd`, esito da leggere domani (punto 5).**
