@@ -358,7 +358,8 @@ def aggiorna_trade(db, trade_id: Optional[int], *, campi: dict[str, Any],
 
 
 def annulla_su_betfair(market, *, bet_id: Optional[str], market_id: Optional[str],
-                       size_reduction: Optional[float] = None) -> Optional[Any]:
+                       size_reduction: Optional[float] = None,
+                       porta: Any = None, mode: Optional[str] = None) -> Optional[Any]:
     """Chiede a Betfair di ANNULLARE l'ordine. ``None`` = esito IGNOTO.
 
     ⚠️ Fino al 16/09 nessuno dei tre bot REST annullava davvero: gli «annulla»
@@ -369,9 +370,19 @@ def annulla_su_betfair(market, *, bet_id: Optional[str], market_id: Optional[str
     ``None`` quando non si puo' sapere com'e' andata (mercato senza la funzione,
     bet_id assente, rete caduta). ``None`` NON e' un successo: chi chiama non
     deve dichiarare la riga annullata, deve andare in riconciliazione.
+
+    F5 (24/09) - ``porta`` a comandi (solo Safe, interruttore acceso): il cancel
+    va al runner sul canale; senza ack si ripiega sul REST qui sotto (un
+    annullo non crea esposizione: decisione D5), mai per una riga PAPER.
+    ``porta`` None = il percorso di oggi, identico.
     """
     if not bet_id:
         return None
+    if porta is not None and getattr(porta, "via_canale", False):
+        esito = _annulla_via_canale(porta, bet_id=str(bet_id), market_id=market_id,
+                                    size_reduction=size_reduction, mode=mode)
+        if esito is not _RIPIEGO_REST:
+            return esito
     fn = getattr(market, "cancel_order_live", None) if market is not None else None
     if not callable(fn):
         logger.warning("[exec] annullo impossibile su bet %s: il mercato non espone "
@@ -382,6 +393,178 @@ def annulla_su_betfair(market, *, bet_id: Optional[str], market_id: Optional[str
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI dichiarare annullato
         logger.critical("[exec] ANNULLO a esito IGNOTO su bet %s: %s", bet_id, str(ex)[:160])
         return None
+
+
+# ---------------------------------------------------------------------------
+# F5 (24/09) - IL TRASPORTO A COMANDI (canale del runner), solo per Safe.
+# Il protocollo e il client stanno in ``porta_ordini``; qui c'e' solo cio' che
+# collega un comando alla RIGA del bot (marcatori, esito, motivo). Chi non passa
+# ``porta`` (Omega, Mike, Safe a interruttore spento) non arriva mai qui.
+# ---------------------------------------------------------------------------
+#: sentinella di ``_annulla_via_canale``: "usa il REST di oggi" (solo cancel)
+_RIPIEGO_REST = object()
+
+
+def ha_marker_canale(trade: dict[str, Any]) -> bool:
+    """Riga il cui ordine e' stato mandato (o forse mandato) sul canale."""
+    meta = trade.get("meta") or {}
+    return bool(isinstance(meta, dict) and meta.get("canale_ref"))
+
+
+def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id: int,
+                      side: str, price: float, size: float, client_ref: str,
+                      tid: Optional[int], meta: dict[str, Any], now: Optional[datetime],
+                      is_closing: bool, sotto_minimo: bool) -> Optional[PlaceOutcome]:
+    """Manda la ``place`` al runner e traduce l'ack in ``PlaceOutcome``.
+
+    Ritorna ``None`` SOLO quando il canale era giu' PRIMA dell'invio e la gamba
+    e' una CHIUSURA: il chiamante prosegue col trasporto di oggi (D5). Per
+    un'APERTURA a canale giu' nessun ordine parte (fail-closed).
+
+    Regole: (1) marcatore ``canale_ref`` scritto PRIMA dell'invio; (2) ack
+    rifiutato = riga in errore col motivo, nessun secondo invio; (3) nessun ack
+    = ESITO IGNOTO, riga 'pending' marcata, NESSUN ripiego: la risolve
+    ``bot_service._risolvi_via_canale`` (eventi, poi Betfair per ref).
+    """
+    from Betfair.safe_strategy import porta_ordini as PO
+
+    ref = str(client_ref)[:PO.REF_MAX]
+    if not porta.disponibile():
+        if is_closing:
+            _log(db, "canale_giu_ripiego", {"trade_id": tid, "mode": mode, "ref": ref,
+                                            "nota": "chiusura con il canale del runner giu': "
+                                                    "trasporto di oggi (D5)"})
+            return None
+        _log(db, "canale_giu", {"trade_id": tid, "mode": mode, "ref": ref,
+                                "critical": mode == "live",
+                                "nota": "apertura NON inviata: canale del runner giu' "
+                                        "(fail-closed, nessun ripiego)"})
+        return PlaceOutcome("error", None, 0.0, None, "canale_giu:apertura_non_inviata",
+                            size_requested=size, size_remaining=0.0)
+    if tid is None:
+        return PlaceOutcome("error", None, 0.0, None, "canale_senza_trade_id")
+    try:
+        comando = PO.costruisci_comando(
+            ref=ref, attore=porta.attore, azione="place", mode=mode,
+            market_id=str(market_id), selection_id=int(selection_id), side=side,
+            price=float(price), size=float(size), persistence="LAPSE",
+            max_eta_ms=PO.MAX_ETA_MS,
+            origine={"tabella": PO.TABELLA_ORIGINE, "id": int(tid)})
+    except ValueError as ex:
+        return PlaceOutcome("error", None, 0.0, None, f"canale_comando_non_valido:{ex}"[:160])
+    pre = dict(meta)
+    # ``reason = place_exception_reconciling`` DAL PRIMO ISTANTE: e' il segnale
+    # che TUTTO il resto del sistema gia' legge come "ordine che puo' esistere a
+    # mercato" (esposizione e tetti in ``bot_db._counts_as_placed``, annullo
+    # manuale rifiutato in ``_request_cancel``, ``is_placed`` di SQL/UI). Senza,
+    # un ordine in volo sul canale non conterebbe nei tetti e la sua riserva
+    # potrebbe essere cancellata a mano. Lo toglie chi risolve la riga.
+    pre.update({"phase": "canale_wait", "canale_ref": ref, "canale_attore": porta.attore,
+                "reason": "place_exception_reconciling", "err": "canale_in_volo",
+                "canale_inviato_at": (now.isoformat() if now is not None
+                                      else datetime.now().astimezone().isoformat())})
+    if sotto_minimo:
+        pre["canale_sotto_minimo"] = True
+    try:
+        db.update_trade(tid, meta=pre)          # write-ahead: PRIMA dell'invio
+    except Exception as ex:  # noqa: BLE001 - nessun invio avvenuto
+        logger.warning("[safe.exec] pre-marcatura canale KO (trade %s): %s", tid, str(ex)[:160])
+        if is_closing:
+            return None
+        return PlaceOutcome("error", None, 0.0, None, "canale_premarcatura_fallita")
+    ack = porta.invia(comando)
+    if not ack.inviato:
+        # caduto fra il controllo e l'invio: NIENTE e' uscito. Si toglie il
+        # marcatore (la riga torna com'era) e si applica la regola del "giu'".
+        try:
+            db.update_trade(tid, meta=dict(meta))
+        except Exception:  # noqa: BLE001
+            pass
+        if is_closing:
+            return None
+        _log(db, "canale_giu", {"trade_id": tid, "mode": mode, "ref": ref,
+                                "critical": mode == "live",
+                                "nota": "apertura NON inviata: canale caduto prima dell'invio"})
+        return PlaceOutcome("error", None, 0.0, None, "canale_giu:apertura_non_inviata",
+                            size_requested=size, size_remaining=0.0)
+    if not ack.arrivato:
+        m = dict(pre)
+        m.update({"canale_esito_ignoto": True})
+        try:
+            db.update_trade(tid, meta=m)
+        except Exception:  # noqa: BLE001 - il marcatore canale_ref c'e' gia'
+            pass
+        _log(db, "canale_senza_ack", {"trade_id": tid, "mode": mode, "ref": ref,
+                                      "critical": True, "max_eta_ms": PO.MAX_ETA_MS,
+                                      "nota": "nessun ack dal runner: ESITO IGNOTO, nessun "
+                                              "ripiego; si decide per ref"})
+        return PlaceOutcome("pending", price, size, None, f"canale_esito_ignoto:{ref}",
+                            size_requested=size)
+    if not ack.accettato and ack.motivo != PO.MOTIVO_REF_GIA_VISTO:
+        _log(db, "canale_rifiutato", {"trade_id": tid, "mode": mode, "ref": ref,
+                                      "motivo": ack.motivo, "critical": mode == "live",
+                                      "nota": "il runner ha rifiutato il comando: nessun "
+                                              "ordine, nessun secondo invio"})
+        return PlaceOutcome("error", None, 0.0, None, f"canale_rifiutato:{ack.motivo}",
+                            size_requested=size, size_remaining=0.0, error_code=ack.motivo)
+    m = dict(pre)
+    m.update({"canale_ack_seq": ack.seq, "canale_ack_ms": ack.ricevuto_ms})
+    if not ack.accettato:
+        m["canale_ref_gia_visto"] = True        # il primo invio e' li': se ne attende l'esito
+    try:
+        db.update_trade(tid, meta=m)
+    except Exception as ex:  # noqa: BLE001 - il marcatore canale_ref c'e' gia'
+        logger.warning("[safe.exec] marcatura ack canale KO (trade %s): %s", tid, str(ex)[:160])
+    _log(db, "canale_inviato", {"trade_id": tid, "mode": mode, "ref": ref,
+                                "seq": ack.seq, "price": price, "size": size,
+                                "chiusura": bool(is_closing)})
+    return PlaceOutcome("pending", price, size, None, f"canale_{mode}:{ref}",
+                        size_requested=size)
+
+
+def _annulla_via_canale(porta: Any, *, bet_id: str, market_id: Optional[str],
+                        size_reduction: Optional[float], mode: Optional[str]) -> Any:
+    """Cancel sul canale. Ritorna un ``CancelResult`` (esito dall'evento
+    ``order`` dell'ordine), ``None`` (esito IGNOTO: riconciliazione), oppure
+    ``_RIPIEGO_REST`` (nessun ack su una riga LIVE: si usa il REST di oggi)."""
+    from Betfair.omega.omega_market import CancelResult
+    from Betfair.safe_strategy import porta_ordini as PO
+
+    mode = str(mode or "")
+    if mode not in PO.MODI:
+        # modalita' ignota: mai decidere a quale mondo mandarlo
+        logger.warning("[safe.exec] annullo canale senza mode valido su bet %s", bet_id)
+        return None
+    if not porta.disponibile():
+        return _RIPIEGO_REST if mode == "live" else None
+    try:
+        comando = PO.costruisci_comando(
+            ref=PO.ref_annullo(bet_id, size_reduction), attore=porta.attore,
+            azione="cancel", mode=mode, market_id=(str(market_id) if market_id else None),
+            bet_id=bet_id, size_reduction=size_reduction, max_eta_ms=PO.MAX_ETA_MS)
+    except ValueError:
+        return None
+    ack = porta.invia(comando)
+    if not ack.arrivato:
+        return _RIPIEGO_REST if mode == "live" else None
+    if not ack.accettato and ack.motivo != PO.MOTIVO_REF_GIA_VISTO:
+        return CancelResult(ok=False, status="RIFIUTATO_DAL_RUNNER", bet_id=bet_id,
+                            size_cancelled=0.0, error_code=ack.motivo, riletto=False)
+    ev = porta.attendi_esito_bet(bet_id, PO.MAX_ETA_MS / 1000.0)
+    if ev is None:
+        return None
+    try:
+        residuo = float(ev.get("size_remaining") or 0.0)
+        abbinato = float(ev.get("size_matched") or 0.0)
+        annullato = float(ev.get("size_cancelled") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    medio = ev.get("average_price_matched")
+    return CancelResult(ok=residuo <= 0.0, status=str(ev.get("status") or ""), bet_id=bet_id,
+                        size_cancelled=annullato, riletto=True, size_matched=abbinato,
+                        avg_price_matched=(float(medio) if medio else None),
+                        size_remaining=residuo, betfair_updated_at=ev.get("matched_at"),
+                        raw=dict(ev))
 
 
 def place(
@@ -402,12 +585,19 @@ def place(
     meta: Optional[dict[str, Any]] = None,
     now: Optional[datetime] = None,
     params: Optional[dict[str, Any]] = None,
+    porta: Any = None,
 ) -> PlaceOutcome:
     """Esegue UN ordine per una riga già RISERVATA ('pending').
 
     ``trade_id`` serve solo alle scritture di marcatura flumine; se assente si
     ricava dal suffisso di ``client_ref``. ``best_size`` è la liquidità
     abbinabile al miglior prezzo: la size viene cappata lì (mai fill parziali).
+
+    F5 (24/09) - ``porta``: ``None`` (o ``porta_ordini.PortaOggi``) = il
+    trasporto di OGGI, riga per riga. Una ``PortaCanale`` (solo Safe, solo a
+    interruttore ``SAFE_ORDINI_VIA_CANALE`` acceso) manda il comando al runner
+    sul canale: vedi ``_place_via_canale``. Prezzo, size e lato sono calcolati
+    QUI SOPRA, uguali per le due porte: cambia solo il trasporto.
     """
     params = params or {}
     meta = dict(meta or {})
@@ -451,6 +641,18 @@ def place(
     min_live = _min_size_live(side)
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
+
+    # --- F5 (24/09): PORTA A COMANDI sul canale del runner ----------------------
+    # Solo se il chiamante (Safe, interruttore acceso) la passa. ``None`` = il
+    # canale era giu' PRIMA dell'invio e la gamba e' una CHIUSURA: si prosegue
+    # col trasporto di oggi (D5). Tutto il resto finisce qui.
+    if porta is not None and getattr(porta, "via_canale", False):
+        esito_canale = _place_via_canale(
+            porta, db=db, mode=mode, market_id=market_id, selection_id=selection_id,
+            side=side, price=price, size=size, client_ref=client_ref, tid=tid, meta=meta,
+            now=now, is_closing=is_closing, sotto_minimo=sotto_minimo)
+        if esito_canale is not None:
+            return esito_canale
 
     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
     # CERT. 13/09, difetto C-2: qui il gate veniva FORZATO ad 'auto' per gli
@@ -1300,8 +1502,12 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                 origin: str = "manual", table_prefix: str = "safe",
                 extra_row: Optional[dict[str, Any]] = None,
                 exit_kind: Optional[str] = None,
-                exit_reason: Optional[str] = None) -> dict[str, Any]:
+                exit_reason: Optional[str] = None,
+                porta: Any = None) -> dict[str, Any]:
     """Chiude a mercato la gamba ``trade`` piazzando l'ordine opposto.
+
+    F5 (24/09): ``porta`` arriva a ``place`` SOLO se passata (Safe a
+    interruttore acceso); senza, la chiamata a ``place`` e' quella di sempre.
 
     ``prices``: {'back','back_size','lay','lay_size','lay_ladder'?} della STESSA
     selezione. ``mode`` default = mode del trade (mai promuovere un paper a live).
@@ -1405,6 +1611,7 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         meta={**dict(reserve.get("meta") or {}), "cashout": True,
               "closes_trade_id": trade.get("id")},
         now=now, params=params,
+        **({"porta": porta} if porta is not None else {}),
     )
     if out.status == "error":
         try:

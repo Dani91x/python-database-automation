@@ -26,6 +26,10 @@ def freni_live_aperti(monkeypatch):
 
     monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
     monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
+    # F5 (24/09): la porta a comandi e' SPENTA per difetto anche nei test, qualunque
+    # cosa dica il .env della macchina; chi la prova la accende a mano.
+    monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE", raising=False)
+    monkeypatch.delenv("SAFE_TENNIS_ORDINI_VIA_CANALE", raising=False)
     with _mo.dichiara_per_banco("LIVE"):
         yield
 

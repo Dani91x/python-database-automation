@@ -765,6 +765,160 @@ def _riserva_mai_piazzata(tr: dict[str, Any]) -> bool:
                 or meta.get("flumine_client_ref") or meta.get("flumine_request_id"))
 
 
+# ---------------------------------------------------------------------------
+# F5 (24/09) - PORTA DEGLI ORDINI sul canale di comando del runner
+# (``SAFE_ORDINI_VIA_CANALE`` calcio / ``SAFE_TENNIS_ORDINI_VIA_CANALE`` tennis,
+# SPENTI di serie). Spenti: ``_porta_kw`` torna ``{}`` e ogni chiamata a
+# ``X.place``/``X.close_trade``/``X.annulla_su_betfair`` e' quella di sempre.
+# ---------------------------------------------------------------------------
+#: scadenze del ripiego quando nessun evento arriva (i DEFAULT di Safe: la
+#: riconciliazione non riceve i parametri del giro, e ``run_once`` non si tocca)
+_CANALE_SCADENZA_LIVE_S = float(DEFAULT_PARAMS.get("live_fill_deadline_s", 20))
+_CANALE_SCADENZA_PAPER_S = float(DEFAULT_PARAMS.get("paper_fill_ttl_s", 45)) + 60.0
+_CANALE_MIN_STAKE = float(DEFAULT_PARAMS.get("min_stake", 2.0))
+
+
+def _porta_di(riga: dict[str, Any]) -> Any:
+    try:
+        from Betfair.safe_strategy import porta_ordini as _PO
+
+        return _PO.porta_per_sport(_sport_di(riga))
+    except Exception as ex:  # noqa: BLE001 - senza porta: il trasporto di oggi
+        logger.warning("[safe.bot] porta degli ordini non disponibile: %s", str(ex)[:160])
+        return None
+
+
+def _porta_kw(riga: dict[str, Any]) -> dict[str, Any]:
+    """``{"porta": ...}`` solo a interruttore acceso; ``{}`` spento."""
+    p = _porta_di(riga)
+    return {"porta": p} if p is not None else {}
+
+
+def _porta_kw_annullo(riga: dict[str, Any]) -> dict[str, Any]:
+    """Come ``_porta_kw`` per il cancel, con la modalita' DELLA RIGA."""
+    p = _porta_di(riga)
+    return {"porta": p, "mode": str(riga.get("mode") or "")} if p is not None else {}
+
+
+def _avvia_porta_ordini() -> None:
+    """All'avvio: collega il client del canale di comando (se acceso), cosi'
+    il primo ordine non trova la porta ancora giu'. Non solleva mai."""
+    try:
+        from Betfair.safe_strategy import porta_ordini as _PO
+
+        for sport in ("calcio", "tennis"):
+            p = _PO.porta_per_sport(sport)
+            if p is not None:
+                logger.info("[safe.bot] ordini %s via canale di comando %s", sport, p.url)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] porta degli ordini non avviata: %s", str(ex)[:160])
+
+
+def _eta_invio_s(tr: dict[str, Any], now: datetime) -> Optional[float]:
+    meta = tr.get("meta") or {}
+    quando = _parse_iso(meta.get("canale_inviato_at")) or _parse_iso(tr.get("placed_at"))
+    if quando is None:
+        return None
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    return (now - quando).total_seconds()
+
+
+def _risolvi_via_canale(*, db, rows: list[dict[str, Any]], now: datetime
+                        ) -> "tuple[int, list[dict[str, Any]]]":
+    """Risolve le righe 'pending' mandate sul canale di comando.
+
+    Ritorna (quante risolte, righe LIVE da interrogare su Betfair per ref).
+    Le conferme e i no-fill passano per le STESSE funzioni del percorso a coda
+    (``omega_service._flumine_confirm`` / ``_flumine_no_fill_error``): cambia
+    da dove arriva l'esito, non cosa si scrive. Mai un fill inventato."""
+    os_mod = _omega_service()
+    n = 0
+    al_rest: list[dict[str, Any]] = []
+    for tr in rows:
+        try:
+            esito = _risolvi_una_via_canale(db, tr, now=now, os_mod=os_mod)
+        except Exception as ex:  # noqa: BLE001 - una riga rotta non ferma le altre
+            _log(db, "reconcile_error", {"trade_id": tr.get("id"), "err": str(ex)[:160],
+                                         "via": "canale"})
+            continue
+        if esito == "risolta":
+            n += 1
+        elif esito == "al_rest":
+            al_rest.append(tr)
+    return n, al_rest
+
+
+def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: Any) -> str:
+    from Betfair.safe_strategy import porta_ordini as _PO
+
+    meta = dict(tr.get("meta") or {})
+    ref = str(meta.get("canale_ref") or _PO.ref_ordine(tr["id"]))
+    mode = str(tr.get("mode") or "")
+    porta = _PO.porta_esistente(_sport_di(tr))
+    ev = porta.esiti(ref) if porta is not None else None
+    if ev is not None and str(ev.get("mode") or "") != mode:
+        ev = None                     # paper e live MAI mischiati
+    if ev is not None and _PO.terminale(ev) and os_mod is not None:
+        fase = str(ev.get("fase"))
+        matched = float(ev.get("size_matched") or 0.0)
+        # il "in riconciliazione" messo all'invio (``execution._place_via_canale``)
+        # si toglie: la riga ha un esito certo
+        pulita = dict(tr)
+        pulita["meta"] = {k: v for k, v in meta.items() if k not in ("reason", "err")}
+        if matched > 0:
+            os_mod._flumine_confirm(pulita, db=db, matched=matched,
+                                    avg=float(ev.get("average_price_matched") or 0.0),
+                                    bet_id=ev.get("bet_id"), min_stake=_CANALE_MIN_STAKE,
+                                    mode=mode, size_remaining=ev.get("size_remaining"),
+                                    betfair_updated_at=ev.get("matched_at"))
+        else:
+            os_mod._flumine_no_fill_error(pulita, db=db, reason=f"canale_{fase}", now=now)
+        _sync_parent_of(db, tr, now)
+        return "risolta"
+    if ev is not None and int(ev.get("seq") or 0) > int(meta.get("canale_seq") or 0):
+        # C.12a - la riga racconta il vero anche prima della fine
+        nuovo = dict(meta)
+        nuovo.update({"canale_fase": ev.get("fase"), "canale_seq": int(ev.get("seq") or 0)})
+        campi: dict[str, Any] = {"meta": nuovo}
+        if ev.get("bet_id") and not tr.get("bet_id"):
+            campi["bet_id"] = str(ev.get("bet_id"))
+        X.aggiorna_trade(db, tr["id"], campi=campi, consapevolezza={
+            "size_requested": ev.get("size"),
+            "size_matched": ev.get("size_matched"),
+            "size_remaining": ev.get("size_remaining"),
+            "avg_price_matched": (ev.get("average_price_matched") or None),
+            "betfair_updated_at": ev.get("matched_at")})
+        tr["meta"] = nuovo
+        if "bet_id" in campi:
+            tr["bet_id"] = campi["bet_id"]
+    eta = _eta_invio_s(tr, now)
+    if mode == "live":
+        if eta is not None and eta < _CANALE_SCADENZA_LIVE_S:
+            return "attesa"
+        # oltre la scadenza senza esito: la verita' la dice Betfair, PER REF.
+        # Marcata 'in riconciliazione' cosi' un "non trovato" chiude la riga in
+        # errore con la traccia invece di cancellarla (C-03).
+        if not X.is_reconciling(tr):
+            m = dict(tr.get("meta") or {})
+            m.update({"reason": "place_exception_reconciling",
+                      "err": "canale_senza_esito_oltre_scadenza"})
+            db.update_trade(int(tr["id"]), meta=m)
+            tr["meta"] = m
+        return "al_rest"
+    if eta is not None and eta < _CANALE_SCADENZA_PAPER_S:
+        return "attesa"
+    if os_mod is None:
+        return "attesa"
+    # PAPER senza esito oltre la scadenza: nessun fill inventato (H-12)
+    pulita = dict(tr)
+    pulita["meta"] = {k: v for k, v in (tr.get("meta") or {}).items()
+                      if k not in ("reason", "err")}
+    os_mod._flumine_no_fill_error(pulita, db=db, reason="canale_senza_esito", now=now)
+    _sync_parent_of(db, tr, now)
+    return "risolta"
+
+
 def reconcile_pending(*, market, db, now: datetime) -> int:
     try:
         pendings = list(db.list_trades("pending") or [])
@@ -780,9 +934,20 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     _PENDING_CICLO["rows"] = pendings
     _dimentica_consapevolezza({int(t["id"]) for t in pendings if t.get("id") is not None})
     legacy = [t for t in pendings if not X.has_flumine_marker(t)]
+    # F5 (24/09): le righe mandate sul CANALE di comando del runner si
+    # risolvono dagli eventi ``order``; quelle LIVE rimaste senza esito oltre la
+    # scadenza tornano qui sotto e si interrogano su Betfair PER REF. Senza
+    # righe marcate (interruttore spento) non cambia un'istruzione.
+    via_canale = [t for t in legacy if X.ha_marker_canale(t)]
+    al_rest: list[dict[str, Any]] = []
+    n_canale = 0
+    if via_canale:
+        legacy = [t for t in legacy if not X.ha_marker_canale(t)]
+        n_canale, al_rest = _risolvi_via_canale(db=db, rows=via_canale, now=now)
+        legacy = legacy + al_rest
     if not legacy:
-        return 0
-    n = 0
+        return n_canale
+    n = n_canale
     # PAPER: nessun ordine reale.
     #  • riga marcata ``place_exception_reconciling``: il fill simulato e'
     #    ESPLOSO, quindi NON e' mai avvenuto → 'error' terminale (L-10: prima
@@ -1078,7 +1243,8 @@ def _annulla_prima_del_terminale(market, tr: dict[str, Any], *, db,
     _log(db, "cancel_richiesto", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
                                   "bet_id": bet_id, "critical": True,
                                   "reason": "prima_di_dichiarare_terminale"})
-    ann = X.annulla_su_betfair(market, bet_id=bet_id, market_id=tr.get("market_id"))
+    ann = X.annulla_su_betfair(market, bet_id=bet_id, market_id=tr.get("market_id"),
+                               **_porta_kw_annullo(tr))
     riletto = bool(ann is not None and getattr(ann, "riletto", False))
     residuo = _r2(getattr(ann, "size_remaining", None)) if riletto else None
     abbinato = _r2(getattr(ann, "size_matched", None)) if riletto else None
@@ -2840,7 +3006,8 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
                         mode=str(trade.get("mode") or "paper"), now=now,
                         params=params, origin="manual", table_prefix="safe",
                         extra_row=extra, exit_kind="manual",
-                        exit_reason="Cash out manuale dalla dashboard")
+                        exit_reason="Cash out manuale dalla dashboard",
+                        **_porta_kw(trade))
     res["source"] = source            # H5: 'feed' | 'rest'
     if res.get("ok"):
         # M-06: anche sull'APERTURA, così un parziale resta riconoscibile e la
@@ -2968,7 +3135,8 @@ def _annulla_riserva(db, *, market, trade: dict[str, Any], now: datetime) -> dic
     _log(db, "cancel_richiesto", {"trade_id": tid, "event_id": trade.get("event_id"),
                                   "origin": "manual", "bet_id": str(bet_id)})
     X.annulla_su_betfair(market, bet_id=str(bet_id),
-                         market_id=str(trade.get("market_id") or ""))
+                         market_id=str(trade.get("market_id") or ""),
+                         **_porta_kw_annullo(trade))
     try:
         esito = _reconcile_by_bet_id(market, trade)
     except Exception as ex:  # noqa: BLE001 — rete KO: esito IGNOTO, mai dedotto
@@ -3514,7 +3682,8 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                                 amount=None, fraction=1.0,
                                 mode=str(leg.get("mode") or "paper"), now=now,
                                 params=params, origin="auto", table_prefix="safe",
-                                extra_row=extra, exit_kind="forced", exit_reason=motivo_leg)
+                                extra_row=extra, exit_kind="forced", exit_reason=motivo_leg,
+                                **_porta_kw(leg))
         except Exception as ex:  # noqa: BLE001
             res = {"error": "exception", "detail": str(ex)[:160]}
         if res.get("error"):
@@ -4643,7 +4812,7 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
                             amount=None, fraction=1.0,
                             mode=str(trade.get("mode") or "paper"), now=now,
                             params=params, origin="auto", table_prefix="safe",
-                            extra_row=extra)
+                            extra_row=extra, **_porta_kw(trade))
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")
@@ -4987,7 +5156,7 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         side=side, price=row["price"], size=row["size"],
         best_size=best_size, ladder=ladder, client_ref=f"safe-t{trade_id}",
         trade_id=int(trade_id), meta=dict(row.get("meta") or {}), now=now,
-        params=params,
+        params=params, **_porta_kw(row),
     )
     if out.status == "pending":
         # coda flumine o esito REST ignoto: la riga resta 'pending' coi suoi
@@ -9041,6 +9210,9 @@ def main() -> None:
     # lo stesso lettore di Omega (stesso poll della coda). Interruttore
     # ``ESITI_ORDINI_CANALE`` spento: non parte niente.
     _avvia_esiti_ordini()
+    # F5 (24/09): il client del canale di COMANDO del runner, dietro
+    # ``SAFE_ORDINI_VIA_CANALE`` (spento di serie: non parte niente).
+    _avvia_porta_ordini()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, il bot Safe
     # si ferma (e le 4 strategie tornano tutte in prova). Da qui in poi la
     # guardia e' attiva: finche' il controllo non riesce, ``run_once`` non apre
