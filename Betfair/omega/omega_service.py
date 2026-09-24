@@ -1897,6 +1897,23 @@ def _leg_note_certain_failure(event_id: str, leg: Optional[str], now: datetime,
     return n + 1
 
 
+def _freno_rest_aperture() -> Optional[str]:
+    """O1 (24/09) - kill-switch davanti a OGNI apertura REST di Omega.
+
+    ``LIVE_KILL_SWITCH`` e ``betfair_live_settings.kill_switch`` fermavano solo il
+    worker della coda: con il runner giu' (ripiego REST) Omega piazzava lo
+    stesso. Il freno e' la funzione CONDIVISA ``controls.motivo_kill_switch``
+    (nessuna copia). Import non riuscito = freno non valutabile = apertura ferma.
+    Le chiusure di Omega non passano di qui (``safe_strategy.execution``)."""
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001 - freno non valutabile: si ferma
+        logger.error("[omega] kill-switch non valutabile, apertura FERMATA: %s", str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
 def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], now: datetime,
                          reason: str, extra: Optional[dict] = None,
                          base_meta: Optional[dict] = None) -> None:
@@ -2442,6 +2459,17 @@ def _place_one(
         if _live_flumine_expected(params or {}):
             db.log("live_fok_fallback", {"event_id": ev.event_id,
                                          "trade_id": trade_id, "reason": gate_reason})
+        # O1 (24/09): il kill-switch del worker (env + DB) vale anche qui. Questa
+        # lay e' SEMPRE un'apertura: a freno tirato nessun ordine parte, la
+        # riserva si chiude come un rifiuto CERTO (nessun ordine esiste).
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.critical("[omega] apertura REST FERMATA dal kill-switch (%s): trade %s, "
+                            "evento %s - nessun ordine inviato", blocco, trade_id, ev.event_id)
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
+                                 {"motivo": blocco, "percorso": "rest"},
+                                 base_meta={**keep_meta, "requested_size": req_size})
+            return 0
         try:
             # §16 (review C1): customerOrderRef PER GAMBA (omega-t<id>), mai per evento —
             # con due gambe per partita il secondo ordine veniva rifiutato
@@ -4639,6 +4667,23 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         if _live_flumine_expected(params):
             db.log("live_fok_fallback", {"event_id": event_id, "trade_id": trade_id,
                                          "reason": gate_reason})
+        # O1 (24/09): kill-switch condiviso (env + DB). Il manuale apre sempre una
+        # riga NUOVA (le chiusure passano da ``_manual_cashout`` -> close_trade):
+        # a freno tirato nessun ordine parte e la riga si chiude come rifiuto CERTO.
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.critical("[omega] ordine manuale REST FERMATO dal kill-switch (%s): "
+                            "trade %s - nessun ordine inviato", blocco, trade_id)
+            db.update_trade(trade_id, status="error", pnl=0.0,
+                            meta={**manual_meta, "reason": "kill_switch",
+                                  "motivo": blocco, "percorso": "rest",
+                                  "leg_failed": True, "error_final": True,
+                                  "error_at": now.isoformat()})
+            db.log("manual_place_exception", {
+                "trade_id": trade_id, "event_id": event_id, "side": side,
+                "price": price, "size": size, "mode": mode,
+                "reason": "kill_switch", "motivo": blocco})
+            return {"error": blocco, "trade_id": trade_id}
         try:
             # ref PER-GAMBA (omega-m<trade_id>): due ordini manuali sullo stesso
             # evento (o manuale+auto) NON devono mai condividere il customerOrderRef,

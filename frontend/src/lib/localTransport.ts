@@ -435,7 +435,10 @@ export function localOrderApi(sport: LocalSport, dbApi: LadderOrderApi): LadderO
     const connected = () => store.channel.getStatus() === 'connected';
 
     const send = async (cmd: LiveOrderCommand): Promise<LiveOrderResult> => {
-        if (!connected()) return dbApi.send(cmd);
+        // C1 (24/09): senza il token dell'app il canale rifiuterebbe il comando
+        // (e chiuderebbe la connessione): l'ordine va sulla coda DB, PRIMA di
+        // qualunque invio, come quando il canale e' giu'.
+        if (!connected() || !store.channel.puoComandare()) return dbApi.send(cmd);
         // trasporto (timeout/caduta) → la request REIETTA e il throw risale (NON reinviare).
         // dedup server-side (fix review HIGH): client_ref univoco per comando —
         // un reinvio accidentale riceve l'esito già calcolato, MAI doppia esecuzione.

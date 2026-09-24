@@ -103,6 +103,10 @@ def _live_brake() -> Optional[str]:
     La riga si rilegge SOLO qui (prima di un'APERTURA live) e al massimo ogni
     ``modo_ordini.ETA_RILETTURA_BOT_S`` secondi: nessuna lettura in piu' per giro.
 
+    O1 (24/09): il kill-switch e' quello CONDIVISO col worker della coda
+    (``controls.motivo_kill_switch``: env E database); freno non valutabile =
+    apertura ferma.
+
     24/09 - FAIL-CLOSED: prima, se il modulo non era importabile, NON si
     bloccava nulla. Ai soldi veri si arriva scrivendolo: freni non leggibili
     = ordine reale NON inviato (``freni_live_non_letti``)."""
@@ -113,6 +117,18 @@ def _live_brake() -> Optional[str]:
         logger.warning("[safe.exec] freni live non importabili: ordine reale NON inviato: %s",
                        str(ex)[:120])
         return "freni_live_non_letti"
+    # O1 (24/09): kill-switch CONDIVISO col worker (env E DB, cache 2 s):
+    # non valutabile = apertura FERMATA (fail-closed).
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        motivo = _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001
+        logger.error("[safe.exec] kill-switch non valutabile, apertura FERMATA: %s",
+                     str(ex)[:120])
+        motivo = "kill_switch_illeggibile"
+    if motivo:
+        return motivo
     try:
         if _cfg.live_kill_switch():
             return "live_kill_switch_attivo"

@@ -51,7 +51,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from Betfair.omega import omega_market as _real_market
+from Betfair.omega import omega_market as _omega_market
 from Betfair.safe_strategy import bot_db as _real_db
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
@@ -60,6 +60,62 @@ from Betfair.safe_strategy import risk as RK
 from Betfair.stream import avvio_app as AA
 
 logger = logging.getLogger("safe.bot")
+
+# ---------------------------------------------------------------------------
+# R1 (24/09) - IL MERCATO VERO DI SAFE PORTA IL REF DI SAFE.
+# Safe piazza con le funzioni REST di ``omega_market`` e fino a oggi i suoi
+# ordini uscivano con ``customerStrategyRef="omega"``: la lettura di Omega
+# (``listCurrentOrders`` filtrata "omega") vedeva anche gli ordini di Safe.
+# ``_MercatoSafe`` e' ``omega_market`` con UNA differenza: dichiara il ref di
+# Safe su ogni place e legge solo gli ordini di Safe. Tutto il resto (book,
+# annulli, posizione di conto, saldo...) passa invariato al modulo.
+# LETTURA: i ref di Safe sono "safe" e, per gli ordini nati PRIMA di oggi,
+# "omega"; di quelli si tengono SOLO gli ordini col ``customerOrderRef`` di Safe
+# (``safe-t<id>``, l'unico che ``execution`` scrive per Safe). Cosi' un ordine
+# di Safe ancora da riconciliare non sparisce, e Omega non entra mai.
+# ---------------------------------------------------------------------------
+SAFE_STRATEGY_REF = "safe"
+_SAFE_REFS_STORICI = ("omega",)
+_SAFE_PREFISSO_ORDINE = "safe-"
+
+
+def _solo_ordini_di_safe(righe: Any) -> list:
+    return [r for r in (righe or [])
+            if str((r or {}).get("customer_order_ref") or "").startswith(_SAFE_PREFISSO_ORDINE)]
+
+
+class _MercatoSafe:
+    """``omega_market`` col customerStrategyRef di Safe (R1). Ogni attributo non
+    ridefinito qui e' quello del modulo, letto al momento dell'uso."""
+
+    def __init__(self, modulo: Any) -> None:
+        object.__setattr__(self, "_modulo", modulo)
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(object.__getattribute__(self, "_modulo"), nome)
+
+    def place_order_live(self, **kw: Any) -> Any:
+        kw.setdefault("strategy_ref", SAFE_STRATEGY_REF)
+        return self._modulo.place_order_live(**kw)
+
+    def place_submin_live(self, **kw: Any) -> Any:
+        kw.setdefault("strategy_ref", SAFE_STRATEGY_REF)
+        return self._modulo.place_submin_live(**kw)
+
+    def list_current_orders(self, strategy_ref: Any = None) -> list:
+        if strategy_ref is not None:
+            return self._modulo.list_current_orders(strategy_ref)
+        return _solo_ordini_di_safe(self._modulo.list_current_orders(
+            [SAFE_STRATEGY_REF, *_SAFE_REFS_STORICI]))
+
+    def list_cleared_orders(self, strategy_ref: Any = None, **kw: Any) -> list:
+        if strategy_ref is not None:
+            return self._modulo.list_cleared_orders(strategy_ref, **kw)
+        return _solo_ordini_di_safe(self._modulo.list_cleared_orders(
+            [SAFE_STRATEGY_REF, *_SAFE_REFS_STORICI], **kw))
+
+
+_real_market = _MercatoSafe(_omega_market)
 
 _SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
 

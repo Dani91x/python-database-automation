@@ -138,6 +138,9 @@ class _RealMarket:
 
         _pretendi_live_abilitato("place_order_live")
         _RealMarket._bind_strategy_ref(omega_market)
+        # R1 (24/09): il ref dell'attore si DICHIARA sulla chiamata, non si
+        # affida solo alla costante di modulo rilegata qui sopra.
+        kw.setdefault("strategy_ref", _STRATEGY_REF)
         return omega_market.place_order_live(**kw)
 
     @staticmethod
@@ -153,6 +156,7 @@ class _RealMarket:
 
         _pretendi_live_abilitato("place_submin_live")
         _RealMarket._bind_strategy_ref(omega_market)
+        kw.setdefault("strategy_ref", _STRATEGY_REF)   # R1 (24/09)
         return omega_market.place_submin_live(**kw)
 
     @staticmethod
@@ -1104,6 +1108,24 @@ def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
     return None
 
 
+def _resting_e_chiusura(leg: E.Leg, chiude: Optional[int]) -> bool:
+    """La lay appoggiata RIDUCE una posizione? (coperture ``*_green`` o una
+    gamba che dichiara quale riga chiude)."""
+    return chiude is not None or str(leg.role or "").endswith("_green")
+
+
+def _freno_aperture_rest() -> Optional[str]:
+    """O1 (24/09): il kill-switch CONDIVISO (``controls.motivo_kill_switch``,
+    env + DB). Non valutabile = apertura ferma."""
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001
+        logger.error("[mike] kill-switch non valutabile, apertura FERMATA: %s", str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
@@ -1136,6 +1158,22 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
                         "ciclo e' gia' pending", eid, leg.ref, doppia.get("id"))
         return
+
+    # O1 (24/09): kill-switch condiviso (env + DB) anche su questa strada REST,
+    # che non passa da ``X.place``. Vale SOLO per le aperture: le lay appoggiate
+    # di oggi sono tutte coperture (ruoli ``*_green``, o ``chiude`` valorizzato),
+    # cioe' CHIUSURE, e a freno tirato devono poter partire (stessa regola di
+    # ``live_order_worker._CLOSING_ACTIONS``). Nessuna riserva scritta se si ferma.
+    if not _resting_e_chiusura(leg, chiude):
+        blocco = _freno_aperture_rest()
+        if blocco:
+            leg.status = "cancelled"
+            db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                     "reason": "kill_switch", "motivo": blocco,
+                                     "nota": "kill-switch attivo: nessun ordine inviato"}, eid)
+            logger.critical("[mike] %s: apertura appoggiata %s FERMATA dal kill-switch (%s)",
+                            eid, leg.ref, blocco)
+            return
 
     try:
         trade_id = _insert_trade_row(
