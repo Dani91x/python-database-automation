@@ -1,5 +1,8 @@
 """Runner LIVE dello scalper (pre-match) con protezioni.
 
+DISATTIVATO dal 24/09 (fail-closed): lo scalper si arma solo dalla UI. Parte
+solo con SCALPER_LIVE_CLI=consentito e il lock di istanza singola libero.
+
 USO (dal root del repo):
     python -m Betfair.stream.scalper.run_scalper_live --hours-ahead 2
     python -m Betfair.stream.scalper.run_scalper_live --market-ids 1.259526914,...
@@ -26,14 +29,41 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from flumine import Flumine, clients
-
-from ..auth import build_client
-from .scalper_bot import ScalperStrategy
+# NB (24/09): flumine, il client Betfair e la strategia si importano DENTRO
+# main(), DOPO la guardia: un avvio non consentito deve uscire prima di
+# toccare qualunque cosa che parli con Betfair.
 
 logger = logging.getLogger(__name__)
 
 KILL_FILE = "STOP_SCALPER"
+# GUARDIA FAIL-CLOSED (24/09, reperto D della certificazione dello scalper):
+# questo avvio da riga di comando NON ha riga `scalper_control`, specchio
+# ordini, heartbeat, guardia `avvio_app`, modalita' paper ne' i
+# `VALIDATED_PARAMS` della sessione: due copie = ordini reali doppi. Resta
+# spento salvo consenso ESPLICITO scritto nella variabile d'ambiente.
+CLI_ENV = "SCALPER_LIVE_CLI"
+CLI_CONSENSO = "consentito"
+CLI_DISATTIVATO = ("run_scalper_live DISATTIVATO: lo scalper si arma solo dalla UI "
+                   "(scalper_control -> scalper_service -> scalper_session)")
+# lock di istanza singola: la STESSA porta del supervisore (`scalper_service`,
+# SCALPER_SVC_LOCK_PORT, 47314). Un solo padrone degli ordini dello scalper
+# per PC: ne' due copie del CLI, ne' CLI insieme al supervisore.
+CLI_LOCK_PORT_ENV = "SCALPER_SVC_LOCK_PORT"
+CLI_LOCK_PORT_DEFAULT = "47314"
+
+
+def _guardia_avvio() -> Any:
+    """Fail-closed: senza consenso esplicito -> SystemExit; con consenso
+    prende il lock di istanza singola (SystemExit se occupato). Ritorna il
+    socket del lock, da tenere referenziato per tutta la vita del processo."""
+    if os.getenv(CLI_ENV, "").strip() != CLI_CONSENSO:
+        raise SystemExit(CLI_DISATTIVATO)
+    from ..single_instance import acquire_single_instance_lock
+
+    porta = int(os.getenv(CLI_LOCK_PORT_ENV, "").strip() or CLI_LOCK_PORT_DEFAULT)
+    return acquire_single_instance_lock(porta, "scalper-live-cli")
+
+
 # tipi mercato validati in backtest (dossier §9): MATCH_ODDS ha il flusso
 # migliore; O/U principali ok. Tutto il resto e' fuori dal perimetro live.
 LIVE_MARKET_TYPES = [
@@ -117,7 +147,7 @@ def _parse_param_value(v: str) -> Any:
         return s
 
 
-def _live_orders(framework: Flumine) -> List[Tuple[Any, Any]]:
+def _live_orders(framework: Any) -> List[Tuple[Any, Any]]:
     """(market, order) per ogni ordine ancora VIVO nei blotter (best-effort)."""
     out: List[Tuple[Any, Any]] = []
     try:
@@ -130,7 +160,7 @@ def _live_orders(framework: Flumine) -> List[Tuple[Any, Any]]:
     return out
 
 
-def _kill_switch_worker(framework: Flumine) -> None:
+def _kill_switch_worker(framework: Any) -> None:
     """Ferma il framework se compare il file KILL_FILE.
 
     ⚠️ In PRE-MATCH gli ordini LAPSE NON decadono da soli: restano vivi
@@ -170,6 +200,14 @@ def _kill_switch_worker(framework: Flumine) -> None:
 
 
 def main() -> None:
+    # PRIMA di tutto (anche del parsing): la guardia fail-closed
+    _lock = _guardia_avvio()  # noqa: F841 - vita del lock = vita del processo
+
+    from flumine import Flumine, clients
+
+    from ..auth import build_client
+    from .scalper_bot import ScalperStrategy
+
     ap = argparse.ArgumentParser(description="Scalper LIVE pre-match")
     ap.add_argument("--market-ids", default="",
                     help="market id espliciti, separati da virgola")

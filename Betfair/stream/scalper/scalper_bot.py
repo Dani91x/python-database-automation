@@ -2049,10 +2049,6 @@ class ScalperStrategy(BaseStrategy):
                            selection_id=int(selection_id), side=side,
                            price=price, size=size)
             return None
-        self.stats["orders_placed"] += 1
-        self._emit("place", market_id=market.market_id,
-                   selection_id=int(selection_id), side=side,
-                   price=price, size=size)
         trade = Trade(
             market_id=market.market_id,
             selection_id=int(selection_id),
@@ -2063,13 +2059,69 @@ class ScalperStrategy(BaseStrategy):
             side=side,
             order_type=LimitOrder(price=price, size=size, persistence_type="LAPSE"),
         )
-        market.place_order(order)
+        # L'ESITO DEL PIAZZAMENTO SI LEGGE (catalogo par.7 difetto 2, "`res.ok`
+        # mai letto"; stessa correzione dei bot tennis del 17/09).
+        # `Market.place_order` torna un BOOL: `False` = un trading control (di
+        # flumine o nostro) ha bocciato l'ordine, che NON entra nel blotter e
+        # resta in `OrderStatus.VIOLATION`. Prima il ritorno si ignorava e lo
+        # slot teneva l'ordine morto come quota viva fino al requote o al TTL
+        # (600 s). Ora il rifiuto torna None: i chiamanti hanno GIA' il ramo
+        # "ordine non partito" (lo stesso di dry-run, txn_cap, min_bet_skip),
+        # nessuna transizione nuova e nessun ritentativo aggiunto qui.
+        motivo_rifiuto = self._esegui_place(market, order)
+        if motivo_rifiuto is not None:
+            self._emit("place_rifiutato", market_id=market.market_id,
+                       selection_id=int(selection_id), side=side,
+                       price=price, size=size, motivo=motivo_rifiuto,
+                       order_id=str(getattr(order, "id", "") or ""))
+            logger.warning("[scalper] piazzamento RIFIUTATO sel=%s %s @%s per %s: %s",
+                           selection_id, side, price, size, motivo_rifiuto)
+            return None
+        # contatore e telemetria DOPO l'esito: prima contavano anche gli ordini
+        # mai partiti (per un ordine accettato l'effetto e' identico)
+        self.stats["orders_placed"] += 1
+        self._emit("place", market_id=market.market_id,
+                   selection_id=int(selection_id), side=side,
+                   price=price, size=size)
         # ANTI-ORFANI (lezione live 10/07: exit rimasta viva 40+ min): ogni
         # ordine piazzato con uno slot noto entra nella contabilita' dello
         # slot (dedup by-identity) → il flatten lo vede e lo cancella SEMPRE.
         if slot is not None:
             self._track(slot, order)
         return order
+
+    @staticmethod
+    def _esegui_place(market: Any, order: Any) -> Optional[str]:
+        """Chiama `market.place_order` e ne LEGGE l'esito.
+
+        None = accettato (l'ordine e' nel blotter del mercato); una stringa =
+        rifiutato, col motivo. Se `place_order` SOLLEVA si guarda il blotter:
+        un ordine che c'e' e' partito (lo si segue come accettato, mai un
+        orfano); uno che non c'e' e' un rifiuto."""
+        try:
+            esito = market.place_order(order)
+        except Exception as exc:  # noqa: BLE001 - un'eccezione e' un esito da leggere
+            if ScalperStrategy._nel_blotter(market, order):
+                logger.warning("[scalper] place_order ha sollevato ma l'ordine %s "
+                               "e' nel blotter: lo seguo", getattr(order, "id", None),
+                               exc_info=True)
+                return None
+            return "eccezione: %s" % (str(exc)[:200] or type(exc).__name__)
+        if esito is False:
+            return str(getattr(order, "violation_msg", "") or "rifiutato")
+        return None
+
+    @staticmethod
+    def _nel_blotter(market: Any, order: Any) -> bool:
+        """True se il blotter del mercato conosce l'ordine (per id)."""
+        oid = getattr(order, "id", None)
+        try:
+            blotter = getattr(market, "blotter", None)
+            if blotter is None or oid is None:
+                return False
+            return any(getattr(o, "id", None) == oid for o in list(blotter))
+        except Exception:  # noqa: BLE001 - blotter illeggibile: non c'e'
+            return False
 
     # ---------------------------------------------- uscite a size ESATTA (.it)
     @staticmethod

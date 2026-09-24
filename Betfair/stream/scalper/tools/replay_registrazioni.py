@@ -682,11 +682,16 @@ def _controllo_rifiuti(quadro: Any, quanti: int):
         def __init__(self, flumine: Any) -> None:
             super().__init__(flumine)
             self.rifiutati: List[str] = []
+            # gli OGGETTI rifiutati: dal 24/09 il bot li lascia cadere (legge il
+            # False di place_order) e il blotter non li ha mai avuti; K2 li
+            # deve vedere lo stesso per giudicare se il bot ci crede ancora
+            self.ordini: List[Any] = []
 
         def _validate(self, order: Any, package_type: Any) -> None:
             if package_type != OrderPackageType.PLACE or len(self.rifiutati) >= quanti:
                 return
             self.rifiutati.append(str(getattr(order, "id", "") or ""))
+            self.ordini.append(order)
             self._on_error(order, "rifiuto iniettato dal replay")
 
     return _Rifiuta(quadro)
@@ -815,6 +820,8 @@ class _Banco:
         self.errori_ponte: List[str] = []
         self.ultima_strategia: Any = None
         self.framework_creati: List[_FrameworkSessione] = []
+        # il trading control dello scenario 'rifiuti-betfair' (None altrove)
+        self.rifiuti: Any = None
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -905,6 +912,13 @@ class _Banco:
                 if oid and oid not in ids:
                     ids.add(oid)
                     righe.append(CERT.riga_ordine(o, False))
+        # i rifiuti iniettati dallo scenario, anche quelli che il bot NON segue
+        # piu' (e' la verita' del mercato: K2 li giudica contro le credenze)
+        for o in list(getattr(self.rifiuti, "ordini", None) or []):
+            oid = str(getattr(o, "id", ""))
+            if oid and oid not in ids:
+                ids.add(oid)
+                righe.append(CERT.riga_ordine(o, False))
         return righe
 
     @staticmethod
@@ -1430,6 +1444,7 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         if scenario == "rifiuti-betfair":
             rifiuti = _controllo_rifiuti(banco.quadro, PIAZZAMENTI_RIFIUTATI)
             banco.quadro.trading_controls.append(rifiuti)
+            banco.rifiuti = rifiuti
         if scenario == "esiti-ignoti":
             ritardi = _ritarda_esiti(banco.quadro, PIAZZAMENTI_IGNOTI, RITARDO_ESITO_IGNOTO_S)
         guasto_cp = None

@@ -15,10 +15,10 @@ Che cosa si difende:
   6. K7 (difetto 3 del 15/09: prezzo medio letto da un campo che non esiste)
      diventa rosso con la mutazione REINTRODOTTA nel codice del bot;
   7. lo specchio VERO della sessione produce righe che P1/P2 accettano;
-  8. il reperto aperto: `ScalperStrategy._place` NON legge il ritorno di
-     `market.place_order` (difetto 2 del catalogo). Documentato come xfail
-     STRETTO: il giorno in cui l'utente fa correggere il bot, il test diventa
-     rosso (XPASS) e chi corregge toglie il marcatore.
+  8. il reperto A (CORRETTO il 24/09 su ordine dell'utente): `_place` legge il
+     ritorno di `market.place_order` (difetto 2 del catalogo). Un rifiuto non
+     lascia nulla nello slot, scrive `place_rifiutato` col motivo, e K2 resta
+     muto pur SOLLECITATO; col difetto reintrodotto K2 torna rosso.
 
 I finti parlano come il vero: gli ordini sono `BetfairOrder` di flumine creati
 dal `_place` del bot, le righe hanno le chiavi dello specchio di produzione.
@@ -299,11 +299,23 @@ def _join(s: Any, m: _Mercato, sel: int = 7) -> Any:
     return slot
 
 
-def test_k2_rosso_quando_il_bot_crede_a_ordini_rifiutati(simulato):
+def _difetto_2_reintrodotto(monkeypatch: Any) -> None:
+    """La MUTAZIONE del 24/09 rimessa nel CODICE DEL BOT: `_esegui_place` che
+    chiama `place_order` e ne IGNORA il ritorno (il `_place` di prima)."""
+    def _ignora(market: Any, order: Any) -> Optional[str]:
+        market.place_order(order)
+        return None
+
+    monkeypatch.setattr(SB.ScalperStrategy, "_esegui_place", staticmethod(_ignora))
+
+
+def test_k2_rosso_quando_il_bot_crede_a_ordini_rifiutati(simulato, monkeypatch):
+    """FALSIFICAZIONE di K2 sul codice del bot: col difetto 2 reintrodotto la
+    strategia tiene le gambe rifiutate e si dichiara QUOTING2."""
+    _difetto_2_reintrodotto(monkeypatch)
     s = _strategia()
     m = _Mercato(rifiuta=True)
     slot = _join(s, m)
-    # la strategia VERA tiene le gambe rifiutate e si dichiara QUOTING2
     assert slot.status == SB.QUOTING2
     cred = CERT.credenze(s)
     righe = [CERT.riga_ordine(o, False) for c in cred for o in CERT.ordini_seguiti(c)]
@@ -547,14 +559,158 @@ def test_lo_specchio_vero_della_sessione_passa_p1_p2(simulato, monkeypatch):
 
 
 # ===========================================================================
-# 8. IL REPERTO APERTO: `_place` non legge il ritorno di `place_order`
+# 8. IL REPERTO A (corretto il 24/09): `_place` legge il ritorno di `place_order`
 # ===========================================================================
-@pytest.mark.xfail(strict=True, reason=(
-    "REPERTO 24/09 (non corretto: strategia intoccabile senza ordine dell'utente): "
-    "ScalperStrategy._place ignora il False di market.place_order, difetto 2 del "
-    "catalogo. Gia' corretto sui bot tennis il 17/09. Quando lo si corregge questo "
-    "test diventa XPASS (rosso): togliere il marcatore."))
 def test_place_rifiutato_non_torna_un_ordine(simulato):
     s = _strategia()
     o = s._place(_Mercato(rifiuta=True), 7, "BACK", 2.0, 25.0)
     assert o is None
+
+
+def _attivita(s: Any) -> List[Any]:
+    """Il sink di telemetria come lo collega `run_session`: (kind, payload)."""
+    righe: List[Any] = []
+    s.event_sink = lambda kind, payload: righe.append((kind, dict(payload)))
+    return righe
+
+
+def _mercato_flumine_che_rifiuta(quanti: int) -> Any:
+    """Un `flumine.markets.market.Market` VERO dentro un `FlumineSimulation`
+    VERO, col trading control di rifiuto del banco (`_controllo_rifiuti`):
+    il rifiuto passa da `Transaction._validate_controls` -> `_on_error` ->
+    `order.violation` -> `place_order` torna False, come in produzione."""
+    from flumine import FlumineSimulation
+    from flumine.markets.market import Market
+
+    quadro = FlumineSimulation(client=BC.cliente_simulato())
+    ctl = R._controllo_rifiuti(quadro, quanti)
+    # in TESTA: il mercato non e' registrato nel quadro e il MARKET_VALIDATION
+    # di flumine lo boccerebbe prima (rifiuto vero anche quello, ma qui si
+    # vuole il motivo del banco); nel replay il mercato c'e' e l'ordine e' lo
+    # stesso
+    quadro.trading_controls.insert(0, ctl)
+    return Market(quadro, "1.100", None), ctl
+
+
+def test_rifiuto_vero_di_flumine_slot_vuoto_attivita_scritta_e_k2_sollecitato_muto(simulato):
+    s = _strategia()
+    att = _attivita(s)
+    m, ctl = _mercato_flumine_che_rifiuta(2)
+    slot = _join(s, m)
+    # entrambe le gambe rifiutate: lo slot NON tiene niente e resta IDLE (il
+    # ramo "ordine non partito" gia' esistente in `_enter_join`)
+    assert len(ctl.ordini) == 2
+    assert slot.status == SB.IDLE
+    assert slot.entry_back is None and slot.entry_lay is None and slot.entry is None
+    assert slot.flatten_orders == []
+    assert list(m.blotter) == []
+    for o in ctl.ordini:
+        assert o.status == SB.OrderStatus.VIOLATION
+        assert SB.ScalperStrategy._has_live(o) is False
+    # la riga di attivita' col MOTIVO vero del rifiuto, e nessun 'place'
+    rif = [p for k, p in att if k == "place_rifiutato"]
+    assert len(rif) == 2
+    assert {p["side"] for p in rif} == {"BACK", "LAY"}
+    for p in rif:
+        assert "REPLAY_RIFIUTA_PRIMI" in p["motivo"]
+        assert p["order_id"] in {str(o.id) for o in ctl.ordini}
+    assert not [k for k, _ in att if k == "place"]
+    assert s.stats["orders_placed"] == 0
+    # K2 SOLLECITATO (a mercato ci sono i rifiuti) e MUTO (il bot non ci crede)
+    righe = [CERT.riga_ordine(o, False) for o in ctl.ordini]
+    oss = _oss(credenze=CERT.credenze(s), ordini=righe)
+    sollecitati: Dict[str, int] = {}
+    mem = CERT.Memoria()
+    codici: List[str] = []
+    for _ in range(CERT.GIRI_DI_TOLLERANZA + 1):
+        codici += [v.codice for v in CERT.verifica(oss, sollecitati, mem)]
+    assert sollecitati.get("K2"), sollecitati
+    assert "K2" not in codici and "K1" not in codici, codici
+
+
+def test_rifiuto_di_una_sola_gamba_cancella_l_altra_e_lo_slot_resta_idle(simulato):
+    """Il ramo ESISTENTE di `_enter_join` (una gamba None -> cancel dell'altra,
+    nessuna quota): ora ci si arriva anche col rifiuto."""
+    class _RifiutaIlPrimo(_Mercato):
+        def __init__(self) -> None:
+            super().__init__()
+            self.piazzati = 0
+            self.cancellati: List[Any] = []
+
+        def place_order(self, order: Any, *a: Any, **k: Any) -> bool:
+            self.piazzati += 1
+            self.rifiuta = self.piazzati == 1
+            return super().place_order(order, *a, **k)
+
+        def cancel_order(self, order: Any, size_reduction: Optional[float] = None) -> bool:
+            self.cancellati.append(order)
+            return True
+
+    s = _strategia()
+    m = _RifiutaIlPrimo()
+    slot = _join(s, m)
+    assert slot.status == SB.IDLE
+    assert slot.entry_back is None and slot.entry_lay is None
+    assert len(m.blotter.ordini) == 1 and m.cancellati == m.blotter.ordini
+
+
+def test_accettato_parita_con_prima(simulato):
+    """Ordine ACCETTATO: stesso oggetto nel blotter, 'place' emesso una volta,
+    contatore +1, tracciato nello slot, JOIN in QUOTING2 come prima."""
+    s = _strategia()
+    att = _attivita(s)
+    m = _Mercato()
+    slot = s._slot(m.market_id, 7)
+    o = s._place(m, 7, "LAY", 2.0, 3.0, floor_min=False, slot=slot)
+    assert o is not None and o in m.blotter.ordini
+    assert o.status == SB.OrderStatus.EXECUTABLE and SB.ScalperStrategy._has_live(o)
+    assert slot.flatten_orders == [o]
+    assert [k for k, _ in att] == ["place"]
+    assert s.stats["orders_placed"] == 1
+    s2 = _strategia()
+    slot2 = _join(s2, _Mercato(), sel=8)
+    assert slot2.status == SB.QUOTING2
+    assert slot2.entry_back is not None and slot2.entry_lay is not None
+
+
+def test_place_order_che_solleva(simulato):
+    """Un'eccezione di `place_order`: se l'ordine NON e' nel blotter e' un
+    rifiuto (None + attivita'); se c'e' e' partito e si segue (mai orfani)."""
+    class _Solleva(_Mercato):
+        def __init__(self, dopo_il_blotter: bool) -> None:
+            super().__init__()
+            self.dopo = dopo_il_blotter
+
+        def place_order(self, order: Any, *a: Any, **k: Any) -> bool:
+            if self.dopo:
+                super().place_order(order)
+            raise RuntimeError("guasto di rete")
+
+    s = _strategia()
+    att = _attivita(s)
+    slot = s._slot("1.100", 7)
+    assert s._place(_Solleva(False), 7, "BACK", 2.0, 25.0, slot=slot) is None
+    assert slot.flatten_orders == []
+    rif = [p for k, p in att if k == "place_rifiutato"]
+    assert len(rif) == 1 and "guasto di rete" in rif[0]["motivo"]
+    m = _Solleva(True)
+    o = s._place(m, 7, "BACK", 2.0, 25.0, slot=slot)
+    assert o is not None and o in m.blotter.ordini and slot.flatten_orders == [o]
+
+
+def test_il_banco_vede_i_rifiuti_anche_quando_il_bot_non_li_segue(simulato):
+    """Il banco (`_Banco.righe_correnti`) mette fra gli ordini osservati i
+    rifiuti iniettati dallo scenario anche se il bot li ha lasciati cadere:
+    senza, K2 resterebbe MAI SOLLECITATO proprio in 'rifiuti-betfair'."""
+    from types import SimpleNamespace
+
+    s = _strategia()
+    m, ctl = _mercato_flumine_che_rifiuta(2)
+    _join(s, m)
+    finto = SimpleNamespace(ordini_di=lambda _ss: [], rifiuti=ctl)
+    righe = R._Banco.righe_correnti(finto, s, CERT.credenze(s))
+    assert len(ctl.ordini) == 2 and len(righe) == 2
+    assert sorted(r["order_id"] for r in righe) == sorted(str(o.id) for o in ctl.ordini)
+    assert all(CERT._rifiutato(r) for r in righe)
+    senza = SimpleNamespace(ordini_di=lambda _ss: [], rifiuti=None)
+    assert R._Banco.righe_correnti(senza, s, CERT.credenze(s)) == []
