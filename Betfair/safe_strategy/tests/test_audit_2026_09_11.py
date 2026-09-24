@@ -1159,6 +1159,10 @@ def test_h16_catalogo_dei_kind_di_attivita():
         # servizio (reperto del 17/09 sulle righe paper etichettate LIVE).
         "proposta_opportunita", "opportunita_piazzata",
         "opportunita_rifiutata", "opportunita_decaduta",
+        # 24/09: ORDINE DELL'UTENTE («decido io»): una proposta viva che il
+        # motore non propone piu' NON decade: resta, marcata non piu' valida
+        # col perche' (etichetta in `safeActivity.ts`).
+        "opportunita_non_piu_valida",
     }
     import re as _re
     from pathlib import Path

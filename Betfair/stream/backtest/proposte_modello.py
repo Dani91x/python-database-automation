@@ -96,17 +96,18 @@ DESCRIZIONI: Dict[str, str] = {
         "slippage) e una dopo 180 s (proposta piu' vecchia di 120 s). "
         "strategy_modes.model='live' scritto (PM1-PM5, PM7)"),
     SCENARIO_SCADUTA: (
-        "MODELLO MONTATO: una proposta mai approvata che DECADE quando "
-        "l'opportunita' sparisce (clic dopo la decadenza -> nessun ordine) e una "
-        "RIFIUTATA dal trader (RIFIUTA tiene, nessun ordine, nessuna riproposta). "
-        "strategy_modes.model NON scritto: proposte in PAPER col servizio in LIVE "
-        "(PM1, PM2, PM4, PM5)"),
+        "MODELLO MONTATO: una proposta la cui opportunita' SPARISCE: dal 24/09 "
+        "(ordine dell'utente, 'decido io') NON decade piu', resta viva marcata "
+        "NON PIU' VALIDA e il trader la firma lo stesso col prezzo visto (ordine "
+        "manuale al prezzo visto, PM3); e una RIFIUTATA dal trader (RIFIUTA tiene, "
+        "nessun ordine, nessuna riproposta). strategy_modes.model NON scritto: "
+        "proposte in PAPER col servizio in LIVE (PM1, PM2, PM3, PM4, PM5)"),
     SCENARIO_ANOMALIA: (
-        "ANOMALIE MONTATE (finto di anomaly.detect): un'anomalia sparisce e la "
-        "proposta decade prima del clic (clic a vuoto, nessun ordine); un'altra "
-        "sparisce dal rilevamento mentre la scheda e' ancora viva e il trader "
-        "preme PIAZZA (PM6: l'anomalia sparita prima del clic non deve dare un "
-        "ordine)"),
+        "ANOMALIE MONTATE (finto di anomaly.detect): due anomalie spariscono dal "
+        "rilevamento mentre la scheda e' viva; dal 24/09 la scheda resta e dice "
+        "NON PIU' VALIDA, e il trader la firma lo stesso col prezzo visto (PM6 "
+        "riletto: l'ordine su un'anomalia sparita e' ammesso SOLO se la scheda al "
+        "clic lo diceva e la firma porta il prezzo visto)"),
     SCENARIO_COMBOS: (
         "COMBO MONTATE (finto di combos.find_combos) con auto_trade_combos ACCESO: "
         "dal 18/09 nessuna combo parte senza approvazione anche con l'interruttore "
@@ -138,7 +139,17 @@ _REGOLE: Tuple[Tuple[str, str], ...] = (
     ("PM5", "parita' paper/live delle proposte: la modalita' della proposta e' "
             "quella SCRITTA (servizio LIVE + strategy_modes.model='live', altrimenti "
             "paper) e la riga nata dall'approvazione ha la modalita' della proposta"),
-    ("PM6", "un'anomalia sparita dal rilevamento PRIMA del clic non da' un ordine"),
+    # 24/09 - RILETTO PER ORDINE DELL'UTENTE ("la scheda deve segnalarmi se
+    # l'opportunita' c'e' ancora o no: io decido se approvare o scartare"). Fino
+    # al 23/09: "un'anomalia sparita dal rilevamento PRIMA del clic non da' un
+    # ordine" (reperto PM6, decisione B24). Da oggi l'ordine su un'anomalia
+    # sparita e' LEGITTIMO solo se la scheda, al clic, la dichiarava NON PIU'
+    # VALIDA (``valutazione.valida=False``, scritta dal servizio) e il trader
+    # l'ha firmata col PREZZO VISTO: l'unico ordine vietato e' quello partito
+    # su una scheda che al clic la dava ancora per buona (o senza prezzo visto).
+    ("PM6", "un'anomalia sparita dal rilevamento PRIMA del clic da' un ordine SOLO "
+            "se la scheda al clic la dichiarava non piu' valida e il trader l'ha "
+            "firmata col prezzo visto (ordine utente 24/09: decide lui)"),
     ("PM7", "un PIAZZA con clic fresco su una proposta viva non si perde per l'eta' "
             "della PROPOSTA (mai 'richiesta_scaduta' su un'approvazione appena fatta)"),
     ("PM8", "combo: tutte le gambe o nessuna alla riserva, ognuna nel tetto "
@@ -283,6 +294,13 @@ def _nome_selezione(payload: Dict[str, Any], chiave: str) -> str:
     if chiave == "draw":
         return "The Draw"
     return str(payload.get(chiave) or chiave)
+
+
+def _scheda_non_valida(payload: Any) -> bool:
+    """24/09 - la scheda dice "non piu' valida"? (``valutazione.valida`` del
+    payload scritto dal servizio: ``bot_service._marca_non_piu_valida``)."""
+    v = (payload or {}).get("valutazione") if isinstance(payload, dict) else None
+    return isinstance(v, dict) and v.get("valida") is False
 
 
 def _coda(db: Any) -> List[Dict[str, Any]]:
@@ -801,6 +819,9 @@ class Clic:
     sids: Tuple[int, ...] = ()
     rilevazione_attiva: bool = True    # il finto la rilevava ancora al clic?
     giudicato: bool = False
+    # 24/09 - che cosa diceva la SCHEDA al clic: ``valutazione.valida`` del
+    # payload (None = la proposta non porta una valutazione)
+    scheda_valida: Optional[bool] = None
 
     @property
     def ok(self) -> bool:
@@ -903,10 +924,20 @@ class TraderProposte:
                 if mosso or eta >= f.dopo_s:
                     self._approva(db, f, r, riga, adesso, "fotografia")
             elif f.quando == "dopo_decadenza":
-                if stato == "rejected" and (r.get("result") or {}).get("decaduta"):
+                # 24/09 - ORDINE DELL'UTENTE: una proposta la cui opportunita'
+                # sparisce NON decade piu' (resta viva, marcata non piu'
+                # valida). Il trader di questa finestra preme PIAZZA quando la
+                # scheda gli dice che non c'e' piu': sulla riga decaduta (i casi
+                # che decadono ancora: partita finita, interruttore) come prima,
+                # oppure sulla scheda VIVA marcata non valida (decide lui).
+                if (stato == "rejected" and (r.get("result") or {}).get("decaduta")) \
+                        or (stato == "proposed" and _scheda_non_valida(p)):
                     self._approva(db, f, r, riga, adesso, "vivo")
             elif f.quando == "dopo_sparizione":
-                if stato == "proposed" and not self.rilevata(f, adesso):
+                # 24/09 - il trader firma DOPO che la scheda glielo ha detto
+                # (valutazione non valida): e' il gesto che PM6 ora ammette
+                if stato == "proposed" and not self.rilevata(f, adesso) \
+                        and _scheda_non_valida(p):
                     self._approva(db, f, r, riga, adesso, "vivo")
 
     def _approva(self, db: Any, f: Finestra, r: Dict[str, Any],
@@ -939,12 +970,14 @@ class TraderProposte:
                   esito: Dict[str, Any], *, prezzo: Optional[float] = None,
                   prezzi_gambe: Optional[Dict[str, float]] = None) -> None:
         p = r.get("payload") or {}
+        v = p.get("valutazione") if isinstance(p.get("valutazione"), dict) else None
         self.clic.append(Clic(
             finestra=f.nome, tipo=f.tipo, azione=azione, req_id=int(r["id"]),
             opp_key=str(p.get("opp_key") or ""), quando=float(adesso), esito=dict(esito),
             prezzo_visto=prezzo, prezzi_gambe=prezzi_gambe, lato=f.lato,
             sids=tuple(self.piano.sid.get(f.nome) or ()),
-            rilevazione_attiva=self.rilevata(f, adesso)))
+            rilevazione_attiva=self.rilevata(f, adesso),
+            scheda_valida=(None if v is None else bool(v.get("valida")))))
 
 
 # ---------------------------------------------------------------------------
@@ -1099,14 +1132,18 @@ class Sorveglianza:
                 if str(t.get("mode") or "") != str(p.get("mode") or ""):
                     viol("PM5", f"riga #{t.get('id')} in {t.get('mode')} da una "
                                 f"proposta in {p.get('mode')}")
-            # PM6 - anomalia sparita prima del clic
+            # PM6 - anomalia sparita prima del clic (riletto il 24/09: l'ordine
+            # e' ammesso SOLO se la scheda al clic la dava per NON valida e il
+            # trader l'ha firmata col prezzo visto)
             if c.tipo == "anomaly" and not c.rilevazione_attiva:
                 _sollecita(sollecitati, "PM6")
-                if nate:
+                firmata_sapendolo = c.scheda_valida is False and c.prezzo_visto is not None
+                if nate and not firmata_sapendolo:
                     viol("PM6", f"anomalia (finestra {c.finestra}) SPARITA dal "
                                 f"rilevamento prima del clic, eppure {len(nate)} "
-                                f"ordine/i: bot_service.py:2262-2286 con price_visto "
-                                f"non ricontrolla l'anomalia")
+                                f"ordine/i su una scheda che al clic "
+                                f"{'la dava ancora per valida' if c.scheda_valida else 'non portava la valutazione'}"
+                                f"{'' if c.prezzo_visto is not None else ' e senza prezzo visto'}")
             # PM3 - prezzo visto
             if c.prezzo_visto is not None and c.tipo != "combo":
                 _sollecita(sollecitati, "PM3")

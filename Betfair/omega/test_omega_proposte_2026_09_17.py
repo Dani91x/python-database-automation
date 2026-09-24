@@ -380,9 +380,17 @@ def test_sostanza_invariata_nessuna_riscrittura():
     assert db.richieste[0]["payload"]["proposed_at"] == aggiornato
 
 
-def test_la_proposta_decade_quando_la_condizione_non_regge_piu():
-    """Una proposta viva su una condizione che non regge e' una bugia sotto gli
-    occhi di chi deve decidere: decade, col motivo.
+def test_la_proposta_resta_viva_marcata_non_valida_quando_la_condizione_non_regge_piu():
+    """Una proposta viva su una condizione che non regge NON deve sembrare
+    ancora valida sotto gli occhi di chi decide.
+
+    24/09 — CONTRATTO CAMBIATO PER ORDINE DELL'UTENTE («la scheda deve
+    segnalarmi se c'e' ancora o no: io decido se approvare o scartare»). Fino al
+    23/09 questo test si chiamava ``test_la_proposta_decade_quando_la_condizione_
+    non_regge_piu`` e pretendeva la DECADENZA ('rejected' + ``decaduta``). Ora la
+    proposta resta VIVA ('proposed'), coi numeri di adesso, ``valutazione.valida
+    = False`` e il motivo; il ``motivo_codice`` della scheda resta quello per cui
+    era stata proposta.
 
     Qui il bot CAMBIA IDEA: la gamba proponeva perche' sforava il tetto di
     liability; l'utente ALZA il tetto dal pannello e quel motivo sparisce — con
@@ -390,12 +398,29 @@ def test_la_proposta_decade_quando_la_condizione_non_regge_piu():
     db = DbFinto([_lay()])
     assert _gira(db) == 1
     assert db.richieste[0]["payload"]["motivo_codice"] == "cap"
+    deciso = db.richieste[0]["payload"]["decided_at"]
     largo = _params(v3_max_liability_per_leg=1000.0, v3_max_liability_per_match=1000.0)
     assert _gira(db, params=largo) == 0
-    assert db.richieste[0]["status"] == "rejected"
-    assert db.richieste[0]["result"]["decaduta"] is True
-    assert "proposta_decaduta" in db.kinds()
-    assert PR.PROPOSTA_KEY not in (db.get_trade(1)["meta"] or {})
+    riga = db.richieste[0]
+    assert riga["status"] == "proposed", "la scheda e' stata chiusa d'autorita'"
+    assert "proposta_decaduta" not in db.kinds()
+    assert db.kinds().count("proposta_non_piu_valida") == 1
+    p = riga["payload"]
+    assert p["valutazione"]["valida"] is False
+    assert p["valutazione"]["motivo_codice"] not in PR.MOTIVI_CHE_PROPONGONO
+    assert p["motivo_codice"] == "cap" and p["decided_at"] == deciso
+    assert db.get_trade(1)["meta"][PR.PROPOSTA_KEY]["non_valida"] is True
+    # write-on-change: stesso quadro, nessuna nuova scrittura ne' attivita'
+    scritte = db.scritture
+    assert _gira(db, params=largo) == 0
+    assert db.scritture == scritte
+    assert db.kinds().count("proposta_non_piu_valida") == 1
+    # il tetto torna stretto: la proposta torna VALIDA, stessa riga, stesso istante
+    assert _gira(db) == 1
+    assert len(db.richieste) == 1 and db.richieste[0]["status"] == "proposed"
+    p2 = db.richieste[0]["payload"]
+    assert p2["valutazione"]["valida"] is True and p2["decided_at"] == deciso
+    assert "non_valida" not in db.get_trade(1)["meta"][PR.PROPOSTA_KEY]
 
 
 def test_una_controparte_che_sparisce_NON_uccide_la_proposta():

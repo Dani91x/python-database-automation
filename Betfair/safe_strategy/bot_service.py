@@ -2369,18 +2369,26 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                                   "selection_id": selection_id})
                 return {"error": "clic_troppo_vecchio"}
             prezzo_attuale = (prices or {}).get(side)
+            soglia = PO.slippage_pct_effettivo(payload)
+            # 24/09 — ORDINE DELL'UTENTE: la tolleranza si misura fra il
+            # prezzo VISTO AL CLIC e quello di ADESSO (millisecondi dopo), mai
+            # rispetto al prezzo della proposta; se scatta, il rifiuto porta i
+            # DUE prezzi nel motivo (``message``, in italiano) e nei campi.
             if not prices or prezzo_attuale is None:
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_sparito",
                                   "origin": "manual", "market_id": market_id,
-                                  "selection_id": selection_id})
-                return {"error": "prezzo_visto_sparito"}
-            soglia = PO.slippage_pct_effettivo(payload)
+                                  "selection_id": selection_id, "price_visto": pv})
+                return {"error": "prezzo_visto_sparito", "price_visto": pv,
+                        "price_attuale": None,
+                        "message": PO.motivo_prezzo_mosso(pv, None, side, soglia)}
             if PO.prezzo_fuori_tolleranza(pv, prezzo_attuale, side, soglia_pct=soglia):
                 _log(db, "skip", {"event_id": event_id, "reason": "prezzo_visto_fuori_tolleranza",
                                   "origin": "manual", "market_id": market_id,
                                   "selection_id": selection_id, "price_visto": pv,
                                   "price_attuale": prezzo_attuale, "soglia_pct": soglia})
-                return {"error": "prezzo_visto_fuori_tolleranza"}
+                return {"error": "prezzo_visto_fuori_tolleranza", "price_visto": pv,
+                        "price_attuale": prezzo_attuale, "soglia_pct": soglia,
+                        "message": PO.motivo_prezzo_mosso(pv, prezzo_attuale, side, soglia)}
             prezzo_ordine = pv
         elif str(payload.get("kind") or "").lower() == "anomaly":
             # NESSUN ``price_visto`` (client vecchio, o prima della
@@ -2589,13 +2597,26 @@ def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: di
             _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_sparita",
                               "origin": "manual", "combo_id": cid, "gamba": i,
                               "market_id": market_id, "selection_id": sid})
-            return {"error": "combo_gamba_sparita", "gamba": i}
+            out_sparita: dict[str, Any] = {"error": "combo_gamba_sparita", "gamba": i}
+            if legs_prezzi_visti is not None:
+                # 24/09 — i due prezzi nel motivo (qui il secondo non c'e' piu')
+                out_sparita.update({"price_visto": prezzo_ordine, "price_attuale": None,
+                                    "message": f"gamba {i + 1}: " + PO.motivo_prezzo_mosso(
+                                        prezzo_ordine, None, side, soglia_pct)})
+            return out_sparita
         if PO.prezzo_fuori_tolleranza(prezzo_ordine, prezzo_attuale, side, soglia_pct=soglia_pct):
             _log(db, "skip", {"event_id": event_id, "reason": "combo_gamba_fuori_tolleranza",
                               "origin": "manual", "combo_id": cid, "gamba": i,
                               "price_at_decision": prezzo_ordine, "price_attuale": prezzo_attuale,
                               "soglia_pct": soglia_pct})
-            return {"error": "combo_gamba_fuori_tolleranza", "gamba": i}
+            out_fuori: dict[str, Any] = {"error": "combo_gamba_fuori_tolleranza", "gamba": i,
+                                         "price_visto": prezzo_ordine,
+                                         "price_attuale": prezzo_attuale,
+                                         "soglia_pct": soglia_pct}
+            if legs_prezzi_visti is not None:
+                out_fuori["message"] = f"gamba {i + 1}: " + PO.motivo_prezzo_mosso(
+                    prezzo_ordine, prezzo_attuale, side, soglia_pct)
+            return out_fuori
         price = prezzo_ordine
         liability = X.liability_of(side, size, price)
         if cap > 0 and liability > cap:
@@ -6277,7 +6298,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                     db=db, payload=payload, event_id=event_id, opps=t_opps,
                     params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
                     sport="tennis", kind="tennis", vivi_ordine=vivi_ordine,
-                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                    motore_params=getattr(tennis_model, "params", None)))
             continue
         if sport != "calcio" or model is None or opp_mod is None:
             continue
@@ -6356,7 +6378,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 db=db, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
                 rows_by_event=rows_by_event or {}, vivi_ordine=vivi_ordine,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                motore_params=getattr(model, "params", None)))
         if (params.get("proponi_anomaly", True) and note_proposte is not None
                 and vivi_ordine is not None and anomalies):
             # ``_proponi_opps`` e' generico: un'anomalia ha la STESSA forma di
@@ -6370,7 +6393,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 params=params, mode=mode, now=now,
                 rows_by_event=rows_by_event or {}, sport="calcio", kind="anomaly",
                 vivi_ordine=vivi_ordine,
-                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known))
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known,
+                motore_params=_parametri_motore_anomalie(mods.get("anomaly"), params)))
         if (params.get("proponi_combo", True) and note_proposte is not None
                 and vivi_ordine is not None and combos):
             corpi_proposte.extend(_proponi_combo(
@@ -6395,7 +6419,10 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
         out["proposte"] = _riconcilia_proposte(
             db=db, note=note_proposte, corpi=corpi_proposte,
             eventi_in_gioco=eventi_in_gioco, eventi_valutati=eventi_valutati, now=now,
-            tipi_disabilitati=tipi_disabilitati)
+            tipi_disabilitati=tipi_disabilitati,
+            rows_by_event=(rows_by_event if rows_by_event is not None else
+                           {str(r.get("event_id") or ""): r for r in rows
+                            if isinstance(r, dict)}))
     if to_write:
         try:
             db.upsert_opportunities(to_write)
@@ -6453,13 +6480,38 @@ def _score_of(payload: dict, sport: str) -> Optional[str]:
     return f"{payload.get('score_home')}-{payload.get('score_away')}"
 
 
+def _parametri_motore_anomalie(mod: Any, params: Optional[dict]) -> dict[str, Any]:
+    """I parametri EFFETTIVI con cui ``anomaly.detect`` ha lavorato: la STESSA
+    espressione di ``detect`` (``{**DEFAULT_ANOMALY_PARAMS, **(params or {})}``),
+    non una copia dei numeri. Se il modulo iniettato (banco) non porta i
+    default, si prendono quelli del modulo vero."""
+    base = getattr(mod, "DEFAULT_ANOMALY_PARAMS", None)
+    if not isinstance(base, dict):
+        try:
+            from Betfair.safe_strategy import anomaly as _AN
+
+            base = _AN.DEFAULT_ANOMALY_PARAMS
+        except Exception:  # noqa: BLE001 — senza default: solo i parametri del bot
+            base = {}
+    return {**base, **(params or {})}
+
+
 def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
                   params: dict, mode: str, now: datetime,
                   rows_by_event: dict, sport: str = "calcio", kind: str = "model",
                   vivi_ordine: Optional[set[str]] = None,
                   scanner_ts: Optional[float] = None,
-                  scanner_ts_known: bool = False) -> list[dict]:
+                  scanner_ts_known: bool = False,
+                  motore_params: Optional[dict] = None) -> list[dict]:
     """LE OPPORTUNITA' DI MODELLO NON SI PIAZZANO PIU' DA SOLE: si PROPONGONO.
+
+    24/09 — ``motore_params`` = i parametri EFFETTIVI del motore che ha
+    generato ``opps`` (``model.params``, ``tennis_model.params``, i parametri
+    fusi delle anomalie): ogni corpo porta i ``criteri`` con cui la scheda (e
+    il servizio, al giro dopo) rivalutano la proposta AL PREZZO DI ADESSO
+    (``PO.valuta_al_prezzo``), e la ``valutazione`` corrente. Nessun filtro in
+    piu' e nessuno in meno: cosa si propone lo decide il codice qui sotto,
+    identico a prima.
 
     Ordine dell'utente del 17/09: ogni opportunita' di modello (calcio e
     tennis) arriva come una scheda con tutte le informazioni e due tasti,
@@ -6499,6 +6551,7 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
     # eredita': senza ``strategy_modes.model='live'`` si resta in paper.
     modo = modalita_di_strategia("model", mode, params)
     now_iso = now.isoformat()
+    criteri = PO.criteri_proposta(motore_params, params, stake=stake)
     fuori: list[dict] = []
     for o in opps:
         if not isinstance(o, dict):
@@ -6532,7 +6585,7 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
         liability = X.liability_of(side, stake, price)
         if cap > 0 and liability > cap:
             continue
-        fuori.append(PO.corpo_proposta(
+        corpo = PO.corpo_proposta(
             event_id=str(event_id), event_name=payload.get("event_name"), sport=sport,
             kind=kind, opp={**o, "price": price, "selection_id": selection_id,
                             "side": side, "market_type": market_type},
@@ -6541,7 +6594,17 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
             now_iso=now_iso, decided_at=now_iso,
             feed_updated_at=(feed_row or {}).get("updated_at"),
             odds_ts_ms=payload.get("odds_ts_ms"),
-        ))
+        )
+        # 24/09 — i criteri del motore e la valutazione al prezzo della
+        # proposta: il motore l'ha PROPOSTA adesso, quindi e' valida
+        # (``valutazione_viva``); ``al_prezzo`` sono i numeri che la scheda
+        # ricalcola a ogni tick con la stessa funzione.
+        corpo["criteri"] = dict(criteri)
+        corpo["valutazione"] = PO.valutazione_viva(
+            ts_iso=now_iso, al_prezzo=PO.valuta_al_prezzo(
+                side=side, prezzo=price, abbinabile=o.get("size_available"),
+                p_model=o.get("p_model"), criteri=criteri))
+        fuori.append(corpo)
     return fuori
 
 
@@ -6620,14 +6683,118 @@ def _opp_keys_con_ordine_vivo(db) -> Optional[set[str]]:
     return vivi
 
 
+def _nascita_della_proposta(precedente: dict[str, Any], corpo: dict[str, Any]) -> dict[str, Any]:
+    """I numeri della NASCITA di una proposta viva, che una riscrittura non deve
+    perdere (G2: «la proposta viva porta i numeri della decisione e si aggiorna
+    senza perdere l'istante»): ``decided_at`` (gia' dal 17/09), e dal 24/09 il
+    prezzo e l'abbinabile visti alla creazione — la scheda li mostra accanto a
+    quelli di adesso. ``valutazione.dal`` resta quello di prima se lo stato
+    (valida / non valida) non e' cambiato."""
+    out: dict[str, Any] = {
+        "decided_at": precedente.get("decided_at") or corpo.get("decided_at")}
+    for k in ("price_at_decision", "size_available_at_decision"):
+        if precedente.get(k) is not None:
+            out[k] = precedente.get(k)
+    v_prima = precedente.get("valutazione")
+    v_nuova = corpo.get("valutazione")
+    if isinstance(v_prima, dict) and isinstance(v_nuova, dict) \
+            and bool(v_prima.get("valida")) == bool(v_nuova.get("valida")) \
+            and v_prima.get("dal"):
+        out["valutazione"] = {**v_nuova, "dal": v_prima.get("dal")}
+    return out
+
+
+# 24/09 — perche' una proposta viva non regge piu' quando il motore smette di
+# proporla e al prezzo di adesso i criteri reggerebbero: lo sa solo il motore,
+# e la scheda lo dice con queste parole (causa 'modello'). Funzione, non dict
+# di modulo: niente stato di processo in piu' (``svuota_le_cache``).
+def _testo_non_piu_proposta(kind: str) -> str:
+    if kind == "anomaly":
+        return ("l'anomalia non e' piu' rilevata (riferimento, punteggio o veto del "
+                "modello cambiati)")
+    if kind == "combo":
+        return "la combinazione non e' piu' trovata dal motore"
+    if kind == "tennis":
+        return ("il modello tennis non la propone piu' (probabilita', confidenza o "
+                "contesto cambiati)")
+    return "il modello non la propone piu' (probabilita', confidenza o contesto cambiati)"
+
+
+def _marca_non_piu_valida(*, db, scrivi: Any, chiave: str, riga: dict[str, Any],
+                          rows_by_event: Optional[dict], now: datetime) -> None:
+    """Una proposta VIVA che il motore non propone piu': la si AGGIORNA (mai
+    chiusa) con ``valutazione.valida=False``, il perche' e i numeri al prezzo
+    di adesso dal feed del ciclo. Write-on-change: si riscrive solo se lo stato,
+    i criteri che cadono o il prezzo sono cambiati. L'attivita'
+    ``opportunita_non_piu_valida`` si scrive UNA volta, al passaggio da valida
+    a non valida."""
+    if not callable(scrivi):
+        return
+    corpo = dict(riga.get("payload") or {})
+    kind = str(corpo.get("kind") or "")
+    al_prezzo: Optional[dict[str, Any]] = None
+    if kind != "combo":
+        side = str(corpo.get("side") or "").lower()
+        try:
+            prezzi = prices_from_row(
+                (rows_by_event or {}).get(str(corpo.get("event_id") or "")),
+                market_type=str(corpo.get("market_type") or ""),
+                selection_id=int(corpo.get("selection_id")),
+                market_id=corpo.get("market_id"))
+        except (TypeError, ValueError):
+            prezzi = None
+        al_prezzo = PO.valuta_al_prezzo(
+            side=side, prezzo=(prezzi or {}).get(side),
+            abbinabile=(prezzi or {}).get(f"{side}_size"),
+            p_model=corpo.get("p_model"), criteri=corpo.get("criteri"))
+    prima = corpo.get("valutazione") if isinstance(corpo.get("valutazione"), dict) else None
+    dal = prima.get("dal") if (prima and prima.get("valida") is False) else None
+    nuova = PO.valutazione_non_valida(
+        ts_iso=now.isoformat(), al_prezzo=al_prezzo,
+        testo_modello=_testo_non_piu_proposta(kind),
+        dal=dal)
+    if prima is not None and PO.impronta_valutazione(prima) == PO.impronta_valutazione(nuova):
+        return
+    try:
+        scrivi(chiave, {**corpo, "valutazione": nuova, "proposed_at": now.isoformat()},
+               int(riga["id"]))
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "error", {"reason": "proposta_opportunita_aggiorna_fallita",
+                           "event_id": corpo.get("event_id"), "err": str(ex)[:160]})
+        return
+    if prima is None or prima.get("valida") is not False:
+        _log(db, "opportunita_non_piu_valida", {
+            "event_id": corpo.get("event_id"), "event_name": corpo.get("event_name"),
+            "request_id": int(riga["id"]), "kind": kind,
+            "signal_key": corpo.get("signal_key"), "causa": nuova.get("causa"),
+            "motivi": [m.get("codice") for m in nuova.get("motivi") or []],
+            "mode": corpo.get("mode")})
+
+
 def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
                          eventi_in_gioco: set, eventi_valutati: set,
                          now: datetime,
-                         tipi_disabilitati: Optional[set] = None) -> int:
+                         tipi_disabilitati: Optional[set] = None,
+                         rows_by_event: Optional[dict] = None) -> int:
     """Scrive le proposte nuove, aggiorna quelle vive, fa DECADERE quelle che
     non hanno piu' un'opportunita' sotto, e annota in attivita' i rifiuti che
     l'utente ha dato dalla scheda (la RPC scrive la riga, l'attivita' la scrive
     il servizio al primo ciclo utile). Ritorna il numero di proposte NUOVE.
+
+    24/09 — ORDINE DELL'UTENTE: «la scheda delle proposte deve segnalarmi se
+    l'opportunita', in base ai calcoli e al prezzo attuale, c'e' ancora o no:
+    io decido se approvare o scartare.» Una proposta viva la cui opportunita'
+    il motore NON propone piu' (partita in gioco e valutata in questo ciclo)
+    NON si chiude piu' d'autorita': resta viva, con ``valutazione.valida=False``
+    e il perche' (``causa`` 'prezzo' con i criteri che cadono al prezzo di
+    adesso, oppure 'modello'), e i numeri al prezzo attuale. Decide l'utente.
+    Restano IDENTICI i casi gia' previsti: partita non piu' in gioco (mercato
+    chiuso / partita finita) e interruttore del tipo spento -> decadenza come
+    prima; l'eta' massima dell'approvazione (120 s dal clic) vive in
+    ``process_requests`` e non e' toccata. Sulle riscritture si conservano i
+    numeri della NASCITA (``decided_at``, ``price_at_decision``,
+    ``size_available_at_decision``): la scheda mostra il prezzo visto alla
+    creazione accanto a quello di adesso.
 
     18/09 (2) — ``tipi_disabilitati``: i ``kind`` col rubinetto chiuso
     (``proponi_*=False``). Il chiamante non genera piu' corpi per quei tipi,
@@ -6679,8 +6846,7 @@ def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
         if PO.sostanza(precedente) == PO.sostanza(corpo):
             continue
         try:
-            scrivi(chiave, {**corpo, "decided_at": precedente.get("decided_at")
-                            or corpo.get("decided_at"),
+            scrivi(chiave, {**corpo, **_nascita_della_proposta(precedente, corpo),
                             **({"riproposta_perche": precedente["riproposta_perche"]}
                                if precedente.get("riproposta_perche") else {})},
                    int(esistente["id"]))
@@ -6700,7 +6866,12 @@ def _riconcilia_proposte(*, db, note: dict[str, Any], corpi: list[dict],
             elif eid not in eventi_in_gioco:
                 motivo = "partita non piu' in gioco"
             elif eid in eventi_valutati:
-                motivo = "opportunita' sparita dal feed"
+                # 24/09 — ORDINE DELL'UTENTE: non si chiude d'autorita'. La
+                # scheda resta, marcata «non piu' valida» col perche' e coi
+                # numeri al prezzo di adesso; decide l'utente.
+                _marca_non_piu_valida(db=db, scrivi=scrivi, chiave=chiave, riga=riga,
+                                      rows_by_event=rows_by_event, now=now)
+                continue
             else:
                 # partita in gioco ma NON valutata in questo ciclo (quote
                 # assenti, feed non fresco): non si sa, e non sapere non e' un
@@ -6931,12 +7102,17 @@ def _proponi_combo(*, db, payload: dict, event_id: str, combos: list,
                              "price": price, "size": leg_stake, "liability": round(liab, 2)})
         if not ok:
             continue
-        fuori.append(PO.corpo_proposta_combo(
+        corpo_combo = PO.corpo_proposta_combo(
             event_id=str(event_id), event_name=payload.get("event_name"), sport="calcio",
             cid=cid, combo=c, legs=legs_out, mode=modo,
             minute=payload.get("minute"), score=_score_of(payload, "calcio"),
             now_iso=now_iso, decided_at=now_iso,
-            feed_updated_at=(feed_row or {}).get("updated_at")))
+            feed_updated_at=(feed_row or {}).get("updated_at"))
+        # 24/09 — il motore la PROPONE adesso: valida (una combo non ha un
+        # prezzo solo su cui rivalutarla; se sparisce lo dice il servizio,
+        # causa 'modello').
+        corpo_combo["valutazione"] = PO.valutazione_viva(ts_iso=now_iso)
+        fuori.append(corpo_combo)
     return fuori
 
 

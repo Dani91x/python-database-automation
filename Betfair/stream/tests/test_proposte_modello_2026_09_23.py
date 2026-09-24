@@ -273,11 +273,12 @@ def _codici(viol) -> List[str]:
 
 
 def _clic(b, req_id, ok=True, prezzo=3.5, tipo="model", rilevata=True,
-          sids=(2,), gambe=None, t=T0):
+          sids=(2,), gambe=None, t=T0, scheda_valida=None):
     c = PM.Clic(finestra="A", tipo=tipo, azione="approva", req_id=req_id,
                 opp_key=KEY if tipo != "combo" else "E1|combo:abc", quando=t,
                 esito={"ok": ok}, prezzo_visto=None if gambe else prezzo,
-                prezzi_gambe=gambe, lato="back", sids=sids, rilevazione_attiva=rilevata)
+                prezzi_gambe=gambe, lato="back", sids=sids, rilevazione_attiva=rilevata,
+                scheda_valida=scheda_valida)
     b.trader.clic.append(c)
     return c
 
@@ -417,13 +418,24 @@ def test_pm5_rosso_se_la_riga_nata_cambia_modalita():
     assert "PM5" in _codici(v)
 
 
-@pytest.mark.parametrize("rilevata,con_ordine,rosso", [
-    (True, True, False), (False, False, False), (False, True, True)])
-def test_pm6_anomalia_sparita_prima_del_clic(rilevata, con_ordine, rosso):
+@pytest.mark.parametrize("rilevata,con_ordine,rosso,scheda_valida,prezzo", [
+    (True, True, False, None, 3.5), (False, False, False, None, 3.5),
+    # senza valutazione sulla scheda: come fino al 23/09, l'ordine e' rosso
+    (False, True, True, None, 3.5),
+    # 24/09 (PM6 riletto): la scheda diceva NON VALIDA e il trader ha firmato
+    # col prezzo visto -> ordine legittimo, decide lui
+    (False, True, False, False, 3.5),
+    # la scheda la dava ancora per VALIDA mentre l'anomalia era sparita: rosso
+    (False, True, True, True, 3.5),
+    # scheda non valida ma firma SENZA prezzo visto: rosso
+    (False, True, True, False, None)])
+def test_pm6_anomalia_sparita_prima_del_clic(rilevata, con_ordine, rosso, scheda_valida,
+                                             prezzo):
     b, _ = _banco(PM.SCENARIO_ANOMALIA)
     db, _ = _db(params={"strategy_modes": {"model": "live"}})
     rid = _proposta(db, kind="anomaly")
-    _clic(b, rid, tipo="anomaly", rilevata=rilevata)
+    _clic(b, rid, tipo="anomaly", rilevata=rilevata, scheda_valida=scheda_valida,
+          prezzo=prezzo)
     db.requests[0].update(status="done" if con_ordine else "error",
                           result={"ok": True} if con_ordine else {"error": "x"})
     if con_ordine:
@@ -431,6 +443,46 @@ def test_pm6_anomalia_sparita_prima_del_clic(rilevata, con_ordine, rosso):
     v, soll = _verifica(b, db)
     assert ("PM6" in _codici(v)) is rosso
     assert soll.get("PM6", 0) == (0 if rilevata else 1)
+
+
+def test_trader_firma_solo_quando_la_scheda_dice_non_piu_valida():
+    """24/09 - il trader del banco fa il gesto dell'utente: sulla finestra
+    "dopo la decadenza" (D) e "dopo la sparizione" (Y, anomalia) preme PIAZZA
+    solo quando la SCHEDA viva dice non piu' valida (la proposta non decade
+    piu'); su una scheda ancora valida non preme niente."""
+    b, oro = _banco(PM.SCENARIO_SCADUTA)
+    b.piano.sid["D"] = (2,)
+    db, _ = _db(params={})
+    rid = _proposta(db, mode="paper", kind="model")
+    b.trader.agisci(db, _riga_feed(), oro.t)
+    assert b.trader.clic == [], "ha firmato una scheda che nessuno dava per non valida"
+    db.scrivi_proposta_opportunita(KEY, {"mode": "paper", "kind": "model",
+                                         "selection_id": 2, "side": "back",
+                                         "valutazione": {"valida": False,
+                                                         "causa": "modello"}}, rid)
+    b.trader.agisci(db, _riga_feed(), oro.t)
+    assert len(b.trader.clic) == 1
+    c = b.trader.clic[0]
+    assert c.finestra == "D" and c.azione == "approva" and c.scheda_valida is False
+    assert c.prezzo_visto == 3.5
+
+    b2, oro2 = _banco(PM.SCENARIO_ANOMALIA)
+    b2.piano.sid["Y"] = (3,)
+    db2, _ = _db(params={})
+    key_y = "E1|anomaly:MATCH_ODDS:3:back"
+    rid2 = db2.scrivi_proposta_opportunita(key_y, {"mode": "paper", "kind": "anomaly",
+                                                   "selection_id": 3, "side": "back",
+                                                   "valutazione": {"valida": True}})
+    b2.trader.agisci(db2, _riga_feed(), oro2.t)
+    assert [c.finestra for c in b2.trader.clic] == [], \
+        "anomalia sparita ma scheda ancora VALIDA: il trader non deve firmare"
+    db2.scrivi_proposta_opportunita(key_y, {"mode": "paper", "kind": "anomaly",
+                                            "selection_id": 3, "side": "back",
+                                            "valutazione": {"valida": False,
+                                                            "causa": "prezzo"}}, rid2)
+    b2.trader.agisci(db2, _riga_feed(), oro2.t)
+    assert [c.finestra for c in b2.trader.clic] == ["Y"]
+    assert b2.trader.clic[0].scheda_valida is False
 
 
 def test_pm7_rosso_su_richiesta_scaduta_per_l_eta_della_proposta():

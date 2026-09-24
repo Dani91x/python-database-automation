@@ -441,13 +441,19 @@ def test_combo_rifiuto_persiste_e_decade_se_una_gamba_sparisce():
     out2 = _ciclo_combo(db, [_combo()], params={"auto_trade_combos": True})
     assert out2["proposte"] == 0
     # una gamba sola sparisce dal libro combo (find_combos non la produce
-    # piu'): l'INTERA proposta decade, non "si aggiorna a una gamba".
+    # piu'): l'INTERA proposta non regge piu', non "si aggiorna a una gamba".
+    # 24/09 — ORDINE DELL'UTENTE («decido io»): fino al 23/09 qui la proposta
+    # DECADEVA; ora resta VIVA marcata non piu' valida (causa 'modello': la
+    # combo non ha un prezzo solo su cui rivalutarla) e nessuna decadenza.
     db2 = DbFinto()
     _ciclo_combo(db2, [_combo()], params={"auto_trade_combos": True})
     assert db2.vive()[0]["payload"]["opp_key"] == chiave
     _ciclo_combo(db2, [], params={"auto_trade_combos": True})   # niente combo questo giro
-    assert db2.vive() == []
-    assert "opportunita_decaduta" in db2.kinds()
+    assert len(db2.vive()) == 1
+    v = db2.vive()[0]["payload"]["valutazione"]
+    assert v["valida"] is False and v["causa"] == "modello"
+    assert "opportunita_decaduta" not in db2.kinds()
+    assert "opportunita_non_piu_valida" in db2.kinds()
 
 
 def test_combo_riga_paper_resta_paper_anche_con_servizio_live(monkeypatch):
@@ -507,17 +513,24 @@ def test_anomalia_rifiutata_non_viene_riproposta():
     assert db.kinds().count("opportunita_rifiutata") == 1, "l'attivita' si scrive una volta sola"
 
 
-def test_anomalia_decade_quando_sparisce_dal_feed():
+def test_anomalia_sparita_dal_feed_resta_viva_marcata_non_valida():
     """CRITERIO DI ACCETTAZIONE ESPLICITO: l'anomalia non e' piu' fra quelle
-    trovate (``st['anomalies']`` vuoto per l'evento) -> la proposta decade."""
+    trovate (``st['anomalies']`` vuoto per l'evento).
+
+    24/09 — ORDINE DELL'UTENTE («la scheda deve segnalarmi se c'e' ancora o
+    no: io decido»): fino al 23/09 questo test si chiamava
+    ``test_anomalia_decade_quando_sparisce_dal_feed`` e pretendeva la
+    decadenza. Ora la proposta resta VIVA, marcata non piu' valida, coi numeri
+    al prezzo di adesso; decide l'utente."""
     db = DbFinto()
     _ciclo_anomalia(db, [_anomaly()])
     assert len(db.vive()) == 1
     _ciclo_anomalia(db, [])          # partita ancora in gioco, anomalia sparita
-    assert db.vive() == []
-    assert "opportunita_decaduta" in db.kinds()
-    motivo = [p for k, p in db.attivita if k == "opportunita_decaduta"][0]
-    assert motivo["motivo"] == "opportunita' sparita dal feed"
+    assert len(db.vive()) == 1
+    assert "opportunita_decaduta" not in db.kinds()
+    v = db.vive()[0]["payload"]["valutazione"]
+    assert v["valida"] is False and v["motivi"]
+    assert v["al_prezzo"]["prezzo"] is not None, "i numeri al prezzo di adesso mancano"
 
 
 # ===========================================================================

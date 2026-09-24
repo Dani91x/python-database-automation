@@ -154,6 +154,100 @@ export function motivoNonApprovabileOmega(p: PropostaUscitaOmegaPayload): string
     return null;
 }
 
+// ------------------------------------------------- l'uscita AL PREZZO DI ADESSO
+
+/**
+ * 24/09 — ORDINE DELL'UTENTE: «tutti i valori e i calcoli devono aggiornarsi al
+ * cambiare del prezzo; la scheda deve segnalarmi se c'è ancora o no, decido io».
+ *
+ * PORTA TypeScript di `Betfair/omega/omega_proposte.py:esito_uscita_al_prezzo`,
+ * cioè la decisione di `omega_v3.proposta_uscita` (e il bloccabile di
+ * `omega_v3.profitto_bloccabile`) al prezzo di back di ADESSO, con gli
+ * ingredienti che NON dipendono dal prezzo scritti dal servizio nel payload
+ * (`ev_tenere`, `max_attesa`, `p_evento`, `commissione`, `margine_attesa`,
+ * `p_lose_max`, `cap_scattato`). Legata al Python dal file d'oro
+ * `omegaUscita.golden.json` (`python -m Betfair.omega.tools.genera_oro_uscita`).
+ */
+export interface EsitoUscitaAlPrezzo {
+    profitto: number | null;
+    back_price: number | null;
+    back_stake: number | null;
+    attuabile: boolean;
+    meglio_aspettare: boolean;
+    proponi: boolean;
+    motivo_codice: string;
+}
+
+/** `float(v)` di Python su un campo del payload: numeri e stringhe numeriche;
+ *  `finito` = rifiuta anche nan/inf e i booleani (come `_fin`). */
+function numeroPy(v: unknown, finito: boolean): number | null {
+    if (v == null || typeof v === 'boolean') return finito || v == null ? null : Number(v);
+    const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    if (Number.isNaN(x) && typeof v !== 'number') return null;
+    if (finito && !Number.isFinite(x)) return null;
+    return x;
+}
+
+function arrotondaPy(x: number, cifre: number): number {
+    const f = 10 ** cifre;
+    return Math.round(x * f) / f;
+}
+
+export function esitoUscitaAlPrezzo(a: {
+    lay_price: unknown; size: unknown; back_price: unknown; back_size: unknown;
+    ev_tenere: unknown; max_attesa: unknown; p_evento: unknown;
+    commissione: unknown; margine_attesa: unknown;
+    cap_scattato?: string | null; p_lose_max?: unknown;
+}): EsitoUscitaAlPrezzo {
+    const out: EsitoUscitaAlPrezzo = {
+        profitto: null, back_price: null, back_stake: null, attuabile: false,
+        meglio_aspettare: false, proponi: false, motivo_codice: 'posizione_senza_numeri',
+    };
+    const lay = numeroPy(a.lay_price, true);
+    const s = numeroPy(a.size, true);
+    const evH = numeroPy(a.ev_tenere, true);
+    const pe = numeroPy(a.p_evento, true);
+    const comm = numeroPy(a.commissione, true);
+    const marg = numeroPy(a.margine_attesa, true);
+    if (lay == null || s == null || lay <= 1 || s <= 0 || evH == null || pe == null
+        || comm == null || marg == null) return out;
+    // --- omega_v3.profitto_bloccabile ---
+    const B = numeroPy(a.back_price, false);
+    if (B == null || !Number.isFinite(B) || B <= 1) {
+        out.motivo_codice = 'nessun_prezzo_di_back';
+        return out;
+    }
+    const sb = s * lay / B;
+    const lordo = s - sb;
+    const c = Math.max(0, Math.min(0.5, comm));
+    const profitto = arrotondaPy(lordo > 0 ? lordo * (1 - c) : lordo, 4);
+    const disponibile = numeroPy(a.back_size, false) ?? 0;
+    const attuabile = disponibile >= sb - 1e-9;
+    // --- omega_v3.proposta_uscita, ramo per ramo ---
+    const ma = numeroPy(a.max_attesa, false);
+    const meglio = ma != null && ma > profitto + marg;
+    out.profitto = profitto;
+    out.back_price = B;
+    out.back_stake = arrotondaPy(sb, 2);
+    out.attuabile = attuabile;
+    out.meglio_aspettare = meglio;
+    const plm = numeroPy(a.p_lose_max, false) || 0;
+    let motivo: string;
+    let proponi: boolean;
+    if (!attuabile) { motivo = 'controparte_insufficiente'; proponi = false; }
+    else if (a.cap_scattato) { motivo = 'cap'; proponi = true; }
+    else if (plm > 0 && pe > plm) { motivo = 'rischio'; proponi = true; }
+    else if (profitto <= 0) {
+        if (evH < profitto) { motivo = 'protezione'; proponi = true; }
+        else { motivo = 'bloccabile_non_positivo'; proponi = false; }
+    } else if (profitto < evH) { motivo = 'tenere_vale_di_piu'; proponi = false; }
+    else if (meglio) { motivo = 'aspettare_vale_di_piu'; proponi = false; }
+    else { motivo = 'blocca_il_profitto'; proponi = true; }
+    out.motivo_codice = motivo;
+    out.proponi = proponi;
+    return out;
+}
+
 /**
  * Prima quello che URGE, poi quello che conviene, poi il resto. A parità, la più
  * vecchia. Una protezione (o un cap) davanti a un green-up: non approvare una
