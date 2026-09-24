@@ -35,6 +35,18 @@ export interface DayBarProps {
     /** nota libera (es. "conta SOLO le partite piazzate oggi") */
     note?: string;
     /**
+     * 24/09 - di `realized`, la parte STIMATA (chiusa dal bot, Betfair non ha
+     * ancora regolato): scritta accanto al realizzato, mai confusa col reale.
+     * Assente = la pagina non la dichiara (comportamento di prima).
+     */
+    realizedEstimated?: number | null;
+    /**
+     * 24/09 - le posizioni VIVE, "se chiudo ora" (stimato): mostrato a parte e
+     * sommato al realizzato SOLO per l'avanzamento della barra e il "resta".
+     * "Obiettivo centrato" resta sul solo realizzato. Assente = come prima.
+     */
+    inProgress?: number | null;
+    /**
      * Certificazione 12/09 — le parole dei contatori sono sovrascrivibili:
      * «operazioni» non significa la stessa cosa nei tre bot (cicli in Mike,
      * posizioni in Omega/Safe) e le pagine erano costrette a spiegarlo nella
@@ -52,6 +64,7 @@ export interface DayBarProps {
 export function DayBar({
     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
     openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
+    realizedEstimated, inProgress,
 }: DayBarProps) {
     const matchesLabel = labels?.matches?.trim() || T.matches;
     const operationsLabel = labels?.operations?.trim() || T.operations;
@@ -73,10 +86,16 @@ export function DayBar({
         return Number.isFinite(n) ? n : null;
     };
     const real = numero(realized);
+    const stimato = numero(realizedEstimated);
+    const inCorso = numero(inProgress);
     const g = numero(goal) ?? 0;
     const hasGoal = g > 0;
-    const pct = hasGoal && real !== null ? Math.max(0, Math.min(100, (real / g) * 100)) : 0;
-    const remaining = hasGoal && real !== null ? Math.max(0, g - real) : 0;
+    // 24/09: l'avanzamento = realizzato + in corso (se passato); senza
+    // `inProgress` e' identico a prima
+    const avanz = real !== null ? real + (inCorso ?? 0) : null;
+    const pct = hasGoal && avanz !== null ? Math.max(0, Math.min(100, (avanz / g) * 100)) : 0;
+    const remaining = hasGoal && avanz !== null ? Math.max(0, g - avanz) : 0;
+    const centrato = hasGoal && real !== null && real >= g;
     // §5: UNA sola forma per le percentuali (lib/format), mai un replace locale
     const pctText = fmtPctPoints(pct, 1);
 
@@ -122,10 +141,26 @@ export function DayBar({
                     </>
                 )}
                 {real !== null && (
-                    <span title={TIP.realizedToday}>{T.realizedToday} <b className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</b></span>
+                    <span title={TIP.realizedToday}>{T.realizedToday} <b className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</b>
+                        {stimato != null && (
+                            <span className="text-amber-300/80 text-xs" data-testid="day-bar-stimato"
+                                title="parte chiusa dai bot ma non ancora regolata da Betfair: e' il calcolo del bot, diventera' il netto di Betfair al regolamento">
+                                {' '}(di cui stimato {fmtMoney(stimato, { signed: true })})
+                            </span>
+                        )}
+                    </span>
+                )}
+                {inCorso != null && (
+                    <>
+                        <span className="text-slate-600" aria-hidden>&middot;</span>
+                        <span data-testid="day-bar-in-corso"
+                            title="posizioni ancora aperte con soldi veri: quanto varrebbe chiuderle adesso. Stimato, entra nell'avanzamento della barra, non nel realizzato">
+                            in corso (stimato) <b className={pnlClass(inCorso)}>{fmtMoney(inCorso, { signed: true })}</b>
+                        </span>
+                    </>
                 )}
                 {hasGoal && real !== null && <span className="text-slate-600" aria-hidden>·</span>}
-                {hasGoal && real !== null && (remaining > 0 ? (
+                {hasGoal && real !== null && (!centrato ? (
                     <span>{T.remaining} <b className="text-amber-300" data-testid={tid.remaining}>{fmtMoney(remaining)}</b></span>
                 ) : (
                     <span>

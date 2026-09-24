@@ -928,6 +928,13 @@ export interface LiveAccountRow {
     manual_app_pnl_orders?: number | null;
     manual_app_pnl_day?: string | null;
     manual_app_pnl_updated_at?: string | null;
+    /**
+     * 24/09 (migrazione `pnl_betfair_reale_2026-09-24.sql`) - il P&L REALE di
+     * OGGI dell'intero conto, per voce, da `listClearedOrders` (runner,
+     * `reconcile_worker._sync_manual_pnl`). Forma grezza: la legge e la
+     * valida `leggiPnlRealeOggi` (`lib/composizioneObiettivo.ts`).
+     */
+    pnl_reale_oggi?: unknown;
 }
 
 export async function fetchLiveAccount(): Promise<LiveAccountRow | null> {

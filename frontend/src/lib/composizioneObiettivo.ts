@@ -15,7 +15,9 @@
 // tutte insieme. Se questa somma diverge, la composizione mente.
 // ============================================================================
 import { realizzatoGiornata, type RigaRealizzato } from './controlRoom';
-import { groupTradesIntoCicli, isErrorRow, type PnlTradeLike } from './eventGroups';
+import {
+    groupTradesIntoCicli, isErrorRow, isSettled, type PnlTradeLike,
+} from './eventGroups';
 
 /**
  * Una riga sorgente, con le STESSE chiavi delle tabelle vere
@@ -32,6 +34,36 @@ import { groupTradesIntoCicli, isErrorRow, type PnlTradeLike } from './eventGrou
  */
 export interface RigaComponente extends RigaRealizzato {
     origin?: string | null;
+    /**
+     * 24/09 - di `pnl`, la parte REGOLATA DA BETFAIR (netto di commissione) e
+     * la parte STIMATA (calcolo del bot: Betfair non ha ancora regolato).
+     * Assenti = riga di prima, trattata tutta come stimata (mai spacciata per
+     * reale). Per una riga paper sono irrilevanti: il paper e' sempre calcolo.
+     */
+    pnlReale?: number | null;
+    pnlStimato?: number | null;
+}
+
+/** Le due parti di una riga: se la riga non le dichiara, e' tutta stimata. */
+function parti(r: RigaComponente): { reale: number | null; stimato: number | null } {
+    if (r.pnlReale === undefined && r.pnlStimato === undefined) {
+        const v = typeof r.pnl === 'number' && Number.isFinite(r.pnl) ? r.pnl : null;
+        return { reale: null, stimato: v };
+    }
+    return { reale: r.pnlReale ?? null, stimato: r.pnlStimato ?? null };
+}
+
+function sommaParti(righe: readonly RigaComponente[]): { reale: number | null; stimato: number | null } {
+    let reale: number | null = null;
+    let stimato: number | null = null;
+    for (const r of righe) {
+        if (String(r.mode ?? '').toLowerCase() !== 'live') continue;
+        if (!isSettled(r.status) || isErrorRow(r.status)) continue;
+        const p = parti(r);
+        if (p.reale != null) reale = somma(reale, p.reale);
+        if (p.stimato != null) stimato = somma(stimato, p.stimato);
+    }
+    return { reale, stimato };
 }
 
 function eManuale(r: RigaComponente): boolean {
@@ -48,10 +80,13 @@ function soloSport(righe: readonly RigaComponente[], sport: 'calcio' | 'tennis')
 
 export interface RigaComposizione {
     chiave: 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | 'bot_tennis' | 'manuale'
-        | 'manuale_sito' | 'manuale_app';
+        | 'manuale_sito' | 'manuale_app' | 'altro';
     etichetta: string;
     /** P&L netto di oggi, SOLO soldi veri; null = nessuna riga (mostrare —, mai 0) */
     valore: number | null;
+    /** 24/09 - di `valore`, la parte STIMATA (Betfair non ha ancora regolato);
+     *  null = tutto regolato da Betfair (o nessuna riga) */
+    stimato?: number | null;
 }
 
 export interface ComposizioneObiettivo {
@@ -60,6 +95,10 @@ export interface ComposizioneObiettivo {
     totale: number | null;
     /** in prova (paper), su TUTTE le fonti insieme: mai sommato al totale sopra */
     provaPaper: number | null;
+    /** 24/09 - di `totale`, la parte regolata da Betfair e quella stimata
+     *  (reale + stimato = totale). Facoltativi per i fixture di prima. */
+    reale?: number | null;
+    stimato?: number | null;
 }
 
 const ETICHETTE: Record<RigaComposizione['chiave'], string> = {
@@ -77,6 +116,11 @@ const ETICHETTE: Record<RigaComposizione['chiave'], string> = {
     // terminale manuale (ladder) della nostra app.
     manuale_sito: 'Manuale · sito Betfair',
     manuale_app: 'Manuale · app',
+    // 24/09 - ordini regolati sul conto di altri bot (non Omega/Safe/Mike/
+    // tennis) e la DIFFERENZA fra il conto Betfair e le righe dei bot lette
+    // dalla pagina (righe fuori dalla finestra caricata, P&L reale non ancora
+    // scritto sulla riga): e' soldi veri, non si nasconde.
+    altro: 'Altro sul conto Betfair',
 };
 
 function somma(a: number | null, b: number | null): number | null {
@@ -108,6 +152,12 @@ export function componiObiettivo(input: {
      */
     manualeSito?: readonly RigaComponente[];
     manualeApp?: readonly RigaComponente[];
+    /**
+     * 24/09 - "Altro sul conto Betfair": righe sintetiche (altri bot + la
+     * differenza fra il conto e le righe dei bot lette). Facoltativo: assente
+     * = voce vuota, comportamento di prima.
+     */
+    altro?: readonly RigaComponente[];
 }): ComposizioneObiettivo {
     const omegaAuto = soloAuto(input.omega);
     const safeCalcioAuto = soloAuto(soloSport(input.safe, 'calcio'));
@@ -117,36 +167,225 @@ export function componiObiettivo(input: {
     const manuale = [...input.omega, ...input.safe, ...input.mike].filter(eManuale);
     const manualeSito = input.manualeSito ?? [];
     const manualeApp = input.manualeApp ?? [];
+    const altro = input.altro ?? [];
 
-    const vOmega = realizzatoGiornata(omegaAuto).live;
-    const vSafeCalcio = realizzatoGiornata(safeCalcioAuto).live;
-    const vSafeTennis = realizzatoGiornata(safeTennisAuto).live;
-    const vMike = realizzatoGiornata(mikeAuto).live;
-    const vTennisBot = realizzatoGiornata(tennisBot).live;
-    const vManuale = realizzatoGiornata(manuale).live;
-    const vManualeSito = realizzatoGiornata(manualeSito).live;
-    const vManualeApp = realizzatoGiornata(manualeApp).live;
+    const voce = (chiave: RigaComposizione['chiave'], righeVoce: readonly RigaComponente[]): RigaComposizione => ({
+        chiave,
+        etichetta: ETICHETTE[chiave],
+        valore: realizzatoGiornata(righeVoce).live,
+        stimato: sommaParti(righeVoce).stimato,
+    });
 
     const righe: RigaComposizione[] = [
-        { chiave: 'omega', etichetta: ETICHETTE.omega, valore: vOmega },
-        { chiave: 'safe_calcio', etichetta: ETICHETTE.safe_calcio, valore: vSafeCalcio },
-        { chiave: 'safe_tennis', etichetta: ETICHETTE.safe_tennis, valore: vSafeTennis },
-        { chiave: 'mike', etichetta: ETICHETTE.mike, valore: vMike },
-        { chiave: 'bot_tennis', etichetta: ETICHETTE.bot_tennis, valore: vTennisBot },
-        { chiave: 'manuale', etichetta: ETICHETTE.manuale, valore: vManuale },
-        { chiave: 'manuale_sito', etichetta: ETICHETTE.manuale_sito, valore: vManualeSito },
-        { chiave: 'manuale_app', etichetta: ETICHETTE.manuale_app, valore: vManualeApp },
+        voce('omega', omegaAuto),
+        voce('safe_calcio', safeCalcioAuto),
+        voce('safe_tennis', safeTennisAuto),
+        voce('mike', mikeAuto),
+        voce('bot_tennis', tennisBot),
+        voce('manuale', manuale),
+        voce('manuale_sito', manualeSito),
+        voce('manuale_app', manualeApp),
+        voce('altro', altro),
     ];
 
     const totale = righe.reduce<number | null>((acc, r) => somma(acc, r.valore), null);
 
     const tutteLeRighe = [
         ...input.omega, ...input.safe, ...input.mike, ...input.tennisBot,
-        ...manualeSito, ...manualeApp,
+        ...manualeSito, ...manualeApp, ...altro,
     ];
     const provaPaper = realizzatoGiornata(tutteLeRighe).paper;
+    const { reale, stimato } = sommaParti(tutteLeRighe);
 
-    return { righe, totale, provaPaper };
+    return { righe, totale, provaPaper, reale, stimato };
+}
+
+// ============================================================================
+// 24/09 - IL P&L REALE DI OGGI DEL CONTO (ordini dell'utente 9 e 10)
+//
+// Il runner (`Betfair/stream/reconcile_worker.py::_sync_manual_pnl`) legge da
+// Betfair i regolati di OGGI (giorno di Roma, `settledDate`) di TUTTO il
+// conto e scrive `betfair_live_account.pnl_reale_oggi` (+ lo pubblica sul
+// canale 47331, topic `account`): netto (profit - commissione del mercato),
+// per voce, e i bet_id contati. Qui lo si LEGGE (mai ricalcolato) e si
+// compongono le righe della barra:
+//   * reale  = quello del conto, per voce;
+//   * stimato = le operazioni gia' chiuse dal bot ma non ancora regolate da
+//     Betfair (calcolo del bot), SEMPRE dichiarate.
+// Il paper non passa mai di qui: resta il calcolo, sulla sua riga separata.
+// ============================================================================
+
+export type FonteReale = 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | 'bot_tennis'
+    | 'manuale_app' | 'manuale_sito' | 'altri_bot';
+
+export const FONTI_REALI: readonly FonteReale[] = [
+    'omega', 'safe_calcio', 'safe_tennis', 'mike', 'bot_tennis',
+    'manuale_app', 'manuale_sito', 'altri_bot',
+];
+
+export interface PnlRealeOggi {
+    /** giorno di Roma YYYY-MM-DD */
+    day: string;
+    /** netto dell'intero conto, regolato oggi */
+    netto: number;
+    ordini: number;
+    per_fonte: Record<FonteReale, { netto: number; ordini: number }>;
+    /** i bet_id gia' contati nel reale: la pagina non li conta anche come stimati */
+    bet_ids: string[];
+    /** ordini senza commissione di mercato leggibile (non nel reale) */
+    senza_commissione: number;
+    /** ordini con un ref ma senza una nostra riga (contati nel sito) */
+    sospetti_sito: number;
+    letto_at: string | null;
+}
+
+function finito(v: unknown): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Legge il P&L reale dal valore GREZZO (colonna JSONB o messaggio del
+ * canale). `null` = non disponibile: forma sbagliata, o giorno diverso da
+ * OGGI (un totale di ieri non e' il totale di oggi, mai mostrato come tale).
+ */
+export function leggiPnlRealeOggi(grezzo: unknown, oggi: string): PnlRealeOggi | null {
+    if (!grezzo || typeof grezzo !== 'object') return null;
+    const g = grezzo as Record<string, unknown>;
+    if (typeof g.day !== 'string' || g.day !== oggi) return null;
+    const netto = finito(g.netto);
+    if (netto == null) return null;
+    const pf = (g.per_fonte && typeof g.per_fonte === 'object') ? g.per_fonte as Record<string, unknown> : null;
+    if (!pf) return null;
+    const per_fonte = {} as Record<FonteReale, { netto: number; ordini: number }>;
+    for (const f of FONTI_REALI) {
+        const v = pf[f] as Record<string, unknown> | undefined;
+        per_fonte[f] = { netto: finito(v?.netto) ?? 0, ordini: finito(v?.ordini) ?? 0 };
+    }
+    const ids = Array.isArray(g.bet_ids) ? g.bet_ids.map((x) => String(x)) : [];
+    return {
+        day: g.day,
+        netto,
+        ordini: finito(g.ordini) ?? 0,
+        per_fonte,
+        bet_ids: ids,
+        senza_commissione: finito(g.senza_commissione) ?? 0,
+        sospetti_sito: finito(g.sospetti_sito) ?? 0,
+        letto_at: typeof g.letto_at === 'string' ? g.letto_at : null,
+    };
+}
+
+/** Fra la riga del database e il messaggio del canale vince il PIU' RECENTE
+ *  (`letto_at`); a pari o illeggibile, quello del canale (arriva per primo). */
+export function pnlRealePiuRecente(db: PnlRealeOggi | null, canale: PnlRealeOggi | null): PnlRealeOggi | null {
+    if (!db) return canale;
+    if (!canale) return db;
+    const a = Date.parse(db.letto_at ?? '');
+    const b = Date.parse(canale.letto_at ?? '');
+    if (Number.isFinite(a) && Number.isFinite(b) && a > b) return db;
+    return canale;
+}
+
+/** Una riga di trade con il P&L reale (chiavi delle tabelle vere). */
+export interface RigaTradeReale extends RigaTradeCiclo {
+    pnl_betfair?: number | null;
+    pnl_betfair_settled_at?: string | null;
+    settled_at?: string | null;
+    bet_id?: string | null;
+}
+
+/**
+ * 24/09 - LE OPERAZIONI DI OGGI PER LA BARRA, con reale e stimato separati.
+ *
+ * Un ciclo (apertura + chiusure) entra con:
+ *   * reale   = somma delle gambe con `pnl_betfair` REGOLATE OGGI da Betfair
+ *     (`pnl_betfair_settled_at` nel giorno di Roma): la giornata e' quella
+ *     del regolamento, come nel conto;
+ *   * stimato = somma delle gambe regolate dal bot (won/lost/void) ma senza
+ *     `pnl_betfair`, il cui bet_id NON e' fra quelli gia' contati dal conto
+ *     (`regolatiBetfair`), chiuse oggi (`settled_at` del bot, o in mancanza il
+ *     piazzamento dell'apertura).
+ * PAPER: invariato rispetto a `righeRealizzatoPerCiclo` (netto del ciclo,
+ * giornata del piazzamento dell'apertura), tutto stimato per definizione.
+ */
+export function righeGiornataPerCiclo<T extends RigaTradeReale>(
+    trades: readonly T[],
+    opts: {
+        oggi: string;
+        /** giorno di Roma di un istante ISO ('' se illeggibile) */
+        giornoDi: (iso: string | null | undefined) => string;
+        sport?: string;
+        regolatiBetfair?: ReadonlySet<string> | null;
+    },
+): RigaComponente[] {
+    const out: RigaComponente[] = [];
+    const vere = trades.filter((t) => !isErrorRow(t.status));
+    const delGiorno = (iso: string | null | undefined) => !!iso && opts.giornoDi(iso) === opts.oggi;
+    for (const c of groupTradesIntoCicli(vere)) {
+        const a = c.open;
+        const sport = opts.sport ?? a.sport ?? null;
+        if (String(a.mode ?? '').toLowerCase() === 'paper') {
+            if (!delGiorno(a.placed_at)) continue;
+            const netto = c.netPnl;
+            out.push({
+                status: netto == null ? a.status : netto > 0 ? 'won' : netto < 0 ? 'lost' : 'void',
+                pnl: netto, mode: a.mode ?? null, sport, origin: a.origin ?? null,
+            });
+            continue;
+        }
+        let reale: number | null = null;
+        let stimato: number | null = null;
+        for (const g of [a, ...c.closes]) {
+            const b = finito(g.pnl_betfair);
+            if (b != null) {
+                if (delGiorno(g.pnl_betfair_settled_at ?? g.settled_at)) reale = somma(reale, b);
+                continue;
+            }
+            if (!isSettled(g.status)) continue;
+            if (g.bet_id && opts.regolatiBetfair?.has(String(g.bet_id))) continue;
+            if (!delGiorno(g.settled_at ?? a.placed_at)) continue;
+            const v = finito(g.pnl);
+            if (v != null) stimato = somma(stimato, v);
+        }
+        if (reale == null && stimato == null) continue;
+        const netto = somma(reale, stimato) as number;
+        out.push({
+            status: netto > 0 ? 'won' : netto < 0 ? 'lost' : 'void',
+            pnl: netto, mode: a.mode ?? null, sport, origin: a.origin ?? null,
+            pnlReale: reale, pnlStimato: stimato,
+        });
+    }
+    return out;
+}
+
+/** Una riga sintetica LIVE (voce del conto): reale e/o stimato dichiarati. */
+export function rigaSintetica(
+    reale: number | null, stimato: number | null, extra: { sport?: string; origin?: string },
+): RigaComponente | null {
+    if (reale == null && stimato == null) return null;
+    const v = somma(reale, stimato) as number;
+    return {
+        status: v > 0 ? 'won' : v < 0 ? 'lost' : 'void', pnl: v, mode: 'live',
+        sport: extra.sport ?? null, origin: extra.origin ?? 'auto',
+        pnlReale: reale, pnlStimato: stimato,
+    };
+}
+
+/**
+ * La DIFFERENZA fra il conto e le righe dei tre bot lette dalla pagina: il
+ * reale di Omega+Safe+Mike secondo il conto meno il reale che le righe
+ * caricate portano. Diversa da zero quando una riga regolata oggi e' fuori
+ * dalla finestra letta o il suo `pnl_betfair` non e' ancora scritto: sono
+ * soldi veri, vanno in "Altro sul conto" invece di sparire.
+ */
+export function differenzaContoRighe(reale: PnlRealeOggi, righeBot: readonly RigaComponente[]): number {
+    const conto = reale.per_fonte.omega.netto + reale.per_fonte.safe_calcio.netto
+        + reale.per_fonte.safe_tennis.netto + reale.per_fonte.mike.netto;
+    let righe = 0;
+    for (const r of righeBot) {
+        if (String(r.mode ?? '').toLowerCase() !== 'live') continue;
+        righe += finito(r.pnlReale) ?? 0;
+    }
+    return Math.round((conto - righe) * 100) / 100;
 }
 
 // ============================================================================

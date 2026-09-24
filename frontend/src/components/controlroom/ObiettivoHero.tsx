@@ -62,6 +62,14 @@ export function ObiettivoHero({
                             <span className="text-white/55">{r.etichetta}</span>
                             <span className={`font-mono ${r.valore == null ? 'text-white/30' : pnlClass(r.valore)}`}>
                                 {r.valore == null ? DASH : fmtMoney(r.valore, { signed: true })}
+                                {/* 24/09 - la parte non ancora regolata da Betfair si DICHIARA */}
+                                {r.valore != null && r.stimato != null && (
+                                    <span className="text-amber-300/70 text-[10px] ml-1"
+                                        data-testid={`cr-composizione-${r.chiave}-stimato`}
+                                        title="calcolo del bot: Betfair non ha ancora regolato">
+                                        {r.stimato === r.valore ? 'stimato' : `di cui stimato ${fmtMoney(r.stimato, { signed: true })}`}
+                                    </span>
+                                )}
                             </span>
                         </div>
                     ))}

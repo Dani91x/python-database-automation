@@ -65,6 +65,7 @@ Testabile a unità: session/supabase/db mockabili, nessuna rete.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -219,7 +220,13 @@ def run_account_sync_if_due(session: Any) -> None:
     # Parte B (18/09 sera): il manuale gira alla STESSA cadenza del saldo (60s
     # normalmente), MA un cambio di saldo appena visto (= qualcosa si e'
     # regolato) lo fa scattare SUBITO, senza aspettare i 60s residui.
-    changed = _LAST_ACCOUNT_SIG != sig_before
+    # 24/09: anche un cambio di saldo visto da una lettura fatta ALTROVE
+    # (``saldo_evento`` dopo un evento d'ordine, ``annota_lettura_esterna``)
+    # e' il segnale di una possibile regolazione: il giro dei regolati parte
+    # qui, nel ciclo del saldo, mai da un thread di chi ha piazzato l'ordine.
+    global _REGOLATI_DA_RILEGGERE
+    changed = _LAST_ACCOUNT_SIG != sig_before or _REGOLATI_DA_RILEGGERE
+    _REGOLATI_DA_RILEGGERE = False
     _run_manual_pnl_if_due(session, force=changed)
 
 
@@ -229,7 +236,11 @@ def annota_lettura_esterna(sig: Tuple[Optional[float], Optional[float]]) -> None
     la cadenza fissa riparte da adesso (niente seconda chiamata a pochi
     secondi) e la firma write-on-change si allinea (niente riscrittura
     identica al giro dopo)."""
-    global _LAST_ACCOUNT_SIG, _LAST_ACCOUNT_TS
+    global _LAST_ACCOUNT_SIG, _LAST_ACCOUNT_TS, _REGOLATI_DA_RILEGGERE
+    if sig != _LAST_ACCOUNT_SIG:
+        # 24/09: il saldo e' cambiato qui e non nel giro del saldo, che quindi
+        # non lo vedrebbe mai come cambio: lo si segna per il giro dei regolati
+        _REGOLATI_DA_RILEGGERE = True
     _LAST_ACCOUNT_SIG = sig
     _LAST_ACCOUNT_TS = time.monotonic()
 
@@ -448,7 +459,11 @@ def _event_by_market(sb: Any) -> Dict[str, str]:
         return {}
 
 
-def _sync_cleared(session: Any, sb: Any = None) -> None:
+def _fetch_cleared_markets_today(session: Any) -> List[Any]:
+    """``listClearedOrders`` di OGGI (giorno Rome) raggruppati per MERCATO,
+    SENZA alcun filtro di strategy ref (tutto il conto). E' l'UNICO livello,
+    insieme a EVENT/EVENT_TYPE/EXCHANGE, che porta ``commission`` (fonte
+    ufficiale in testa alla sezione "P&L REALE" sotto). Paginato."""
     from betfairlightweight import filters
 
     start_utc, end_utc = day_window_utc(_now_local())
@@ -470,9 +485,31 @@ def _sync_cleared(session: Any, sb: Any = None) -> None:
         from_record += len(page)
         if not page or not low._val(res, "more_available"):
             break
+    return groups
 
-    ev_map = _event_by_market(sb) if sb is not None else {}
+
+def _sync_cleared(session: Any, sb: Any = None) -> None:
+    # 24/09: la lettura per MERCATO e' la stessa che serve al P&L reale
+    # (commissione per mercato): si legge UNA volta e si conserva in
+    # ``_MERCATI_CACHE``, cosi' il giro dei regolati la riusa invece di
+    # rifarla (chiamate REST che diminuiscono, regola del 13/09).
+    groups = _leggi_mercati_regolati(session, max_eta_s=0.0)
+
+    # 24/09: la mappa mercato -> evento (una LETTURA DB di fino a 1000 righe)
+    # serve solo se c'e' almeno un mercato da scrivere: prima si leggeva a
+    # OGNI giro (2 letture/min in LIVE) anche a mercati invariati.
+    da_scrivere = []
     for group in groups:
+        market_id = low._val(group, "market_id")
+        profit = low._f(low._val(group, "profit"))
+        if market_id is None or profit is None:
+            continue
+        bet_count = low._int(low._val(group, "bet_count")) or 0
+        if _LAST_CLEARED_SIG.get(str(market_id)) == (round(profit, 2), bet_count):
+            continue
+        da_scrivere.append(group)
+    ev_map = _event_by_market(sb) if (sb is not None and da_scrivere) else {}
+    for group in da_scrivere:
         market_id = low._val(group, "market_id")
         profit = low._f(low._val(group, "profit"))
         if market_id is None or profit is None:
@@ -500,69 +537,104 @@ def _sync_cleared(session: Any, sb: Any = None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Manuale (Parte B, 18/09 sera): P&L di OGGI delle operazioni NON dei bot
-# (piazzate dal SITO Betfair). Girato da run_account_sync_if_due (QUALUNQUE
-# LIVE_ORDER_MODE, mai in paper: il conto e' reale per definizione), cadenza
-# bassa (60s) + SUBITO dopo un cambio di saldo (segnale di un settlement).
-# NON duplica il futuro importer di personal_trades (entry_source='import',
-# vedi migrations/personal_tracking_manual_entry.sql): questo e' SOLO un
-# totale di giornata in tempo quasi reale, scritto su betfair_live_account.
+# P&L REALE DA BETFAIR (24/09, ordini dell'utente 9 e 10)
+#
+# (9)  "il P&L delle operazioni va preso DIRETTAMENTE da Betfair e non
+#      stimato, al netto di tutto (commissione)";
+# (10) "la barra di giornata deve avanzare considerando le operazioni di TUTTI
+#      i bot attivi e le mie in manuale, sia dalla nostra app che dal sito".
+#
+# FONTE UFFICIALE (docs.developer.betfair.com, "Betting Type Definitions" ->
+# ClearedOrderSummary, e "listClearedOrders - Roll-up Fields Available"):
+#   * profit: "The profit or loss (negative profit) gained on this line, in
+#     the account currency". Nella tabella dei roll-up e' sommato (SUM) a ogni
+#     livello e la doc non lo dice MAI "net of commission": e' il LORDO;
+#   * commission: "The cumulative amount of commission paid by the customer
+#     across all bets under this Item, in the account currency. Available at
+#     EXCHANGE, EVENT_TYPE, EVENT and MARKET level groupings only" (roll-up:
+#     Commission = N a livello BET e SIDE, Y a livello MARKET).
+# Quindi il NETTO reale di un mercato e' profit(MARKET) - commission(MARKET).
+# Il netto di UN ordine e' il suo profit(BET) meno la sua QUOTA della
+# commissione del mercato: Betfair la applica sulle vincite nette del MERCATO,
+# non ordine per ordine. La quota e' in proporzione ai profit POSITIVI degli
+# ordini di quel mercato (chi ha vinto paga), arrotondata al centesimo con il
+# residuo sull'ultimo ordine in utile: la somma resta ESATTA.
+#
+# CHI E' DI CHI (nota del coordinatore, 24/09): un ordine regolato e' di una
+# NOSTRA riga se una delle 5 tabelle ha una riga LIVE con quel ``bet_id``
+# (omega_trades, safe_strategy_trades, mike_trades, tennis_live_orders,
+# betfair_live_orders); in subordine se il suo ``customerOrderRef`` e'
+# ``omega-t<id>``/``safe-t<id>``/``mike-t<id>`` e quella riga esiste. MAI per
+# ``customerStrategyRef``: oggi Safe piazza con il ref di strategia di Omega.
+# Senza una nostra riga l'ordine e' "manuale sito". Eccezione dichiarata: una
+# riga di ``betfair_live_orders`` con ``source='account'`` e' la COPIA che la
+# riconciliazione scrive per un ordine trovato sul conto e mai piazzato da noi
+# (``_account_order_row``): e' proprio il sito, non conta come nostra.
+#
+# UN SOLO PUNTO DI SCRITTURA: questo giro, dentro il ciclo del saldo gia'
+# esistente (``run_account_sync_if_due``). Nessun processo nuovo. Il paper
+# non passa MAI di qui (il conto e' reale; nelle tabelle si toccano solo le
+# righe ``mode='live'``).
+#
+# CADENZA (le chiamate REST possono solo diminuire, regola del 13/09):
+#   * la lettura per MERCATO (una chiamata) gira: dopo un cambio di saldo
+#     (segnale di una regolazione, mai due volte in 20 s) e comunque ogni 5
+#     minuti come rete; riusa quella che ``_sync_cleared`` ha appena fatto
+#     (``_MERCATI_CACHE``: 35 s per il giro di rete, 5 s per il forzato);
+#   * la lettura per ORDINE (una chiamata, paginata) SOLO se la firma dei
+#     mercati regolati e' cambiata (un mercato nuovo, un profit o una
+#     commissione diversi): a mercati invariati non parte.
+# Prima (18/09): una lettura per ORDINE ogni 60 s + una a ogni cambio di saldo.
 # ---------------------------------------------------------------------------
-_MANUAL_PNL_INTERVAL_SEC = 60.0
+_MANUAL_PNL_INTERVAL_SEC = 300.0
 _LAST_MANUAL_PNL_TS = 0.0
 _LAST_MANUAL_PNL_SIG: Optional[Tuple] = None
+# la firma dei mercati regolati dell'ultimo giro COMPLETO (tutte le scritture
+# riuscite): uguale -> niente lettura per ordine
+_LAST_MERCATI_SIG: Optional[Tuple] = None
+_LAST_PNL_REALE_SIG: Optional[Tuple] = None
+# cache della lettura per MERCATO: monotonic, giorno, gruppi
+_MERCATI_CACHE: Dict[str, Any] = {"ts": None, "day": None, "gruppi": []}
+_MERCATI_CACHE_REGOLARE_SEC = 35.0
+_MERCATI_CACHE_FORZATO_SEC = 5.0
+# fra due giri FORZATI (cambio di saldo) almeno questo
+_MANUAL_PNL_MIN_FORZATO_SEC = 20.0
+# segnale "il saldo e' cambiato" arrivato da una lettura fatta altrove
+# (``annota_lettura_esterna``): il prossimo giro del saldo forza i regolati
+_REGOLATI_DA_RILEGGERE = False
+# proprietario di un bet_id gia' risolto in questo processo:
+# bet_id -> (tabella, id riga, extra) oppure None = nessuna nostra riga
+_PROPRIETARIO_BET: Dict[str, Optional[Tuple[str, Any, Dict[str, Any]]]] = {}
+_PROPRIETARIO_DAY: Optional[str] = None
+# firma dell'ultima scrittura per riga: (tabella, id) -> (netto, commissione, settled)
+_FIRMA_RIGA: Dict[Tuple[str, str], Tuple] = {}
 
-# Censimento 18/09, CORRETTO il 18/09 sera "terzo giro" dopo audit puntuale di
-# CIASCUN file che chiama ``market.place_order`` (vedi CHECKPOINT §16-17):
-#   * ``omega``/``mike`` -> bot REALI con customerStrategyRef esplicito (Safe
-#     eredita "omega": nessun ref proprio, `Betfair/safe_strategy/bot_service.py:45`
-#     importa `omega_market` senza mai ripatchare CUSTOMER_STRATEGY_REF).
-#   * ``live`` (calcio, `Betfair/stream/live_order_worker.py:53`) e ``tennis``
-#     (`Betfair/stream/tennis_live/tennis_live_order_worker.py:34`) NON sono bot:
-#     sono il ref del TERMINALE DI TRADING MANUALE della nostra app (ladder +
-#     comandi place/cashout/greenup via RPC, `migrations/betfair_live_cashout*.sql`
-#     `migrations/betfair_live_greenup.sql`, + chiusure di risk_rule su posizioni
-#     APERTE A MANO dall'utente) — verificato: `tennis_live_order_worker.py:1-6`
-#     lo dichiara ESPLICITAMENTE ("drena tennis_live_order_queue, ordini MANUALI
-#     della ladder"), e nessun file sotto `Betfair/stream/scalper/` o
-#     `Betfair/stream/tennis_scalper/` (i bot AUTONOMI veri) usa questi ref.
-#     Per l'utente ("tutto cio' che non e' bot: dal sito O dalla nostra app")
-#     questi ordini vanno nel MANUALE, sotto-classe 'manual_app' (calcio+tennis
-#     insieme: lo stesso ref serve sia ladder-click sia risk-rule, e non sono
-#     distinguibili fra loro — ne' serve, sono comunque manuali per l'utente).
-#   * QUALUNQUE ALTRO customerStrategyRef presente (compreso uno NON ancora
-#     censito qui) -> 'ours': il sito non manda MAI questo campo, quindi se
-#     c'e' e non e' live/tennis e' un bot, anche uno futuro.
+# Censimento 18/09 (vedi ``_classify_cleared_order``): i ref di strategia del
+# terminale manuale della nostra app. Restano per la classificazione STORICA
+# (diagnostico, test); l'attribuzione di oggi e' per riga (sopra).
 _MANUAL_APP_STRATEGY_REFS = frozenset({"live", "tennis"})
-# prefissi di customerOrderRef dei nostri bot: seconda rete SOLO quando lo
-# strategy ref manca (difensivo, es. un futuro bot che dimentica il ref).
 _OUR_ORDER_REF_PREFIXES = ("omega-", "safe-t", "mike-t")
+
+# tabelle in ordine di precedenza: un ordine di Omega/Safe passa ANCHE dalla
+# coda del runner (``betfair_live_orders``), ma e' del bot.
+_TABELLE_BOT = ("omega_trades", "safe_strategy_trades", "mike_trades")
+_TABELLE_SPECCHIO = ("tennis_live_orders", "betfair_live_orders")
+_TABELLA_DEL_PREFISSO = {"omega": "omega_trades", "safe": "safe_strategy_trades",
+                         "mike": "mike_trades"}
+_RE_REF_RIGA = re.compile(r"^(omega|safe|mike)-t(\d+)$")
+_BLOCCO_IN = 100  # bet_id per lettura (lunghezza dell'URL PostgREST)
+
+#: le voci della composizione, nello stesso vocabolario del frontend
+#: (``frontend/src/lib/composizioneObiettivo.ts``)
+FONTI = ("omega", "safe_calcio", "safe_tennis", "mike", "bot_tennis",
+         "manuale_app", "manuale_sito", "altri_bot")
 
 
 def _classify_cleared_order(order: Any) -> str:
-    """'ours' | 'manual_app' | 'manual' | 'ambiguous'.
-
-    Precedente 15/09 (customerOrderRef vs customer_order_ref): le chiavi qui
-    sono lette con ``low._val`` esattamente come le espone l'oggetto
-    ``ClearedOrder`` di betfairlightweight (snake_case reale, verificato in
-    ``betfairlightweight/resources/bettingresources.py``), mai un dict/camelCase
-    a mano.
-
-    'manual_app' = ref "live"/"tennis" (terminale di trading MANUALE della
-    nostra app, calcio o tennis — MAI un bot, vedi censimento sopra): erode
-    l'obiettivo come il manuale dal sito, ma contato SEPARATO
-    (``manual_app_pnl_*``).
-    'ambiguous' (ref presente ma irriconoscibile: ne' un nostro bot ne'
-    manual_app ne' chiaramente il sito) -> MAI nel manuale, contato a parte
-    ("nel dubbio escludi e conta gli esclusi", ordine esplicito).
-    'manual' = NESSUN ref leggibile (ne' strategy ne' order): il caso NORMALE
-    di una scommessa dal sito. ATTENZIONE (dichiarato, vedi CHECKPOINT §17):
-    OGGI questo stesso bucket include ANCHE gli ordini reali dei bot
-    AUTONOMI (scalper/sniper calcio, i 4 bot tennis) perche' quei file NON
-    passano alcun customerStrategyRef a ``market.place_order`` — non
-    distinguibile da qui, serve un fix nel loro codice (proposto, non
-    applicato: sono file di strategia).
-    """
+    """'ours' | 'manual_app' | 'manual' | 'ambiguous' - classificazione
+    STORICA per ref (18/09), invariata. 24/09: NON decide piu' a chi va il
+    P&L (lo decide la riga con quel bet_id, vedi ``_proprietari``): resta
+    come diagnostico, perche' ``customerStrategyRef`` oggi mente per Safe."""
     sref = low._val(order, "customer_strategy_ref")
     oref = low._val(order, "customer_order_ref")
     sref_s = str(sref).strip() if sref else ""
@@ -570,7 +642,7 @@ def _classify_cleared_order(order: Any) -> str:
     if sref_s.lower() in _MANUAL_APP_STRATEGY_REFS:
         return "manual_app"
     if sref_s:
-        return "ours"  # presente e non manual_app = un bot, chiunque sia
+        return "ours"
     if oref_s.startswith(_OUR_ORDER_REF_PREFIXES):
         return "ours"
     if not sref_s and not oref_s:
@@ -579,10 +651,9 @@ def _classify_cleared_order(order: Any) -> str:
 
 
 def _fetch_cleared_orders_today(session: Any) -> List[Any]:
-    """``listClearedOrders`` di OGGI (giorno Rome, STESSA finestra di
-    ``_sync_cleared``), NON raggruppati (bet-level: i soli che portano
-    customerStrategyRef/customerOrderRef/commission per singolo ordine).
-    Paginato (moreAvailable, stesso cap difensivo ``_MAX_PAGES``)."""
+    """``listClearedOrders`` di OGGI (giorno Rome), livello ORDINE (nessun
+    groupBy): l'unico che porta betId/customerOrderRef/eventTypeId per
+    singolo ordine. SENZA filtro di strategy ref (tutto il conto). Paginato."""
     from betfairlightweight import filters
 
     start_utc, end_utc = day_window_utc(_now_local())
@@ -606,91 +677,362 @@ def _fetch_cleared_orders_today(session: Any) -> List[Any]:
     return orders
 
 
-def _sum_pnl(orders: List[Any]) -> "Tuple[float, bool, int]":
-    """Somma profit/commissione di una lista di ordini GIA' filtrata.
+def _leggi_mercati_regolati(session: Any, *, max_eta_s: float) -> List[Any]:
+    """I mercati regolati di oggi (livello MERCATO), dalla cache se piu'
+    giovane di ``max_eta_s`` e dello stesso giorno, altrimenti UNA lettura
+    REST. Solleva se la lettura fallisce (il chiamante decide)."""
+    day = _now_local().strftime("%Y-%m-%d")
+    ts = _MERCATI_CACHE.get("ts")
+    if (ts is not None and _MERCATI_CACHE.get("day") == day
+            and (time.monotonic() - float(ts)) <= max_eta_s):
+        return list(_MERCATI_CACHE.get("gruppi") or [])
+    gruppi = _fetch_cleared_markets_today(session)
+    _MERCATI_CACHE["ts"] = time.monotonic()
+    _MERCATI_CACHE["day"] = day
+    _MERCATI_CACHE["gruppi"] = list(gruppi)
+    return gruppi
 
-    Ritorna (pnl_eur, is_net, n_ordini). ``is_net`` False (LORDO, mai finto
-    netto) se la commissione manca su almeno un ordine o la lista e' vuota."""
-    profit_tot = 0.0
-    commission_tot = 0.0
-    commission_readable = True
-    n = 0
-    for order in orders:
-        profit = low._f(low._val(order, "profit"))
-        if profit is None:
+
+def _firma_mercati(gruppi: List[Any]) -> Tuple:
+    out = []
+    for g in gruppi:
+        mid = low._val(g, "market_id")
+        if mid is None:
             continue
-        profit_tot += profit
-        n += 1
-        commission = low._f(low._val(order, "commission"))
-        if commission is None:
-            commission_readable = False
+        p = low._f(low._val(g, "profit"))
+        c = low._f(low._val(g, "commission"))
+        out.append((str(mid), None if p is None else round(p, 2),
+                    low._int(low._val(g, "bet_count")) or 0,
+                    None if c is None else round(c, 2)))
+    return tuple(sorted(out, key=repr))
+
+
+def commissioni_per_ordine(ordini: List[Any], gruppi: List[Any]) -> Dict[str, Optional[float]]:
+    """bet_id -> quota della commissione del SUO mercato (None = commissione
+    del mercato non leggibile: quell'ordine non ha un netto reale).
+
+    Funzione PURA. La commissione e' quella di ``listClearedOrders``
+    raggruppato per MERCATO (``commission``); ripartita sui profit POSITIVI
+    degli ordini di quel mercato, somma esatta al centesimo."""
+    comm_m: Dict[str, Optional[float]] = {}
+    for g in gruppi:
+        mid = low._val(g, "market_id")
+        if mid is None:
+            continue
+        comm_m[str(mid)] = low._f(low._val(g, "commission"))
+    per_mercato: Dict[str, List[Tuple[str, float]]] = {}
+    for o in ordini:
+        bet = low._val(o, "bet_id")
+        profit = low._f(low._val(o, "profit"))
+        if bet is None or profit is None:
+            continue
+        per_mercato.setdefault(str(low._val(o, "market_id")), []).append((str(bet), profit))
+    out: Dict[str, Optional[float]] = {}
+    for mid, bets in per_mercato.items():
+        c = comm_m.get(mid)
+        if c is None:
+            for bet, _p in bets:
+                out[bet] = None
+            continue
+        c = round(max(0.0, c), 2)
+        positivi = [(b, p) for b, p in bets if p > 0]
+        tot_pos = sum(p for _b, p in positivi)
+        for bet, _p in bets:
+            out[bet] = 0.0
+        if c <= 0:
+            continue
+        if tot_pos <= 0:
+            # commissione senza ordini in utile (non dovrebbe esistere): tutta
+            # sul primo ordine, la somma resta esatta e il caso non si perde
+            out[bets[0][0]] = c
+            continue
+        assegnata = 0.0
+        for i, (bet, p) in enumerate(positivi):
+            if i == len(positivi) - 1:
+                q = round(c - assegnata, 2)
+            else:
+                q = round(c * p / tot_pos, 2)
+                assegnata = round(assegnata + q, 2)
+            out[bet] = q
+    return out
+
+
+def _chiave_ref(order: Any) -> Optional[Tuple[str, str]]:
+    """(tabella, id) dal ``customerOrderRef`` ``<bot>-t<id>``, o None."""
+    oref = low._val(order, "customer_order_ref")
+    m = _RE_REF_RIGA.match(str(oref).strip()) if oref else None
+    if not m:
+        return None
+    return _TABELLA_DEL_PREFISSO[m.group(1)], m.group(2)
+
+
+def _fonte_di(tabella: str, extra: Dict[str, Any], order: Any) -> str:
+    """La voce della composizione per un ordine GIA' attribuito a una riga.
+    Lo sport viene da ``eventTypeId`` dell'ordine (2 = tennis), mai dal ref."""
+    tennis = str(low._val(order, "event_type_id") or "") == "2"
+    if tabella == "omega_trades":
+        return "omega"
+    if tabella == "safe_strategy_trades":
+        return "safe_tennis" if tennis else "safe_calcio"
+    if tabella == "mike_trades":
+        return "mike"
+    src = str(extra.get("source") or "").strip().lower()
+    if tabella == "tennis_live_orders":
+        return "manuale_app" if src in ("", "manual") else "bot_tennis"
+    # betfair_live_orders: 'runner' = terminale manuale dell'app;
+    # 'bot:<ref>' = ordine di un bot visto sul conto
+    if src.startswith("bot:"):
+        return "bot_tennis" if tennis else "altri_bot"
+    return "manuale_app"
+
+
+def _client_db() -> Any:
+    """Il client Supabase del processo (punto unico, sostituibile nei test)."""
+    from db_client import get_supabase_client
+
+    return get_supabase_client()
+
+
+def _proprietari(sb: Any, ordini: List[Any], day: str) -> None:
+    """Risolve (e ricorda) a quale NOSTRA riga appartiene ogni ordine non
+    ancora risolto in questo processo. Letture SOLO per i bet_id nuovi, a
+    blocchi, una per tabella (+ una per i ref ``<bot>-t<id>`` rimasti
+    orfani). Solleva se una lettura fallisce: il giro si ferma senza scrivere
+    e riprova al prossimo (mai un "manuale sito" dedotto da una lettura KO)."""
+    global _PROPRIETARIO_DAY
+    if _PROPRIETARIO_DAY != day:
+        _PROPRIETARIO_BET.clear()
+        _PROPRIETARIO_DAY = day
+    nuovi = [o for o in ordini
+             if low._val(o, "bet_id") is not None
+             and str(low._val(o, "bet_id")) not in _PROPRIETARIO_BET]
+    if not nuovi:
+        return
+    ids = sorted({str(low._val(o, "bet_id")) for o in nuovi})
+    trovati: Dict[str, Tuple[str, Any, Dict[str, Any]]] = {}
+    for tabella in _TABELLE_BOT + _TABELLE_SPECCHIO:
+        colonne = "id,bet_id" if tabella in _TABELLE_BOT else "id,bet_id,source"
+        for i in range(0, len(ids), _BLOCCO_IN):
+            blocco = [b for b in ids[i:i + _BLOCCO_IN] if b not in trovati]
+            if not blocco:
+                continue
+            res = (sb.table(tabella).select(colonne)
+                   .eq("mode", "live").in_("bet_id", blocco).execute())
+            for r in getattr(res, "data", None) or []:
+                b = str(r.get("bet_id"))
+                if b in trovati:
+                    continue
+                if tabella == "betfair_live_orders" and \
+                        str(r.get("source") or "").strip().lower() == "account":
+                    continue  # copia di un ordine del SITO, non nostra
+                trovati[b] = (tabella, r.get("id"), {"source": r.get("source")})
+    # in subordine: customerOrderRef <bot>-t<id>, se quella riga esiste
+    per_tabella: Dict[str, Dict[str, List[str]]] = {}
+    for o in nuovi:
+        b = str(low._val(o, "bet_id"))
+        if b in trovati:
+            continue
+        k = _chiave_ref(o)
+        if k is not None:
+            per_tabella.setdefault(k[0], {}).setdefault(k[1], []).append(b)
+    for tabella, per_id in per_tabella.items():
+        res = (sb.table(tabella).select("id")
+               .eq("mode", "live").in_("id", sorted(per_id)).execute())
+        for r in getattr(res, "data", None) or []:
+            for b in per_id.get(str(r.get("id")), []):
+                trovati[b] = (tabella, r.get("id"), {"via_ref": True})
+    for b in ids:
+        _PROPRIETARIO_BET[b] = trovati.get(b)
+
+
+def componi_regolati(ordini: List[Any], gruppi: List[Any],
+                     proprietari: Dict[str, Optional[Tuple[str, Any, Dict[str, Any]]]],
+                     day: str) -> Tuple[Dict[str, Any], Dict[Tuple[str, str], Dict[str, Any]]]:
+    """Funzione PURA: (totali del conto di oggi, P&L reale per riga).
+
+    Totali: netto/lordo/commissione dell'intero conto e per voce (``FONTI``),
+    gli ordini contati, i bet_id regolati (la pagina non li conta anche come
+    stimati), quanti ordini non hanno un netto (commissione del mercato
+    illeggibile: NON entrano nei totali reali, restano stimati)."""
+    comm = commissioni_per_ordine(ordini, gruppi)
+    per_fonte: Dict[str, Dict[str, Any]] = {
+        f: {"netto": 0.0, "lordo": 0.0, "ordini": 0, "senza_commissione": 0} for f in FONTI}
+    tot_netto = tot_lordo = tot_comm = 0.0
+    n = senza = sospetti = 0
+    bet_ids: List[str] = []
+    righe: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for o in ordini:
+        bet = low._val(o, "bet_id")
+        profit = low._f(low._val(o, "profit"))
+        if bet is None or profit is None:
+            continue
+        bet = str(bet)
+        prop = proprietari.get(bet)
+        if prop is None:
+            fonte = "manuale_sito"
+            if _chiave_ref(o) is not None or low._val(o, "customer_strategy_ref"):
+                sospetti += 1  # porta un ref ma nessuna nostra riga: dichiarato
         else:
-            commission_tot += commission
-    is_net = commission_readable and n > 0
-    pnl = round(profit_tot - commission_tot, 2) if is_net else round(profit_tot, 2)
-    return pnl, is_net, n
+            fonte = _fonte_di(prop[0], prop[2], o)
+        c = comm.get(bet)
+        pf = per_fonte[fonte]
+        pf["lordo"] += profit
+        if c is None:
+            senza += 1
+            pf["senza_commissione"] += 1
+            continue
+        netto = round(profit - c, 2)
+        n += 1
+        tot_netto += netto
+        tot_lordo += profit
+        tot_comm += c
+        pf["netto"] += netto
+        pf["ordini"] += 1
+        bet_ids.append(bet)
+        if prop is not None:
+            k = (prop[0], str(prop[1]))
+            acc = righe.setdefault(k, {"netto": 0.0, "commissione": 0.0,
+                                       "settled_at": None, "bet_ids": []})
+            acc["netto"] = round(acc["netto"] + netto, 2)
+            acc["commissione"] = round(acc["commissione"] + c, 2)
+            acc["bet_ids"].append(bet)
+            sd = _dt_iso(low._val(o, "settled_date"))
+            if sd and (acc["settled_at"] is None or sd > acc["settled_at"]):
+                acc["settled_at"] = sd
+    for pf in per_fonte.values():
+        pf["netto"] = round(pf["netto"], 2)
+        pf["lordo"] = round(pf["lordo"], 2)
+    totali = {
+        "day": day,
+        "netto": round(tot_netto, 2),
+        "lordo": round(tot_lordo, 2),
+        "commissione": round(tot_comm, 2),
+        "ordini": n,
+        "senza_commissione": senza,
+        "sospetti_sito": sospetti,
+        "per_fonte": per_fonte,
+        "bet_ids": sorted(bet_ids),
+    }
+    return totali, righe
 
 
-def _sync_manual_pnl(session: Any) -> None:
-    """Calcola e scrive (write-on-change) il P&L manuale di oggi — DUE totali
-    SEPARATI (terzo giro, 18/09 sera, ordine esplicito dell'utente "tutto cio'
-    che non e' bot: dal sito O dalla nostra app"):
-      * ``manual_pnl_*``     — dal SITO Betfair (nessun ref leggibile);
-      * ``manual_app_pnl_*`` — dal TERMINALE MANUALE della nostra app
-        (calcio+tennis, ref "live"/"tennis" — MAI un bot, vedi censimento
-        in ``_classify_cleared_order``).
-    ``manual_pnl_excluded`` resta un contatore UNICO (ordini 'ambiguous',
-    ref presente ma irriconoscibile): non si sa a quale bucket assegnarli,
-    quindi non stanno in nessuno dei due totali, solo nel diagnostico.
+def _scrivi_righe(righe: Dict[Tuple[str, str], Dict[str, Any]]) -> bool:
+    """P&L reale ACCANTO a quello calcolato (``pnl`` non si tocca), sulle
+    righe LIVE, write-on-change. Ritorna False se almeno una scrittura e'
+    fallita (il giro verra' rifatto). Una tabella che rifiuta una scrittura
+    (migrazione non applicata) non riceve le altre in questo giro."""
+    from . import db
 
-    MONEY-CRITICAL: un KO REST NON tocca MAI i totali gia' scritti (si esce
-    PRIMA di toccare la firma write-on-change) — mai azzerare per un guasto
-    transitorio. Non solleva MAI (chiamata da run_account_sync_if_due)."""
-    global _LAST_MANUAL_PNL_SIG
+    ok = True
+    tabelle_ko: set = set()
+    for (tabella, rid), v in sorted(righe.items()):
+        if tabella in tabelle_ko:
+            ok = False
+            continue
+        firma = (v["netto"], v["commissione"], v["settled_at"])
+        if _FIRMA_RIGA.get((tabella, rid)) == firma:
+            continue
+        try:
+            db.update_pnl_betfair(tabella, rid, {
+                "pnl_betfair": v["netto"],
+                "commissione_betfair": v["commissione"],
+                "pnl_betfair_settled_at": v["settled_at"],
+            })
+            _FIRMA_RIGA[(tabella, rid)] = firma
+        except Exception as ex:  # noqa: BLE001 - riprova al prossimo giro
+            ok = False
+            tabelle_ko.add(tabella)
+            logger.warning("[reconcile] P&L reale su %s id %s KO (migrazione "
+                           "pnl_betfair_reale_2026-09-24.sql applicata?): %s",
+                           tabella, rid, str(ex)[:200])
+    return ok
+
+
+def _sync_manual_pnl(session: Any, *, max_eta_s: float = _MERCATI_CACHE_FORZATO_SEC) -> None:
+    """IL GIRO DEI REGOLATI DI OGGI (nome storico: nato per il solo manuale).
+
+    1. mercati regolati di oggi (cache o UNA lettura REST per MERCATO);
+    2. firma invariata rispetto all'ultimo giro completo -> fine (nessuna
+       altra chiamata, nessuna scrittura);
+    3. altrimenti ordini regolati di oggi (UNA lettura REST per ORDINE),
+       proprietari per bet_id (letture DB solo per i bet_id nuovi), P&L reale
+       sulle righe, totali del conto (``betfair_live_account.pnl_reale_oggi``)
+       e i due totali manuali di sempre (``manual_pnl_*``/``manual_app_pnl_*``,
+       ora NETTI con la commissione del mercato), pubblicati sul canale.
+
+    MONEY-CRITICAL: un KO (REST o DB) non tocca MAI i valori gia' scritti e
+    non fa avanzare la firma: si ritenta. Non solleva MAI. Mai in paper."""
+    global _LAST_MANUAL_PNL_SIG, _LAST_MERCATI_SIG, _LAST_PNL_REALE_SIG
+    day = _now_local().strftime("%Y-%m-%d")
+    try:
+        gruppi = _leggi_mercati_regolati(session, max_eta_s=max_eta_s)
+    except Exception as ex:  # noqa: BLE001 - REST KO: i totali restano quelli di prima
+        logger.warning("[reconcile] listClearedOrders per mercato KO: %s", str(ex)[:200])
+        return
+    firma_mercati = (day, _firma_mercati(gruppi))
+    if firma_mercati == _LAST_MERCATI_SIG:
+        return
     try:
         orders = _fetch_cleared_orders_today(session)
     except Exception as ex:  # noqa: BLE001 - REST KO: i totali restano quelli di prima
-        logger.warning("[reconcile] listClearedOrders (manuale) KO: %s", str(ex)[:200])
-        return
-
-    site_orders: List[Any] = []
-    app_orders: List[Any] = []
-    n_ambiguous = 0
-    for order in orders:
-        kind = _classify_cleared_order(order)
-        if kind == "ours":
-            continue
-        if kind == "ambiguous":
-            n_ambiguous += 1
-            continue
-        if kind == "manual_app":
-            app_orders.append(order)
-        else:  # 'manual' (sito)
-            site_orders.append(order)
-
-    pnl_value, is_net, n_manual = _sum_pnl(site_orders)
-    app_pnl_value, app_is_net, n_app = _sum_pnl(app_orders)
-    day = _now_local().strftime("%Y-%m-%d")
-
-    sig = (pnl_value, is_net, n_manual, n_ambiguous, day, app_pnl_value, app_is_net, n_app)
-    if sig == _LAST_MANUAL_PNL_SIG:
+        logger.warning("[reconcile] listClearedOrders (ordini) KO: %s", str(ex)[:200])
         return
     try:
-        from . import db
-
-        db.upsert_live_account_manual_pnl(
-            pnl_eur=pnl_value, is_net=is_net, orders=n_manual, excluded=n_ambiguous, day=day,
-            app_pnl_eur=app_pnl_value, app_is_net=app_is_net, app_orders=n_app,
-        )
-        _LAST_MANUAL_PNL_SIG = sig
-    except Exception as ex:  # noqa: BLE001 - migrazione non applicata o DB KO: ritenta al giro dopo
-        logger.warning(
-            "[reconcile] upsert manuale KO (migrazione betfair_live_account_manual_pnl.sql "
-            "applicata?): %s", str(ex)[:200],
-        )
+        _proprietari(_client_db(), orders, day)
+    except Exception as ex:  # noqa: BLE001 - DB KO: mai un "sito" dedotto da un guasto
+        logger.warning("[reconcile] lettura dei proprietari KO: %s", str(ex)[:200])
         return
-    # publish SEMPRE sul canale locale (STESSO topic 'account' del saldo, zero
-    # costo DB): il frontend vede il manuale aggiornato in tempo reale ad app aperta.
+    totali, righe = componi_regolati(orders, gruppi, dict(_PROPRIETARIO_BET), day)
+    completo = _scrivi_righe(righe)
+
+    def _bucket(pf: Dict[str, Any]) -> Tuple[float, bool, int]:
+        # NETTO solo se la commissione del mercato era leggibile per TUTTI gli
+        # ordini del bucket; altrimenti LORDO dichiarato (mai finto netto)
+        n_tot = pf["ordini"] + pf["senza_commissione"]
+        netto = pf["senza_commissione"] == 0 and n_tot > 0
+        return (pf["netto"] if netto else pf["lordo"]), netto, n_tot
+
+    pnl_value, is_net, n_manual = _bucket(totali["per_fonte"]["manuale_sito"])
+    app_pnl_value, app_is_net, n_app = _bucket(totali["per_fonte"]["manuale_app"])
+    manual_sig = (pnl_value, is_net, n_manual, 0, day, app_pnl_value, app_is_net, n_app)
+    from . import db
+
+    if manual_sig != _LAST_MANUAL_PNL_SIG:
+        try:
+            # ``excluded`` = 0: dal 24/09 non esistono piu' ordini "ambigui"
+            # (o c'e' una nostra riga con quel bet_id, o e' il sito); gli
+            # ordini con un ref ma senza riga sono in ``pnl_reale_oggi.
+            # sospetti_sito`` (dentro il totale del sito, dichiarati)
+            db.upsert_live_account_manual_pnl(
+                pnl_eur=pnl_value, is_net=is_net, orders=n_manual, excluded=0, day=day,
+                app_pnl_eur=app_pnl_value, app_is_net=app_is_net, app_orders=n_app,
+            )
+            _LAST_MANUAL_PNL_SIG = manual_sig
+        except Exception as ex:  # noqa: BLE001 - migrazione non applicata o DB KO
+            completo = False
+            logger.warning(
+                "[reconcile] upsert manuale KO (migrazione betfair_live_account_manual_pnl.sql "
+                "applicata?): %s", str(ex)[:200],
+            )
+    letto_at = datetime.now(timezone.utc).isoformat()
+    reale = dict(totali, letto_at=letto_at)
+    reale_sig = (day, totali["netto"], totali["ordini"], totali["senza_commissione"],
+                 tuple(totali["bet_ids"]),
+                 tuple((f, v["netto"], v["ordini"]) for f, v in sorted(totali["per_fonte"].items())))
+    if reale_sig != _LAST_PNL_REALE_SIG:
+        try:
+            db.upsert_live_account_pnl_reale(reale)
+            _LAST_PNL_REALE_SIG = reale_sig
+        except Exception as ex:  # noqa: BLE001 - migrazione non applicata o DB KO
+            completo = False
+            logger.warning(
+                "[reconcile] upsert pnl_reale_oggi KO (migrazione "
+                "pnl_betfair_reale_2026-09-24.sql applicata?): %s", str(ex)[:200],
+            )
+    if completo:
+        _LAST_MERCATI_SIG = firma_mercati
+    # canale locale (topic 'account', zero costo DB): i due manuali di sempre
+    # + il P&L reale del conto, a ogni giro che ha letto gli ordini.
     try:
         from . import local_channel as _lc
 
@@ -700,12 +1042,13 @@ def _sync_manual_pnl(session: Any) -> None:
                 "manual_pnl_eur": pnl_value,
                 "manual_pnl_is_net": is_net,
                 "manual_pnl_orders": n_manual,
-                "manual_pnl_excluded": n_ambiguous,
+                "manual_pnl_excluded": 0,
                 "manual_pnl_day": day,
                 "manual_app_pnl_eur": app_pnl_value,
                 "manual_app_pnl_is_net": app_is_net,
                 "manual_app_pnl_orders": n_app,
-                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "pnl_reale_oggi": reale,
+                "checked_at": letto_at,
             },
         )
     except Exception:  # noqa: BLE001 - canale opzionale, mai bloccare il dato
@@ -713,16 +1056,18 @@ def _sync_manual_pnl(session: Any) -> None:
 
 
 def _run_manual_pnl_if_due(session: Any, *, force: bool = False) -> None:
-    """Cadenza bassa (60s) + trigger immediato (``force=True``) subito dopo
-    un cambio di saldo (segnale che qualcosa si e' appena regolato). Non
-    solleva MAI."""
+    """Rete ogni 5 minuti + giro forzato dopo un cambio di saldo (segnale di
+    una regolazione), mai due forzati a meno di 20 s. Non solleva MAI."""
     global _LAST_MANUAL_PNL_TS
     now_mono = time.monotonic()
-    if not force and (now_mono - _LAST_MANUAL_PNL_TS) < _MANUAL_PNL_INTERVAL_SEC:
+    trascorso = now_mono - _LAST_MANUAL_PNL_TS
+    regolare = trascorso >= _MANUAL_PNL_INTERVAL_SEC
+    if not regolare and not (force and trascorso >= _MANUAL_PNL_MIN_FORZATO_SEC):
         return
     _LAST_MANUAL_PNL_TS = now_mono
     try:
-        _sync_manual_pnl(session)
+        _sync_manual_pnl(session, max_eta_s=(_MERCATI_CACHE_FORZATO_SEC if force
+                                             else _MERCATI_CACHE_REGOLARE_SEC))
     except Exception as ex:  # noqa: BLE001 - mai far cadere ne' il worker ne' il ciclo idle
         logger.exception("[reconcile] _run_manual_pnl_if_due KO: %s", str(ex)[:200])
 

@@ -473,6 +473,9 @@ export default function ControlRoom() {
                     dayBar={{
                         dayLabel: etichettaGiorno(giornoOperativo),
                         realized: vm.soldiGiornata.realizzato,
+                        // 24/09 - parte stimata del realizzato e posizioni vive ("se chiudo ora")
+                        realizedEstimated: vm.soldiGiornata.realizzatoStimato,
+                        inProgress: vm.soldiGiornata.inCorso,
                         goal: vm.obiettivo,
                         matches: vm.totali.partite,
                         operations: vm.soldiGiornata.operazioni,
@@ -480,7 +483,14 @@ export default function ControlRoom() {
                         lost: vm.soldiGiornata.perse,
                         live: vm.totali.conPosizioneLive,
                         openLiability: vm.totali.letti ? vm.totali.liability : null,
-                        note: vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio',
+                        note: [
+                            vm.obiettivoStoricizzato ? null : 'obiettivo non ancora storicizzato per oggi: \u00e8 quello corrente del servizio',
+                            vm.soldiGiornata.fonteReale === 'conto'
+                                ? 'P&L netto di commissione da Betfair, tutto il conto (bot, manuale app e sito)'
+                                : vm.soldiGiornata.fonteReale === 'righe'
+                                    ? 'conto Betfair non letto: P&L dalle righe dei bot'
+                                    : null,
+                        ].filter(Boolean).join(' - '),
                         countsNote: ['Operazioni, vinte e perse: SOLO SOLDI VERI, sui tre bot e sui 4 bot tennis (conteggi reali). «Partite» invece è tutto il programma di oggi, comprese quelle su cui non si è operato.', vm.soldiGiornata.notaContatori].filter(Boolean).join(' '),
                         ids: { day: 'cr-giornata-giorno', line: 'cr-giornata-riga' },
                     } satisfies DayBarProps}
