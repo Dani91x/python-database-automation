@@ -57,6 +57,7 @@ import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
+import { BottoneChiudiRiga, ChiusuraRigaContext, type ChiusuraRigaApi } from '@/components/controlroom/BottoneChiudiRiga';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import {
     BadgeStato, Ingresso, QuotaOra, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
@@ -144,6 +145,11 @@ const FRESCHEZZA_CLS: Record<Freschezza, string> = {
 
 export default function ControlRoom() {
     const vm = useControlRoom();
+    // B16 (24/09) — il «Chiudi» per singolo bot, portato alle righe dal contesto
+    const chiusuraRiga = useMemo<ChiusuraRigaApi>(
+        () => ({ chiudi: vm.chiudi, stato: vm.statoChiusuraRiga }),
+        [vm.chiudi, vm.statoChiusuraRiga],
+    );
     // LO SPORT SCELTO filtra il banco: `null` = tutti e due.
     const [sport, setSport] = useState<SportKey | null>(null);
 
@@ -622,6 +628,9 @@ export default function ControlRoom() {
             <div className="grid gap-4 items-start
                 lg:grid-cols-[minmax(0,1fr)_340px]
                 xl:grid-cols-[minmax(0,1fr)_340px_340px]">
+                {/* B16 (24/09) — il «Chiudi» di ogni riga, cablato sul SUO bot:
+                    il contesto non disegna niente, porta solo il comando. */}
+                <ChiusuraRigaContext.Provider value={chiusuraRiga}>
                 <Tabs value={scheda} onValueChange={setScheda} className="min-w-0 xl:[grid-column:1]">
                     <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
                         <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
@@ -668,7 +677,7 @@ export default function ControlRoom() {
                         partita nota al programma di oggi (fail-open, mai perse). */}
                     <TabsContent value="aperte" className="mt-3">
                         <AperteTab
-                            giornata={giornata} posizioni={posizioni} onChiudi={vm.chiudi} sport={sport}
+                            giornata={giornata} posizioni={posizioni} sport={sport}
                             registrazioni={vm.registrazioni} registratori={registratori}
                             operazioni={vm.operazioni} mikeEventi={vm.mikeEventi}
                             safe={{
@@ -684,6 +693,7 @@ export default function ControlRoom() {
                         <PosizioniChiuse chiuse={vm.chiuse} sport={sport} giorno={giornoOperativo} />
                     </TabsContent>
                 </Tabs>
+                </ChiusuraRigaContext.Provider>
 
                 {/* le due colonne di decisione: su schermi < xl si impilano in
                     un'unica colonna di griglia (uscite sopra, poi opportunità);
@@ -1213,11 +1223,10 @@ function ElencoPartite({
  * posizione (`onChiudi(tradeId)`, che quindi resta qui, non perso).
  */
 function AperteTab({
-    giornata, posizioni, onChiudi, sport, registrazioni, registratori, operazioni, mikeEventi, safe,
+    giornata, posizioni, sport, registrazioni, registratori, operazioni, mikeEventi, safe,
 }: {
     giornata: GruppoCampionato[];
     posizioni: PosizioneAperta[];
-    onChiudi: (tradeId: number) => Promise<void>;
     sport: SportKey | null;
     registrazioni: Set<string>;
     registratori: { calcio: boolean | null; tennis: boolean | null };
@@ -1299,7 +1308,7 @@ function AperteTab({
                         </div>
                         <div className="space-y-2">
                             {orfane.map((p) => (
-                                <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} onChiudi={onChiudi} />
+                                <RigaPosizioneOrfana key={`${p.bot}-${p.id}`} p={p} />
                             ))}
                         </div>
                     </div>
@@ -1313,9 +1322,8 @@ function AperteTab({
  *  per le posizioni orfane (vedi `AperteTab`) — stesso markup, stessi
  *  testid, stesso comando "Chiudi" per singola posizione: nessuna
  *  regressione sul contenuto, solo sul quando compare. */
-function RigaPosizioneOrfana({ p, onChiudi }: {
+function RigaPosizioneOrfana({ p }: {
     p: PosizioneAperta;
-    onChiudi: (tradeId: number) => Promise<void>;
 }) {
     return (
         <div className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2" data-testid="cr-posizione">
@@ -1386,12 +1394,15 @@ function RigaPosizioneOrfana({ p, onChiudi }: {
                                     {fmtMoney(p.chiusura.abbinabile)} abbinabili
                                 </span>
                             )}
-                            <Button
-                                size="sm" variant="ghost"
-                                onClick={() => void onChiudi(p.id)}
-                                className="ml-auto h-6 px-2 text-[10px] uppercase tracking-wider border border-white/15 text-white/70 hover:text-white hover:border-emerald-500/50"
-                                data-testid="cr-chiudi"
-                            >Chiudi</Button>
+                            {/* B16 (24/09) — stesso posto, stesso testid: ora il
+                                comando va al bot DELLA RIGA, non a Safe per tutti */}
+                            <BottoneChiudiRiga
+                                riga={{
+                                    bot: p.bot, id: p.id, eventId: p.eventId,
+                                    modalita: p.modalita, stato: p.ordine?.status ?? '',
+                                }}
+                                testId="cr-chiudi" variante="orfana"
+                            />
                         </>
                     )}
                 </div>

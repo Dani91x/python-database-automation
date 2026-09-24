@@ -4838,6 +4838,33 @@ def _exit_kind_della_proposta(payload: dict[str, Any],
     return kind, testi.get(motivo, "Uscita proposta dal bot, approvata da te")
 
 
+def _richiesta_non_di_questa_riga(payload: dict[str, Any],
+                                  tr: dict[str, Any]) -> Optional[str]:
+    """B16 (24/09) - la richiesta di chiusura e' davvero per QUESTA riga di Omega?
+
+    Il «Chiudi» della Control Room scrive nel payload il bot, la partita e la
+    modalita' della riga su cui l'utente ha cliccato. Gli id delle tabelle dei
+    bot collidono (una riga Omega e una Safe possono avere lo stesso numero):
+    una richiesta che dichiara un ALTRO bot, un'altra partita o un'altra
+    modalita' e' ambigua e si rifiuta, mai un ordine «per sicurezza».
+    Le chiavi ASSENTI non si inventano: i gesti di prima (scheda di Omega,
+    proposte approvate) non le portano e restano validi come sono.
+    Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "omega":
+        return f"la richiesta e' per il bot '{bot}', non per Omega"
+    ev = payload.get("event_id")
+    if ev not in (None, "") and str(ev) != str(tr.get("event_id") or ""):
+        return (f"la partita della richiesta ({ev}) non e' quella della riga "
+                f"({tr.get('event_id')})")
+    modo = payload.get("mode")
+    modo_riga = str(tr.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_riga:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della riga "
+                f"({modo_riga}): paper e live non si mischiano")
+    return None
+
+
 def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     """Chiude a mercato (green-up totale o cash-out parziale) UNA gamba aperta.
 
@@ -4869,6 +4896,16 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         tr = next((t for t in db.list_trades("open") if int(t.get("id") or 0) == tid), None)
     if tr is None:
         return {"error": "trade_inesistente"}
+    # B16 (24/09): prima dello stato, l'IDENTITA' - una richiesta per un altro
+    # bot, un'altra partita o un'altra modalita' non si esegue (fail-closed).
+    ambigua = _richiesta_non_di_questa_riga(payload, tr)
+    if ambigua is not None:
+        db.log("error", {"reason": "richiesta_ambigua", "trade_id": tid,
+                         "event_id": tr.get("event_id"), "motivo": ambigua,
+                         "bot_richiesta": payload.get("bot"),
+                         "mode_richiesta": payload.get("mode"),
+                         "mode_riga": tr.get("mode")})
+        return {"error": "richiesta_ambigua", "message": f"rifiutato: {ambigua}"}
     if str(tr.get("status")) != "open":
         return {"error": f"trade_non_aperto:{tr.get('status')}"}
 

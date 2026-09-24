@@ -2182,7 +2182,53 @@ def _result(code: str, message: str, **extra: Any) -> Dict[str, Any]:
 # 'rejected'. Tutto il resto e' 'error' = il servizio non ce l'ha fatta
 # (``kind_non_valido`` compreso: significa contratto rotto fra UI e DB).
 _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "stato_non_riprendibile",
-                 "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio")
+                 "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio",
+                 "richiesta_ambigua")
+
+
+def _richiesta_non_di_questa_partita(db: Any, payload: Dict[str, Any],
+                                     ev: Dict[str, Any], eid: str) -> Optional[str]:
+    """B16 (24/09) - il cash out chiesto dalla riga della Control Room e'
+    davvero per QUESTA partita di Mike, nella SUA modalita'?
+
+    Mike chiude per PARTITA (il ciclo intero: ingresso, copertura, residui),
+    non per riga: il «Chiudi» di una riga manda ``event_id`` piu' ``bot``,
+    ``mode`` e ``trade_id`` della riga cliccata. Le chiavi ASSENTI non si
+    inventano (la scheda di Mike manda il solo ``event_id`` e resta valida).
+    Quelle presenti devono concordare, o la richiesta e' ambigua:
+      * ``bot`` diverso da 'mike';
+      * ``mode`` diversa da quella congelata sulla partita (paper e live
+        non si mischiano: si chiude nella modalita' della riga);
+      * ``trade_id`` che non e' una riga di Mike di questa partita, o che non
+        si riesce a verificare (fail-closed: mai un ordine «per sicurezza»).
+    Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "mike":
+        return f"la richiesta e' per il bot '{bot}', non per Mike"
+    modo = payload.get("mode")
+    modo_partita = str(ev.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_partita:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della partita "
+                f"({modo_partita}): paper e live non si mischiano")
+    tid = payload.get("trade_id")
+    if tid in (None, ""):
+        return None
+    getter = getattr(db, "get_trade", None)
+    if not callable(getter):
+        return "la riga indicata non si puo' verificare"
+    try:
+        riga = getter(int(tid))
+    except Exception as ex:  # noqa: BLE001 - non verificabile = rifiuto
+        return f"la riga indicata non si puo' leggere ({str(ex)[:80]})"
+    if not riga:
+        return f"la riga {tid} non esiste fra quelle di Mike"
+    if str(riga.get("event_id") or "") != str(eid):
+        return f"la riga {tid} non e' di questa partita"
+    modo_riga = str(riga.get("mode") or "paper")
+    if modo_riga != modo_partita:
+        return (f"la riga {tid} e' {modo_riga} ma la partita e' {modo_partita}: "
+                f"paper e live non si mischiano")
+    return None
 
 
 def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
@@ -2214,6 +2260,15 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
             elif kind != "resume_event" and str(ev.get("state")) in ("SETTLED", "ERROR"):
                 res = _result("stato_terminale",
                               f"Partita in stato {ev.get('state')}: nessuna operazione possibile.")
+            elif kind in ("cashout", "flatten") and (
+                    ambigua := _richiesta_non_di_questa_partita(db, payload, ev, eid)) is not None:
+                # B16 (24/09): richiesta per un altro bot, un'altra modalita' o
+                # una riga che non e' di questa partita: non si arma niente.
+                db.log("error", {"reason": "richiesta_ambigua", "kind": kind,
+                                 "motivo": ambigua, "bot_richiesta": payload.get("bot"),
+                                 "mode_richiesta": payload.get("mode"),
+                                 "trade_id": payload.get("trade_id")}, eid)
+                res = _result("richiesta_ambigua", f"Rifiutato: {ambigua}.")
             elif kind in ("cashout", "flatten"):
                 res = _request_flatten(db, market, ev, rows_by_event.get(eid), eff, now, dry,
                                        scanner_age=scanner_age, kind=kind)

@@ -26,7 +26,7 @@ import {
     type OmegaState, type OmegaTrade, type OmegaStats, type OmegaEvent,
 } from '@/lib/omega';
 import {
-    fetchSafeState, fetchRunnerState, requestSafe, tradeExposureNow,
+    fetchSafeState, fetchRunnerState, tradeExposureNow,
     cashOutEvento as cashOutEventoSafe, riprendiEventoSafe,
     type SafeState, type SafeRiskStats, type RunnerState, type SafeTrade,
 } from '@/lib/safeBot';
@@ -45,6 +45,10 @@ import {
     type MappaRighe, type FonteRiga,
 } from '@/lib/righeCanale';
 import { getLocalChannel, svegliaBot, type LocalStatus } from '@/lib/localChannel';
+import {
+    inviaChiusura, faseDaRichiesta, firmaRiga, cambiataPerChiusura, richiestaDaRileggere,
+    statoConScadenza, LETTURA, type RigaDaChiudere, type StatoChiusuraRiga,
+} from './chiudiRiga';
 import { fetchMissions } from '@/lib/omegaMissions';
 import {
     fetchTennisFollows, fetchTennisBotServices, fetchTennisBotDaily,
@@ -329,6 +333,14 @@ export interface OperazionePartita {
      * già tradotto). Vuoto per i 4 bot tennis (nessuna catena di chiusura).
      */
     chiusureOrdini: RigaOrdine[];
+    /**
+     * B16 (24/09) — la PARTITA della riga e la sua apertura se e' una gamba di
+     * chiusura orfana (`closes_trade_id`). Servono al «Chiudi» per bot: Mike
+     * chiude per partita, e una gamba di chiusura non si chiude a sua volta.
+     * Opzionali: assenti sulle righe costruite a mano (test storici).
+     */
+    eventId?: string;
+    chiudeId?: number | null;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -742,10 +754,13 @@ export interface ControlRoomVM {
     approva: (id: number) => Promise<void>;
     ignora: (id: number) => Promise<void>;
     /** chiusura MANUALE di una posizione, per intero: accoda una richiesta
-     *  `cashout` sul percorso di sempre. Non passa dal cancelletto — una
-     *  chiusura decisa dall'operatore non ha bisogno di essere approvata da
-     *  lui stesso. */
-    chiudi: (tradeId: number) => Promise<void>;
+     *  `cashout` sulla coda DEL BOT DELLA RIGA (B16, 24/09: prima andava a
+     *  Safe per qualunque bot). Non passa dal cancelletto — una chiusura
+     *  decisa dall'operatore non ha bisogno di essere approvata da lui stesso. */
+    chiudi: (riga: RigaDaChiudere) => Promise<void>;
+    /** B16 — l'esito del «Chiudi» di una riga (inviata / presa in carico /
+     *  eseguita / rifiutata col motivo), `null` = nessun clic su questa riga. */
+    statoChiusuraRiga: (bot: Bot, id: number) => StatoChiusuraRiga | null;
 
     /**
      * «SE CHIUDO IO, IL BOT DEVE SAPERLO» (ordine dell'utente, 16/09 sera).
@@ -1982,6 +1997,8 @@ export function useControlRoom(): ControlRoomVM {
                 vivo, etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
                 chiusura: chius,
                 chiusureOrdini: closes.map((c) => ordineDi(c)),
+                eventId: k,
+                chiudeId: t.closes_trade_id ?? null,
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
@@ -2060,6 +2077,8 @@ export function useControlRoom(): ControlRoomVM {
                 // nessuna catena di chiusura per un ordine tennis (audit F4,
                 // PARTE 1): ogni riga e' la propria posizione.
                 chiusureOrdini: [],
+                eventId: k,
+                chiudeId: null,
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
@@ -2068,12 +2087,116 @@ export function useControlRoom(): ControlRoomVM {
         return m;
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva]);
 
-    const chiudi = useCallback(async (tradeId: number) => {
-        // chiusura PIENA: il P&L diventa identico sui due esiti (green-up)
-        await requestSafe('cashout', { trade_id: tradeId, fraction: 1 });
-        svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
-        await ricaricaProposte();
-    }, [ricaricaProposte]);
+    // ── B16 (24/09): IL «CHIUDI» DI UNA RIGA, PER SINGOLO BOT ───────────────
+    // Prima: `requestSafe('cashout', {trade_id})` per QUALUNQUE bot - su una
+    // riga di Omega o di Mike non chiudeva niente, o chiudeva la riga di Safe
+    // con lo stesso id. Ora la richiesta va alla coda DEL BOT DELLA RIGA
+    // (`chiudiRiga.ts`), e l'esito si segue in due modi:
+    //   · dal CANALE del bot (`*_posizioni`, gia' sottoscritti qui sopra): la
+    //     riga che cambia (gamba di chiusura nuova, coperta, regolata) = eseguita;
+    //   · dalla coda del bot riletta per id (ripiego, SOLO mentre una richiesta
+    //     e' aperta, ogni 2 s, mai piu' di 3 minuti): presa in carico,
+    //     rifiutata col motivo scritto dal servizio.
+    const [chiusureRighe, setChiusureRighe] = useState<Record<string, StatoChiusuraRiga & { firma: string }>>({});
+    const chiusureRigheRef = useRef(chiusureRighe);
+    chiusureRigheRef.current = chiusureRighe;
+
+    const trovaOperazione = useCallback((bot: Bot, id: number, eventId: string | null) => {
+        const cerca = (lista: readonly OperazionePartita[] | undefined) =>
+            (lista ?? []).find((x) => x.bot === bot && x.id === id);
+        const diretta = eventId ? cerca(operazioni.get(eventId)) : undefined;
+        if (diretta) return diretta;
+        for (const lista of operazioni.values()) {
+            const o = cerca(lista);
+            if (o) return o;
+        }
+        return undefined;
+    }, [operazioni]);
+
+    const chiudi = useCallback(async (riga: RigaDaChiudere) => {
+        const chiave = `${riga.bot}:${riga.id}`;
+        // un clic alla volta per riga: una seconda richiesta mentre la prima e'
+        // aperta raddoppierebbe la chiusura (il servizio la rifiuterebbe, ma
+        // non si manda nemmeno)
+        const prima = chiusureRigheRef.current[chiave];
+        if (prima && !prima.richiestaChiusa && prima.faseRichiesta !== 'rifiutata') return;
+        const o = trovaOperazione(riga.bot, riga.id, riga.eventId);
+        const firma = firmaRiga(o?.stato ?? riga.stato, o?.chiusureOrdini?.length ?? 0);
+        const inviataMs = Date.now();
+        try {
+            const { bot, requestId } = await inviaChiusura(riga);
+            setChiusureRighe((p) => ({
+                ...p,
+                [chiave]: {
+                    bot, id: riga.id, requestId, faseRichiesta: 'inviata', richiestaChiusa: false,
+                    motivo: null, rigaCambiata: false, inviataMs, firma,
+                },
+            }));
+            svegliaBot(bot, 'comando'); // STADIO C — DOPO la scrittura riuscita, mai prima
+        } catch (e) {
+            setChiusureRighe((p) => ({
+                ...p,
+                [chiave]: {
+                    bot: riga.bot, id: riga.id, requestId: null, faseRichiesta: 'rifiutata',
+                    richiestaChiusa: true, rigaCambiata: false, inviataMs, firma,
+                    motivo: `non inviata: ${e instanceof Error ? e.message : String(e)}`,
+                },
+            }));
+        }
+    }, [trovaOperazione]);
+
+    // (a) il CANALE: la riga cambia nel senso di una chiusura -> eseguita
+    useEffect(() => {
+        const aperte = Object.entries(chiusureRigheRef.current).filter(([, s]) => !s.rigaCambiata);
+        if (!aperte.length) return;
+        const cambiate: string[] = [];
+        for (const [k, s] of aperte) {
+            const o = trovaOperazione(s.bot, s.id, null);
+            if (o && cambiataPerChiusura(s.firma, o.stato, o.chiusureOrdini?.length ?? 0)) cambiate.push(k);
+        }
+        if (!cambiate.length) return;
+        setChiusureRighe((p) => {
+            const n = { ...p };
+            for (const k of cambiate) if (n[k]) n[k] = { ...n[k], rigaCambiata: true };
+            return n;
+        });
+    }, [trovaOperazione, chiusureRighe]);
+
+    // (b) il RIPIEGO: la coda del bot riletta per id, solo mentre serve
+    const daRileggere = useMemo(
+        () => Object.entries(chiusureRighe)
+            .filter(([, s]) => richiestaDaRileggere(s, nowMs)).map(([k]) => k).sort().join(','),
+        [chiusureRighe, nowMs],
+    );
+    useEffect(() => {
+        if (!daRileggere) return;
+        let vivo = true;
+        const giro = async () => {
+            for (const k of daRileggere.split(',')) {
+                const s = chiusureRigheRef.current[k];
+                if (!s || s.requestId == null || isBotTennis(s.bot)) continue;
+                const botC = s.bot as 'omega' | 'safe' | 'mike';
+                try {
+                    const r = await LETTURA[botC](s.requestId);
+                    if (!vivo || !r) continue;
+                    const f = faseDaRichiesta(botC, r);
+                    setChiusureRighe((p) => (p[k] ? {
+                        ...p,
+                        [k]: { ...p[k], faseRichiesta: f.fase, richiestaChiusa: f.chiusa, motivo: f.motivo ?? p[k].motivo },
+                    } : p));
+                } catch { /* il giro dopo riprova: il comando vero e' gia' scritto */ }
+            }
+        };
+        void giro();
+        const t = window.setInterval(() => { void giro(); }, 2_000);
+        return () => { vivo = false; window.clearInterval(t); };
+    }, [daRileggere]);
+
+    const statoChiusuraRiga = useCallback((bot: Bot, id: number): StatoChiusuraRiga | null => {
+        const s = chiusureRighe[`${bot}:${id}`];
+        if (!s) return null;
+        return statoConScadenza(s, nowMs);
+    }, [chiusureRighe, nowMs]);
 
     // ── «SE CHIUDO IO, IL BOT DEVE SAPERLO» (16/09) ─────────────────────────
     // Lo stato lo DICHIARA il servizio: Safe scrivendo `meta.chiuso_dall_utente`
@@ -2286,7 +2409,7 @@ export function useControlRoom(): ControlRoomVM {
         proposteOpportunita,
         piazzaOpportunita,
         rifiutaOpportunita, avvisoOpportunita,
-        slippagePct, setSlippagePct, approva, ignora, chiudi,
+        slippagePct, setSlippagePct, approva, ignora, chiudi, statoChiusuraRiga,
         statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
         proposteOmega: ordinaProposteOmega(proposteOmega), erroreProposteOmega,
         approvaOmega, ignoraOmega,

@@ -43,13 +43,17 @@ vi.mock('@/lib/omega', async (orig) => ({
     fetchOmegaTrades: vi.fn(async () => []),
     fetchOmegaEvents: vi.fn(async () => []),
     updateOmegaParams: vi.fn(async () => ({})),
+    // B16 (24/09) - la coda manuale di Omega (`omega_request`/`get_omega_manual_requests`)
+    requestManual: vi.fn(async () => 7001),
+    fetchManualRequests: vi.fn(async () => []),
 }));
 
 vi.mock('@/lib/safeBot', async (orig) => ({
     ...(await orig() as object),
     fetchSafeState: vi.fn(async () => ({ control: null, trades: [], aggregates: null })),
     fetchRunnerState: vi.fn(async () => ({ ts: null, mode: null, ageS: null, up: false })),
-    requestSafe: vi.fn(async () => undefined),
+    requestSafe: vi.fn(async () => 7002),
+    fetchSafeRequests: vi.fn(async () => []),
     cashOutEvento: vi.fn(async () => undefined),
     riprendiEventoSafe: vi.fn(async () => undefined),
     approvaPropostaOpportunita: vi.fn(async () => undefined),
@@ -58,6 +62,9 @@ vi.mock('@/lib/safeBot', async (orig) => ({
 vi.mock('@/lib/mike', async (orig) => ({
     ...(await orig() as object),
     fetchMikeState: vi.fn(async () => ({ control: null, events: [], trades: [], activity: [], aggregates: null, requests: [], day_start: null, day_by: null })),
+    // B16 (24/09) - la coda di Mike (`mike_request`/`mike_requests`)
+    requestMike: vi.fn(async () => 7003),
+    fetchMikeRequests: vi.fn(async () => []),
 }));
 
 vi.mock('@/lib/controlRoomProposte', async (orig) => ({
@@ -106,6 +113,7 @@ vi.mock('@/lib/localChannel', async (orig) => ({
         onStatus: () => () => { /* nessun cambio */ },
         subscribe: () => () => { /* nessuna spinta */ },
     })),
+    svegliaBot: vi.fn(),
 }));
 
 // 18/09 (raccordo, R4) — `betfair_live_account`: NON entra nel poll dei 30s
@@ -720,5 +728,126 @@ describe('23/09 - ogni operazione chiusa mostra il NETTO del ciclo, barra compre
         const { result } = renderHook(() => useControlRoom());
         await waitFor(() => expect(result.current.caricamento).toBe(false));
         expect((result.current.operazioni.get('T1') ?? []).map((o) => [o.id, o.pnl])).toEqual([[326, null]]);
+    });
+});
+
+// ============================================================================
+// B16 (24/09) — IL «CHIUDI» DI UNA RIGA VA AL SUO BOT, MAI A SAFE PER TUTTI.
+//
+// Il reperto: `chiudi(tradeId)` accodava `requestSafe('cashout', …)` per
+// qualunque riga. Qui, dal modello di vista vero: ogni bot riceve la richiesta
+// sulla SUA coda con bot/partita/modalita' della riga; i 4 bot tennis non
+// mandano niente e lo dicono; l'esito si legge dalla coda del bot (rifiuto col
+// motivo) e dalla riga che cambia (eseguita).
+// FALSIFICAZIONE (24/09): rimettendo `requestSafe` per ogni bot in `INVIO`
+// (chiudiRiga.ts) i test Omega/Mike diventano ROSSI; togliendo la lettura
+// della coda il test del rifiuto diventa ROSSO.
+// ============================================================================
+import { requestManual, fetchManualRequests } from '@/lib/omega';
+import { requestSafe } from '@/lib/safeBot';
+import { requestMike } from '@/lib/mike';
+import { svegliaBot } from '@/lib/localChannel';
+import { faseMostrata } from './chiudiRiga';
+
+describe('B16 - «Chiudi» cablato per singolo bot', () => {
+    // `vi.clearAllMocks` non azzera le implementazioni: ogni test parte dalle
+    // code VUOTE dei tre bot, come un servizio appena avviato
+    beforeEach(() => {
+        vi.mocked(fetchManualRequests).mockResolvedValue([]);
+        vi.mocked(requestManual).mockResolvedValue(7001);
+        vi.mocked(requestSafe).mockResolvedValue(7002);
+        vi.mocked(requestMike).mockResolvedValue(7003);
+    });
+
+    it('riga OMEGA: omega_request sulla coda di Omega, MAI safe_request', async () => {
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([
+            tradeOmega({ id: 900, status: 'open', pnl: 0, settled_at: null }),
+        ]);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'omega', id: 900, eventId: 'E1', modalita: 'live', stato: 'open' });
+        expect(requestManual).toHaveBeenCalledWith('cashout', {
+            trade_id: 900, fraction: 1, bot: 'omega', event_id: 'E1', mode: 'live',
+        });
+        expect(requestSafe).not.toHaveBeenCalled();
+        expect(requestMike).not.toHaveBeenCalled();
+        expect(svegliaBot).toHaveBeenCalledWith('omega', 'comando');
+        await waitFor(() => expect(result.current.statoChiusuraRiga('omega', 900)?.requestId).toBe(7001));
+    });
+
+    it("riga MIKE: mike_request per la PARTITA della riga, nella sua modalita'", async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'mike', id: 801, eventId: 'E2', modalita: 'paper', stato: 'open' });
+        expect(requestMike).toHaveBeenCalledWith('cashout', {
+            event_id: 'E2', trade_id: 801, bot: 'mike', mode: 'paper',
+        });
+        expect(requestSafe).not.toHaveBeenCalled();
+        expect(requestManual).not.toHaveBeenCalled();
+        expect(svegliaBot).toHaveBeenCalledWith('mike', 'comando');
+    });
+
+    it("riga SAFE: safe_request con bot/partita/modalita' della riga", async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'safe', id: 321, eventId: '36061420', modalita: 'paper', stato: 'open' });
+        expect(requestSafe).toHaveBeenCalledWith('cashout', {
+            trade_id: 321, fraction: 1, bot: 'safe', event_id: '36061420', mode: 'paper',
+        });
+        expect(requestManual).not.toHaveBeenCalled();
+        expect(requestMike).not.toHaveBeenCalled();
+    });
+
+    it('bot TENNIS: nessuna richiesta a nessuno, il motivo si legge', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'tennis_pro', id: 5, eventId: 'T1', modalita: 'paper', stato: 'EXECUTABLE' });
+        expect(requestSafe).not.toHaveBeenCalled();
+        expect(requestManual).not.toHaveBeenCalled();
+        expect(requestMike).not.toHaveBeenCalled();
+        await waitFor(() => expect(result.current.statoChiusuraRiga('tennis_pro', 5)).not.toBeNull());
+        const s = result.current.statoChiusuraRiga('tennis_pro', 5)!;
+        expect(faseMostrata(s)).toBe('rifiutata');
+        expect(s.motivo).toContain('bot tennis');
+    });
+
+    it('il RIFIUTO scritto dal servizio sulla coda di Omega arriva con il suo motivo', async () => {
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([
+            tradeOmega({ id: 900, status: 'open', pnl: 0, settled_at: null }),
+        ]);
+        vi.mocked(fetchManualRequests).mockResolvedValue([{
+            id: 7001, kind: 'cashout', payload: { trade_id: 900 }, status: 'error',
+            result: {
+                error: 'richiesta_ambigua',
+                message: "rifiutato: la modalita' della richiesta (live) non e' quella della riga (paper)",
+            },
+            created_at: PIAZZATO, processed_at: REGOLATO,
+        }]);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'omega', id: 900, eventId: 'E1', modalita: 'live', stato: 'open' });
+        await waitFor(() => {
+            const s = result.current.statoChiusuraRiga('omega', 900);
+            expect(s && faseMostrata(s)).toBe('rifiutata');
+        });
+        expect(result.current.statoChiusuraRiga('omega', 900)!.motivo).toContain('modalita');
+    });
+
+    it('la riga che CAMBIA (gamba di chiusura nuova) = eseguita', async () => {
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([
+            tradeOmega({ id: 900, status: 'open', pnl: 0, settled_at: null }),
+        ]);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({ bot: 'omega', id: 900, eventId: 'E1', modalita: 'live', stato: 'open' });
+        await waitFor(() => expect(result.current.statoChiusuraRiga('omega', 900)).not.toBeNull());
+        expect(faseMostrata(result.current.statoChiusuraRiga('omega', 900)!)).toBe('inviata');
+        // il bot ha piazzato la chiusura: la riga porta ora la sua gamba figlia
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([
+            tradeOmega({ id: 900, status: 'hedged', pnl: 0, settled_at: null }),
+            tradeOmega({ id: 901, side: 'lay', status: 'open', pnl: 0, settled_at: null, closes_trade_id: 900 } as never),
+        ]);
+        result.current.ricarica();
+        await waitFor(() => expect(faseMostrata(result.current.statoChiusuraRiga('omega', 900)!)).toBe('eseguita'));
     });
 });

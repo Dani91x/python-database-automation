@@ -2598,6 +2598,29 @@ def _trade_by_idempotency_key(db, key: str,
     return None
 
 
+def _richiesta_non_di_questa_riga(payload: dict[str, Any],
+                                  trade: dict[str, Any]) -> Optional[str]:
+    """B16 (24/09) - la richiesta di chiusura e' davvero per QUESTA riga di Safe?
+
+    Il «Chiudi» della Control Room scrive nel payload il bot, la partita e la
+    modalita' della riga cliccata. Le chiavi ASSENTI non si inventano: la
+    scheda di Safe, il cash-out globale e le proposte approvate non le portano
+    e restano validi come sono. Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "safe":
+        return f"la richiesta e' per il bot '{bot}', non per Safe"
+    ev = payload.get("event_id")
+    if ev not in (None, "") and str(ev) != str(trade.get("event_id") or ""):
+        return (f"la partita della richiesta ({ev}) non e' quella della riga "
+                f"({trade.get('event_id')})")
+    modo = payload.get("mode")
+    modo_riga = str(trade.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_riga:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della riga "
+                f"({modo_riga}): paper e live non si mischiano")
+    return None
+
+
 def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
                      now: datetime, come: str = "cashout") -> dict:
     """Cash-out MANUALE di UNA riga. ``come`` dice con quale gesto l'utente
@@ -2614,6 +2637,20 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"error": "lettura_trade_fallita", "detail": str(ex)[:160]}
     if not trade:
         return {"error": "trade_inesistente"}
+    # B16 (24/09): prima di tutto l'IDENTITA' della riga. Gli id delle tabelle
+    # dei bot collidono: il «Chiudi» della Control Room mandava QUI anche le
+    # righe di Omega e di Mike, e un id di Omega poteva chiudere la riga di
+    # Safe con lo stesso numero. Una richiesta che dichiara un altro bot,
+    # un'altra partita o un'altra modalita' si rifiuta (fail-closed).
+    ambigua = _richiesta_non_di_questa_riga(payload, trade)
+    if ambigua is not None:
+        _log(db, "skip", {"reason": "richiesta_ambigua", "origin": "manual",
+                          "trade_id": int(tid), "event_id": trade.get("event_id"),
+                          "motivo": ambigua, "bot_richiesta": payload.get("bot"),
+                          "mode_richiesta": payload.get("mode"),
+                          "mode_riga": trade.get("mode")})
+        return {"rejected": "richiesta_ambigua", "trade_id": int(tid),
+                "message": f"rifiutato: {ambigua}"}
     if X.is_reconciling(trade):
         # C-03/coerenza: su una riga a esito ignoto non si chiude nulla
         return {"rejected": "in riconciliazione", "trade_id": int(tid),
