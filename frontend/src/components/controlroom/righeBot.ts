@@ -72,6 +72,7 @@ export function righeInterruttori(
         out.push({
             id: i.id, bot: i.bot,
             etichetta: etichette?.[i.id] ?? i.etichetta,
+            ...(i.descrizione ? { descrizione: i.descrizione } : {}),
             acceso: st.acceso, modalita: st.modalita, statoNoto: st.noto,
             stato: parolaStato(i, b, st.acceso, st.noto),
             etaPushS: b.etaPushS,

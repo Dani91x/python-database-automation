@@ -304,7 +304,7 @@ describe('BotParamsSheet — modalita per strategia', () => {
         expect(tendina(/Base \(banca 1X2\)/)).toHaveValue('paper');
         // una strategia non nominata resta «come il servizio», non diventa un
         // valore fisso che poi nessuno ricorda di aver messo
-        expect(tendina(/Ordini manuali/)).toHaveValue('');
+        expect(tendina(/Ordini a mano dalla scheda/)).toHaveValue('');
     });
 
     it('dichiara che il servizio in PAPER e un TETTO', async () => {

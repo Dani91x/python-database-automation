@@ -2158,17 +2158,30 @@ def _verifica_modalita_proposta(*, db, event_id: str, mode: str, opp_key: str,
     Estratto da ``_request_place`` il 18/09 perche' l'approvazione di una
     combo (``_request_place_combo``) lo rifa' identico: stessa regola, non una
     copia. Ritorna il dict di rifiuto pronto per il chiamante, o ``None`` se
-    la modalita' torna."""
-    atteso = (modalita_di_strategia("model", str(control_mode).lower(), params)
-              if (opp_key and control_mode) else str(control_mode).lower())
+    la modalita' torna.
+
+    24/09 — ORDINE DELL'UTENTE: «OGNI strumento che propone ingressi a mercato
+    deve avere sia la versione PAPER che LIVE». Una richiesta SENZA
+    ``opp_key`` e' un ordine A MANO dalla scheda: la sua autorita' e'
+    ``modalita_di_strategia('manual', control.mode, params)``, con la stessa
+    regola del modello. Prima era ``control.mode`` NUDO, cioe' l'ordine a mano
+    EREDITAVA la modalita' del servizio: armare il servizio in LIVE per il solo
+    tennis mandava a soldi veri anche i clic a mano. Adesso una chiave
+    ``strategy_modes.manual`` assente o illeggibile vale PAPER, come per ogni
+    altra strategia: ai soldi veri si arriva scrivendolo, mai ereditandolo."""
+    strategia = "model" if opp_key else "manual"
+    atteso = (modalita_di_strategia(strategia, str(control_mode).lower(), params)
+              if control_mode else str(control_mode).lower())
     if control_mode and mode != atteso:
         _log(db, "skip", {"event_id": event_id, "origin": "manual",
                           "reason": "modalita_non_corrispondente",
-                          "richiesta": mode, "attiva": atteso})
+                          "richiesta": mode, "attiva": atteso,
+                          "strategia": strategia})
+        quale = "del modello" if strategia == "model" else "a mano"
         return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
                             f"attiva {atteso}",
-                "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
-                           f"servizio e' in {atteso.upper()}"}
+                "message": f"rifiutato: la richiesta era in {mode.upper()} ma per gli "
+                           f"ordini {quale} vale {atteso.upper()}"}
     return None
 
 
@@ -2217,6 +2230,9 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # la rifiuterebbe sempre, e il tasto PIAZZA non funzionerebbe mai.
     # La direzione dell'errore resta la stessa di sempre: i soldi veri si
     # raggiungono solo scrivendolo.
+    # 24/09 — e vale anche per l'ordine A MANO (senza ``opp_key``): la sua
+    # autorita' e' ``strategy_modes.manual``, non piu' ``control.mode`` nudo
+    # (vedi ``_verifica_modalita_proposta``).
     opp_key = str(payload.get("opp_key") or "").strip()
     rifiuto_modalita = _verifica_modalita_proposta(db=db, event_id=event_id, mode=mode,
                                                    opp_key=opp_key, control_mode=control_mode,

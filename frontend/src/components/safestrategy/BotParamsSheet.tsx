@@ -248,7 +248,7 @@ const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
     { key: 'auto_trade_opportunities', label: 'Opportunità di MODELLO (calcio) — NON piazza più da sola', note: 'dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA): questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_anomalies', label: 'ANOMALIE di prezzo — NON piazza più da sola', note: 'dal 18/09 le anomalie si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA), a una gamba sola; questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_combos', label: 'COMBINAZIONI — NON piazza più da sola', note: 'dal 18/09 una combinazione si propone con TUTTE le gambe in una scheda sola; PIAZZA le manda tutte o nessuna (approvazione atomica); questo interruttore resta per compatibilità e non manda più ordini' },
-    { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — oggi in paper finché strategy_modes.model resta paper' },
+    { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — in prova o con soldi veri secondo l’interruttore «Safe modello» (opportunità del modello che approvo)' },
 ];
 
 // 18/09 — RUBINETTI DELLE PROPOSTE (decisione «B»): spengono la VISTA di un
@@ -282,8 +282,10 @@ const MODE_STRATEGIES: { id: string; label: string }[] = [
     { id: 'esatto', label: 'Calcio · Risultato Esatto' },
     { id: 'punta', label: 'Calcio · Punta' },
     { id: 'tennis', label: 'Tennis' },
-    { id: 'model', label: 'Opportunità di modello / anomalie / combo' },
-    { id: 'manual', label: 'Ordini manuali dalla schermata' },
+    // 24/09 — stesse parole dei due interruttori «Safe modello» / «Safe a
+    // mano» della Control Room: stessa chiave, stesso nome.
+    { id: 'model', label: 'Opportunità del modello che approvo (modello / anomalie / combo / tennis)' },
+    { id: 'manual', label: 'Ordini a mano dalla scheda' },
 ];
 const MODE_KEY = (id: string) => `strategy_modes.${id}`;
 

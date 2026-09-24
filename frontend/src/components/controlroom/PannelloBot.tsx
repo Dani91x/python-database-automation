@@ -171,6 +171,9 @@ export interface RigaInterruttore {
     bot: Bot;
     /** come si chiama davanti al trader in questo contesto */
     etichetta: string;
+    /** 24/09 — che cosa comanda, in parole (Safe modello / a mano): si legge
+     *  passando sul nome e nella conferma dei soldi veri */
+    descrizione?: string;
     /** sta aprendo? Per Safe: servizio in corsa E strategia in `variants` */
     acceso: boolean;
     /** con che soldi. `null` = il servizio non la dichiara */
@@ -523,7 +526,8 @@ function RigaBot({
     return (
         <div className="px-3 py-2" data-testid={`cr-bot-riga-${r.id}`}>
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">{r.etichetta}</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0"
+                    title={r.descrizione}>{r.etichetta}</span>
 
                 <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'}`}
                     data-testid={`cr-bot-stato-${r.id}`}>
@@ -754,7 +758,7 @@ function RigaBot({
 
                 {armato && (
                     <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${r.id}`}>
-                        Da qui in poi {r.etichetta} manda ordini reali su Betfair.
+                        Da qui in poi {r.etichetta}{r.descrizione ? ` (${r.descrizione})` : ''} manda ordini reali su Betfair.
                     </span>
                 )}
 

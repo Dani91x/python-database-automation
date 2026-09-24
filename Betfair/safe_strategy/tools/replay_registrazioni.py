@@ -1368,6 +1368,15 @@ def _params_di_scenario(scenario: str, strategie: Tuple[str, ...],
         "execution_mode": "rest",
     }
     par.update(SCENARI.get(scenario, {}))
+    # 24/09 — L'ORDINE A MANO HA LA SUA MODALITA'. Da oggi il servizio non fa
+    # piu' ereditare a un ordine a mano il ``mode`` del control: vale
+    # ``strategy_modes.manual``, e una chiave assente vale PAPER. Gli scenari
+    # che premono «Investi» lo DICHIARANO, come fa ora l'interruttore «Safe ·
+    # ordini a mano» della Control Room — altrimenti il clic in LIVE del banco
+    # verrebbe rifiutato (``modalita_non_corrispondente``) e il ciclo di vita
+    # dell'ordine non verrebbe esercitato. Gli altri scenari restano identici.
+    if scenario in SCENARI_CON_ORDINE_MANUALE:
+        par["strategy_modes"] = {**par["strategy_modes"], "manual": mode}
     if scenario in PM.SCENARI_CALCIO:
         par = PM.parametri(scenario, par)
     return par

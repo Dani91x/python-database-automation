@@ -32,7 +32,8 @@ const TRE = [
 describe('una riga per interruttore, filtrate per sport', () => {
     it('scheda calcio: Omega, Mike e le tre strategie di calcio. Niente tennis', () => {
         expect(righeInterruttori(TRE, 'calcio').map((r) => r.id))
-            .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta']);
+            .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta',
+                'safe-model', 'safe-manual']);
     });
 
     it('scheda tennis, con i soli tre servizi del calcio: resta Safe tennis', () => {
@@ -40,12 +41,13 @@ describe('una riga per interruttore, filtrate per sport', () => {
     });
 
     it('con i soli tre servizi del calcio non nascono righe tennis fantasma', () => {
-        expect(righeInterruttori(TRE, null)).toHaveLength(6);
+        // 24/09 — sei + le due righe di Safe «modello» e «a mano»
+        expect(righeInterruttori(TRE, null)).toHaveLength(8);
     });
 
     it('un bot che non c e non produce righe fantasma', () => {
         expect(righeInterruttori([TRE[1]], 'calcio').map((r) => r.id))
-            .toEqual(['safe-base', 'safe-esatto', 'safe-punta']);
+            .toEqual(['safe-base', 'safe-esatto', 'safe-punta', 'safe-model', 'safe-manual']);
     });
 });
 

@@ -166,6 +166,26 @@ export function liveStrategies(
         .map((v) => String(v));
 }
 
+/**
+ * 24/09 — LA MODALITA' DI UN ORDINE A MANO DALLA SCHEDA DI SAFE.
+ *
+ * Stessa regola del servizio (`bot_service.modalita_di_strategia('manual',
+ * control.mode, params)`) e della barriera SQL di `safe_request`: il `mode`
+ * del servizio e' un TETTO, e con il servizio in live l'ordine a mano va a
+ * soldi veri SOLO se `strategy_modes.manual` e' scritto 'live'. Assente o
+ * illeggibile = PAPER: ai soldi veri si arriva scrivendolo, mai ereditandolo.
+ * E' la modalita' che la scheda DICHIARA nel payload: se fosse quella nuda
+ * del servizio, il servizio rifiuterebbe l'ordine (modalita' non
+ * corrispondente) o — prima del 24/09 — lo mandava a soldi veri per eredita'.
+ */
+export function modalitaOrdineAMano(
+    mode: string | null | undefined,
+    strategyModes: Record<string, string> | null | undefined,
+): SafeMode {
+    if (String(mode ?? '').toLowerCase() !== 'live') return 'paper';
+    return String((strategyModes ?? {}).manual ?? '').toLowerCase() === 'live' ? 'live' : 'paper';
+}
+
 /** conteggio opportunità per tipo (control.stats.opps) */
 export type SafeOppCounts = Partial<Record<SafeOppKind, number>>;
 
