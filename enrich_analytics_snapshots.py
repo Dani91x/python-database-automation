@@ -60,6 +60,7 @@ Uso:
   python enrich_analytics_snapshots.py --league 256 --dry-run
   python enrich_analytics_snapshots.py --days 4                  # incrementale (action)
   python enrich_analytics_snapshots.py --today                   # solo oggi
+  python enrich_analytics_snapshots.py --days 4 --leagues 292,293  # recupero leghe fallite
 """
 from __future__ import annotations
 
@@ -139,38 +140,60 @@ def _sleep_backoff(attempt: int) -> None:
     time.sleep(min(8.0, 0.5 * (2 ** attempt)) * (0.7 + random.random() * 0.6))
 
 
-def _leggi_pagine(fai_query, what: str, page: int = _PAGE) -> list[dict]:
-    """Legge TUTTE le pagine di una query.
+def _cursore_id(r: dict):
+    """Cursore keyset di default: la chiave primaria `id` dell'ultima riga letta."""
+    return r["id"]
+
+
+def _leggi_pagine(fai_query, what: str, page: int = _PAGE,
+                  cursore=_cursore_id) -> list[dict]:
+    """Legge TUTTE le pagine di una query con paginazione KEYSET (24/09).
+
+    `fai_query(dopo, size)` costruisce la query di UNA pagina: `dopo` e' None
+    alla prima pagina, poi il cursore dell'ultima riga ricevuta (`cursore(riga)`);
+    il chiamante filtra `> dopo` sulla colonna d'ordine e mette `.limit(size)`.
+    MAI OFFSET: con OFFSET il server deve SCORRERE e scartare tutte le righe
+    precedenti a ogni pagina. Sulla lettura per lega di analytics_signals il
+    piano era `Index Scan using analytics_signals_pkey ... Filter: (league_id =
+    N)` -> per arrivare alla pagina k scorreva l'intera tabella (945.156 righe)
+    fino a trovare k*blocco righe della lega: 57014 anche a blocco 25 sulle
+    leghe piccole (run 35976004167: 292, 293, 653, 251, 401, 164, 253, 489,
+    650, 243). Con il keyset ogni pagina riparte dal cursore: con l'indice
+    (league_id, id) e' un Index Scan con Limit che legge SOLO `size` righe.
 
     Tre regole, contro la perdita silenziosa di righe:
-      1) ORDINE TOTALE server-side (lo mette il chiamante su una colonna UNICA):
-         senza ordine l'ordine di ritorno non e' garantito fra una pagina e
-         l'altra e le righe si saltano o si duplicano;
-      2) l'offset avanza di quanto RICEVUTO e si esce SOLO a pagina VUOTA: una
-         pagina piu' corta di quanto chiesto puo' essere il cap del server
-         (PostgREST max-rows), non la fine dei dati;
+      1) ORDINE TOTALE server-side (lo mette il chiamante su una colonna UNICA,
+         la stessa del cursore): senza ordine totale il cursore salterebbe o
+         ripeterebbe righe;
+      2) si esce SOLO a pagina VUOTA: una pagina piu' corta di quanto chiesto
+         puo' essere il cap del server (PostgREST max-rows), non la fine dei dati;
       3) retry sui soli errori transitori, con pagina dimezzata: se non si riesce
          a leggere, l'errore ESCE (mai una storia troncata scambiata per completa).
     """
     out: list[dict] = []
-    off, size = 0, page
+    dopo, size = None, page
     while True:
         righe = None
         for attempt in range(_RETRY):
             try:
-                righe = fai_query(off, size).execute().data or []
+                righe = fai_query(dopo, size).execute().data or []
                 break
             except Exception as e:  # noqa: BLE001
                 if not _is_transient(e) or attempt == _RETRY - 1:
                     raise RuntimeError(
-                        f"lettura {what} (offset {off}, blocco {size}) fallita dopo "
+                        f"lettura {what} (dopo {dopo!r}, blocco {size}) fallita dopo "
                         f"{attempt + 1} tentativi: {type(e).__name__}: {str(e)[:120]}") from e
                 _sleep_backoff(attempt)
                 size = max(_PAGE_MIN, size // 2)
         if not righe:
             return out
         out.extend(righe)
-        off += len(righe)
+        dopo = cursore(righe[-1])
+
+
+def _dopo(q, col: str, dopo):
+    """Applica il filtro keyset `col > dopo` (niente alla prima pagina)."""
+    return q if dopo is None else q.gt(col, dopo)
 
 
 def _fetch_matches(sb, league_id: int) -> list[dict]:
@@ -179,22 +202,26 @@ def _fetch_matches(sb, league_id: int) -> list[dict]:
     l'ordine e' totale e le pagine non si sovrappongono. Una storia partite
     TRONCATA darebbe freq/ritardi FALSI scritti come se fossero buoni."""
     return _leggi_pagine(
-        lambda off, size: (sb.table("matches").select(_MATCH_COLS)
-                           .eq("league_id", league_id)
-                           .in_("status_short", ["FT", "AET", "PEN"])
-                           .order("fixture_id").range(off, off + size - 1)),
-        f"matches lega {league_id}")
+        lambda dopo, size: _dopo(sb.table("matches").select(_MATCH_COLS)
+                                 .eq("league_id", league_id)
+                                 .in_("status_short", ["FT", "AET", "PEN"]),
+                                 "fixture_id", dopo)
+        .order("fixture_id").limit(size),
+        f"matches lega {league_id}", cursore=lambda r: r["fixture_id"])
 
 
 def _fetch_signal_targets(sb, league_id: int) -> dict[tuple[str, str], set[int]]:
     """{(market, selection): {fixture presenti}} per i SOLI (fixture×market×selection)
     in analytics_signals della lega -- cosi' non si fanno UPDATE a vuoto.
-    ORDER BY id (chiave primaria, unica) = ordine totale."""
+    ORDER BY id (chiave primaria, unica) = ordine totale; keyset `id > cursore`
+    (con l'indice idx_as_league_id_id = Index Scan (league_id, id) + Limit;
+    senza l'indice resta corretta, solo piu' lenta)."""
     by_ms: dict[tuple[str, str], set[int]] = defaultdict(set)
     for x in _leggi_pagine(
-            lambda off, size: (sb.table("analytics_signals").select("id,fixture_id,market,selection")
-                               .eq("league_id", league_id)
-                               .order("id").range(off, off + size - 1)),
+            lambda dopo, size: _dopo(sb.table("analytics_signals")
+                                     .select("id,fixture_id,market,selection")
+                                     .eq("league_id", league_id), "id", dopo)
+            .order("id").limit(size),
             f"analytics_signals lega {league_id}", page=_PAGE_LEGA):
         by_ms[(x["market"], x["selection"])].add(x["fixture_id"])
     return by_ms
@@ -388,6 +415,16 @@ def _enrich_league(sb, league_id: int, dry: bool, counters: dict,
     return n_target, updated
 
 
+def _dopo_kickoff_id(q, dopo):
+    """Filtro keyset sul cursore composto (kickoff, id): righe DOPO l'ultima letta
+    nell'ordine `kickoff, id`. Il timestamp va fra virgolette doppie nel filtro
+    `or` di PostgREST (contiene ':' e '+')."""
+    if dopo is None:
+        return q
+    k, i = dopo
+    return q.or_(f'kickoff.gt."{k}",and(kickoff.eq."{k}",id.gt.{int(i)})')
+
+
 def _recent_targets(sb, days: int) -> dict[int, set[int]]:
     """{league_id: {fixture recenti}} per le righe di analytics_signals con
     kickoff negli ultimi `days` giorni. Serve al modo incrementale: enrichisce
@@ -397,11 +434,15 @@ def _recent_targets(sb, days: int) -> dict[int, set[int]]:
     # ORDER BY kickoff,id: kickoff e' gia' l'ordine dell'indice usato dal filtro
     # (idx_as_kickoff) e id lo rende TOTALE; il piano resta lo stesso con un
     # Incremental Sort (misurato: 26.076 contro 25.031, +4%).
+    # KEYSET composto (24/09): cursore (kickoff, id) dell'ultima riga, filtro
+    # `kickoff > k OR (kickoff = k AND id > i)` -> niente OFFSET sull'indice kickoff.
     for x in _leggi_pagine(
-            lambda off, size: (sb.table("analytics_signals").select("league_id,fixture_id,kickoff,id")
-                               .gte("kickoff", since)
-                               .order("kickoff").order("id").range(off, off + size - 1)),
-            f"analytics_signals recenti (da {since[:10]})"):
+            lambda dopo, size: _dopo_kickoff_id(
+                sb.table("analytics_signals").select("league_id,fixture_id,kickoff,id")
+                .gte("kickoff", since), dopo)
+            .order("kickoff").order("id").limit(size),
+            f"analytics_signals recenti (da {since[:10]})",
+            cursore=lambda r: (r["kickoff"], r["id"])):
         if x.get("league_id") is not None:
             out[x["league_id"]].add(x["fixture_id"])
     return out
@@ -417,8 +458,15 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=None,
                     help="incrementale: solo fixture (per lega) con kickoff negli ultimi N giorni")
     ap.add_argument("--today", action="store_true", help="alias di --days 1")
+    ap.add_argument("--leagues", default="",
+                    help="RECUPERO (con --days/--today): elabora SOLO queste leghe, "
+                         "CSV di id (es. 292,293). Vuoto = tutte (default).")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    try:
+        solo_leghe = {int(x) for x in args.leagues.replace(" ", "").split(",") if x}
+    except ValueError:
+        raise SystemExit(f"--leagues non valido: {args.leagues!r} (atteso CSV di interi)")
     if not args.league and not args.days and not args.today:
         raise SystemExit("Specificare --league N | --days N | --today")
 
@@ -444,6 +492,11 @@ def main() -> None:
     # ---- MODO INCREMENTALE: leghe con fixture recenti (point-in-time + stato corrente) ----
     days = args.days if args.days else 1
     recent = _recent_targets(sb, days)
+    if solo_leghe:
+        # recupero mirato delle leghe fallite in un run precedente
+        mancanti = sorted(solo_leghe - set(recent))
+        recent = {lid: f for lid, f in recent.items() if lid in solo_leghe}
+        print(f"Recupero --leagues: {sorted(solo_leghe)} (senza fixture recenti: {mancanti})")
     if not recent:
         print(f"Incrementale (--days {days}): nessuna fixture recente in analytics_signals.")
         return

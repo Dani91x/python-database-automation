@@ -43,6 +43,13 @@ PERCHE' A FINESTRE DI UN GIORNO IL RISULTATO E' LO STESSO (letto dal SQL)
   53300, 40001/40P01, PGRST002, 503, e gli errori di CONNESSIONE (la richiesta
   non e' mai partita, es. httpx.ConnectTimeout/ConnectError).
 
+RPC v2 (24/09, migrations/refresh_analytics_bets_range_v2_2026-09-24.sql)
+  Stessa firma e stesso risultato; il server ora ha `SET statement_timeout =
+  '600s'` sulla funzione (PostgREST lo applica alla transazione della chiamata):
+  una finestra fuggita viene UCCISA a 600 s (57014, rollback) invece di girare
+  fino a 49 minuti accodandosi alle successive. Il client aspetta 660 s (> 600)
+  e sul 57014 del server NON ritenta: finestra fallita, exit != 0.
+
 Uso (equivalente a `refresh_analytics_bets(p_days=5)`):
   python refresh_analytics_bets.py --days 5
   python refresh_analytics_bets.py --from 2026-09-01 --to 2026-10-01   # backfill
@@ -63,7 +70,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from db_client import get_supabase_client
 
 _RPC = "refresh_analytics_bets_range"
-_HTTP_TIMEOUT = 600.0   # secondi per finestra (il server non ha statement_timeout)
+# secondi per finestra. 24/09: la RPC v2 (migrations/refresh_analytics_bets_range_v2_
+# 2026-09-24.sql) ha `SET statement_timeout = '600s'`: il SERVER uccide lo statement
+# a 600 s. Il client aspetta 60 s in piu' (660 > 600) per ricevere l'errore 57014
+# del server invece di chiudere prima e lasciare lo statement vivo (prima: 0 = mai,
+# finestre fuggite fino a 2.950 s che si accodavano alle successive).
+_HTTP_TIMEOUT = 660.0
 _RETRY = 3              # tentativi su errori TRANSITORI (MAI sul timeout del client)
 _PAUSA = 1.0            # pausa fra finestre: il DB respira
 
@@ -71,9 +83,14 @@ _PAUSA = 1.0            # pausa fra finestre: il DB respira
 # ATTENZIONE: 500/502/504 NON sono qui (vedi _GATEWAY_TIMEOUT_CODES sotto): un
 # 5xx del GATEWAY (non del client) e' la risposta arrivata a una richiesta gia'
 # partita, quindi va trattato come _timeout_client, non ritentato.
-_TRANSIENT_CODES = {"57014", "53300", "53400", "55P03", "40001", "40P01",
+# 24/09: 57014 NON e' piu' qui. Con la RPC v2 il 57014 e' lo statement_timeout
+# DEL SERVER (600 s) che ha UCCISO la finestra: la transazione e' annullata
+# (rollback, nessuna riga toccata) e ripeterla subito rifarebbe lo stesso lavoro
+# fino allo stesso limite (3 x 600 s). La finestra fallisce, il run esce != 0.
+_TRANSIENT_CODES = {"53300", "53400", "55P03", "40001", "40P01",
                     "08006", "08003", "08000", "57P01", "57P02", "57P03",
                     "PGRST002", "408", "503"}
+_TIMEOUT_SERVER_CODE = "57014"
 
 # 5xx del GATEWAY osservati in produzione (run 35837906029, 23/09) sulle finestre
 # 18/09, 20/09, 22/09: 'JSON could not be generated' / code 504, "b'upstream
@@ -124,11 +141,18 @@ def _timeout_client(e: Exception) -> bool:
     return _gateway_timeout_dopo_invio(e)
 
 
+def _timeout_server(e: Exception) -> bool:
+    """True se il SERVER ha ucciso lo statement per statement_timeout (57014):
+    con la RPC v2 succede a 600 s. Non si ritenta (vedi _TRANSIENT_CODES)."""
+    return str(getattr(e, "code", None)) == _TIMEOUT_SERVER_CODE
+
+
 def _is_transient(e: Exception) -> bool:
     """True solo per gli errori che ha senso ritentare. ATTENZIONE: esclude i
-    timeout del client E i 5xx del gateway dopo l'invio (vedi _timeout_client),
-    che NON si ritentano."""
-    if _timeout_client(e):
+    timeout del client E i 5xx del gateway dopo l'invio (vedi _timeout_client)
+    E lo statement_timeout del server (57014, vedi _timeout_server), che NON si
+    ritentano."""
+    if _timeout_client(e) or _timeout_server(e):
         return False
     if isinstance(e, httpx.TransportError):   # ConnectError, ConnectTimeout gia' escluso, PoolTimeout...
         return True
@@ -177,9 +201,15 @@ def rinfresca_finestra(sb, p_from: date, p_to: date) -> tuple[bool, int]:
             if _timeout_client(e):
                 print(f"  [ERR] {p_from} -> {p_to}: {type(e).__name__} dopo "
                       f"{_HTTP_TIMEOUT:.0f}s: NON ritento. Lo statement PUO' ESSERE "
-                      f"ANCORA IN ESECUZIONE sul server (le RPC hanno "
-                      f"statement_timeout=0): NON rilanciare a mano subito, "
+                      f"ANCORA IN ESECUZIONE sul server (se la RPC v2 NON e' "
+                      f"applicata ha statement_timeout=0; con la v2 muore a 600 s): "
+                      f"NON rilanciare a mano subito, "
                       f"verifica prima che non stia ancora girando.")
+                return False, 0
+            if _timeout_server(e):
+                print(f"  [ERR] {p_from} -> {p_to}: statement_timeout del SERVER (57014): "
+                      f"la finestra e' stata annullata (rollback), NON ritento. "
+                      f"Misurare le fasi con refresh_analytics_bets_range_diag.")
                 return False, 0
             if not _is_transient(e) or attempt == _RETRY - 1:
                 print(f"  [ERR] {p_from} -> {p_to}: {type(e).__name__}: {str(e)[:140]}")
@@ -225,7 +255,7 @@ def main() -> None:
         return
 
     sb = get_supabase_client()
-    # il server non ha statement_timeout su queste funzioni: il limite e' il client
+    # il client aspetta PIU' del server (660 > 600 s della RPC v2): vedi _HTTP_TIMEOUT
     sb.postgrest.session.timeout = httpx.Timeout(_HTTP_TIMEOUT)
 
     tot, falliti = 0, []

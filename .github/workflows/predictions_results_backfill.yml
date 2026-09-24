@@ -11,6 +11,11 @@ on:
         required: false
         type: string
         default: ''
+      leagues:
+        description: 'RECUPERO enrich: solo queste leghe, CSV (es. 292,293). Vuoto = tutte (default)'
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: predictions-results-backfill
@@ -110,6 +115,9 @@ jobs:
       # BULK (staging + 1 UPDATE/lega) → veloce e poco stressante. NON lancia mai
       # l'enrich STORICO completo (46k): quello è on-demand dall'utente. Un errore
       # qui NON deve far fallire la pipeline risultati.
+      # 24/09: lettura per lega a KEYSET (niente OFFSET). Le leghe fallite sono
+      # elencate a fine step ("Leghe FALLITE"); si recuperano con un dispatch con
+      # l'input 'leagues' (CSV), che restringe SOLO questo step a quelle leghe.
       - name: Enrich freq/ritardi (incrementale, BULK)
         id: enrich
         if: always()
@@ -117,7 +125,13 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python enrich_analytics_snapshots.py --days "$GIORNI_FINESTRA"
+          LEGHE_RECUPERO: ${{ github.event.inputs.leagues }}
+        run: |
+          if [ -n "$LEGHE_RECUPERO" ]; then
+            python enrich_analytics_snapshots.py --days "$GIORNI_FINESTRA" --leagues "$LEGHE_RECUPERO"
+          else
+            python enrich_analytics_snapshots.py --days "$GIORNI_FINESTRA"
+          fi
 
       # ADDITIVO E NON-FATALE: rinfresca la tabella materializzata analytics_bets
       # (motore strategie) per i giorni recenti — incrementale per intervallo di date,

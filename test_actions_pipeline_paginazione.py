@@ -80,6 +80,48 @@ def err_504() -> APIError:
 
 
 # ------------------------------------------------------------- finto PostgREST
+def _spezza_virgole(s: str) -> list[str]:
+    """Divide sulle virgole di primo livello (fuori da parentesi e virgolette)."""
+    out, liv, dentro, cur = [], 0, False, ""
+    for ch in s:
+        if ch == '"':
+            dentro = not dentro
+        elif not dentro and ch == "(":
+            liv += 1
+        elif not dentro and ch == ")":
+            liv -= 1
+        if ch == "," and liv == 0 and not dentro:
+            out.append(cur); cur = ""
+        else:
+            cur += ch
+    out.append(cur)
+    return out
+
+
+def _parse_logico(expr: str) -> list:
+    """`a.gt.1,and(b.eq."x",c.gt.2)` -> [("cmp",a,gt,"1"), ("and",[...])]."""
+    termini = []
+    for t in _spezza_virgole(expr):
+        if t.startswith("and(") and t.endswith(")"):
+            termini.append(("and", _parse_logico(t[4:-1])))
+        else:
+            col, op, val = t.split(".", 2)
+            termini.append(("cmp", col, op, val.strip('"')))
+    return termini
+
+
+def _valuta_logico(t, r) -> bool:
+    if t[0] == "and":
+        return all(_valuta_logico(x, r) for x in t[1])
+    _k, col, op, val = t
+    x = r.get(col)
+    if x is None:
+        return False
+    if isinstance(x, int):
+        val = int(val)
+    return {"gt": x > val, "eq": x == val, "gte": x >= val, "lt": x < val}[op]
+
+
 class FakeResp:
     def __init__(self, data, count=None):
         self.data = data
@@ -134,6 +176,11 @@ class FakeQuery:
     def lt(self, c, v):
         self.filters.append(("lt", c, v)); return self
 
+    def or_(self, expr, **kw):
+        """Filtro `or` di PostgREST (sintassi reale: `col.op.val,and(col.op.val,...)`,
+        valori fra virgolette doppie ammessi)."""
+        self.filters.append(("or", None, _parse_logico(expr))); return self
+
     def order(self, c, desc=False, **kw):
         self.orders.append((c, desc)); return self
 
@@ -161,6 +208,8 @@ class FakeQuery:
             if kind == "lt" and not (x is not None and x < v):
                 return False
             if kind == "notnull" and x is None:
+                return False
+            if kind == "or" and not any(_valuta_logico(t, r) for t in v):
                 return False
         return True
 
@@ -1072,15 +1121,15 @@ def test_letture_enrich_ritentano_il_transitorio_e_dimezzano():
     def hook(q):
         if q.table != "matches":
             return
-        usate.append(q._range)
-        lung = q._range[1] - q._range[0] + 1
-        if lung > 500:
+        assert q._range is None                  # keyset: mai OFFSET (24/09)
+        usate.append(q._limit)
+        if q._limit > 500:
             raise err_57014()
 
     db.select_hook = hook
     letti = en._fetch_matches(db, 129)
     assert len(letti) == 300
-    assert min(r[1] - r[0] + 1 for r in usate) <= 500        # pagina dimezzata
+    assert min(usate) <= 500                     # pagina dimezzata
 
 
 def _eventi_gol(fids, per_fixture: int):
@@ -1286,7 +1335,8 @@ def test_fetch_signal_targets_dimezza_il_blocco_su_57014_e_legge_la_lega():
     def hook(q):
         if q.table != "analytics_signals":
             return
-        lung = q._range[1] - q._range[0] + 1
+        assert q._range is None                  # keyset: mai OFFSET (24/09)
+        lung = q._limit
         usati.append(lung)
         if lung >= en._PAGE_LEGA:     # 100: va SEMPRE in 57014 -> deve dimezzare per passare
             raise err_57014()
@@ -1409,4 +1459,142 @@ def test_rinfresca_finestra_55P03_si_ritenta():
     db.rpc_impl[rab._RPC] = impl
     ok, righe = rab.rinfresca_finestra(db, date(2026, 9, 20), date(2026, 9, 21))
     assert ok and righe == 15 and n["c"] == 2
+
+
+# ============================================================================
+# 6) 24/09 - enrich a KEYSET (run 35976004167: 10 leghe in 57014 anche a blocco
+#    25 perche' `order by id offset K` sulla pkey scorreva l'intera tabella)
+# ============================================================================
+def _segnali_sparsi(league_id: int, n: int, altra_lega: int = 999, passo: int = 7):
+    """Righe vere di analytics_signals della lega con id NON contigui, intercalate
+    a righe di un'altra lega (come nella tabella vera: le leghe si mescolano)."""
+    out, rid = [], 1000
+    for i in range(n):
+        for lid in (altra_lega, league_id):
+            rid += passo + (i % 5)           # buchi irregolari negli id
+            out.append({"id": rid, "fixture_id": 1500000 + i, "league_id": lid,
+                        "market": "over_2_5", "selection": "Over" if i % 2 else "Under",
+                        "engine": "poisson",
+                        "kickoff": "2026-09-2%dT18:00:00+00:00" % (i % 3)})
+    return out
+
+
+def _osserva(db, tabella):
+    viste = []
+
+    def hook(q):
+        if q.table == tabella:
+            viste.append({"range": q._range, "limit": q._limit, "filtri": list(q.filters),
+                          "ordini": list(q.orders)})
+    db.select_hook = hook
+    return viste
+
+
+def test_keyset_lega_pagine_complete_ultima_vuota_id_non_contigui(monkeypatch):
+    monkeypatch.setattr(en, "_PAGE_LEGA", 25)
+    righe = _segnali_sparsi(292, 60)
+    db = FakeDB({"analytics_signals": righe})
+    viste = _osserva(db, "analytics_signals")
+    by_ms = en._fetch_signal_targets(db, 292)
+    attese = {(r["market"], r["selection"], r["fixture_id"]) for r in righe if r["league_id"] == 292}
+    lette = {(m, s, f) for (m, s), fids in by_ms.items() for f in fids}
+    assert lette == attese
+    # 60 righe a blocchi di 25 -> 25, 25, 10, poi la pagina VUOTA che chiude
+    assert len(viste) == 4
+    assert all(v["range"] is None for v in viste)               # MAI offset
+    assert all(v["limit"] == 25 for v in viste)
+    assert all(v["ordini"] == [("id", False)] for v in viste)
+    assert not any(f[0] == "gt" for f in viste[0]["filtri"])    # prima pagina: nessun cursore
+    id_lega = sorted(r["id"] for r in righe if r["league_id"] == 292)
+    # ogni pagina successiva riparte dall'ULTIMO id letto (non contiguo)
+    assert ("gt", "id", id_lega[24]) in viste[1]["filtri"]
+    assert ("gt", "id", id_lega[49]) in viste[2]["filtri"]
+    assert ("gt", "id", id_lega[59]) in viste[3]["filtri"]
+
+
+def test_keyset_multiplo_esatto_della_pagina_chiude_sulla_pagina_vuota(monkeypatch):
+    monkeypatch.setattr(en, "_PAGE_LEGA", 25)
+    db = FakeDB({"analytics_signals": _segnali_sparsi(292, 50)})
+    viste = _osserva(db, "analytics_signals")
+    by_ms = en._fetch_signal_targets(db, 292)
+    assert sum(len(v) for v in by_ms.values()) == 50
+    assert len(viste) == 3                                      # 25, 25, vuota
+
+
+def test_keyset_regge_il_cap_del_server_senza_saltare_righe(monkeypatch):
+    monkeypatch.setattr(en, "_PAGE_LEGA", 100)
+    righe = _segnali_sparsi(292, 230)
+    db = FakeDB({"analytics_signals": righe}, cap=40)           # max-rows < blocco
+    by_ms = en._fetch_signal_targets(db, 292)
+    assert sum(len(v) for v in by_ms.values()) == 230
+
+
+def test_offset_profondo_in_57014_il_keyset_legge_lo_stesso():
+    """Riproduce il 24/09: il server regge la PRIMA pagina ma va in 57014 appena
+    deve scorrere righe (OFFSET > 0). Con il keyset nessuna pagina ha OFFSET e
+    la lega si legge tutta; rimettere l'OFFSET rende questo test ROSSO."""
+    righe = _segnali_sparsi(292, 300)
+    db = FakeDB({"analytics_signals": righe, "matches": _righe_matches(300, 292)})
+
+    def hook(q):
+        if q._range is not None and q._range[0] > 0:
+            raise err_57014()
+    db.select_hook = hook
+    by_ms = en._fetch_signal_targets(db, 292)
+    assert sum(len(v) for v in by_ms.values()) == 300
+    assert len(en._fetch_matches(db, 292)) == 300
+
+
+def test_recent_targets_keyset_composto_con_kickoff_pari_e_cap():
+    """(kickoff, id): molte righe con lo STESSO kickoff e un cap del server che
+    spezza il gruppo a meta' -> il cursore composto non salta ne' ripete."""
+    righe = _segnali_sparsi(292, 120)
+    oggi = datetime.now(timezone.utc).strftime("%Y-%m-%dT18:00:00+00:00")
+    for r in righe:
+        r["kickoff"] = oggi                                     # tutti PARI
+    db = FakeDB({"analytics_signals": righe}, cap=7)
+    viste = _osserva(db, "analytics_signals")
+    out = en._recent_targets(db, 4)
+    assert out[292] == {r["fixture_id"] for r in righe if r["league_id"] == 292}
+    assert out[999] == {r["fixture_id"] for r in righe if r["league_id"] == 999}
+    assert all(v["range"] is None for v in viste)
+    assert any(f[0] == "or" for f in viste[1]["filtri"])        # cursore composto
+
+
+def test_dopo_kickoff_id_produce_il_filtro_or_vero_di_postgrest():
+    """Il filtro va costruito dal client VERO (postgrest-py), non solo dal finto."""
+    from postgrest import SyncPostgrestClient
+    c = SyncPostgrestClient("http://127.0.0.1:9")
+    q = c.from_("analytics_signals").select("league_id,fixture_id,kickoff,id")
+    q = en._dopo_kickoff_id(q, ("2026-09-24T18:00:00+00:00", 5))
+    assert q.request.params.get("or") == ('(kickoff.gt."2026-09-24T18:00:00+00:00",'
+                                  'and(kickoff.eq."2026-09-24T18:00:00+00:00",id.gt.5))')
+    assert en._dopo_kickoff_id(q, None) is q
+
+
+def test_main_leagues_recupera_solo_le_leghe_indicate(monkeypatch, capsys):
+    sig = _righe_signals_lega(5, league_id=292) + _righe_signals_lega(5, league_id=331)
+    db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": [],
+                 "matches": _righe_matches(5, 292) + _righe_matches(5, 331)})
+    lette = []
+
+    def hook(q):
+        for f in q.filters:
+            if f[0] == "eq" and f[1] == "league_id":
+                lette.append(f[2])
+    db.select_hook = hook
+    monkeypatch.setattr(en, "get_supabase_client", lambda: db)
+    monkeypatch.setattr(sys, "argv", ["enrich_analytics_snapshots.py", "--days", "4",
+                                      "--leagues", "292"])
+    en.main()
+    assert set(lette) == {292}                                  # la 331 non e' toccata
+
+
+def test_main_leagues_non_valido_esce_prima_di_toccare_il_db(monkeypatch):
+    monkeypatch.setattr(en, "get_supabase_client",
+                        lambda: (_ for _ in ()).throw(AssertionError("DB toccato")))
+    monkeypatch.setattr(sys, "argv", ["enrich_analytics_snapshots.py", "--days", "4",
+                                      "--leagues", "29x"])
+    with pytest.raises(SystemExit, match="--leagues non valido"):
+        en.main()
 

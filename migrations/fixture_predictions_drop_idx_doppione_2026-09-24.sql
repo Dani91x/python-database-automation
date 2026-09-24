@@ -1,0 +1,15 @@
+-- ============================================================================
+-- fixture_predictions: togliere l'indice DOPPIONE della chiave primaria.
+-- 24/09/2026. DA APPLICARE A CURA DELL'UTENTE, nello SQL editor, FUORI da una
+-- transazione (DROP INDEX CONCURRENTLY), a DB scarico (nessuna action in corso).
+--
+-- Letto dal coordinatore sul DB vero (24/09): fixture_predictions ha
+-- pkey(fixture_id) E idx_fixture_predictions_fixture_id (fixture_id): stesso
+-- contenuto, ogni scrittura su fixture_predictions aggiorna due indici uguali.
+-- Nessuna query ha bisogno del secondo: la pkey copre ogni filtro su fixture_id.
+-- ============================================================================
+-- CONTROLLO PRIMA (sola lettura): deve mostrare due indici sulla sola colonna
+-- fixture_id, uno dei quali e' la pkey:
+--   select indexrelid::regclass, indisprimary, pg_get_indexdef(indexrelid)
+--     from pg_index where indrelid = 'public.fixture_predictions'::regclass;
+drop index concurrently if exists public.idx_fixture_predictions_fixture_id;

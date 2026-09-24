@@ -1,0 +1,37 @@
+-- ============================================================================
+-- analytics_signals: indice (league_id, id) per la lettura KEYSET per lega
+-- (enrich_analytics_snapshots.py::_fetch_signal_targets). 24/09/2026.
+-- DA APPLICARE A CURA DELL'UTENTE, nello SQL editor, FUORI da una transazione
+-- (CREATE INDEX CONCURRENTLY non puo' stare in un blocco BEGIN/COMMIT: incollare
+-- ed eseguire SOLO questa istruzione). Non blocca le scritture.
+--
+-- CAUSA (run 35976004167, 24/09): la lettura per lega era
+--   select id,fixture_id,market,selection from analytics_signals
+--   where league_id = 292 order by id offset 75 limit 25
+-- e il piano era
+--   Limit -> Index Scan using analytics_signals_pkey
+--            Filter: (league_id = 292)
+-- cioe' la tabella INTERA (945.156 righe) scorsa in ordine di id filtrando la
+-- lega: oltre gli 8 s del ruolo (57014) per le leghe piccole o "in fondo", anche
+-- a blocco 25. Nessun indice serve insieme filtro e ordine: esiste
+-- (league_id, season_year) ma non (league_id, id).
+--
+-- DOPO (codice keyset: where league_id = N and id > cursore order by id limit K)
+-- il piano atteso e':
+--   Limit
+--     -> Index Scan using idx_as_league_id_id on analytics_signals
+--          Index Cond: ((league_id = 292) AND (id > 12345))
+-- che legge SOLO K righe per pagina, qualunque sia la posizione della lega.
+-- Il codice resta CORRETTO anche senza l'indice (solo piu' lento: il keyset
+-- evita comunque di riscorrere le pagine precedenti).
+-- ============================================================================
+create index concurrently if not exists idx_as_league_id_id
+    on public.analytics_signals (league_id, id);
+
+-- VERIFICA (sola lettura, dopo la creazione):
+--   select indexrelid::regclass, indisvalid from pg_index
+--    where indexrelid = 'public.idx_as_league_id_id'::regclass;   -- indisvalid = true
+--   explain select id,fixture_id,market,selection from public.analytics_signals
+--    where league_id = 292 and id > 0 order by id limit 100;
+-- Se indisvalid = false (CONCURRENTLY interrotto): drop index concurrently
+-- public.idx_as_league_id_id; e ricreare.
