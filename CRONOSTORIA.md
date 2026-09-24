@@ -2650,3 +2650,20 @@ confirm, non due), scalper A+D (`5ea391e`: rifiuto letto, CLI fail-closed; REPER
 rifiuto persistente → decisione utente, come il `_freno` dei bot tennis). Replay (c3j) e suite intera in corso.
 **h18:00 — SUITE PYTHON FINALE su master (`5ea391e`): 5878 verdi, 0 rossi, 1 xfail, 1 deselezionato (campione banco
 scalper, 2 replay: da lanciare a parte). Replay c3j in corso (uno per bot, in sequenza).**
+**h14:10 — REPLAY c3j (un bot alla volta, banco corretto) e PUSH.** Mike 15/15 (0 viol.); Safe base/esatto/punta 22/22
+(0 viol.: PM6 e T13 CHIUSI, +1 scenario `combos-gamba-automatica`); Safe tennis 34+2 (T7/T7-APPROVAZIONE preesistenti,
+77 viol. come ieri 78); tennis_scalper/pro/flb/swing 11/11 ciascuno; Omega: 49 OK a parità con ieri (3 scarti di 1-3
+tick sui tempi di stop, azioni identiche) ma tetto di 40 min superato → ribattuta per partita in corso (c3k). SCALPER
+su 35797769 (dove entra: 102-108 azioni): KO in `base` e `rifiuti-betfair` con S5 ×5764 («heartbeat fermo per 7,3 s di
+mercato»: quasi certamente l'orologio dell'ADATTATORE sui buchi della registrazione, non il bot) e S3 ×1 (sessione
+'done' con esposizione sbilanciata −0,20/+0,40 su una selezione e nessuna dichiarazione «posizione NON flat»: reperto
+VERO del bot, residuo accettato dall'anti-churn ma non dichiarato). PUSH su origin: 24 commit (`29f50b0`).
+Mutazione mia sul cursore keyset dell'enrich (cursore inclusivo): il test si BLOCCA invece di fallire (pagine ripetute
+all'infinito) → i test di paginazione vanno limitati nelle iterazioni (piccolo, come per il giro veloce).
+**AUDIT (4) consegnati e archiviati in `AUDIT_2026-09-24/` con i due del mattino**: bot×dati×algoritmi; tempo reale
+(PARZIALE: fonte scanner a 1 s per conflate, punteggi IPS 2 s, Omega 20-60 s, posizioni NUOVE dei bot solo al poll 30 s,
+47337 senza sottoscrittori, ordini mai dal canale finché F5-F8 restano spenti); fedeltà strategie Safe (PARZIALE:
+controllo del gioco spento, uscite a tempo filtrate dal modello, tennis banda 1,01-1,10 vs ~1,03, uscita obbligatoria
+in attesa di firma; trascrizioni dei video NON esistono: 63 video mai trascritti, `SPEC_STRATEGIA_S.md` non versionato);
+tab dashboard (Frequenze/Ritardi su `matches` senza realtime, Poisson/ML/TacticAI istantanee, TacticAI copertura
+4-16 % verificata da me sul DB, Direzione senza quota per `bets` rotto: verificato 185 quote su 1752 righe di oggi).
