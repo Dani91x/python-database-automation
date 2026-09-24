@@ -553,6 +553,57 @@ def test_chiudi_ora_gia_in_uscita_nessun_secondo_ordine(bot, monkeypatch):
         assert "gia' in uscita" in res["message"]
 
 
+def _blotter_illeggibile(flumine: Any, strat: Any) -> bool:
+    """`_strategy_is_flat` quando il blotter non si legge: solleva (avanza lo
+    tratta come NON flat, fail-safe)."""
+    raise RuntimeError("blotter illeggibile")
+
+
+@pytest.mark.parametrize("caso", ["residuo", "blotter_illeggibile"])
+def test_chiudi_ora_posizione_non_pari_dopo_la_grazia_e_error_mai_stopped(caso, monkeypatch):
+    """Il bot ha FINITO la sua uscita ma il blotter NON e' pari (residuo fra 1 e
+    2 centesimi: il PRO lo chiama pari a 0,02, il runner no a 0,01) oppure non
+    si legge. Prima della grazia di 45 s non si conclude; dopo, la riga va a
+    `error` col messaggio che lo DICE - mai uno `stopped` bugiardo."""
+    bot = "tennis_pro"
+    strat = _arma(bot)
+    m = _Mercato()
+    _semina_aperta(bot, strat, m)
+    session, fl = _quadro(bot, strat, m)
+    db = _Db(bot)
+    cmd = CM.comando_da_riga(_riga_chiudi(51, bot))
+    assert CM.prendi_in_carico(session, 51, cmd, db=db, adesso=1000.0) is None
+    strat.process_market_book(m, _libro(T0 + 1_000))
+    assert len(m.piazzati) == 1
+    chiusura = m.piazzati[0]
+    abbinata = 1.98 if caso == "blotter_illeggibile" else 1.99   # 1.99: residuo 0,0198
+    chiusura.responses.current_order = types.SimpleNamespace(
+        size_matched=abbinata, size_remaining=0.0,
+        average_price_matched=float(chiusura.order_type.price))
+    chiusura.execution_complete()
+    strat.process_market_book(m, _libro(T0 + 2_000))
+    assert strat.uscita_manuale_finita() is True
+    e_flat = _blotter_illeggibile if caso == "blotter_illeggibile" else TR._strategy_is_flat
+    if caso == "residuo":
+        assert TR._strategy_is_flat(fl, strat) is False
+    kw = dict(e_flat=e_flat, disabilita=TR._disable_strategy, db=db)
+    # dentro la grazia: niente di concluso, nessuno stato scritto
+    assert CM.avanza(fl, session, adesso=1010.0, **kw) == []
+    assert CM.avanza(fl, session, adesso=1010.0 + CM.GRAZIA_FLAT_S - 1, **kw) == []
+    assert db.stati == [] and db.fatte == []
+    # oltre la grazia: conclusa, ma DICHIARATA non pari
+    assert CM.avanza(fl, session, adesso=1010.0 + CM.GRAZIA_FLAT_S + 1, **kw) == [(EV, bot)]
+    stati = [s[2] for s in db.stati]
+    assert stati == ["error"], "posizione NON pari dichiarata %s" % stati
+    kw_riga = db.stati[0][3]
+    assert "NON e' pari" in (kw_riga.get("error") or "")
+    assert kw_riga["stats"][CM.CHIAVE_STATS]["flat"] is False
+    assert [rid for rid, _ in db.fatte] == [51]
+    assert "ATTENZIONE" in db.fatte[0][1]["message"]
+    assert db.fatte[0][1]["flat"] is False
+    assert strat._tennis_disabled is True
+
+
 def _riempi_ns(o: Any) -> None:
     o.size_matched = float(o.order_type.size)
     o.average_price_matched = float(o.order_type.price)
