@@ -79,7 +79,7 @@ function soloSport(righe: readonly RigaComponente[], sport: 'calcio' | 'tennis')
 }
 
 export interface RigaComposizione {
-    chiave: 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | 'bot_tennis' | 'manuale'
+    chiave: 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | 'scalper' | 'bot_tennis' | 'manuale'
         | 'manuale_sito' | 'manuale_app' | 'altro';
     etichetta: string;
     /** P&L netto di oggi, SOLO soldi veri; null = nessuna riga (mostrare —, mai 0) */
@@ -106,6 +106,8 @@ const ETICHETTE: Record<RigaComposizione['chiave'], string> = {
     safe_calcio: 'Safe calcio',
     safe_tennis: 'Safe tennis',
     mike: 'Mike',
+    // 24/09 - reale di Betfair per bet_id degli ordini della sessione
+    scalper: 'Scalper calcio',
     bot_tennis: 'Bot tennis (Scalper · Pro · FLB · Swing)',
     manuale: 'Manuale (app + sito Betfair)',
     // 18/09 (raccordo) — DUE voci NUOVE, dal conto Betfair (`betfair_live_
@@ -158,6 +160,11 @@ export function componiObiettivo(input: {
      * = voce vuota, comportamento di prima.
      */
     altro?: readonly RigaComponente[];
+    /**
+     * 24/09 - lo SCALPER CALCIO: righe sintetiche (una per partita) col reale
+     * di Betfair regolato oggi. Facoltativo: assente = voce vuota, come prima.
+     */
+    scalper?: readonly RigaComponente[];
 }): ComposizioneObiettivo {
     const omegaAuto = soloAuto(input.omega);
     const safeCalcioAuto = soloAuto(soloSport(input.safe, 'calcio'));
@@ -168,6 +175,7 @@ export function componiObiettivo(input: {
     const manualeSito = input.manualeSito ?? [];
     const manualeApp = input.manualeApp ?? [];
     const altro = input.altro ?? [];
+    const scalper = input.scalper ?? [];
 
     const voce = (chiave: RigaComposizione['chiave'], righeVoce: readonly RigaComponente[]): RigaComposizione => ({
         chiave,
@@ -181,6 +189,7 @@ export function componiObiettivo(input: {
         voce('safe_calcio', safeCalcioAuto),
         voce('safe_tennis', safeTennisAuto),
         voce('mike', mikeAuto),
+        voce('scalper', scalper),
         voce('bot_tennis', tennisBot),
         voce('manuale', manuale),
         voce('manuale_sito', manualeSito),
@@ -192,7 +201,7 @@ export function componiObiettivo(input: {
 
     const tutteLeRighe = [
         ...input.omega, ...input.safe, ...input.mike, ...input.tennisBot,
-        ...manualeSito, ...manualeApp, ...altro,
+        ...manualeSito, ...manualeApp, ...altro, ...scalper,
     ];
     const provaPaper = realizzatoGiornata(tutteLeRighe).paper;
     const { reale, stimato } = sommaParti(tutteLeRighe);

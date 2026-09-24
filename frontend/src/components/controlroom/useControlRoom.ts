@@ -59,7 +59,7 @@ import {
 } from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
 import {
-    posizioniChiuse, rigaDaOrdineTennis,
+    posizioniChiuse, rigaDaOrdineTennis, SOGLIA_PARI,
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
@@ -102,6 +102,13 @@ import { prezzoVivoPerGamba } from '@/lib/comboPrezzoVivo';
 import { updateOmegaParams } from '@/lib/omega';
 import { applicaLottoScan, type ScanRowEvent } from '@/lib/scanEventBuffer';
 import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/lib/liveOrders';
+import {
+    fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
+    chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
+    notaSessioneScalper,
+    type ScalperControlRoom, type SessioneScalper, type OrdineScalper,
+} from '@/lib/scalperControlRoom';
+import type { BotConChiusura } from './chiudiRiga';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -168,6 +175,9 @@ export const FONTI_RICARICA: readonly string[] = [
     'registrazioni calcio',
     'servizi bot tennis', 'giornata bot tennis live',
     'giornata bot tennis paper', 'ordini bot tennis di oggi',
+    // 24/09 - sessioni e ordini dello scalper calcio (UNA RPC per giro,
+    // `get_scalper_control_room`): lo scalper non ha un canale locale
+    'scalper calcio',
 ];
 /** ritmo dell'orologio di pagina: le età devono crescere da sole */
 const TICK_MS = 1_000;
@@ -265,6 +275,8 @@ export interface StatoBot {
      */
     pnlOggi: number | null;
     pnlOggiPaper: number | null;
+    /** 24/09 - scalper calcio: quante sessioni, in che modalita', fonte ed eta' */
+    nota?: string | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -344,6 +356,16 @@ export interface OperazionePartita {
      */
     eventId?: string;
     chiudeId?: number | null;
+    /**
+     * 24/09 - SCALPER CALCIO: la riga e' la SESSIONE della partita (id =
+     * event_id numerico). `firma` = `requested_at` della sessione, com'e'
+     * scritto nel database (guardia d'identita' dello stop); `residuo` =
+     * sessione ferma con esposizione non coperta; `notaSessione` = stato,
+     * ultima attivita', battito, P&L lordo del bot, FONTE ed ETA' del dato.
+     */
+    firma?: string | null;
+    residuo?: boolean;
+    notaSessione?: string | null;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -388,6 +410,9 @@ export interface PosizioneAperta {
     ordine: RigaOrdine;
     /** 17/09 — il dettaglio della scheda originale (v. `OperazionePartita`) */
     dettaglio: DettaglioRiga | null;
+    /** 24/09 - scalper calcio: firma della sessione e residuo (v. `OperazionePartita`) */
+    firma?: string | null;
+    residuo?: boolean;
     /**
      * 17/09 — QUOTA DI ADESSO sulla stessa selezione, dal feed di scansione
      * già caricato per le partite: back, lay e i tick di movimento
@@ -508,6 +533,9 @@ const OFFSET_BOT: Record<Bot, number> = {
     omega: 0, safe: 1_000_000_000, mike: 2_000_000_000,
     tennis_scalper: 3_000_000_000, tennis_pro: 4_000_000_000,
     tennis_flb: 5_000_000_000, tennis_swing: 6_000_000_000,
+    // lo scalper non entra in `soldiPerPartita` (le sue righe sono sessioni,
+    // non trade con `closes_trade_id`): l'offset c'e' per completezza
+    scalper: 7_000_000_000,
 };
 
 function chiaviComposte<T extends { id: number; closes_trade_id?: number | null }>(
@@ -1029,6 +1057,15 @@ export function useControlRoom(): ControlRoomVM {
     const giaChieste = useRef<Set<string>>(new Set());
     const rilettore = useRef<RilettureMirate | null>(null);
     /**
+     * 24/09 - LO SCALPER CALCIO: sessioni vive o di oggi + ordini dello
+     * specchio della sessione (`get_scalper_control_room`). `null` = mai letto
+     * (RPC assente = migrazione non applicata): la riga dice "stato non
+     * letto", mai "fermo". `scalperLettoMs` = quando e' arrivata la lettura:
+     * l'eta' si DICHIARA (fonte: database, al giro dei 30 s).
+     */
+    const [scalperCR, setScalperCR] = useState<ScalperControlRoom | null>(null);
+    const [scalperLettoMs, setScalperLettoMs] = useState<number | null>(null);
+    /**
      * 18/09 (raccordo, R4) — la riga singleton `betfair_live_account`, GIA'
      * letta/sottoscritta da `SaldoBetfairCard` (autosufficiente, non passa da
      * qui): serve ANCHE qui per le due colonne manuali (`manual_pnl_*`/
@@ -1080,11 +1117,16 @@ export function useControlRoom(): ControlRoomVM {
             (() => { const g = romeDay(new Date()); return fetchTennisBotDaily(g, g, 'live'); })(),
             (() => { const g = romeDay(new Date()); return fetchTennisBotDaily(g, g, 'paper'); })(),
             fetchTennisBotOrdersToday(null),
+            fetchScalperControlRoom(),
         ]).then((r) => {
             if (!vivo || mioGiro !== giroCorrente.current) return;
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
                 rDaily, rDailyPaper, rEventi, rMissioni, rFollowT, rFollowC,
-                rTennisSrv, rTennisDaily, rTennisDailyPaper, rTennisOrdini] = r;
+                rTennisSrv, rTennisDaily, rTennisDailyPaper, rTennisOrdini, rScalper] = r;
+            if (rScalper.status === 'fulfilled') {
+                setScalperCR(rScalper.value);
+                setScalperLettoMs(Date.now());
+            }
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -1496,6 +1538,58 @@ export function useControlRoom(): ControlRoomVM {
         [feedPerEvento],
     );
 
+    // -- 24/09 - LO SCALPER CALCIO, sessione per sessione --------------------
+    // Tutto da UNA lettura (`get_scalper_control_room`, giro dei 30 s) e dal
+    // feed gia' in memoria: esposizione ABBINATA degli ordini della sessione,
+    // "se chiudo ora" (green-up pieno al prezzo del feed, stessa matematica
+    // del cash out), P&L REALE di Betfair per bet_id. Nessuna seconda formula
+    // di strategia: lo stato della sessione lo scrive il servizio.
+    // la giornata (cambia una volta al giorno) e l'eta' della lettura (ogni
+    // secondo) stanno FUORI dal memo: posizioni e righe non si ricalcolano a
+    // ogni tic dell'orologio, solo quando arriva una lettura o il feed cambia
+    const oggiScalper = romeDay(new Date(nowMs));
+    const scalperEtaLetturaS = scalperLettoMs == null
+        ? null : Math.max(0, Math.round((nowMs - scalperLettoMs) / 1000));
+    const scalperVista = useMemo(() => {
+        const oggi = oggiScalper;
+        const giornoDi = (iso: string): string => {
+            const t = Date.parse(iso);
+            return Number.isFinite(t) ? romeDay(new Date(t)) : '';
+        };
+        const tuttiOrdini: OrdineScalper[] = scalperCR?.ordini ?? [];
+        const sessioni = (scalperCR?.sessioni ?? []).map((s: SessioneScalper) => {
+            const ordini = ordiniDellaSessione(s, tuttiOrdini);
+            const esp = esposizioneScalper(ordini);
+            const payload = (feedPerEvento.get(String(s.event_id))?.payload ?? null) as Parameters<typeof chiusuraScalper>[1];
+            const viva = sessioneViva(s);
+            const pnl = pnlRealeOrdini(ordini, giornoDi, oggi);
+            const scoperta = esp.selezioni.some((e) => Math.abs(e.win - e.lose) >= 0.005);
+            return {
+                s, ordini, esp, viva, pnl,
+                id: idSessione(s.event_id),
+                modalita: modalitaSessione(s),
+                chiusura: chiusuraScalper(esp, payload),
+                // ferma ma con un'esposizione non coperta e non ancora regolata
+                residuo: !viva && scoperta && !pnl.completo,
+            };
+        });
+        // IL REALE DI OGGI (solo soldi veri): TUTTI gli ordini dello scalper
+        // regolati oggi da Betfair, di qualunque sessione, per partita e per bet
+        const realePerPartita = new Map<string, number>();
+        const realePerBet = new Map<string, number>();
+        for (const o of tuttiOrdini) {
+            if (String(o.mode ?? '').toLowerCase() !== 'live') continue;
+            const v = typeof o.pnl_betfair === 'number' && Number.isFinite(o.pnl_betfair) ? o.pnl_betfair : null;
+            if (v == null || !o.pnl_betfair_settled_at || giornoDi(o.pnl_betfair_settled_at) !== oggi) continue;
+            const k = String(o.event_id ?? '');
+            realePerPartita.set(k, Math.round(((realePerPartita.get(k) ?? 0) + v) * 100) / 100);
+            if (o.bet_id) realePerBet.set(String(o.bet_id), v);
+        }
+        let realeOggi: number | null = null;
+        for (const v of realePerPartita.values()) realeOggi = Math.round(((realeOggi ?? 0) + v) * 100) / 100;
+        return { sessioni, realePerPartita, realePerBet, realeOggi };
+    }, [scalperCR, feedPerEvento, oggiScalper]);
+
 
     const soldi = useMemo(() => soldiPerPartita([
         ...chiaviComposte(marca(omegaTrades as unknown as PnlTradeLike[], 'omega'), 'omega'),
@@ -1645,6 +1739,16 @@ export function useControlRoom(): ControlRoomVM {
         const nettoFonte = (f: keyof PnlRealeOggi['per_fonte']): number | null =>
             pnlRealeOggi && pnlRealeOggi.per_fonte[f].ordini > 0 ? pnlRealeOggi.per_fonte[f].netto : null;
 
+        // 24/09 - LO SCALPER CALCIO: una riga sintetica per PARTITA con il
+        // reale di Betfair regolato oggi (netto, per bet_id). Il paper dello
+        // scalper NON entra: il bot dichiara solo un P&L LORDO (`stats.
+        // pnl_locked`, flumine non detrae la commissione) e un lordo sommato
+        // a dei netti sarebbe un numero che non esiste.
+        const scalperRighe: RigaComponente[] = [];
+        for (const v of scalperVista.realePerPartita.values()) {
+            scalperRighe.push(...soloSe(rigaSintetica(v, null, { sport: 'calcio', origin: 'auto' })));
+        }
+
         let tennisBotRighe: RigaComponente[];
         let manualeSitoRighe: RigaComponente[];
         let manualeAppRighe: RigaComponente[];
@@ -1658,7 +1762,21 @@ export function useControlRoom(): ControlRoomVM {
                 ...tennisPaper,
             ];
             manualeSitoRighe = soloSe(rigaSintetica(nettoFonte('manuale_sito'), null, { sport: 'calcio', origin: 'manual' }));
-            manualeAppRighe = soloSe(rigaSintetica(nettoFonte('manuale_app'), null, { sport: 'calcio', origin: 'manual' }));
+            // 24/09 - il giro dei regolati del runner attribuisce le righe di
+            // `betfair_live_orders` con source 'runner' al "manuale app"
+            // (`reconcile_worker._fonte_di`): ci finiscono anche gli ordini
+            // dello SCALPER (il suo specchio non scrive una source sua). Qui
+            // si SPOSTANO sulla voce dello scalper, per bet_id, e solo quelli
+            // che il conto ha davvero contato: mai due volte gli stessi soldi.
+            let scalperNelConto = 0;
+            const contati = new Set(pnlRealeOggi.bet_ids);
+            for (const [bet, v] of scalperVista.realePerBet) {
+                if (contati.has(bet)) scalperNelConto = Math.round((scalperNelConto + v) * 100) / 100;
+            }
+            const manualeApp = nettoFonte('manuale_app');
+            manualeAppRighe = soloSe(rigaSintetica(
+                manualeApp == null ? null : Math.round((manualeApp - scalperNelConto) * 100) / 100,
+                null, { sport: 'calcio', origin: 'manual' }));
             const diff = differenzaContoRighe(pnlRealeOggi, [...omegaRighe, ...safeRighe, ...mikeRighe]);
             const altri = nettoFonte('altri_bot');
             const altro = (altri != null || Math.abs(diff) >= 0.005)
@@ -1676,18 +1794,19 @@ export function useControlRoom(): ControlRoomVM {
         }
         return {
             omegaRighe, safeRighe, mikeRighe, tennisBotRighe, manualeSitoRighe, manualeAppRighe,
-            altroRighe, safeRigheCalcolo,
+            altroRighe, safeRigheCalcolo, scalperRighe,
         };
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOggi, tennisOggiPaper, nowMs, manualeSitoBetfair,
-        pnlRealeOggi]);
+        pnlRealeOggi, scalperVista]);
 
     const realizzatoOggi = useMemo(() => {
         const {
             omegaRighe, safeRighe, mikeRighe, tennisBotRighe, manualeSitoRighe, manualeAppRighe, altroRighe,
+            scalperRighe,
         } = oggiRighe;
         const righe: RigaRealizzato[] = [
             ...omegaRighe, ...safeRighe, ...mikeRighe, ...tennisBotRighe,
-            ...manualeSitoRighe, ...manualeAppRighe, ...altroRighe,
+            ...manualeSitoRighe, ...manualeAppRighe, ...altroRighe, ...scalperRighe,
         ];
         // DUE conti separati sulle STESSE righe. `realizzatoGiornata` sa gia'
         // dividere per modalita', ma il chiamante deve DECIDERE quale mostrare:
@@ -1711,6 +1830,7 @@ export function useControlRoom(): ControlRoomVM {
         manualeSito: oggiRighe.manualeSitoRighe,
         manualeApp: oggiRighe.manualeAppRighe,
         altro: oggiRighe.altroRighe,
+        scalper: oggiRighe.scalperRighe,
     }), [oggiRighe]);
 
     /** Task 2 — salva l'obiettivo di oggi (RPC gia' pronta, verificata: fa
@@ -1832,9 +1952,52 @@ export function useControlRoom(): ControlRoomVM {
                     (c?.stats ?? null) as Record<string, unknown> | null,
                 );
             }),
+            rigaScalper(),
         ];
+
+        /**
+         * 24/09 - LO SCALPER CALCIO: la sua riga si legge dalle SUE sessioni
+         * (`statoBotScalper`): acceso = almeno una sessione attiva, modalita'
+         * = quella dichiarata dalle sessioni vive. Mai letto = stato `null`
+         * ("stato non letto"). La nota dice quante sessioni, in che modalita',
+         * e da DOVE viene il dato (database, giro dei 30 s) con la sua eta'.
+         */
+        function rigaScalper(): StatoBot {
+            if (scalperCR == null) {
+                return {
+                    ...riga('scalper', null, false, null, null, null),
+                    pnlOggi: null, pnlOggiPaper: null,
+                    nota: 'sessioni non lette (get_scalper_control_room: migrazione applicata?)',
+                };
+            }
+            const st = statoBotScalper(scalperCR.sessioni);
+            let fermatoAt: string | null = null;
+            for (const s of scalperCR.sessioni) {
+                const f = testo((s.stats as Record<string, unknown> | null)?.fermato_all_avvio_at);
+                if (f && (fermatoAt == null || f > fermatoAt)) fermatoAt = f;
+            }
+            const vive = scalperCR.sessioni.filter(sessioneViva);
+            const nLive = vive.filter((s) => modalitaSessione(s) === 'live').length;
+            const nPaper = vive.filter((s) => modalitaSessione(s) === 'paper').length;
+            const eta = scalperEtaLetturaS;
+            const fonte = `dal database, letto ${eta == null ? 'mai' : `${eta} s fa`}`;
+            const quante = vive.length === 0 ? 'nessuna sessione viva'
+                : `${vive.length} ${vive.length === 1 ? 'sessione viva' : 'sessioni vive'}`
+                    + ` (${[nLive ? `${nLive} soldi veri` : '', nPaper ? `${nPaper} prova` : '']
+                        .filter(Boolean).join(' - ')})`;
+            return {
+                ...riga('scalper', st.modalita, st.inCorsa, st.battitoAt, st.stato, null,
+                    fermatoAt ? { fermato_all_avvio_at: fermatoAt } : null),
+                // P&L di oggi: il REALE di Betfair (netto). Il paper dello
+                // scalper e' solo LORDO nel bot: non si mostra come netto.
+                pnlOggi: scalperVista.realeOggi,
+                pnlOggiPaper: null,
+                nota: `${quante} - ${fonte}`,
+            };
+        }
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,
-        tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs]);
+        tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs,
+        scalperCR, scalperVista, scalperEtaLetturaS]);
 
     // -- LE POSIZIONI GIA' CHIUSE, vinte e perse -----------------------------
     // Una posizione e apertura + coperture: sul green-up del 14/09 le righe da
@@ -1866,6 +2029,58 @@ export function useControlRoom(): ControlRoomVM {
 
     /** le righe GREZZE dei 7 bot, con lo stesso contratto: la scheda le unisce
      *  a quelle lette per giornata dal database (`lib/chiuseGiornata.ts`) */
+    // -- 24/09 - LE SESSIONI CHIUSE DELLO SCALPER CALCIO ----------------------
+    // Calcolate SOLO dalla lettura dello scalper (mai dal feed): le chiuse non
+    // si ricostruiscono a ogni battito dello scanner (garanzia dello storico).
+    const righeChiuseScalper = useMemo<TradeChiudibile[]>(() => {
+        const righe: TradeChiudibile[] = [];
+        const oggi = oggiScalper;
+        const giornoDi = (iso: string): string => {
+            const t = Date.parse(iso);
+            return Number.isFinite(t) ? romeDay(new Date(t)) : '';
+        };
+        const tuttiOrdini: OrdineScalper[] = scalperCR?.ordini ?? [];
+        for (const s of (scalperCR?.sessioni ?? []) as SessioneScalper[]) {
+            const ordini = ordiniDellaSessione(s, tuttiOrdini);
+            const esp = esposizioneScalper(ordini);
+            const pnl = pnlRealeOrdini(ordini, giornoDi, oggi);
+            const v = { s, ordini, esp, pnl, id: idSessione(s.event_id), viva: sessioneViva(s), modalita: modalitaSessione(s) };
+            // Una posizione chiusa = una SESSIONE ferma con soldi veri e OGNI suo
+            // ordine abbinato regolato da Betfair (`pnl_betfair` per bet_id,
+            // netto): il suo P&L e' la somma, e l'esito il suo segno. Una sessione
+            // con anche un solo ordine non ancora regolato NON entra (il risultato
+            // non lo sappiamo). Paper: il bot dichiara solo un LORDO, e il
+            // contratto di questa scheda e' il NETTO: non entra, e lo si dichiara.
+            if (v.id == null || v.viva || v.modalita !== 'live' || !v.pnl.completo || v.pnl.reale == null) continue;
+            const netto = v.pnl.reale;
+            righe.push({
+                id: v.id,
+                event_id: String(v.s.event_id),
+                event_name: v.s.event_name ?? null,
+                sport: 'calcio',
+                mode: 'live',
+                status: netto > SOGLIA_PARI ? 'won' : netto < -SOGLIA_PARI ? 'lost' : 'void',
+                pnl: netto,
+                pnl_betfair: netto,
+                side: null, price: null, size: v.esp.abbinato,
+                selection_name: `sessione scalper - ${v.ordini.length} ordini`,
+                placed_at: v.s.started_at ?? v.s.requested_at,
+                settled_at: v.s.stopped_at ?? null,
+                closes_trade_id: null,
+                strategy: `scalper ${v.s.mode ?? ''}`.trim(),
+                size_requested: v.esp.chiesto,
+                size_matched: v.esp.abbinato,
+                size_remaining: v.esp.residuo,
+                avg_price_matched: null,
+                betfair_updated_at: null,
+                bet_id: v.pnl.betIds[0] ?? null,
+                meta: null,
+                __bot: 'scalper',
+            });
+        }
+        return righe;
+    }, [scalperCR, oggiScalper]);
+
     const righeChiuse = useMemo<TradeChiudibile[]>(() => {
         const righe: TradeChiudibile[] = [];
         const aggiungi = (lista: readonly Record<string, unknown>[] | undefined, bot: Bot, sport?: string) => {
@@ -1887,8 +2102,9 @@ export function useControlRoom(): ControlRoomVM {
                 (b) => isBotTennis(b as Bot));
             if (r) righe.push(r);
         }
+        for (const r of righeChiuseScalper) righe.push(r);
         return righe;
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, nomiPartite]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, nomiPartite, righeChiuseScalper]);
 
     const chiuse = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
 
@@ -2060,10 +2276,33 @@ export function useControlRoom(): ControlRoomVM {
                 vivo: null,
             });
         }
+        // -- 24/09 - LE SESSIONI DELLO SCALPER CALCIO -------------------------
+        // Una riga per SESSIONE viva (o ferma ma con un'esposizione non coperta):
+        // la posizione dello scalper e' l'insieme dei suoi ordini sulla partita,
+        // non un singolo ordine. Importo = abbinato, responsabilita' = caso
+        // peggiore per mercato, "se chiudo ora" = green-up pieno al feed.
+        for (const v of scalperVista.sessioni) {
+            if (v.id == null || !(v.viva || v.residuo)) continue;
+            out.push({
+                bot: 'scalper', id: v.id, eventId: String(v.s.event_id),
+                partita: v.s.event_name ?? String(v.s.event_id),
+                selezione: `sessione scalper - ${v.ordini.length} ordini (${v.esp.inAttesa} sul book)`,
+                lato: null, prezzo: null, size: v.esp.abbinato,
+                liability: v.esp.responsabilita, modalita: v.modalita,
+                piazzataAt: v.s.started_at ?? v.s.requested_at,
+                chiusura: v.chiusura,
+                ordine: ordineSessioneScalper(v.s.status, v.esp),
+                dettaglio: null,
+                vivo: null,
+                firma: v.s.requested_at,
+                residuo: v.residuo,
+            });
+        }
         // le più recenti in cima: è l'ordine in cui un trader le cerca
         out.sort((a, b) => Date.parse(b.piazzataAt) - Date.parse(a.piazzataAt));
         return out;
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, chiusuraViva, libroVivo]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, chiusuraViva, libroVivo,
+        scalperVista]);
 
     const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(
         // 17/09: le proposte di OPPORTUNITA' stanno nella stessa coda ma sono
@@ -2387,9 +2626,45 @@ export function useControlRoom(): ControlRoomVM {
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
         }
+        // -- 24/09 - LE SESSIONI DELLO SCALPER CALCIO SULLA PARTITA ----------
+        // Una riga per sessione di OGGI (anche ferma): stato scritto dal
+        // servizio, esposizione e "se chiudo ora" dai suoi ordini, P&L = il
+        // REALE di Betfair solo quando OGNI ordine abbinato e' regolato (prima
+        // e' ignoto: "-", mai 0). Il paper non ha un netto: "-", e il lordo del
+        // bot sta nella nota, marcato lordo. Fonte ed eta' sempre dichiarate.
+        for (const v of scalperVista.sessioni) {
+            if (v.id == null) continue;
+            const k = String(v.s.event_id);
+            const riga: OperazionePartita = {
+                bot: 'scalper', id: v.id,
+                selezione: `sessione - ${v.ordini.length} ordini (${v.esp.inAttesa} sul book)`,
+                lato: null, prezzo: null, size: v.esp.abbinato,
+                stato: v.s.status,
+                pnl: v.modalita === 'live' && !v.viva && v.pnl.completo ? v.pnl.reale : null,
+                modalita: v.modalita,
+                at: v.s.started_at ?? v.s.requested_at,
+                quale: `scalper ${v.s.mode ?? ''}`.trim(),
+                ordine: ordineSessioneScalper(v.s.status, v.esp),
+                dettaglio: null,
+                marketId: null, selectionId: null,
+                liability: v.esp.responsabilita,
+                vivo: null,
+                etaQuoteS: etaSecondi(feedPerEvento.get(k)?.updated_at ?? null, nowMs),
+                chiusura: v.chiusura,
+                chiusureOrdini: [],
+                eventId: k,
+                chiudeId: null,
+                firma: v.s.requested_at,
+                residuo: v.residuo,
+                notaSessione: notaSessioneScalper(v.s, nowMs, scalperEtaLetturaS),
+            };
+            const arr = m.get(k);
+            if (arr) arr.push(riga); else m.set(k, [riga]);
+        }
         for (const arr of m.values()) arr.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
         return m;
-    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva]);
+    }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva,
+        scalperVista, scalperEtaLetturaS]);
 
     // ── B16 (24/09): IL «CHIUDI» DI UNA RIGA, PER SINGOLO BOT ───────────────
     // Prima: `requestSafe('cashout', {trade_id})` per QUALUNQUE bot - su una
@@ -2479,7 +2754,7 @@ export function useControlRoom(): ControlRoomVM {
             for (const k of daRileggere.split(',')) {
                 const s = chiusureRigheRef.current[k];
                 if (!s || s.requestId == null || isBotTennis(s.bot)) continue;
-                const botC = s.bot as 'omega' | 'safe' | 'mike';
+                const botC = s.bot as BotConChiusura;
                 try {
                     const r = await LETTURA[botC](s.requestId);
                     if (!vivo || !r) continue;
@@ -2581,6 +2856,9 @@ export function useControlRoom(): ControlRoomVM {
             // (`get_tennis_bot_daily`, p_mode='live'), NETTO di commissione e
             // per bot. Qui non si somma niente a mano e non si tocca il paper:
             // sono due conti separati, e separati restano.
+            // SCALPER CALCIO - il reale di Betfair regolato oggi (netto, per
+            // bet_id), solo soldi veri. Il paper e' lordo nel bot: fuori.
+            scalper: scalperVista.realeOggi,
             tennis_scalper: pnlTennisDi(tennisOggi, 'tennis_scalper'),
             tennis_pro: pnlTennisDi(tennisOggi, 'tennis_pro'),
             tennis_flb: pnlTennisDi(tennisOggi, 'tennis_flb'),
@@ -2689,7 +2967,7 @@ export function useControlRoom(): ControlRoomVM {
         };
     }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
         tennisOggi, tennisOggiPaper, realizzatoOggi, oggiRighe, composizioneOggi, posizioni,
-        pnlRealeOggi]);
+        pnlRealeOggi, scalperVista]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
     const fonteScanEtaS = ultimoScanLocaleMs == null
@@ -2799,7 +3077,7 @@ export function leggiModiStrategia(
  */
 function perOgniBot<T>(v: T): Record<Bot, T> {
     return {
-        omega: v, safe: v, mike: v,
+        omega: v, safe: v, mike: v, scalper: v,
         tennis_scalper: v, tennis_pro: v, tennis_flb: v, tennis_swing: v,
     };
 }
@@ -2810,6 +3088,23 @@ function perOgniBot<T>(v: T): Record<Bot, T> {
  * «regolato»): si guarda il REGOLAMENTO. Finche' `settled_at` e' nullo e c'e'
  * qualcosa abbinato o ancora in coda, quella posizione e' aperta.
  */
+/**
+ * 24/09 - lo STATO DELL'ORDINE di una sessione scalper, sommato sui suoi
+ * ordini: chiesto, abbinato e residuo sono le somme delle colonne vere dello
+ * specchio (`betfair_live_orders`); il prezzo medio NON si somma (ordini su
+ * selezioni e lati diversi): resta `null`, mai un numero inventato.
+ */
+function ordineSessioneScalper(
+    stato: string, esp: { chiesto: number; abbinato: number; residuo: number },
+): RigaOrdine {
+    return {
+        status: stato, side: null, price: null, size: esp.abbinato,
+        size_requested: esp.chiesto, size_matched: esp.abbinato,
+        size_remaining: esp.residuo, avg_price_matched: null,
+        betfair_updated_at: null, meta: null,
+    };
+}
+
 function ordineTennisAperto(o: TennisBotOrderRow): boolean {
     if (isErrorRow(o.status)) return false;
     if (o.settled_at != null) return false;

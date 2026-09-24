@@ -29,8 +29,11 @@ import {
 
 // ---------------------------------------------------------------- vocabolario
 
-/** I bot del CALCIO: tre servizi, tre righe. */
-export type BotCalcio = 'omega' | 'safe' | 'mike';
+/** I bot del CALCIO: tre servizi, tre righe. 24/09 - piu' lo SCALPER calcio
+ *  (decisione dell'utente: "in Control Room come tutti gli altri bot"), che
+ *  pero' si arma PER PARTITA (`scalper_control`, una riga per evento): la sua
+ *  riga di plancia legge le sue sessioni (`lib/scalperControlRoom.ts`). */
+export type BotCalcio = 'omega' | 'safe' | 'mike' | 'scalper';
 
 /**
  * I QUATTRO BOT DEL TENNIS (17/09). Sono INDIPENDENTI come gli altri: quattro
@@ -64,6 +67,7 @@ export const BOT_LABEL: Record<Bot, string> = {
     omega: 'Omega',
     safe: 'Safe',
     mike: 'Mike',
+    scalper: 'Scalper calcio',
     tennis_scalper: 'Scalper',
     tennis_pro: 'Pro',
     tennis_flb: 'FLB',
@@ -635,7 +639,7 @@ export function modoDi(t: { mode?: string | null }): Modo {
  * qui perché comparissero nella scheda della partita, nell'ordine fisso in
  * cui la Control Room mostra i simboli (calcio prima, poi tennis).
  */
-const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike', ...BOT_TENNIS];
+const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike', 'scalper', ...BOT_TENNIS];
 
 /**
  * Soldi per partita, sommando tutti i bot passati (calcio + tennis). Usa

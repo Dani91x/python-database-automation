@@ -31,8 +31,18 @@ import { isSettled, isErrorRow } from '@/lib/eventGroups';
 import { requestManual, fetchManualRequests } from '@/lib/omega';
 import { requestSafe, fetchSafeRequests } from '@/lib/safeBot';
 import { requestMike, fetchMikeRequests } from '@/lib/mike';
+import { fetchScalperState } from '@/lib/scalper';
+import { stopScalperSessione } from '@/lib/scalperControlRoom';
 
-export type BotConChiusura = 'omega' | 'safe' | 'mike';
+// 24/09 - LO SCALPER CALCIO. La sua "riga" in Control Room e' la SESSIONE di
+// una partita (id = event_id numerico). Chiudere = fermare la sessione:
+// `scalper_stop_sessione` porta la riga `scalper_control` a 'stopping', la
+// sessione (che la rilegge ogni 5 s) fa force-flat di maker/sniper/theta,
+// aspetta il flat fino a 30 s e scrive 'stopped' (`scalper_session.py`). La
+// GUARDIA D'IDENTITA' e' la firma della sessione (`requested_at`) + la
+// modalita': una sessione riarmata nel frattempo, o in un'altra modalita',
+// fa rifiutare la richiesta ('richiesta_ambigua'), mai uno stop a caso.
+export type BotConChiusura = 'omega' | 'safe' | 'mike' | 'scalper';
 
 /** Cio' che serve per chiudere UNA riga: la sua identita', non il suo aspetto. */
 export interface RigaDaChiudere {
@@ -48,7 +58,16 @@ export interface RigaDaChiudere {
     chiudeId?: number | null;
     /** risultato gia' certo (regolata dal mercato): non e' una posizione */
     regolata?: boolean;
+    /** 24/09 - scalper: la FIRMA della sessione (`requested_at`, esattamente
+     *  come l'ha scritta il database). Senza firma non si ferma niente. */
+    firma?: string | null;
+    /** 24/09 - scalper: sessione gia' ferma ma con esposizione abbinata non
+     *  coperta (lo stop non ha trovato il flat in 30 s) */
+    residuo?: boolean;
 }
+
+/** Gli stati della sessione scalper in cui uno stop ha qualcosa da fermare. */
+const SCALPER_FERMABILE = new Set(['requested', 'arming', 'armed', 'running']);
 
 export type Chiudibile = { ok: true } | { ok: false; motivo: string };
 
@@ -61,6 +80,7 @@ const STATI_NON_POSIZIONE = new Set(['cancelled', 'lapsed', 'void', 'won', 'lost
  */
 export function chiudibile(r: RigaDaChiudere): Chiudibile | null {
     const s = String(r.stato ?? '').toLowerCase();
+    if (r.bot === 'scalper') return chiudibileScalper(r, s);
     if (r.regolata || isSettled(s) || isErrorRow(s) || STATI_NON_POSIZIONE.has(s)) return null;
     if (isBotTennis(r.bot)) {
         return {
@@ -88,8 +108,38 @@ export function chiudibile(r: RigaDaChiudere): Chiudibile | null {
     return { ok: true };
 }
 
+/** La sessione scalper: fermabile se attiva, con firma e modalita' dichiarate. */
+function chiudibileScalper(r: RigaDaChiudere, s: string): Chiudibile | null {
+    if (s === 'stopping') {
+        return { ok: false, motivo: 'la sessione si sta gia\' fermando (force-flat in corso)' };
+    }
+    if (!SCALPER_FERMABILE.has(s)) {
+        // ferma (stopped/done/error): non c'e' una sessione da fermare. Se e'
+        // rimasta un'esposizione, lo si dice: la chiude il trader dal ladder.
+        return r.residuo
+            ? {
+                ok: false,
+                motivo: 'sessione gia\' ferma con esposizione non coperta: '
+                    + 'chiudila dal ladder di Segui Live (lo scalper non riapre una sessione per chiudere)',
+            }
+            : null;
+    }
+    if (r.modalita !== 'paper' && r.modalita !== 'live') {
+        return { ok: false, motivo: 'modalita\' della sessione non dichiarata: non si ferma alla cieca' };
+    }
+    if (!r.eventId) return { ok: false, motivo: 'partita della sessione sconosciuta' };
+    if (!r.firma) {
+        return { ok: false, motivo: 'firma della sessione assente (requested_at): non si ferma alla cieca' };
+    }
+    return { ok: true };
+}
+
 /** Cosa fa il clic, per bot: detto nel `title` del bottone. */
 export function cosaFaIlClic(bot: Bot): string {
+    if (bot === 'scalper') {
+        return 'ferma la SESSIONE dello scalper su questa partita: force-flat di tutti gli ordini '
+            + '(maker, sniper, theta) e attesa del flat fino a 30 s, nella modalita\' della sessione';
+    }
     if (bot === 'mike') {
         return 'Mike chiude l\'intera posizione della PARTITA (ciclo: ingresso, copertura, ordini vivi), '
             + 'sull\'abbinato, nella modalita\' della partita';
@@ -110,6 +160,12 @@ export const INVIO: Record<BotConChiusura, (r: RigaDaChiudere) => Promise<number
     mike: (r) => requestMike('cashout', {
         event_id: r.eventId, trade_id: r.id, bot: 'mike', mode: r.modalita,
     }),
+    // la "richiesta" dello scalper e' la riga `scalper_control` stessa: il suo
+    // id e' quello della riga (l'event_id numerico), riletto da `LETTURA`
+    scalper: async (r) => {
+        await stopScalperSessione(String(r.eventId), String(r.firma), r.modalita as 'paper' | 'live');
+        return r.id;
+    },
 };
 
 /**
@@ -179,8 +235,47 @@ export function faseDaRichiesta(
     return { fase: 'ignota', motivo: `stato della richiesta non riconosciuto: ${st || 'assente'}`, chiusa: true };
 }
 
+/**
+ * 24/09 - LA SESSIONE SCALPER LETTA COME UNA RICHIESTA, cosi' l'esito passa
+ * dalla STESSA `faseDaRichiesta` degli altri bot:
+ *  - requested/arming/armed/running -> 'pending'   (inviata: la sessione non
+ *    ha ancora visto lo stop; la rilegge ogni 5 s);
+ *  - stopping                       -> 'processing' (presa in carico:
+ *    force-flat in corso);
+ *  - stopped / done                 -> 'done'       (eseguita), col motivo se
+ *    la sessione ha scritto che il flat NON e' arrivato in 30 s;
+ *  - error                          -> 'error'      (rifiutata, col suo errore).
+ */
+export function richiestaDaSessioneScalper(
+    id: number,
+    control: { status?: string | null; error?: string | null } | null,
+    attivita: readonly { kind?: string | null; payload?: Record<string, unknown> | null }[] = [],
+): RichiestaLetta | null {
+    if (!control) return null;
+    const st = String(control.status ?? '').toLowerCase();
+    if (st === 'stopping') return { id, status: 'processing', result: null };
+    if (st === 'stopped' || st === 'done') {
+        const nonFlat = attivita.find((a) => String(a.kind ?? '') === 'error'
+            && /NON flat/i.test(String((a.payload ?? {}).msg ?? '')));
+        return {
+            id, status: 'done',
+            result: nonFlat
+                ? { message: 'sessione ferma, ma la posizione NON era flat dopo 30 s: controlla il ladder' }
+                : { message: 'sessione ferma' },
+        };
+    }
+    if (st === 'error') {
+        return { id, status: 'error', result: { message: control.error ?? 'sessione in errore' } };
+    }
+    return { id, status: 'pending', result: null };
+}
+
 /** Rilegge UNA richiesta dalla coda del suo bot (ripiego del canale). */
 export const LETTURA: Record<BotConChiusura, (id: number) => Promise<RichiestaLetta | null>> = {
+    scalper: async (id) => {
+        const st = await fetchScalperState(String(id), 5);
+        return richiestaDaSessioneScalper(id, st.control, st.activity);
+    },
     omega: async (id) => {
         const righe = await fetchManualRequests(30);
         const r = righe.find((x) => Number(x.id) === id);

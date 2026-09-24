@@ -317,7 +317,10 @@ export function getLocalChannel(sport: LocalSport): LocalChannel {
 // comando vero e non deve mai fallire per colpa della sveglia.
 export type MotivoSveglia = 'approvazione' | 'comando';
 
-function canaleDiBot(bot: Bot): LocalSport {
+function canaleDiBot(bot: Bot): LocalSport | null {
+    // 24/09 - lo SCALPER calcio non ha un canale: ogni sessione e' un processo
+    // suo e il supervisore legge `scalper_control` ogni 3 s. Nessuna sveglia.
+    if (bot === 'scalper') return null;
     return isBotTennis(bot) ? 'tennis_bot' : bot;
 }
 
@@ -328,7 +331,9 @@ function canaleDiBot(bot: Bot): LocalSport {
  * tentativo, mai un log d'errore per una sveglia mancata.
  */
 export function svegliaBot(bot: Bot, motivo: MotivoSveglia): void {
-    getLocalChannel(canaleDiBot(bot)).request('sveglia', { motivo }).catch(() => {
+    const canale = canaleDiBot(bot);
+    if (canale == null) return;
+    getLocalChannel(canale).request('sveglia', { motivo }).catch(() => {
         /* best-effort: il comando vero e' gia' scritto sul database */
     });
 }

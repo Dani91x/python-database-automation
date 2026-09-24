@@ -99,6 +99,7 @@ const BOT_CLS: Record<Bot, string> = {
     omega: 'text-primary',
     safe: 'text-secondary',
     mike: 'text-teal-300',
+    scalper: 'text-violet-300',
     // i quattro del tennis, stessa famiglia di colore della scheda partita
     tennis_scalper: 'text-amber-300',
     tennis_pro: 'text-amber-200',
@@ -1415,6 +1416,9 @@ function RigaPosizioneOrfana({ p }: {
                                 riga={{
                                     bot: p.bot, id: p.id, eventId: p.eventId,
                                     modalita: p.modalita, stato: p.ordine?.status ?? '',
+                                    // 24/09 - scalper: firma della sessione e residuo
+                                    ...(p.firma != null ? { firma: p.firma } : {}),
+                                    ...(p.residuo ? { residuo: true } : {}),
                                 }}
                                 testId="cr-chiudi" variante="orfana"
                             />

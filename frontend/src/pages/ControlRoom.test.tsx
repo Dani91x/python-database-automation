@@ -758,7 +758,7 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
                 realizzatoPaper: -4.83,    // prova: NON deve entrare nella barra
                 discordanza: null,
                 perBot: {
-                    omega: null, safe: 0.44, mike: null,
+                    omega: null, safe: 0.44, mike: null, scalper: null,
                     tennis_scalper: null, tennis_pro: null,
                     tennis_flb: null, tennis_swing: null,
                 },

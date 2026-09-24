@@ -120,7 +120,10 @@ function sorgente(over: Partial<{
 describe('i dieci interruttori, divisi per sport', () => {
     it('la scheda calcio non contiene il tennis', () => {
         expect(interruttoriDiSport('calcio').map((i) => i.id))
-            .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta',
+            .toEqual(['omega', 'mike',
+                // 24/09 - lo scalper calcio (si arma per partita)
+                'scalper',
+                'safe-base', 'safe-esatto', 'safe-punta',
                 // 24/09 — i due strumenti di Safe che propongono ingressi
                 'safe-model', 'safe-manual']);
     });
@@ -135,9 +138,9 @@ describe('i dieci interruttori, divisi per sport', () => {
     });
 
     it('senza scheda scelta ci sono tutti e dieci', () => {
-        // 24/09 — dieci + i due strumenti di Safe (modello, a mano)
-        expect(interruttoriDiSport(null)).toHaveLength(12);
-        expect(INTERRUTTORI).toHaveLength(12);
+        // 24/09 - dieci + i due strumenti di Safe (modello, a mano) + scalper calcio
+        expect(interruttoriDiSport(null)).toHaveLength(13);
+        expect(INTERRUTTORI).toHaveLength(13);
     });
 
     it('i quattro del tennis comandano il SERVIZIO, non una strategia', () => {
@@ -460,10 +463,12 @@ describe('importoDi — la chiave per strategia, col ripiego DICHIARATO', () => 
         const m = importiInterruttori(interruttoriDiSport('calcio'), () => CORRENTI_SAFE);
         expect(Object.keys(m).sort())
             .toEqual(['mike', 'omega', 'safe-base', 'safe-esatto', 'safe-manual',
-                'safe-model', 'safe-punta']);
+                'safe-model', 'safe-punta', 'scalper']);
         // 24/09 — model/manual non hanno un importo loro: nessun campo inventato
         expect(m['safe-model']).toEqual([]);
         expect(m['safe-manual']).toEqual([]);
+        // 24/09 - lo stake dello scalper e' della sessione, scelto all'armo
+        expect(m.scalper).toEqual([]);
     });
 });
 

@@ -126,6 +126,19 @@ vi.mock('@/lib/liveOrders', async (orig) => ({
     subscribeLiveAccount: vi.fn(() => () => { /* nessuna spinta */ }),
 }));
 
+// 24/09 - lo scalper calcio: UNA lettura nel giro (`get_scalper_control_room`).
+// Le funzioni pure restano le vere; il finto ha le chiavi della RPC.
+vi.mock('@/lib/scalperControlRoom', async (orig) => ({
+    ...(await orig() as object),
+    fetchScalperControlRoom: vi.fn(async () => ({ sessioni: [], ordini: [], lettoAt: null })),
+    stopScalperSessione: vi.fn(async () => ({})),
+}));
+// lo stato di UNA sessione (`get_scalper_state`), riletto per l'esito del Chiudi
+vi.mock('@/lib/scalper', async (orig) => ({
+    ...(await orig() as object),
+    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
+}));
+
 import { fetchScanRows, fetchScanStatus, subscribeScanRows, subscribeScanStatus } from '@/lib/safeStrategyScan';
 import { fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents, updateOmegaParams } from '@/lib/omega';
 import { fetchSafeState, fetchRunnerState, approvaPropostaOpportunita, type SafeTrade } from '@/lib/safeBot';
@@ -139,6 +152,7 @@ import {
     fetchTennisBotOrdersToday,
 } from '@/lib/tennis';
 import { fetchLiveAccount, subscribeLiveAccount } from '@/lib/liveOrders';
+import { fetchScalperControlRoom } from '@/lib/scalperControlRoom';
 import { useControlRoom, FONTI_RICARICA } from '@/components/controlroom/useControlRoom';
 
 /** tutte le letture del giro, nell'ORDINE in cui il hook le lancia */
@@ -151,6 +165,7 @@ function letture() {
         fetchOmegaEvents, fetchMissions, fetchTennisFollows, fetchLiveFollows,
         fetchTennisBotServices, fetchTennisBotDaily, fetchTennisBotDaily,
         fetchTennisBotOrdersToday,
+        fetchScalperControlRoom,
     ];
 }
 
@@ -186,6 +201,7 @@ function reset() {
     vi.mocked(updateOmegaParams).mockResolvedValue({} as never);
     vi.mocked(fetchLiveAccount).mockResolvedValue(null);
     vi.mocked(subscribeLiveAccount).mockReturnValue(() => { /* niente */ });
+    vi.mocked(fetchScalperControlRoom).mockResolvedValue({ sessioni: [], ordini: [], lettoAt: null });
 }
 
 beforeEach(() => {
@@ -202,12 +218,14 @@ describe('«fonti non raggiunte»: ogni lettura si chiama per nome', () => {
     });
 
     it('le quattro letture dei bot tennis hanno un nome PARLANTE', () => {
-        expect(FONTI_RICARICA.slice(-4)).toEqual([
+        // 24/09 - dopo di loro c'e' la lettura dello scalper calcio
+        expect(FONTI_RICARICA.slice(-5, -1)).toEqual([
             'servizi bot tennis',
             'giornata bot tennis live',
             'giornata bot tennis paper',
             'ordini bot tennis di oggi',
         ]);
+        expect(FONTI_RICARICA[FONTI_RICARICA.length - 1]).toBe('scalper calcio');
     });
 
     it('cade la lettura degli ORDINI dei bot tennis: compare col suo nome', async () => {
@@ -881,5 +899,156 @@ describe('B16 - «Chiudi» cablato per singolo bot', () => {
         ]);
         result.current.ricarica();
         await waitFor(() => expect(faseMostrata(result.current.statoChiusuraRiga('omega', 900)!)).toBe('eseguita'));
+    });
+});
+
+// ============================================================================
+// 24/09 - LO SCALPER CALCIO IN CONTROL ROOM ("come tutti gli altri bot").
+// Una lettura (`get_scalper_control_room`): la riga della plancia, le righe
+// per partita (sessioni), le posizioni aperte e chiuse, la barra (reale di
+// Betfair per bet_id, spostato dal "manuale app" dove il runner lo mette oggi),
+// e il Chiudi (stop della sessione con la sua firma).
+// FALSIFICAZIONE (24/09, patch salvata): tolto `scalperRighe` dalla
+// composizione -> rossa la voce; tolta la sottrazione dal manuale app ->
+// rossa (1,30 invece di 1,00); `ordiniDellaSessione` senza filtro di
+// modalita' -> rossa l'esposizione paper; `firma` non passata -> rosso il Chiudi.
+// ============================================================================
+import { stopScalperSessione } from '@/lib/scalperControlRoom';
+import { fetchScalperState } from '@/lib/scalper';
+import { sessione as sessioneScalper, ordine as ordineScalper } from '@/lib/__fixtures__/scalperFinti';
+
+describe('scalper calcio: riga, sessioni, posizioni, barra e Chiudi', () => {
+    const ADESSO = new Date().toISOString();
+    const FIRMA_B = `${OGGI}T11:00:00.654321+00:00`;
+    /** A: sessione LIVE ferma, due ordini regolati oggi da Betfair (+0,50 e -0,20) */
+    const A = sessioneScalper({
+        event_id: '101', status: 'stopped', dry_run: false, requested_at: `${OGGI}T10:00:00+00:00`,
+        started_at: `${OGGI}T10:00:03+00:00`, stopped_at: `${OGGI}T10:40:00+00:00`,
+        event_name: 'Roma v Lazio', stats: { pnl_locked: 0.35 },
+    });
+    /** B: sessione PAPER in corso, un back abbinato e un lay sul book */
+    const B = sessioneScalper({
+        event_id: '202', status: 'running', dry_run: true, requested_at: FIRMA_B,
+        started_at: `${OGGI}T11:00:03+00:00`, heartbeat_at: ADESSO, event_name: 'Inter v Milan',
+    });
+    const ORDINI = [
+        ordineScalper({ id: 1, event_id: '101', mode: 'live', bet_id: '11', pnl_betfair: 0.5,
+            placed_at: `${OGGI}T10:05:00+00:00`, pnl_betfair_settled_at: ADESSO }),
+        ordineScalper({ id: 2, event_id: '101', mode: 'live', bet_id: '12', side: 'lay', pnl_betfair: -0.2,
+            placed_at: `${OGGI}T10:06:00+00:00`, pnl_betfair_settled_at: ADESSO }),
+        ordineScalper({ id: 3, event_id: '202', mode: 'paper', bet_id: '100000000001',
+            size_matched: 10, average_price_matched: 2.5, placed_at: `${OGGI}T11:05:00+00:00` }),
+        ordineScalper({ id: 4, event_id: '202', mode: 'paper', bet_id: '100000000002', side: 'lay',
+            size: 10, size_matched: 0, size_remaining: 10, status: 'EXECUTABLE',
+            placed_at: `${OGGI}T11:05:01+00:00` }),
+    ];
+    /** il P&L reale del conto: il runner ha messo i due ordini dello scalper nel "manuale app" */
+    const CONTO = {
+        day: OGGI, netto: 1.3, ordini: 3,
+        per_fonte: {
+            omega: { netto: 0, ordini: 0 }, safe_calcio: { netto: 0, ordini: 0 },
+            safe_tennis: { netto: 0, ordini: 0 }, mike: { netto: 0, ordini: 0 },
+            bot_tennis: { netto: 0, ordini: 0 }, manuale_app: { netto: 1.3, ordini: 3 },
+            manuale_sito: { netto: 0, ordini: 0 }, altri_bot: { netto: 0, ordini: 0 },
+        },
+        bet_ids: ['11', '12', '99'], senza_commissione: 0, sospetti_sito: 0, letto_at: ADESSO,
+    };
+
+    beforeEach(() => {
+        vi.mocked(fetchScalperControlRoom).mockResolvedValue({ sessioni: [A, B], ordini: ORDINI, lettoAt: ADESSO });
+        vi.mocked(stopScalperSessione).mockResolvedValue({} as never);
+        vi.mocked(fetchScalperState).mockResolvedValue({ control: null, activity: [] });
+    });
+
+    it('la riga della plancia: acceso in PROVA (solo B e viva), nota con fonte ed eta, P&L reale di oggi', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.bots.find((b) => b.bot === 'scalper')?.stato).toBe('running'));
+        const s = result.current.bots.find((b) => b.bot === 'scalper')!;
+        expect(s).toMatchObject({ inCorsa: true, modalita: 'paper', pnlOggi: 0.3, pnlOggiPaper: null });
+        expect(s.nota).toContain('1 sessione viva (1 prova)');
+        expect(s.nota).toMatch(/dal database, letto \d+ s fa/);
+    });
+
+    it('lettura mai riuscita: stato non letto, mai "fermo"', async () => {
+        vi.mocked(fetchScalperControlRoom).mockRejectedValue(new Error('RPC assente'));
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const s = result.current.bots.find((b) => b.bot === 'scalper')!;
+        expect(s.stato).toBeNull();
+        expect(s.inCorsa).toBe(false);
+        expect(result.current.errore).toBe('fonti non raggiunte: scalper calcio');
+    });
+
+    it('posizioni aperte: la sessione VIVA, con abbinato, responsabilita e firma; la ferma e regolata no', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.posizioni.some((p) => p.bot === 'scalper')).toBe(true));
+        const pos = result.current.posizioni.filter((p) => p.bot === 'scalper');
+        expect(pos).toHaveLength(1);
+        expect(pos[0]).toMatchObject({
+            id: 202, eventId: '202', partita: 'Inter v Milan', modalita: 'paper',
+            size: 10, liability: 10, firma: FIRMA_B,
+        });
+        // paper e live mai mischiati: gli ordini LIVE della partita 101 non entrano in B
+        expect(pos[0].ordine).toMatchObject({ size_requested: 20, size_matched: 10, size_remaining: 10 });
+    });
+
+    it('righe per partita: una per sessione, con firma, nota (fonte/eta/lordo) e P&L reale solo se tutto regolato', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.operazioni.get('101')?.length).toBe(1));
+        const a = result.current.operazioni.get('101')![0];
+        expect(a).toMatchObject({ bot: 'scalper', id: 101, stato: 'stopped', modalita: 'live', pnl: 0.3 });
+        expect(a.notaSessione).toContain('+0.35 EUR lordo');
+        expect(a.notaSessione).toContain('fonte: database');
+        const b = result.current.operazioni.get('202')![0];
+        expect(b).toMatchObject({ bot: 'scalper', id: 202, modalita: 'paper', pnl: null, firma: FIRMA_B });
+    });
+
+    it('posizioni chiuse: la sessione LIVE ferma e regolata, col netto di Betfair', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.chiuse.some((c) => c.bot === 'scalper')).toBe(true));
+        const c = result.current.chiuse.filter((x) => x.bot === 'scalper');
+        expect(c).toHaveLength(1);   // la sessione PAPER non entra: il bot ha solo un lordo
+        expect(c[0]).toMatchObject({ id: 101, pnlGlobale: 0.3, modo: 'live', fontePnl: 'betfair', esito: 'vinta' });
+    });
+
+    it('barra: voce Scalper = reale di Betfair; il manuale app perde gli stessi euro (mai due volte)', async () => {
+        vi.mocked(fetchLiveAccount).mockResolvedValue({ pnl_reale_oggi: CONTO } as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(
+            result.current.composizioneOggi.righe.find((r) => r.chiave === 'scalper')?.valore).toBe(0.3));
+        const voce = (k: string) => result.current.composizioneOggi.righe.find((r) => r.chiave === k)?.valore;
+        expect(voce('manuale_app')).toBe(1);
+        // il totale e' quello del conto: nessun euro contato due volte
+        expect(result.current.composizioneOggi.totale).toBe(1.3);
+        expect(result.current.soldiGiornata.perBot.scalper).toBe(0.3);
+    });
+
+    it('Chiudi: stop della SESSIONE con la sua firma e modalita, poi presa in carico', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.operazioni.get('202')?.length).toBe(1));
+        vi.mocked(fetchScalperState).mockResolvedValue({
+            control: { ...B, status: 'stopping' } as never, activity: [],
+        });
+        await result.current.chiudi({
+            bot: 'scalper', id: 202, eventId: '202', modalita: 'paper', stato: 'running', firma: FIRMA_B,
+        });
+        expect(stopScalperSessione).toHaveBeenCalledWith('202', FIRMA_B, 'paper');
+        expect(requestSafe).not.toHaveBeenCalled();
+        await waitFor(() => expect(
+            faseMostrata(result.current.statoChiusuraRiga('scalper', 202)!)).toBe('presa_in_carico'));
+    });
+
+    it('Chiudi rifiutato dalla guardia d identita: rifiutata, col motivo', async () => {
+        vi.mocked(stopScalperSessione).mockRejectedValue(
+            new Error('richiesta_ambigua: la sessione di 202 e\' stata riarmata'));
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        await result.current.chiudi({
+            bot: 'scalper', id: 202, eventId: '202', modalita: 'paper', stato: 'running', firma: FIRMA_B,
+        });
+        await waitFor(() => expect(result.current.statoChiusuraRiga('scalper', 202)).not.toBeNull());
+        const s = result.current.statoChiusuraRiga('scalper', 202)!;
+        expect(faseMostrata(s)).toBe('rifiutata');
+        expect(s.motivo).toContain('richiesta_ambigua');
     });
 });

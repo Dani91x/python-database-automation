@@ -38,6 +38,9 @@ export interface StatoBotPlancia {
      *  singoli bot che non li leggono non devono inventarli. */
     pnlOggi?: number | null;
     pnlOggiPaper?: number | null;
+    /** 24/09 - una frase del servizio da mostrare accanto allo stato (lo
+     *  scalper: quante sessioni, in che modalita', da dove e quanto vecchio) */
+    nota?: string | null;
 }
 
 /** Lo stato del SERVIZIO di un bot, nella forma che il modello condiviso legge. */
@@ -73,6 +76,8 @@ export function righeInterruttori(
             id: i.id, bot: i.bot,
             etichetta: etichette?.[i.id] ?? i.etichetta,
             ...(i.descrizione ? { descrizione: i.descrizione } : {}),
+            ...(i.armoPerPartita ? { armoPerPartita: i.armoPerPartita } : {}),
+            ...(b.nota ? { nota: b.nota } : {}),
             acceso: st.acceso, modalita: st.modalita, statoNoto: st.noto,
             stato: parolaStato(i, b, st.acceso, st.noto),
             etaPushS: b.etaPushS,

@@ -335,6 +335,10 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                     modalita: o.modalita, stato: o.stato, chiudeId: o.chiudeId ?? null,
                     // tennis: lo stato flumine non dice «regolato», il P&L si'
                     regolata: isBotTennis(o.bot) && o.pnl != null,
+                    // 24/09 - scalper: firma della sessione e residuo scoperto
+                    // (solo quando ci sono: le righe degli altri bot restano uguali)
+                    ...(o.firma != null ? { firma: o.firma } : {}),
+                    ...(o.residuo ? { residuo: true } : {}),
                 }}
                 testId={`${testId}-chiudi`}
             />
@@ -355,6 +359,13 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                 {o.pnl == null ? DASH : fmtMoney(o.pnl, { signed: true })}
             </span>
             <span className="text-[9px] text-white/25 font-mono">{fmtTime(o.at)}</span>
+            {/* 24/09 - scalper calcio: stato della sessione, ultima attivita',
+                battito, lordo del bot (marcato lordo), FONTE ed ETA' del dato */}
+            {o.notaSessione && (
+                <div className="basis-full pl-4 text-[10px] text-white/40" data-testid={`${testId}-sessione`}>
+                    {o.notaSessione}
+                </div>
+            )}
             {o.dettaglio && (
                 <div className="basis-full pl-4 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap"
                     data-testid={`${testId}-dettaglio`}>

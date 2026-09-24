@@ -86,7 +86,9 @@ const STATO_CLS: Record<string, string> = {
 // frontend/backend per questo numero.
 // ============================================================================
 const ATTESA_TIPICA_S: Record<Bot, number> = {
-    omega: 20, safe: 2, mike: 2,
+    // scalper calcio: il supervisore legge `scalper_control` ogni 3 s
+    // (`scalper_service.py` POLL_S), la sessione ogni 5 s (HEARTBEAT_S)
+    omega: 20, safe: 2, mike: 2, scalper: 5,
     tennis_scalper: 15, tennis_pro: 15, tennis_flb: 15, tennis_swing: 15,
 };
 
@@ -199,6 +201,12 @@ export interface RigaInterruttore {
     /** true sulla PRIMA riga di ciascun bot: lì va il foglio parametri, che è
      *  del servizio e non della singola strategia */
     primaDelBot: boolean;
+    /** 24/09 - il bot si ARMA PER PARTITA (scalper calcio): niente "avvia" e
+     *  niente cambio di modalita' da qui, solo "ferma"; al loro posto questa
+     *  frase. Assente = riga come tutte le altre. */
+    armoPerPartita?: string;
+    /** 24/09 - una frase dichiarata dal servizio accanto allo stato */
+    nota?: string;
 }
 
 export interface PannelloBotProps {
@@ -558,6 +566,12 @@ function RigaBot({
                     {r.etaPushS == null ? DASH : fmtAge(r.etaPushS)}
                 </span>
 
+                {r.nota && (
+                    <span className="text-[10px] text-white/40" data-testid={`cr-bot-nota-${r.id}`}>
+                        {r.nota}
+                    </span>
+                )}
+
                 {/* IL P&L DI OGGI, quando il servizio lo dichiara. È quello
                     della modalità della riga: prova e soldi veri non finiscono
                     mai nello stesso numero. */}
@@ -703,7 +717,7 @@ function RigaBot({
                             </span>
                         )}
 
-                        {r.modalita != null && (
+                        {r.modalita != null && !r.armoPerPartita && (
                             live ? (
                                 <Button
                                     type="button" size="sm" variant="ghost"
@@ -733,6 +747,12 @@ function RigaBot({
                             )
                         )}
                     </>
+                ) : r.armoPerPartita ? (
+                    // 24/09 - si arma PER PARTITA: da qui niente "avvia",
+                    // si dice dove si fa (mai un pulsante che non puo' riuscire)
+                    <span className="text-[10px] text-white/40" data-testid={`cr-armo-per-partita-${r.id}`}>
+                        {r.armoPerPartita}
+                    </span>
                 ) : (
                     <>
                         <Button

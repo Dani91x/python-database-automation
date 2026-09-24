@@ -39,13 +39,16 @@ import { marketStatusMeta, type MikeEvent } from '@/lib/mike';
 import { useTennisVivo, nomeSelezioneTennis } from '@/components/controlroom/useTennisVivo';
 
 const BOT_SIGLA: Record<Bot, string> = {
-    omega: 'Ω', safe: 'S', mike: 'M',
+    omega: 'Ω', safe: 'S', mike: 'M', scalper: 'Sc',
     tennis_scalper: 'Sc', tennis_pro: 'Pr', tennis_flb: 'Fl', tennis_swing: 'Sw',
 };
 const BOT_CLS: Record<Bot, string> = {
     omega: 'text-primary border-primary/40 bg-primary/10',
     safe: 'text-secondary border-secondary/40 bg-secondary/10',
     mike: 'text-teal-300 border-teal-400/40 bg-teal-400/10',
+    // 24/09 - lo scalper calcio: compare solo sulle partite di calcio, quindi
+    // la sigla 'Sc' non si confonde con quella dello scalper tennis
+    scalper: 'text-violet-300 border-violet-400/40 bg-violet-400/10',
     // i quattro del tennis: una famiglia di colore sola (ambra), perche' sono
     // quattro bot dello stesso sport e si leggono insieme
     tennis_scalper: 'text-amber-300 border-amber-400/40 bg-amber-400/10',
@@ -61,7 +64,7 @@ const BOT_CLS: Record<Bot, string> = {
  * c'e' in tutti e due, perche' ha una strategia per ciascuno sport.
  */
 export function botDiSport(sport: Sport): Bot[] {
-    return sport === 'tennis' ? ['safe', ...BOT_TENNIS] : ['omega', 'safe', 'mike'];
+    return sport === 'tennis' ? ['safe', ...BOT_TENNIS] : ['omega', 'safe', 'mike', 'scalper'];
 }
 
 /** «fermo» NON è un allarme: è un mercato che non si muove, e quel prezzo è
