@@ -19,6 +19,7 @@
 // ripiego (la riga cambia solo per un gesto dell'utente o all'avvio dell'app).
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
+import { fmtDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import {
@@ -37,13 +38,10 @@ const TESTO_MODO: Record<ModoOrdini, string> = {
 };
 
 function fmtQuando(iso: string | null): string {
+    // design system: un solo formato per date e ore, quello di lib/format
     if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString('it-IT', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-        timeZone: 'Europe/Rome',
-    });
+    if (Number.isNaN(Date.parse(iso))) return iso;
+    return fmtDateTime(iso);
 }
 
 function chi(da: string | null): string {
