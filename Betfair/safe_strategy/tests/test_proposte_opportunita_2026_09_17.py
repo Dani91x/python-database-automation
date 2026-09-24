@@ -256,16 +256,28 @@ def test_una_chiave_diversa_dopo_il_rifiuto_torna_a_proporsi():
 # ===========================================================================
 # 3. DECADENZA
 # ===========================================================================
-def test_decade_se_l_opportunita_sparisce_dal_feed():
+def test_opportunita_sparita_dal_feed_resta_viva_marcata_non_valida():
+    """24/09 — CONTRATTO CAMBIATO PER ORDINE DELL'UTENTE («la scheda deve
+    segnalarmi se l'opportunita' c'e' ancora o no: io decido se approvare o
+    scartare»). Fino al 23/09 questo test si chiamava
+    ``test_decade_se_l_opportunita_sparisce_dal_feed`` e pretendeva la
+    DECADENZA ('rejected', motivo «opportunita' sparita dal feed"). Ora la
+    proposta resta VIVA, marcata non piu' valida col perche', e nessuna
+    decadenza viene scritta. Gli altri due casi (partita non piu' in gioco,
+    interruttore spento) restano decadenze: test qui sotto, invariati."""
     db = DbFinto()
     _ciclo(db, [_opp()])
     assert len(db.vive()) == 1
     _ciclo(db, [])          # partita ancora in gioco, opportunita' non piu' emessa
-    assert db.vive() == []
-    assert "opportunita_decaduta" in db.kinds()
-    motivo = [p for k, p in db.attivita if k == "opportunita_decaduta"][0]
-    assert motivo["motivo"] == "opportunita' sparita dal feed"
-    assert motivo["mode"] == "paper"
+    assert len(db.vive()) == 1, "la scheda e' stata chiusa d'autorita': decide l'utente"
+    assert "opportunita_decaduta" not in db.kinds()
+    v = db.vive()[0]["payload"]["valutazione"]
+    assert v["valida"] is False and v["causa"] in ("prezzo", "modello") and v["motivi"]
+    att = [p for k, p in db.attivita if k == "opportunita_non_piu_valida"]
+    assert len(att) == 1 and att[0]["mode"] == "paper"
+    # un secondo giro uguale non riscrive e non ripete l'attivita'
+    _ciclo(db, [])
+    assert db.kinds().count("opportunita_non_piu_valida") == 1
 
 
 def test_decade_se_la_partita_non_e_piu_in_gioco():

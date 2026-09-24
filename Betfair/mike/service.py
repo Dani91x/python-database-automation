@@ -138,6 +138,9 @@ class _RealMarket:
 
         _pretendi_live_abilitato("place_order_live")
         _RealMarket._bind_strategy_ref(omega_market)
+        # R1 (24/09): il ref dell'attore si DICHIARA sulla chiamata, non si
+        # affida solo alla costante di modulo rilegata qui sopra.
+        kw.setdefault("strategy_ref", _STRATEGY_REF)
         return omega_market.place_order_live(**kw)
 
     @staticmethod
@@ -153,6 +156,7 @@ class _RealMarket:
 
         _pretendi_live_abilitato("place_submin_live")
         _RealMarket._bind_strategy_ref(omega_market)
+        kw.setdefault("strategy_ref", _STRATEGY_REF)   # R1 (24/09)
         return omega_market.place_submin_live(**kw)
 
     @staticmethod
@@ -1104,6 +1108,24 @@ def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
     return None
 
 
+def _resting_e_chiusura(leg: E.Leg, chiude: Optional[int]) -> bool:
+    """La lay appoggiata RIDUCE una posizione? (coperture ``*_green`` o una
+    gamba che dichiara quale riga chiude)."""
+    return chiude is not None or str(leg.role or "").endswith("_green")
+
+
+def _freno_aperture_rest() -> Optional[str]:
+    """O1 (24/09): il kill-switch CONDIVISO (``controls.motivo_kill_switch``,
+    env + DB). Non valutabile = apertura ferma."""
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001
+        logger.error("[mike] kill-switch non valutabile, apertura FERMATA: %s", str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
@@ -1136,6 +1158,22 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
                         "ciclo e' gia' pending", eid, leg.ref, doppia.get("id"))
         return
+
+    # O1 (24/09): kill-switch condiviso (env + DB) anche su questa strada REST,
+    # che non passa da ``X.place``. Vale SOLO per le aperture: le lay appoggiate
+    # di oggi sono tutte coperture (ruoli ``*_green``, o ``chiude`` valorizzato),
+    # cioe' CHIUSURE, e a freno tirato devono poter partire (stessa regola di
+    # ``live_order_worker._CLOSING_ACTIONS``). Nessuna riserva scritta se si ferma.
+    if not _resting_e_chiusura(leg, chiude):
+        blocco = _freno_aperture_rest()
+        if blocco:
+            leg.status = "cancelled"
+            db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                     "reason": "kill_switch", "motivo": blocco,
+                                     "nota": "kill-switch attivo: nessun ordine inviato"}, eid)
+            logger.critical("[mike] %s: apertura appoggiata %s FERMATA dal kill-switch (%s)",
+                            eid, leg.ref, blocco)
+            return
 
     try:
         trade_id = _insert_trade_row(
@@ -2182,7 +2220,53 @@ def _result(code: str, message: str, **extra: Any) -> Dict[str, Any]:
 # 'rejected'. Tutto il resto e' 'error' = il servizio non ce l'ha fatta
 # (``kind_non_valido`` compreso: significa contratto rotto fra UI e DB).
 _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "stato_non_riprendibile",
-                 "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio")
+                 "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio",
+                 "richiesta_ambigua")
+
+
+def _richiesta_non_di_questa_partita(db: Any, payload: Dict[str, Any],
+                                     ev: Dict[str, Any], eid: str) -> Optional[str]:
+    """B16 (24/09) - il cash out chiesto dalla riga della Control Room e'
+    davvero per QUESTA partita di Mike, nella SUA modalita'?
+
+    Mike chiude per PARTITA (il ciclo intero: ingresso, copertura, residui),
+    non per riga: il «Chiudi» di una riga manda ``event_id`` piu' ``bot``,
+    ``mode`` e ``trade_id`` della riga cliccata. Le chiavi ASSENTI non si
+    inventano (la scheda di Mike manda il solo ``event_id`` e resta valida).
+    Quelle presenti devono concordare, o la richiesta e' ambigua:
+      * ``bot`` diverso da 'mike';
+      * ``mode`` diversa da quella congelata sulla partita (paper e live
+        non si mischiano: si chiude nella modalita' della riga);
+      * ``trade_id`` che non e' una riga di Mike di questa partita, o che non
+        si riesce a verificare (fail-closed: mai un ordine «per sicurezza»).
+    Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "mike":
+        return f"la richiesta e' per il bot '{bot}', non per Mike"
+    modo = payload.get("mode")
+    modo_partita = str(ev.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_partita:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della partita "
+                f"({modo_partita}): paper e live non si mischiano")
+    tid = payload.get("trade_id")
+    if tid in (None, ""):
+        return None
+    getter = getattr(db, "get_trade", None)
+    if not callable(getter):
+        return "la riga indicata non si puo' verificare"
+    try:
+        riga = getter(int(tid))
+    except Exception as ex:  # noqa: BLE001 - non verificabile = rifiuto
+        return f"la riga indicata non si puo' leggere ({str(ex)[:80]})"
+    if not riga:
+        return f"la riga {tid} non esiste fra quelle di Mike"
+    if str(riga.get("event_id") or "") != str(eid):
+        return f"la riga {tid} non e' di questa partita"
+    modo_riga = str(riga.get("mode") or "paper")
+    if modo_riga != modo_partita:
+        return (f"la riga {tid} e' {modo_riga} ma la partita e' {modo_partita}: "
+                f"paper e live non si mischiano")
+    return None
 
 
 def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
@@ -2214,6 +2298,15 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
             elif kind != "resume_event" and str(ev.get("state")) in ("SETTLED", "ERROR"):
                 res = _result("stato_terminale",
                               f"Partita in stato {ev.get('state')}: nessuna operazione possibile.")
+            elif kind in ("cashout", "flatten") and (
+                    ambigua := _richiesta_non_di_questa_partita(db, payload, ev, eid)) is not None:
+                # B16 (24/09): richiesta per un altro bot, un'altra modalita' o
+                # una riga che non e' di questa partita: non si arma niente.
+                db.log("error", {"reason": "richiesta_ambigua", "kind": kind,
+                                 "motivo": ambigua, "bot_richiesta": payload.get("bot"),
+                                 "mode_richiesta": payload.get("mode"),
+                                 "trade_id": payload.get("trade_id")}, eid)
+                res = _result("richiesta_ambigua", f"Rifiutato: {ambigua}.")
             elif kind in ("cashout", "flatten"):
                 res = _request_flatten(db, market, ev, rows_by_event.get(eid), eff, now, dry,
                                        scanner_age=scanner_age, kind=kind)

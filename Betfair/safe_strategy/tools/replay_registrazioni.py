@@ -468,6 +468,14 @@ class DbSafeMemoria(PM.ProposteDb, DbMemoria):
                               "created_at": self._ora_iso(), "result": None})
         return self._req_id
 
+    def richiesta_per_id(self, request_id: int) -> Optional[Dict[str, Any]]:
+        # stessa firma e stesse colonne di `bot_db.richiesta_per_id` (24/09)
+        for r in self.requests:
+            if int(r.get("id") or 0) == int(request_id):
+                return {"id": r.get("id"), "kind": r.get("kind"),
+                        "status": r.get("status"), "result": r.get("result")}
+        return None
+
     def chiudi_proposta(self, trade_id: int, motivo: str) -> None:
         viva = self.proposta_di_chiusura_viva(trade_id)
         if viva is None:
@@ -711,12 +719,21 @@ def freni_live(attivi: bool) -> Iterator[None]:
     «nessun ordine» e non si saprebbe perche'. Si dichiarano qui, e si
     rimettono com'erano alla fine (sono di PROCESSO).
     """
+    # 24/09: il modo ordini e' anche una riga di controllo (scelta dalla Control
+    # Room, ``Betfair/stream/modo_ordini.py``): il banco non tocca il DB, la
+    # DICHIARA in memoria per la durata del replay, come il tetto qui sotto.
+    from contextlib import ExitStack
+
+    from Betfair.stream import modo_ordini as _mo
+
     prima = {k: os.environ.get(k) for k in ("LIVE_ORDER_MODE", "LIVE_KILL_SWITCH")}
     try:
-        if attivi:
-            os.environ["LIVE_ORDER_MODE"] = "LIVE"
-            os.environ["LIVE_KILL_SWITCH"] = "false"
-        yield
+        with ExitStack() as pila:
+            if attivi:
+                os.environ["LIVE_ORDER_MODE"] = "LIVE"
+                os.environ["LIVE_KILL_SWITCH"] = "false"
+                pila.enter_context(_mo.dichiara_per_banco("LIVE"))
+            yield
     finally:
         for k, v in prima.items():
             if v is None:
@@ -1368,6 +1385,15 @@ def _params_di_scenario(scenario: str, strategie: Tuple[str, ...],
         "execution_mode": "rest",
     }
     par.update(SCENARI.get(scenario, {}))
+    # 24/09 — L'ORDINE A MANO HA LA SUA MODALITA'. Da oggi il servizio non fa
+    # piu' ereditare a un ordine a mano il ``mode`` del control: vale
+    # ``strategy_modes.manual``, e una chiave assente vale PAPER. Gli scenari
+    # che premono «Investi» lo DICHIARANO, come fa ora l'interruttore «Safe ·
+    # ordini a mano» della Control Room — altrimenti il clic in LIVE del banco
+    # verrebbe rifiutato (``modalita_non_corrispondente``) e il ciclo di vita
+    # dell'ordine non verrebbe esercitato. Gli altri scenari restano identici.
+    if scenario in SCENARI_CON_ORDINE_MANUALE:
+        par["strategy_modes"] = {**par["strategy_modes"], "manual": mode}
     if scenario in PM.SCENARI_CALCIO:
         par = PM.parametri(scenario, par)
     return par

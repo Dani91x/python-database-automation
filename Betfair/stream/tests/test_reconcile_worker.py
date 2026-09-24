@@ -48,10 +48,22 @@ class _Query:
         self._filters[key] = value
         return self
 
+    def limit(self, _n: int) -> "_Query":
+        return self
+
+    def in_(self, key: str, values: List[Any]) -> "_Query":
+        """24/09: stessa firma di postgrest ``in_(column, values)``; confronto
+        per stringa come PostgREST (l'id numerico arriva nell'URL come testo)."""
+        self._in = getattr(self, "_in", {})
+        self._in[key] = {str(v) for v in values}
+        return self
+
     def execute(self) -> _Resp:
+        self._table.reads += 1 if self._op == "select" else 0
         matched = [
             r for r in self._table.rows
             if all(r.get(k) == v for k, v in self._filters.items())
+            and all(str(r.get(k)) in vs for k, vs in getattr(self, "_in", {}).items())
         ]
         if self._op == "select":
             return _Resp([dict(r) for r in matched])
@@ -85,6 +97,7 @@ class _FakeTable:
         self.rows: List[Dict[str, Any]] = [dict(r) for r in (rows or [])]
         self.upserts: List[Any] = []
         self.updates: List[Any] = []
+        self.reads = 0
 
     def select(self, *_cols: Any) -> _Query:
         return _Query(self, "select")
@@ -104,12 +117,20 @@ class _FakeSb:
     ) -> None:
         self.orders = _FakeTable(orders)
         self.rules = _FakeTable(rules)
+        # 24/09: le tabelle dei bot e dello specchio tennis, per il P&L reale
+        # (stesse colonne del vero: id, bet_id, mode, source dove esiste)
+        self.bot_tables: Dict[str, _FakeTable] = {
+            n: _FakeTable() for n in (
+                "omega_trades", "safe_strategy_trades", "mike_trades", "tennis_live_orders")
+        }
 
     def table(self, name: str) -> _FakeTable:
         if name == "betfair_live_orders":
             return self.orders
         if name == "betfair_live_risk_rules":
             return self.rules
+        if name in self.bot_tables:
+            return self.bot_tables[name]
         raise AssertionError(f"tabella inattesa: {name}")
 
 
@@ -144,10 +165,17 @@ class _FakeBetting:
         current_batches: Optional[List[List[Any]]] = None,
         cleared_groups: Optional[List[Any]] = None,
         cleared_pages: Optional[List[List[Any]]] = None,
+        market_groups: Optional[List[Any]] = None,
     ) -> None:
         self.current_batches = current_batches or [[]]
         self.cleared_groups = cleared_groups or []
         self.cleared_pages = cleared_pages  # None -> comportamento storico (cleared_groups)
+        # 24/09: i gruppi per MERCATO (groupBy=MARKET) quando ci sono anche le
+        # pagine per ordine. None = ricavati dalle pagine come li darebbe
+        # Betfair: profit sommato, betCount, commission del mercato (qui la
+        # somma di quella scritta sugli ordini del fake storico; None se manca
+        # su uno: "commissione del mercato illeggibile").
+        self.market_groups = market_groups
         self.current_calls: List[int] = []
         self.cleared_calls: List[Dict[str, Any]] = []
 
@@ -165,6 +193,20 @@ class _FakeBetting:
 
     def list_cleared_orders(self, from_record: int = 0, record_count: int = 1000, **kwargs: Any) -> Any:
         self.cleared_calls.append({"from_record": from_record, "record_count": record_count, **kwargs})
+        if self.cleared_pages is not None and kwargs.get("group_by") == "MARKET":
+            if self.market_groups is not None:
+                return SimpleNamespace(orders=list(self.market_groups), more_available=False)
+            per_m: Dict[str, Dict[str, Any]] = {}
+            for page in self.cleared_pages:
+                for o in page:
+                    g = per_m.setdefault(str(o.market_id), {"profit": 0.0, "n": 0, "c": 0.0})
+                    g["profit"] += o.profit
+                    g["n"] += 1
+                    g["c"] = None if (g["c"] is None or o.commission is None) else g["c"] + o.commission
+            return SimpleNamespace(orders=[
+                SimpleNamespace(market_id=m, profit=round(g["profit"], 2), bet_count=g["n"],
+                                commission=None if g["c"] is None else round(g["c"], 2))
+                for m, g in per_m.items()], more_available=False)
         if self.cleared_pages is not None:
             offset = 0
             for i, page in enumerate(self.cleared_pages):
@@ -224,6 +266,8 @@ def _cleared(
     customer_strategy_ref: Optional[str] = None,
     customer_order_ref: Optional[str] = None,
     market_id: str = "1.100",
+    event_type_id: str = "1",
+    settled_date: Optional[datetime] = None,
 ) -> Any:
     """``ClearedOrder`` fake CON GLI STESSI attributi snake_case reali
     dell'oggetto betfairlightweight (verificati in
@@ -240,7 +284,8 @@ def _cleared(
         commission=commission,
         customer_strategy_ref=customer_strategy_ref,
         customer_order_ref=customer_order_ref,
-        settled_date=datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc),
+        event_type_id=event_type_id,
+        settled_date=settled_date or datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc),
     )
 
 
@@ -266,6 +311,7 @@ def env(monkeypatch):
         "manual_pnl_writes": [],
     }
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: state["mode"])
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: state["mode"])
 
     import Betfair.stream.db as dbmod
 
@@ -298,7 +344,40 @@ def env(monkeypatch):
     # test precedente (stessi globals di modulo).
     monkeypatch.setattr(rw, "_LAST_MANUAL_PNL_TS", 0.0)
     monkeypatch.setattr(rw, "_LAST_MANUAL_PNL_SIG", None)
+    # 24/09 (P&L reale): il giro dei regolati legge i proprietari dal DB e
+    # scrive righe e totali: tutto su finti in memoria, MAI il DB vero.
+    state["sb"] = _FakeSb()
+    state["pnl_reale_writes"] = []
+    state["riga_writes"] = []
+    monkeypatch.setattr(rw, "_client_db", lambda: state["sb"])
+    monkeypatch.setattr(
+        dbmod, "upsert_live_account_pnl_reale",
+        lambda totali: state["pnl_reale_writes"].append(dict(totali)),
+    )
+    monkeypatch.setattr(
+        dbmod, "update_pnl_betfair",
+        lambda tabella, rid, campi: state["riga_writes"].append((tabella, rid, dict(campi))),
+    )
+    monkeypatch.setattr(rw, "_LAST_MERCATI_SIG", None)
+    monkeypatch.setattr(rw, "_LAST_PNL_REALE_SIG", None)
+    monkeypatch.setattr(rw, "_MERCATI_CACHE", {"ts": None, "day": None, "gruppi": []})
+    monkeypatch.setattr(rw, "_PROPRIETARIO_BET", {})
+    monkeypatch.setattr(rw, "_PROPRIETARIO_DAY", None)
+    monkeypatch.setattr(rw, "_FIRMA_RIGA", {})
+    monkeypatch.setattr(rw, "_REGOLATI_DA_RILEGGERE", False)
     return state
+
+
+def _riga(env, tabella: str, **campi: Any) -> None:
+    """Una nostra riga LIVE nella tabella finta (chiavi del vero: id, bet_id,
+    mode, source dove la tabella la ha)."""
+    campi.setdefault("mode", "live")
+    env["sb"].table(tabella).rows.append(dict(campi))
+
+
+def _chiamate_ordini(betting: "_FakeBetting") -> List[Dict[str, Any]]:
+    """Le sole letture per ORDINE (senza groupBy)."""
+    return [c for c in betting.cleared_calls if c.get("group_by") is None]
 
 
 def _cycle(sb: Any, session: Any) -> None:
@@ -557,6 +636,8 @@ def test_run_account_sync_if_due_runs_with_no_mode_dependency(env, monkeypatch):
     runner calcio e' OFF/senza follow, mentre magari un altro bot
     (Omega/Mike/tennis) e' LIVE sullo stesso conto."""
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: (_ for _ in ()).throw(
+        AssertionError("run_account_sync_if_due non deve consultare la mode")))
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: (_ for _ in ()).throw(
         AssertionError("run_account_sync_if_due non deve consultare la mode")))
     account = _FakeAccount(available=77.0, exposure=-1.0)
     session = _session(account)
@@ -835,6 +916,9 @@ def test_sync_manual_pnl_gross_and_declared_when_commission_missing_on_any_order
 
 
 def test_sync_manual_pnl_excludes_bot_orders_from_total(env):
+    """24/09 (nota del coordinatore): e' del bot perche' omega_trades ha una
+    riga LIVE con quel bet_id, NON perche' il ref di strategia dice 'omega'."""
+    _riga(env, "omega_trades", id=7, bet_id="30")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("30", profit=100.0, customer_strategy_ref="omega"),      # bot: escluso
         _cleared("31", profit=7.0, customer_strategy_ref=None, customer_order_ref=None),  # manuale
@@ -843,11 +927,30 @@ def test_sync_manual_pnl_excludes_bot_orders_from_total(env):
     rw._sync_manual_pnl(session)
     w = env["manual_pnl_writes"][0]
     assert w["orders"] == 1
-    assert w["excluded"] == 0            # riconosciuto come NOSTRO, non "ambiguo"
+    assert w["excluded"] == 0
     assert w["pnl_eur"] == 7.0 - (0.0)  # commission default 0.0 nel fake
 
 
-def test_sync_manual_pnl_excludes_and_counts_ambiguous_orders(env):
+def test_sync_manual_pnl_strategy_ref_without_our_row_is_site(env):
+    """24/09 (nota del coordinatore): il ref di strategia NON decide. Un
+    ordine con ref 'omega' ma SENZA una nostra riga con quel bet_id (in
+    nessuna delle 5 tabelle) e senza un customerOrderRef che porti a una riga
+    esistente e' del SITO: entra nel manuale sito ed e' contato come
+    'sospetto' nel P&L reale del conto (dichiarato, mai nascosto)."""
+    betting = _FakeBetting(cleared_pages=[[
+        _cleared("32", profit=4.0, customer_strategy_ref="omega", customer_order_ref="omega-t999"),
+    ]])
+    session = _session(betting=betting)
+    rw._sync_manual_pnl(session)
+    w = env["manual_pnl_writes"][0]
+    assert w["orders"] == 1 and w["pnl_eur"] == 4.0
+    assert env["pnl_reale_writes"][0]["sospetti_sito"] == 1
+
+
+def test_sync_manual_pnl_unknown_order_ref_without_row_is_site(env):
+    """Prima del 24/09 un ref irriconoscibile era 'ambiguo' ed escluso da
+    tutto. Con la regola per riga (coordinatore) un ordine senza una nostra
+    riga e' del sito: entra nel totale del sito, 'excluded' non esiste piu'."""
     betting = _FakeBetting(cleared_pages=[[
         _cleared("40", profit=7.0, customer_strategy_ref=None, customer_order_ref=None),
         _cleared("41", profit=999.0, customer_strategy_ref=None, customer_order_ref="mai-visto-prima"),
@@ -855,14 +958,17 @@ def test_sync_manual_pnl_excludes_and_counts_ambiguous_orders(env):
     session = _session(betting=betting)
     rw._sync_manual_pnl(session)
     w = env["manual_pnl_writes"][0]
-    assert w["orders"] == 1
-    assert w["excluded"] == 1
-    assert w["pnl_eur"] == 7.0            # il 999.0 ambiguo NON entra nel totale
+    assert w["orders"] == 2
+    assert w["excluded"] == 0
+    assert w["pnl_eur"] == 1006.0
 
 
 def test_sync_manual_pnl_separates_site_and_app_totals(env):
     """Terzo giro: due totali SEPARATI nella STESSA scrittura — un ordine dal
-    sito (nessun ref) e uno dal ladder calcio (ref 'live') non si mescolano."""
+    sito (nessuna nostra riga) e uno dal ladder calcio (riga dello specchio
+    ``betfair_live_orders`` con source 'runner') non si mescolano."""
+    _riga(env, "betfair_live_orders", id=11, bet_id="101", source="runner")
+    _riga(env, "omega_trades", id=12, bet_id="102")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("100", profit=10.0, commission=0.0, customer_strategy_ref=None, customer_order_ref=None),
         _cleared("101", profit=3.0, commission=0.0, customer_strategy_ref="live"),
@@ -879,6 +985,7 @@ def test_sync_manual_pnl_separates_site_and_app_totals(env):
 
 
 def test_sync_manual_pnl_tennis_ladder_also_counts_in_app_total(env):
+    _riga(env, "tennis_live_orders", id=21, bet_id="110", source="manual")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("110", profit=4.0, commission=0.0, customer_strategy_ref="tennis"),
     ]])
@@ -891,6 +998,7 @@ def test_sync_manual_pnl_tennis_ladder_also_counts_in_app_total(env):
 
 
 def test_sync_manual_pnl_app_gross_when_commission_missing(env):
+    _riga(env, "betfair_live_orders", id=22, bet_id="120", source="runner")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("120", profit=5.0, commission=None, customer_strategy_ref="live"),
     ]])
@@ -904,6 +1012,7 @@ def test_sync_manual_pnl_app_gross_when_commission_missing(env):
 def test_sync_manual_pnl_write_on_change_app_total_alone_triggers_write(env):
     """Il saldo del sito resta invariato ma l'app cambia -> comunque una nuova
     scrittura (la firma copre ENTRAMBI i totali)."""
+    _riga(env, "betfair_live_orders", id=23, bet_id="131", source="runner")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("130", profit=1.0, commission=0.0, customer_strategy_ref=None, customer_order_ref=None),
     ]])
@@ -914,6 +1023,8 @@ def test_sync_manual_pnl_write_on_change_app_total_alone_triggers_write(env):
         _cleared("130", profit=1.0, commission=0.0, customer_strategy_ref=None, customer_order_ref=None),
         _cleared("131", profit=9.0, commission=0.0, customer_strategy_ref="live"),
     ]]
+    # 24/09: e' passato del tempo, la lettura per MERCATO in cache e' scaduta
+    rw._MERCATI_CACHE["ts"] = None
     rw._sync_manual_pnl(session)
     assert len(env["manual_pnl_writes"]) == 2
     assert env["manual_pnl_writes"][1]["orders"] == 1        # sito invariato
@@ -927,7 +1038,8 @@ def test_sync_manual_pnl_pagination_reads_second_page(env):
     ])
     session = _session(betting=betting)
     rw._sync_manual_pnl(session)
-    assert [c["from_record"] for c in betting.cleared_calls] == [0, 1]  # pagina due letta
+    # pagina due letta (24/09: prima c'e' la lettura per MERCATO, qui esclusa)
+    assert [c["from_record"] for c in _chiamate_ordini(betting)] == [0, 1]
     w = env["manual_pnl_writes"][0]
     assert w["orders"] == 2
     assert w["pnl_eur"] == 3.0
@@ -987,6 +1099,7 @@ def test_sync_manual_pnl_publishes_local_channel(env, monkeypatch):
 
     published: List[Any] = []
     monkeypatch.setattr(lc, "publish", lambda topic, payload: published.append((topic, dict(payload))))
+    _riga(env, "betfair_live_orders", id=24, bet_id="91", source="runner")
     betting = _FakeBetting(cleared_pages=[[
         _cleared("90", profit=6.0, customer_strategy_ref=None, customer_order_ref=None),
         _cleared("91", profit=2.0, commission=0.0, customer_strategy_ref="live"),
@@ -1005,15 +1118,23 @@ def test_sync_manual_pnl_never_consults_live_order_mode(env, monkeypatch):
     dipendere in alcun modo dalla LIVE_ORDER_MODE del runner calcio."""
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: (_ for _ in ()).throw(
         AssertionError("_sync_manual_pnl non deve consultare la mode")))
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: (_ for _ in ()).throw(
+        AssertionError("_sync_manual_pnl non deve consultare la mode")))
     betting = _FakeBetting(cleared_pages=[[]])
     session = _session(betting=betting)
     rw._sync_manual_pnl(session)  # non deve sollevare l'AssertionError sopra
 
 
 # ---------------------------------------------------------------------------
-# _run_manual_pnl_if_due: cadenza bassa (60s) + trigger immediato su cambio saldo
+# _run_manual_pnl_if_due: rete ogni 5 min + giro forzato su cambio saldo
+# (24/09: prima 60 s; ora la lettura per MERCATO fa da sentinella e quella per
+# ORDINE parte solo se i mercati regolati sono cambiati -> meno chiamate REST)
 # ---------------------------------------------------------------------------
-def test_run_manual_pnl_if_due_low_cadence_60s(env, monkeypatch):
+def _chiamate_mercato(betting: "_FakeBetting") -> List[Dict[str, Any]]:
+    return [c for c in betting.cleared_calls if c.get("group_by") == "MARKET"]
+
+
+def test_run_manual_pnl_if_due_rete_ogni_5_minuti(env, monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
     betting = _FakeBetting(cleared_pages=[[
@@ -1021,41 +1142,74 @@ def test_run_manual_pnl_if_due_low_cadence_60s(env, monkeypatch):
     ]])
     session = _session(betting=betting)
     rw._run_manual_pnl_if_due(session)
-    assert len(betting.cleared_calls) == 1
-    clock["t"] += 30.0
-    rw._run_manual_pnl_if_due(session)      # +30s: troppo presto (cadenza 60s)
-    assert len(betting.cleared_calls) == 1
-    clock["t"] += 30.1
-    rw._run_manual_pnl_if_due(session)      # +60.1s totali: si ritenta
+    assert len(_chiamate_mercato(betting)) == 1
+    assert len(_chiamate_ordini(betting)) == 1          # primo giro: anche gli ordini
+    clock["t"] += 299.0
+    rw._run_manual_pnl_if_due(session)      # prima dei 5 minuti: niente
     assert len(betting.cleared_calls) == 2
+    clock["t"] += 1.1
+    rw._run_manual_pnl_if_due(session)      # 5 minuti: la sola sentinella per MERCATO
+    assert len(_chiamate_mercato(betting)) == 2
+    assert len(_chiamate_ordini(betting)) == 1          # mercati invariati: niente ordini
 
 
-def test_run_manual_pnl_if_due_forced_bypasses_cadence(env, monkeypatch):
+def test_run_manual_pnl_if_due_forced_bypasses_cadence_but_not_under_20s(env, monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
     betting = _FakeBetting(cleared_pages=[[]])
     session = _session(betting=betting)
     rw._run_manual_pnl_if_due(session)
-    assert len(betting.cleared_calls) == 1
-    clock["t"] += 1.0   # ben sotto i 60s
-    rw._run_manual_pnl_if_due(session, force=True)   # forzato: gira comunque
-    assert len(betting.cleared_calls) == 2
+    assert len(_chiamate_mercato(betting)) == 1
+    clock["t"] += 1.0
+    rw._run_manual_pnl_if_due(session, force=True)   # forzato ma a 1 s: no
+    assert len(_chiamate_mercato(betting)) == 1
+    clock["t"] += 20.0
+    rw._run_manual_pnl_if_due(session, force=True)   # forzato a 21 s: gira
+    assert len(_chiamate_mercato(betting)) == 2
+
+
+def test_orders_read_only_when_settled_markets_change(env, monkeypatch):
+    """La lettura per ORDINE parte solo se la firma dei mercati regolati e'
+    cambiata: un mercato nuovo regolato -> una lettura; nulla di nuovo ->
+    nessuna."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
+    betting = _FakeBetting(cleared_pages=[[
+        _cleared("200", profit=2.0, customer_strategy_ref=None, customer_order_ref=None),
+    ]])
+    session = _session(betting=betting)
+    rw._run_manual_pnl_if_due(session)
+    assert len(_chiamate_ordini(betting)) == 1
+    clock["t"] += 25.0
+    rw._run_manual_pnl_if_due(session, force=True)
+    assert len(_chiamate_ordini(betting)) == 1           # invariato
+    betting.cleared_pages = [[
+        _cleared("200", profit=2.0, customer_strategy_ref=None, customer_order_ref=None),
+        _cleared("201", profit=-1.0, customer_strategy_ref=None, customer_order_ref=None,
+                 market_id="1.200"),
+    ]]
+    clock["t"] += 25.0
+    rw._run_manual_pnl_if_due(session, force=True)
+    assert len(_chiamate_ordini(betting)) == 2           # mercato nuovo: letto
 
 
 def test_run_account_sync_if_due_forces_manual_pnl_immediately_on_balance_change(env, monkeypatch):
-    """Integrazione: run_account_sync_if_due (saldo) fa scattare SUBITO il
-    manuale quando il saldo e' appena cambiato, anche se i 60s non sono
-    passati — 'a cadenza bassa (60s) e SUBITO dopo un cambio di saldo'."""
+    """Integrazione: il giro dei regolati parte SUBITO quando il saldo e'
+    appena cambiato (segnale di una regolazione), non alla rete dei 5 minuti."""
     clock = {"t": 1000.0}
     monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
     account = _FakeAccount(available=100.0, exposure=0.0)
     betting = _FakeBetting(cleared_pages=[[]])
     session = _session(account, betting)
     rw.run_account_sync_if_due(session)             # prima lettura: saldo "cambia" (era None)
-    assert len(betting.cleared_calls) == 1           # scattato SUBITO (force=True)
+    assert len(_chiamate_mercato(betting)) == 1      # scattato SUBITO
     clock["t"] += 21.0                                # 20s dopo: nuovo giro saldo, INVARIATO
     rw.run_account_sync_if_due(session)
-    assert len(betting.cleared_calls) == 1            # non forzato, e 60s non passati: niente
+    assert len(_chiamate_mercato(betting)) == 1      # non forzato, 5 minuti non passati
+    account.funds = SimpleNamespace(available_to_bet_balance=103.0, exposure=0.0)
+    clock["t"] += 21.0
+    rw.run_account_sync_if_due(session)              # saldo cambiato: forzato
+    assert len(_chiamate_mercato(betting)) == 2
 
 
 def test_run_account_sync_if_due_manual_pnl_not_forced_when_balance_unchanged(env, monkeypatch):
@@ -1068,4 +1222,24 @@ def test_run_account_sync_if_due_manual_pnl_not_forced_when_balance_unchanged(en
     rw._LAST_MANUAL_PNL_TS = clock["t"]  # simula: il manuale e' appena girato per conto suo
     clock["t"] += 20.1
     rw.run_account_sync_if_due(session)  # saldo invariato -> niente force
-    assert len(betting.cleared_calls) == 1  # nessun secondo giro (60s non passati, non forzato)
+    assert len(_chiamate_mercato(betting)) == 1  # nessun secondo giro
+
+
+def test_external_balance_read_forces_next_settled_round(env, monkeypatch):
+    """24/09: il saldo riletto da ``saldo_evento`` (dopo un evento d'ordine)
+    passa da ``annota_lettura_esterna``: il giro del saldo non vede il cambio
+    (la firma e' gia' allineata), quindi il segnale va portato a mano al giro
+    dei regolati, che deve partire al prossimo giro del saldo."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
+    account = _FakeAccount(available=50.0, exposure=0.0)
+    betting = _FakeBetting(cleared_pages=[[]])
+    session = _session(account, betting)
+    rw.run_account_sync_if_due(session)
+    assert len(_chiamate_mercato(betting)) == 1
+    clock["t"] += 5.0
+    rw.annota_lettura_esterna((57.0, 0.0))       # saldo cambiato, letto altrove
+    account.funds = SimpleNamespace(available_to_bet_balance=57.0, exposure=0.0)
+    clock["t"] += 20.1
+    rw.run_account_sync_if_due(session)          # stessa firma, ma il segnale c'e'
+    assert len(_chiamate_mercato(betting)) == 2

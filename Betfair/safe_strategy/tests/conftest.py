@@ -19,13 +19,19 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def freni_live_aperti(monkeypatch):
+    # 24/09: il modo ordini e' anche una riga di controllo (scelta dalla Control
+    # Room, ``Betfair/stream/modo_ordini.py``): la si dichiara in memoria come
+    # il tetto dell'ambiente, mai letta da un DB.
+    from Betfair.stream import modo_ordini as _mo
+
     monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
     monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
     # F5 (24/09): la porta a comandi e' SPENTA per difetto anche nei test, qualunque
     # cosa dica il .env della macchina; chi la prova la accende a mano.
     monkeypatch.delenv("SAFE_ORDINI_VIA_CANALE", raising=False)
     monkeypatch.delenv("SAFE_TENNIS_ORDINI_VIA_CANALE", raising=False)
-    yield
+    with _mo.dichiara_per_banco("LIVE"):
+        yield
 
 
 @pytest.fixture(autouse=True)

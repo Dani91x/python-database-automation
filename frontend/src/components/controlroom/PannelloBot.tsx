@@ -171,6 +171,9 @@ export interface RigaInterruttore {
     bot: Bot;
     /** come si chiama davanti al trader in questo contesto */
     etichetta: string;
+    /** 24/09 — che cosa comanda, in parole (Safe modello / a mano): si legge
+     *  passando sul nome e nella conferma dei soldi veri */
+    descrizione?: string;
     /** sta aprendo? Per Safe: servizio in corsa E strategia in `variants` */
     acceso: boolean;
     /** con che soldi. `null` = il servizio non la dichiara */
@@ -242,12 +245,18 @@ export interface PannelloBotProps {
      * filtro sta facendo vedere. Sono BOT, non strategie.
      */
     serviziAccesi?: { bot: Bot; modalita: Modalita | null }[];
+    /**
+     * 24/09 - la riga "Ordini reali: OFF / PAPER / LIVE" (`RigaOrdiniReali`):
+     * sta QUI, in testa agli interruttori dei bot, con il loro stesso stile.
+     * Nodo gia' montato dalla pagina (come `parametri`): assente = non mostrata.
+     */
+    ordiniReali?: ReactNode;
     testId?: string;
 }
 
 export function PannelloBot({
     righe, importi, comandi, parametri, parametriRiga, titolo = 'Comando dei bot', nota,
-    ambito = 'tutti', serviziAccesi, testId = 'cr-pannello-bot',
+    ambito = 'tutti', serviziAccesi, ordiniReali, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<InterruttoreId | 'tutti' | null>(null);
     /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
@@ -331,6 +340,8 @@ export function PannelloBot({
                     {nota}
                 </div>
             )}
+
+            {ordiniReali}
 
             {righe.length === 0 ? (
                 <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
@@ -523,7 +534,8 @@ function RigaBot({
     return (
         <div className="px-3 py-2" data-testid={`cr-bot-riga-${r.id}`}>
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">{r.etichetta}</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0"
+                    title={r.descrizione}>{r.etichetta}</span>
 
                 <span className={`text-[11px] ${STATO_CLS[r.stato] ?? 'text-white/40'}`}
                     data-testid={`cr-bot-stato-${r.id}`}>
@@ -754,7 +766,7 @@ function RigaBot({
 
                 {armato && (
                     <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${r.id}`}>
-                        Da qui in poi {r.etichetta} manda ordini reali su Betfair.
+                        Da qui in poi {r.etichetta}{r.descrizione ? ` (${r.descrizione})` : ''} manda ordini reali su Betfair.
                     </span>
                 )}
 

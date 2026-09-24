@@ -248,7 +248,7 @@ const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
     { key: 'auto_trade_opportunities', label: 'Opportunità di MODELLO (calcio) — NON piazza più da sola', note: 'dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA): questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_anomalies', label: 'ANOMALIE di prezzo — NON piazza più da sola', note: 'dal 18/09 le anomalie si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA), a una gamba sola; questo interruttore resta per compatibilità e non manda più ordini' },
     { key: 'auto_trade_combos', label: 'COMBINAZIONI — NON piazza più da sola', note: 'dal 18/09 una combinazione si propone con TUTTE le gambe in una scheda sola; PIAZZA le manda tutte o nessuna (approvazione atomica); questo interruttore resta per compatibilità e non manda più ordini' },
-    { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — oggi in paper finché strategy_modes.model resta paper' },
+    { key: 'auto_trade_tennis', label: 'Secondo motore: opportunità di MODELLO tennis — NON piazza più da sola', note: 'righe "modello" (strategy=model, meta.kind=tennis), NON la Strategia S tennis (quella si accende da "Varianti attive" sotto); dal 17/09 le opportunità si piazzano SOLO dalla scheda della Control Room (PIAZZA / RIFIUTA) — in prova o con soldi veri secondo l’interruttore «Safe modello» (opportunità del modello che approvo)' },
 ];
 
 // 18/09 — RUBINETTI DELLE PROPOSTE (decisione «B»): spengono la VISTA di un
@@ -264,6 +264,15 @@ const PROPONI_TOGGLES: { key: string; label: string; note: string }[] = [
     { key: 'proponi_combo', label: 'Proponimi le COMBINAZIONI', note: 'a spento, nessuna nuova scheda con tutte le gambe della combinazione; quelle già in vista decadono (nessuna gamba viene toccata se già approvata).' },
     { key: 'proponi_anomaly', label: 'Proponimi le ANOMALIE di prezzo', note: 'a spento, il cecchino smette di generare schede (continua comunque a rilevarle per la tabella delle opportunità); quelle già in vista decadono.' },
 ];
+
+// 24/09 — la scelta sulla gamba manuale della combo incompleta. Default (anche
+// chiave assente o sconosciuta) = 'avvisa_e_proponi', come il servizio
+// (`bot_service.modo_gamba_manuale`): il bot tocca le gambe del trader SOLO se
+// l'utente ha scritto 'automatico'.
+export const COMBO_GAMBA_MANUALE_KEY = 'combo_gamba_manuale';
+export function modoGambaManuale(raw: unknown): 'avvisa_e_proponi' | 'automatico' {
+    return String(raw ?? '').trim().toLowerCase() === 'automatico' ? 'automatico' : 'avvisa_e_proponi';
+}
 
 const VARIANTS: { id: VariantId; label: string }[] = [
     { id: 'base', label: 'Base' },
@@ -282,8 +291,10 @@ const MODE_STRATEGIES: { id: string; label: string }[] = [
     { id: 'esatto', label: 'Calcio · Risultato Esatto' },
     { id: 'punta', label: 'Calcio · Punta' },
     { id: 'tennis', label: 'Tennis' },
-    { id: 'model', label: 'Opportunità di modello / anomalie / combo' },
-    { id: 'manual', label: 'Ordini manuali dalla schermata' },
+    // 24/09 — stesse parole dei due interruttori «Safe modello» / «Safe a
+    // mano» della Control Room: stessa chiave, stesso nome.
+    { id: 'model', label: 'Opportunità del modello che approvo (modello / anomalie / combo / tennis)' },
+    { id: 'manual', label: 'Ordini a mano dalla scheda' },
 ];
 const MODE_KEY = (id: string) => `strategy_modes.${id}`;
 
@@ -544,6 +555,23 @@ export function BotParamsSheet({
             })),
         },
         {
+            // 24/09 (estensione B25, ordine dell'utente: «devo poter scegliere
+            // tramite pulsanti») — la gamba MANUALE rimasta aperta quando una
+            // gamba della combinazione approvata non si abbina.
+            label: 'Combinazioni incomplete',
+            note: 'Quando una gamba della combinazione che hai approvato non si abbina, l’altra resta aperta a mercato ed è tua. Scegli chi la gestisce.',
+            fields: [{
+                key: COMBO_GAMBA_MANUALE_KEY,
+                label: 'Gamba manuale della combo incompleta',
+                type: 'choice' as const,
+                options: [
+                    { value: 'avvisa_e_proponi', label: 'Avvisa e proponi la copertura' },
+                    { value: 'automatico', label: 'Automatico (se ne occupa il bot)' },
+                ],
+                hint: 'Avvisa e proponi: il bot non la tocca, ti avvisa e ti mette in scheda la copertura da approvare con un clic. Automatico: la chiude il bot subito, a mercato, come una sua gamba.',
+            }],
+        },
+        {
             label: 'Modalità per strategia (paper / live)',
             note: (
                 <>
@@ -746,6 +774,7 @@ export function toValues(
         const raw2 = getPath(src, t.key);
         out[t.key] = typeof raw2 === 'boolean' ? raw2 : true;
     }
+    out[COMBO_GAMBA_MANUALE_KEY] = modoGambaManuale(getPath(src, COMBO_GAMBA_MANUALE_KEY));
     for (const v of VARIANTS) out[VARIANT_KEY(v.id)] = p.variants.includes(v.id);
     // mappa PARZIALE: la chiave assente si mostra come «Non dichiarata», che
     // e' esattamente quello che fa il servizio — e che in live vale PAPER.

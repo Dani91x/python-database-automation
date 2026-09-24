@@ -16,7 +16,7 @@
 // dell'una o dell'altra modalità; due modalità sulla stessa partita sono due
 // posizioni diverse, e questa pagina non le mette mai nella stessa riga.
 // ============================================================================
-import { isSettled, isErrorRow } from '@/lib/eventGroups';
+import { isSettled, isErrorRow, pnlDiRiga, fonteDiRiga, fonteDiRighe, type FontePnl } from '@/lib/eventGroups';
 import type { Bot, Modo } from '@/lib/controlRoom';
 import { modoDi } from '@/lib/controlRoom';
 import { romeDay } from '@/lib/dailyHistory';
@@ -33,8 +33,11 @@ export interface RigaChiusa {
     lato: 'back' | 'lay' | null;
     prezzo: number | null;
     size: number | null;
-    /** netto di commissione; null = non regolata */
+    /** netto di commissione; null = non regolata. 24/09: quello di Betfair
+     *  (`pnl_betfair`) se c'e', altrimenti il calcolo del bot (`fontePnl`). */
     pnl: number | null;
+    /** 24/09 - da dove viene `pnl`: Betfair, stimato (calcolo del bot), paper */
+    fontePnl?: FontePnl;
     stato: string;
     at: string;
     /** è la gamba di copertura di un'altra riga? */
@@ -61,6 +64,12 @@ export interface PosizioneChiusa {
     bot: Bot;
     /** P&L della posizione INTERA: apertura + coperture */
     pnlGlobale: number;
+    /**
+     * 24/09 - da dove viene `pnlGlobale`: `betfair` solo se TUTTE le gambe
+     * regolate hanno il netto di Betfair; altrimenti `stimato` (la pagina lo
+     * scrive) o `paper`. Opzionale nel tipo per i fixture scritti prima.
+     */
+    fontePnl?: FontePnl;
     /** vinta / persa / pari, dal P&L globale */
     esito: Esito;
     /** le righe che la compongono, in ordine di tempo */
@@ -109,6 +118,9 @@ export interface TradeChiudibile {
     mode?: string | null;
     status?: string | null;
     pnl?: number | null;
+    /** 24/09 - netto regolato da Betfair (null/assente = non ancora: stimato) */
+    pnl_betfair?: number | null;
+    pnl_betfair_settled_at?: string | null;
     side?: string | null;
     price?: number | null;
     size?: number | null;
@@ -259,12 +271,13 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
 
         // il P&L globale somma TUTTE le gambe regolate: su un green-up
         // l'apertura vince e la copertura perde, e solo la somma dice il vero.
+        // 24/09 - di ogni gamba il netto di BETFAIR se c'e' (`pnl_betfair`),
+        // altrimenti il calcolo del bot: e la posizione dice quale dei due e'.
         let globale = 0;
-        for (const r of tutte) {
-            if (!isSettled(String(r.status ?? ''))) continue;
-            globale += numero(r.pnl) ?? 0;
-        }
+        const regolate = tutte.filter((r) => isSettled(String(r.status ?? '')));
+        for (const r of regolate) globale += pnlDiRiga(r) ?? 0;
         globale = Math.round(globale * 100) / 100;
+        const fontePnl = fonteDiRighe(regolate) ?? 'stimato';
 
         const righe: RigaChiusa[] = tutte
             .map((r) => ({
@@ -272,7 +285,7 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
                 selezione: testo(r.selection_name),
                 lato: r.side === 'lay' ? 'lay' as const : r.side === 'back' ? 'back' as const : null,
                 prezzo: numero(r.price), size: numero(r.size),
-                pnl: numero(r.pnl), stato: String(r.status ?? ''),
+                pnl: pnlDiRiga(r), fontePnl: fonteDiRiga(r), stato: String(r.status ?? ''),
                 at: testo(r.settled_at) ?? testo(r.placed_at) ?? '',
                 chiusura: numero(r.closes_trade_id) != null,
                 quale: testo(r.strategy),
@@ -301,6 +314,7 @@ export function posizioniChiuse(trades: readonly TradeChiudibile[]): PosizioneCh
             modo: modoDi(a),
             bot: a.__bot,
             pnlGlobale: globale,
+            fontePnl,
             esito: esitoDi(globale),
             righe,
             chiusaAt,

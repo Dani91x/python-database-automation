@@ -80,14 +80,15 @@ def test_instantiate_bot_paper_defaults_to_placing_simulated():
 
 def test_instantiate_bot_live_respects_control_but_defaults_safe():
     df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
+    # T1 (24/09): il bot e' LIVE solo se la riga lo DICHIARA (mode='live')
     bot = tennis_runner._instantiate_bot(
-        "tennis_scalper", {"stake": 2.0, "dry_run": False, "params": {}},
+        "tennis_scalper", {"stake": 2.0, "dry_run": False, "mode": "live", "params": {}},
         "1.100", {}, lambda *a, **k: None, df, "LIVE",
     )
     assert bot.dry_run is False
     # LIVE senza dry_run esplicito → default PRUDENTE (soldi veri solo consapevolmente)
     bot2 = tennis_runner._instantiate_bot(
-        "tennis_scalper", {"stake": 2.0, "params": {}},
+        "tennis_scalper", {"stake": 2.0, "mode": "live", "params": {}},
         "1.100", {}, lambda *a, **k: None, df, "LIVE",
     )
     assert bot2.dry_run is True

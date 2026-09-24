@@ -66,7 +66,7 @@ import {
     sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, groupClosingLegs, isCurrentOppRow,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
-    liveStrategies, fetchRunnerState, executionRoute, runnerPhase, type RunnerState,
+    liveStrategies, modalitaOrdineAMano, fetchRunnerState, executionRoute, runnerPhase, type RunnerState,
     cashOutEvento, riprendiEventoSafe,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
@@ -612,6 +612,14 @@ export default function SafeStrategy() {
     // diversa dalla sua) e quella con cui vanno ETICHETTATI i KPI.
     const mode: SafeMode = bot.mode;
     const modeTag = mode.toUpperCase();
+    // 24/09 — gli ordini A MANO di questa scheda hanno la LORO modalita':
+    // tetto del servizio E `strategy_modes.manual` scritto 'live'
+    // (interruttore «Safe a mano»). Mai quella nuda del servizio.
+    const modoManuale: SafeMode = useMemo(
+        () => modalitaOrdineAMano(bot.mode, (bot.paramsEffective?.strategy_modes
+            ?? bot.control?.params?.strategy_modes ?? null) as Record<string, string> | null),
+        [bot.mode, bot.paramsEffective, bot.control],
+    );
 
     // ── GLI INTERRUTTORI DELLE STRATEGIE, con i comandi CONDIVISI ───────────
     // La riga di control e' la stessa che legge la Control Room; qui si
@@ -672,7 +680,8 @@ export default function SafeStrategy() {
     /** LIVE ereditato dal control (altra sessione/tab) ma MAI confermato qui:
      *  nessun ordine con soldi veri finche' l'utente non passa dal dialog. */
     function liveNotConfirmed(): boolean {
-        if (mode !== 'live' || bot.liveConfirmed) return false;
+        // 24/09 — conta la modalita' dell'ORDINE A MANO, non quella del servizio
+        if (modoManuale !== 'live' || bot.liveConfirmed) return false;
         setLiveConfirmOpen(true);
         toast.warning('Conferma la modalità LIVE prima di operare con soldi veri');
         return true;
@@ -685,8 +694,9 @@ export default function SafeStrategy() {
             event_name: signal.matchLabel,
             sport: signal.sport,
             // il servizio NON deduce la modalita dal control: va dichiarata
-            // esplicitamente o l'ordine finirebbe in paper anche a bot LIVE.
-            mode,
+            // esplicitamente. 24/09 — e' quella dell'ORDINE A MANO
+            // (`strategy_modes.manual`), non quella nuda del servizio.
+            mode: modoManuale,
             market_id: placement.market_id,
             market_type: placement.market_type,
             selection_id: placement.selection_id,
@@ -724,7 +734,9 @@ export default function SafeStrategy() {
                     event_id: eventId,
                     event_name: eventName,
                     sport,
-                    mode,
+                    // 24/09 — «Investi» dalla tabella e' un ordine A MANO
+                    // (nessuna `opp_key`): vale `strategy_modes.manual`
+                    mode: modoManuale,
                     market_id: leg.market_id,
                     market_type: leg.market_type,
                     selection_id: leg.selection_id,
@@ -753,7 +765,8 @@ export default function SafeStrategy() {
             event_id: eventId,
             event_name: eventName,
             sport,
-            mode,
+            // 24/09 — ordine A MANO (nessuna `opp_key`): `strategy_modes.manual`
+            mode: modoManuale,
             market_id: o.market_id,
             market_type: o.market_type,
             selection_id: o.selection_id,
@@ -834,7 +847,7 @@ export default function SafeStrategy() {
                             nowMs={nowMs}
                             media={mediaByEvent[s.eventId]}
                             placement={placement}
-                            mode={mode}
+                            mode={modoManuale}
                             stake={s.side === 'LAY' ? bot.params.stake.laySize : bot.params.stake.backSize}
                             requests={bot.requests}
                             trade={trade}
@@ -932,7 +945,7 @@ export default function SafeStrategy() {
                             <OpportunityGroup
                                 key={r.event_id}
                                 row={r}
-                                mode={mode}
+                                mode={modoManuale}
                                 stake={bot.paramsEffective?.opps_stake ?? bot.params.opps_stake}
                                 minStake={minStake}
                                 requests={bot.requests}

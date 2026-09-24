@@ -37,6 +37,65 @@ export interface PnlTradeLike {
     placed_at: string;
     /** id della riga di APERTURA che questa riga chiude */
     closes_trade_id?: number | null;
+    /**
+     * 24/09 - IL P&L REALE DI BETFAIR (migrazione `pnl_betfair_reale_2026-09-24.sql`,
+     * scritto dal runner: `reconcile_worker._sync_manual_pnl`). NETTO: profit
+     * dell'ordine su `listClearedOrders` meno la sua quota della commissione
+     * del mercato. Assente/null = Betfair non ha ancora regolato (o riga
+     * paper): vale `pnl`, il calcolo del bot, e si DICHIARA stimato.
+     */
+    pnl_betfair?: number | null;
+    /** quando Betfair ha regolato (settledDate), ISO */
+    pnl_betfair_settled_at?: string | null;
+}
+
+// --------------------------------------------------- P&L reale o stimato
+/**
+ * 24/09 - DA DOVE VIENE UN P&L (ordine dell'utente: "il P&L delle operazioni
+ * va preso DIRETTAMENTE da Betfair e non stimato, al netto di tutto"):
+ *   - `betfair` = il netto regolato da Betfair (`pnl_betfair`);
+ *   - `stimato` = soldi veri, ma Betfair non ha ancora regolato: e' il calcolo
+ *     del bot, e la pagina lo deve SCRIVERE ("stimato");
+ *   - `paper`   = simulazione: Betfair non esiste, e' sempre il calcolo.
+ */
+export type FontePnl = 'betfair' | 'stimato' | 'paper';
+
+export interface RigaPnlReale {
+    pnl?: number | null;
+    pnl_betfair?: number | null;
+    mode?: string | null;
+}
+
+function ePaper(r: { mode?: string | null }): boolean {
+    return String(r.mode ?? '').trim().toLowerCase() === 'paper';
+}
+
+/** Il P&L da MOSTRARE per una riga: quello di Betfair se c'e' (mai per una
+ *  riga paper), altrimenti il calcolo del bot. */
+export function pnlDiRiga(r: RigaPnlReale): number | null {
+    if (!ePaper(r)) {
+        const b = num(r.pnl_betfair);
+        if (b != null) return b;
+    }
+    return num(r.pnl);
+}
+
+/** La fonte del P&L di UNA riga. */
+export function fonteDiRiga(r: RigaPnlReale): FontePnl {
+    if (ePaper(r)) return 'paper';
+    return num(r.pnl_betfair) != null ? 'betfair' : 'stimato';
+}
+
+/**
+ * La fonte di un INSIEME di righe regolate (un'operazione, una partita):
+ * `betfair` solo se TUTTE hanno il reale; basta una stimata e l'insieme e'
+ * stimato (un totale mezzo reale e mezzo calcolato non e' "da Betfair").
+ * Una qualunque riga paper -> paper. Nessuna riga -> null.
+ */
+export function fonteDiRighe(righe: readonly RigaPnlReale[]): FontePnl | null {
+    if (!righe.length) return null;
+    if (righe.some(ePaper)) return 'paper';
+    return righe.every((r) => num(r.pnl_betfair) != null) ? 'betfair' : 'stimato';
 }
 
 /** Esiti CERTI: solo queste righe hanno un P&L da sommare. */
@@ -94,16 +153,17 @@ function radiceDi<T extends PnlTradeLike>(t: T, byId: ReadonlyMap<number, T>): T
  * Le gambe `cancelled`/`error` non sono mai andate a mercato: non pesano.
  */
 export function nettoCicloChiuso(
-    open: { status: string; pnl?: number | null },
-    closes: readonly { status: string; pnl?: number | null }[],
+    open: { status: string } & RigaPnlReale,
+    closes: readonly ({ status: string } & RigaPnlReale)[],
 ): number | null {
     if (!isSettled(open.status)) return null;
-    const base = num(open.pnl);
+    // 24/09 - di ogni gamba il P&L di Betfair se c'e', altrimenti il calcolo
+    const base = pnlDiRiga(open);
     if (base == null) return null;
     let v = base;
     for (const g of closes) {
         const s = String(g.status ?? '').toLowerCase();
-        if (isSettled(s)) { v += num(g.pnl) ?? 0; continue; }
+        if (isSettled(s)) { v += pnlDiRiga(g) ?? 0; continue; }
         if (s === 'cancelled' || isErrorRow(s)) continue;
         return null;
     }
@@ -120,6 +180,8 @@ export interface CicloGroup<T extends PnlTradeLike> {
     netPnl: number | null;
     /** true = chiusura senza la sua apertura fra le righe caricate (mai nascosta) */
     orphan: boolean;
+    /** 24/09 - da dove viene `netPnl` (Betfair / stimato / paper); null = nessuna riga regolata */
+    fontePnl?: FontePnl | null;
 }
 
 /**
@@ -153,8 +215,8 @@ export function groupTradesIntoCicli<T extends PnlTradeLike>(trades: readonly T[
         const closes = (closesOf.get(Number(open.id)) ?? [])
             .slice().sort((a, b) => Date.parse(a.placed_at) - Date.parse(b.placed_at));
         const rows = [open, ...closes].filter((r) => isSettled(r.status));
-        const netPnl = rows.length ? cent(rows.reduce((s, r) => s + (num(r.pnl) ?? 0), 0)) : null;
-        return { open, closes, netPnl, orphan };
+        const netPnl = rows.length ? cent(rows.reduce((s, r) => s + (pnlDiRiga(r) ?? 0), 0)) : null;
+        return { open, closes, netPnl, orphan, fontePnl: fonteDiRighe(rows) };
     };
     return [
         ...opens.map((o) => mk(o, false)),
@@ -219,7 +281,7 @@ export function groupCicliByEvent<T extends PnlTradeLike>(
         const regolate = vere.filter((r) => isSettled(r.status));
         const aperte = vere.filter((r) => !isSettled(r.status));
         const netPnl = regolate.length
-            ? cent(regolate.reduce((s, r) => s + (num(r.pnl) ?? 0), 0))
+            ? cent(regolate.reduce((s, r) => s + (pnlDiRiga(r) ?? 0), 0))
             : null;
         // capitale: SOLO le aperture (una chiusura non impegna capitale nuovo,
         // svolge quello già impegnato) e SOLO quelle non in errore

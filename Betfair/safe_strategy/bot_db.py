@@ -607,6 +607,16 @@ def pending_requests(limit: int = 50) -> list[dict[str, Any]]:
 REQUEST_STATES = ("proposed", "pending", "processing", "done", "rejected", "error")
 
 
+def richiesta_per_id(request_id: int) -> Optional[dict[str, Any]]:
+    """UNA richiesta per id (sola lettura): serve a sapere com'e' finita una
+    proposta di copertura (rifiutata, approvata, decaduta) - 24/09."""
+    rows = (
+        _sb().table("safe_strategy_requests").select("id,kind,status,result")
+        .eq("id", int(request_id)).limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
 def proposta_di_chiusura_viva(trade_id: int) -> Optional[dict[str, Any]]:
     """La proposta di chiusura ancora IN ATTESA DI APPROVAZIONE per questo trade.
 

@@ -46,6 +46,7 @@ import {
     leggiChiave, scriviChiave, importoDi, importiInterruttori, creaInterruttori,
     ObiettivoOmegaIgnoto, ParametriOmegaIgnoti, ParametriNonLetti,
     BotFermoNonCambiaModalita,
+    SafeFermoPerStrumento, StrumentoSenzaSpegnimento, modalitaServizioDaParams,
     STRATEGIE_SAFE_TUTTE,
     type Accensioni, type Bot, type SorgenteInterruttori, type StatoServizio,
 } from '@/lib/interruttori';
@@ -119,7 +120,9 @@ function sorgente(over: Partial<{
 describe('i dieci interruttori, divisi per sport', () => {
     it('la scheda calcio non contiene il tennis', () => {
         expect(interruttoriDiSport('calcio').map((i) => i.id))
-            .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta']);
+            .toEqual(['omega', 'mike', 'safe-base', 'safe-esatto', 'safe-punta',
+                // 24/09 — i due strumenti di Safe che propongono ingressi
+                'safe-model', 'safe-manual']);
     });
 
     it('la scheda tennis non contiene il calcio', () => {
@@ -132,8 +135,9 @@ describe('i dieci interruttori, divisi per sport', () => {
     });
 
     it('senza scheda scelta ci sono tutti e dieci', () => {
-        expect(interruttoriDiSport(null)).toHaveLength(10);
-        expect(INTERRUTTORI).toHaveLength(10);
+        // 24/09 — dieci + i due strumenti di Safe (modello, a mano)
+        expect(interruttoriDiSport(null)).toHaveLength(12);
+        expect(INTERRUTTORI).toHaveLength(12);
     });
 
     it('i quattro del tennis comandano il SERVIZIO, non una strategia', () => {
@@ -455,7 +459,11 @@ describe('importoDi — la chiave per strategia, col ripiego DICHIARATO', () => 
     it('ogni interruttore visibile ha il suo importo', () => {
         const m = importiInterruttori(interruttoriDiSport('calcio'), () => CORRENTI_SAFE);
         expect(Object.keys(m).sort())
-            .toEqual(['mike', 'omega', 'safe-base', 'safe-esatto', 'safe-punta']);
+            .toEqual(['mike', 'omega', 'safe-base', 'safe-esatto', 'safe-manual',
+                'safe-model', 'safe-punta']);
+        // 24/09 — model/manual non hanno un importo loro: nessun campo inventato
+        expect(m['safe-model']).toEqual([]);
+        expect(m['safe-manual']).toEqual([]);
     });
 });
 
@@ -685,5 +693,158 @@ describe('STADIO C — la sveglia parte DOPO la scrittura riuscita, mai prima', 
         await c.accendi('omega', 'paper');
         expect(mSveglia).toHaveBeenCalledWith('omega', 'comando');
         expect(mSveglia).not.toHaveBeenCalledWith('safe', expect.anything());
+    });
+});
+
+// ============================================================================
+// 24/09 — «OGNI strumento che propone ingressi a mercato deve avere sia la
+// versione PAPER che LIVE, e in caso di LIVE gli ordini devono partire
+// DAVVERO» (utente). Le due righe nuove di Safe: `safe-model` (opportunita'
+// del modello che approvo) e `safe-manual` (ordini a mano dalla scheda).
+// Chiavi del finto = chiavi della riga di control (`strategy_modes.model`,
+// `strategy_modes.manual`, `variants`, `mode`): quelle che il servizio legge
+// in `bot_service.modalita_di_strategia`.
+// ============================================================================
+describe('24/09 — Safe modello e Safe a mano: paper e live dalla plancia', () => {
+    it('le due voci esistono, sono di Safe, nella scheda calcio, senza importo', () => {
+        const m = interruttoreDi('safe-model');
+        const a = interruttoreDi('safe-manual');
+        expect([m.bot, m.strategia, m.sport]).toEqual(['safe', 'model', 'calcio']);
+        expect([a.bot, a.strategia, a.sport]).toEqual(['safe', 'manual', 'calcio']);
+        expect(m.descrizione).toBe('opportunità del modello che approvo');
+        expect(a.descrizione).toBe('ordini a mano dalla scheda');
+        expect(m.chiaveImporto).toBeNull();
+        expect(a.chiaveImporto).toBeNull();
+        // nella scheda tennis non compaiono: il gesto «solo tennis» li porta
+        // comunque in prova
+        expect(interruttoriDiSport('tennis').map((i) => i.id)).not.toContain('safe-model');
+    });
+
+    it('stato: live SOLO se servizio live E voce scritta live; chiave assente = prova', () => {
+        const m = interruttoreDi('safe-model');
+        const a = interruttoreDi('safe-manual');
+        const s: StatoServizio = {
+            ...SERVIZIO_SAFE, modiStrategia: { ...SERVIZIO_SAFE.modiStrategia, model: 'live' },
+        };
+        expect(statoInterruttore(m, s)).toEqual({ acceso: true, modalita: 'live', noto: true });
+        // `manual` non scritto: PAPER, mai ereditato dal servizio in live
+        expect(statoInterruttore(a, s)).toEqual({ acceso: true, modalita: 'paper', noto: true });
+        // servizio in paper = tetto: la voce live non basta
+        expect(statoInterruttore(m, { ...s, modalita: 'paper' }).modalita).toBe('paper');
+        // servizio in corsa senza `variants`: non si sa, non si comanda
+        expect(statoInterruttore(m, { ...s, varianti: null }).noto).toBe(false);
+        // servizio in live senza la mappa: non si sa
+        expect(statoInterruttore(m, { ...s, modiStrategia: null }).noto).toBe(false);
+        // servizio fermo: spento, e la modalita' (prova) si dichiara lo stesso
+        expect(statoInterruttore(m, { inCorsa: false, modalita: 'paper' }))
+            .toEqual({ acceso: false, modalita: 'paper', noto: true });
+    });
+
+    it('«Safe modello» in LIVE: scrive strategy_modes.model=live con la mappa INTERA, tocca solo lui', async () => {
+        const dopo = vi.fn();
+        const c = creaInterruttori(sorgente(), dopo);
+        await c.cambiaModalita('safe-model', 'live');
+        // servizio gia' in live (per il tennis): nessun riarmo, solo i parametri
+        expect(mActSafe).not.toHaveBeenCalled();
+        expect(mStopSafe).not.toHaveBeenCalled();
+        expect(mUpdSafe).toHaveBeenCalledTimes(1);
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect(p.strategy_modes).toEqual({
+            base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'live',
+            model: 'live', manual: 'paper',
+        });
+        // le accensioni non si muovono di un millimetro, e il resto passa intatto
+        expect(p.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
+        expect(p.chiave_che_nessuno_conosce).toBe(42);
+        expect(p.tennis_exit_approval).toBe(true);
+        expect(dopo).toHaveBeenCalledTimes(1);
+        expect(mSveglia).toHaveBeenCalledWith('safe', 'comando');
+    });
+
+    it('«Safe a mano» in LIVE con il servizio in PAPER: arma il tetto con safe_activate(live)', async () => {
+        const servizio: StatoServizio = {
+            inCorsa: true, modalita: 'paper', varianti: ['base'],
+            modiStrategia: { base: 'paper' },
+        };
+        const c = creaInterruttori(sorgente({
+            servizioSafe: servizio,
+            safe: { variants: ['base'], strategy_modes: { base: 'paper' }, stake: { laySize: 2 } },
+        }), vi.fn());
+        await c.accendi('safe-manual', 'live');
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mActSafe).toHaveBeenCalledTimes(1);
+        const [mode, p] = mActSafe.mock.calls[0] as unknown as [string, Record<string, unknown>];
+        expect(mode).toBe('live');
+        expect(p.strategy_modes).toEqual({
+            base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper',
+            model: 'paper', manual: 'live',
+        });
+        expect(p.variants).toEqual(['base']);
+    });
+
+    it('tornare in PROVA abbassa il tetto se nessun altro e in live', async () => {
+        const servizio: StatoServizio = {
+            inCorsa: true, modalita: 'live', varianti: ['base'],
+            modiStrategia: { base: 'paper', model: 'live' },
+        };
+        const c = creaInterruttori(sorgente({
+            servizioSafe: servizio,
+            safe: { variants: ['base'], strategy_modes: { base: 'paper', model: 'live' } },
+        }), vi.fn());
+        await c.cambiaModalita('safe-model', 'paper');
+        const [mode, p] = mActSafe.mock.calls[0] as unknown as [string, Record<string, unknown>];
+        expect(mode).toBe('paper');
+        expect((p.strategy_modes as Record<string, string>).model).toBe('paper');
+    });
+
+    it('a servizio FERMO non si arma niente: rifiuto dichiarato, nessuna scrittura', async () => {
+        const c = creaInterruttori(sorgente({
+            servizioSafe: { inCorsa: false, modalita: 'paper', varianti: null, modiStrategia: null },
+        }), vi.fn());
+        await expect(c.accendi('safe-model', 'live')).rejects.toThrow(SafeFermoPerStrumento);
+        await expect(c.cambiaModalita('safe-manual', 'paper')).rejects.toThrow(SafeFermoPerStrumento);
+        expect(mActSafe).not.toHaveBeenCalled();
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mStopSafe).not.toHaveBeenCalled();
+    });
+
+    it('«ferma» su modello/a mano non ferma Safe: rifiuto dichiarato', async () => {
+        const c = creaInterruttori(sorgente(), vi.fn());
+        await expect(c.spegni('safe-model')).rejects.toThrow(StrumentoSenzaSpegnimento);
+        expect(mStopSafe).not.toHaveBeenCalled();
+        expect(mUpdSafe).not.toHaveBeenCalled();
+    });
+
+    it('accensioni ignote (`variants` non letto): non si scrive', async () => {
+        const c = creaInterruttori(sorgente({
+            servizioSafe: { ...SERVIZIO_SAFE, varianti: null },
+        }), vi.fn());
+        await expect(c.cambiaModalita('safe-model', 'live')).rejects.toThrow(ParametriNonLetti);
+        expect(mUpdSafe).not.toHaveBeenCalled();
+        expect(mActSafe).not.toHaveBeenCalled();
+    });
+
+    it('accendere una strategia del manuale CONSERVA model=live e tiene il tetto in live', async () => {
+        const servizio: StatoServizio = {
+            inCorsa: true, modalita: 'live', varianti: ['base'],
+            modiStrategia: { base: 'paper', model: 'live' },
+        };
+        const c = creaInterruttori(sorgente({
+            servizioSafe: servizio,
+            safe: { variants: ['base'], strategy_modes: { base: 'paper', model: 'live' } },
+        }), vi.fn());
+        await c.accendi('safe-punta', 'paper');
+        // tetto gia' in live e voluto live (model): solo i parametri
+        expect(mActSafe).not.toHaveBeenCalled();
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect((p.strategy_modes as Record<string, string>).model).toBe('live');
+        expect(p.variants).toEqual(['base', 'punta']);
+    });
+
+    it('modalitaServizioDaParams: solo le chiavi che il servizio conosce armano il tetto', () => {
+        expect(modalitaServizioDaParams({ strategy_modes: { manual: 'live' } })).toBe('live');
+        expect(modalitaServizioDaParams({ strategy_modes: { base: 'paper', model: 'paper' } })).toBe('paper');
+        expect(modalitaServizioDaParams({ strategy_modes: { estranea: 'live' } })).toBe('paper');
+        expect(modalitaServizioDaParams({})).toBe('paper');
     });
 });

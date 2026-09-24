@@ -16,6 +16,43 @@ from typing import Any, Callable, Optional
 from Betfair.omega import omega_engine as E
 from Betfair.omega.omega_config import CUSTOMER_STRATEGY_REF, FOOTBALL_EVENT_TYPE_ID
 
+# ---------------------------------------------------------------------------
+# R1 (24/09) - customerStrategyRef PER ATTORE.
+# Prima il ref di scrittura era SOLO la costante di modulo: Safe usa queste
+# funzioni e i suoi ordini REST uscivano marchiati "omega" (listCurrentOrders
+# di Omega vedeva anche gli ordini di Safe). Adesso ``strategy_ref`` e' un
+# parametro esplicito di ogni place: chi chiama dichiara chi e'. ``None`` =
+# la costante di modulo letta AL MOMENTO della chiamata (Omega: "omega", come
+# prima; Mike la rilega a "mike" nel suo processo). Le letture accettano un
+# ref o l'elenco dei ref dell'attore.
+# Il default delle letture resta quello di sempre: la costante di Omega
+# fissata all'import (``_REF_OMEGA``).
+# ---------------------------------------------------------------------------
+_REF_OMEGA = CUSTOMER_STRATEGY_REF
+STRATEGY_REF_MAX_LEN = 15   # limite di Betfair su customerStrategyRef
+
+
+def ref_di_strategia(strategy_ref: Optional[str] = None) -> str:
+    """Il customerStrategyRef da scrivere su un ordine. Validato PRIMA di
+    qualunque chiamata di rete: vuoto, piu' lungo di 15 caratteri o non ASCII
+    stampabile -> ``ValueError`` (nessun ordine parte con un ref sbagliato)."""
+    ref = CUSTOMER_STRATEGY_REF if strategy_ref is None else strategy_ref
+    if not isinstance(ref, str) or not ref or len(ref) > STRATEGY_REF_MAX_LEN \
+            or not all(32 < ord(ch) < 127 for ch in ref):
+        raise ValueError(f"customerStrategyRef non valido: {ref!r} "
+                         f"(1-{STRATEGY_REF_MAX_LEN} caratteri ASCII, senza spazi)")
+    return ref
+
+
+def _refs_di_lettura(strategy_ref: Any) -> list:
+    """Un ref o l'elenco dei ref dell'attore -> lista per ``customerStrategyRefs``.
+    Mai una lista vuota: senza filtro Betfair tornerebbe gli ordini di TUTTI."""
+    refs = [strategy_ref] if isinstance(strategy_ref, str) else list(strategy_ref or [])
+    refs = [ref_di_strategia(r) for r in refs]
+    if not refs:
+        raise ValueError("lettura per strategia senza nessun ref")
+    return refs
+
 logger = logging.getLogger("omega.market")
 
 
@@ -659,9 +696,12 @@ class CancelResult:
 def place_order_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     side: str = "lay", customer_ref: Optional[str] = None,
-    fill_or_kill: bool = True,
+    fill_or_kill: bool = True, strategy_ref: Optional[str] = None,
 ) -> PlaceResult:
     """Piazza un ordine REALE (lay/back). customerRef deterministico = de-dup Betfair (I1).
+
+    ``strategy_ref`` (R1, 24/09): il customerStrategyRef dell'ATTORE che piazza
+    (``ref_di_strategia``); ``None`` = costante di modulo, come prima.
 
     Certificazione 12/09 (money-critical): prezzo e size sono VALIDATI PRIMA di
     qualunque chiamata di rete. ``round(float(nan), 2)`` è NaN e finiva dritto
@@ -680,6 +720,7 @@ def place_order_live(
     if not (E.MIN_PRICE <= price_tick <= E.MAX_PRICE):
         raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
     customer_ref = (customer_ref or f"omega-{event_id}")[:32]
+    ref_strategia = ref_di_strategia(strategy_ref)   # validato PRIMA della rete
     instruction = {
         "selectionId": int(selection_id),
         "handicap": 0,
@@ -710,7 +751,7 @@ def place_order_live(
             market_id,
             [instruction],
             customer_ref=customer_ref,
-            customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+            customer_strategy_ref=ref_strategia,
         )
     ) or {}
     reports = report.get("instructionReports") or []
@@ -876,9 +917,12 @@ def place_submin_live(
     side: str = "back", customer_ref: Optional[str] = None,
     fill_or_kill: bool = True,
     best_back: Optional[float] = None, best_lay: Optional[float] = None,
-    max_stake: Optional[float] = None,
+    max_stake: Optional[float] = None, strategy_ref: Optional[str] = None,
 ) -> PlaceResult:
     """Piazza un importo SOTTO il minimo di Betfair col place-and-trim (REST).
+
+    ``strategy_ref`` (R1, 24/09): come in ``place_order_live``; vale per il
+    parcheggio e per l'eventuale ordine normale.
 
     ``fill_or_kill`` (default, ed e' il comportamento che serve a Mike): finito
     il riprezzo, la parte NON abbinata viene ritirata subito. Cosi' questa
@@ -898,6 +942,10 @@ def place_submin_live(
     side_l = str(side).lower()
     if side_l not in ("back", "lay"):
         raise ValueError(f"side non valido: {side!r}")
+    ref_strategia = ref_di_strategia(strategy_ref)   # validato PRIMA della rete
+    # ``strategy_ref`` si inoltra solo se dichiarato: chiamata identica a prima
+    # quando il chiamante non lo passa.
+    ref_kw = {} if strategy_ref is None else {"strategy_ref": strategy_ref}
     try:
         target = round(float(size), 2)
     except (TypeError, ValueError):
@@ -910,7 +958,7 @@ def place_submin_live(
         # non serve nessun trucco: e' un ordine normale
         return place_order_live(market_id=market_id, selection_id=selection_id, price=price,
                                 size=target, event_id=event_id, side=side_l,
-                                customer_ref=customer_ref)
+                                customer_ref=customer_ref, **ref_kw)
     target_tick = E.round_to_tick(float(price))
     if not (E.MIN_PRICE <= target_tick <= E.MAX_PRICE):
         raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
@@ -970,7 +1018,7 @@ def place_submin_live(
                                "persistenceType": "LAPSE"},
             }],
             customer_ref=ref,
-            customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+            customer_strategy_ref=ref_strategia,
         )
     ) or {}
     esito_park = _SUBMIN.esito_istruzione(report)
@@ -1372,9 +1420,12 @@ def _riga_corrente(o: dict) -> dict:
     }
 
 
-def list_current_orders(strategy_ref: str = CUSTOMER_STRATEGY_REF) -> list[dict]:
-    """Ordini APERTI/matchati DELLA STRATEGIA (normalizzati) per la riconciliazione."""
-    resp = call(lambda c: c.list_current_orders(customer_strategy_refs=[strategy_ref])) or {}
+def list_current_orders(strategy_ref: Any = _REF_OMEGA) -> list[dict]:
+    """Ordini APERTI/matchati DELLA STRATEGIA (normalizzati) per la riconciliazione.
+
+    ``strategy_ref``: un ref o l'elenco dei ref dell'attore (R1, 24/09)."""
+    refs = _refs_di_lettura(strategy_ref)
+    resp = call(lambda c: c.list_current_orders(customer_strategy_refs=refs)) or {}
     return [_riga_corrente(o) for o in (resp.get("currentOrders", []) or [])]
 
 
@@ -1432,7 +1483,7 @@ def _riga_regolata(o: dict) -> dict:
 
 
 def list_cleared_orders(
-    strategy_ref: str = CUSTOMER_STRATEGY_REF,
+    strategy_ref: Any = _REF_OMEGA,
     market_ids: Optional[list] = None,
     lookback_hours: int = 72,
 ) -> list[dict]:
@@ -1440,7 +1491,10 @@ def list_cleared_orders(
     (default 72h) + stati SETTLED **e** VOIDED (un ordine parzialmente matchato
     su un mercato annullato non è SETTLED): così un ordine reale non sfugge
     alla riconciliazione.
+
+    ``strategy_ref``: un ref o l'elenco dei ref dell'attore (R1, 24/09).
     """
+    refs = _refs_di_lettura(strategy_ref)
     settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
@@ -1448,7 +1502,7 @@ def list_cleared_orders(
     for status in ("SETTLED", "VOIDED"):
         resp = call(
             lambda c, s=status: c.list_cleared_orders(
-                bet_status=s, customer_strategy_refs=[strategy_ref],
+                bet_status=s, customer_strategy_refs=refs,
                 market_ids=market_ids, settled_from=settled_from,
             )
         ) or {}

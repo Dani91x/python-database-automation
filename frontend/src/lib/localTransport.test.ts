@@ -87,6 +87,9 @@ beforeEach(() => {
     vi.useFakeTimers();
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
+    // C1 (24/09): nell'app il preload espone il token di sessione; senza, gli
+    // ordini vanno sulla coda DB (collaudato in localChannel.token.test.ts).
+    vi.stubGlobal('alphascoreCanale', { token: 'ab'.repeat(32) });
 });
 
 afterEach(() => {
@@ -252,7 +255,8 @@ describe('localOrderApi — specchi ordini/posizioni', () => {
         });
         const api = localOrderApi('tennis', dbApi);
         const ws = lastWs();
-        expect(ws.url).toBe('ws://127.0.0.1:47332');
+        // C1 (24/09): canale che comanda -> si presenta col token di sessione
+        expect(ws.url).toBe(`ws://127.0.0.1:47332/?t=${'ab'.repeat(32)}`);
         ws.serverOpen();
 
         const rows = await api.fetchOrders('1.2', 'paper');

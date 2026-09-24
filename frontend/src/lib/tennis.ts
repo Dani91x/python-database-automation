@@ -940,6 +940,14 @@ export interface TennisBotDailyRow {
     commissione: number | null;
     pnl_netto: number | null;
     volume: number | null;
+    /**
+     * 24/09 (migrazione `pnl_betfair_reale_2026-09-24.sql`): di `pnl_netto`,
+     * la parte REGOLATA DA BETFAIR e quella STIMATA (pnl - commission del
+     * bot, Betfair non ha ancora regolato). `undefined` = RPC di prima
+     * (migrazione non applicata): tutto `pnl_netto` e' da considerare stimato.
+     */
+    pnl_reale?: number | null;
+    pnl_stimato?: number | null;
 }
 
 /** Un numero, o `null`. Mai zero per «non lo so». */
@@ -970,6 +978,8 @@ export async function fetchTennisBotDaily(
         commissione: numeroO(r.commissione),
         pnl_netto: numeroO(r.pnl_netto),
         volume: numeroO(r.volume),
+        // 24/09: presenti solo con la RPC nuova; assenti restano undefined
+        ...('pnl_stimato' in r ? { pnl_reale: numeroO(r.pnl_reale), pnl_stimato: numeroO(r.pnl_stimato) } : {}),
     }));
 }
 
@@ -986,6 +996,10 @@ export interface TennisBotOrderRow extends Omit<LiveOrderRow, 'source'> {
     pnl?: number | null;
     commission?: number | null;
     settled_at?: string | null;
+    /** 24/09 - netto regolato da Betfair (migrazione `pnl_betfair_reale_2026-09-24.sql`);
+     *  null/assente = non ancora: vale pnl - commission, stimato */
+    pnl_betfair?: number | null;
+    pnl_betfair_settled_at?: string | null;
 }
 
 /** get_tennis_bot_orders_today(p_mode) -> { rows: [...] }. `null` = tutte e due

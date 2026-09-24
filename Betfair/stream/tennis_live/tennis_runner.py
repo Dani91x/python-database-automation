@@ -62,6 +62,7 @@ from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from ..runner_lifecycle import EXIT_PLANNED_RESTART
 from ..scores.betfair_inplay import BetfairInPlayProvider
 from ..scores.scan_feed import ScanFeedScoreProvider
+from . import guardie_tennis as _gt
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
 from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
@@ -549,10 +550,48 @@ def _make_sink(event_id: str, bot_key: str) -> Any:
     return _sink
 
 
+def descrivi_esecuzione_bot(strat: Any, runner_mode: str) -> Dict[str, Any]:
+    """T1: come esegue DAVVERO un bot armato, in parole (per l'attivita' e i log).
+
+    ``esecuzione``: 'reale' SOLO se modalita' LIVE e dry_run spento; 'simulata'
+    se PAPER e dry_run spento (blotter simulato, client paper_trade=True);
+    'nessun ordine (dry-run)' altrimenti."""
+    mod = str(getattr(strat, "_tennis_modalita_esecuzione", "OFF") or "OFF").upper()
+    dry = bool(getattr(strat, "dry_run", True))
+    client = getattr(strat, "_tennis_client_ordini", None)
+    if dry:
+        esecuzione = "nessun ordine (dry-run)"
+    elif mod == "LIVE":
+        esecuzione = "reale"
+    else:
+        esecuzione = "simulata"
+    return {
+        "modalita_bot": getattr(strat, "_tennis_modalita_riga", "paper"),
+        "modalita_esecuzione": mod,
+        "runner": str(runner_mode or "OFF").strip().upper(),
+        "dry_run": dry,
+        "esecuzione": esecuzione,
+        "client": ("simulato affiancato (paper_trade=True)" if client is not None
+                   else "di default del processo"),
+    }
+
+
+def _scrivi_attivita_modalita(event_id: str, bot_key: str, strat: Any,
+                              runner_mode: str) -> None:
+    """Riga di attivita' ``modalita`` all'armamento: dice come il bot esegue
+    (T1: un bot paper in un runner LIVE lo deve DIRE, non solo farlo)."""
+    try:
+        tennis_db.write_tennis_bot_activity(
+            event_id, bot_key, "modalita", descrivi_esecuzione_bot(strat, runner_mode))
+    except Exception as e:  # noqa: BLE001 - l'attivita' non ferma mai l'armamento
+        logger.debug("[tennis-runner] attivita' modalita' %s/%s KO: %s", event_id, bot_key, e)
+
+
 def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
                      name_to_sel: Dict[str, int], sink: Any,
                      data_filter: Dict[str, Any], mode: str,
-                     market_ids: Optional[List[str]] = None) -> Any:
+                     market_ids: Optional[List[str]] = None,
+                     client_paper: Any = None) -> Any:
     """Istanzia un bot AGGANCIATO allo stream unico dell'evento.
 
     STREAM UNICO (#1): passa lo STESSO ``market_data_filter`` (``data_filter``) della
@@ -572,17 +611,38 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     blotter → mirror ``tennis_live_orders`` e diventano VISIBILI sul ladder come dal
     vivo. Il flag del control resta rispettato (un dry_run esplicito vince). In LIVE il
     default resta ``dry_run=True`` (prudenza sui soldi veri: va tolto consapevolmente).
+
+    T1 (24/09) - LA MODALITA' E' DEL BOT, NON DEL RUNNER. ``mode`` qui e' la
+    modalita' del PROCESSO; quella con cui il bot esegue la decide
+    ``guardie_tennis.modalita_esecuzione_bot``: LIVE solo se il runner e' LIVE E la
+    riga porta ``mode='live'``. Una riga paper (o senza ``mode``) dentro un runner
+    LIVE esegue come nel runner PAPER (stessi params, ``dry_run`` di default falso)
+    ma SOLO se le viene dato ``client_paper``: il bot viene instradato su quel
+    client simulato (``instrada_ordini_su_client``). Senza client paper il bot
+    nasce in ``dry_run`` FORZATO: non puo' piazzare niente, ne' finto ne' vero.
+    Il reale, infine, vuole ``dry_run`` ESATTAMENTE ``False`` sulla riga (prima
+    bastava un ``null``: ``bool(None)`` era gia' "reale").
     """
     cls, params_kw, needs_names = _BOT_REGISTRY[bot_key]
     params = dict(control.get("params") or {})
     params["stake"] = float(control.get("stake") or params.get("stake") or 2.0)
-    mode_u = (mode or "OFF").strip().upper()
+    runner_u = (mode or "OFF").strip().upper()
+    mode_u = _gt.modalita_esecuzione_bot(control, runner_u)
     is_live = mode_u == "LIVE"
-    if mode_u == "PAPER":
+    # un bot PAPER in un runner LIVE: il client di default del framework e' quello
+    # REALE, quindi il bot deve essere instradato sul client simulato affiancato
+    paper_in_runner_live = runner_u == "LIVE" and mode_u == "PAPER"
+    if mode_u == "PAPER" and paper_in_runner_live and client_paper is None:
+        # nessun client simulato a disposizione: il bot non deve piazzare NULLA
+        # (fail-closed, mai un ordine "paper" sul client reale)
+        params["dry_run"] = True
+    elif mode_u == "PAPER":
         # simulato per costruzione: default dry_run=False per la visibilità sul ladder
+        # (l'ordine passa dal blotter SIMULATO: SimulatedExecution, mai Betfair)
         params["dry_run"] = bool(control.get("dry_run", False))
     elif is_live:
-        params["dry_run"] = bool(control.get("dry_run", True))
+        # il reale e' un gesto per partita: SOLO un False esplicito toglie il dry-run
+        params["dry_run"] = not _gt.dry_run_esplicito_falso(control)
     else:
         # OFF: dry-run FORZATO (kill-switch, il control non può aggirarlo)
         params["dry_run"] = True
@@ -642,6 +702,13 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
         kwargs["name_to_sel"] = name_to_sel
     strat = cls(**kwargs)
     _scope_to_market(strat, market_id)
+    # T1: la modalita' viaggia con l'istanza. La leggono il trading control
+    # ``ControlloModalitaBotTennis`` (seconda rete, dentro flumine), lo specchio
+    # ordini/posizioni (``tennis_live_order_worker``) e l'attivita' d'armamento.
+    strat._tennis_modalita_riga = _gt.modalita_riga(control)
+    strat._tennis_modalita_esecuzione = mode_u
+    if paper_in_runner_live and client_paper is not None:
+        _gt.instrada_ordini_su_client(strat, client_paper)
     # CARRY-OVER delle stats (fix 17/07, incongruenza trovata dal monitor):
     # un restart del framework RE-ISTANZIA i bot e l'heartbeat sovrascriveva
     # le stats del control con ZERI — il P&L già fatto nel match spariva dal
@@ -1135,6 +1202,9 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
 def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     need_restart = False
     now_mono = time.monotonic()
+    # T2 (24/09): a guardia d'avvio armata un bot nuovo NON provoca il restart
+    # che lo armerebbe (si riprova la ripresa; disarmi e protezioni girano).
+    guardia_armata = _gt.guardia_blocca()
     for event_id in list(session.market_meta.keys()):
         desired = _desired_controls(event_id)
         stopping = _stopping_controls(event_id)
@@ -1153,7 +1223,7 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         }
         # nuovi bot richiesti non ancora ospitati → restart per agganciarli allo stream
         for bot_key in desired:
-            if (event_id, bot_key) not in session.hosted:
+            if (event_id, bot_key) not in session.hosted and not guardia_armata:
                 need_restart = True
         # MISSIONE COMPIUTA (one_tick_per_phase): il bot alza ``mission_done``
         # dopo 1 green pre-match + 1 green in-play (e si e' gia' auto-appiattito
@@ -1516,11 +1586,20 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
     # runner li ri-arma da solo. Un riavvio dal watchdog (stesso APP_BOOT_ID)
     # non tocca niente. Va PRIMA della pulizia orfani, che guarda solo gli
     # heartbeat vecchi e una riga 'requested' fresca non la vede nemmeno.
-    from .tennis_bot_service import ferma_bot_al_nuovo_avvio as _ferma_al_boot
-    try:
-        _ferma_al_boot()
-    except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio del runner
-        logger.warning("[tennis-runner] controllo d'avvio bot KO (ignorato): %s", e)
+    # T2 (24/09) - GUARDIA D'AVVIO (gemella di ``Guardia("runner_calcio")``): con
+    # gli ordini accesi (PAPER/LIVE) la guardia si ARMA qui e la disarma SOLO una
+    # ripresa riuscita (bot di un avvio vecchio fermati, coda stantia chiusa,
+    # specchio paper orfano chiuso). Finche' e' armata nessun bot si arma e la
+    # coda del desktop non si esegue; si riprova ogni 10 s dai worker.
+    if live_order_mode() in ("PAPER", "LIVE"):
+        _gt.arma_guardia_runner()
+        _gt.ripresa_all_avvio()
+    else:
+        from .tennis_bot_service import ferma_bot_al_nuovo_avvio as _ferma_al_boot
+        try:
+            _ferma_al_boot()
+        except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio del runner
+            logger.warning("[tennis-runner] controllo d'avvio bot KO (ignorato): %s", e)
     _cleanup_orphan_bot_controls()  # mai bot 'running' fantasma dopo un riavvio
     # A7 — canale LOCALE desktop (bind SOLO 127.0.0.1); best-effort come il calcio.
     from .. import local_channel as _lc
@@ -1583,6 +1662,30 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             )
             framework = Flumine(client=client)
             _wire_paper_execution(framework, mode)
+            # T1 (24/09) - in LIVE si AFFIANCA al client reale un client SIMULATO,
+            # come nel runner calcio (F0): i bot dichiarati PAPER piazzano su di lui
+            # (``_instantiate_bot(..., client_paper=...)``). Se non si costruisce,
+            # i bot paper nascono in dry-run forzato: mai sul client reale.
+            client_paper = None
+            if str(mode).strip().upper() == "LIVE":
+                try:
+                    client_paper = _gt.build_client_paper_affiancato(trading)
+                    framework.add_client(client_paper)
+                    # il paper affiancato dorme il betDelay VIGENTE come il runner
+                    # PAPER (fix GAP-5): stessa esecuzione simulata
+                    install_fresh_delay_execution(framework)
+                    logger.info("[tennis-runner] T1: client PAPER affiancato al client "
+                                "REALE (%s): i bot 'paper' non toccano mai l'Exchange.",
+                                client_paper.username)
+                except Exception as e:  # noqa: BLE001 - fail-closed: bot paper in dry-run
+                    logger.error("[tennis-runner] client PAPER affiancato NON costruito: "
+                                 "i bot 'paper' nasceranno in dry-run forzato: %s", e)
+                    client_paper = None
+            if orders_enabled:
+                # T1 seconda rete + T2 kill-switch, DENTRO flumine (ogni place, anche
+                # quello di un bot, passa di qui prima di andare al client)
+                framework.add_trading_control(_gt.ControlloModalitaBotTennis)
+                framework.add_trading_control(_gt.ControlloKillSwitchTennis)
             # 23/09 - saldo del conto riletto dopo ogni ordine REALE confermato
             # (ladder tennis e 4 bot) e ogni regolazione: una chiamata per
             # evento, ordini simulati ignorati, SOLO in LIVE.
@@ -1596,16 +1699,25 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             shared_cap = _make_capture(all_market_ids[0], "*", market_ids=all_market_ids)
             shared_cap.market_data_filter = data_filter
             framework.add_strategy(shared_cap)
+            # T2 (24/09): a guardia d'avvio armata (ripresa non riuscita) NESSUN bot
+            # si arma; le righe restano 'requested' e si armano al restart che il
+            # bot_control_worker chiede appena la ripresa riesce.
+            guardia_armata = _gt.guardia_blocca()
+            if guardia_armata:
+                logger.error("[tennis-runner] guardia d'avvio ARMATA: nessun bot armato "
+                             "in questo giro (ripresa non ancora riuscita).")
             for event_id, meta in session.market_meta.items():
                 cap = shared_cap
                 session.capture[event_id] = cap
-                for bot_key, ctrl in _desired_controls(event_id).items():
+                desiderati = {} if guardia_armata else _desired_controls(event_id)
+                for bot_key, ctrl in desiderati.items():
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "arming")
                     sink = _make_sink(event_id, bot_key)
                     try:
                         bot = _instantiate_bot(
                             bot_key, ctrl, meta["market_id"], meta["name_to_sel"], sink,
                             data_filter, mode, market_ids=all_market_ids,
+                            client_paper=client_paper,
                         )
                     except Exception as e:  # noqa: BLE001
                         logger.warning("[tennis-runner] arm KO %s/%s: %s", event_id, bot_key, e)
@@ -1624,6 +1736,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                         )
                     session.hosted[(event_id, bot_key)] = bot
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "running", started=True)
+                    _scrivi_attivita_modalita(event_id, bot_key, bot, mode)
 
             # 23/09: il worker gira alla cadenza del CANALE (mai < 20 ms); il DB
             # resta a LADDER_PUBLISH_SEC dentro il worker (ladder_canale.py).

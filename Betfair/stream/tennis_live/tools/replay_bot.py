@@ -860,6 +860,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     dry = dry_run_scenario(scenario)
     if dry is not None:
         control["dry_run"] = dry
+    # T1 (24/09): la riga per partita porta la modalita' DEL BOT, come la scrive
+    # il ponte (`tennis_bot_service.riconcilia_interruttori`). Lo scenario `live`
+    # e' un bot acceso in LIVE dall'utente: senza `mode='live'` il runner lo
+    # eseguirebbe PAPER (riga senza modalita' = paper, mai ereditata dal runner).
+    control["mode"] = "live" if modalita == "LIVE" else "paper"
 
     from betfairlightweight.filters import streaming_market_data_filter
     from flumine import FlumineSimulation

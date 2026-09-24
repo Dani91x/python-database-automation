@@ -405,6 +405,8 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     proposta_scritta: { label: 'USCITA PROPOSTA · aspetta la tua firma', cls: A_WARN },
     proposta_riproposta: { label: 'USCITA RIPROPOSTA · la situazione è cambiata', cls: A_WARN },
     proposta_decaduta: { label: 'PROPOSTA DECADUTA · la condizione non regge più', cls: A_MUTED },
+    // 24/09 — la scheda resta viva ma il bot non la proporrebbe più: decidi tu
+    proposta_non_piu_valida: { label: 'USCITA NON PIÙ VALIDA · la scheda resta, decidi tu', cls: A_WARN },
     uscita_approvata: { label: 'USCITA APPROVATA DA TE (decisa dal bot)', cls: A_CLOSE },
     // ---- regolamento
     settle: { label: 'REGOLATA', cls: A_PLAIN },

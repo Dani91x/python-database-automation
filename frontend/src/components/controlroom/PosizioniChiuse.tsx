@@ -315,6 +315,14 @@ export function PosizioniChiuse({ chiuse, sport, giorno, testId = 'cr-chiuse' }:
                                         ? "CHIUSURA ORFANA: la sua apertura non e' fra le righe lette. Questo e' il P&L della sola gamba di chiusura, non il netto dell'operazione"
                                         : 'P&L della POSIZIONE intera: apertura e coperture insieme'}>
                                     {fmtMoney(p.pnlGlobale, { signed: true })}
+                                    {/* 24/09 - soldi veri non ancora regolati da Betfair: si DICHIARA */}
+                                    {p.fontePnl === 'stimato' && p.modo === 'live' && (
+                                        <span className="ml-1 text-[9px] font-normal text-amber-300/80"
+                                            data-testid={`cr-chiusa-stimato-${p.id}`}
+                                            title="calcolo del bot: Betfair non ha ancora regolato. Diventa il netto di Betfair al regolamento">
+                                            stimato
+                                        </span>
+                                    )}
                                 </span>
 
                                 <span className="text-[9px] text-white/25 font-mono w-10 text-right">

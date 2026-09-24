@@ -290,6 +290,16 @@ export function GridView({
         return () => clearInterval(t);
     }, [refreshPositions, mode]);
 
+    // fix B33 punto 2: se la sorgente ordini offre un push (canale locale o realtime
+    // DB), il refresh scatta SUBITO invece di aspettare il prossimo giro del poll
+    // qui sopra. Il poll RESTA (rete di sicurezza invariata): questo è un trigger
+    // aggiuntivo, mai una sostituzione — nessuna sorgente lo offre → nessun cambio.
+    useEffect(() => {
+        if (!marketId || mode === 'off' || !orderApi.subscribePositions) return undefined;
+        const unsub = orderApi.subscribePositions(marketId, () => { void refreshPositions(); });
+        return () => unsub();
+    }, [marketId, mode, orderApi, refreshPositions]);
+
     // ---- MONEY-CRITICAL: la barra di conferma LIVE SCADE (prezzo stantio) ----
     useEffect(() => {
         if (!confirmIntent) return;

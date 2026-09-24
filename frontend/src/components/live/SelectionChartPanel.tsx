@@ -218,6 +218,15 @@ export function SelectionChartPanel({ marketId, ladderSource, defaultBucketMs }:
                 </div>
             </div>
 
+            {/* fix B33 punto 1: eta'/fonte dichiarate come in LadderView (l'indicatore
+                "Aggiornato" gia' esistente) -- solo se la sorgente iniettata le porta
+                (LadderSource.fonte e' opzionale: default DB non la ha, sorgenteLadderAlMs si'). */}
+            {row?.ladder?.updated_ms && (
+                <div className="px-2 pt-1 text-[9px] text-slate-500 tabular-nums text-right">
+                    Aggiornato: {new Date(row.ladder.updated_ms).toLocaleTimeString('it')}
+                    {source.fonte ? ` (${source.fonte(marketId) === 'canale' ? 'canale' : 'DB'})` : ''}
+                </div>
+            )}
             {!hasChart ? (
                 <div className="h-56 flex items-center justify-center px-4">
                     <span className="text-[11px] text-slate-400 text-center">

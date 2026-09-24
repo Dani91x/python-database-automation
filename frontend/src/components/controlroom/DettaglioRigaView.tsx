@@ -19,6 +19,7 @@ import { pnlClass } from '@/lib/tradeStatus';
 import { comeLabel, marcatoreRiga } from '@/lib/chiusuraUtente';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { isBotTennis } from '@/lib/controlRoom';
+import { BottoneChiudiRiga } from '@/components/controlroom/BottoneChiudiRiga';
 import type { DettaglioRiga, QuotaViva } from '@/components/controlroom/dettaglioRiga';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
@@ -325,6 +326,18 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                     )}
                 </span>
             )}
+            {/* B16 (24/09) — il «Chiudi» di QUESTA riga, cablato sul SUO bot
+                (`chiudiRiga.ts`): si monta solo sotto la pagina della Control
+                Room (contesto), dice sempre perche' e' spento. */}
+            <BottoneChiudiRiga
+                riga={{
+                    bot: o.bot, id: o.id, eventId: o.eventId ?? null,
+                    modalita: o.modalita, stato: o.stato, chiudeId: o.chiudeId ?? null,
+                    // tennis: lo stato flumine non dice «regolato», il P&L si'
+                    regolata: isBotTennis(o.bot) && o.pnl != null,
+                }}
+                testId={`${testId}-chiudi`}
+            />
             {o.quale && (
                 <span className="text-[9px] text-white/30 uppercase"
                     title="la regola che ha prodotto questa operazione">

@@ -206,7 +206,7 @@ _CACHE_SCANNER: dict[str, Any] = {}
 # ``svuota_le_cache``, che pero' ne svuota la memoria delle righe) e i conti del
 # giro: quante righe sono arrivate dal canale e quante dal database, per
 # ``stats.fonte_scan``. Vedi il blocco "IL CANALE DELLO SCANNER" piu' sotto.
-_CLIENT_SCAN: dict[str, Any] = {"client": None, "cache": None}
+_CLIENT_SCAN: dict[str, Any] = {"client": None, "cache": None, "condiviso": False}
 _CACHE_FONTE_SCAN: dict[str, int] = {}
 # 23/09 (B-2, revisore B): le partite con una POSIZIONE VIVA del bot, come le ha
 # viste l'ultimo giro (``settle_open`` -> 'open', ``poll_flumine_pending`` ->
@@ -272,9 +272,13 @@ def svuota_le_cache() -> None:
     _CACHE_FONTE_SCAN.clear()
     _CACHE_POSIZIONI_VIVE.clear()
     try:
-        memoria = _CLIENT_SCAN.get("cache")
-        if memoria is not None:
-            memoria.azzera()
+        # B33-3 (24/09): un client CONDIVISO col feed unico (PUNTEGGI_CANALE,
+        # vedi ``avvia_client_scan``) non e' di Omega: la memoria e' quella di
+        # ``scan_feed.lettore_canale()`` e la svuota lui, non Omega.
+        if not _CLIENT_SCAN.get("condiviso"):
+            memoria = _CLIENT_SCAN.get("cache")
+            if memoria is not None:
+                memoria.azzera()
     except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
         pass
     _CACHE_AGGREGATI.svuota()
@@ -673,6 +677,34 @@ def avvia_client_scan() -> bool:
     try:
         from Betfair.safe_strategy import canale_scan as CS
 
+        # B33-3 (coordinatore, 24/09): il feed unico (``PUNTEGGI_CANALE``,
+        # ``scan_feed.lettore_canale()``) puo' GIA' avere un client di QUESTO
+        # processo sulla STESSA porta (47336) per lo STESSO scopo (righe di
+        # ``safe_strategy_scan``): se c'e', lo si RIUSA invece di aprirne un
+        # secondo — stesso principio "una connessione sola" gia' applicato qui
+        # sotto alla sveglia F5 (vedi ``_avvia_sveglia``). Le righe che Omega
+        # legge e le decisioni che ne derivano restano IDENTICHE (stesso
+        # socket, stessa ``CacheScan``): cambia solo il numero di connessioni
+        # aperte. Con ``PUNTEGGI_CANALE`` spento (di serie) ``lettore_canale()``
+        # torna ``None`` e questo ramo e' BYTE-IDENTICO a prima.
+        condiviso = _scan_feed.lettore_canale()
+        if condiviso is not None:
+            # ``interessa`` di default e' ``None`` (nessuna sveglia): lo si
+            # aggancia SOLO se ancora libero, mai sovrascrivendo un aggancio
+            # gia' fatto da chi ha creato il client per primo.
+            if condiviso.evento is None and condiviso.interessa is None:
+                condiviso.evento = _SvegliaDalCanale()
+                condiviso.interessa = _evento_con_posizione_viva
+            _CLIENT_SCAN["cache"] = condiviso.cache
+            _CLIENT_SCAN["client"] = condiviso
+            _CLIENT_SCAN["condiviso"] = True
+            logger.info("[omega] righe dello scanner dal client CONDIVISO col feed unico "
+                        "(porta %d, PUNTEGGI_CANALE gia' attivo): nessuna seconda "
+                        "connessione; sveglia del ciclo sulle partite con posizione "
+                        "viva, al massimo un giro ogni %.1f s",
+                        condiviso.porta, giro_minimo_canale_s())
+            return True
+
         memoria = CS.CacheScan()
         client = CS.ClientScan(CS.porta_scan(), memoria,
                                evento=_SvegliaDalCanale(),
@@ -680,6 +712,7 @@ def avvia_client_scan() -> bool:
         client.avvia()
         _CLIENT_SCAN["cache"] = memoria
         _CLIENT_SCAN["client"] = client
+        _CLIENT_SCAN["condiviso"] = False
         logger.info("[omega] righe dello scanner dal canale locale %d ATTIVE (il "
                     "database resta la lista e il ripiego); sveglia del ciclo "
                     "sulle partite con posizione viva, al massimo un giro ogni %.1f s",
@@ -744,14 +777,20 @@ def esiti_ciclo() -> Any:
 
 
 def ferma_client_scan() -> None:
-    """Spegne e dimentica il client. Per i test e per il riavvio."""
+    """Spegne e dimentica il client. Per i test e per il riavvio.
+
+    B33-3: un client CONDIVISO col feed unico (``condiviso=True``) non si
+    ferma qui — non e' di Omega, e' di ``scan_feed`` (``azzera_lettore_canale``
+    lo spegne quando decide lui): fermarlo qui spegnerebbe anche il feed unico
+    per tutto il resto del processo che lo usa.
+    """
     client = _CLIENT_SCAN.get("client")
-    if client is not None:
+    if client is not None and not _CLIENT_SCAN.get("condiviso"):
         try:
             client.ferma()
         except Exception:  # noqa: BLE001
             pass
-    _CLIENT_SCAN.update({"client": None, "cache": None})
+    _CLIENT_SCAN.update({"client": None, "cache": None, "condiviso": False})
     _CACHE_FONTE_SCAN.clear()
 
 
@@ -1858,6 +1897,23 @@ def _leg_note_certain_failure(event_id: str, leg: Optional[str], now: datetime,
     return n + 1
 
 
+def _freno_rest_aperture() -> Optional[str]:
+    """O1 (24/09) - kill-switch davanti a OGNI apertura REST di Omega.
+
+    ``LIVE_KILL_SWITCH`` e ``betfair_live_settings.kill_switch`` fermavano solo il
+    worker della coda: con il runner giu' (ripiego REST) Omega piazzava lo
+    stesso. Il freno e' la funzione CONDIVISA ``controls.motivo_kill_switch``
+    (nessuna copia). Import non riuscito = freno non valutabile = apertura ferma.
+    Le chiusure di Omega non passano di qui (``safe_strategy.execution``)."""
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001 - freno non valutabile: si ferma
+        logger.error("[omega] kill-switch non valutabile, apertura FERMATA: %s", str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
 def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], now: datetime,
                          reason: str, extra: Optional[dict] = None,
                          base_meta: Optional[dict] = None) -> None:
@@ -2403,6 +2459,17 @@ def _place_one(
         if _live_flumine_expected(params or {}):
             db.log("live_fok_fallback", {"event_id": ev.event_id,
                                          "trade_id": trade_id, "reason": gate_reason})
+        # O1 (24/09): il kill-switch del worker (env + DB) vale anche qui. Questa
+        # lay e' SEMPRE un'apertura: a freno tirato nessun ordine parte, la
+        # riserva si chiude come un rifiuto CERTO (nessun ordine esiste).
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.critical("[omega] apertura REST FERMATA dal kill-switch (%s): trade %s, "
+                            "evento %s - nessun ordine inviato", blocco, trade_id, ev.event_id)
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
+                                 {"motivo": blocco, "percorso": "rest"},
+                                 base_meta={**keep_meta, "requested_size": req_size})
+            return 0
         try:
             # §16 (review C1): customerOrderRef PER GAMBA (omega-t<id>), mai per evento —
             # con due gambe per partita il secondo ordine veniva rifiutato
@@ -4600,6 +4667,23 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         if _live_flumine_expected(params):
             db.log("live_fok_fallback", {"event_id": event_id, "trade_id": trade_id,
                                          "reason": gate_reason})
+        # O1 (24/09): kill-switch condiviso (env + DB). Il manuale apre sempre una
+        # riga NUOVA (le chiusure passano da ``_manual_cashout`` -> close_trade):
+        # a freno tirato nessun ordine parte e la riga si chiude come rifiuto CERTO.
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.critical("[omega] ordine manuale REST FERMATO dal kill-switch (%s): "
+                            "trade %s - nessun ordine inviato", blocco, trade_id)
+            db.update_trade(trade_id, status="error", pnl=0.0,
+                            meta={**manual_meta, "reason": "kill_switch",
+                                  "motivo": blocco, "percorso": "rest",
+                                  "leg_failed": True, "error_final": True,
+                                  "error_at": now.isoformat()})
+            db.log("manual_place_exception", {
+                "trade_id": trade_id, "event_id": event_id, "side": side,
+                "price": price, "size": size, "mode": mode,
+                "reason": "kill_switch", "motivo": blocco})
+            return {"error": blocco, "trade_id": trade_id}
         try:
             # ref PER-GAMBA (omega-m<trade_id>): due ordini manuali sullo stesso
             # evento (o manuale+auto) NON devono mai condividere il customerOrderRef,
@@ -4799,6 +4883,33 @@ def _exit_kind_della_proposta(payload: dict[str, Any],
     return kind, testi.get(motivo, "Uscita proposta dal bot, approvata da te")
 
 
+def _richiesta_non_di_questa_riga(payload: dict[str, Any],
+                                  tr: dict[str, Any]) -> Optional[str]:
+    """B16 (24/09) - la richiesta di chiusura e' davvero per QUESTA riga di Omega?
+
+    Il «Chiudi» della Control Room scrive nel payload il bot, la partita e la
+    modalita' della riga su cui l'utente ha cliccato. Gli id delle tabelle dei
+    bot collidono (una riga Omega e una Safe possono avere lo stesso numero):
+    una richiesta che dichiara un ALTRO bot, un'altra partita o un'altra
+    modalita' e' ambigua e si rifiuta, mai un ordine «per sicurezza».
+    Le chiavi ASSENTI non si inventano: i gesti di prima (scheda di Omega,
+    proposte approvate) non le portano e restano validi come sono.
+    Ritorna il motivo del rifiuto, oppure None."""
+    bot = payload.get("bot")
+    if bot not in (None, "") and str(bot) != "omega":
+        return f"la richiesta e' per il bot '{bot}', non per Omega"
+    ev = payload.get("event_id")
+    if ev not in (None, "") and str(ev) != str(tr.get("event_id") or ""):
+        return (f"la partita della richiesta ({ev}) non e' quella della riga "
+                f"({tr.get('event_id')})")
+    modo = payload.get("mode")
+    modo_riga = str(tr.get("mode") or "paper")
+    if modo not in (None, "") and str(modo) != modo_riga:
+        return (f"la modalita' della richiesta ({modo}) non e' quella della riga "
+                f"({modo_riga}): paper e live non si mischiano")
+    return None
+
+
 def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     """Chiude a mercato (green-up totale o cash-out parziale) UNA gamba aperta.
 
@@ -4830,6 +4941,16 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         tr = next((t for t in db.list_trades("open") if int(t.get("id") or 0) == tid), None)
     if tr is None:
         return {"error": "trade_inesistente"}
+    # B16 (24/09): prima dello stato, l'IDENTITA' - una richiesta per un altro
+    # bot, un'altra partita o un'altra modalita' non si esegue (fail-closed).
+    ambigua = _richiesta_non_di_questa_riga(payload, tr)
+    if ambigua is not None:
+        db.log("error", {"reason": "richiesta_ambigua", "trade_id": tid,
+                         "event_id": tr.get("event_id"), "motivo": ambigua,
+                         "bot_richiesta": payload.get("bot"),
+                         "mode_richiesta": payload.get("mode"),
+                         "mode_riga": tr.get("mode")})
+        return {"error": "richiesta_ambigua", "message": f"rifiutato: {ambigua}"}
     if str(tr.get("status")) != "open":
         return {"error": f"trade_non_aperto:{tr.get('status')}"}
 

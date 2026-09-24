@@ -26,8 +26,22 @@ import pytest
 from Betfair.omega import omega_service as S
 from Betfair.omega.tests import traccia_canale_scan_2026_09_23 as T
 from Betfair.safe_strategy import canale_scan as CS
+from Betfair.stream.scores import scan_feed as SF
 
 ENV = "OMEGA_LEGGE_CANALE"
+
+
+@pytest.fixture(autouse=True)
+def _punteggi_canale_neutro(monkeypatch):
+    """B33-3 (coordinatore, 24/09): come in ``test_omega_legge_canale_2026_09_23.py``
+    -- questo file prova la sveglia col client PROPRIO di Omega; un
+    ``PUNTEGGI_CANALE`` REALE nell'ambiente farebbe riusare il client
+    condiviso del feed unico al posto di quello che ``ambiente`` costruisce
+    e osserva (``client.svegliate``)."""
+    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
+    SF.azzera_lettore_canale()
+    yield
+    SF.azzera_lettore_canale()
 
 
 class _Orologio:

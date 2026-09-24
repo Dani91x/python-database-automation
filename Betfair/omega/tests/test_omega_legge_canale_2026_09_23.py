@@ -44,6 +44,23 @@ from Betfair.stream.scores import scan_feed as SF
 ENV = "OMEGA_LEGGE_CANALE"
 
 
+@pytest.fixture(autouse=True)
+def _punteggi_canale_neutro(monkeypatch):
+    """B33-3 (coordinatore, 24/09): questo file prova SOLO ``OMEGA_LEGGE_CANALE``
+    in isolamento, col client PROPRIO di Omega. Da quando ``avvia_client_scan``
+    puo' riusare il client del feed unico (``scan_feed.lettore_canale()``,
+    interruttore ``PUNTEGGI_CANALE``), un valore REALE di ``PUNTEGGI_CANALE``
+    nell'ambiente (il ``.env`` del checkout principale: ``load_dotenv`` risale
+    ai genitori anche da un worktree, vedi ``test_punteggi_canale_2026_09_23.py``
+    che si difende allo stesso modo) farebbe riusare un client CONDIVISO al
+    posto di quello proprio che questi test costruiscono e osservano -- si
+    forza spento e si azzera il lettore di processo, qui e a fine test."""
+    monkeypatch.delenv(SF.ENV_PUNTEGGI_CANALE, raising=False)
+    SF.azzera_lettore_canale()
+    yield
+    SF.azzera_lettore_canale()
+
+
 # ===========================================================================
 # aiuti
 # ===========================================================================

@@ -104,6 +104,46 @@ def get_live_settings(force: bool = False) -> Dict[str, Any]:
     return _SETTINGS_CACHE["data"]
 
 
+def motivo_kill_switch() -> Optional[str]:
+    """O1 (24/09) - IL FRENO D'EMERGENZA, UNO SOLO PER TUTTE LE STRADE.
+
+    Motivo per cui un'APERTURA reale non deve partire, o None. Sono gli stessi
+    due interruttori che ferma il worker della coda (``live_order_worker``:
+    ``_kill_switch() or _db_kill_switch()``), letti a caldo:
+
+      * ``LIVE_KILL_SWITCH=true`` nell'ambiente (``config_stream.live_kill_switch``,
+        riletto a ogni chiamata)          -> ``"live_kill_switch_attivo"``;
+      * ``betfair_live_settings.kill_switch`` (RPC ``get_live_settings``, cache
+        ~2 s, stessa colonna che legge il worker) -> ``"db_kill_switch_attivo"``.
+
+    Serve alle strade REST che il worker non vede (Omega e Safe in ripiego, Mike):
+    prima ``LIVE_KILL_SWITCH`` fermava il worker ma non Omega in ripiego.
+    Chi chiama lo applica SOLO alle aperture: le chiusure passano sempre (stessa
+    regola di ``live_order_worker._CLOSING_ACTIONS``).
+
+    Lettura del DB: stessa semantica del resto del modulo (ultimo snapshot
+    valido se il DB non risponde). Un errore INATTESO qui dentro NON e' un via
+    libera: si risponde ``"kill_switch_illeggibile"`` (fail-closed).
+    """
+    try:
+        from .. import config_stream  # import pigro: nessun ciclo all'avvio
+
+        if config_stream.live_kill_switch():
+            return "live_kill_switch_attivo"
+    except Exception:  # noqa: BLE001 - freno non leggibile: si ferma
+        logger.error("[live-control] LIVE_KILL_SWITCH non leggibile: apertura FERMATA",
+                     exc_info=True)
+        return "kill_switch_illeggibile"
+    try:
+        if bool(get_live_settings().get("kill_switch")):
+            return "db_kill_switch_attivo"
+    except Exception:  # noqa: BLE001 - freno non leggibile: si ferma
+        logger.error("[live-control] kill_switch del DB non leggibile: apertura FERMATA",
+                     exc_info=True)
+        return "kill_switch_illeggibile"
+    return None
+
+
 def _max_exposure_per_selection() -> Optional[float]:
     return _f(get_live_settings().get("max_exposure_per_selection"))
 

@@ -19,17 +19,97 @@ Protocollo (JSON, una riga per messaggio):
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import queue
+import secrets
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
+from urllib.parse import parse_qs, urlsplit
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_METHODS = frozenset({"order", "snapshot"})
+
+# ---------------------------------------------------------------------------
+# C1 (24/09) - ORIGINE + TOKEN DI SESSIONE.
+#
+# Un WebSocket del browser NON e' soggetto a CORS: prima di oggi qualunque
+# pagina aperta sulla macchina poteva collegarsi a ws://127.0.0.1:47331 e
+# mandare {"m": "order"}. Due chiavi, entrambe necessarie per un comando che
+# ESEGUE:
+#
+# 1. ORIGINE. Un browser mette SEMPRE l'header ``Origin`` e una pagina non puo'
+#    falsificarlo. Si accettano solo le origini dell'app (la UI servita da
+#    ``desktop/main.js`` su 127.0.0.1:47330) e quelle scritte a mano in
+#    ``LOCAL_CHANNEL_ORIGINS`` (virgole). Nessun header Origin = client NON
+#    browser (i lettori Python dei bot, la sveglia): ammesso, perche' un
+#    processo locale che volesse mentire potrebbe comunque farlo. "null" (iframe
+#    in sandbox, pagine data:/file:) NON e' mai ammesso. Origine estranea ->
+#    handshake RIFIUTATO (HTTP 403) con il motivo nel log.
+# 2. TOKEN. I metodi che ESEGUONO (``order``) passano solo da una connessione
+#    che si e' presentata col token di sessione (``?t=<token>`` nel percorso).
+#    Il token lo genera ``desktop/main.js`` una volta per avvio dell'app e lo
+#    passa ai runner nell'ambiente (``LOCAL_CHANNEL_TOKEN``, la stessa via di
+#    ``APP_BOOT_ID``) e alla pagina dal preload. Senza token (o con un token
+#    sbagliato) il comando e' RIFIUTATO, la connessione CHIUSA, il motivo nel
+#    log: mai un comando eseguito. I lettori e i push non chiedono token.
+#    Runner avviato fuori dall'app (niente variabile): token CASUALE che nessuno
+#    conosce -> nessun comando dal canale, la UI usa la coda DB (fail-closed).
+# ---------------------------------------------------------------------------
+_METODI_CHE_ESEGUONO = frozenset({"order"})
+ENV_TOKEN = "LOCAL_CHANNEL_TOKEN"
+ENV_ORIGINI = "LOCAL_CHANNEL_ORIGINS"
+# la UI dell'app desktop (desktop/main.js: UI_PORT = 47330, carica 127.0.0.1)
+ORIGINI_APP = frozenset({"http://127.0.0.1:47330", "http://localhost:47330"})
+_TOKEN_MIN_LEN = 32
+_CHIUSURA_POLICY = 1008   # RFC 6455: violazione di policy
+
+
+def origini_ammesse(extra: Optional[str] = None) -> frozenset:
+    """Le origini browser ammesse: quelle dell'app piu' ``LOCAL_CHANNEL_ORIGINS``.
+
+    "null" non entra mai, nemmeno se scritto nella variabile: e' l'origine di
+    qualunque iframe in sandbox o pagina locale, cioe' di chiunque."""
+    grezzo = os.getenv(ENV_ORIGINI, "") if extra is None else extra
+    scritte = {o.strip().rstrip("/") for o in str(grezzo or "").split(",") if o.strip()}
+    scritte.discard("null")
+    return frozenset(ORIGINI_APP | scritte)
+
+
+def token_di_sessione() -> str:
+    """Il token dei comandi: quello dell'app (env) se valido, altrimenti uno
+    CASUALE che nessuno conosce (nessun comando accettato dal canale)."""
+    t = str(os.getenv(ENV_TOKEN, "") or "").strip()
+    if len(t) >= _TOKEN_MIN_LEN:
+        return t
+    if t:
+        logger.warning("[local-ws] %s troppo corto (%d caratteri, minimo %d): ignorato, "
+                       "nessun comando accettato dal canale.", ENV_TOKEN, len(t), _TOKEN_MIN_LEN)
+    else:
+        logger.warning("[local-ws] %s assente (runner avviato fuori dall'app): nessun "
+                       "comando ordine accettato dal canale, la UI usa la coda DB.", ENV_TOKEN)
+    return secrets.token_hex(32)
+
+
+def _origine_di(request: Any) -> Optional[str]:
+    """L'header Origin della richiesta di connessione (solo per il log)."""
+    try:
+        return request.headers.get("Origin") if request is not None else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def token_dal_percorso(percorso: Any) -> Optional[str]:
+    """Il token presentato nel percorso di connessione (``?t=...``), o None."""
+    if not isinstance(percorso, str) or "?" not in percorso:
+        return None
+    valori = parse_qs(urlsplit(percorso).query).get("t") or []
+    return str(valori[0]) if len(valori) == 1 and valori[0] else None
 _MAX_QUEUE = 200  # anti-runaway: mai accumulare comandi all'infinito
 # LETTORI (23/09, esiti degli ordini): un client che si collega al percorso
 # ``/lettore/<topic>[,<topic>...]`` e' un LETTORE. Riceve SOLO i topic che ha
@@ -70,9 +150,20 @@ class LocalRequest:
 class LocalChannel:
     """Server WS su localhost. publish/respond sono THREAD-SAFE (call_soon_threadsafe)."""
 
-    def __init__(self, port: int, sport: str = "calcio", solo_lettura: bool = False) -> None:
+    def __init__(self, port: int, sport: str = "calcio", solo_lettura: bool = False,
+                 token: Optional[str] = None,
+                 origini: Optional[Iterable[str]] = None) -> None:
         self.port = int(port)
         self.sport = sport
+        # C1 (24/09): chi puo' collegarsi (origini browser) e chi puo' comandare
+        # (token). ``None`` = dall'ambiente (vedi ``token_di_sessione`` e
+        # ``origini_ammesse``); i test passano valori espliciti.
+        self._token: str = str(token) if token else token_di_sessione()
+        self._origini: frozenset = (frozenset(str(o).rstrip("/") for o in origini) - {"null"}
+                                    if origini is not None else origini_ammesse())
+        # connessioni che si sono presentate col token giusto. SOLO thread del loop.
+        self._autorizzati: set = set()
+        self._conti_rifiuti: Dict[str, int] = {"origine": 0, "token": 0}
         # CANALE DI SOLA USCITA (14/09). I canali dei BOT (Mike, Omega, Safe)
         # servono a mostrare, non a comandare: nessuno drena la loro coda, e una
         # richiesta che arrivasse resterebbe li' senza risposta finche' la coda
@@ -142,7 +233,8 @@ class LocalChannel:
 
         self._loop = asyncio.get_running_loop()
         try:
-            async with serve(self._handler, "127.0.0.1", self.port):
+            async with serve(self._handler, "127.0.0.1", self.port,
+                             process_request=self._controlla_origine):
                 self._started.set()
                 logger.info("[local-ws] canale locale %s attivo su 127.0.0.1:%d", self.sport, self.port)
                 await asyncio.Future()  # per sempre (thread daemon)
@@ -150,11 +242,41 @@ class LocalChannel:
             self._loop = None
             self._started.set()
 
+    def _controlla_origine(self, connection: Any, request: Any) -> Any:
+        """C1: handshake RIFIUTATO (403) se un browser si presenta da un'origine
+        che non e' quella dell'app. Senza header Origin (client non browser) si
+        passa: il token decide poi se puo' comandare. Mai solleva."""
+        try:
+            origini = list(request.headers.get_all("Origin"))
+        except Exception:  # noqa: BLE001 - header illeggibili: si rifiuta
+            origini = ["<illeggibile>"]
+        if not origini:
+            return None
+        origine = str(origini[0]).rstrip("/")
+        if len(origini) == 1 and origine in self._origini:
+            return None
+        self._conti_rifiuti["origine"] += 1
+        logger.warning("[local-ws] connessione RIFIUTATA sulla porta %d: origine non "
+                       "ammessa %r (ammesse: %s). Nessun comando puo' arrivare da li'.",
+                       self.port, origini if len(origini) != 1 else origine,
+                       ", ".join(sorted(self._origini)))
+        return connection.respond(403, "origine non ammessa\n")
+
+    def _token_valido(self, presentato: Optional[str]) -> bool:
+        if not presentato:
+            return False
+        return hmac.compare_digest(str(presentato).encode("utf-8"),
+                                   self._token.encode("utf-8"))
+
     async def _handler(self, ws: Any) -> None:
-        filtro = topic_del_lettore(getattr(getattr(ws, "request", None), "path", None))
+        percorso = getattr(getattr(ws, "request", None), "path", None)
+        filtro = topic_del_lettore(percorso)
         self._clients.add(ws)
         if filtro is not None:
             self._lettori[ws] = filtro
+        elif self._token_valido(token_dal_percorso(percorso)):
+            # C1: solo chi ha il token puo' mandare comandi che eseguono
+            self._autorizzati.add(ws)
         self._ricalcola_lettori()
         self._n_clients = len(self._clients)
         self._ricalcola_pronti()
@@ -168,6 +290,7 @@ class LocalChannel:
             self._clients.discard(ws)
             self._in_volo_ws.pop(ws, None)
             self._lettori.pop(ws, None)
+            self._autorizzati.discard(ws)
             self._ricalcola_lettori()
             self._n_clients = len(self._clients)
             self._ricalcola_pronti()
@@ -226,6 +349,12 @@ class LocalChannel:
             if method not in _ALLOWED_METHODS:
                 self._send(ws, {"id": msg_id, "ok": False, "e": f"metodo sconosciuto: {method}"})
                 return
+            if method in _METODI_CHE_ESEGUONO and ws not in self._autorizzati:
+                # C1: comando che esegue da una connessione senza token (o col
+                # token sbagliato). Si risponde, si CHIUDE, si scrive perche'.
+                # Il comando non entra nemmeno in coda.
+                self._rifiuta_senza_token(ws, msg_id, method)
+                return
             params = msg.get("p")
             self._requests.put_nowait(
                 LocalRequest(ws=ws, msg_id=msg_id, method=method,
@@ -236,6 +365,28 @@ class LocalChannel:
                             "e": "coda locale piena: comando NON accettato (riprova)"})
         except Exception as ex:  # noqa: BLE001 - messaggio malformato
             logger.debug("[local-ws] messaggio malformato: %s", str(ex)[:120])
+
+    def _rifiuta_senza_token(self, ws: Any, msg_id: Any, method: str) -> None:
+        """C1: risposta di rifiuto + chiusura della connessione (policy 1008)."""
+        self._conti_rifiuti["token"] += 1
+        req = getattr(ws, "request", None)
+        logger.warning("[local-ws] comando %r RIFIUTATO sulla porta %d: token di sessione "
+                       "assente o errato (origine %r). Nessun comando eseguito, "
+                       "connessione chiusa.", method, self.port,
+                       _origine_di(req))
+        self._send(ws, {"id": msg_id, "ok": False,
+                        "e": "comando rifiutato: token di sessione assente o errato "
+                             "(NESSUN ordine eseguito)"})
+        if self._loop is not None and hasattr(ws, "close"):
+            self._loop.create_task(self._chiudi_dopo_la_risposta(ws))
+
+    async def _chiudi_dopo_la_risposta(self, ws: Any) -> None:
+        # un giro di loop per lasciar partire la risposta prima della chiusura
+        await asyncio.sleep(0.05)
+        try:
+            await ws.close(_CHIUSURA_POLICY, "token di sessione assente o errato")
+        except Exception:  # noqa: BLE001 - client gia' andato
+            pass
 
     def _send(self, ws: Any, payload: Dict[str, Any]) -> None:
         """Send fire-and-forget dal thread del loop."""
@@ -287,6 +438,8 @@ class LocalChannel:
         client agganciati, invii in volo. Se la coda cresce LO SI DICE, non lo
         si assorbe: e' il numero che la prova a secco di F1 deve leggere."""
         return {**self._conti, "client": self._n_clients,
+                "rifiutati_origine": self._conti_rifiuti["origine"],
+                "rifiutati_token": self._conti_rifiuti["token"],
                 "lettori": self._n_lettori,
                 "client_pronti": self._client_pronti, "in_volo": self._in_volo,
                 "porta": self.port, "solo_lettura": self.solo_lettura}

@@ -1058,7 +1058,10 @@ def _read_armed_rules(sb: Any, mode_l: str) -> list:
 
 
 def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
-    mode = low._live_order_mode()
+    # 24/09: modo di PROCESSO (tetto del .env), non la scelta dalla Control
+    # Room: questo worker protegge/riconcilia cio' che e' GIA' a mercato, e un
+    # declassamento dalla UI ferma le aperture, mai la sorveglianza.
+    mode = low._modo_processo()
     if mode not in ("PAPER", "LIVE"):
         return 0
     # snapshot settings (kill-switch UI condiviso con l'order worker): 1s come l'order worker

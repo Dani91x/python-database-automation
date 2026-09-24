@@ -17,9 +17,12 @@ from Betfair.stream.tennis_live import tennis_runner
 
 def _mk(mode: str = "PAPER", params: dict | None = None, dry_run: bool = False):
     df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
+    # T1 (24/09): la riga per partita porta la modalita' DEL BOT (come la scrive
+    # il ponte). Qui il bot e' della modalita' del runner: LIVE solo se dichiarato.
     return tennis_runner._instantiate_bot(
         "tennis_scalper",
-        {"stake": 2.0, "dry_run": dry_run, "params": params or {}},
+        {"stake": 2.0, "dry_run": dry_run, "params": params or {},
+         "mode": "live" if mode == "LIVE" else "paper"},
         "1.100", {}, lambda *a, **k: None, df, mode,
     )
 

@@ -1,0 +1,1187 @@
+[
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.999,
+   "prezzo": 1.1,
+   "side": "back"
+  },
+  "nome": "modello back valido",
+  "uscita": {
+   "edge": 0.089909,
+   "ev": 0.093905,
+   "ev_eur": 0.4695,
+   "liability": 5.0,
+   "motivi": [],
+   "p_implicita": 0.909091,
+   "prezzo": 1.1,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.985,
+   "prezzo": 1.04,
+   "side": "back"
+  },
+  "nome": "modello back edge sotto soglia",
+  "uscita": {
+   "edge": 0.023462,
+   "ev": 0.02243,
+   "ev_eur": 0.1122,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.03,
+     "valore": 0.023462
+    },
+    {
+     "codice": "edge_sotto_minimo_servizio",
+     "soglia": 0.03,
+     "valore": 0.023462
+    }
+   ],
+   "p_implicita": 0.961538,
+   "prezzo": 1.04,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.9,
+   "prezzo": 1.02,
+   "side": "back"
+  },
+  "nome": "modello back p sotto minimo",
+  "uscita": {
+   "edge": -0.080392,
+   "ev": -0.0829,
+   "ev_eur": -0.4145,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "probabilita_sotto_minimo",
+     "soglia": 0.95,
+     "valore": 0.9
+    },
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.03,
+     "valore": -0.080392
+    },
+    {
+     "codice": "edge_sotto_minimo_servizio",
+     "soglia": 0.03,
+     "valore": -0.080392
+    },
+    {
+     "codice": "ev_non_positivo",
+     "soglia": 0.0,
+     "valore": -0.0829
+    }
+   ],
+   "p_implicita": 0.980392,
+   "prezzo": 1.02,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 10.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.999,
+   "prezzo": 1.1,
+   "side": "back"
+  },
+  "nome": "modello back abbinabile scarso",
+  "uscita": {
+   "edge": 0.089909,
+   "ev": 0.093905,
+   "ev_eur": 0.4695,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "abbinabile_sotto_minimo",
+     "soglia": 20.0,
+     "valore": 10.0
+    }
+   ],
+   "p_implicita": 0.909091,
+   "prezzo": 1.1,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": null,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.999,
+   "prezzo": 1.1,
+   "side": "back"
+  },
+  "nome": "modello back abbinabile ignoto",
+  "uscita": {
+   "edge": 0.089909,
+   "ev": 0.093905,
+   "ev_eur": 0.4695,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "abbinabile_sotto_minimo",
+     "soglia": 20.0,
+     "valore": null
+    }
+   ],
+   "p_implicita": 0.909091,
+   "prezzo": 1.1,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.96,
+   "prezzo": 1.03,
+   "side": "back"
+  },
+  "nome": "modello back ev negativo",
+  "uscita": {
+   "edge": -0.010874,
+   "ev": -0.01264,
+   "ev_eur": -0.0632,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.03,
+     "valore": -0.010874
+    },
+    {
+     "codice": "edge_sotto_minimo_servizio",
+     "soglia": 0.03,
+     "valore": -0.010874
+    },
+    {
+     "codice": "ev_non_positivo",
+     "soglia": 0.0,
+     "valore": -0.01264
+    }
+   ],
+   "p_implicita": 0.970874,
+   "prezzo": 1.03,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.995,
+   "prezzo": 1.03,
+   "side": "back"
+  },
+  "nome": "modello back quota al tick contro",
+  "uscita": {
+   "edge": 0.024126,
+   "ev": 0.023358,
+   "ev_eur": 0.1168,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.03,
+     "valore": 0.024126
+    },
+    {
+     "codice": "edge_sotto_minimo_servizio",
+     "soglia": 0.03,
+     "valore": 0.024126
+    }
+   ],
+   "p_implicita": 0.970874,
+   "prezzo": 1.03,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.1,
+   "prezzo": 1.5,
+   "side": "lay"
+  },
+  "nome": "modello lay spento (max_prob_lay 0)",
+  "uscita": {
+   "edge": 0.566667,
+   "ev": 0.805,
+   "ev_eur": 4.025,
+   "liability": 2.5,
+   "motivi": [
+    {
+     "codice": "probabilita_sopra_massimo",
+     "soglia": 0.0,
+     "valore": 0.1
+    }
+   ],
+   "p_implicita": 0.666667,
+   "prezzo": 1.5,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.0,
+   "prezzo": 1.5,
+   "side": "lay"
+  },
+  "nome": "modello lay p zero",
+  "uscita": {
+   "edge": 0.666667,
+   "ev": 0.95,
+   "ev_eur": 4.75,
+   "liability": 2.5,
+   "motivi": [],
+   "p_implicita": 0.666667,
+   "prezzo": 1.5,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.0,
+   "prezzo": 6.0,
+   "side": "lay"
+  },
+  "nome": "modello lay oltre quota massima",
+  "uscita": {
+   "edge": 0.166667,
+   "ev": 0.95,
+   "ev_eur": 4.75,
+   "liability": 25.0,
+   "motivi": [
+    {
+     "codice": "quota_sopra_massimo",
+     "soglia": 5.0,
+     "valore": 6.0
+    }
+   ],
+   "p_implicita": 0.166667,
+   "prezzo": 6.0,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.99,
+   "prezzo": 1.05,
+   "side": "back"
+  },
+  "nome": "tennis back valido",
+  "uscita": {
+   "edge": 0.037619,
+   "ev": 0.037025,
+   "ev_eur": 0.1851,
+   "liability": 5.0,
+   "motivi": [],
+   "p_implicita": 0.952381,
+   "prezzo": 1.05,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.999,
+   "prezzo": 1.01,
+   "side": "back"
+  },
+  "nome": "tennis back quota sotto minimo",
+  "uscita": {
+   "edge": 0.008901,
+   "ev": 0.008491,
+   "ev_eur": 0.0425,
+   "liability": 5.0,
+   "motivi": [
+    {
+     "codice": "quota_sotto_minimo",
+     "soglia": 1.02,
+     "valore": 1.01
+    },
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.015,
+     "valore": 0.008901
+    },
+    {
+     "codice": "edge_sotto_minimo_servizio",
+     "soglia": 0.03,
+     "valore": 0.008901
+    }
+   ],
+   "p_implicita": 0.990099,
+   "prezzo": 1.01,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.01,
+   "prezzo": 5.0,
+   "side": "lay"
+  },
+  "nome": "tennis lay valido",
+  "uscita": {
+   "edge": 0.19,
+   "ev": 0.9005,
+   "ev_eur": 4.5025,
+   "liability": 20.0,
+   "motivi": [],
+   "p_implicita": 0.2,
+   "prezzo": 5.0,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.01,
+   "prezzo": 20.0,
+   "side": "lay"
+  },
+  "nome": "tennis lay oltre quota (20)",
+  "uscita": {
+   "edge": 0.04,
+   "ev": 0.7505,
+   "ev_eur": 3.7525,
+   "liability": 95.0,
+   "motivi": [
+    {
+     "codice": "quota_sopra_massimo",
+     "soglia": 8.0,
+     "valore": 20.0
+    },
+    {
+     "codice": "responsabilita_oltre_tetto",
+     "soglia": 20.0,
+     "valore": 95.0
+    }
+   ],
+   "p_implicita": 0.05,
+   "prezzo": 20.0,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.01,
+   "prezzo": 9.0,
+   "side": "lay"
+  },
+  "nome": "tennis lay oltre quota e tetto",
+  "uscita": {
+   "edge": 0.101111,
+   "ev": 0.8605,
+   "ev_eur": 4.3025,
+   "liability": 40.0,
+   "motivi": [
+    {
+     "codice": "quota_sopra_massimo",
+     "soglia": 8.0,
+     "valore": 9.0
+    },
+    {
+     "codice": "responsabilita_oltre_tetto",
+     "soglia": 20.0,
+     "valore": 40.0
+    }
+   ],
+   "p_implicita": 0.111111,
+   "prezzo": 9.0,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.01,
+   "prezzo": 5.5,
+   "side": "lay"
+  },
+  "nome": "tennis lay entro quota, tetto superato",
+  "uscita": {
+   "edge": 0.171818,
+   "ev": 0.8955,
+   "ev_eur": 4.4775,
+   "liability": 22.5,
+   "motivi": [
+    {
+     "codice": "responsabilita_oltre_tetto",
+     "soglia": 20.0,
+     "valore": 22.5
+    }
+   ],
+   "p_implicita": 0.181818,
+   "prezzo": 5.5,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.2,
+   "prezzo": 3.0,
+   "side": "lay"
+  },
+  "nome": "tennis lay p sopra massimo",
+  "uscita": {
+   "edge": 0.133333,
+   "ev": 0.36,
+   "ev_eur": 1.8,
+   "liability": 10.0,
+   "motivi": [
+    {
+     "codice": "probabilita_sopra_massimo",
+     "soglia": 0.1,
+     "valore": 0.2
+    }
+   ],
+   "p_implicita": 0.333333,
+   "prezzo": 3.0,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 40.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "min_edge": 0.005,
+    "min_size": 10.0,
+    "opps_min_edge": 0.0,
+    "stake": 2.0
+   },
+   "p_model": 1.0,
+   "prezzo": 1.08,
+   "side": "back"
+  },
+  "nome": "anomalia back decided valida",
+  "uscita": {
+   "edge": 0.074074,
+   "ev": 0.076,
+   "ev_eur": 0.152,
+   "liability": 2.0,
+   "motivi": [],
+   "p_implicita": 0.925926,
+   "prezzo": 1.08,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 40.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "min_edge": 0.005,
+    "min_size": 10.0,
+    "opps_min_edge": 0.0,
+    "stake": 2.0
+   },
+   "p_model": 0.52,
+   "prezzo": 1.9,
+   "side": "back"
+  },
+  "nome": "anomalia back edge sotto",
+  "uscita": {
+   "edge": -0.006316,
+   "ev": -0.0354,
+   "ev_eur": -0.0708,
+   "liability": 2.0,
+   "motivi": [
+    {
+     "codice": "edge_sotto_minimo",
+     "soglia": 0.005,
+     "valore": -0.006316
+    },
+    {
+     "codice": "ev_non_positivo",
+     "soglia": 0.0,
+     "valore": -0.0354
+    }
+   ],
+   "p_implicita": 0.526316,
+   "prezzo": 1.9,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 40.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "min_edge": 0.005,
+    "min_size": 10.0,
+    "opps_min_edge": 0.0,
+    "stake": 2.0
+   },
+   "p_model": 0.0,
+   "prezzo": 1.2,
+   "side": "lay"
+  },
+  "nome": "anomalia lay valida",
+  "uscita": {
+   "edge": 0.833333,
+   "ev": 0.95,
+   "ev_eur": 1.9,
+   "liability": 0.4,
+   "motivi": [],
+   "p_implicita": 0.833333,
+   "prezzo": 1.2,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 40.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "min_edge": 0.005,
+    "min_size": 10.0,
+    "opps_min_edge": 0.0,
+    "stake": 2.0
+   },
+   "p_model": 0.0,
+   "prezzo": 5.5,
+   "side": "lay"
+  },
+  "nome": "anomalia lay oltre quota",
+  "uscita": {
+   "edge": 0.181818,
+   "ev": 0.95,
+   "ev_eur": 1.9,
+   "liability": 9.0,
+   "motivi": [
+    {
+     "codice": "quota_sopra_massimo",
+     "soglia": 5.0,
+     "valore": 5.5
+    }
+   ],
+   "p_implicita": 0.181818,
+   "prezzo": 5.5,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 20.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.999,
+   "prezzo": 1.1,
+   "side": "back"
+  },
+  "nome": "confine min_size uguale",
+  "uscita": {
+   "edge": 0.089909,
+   "ev": 0.093905,
+   "ev_eur": 0.4695,
+   "liability": 5.0,
+   "motivi": [],
+   "p_implicita": 0.909091,
+   "prezzo": 1.1,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.0,
+   "prezzo": 5.0,
+   "side": "lay"
+  },
+  "nome": "confine max_lay_price uguale",
+  "uscita": {
+   "edge": 0.2,
+   "ev": 0.95,
+   "ev_eur": 4.75,
+   "liability": 20.0,
+   "motivi": [],
+   "p_implicita": 0.2,
+   "prezzo": 5.0,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 50.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 8.0,
+    "max_liability_per_trade": 20.0,
+    "max_prob_lay": 0.1,
+    "min_back_price": 1.02,
+    "min_edge": 0.015,
+    "min_prob_back": 0.9,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.0,
+   "prezzo": 5.0,
+   "side": "lay"
+  },
+  "nome": "confine tetto uguale",
+  "uscita": {
+   "edge": 0.2,
+   "ev": 0.95,
+   "ev_eur": 4.75,
+   "liability": 20.0,
+   "motivi": [],
+   "p_implicita": 0.2,
+   "prezzo": 5.0,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.995,
+   "prezzo": null,
+   "side": "back"
+  },
+  "nome": "prezzo assente",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "prezzo_assente",
+     "soglia": null,
+     "valore": null
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": null,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.995,
+   "prezzo": 1.0,
+   "side": "back"
+  },
+  "nome": "prezzo 1.0",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "prezzo_assente",
+     "soglia": null,
+     "valore": 1.0
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": 1.0,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.995,
+   "prezzo": "2.0",
+   "side": "back"
+  },
+  "nome": "prezzo stringa",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "prezzo_assente",
+     "soglia": null,
+     "valore": null
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": null,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": null,
+   "prezzo": 1.02,
+   "side": "back"
+  },
+  "nome": "p assente",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "probabilita_assente",
+     "soglia": null,
+     "valore": null
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": 1.02,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 1.5,
+   "prezzo": 1.02,
+   "side": "back"
+  },
+  "nome": "p oltre 1",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "probabilita_assente",
+     "soglia": null,
+     "valore": 1.5
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": 1.02,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.995,
+   "prezzo": 1.02,
+   "side": "punta"
+  },
+  "nome": "lato sbagliato",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "lato_non_valido",
+     "soglia": null,
+     "valore": null
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": 1.02,
+   "valida": false
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": null,
+   "p_model": 0.8,
+   "prezzo": 1.5,
+   "side": "back"
+  },
+  "nome": "criteri assenti",
+  "uscita": {
+   "edge": 0.133333,
+   "ev": 0.18,
+   "ev_eur": 0.0,
+   "liability": 0.0,
+   "motivi": [],
+   "p_implicita": 0.666667,
+   "prezzo": 1.5,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {},
+   "p_model": 0.2,
+   "prezzo": 1.5,
+   "side": "lay"
+  },
+  "nome": "criteri vuoti lay",
+  "uscita": {
+   "edge": 0.466667,
+   "ev": 0.66,
+   "ev_eur": 0.0,
+   "liability": 0.0,
+   "motivi": [],
+   "p_implicita": 0.666667,
+   "prezzo": 1.5,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.0,
+    "stake": 3.0
+   },
+   "p_model": 0.8,
+   "prezzo": 1.5,
+   "side": "back"
+  },
+  "nome": "commissione zero",
+  "uscita": {
+   "edge": 0.133333,
+   "ev": 0.2,
+   "ev_eur": 0.6,
+   "liability": 3.0,
+   "motivi": [],
+   "p_implicita": 0.666667,
+   "prezzo": 1.5,
+   "valida": true
+  }
+ },
+ {
+  "ingresso": {
+   "abbinabile": 300.0,
+   "criteri": {
+    "commission": 0.05,
+    "max_lay_price": 5.0,
+    "max_liability_per_trade": 0.0,
+    "max_prob_lay": 0.0,
+    "min_edge": 0.03,
+    "min_prob_back": 0.95,
+    "min_size": 20.0,
+    "opps_min_edge": 0.03,
+    "stake": 5.0
+   },
+   "p_model": 0.8,
+   "prezzo": true,
+   "side": "back"
+  },
+  "nome": "bool come prezzo",
+  "uscita": {
+   "edge": null,
+   "ev": null,
+   "ev_eur": null,
+   "liability": null,
+   "motivi": [
+    {
+     "codice": "prezzo_assente",
+     "soglia": null,
+     "valore": null
+    }
+   ],
+   "p_implicita": null,
+   "prezzo": null,
+   "valida": false
+  }
+ }
+]
