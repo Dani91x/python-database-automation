@@ -4,12 +4,23 @@ Protocollo "COMANDO ORDINE" (contratto del coordinatore): ``/comando/safe`` su
 47331, header ``X-Canale-Token``, busta ``{"t":..., "d":{...}}``, ``comando`` ->
 ``ack`` -> eventi ``order`` con ``seq``, ``da_seq`` alla riconnessione.
 
-Il motore del runner (``Betfair/stream/motore_ordini.py``) NON e' ancora su
-master: qui parla un FINTO che risponde esattamente col protocollo. Le righe
-degli eventi ``order`` del finto NON sono scritte a mano: nascono dalla
+Il FINTO del motore del runner VALIDA ogni comando con la funzione VERA
+(``Betfair/stream/motore_ordini.py::valida_comando``, lo stesso modulo che il
+runner monta in produzione — vedi il test di contratto sulle chiavi): un
+comando che il runner rifiuterebbe davvero (``creato_ms`` float,
+``strategy_ref`` diverso dall'attore, chiave mancante) fa fallire il test. Le
+righe degli eventi ``order`` del finto NON sono scritte a mano: nascono dalla
 ``LiveTradingStrategy._order_row`` VERA (piu' ``updated_at`` di
 ``db.upsert_live_order`` e le quattro chiavi del protocollo), e un test di
 contratto lo verifica.
+
+Difetti 24/09 (referto del delegato che ha costruito la porta di Omega,
+``Betfair/omega/porta_ordini.py::adatta_comando``, corretti qui):
+``creato_ms`` float (respinto da ``motore_ordini._intero``), ``strategy_ref``
+fisso a "safe" (respinto per l'attore ``safe_tennis``), chiusure via canale
+senza ``time_in_force``/``reduces_liability`` (la coda flumine li mette gia'
+oggi, vedi ``execution.enqueue_place``). Piu' le fasi INTERMEDIE del
+place-and-trim (``parcheggiato``/``ridotto``), mai terminali.
 
 Ogni test e' falsificato (vedi il referto del delegato): ref casuale, ripiego
 automatico su una place, mode ereditato, seq ignorato, interruttore ignorato.
@@ -31,6 +42,7 @@ import pytest
 from Betfair.safe_strategy import bot_service as S
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import porta_ordini as PO
+from Betfair.stream import motore_ordini as MO
 
 NOW = datetime(2026, 9, 24, 20, 0, tzinfo=timezone.utc)
 TOKEN = "tok-di-prova"
@@ -123,11 +135,16 @@ class FintoMotore:
     prima della fine (evento ``abbinato_parziale``)."""
 
     def __init__(self, *, comportamento: str = "accetta", fase_finale: Optional[str] = "abbinato",
-                 motivo: str = "kill_switch", parziale: Optional[float] = None) -> None:
+                 motivo: str = "kill_switch", parziale: Optional[float] = None,
+                 attore: str = "safe") -> None:
         self.comportamento = comportamento
         self.fase_finale = fase_finale
         self.motivo = motivo
         self.parziale = parziale
+        # l'attore REGISTRATO nel motore per questa porta (``safe`` calcio,
+        # ``safe_tennis`` tennis): usato per il percorso ``/comando/<attore>``
+        # e per validare i comandi con la funzione VERA del runner.
+        self.attore = attore
         self.connessioni: list[FintaWS] = []
         self.comandi: list[dict] = []
         self.buste: list[dict] = []
@@ -143,7 +160,7 @@ class FintoMotore:
         if self.rifiuta_connessione:
             raise ConnectionRefusedError("runner giu'")
         ws = FintaWS(self, url, headers)
-        if headers.get(PO.HEADER_TOKEN) != TOKEN or not url.endswith("/comando/safe"):
+        if headers.get(PO.HEADER_TOKEN) != TOKEN or not url.endswith("/comando/%s" % self.attore):
             raise PermissionError("token o percorso errato: chiusura")
         self.connessioni.append(ws)
         return ws
@@ -185,8 +202,11 @@ class FintoMotore:
                     self._manda(ws, "order", e)
             return
         assert t == "comando", t
-        # CONTRATTO: tutte e sole le chiavi del protocollo
+        # CONTRATTO: tutte e sole le chiavi del protocollo, e il validatore
+        # VERO del runner (un comando che il motore rifiuterebbe fa fallire
+        # il test, non solo il finto)
         assert tuple(d.keys()) == PO.CHIAVI_COMANDO, list(d.keys())
+        MO.valida_comando(self.attore, d)
         self.comandi.append(d)
         if self.comportamento in ("muto", "muto_con_esito"):
             if self.comportamento == "muto_con_esito":
@@ -240,8 +260,24 @@ def _attendi(cond, timeout: float = 3.0) -> bool:
 def porta_e_motore(monkeypatch):
     """Una PortaCanale collegata al finto (thread vero, nessun socket)."""
     monkeypatch.setattr(PO, "MAX_ETA_MS", 400)
-    motore = FintoMotore()
+    motore = FintoMotore(attore="safe")
     porta = PO.PortaCanale(porta_ws=47331, attore="safe", connetti=motore.connetti,
+                           token_fn=lambda: TOKEN)
+    porta.avvia()
+    assert _attendi(porta.disponibile)
+    yield porta, motore
+    porta.ferma()
+
+
+@pytest.fixture
+def porta_e_motore_tennis(monkeypatch):
+    """Come ``porta_e_motore`` ma per l'attore Safe TENNIS: il motore lo
+    registra come attore SEPARATO da ``safe`` (``ATTORI_COMANDO`` di
+    ``motore_ordini.py``), quindi ``strategy_ref`` deve seguirlo, non restare
+    fisso a "safe" (difetto 2)."""
+    monkeypatch.setattr(PO, "MAX_ETA_MS", 400)
+    motore = FintoMotore(attore="safe_tennis")
+    porta = PO.PortaCanale(porta_ws=47332, attore="safe_tennis", connetti=motore.connetti,
                            token_fn=lambda: TOKEN)
     porta.avvia()
     assert _attendi(porta.disponibile)
@@ -885,3 +921,149 @@ def test_websocket_vero_token_percorso_e_ack():
         porta.ferma()
     finally:
         server.shutdown()
+
+
+# ===========================================================================
+# 8. difetti 24/09 (referto della porta di Omega): creato_ms intero,
+#    strategy_ref per attore, FOK/reduces_liability sulle chiusure, fasi
+#    intermedie del place-and-trim
+# ===========================================================================
+def test_creato_ms_e_intero_il_motore_vero_lo_accetta():
+    """Difetto 1: ``creato_ms`` era ``round(ms, 1)`` (float): il motore vero
+    (``motore_ordini._intero``) rifiuta QUALSIASI float, anche un numero
+    tondo — ogni comando di Safe sarebbe stato respinto."""
+    cmd = PO.costruisci_comando(ref="safe-t1", attore="safe", azione="place", mode="paper",
+                                market_id="1.2", selection_id=1, side="LAY", price=2.0,
+                                size=2.0, persistence="LAPSE")
+    assert type(cmd["creato_ms"]) is int
+    piano = MO.valida_comando("safe", cmd)
+    assert piano["creato_ms"] == cmd["creato_ms"]
+    # un creato_ms passato ESPLICITO (float, come faceva execution.py prima)
+    # arrotonda a intero, non resta float
+    cmd2 = PO.costruisci_comando(ref="safe-t2", attore="safe", azione="place", mode="paper",
+                                 market_id="1.2", selection_id=1, side="LAY", price=2.0,
+                                 size=2.0, persistence="LAPSE", creato_ms=1234.7)
+    assert cmd2["creato_ms"] == 1235 and type(cmd2["creato_ms"]) is int
+    MO.valida_comando("safe", cmd2)
+
+
+def test_place_via_canale_manda_creato_ms_intero(porta_e_motore):
+    """End-to-end: il comando che ESCE dal canale (``execution._place_via_canale``)
+    ha ``creato_ms`` intero. Il finto lo valida col motore VERO (``FintoMotore.
+    gestisci``): un ``creato_ms`` float farebbe fallire QUESTO test dentro il
+    finto stesso, prima ancora dell'assert qui sotto."""
+    porta, motore = porta_e_motore
+    db, market = FakeDB(), FakeMarket()
+    tr = _riserva(db, mode="live")
+    _place(db, market, porta, tr)
+    cmd = motore.comandi[-1]
+    assert type(cmd["creato_ms"]) is int
+
+
+def test_strategy_ref_segue_l_attore_calcio_e_tennis(porta_e_motore, porta_e_motore_tennis):
+    """Difetto 2: ``strategy_ref`` era fisso a "safe": un comando dell'attore
+    ``safe_tennis`` veniva rifiutato dal motore (``strategy_ref`` diverso
+    dall'attore del percorso, ``motore_ordini.valida_comando``)."""
+    porta_c, motore_c = porta_e_motore
+    porta_t, motore_t = porta_e_motore_tennis
+    db, market = FakeDB(), FakeMarket()
+
+    tr_c = _riserva(db, mode="live", sport="calcio")
+    _place(db, market, porta_c, tr_c)
+    cmd_c = motore_c.comandi[-1]
+    assert cmd_c["attore"] == "safe" and cmd_c["strategy_ref"] == "safe"
+    MO.valida_comando("safe", cmd_c)                    # non solleva
+
+    tr_t = _riserva(db, mode="live", sport="tennis")
+    _place(db, market, porta_t, tr_t)
+    cmd_t = motore_t.comandi[-1]
+    assert cmd_t["attore"] == "safe_tennis" and cmd_t["strategy_ref"] == "safe_tennis"
+    MO.valida_comando("safe_tennis", cmd_t)             # non solleva
+
+    # il difetto ERA: strategy_ref fisso a "safe" -> il motore rifiuta
+    # l'attore tennis (riprodotto qui a mano, senza toccare il codice)
+    rotto = dict(cmd_t, strategy_ref="safe")
+    with pytest.raises(MO.Rifiuto):
+        MO.valida_comando("safe_tennis", rotto)
+
+
+def test_place_via_canale_apertura_e_chiusura_portano_fok_come_la_coda(porta_e_motore):
+    """Difetto 3: le chiusure via canale partivano SENZA ``time_in_force`` ne'
+    ``reduces_liability``. La coda flumine (``execution.enqueue_place``) mette
+    FOK su OGNI place normale — apertura e chiusura, paper e live — e
+    ``reduces_liability`` SOLO sulle chiusure: qui si riproduce lo STESSO
+    comportamento, verificato dal motore vero."""
+    porta, motore = porta_e_motore
+    db, market = FakeDB(), FakeMarket()
+
+    # apertura: FOK si', reduces_liability no
+    tr = _riserva(db, mode="live")
+    _place(db, market, porta, tr)
+    cmd_open = motore.comandi[-1]
+    assert cmd_open["time_in_force"] == "FILL_OR_KILL"
+    assert cmd_open["reduces_liability"] is False
+    MO.valida_comando("safe", cmd_open)
+
+    # chiusura: FOK si', reduces_liability si' (closes_trade_id nel meta)
+    ch = _riserva(db, mode="live", side="back", closes=tr["id"])
+    out = X.place(db=db, market=market, mode="live", event_id=ch["event_id"],
+                  market_id=ch["market_id"], selection_id=ch["selection_id"], side="back",
+                  price=3.0, size=2.0, best_size=100.0, ladder=((3.0, 100.0),),
+                  client_ref="safe-t%d" % ch["id"], trade_id=ch["id"],
+                  meta=dict(ch["meta"]), now=NOW, params={}, porta=porta)
+    assert out.status == "pending"
+    cmd_close = motore.comandi[-1]
+    assert cmd_close["time_in_force"] == "FILL_OR_KILL"
+    assert cmd_close["reduces_liability"] is True
+    piano = MO.valida_comando("safe", cmd_close)
+    assert piano["riduce"] is True
+
+    # paper: la coda mette FOK ANCHE in paper (CERT. 14/09: "il paper uccide
+    # come il live") — stessa regola qui
+    db2 = FakeDB()
+    tr2 = _riserva(db2, mode="paper")
+    _place(db2, market, porta, tr2)
+    assert motore.comandi[-1]["time_in_force"] == "FILL_OR_KILL"
+
+
+def test_fasi_intermedie_place_and_trim_non_terminali():
+    """La porta accetta le fasi INTERMEDIE del place-and-trim (``parcheggiato``
+    = ordine al minimo non abbinabile, ``ridotto`` = tagliato sotto il minimo,
+    ``trading/submin.py``) come NON terminali: non si scartano, e un esito
+    VERO arrivato dopo le sostituisce comunque."""
+    assert "parcheggiato" in PO.FASI and "ridotto" in PO.FASI
+    assert "parcheggiato" not in PO.FASI_TERMINALI
+    assert "ridotto" not in PO.FASI_TERMINALI
+    assert not PO.terminale({"fase": "parcheggiato"})
+    assert not PO.terminale({"fase": "ridotto"})
+
+    m = PO.MemoriaComandi()
+    base = {"ref": "safe-t1", "size_matched": 0.0}
+    assert m.ricevi_evento(dict(base, seq=1, fase="parcheggiato"))    # non scartato
+    assert m.esito("safe-t1")["fase"] == "parcheggiato"
+    assert not PO.terminale(m.esito("safe-t1"))
+    assert m.ricevi_evento(dict(base, seq=2, fase="ridotto"))         # non scartato
+    assert m.esito("safe-t1")["fase"] == "ridotto"
+    assert not PO.terminale(m.esito("safe-t1"))
+    # l'esito VERO arriva dopo: una fase intermedia non e' terminale, quindi
+    # non blocca l'aggiornamento (la regola "un esito terminale non torna
+    # indietro" vale SOLO per un esito gia' terminale)
+    assert m.ricevi_evento(dict(base, seq=3, fase="abbinato"))
+    assert PO.terminale(m.esito("safe-t1"))
+    assert m.esito("safe-t1")["fase"] == "abbinato"
+
+
+def test_attendi_esito_bet_ignora_le_fasi_intermedie(porta_e_motore):
+    """``attendi_esito_bet`` aspetta un esito VERO: una fase intermedia del
+    place-and-trim (size ancora viva a mercato) non deve soddisfarlo."""
+    porta, motore = porta_e_motore
+    porta.memoria.ricevi_evento({"ref": "safe-t1", "seq": 1, "fase": "parcheggiato",
+                                 "bet_id": "B1", "size_remaining": 2.0})
+    assert porta.attendi_esito_bet("B1", 0.1) is None
+    porta.memoria.ricevi_evento({"ref": "safe-t1", "seq": 2, "fase": "ridotto",
+                                 "bet_id": "B1", "size_remaining": 0.3})
+    assert porta.attendi_esito_bet("B1", 0.1) is None
+    porta.memoria.ricevi_evento({"ref": "safe-t1", "seq": 3, "fase": "abbinato",
+                                 "bet_id": "B1", "size_remaining": 0.0})
+    ev = porta.attendi_esito_bet("B1", 1.0)
+    assert ev is not None and ev["fase"] == "abbinato"

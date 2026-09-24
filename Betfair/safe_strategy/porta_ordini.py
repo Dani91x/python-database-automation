@@ -34,6 +34,21 @@ Regole money-critical (ognuna inchiodata da un test in
    della riserva), mai ereditato dal servizio.
 5. Un evento ``order`` piu' vecchio (``seq`` minore) non sostituisce mai quello
    che c'e'; un esito terminale non torna indietro.
+6. ``creato_ms`` e' un INTERO (``motore_ordini._intero`` rifiuta un float, anche
+   un numero tondo): mai ``round(ms, 1)``.
+7. ``strategy_ref`` e' SEMPRE l'attore che manda il comando (``safe`` calcio,
+   ``safe_tennis`` tennis), mai una costante fissa: il motore rifiuta uno
+   ``strategy_ref`` diverso dall'attore del percorso.
+8. Le chiusure via canale portano ``time_in_force=FILL_OR_KILL`` e
+   ``reduces_liability=True`` come la coda flumine (``execution.enqueue_place``);
+   le fasi INTERMEDIE del place-and-trim (``parcheggiato``/``ridotto``, quando la
+   sequenza arrivera' anche dal canale) non sono mai terminali.
+
+Difetti trovati e corretti (24/09, dal referto del delegato che ha costruito la
+porta di Omega, ``Betfair/omega/porta_ordini.py::adatta_comando``): i tre punti
+6-8 sopra erano rotti (``creato_ms`` float -> ogni comando respinto,
+``strategy_ref`` fisso a ``safe`` -> Safe tennis sempre rifiutato, chiusure
+senza FOK/reduces_liability -> divergenti dalla coda).
 
 Modulo PURO: nessun import di flumine, betfairlightweight, supabase o database.
 ``websockets`` entra solo dentro il thread del client (import pigro).
@@ -61,27 +76,38 @@ PORTA_CALCIO = 47331
 PORTA_TENNIS = 47332
 ATTORE_CALCIO = "safe"
 ATTORE_TENNIS = "safe_tennis"
-STRATEGY_REF = "safe"
 PREFISSO_COMANDO = "/comando/"
 HEADER_TOKEN = "X-Canale-Token"
 #: eta' massima di un comando (ms): oltre, il runner lo rifiuta
 MAX_ETA_MS = 3000
 REF_MAX = 32
 TABELLA_ORIGINE = "safe_strategy_trades"
+#: estensione del protocollo (coordinatore, 24/09): FILL_OR_KILL sul ``place``
+FOK = "FILL_OR_KILL"
 
 VALORI_ACCESI = frozenset({"1", "true", "si", "yes"})
 AZIONI = frozenset({"place", "cancel", "replace", "greenup", "cashout_event", "cashout_all"})
 MODI = ("paper", "live")
 LATI = ("BACK", "LAY")
 PERSISTENZE = ("LAPSE", "PERSIST")
+#: fasi del protocollo (``motore_ordini.FASI``) PIU' le fasi INTERMEDIE del
+#: place-and-trim (``trading/submin.py``: parcheggio al minimo non abbinabile,
+#: poi ridotto sotto il minimo) quando quella sequenza arrivera' anche dal
+#: canale (F4, punto di ripresa 1 dell'audit strade ordine): intermedie, MAI
+#: terminali, non si scartano e non sostituiscono un esito.
 FASI = frozenset({"inviato", "accettato_betfair", "rifiutato", "abbinato_parziale",
-                  "abbinato", "annullato", "scaduto", "errore"})
+                  "abbinato", "annullato", "scaduto", "errore",
+                  "parcheggiato", "ridotto"})
 FASI_TERMINALI = frozenset({"rifiutato", "abbinato", "annullato", "scaduto", "errore"})
 
-#: le chiavi della richiesta ``t="comando"``, TUTTE e sempre, in quest'ordine
+#: le chiavi della richiesta ``t="comando"``, TUTTE e sempre, in quest'ordine.
+#: ``time_in_force``/``reduces_liability``: estensione del protocollo (24/09,
+#: dal referto della porta di Omega) — le stesse due chiavi che la coda del
+#: runner mette sulle chiusure (``execution.enqueue_place``).
 CHIAVI_COMANDO = ("ref", "attore", "azione", "mode", "market_id", "selection_id", "side",
                   "price", "size", "persistence", "bet_id", "size_reduction", "new_price",
-                  "strategy_ref", "creato_ms", "max_eta_ms", "origine")
+                  "strategy_ref", "creato_ms", "max_eta_ms", "origine",
+                  "time_in_force", "reduces_liability")
 CHIAVI_ACK = ("ref", "seq", "accettato", "motivo", "ricevuto_ms")
 #: le chiavi che il protocollo AGGIUNGE alla riga dello specchio negli eventi
 CHIAVI_EVENTO_EXTRA = ("ref", "seq", "fase", "esito_ms")
@@ -94,8 +120,15 @@ _ATTESE_S = (0.5, 1.0, 2.0, 5.0)
 _RECV_TIMEOUT_S = 1.0
 
 
-def _ora_ms() -> float:
-    return round(time.time() * 1000.0, 1)
+def _ora_ms() -> int:
+    """Orologio in millisecondi INTERO per ``creato_ms``.
+
+    ``motore_ordini._intero`` (``Betfair/stream/motore_ordini.py``) rifiuta
+    QUALSIASI float, anche uno che vale un numero tondo: ``isinstance(v, int)``
+    e basta. Un ``round(..., 1)`` restava float sul JSON e ogni comando di
+    Safe veniva respinto con ``parametri_invalidi: creato_ms non intero``
+    (difetto trovato dal delegato che ha costruito la porta di Omega)."""
+    return int(round(time.time() * 1000.0))
 
 
 def acceso(nome_env: str) -> bool:
@@ -157,10 +190,26 @@ def costruisci_comando(*, ref: str, attore: str, azione: str, mode: str,
                        new_price: Optional[float] = None,
                        creato_ms: Optional[float] = None,
                        max_eta_ms: int = MAX_ETA_MS,
-                       origine: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       origine: Optional[Dict[str, Any]] = None,
+                       time_in_force: Optional[str] = None,
+                       reduces_liability: bool = False) -> Dict[str, Any]:
     """Il corpo ``d`` di un ``t="comando"``: TUTTE le chiavi del protocollo,
     sempre, ``None`` dove l'azione non le usa. Solleva ``ValueError`` su un
-    valore fuori protocollo (nessun comando a sorpresa esce di qui)."""
+    valore fuori protocollo (nessun comando a sorpresa esce di qui).
+
+    ``strategy_ref`` e' SEMPRE quello dell'attore che manda il comando (mai
+    una costante fissa a "safe"): il motore del runner rifiuta un
+    ``strategy_ref`` diverso dall'attore del percorso (``valida_comando``),
+    e Safe calcio (attore ``safe``) e Safe tennis (attore ``safe_tennis``)
+    sono due attori diversi sullo stesso protocollo.
+
+    ``time_in_force``/``reduces_liability``: le due chiavi che la coda del
+    runner mette gia' oggi sulle chiusure (``execution.enqueue_place``):
+    FOK su OGNI ``place`` normale (paper e live, apertura e chiusura — la
+    coda lo fa sempre, tranne ``place_submin``, che il canale non serve
+    ancora), ``reduces_liability`` SOLO quando il place dichiara di ridurre
+    una posizione (chiusura). Valgono solo per ``place``: su ogni altra
+    azione restano ``None``/``False``, come fa ``motore_ordini.valida_comando``."""
     ref = str(ref or "")
     if not ref or len(ref) > REF_MAX:
         raise ValueError("ref non valido: %r" % ref)
@@ -180,6 +229,16 @@ def costruisci_comando(*, ref: str, attore: str, azione: str, mode: str,
         raise ValueError("place senza mercato/selezione/lato/prezzo/size")
     if azione == "cancel" and not bet_id:
         raise ValueError("cancel senza bet_id")
+    if time_in_force not in (None, FOK):
+        raise ValueError("time_in_force fuori protocollo: %r" % time_in_force)
+    if creato_ms is None:
+        creato_intero = _ora_ms()
+    else:
+        if isinstance(creato_ms, bool) or not isinstance(creato_ms, (int, float)):
+            raise ValueError("creato_ms non numerico: %r" % creato_ms)
+        # il runner vuole un INTERO (``motore_ordini._intero``): un float resta
+        # float sul JSON e viene rifiutato anche se vale un numero tondo.
+        creato_intero = int(round(float(creato_ms)))
     return {
         "ref": ref,
         "attore": str(attore),
@@ -194,10 +253,12 @@ def costruisci_comando(*, ref: str, attore: str, azione: str, mode: str,
         "bet_id": (str(bet_id) if bet_id else None),
         "size_reduction": (float(size_reduction) if size_reduction is not None else None),
         "new_price": (float(new_price) if new_price is not None else None),
-        "strategy_ref": STRATEGY_REF,
-        "creato_ms": float(creato_ms) if creato_ms is not None else _ora_ms(),
+        "strategy_ref": str(attore),
+        "creato_ms": creato_intero,
         "max_eta_ms": int(max_eta_ms),
         "origine": dict(origine) if origine else None,
+        "time_in_force": (time_in_force if azione == "place" else None),
+        "reduces_liability": (bool(reduces_liability) if azione == "place" else False),
     }
 
 

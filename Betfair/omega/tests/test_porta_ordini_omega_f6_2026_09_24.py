@@ -291,9 +291,12 @@ def test_adatta_comando_chiavi_e_validatore_vero():
     assert d["time_in_force"] == "FILL_OR_KILL" and d["reduces_liability"] is True
     piano = MO.valida_comando("omega", d)
     assert piano["riduce"] is True and piano["riga"]["time_in_force"] == "FILL_OR_KILL"
-    # il comando di Safe senza adattamento il runner lo RIFIUTA (strategy_ref)
-    with pytest.raises(MO.Rifiuto):
-        MO.valida_comando("omega", base)
+    # (24/09 sera) la porta di Safe e' stata corretta: strategy_ref segue l'attore e
+    # creato_ms e' intero, quindi il comando GREZZO passa la validazione del runner;
+    # l'adattamento di Omega resta necessario per tabella d'origine, FOK e riduzione
+    grezzo = MO.valida_comando("omega", base)
+    assert grezzo["riga"].get("time_in_force") is None and not grezzo["riduce"]
+    assert base["origine"]["tabella"] != PO.TABELLA_ORIGINE
     # cancel: ref di Omega, niente FOK ne' riduzione
     c = SPO.costruisci_comando(ref=SPO.ref_annullo("301"), attore="omega", azione="cancel",
                                mode="paper", market_id="1.2", bet_id="301", creato_ms=1.0)

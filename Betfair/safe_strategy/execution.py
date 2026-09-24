@@ -449,7 +449,11 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
             market_id=str(market_id), selection_id=int(selection_id), side=side,
             price=float(price), size=float(size), persistence="LAPSE",
             max_eta_ms=PO.MAX_ETA_MS,
-            origine={"tabella": PO.TABELLA_ORIGINE, "id": int(tid)})
+            origine={"tabella": PO.TABELLA_ORIGINE, "id": int(tid)},
+            # stesse due chiavi che la coda flumine mette gia' oggi
+            # (``enqueue_place``): FOK su OGNI place normale (paper e live,
+            # apertura e chiusura), reduces_liability SOLO sulle chiusure.
+            time_in_force=PO.FOK, reduces_liability=bool(is_closing))
     except ValueError as ex:
         return PlaceOutcome("error", None, 0.0, None, f"canale_comando_non_valido:{ex}"[:160])
     pre = dict(meta)

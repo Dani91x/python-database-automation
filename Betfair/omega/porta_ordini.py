@@ -57,7 +57,9 @@ MOTIVO_REF_GIA_VISTO = _SPO.MOTIVO_REF_GIA_VISTO
 MOTIVO_NON_VALIDO = "omega_comando_non_valido"
 #: le chiavi del comando di Omega: quelle di Safe piu' l'estensione del
 #: protocollo (``motore_ordini.valida_comando``), TUTTE e sempre, in quest'ordine
-CHIAVI_COMANDO = tuple(_SPO.CHIAVI_COMANDO) + ("time_in_force", "reduces_liability")
+# (24/09 sera) la porta di Safe porta gia' le due chiavi: non si duplicano
+CHIAVI_COMANDO = tuple(_SPO.CHIAVI_COMANDO) + tuple(
+    k for k in ("time_in_force", "reduces_liability") if k not in _SPO.CHIAVI_COMANDO)
 
 Ack = _SPO.Ack
 terminale = _SPO.terminale
