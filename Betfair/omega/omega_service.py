@@ -29,6 +29,7 @@ from Betfair.stream import avvio_app as AA
 from Betfair.stream import esiti_ordini_canale as _EO
 from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
+from Betfair.stream.trading import stato_mercato as _SM
 from Betfair.stream.scores import scan_feed as _scan_feed
 from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
 
@@ -263,6 +264,7 @@ def svuota_le_cache() -> None:
     global _ULTIMI_PARAMS, _ULTIME_MISSIONI_ATTIVE
     _ULTIMI_PARAMS = None
     _ULTIME_MISSIONI_ATTIVE = 0
+    _ATTESE_MERCATO.svuota()  # D2 (24/09)
     _CACHE_FEED_RIGHE.clear()
     _CACHE_FEED_LETTO_A.clear()
     _CACHE_FEED_CHIESTO_A.clear()
@@ -1614,6 +1616,37 @@ _SKIP_SEEN: dict[Any, float] = {}
 SKIP_LOG_EVERY_S = 600.0
 
 
+# D2 (24/09): il diario delle attese di riapertura (una riga per sospensione).
+_ATTESE_MERCATO = _SM.AttesaRiapertura()
+
+
+def _mercato_in_attesa(db, event_id: Any, market_id: Any, snapshot: Any,
+                       percorso: str) -> bool:
+    """D2 (24/09) - GUARDIA DELLO STATO DEL MERCATO (modulo condiviso).
+
+    Lo stato e' quello che Omega ha GIA' (``MarketSnapshot.status``/``inplay``
+    dal feed dello scanner o dal REST): nessuna lettura in piu'. True = NON
+    piazzare adesso; l'attivita' ``attesa_riapertura`` si scrive UNA volta per
+    sospensione. Stato mancante = IGNOTO = si passa, come oggi (fail-open
+    storico di Omega: irrigidirlo e' una decisione dell'utente).
+    """
+    stato = _SM.StatoMercato(status=getattr(snapshot, "status", None),
+                             inplay=getattr(snapshot, "inplay", None),
+                             fonte="omega_snapshot")
+    chiave = (str(event_id), str(market_id or ""), percorso)
+    piazza, motivo, annuncia = _SM.guardia(stato, _ATTESE_MERCATO, chiave)
+    if piazza:
+        return False
+    if annuncia:
+        db.log(_SM.KIND_ATTESA, {"event_id": str(event_id),
+                                 "market_id": str(market_id or ""),
+                                 "percorso": percorso, "motivo": motivo,
+                                 "aspetta": _SM.da_aspettare(motivo),
+                                 "note": "nessun ordine: mercato non operabile, "
+                                         "si rivaluta alla riapertura"})
+    return True
+
+
 def _log_dedup(db, key: Any, kind: str, payload: dict) -> None:
     """Log ripetitivi (skip per gamba per ciclo): una riga per (chiave) ogni
     SKIP_LOG_EVERY_S — il 10/09 erano 746 righe identiche in un giorno (review M12)."""
@@ -2170,6 +2203,14 @@ def scan_and_place(
                            {"event_id": ev.event_id, "reason": "book_error", "err": str(ex)[:160]})
                 continue
         if snapshot is None or snapshot.closed:
+            continue
+        # D2 (24/09): il motore v1 aveva lo stato in mano (``snapshot.status``,
+        # dal feed o dal REST) e non lo guardava: a mercato sospeso l'ordine
+        # partiva (rifiuto certo in live, fill a quote congelate nel paper
+        # legacy). Guardia condivisa, nessuna lettura in piu'; la partita si
+        # rivaluta al ciclo dopo con le condizioni di quel momento.
+        if _mercato_in_attesa(db, ev.event_id, getattr(cs, "market_id", None),
+                              snapshot, "v1"):
             continue
 
         minute, score_str = estimate_minute(
@@ -5199,6 +5240,15 @@ def _cashout_prices(market, tr: dict[str, Any]) -> Optional[dict[str, Any]]:
     if feed is not None:
         cs_market, snap = feed
         if str(cs_market.market_id) == market_id:
+            # D2 (24/09): il ramo del feed restituiva i prezzi anche a mercato
+            # SOSPESO (quote congelate: rifiuto certo in live, fill finto nel
+            # paper legacy). Stesso esito del ramo REST qui sotto: None, e chi
+            # chiama lo dice gia' (`prezzi_non_disponibili`, `greenup_wait`).
+            operabile, _motivo = _SM.mercato_operabile(_SM.StatoMercato(
+                status=getattr(snap, "status", None),
+                inplay=getattr(snap, "inplay", None), fonte="omega_snapshot"))
+            if not operabile:
+                return None
             r = next((x for x in snap.runners if int(x.selection_id) == sid), None)
             if r is not None and (r.back_price or r.lay_price):
                 return {"back": r.back_price, "back_size": getattr(r, "back_size", None),

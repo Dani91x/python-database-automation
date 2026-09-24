@@ -1054,7 +1054,7 @@ class _Banco:
             # 'posizione NON flat dopo 30s' e l'allarme CRITICAL del crash
             # ('VERIFICA il matched residuo sul conto')
             dichiarato_non_flat=fine and (
-                any("NON flat" in m or "CRASH thread flumine" in m
+                any(CERT.messaggio_dichiara_non_flat(m)
                     for m in self.db.messaggi())
                 or any(str(a.get("code") or "") == "SCALPER_CRASH"
                        for a in self.db.tabelle.get("live_alerts", []))),

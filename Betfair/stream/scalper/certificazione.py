@@ -339,6 +339,18 @@ def ordini_seguiti(c: Dict[str, Any]) -> List[Any]:
     return list(c.get("ingressi") or []) + list(c.get("uscite") or [])
 
 
+def messaggio_dichiara_non_flat(msg: Any) -> bool:
+    """Il servizio ha DICHIARATO una posizione non piatta? (S3)
+
+    Le dichiarazioni riconosciute: 'posizione NON flat' (stop o fine vita dopo
+    30 s; D7 24/09: residuo accettato dal bot e stato finale della sessione) e
+    l'allarme del crash ('CRASH thread flumine'). Spostata qui dal banco
+    (`tools/replay_registrazioni.py`) il 24/09 SENZA cambiarne la regola, perche'
+    il test la possa provare."""
+    m = str(msg or "")
+    return "NON flat" in m or "CRASH thread flumine" in m
+
+
 def esposizione(righe: Sequence[Dict[str, Any]]) -> Tuple[float, float]:
     """(se vince, se perde) sugli ABBINATI delle righe, col prezzo medio VERO."""
     w = l = 0.0

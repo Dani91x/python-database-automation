@@ -58,6 +58,9 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
+from ..trading.freno_rifiuti import BACKOFF_SCALPER_S, FrenoRifiuti
+from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
+
 logger = logging.getLogger(__name__)
 
 # Stake minimo accettato (Betfair / client simulato).
@@ -76,6 +79,14 @@ IDLE, QUOTING, QUOTING2, CANCELLING, LOCKING, FLATTENING, DONE = (
 # ---------------------------------------------------------------------------
 # Helper PURI (testabili senza flumine)
 # ---------------------------------------------------------------------------
+def _msg_residuo(net_win: float, net_lose: float) -> str:
+    """D7 (24/09): il residuo accettato si DICHIARA. ``net_win`` = P&L se la
+    selezione vince, ``net_lose`` = P&L se perde (dal blotter dello slot)."""
+    return ("posizione NON flat: residuo accettato %.2f (se vince %.2f, se perde %.2f)"
+            % (abs(float(net_win) - float(net_lose)), float(net_win), float(net_lose)))
+
+
+
 def micro_price(
     best_back: Optional[float],
     size_back: Optional[float],
@@ -489,6 +500,20 @@ class ScalperStrategy(BaseStrategy):
         self.stop_ticks_far: int = int(c.get("stop_ticks_far", 0))
         self.stop_horizon_s: float = float(c.get("stop_horizon_s", 1800.0))
 
+        # ---- D2 (24/09): STATO DEL MERCATO e FRENO CRESCENTE ----
+        # La guardia legge lo stato che Betfair comunica (il `market_book` che
+        # il bot ha gia'): a mercato non operabile NON si piazza e si scrive
+        # `attesa_riapertura` una volta. Il freno rallenta i rifiuti RESIDUI
+        # (mercato aperto, Betfair dice no): 1, 2, 4, 8, 16 e poi 30 s di tempo
+        # di mercato, azzerato al primo accettato, solo sugli INGRESSI (le
+        # uscite partono sempre, stessa regola del tetto transazioni). Nessuna
+        # soglia, nessun prezzo cambia: cambia solo QUANDO si riprova.
+        self._freno = FrenoRifiuti(tetto=None, backoff_s=BACKOFF_SCALPER_S,
+                                   azzera_al_successo=True)
+        self._attese = AttesaRiapertura()
+        # l'orologio DEL MERCATO (publish_time del book in lavorazione, ms)
+        self._ora_mercato_ms: Optional[int] = None
+
         # stato per (market_id, selection_id)
         self._slots: Dict[Tuple[str, int], _Slot] = {}
         # ordini regolati (dedup per id) per il report del P&L
@@ -509,6 +534,15 @@ class ScalperStrategy(BaseStrategy):
             self.event_sink(kind, payload)
         except Exception:  # noqa: BLE001 - il sink non deve mai rompere il bot
             logger.debug("[scalper] event_sink errore su %s", kind, exc_info=True)
+
+    def _orologio_s(self) -> float:
+        """L'ora del BOT in secondi: il `publish_time` del book in lavorazione.
+        Il freno conta il tempo DI MERCATO (replay, paper e live uguali); prima
+        del primo book si ripiega sull'orologio del muro."""
+        if self._ora_mercato_ms is not None:
+            return float(self._ora_mercato_ms) / 1000.0
+        import time as _t
+        return _t.time()
 
     @property
     def settled_orders(self):
@@ -576,6 +610,7 @@ class ScalperStrategy(BaseStrategy):
         now = getattr(market_book, "publish_time_epoch", None)
         if now is None:
             return
+        self._ora_mercato_ms = int(now)
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
         # GATE DI EVENTO valutato PER-BOOK (fix 10/07: prima viveva solo in
@@ -1869,7 +1904,8 @@ class ScalperStrategy(BaseStrategy):
                     self._on_cycle_closed(slot, locked,
                                           kind="flatten_residual", now=now)
                     self._emit("flatten_residual", locked=round(locked, 4),
-                               nw=round(net_win, 3), nl=round(net_lose, 3))
+                               nw=round(net_win, 3), nl=round(net_lose, 3),
+                               msg=_msg_residuo(net_win, net_lose))
                 slot.status = DONE
             elif not slot.submins and slot.flat_tries > 12:
                 # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
@@ -1890,7 +1926,8 @@ class ScalperStrategy(BaseStrategy):
                                           kind="flatten_residual", now=now)
                     self._emit("flatten_residual_forced", level="WARN",
                                locked=round(locked, 4),
-                               nw=round(net_win, 3), nl=round(net_lose, 3))
+                               nw=round(net_win, 3), nl=round(net_lose, 3),
+                               msg=_msg_residuo(net_win, net_lose))
                 slot.status = DONE
             elif (
                 best_back is None and best_lay is None and slot.flat_tries > 50
@@ -2026,6 +2063,26 @@ class ScalperStrategy(BaseStrategy):
                 return None
         if size < 0.01:
             return None
+        if not self.dry_run:
+            # D2 (24/09) GUARDIA DELLO STATO DEL MERCATO, per OGNI ordine: a
+            # mercato sospeso/chiuso Betfair (e il `MarketValidation` di
+            # flumine) rifiuterebbe comunque. Qui l'ordine non si costruisce
+            # nemmeno: esito identico al rifiuto di oggi (None, il ramo
+            # "ordine non partito" che i chiamanti hanno gia'), ma col motivo
+            # di Betfair, UNA riga di attivita' e SENZA contarlo nel freno.
+            if guardia_flumine(market, self._attese, self._emit,
+                               selection_id=int(selection_id), side=side) is not None:
+                return None
+            # D2 FRENO CRESCENTE sui rifiuti residui: solo gli INGRESSI.
+            if floor_min:
+                fermo = self._freno.bloccato(market.market_id, selection_id,
+                                             self._orologio_s())
+                if fermo:
+                    if self._freno.da_annunciare(market.market_id, selection_id):
+                        self._emit("freno_rifiuti", market_id=market.market_id,
+                                   selection_id=int(selection_id), side=side,
+                                   motivo=fermo)
+                    return None
         # tetto transazioni/ora: blocca SOLO i nuovi ingressi (floor_min=True);
         # chiusure e flatten passano sempre (la sicurezza vince sui costi)
         if self.max_txn_hour > 0 and not self.dry_run:
@@ -2070,13 +2127,20 @@ class ScalperStrategy(BaseStrategy):
         # nessuna transizione nuova e nessun ritentativo aggiunto qui.
         motivo_rifiuto = self._esegui_place(market, order)
         if motivo_rifiuto is not None:
+            # D2: il rifiuto arma il freno (1, 2, 4, 8, 16, 30 s di mercato)
+            n_rif, attesa = self._freno.registra_rifiuto(
+                market.market_id, selection_id, self._orologio_s())
             self._emit("place_rifiutato", market_id=market.market_id,
                        selection_id=int(selection_id), side=side,
                        price=price, size=size, motivo=motivo_rifiuto,
-                       order_id=str(getattr(order, "id", "") or ""))
-            logger.warning("[scalper] piazzamento RIFIUTATO sel=%s %s @%s per %s: %s",
-                           selection_id, side, price, size, motivo_rifiuto)
+                       order_id=str(getattr(order, "id", "") or ""),
+                       rifiuti=n_rif, riprovo_fra_s=attesa)
+            logger.warning("[scalper] piazzamento RIFIUTATO sel=%s %s @%s per %s "
+                           "(%d-esimo, ingressi fermi %.0fs): %s",
+                           selection_id, side, price, size, n_rif, attesa,
+                           motivo_rifiuto)
             return None
+        self._freno.registra_successo(market.market_id, selection_id)
         # contatore e telemetria DOPO l'esito: prima contavano anche gli ordini
         # mai partiti (per un ordine accettato l'effetto e' identico)
         self.stats["orders_placed"] += 1

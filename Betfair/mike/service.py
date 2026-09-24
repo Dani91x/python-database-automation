@@ -30,6 +30,7 @@ from Betfair.safe_strategy import execution as X
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
+from Betfair.stream.trading import stato_mercato as _SM
 
 from . import config as C
 from . import db as _real_db
@@ -337,6 +338,7 @@ def svuota_le_cache() -> None:
     """
     global _EVENTI_LETTI_A, _ULTIMI_PARAMS
     _ULTIMI_PARAMS = None
+    _ATTESE_RESTING.svuota()  # D2 (24/09)
     _CACHE_FEED.svuota()
     _CACHE_AGGREGATI.svuota()
     _CACHE_EVENTI.clear()
@@ -1112,6 +1114,50 @@ def _resting_e_chiusura(leg: E.Leg, chiude: Optional[int]) -> bool:
     """La lay appoggiata RIDUCE una posizione? (coperture ``*_green`` o una
     gamba che dichiara quale riga chiude)."""
     return chiude is not None or str(leg.role or "").endswith("_green")
+
+
+# D2 (24/09): il diario delle attese di riapertura della lay appoggiata (una riga
+# `attesa_riapertura` per sospensione, per partita, mercato e ruolo).
+_ATTESE_RESTING = _SM.AttesaRiapertura()
+
+
+def _resting_in_attesa(db: Any, event_id: Any, leg: "E.Leg",
+                       book: Optional["E.Book"]) -> bool:
+    """D2 (24/09) - GUARDIA DELLO STATO DEL MERCATO per la lay appoggiata.
+
+    Era l'unica strada d'invio di Mike senza controllo di stato (mappa del
+    24/09): a mercato sospeso l'ordine partiva, Betfair lo rifiutava, la gamba
+    finiva in `_rifiutata` e la green al prezzo fisso non veniva piu' riproposta
+    alla riapertura; in paper, invece, si scriveva la riga pending (paper e live
+    divergevano). Lo stato e' quello che Mike ha gia' (``book`` della selezione
+    dal feed): nessuna lettura in piu'. La regola e' quella condivisa
+    (``stato_mercato.mercato_operabile``) con la regola di Mike sullo stato
+    IGNOTO (M-17: nel dubbio non si opera e non si rinuncia), la stessa di
+    ``execute_place``.
+
+    True = NON piazzare adesso (la gamba e' gia' marcata ``cancelled``).
+    """
+    stato = (_SM.STATO_IGNOTO if book is None else
+             _SM.StatoMercato(status=getattr(book, "status", None),
+                              inplay=getattr(book, "inplay", None),
+                              bet_delay=getattr(book, "bet_delay", None),
+                              fonte="feed_mike"))
+    ok, motivo = _SM.mercato_operabile(stato)
+    if ok and motivo != _SM.IGNOTO:
+        _ATTESE_RESTING.riaperto((str(event_id), leg.market, leg.role))
+        return False
+    if ok:  # stato ignoto: Mike non opera (M-17)
+        motivo = _SM.IGNOTO
+    leg.status = "cancelled"
+    if _ATTESE_RESTING.annota((str(event_id), leg.market, leg.role), motivo):
+        db.log(_SM.KIND_ATTESA, {"leg": leg.ref, "role": leg.role,
+                                 "market": leg.market, "motivo": motivo,
+                                 "stato_mercato": E.stato_mercato(book),
+                                 "aspetta": _SM.da_aspettare(motivo) or motivo == _SM.IGNOTO,
+                                 "note": "lay appoggiata non inviata: mercato non "
+                                         "operabile; il motore la ripropone alla "
+                                         "riapertura"}, event_id)
+    return True
 
 
 def _freno_aperture_rest() -> Optional[str]:
@@ -3496,6 +3542,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         if _is_resting_leg(leg, params):
             # lay appoggiata: resta 'pending' sul book (riga riservata in mike_trades)
             # finche' il mercato non scambia sotto il suo prezzo (vedi _resting_filled)
+            if not dry and _resting_in_attesa(db, ev["event_id"], leg, book):
+                # D2 (24/09): mercato non operabile -> nessun ordine, nessuna
+                # riga di riserva, NESSUN `_rifiutata` (non e' un rifiuto): la
+                # gamba torna al motore, che la ripropone alla riapertura con le
+                # condizioni di quel momento. Paper e live uguali.
+                n_actions += 1
+                continue
             if dry:
                 leg.status = "cancelled"
                 db.log("would_place", {"leg": leg.ref, "role": leg.role, "side": "lay", "price": leg.price,

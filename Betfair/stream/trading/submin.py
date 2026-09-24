@@ -207,6 +207,14 @@ class FlumineSubminOps:
         # control rifiuta (ordine VIOLATION, MAI inviato a Betfair). Ignorarlo lascerebbe la
         # sequenza submin ad attendere un ordine INESISTENTE ('processing' per sempre).
         extra = {"client": self.client} if self.client is not None else {}
+        # 24/09 D2: guardia dello stato del mercato (modulo condiviso): a
+        # mercato sospeso/chiuso il park non parte. Stesso esito del rifiuto
+        # di un trading control (ValueError pre-place, la sequenza abortisce).
+        from .stato_mercato import mercato_operabile, stato_da_mercato_flumine
+        _ok_mercato, _motivo_mercato = mercato_operabile(stato_da_mercato_flumine(market))
+        if not _ok_mercato:
+            raise ValueError(f"submin place RIFIUTATO — mercato non operabile "
+                             f"({_motivo_mercato}): Market is not open")
         if self.customer_strategy_ref is not None:
             ok = market.place_order(
                 built.order, customer_strategy_ref=self.customer_strategy_ref, **extra)

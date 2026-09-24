@@ -140,6 +140,59 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# D7 (24/09): oltre questo sbilancio (EUR, |se vince - se perde|) per selezione
+# la posizione finale NON e' piatta e il servizio lo DICHIARA. E' la stessa
+# soglia del controllo S3 del banco e del residuo accettato dei bot
+# (`condotta_ordini.RESIDUO_ACCETTATO`): non e' un numero nuovo.
+SOGLIA_NON_FLAT = 0.30
+
+
+def _esposizioni_nette(framework: Any) -> Dict[Any, Any]:
+    """(se vince, se perde) ABBINATI per (market_id, selection_id), letti dal
+    blotter di TUTTI i mercati della sessione con i campi veri di flumine
+    (`size_matched`, `average_price_matched`). Solleva se il blotter non e'
+    leggibile: un'esposizione non letta NON e' un'esposizione nulla."""
+    per: Dict[Any, List[float]] = {}
+    for m in list(getattr(framework, "markets", None) or []):
+        blotter = getattr(m, "blotter", None)
+        if blotter is None:
+            continue
+        for o in list(blotter):
+            sm = float(getattr(o, "size_matched", 0.0) or 0.0)
+            ap = float(getattr(o, "average_price_matched", 0.0) or 0.0)
+            if sm <= 0 or ap <= 1.0:
+                continue
+            k = (str(getattr(o, "market_id", "") or ""),
+                 int(getattr(o, "selection_id", 0) or 0))
+            wl = per.setdefault(k, [0.0, 0.0])
+            lato = str(getattr(o, "side", "") or "").upper()
+            if lato == "BACK":
+                wl[0] += sm * (ap - 1.0)
+                wl[1] -= sm
+            elif lato == "LAY":
+                wl[0] -= sm * (ap - 1.0)
+                wl[1] += sm
+    return {k: (round(v[0], 4), round(v[1], 4)) for k, v in per.items()}
+
+
+def _dichiarazione_non_flat(framework: Any) -> Optional[str]:
+    """D7: il messaggio 'posizione NON flat' per lo stato finale, o None se la
+    posizione e' piatta (entro `SOGLIA_NON_FLAT`). Blotter illeggibile = si
+    DICHIARA che l'esposizione non e' verificabile (mai 'piatta' a occhio)."""
+    try:
+        esp = _esposizioni_nette(framework)
+    except Exception as exc:  # noqa: BLE001 - illeggibile: si dichiara
+        return ("posizione NON flat verificabile: blotter illeggibile a fine "
+                "sessione (%s)" % (str(exc)[:120] or type(exc).__name__))
+    sbil = [(k, w, l) for k, (w, l) in esp.items()
+            if abs(w - l) > SOGLIA_NON_FLAT + 1e-9]
+    if not sbil:
+        return None
+    parti = ["%s/%s residuo accettato %.2f (se vince %.2f, se perde %.2f)"
+             % (k[0], k[1], abs(w - l), w, l) for k, w, l in sbil]
+    return "posizione NON flat a fine sessione: " + "; ".join(parti)
+
+
 def _session_bet_ids(framework: Any) -> List[str]:
     """bet_id degli ordini di QUESTA sessione, dai blotter del framework.
 
@@ -1118,6 +1171,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         flush()
         final = "stopped" if stopped_by_ui else ("error" if crashed else "done")
         _final_stats = _stats() if strategy is not None else None
+        # D7 (24/09): il residuo che resta a fine sessione si DICHIARA nello
+        # stato finale e nell'attivita' (mai una posizione scoperta non
+        # dichiarata, par.6.4). Solo lettura del blotter: nessun ordine.
+        _non_flat = _dichiarazione_non_flat(framework)
+        if _non_flat:
+            db.log(ev, "warn", {"msg": _non_flat, "stato_finale": final})
+            if isinstance(_final_stats, dict):
+                _final_stats = {**_final_stats, "posizione_non_flat": _non_flat}
         db.set_control(
             ev, status=final, stopped_at=_now_iso(), stats=_final_stats,
             error=("thread flumine morto: sweep cancel eseguito"

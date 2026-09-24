@@ -1174,6 +1174,20 @@ def _place_or_raise(market: Any, order: Any, what: str, client: Any = None) -> N
     # ``None`` = niente da specificare (framework senza registro client: vale il
     # default di flumine, comportamento storico invariato).
     extra = {"client": client} if client is not None else {}
+    # 24/09 D2: GUARDIA DELLO STATO DEL MERCATO (modulo condiviso), dal
+    # ``market_book`` che il runner ha gia' in memoria. A mercato SUSPENDED /
+    # CLOSED / definizione incompleta l'ordine NON parte e NON si scrive nel
+    # diario: rifiuto PRE-PLACE esplicito con lo stato di Betfair (lo stesso
+    # esito che oggi da' il ``MarketValidation`` di flumine, "Market is not
+    # open", che resta nel testo per chi lo legge). Il comando non si tiene in
+    # coda per piazzarlo dopo: sara' il bot a rivalutare alla riapertura (mai
+    # un ordine "in ritardo" alla cieca). Stato ignoto (finto senza book) = si
+    # lascia decidere a flumine, come oggi.
+    from .trading.stato_mercato import mercato_operabile, stato_da_mercato_flumine
+    _ok_mercato, _motivo_mercato = mercato_operabile(stato_da_mercato_flumine(market))
+    if not _ok_mercato:
+        raise ValueError(f"{what}: place RIFIUTATO — mercato non operabile "
+                         f"({_motivo_mercato}): Market is not open")
     # 24/09 F1: diario write-ahead del motore PRIMA della chiamata (se fallisce:
     # ValueError pre-place, niente parte). Fuori dal motore e' un no-op.
     _chiama_pre_invio(order, market, what)

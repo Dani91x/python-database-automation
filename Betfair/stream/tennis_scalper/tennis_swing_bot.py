@@ -18,6 +18,7 @@ from flumine.order.trade import Trade
 from flumine.order.ordertype import LimitOrder
 from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_price
 
+from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
     FrenoRifiuti,
     dichiara_chiusura_mercato,
@@ -97,6 +98,8 @@ class TennisSwingStrategy(BaseStrategy):
         self._pnl_settled_oids: set = set()
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
         self._freno = FrenoRifiuti()
+        # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
+        self._attese = AttesaRiapertura()
         self._now_ms: Optional[int] = None
         # il blotter e' stato letto davvero in questo giro? Un'esposizione non
         # letta NON e' un'esposizione nulla: senza questo flag, un'eccezione del
@@ -184,6 +187,14 @@ class TennisSwingStrategy(BaseStrategy):
                            sel, side, size, motivo)
             return None
         size = legale
+        # D2 (24/09) GUARDIA DELLO STATO DEL MERCATO, per OGNI ordine (anche
+        # le coperture): a mercato sospeso/chiuso Betfair e il `MarketValidation`
+        # di flumine lo rifiuterebbero comunque. L'ordine non parte (esito
+        # identico al rifiuto di oggi), UNA riga `attesa_riapertura`, e NON si
+        # conta nel freno: una sospensione non e' un rifiuto.
+        if guardia_flumine(market, self._attese, self._emit,
+                           sel=int(sel), side=side) is not None:
+            return None
         # FRENO DOPO I RIFIUTI: mai sulle coperture (devono poter partire sempre)
         if not copertura:
             fermo = self._freno.bloccato(market.market_id, sel, self._orologio_s())

@@ -58,6 +58,7 @@ from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_away
 
+from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
     RESIDUO_ACCETTATO,
     FrenoRifiuti,
@@ -454,6 +455,8 @@ class TennisScalperStrategy(BaseStrategy):
         self._now_ms: Optional[int] = None
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
         self._freno = FrenoRifiuti()
+        # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
+        self._attese = AttesaRiapertura()
         # eventi su cui si e' gia' spiegato perche' la missione non apre: una
         # riga di attivita' per evento, non una per book
         self._missione_spiegata: set = set()
@@ -2216,6 +2219,15 @@ class TennisScalperStrategy(BaseStrategy):
         # processo standard esige (§4). Tutto il resto della logica del bot usa
         # gia' `publish_time_epoch` (vedi `process_market_book`).
         now_s = self._orologio_s()
+        # D2 (24/09) GUARDIA DELLO STATO DEL MERCATO, per OGNI ordine (anche
+        # le coperture): a mercato sospeso/chiuso Betfair e il `MarketValidation`
+        # di flumine lo rifiuterebbero comunque. L'ordine non parte (esito
+        # identico al rifiuto di oggi), UNA riga `attesa_riapertura`, e NON si
+        # conta nel freno: una sospensione non e' un rifiuto.
+        if not self.dry_run and guardia_flumine(
+                market, self._attese, self._emit,
+                selection_id=int(selection_id), side=side) is not None:
+            return None
         # FRENO DOPO I RIFIUTI (17/09): misurato 20.534 piazzamenti rifiutati in
         # UNA partita nello scenario `rifiuti-betfair`. Non tocca le USCITE
         # (`floor_min=False`): una chiusura deve poter partire sempre, come per

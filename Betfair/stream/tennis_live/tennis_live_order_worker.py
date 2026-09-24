@@ -520,6 +520,15 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
     cap = _max_stake_per_order()
     if cap is not None and size > cap + 1e-9:
         raise ValueError(f"size {size:.2f} oltre il cap TENNIS_LIVE_MAX_STAKE_PER_ORDER={cap:.2f}")
+    # 24/09 D2: guardia dello stato del mercato (modulo condiviso), dal
+    # ``market_book`` che il runner ha gia': a mercato sospeso/chiuso il
+    # comando e' rifiutato PRE-PLACE con lo stato di Betfair (stesso esito del
+    # ``MarketValidation`` di flumine, "Market is not open").
+    from ..trading.stato_mercato import mercato_operabile, stato_da_mercato_flumine
+    _ok_mercato, _motivo_mercato = mercato_operabile(stato_da_mercato_flumine(market))
+    if not _ok_mercato:
+        raise ValueError(f"place RIFIUTATO — mercato non operabile "
+                         f"({_motivo_mercato}): Market is not open")
     trade = Trade(market_id=market.market_id, selection_id=int(cmd["selection_id"]),
                   handicap=float(cmd.get("handicap") or 0.0), strategy=strategy)
     order = trade.create_order(

@@ -190,19 +190,21 @@ uscita in perdita → cap.
 Decisione a modello (`loss_exit_mode = model`):
 ```
 CHIUDO ORA = valore certo del cash-out (negativo)
-TENGO      = Σ P(gol totali = t) × P&L(t)  −  premio al rischio (50% × P(4) × capitale)
+TENGO      = Σ P(gol totali = t) × P&L(t)  −  premio al rischio (10% × P(4) × capitale)
 chiude se CHIUDO ORA ≥ TENGO − premio
 ```
+> **Premio al rischio = 10 %** (`config.py`, `loss_exit_risk_premium_pct`): deciso dall'utente il 24/09 (D8), il documento si allinea al codice (motivo in §14.2). Il 50 % scritto qui prima era il valore superato.
 P(gol totali) = media fra griglia Omega (λ, minuto, punteggio, rossi) e tabella empirica HT→FT
 (parla finché il punteggio è quello dell'intervallo); P(4) prudente = la più pessimista fra
 modello/empirico e mercato. Senza dati di modello → regola fissa "perdita ≤ 25% del capitale".
 Esempi (Under 20 € @ 1,50 + Over 4 € @ 8, capitale 24 €):
 ```
-HT 1-1  chiudo −5,51 (23%)  tengo −0,79 · P(4) 22% · premio 2,64 → soglia −3,43 → TIENE
+HT 1-1  chiudo −5,51 (23%)  tengo −0,79 · P(4) 22% · premio 0,53 → soglia −1,32 → TIENE
         (la regola fissa avrebbe chiuso: uscita troppo presto)
-HT 2-1  chiudo −6,53 (27%)  tengo −3,08 · P(4) 30% · premio 3,60 → soglia −6,68 → CHIUDE
-        (la regola fissa avrebbe tenuto: il 4° gol era troppo probabile)
+HT 2-1  chiudo −6,53 (27%)  tengo −3,08 · P(4) 30% · premio 0,72 → soglia −3,80 → TIENE
+        (col premio al 50% di prima: premio 3,60, soglia −6,68 → CHIUDEVA; col 10% tiene)
 HT 1-1  mercato prezza P(4) al 45%                                           → CHIUDE
+        (esempio calcolato col premio al 50%: da ricalcolare sul caso reale col 10%)
 ```
 Dopo un'uscita in perdita → FLAT senza re-ingresso.
 
@@ -400,7 +402,7 @@ una riproposizione a ogni giro. Il parametro resta in whitelist ma nessun ramo l
 | chiave | default | significato |
 |---|---|---|
 | loss_exit_mode | model | model / fixed |
-| loss_exit_risk_premium_pct | 50 | premio al rischio (% capitale × P(4)) |
+| loss_exit_risk_premium_pct | 10 | premio al rischio (% capitale × P(4)); 10 deciso dall'utente il 24/09 (D8) |
 | loss_exit_p4_prudent | on | P(4) = max(modello/empirico, mercato) |
 | loss_exit_max_pct | 0 | tetto "non cristallizzare oltre" (0 = off) |
 | loss_exit_emp_min_n | 200 | casi minimi della tabella HT→FT |

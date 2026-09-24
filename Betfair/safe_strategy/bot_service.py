@@ -58,6 +58,7 @@ from Betfair.safe_strategy import exits as XE
 from Betfair.safe_strategy import proposte_opportunita as PO
 from Betfair.safe_strategy import risk as RK
 from Betfair.stream import avvio_app as AA
+from Betfair.stream.trading import stato_mercato as _SM
 
 logger = logging.getLogger("safe.bot")
 
@@ -2415,6 +2416,65 @@ def _verifica_modalita_proposta(*, db, event_id: str, mode: str, opp_key: str,
     return None
 
 
+# D2 (24/09): il diario delle attese di riapertura (una riga per sospensione).
+_ATTESE_MERCATO = _SM.AttesaRiapertura()
+
+
+def _mercato_non_operabile(db, event_id: Any, trade: dict[str, Any],
+                           row: Optional[dict[str, Any]],
+                           percorso: str) -> Optional[dict[str, Any]]:
+    """D2 (24/09) - GUARDIA DELLO STATO DEL MERCATO (modulo condiviso) per i
+    percorsi manuali di Safe che non la avevano (piazzamento manuale, combo).
+
+    Lo stato si legge dalla riga di scan che il servizio ha gia' in memoria,
+    con la stessa lettura delle uscite (``exits.market_open``: il blocco del
+    feed del MERCATO della gamba, M-23). ``None`` = si procede (aperto o stato
+    ignoto, come oggi); altrimenti il rifiuto da restituire alla UI, e
+    l'attivita' ``attesa_riapertura`` scritta UNA volta per sospensione.
+    """
+    payload = (row or {}).get("payload") if isinstance(row, dict) else None
+    aperto = XE.market_open(trade, payload)
+    chiave = (str(event_id), str(trade.get("market_id") or ""), percorso)
+    if aperto is None:
+        stato = _SM.STATO_IGNOTO
+    else:
+        stato = _SM.StatoMercato(status=_SM.OPERABILE if aperto else
+                                 _stato_grezzo(trade, payload), fonte="riga_scan")
+    piazza, motivo, annuncia = _SM.guardia(stato, _ATTESE_MERCATO, chiave)
+    if piazza:
+        return None
+    if annuncia:
+        _log(db, _SM.KIND_ATTESA, {"event_id": str(event_id),
+                                   "market_id": str(trade.get("market_id") or ""),
+                                   "origin": ("manual" if percorso in ("manuale", "combo")
+                                              else "bot"),
+                                   "percorso": percorso,
+                                   "motivo": motivo, "aspetta": _SM.da_aspettare(motivo)})
+    return {"rejected": f"mercato {motivo.lower()}", "error": "mercato_non_operabile",
+            "motivo": motivo,
+            "message": "rifiutato: mercato non operabile (%s), riprova appena riapre" % motivo}
+
+
+def _stato_grezzo(trade: dict[str, Any], payload: Any) -> str:
+    """Lo status letterale del blocco (SUSPENDED/CLOSED/...) per il motivo;
+    ``exits.market_open`` dice solo aperto si'/no."""
+    if not isinstance(payload, dict):
+        return _SM.SOSPESO
+    mt = str(trade.get("market_type") or "").upper()
+    mid = str(trade.get("market_id") or "")
+    if mt == "MATCH_ODDS" or not mt:
+        st = payload.get("mo_status")
+        return str(st).upper() if isinstance(st, str) and st else _SM.SOSPESO
+    blocchi = [payload.get(k) for k in ("cs", "ht", "btts", "ht_result")]
+    blocchi.extend(payload.get("ou") or [])
+    for blk in blocchi:
+        if isinstance(blk, dict) and (not mid or str(blk.get("market_id") or "") == mid):
+            st = blk.get("status")
+            if isinstance(st, str) and st and st.upper() != _SM.OPERABILE:
+                return st.upper()
+    return _SM.SOSPESO
+
+
 def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                    now: datetime, risk_ctx: Optional[dict] = None,
                    control_mode: str = "") -> dict:
@@ -2497,6 +2557,16 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         _log(db, "skip", {"event_id": event_id, "reason": motivo, "origin": "manual",
                           "market_id": market_id, "selection_id": selection_id})
         return {"error": motivo}
+    # D2 (24/09): STATO DEL MERCATO, dalla riga di scan che il servizio ha gia'
+    # (nessuna lettura in piu'). A mercato sospeso/chiuso nessuna riserva e
+    # nessun ordine (in live Betfair rifiuterebbe; in paper si riempiva su quote
+    # congelate): il manuale e' un colpo solo, si rifiuta col motivo come fa gia'
+    # il cash-out manuale. Stato ignoto = si passa, come oggi.
+    rifiuto_mercato = _mercato_non_operabile(
+        db, event_id, {"market_type": market_type, "market_id": market_id},
+        row_feed, "manuale")
+    if rifiuto_mercato is not None:
+        return rifiuto_mercato
 
     # idempotenza del MANUALE: la UI può reinviare la stessa richiesta (retry,
     # doppio click): con la stessa chiave non si piazza due volte.
@@ -2753,6 +2823,14 @@ def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: di
             if pv is None:
                 return {"error": f"combo_gamba_{i}_prezzo_visto_non_valido"}
             prezzo_ordine = pv
+        # D2 (24/09): STATO DEL MERCATO della gamba, dalla riga di scan gia' in
+        # memoria. Una gamba su un mercato sospeso/chiuso = NESSUNA gamba
+        # piazzata (tutto o niente, prima di riservare qualsiasi cosa).
+        rifiuto_mercato = _mercato_non_operabile(
+            db, event_id, {"market_type": market_type, "market_id": str(market_id)},
+            (rows_by_event or {}).get(event_id), "combo")
+        if rifiuto_mercato is not None:
+            return {**rifiuto_mercato, "gamba": i}
         # NESSUNA GAMBA PIAZZATA se anche una sola e' sparita o fuori
         # tolleranza: si esce SUBITO, prima di riservare qualsiasi cosa.
         prices = prices_for(market=market, rows_by_event=rows_by_event, event_id=event_id,
@@ -7808,6 +7886,15 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
             _log(db, "exit_failed", {"reason": "combo_incompleta_senza_prezzi",
                                      "trade_id": tid, "critical": True})
             continue
+        # D2 (24/09): a mercato sospeso/chiuso la gamba NON si manda (in live
+        # Betfair la rifiutava con `exit_failed` critico a ogni ciclo; in paper
+        # si riempiva su quote congelate): si aspetta, e questa stessa funzione
+        # la riprende al ciclo dopo con le quote di quel momento.
+        if _mercato_non_operabile(
+                db, str(leg.get("event_id") or event_id), leg,
+                rows_by_event.get(str(leg.get("event_id") or event_id)),
+                "combo_incompleta") is not None:
+            continue
         if _close_combo_siblings(db=db, market=market, legs=[leg],
                                  prices_by_id={int(tid): prices}, params=params,
                                  now=now, reason="combo incompleta: gamba chiusa subito"):
@@ -9347,6 +9434,7 @@ def svuota_le_cache() -> None:
     ``.clear()`` nudo produrrebbe un ``KeyError`` al primo giro dopo
     l'azzeramento, quindi si RIPRISTINA il valore iniziale di modulo.
     """
+    _ATTESE_MERCATO.svuota()  # D2 (24/09): diario delle attese di riapertura
     # -- cache che nascono vuote -------------------------------------------
     _OPTIONAL_MODS.clear()
     _CONSAPEVOLEZZA_SCRITTA.clear()

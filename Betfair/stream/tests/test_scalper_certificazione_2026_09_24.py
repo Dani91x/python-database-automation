@@ -659,9 +659,12 @@ def test_rifiuto_vero_di_flumine_slot_vuoto_attivita_scritta_e_k2_sollecitato_mu
     att = _attivita(s)
     m, ctl = _mercato_flumine_che_rifiuta(2)
     slot = _join(s, m)
-    # entrambe le gambe rifiutate: lo slot NON tiene niente e resta IDLE (il
-    # ramo "ordine non partito" gia' esistente in `_enter_join`)
-    assert len(ctl.ordini) == 2
+    # la prima gamba (BACK) e' rifiutata: lo slot NON tiene niente e resta IDLE
+    # (il ramo "ordine non partito" gia' esistente in `_enter_join`).
+    # D2 (24/09): il rifiuto arma il FRENO dello scalper (1 s di mercato) e la
+    # seconda gamba (LAY) della stessa selezione NON parte: prima partiva per
+    # essere comunque cancellata (la coppia vuole entrambe le gambe).
+    assert len(ctl.ordini) == 1
     assert slot.status == SB.IDLE
     assert slot.entry_back is None and slot.entry_lay is None and slot.entry is None
     assert slot.flatten_orders == []
@@ -671,8 +674,11 @@ def test_rifiuto_vero_di_flumine_slot_vuoto_attivita_scritta_e_k2_sollecitato_mu
         assert SB.ScalperStrategy._has_live(o) is False
     # la riga di attivita' col MOTIVO vero del rifiuto, e nessun 'place'
     rif = [p for k, p in att if k == "place_rifiutato"]
-    assert len(rif) == 2
-    assert {p["side"] for p in rif} == {"BACK", "LAY"}
+    assert len(rif) == 1
+    assert {p["side"] for p in rif} == {"BACK"}
+    assert rif[0]["riprovo_fra_s"] == 1.0
+    freno = [p for k, p in att if k == "freno_rifiuti"]
+    assert len(freno) == 1 and freno[0]["side"] == "LAY"
     for p in rif:
         assert "REPLAY_RIFIUTA_PRIMI" in p["motivo"]
         assert p["order_id"] in {str(o.id) for o in ctl.ordini}
@@ -692,7 +698,9 @@ def test_rifiuto_vero_di_flumine_slot_vuoto_attivita_scritta_e_k2_sollecitato_mu
 
 def test_rifiuto_di_una_sola_gamba_cancella_l_altra_e_lo_slot_resta_idle(simulato):
     """Il ramo ESISTENTE di `_enter_join` (una gamba None -> cancel dell'altra,
-    nessuna quota): ora ci si arriva anche col rifiuto."""
+    nessuna quota): ora ci si arriva anche col rifiuto. D2 (24/09): si rifiuta
+    la SECONDA gamba (col primo rifiutato il freno non farebbe partire la
+    seconda, vedi il test sopra)."""
     class _RifiutaIlPrimo(_Mercato):
         def __init__(self) -> None:
             super().__init__()
@@ -701,7 +709,7 @@ def test_rifiuto_di_una_sola_gamba_cancella_l_altra_e_lo_slot_resta_idle(simulat
 
         def place_order(self, order: Any, *a: Any, **k: Any) -> bool:
             self.piazzati += 1
-            self.rifiuta = self.piazzati == 1
+            self.rifiuta = self.piazzati == 2
             return super().place_order(order, *a, **k)
 
         def cancel_order(self, order: Any, size_reduction: Optional[float] = None) -> bool:
@@ -751,11 +759,13 @@ def test_place_order_che_solleva(simulato):
     s = _strategia()
     att = _attivita(s)
     slot = s._slot("1.100", 7)
+    s._ora_mercato_ms = 0          # D2 (24/09): il freno conta il tempo di mercato
     assert s._place(_Solleva(False), 7, "BACK", 2.0, 25.0, slot=slot) is None
     assert slot.flatten_orders == []
     rif = [p for k, p in att if k == "place_rifiutato"]
     assert len(rif) == 1 and "guasto di rete" in rif[0]["motivo"]
     m = _Solleva(True)
+    s._ora_mercato_ms = 2_000      # oltre il primo passo del freno (1 s)
     o = s._place(m, 7, "BACK", 2.0, 25.0, slot=slot)
     assert o is not None and o in m.blotter.ordini and slot.flatten_orders == [o]
 
@@ -771,7 +781,8 @@ def test_il_banco_vede_i_rifiuti_anche_quando_il_bot_non_li_segue(simulato):
     _join(s, m)
     finto = SimpleNamespace(ordini_di=lambda _ss: [], rifiuti=ctl)
     righe = R._Banco.righe_correnti(finto, s, CERT.credenze(s))
-    assert len(ctl.ordini) == 2 and len(righe) == 2
+    # D2 (24/09): col freno la seconda gamba della coppia non parte piu'
+    assert len(ctl.ordini) == 1 and len(righe) == 1
     assert sorted(r["order_id"] for r in righe) == sorted(str(o.id) for o in ctl.ordini)
     assert all(CERT._rifiutato(r) for r in righe)
     senza = SimpleNamespace(ordini_di=lambda _ss: [], rifiuti=None)

@@ -127,82 +127,17 @@ def size_legale(size: float, side: str, *, live: bool, giurisdizione: str = JURI
 # ---------------------------------------------------------------------------
 # 2. il freno dopo un rifiuto
 # ---------------------------------------------------------------------------
-# backoff in SECONDI DI TEMPO DI MERCATO. Il primo passo copre il betDelay del
-# tennis in gioco (5 s): un rifiuto non si ripresenta prima che l'esito
-# precedente sia noto.
-BACKOFF_S = (5.0, 10.0, 20.0, 40.0, 60.0)
-# tetto di rifiuti per (mercato, selezione) e per partita: oltre, su quella
-# selezione non si apre piu'. 20 e' prudente — nel replay i rifiuti a raffica
-# erano migliaia, e un conto sano non ne produce nemmeno uno.
-TETTO_RIFIUTI = 20
-
-
-class FrenoRifiuti:
-    """Quante volte Betfair ci ha detto di no, e quando si puo' riprovare.
-
-    Il tempo e' quello DEL MERCATO (`publish_time_epoch`), non quello del muro:
-    e' l'unico modo perche' replay, paper e live si comportino allo stesso modo
-    (stessa correzione gia' fatta al tetto transazioni dello scalper).
-    """
-
-    def __init__(self, tetto: int = TETTO_RIFIUTI) -> None:
-        self.tetto = int(tetto)
-        self._rifiuti: Dict[Tuple[str, int], int] = {}
-        self._riprova_da: Dict[Tuple[str, int], float] = {}
-        # per quale conteggio di rifiuti si e' gia' scritto il motivo in
-        # attivita': senza questo, un bot che tenta a ogni book scriverebbe
-        # DECINE DI MIGLIAIA di righe in `tennis_bot_activity` (misurato:
-        # 20.494 righe per 40 rifiuti veri). Il motivo si dice UNA volta per
-        # rifiuto, non una volta per tentativo.
-        self._annunciato: Dict[Tuple[str, int], int] = {}
-
-    def _k(self, market_id: Any, selection_id: Any) -> Tuple[str, int]:
-        try:
-            return (str(market_id), int(selection_id))
-        except (TypeError, ValueError):
-            return (str(market_id), 0)
-
-    def registra_rifiuto(self, market_id: Any, selection_id: Any,
-                         adesso_s: float) -> Tuple[int, float]:
-        """Un rifiuto in piu'. Torna (quanti, fra quanti secondi si riprova)."""
-        k = self._k(market_id, selection_id)
-        n = self._rifiuti.get(k, 0) + 1
-        self._rifiuti[k] = n
-        attesa = BACKOFF_S[min(n, len(BACKOFF_S)) - 1]
-        self._riprova_da[k] = float(adesso_s) + attesa
-        return n, attesa
-
-    def registra_successo(self, market_id: Any, selection_id: Any) -> None:
-        """Un piazzamento riuscito azzera il backoff (non il conteggio: il tetto
-        per partita resta, perche' misura quante volte il conto ha detto no)."""
-        self._riprova_da.pop(self._k(market_id, selection_id), None)
-
-    def bloccato(self, market_id: Any, selection_id: Any,
-                 adesso_s: float) -> Optional[str]:
-        """`None` = si puo' provare. Altrimenti il MOTIVO, gia' scritto per la UI."""
-        k = self._k(market_id, selection_id)
-        n = self._rifiuti.get(k, 0)
-        if n >= self.tetto:
-            return ("tetto rifiuti raggiunto su questa selezione (%d): non apro "
-                    "piu' finche' la partita non finisce" % n)
-        fino_a = self._riprova_da.get(k)
-        if fino_a is not None and float(adesso_s) < fino_a:
-            return ("freno dopo %d rifiuto/i di Betfair: riprovo fra %.0f s"
-                    % (n, fino_a - float(adesso_s)))
-        return None
-
-    def da_annunciare(self, market_id: Any, selection_id: Any) -> bool:
-        """True solo la PRIMA volta che si blocca per questo conteggio di
-        rifiuti: il motivo va scritto in attivita' una volta, non a ogni book."""
-        k = self._k(market_id, selection_id)
-        n = self._rifiuti.get(k, 0)
-        if self._annunciato.get(k) == n:
-            return False
-        self._annunciato[k] = n
-        return True
-
-    def quanti(self, market_id: Any, selection_id: Any) -> int:
-        return self._rifiuti.get(self._k(market_id, selection_id), 0)
+# 24/09 (D2): il freno e' stato SPOSTATO nel modulo condiviso
+# `Betfair/stream/trading/freno_rifiuti.py` per montarlo anche nello scalper
+# calcio. Comportamento INVARIATO per i quattro bot tennis: stessi default
+# (5-10-20-40-60 s di tempo di mercato, tetto 20 per mercato e selezione,
+# conteggio NON azzerato dal successo). Il test di parita'
+# `tests/test_freno_parita_2026_09_24.py` lo prova sul vecchio comportamento.
+from ..trading.freno_rifiuti import (  # noqa: E402,F401 - re-export
+    BACKOFF_S,
+    TETTO_RIFIUTI,
+    FrenoRifiuti,
+)
 
 
 # ---------------------------------------------------------------------------
