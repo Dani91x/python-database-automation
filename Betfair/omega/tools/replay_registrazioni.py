@@ -1047,6 +1047,14 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # (`Betfair/safe_strategy/tools/replay_tennis.py`): non si inventa un
     # meccanismo nuovo per la stessa cosa.
     "proposta-approvata": dict(_APRE, strategy_version=3),
+    # ---- 24/09: L'UTENTE SCEGLIE "AUTOMATICO" (uscite_protezione) ----------
+    # Stesso motore e stessi ingressi di `proposta-approvata`, ma col pulsante
+    # dell'utente su 'automatico': l'uscita che il produttore calcola (stessi
+    # criteri, nessuna soglia cambiata) la ESEGUE il bot, con l'attivita'
+    # `uscita_automatica` che dichiara la scelta. Nessuna firma dal banco: in
+    # questo modo nessuno firma. G1 (c)/(d) e G4 giudicano col parametro.
+    "uscite-automatiche": dict(_APRE, strategy_version=3,
+                               uscite_protezione="automatico"),
     # ---- BETFAIR RIFIUTA IL LAY (addendum 16/09, difetto 2 del 15/09) ----
     # `place_rifiuto` del banco: l'istruzione torna `ok=False` e NESSUN ordine
     # esiste a mercato. Senza provocarlo, `res.ok` non vale MAI False in tutto
@@ -1103,6 +1111,12 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                           "spento il bot non chiude piu' da solo — scrive una "
                           "proposta coi numeri, e il banco la FIRMA al giro dopo "
                           "come fa il trader dalla Control Room (G1/G2/G3/G4)",
+    "uscite-automatiche": "LE USCITE LE ESEGUE IL BOT PER SCELTA DELL'UTENTE "
+                          "(uscite_protezione='automatico', 24/09): stessi "
+                          "ingressi e stessi criteri di `proposta-approvata`, "
+                          "ma l'uscita calcolata la chiude il bot, con l'audit "
+                          "della scelta (attivita' `uscita_automatica`); nessuna "
+                          "firma (G1 c/d, G4 col parametro)",
     "v4": "IL MOTORE DI DEFAULT dal 17/09 sul percorso di produzione: SOLO "
           "Correct Score, due celle diverse in due momenti (1'-44' e 46'-85'), "
           "stake fisso 1,00 EUR, fascia di P [1 %, 2 %], margine k = 1,11, "
@@ -2371,6 +2385,13 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                                 "registrazione (o il bot non ha mai aperto, o "
                                 "chiudere non ha mai battuto tenere): il caso non "
                                 "e' capitato, e G2/G3/G4 restano «non lo so»"))
+    if scenario == "uscite-automatiche":
+        g = {c: int(ref.sollecitati.get(c) or 0) for c in ("G1", "G2", "G4")}
+        ref.note.append(
+            f"scenario uscite-automatiche: controlli sollecitati {g}"
+            + ("" if ref.azioni else " - il bot non ha mai operato su questa "
+                                     "registrazione: nessuna uscita da eseguire, "
+                                     "il caso non e' capitato"))
     if scenario in ("bot-fermo", "v4-bot-fermo"):
         quante = int(ref.sollecitati.get("C4") or 0)
         ref.note.append(

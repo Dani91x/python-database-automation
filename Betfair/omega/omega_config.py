@@ -284,7 +284,19 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # si accende di iniziativa (regola dell'utente). Si accende dal pannello, in
     # punti percentuali (2.5 = 2,5%).
     "proposta_p_lose_max_pct": (0.0, float, 0.0, 100.0),
+    # 24/09 - ORDINE DELL'UTENTE ("QUESTO PER TUTTI I BOT"): CHI esegue l'uscita
+    # che il bot ha gia' calcolato (`omega_proposte`, motivi `blocca_il_profitto`
+    # / `protezione` / `cap` / `rischio`). Non cambia NESSUN criterio d'uscita:
+    #   'avvisa_e_proponi' (DEFAULT, fail-closed) = la proposta in scheda che
+    #       firma l'utente, come dal 17/09;
+    #   'automatico' = la stessa uscita la esegue il bot da solo, con l'audit
+    #       della scelta dell'utente sulla riga e nell'attivita'.
+    # Tutto cio' che non e' esattamente 'automatico' vale 'avvisa_e_proponi'.
+    "uscite_protezione": ("avvisa_e_proponi", str, None, None),
 }
+
+# 24/09 - i due valori ammessi di `uscite_protezione` (il primo e' il default)
+USCITE_PROTEZIONE_AMMESSE = ("avvisa_e_proponi", "automatico")
 
 # Valori ammessi per i due `select` di V3 (specchio della UI, quando ci sara').
 V3_MODELLI_AMMESSI = ("poisson", "dixon_coles", "dixon_robinson", "bivariato",
@@ -319,6 +331,10 @@ def _coerce(key: str, raw: Any) -> Any:
         return default
     if key == "v3_fusione_mercato" and val not in ("auto", "off"):
         return default
+    if key == "uscite_protezione":
+        # fail-closed: il bot chiude da solo SOLO se l'utente l'ha scritto
+        v = str(raw if raw is not None else "").strip().lower()
+        return v if v in USCITE_PROTEZIONE_AMMESSE else default
     if key == "model_calibration_path":
         # None/null dalla UI → "" (prima str(None) = "None": un percorso inesistente)
         return "" if raw is None else str(val).strip()

@@ -20,6 +20,11 @@ un lay la liability e' GIA' impegnata: chiudere non riduce il rischio preso, lo
 trasforma in perdita certa. Quella decisione la prende una persona, con i numeri
 davanti.
 
+24/09 - ORDINE DELL'UTENTE ("QUESTO PER TUTTI I BOT"): la scelta fra "avvisa e
+proponi" (default, questo modulo come sopra) e "automatico" (la stessa uscita la
+esegue il bot) e' il parametro `uscite_protezione` (``modo_uscite``). Cambia
+solo CHI esegue, mai il criterio che decide l'uscita.
+
 IL MODELLO E' COPIATO, NON INVENTATO. E' quello della Safe tennis, vivo e
 certificato dal 14/09 (`Betfair/safe_strategy/bot_service.py:_proponi_chiusura`,
 `bot_db.py:scrivi_proposta_di_chiusura`): stessa coda, stessi stati, stesso
@@ -102,6 +107,39 @@ _CAP_DI_GAMBA = ("v3_max_liability_per_leg", "v3_max_liability_per_match",
                  "max_liability_per_match")
 
 _TOLLERANZA_CAP = 0.011     # centesimi di arrotondamento, non uno sforamento
+
+# ---------------------------------------------------------------------------
+# 24/09 - ORDINE DELL'UTENTE: 'la scelta tra "avvisa e proponi la copertura/
+# uscita con un clic" e "automatico (se ne occupa il bot)" vale PER TUTTI I
+# BOT'. Il parametro `uscite_protezione` (omega_config) decide CHI esegue
+# l'uscita che questo modulo ha GIA' calcolato - mai QUANDO uscire:
+#   - 'avvisa_e_proponi' (DEFAULT, fail-closed): la proposta in scheda, firmata
+#     dall'utente (ordine del 17/09, invariato);
+#   - 'automatico': la STESSA uscita (stessa gamba, intera, stessi prezzi del
+#     percorso di un'approvazione: `omega_service._cashout_prices`) la esegue
+#     il bot, con l'audit della scelta sulla riga e nell'attivita'
+#     `uscita_automatica`.
+# Il green-up automatico del motore v2 e i cash out dell'utente non passano di
+# qui e restano come sono.
+# ---------------------------------------------------------------------------
+USCITE_AVVISA = "avvisa_e_proponi"
+USCITE_AUTOMATICO = "automatico"
+SCELTA_UTENTE_AUTOMATICO = "uscite_protezione=automatico"
+AUDIT_AUTOMATICO = ("esecuzione automatica per scelta dell'utente "
+                    "(uscite_protezione=automatico)")
+# il marcatore sulla riga dei tentativi automatici (idempotenza e freno)
+AUTOMATICA_KEY = "uscita_automatica"
+# dopo tanti invii FALLITI di fila il bot smette di provarci da solo e ripiega
+# sulla proposta in scheda (fail-closed: decide l'utente). Fra un tentativo e il
+# successivo passa almeno ``_RICONTROLLO_PROPOSTA_S``: mai un ordine a ogni giro
+# (catalogo par. 7, il loop dei 32 ordini di Mike del 15/09).
+_TENTATIVI_AUTOMATICI_MAX = 3
+# esiti di `close_trade` che NON sono un fallimento: una chiusura e' gia' in
+# volo, o non resta niente da chiudere. Si riguarda al giro dopo, senza contare
+# un tentativo (stesso trattamento di `omega_service._greenup_send`). Ogni altro
+# esito (prezzi assenti, liquidita' ignota, rifiuto) CONTA: dopo
+# ``_TENTATIVI_AUTOMATICI_MAX`` decide l'utente dalla scheda.
+_ESITI_DI_ATTESA = ("chiusura_in_corso", "niente_da_chiudere")
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +247,13 @@ def cap_globale_scattato(*, db: Any, params: dict[str, Any],
 # ---------------------------------------------------------------------------
 # il giro
 # ---------------------------------------------------------------------------
+def modo_uscite(params: Optional[dict[str, Any]]) -> str:
+    """CHI esegue l'uscita calcolata (24/09). Fail-closed: tutto cio' che non
+    e' esattamente 'automatico' vale 'avvisa_e_proponi'."""
+    v = str((params or {}).get("uscite_protezione") or "").strip().lower()
+    return USCITE_AUTOMATICO if v == USCITE_AUTOMATICO else USCITE_AVVISA
+
+
 def proposte_attive(params: dict[str, Any]) -> bool:
     """Il produttore gira quando il green-up AUTOMATICO non gira.
 
@@ -228,7 +273,10 @@ def process_proposte_uscita(*, params: dict[str, Any], market: Any, db: Any,
     """Fase 1-bis del giro quando il green-up automatico e' spento: per ogni
     gamba lay aperta calcola i numeri dell'uscita e SCRIVE UNA PROPOSTA quando
     chiudere batte tenere. Ritorna quante proposte sono state scritte o
-    aggiornate in questo giro. **Non manda mai un ordine.**
+    aggiornate in questo giro. **Non manda mai un ordine** - salvo che l'utente
+    abbia scelto `uscite_protezione='automatico'` (24/09): allora la stessa
+    uscita la esegue il bot (``_esegui_da_solo``) e il conteggio include le
+    uscite eseguite.
 
     L'elenco delle gambe e' quello gia' filtrato di ``_greenup_candidates``, che
     esclude per costruzione (ordine dell'utente del 16/09, R7-R9): le righe
@@ -385,6 +433,17 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
                         minuto=minuto, punteggio=f"{sh}-{sa}", now=now,
                         fonte_p=fonte_p, cap=cap, ingredienti=ingredienti)
         return False
+    if modo_uscite(params) == USCITE_AUTOMATICO:
+        # 24/09 - l'utente ha scelto 'automatico': la STESSA uscita la esegue il
+        # bot. None = tentativi esauriti: si ripiega sulla proposta qui sotto
+        # (fail-closed, decide l'utente).
+        eseguita = _esegui_da_solo(db=db, market=market, tr=tr, meta=meta,
+                                   proposta=proposta, minuto=minuto,
+                                   punteggio=f"{sh}-{sa}", now=now, fonte_p=fonte_p,
+                                   cap=cap, params=params)
+        if eseguita is not None:
+            return eseguita
+        meta = dict(tr.get("meta") or {})
     return _scrivi(db=db, tr=tr, meta=meta, proposta=proposta, prezzi=prezzi,
                    minuto=minuto, punteggio=f"{sh}-{sa}", now=now,
                    fonte_p=fonte_p, cap=cap, params=params, ingredienti=ingredienti)
@@ -611,6 +670,171 @@ def _scrivi(*, db: Any, tr: dict[str, Any], meta: dict[str, Any], proposta: Any,
             "critical": bool(proposta.motivo_codice in ("protezione", "cap", "rischio")),
             **({"riproposta_perche": prima["riproposta_perche"]}
                if prima.get("riproposta_perche") else {})})
+    return True
+
+
+_TESTI_AUTOMATICI = {
+    "blocca_il_profitto": "Uscita decisa dal bot (blocca il profitto)",
+    "protezione": "Uscita decisa dal bot (protezione: tenere costava di piu')",
+    "cap": "Uscita decisa dal bot (tetto di rischio scattato)",
+    "rischio": "Uscita decisa dal bot (rischio oltre la soglia)",
+}
+
+
+def _segna_automatica(db: Any, tr: dict[str, Any], valore: dict[str, Any]) -> None:
+    """Riscrive ``meta.uscita_automatica`` sul meta CORRENTE della riga
+    (``close_trade`` puo' averla gia' aggiornata)."""
+    try:
+        getter = getattr(db, "get_trade", None)
+        cur = (getter(int(tr["id"])) if callable(getter) else None) or tr
+    except Exception:  # noqa: BLE001
+        cur = tr
+    nuovo = {**(cur.get("meta") or {}), AUTOMATICA_KEY: valore}
+    db.update_trade(int(tr["id"]), meta=nuovo)
+    tr["meta"] = nuovo
+
+
+def _esegui_da_solo(*, db: Any, market: Any, tr: dict[str, Any], meta: dict[str, Any],
+                    proposta: Any, minuto: int, punteggio: str, now: datetime,
+                    fonte_p: str, cap: Optional[str],
+                    params: dict[str, Any]) -> Optional[bool]:
+    """24/09 - `uscite_protezione='automatico'`: il bot ESEGUE l'uscita che
+    altrimenti proporrebbe. Il criterio e' lo stesso (``proposta.proponi`` gia'
+    vero); cambia solo chi preme il bottone.
+
+    L'esecuzione e' quella di un'approvazione (`omega_service._manual_cashout`):
+    prezzi da ``_cashout_prices`` (feed fresco, poi REST), gamba intera con
+    ``execution.close_trade`` - ma con ``origin='auto'`` e SENZA marcare la
+    partita 'chiusa dall'utente': la decisione e' del bot.
+
+    Ritorna True (ordine partito), False (niente in questo giro: freno fra due
+    tentativi, chiusura gia' in volo, invio fallito da ritentare) oppure None
+    (tentativi esauriti: il chiamante scrive la PROPOSTA, decide l'utente)."""
+    from . import omega_service as S
+    from Betfair.safe_strategy import execution as X
+
+    prima = meta.get(AUTOMATICA_KEY) if isinstance(meta.get(AUTOMATICA_KEY), dict) else {}
+    prima = dict(prima or {})
+    if prima.get("esaurita"):
+        return None
+    ultimo = _ts(prima.get("ultimo_ts"))
+    if ultimo is not None and now.timestamp() - ultimo < _RICONTROLLO_PROPOSTA_S:
+        return False
+    motivo = str(proposta.motivo_codice)
+    tentativi = int(prima.get("tentativi") or 0)
+    base = {"motivo_codice": motivo, "decided_at": now.isoformat(),
+            "scelta_utente": SCELTA_UTENTE_AUTOMATICO}
+    prezzi_ordine = S._cashout_prices(market, tr)
+    if not prezzi_ordine:
+        res: dict[str, Any] = {"error": "prezzi_non_disponibili"}
+    else:
+        # il marcatore PRIMA dell'ordine: un crash fra ordine e conferma non
+        # deve produrre un secondo invio a raffica (``close_trade`` blocca
+        # comunque con una chiusura 'pending' della stessa apertura)
+        _segna_automatica(db, tr, {**prima, **base, "tentativi": tentativi + 1,
+                                   "ultimo_ts": now.isoformat()})
+        extra = {"runner_name": tr.get("runner_name"), "kickoff": tr.get("kickoff")}
+        if tr.get("phase"):
+            extra["phase"] = tr.get("phase")
+        try:
+            res = X.close_trade(db=db, market=market, trade=tr, prices=prezzi_ordine,
+                                amount=None, fraction=1.0,
+                                mode=str(tr.get("mode") or "paper"), now=now,
+                                params=params, origin="auto", table_prefix="omega",
+                                extra_row=extra)
+        except Exception as ex:  # noqa: BLE001
+            res = {"error": "exception", "detail": str(ex)[:160]}
+    err = res.get("error")
+    comuni = {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+              "motivo_codice": motivo, "scelta_utente": SCELTA_UTENTE_AUTOMATICO,
+              "mode": tr.get("mode"), "minute": minuto, "score": punteggio,
+              "profitto_bloccabile": round(float(proposta.profitto_bloccabile), 2),
+              "ev_tenere": round(float(proposta.ev_tenere), 2),
+              "p_evento": round(float(proposta.p_evento), 6), "p_fonte": str(fonte_p),
+              **({"cap_scattato": str(cap)} if cap else {})}
+    if err in _ESITI_DI_ATTESA:
+        # non e' un fallimento: il tentativo non si conta
+        _segna_automatica(db, tr, {**prima, **base, "tentativi": tentativi,
+                                   "ultimo_ts": now.isoformat(), "attesa": str(err)})
+        return False
+    if err == "posizione_gia_chiusa" or (isinstance(err, str)
+                                         and err.startswith("trade_non_aperto")):
+        return False
+    if err:
+        tentativi += 1
+        esaurita = tentativi >= _TENTATIVI_AUTOMATICI_MAX
+        _segna_automatica(db, tr, {**prima, **base, "tentativi": tentativi,
+                                   "ultimo_ts": now.isoformat(), "ultimo_errore": str(err),
+                                   "esaurita": esaurita})
+        # l'attivita' si scrive SEMPRE, anche sul ramo fallito: se `close_trade`
+        # ha gia' piazzato l'ordine prima di fallire (`closing_trade_id`), quel
+        # BACK deve avere la sua dichiarazione (G1; stessa lezione del 23/09 sul
+        # cash out manuale)
+        db.log("uscita_automatica_fallita", {
+            **comuni, "esito": "fallito", "motivo": str(err), "detail": res.get("detail"),
+            "closing_trade_id": res.get("closing_trade_id"), "tentativi": tentativi,
+            "critical": True, "exit_reason": AUDIT_AUTOMATICO})
+        if esaurita:
+            db.log("uscita_automatica_esaurita", {
+                **comuni, "tentativi": tentativi, "ultimo_errore": str(err),
+                "critical": True,
+                "nota": "il bot non e' riuscito a chiudere da solo: da qui l'uscita "
+                        "e' una PROPOSTA in scheda e la decidi tu"})
+            return None
+        return False
+
+    # --- ORDINE PARTITO -----------------------------------------------------
+    locked = res.get("locked_pnl")
+    lock_ref = locked
+    if lock_ref is None:
+        for k in ("planned_lock", "worst_case"):
+            if res.get(k) is not None:
+                lock_ref = res.get(k)
+                break
+    kind, _testo_firma = S._exit_kind_della_proposta({"motivo_codice": motivo}, lock_ref)
+    residuo = res.get("residual_size")
+    parziale = bool(residuo is not None and float(residuo) > X.HEDGE_EPS)
+    reason = (f"{_TESTI_AUTOMATICI.get(motivo, 'Uscita decisa dal bot')}: {AUDIT_AUTOMATICO}"
+              + (" (parziale)" if parziale else ""))
+    profit = bool(lock_ref is not None and float(lock_ref) >= 0.0)
+    viva = meta.get(PROPOSTA_KEY) if isinstance(meta.get(PROPOSTA_KEY), dict) else None
+    try:
+        getter = getattr(db, "get_trade", None)
+        cur = (getter(int(tr["id"])) if callable(getter) else None) or tr
+        nuovo = {**(cur.get("meta") or {}), "exit_kind": kind, "exit_reason": reason,
+                 "exit_profit": profit,
+                 "chiusura_automatica": {
+                     **base, "profitto_bloccabile": comuni["profitto_bloccabile"],
+                     "ev_tenere": comuni["ev_tenere"], "p_evento": comuni["p_evento"],
+                     "eseguita_at": now.isoformat()},
+                 AUTOMATICA_KEY: {**prima, **base, "tentativi": 0,
+                                  "ultimo_ts": now.isoformat(), "eseguita": True}}
+        # la proposta viva (scritta prima che l'utente scegliesse 'automatico')
+        # non serve piu': il marcatore si toglie, la riga in coda decade
+        nuovo.pop(PROPOSTA_KEY, None)
+        db.update_trade(int(tr["id"]), meta=nuovo)
+        tr["meta"] = nuovo
+    except Exception as ex:  # noqa: BLE001 - l'ordine e' gia' partito: solo etichette
+        logger.warning("[omega.proposte] etichette uscita automatica %s KO: %s",
+                       tr.get("id"), str(ex)[:120])
+    if viva and int(viva.get("request_id") or 0) > 0:
+        try:
+            db.chiudi_proposta(int(tr["id"]), f"eseguita dal bot: {AUDIT_AUTOMATICO}")
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[omega.proposte] decadenza proposta %s KO: %s",
+                           tr.get("id"), str(ex)[:120])
+    S._greenup_stamp_closing(db, res.get("closing_trade_id"), kind, reason,
+                             profit=profit, commission=tr.get("commission"))
+    db.log("uscita_automatica", {
+        **comuni, "esito": "eseguita", "closing_trade_id": res.get("closing_trade_id"),
+        "exit_kind": kind, "exit_reason": reason, "price": res.get("price"),
+        "size": res.get("size"), "side": res.get("side"), "locked_pnl": locked,
+        "planned_lock": res.get("planned_lock"), "residual_size": residuo,
+        "partial": parziale, "pending_fill": bool(res.get("pending_fill")),
+        "critical": bool(motivo in ("protezione", "cap", "rischio")),
+        "nota": "uscita DECISA ed ESEGUITA dal bot per scelta dell'utente "
+                "(uscite_protezione=automatico): la partita NON e' 'chiusa "
+                "dall'utente' e il bot continua a gestirla"})
     return True
 
 

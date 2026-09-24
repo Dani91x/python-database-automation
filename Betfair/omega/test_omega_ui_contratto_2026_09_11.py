@@ -230,6 +230,8 @@ class TestWhitelistParametri:
             # rifiuta riporterebbe il parametro al default senza dirlo.
             "v3_modello": set(C.V3_MODELLI_AMMESSI),
             "v3_fusione_mercato": {"auto", "off"},
+            # 24/09 - i DUE pulsanti di "chi esegue l'uscita" (tipo 'choice')
+            "uscite_protezione": set(C.USCITE_PROTEZIONE_AMMESSE),
         }
         for key, want in ammessi.items():
             m = re.search(r"\{\s*key:\s*'" + key + r"'.*?options:\s*\[(.*?)\]\s*\}", block, re.S)

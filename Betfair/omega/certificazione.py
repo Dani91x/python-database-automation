@@ -1431,7 +1431,35 @@ def _g1(m: Momento) -> Optional[str]:
             if firma is None:
                 return (f"ordine di BACK (= chiusura) partito senza approvazione "
                         f"dell'utente: ref {r.get('customer_ref')}")
+    # (d) 24/09 - l'uscita ESEGUITA DAL BOT si guarda anche dal lato
+    #     dell'attivita' (vale anche in paper, dove l'ordine non passa dal
+    #     mercato del banco): con `uscite_protezione` su 'avvisa_e_proponi' non
+    #     deve esistere; su 'automatico' deve dichiarare la scelta dell'utente e
+    #     un motivo che la proposta avrebbe avuto.
+    if m.tipo == "giro":
+        automatico = _uscite_automatiche(m)
+        for voce in (m.attivita or ()):
+            try:
+                kind, payload = str(voce[0]), (voce[1] or {})
+            except (TypeError, IndexError):
+                continue
+            if kind != _ATTIVITA_USCITA_AUTOMATICA or payload.get("esito") != "eseguita":
+                continue
+            if not automatico:
+                return (f"uscita del trade {payload.get('trade_id')} ESEGUITA DAL BOT con "
+                        f"uscite_protezione='avvisa_e_proponi': doveva essere una "
+                        f"proposta da firmare")
+            if payload.get("scelta_utente") != _SCELTA_AUTOMATICO or \
+                    str(payload.get("motivo_codice") or "") not in _MOTIVI_DI_USCITA:
+                return (f"uscita automatica del trade {payload.get('trade_id')} senza la "
+                        f"scelta dell'utente dichiarata o con un motivo che nessuna "
+                        f"proposta avrebbe ('{payload.get('motivo_codice')}')")
     return None
+
+
+# i motivi con cui il produttore delle proposte PROPONE (`omega_proposte.
+# MOTIVI_CHE_PROPONGONO`): un'uscita automatica non puo' averne un altro
+_MOTIVI_DI_USCITA = ("blocca_il_profitto", "protezione", "cap", "rischio")
 
 
 # le attivita' con cui il servizio DICHIARA che a chiudere e' stata una persona.
@@ -1441,6 +1469,24 @@ def _g1(m: Momento) -> Optional[str]:
 #                        la RPC: senza, quella riga e' arrivata a 'pending' senza
 #                        passare dal cancelletto, e non e' una firma.
 _ATTIVITA_DI_CHIUSURA_UMANA = ("cashout_manual", "uscita_approvata")
+
+# 24/09 - ORDINE DELL'UTENTE ("QUESTO PER TUTTI I BOT"): con
+# `uscite_protezione='automatico'` l'uscita calcolata la ESEGUE il bot e lo
+# dichiara con l'attivita' `uscita_automatica` (``omega_proposte._esegui_da_solo``).
+# E' conforme SOLO col parametro su 'automatico'; in 'avvisa_e_proponi' (il
+# default) vale la regola del 17/09: nessuna chiusura parte da sola.
+_ATTIVITA_USCITA_AUTOMATICA = "uscita_automatica"
+# anche l'invio FALLITO si dichiara (``closing_trade_id`` se l'ordine e' partito
+# prima dell'errore): e' la stessa decisione, con esito diverso
+_ATTIVITE_USCITA_AUTOMATICA = (_ATTIVITA_USCITA_AUTOMATICA, "uscita_automatica_fallita")
+_SCELTA_AUTOMATICO = "uscite_protezione=automatico"
+
+
+def _uscite_automatiche(m: "Momento") -> bool:
+    """Il parametro dell'utente su 'automatico', letto come lo legge il servizio
+    (``omega_proposte.modo_uscite``: fail-closed, solo il valore esatto)."""
+    v = str((m.params or {}).get("uscite_protezione") or "").strip().lower()
+    return v == "automatico"
 
 
 def _trade_dal_ref(ref: Any) -> Optional[int]:
@@ -1461,12 +1507,21 @@ def _firma_umana(m: Momento, richiesta: Dict[str, Any]) -> Optional[Dict[str, An
     pagina sotto gli occhi del trader.
     """
     tid = _trade_dal_ref(richiesta.get("customer_ref"))
+    automatico = _uscite_automatiche(m)
     for voce in (m.attivita or ()):
         try:
             kind, payload = str(voce[0]), (voce[1] or {})
         except (TypeError, IndexError):
             continue
-        if kind not in _ATTIVITA_DI_CHIUSURA_UMANA:
+        if kind in _ATTIVITE_USCITA_AUTOMATICA:
+            # 24/09 - l'uscita del bot eseguita per SCELTA DELL'UTENTE
+            # (`uscite_protezione='automatico'`) e' una decisione dichiarata
+            # SOLO se il parametro e' davvero su 'automatico' in questo giro e
+            # l'attivita' porta la scelta. In 'avvisa_e_proponi' non conta
+            # niente: e' il bot che ha chiuso da solo.
+            if not automatico or payload.get("scelta_utente") != _SCELTA_AUTOMATICO:
+                continue
+        elif kind not in _ATTIVITA_DI_CHIUSURA_UMANA:
             continue
         if kind == "uscita_approvata" and not payload.get("firmata"):
             continue          # promossa a 'pending' senza passare dalla RPC: NON e' una firma
@@ -1583,6 +1638,12 @@ def _g4(m: Momento) -> Optional[str]:
       · e resta una PROPOSTA — cioe' la riga in coda e' 'proposed'. Se il bot
         se la promuovesse da solo a 'pending' avrebbe chiuso senza firma, che e'
         esattamente cio' che G1 vieta, dal lato della coda.
+
+    24/09 - IL PARAMETRO DELL'UTENTE `uscite_protezione`. In
+    'avvisa_e_proponi' (default) vale tutto quanto sopra. In 'automatico'
+    l'uscita la esegue il bot (attivita' `uscita_automatica`, giudicata da G1):
+    una proposta in perdita ancora 'proposed' e' ammessa SOLO come ripiego
+    dichiarato (tentativi automatici esauriti sulla riga).
     """
     p = m.proposta
     motivo = str(getattr(p, "motivo_codice", "") or "")
@@ -1601,6 +1662,25 @@ def _g4(m: Momento) -> Optional[str]:
         return (f"proposta in perdita ({bloccabile:.2f} EUR) col motivo '{motivo}': "
                 f"il trader leggerebbe un guadagno dove c'e' una perdita bloccata")
     stato = str(m.stato_richiesta or "")
+    if _uscite_automatiche(m) and stato == "proposed":
+        # 24/09 - con `uscite_protezione='automatico'` questa uscita la doveva
+        # ESEGUIRE il bot. Una proposta in attesa e' legittima solo come
+        # ripiego dichiarato: tentativi automatici esauriti
+        # (``meta.uscita_automatica.esaurita`` sulla riga).
+        riga = None
+        getter = getattr(m.db, "get_trade", None)
+        if callable(getter) and m.trade_id is not None:
+            try:
+                riga = getter(int(m.trade_id))
+            except Exception:  # noqa: BLE001 - riga illeggibile: non si accusa
+                riga = None
+        if riga is not None:
+            auto = (riga.get("meta") or {}).get("uscita_automatica")
+            if not (isinstance(auto, dict) and auto.get("esaurita")):
+                return (f"uscite_protezione='automatico' e la proposta in perdita del "
+                        f"trade {m.trade_id} e' in scheda invece che eseguita, senza "
+                        f"che i tentativi automatici risultino esauriti")
+        return None
     if stato and stato != "proposed":
         return (f"la proposta in perdita del trade {m.trade_id} e' in stato '{stato}' "
                 f"invece che 'proposed': nessuno l'ha firmata, e sta per partire")

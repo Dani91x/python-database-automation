@@ -74,6 +74,52 @@ describe('OmegaParamsSheet', () => {
         expect(payload.v3_k_minimo).toBe(valoreVivo);
     });
 
+    // ---- 24/09 — «QUESTO PER TUTTI I BOT»: chi esegue l'uscita calcolata ----
+    const AVVISA = 'Avvisa e proponi l’uscita';
+    const AUTO = 'Automatico (se ne occupa il bot)';
+
+    it('24/09 uscite: DUE pulsanti, default «Avvisa e proponi» (chiave assente)', async () => {
+        await apri({ min_stake: 0.5 }, 100);
+        const scelte = screen.getAllByTestId('params-choice').filter((b) => b.getAttribute('data-field') === 'uscite_protezione');
+        expect(scelte.map((b) => b.getAttribute('data-value'))).toEqual(['avvisa_e_proponi', 'automatico']);
+        expect(screen.getByRole('button', { name: AVVISA })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: AUTO })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('24/09 valore sconosciuto sul DB -> «Avvisa e proponi» (fail-closed, come il servizio)', async () => {
+        await apri({ uscite_protezione: 'boh' }, 100);
+        expect(screen.getByRole('button', { name: AVVISA })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: AUTO })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('24/09 premere «Automatico» e salvare manda uscite_protezione=automatico a omega_update_params (resto invariato)', async () => {
+        const { user } = await apri({ min_stake: 0.5, v3_k_minimo: 1.2 }, 100);
+        await user.click(screen.getByRole('button', { name: AUTO }));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(mUpdate).toHaveBeenCalled());
+        const payload = mUpdate.mock.calls[0][0].params as Record<string, unknown>;
+        expect(payload.uscite_protezione).toBe('automatico');
+        expect(payload.min_stake).toBe(0.5);
+        expect(payload.v3_k_minimo).toBe(1.2);
+    });
+
+    it('24/09 salvare SENZA toccare i pulsanti non scrive la chiave (nessun default della UI sul DB)', async () => {
+        const { user } = await apri({ min_stake: 0.5 }, 100);
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(mUpdate).toHaveBeenCalled());
+        const payload = mUpdate.mock.calls[0][0].params as Record<string, unknown>;
+        expect(payload).not.toHaveProperty('uscite_protezione');
+    });
+
+    it('24/09 da «automatico» si torna ad «Avvisa e proponi» con un clic', async () => {
+        const { user } = await apri({ uscite_protezione: 'automatico' }, 100);
+        expect(screen.getByRole('button', { name: AUTO })).toHaveAttribute('aria-pressed', 'true');
+        await user.click(screen.getByRole('button', { name: AVVISA }));
+        await user.click(screen.getByTestId('params-save'));
+        await waitFor(() => expect(mUpdate).toHaveBeenCalled());
+        expect((mUpdate.mock.calls[0][0].params as Record<string, unknown>).uscite_protezione).toBe('avvisa_e_proponi');
+    });
+
     it('«Default» ripristina i valori di fabbrica (compreso l\'obiettivo a 250)', async () => {
         const { user } = await apri({ min_stake: 9 }, 999);
         await user.click(screen.getByTestId('params-reset'));

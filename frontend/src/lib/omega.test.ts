@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, OMEGA_PARAM_KEYS, omegaParamsPatch,
+    USCITE_PROTEZIONE_KEY, modoUsciteProtezione,
     OMEGA_ACTIVITY_EXTRA, activityMeta, activityLine,
     greenupInfo, greenupHold, greenupBadge, hedgeInfo, isHedging,
     isReconciling, reconcilingSince, terminalError, staleOpenAlerted,
@@ -60,6 +61,24 @@ describe('OMEGA_PARAM_DEFAULTS — allineati alla whitelist del servizio (H-07)'
                 expect(f.label, `etichetta = chiave per ${f.key}`).not.toBe(f.key);
             }
         }
+    });
+});
+
+describe('24/09 uscite_protezione — chi esegue l’uscita calcolata', () => {
+    it('default della UI = quello del servizio: «avvisa_e_proponi»', () => {
+        expect(OMEGA_PARAM_DEFAULTS.uscite_protezione).toBe('avvisa_e_proponi');
+    });
+    it('fail-closed: solo «automatico» scritto accende, tutto il resto è «avvisa»', () => {
+        for (const v of [undefined, null, '', 'boh', 'auto', true, 1]) {
+            expect(modoUsciteProtezione(v)).toBe('avvisa_e_proponi');
+        }
+        expect(modoUsciteProtezione('automatico')).toBe('automatico');
+        expect(modoUsciteProtezione(' Automatico ')).toBe('automatico');
+    });
+    it('il campo è un «choice» a DUE pulsanti con i valori del servizio', () => {
+        const f = OMEGA_PARAM_GROUPS.flatMap((g) => g.fields).find((x) => x.key === USCITE_PROTEZIONE_KEY);
+        expect(f?.type).toBe('choice');
+        expect(f?.options?.map((o) => o.value)).toEqual(['avvisa_e_proponi', 'automatico']);
     });
 });
 

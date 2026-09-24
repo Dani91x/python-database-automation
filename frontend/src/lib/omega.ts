@@ -312,6 +312,9 @@ export interface OmegaParams {
     v3_fusione_mercato: string;
     /** proposte di uscita: P massima tollerata che il bancato esca (punti %). 0 = SPENTA */
     proposta_p_lose_max_pct: number;
+    /** 24/09 — CHI esegue l'uscita calcolata dal bot: 'avvisa_e_proponi' (default,
+     *  la proposta che firmi tu) | 'automatico' (la esegue il bot). */
+    uscite_protezione: string;
 }
 
 /** P del modello di un trade Omega (meta.model.{p_model_raw,calibrated}) */
@@ -414,6 +417,10 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     canale_giu: { label: 'CANALE GIÙ · apertura non inviata', cls: A_WARN },
     canale_giu_ripiego: { label: 'CANALE GIÙ · chiusura sul trasporto di ripiego', cls: A_WARN },
     uscita_approvata: { label: 'USCITA APPROVATA DA TE (decisa dal bot)', cls: A_CLOSE },
+    // 24/09 — «Uscite calcolate dal bot» su AUTOMATICO: la esegue il bot per tua scelta
+    uscita_automatica: { label: 'USCITA AUTOMATICA · eseguita dal bot per tua scelta', cls: A_CLOSE },
+    uscita_automatica_fallita: { label: 'USCITA AUTOMATICA FALLITA · ritento', cls: A_WARN, critical: true },
+    uscita_automatica_esaurita: { label: 'USCITA AUTOMATICA NON RIUSCITA · ora è una proposta, decidi tu', cls: A_BAD, critical: true },
     // ---- regolamento
     settle: { label: 'REGOLATA', cls: A_PLAIN },
     settle_hedged: { label: 'REGOLATA (coperta)', cls: A_CLOSE },
@@ -931,6 +938,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     v3_p_min_pct: 1,
     v3_fusione_mercato: 'auto',
     proposta_p_lose_max_pct: 0,
+    uscite_protezione: 'avvisa_e_proponi',
     price_min: 20,
     price_max: 120,
     entry_minute_min: 30,
@@ -1162,12 +1170,26 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
     },
     {
         label: 'Uscite — proposte che firmi tu',
-        note: 'Quando il green-up automatico è SPENTO (« Modalità green-up » = off, e sempre con la strategia v3) Omega non chiude più da solo: calcola i numeri e SCRIVE UNA PROPOSTA nella scheda della Control Room, in profitto e in perdita. La firma è tua, sempre. Qui c’è una sola manopola, e nasce SPENTA.',
+        note: 'Quando il green-up automatico è SPENTO (« Modalità green-up » = off, e sempre con la strategia v3) Omega calcola i numeri e, quando chiudere batte tenere (in profitto e in perdita), SCRIVE UNA PROPOSTA nella scheda della Control Room: la firma è tua. Qui ci sono due manopole: la soglia di rischio (nasce SPENTA) e chi esegue l’uscita calcolata (nasce su « Avvisa e proponi »; su « Automatico » la esegue il bot, stessi criteri).',
         fields: [
             { key: 'proposta_p_lose_max_pct', label: 'Proposte: P massima tollerata del risultato bancato (punti %)', type: 'number', step: 0.5, min: 0, max: 100, hint: '0 = SPENTA (default del servizio). Sopra zero, quando la P che il risultato bancato esca supera questa soglia il bot propone l’uscita col motivo « rischio » — non perché sia un affare, ma per ridurre il rischio' },
+            // 24/09 (ordine dell'utente: «QUESTO PER TUTTI I BOT») — CHI esegue
+            // l'uscita che il bot ha calcolato. I criteri non cambiano.
+            { key: 'uscite_protezione', label: 'Uscite calcolate dal bot', type: 'choice', hint: 'Avvisa e proponi: la proposta arriva nella scheda « Uscite — decidi tu » e parte solo se la firmi. Automatico: la stessa uscita (stessi criteri, in profitto e in perdita) la esegue il bot, e la riga lo dice.', options: [
+                { value: 'avvisa_e_proponi', label: 'Avvisa e proponi l’uscita' },
+                { value: 'automatico', label: 'Automatico (se ne occupa il bot)' },
+            ] },
         ],
     },
 ];
+
+/** 24/09 — la chiave del parametro «chi esegue l'uscita» e il suo valore
+ *  normalizzato come lo legge il servizio (`omega_proposte.modo_uscite`):
+ *  tutto ciò che non è esattamente 'automatico' vale 'avvisa_e_proponi'. */
+export const USCITE_PROTEZIONE_KEY = 'uscite_protezione';
+export function modoUsciteProtezione(raw: unknown): 'avvisa_e_proponi' | 'automatico' {
+    return String(raw ?? '').trim().toLowerCase() === 'automatico' ? 'automatico' : 'avvisa_e_proponi';
+}
 
 /** tutte le chiavi che hanno una UI (i test verificano che coprano la whitelist) */
 export const OMEGA_PARAM_KEYS: string[] = OMEGA_PARAM_GROUPS.flatMap((g) => g.fields.map((f) => f.key));

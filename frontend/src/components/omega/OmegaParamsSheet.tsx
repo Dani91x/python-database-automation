@@ -22,6 +22,7 @@ import {
 import {
     OMEGA_PARAM_GROUPS, OMEGA_PARAM_DEFAULTS, OMEGA_DAILY_GOAL_MAX,
     omegaParamsPatch, updateOmegaParams, type OmegaParams,
+    USCITE_PROTEZIONE_KEY, modoUsciteProtezione,
 } from '@/lib/omega';
 
 /** Il gruppo "Obiettivo" — DUPLICATO DICHIARATO da `pages/Omega.tsx` (vedi
@@ -59,6 +60,9 @@ export function OmegaParamsSheet({
         __daily_goal: dailyGoal ?? 250,
         ...(OMEGA_PARAM_DEFAULTS as unknown as Record<string, number | boolean | string>),
         ...(rawParams as unknown as Record<string, number | boolean | string> ?? {}),
+        // 24/09 — i due pulsanti mostrano il valore COME LO LEGGE il servizio:
+        // assente o sconosciuto = «Avvisa e proponi» (fail-closed)
+        [USCITE_PROTEZIONE_KEY]: modoUsciteProtezione((rawParams ?? {})[USCITE_PROTEZIONE_KEY]),
     };
 
     async function save(next: ParamValues) {
