@@ -45,6 +45,10 @@ IDLE_BACKOFF_SEC = float(os.getenv("TENNIS_BOT_SVC_IDLE_BACKOFF_SEC", "30.0"))
 
 #: guardia di PROCESSO del controllo d'avvio (vedi ``Betfair/stream/avvio_app.py``)
 _GUARDIA_AVVIO = AA.Guardia("tennis")
+#: esito dell'ULTIMA chiamata di ``ferma_bot_al_nuovo_avvio`` (T2, 24/09): la
+#: ripresa del runner tennis lo legge per sapere se QUESTO giro e' riuscito
+#: (``_GUARDIA_AVVIO.fatto`` puo' restare True da un giro precedente e non basta).
+ESITO_ULTIMO_FERMO: Dict[str, Any] = {"riuscito": False}
 
 
 def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
@@ -66,6 +70,7 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
     Ritorna l'elenco delle righe fermate (dizionari {event_id, bot_key, ...}).
     """
     boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    ESITO_ULTIMO_FERMO["riuscito"] = False
     try:
         righe = db.list_tennis_bot_controls(statuses=list(_ACTIVE_STATUSES))
     except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio per una select
@@ -73,6 +78,10 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
                        "riprovo al giro dopo.", str(e)[:160])
         return []
     fermate: List[Dict[str, Any]] = []
+    # T2 (24/09): il controllo e' "fatto" SOLO se ogni riga da fermare e' stata
+    # davvero scritta. Prima una scrittura fallita veniva saltata e la guardia si
+    # disarmava lo stesso: il bot di ieri restava armato col controllo "riuscito".
+    scritture_fallite = 0
     ora = tennis_db._now_iso()
     for r in AA.righe_da_fermare(righe, boot):
         ev, bot_key = str(r.get("event_id") or ""), str(r.get("bot_key") or "")
@@ -98,6 +107,7 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
             )
         except Exception as e:  # noqa: BLE001 — una riga rotta non ferma le altre
             logger.warning("[tennis-bot-svc] stop d'avvio %s/%s KO: %s", ev, bot_key, str(e)[:160])
+            scritture_fallite += 1
             continue
         fermate.append({"event_id": ev, "bot_key": bot_key, **payload})
         try:
@@ -106,7 +116,13 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
             logger.warning("[tennis-bot-svc] attivita' d'avvio %s/%s KO: %s",
                            ev, bot_key, str(e)[:160])
     _GUARDIA_AVVIO.boot_id = boot
-    _GUARDIA_AVVIO.fatto = True
+    if scritture_fallite:
+        logger.error("[tennis-bot-svc] controllo d'avvio INCOMPLETO: %d righe non "
+                     "fermate - guardia d'avvio ancora armata, riprovo al giro dopo.",
+                     scritture_fallite)
+    else:
+        _GUARDIA_AVVIO.fatto = True
+        ESITO_ULTIMO_FERMO["riuscito"] = True
     if fermate:
         logger.warning("[tennis-bot-svc] avvio dell'app: %d bot tennis fermati (%s)",
                        len(fermate), ", ".join(f"{f['bot_key']}@{f['event_id']}" for f in fermate[:6]))
@@ -373,6 +389,9 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
         return {"letto": False, "armati": 0, "fermati": 0}
     eventi = sorted(_followed_event_ids())
     armati = fermati = 0
+    # T2 (24/09): a guardia d'avvio ARMATA (controllo d'avvio non ancora
+    # riuscito) il ponte NON arma niente; le fermate passano (riducono il rischio).
+    bloccato = _GUARDIA_AVVIO.blocca_aperture
     for bot, d in desiderato.items():
         try:
             attive = {r.get("event_id"): r for r in
@@ -384,16 +403,26 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
         motivo = None
         if d["acceso"] and not eventi:
             motivo = "acceso, ma nessun evento tennis seguito in questo momento"
-        if d["acceso"]:
+        if d["acceso"] and bloccato:
+            motivo = ("guardia d'avvio: il controllo d'avvio dell'app non e' ancora "
+                      "riuscito, nessun bot si arma finche' non riesce")
+        if d["acceso"] and not bloccato:
             for ev in eventi:
                 if ev in attive:
                     continue
                 db.upsert_tennis_bot_control({
                     "event_id": ev, "bot_key": bot, "status": "requested",
-                    # PAPER = simulato per costruzione: `dry_run` FALSO cosi' gli
-                    # ordini passano dal blotter e si vedono sul ladder. In LIVE
-                    # `dry_run` resta True finche' l'utente non lo toglie a mano
-                    # (prudenza sui soldi veri, come `_instantiate_bot`).
+                    # T1 (24/09): la modalita' del bot viaggia ESPLICITA sulla riga
+                    # per partita. Il runner la legge (guardie_tennis.modalita_riga)
+                    # e simula SEMPRE quando e' 'paper', qualunque sia la sua
+                    # modalita' di processo: prima la riga non la portava e un bot
+                    # PAPER su runner LIVE andava sul client REALE.
+                    "mode": d["mode"],
+                    # `dry_run` e' il cancello del BOT su `market.place_order`. In
+                    # PAPER e' FALSO: gli ordini passano dal blotter SIMULATO (client
+                    # paper_trade=True, mai Betfair) e si vedono sul ladder. In LIVE
+                    # resta True finche' l'utente non lo toglie a mano per partita
+                    # (il doppio gesto: il reale vuole mode='live' E dry_run=False).
                     "dry_run": d["mode"] == "live",
                     "stake": d["stake"] if d["stake"] is not None else 2,
                     "params": d["params"],
@@ -421,11 +450,18 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
     Torna i `bot_key` fermati.
     """
     boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
+    ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] = False
     righe = db.list_tennis_bot_services()
     if righe is None:
+        # NON letto. E' un esito riuscito SOLO se la tabella non esiste (migrazione
+        # dell'interruttore non applicata: non c'e' niente da fermare). Un DB giu'
+        # resta un controllo NON fatto.
+        ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] = bool(
+            getattr(db, "_servizio_assente_detto", False))
         return []
     ora = tennis_db._now_iso()
     fermati: List[str] = []
+    fallite = 0
     for r in righe or []:
         bot = str((r or {}).get("bot_key") or "")
         if bot not in _BOT_KEYS:
@@ -443,15 +479,62 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
             fermati.append(bot)
             logger.info("[tennis-bot-svc] avvio NUOVO dell'app: interruttore "
                         "%s riportato a 'stopped' (lo accende l'utente).", bot)
+        else:
+            fallite += 1
+    ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] = fallite == 0
     return fermati
+
+
+#: esito dell'ULTIMA chiamata di ``ferma_interruttori_al_nuovo_avvio`` (T2, 24/09)
+ESITO_ULTIMO_FERMO_INTERRUTTORI: Dict[str, Any] = {"riuscito": False}
+
+
+def ripresa_ponte(db: Any = tennis_db) -> bool:
+    """T2 (24/09) - il controllo d'avvio del PONTE, gemello della ripresa del
+    runner: righe per partita di un avvio vecchio fermate E interruttori di un
+    avvio vecchio fermati. Solo se ENTRAMBI riescono la guardia si disarma e il
+    ponte torna ad armare bot; altrimenti resta armata e si riprova al giro dopo.
+
+    Prima del 24/09 la modalita' ``--bridge-only`` (quella dell'app desktop)
+    fermava le righe per partita ma NON gli interruttori: un interruttore
+    lasciato 'running' ieri sera ri-armava i bot al primo giro del ponte."""
+    ferma_bot_al_nuovo_avvio(db=db)
+    ok_bot = bool(ESITO_ULTIMO_FERMO.get("riuscito"))
+    ferma_interruttori_al_nuovo_avvio(db=db)
+    ok_int = bool(ESITO_ULTIMO_FERMO_INTERRUTTORI.get("riuscito"))
+    _GUARDIA_AVVIO.fatto = ok_bot and ok_int
+    if not _GUARDIA_AVVIO.fatto:
+        logger.error("[tennis-bot-svc] controllo d'avvio del ponte NON riuscito "
+                     "(righe per partita: %s, interruttori: %s): nessun bot si arma, "
+                     "riprovo al giro dopo.", "ok" if ok_bot else "KO",
+                     "ok" if ok_int else "KO")
+    return _GUARDIA_AVVIO.fatto
+
+
+def arma_guardia_ponte() -> None:
+    """La guardia del ponte si arma all'avvio del SERVIZIO (non nei test ne' nei
+    replay, che chiamano le funzioni direttamente)."""
+    _GUARDIA_AVVIO.attiva = True
+    _GUARDIA_AVVIO.fatto = False
+    _GUARDIA_AVVIO.boot_id = AA.boot_id_ambiente()
 
 
 def _ensure_loop(stop: threading.Event) -> None:
     while not stop.is_set():
-        try:
-            ensure_follows_for_bots()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[tennis-bot-svc] ensure loop KO: %s", e)
+        if _GUARDIA_AVVIO.blocca_aperture:
+            # T2: controllo d'avvio non ancora riuscito -> si riprova; finche'
+            # fallisce niente follow nuovi (riporterebbero sullo stream i bot di
+            # un avvio vecchio). Il giro del ponte gira lo stesso: NON arma
+            # (``riconcilia_interruttori`` lo sa) ma ferma e batte il cuore.
+            try:
+                ripresa_ponte()
+            except Exception as e:  # noqa: BLE001 - la guardia resta armata
+                logger.warning("[tennis-bot-svc] ripresa del ponte KO: %s", e)
+        if not _GUARDIA_AVVIO.blocca_aperture:
+            try:
+                ensure_follows_for_bots()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[tennis-bot-svc] ensure loop KO: %s", e)
         try:
             riconcilia_interruttori()
         except Exception as e:  # noqa: BLE001 - il ponte non ferma il servizio
@@ -474,12 +557,14 @@ def run() -> None:
     from .tennis_runner import setup_and_run
 
     # FASE A — PRIMA di creare i follow: un bot armato ieri non deve tornare
-    # sullo stream solo perche' l'app e' stata riaperta.
-    ferma_bot_al_nuovo_avvio()
-    # ...e anche gli INTERRUTTORI: una riga lasciata `running` ieri sera farebbe
-    # ripartire il bot da sola alla riapertura dell'app.
-    ferma_interruttori_al_nuovo_avvio()
-    ensure_follows_for_bots()
+    # sullo stream solo perche' l'app e' stata riaperta; e anche gli
+    # INTERRUTTORI: una riga lasciata `running` ieri sera farebbe ripartire il
+    # bot da sola alla riapertura dell'app. T2 (24/09): guardia d'avvio ARMATA,
+    # disarmata solo se entrambi i fermi riescono (``ripresa_ponte``).
+    arma_guardia_ponte()
+    ripresa_ponte()
+    if not _GUARDIA_AVVIO.blocca_aperture:
+        ensure_follows_for_bots()
     riconcilia_interruttori()
     lock_port = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
     try:
@@ -524,8 +609,11 @@ def _main() -> None:
         logger.info("[tennis-bot-svc] modalità ponte: ensure-follows ogni %.0fs, nessun hosting.",
                     ENSURE_POLL_SEC)
         # FASE A — anche il ponte lo fa, e per primo: e' lui che rimette sullo
-        # stream gli eventi dei bot ancora attivi.
-        ferma_bot_al_nuovo_avvio()
+        # stream gli eventi dei bot ancora attivi. T2 (24/09): con la guardia
+        # d'avvio ARMATA e anche gli INTERRUTTORI (prima qui mancava: un
+        # interruttore lasciato 'running' ieri ri-armava i bot al primo giro).
+        arma_guardia_ponte()
+        ripresa_ponte()
         # F3: il canale 47337 vive QUI e solo qui (vedi ``_avvia_canale``).
         _avvia_canale()
         # F5/F6: la sveglia del ponte, agganciata a quello stesso canale.

@@ -461,7 +461,116 @@ def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    res = _exec_retry(sb.table("tennis_bot_control").upsert(
-        payload, on_conflict="event_id,bot_key"))
+    try:
+        res = _exec_retry(sb.table("tennis_bot_control").upsert(
+            payload, on_conflict="event_id,bot_key"))
+    except Exception as e:  # noqa: BLE001
+        # T1 (24/09): la colonna `mode` arriva con la migrazione
+        # `tennis_bot_control_mode_2026-09-24.sql`, che applica l'utente. Finche'
+        # manca, la riga si scrive SENZA `mode` e il runner la legge PAPER
+        # (`guardie_tennis.modalita_riga`): fail-closed, il paper resta usabile e
+        # il live e' impossibile finche' la colonna non c'e'.
+        if "mode" not in payload or not _colonna_mode_assente(e):
+            raise
+        global _mode_assente_detto
+        if not _mode_assente_detto:
+            _mode_assente_detto = True
+            logger.warning(
+                "[tennis-db] tennis_bot_control.mode non esiste ancora (migrazione "
+                "tennis_bot_control_mode_2026-09-24.sql NON applicata): riga scritta "
+                "SENZA modalita' = PAPER per il runner.")
+        senza = {k: v for k, v in payload.items() if k != "mode"}
+        res = _exec_retry(sb.table("tennis_bot_control").upsert(
+            senza, on_conflict="event_id,bot_key"))
     if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
         _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_posizioni"], res)
+
+
+_mode_assente_detto = False
+
+
+def _colonna_mode_assente(e: Exception) -> bool:
+    """PostgREST risponde PGRST204 ("Could not find the 'mode' column") o
+    Postgres 42703 (colonna inesistente). Solo questi: un DB giu' non e' una
+    migrazione mancante."""
+    t = str(e)
+    return ("'mode'" in t or '"mode"' in t) and ("PGRST204" in t or "42703" in t
+                                                  or "Could not find" in t
+                                                  or "does not exist" in t)
+
+
+# ---------------------------------------------------------------------------
+# T2 (24/09) - RIPRESA del runner tennis (``guardie_tennis.ripresa_all_avvio``)
+# ---------------------------------------------------------------------------
+# stati flumine di un ordine ancora VIVO (tutto il resto e' terminale)
+_STATI_VIVI = ("PENDING", "CANCELLING", "UPDATING", "REPLACING", "EXECUTABLE")
+_CAMPI_POSIZIONE = (
+    "matched_if_win", "matched_if_lose", "worst_if_win", "worst_if_lose",
+    "selection_exposure", "unmatched_back_exposure", "unmatched_lay_exposure",
+    "net_position",
+)
+
+
+def fail_stale_pending_tennis_orders(max_age_sec: float = 120.0) -> int:
+    """All'avvio del runner le richieste della coda desktop piu' vecchie di
+    ``max_age_sec`` vanno in 'error' SENZA esecuzione (gemella di
+    ``db.fail_stale_pending_requests`` del calcio): un comando di prima del
+    crash eseguito minuti dopo agirebbe su un mercato diverso. Le 'processing'
+    interrotte hanno esito INCERTO e il messaggio lo dichiara. Ritorna quante."""
+    from datetime import timedelta
+
+    sb = get_tennis_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_sec)).isoformat()
+    res = (
+        sb.table(_ORDER_TABLE)
+        .update({
+            "status": "error",
+            "error": "richiesta STANTIA al riavvio del runner tennis: non eseguita "
+                     "(ripetere se serve)",
+            "processed_at": _now_iso(),
+        })
+        .eq("status", "pending")
+        .lt("created_at", cutoff)
+        .execute()
+    )
+    n = len(getattr(res, "data", None) or [])
+    res2 = (
+        sb.table(_ORDER_TABLE)
+        .update({
+            "status": "error",
+            "error": "richiesta INTERROTTA a meta' da un riavvio del runner tennis: "
+                     "esito INCERTO - verificare ordini e posizioni sul conto prima "
+                     "di ripetere",
+            "processed_at": _now_iso(),
+        })
+        .eq("status", "processing")
+        .lt("created_at", cutoff)
+        .execute()
+    )
+    return n + len(getattr(res2, "data", None) or [])
+
+
+def chiudi_specchio_paper_orfano() -> "tuple[int, int]":
+    """All'avvio del runner il blotter SIMULATO e' vuoto: gli ordini paper
+    ancora 'vivi' nello specchio sono morti col processo di prima. Si chiudono
+    (status VOIDED, NON si cancellano: il P&L regolato resta) e le posizioni
+    paper vanno a zero. Le righe LIVE non si toccano MAI (soldi veri: la verita'
+    la dice lo stream ordini). Ritorna (ordini chiusi, posizioni azzerate)."""
+    sb = get_tennis_client()
+    res_o = (
+        sb.table("tennis_live_orders")
+        .update({"status": "VOIDED", "updated_at": _now_iso()})
+        .eq("mode", "paper")
+        .in_("status", list(_STATI_VIVI))
+        .execute()
+    )
+    zero: Dict[str, Any] = {f: 0.0 for f in _CAMPI_POSIZIONE}
+    zero["updated_at"] = _now_iso()
+    res_p = (
+        sb.table("tennis_live_positions")
+        .update(zero)
+        .eq("mode", "paper")
+        .execute()
+    )
+    return (len(getattr(res_o, "data", None) or []),
+            len(getattr(res_p, "data", None) or []))
