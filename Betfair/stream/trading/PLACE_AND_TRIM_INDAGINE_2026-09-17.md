@@ -188,5 +188,104 @@ di Betfair in-play:
 - il codice INTERNO dei 171 rifiuti (non lo avevamo salvato);
 - se il percorso A in-play regga davvero (nessun successo storico da mostrare).
 
-**Serve il test dedicato dal vivo con l'utente.** Procedura in
-`Betfair/mike/CHECKPOINT_2026-09-17_SERA.md`, §«Test dal vivo».
+**AGGIORNAMENTO: il test dal vivo E' STATO FATTO la sera del 17/09 (§7). Entrambe le
+domande hanno ora una risposta.**
+
+---
+
+## 7. VERIFICA DAL VIVO — 17/09/2026, ordini REALI (l'utente al terminale)
+
+Partita: Besiktas v Marseille, mercato `1.262290365`, selezione `58805`, **in-play**,
+`betDelay` 5.
+
+### PROVA B — quota ABBINABILE (0,10 EUR a 2.98): FALLITA, e ora sappiamo perche'
+
+| gradino | esito |
+|---|---|
+| 1. `placeOrders` 2,00 @1000 LAPSE | OK |
+| 2. `cancelOrders` `sizeReduction` 1,90 | OK |
+| 3. `replaceOrders` -> 2.98 | **RIFIUTATO** |
+
+Report vero del gradino 3:
+
+```
+status: FAILURE, errorCode: BET_ACTION_ERROR
+instructionReports[0].errorCode          = CANCELLED_NOT_PLACED   (esterno)
+instructionReports[0].cancelInstructionReport.status = SUCCESS, sizeCancelled = 0.1
+instructionReports[0].placeInstructionReport.errorCode = INVALID_BET_SIZE   (INTERNO)
+```
+
+**DIAGNOSI DEFINITIVA: `INVALID_BET_SIZE`.** Betfair valida il RI-PIAZZAMENTO contro il
+minimo di giurisdizione. Il replace di un residuo sotto minimo **e' impossibile**: non e'
+una questione di bet delay, di `persistenceType` o di ordine dei gradini. Il percorso B
+**NON E' PERCORRIBILE** su .it.
+
+Nota sul report: `cancelInstructionReport` dice SUCCESS con `sizeCancelled` = tutto il
+residuo. La meta' cancel del replace **e' avvenuta**: l'ordine e' certamente morto. Prima
+del fix il codice chiamava comunque il ritiro, Betfair rispondeva `BET_TAKEN_OR_LAPSED` e
+si concludeva «RITIRO FALLITO, ordine forse vivo» -> riga in riconciliazione su un ordine
+inesistente.
+
+### PROVA A — quota NON abbinabile (0,10 EUR a 3.15): RIUSCITA
+
+| gradino | esito |
+|---|---|
+| 1. `placeOrders` 2,00 @3.15 LAPSE | OK |
+| 2. `cancelOrders` `sizeReduction` 1,90 | OK, `sizeCancelled` 1.9 |
+| verifica `listCurrentOrders` | ordine a riposo, `sizeRemaining` **0.1** |
+| annullo | pulito |
+
+**2 sole chiamate mutanti, nessun `replaceOrders`. PERCORSO A CERTIFICATO IN-PLAY.**
+
+### LA REGOLA, da qui in avanti
+
+> **Gli importi sotto il minimo si piazzano SOLO in modo PASSIVO (percorso A).**
+> Se la quota target e' abbinabile — o il book non e' noto — non c'e' strada: si dichiara
+> il rifiuto `SUBMIN_REPLACE_NON_PERCORRIBILE` **prima** di toccare Betfair (0 chiamate
+> mutanti). `consenti_replace=True` resta solo come flag per esperimenti dichiarati.
+
+Conseguenza per Mike: `cover_place_price` piazza la copertura SOTTO il best back (ordine
+aggressivo), quindi con importi esatti sotto minimo la copertura e' **impossibile**. La
+scelta e' dell'utente: `exact_sizes=false` (copertura al minimo 2,00 EUR), oppure copertura
+passiva a quota >= best back, oppure nessuna copertura. **Default lasciato invariato.**
+
+
+---
+
+## 8. LE MISURE DAL VIVO DEL 17/09 — FATTI, non regole nostre
+
+Ordini REALI, listino italiano, in-play (mercati 1.262290365 e 1.262290216, selezione
+58805). Riportate qui come FATTI misurati. **Il nostro codice non impone nessuna regola di
+passo**: la risposta la da' Betfair e noi la REGISTRIAMO con il codice interno
+(`esito_istruzione` / `codice_rifiuto`). **Le decisioni sulle strategie — se e come
+arrotondare un importo — sono dell'utente.**
+
+| lato | importo | come | esito |
+|---|---|---|---|
+| BACK | 0,10 | replace dopo trim | `CANCELLED_NOT_PLACED` / interno `INVALID_BET_SIZE` |
+| BACK | 0,75 | replace dopo trim | `INVALID_BET_SIZE` |
+| BACK | 1,21 | replace dopo trim (Mike, 171 volte) | `INVALID_BET_SIZE` |
+| BACK | 2,25 | piazzato **DIRETTO**, sopra il minimo | `INVALID_BET_SIZE` |
+| BACK | 0,50 | replace dopo trim | **SUCCESS**, a riposo; poi abbinato — bet **443269473277** |
+| BACK | 0,50 | percorso A (quota non abbinabile 3.15) | **SUCCESS**, a riposo, `sizeRemaining` 0.1/0.5 confermato da `listCurrentOrders` |
+| LAY | 1,21 | trim + replace | **SUCCESS**, a riposo — bet **443270510087** |
+| LAY | 2,25 | **DIRETTO** | **SUCCESS** |
+| LAY | 0,50 e 0,01 | messi a mano dal SITO dall'utente | **abbinati** |
+| LAY | 0,75 / 0,33 / 0,10 | trim con parcheggio a **1.01** | il TAGLIO cade in `INVALID_PROFIT_RATIO` (restrizione anti-abuso del 2020): non conclusivo sul residuo |
+
+Altri bet id della sessione: 443268413725, 443268485109, 443269344346.
+
+### Cosa se ne ricava (lettura, non regola imposta)
+
+- Sul **BACK** i rifiuti cadono tutti su importi che non sono multipli di 0,50, e il rifiuto
+  arriva **anche sopra il minimo** (2,25 piazzato diretto). Sul **LAY** Betfair accetta il
+  centesimo.
+- Il `replaceOrders` **non e' il colpevole**: con 0,50 EUR funziona e l'ordine si abbina.
+  La causa dei 171 rifiuti di Mike era **l'IMPORTO** (1,21-1,37 EUR).
+- Il **parcheggio LAY a 1.01** e' sconsigliato: il taglio cade in
+  `INVALID_PROFIT_RATIO`. `initial_place_price("lay", best_back=...)` calcola una quota non
+  abbinabile con margine — `min(2.0, best_back - 5 tick)` — e torna a 1.01 solo senza book,
+  cioe' il comportamento storico.
+
+Helper di SOLA LETTURA per chi misura: `place_step_size(jurisdiction, side)`,
+`importo_legale(...)`, `importi_legali_vicini(...)`. Non bloccano nessun ordine.

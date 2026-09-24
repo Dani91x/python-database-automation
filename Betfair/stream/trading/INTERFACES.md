@@ -508,7 +508,9 @@ CASO CHE CI SERVE PRESENTE E FUTURO». Indagine e fonti:
 Adattatori (nessuna copia della sequenza):
 
 - **REST**: `Betfair/omega/omega_market.py::place_submin_live` (Mike, Omega, Safe);
-- **flumine**: `start_submin` / `advance_submin` (live_order_worker, scalper, tennis).
+- **flumine**: `start_submin` / `advance_submin` (live_order_worker, scalper, tennis);
+  il motore ordini del canale (`motore_ordini.py`, 24/09) usa la macchina del
+  live_order_worker (`_start_submin` + `_advance_submin_row` avanzati in RAM).
 
 Le firme pubbliche restano compatibili: `best_back`/`best_lay` sono kwargs OPZIONALI.
 
@@ -519,9 +521,10 @@ Le firme pubbliche restano compatibili: `best_back`/`best_lay` sono kwargs OPZIO
 | target >= minimo | place normale | 1 | `test_sopra_il_minimo_nessun_trucco` |
 | BACK sotto minimo, quota NON abbinabile | A (park alla target, niente replace) | 2 | `test_percorso_a_quando_la_quota_non_e_abbinabile`, `test_macchina_percorso_a_non_chiama_mai_replace` |
 | LAY sotto minimo, quota NON abbinabile | A | 2 | `test_lay_percorso_a` |
-| quota abbinabile (caso Mike, aggressivo) | B (park lontano + replace) | 3 | `test_percorso_b_quando_la_quota_e_abbinabile`, `test_macchina_percorso_b_chiama_il_replace` |
-| book IGNOTO | B (conservativo) | 3 | `test_book_ignoto_sceglie_il_percorso_conservativo` |
-| replace vietato dal chiamante | rifiuto, 0 ordini | 0 | `test_replace_non_consentito_rifiuta_senza_piazzare` |
+| quota abbinabile (caso Mike, aggressivo) | **rifiuto `SUBMIN_REPLACE_NON_PERCORRIBILE`** | **0** | `test_il_percorso_b_e_rifiutato_PER_DEFAULT_dopo_la_verifica_dal_vivo` |
+| book IGNOTO | **rifiuto `SUBMIN_REPLACE_NON_PERCORRIBILE`** | **0** | `test_book_ignoto_col_default_rifiuta_anche_lui` |
+| percorso B chiesto ESPLICITAMENTE (`consenti_replace=True`, esperimenti) | B (park lontano + replace) | 3 | `test_percorso_b_quando_la_quota_e_abbinabile`, `test_macchina_percorso_b_chiama_il_replace` |
+| replace rifiutato con cancel gia' riuscito | rifiuto CERTO, nessun ritiro | 3 | `test_replace_rifiutato_col_cancel_riuscito_e_un_rifiuto_CERTO` (report VERO del 17/09) |
 | fill-or-kill + quota non abbinabile | rifiuto `SUBMIN_NESSUNA_CONTROPARTE`, 0 ordini | 0 | percorso REST |
 | importo < 0,01 EUR | `ValueError` | 0 | `test_sotto_il_floor_assoluto_solleva` |
 | parcheggio abbinato | ritiro + abort, niente ritento | — | `test_guardia_il_parcheggio_non_deve_mai_abbinarsi` |
@@ -533,6 +536,42 @@ Le firme pubbliche restano compatibili: `best_back`/`best_lay` sono kwargs OPZIO
 Finti dei test: chiavi e tipi IDENTICI al vero (`instructionReports`,
 `placeInstructionReport`, `cancelInstructionReport`, `errorCode`, `betId`, `sizeMatched`,
 `sizeCancelled`, `status`, `orderStatus`, `sizeRemaining`).
+
+### Verifica dal vivo 17/09 e regola del percorso (ordini REALI)
+
+Besiktas v Marseille, mercato `1.262290365`, selezione `58805`, in-play, `betDelay` 5.
+
+- **Percorso B (quota abbinabile, 0,10 EUR a 2.98): FALLITO.** `replaceOrders` ->
+  esterno `CANCELLED_NOT_PLACED`, **interno `INVALID_BET_SIZE`**,
+  `cancelInstructionReport` SUCCESS `sizeCancelled` 0.1. Betfair valida il
+  ri-piazzamento contro il minimo: **il percorso B NON E' PERCORRIBILE su .it**.
+- **Percorso A (quota NON abbinabile, 0,10 EUR a 3.15): RIUSCITO.** 2 chiamate mutanti,
+  ordine a riposo da 0,10 EUR confermato da `listCurrentOrders` (`sizeRemaining` 0.1,
+  `sizeCancelled` 1.9), annullato pulito. **CERTIFICATO IN-PLAY.**
+
+**REGOLA (IN VERIFICA, 17/09 sera)**: vedi sotto — la causa vera sembra l'IMPORTO, non il percorso.
+`pianifica_submin` ha quindi `consenti_replace=False` per DEFAULT: con quota abbinabile o
+book ignoto ritorna `rifiuto = "SUBMIN_REPLACE_NON_PERCORRIBILE: ..."` e **0 chiamate
+mutanti**. `consenti_replace=True` resta solo come flag per esperimenti dichiarati (i test
+storici della sequenza B lo passano esplicitamente).
+
+**Replace rifiutato con la meta' cancel riuscita** (`cancelInstructionReport.status ==
+SUCCESS` e `sizeCancelled >= residuo`): l'ordine e' **certamente morto**, quindi rifiuto
+CERTO col codice `ESTERNO:INTERNO` e **nessuna chiamata di ritiro**. Chiamarlo faceva
+rispondere `BET_TAKEN_OR_LAPSED` e concludere «ordine forse vivo» su un ordine inesistente.
+
+### `customerRef` unico per TENTATIVO (anti `DUPLICATE_TRANSACTION`)
+
+`customerRef` e' il campo con cui Betfair de-duplica le richieste re-inviate per errore:
+riusarlo fra due TENTATIVI diversi fa tornare `DUPLICATE_TRANSACTION` invece di piazzare.
+Verificato sui chiamanti di produzione:
+
+- **Mike**: `execute_place` passa `client_ref = f"mike-t{trade_id}"` e il `trade_id` nasce
+  da `_insert_trade_row` **prima** di ogni piazzamento (`service.py:669`), quindi ogni
+  tentativo ha una riga nuova e un ref nuovo. OK.
+- **Safe**: `client_ref` ha un UNIQUE sulla coda `betfair_live_order_requests`. OK.
+- Dentro la sequenza il ref **si riusa di proposito** sui tre gradini (place, cancel,
+  replace): sono metodi diversi della stessa operazione, non re-invii.
 
 ### Regola money-critical: «il parcheggio non espone mai piu' del cap»
 
@@ -580,3 +619,23 @@ place-and-trim nel replay).
 Nessun modulo di produzione deve costruire da solo un ordine sotto il minimo: gli unici
 punti ammessi sono `place_submin_live` e `start_submin`/`advance_submin`. La lista dei
 chiamanti legittimi e' in `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` §5.
+
+
+---
+
+## Misure dal vivo del 17/09 (FATTI) e cosa fa il modulo
+
+Tabella completa in `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` §8. In sintesi, ordini reali su
+.it in-play: **BACK** 0,10 / 0,75 / 1,21 / 2,25 rifiutati con `INVALID_BET_SIZE` (2,25
+piazzato DIRETTO, quindi anche sopra il minimo), **BACK 0,50 accettato e abbinato** (bet
+443269473277); **LAY** 1,21 accettato a riposo (bet 443270510087), **LAY 2,25 diretto
+accettato**, **LAY 0,50 e 0,01 abbinati** (messi a mano dal sito).
+
+**Il modulo NON impone nessuna regola di passo.** Prova la sequenza, legge la risposta di
+Betfair e la registra con il codice ESTERNO e quello INTERNO
+(`CANCELLED_NOT_PLACED:INVALID_BET_SIZE`). `place_step_size` / `importo_legale` /
+`importi_legali_vicini` sono helper di **sola lettura** per chi misura.
+
+> **Le decisioni sulle strategie sono dell'utente.** Se e come arrotondare un importo di
+> copertura non lo decide questo modulo, e al 17/09 sera **nessun arrotondamento e' stato
+> introdotto in nessun bot**.

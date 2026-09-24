@@ -2679,3 +2679,121 @@ del bot (residuo accettato non dichiarato: `_emit flatten_residual*` senza `msg`
 → decisione D11 nel riepilogo. Test di paginazione con freno anti-blocco (63 verdi; con la mutazione `gte` 11 rossi in
 16 s invece del blocco). Action rilanciata alle 13:02 UTC: step risultati/signals/merge verdi, `enrich` in corso alle
 13:22 UTC.
+**h16:15 — APP AVVIATA dall'utente dopo le 4 migrazioni bot + sicurezza B1 (applicata dall'utente, `verifica_b1()` 0 KO,
+ricontrollo mio: anon solo `leads:INSERT`, 13 funzioni ad anon di cui 4 con owner nel corpo, service_role 108 SELECT,
+realtime 37 canali OK). Verifica MIA all'avvio: 15 processi vivi, porte 47330-47337 in ascolto, battito runner 6 s,
+modo ordini effettivo PAPER (riga paper, tetto live dichiarato dal runner), saldo 40,56 € letto 73 s prima, tutti i
+bot stopped/paper (Safe con 6 strategie paper), 2.449 richieste API in 15 min con 0 errori. C2 a video (utente):
+saldo OK, «Ordini reali» visibile, runner OK, barra OK, scheda partita OK; REPERTI: storico posizioni chiuse LENTO e
+CONFUSO (calcio e tennis) → Opus in corso; ladder lento (DB occupato da autovacuum ANALYZE di analytics_signals 7+ min
+durante la action); opportunità del modello con «hazard non verificato (atlante assente)» → Opus in corso (collegare
+`_hazard_check`, rigenerare l'atlante, aggiornamento AUTOMATICO continuo per lega/partita: CONFERMATO dall'utente,
+non una tantum). DECISIONE: scalper calcio in Control Room come gli altri bot → Opus in corso. ACTION rilanciata da me:
+enrich OK in 59 min (nessun 57014), bets 7 finestre in errore 521 (gateway del DB giù mentre l'utente applicava il
+blocco 2) → da rilanciare a DB fermo; gate rosso per questo.
+**h16:45 — C5 F1 SUL VIVO (app in paper, sonda in sola lettura su 47336, 900 s):** canale acceso, `saltati=0`,
+6 client collegati, 20-21 mercati monitorati; scan_calcio 3,9 msg/s (età updated_at p50 12,8 ms / p95 82 ms), scan_tennis
+4,0 msg/s (p50 24 ms / p95 85 ms); QUOTE NULLE in gioco = 0; giro dello scanner p50 263 ms / p95 750 ms (book 441 ms,
+scrittura 445 ms). Criteri del checkpoint F0/F1 rispettati sul vivo. Nota di misura: «ritardo da Betfair» p95 7,2 s con
+1.230 valori «impossibili» (negativi): il confronto fra `odds_pt_ms` di Betfair e l'orologio locale non è affidabile
+(orologio del PC/pt dello stream), NON un ritardo del canale (l'età di `updated_at` è a 13 ms). Sicurezza DB: B1, B2 e
+B3 APPLICATI dall'utente e verificati da me (anon: 0 funzioni, 1 grant `leads:INSERT`, 1 sequenza; authenticated senza
+scritture dirette; 99 RPC della UI eseguibili; service_role pieni poteri). Durante B2 (14:04-14:08 UTC) il gateway ha
+dato 5xx per 4 minuti (2.500 richieste), nessun errore di permesso; l'utente ha riavviato l'app dopo B3 (16:21).
+DECISIONI 24/09 pomeriggio: D1 lasciare; D2 freno ai ritentativi (spiegato, in attesa); D3 chiusura manuale bot tennis
+SÌ (Opus in corso); D5 e D9 restano così; D6/D8 rimandate; D7 spiegato; D10 trascrizioni «già fatte»: ricerca Sonnet
+in corso; D11 SÌ aggiornamento automatico dell'atlante. Lavori lanciati: proposte React al ms SENZA blocco («prezzo
+vivo assente» = avviso), Omega/Mike avvisa-o-automatico, righe nuove subito + tennis dal 47337, motore place-and-trim
++ PortaBanco, Omega sulla porta unica, scalper in Control Room, storico chiuse, atlante.
+
+**h17:00-19:30 — SERA: 9 CONSEGNE CERTIFICATE E INTEGRATE (un commit ciascuna, mutazioni mie, suite sui file toccati; REPLAY
+NON rieseguiti per ordine dell'utente delle 18:20 «i replay lascia perdere»).** Ordine dell'utente: chiudere tutto, pushare,
+audit domani. Commit su master (da `8e68de1`):
+- `5e15cf8` storico posizioni chiuse per GIORNATA DI REGOLAMENTO (Roma), una modalità alla volta, lettura a richiesta
+  (`chiuseGiornata.ts`, RPC `get_posizioni_chiuse_giornata` in `migrations/posizioni_chiuse_giornata_2026-09-24.sql`,
+  DA APPLICARE). Mie mutazioni: filtro modo spento → 4 file rossi; paper eredita la data Betfair → sopravvissuta →
+  test aggiunto da me, ora rosso. 474 vitest verdi.
+- `fcaf1b8` + `8b8187f` motore ordini: place-and-trim dal canale con la STESSA macchina del worker (paper e live), fasi
+  `parcheggiato`/`ridotto`, `PortaBanco` F4 (NON ancora agganciata al replay). Mie mutazioni: timeout mai → rosso;
+  avanzamento paper sul client LIVE e aborted chiuso come ok → sopravvissute → 3 test del delegato, ribattuti da me rossi.
+- `83e44d6` Omega sulla porta unica (F6, `OMEGA_ORDINI_VIA_CANALE`, default spento; 33 test + Omega 1294 verdi; mie
+  mutazioni: tabella origine, creato_ms float, ref uguale → rosse). Reperti sulla porta Safe trovati qui → `06366d3`.
+- `7845129` Omega uscite «avvisa e proponi» (default fail-closed) / «automatico» (`uscite_protezione` nei params, freno
+  20 s, 3 fallimenti → proposta); banco G1/G4 + scenario `uscite-automatiche`. Mie mutazioni: origin=user, ramo
+  invertito, esaurita mai → rosse. MIKE: solo mappa (uscite tutte automatiche oggi; per le proposte servono migrazione
+  stato `proposed` + scheda + decisione sui timer) → DECISIONE UTENTE.
+- `03784be` righe nuove SUBITO (rilettura mirata ≤1 ogni 2 s per bot) + ordini dei 4 bot tennis dal 47337 (inoltro nel
+  ponte dal 47332; topic nuovo `tennis_bot_armamento`; `TENNIS_RUNNER_SVEGLIA_CANALE` SPENTO di serie → decisione).
+  Mie mutazioni: pubblica anche i manuali, rilettura a ogni messaggio → rosse. 471 pytest + 628 vitest verdi.
+- `cb9ee31` scalper calcio in Control Room (riga senza importo: si arma per partita da Segui Live; posizioni per
+  sessione; Chiudi = `scalper_stop_sessione`; barra = reale per bet_id; chiuse solo live regolate). Migrazione
+  `migrations/scalper_control_room_2026-09-24.sql` DA APPLICARE. Raccordo MIO con lo storico: chiuse dello scalper in
+  un memo indipendente dal feed (il test dello storico «un battito non ricostruisce le chiuse» era rosso, ora verde).
+  Mia mutazione: ordini senza filtro di modalità → rossa. 774 vitest verdi.
+- `06366d3` porta Safe: 3 difetti corretti (creato_ms float → OGNI comando respinto dal motore; strategy_ref fisso;
+  chiusure senza FOK/reduces_liability) + fasi intermedie; finto del motore ora valida col `valida_comando` VERO.
+  REPERTO APERTO: ref Safe tennis `safe-t<id>` ≠ `safe_tennis-<id>` preteso dal motore → sistemare PRIMA di accendere
+  la porta per il tennis. 292 test verdi; mia mutazione (reduces_liability tolto) rossa.
+- `6070623` + `5c48c2a` atlante hazard: collegato a Safe (`_build_model` passava atlante None → nota «atlante assente»
+  SEMPRE), istanza condivisa con ricarica su mtime, note verificato/divergente/lega non coperta, soglie INVARIATE;
+  generatore `genera_atlante.py` (prima solo in uno scratchpad!) + sync (`HAZARD_ATLAS_SYNC`, spento) + v3 rigenerato
+  (NON in uso finché non copiato in `hazard_atlas_live.json`); migrazione `migrations/hazard_atlas_2026-09-24.sql` DA
+  APPLICARE; job notturno nel workflow NON montato (patch in scratchpad `atlante_workflow_job.patch`): si monta dopo
+  migrazione + bootstrap. Safe+Mike+Omega 3636 verdi. REPERTO GRAVE: la stagione 2026-27 delle leghe europee NON entra
+  nel DB (`api_coverage_by_season` 2026 con fixtures_events=False, odds=False, righe di luglio mai aggiornate) → il
+  backfill salta eventi/formazioni/statistiche/quote; `leagues_mapper` gira solo il 1° del mese. DA DECIDERE DOMANI.
+- `baf4286` D2 stato del mercato da Betfair prima di ogni ordine (tutti i bot; 4 strade piazzavano DAVVERO a mercato
+  sospeso: lay appoggiata Mike, Omega v1, cash-out Omega dal feed, Safe manuale/combo), freno rifiuti condiviso, D7
+  residuo dichiarato, D8 doc Mike 10 %. 5997 test verdi; mia mutazione cash-out Omega → rossa; guardia tennis worker
+  senza test dedicato (resta il rifiuto di flumine). Aperto: chiusura solidale sorelle combo Safe senza guardia.
+- `3acde25` proposte al ms, MAI un blocco lato UI (avvisi al posto dei blocchi, semaforo SÌ/QUASI/NO, prezzo visto al
+  clic con età/fonte/flag, esito dell'approvazione a video). Migrazione
+  `migrations/safe_request_approve_contesto_2026-09-24.sql` DA APPLICARE (senza: ripiego dichiarato). 281 pytest +
+  875 vitest verdi; mia mutazione scanner spacciato per ladder → rossa. Aperti: B17 (esecuzione a mercato vs prezzo
+  visto), `feed_non_fresco` resta rifiuto del servizio, FOK live con back visto sopra il mercato.
+- `512440f` «Chiudi» manuale per i 4 bot tennis (D3), ognuno con la SUA macchina d'uscita, `chiusura_manuale.py` nel
+  runner (guardie, presa in carico, conclusione stopped/error a 45 s), riga `chiudi_bot` prima del cross-mode, ponte che
+  non riarma; migrazione `migrations/tennis_chiudi_bot_2026-09-24.sql` DA APPLICARE. 518 pytest + 631 vitest verdi.
+  Mia mutazione «non flat dichiarato stopped» SOPRAVVISSUTA → test richiesto al delegato (vedi sotto).
+- `8d43da0` ACTION lega 667: causa provata sul DB (fixture_id globale, nessun indice (league_id, fixture_id): timeout
+  anche a LIMIT 1) → keyset composto `(season_year, fixture_id)` sull'indice esistente, prima pagina 0,24 s; guardia
+  season_year NULL fail-loud; migrazione OPZIONALE `matches_idx_league_fixture_2026-09-24_OPZIONALE.sql`. 78 test,
+  mie mutazioni (gte, sola stagione) rosse. Run 36011159941: enrich 153/154 leghe OK in 45 min, bets 1m37 (prima 49 min
+  fuggiti), pagella OK, gate ROSSO solo per la lega 667 → rilancio dopo il push.
+**SUITE INTERE su master (sera, dopo tutte le integrazioni tranne il chiudi tennis):** pytest `Betfair/` **6083 verdi**
++ 1 xfail (14:40, sotto carico); vitest **3562 verdi**, 30 saltati, 0 rossi; tsc 0; `npm run build` OK (ripetuto dopo
+il chiudi tennis). REPLAY: NON eseguiti (ordine dell'utente delle 18:20). Tutti i replay di oggi pomeriggio (c3j/c3k)
+restano l'ultimo riferimento; i bot toccati stasera (tutti) vanno ribattuti sul banco alla prima occasione.
+**BOT IN PAPER verificati sul DB alle 17:35 (sola lettura):** Omega running (lay 55 su Uzbekistan-Iran 1-0, 1 €), Mike
+running (2 cicli Under 3.5, green-up pending), Safe running (esatto lay 70 coperto con back 12 «hedged»; back tennis
+Sakkari 1.02 da 3 €), 4 bot tennis: NESSUNA partita armata (le righe di `tennis_bot_control` sono di luglio: i bot si
+armano solo sulle partite SEGUITE nel Terminale Tennis, `tennis_bot_service.py:390-405`; auto-follow = modifica di
+progetto, decisione utente), scalper fermo, 0 alert, 0 errori API.
+**TRASCRIZIONI** (D10, ritrascrizione autorizzata): faster-whisper small, 57 video, in corso (23/57 alle 18:24, ~2,5 min
+l'uno sotto carico) → output `Desktop\Strategia S - Giuseppe Bentivegna\TRASCRIZIONI\`; il confronto trascrizioni vs
+codice Safe si fa DOMANI con un delegato.
+
+**MIGRAZIONI DA APPLICARE (utente, SQL editor, nell'ordine; nessuna tocca tabelle esistenti):**
+1. `migrations/posizioni_chiuse_giornata_2026-09-24.sql` (storico); 2. `migrations/scalper_control_room_2026-09-24.sql`;
+3. `migrations/safe_request_approve_contesto_2026-09-24.sql` (prezzo visto al clic); 4. `migrations/tennis_chiudi_bot_2026-09-24.sql`;
+5. `migrations/hazard_atlas_2026-09-24.sql` → poi bootstrap dell'atlante (comando nel referto, ~3 min, lo lancio io col suo
+ok) → poi job notturno nel workflow (`scratchpad/atlante_workflow_job.patch`) → `HAZARD_ATLAS_SYNC=1` nel `.env`.
+Facoltativa: `matches_idx_league_fixture_2026-09-24_OPZIONALE.sql`. Senza le migrazioni 1-4 la UI ripiega e lo DICE a video.
+
+**DECISIONI APERTE PER L'UTENTE (domani):** (a) stagione 2026-27 europea che non entra nel DB (coverage 2026 False: eventi,
+formazioni, statistiche, quote saltati dal backfill; `leagues_mapper` mensile) — GRAVE per ML e atlante; (b) Mike avvisa/
+automatico: servono migrazione stato `proposed` + scheda + regola sui timer (quale uscita va sotto il selettore); (c) bot
+tennis: auto-follow su tutti i tennis in-play (come Safe) sì/no; (d) scalper: interruttore globale (A) o partita dalla
+card (B); `source='scalper'` nello specchio (oggi il live dello scalper finisce in «manuale app» e la pagina lo sposta
+per bet_id); canale `scalper_stato`; (e) `TENNIS_RUNNER_SVEGLIA_CANALE` (spento di serie) e `OMEGA_ORDINI_VIA_CANALE`/
+`SAFE_ORDINI_VIA_CANALE` (spenti: la strada unica resta opt-in finché PortaBanco non è agganciata al replay); (f) ref
+Safe tennis `safe-t<id>` vs `safe_tennis-<id>` prima di accendere la porta tennis; (g) chiusura solidale sorelle combo
+Safe senza guardia di mercato; (h) B17 esecuzione a mercato vs prezzo visto; `feed_non_fresco` resta rifiuto; (i) Omega
+tratta stato mercato mancante come OPEN (come prima).
+**PUNTO DI RIPRESA (25/09):** 1) leggere questa sezione; 2) verificare git (`origin/master` = ultimo commit di stasera),
+app viva, bot in paper; 3) AUDIT (rimandati da oggi): riepilogo dei 6 audit in `AUDIT_2026-09-24/` + 10 miglioramenti +
+14 voci tempo reale, da discutere; 4) controllo a monitor con l'utente: storico chiuse (dopo migrazione 1), scalper in
+Control Room (migrazione 2), schede proposte al ms, Chiudi tennis (migrazione 4), opportunità con hazard verificato;
+5) esito del rilancio della action (gate deve essere verde con la lega 667) e run notturna del 25/09; 6) trascrizioni →
+delegato confronto vs codice Safe; 7) test mancanti dichiarati: conclusione non flat del chiudi tennis, guardia tennis
+worker; 8) replay uno per bot su tutti i bot toccati stasera; 9) decisioni (a)-(i).
