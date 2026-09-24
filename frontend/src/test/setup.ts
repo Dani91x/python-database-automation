@@ -4,10 +4,30 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { forzaSupabaseFinto } from './forzaSupabaseFinto';
 
 afterEach(() => {
     cleanup();
 });
+
+// ============================================================================
+// SOTTO VITEST IL CLIENT SUPABASE NON DEVE MAI PARLARE COL DB VERO (23/09/2026)
+// ============================================================================
+// Reperto grave: il 23/09 `npx vitest run` lanciato SENZA esportare
+// VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY in shell ha letto il DB VERO con la
+// chiave anon (3 raffiche sui log API di Supabase: safe_strategy_status,
+// betfair_live_heartbeat, get_safe_activity, omega_eventi_chiusi_dall_utente).
+// Causa: `src/integrations/supabase/client.ts` legge
+// `import.meta.env.VITE_SUPABASE_URL/_ANON_KEY` dal `.env` di `frontend/`, e
+// quel client è un singleton creato al primo import — se nessuno esporta le
+// var finte prima di lanciare i test, il client si aggancia a QUALUNQUE cosa
+// dica il `.env` reale. La sandbox non deve dipendere dalla disciplina di chi
+// lancia: si forza qui, nel setup globale (`setupFiles` di vitest.config.ts),
+// PRIMA che il file di test — e quindi qualunque modulo che importa il client
+// Supabase — venga caricato. Logica e via di fuga (VITEST_DB_VERO=1) in
+// `./forzaSupabaseFinto.ts`; dimostrazione e falsificazione in
+// `./forzaSupabaseFinto.test.ts`.
+forzaSupabaseFinto();
 
 // ============================================================================
 // IL COLLAUDO NON DEVE APRIRE SOCKET VERI (14/09/2026)
