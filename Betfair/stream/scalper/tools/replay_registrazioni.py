@@ -290,11 +290,29 @@ class _Orologio:
         self.motore_finito = False
         self.libero = False            # nessun controllo: il motore corre
         self._uccidi: Optional[BaseException] = None
+        # ogni istante di mercato (ms) in cui un book e' arrivato, nell'ORDINE
+        # di arrivo: serve a S5 per scomputare i silenzi VERI della
+        # registrazione (nessun book, qualunque market) dal ritardo del
+        # heartbeat (`buchi`, sotto; difetto 24/09)
+        self.libro_ms: List[int] = []
 
     # ------------------------------------------------------------ lettura
     def time(self) -> float:
         o = self.ora_s
         return float(o) if o is not None else _TIME_VERO()
+
+    def buchi(self, soglia_ms: int = 2000) -> List[Tuple[int, int]]:
+        """Coppie (inizio, fine) in cui NESSUN book (di nessun mercato della
+        sessione) e' arrivato per almeno `soglia_ms`: il turno non poteva
+        passare alla sessione piu' spesso di cosi', in un replay che avanza
+        il tempo SOLO ai book (vedi il docstring del modulo, 'L'OROLOGIO')."""
+        out: List[Tuple[int, int]] = []
+        prima = None
+        for ms in self.libro_ms:
+            if prima is not None and ms - prima >= soglia_ms:
+                out.append((prima, ms))
+            prima = ms
+        return out
 
     def ora_ms(self) -> int:
         return int(round(self.time() * 1000.0))
@@ -346,6 +364,7 @@ class _Orologio:
     # ------------------------------------------------------------ motore
     def al_book(self, t_s: float) -> None:
         with self._cv:
+            self.libro_ms.append(int(round(t_s * 1000.0)))
             self.ora_s = t_s if self.ora_s is None else max(self.ora_s, t_s)
             if self._pendente is not None:
                 self._sveglia = self.ora_s + self._pendente
@@ -1040,6 +1059,7 @@ class _Banco:
                 or any(str(a.get("code") or "") == "SCALPER_CRASH"
                        for a in self.db.tabelle.get("live_alerts", []))),
             heartbeat_ms=battiti, running_da_ms=running,
+            buchi_registrazione_ms=self.orologio.buchi(),
             parita=parita, orfani_dopo_riavvio=orfani,
             allarmi=list(self.db.tabelle.get("live_alerts", [])),
         )

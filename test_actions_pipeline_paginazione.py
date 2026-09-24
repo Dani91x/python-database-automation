@@ -47,6 +47,15 @@ import refresh_analytics_bets as rab
 _SNAP_COLS = ("freq_baseline", "freq_current", "freq_deviation",
               "delay_current", "delay_record", "delay_avg")
 
+# freno del finto contro la paginazione che NON TERMINA (24/09): un cursore
+# keyset rotto (es. `.gt` mutato in `.gte`) rilegge per sempre l'ultima riga
+# (`dopo` resta fermo sul valore massimo) invece di fallire -> il test resta
+# APPESO invece di diventare rosso. Nessun test qui arriva vicino a poche
+# centinaia di select (la lega piu' grande e' 2500 righe/cap 500 = 5 pagine):
+# 3.000 e' un tetto largo (>500x il caso reale piu' pesante) che non tocca i
+# test sani e fa fallire in fretta quello rotto.
+_LIMITE_SELECT_TEST = 3_000
+
 
 # ---------------------------------------------------------------- errori veri
 def api_error(code, message: str, hint=None, details=None) -> APIError:
@@ -219,6 +228,13 @@ class FakeQuery:
         if self._delete:
             return self._esegui_delete()
         self.db.n_select += 1
+        if self.db.n_select > _LIMITE_SELECT_TEST:
+            # un cursore keyset rotto (`.gt` -> `.gte`) rilegge la stessa riga
+            # per sempre: senza freno il test resta appeso invece di fallire
+            # (24/09). pytest.fail, non un'eccezione qualsiasi: niente retry
+            # transitorio del codice sotto test la puo' inghiottire.
+            pytest.fail("paginazione che non termina (oltre %d select in un "
+                        "solo test: cursore keyset rotto?)" % _LIMITE_SELECT_TEST)
         if self.db.select_hook:
             self.db.select_hook(self)
         rows = [dict(r) for r in self.db.tables.get(self.table, []) if self._match(r)]

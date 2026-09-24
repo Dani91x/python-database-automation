@@ -203,6 +203,37 @@ def test_il_primo_publish_time_e_quello_della_registrazione():
     assert quando.strftime("%Y-%m-%d %H:%M") == "2026-06-30 15:05"
 
 
+def test_orologio_buchi_isola_i_silenzi_veri_e_ignora_la_cadenza_normale():
+    """Difetto S5 del 24/09 (referto: scalper_calcio 35797769, S5 violato 5764
+    volte): il replay avanza il tempo di mercato SOLO quando un book arriva
+    (`al_book`), un thread separato in produzione invece dorme sull'orologio
+    REALE (docstring del modulo, 'L'OROLOGIO'). Un buco VERO della
+    registrazione (nessun book per >= la soglia) va isolato da `buchi()`."""
+    # `libera()`: nessun controllo si mette in mezzo, `al_book` non aspetta
+    # turno (qui interessa solo la registrazione di `libro_ms`, non il turno)
+    o = R._Orologio()
+    o.libera()
+    for ms in (0, 100, 250, 400):
+        o.al_book(ms / 1000.0)
+    o.al_book(7400 / 1000.0)   # buco: 7000 ms senza nessun book (> soglia)
+    for ms in (7500, 7650):
+        o.al_book(ms / 1000.0)
+    assert o.buchi() == [(400, 7400)]
+    # la cadenza NORMALE dei book (< soglia) non e' un buco
+    o2 = R._Orologio()
+    o2.libera()
+    for ms in (0, 500, 1000, 1500):
+        o2.al_book(ms / 1000.0)
+    assert o2.buchi() == []
+    # due silenzi piu' piccoli della soglia CONSECUTIVI restano due, non si
+    # sommano da soli (la soglia si applica al singolo intervallo fra book)
+    o3 = R._Orologio()
+    o3.libera()
+    for ms in (0, 1500, 3000):
+        o3.al_book(ms / 1000.0)
+    assert o3.buchi() == []
+
+
 def test_orologio_ucciso_al_prossimo_sonno():
     o = R._Orologio()
     o.al_book  # noqa: B018 - solo per chiarezza: nessun book ancora
@@ -530,6 +561,37 @@ def test_s2_s3_s4_s5_s7():
     assert "S7" not in _codici(_oss(orfani_dopo_riavvio=[orfano],
                                     allarmi=[{"message": "posizione ORFANA della sessione"}]),
                                giri=CERT.GIRI_DI_TOLLERANZA)
+
+
+def test_s5_scomputa_un_buco_vero_della_registrazione_ma_resta_rosso_su_un_ritardo_vero():
+    """Difetto dell'ADATTATORE del 24/09 (referto: scalper_calcio 35797769, S5
+    violato 5764 volte, esempio 'heartbeat fermo per 7317 ms fra 1783701117089
+    e 1783701124406'). Verificato sulla registrazione vera: in
+    quell'intervallo ci sono DUE silenzi (3731 ms + 2588 ms = 6319 ms) fra i
+    book, nessuno dei due da solo sopra HEARTBEAT_S+1 (6000 ms): il servizio
+    ha scritto il heartbeat al PRIMO book utile, come deve fare un replay che
+    avanza il tempo SOLO ai book (il servizio VERO dorme su un thread a parte,
+    sull'orologio REALE: mai toccato qui). S5 deve tacere quando il buco
+    spiega il ritardo, e restare rosso quando non lo spiega (falsificazione:
+    il fix non deve rendere S5 cieco a un ritardo vero del servizio)."""
+    stats = {"orders_placed": 0, "cycles": 0, "pnl_locked": 0.0}
+    a, b = 1_783_701_117_089, 1_783_701_124_406
+    assert b - a == 7317
+    buchi_veri = [(1_783_701_117_297, 1_783_701_121_028),
+                  (1_783_701_121_818, 1_783_701_124_406)]
+    oss = _oss(running_da_ms=0, heartbeat_ms=[a, b], ms=b + 1000, stats=stats,
+               buchi_registrazione_ms=buchi_veri)
+    assert "S5" not in _codici(oss)
+    # FALSIFICAZIONE 1: stesso ritardo di 7317 ms ma SENZA alcun buco
+    # dichiarato (book fitti, il servizio e' semplicemente stato lento): rosso
+    oss_senza_buchi = _oss(running_da_ms=0, heartbeat_ms=[a, b], ms=b + 1000, stats=stats)
+    assert "S5" in _codici(oss_senza_buchi)
+    # FALSIFICAZIONE 2: un buco troppo piccolo per spiegare tutto il ritardo
+    # (800 ms su 7317) resta rosso: non basta CHE ci sia un buco, deve
+    # spiegare lo scarto oltre la cadenza
+    oss_buco_parziale = _oss(running_da_ms=0, heartbeat_ms=[a, b], ms=b + 1000, stats=stats,
+                              buchi_registrazione_ms=[(a + 100, a + 900)])
+    assert "S5" in _codici(oss_buco_parziale)
 
 
 # ===========================================================================

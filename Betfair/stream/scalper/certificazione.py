@@ -160,6 +160,13 @@ class Osservazione:
     dichiarato_non_flat: bool = False
     heartbeat_ms: List[int] = field(default_factory=list)
     heartbeat_cadenza_s: float = 5.0
+    # buchi VERI della registrazione (nessun book di NESSUN mercato della
+    # sessione, coppie inizio/fine ms): il replay passa il turno alla
+    # sessione SOLO quando un book arriva (`_Orologio.al_book`), quindi un
+    # silenzio della registrazione ritarda il heartbeat nel replay anche se
+    # in produzione il thread dorme sull'orologio REALE, indipendente dal
+    # flusso di flumine (S5 li scomputa, non li ignora: difetto 24/09)
+    buchi_registrazione_ms: List[Tuple[int, int]] = field(default_factory=list)
     running_da_ms: Optional[int] = None
     parita: Optional[Dict[str, Any]] = None
     orfani_dopo_riavvio: Optional[List[Dict[str, Any]]] = None
@@ -850,9 +857,23 @@ def _s4(o: Osservazione) -> Optional[str]:
     return None
 
 
+def _sovrapposizione_ms(a: int, b: int, c: int, d: int) -> int:
+    """ms in comune fra [a, b) e [c, d)."""
+    return max(0, min(b, d) - max(a, c))
+
+
+def _buco_dentro_ms(buchi: Sequence[Tuple[int, int]], a: int, b: int) -> int:
+    """Somma dei ms di [a, b] in cui NESSUN book e' arrivato (silenzio della
+    registrazione): il tempo che il replay non poteva far scorrere piu' in
+    fretta, qualunque sia la causa del silenzio."""
+    return sum(_sovrapposizione_ms(a, b, ga, gb) for ga, gb in buchi)
+
+
 @_controllo("S5", "mentre la sessione e' 'running' il servizio scrive "
                   "heartbeat_at e stats almeno ogni HEARTBEAT_S (+1 s) di "
-                  "mercato, con le chiavi delle stats della strategia (UI e "
+                  "mercato EFFETTIVAMENTE trascorso (al netto dei silenzi "
+                  "della registrazione, che il replay non puo' scorrere piu' "
+                  "in fretta), con le chiavi delle stats della strategia (UI e "
                   "supervisore leggono QUESTE: par.6.5, par.7.20, par.7.23)",
             quando=_q_running)
 def _s5(o: Osservazione) -> Optional[str]:
@@ -862,14 +883,19 @@ def _s5(o: Osservazione) -> Optional[str]:
     # il conto (`heartbeat_ms` arriva gia' filtrato dal replay)
     battiti = sorted(o.heartbeat_ms)
     massimo = int((o.heartbeat_cadenza_s + 1.0) * 1000)
+    buchi = o.buchi_registrazione_ms or []
     for a, b in zip(battiti, battiti[1:]):
-        if b - a > massimo:
-            return ("heartbeat fermo per %d ms di mercato (fra %d e %d), la "
-                    "cadenza del servizio e' %.0f s" % (b - a, a, b, o.heartbeat_cadenza_s))
-    if (o.sessione_viva and o.stop_richiesto_ms is None and battiti
-            and o.ms - battiti[-1] > massimo):
-        return ("ultimo heartbeat %d ms fa, la cadenza del servizio e' %.0f s"
-                % (o.ms - battiti[-1], o.heartbeat_cadenza_s))
+        scarto = (b - a) - _buco_dentro_ms(buchi, a, b)
+        if scarto > massimo:
+            return ("heartbeat fermo per %d ms di mercato EFFETTIVO (fra %d e "
+                    "%d, %d ms sono silenzio della registrazione), la cadenza "
+                    "del servizio e' %.0f s"
+                    % (scarto, a, b, (b - a) - scarto, o.heartbeat_cadenza_s))
+    if (o.sessione_viva and o.stop_richiesto_ms is None and battiti):
+        scarto = (o.ms - battiti[-1]) - _buco_dentro_ms(buchi, battiti[-1], o.ms)
+        if scarto > massimo:
+            return ("ultimo heartbeat %d ms fa di mercato EFFETTIVO, la "
+                    "cadenza del servizio e' %.0f s" % (scarto, o.heartbeat_cadenza_s))
     for k in ("orders_placed", "cycles", "pnl_locked"):
         if k not in (o.stats or {}):
             return "le stats scritte non portano la chiave '%s'" % k
