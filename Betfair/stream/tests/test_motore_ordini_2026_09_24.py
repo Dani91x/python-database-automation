@@ -588,6 +588,63 @@ def test_sotto_il_minimo_place_and_trim_in_ram_con_eventi(amb, mode):
         "inviato", "ordine", "esito"]
 
 
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_place_and_trim_ogni_passo_sul_client_della_modalita(amb, monkeypatch, mode):
+    """Revisione del coordinatore (24/09): non solo il park iniziale, ma OGNI
+    passo della macchina (trim, replace) deve girare sul client della modalita'
+    del comando. In PAPER mai il client REALE, in nessun passo."""
+    amb.market.borsa = True
+    vero = LOW._advance_submin_row
+    client_passi: List[Any] = []
+
+    def _spia(sb: Any, flumine: Any, row: Any, mode_r: str, strategy: Any,
+              *, client: Any = None) -> None:
+        client_passi.append((mode_r, client))
+        return vero(sb, flumine, row, mode_r, strategy, client=client)
+    monkeypatch.setattr(LOW, "_advance_submin_row", _spia)
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, mode=mode, size=1.0, price=3.0))
+    _giri_submin(amb)
+    atteso = amb.paper if mode == "paper" else amb.reale
+    assert len(client_passi) >= 2                  # trim e replace passati di qui
+    assert all(m == mode for m, _c in client_passi)
+    assert all(c is atteso for _m, c in client_passi)
+    # e i passi hanno davvero cambiato l'ordine (non spiato a vuoto)
+    ordine = amb.market.calls[0][0]
+    assert ordine.order_type.size == 1.0 and ordine.order_type.price == 3.0
+
+
+def test_place_and_trim_abortito_chiuso_come_errore_mai_accettato(amb, monkeypatch):
+    """Revisione del coordinatore (24/09): una sequenza che la macchina marca
+    ABORTED (es. park abbinato alla quota non abbinabile) si chiude come ERRORE
+    col motivo, mai come ordine accettato."""
+    amb.market.borsa = True
+    motivo = ("ABORT: step1 abbinato (size_matched=2.00) alla quota non "
+              "abbinabile - nessun ritento, riconciliare a mano")
+
+    def _abortisce(sb: Any, flumine: Any, row: Any, mode_r: str, strategy: Any,
+                   *, client: Any = None) -> None:
+        # stessa scrittura di ``_persist_submin_step`` sul ramo ABORTED
+        prev = dict(row.get("result") or {})
+        prev.update({"ok": False, "submin_step": "aborted", "error": motivo,
+                     "detail": motivo})
+        sb.table(LOW._TABLE).update({"status": "error", "error": motivo,
+                                     "result": prev}).eq("id", row["id"]).execute()
+    monkeypatch.setattr(LOW, "_advance_submin_row", _abortisce)
+    ws = amb.ch.collega("mike")
+    _manda(amb, ws, _cmd("mike", 1, size=1.0, price=3.0))
+    _giri_submin(amb)
+    assert not amb.motore._submin
+    ev = [m["d"] for m in amb.ch.per_ws(ws, "order")]
+    fasi = [e["fase"] for e in ev]
+    assert fasi == ["inviato", "parcheggiato", "errore"]
+    assert "accettato_betfair" not in fasi
+    assert ev[-1]["errore"] == motivo and ev[-1]["submin_step"] == "aborted"
+    esiti = [r for r in _righe_diario(amb) if r["tipo"] == "esito"]
+    assert esiti[-1]["ref"] == "mike-t1" and esiti[-1]["ok"] is False
+    assert esiti[-1]["errore"] == motivo
+
+
 def test_place_and_trim_nessun_sonno_nel_thread_del_motore(amb, monkeypatch):
     """Il gradino 1 torna SUBITO: la sequenza avanza a giri, mai time.sleep."""
     amb.market.borsa = True
