@@ -91,27 +91,45 @@ def _min_size_live(side: str = "back") -> float:
 def _live_brake() -> Optional[str]:
     """Motivo per cui un ordine LIVE non deve partire, o None se puo' partire.
 
-    Legge i freni GLOBALI del progetto (``Betfair/stream/config_stream.py``),
-    gli stessi che governano il worker della coda:
-      · ``LIVE_KILL_SWITCH=true``  -> nessun ordine reale, punto;
-      · ``LIVE_ORDER_MODE`` != LIVE -> l'operatore ha dichiarato il sistema in
-        PAPER/OFF: il percorso REST non puo' scavalcarlo.
-    Se il modulo non e' importabile NON si blocca nulla (il bot non deve morire
-    perche' manca un file di configurazione): si logga e si prosegue."""
+    Legge i freni GLOBALI del progetto, gli stessi che governano il worker
+    della coda (usata da Safe, Mike e Omega: tutti passano da ``place``):
+      - kill-switch: ``LIVE_KILL_SWITCH=true`` nel .env OPPURE
+        ``betfair_live_settings.kill_switch`` acceso dalla UI -> nessun ordine
+        reale, punto;
+      - modo ordini EFFETTIVO != LIVE (24/09): il piu' restrittivo fra il
+        tetto del .env (``LIVE_ORDER_MODE``) e la scelta dalla Control Room
+        (``betfair_live_settings.order_mode``), regola unica in
+        ``Betfair/stream/modo_ordini.py``. Riga non letta -> OFF.
+    La riga si rilegge SOLO qui (prima di un'APERTURA live) e al massimo ogni
+    ``modo_ordini.ETA_RILETTURA_BOT_S`` secondi: nessuna lettura in piu' per giro.
+
+    24/09 - FAIL-CLOSED: prima, se il modulo non era importabile, NON si
+    bloccava nulla. Ai soldi veri si arriva scrivendolo: freni non leggibili
+    = ordine reale NON inviato (``freni_live_non_letti``)."""
     try:
         from Betfair.stream import config_stream as _cfg
+        from Betfair.stream import modo_ordini as _mo
     except Exception as ex:  # noqa: BLE001
-        logger.warning("[safe.exec] config_stream non importabile, freni live non letti: %s",
+        logger.warning("[safe.exec] freni live non importabili: ordine reale NON inviato: %s",
                        str(ex)[:120])
-        return None
+        return "freni_live_non_letti"
     try:
         if _cfg.live_kill_switch():
             return "live_kill_switch_attivo"
-        lom = str(_cfg.live_order_mode() or "").upper()
-        if lom != "LIVE":
-            return f"live_order_mode_non_live:{lom or 'OFF'}"
+        # tetto OFF/PAPER: inutile leggere il DB, la risposta e' gia' no
+        tetto = _mo.normalizza(_cfg.live_order_mode()) or "OFF"
+        if tetto != "LIVE":
+            return f"live_order_mode_non_live:{tetto}"
+        _mo.aggiorna_da_db()
+        if _mo.kill_switch_db():
+            return "live_kill_switch_attivo"
+        eff = _mo.modo_effettivo(tetto, _mo.valore_db())
+        if eff != "LIVE":
+            return f"live_order_mode_non_live:{eff}"
     except Exception as ex:  # noqa: BLE001
-        logger.warning("[safe.exec] lettura freni live KO: %s", str(ex)[:120])
+        logger.warning("[safe.exec] lettura freni live KO: ordine reale NON inviato: %s",
+                       str(ex)[:120])
+        return "freni_live_non_letti"
     return None
 
 

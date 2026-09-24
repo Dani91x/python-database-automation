@@ -177,6 +177,7 @@ def env(monkeypatch):
         "settled_writes": [],
     }
     monkeypatch.setattr(dsw.low, "_live_order_mode", lambda: state["mode"])
+    monkeypatch.setattr(dsw.low, "_modo_processo", lambda: state["mode"])
     monkeypatch.setattr(dsw.low, "_refresh_settings", lambda _sb: None)
     monkeypatch.setattr(dsw.low, "_SETTINGS", state["settings"], raising=False)
 

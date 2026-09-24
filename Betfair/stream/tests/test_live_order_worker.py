@@ -30,6 +30,7 @@ import Betfair.stream.live_order_worker as wk
 _REAL_KILL_SWITCH = wk._kill_switch
 _REAL_MAX_STAKE = wk._max_stake
 _REAL_LIVE_ORDER_MODE = wk._live_order_mode
+_REAL_MODO_PROCESSO = wk._modo_processo
 
 # Strategy registrata "tipo": l'istanza sotto cui gli ordini del worker sono creati
 # (in produzione è la LiveTradingStrategy registrata nel framework e passata via func_kwargs).
@@ -202,6 +203,7 @@ def _fake_order(
 @pytest.fixture(autouse=True)
 def _cfg(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "PAPER")
     monkeypatch.setattr(wk, "_kill_switch", lambda: False)
     monkeypatch.setattr(wk, "_jurisdiction", lambda: "it")
     monkeypatch.setattr(wk, "_batch", lambda: 5)
@@ -478,6 +480,7 @@ def test_kill_switch_flip_midbatch_blocks_remaining_orders(monkeypatch):
 
 def test_off_mode_is_inert(monkeypatch):
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "OFF")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "OFF")
     sb = _FakeSupabase([_row(1)])
     fl = _FakeFlumine({"1.1": _FakeMarket("1.1")})
     assert wk._process_once(sb, fl, strategy=_STRAT) == 0
@@ -603,38 +606,44 @@ def test_max_stake_reread_from_env_live(monkeypatch):
 def test_live_order_mode_reread_from_env_live(monkeypatch):
     """SEC-MED-1: la mode è RI-LETTA dall'env ad ogni ciclo. Un DOWNGRADE di sicurezza
     (LIVE/PAPER → OFF) a runtime rende il worker inerte al giro successivo, SENZA riavvio
-    (prima era congelata via _cfg_attr all'import)."""
+    (prima era congelata via _cfg_attr all'import).
+    24/09: il .env e' il TETTO (``_modo_processo``); la scelta dalla Control Room
+    e' dichiarata LIVE, quindi qui comanda il tetto."""
+    from Betfair.stream import modo_ordini as _mo
+
     monkeypatch.setattr(wk, "_live_order_mode", _REAL_LIVE_ORDER_MODE)  # impl REALE, non la fixture
+    monkeypatch.setattr(wk, "_modo_processo", _REAL_MODO_PROCESSO)
 
-    # ciclo 1: PAPER → l'ordine è processato
-    monkeypatch.setenv("LIVE_ORDER_MODE", "paper")
-    sb1 = _FakeSupabase([_row(1)])
-    market = _FakeMarket("1.1")
-    fl = _FakeFlumine({"1.1": market})
-    assert wk._process_once(sb1, fl, strategy=_STRAT) == 1
-    assert _by_id(sb1, 1)["status"] == "done"
+    with _mo.dichiara_per_banco("LIVE"):
+        # ciclo 1: PAPER → l'ordine è processato
+        monkeypatch.setenv("LIVE_ORDER_MODE", "paper")
+        sb1 = _FakeSupabase([_row(1)])
+        market = _FakeMarket("1.1")
+        fl = _FakeFlumine({"1.1": market})
+        assert wk._process_once(sb1, fl, strategy=_STRAT) == 1
+        assert _by_id(sb1, 1)["status"] == "done"
 
-    # downgrade a runtime → OFF: worker INERTE (diverso dal kill: qui non si
-    # processa nulla e la riga resta pending — nessun claim, nessun esito)
-    monkeypatch.setenv("LIVE_ORDER_MODE", "OFF")
-    sb2 = _FakeSupabase([_row(2)])
-    market2 = _FakeMarket("1.1")
-    fl2 = _FakeFlumine({"1.1": market2})
-    assert wk._process_once(sb2, fl2, strategy=_STRAT) == 0
-    assert market2.calls == []
-    assert _by_id(sb2, 2)["status"] == "pending"
+        # downgrade a runtime → OFF: worker INERTE (diverso dal kill: qui non si
+        # processa nulla e la riga resta pending — nessun claim, nessun esito)
+        monkeypatch.setenv("LIVE_ORDER_MODE", "OFF")
+        sb2 = _FakeSupabase([_row(2)])
+        market2 = _FakeMarket("1.1")
+        fl2 = _FakeFlumine({"1.1": market2})
+        assert wk._process_once(sb2, fl2, strategy=_STRAT) == 0
+        assert market2.calls == []
+        assert _by_id(sb2, 2)["status"] == "pending"
 
 
 def test_live_order_mode_falls_back_to_env_when_no_config_helper(monkeypatch):
     """SEC-MED-1 fallback: senza il helper config_stream.live_order_mode, la mode è letta
     direttamente da os.getenv (con default OFF)."""
     import Betfair.stream.config_stream as cs
-    monkeypatch.setattr(wk, "_live_order_mode", _REAL_LIVE_ORDER_MODE)
+    monkeypatch.setattr(wk, "_modo_processo", _REAL_MODO_PROCESSO)
     monkeypatch.delattr(cs, "live_order_mode", raising=False)
     monkeypatch.setenv("LIVE_ORDER_MODE", "live")
-    assert wk._live_order_mode() == "LIVE"
+    assert wk._modo_processo() == "LIVE"
     monkeypatch.delenv("LIVE_ORDER_MODE", raising=False)
-    assert wk._live_order_mode() == "OFF"
+    assert wk._modo_processo() == "OFF"
 
 
 def test_config_helper_live_order_mode_rereads_env(monkeypatch):

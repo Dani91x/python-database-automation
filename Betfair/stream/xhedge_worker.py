@@ -77,7 +77,10 @@ def _cs_back_odds(session: Any, cs_market_id: str, cs_map: Dict[int, Tuple[int, 
 
 
 def _process_once(sb: Any, session: Any) -> int:
-    mode = low._live_order_mode().lower()
+    # 24/09: modo di PROCESSO (tetto del .env), non la scelta dalla Control
+    # Room: questo worker protegge/riconcilia cio' che e' GIA' a mercato, e un
+    # declassamento dalla UI ferma le aperture, mai la sorveglianza.
+    mode = low._modo_processo().lower()
     if mode not in ("paper", "live"):
         return 0
     handled = 0

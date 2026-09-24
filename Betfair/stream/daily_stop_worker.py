@@ -411,7 +411,10 @@ def _activate_kill(sb: Any, mode_l: str, decision: daily_pnl.DailyStopDecision) 
 # Ciclo
 # ---------------------------------------------------------------------------
 def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> None:
-    mode = low._live_order_mode()
+    # 24/09: modo di PROCESSO (tetto del .env), non la scelta dalla Control
+    # Room: questo worker protegge/riconcilia cio' che e' GIA' a mercato, e un
+    # declassamento dalla UI ferma le aperture, mai la sorveglianza.
+    mode = low._modo_processo()
     if mode not in ("PAPER", "LIVE"):
         return
     mode_l = mode.lower()

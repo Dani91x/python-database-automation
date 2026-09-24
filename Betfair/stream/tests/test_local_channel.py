@@ -121,6 +121,9 @@ def _req(params: Dict[str, Any], method: str = "order", msg_id: int = 1) -> Loca
 @pytest.fixture()
 def env(monkeypatch):
     state: Dict[str, Any] = {"journal": [], "kill": False}
+    # 24/09: modo EFFETTIVO dichiarato LIVE (tetto .env x scelta dalla UI): qui
+    # si prova il canale; la regola del modo ha i suoi test.
+    monkeypatch.setattr(wk, "_live_order_mode", lambda: "LIVE")
     monkeypatch.setattr(wk, "_kill_switch", lambda: state["kill"])
     monkeypatch.setattr(wk, "_db_kill_switch", lambda: False)
     monkeypatch.setattr(wk, "_journal_done", lambda _sb, _fl, row, _m: state["journal"].append(dict(row)))

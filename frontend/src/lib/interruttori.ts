@@ -44,6 +44,7 @@ import {
 } from '@/lib/tennis';
 import { isBotTennis, BOT_TENNIS, BOT_LABEL, type Bot, type BotTennis } from '@/lib/controlRoom';
 import { svegliaBot } from '@/lib/localChannel';
+import { getLiveSettings, setLiveOrderMode, type LiveSettings } from '@/lib/liveOrders';
 
 export type { Bot };
 
@@ -877,4 +878,82 @@ export function creaInterruttori(
         accendi, spegni, cambiaModalita, cambiaImporto, fermaBot,
         scriviAccensioni: scriviSafe, cambiaModalitaServizio,
     };
+}
+
+// ============================================================================
+// ORDINI REALI (24/09) - "devo operare dalla UI, non dal codice".
+//
+// Prima `LIVE_ORDER_MODE` (OFF/PAPER/LIVE) viveva SOLO nel .env: era il gate
+// del trading manuale dal ladder E il freno di Safe/Mike/Omega sugli ordini
+// reali. Adesso la scelta sta nella riga di controllo `betfair_live_settings`
+// (la stessa del kill-switch) e si cambia da qui.
+//
+// LA REGOLA E' UNA, ED E' QUELLA DEL RUNNER (`Betfair/stream/modo_ordini.py`):
+//   effettivo = il PIU' RESTRITTIVO fra il tetto del .env e la scelta dalla UI
+//   (OFF < PAPER < LIVE); scelta assente o illeggibile -> OFF.
+// Qui la si RIPETE solo per mostrarla: chi decide e' il runner, che pubblica
+// lo stesso valore in `live_now.state.order_mode` (il badge di MarketWatch).
+// ============================================================================
+export type ModoOrdini = 'OFF' | 'PAPER' | 'LIVE';
+export const MODI_ORDINI: readonly ModoOrdini[] = ['OFF', 'PAPER', 'LIVE'];
+const RANGO_MODO: Record<ModoOrdini, number> = { OFF: 0, PAPER: 1, LIVE: 2 };
+
+/** 'live' / ' Paper ' -> 'LIVE' / 'PAPER'. Qualunque altra cosa -> null. */
+export function normalizzaModoOrdini(v: unknown): ModoOrdini | null {
+    if (typeof v !== 'string') return null;
+    const m = v.trim().toUpperCase();
+    return (MODI_ORDINI as readonly string[]).includes(m) ? (m as ModoOrdini) : null;
+}
+
+/** La regola del runner: il piu' restrittivo; uno dei due illeggibile -> OFF. */
+export function modoOrdiniEffettivo(tetto: unknown, scelto: unknown): ModoOrdini {
+    const t = normalizzaModoOrdini(tetto);
+    const s = normalizzaModoOrdini(scelto);
+    if (t == null || s == null) return 'OFF';
+    return RANGO_MODO[t] <= RANGO_MODO[s] ? t : s;
+}
+
+export interface StatoOrdiniReali {
+    /** la riga e' stata letta */
+    letto: boolean;
+    /** riga letta ma senza `order_mode`: la migrazione non e' applicata */
+    migrazioneMancante: boolean;
+    scelto: ModoOrdini | null;
+    /** tetto dichiarato dal runner al suo avvio; null = mai dichiarato */
+    tetto: ModoOrdini | null;
+    effettivo: ModoOrdini;
+    /** la UI chiede piu' di quanto il tetto consenta */
+    limitatoDalTetto: boolean;
+    cambiatoDa: string | null;
+    cambiatoAlle: string | null;
+    tettoAlle: string | null;
+}
+
+export function statoOrdiniReali(s: LiveSettings | null | undefined): StatoOrdiniReali {
+    const letto = s != null;
+    const migrazioneMancante = letto && !('order_mode' in (s as object));
+    const scelto = letto ? normalizzaModoOrdini(s?.order_mode) : null;
+    const tetto = letto ? normalizzaModoOrdini(s?.order_mode_tetto) : null;
+    return {
+        letto,
+        migrazioneMancante,
+        scelto,
+        tetto,
+        effettivo: modoOrdiniEffettivo(tetto, scelto),
+        limitatoDalTetto: scelto != null && tetto != null && RANGO_MODO[scelto] > RANGO_MODO[tetto],
+        cambiatoDa: s?.order_mode_updated_by ?? null,
+        cambiatoAlle: s?.order_mode_updated_at ?? null,
+        tettoAlle: s?.order_mode_tetto_at ?? null,
+    };
+}
+
+/** Il gesto: scrive la scelta (RPC `set_live_order_mode`). La doppia conferma
+ *  per LIVE la fa il componente, come per i bot. */
+export async function scegliModoOrdini(m: ModoOrdini): Promise<LiveSettings | null> {
+    return setLiveOrderMode(m.toLowerCase() as 'off' | 'paper' | 'live');
+}
+
+/** La lettura (RPC `get_live_settings`, owner-only). */
+export async function leggiModoOrdini(): Promise<LiveSettings | null> {
+    return getLiveSettings();
 }

@@ -820,7 +820,10 @@ def reconcile_worker(context: Any, flumine: Any, session: Any = None, strategy: 
     """
     if session is None:
         return
-    mode = low._live_order_mode()
+    # 24/09: modo di PROCESSO (tetto del .env), non la scelta dalla Control
+    # Room: questo worker protegge/riconcilia cio' che e' GIA' a mercato, e un
+    # declassamento dalla UI ferma le aperture, mai la sorveglianza.
+    mode = low._modo_processo()
     if mode != "LIVE":
         return
     try:

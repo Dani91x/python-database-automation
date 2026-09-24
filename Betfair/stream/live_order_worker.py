@@ -86,13 +86,15 @@ def _cfg_attr(name: str) -> Any:
     return None
 
 
-def _live_order_mode() -> str:
-    """OFF | PAPER | LIVE (UPPER) RI-LETTA LIVE ad ogni ciclo (no riavvio). Default OFF.
+def _modo_processo() -> str:
+    """Il TETTO DELL'AMBIENTE (``LIVE_ORDER_MODE`` nel .env), riletto a ogni ciclo.
 
-    Money-critical: come kill-switch/cap, un DOWNGRADE di sicurezza (LIVE→PAPER/OFF) deve
-    avere effetto SUBITO. Usa ``config_stream.live_order_mode()`` che rilegge l'env ad ogni
-    chiamata; NON la costante ``config_stream.LIVE_ORDER_MODE`` (congelata all'import).
-    Fallback diretto a ``os.getenv('LIVE_ORDER_MODE','OFF')``.
+    24/09 - e' la CAPACITA' del processo: dice quali client esistono (il reale
+    solo con tetto LIVE, ``runner.build_order_client``) e quindi quali righe
+    questo runner SA eseguire. Da qui passano le CHIUSURE (cancel, green-up,
+    cash-out, uscite ``reduces_liability``): un freno ferma le aperture, mai le
+    vie di uscita. Le APERTURE seguono ``_live_order_mode()`` (modo effettivo).
+    Usa ``config_stream.live_order_mode()``; fallback all'env. Default OFF.
     """
     try:
         from . import config_stream  # import lazy: evita cicli all'avvio
@@ -101,6 +103,46 @@ def _live_order_mode() -> str:
     except Exception:  # noqa: BLE001 - config opzionale, fallback a env
         pass
     return os.getenv("LIVE_ORDER_MODE", "OFF").strip().upper()
+
+
+def _live_order_mode() -> str:
+    """Modo EFFETTIVO: il piu' restrittivo fra tetto dell'ambiente e scelta dalla UI.
+
+    24/09 - "devo operare dalla UI, non dal codice". La scelta vive in
+    ``betfair_live_settings.order_mode`` (RPC ``set_live_order_mode``) e arriva
+    qui con lo snapshot che il worker legge GIA' a ~1 s per il kill-switch
+    (``_refresh_settings`` -> ``modo_ordini.registra_settings``): nessuna
+    lettura DB in piu'. Regola unica in ``modo_ordini.modo_effettivo``: riga
+    assente/illeggibile/vecchia -> OFF; la UI non supera mai il tetto del .env.
+    Governa le APERTURE (vedi ``_blocco_apertura_modo``).
+    """
+    from . import modo_ordini as _mo
+
+    return _mo.modo_effettivo(_modo_processo(), _mo.valore_db())
+
+
+def _blocco_apertura_modo(row_mode: Any, action: str, params: Any) -> Optional[str]:
+    """Motivo per cui un'APERTURA non deve partire col modo effettivo di adesso,
+    o None. Le chiusure passano sempre (le serve il modo di PROCESSO)."""
+    if _is_closing_row(action, params):
+        return None
+    row_m = str(row_mode or "").strip().lower()
+    if row_m not in _servable_modes(_modo_processo()):
+        # il processo non ha nemmeno il client di quella modalita': la rifiuta
+        # ``_client_for_mode`` col suo motivo (``live_client_assente`` ...)
+        return None
+    eff = _live_order_mode()
+    if row_m in _servable_modes(eff):
+        return None
+    from . import modo_ordini as _mo
+
+    info = _mo.descrivi(_modo_processo(), _mo.valore_db())
+    perche = {
+        _mo.MOTIVO_TETTO: f"tetto dell'ambiente: {info['tetto_ambiente']}",
+        _mo.MOTIVO_DB_ASSENTE: "scelta dalla Control Room non letta",
+    }.get(info["motivo"], "scelta dalla Control Room")
+    return (f"modo ordini {eff} ({perche}): apertura '{row_m or '?'}' RIFIUTATA "
+            f"- si cambia da Control Room, Ordini reali")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +179,7 @@ def _servable_modes(proc_mode: Optional[str] = None) -> Tuple[str, ...]:
     processo PAPER -> ('paper',)         [nessun client reale nel processo]
     OFF / ignoto   -> ()                 [worker inerte]
     """
-    mode = str(proc_mode or _live_order_mode()).strip().upper()
+    mode = str(proc_mode or _modo_processo()).strip().upper()
     if mode == "LIVE":
         return ("live", "paper")
     if mode == "PAPER":
@@ -184,7 +226,7 @@ def _client_for_mode(flumine: Any, row_mode: str, proc_mode: Optional[str] = Non
     row_m = str(row_mode or "").strip().lower()
     if row_m not in ("paper", "live"):
         raise ValueError(f"mode di riga sconosciuta: {row_mode!r}")
-    proc = str(proc_mode or _live_order_mode()).strip().upper()
+    proc = str(proc_mode or _modo_processo()).strip().upper()
     if row_m not in _servable_modes(proc):
         motivo = ERR_LIVE_CLIENT_ASSENTE if row_m == "live" else ERR_PAPER_CLIENT_ASSENTE
         raise ValueError(
@@ -397,6 +439,11 @@ def _refresh_settings(sb: Any) -> None:
         data = getattr(res, "data", None)
         if isinstance(data, dict):
             _SETTINGS = dict(data)
+            # 24/09 - la STESSA lettura porta la scelta del modo ordini dalla UI
+            # (``order_mode``): nessuna lettura DB in piu' per il modo.
+            from . import modo_ordini as _mo
+
+            _mo.registra_settings(data)
     except Exception:  # noqa: BLE001 - settings opzionali; il worker resta operativo
         pass
 
@@ -3065,6 +3112,12 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
             if (_kill_switch() or _db_kill_switch())                     and not _is_closing_row(action, cmd.get("params")):
                 ch.respond(req, False, error="kill-switch ATTIVO: solo chiusure permesse")
                 continue
+            # 24/09: modo EFFETTIVO (tetto .env x scelta dalla Control Room) sulle
+            # APERTURE; le chiusure le serve il modo di processo (sopra).
+            blocco_modo = _blocco_apertura_modo(req_mode, action, cmd.get("params"))
+            if blocco_modo:
+                ch.respond(req, False, error=blocco_modo)
+                continue
             # fix review HIGH: dedup per client_ref — un reinvio identico risponde
             # l'esito già calcolato, MAI una seconda esecuzione reale.
             client_ref = str(cmd.get("client_ref") or "") or None
@@ -3219,7 +3272,10 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     modalita: gli ordini di ogni riga sono creati sotto la strategy della SUA modalita
     (blotter flumine per-strategia -> esposizioni e specchio mai mescolati).
     """
-    mode = _live_order_mode()
+    # 24/09: il gate del PROCESSO e' il tetto del .env (capacita': quali client
+    # esistono). La scelta dalla Control Room restringe le APERTURE, riga per
+    # riga (``_blocco_apertura_modo``): le chiusure restano sempre servite.
+    mode = _modo_processo()
     if mode not in ("PAPER", "LIVE"):
         return 0  # OFF (o valore ignoto): worker inerte
     # Fase 6 + A7: snapshot settings a cadenza ~1s — col canale locale il worker
@@ -3258,8 +3314,9 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     servibili = _servable_modes(mode)
 
     # 1) sequenze submin in corso (place_submin) → avanza di uno step (APERTURE: mai col freno)
+    # 24/09: solo le modalita' servibili dal modo EFFETTIVO (sono aperture).
     if not kill_cycle:
-        for _m in servibili:
+        for _m in _servable_modes(_live_order_mode()):
             handled += _advance_inflight_submins(sb, flumine, _m, strategy)
 
     # 2) nuove richieste pending - di ENTRAMBE le modalita' (F0): il filtro per
@@ -3297,6 +3354,21 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
                         "kill-switch ATTIVO: apertura RIFIUTATA — riprovare a freno spento"))
                 except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
                     logger.exception("[live-order] esito kill per riga %s non scritto", rid_k)
+            handled += 1
+            continue
+        # 24/09: modo EFFETTIVO (tetto .env x scelta dalla Control Room) sulle
+        # APERTURE: rifiutata con esito esplicito, come il kill-switch (mai
+        # lasciata 'pending' a partire da sola quando il modo risale).
+        blocco_modo = _blocco_apertura_modo(r.get("mode"), str(r.get("action") or ""),
+                                            r.get("params"))
+        if blocco_modo:
+            rid_m = r.get("id")
+            if _claim(sb, rid_m):
+                try:
+                    _write_error(sb, rid_m, r, str(r.get("mode") or mode_l).lower(),
+                                 ValueError(blocco_modo))
+                except Exception:  # noqa: BLE001 - scrittura esito best-effort
+                    logger.exception("[live-order] esito modo per riga %s non scritto", rid_m)
             handled += 1
             continue
         rid = r.get("id")
@@ -3346,7 +3418,7 @@ def esegui_richieste_locali_scelte(flumine: Any, strategy: Any, reqs: List[Any])
     ch = local_channel.get_channel()
     if ch is None or not reqs:
         return 0
-    mode = _live_order_mode()
+    mode = _modo_processo()  # 24/09: chiusure (cancel) -> modo di processo
     motivo: Optional[str] = None
     sb: Any = None
     if mode not in ("PAPER", "LIVE"):

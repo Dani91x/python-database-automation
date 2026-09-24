@@ -53,6 +53,7 @@ import {
 } from '@/components/controlroom/useControlRoom';
 import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
+import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -552,6 +553,7 @@ export default function ControlRoom() {
                 titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
                 ambito={sport ?? 'tutti'}
                 serviziAccesi={serviziAccesi}
+                ordiniReali={<RigaOrdiniReali />}
                 nota={soloTennis ? (
                     <>
                         {/* al FUTURO, perché è quello che il pulsante farà: al

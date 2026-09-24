@@ -78,6 +78,7 @@ def _session(orders_event="EVT1"):
 @pytest.fixture(autouse=True)
 def _paper(monkeypatch):
     monkeypatch.setattr(xw.low, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(xw.low, "_modo_processo", lambda: "PAPER")
 
 
 def test_xhedge_worker_computes_and_upserts():

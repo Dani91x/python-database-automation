@@ -711,12 +711,21 @@ def freni_live(attivi: bool) -> Iterator[None]:
     «nessun ordine» e non si saprebbe perche'. Si dichiarano qui, e si
     rimettono com'erano alla fine (sono di PROCESSO).
     """
+    # 24/09: il modo ordini e' anche una riga di controllo (scelta dalla Control
+    # Room, ``Betfair/stream/modo_ordini.py``): il banco non tocca il DB, la
+    # DICHIARA in memoria per la durata del replay, come il tetto qui sotto.
+    from contextlib import ExitStack
+
+    from Betfair.stream import modo_ordini as _mo
+
     prima = {k: os.environ.get(k) for k in ("LIVE_ORDER_MODE", "LIVE_KILL_SWITCH")}
     try:
-        if attivi:
-            os.environ["LIVE_ORDER_MODE"] = "LIVE"
-            os.environ["LIVE_KILL_SWITCH"] = "false"
-        yield
+        with ExitStack() as pila:
+            if attivi:
+                os.environ["LIVE_ORDER_MODE"] = "LIVE"
+                os.environ["LIVE_KILL_SWITCH"] = "false"
+                pila.enter_context(_mo.dichiara_per_banco("LIVE"))
+            yield
     finally:
         for k, v in prima.items():
             if v is None:

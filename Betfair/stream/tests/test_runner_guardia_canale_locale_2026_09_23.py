@@ -65,6 +65,7 @@ def ambiente(monkeypatch):
     # percorso vero del worker per i cancel: modo LIVE, dispatch registrato
     eseguiti = []
     monkeypatch.setattr(LOW, "_live_order_mode", lambda: "LIVE")
+    monkeypatch.setattr(LOW, "_modo_processo", lambda: "LIVE")
     monkeypatch.setattr(LOW, "_kill_switch", lambda: False)
     monkeypatch.setattr(LOW, "_db_kill_switch", lambda: False)
     monkeypatch.setattr(LOW, "_dispatch",
@@ -138,6 +139,7 @@ def test_snapshot_in_guardia_rifiutato(ambiente):
 
 def test_cancel_con_modo_off_rifiutato_non_eseguito(ambiente, monkeypatch):
     monkeypatch.setattr(LOW, "_live_order_mode", lambda: "OFF")
+    monkeypatch.setattr(LOW, "_modo_processo", lambda: "OFF")
     ch = ambiente["ch"]
     ch._requests.put_nowait(_req(5, "cancel", bet_id="B-5"))
     R._live_order_worker_guardato({}, "FL")

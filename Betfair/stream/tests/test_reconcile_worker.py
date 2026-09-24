@@ -266,6 +266,7 @@ def env(monkeypatch):
         "manual_pnl_writes": [],
     }
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: state["mode"])
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: state["mode"])
 
     import Betfair.stream.db as dbmod
 
@@ -557,6 +558,8 @@ def test_run_account_sync_if_due_runs_with_no_mode_dependency(env, monkeypatch):
     runner calcio e' OFF/senza follow, mentre magari un altro bot
     (Omega/Mike/tennis) e' LIVE sullo stesso conto."""
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: (_ for _ in ()).throw(
+        AssertionError("run_account_sync_if_due non deve consultare la mode")))
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: (_ for _ in ()).throw(
         AssertionError("run_account_sync_if_due non deve consultare la mode")))
     account = _FakeAccount(available=77.0, exposure=-1.0)
     session = _session(account)
@@ -1004,6 +1007,8 @@ def test_sync_manual_pnl_never_consults_live_order_mode(env, monkeypatch):
     """MAI in paper: il conto e' reale per definizione — la funzione non deve
     dipendere in alcun modo dalla LIVE_ORDER_MODE del runner calcio."""
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: (_ for _ in ()).throw(
+        AssertionError("_sync_manual_pnl non deve consultare la mode")))
+    monkeypatch.setattr(rw.low, "_modo_processo", lambda: (_ for _ in ()).throw(
         AssertionError("_sync_manual_pnl non deve consultare la mode")))
     betting = _FakeBetting(cleared_pages=[[]])
     session = _session(betting=betting)

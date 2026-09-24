@@ -248,6 +248,7 @@ def test_loop_journals_only_successful_dispatch(monkeypatch, sink):
     monkeypatch.setattr(wk, "_claim", lambda _sb, _rid: True)
     monkeypatch.setattr(wk, "_write_error", lambda *_a, **_k: None)
     monkeypatch.setattr(wk, "_live_order_mode", lambda: "PAPER")
+    monkeypatch.setattr(wk, "_modo_processo", lambda: "PAPER")
     monkeypatch.setattr(wk, "_kill_switch", lambda: False)
     monkeypatch.setattr(wk, "_refresh_settings", lambda _sb: None)
     monkeypatch.setattr(wk, "_db_kill_switch", lambda: False)

@@ -245,12 +245,18 @@ export interface PannelloBotProps {
      * filtro sta facendo vedere. Sono BOT, non strategie.
      */
     serviziAccesi?: { bot: Bot; modalita: Modalita | null }[];
+    /**
+     * 24/09 - la riga "Ordini reali: OFF / PAPER / LIVE" (`RigaOrdiniReali`):
+     * sta QUI, in testa agli interruttori dei bot, con il loro stesso stile.
+     * Nodo gia' montato dalla pagina (come `parametri`): assente = non mostrata.
+     */
+    ordiniReali?: ReactNode;
     testId?: string;
 }
 
 export function PannelloBot({
     righe, importi, comandi, parametri, parametriRiga, titolo = 'Comando dei bot', nota,
-    ambito = 'tutti', serviziAccesi, testId = 'cr-pannello-bot',
+    ambito = 'tutti', serviziAccesi, ordiniReali, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<InterruttoreId | 'tutti' | null>(null);
     /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
@@ -334,6 +340,8 @@ export function PannelloBot({
                     {nota}
                 </div>
             )}
+
+            {ordiniReali}
 
             {righe.length === 0 ? (
                 <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
