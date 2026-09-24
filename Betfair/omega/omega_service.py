@@ -24,6 +24,7 @@ from Betfair.omega import omega_model as M
 from Betfair.omega import omega_v3 as V3
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
+from Betfair.omega import porta_ordini as _PO
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import esiti_ordini_canale as _EO
 from Betfair.stream import local_channel as _lc
@@ -2384,6 +2385,27 @@ def _place_one(
         return 0
 
     # 2) ESEGUE
+    # F6 (24/09): a interruttore ``OMEGA_ORDINI_VIA_CANALE`` acceso il lay va al
+    # runner sul canale di comando (strada unica). Spento: ``porta`` e' None e
+    # il percorso qui sotto e' quello di sempre, byte per byte.
+    porta = _porta_per(params or {}, mode)
+    if porta is not None:
+        req_size = requested_size if requested_size is not None else size
+        out = _place_via_canale(porta, db=db, trade_id=trade_id, market_id=cs.market_id,
+                                selection_id=sel.selection_id, side="lay", price=price,
+                                size=size, mode=mode, now=now,
+                                base_meta={"requested_size": req_size, **keep_meta})
+        if out is not None and out.status == "pending":
+            return 1  # esito dal canale (o ignoto): riserva occupata, MAI un secondo invio
+        # esito CERTO negativo (rifiuto del runner col motivo, canale giu' prima
+        # dell'invio, comando non valido): nessun ordine esiste, nessun ripiego
+        _leg_certain_failure(
+            db, trade_id, ev.event_id, phase, now,
+            (out.fill_note if out is not None else "canale_giu:apertura_non_inviata"),
+            {"percorso": "canale",
+             "motivo_canale": (getattr(out, "error_code", None) if out is not None else None)},
+            base_meta={**keep_meta, "requested_size": req_size})
+        return 0
     if mode == "paper":
         # DEMO=LIVE: se il gate flumine passa, il fill NON è istantaneo — si
         # accoda sulla coda del runner e la riserva resta 'pending' (conferma
@@ -2662,6 +2684,329 @@ def _live_flumine_expected(params: dict[str, Any]) -> bool:
     return (str(params.get("execution_mode", "auto")) == "auto"
             and bool(params.get("omega_live_via_flumine",
                                 omega_config.DEFAULTS["omega_live_via_flumine"])))
+
+
+# ---------------------------------------------------------------------------
+# F6 (24/09) - LA PORTA A COMANDI (canale di comando del runner, 47331).
+# Decisione dell'utente: la strada UNICA verso gli ordini e' il runner con
+# flumine nello stesso processo; Omega gli parla su ``/comando/omega`` col
+# protocollo "COMANDO ORDINE" (lo stesso di Safe: ``Betfair/omega/porta_ordini``
+# riusa le classi di ``Betfair/safe_strategy/porta_ordini``). Il DB resta
+# diario e ripiego. Interruttore ``OMEGA_ORDINI_VIA_CANALE`` SPENTO di serie:
+# spento, ``_porta_per`` torna None e ogni chiamata a mercato/coda e' quella di
+# sempre, byte per byte. Cambia il TRASPORTO, mai cosa/quanto/quando.
+# Le due scelte dell'utente che oggi portano al REST restano rispettate anche
+# ad interruttore acceso: ``execution_mode='rest'`` e, in LIVE,
+# ``omega_live_via_flumine=False`` (sono i parametri dell'UI, non si scavalcano).
+# ---------------------------------------------------------------------------
+def _porta_ordini() -> Any:
+    """La porta a comandi di Omega, o None a interruttore SPENTO."""
+    try:
+        return _PO.porta_omega()
+    except Exception as ex:  # noqa: BLE001 - senza porta: il trasporto di oggi
+        logger.warning("[omega] porta degli ordini non disponibile: %s", str(ex)[:160])
+        return None
+
+
+def _porta_per(params: dict[str, Any], mode: str) -> Any:
+    """La porta per un ORDINE (apertura o chiusura) di questa modalita', o None."""
+    if str(params.get("execution_mode", "auto")) != "auto":
+        return None
+    if str(mode) == "live" and not params.get(
+            "omega_live_via_flumine", omega_config.DEFAULTS["omega_live_via_flumine"]):
+        return None
+    return _porta_ordini()
+
+
+def _porta_kw_chiusura(params: dict[str, Any], mode: str) -> dict[str, Any]:
+    """``{"porta": vista}`` per ``X.close_trade`` solo a interruttore acceso,
+    ``{}`` spento. Una chiusura va col FOK (come oggi sulla coda) e dichiara
+    ``reduces_liability`` (la verifica spetta al runner, sul suo blotter)."""
+    p = _porta_per(params or {}, mode)
+    if p is None:
+        return {}
+    return {"porta": _PO.VistaOmega(p, time_in_force=_PO.FOK, riduce=True)}
+
+
+def _porta_kw_annullo(tr: dict[str, Any]) -> dict[str, Any]:
+    """``{"porta": vista, "mode": <della riga>}`` per ``X.annulla_su_betfair``
+    solo a interruttore acceso, ``{}`` spento. Un annullo riduce il rischio: non
+    guarda i parametri; senza ack su una riga LIVE ripiega sul REST di oggi
+    (dentro ``execution._annulla_via_canale``), mai su una PAPER."""
+    p = _porta_ordini()
+    if p is None:
+        return {}
+    return {"porta": _PO.VistaOmega(p), "mode": str(tr.get("mode") or "")}
+
+
+def avvia_porta_ordini() -> bool:
+    """All'avvio: collega il client del canale di comando (se acceso), cosi' il
+    primo ordine non trova la porta ancora giu'. Non solleva mai."""
+    p = _porta_ordini()
+    if p is not None:
+        logger.info("[omega] ordini via canale di comando %s", getattr(p, "url", "?"))
+    return p is not None
+
+
+def _place_via_canale(porta: Any, *, db, trade_id: int, market_id: Any, selection_id: Any,
+                      side: str, price: float, size: float, mode: str, now: datetime,
+                      base_meta: dict[str, Any]) -> Any:
+    """Manda l'APERTURA al runner sul canale e ritorna il ``PlaceOutcome`` di
+    ``execution._place_via_canale`` (lo stesso punto di Safe: marcatore
+    ``canale_ref`` scritto PRIMA dell'invio, ack rifiutato = errore certo col
+    motivo, nessun ack = ESITO IGNOTO e riga 'pending', canale giu' = apertura
+    NON inviata). FOK dove oggi Omega usa il FOK: in LIVE (la coda lo mette
+    solo in live); in PAPER l'ordine lavora il book fino al TTL e poi si
+    annulla il residuo (``_risolvi_via_canale``), come sulla coda."""
+    from Betfair.safe_strategy import execution as X
+
+    vista = _PO.VistaOmega(porta, time_in_force=(_PO.FOK if str(mode) == "live" else None),
+                           riduce=False)
+    return X._place_via_canale(
+        vista, db=db, mode=str(mode), market_id=str(market_id),
+        selection_id=int(selection_id), side=str(side), price=float(price),
+        size=float(size), client_ref=_PO.ref_ordine(trade_id), tid=int(trade_id),
+        meta=dict(base_meta or {}), now=now, is_closing=False, sotto_minimo=False)
+
+
+def _eta_canale_s(tr: dict[str, Any], now: datetime) -> Optional[float]:
+    meta = tr.get("meta") or {}
+    quando = _parse_iso_dt(meta.get("canale_inviato_at")) or _parse_iso_dt(tr.get("placed_at"))
+    if quando is None:
+        return None
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    return (now - quando).total_seconds()
+
+
+def _riga_senza_riconciliazione(tr: dict[str, Any]) -> dict[str, Any]:
+    """La riga col "in riconciliazione" messo all'invio tolto: ha un esito."""
+    pulita = dict(tr)
+    pulita["meta"] = {k: v for k, v in (tr.get("meta") or {}).items()
+                      if k not in ("reason", "err")}
+    return pulita
+
+
+def _chiudi_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db, mode: str,
+                      min_stake: float, now: datetime) -> int:
+    """Esito TERMINALE dal canale: le STESSE funzioni del percorso a coda."""
+    pulita = _riga_senza_riconciliazione(tr)
+    matched = float(ev.get("size_matched") or 0.0)
+    if matched > 0:
+        return _flumine_confirm(pulita, db=db, matched=matched,
+                                avg=float(ev.get("average_price_matched") or 0.0),
+                                bet_id=ev.get("bet_id"), min_stake=min_stake, mode=mode,
+                                size_remaining=ev.get("size_remaining"),
+                                betfair_updated_at=ev.get("matched_at"))
+    return _flumine_no_fill_error(pulita, db=db, now=now,
+                                  reason="canale_%s" % str(ev.get("fase") or "no_fill"))
+
+
+def _aggiorna_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db) -> None:
+    """Evento INTERMEDIO (accettato/abbinato in parte): la riga racconta il
+    vero anche prima della fine (C.12a): abbinato, residuo, medio, bet_id."""
+    from Betfair.safe_strategy import execution as X
+
+    meta = dict(tr.get("meta") or {})
+    if int(ev.get("seq") or 0) <= int(meta.get("canale_seq") or 0):
+        return                                  # mai un evento piu' vecchio
+    meta.update({"canale_fase": ev.get("fase"), "canale_seq": int(ev.get("seq") or 0)})
+    campi: dict[str, Any] = {"meta": meta}
+    if ev.get("bet_id") and not tr.get("bet_id"):
+        campi["bet_id"] = str(ev.get("bet_id"))
+    X.aggiorna_trade(db, tr["id"], campi=campi, consapevolezza={
+        "size_requested": ev.get("size"),
+        "size_matched": ev.get("size_matched"),
+        "size_remaining": ev.get("size_remaining"),
+        "avg_price_matched": (ev.get("average_price_matched") or None),
+        "betfair_updated_at": ev.get("matched_at")})
+    tr["meta"] = meta
+    if "bet_id" in campi:
+        tr["bet_id"] = campi["bet_id"]
+
+
+def _adotta_per_mercato(tr: dict[str, Any], *, db, market) -> Optional[str]:
+    """LIVE oltre la scadenza SENZA bet_id: l'ordine si cerca su Betfair per
+    mercato/selezione/lato fra gli ordini della strategia (il runner piazza con
+    ``customerStrategyRef`` omega ma col SUO customerOrderRef: il ref della riga
+    non basta). Ritorna il bet_id adottato, ``""`` se non c'e' nessun ordine,
+    ``None`` se non si puo' decidere (letture KO o piu' candidati)."""
+    from Betfair.safe_strategy import execution as X
+
+    try:
+        ordini = list(market.list_current_orders() or []) + \
+            list(market.list_cleared_orders() or [])
+        altre = list(db.trades_for_event(str(tr.get("event_id"))) or [])
+    except Exception as ex:  # noqa: BLE001 - al buio non si decide
+        logger.warning("[omega] ricerca per mercato di %s KO: %s", tr.get("id"), str(ex)[:120])
+        return None
+    noti = {str(r.get("bet_id")) for r in altre
+            if r.get("bet_id") and r.get("id") != tr.get("id")}
+    lato = str(tr.get("side") or "lay").lower()
+    try:
+        sel = int(tr.get("selection_id"))
+    except (TypeError, ValueError):
+        return None
+    candidati = {str(o.get("bet_id")) for o in ordini
+                 if o.get("bet_id") and str(o.get("market_id")) == str(tr.get("market_id"))
+                 and o.get("selection_id") == sel and str(o.get("side") or "").lower() == lato
+                 and str(o.get("bet_id")) not in noti}
+    if not candidati:
+        return ""
+    if len(candidati) > 1:
+        return None
+    bet_id = next(iter(candidati))
+    meta = dict(tr.get("meta") or {})
+    meta["canale_bet_id_da"] = "mercato_selezione_lato"
+    X.aggiorna_trade(db, tr["id"], campi={"bet_id": bet_id, "meta": meta})
+    tr["bet_id"] = bet_id
+    tr["meta"] = meta
+    db.log("flumine_recovered", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                                 "bet_id": bet_id, "via": "canale",
+                                 "come": "mercato_selezione_lato"})
+    return bet_id
+
+
+def _canale_live_oltre_scadenza(tr: dict[str, Any], *, db, market, now: datetime,
+                                min_stake: float, eta: Optional[float],
+                                deadline_s: float) -> int:
+    """LIVE senza esito terminale oltre la scadenza: la verita' la dice
+    Betfair, per bet_id (dagli eventi) o per mercato/selezione/lato. MAI un
+    esito inventato, MAI liberare una riga con un ordine forse vivo."""
+    bet_id = str(tr.get("bet_id") or "").strip()
+    if not bet_id:
+        trovato = _adotta_per_mercato(tr, db=db, market=market)
+        if trovato is None:
+            _alert_canale_orfano(tr, db=db, motivo="ricerca_per_mercato_indecisa")
+            return 0
+        if trovato == "":
+            # dopo ``max_eta_ms`` il runner non esegue piu' quel comando
+            # (``comando_scaduto``): passata anche la grazia della propagazione
+            # Betfair, un ordine che non compare in nessuna lista non esiste.
+            if eta is not None and eta < deadline_s + E.RECON_GRACE_S:
+                return 0
+            return _flumine_no_fill_error(_riga_senza_riconciliazione(tr), db=db, now=now,
+                                          reason="canale_mai_visto_su_betfair")
+        bet_id = trovato
+    state_fn = getattr(market, "order_state_by_bet_id", None) if market is not None else None
+    state = None
+    if callable(state_fn):
+        try:
+            state = state_fn(bet_id)
+        except Exception:  # noqa: BLE001 - REST muto: mai decidere al buio
+            state = None
+    if state is None:
+        _alert_canale_orfano(tr, db=db, motivo="stato_per_bet_id_illeggibile")
+        return 0
+    pulita = _riga_senza_riconciliazione(tr)
+    if state.get("found"):
+        if float(state.get("size_remaining") or 0.0) > 0:
+            return 0                               # ancora vivo: si aspetta
+        m2 = float(state.get("size_matched") or 0.0)
+        if m2 > 0:
+            return _flumine_confirm(pulita, db=db, matched=m2,
+                                    avg=float(state.get("avg_price_matched") or 0.0),
+                                    bet_id=bet_id, min_stake=min_stake, mode="live",
+                                    size_remaining=state.get("size_remaining"),
+                                    betfair_updated_at=state.get("matched_date"))
+        return _flumine_no_fill_error(pulita, db=db, reason="canale_rest_no_fill", now=now)
+    if _ordine_ancora_vivo(market, tr, db=db, now=now, bet_id=bet_id, ignoto_e_vivo=True):
+        return 0
+    return _flumine_no_fill_error(pulita, db=db, reason="canale_rest_not_found", now=now)
+
+
+def _alert_canale_orfano(tr: dict[str, Any], *, db, motivo: str) -> None:
+    meta = dict(tr.get("meta") or {})
+    if meta.get("canale_orfano_segnalato"):
+        return
+    meta["canale_orfano_segnalato"] = True
+    try:
+        db.update_trade(tr["id"], meta=meta)
+        tr["meta"] = meta
+    except Exception:  # noqa: BLE001 - solo un'etichetta
+        pass
+    logger.critical("[omega] trade LIVE %s (event=%s) mandato sul canale e senza esito "
+                    "oltre la scadenza (%s): VERIFICARE SU BETFAIR (ref=%s, bet_id=%s)",
+                    tr.get("id"), tr.get("event_id"), motivo, meta.get("canale_ref"),
+                    tr.get("bet_id"))
+    db.log("flumine_live_orphan", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                                   "ref": meta.get("canale_ref"), "bet_id": tr.get("bet_id"),
+                                   "via": "canale", "motivo": motivo})
+
+
+def _risolvi_via_canale(tr: dict[str, Any], *, db, params: dict[str, Any], market,
+                        now: datetime) -> int:
+    """Fa avanzare di uno step UNA riga 'pending' mandata sul canale.
+
+    Esiti dagli eventi ``order`` del runner (memoria della porta): terminale ->
+    ``_flumine_confirm`` / ``_flumine_no_fill_error`` (le stesse funzioni della
+    coda: cambia da dove arriva l'esito, non cosa si scrive); intermedio ->
+    abbinato/residuo/medio/bet_id sulla riga. Mai un evento dell'altra modalita'.
+    Senza esito: LIVE oltre ``live_fill_deadline_s`` -> Betfair per bet_id o
+    per mercato/selezione/lato; PAPER -> al TTL si annulla il residuo
+    dell'apertura (sul canale, come la coda), oltre TTL+grazia nessun fill
+    inventato. Ritorna 1 se la riga e' risolta."""
+    from Betfair.safe_strategy import execution as X
+
+    meta = dict(tr.get("meta") or {})
+    ref = str(meta.get("canale_ref") or "")
+    mode = str(tr.get("mode") or "")
+    if mode not in ("paper", "live") or not ref:
+        return 0
+    min_stake = float(params.get("min_stake", omega_config.DEFAULTS["min_stake"]))
+    porta = _PO.porta_esistente()
+    ev = porta.esiti(ref) if porta is not None else None
+    if ev is not None and str(ev.get("mode") or "") != mode:
+        ev = None                                   # paper e live MAI mischiati
+    if ev is not None and _PO.terminale(ev):
+        return _chiudi_da_evento(tr, ev, db=db, mode=mode, min_stake=min_stake, now=now)
+    if ev is not None:
+        _aggiorna_da_evento(tr, ev, db=db)
+        meta = dict(tr.get("meta") or {})
+    eta = _eta_canale_s(tr, now)
+    if mode == "live":
+        deadline_s = float(params.get("live_fill_deadline_s",
+                                      omega_config.DEFAULTS["live_fill_deadline_s"]))
+        if eta is not None and eta < deadline_s:
+            return 0
+        return _canale_live_oltre_scadenza(tr, db=db, market=market, now=now,
+                                           min_stake=min_stake, eta=eta,
+                                           deadline_s=deadline_s)
+    # PAPER
+    ttl_s = float(params.get("paper_fill_ttl_s", omega_config.DEFAULTS["paper_fill_ttl_s"]))
+    chiusura = bool(tr.get("closes_trade_id") or meta.get("closes_trade_id")
+                    or meta.get("cashout"))
+    if (not chiusura and eta is not None and eta >= ttl_s
+            and not meta.get("canale_cancel_at")):
+        bet_id = str((ev or {}).get("bet_id") or tr.get("bet_id") or "").strip()
+        if bet_id and porta is not None and porta.disponibile():
+            meta["canale_cancel_at"] = now.isoformat()
+            db.update_trade(tr["id"], meta=meta)    # marcatore PRIMA dell'invio
+            tr["meta"] = meta
+            db.log("flumine_cancel", {"trade_id": tr["id"], "bet_id": bet_id, "via": "canale"})
+            X.annulla_su_betfair(None, bet_id=bet_id, market_id=tr.get("market_id"),
+                                 porta=_PO.VistaOmega(porta), mode="paper")
+            ev2 = porta.esiti(ref)
+            if ev2 is not None and str(ev2.get("mode") or "") == mode and _PO.terminale(ev2):
+                return _chiudi_da_evento(tr, ev2, db=db, mode=mode, min_stake=min_stake,
+                                         now=now)
+            return 0
+    if eta is not None and eta < ttl_s + FLUMINE_CANCEL_GRACE_S:
+        return 0
+    cancel_at = _parse_iso_dt(meta.get("canale_cancel_at"))
+    if cancel_at is not None and (now - cancel_at).total_seconds() < FLUMINE_CANCEL_GRACE_S:
+        return 0
+    matched = float((ev or {}).get("size_matched") or 0.0)
+    if matched > 0:
+        # oltre la scadenza con un abbinato DICHIARATO dal runner: si conferma
+        # SOLO quello (come la coda oltre la hard deadline), mai la riserva
+        return _flumine_confirm(_riga_senza_riconciliazione(tr), db=db, matched=matched,
+                                avg=float((ev or {}).get("average_price_matched") or 0.0),
+                                bet_id=(ev or {}).get("bet_id"), min_stake=min_stake,
+                                mode=mode, size_remaining=(ev or {}).get("size_remaining"),
+                                betfair_updated_at=(ev or {}).get("matched_at"))
+    return _flumine_no_fill_error(_riga_senza_riconciliazione(tr), db=db, now=now,
+                                  reason="canale_senza_esito")
 
 
 def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
@@ -3235,6 +3580,16 @@ def poll_flumine_pending(*, db, params: Optional[dict[str, Any]] = None,
             continue
         if solo_rid is not None and _EO.rid_del_trade(tr) not in solo_rid:
             continue  # applicatore degli esiti: solo le richieste arrivate
+        if meta.get("canale_ref"):
+            # F6 (24/09): riga mandata sul CANALE di comando (solo a interruttore
+            # acceso ne esistono): esito dagli eventi ``order``, poi Betfair
+            if solo_rid is None:
+                try:
+                    n += _risolvi_via_canale(tr, db=db, params=params, market=market, now=now)
+                except Exception as ex:  # noqa: BLE001 - una riga rotta non ferma le altre
+                    db.log("flumine_poll_error", {"trade_id": tr.get("id"),
+                                                  "err": str(ex)[:160], "via": "canale"})
+            continue
         if mode == "live" and not (meta.get("flumine_request_id")
                                    or meta.get("flumine_client_ref")):
             continue  # pending live LEGACY: lo riconcilia reconcile_pending
@@ -3295,7 +3650,10 @@ def _ordine_ancora_vivo(market, tr: dict[str, Any], *, db, now: datetime,
     db.log("cancel_richiesto", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
                                "bet_id": bet_id, "critical": True,
                                "reason": "prima_di_dichiarare_terminale"})
-    ann = X.annulla_su_betfair(market, bet_id=bet_id, market_id=tr.get("market_id"))
+    # F6 (24/09): ``{}`` a interruttore spento (chiamata identica a prima);
+    # acceso, il cancel va al runner e senza ack (solo LIVE) ripiega sul REST
+    ann = X.annulla_su_betfair(market, bet_id=bet_id, market_id=tr.get("market_id"),
+                               **_porta_kw_annullo(tr))
     residuo = float(getattr(ann, "size_remaining", 0.0) or 0.0) if ann is not None else 0.0
     ignoto = ann is None or not getattr(ann, "riletto", False)
     vivo = bool((ignoto and ignoto_e_vivo) or (not ignoto and residuo > 0))
@@ -3343,9 +3701,13 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     # (fix F1: escluso anche il solo marker client_ref — un crash tra enqueue e
     # persistenza del request_id NON deve far confermare/liberare qui un trade
     # il cui ordine potrebbe già vivere nel runner; lo risolve il poll.)
+    # F6 (24/09): anche le righe mandate sul CANALE di comando (``canale_ref``)
+    # sono del poll: qui una PAPER verrebbe confermata coi dati della riserva
+    # (fill inventato) e una LIVE cercata per un ref che il runner non usa.
     def _is_flumine(t: dict) -> bool:
         m = t.get("meta") or {}
-        return bool(m.get("flumine_request_id") or m.get("flumine_client_ref"))
+        return bool(m.get("flumine_request_id") or m.get("flumine_client_ref")
+                    or m.get("canale_ref"))
 
     paper_pendings = [t for t in pendings
                       if str(t.get("mode")) == "paper" and not _is_flumine(t)]
@@ -4644,6 +5006,32 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     if not trade_id:
         return {"error": "reserve_no_id"}
 
+    # F6 (24/09): interruttore acceso -> l'ordine manuale va al runner sul
+    # canale di comando; spento -> ``porta`` None e il percorso di sempre.
+    porta = _porta_per(params, mode)
+    if porta is not None:
+        out = _place_via_canale(porta, db=db, trade_id=trade_id, market_id=market_id,
+                                selection_id=selection_id, side=side, price=price,
+                                size=size, mode=mode, now=now, base_meta=dict(manual_meta))
+        if out is not None and out.status == "pending":
+            db.log("manual_place", {"trade_id": trade_id, "event_id": event_id,
+                                    "side": side, "price": price, "size": size,
+                                    "mode": mode, "canale_ref": _PO.ref_ordine(trade_id)})
+            return {"ok": True, "trade_id": trade_id, "pending_fill": True,
+                    "canale_ref": _PO.ref_ordine(trade_id)}
+        motivo = out.fill_note if out is not None else "canale_giu:apertura_non_inviata"
+        # esito CERTO negativo: nessun ordine esiste. Riga TERMINALE come il
+        # 'live_not_matched' del REST (M-05), meta conservato, nessun ripiego.
+        db.update_trade(trade_id, status="error", pnl=0.0,
+                        meta={**manual_meta, "reason": motivo, "percorso": "canale",
+                              "motivo_canale": getattr(out, "error_code", None),
+                              "leg_failed": True, "error_final": True,
+                              "error_at": now.isoformat()})
+        db.log("manual_place_exception", {
+            "trade_id": trade_id, "event_id": event_id, "side": side,
+            "price": price, "size": size, "mode": mode, "reason": motivo})
+        return {"error": motivo, "trade_id": trade_id}
+
     if mode == "live":  # soldi veri — ramo ESPLICITO
         # LIVE=DEMO (§6-bis v2): stesso gate del path automatico — se passa, il
         # place va sulla coda flumine con FOK vero e la UI riceve pending_fill
@@ -5001,6 +5389,8 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         db=db, market=market, trade=tr, prices=prices, amount=amount,
         fraction=fraction, mode=str(tr.get("mode") or "paper"), now=now,
         params=params, origin="manual", table_prefix="omega", extra_row=extra,
+        # F6 (24/09): ``{}`` a interruttore spento (chiamata identica a prima)
+        **_porta_kw_chiusura(params, str(tr.get("mode") or "paper")),
     )
     if res.get("error"):
         # CORREZIONE 23/09 (reperto banco: G1 su 35797769 e 35777617, scenario
@@ -5860,7 +6250,9 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     try:
         res = X.close_trade(db=db, market=market, trade=tr, prices=prices, amount=None,
                             fraction=1.0, mode=str(tr.get("mode") or "paper"), now=now,
-                            params=params, origin="auto", table_prefix="omega", extra_row=extra)
+                            params=params, origin="auto", table_prefix="omega", extra_row=extra,
+                            # F6 (24/09): ``{}`` a interruttore spento
+                            **_porta_kw_chiusura(params, str(tr.get("mode") or "paper")))
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")
@@ -7357,6 +7749,9 @@ def main() -> None:
     # 23/09: gli esiti degli ordini in coda dal canale del runner (47331). A
     # interruttore ``ESITI_ORDINI_CANALE`` spento non parte niente.
     avvia_esiti_ordini()
+    # F6 (24/09): la porta degli ordini sul canale di comando del runner. A
+    # interruttore ``OMEGA_ORDINI_VIA_CANALE`` spento non parte niente.
+    avvia_porta_ordini()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, Omega si
     # ferma. Da qui in poi la guardia e' attiva: finche' il controllo non
     # riesce, ``run_once`` non apre niente (le protezioni girano).
