@@ -63,6 +63,7 @@ from ..runner_lifecycle import EXIT_PLANNED_RESTART
 from ..scores.betfair_inplay import BetfairInPlayProvider
 from ..scores.scan_feed import ScanFeedScoreProvider
 from . import canale_bot_tennis as _CBT
+from . import chiusura_manuale as _cm
 from . import guardie_tennis as _gt
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
@@ -469,6 +470,10 @@ class TennisLiveSession:
         # tennis_live_positions in questa sessione (fix audit #8: azzeramento
         # delle righe rimaste orfane dopo un restart del framework).
         self.positions_written: Dict[tuple, Dict[str, Any]] = {}
+        # D3 (24/09): i "chiudi ora" in corso, (event_id, bot_key) -> record
+        # (`chiusura_manuale`). NON si svuota a `reset_streams`: il comando va
+        # ridato all'istanza nuova dopo un rebuild.
+        self.chiusure_manuali: Dict[tuple, Dict[str, Any]] = {}
 
     def reset_streams(self) -> None:
         self.capture.clear()
@@ -851,7 +856,11 @@ def _hosted_not_flat(flumine: Any, session: TennisLiveSession) -> List[tuple]:
     for (ev, bot_key), strat in list(session.hosted.items()):
         if getattr(strat, "_tennis_disabled", False):
             continue
-        if not _strategy_is_flat(flumine, strat):
+        # D3 (24/09): un "chiudi ora" non concluso blocca il restart anche a
+        # posizione pari: il rebuild ri-istanzierebbe il bot dalla riga ancora
+        # 'running' e quello potrebbe riaprire prima di ricevere il comando.
+        if (not _strategy_is_flat(flumine, strat)
+                or _cm.in_chiusura(session, (ev, bot_key))):
             out.append((ev, bot_key, strat))
     return out
 
@@ -1248,6 +1257,14 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         return          # 24/09: ne' cadenza ne' sveglia: nessuna lettura
     need_restart = False
     now_mono = time.monotonic()
+    # D3 (24/09) - "CHIUDI ORA" dell'utente: PRIMA di tutto il resto, cosi' un
+    # bot che ha finito la sua uscita viene disabilitato e portato a 'stopped'
+    # prima che l'heartbeat di questo giro lo riscriva 'running'.
+    try:
+        _cm.avanza(flumine, session, e_flat=_strategy_is_flat,
+                   disabilita=_disable_strategy, db=tennis_db)
+    except Exception as e:  # noqa: BLE001 - il chiudi non ferma il worker
+        logger.warning("[tennis-runner] chiudi ora: avanzamento KO: %s", e)
     # T2 (24/09): a guardia d'avvio armata un bot nuovo NON provoca il restart
     # che lo armerebbe (si riprova la ripresa; disarmi e protezioni girano).
     guardia_armata = _gt.guardia_blocca()

@@ -445,6 +445,50 @@ export async function sendTennisOrderCommand(
     throw new Error('Esito comando tennis non confermato (timeout): NON reinviare, verifica la lista ordini.');
 }
 
+// ------------------------------------------- "CHIUDI ORA" di un BOT tennis (D3, 24/09)
+// Stessa coda (`tennis_live_order_queue`) e stesse RPC dei comandi della ladder,
+// azione `chiudi_bot` (whitelist: `migrations/tennis_chiudi_bot_2026-09-24.sql`).
+// Il runner la riconosce (`tennis_live_order_worker` -> `chiusura_manuale`): il
+// BOT della riga annulla i suoi ordini vivi, chiude l'abbinato e non rientra
+// sulla partita. Qui si ACCODA e basta: l'esito si rilegge per id
+// (`fetchTennisOrderRequest`) come per le code di Omega/Safe/Mike.
+
+export interface TennisChiudiBotPayload {
+    bot: string;
+    event_id: string;
+    market_id: string;
+    mode: 'paper' | 'live';
+    trade_id?: number | null;
+}
+
+/** Accoda il "chiudi ora" di un bot tennis. Ritorna l'id della riga di coda. */
+export async function requestTennisChiudiBot(p: TennisChiudiBotPayload): Promise<number> {
+    const client_ref =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const { data, error } = await supabase.rpc('request_tennis_live_order', {
+        p: { action: 'chiudi_bot', ...p, client_ref } as never,
+    });
+    if (error) throw new Error(error.message);
+    if (data == null) throw new Error('richiesta di chiusura non accodata');
+    return data as number;
+}
+
+/** La riga della coda tennis, nelle chiavi che `get_tennis_live_order` ritorna. */
+export interface TennisOrderRequest {
+    status: string;
+    result: Record<string, unknown> | null;
+}
+
+export async function fetchTennisOrderRequest(id: number): Promise<TennisOrderRequest | null> {
+    const { data, error } = await supabase.rpc('get_tennis_live_order', { p_id: id });
+    if (error) throw new Error(error.message);
+    const r = data as { status?: string; result?: Record<string, unknown> | null } | null;
+    if (!r || r.status == null) return null;
+    return { status: String(r.status), result: r.result ?? null };
+}
+
 export async function fetchTennisOrders(marketId: string, mode: string): Promise<LiveOrderRow[]> {
     const { data, error } = await supabase.rpc('get_tennis_live_orders', {
         p_market_id: marketId,

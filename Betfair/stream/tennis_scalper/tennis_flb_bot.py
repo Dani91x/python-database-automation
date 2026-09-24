@@ -35,10 +35,15 @@ from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_pri
 
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
+    ESITO_GIA_IN_USCITA,
+    ESITO_NESSUNA_POSIZIONE,
+    ESITO_USCITA_AVVIATA,
+    MOTIVO_USCITA_MANUALE,
     FrenoRifiuti,
     dichiara_chiusura_mercato,
     ingresso_finito,
     ordini_vivi_su,
+    registra_esito_manuale,
     size_legale,
     stato_ordine,
 )
@@ -106,7 +111,13 @@ class TennisFLBStrategy(BaseStrategy):
         # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
         self._attese = AttesaRiapertura()
         self._now_ms: Optional[int] = None
-        self.stats: Dict[str, Any] = {"entries": 0, "greens": 0, "held": 0, "pnl": 0.0}
+        self.stats: Dict[str, Any] = {"entries": 0, "greens": 0, "held": 0,
+                                      "manuali": 0, "pnl": 0.0}
+        # "CHIUDI ORA" (D3, 24/09): il runner alza la richiesta, il bot chiude
+        # con la SUA copertura di green (`_green`, frazione intera) e non apre
+        # piu' niente (`condotta_ordini` sezione 4).
+        self.uscita_manuale_chiesta: bool = False
+        self.uscita_manuale: Optional[Dict[str, Any]] = None
         self.settled_pnl: float = 0.0
         # gli ordini gia' contati nel settlement: `process_closed_market` puo'
         # essere richiamato piu' volte sullo stesso mercato (vedi la nota li').
@@ -279,6 +290,12 @@ class TennisFLBStrategy(BaseStrategy):
         pt0 = getattr(mb, "publish_time_epoch", None)
         if pt0 is not None:
             self._now_ms = int(pt0)
+        if self.uscita_manuale_chiesta:
+            # "CHIUDI ORA" dell'utente (D3, 24/09): da qui il bot solo CHIUDE
+            # (nessun gate di liquidita': la chiusura non si ferma mai) e non
+            # rientra finche' l'utente non lo riarma.
+            self._uscita_manuale(market, mb)
+            return
         if float(getattr(mb, "total_matched", 0.0) or 0.0) < self.min_matched:
             return
         mid = mb.market_id
@@ -469,6 +486,104 @@ class TennisFLBStrategy(BaseStrategy):
             # SOLO quando l'hedge risulta matched (vedi sorveglianza sopra).
             self._cancel(market, st.get("order"))
         # "hold" / residuo hybrid: nessuno stop, si tiene fino alla chiusura mercato
+
+    # ---------------------------------------------- "CHIUDI ORA" dell'utente
+    def _gia_in_uscita(self, st: Dict[str, Any]) -> bool:
+        """La posizione sta GIA' uscendo: ingresso in annullo (PENDING) oppure
+        copertura di green INTERA gia' in volo. In entrambi i casi un secondo
+        ordine sarebbe una doppia uscita."""
+        if st.get("state") == PENDING:
+            return True
+        return bool(st.get("greened") and not st.get("green_locked")
+                    and float(st.get("green_fr") or 0.0) >= 1.0
+                    and self._order_alive(st.get("green_order")))
+
+    def _uscita_manuale(self, market: Any, mb: Any) -> None:
+        """Il "chiudi ora" (D3, 24/09) sulle posizioni del FLB, con la SUA
+        copertura di green (`_green`, frazione 1: tutto l'ABBINATO).
+
+        L'esito si scrive UNA volta al primo book: "nessuna posizione", "gia' in
+        uscita" (ogni posizione aperta sta gia' uscendo: nessun secondo ordine)
+        o "uscita avviata". Poi, per ogni selezione ancora PENDING/OPEN:
+        annullo dell'ingresso e di una copertura PARZIALE (hybrid), attesa che
+        sul book non resti niente di vivo, e SOLO allora la copertura intera
+        dell'abbinato al touch (`bb` per chiudere un lay, `bl` per un back)."""
+        mid = str(getattr(mb, "market_id", "") or "")
+        vive = {k: st for k, st in self._pos_state.items()
+                if k[0] == mid and st.get("state") in (PENDING, OPEN)}
+        if self.uscita_manuale is None:
+            if not vive:
+                registra_esito_manuale(self, ESITO_NESSUNA_POSIZIONE, market_id=mid)
+            elif all(self._gia_in_uscita(st) for st in vive.values()):
+                registra_esito_manuale(self, ESITO_GIA_IN_USCITA, market_id=mid,
+                                       selezioni=sorted(k[1] for k in vive))
+            else:
+                registra_esito_manuale(self, ESITO_USCITA_AVVIATA, market_id=mid,
+                                       selezioni=sorted(k[1] for k in vive))
+        for r in mb.runners:
+            sel = int(getattr(r, "selection_id", 0) or 0)
+            key = (mid, sel)
+            st = self._pos_state.get(key)
+            if not st or st.get("state") not in (PENDING, OPEN):
+                continue
+            ex = getattr(r, "ex", None)
+            bb = get_price(ex.available_to_back, 0) if ex is not None else None
+            bl = get_price(ex.available_to_lay, 0) if ex is not None else None
+            self._chiudi_selezione_manuale(market, sel, key, st, bb, bl)
+
+    def _chiudi_selezione_manuale(self, market: Any, sel: int, key: Tuple[str, int],
+                                  st: Dict[str, Any], bb: Optional[float],
+                                  bl: Optional[float]) -> None:
+        if not st.get("manuale"):
+            st["manuale"] = True
+            # la copertura INTERA gia' in volo E' l'uscita: si tiene
+            if self._gia_in_uscita(st) and st.get("state") == OPEN:
+                st["ordine_manuale"] = st.get("green_order")
+        # tutto cio' che non e' la copertura dell'uscita si annulla: il residuo
+        # dell'ingresso e una copertura PARZIALE (hybrid)
+        self._cancel(market, st.get("order"))
+        go = st.get("green_order")
+        if go is not None and go is not st.get("ordine_manuale"):
+            self._cancel(market, go)
+        # ANTI DOPPIA USCITA: finche' un ordine del bot e' vivo sulla selezione
+        # (compresa la copertura in volo, o un annullo non ancora confermato:
+        # `cancel_order` e' asincrona) non si piazza niente. Blotter illeggibile
+        # (`None`) = non si decide.
+        if ordini_vivi_su(market, self, sel) is not False:
+            return
+        b, ba, l, la = self._matched(market, sel)
+        nw, nl = self._net(b, ba, l, la)
+        if abs(nw - nl) <= 0.01:
+            self._pos_state[key] = {"state": DONE, "manuale": True}
+            self._emit("uscita_manuale_flat", sel=sel, abbinato=round(b + l, 2),
+                       note="selezione pari e nessun ordine vivo: chiusa")
+            return
+        lato = "LAY" if nw > nl else "BACK"
+        px = bl if lato == "LAY" else bb
+        if not px:
+            return          # book monco: si riprova al prossimo book
+        locked, o = self._green(market, sel, px, 1.0)
+        if o is None:
+            return          # non partita: si riprova al prossimo book
+        st["ordine_manuale"] = o
+        st["green_order"] = o
+        st["greened"] = True
+        st["green_locked"] = False
+        st["green_price"] = px
+        st["green_fr"] = 1.0
+        st["green_est"] = round(float(locked), 3)
+        if not st.get("manuale_contato"):
+            st["manuale_contato"] = True
+            self.stats["manuali"] += 1
+        self._emit("exit", sel=sel, kind=MOTIVO_USCITA_MANUALE, price=px,
+                   locked_est=round(float(locked), 3))
+
+    def uscita_manuale_finita(self) -> bool:
+        """Finita per il BOT: esito scritto e nessuna selezione PENDING/OPEN."""
+        if self.uscita_manuale is None:
+            return False
+        return all(st.get("state") not in (PENDING, OPEN)
+                   for st in self._pos_state.values())
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
         # P&L VERO: profitto del settlement simulato (include hold-to-end).

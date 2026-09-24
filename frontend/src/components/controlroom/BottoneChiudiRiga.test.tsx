@@ -10,6 +10,9 @@
 // `bot: 'safe'` fisso invece di `o.bot` → rosso il test Omega/Mike; (2) il
 // bottone nascosto (return null) per i bot tennis invece che spento col
 // motivo → rosso; (3) l'esito non mostrato → rosso.
+// D3 (24/09): i bot tennis ora hanno il Chiudi ACCESO (coda tennis
+// `chiudi_bot`). Falsificazione D3: (4) `marketId` non passato dalla riga ->
+// rosso; (5) il rifiuto per i bot tennis rimesso in `chiudibile` -> rosso.
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -63,18 +66,41 @@ describe('B16 - il bottone chiama il SUO bot', () => {
         expect(b.getAttribute('data-bot')).toBe(bot);
         fireEvent.click(b);
         expect(api.chiudi).toHaveBeenCalledWith({
-            bot, id, eventId: ev, modalita: modo, stato: 'open', chiudeId: null, regolata: false,
+            bot, id, eventId: ev, marketId: '1.9', modalita: modo, stato: 'open', chiudeId: null, regolata: false,
         });
     });
 
-    it('bot TENNIS: il bottone c\'e\', SPENTO, e dice perche\'', () => {
-        const api = monta(op({ bot: 'tennis_scalper', id: 5, stato: 'EXECUTABLE', modalita: 'paper' }));
+    it.each(['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'] as const)(
+        'D3 (24/09) - bot TENNIS %s: il bottone e\' ACCESO e chiude la partita del bot, col mercato della riga',
+        (bot) => {
+            const api = monta(op({
+                bot, id: 5, stato: 'EXECUTABLE', modalita: 'paper', eventId: '35800001', marketId: '1.200',
+            }));
+            const b = screen.getByTestId('cr-op-chiudi');
+            expect(b).not.toBeDisabled();
+            expect(b.getAttribute('data-bot')).toBe(bot);
+            expect(b.getAttribute('title')).toMatch(/non rientra/);
+            fireEvent.click(b);
+            expect(api.chiudi).toHaveBeenCalledWith({
+                bot, id: 5, eventId: '35800001', marketId: '1.200', modalita: 'paper',
+                stato: 'EXECUTABLE', chiudeId: null, regolata: false,
+            });
+        },
+    );
+
+    it('bot TENNIS senza mercato della riga: il bottone c\'e\', SPENTO, e dice perche\'', () => {
+        const api = monta(op({ bot: 'tennis_scalper', id: 5, stato: 'EXECUTABLE', modalita: 'paper', marketId: null }));
         const b = screen.getByTestId('cr-op-chiudi');
         expect(b).toBeDisabled();
-        expect(b.getAttribute('data-motivo')).toMatch(/bot tennis/);
+        expect(b.getAttribute('data-motivo')).toMatch(/mercato/);
         expect(b.getAttribute('title')).toMatch(/non chiudibile/);
         fireEvent.click(b);
         expect(api.chiudi).not.toHaveBeenCalled();
+    });
+
+    it('bot TENNIS regolato (P&L presente): nessun bottone', () => {
+        monta(op({ bot: 'tennis_pro', id: 6, stato: 'EXECUTION_COMPLETE', modalita: 'paper', pnl: 0.4 }));
+        expect(screen.queryByTestId('cr-op-chiudi')).toBeNull();
     });
 
     it('gamba di chiusura / coperta / modalita\' ignota: spento col motivo', () => {

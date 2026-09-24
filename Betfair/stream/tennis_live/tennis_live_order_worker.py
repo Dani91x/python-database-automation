@@ -27,6 +27,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from . import chiusura_manuale as _cm
 from . import guardie_tennis as _gt
 from . import tennis_db
 
@@ -1361,6 +1362,15 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
     for row in rows:
         rid = row.get("id")
         if rid is None:
+            continue
+        # D3 (24/09) - "CHIUDI ORA" di un BOT tennis: non e' un ordine della
+        # ladder. La modalita' si confronta con quella DEL BOT (un bot paper in
+        # un runner LIVE si chiude in paper), non con quella del runner; e' una
+        # chiusura, quindi il kill-switch non la ferma. Guardie e esito:
+        # `chiusura_manuale.gestisci_riga`.
+        if _declared_action(row) == _cm.AZIONE:
+            if tennis_db.claim_tennis_order(rid):
+                _cm.gestisci_riga(session, row, rid, db=tennis_db)
             continue
         # CROSS-MODE (C1): una riga della mode opposta NON va eseguita. Claim atomico + error.
         if _declared_mode(row) != runner_mode_l:

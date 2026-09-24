@@ -41,10 +41,15 @@ from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_pri
 
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
+    ESITO_GIA_IN_USCITA,
+    ESITO_NESSUNA_POSIZIONE,
+    ESITO_USCITA_AVVIATA,
+    MOTIVO_USCITA_MANUALE,
     FrenoRifiuti,
     dichiara_chiusura_mercato,
     ingresso_finito,
     ordini_vivi_su,
+    registra_esito_manuale,
     size_legale,
     stato_ordine,
 )
@@ -187,7 +192,12 @@ class TennisProStrategy(BaseStrategy):
         self._set_won: Dict[str, Tuple[int, int]] = {}             # mid -> (winner_sel, games_tot@win)
         self._last_game_traded: Dict[str, Any] = {}                # mid -> game gia' tradato
         self.stats = {"entries": 0, "greens": 0, "scratches": 0, "stops": 0,
-                      "pnl": 0.0, "pnl_settled": 0.0}
+                      "manuali": 0, "pnl": 0.0, "pnl_settled": 0.0}
+        # "CHIUDI ORA" (D3, 24/09): il runner alza la richiesta, il bot esce
+        # con la SUA uscita (`_finish` -> CLOSING) e non apre piu' niente.
+        # Protocollo comune in `condotta_ordini` (sezione 4).
+        self.uscita_manuale_chiesta: bool = False
+        self.uscita_manuale: Optional[Dict[str, Any]] = None
         # ordini gia' contati in pnl_settled (dedup: flumine puo' richiamare
         # process_closed_market piu' volte sullo stesso mercato)
         self._pnl_settled_oids: set = set()
@@ -625,6 +635,12 @@ class TennisProStrategy(BaseStrategy):
         self._track_sets(mid, px)
         self._track_px(pt, px)
 
+        # 0) "CHIUDI ORA" dell'utente (D3, 24/09): l'uscita parte da qui, con la
+        # stessa `_finish` delle uscite del dossier; la sorveglianza CLOSING
+        # qui sotto la porta a FLAT come sempre.
+        if self.uscita_manuale_chiesta:
+            self._avvia_uscita_manuale(market, mid, px)
+
         # 1) gestisci trade aperto
         trade = self._trade.get(mid)
         if trade and trade["state"] == OPEN:
@@ -635,6 +651,10 @@ class TennisProStrategy(BaseStrategy):
         # 3s) lascerebbero un'esposizione nuda/rovesciata non gestita.
         if trade and trade["state"] == CLOSING:
             self._surveil_closing(market, trade, px)
+            return
+        # dopo il "chiudi ora" dell'utente il bot NON rientra su questa
+        # partita: nessun segnale viene piu' valutato (lo riarma l'utente)
+        if self.uscita_manuale_chiesta:
             return
 
         # 2) gate ingresso
@@ -788,8 +808,8 @@ class TennisProStrategy(BaseStrategy):
         # sorveglianza CLOSING ri-hedgia a un prezzo diverso, stats["pnl"] viene
         # CORRETTO col delta (mai lasciare una stima vecchia nel dashboard).
         trade["booked"] = float(locked)
-        self.stats[{"green": "greens", "stop": "stops",
-                    "scratch": "scratches"}.get(outcome, "greens")] += 1
+        self.stats[{"green": "greens", "stop": "stops", "scratch": "scratches",
+                    MOTIVO_USCITA_MANUALE: "manuali"}.get(outcome, "greens")] += 1
         self._emit("exit", outcome=outcome, kind=trade.get("kind"), sel=sel,
                    locked=round(float(locked), 3))
         logger.info("[PRO] EXIT %s (%s) sel=%s locked=%+.3f | stats=%s",
@@ -890,6 +910,55 @@ class TennisProStrategy(BaseStrategy):
         trade["close_wait"] = 0
         self._emit("close_escalate", sel=sel, kind=trade.get("kind"), price=mkt,
                    locked=round(float(locked2), 3))
+
+    # ---------------------------------------------- "CHIUDI ORA" dell'utente
+    def _avvia_uscita_manuale(self, market: Any, mid: str,
+                              px: Dict[int, Dict[str, Any]]) -> None:
+        """Esegue il "chiudi ora" UNA volta (D3, 24/09), con la macchina d'uscita
+        del PRO: nessuna regola nuova.
+
+        * trade OPEN -> `_finish(..., "manuale", *_full_close(...))`: la stessa
+          chiusura di target/stop/scratch. `_full_close` annulla lo scaglione,
+          `_finish` annulla il residuo dell'ingresso e porta in CLOSING; la
+          copertura e' calcolata da `compute_green` sull'ABBINATO letto dal
+          blotter (mai sul chiesto) e piazzata al TOUCH (`bl` per chiudere un
+          BACK, `bb` per un LAY: come le uscite del dossier);
+        * trade gia' in CLOSING -> "gia' in uscita": NESSUN secondo ordine, la
+          sorveglianza CLOSING porta a FLAT la copertura che c'e';
+        * nessun trade -> "nessuna posizione".
+        Se il book non ha il prezzo per chiudere si riprova al book dopo (mai
+        un esito scritto senza la chiusura partita)."""
+        if self.uscita_manuale is not None:
+            return
+        trade = self._trade.get(mid)
+        stato = str((trade or {}).get("state") or FLAT)
+        if stato == CLOSING:
+            registra_esito_manuale(self, ESITO_GIA_IN_USCITA, market_id=str(mid),
+                                   sel=trade.get("sel"), kind=trade.get("kind"))
+            return
+        if stato != OPEN:
+            registra_esito_manuale(self, ESITO_NESSUNA_POSIZIONE, market_id=str(mid))
+            return
+        sel = int(trade["sel"])
+        d = px.get(sel)
+        mkt = (d.get("bl") if trade["side"] == "BACK" else d.get("bb")) if d else None
+        if mkt is None:
+            return          # book monco: si riprova al prossimo book
+        b, _ba, l, _la = self._position(market, sel)
+        self._finish(market, trade, MOTIVO_USCITA_MANUALE, sel,
+                     *self._full_close(market, trade, sel, mkt))
+        registra_esito_manuale(self, ESITO_USCITA_AVVIATA, market_id=str(mid),
+                               sel=sel, kind=trade.get("kind"), prezzo=mkt,
+                               abbinato=round(b + l, 2))
+
+    def uscita_manuale_finita(self) -> bool:
+        """L'uscita manuale e' finita per il BOT: esito scritto e nessun trade
+        ancora aperto o in chiusura. Il flat VERO lo verifica il runner sul
+        blotter (`tennis_runner._strategy_is_flat`)."""
+        if self.uscita_manuale is None:
+            return False
+        return all(str(t.get("state") or FLAT) not in (OPEN, CLOSING)
+                   for t in self._trade.values())
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
         # P&L VERO del settlement simulato (audit 16/07): stats["pnl"] resta la

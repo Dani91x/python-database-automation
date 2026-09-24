@@ -5,6 +5,10 @@
 // chiamano `requestSafe` → rossi i test di instradamento; (2) `chiudibile` che
 // lascia passare i bot tennis → rosso; (3) `faseDaRichiesta` che legge 'done'
 // di Mike come 'eseguita' → rosso; (4) `mode` tolto dal payload → rosso.
+// D3 (24/09): i bot tennis ora si chiudono (`chiudi_bot` sulla coda tennis).
+// Falsificazione D3: (5) `INVIO.tennis_*` che dimentica `market_id` -> rosso;
+// (6) `chiudibile` che rimette il rifiuto per i bot tennis -> rosso;
+// (7) `LETTURA.tennis_*` assente/sbagliata -> rosso.
 // I finti hanno le chiavi VERE delle tre code (status/result con message,
 // rejected, error, code, phase), non una grafia inventata (catalogo §7, 27).
 // ============================================================================
@@ -25,10 +29,16 @@ vi.mock('@/lib/mike', async (orig) => ({
     requestMike: vi.fn(async () => 33),
     fetchMikeRequests: vi.fn(async () => []),
 }));
+vi.mock('@/lib/tennis', async (orig) => ({
+    ...(await orig() as object),
+    requestTennisChiudiBot: vi.fn(async () => 44),
+    fetchTennisOrderRequest: vi.fn(async () => null),
+}));
 
 import { requestManual, fetchManualRequests } from '@/lib/omega';
 import { requestSafe, fetchSafeRequests } from '@/lib/safeBot';
 import { requestMike, fetchMikeRequests } from '@/lib/mike';
+import { requestTennisChiudiBot, fetchTennisOrderRequest } from '@/lib/tennis';
 import {
     chiudibile, inviaChiusura, faseDaRichiesta, faseMostrata, LETTURA,
     cambiataPerChiusura, firmaRiga, statoConScadenza, SCADENZA_ESITO_MS,
@@ -69,12 +79,26 @@ describe('instradamento: ogni riga sulla coda del SUO bot', () => {
         expect(requestSafe).not.toHaveBeenCalled();
     });
 
-    it('bot tennis → nessuna richiesta, errore col motivo', async () => {
-        await expect(inviaChiusura(riga({ bot: 'tennis_scalper', stato: 'EXECUTABLE' })))
-            .rejects.toThrow(/bot tennis/);
-        expect(requestSafe).not.toHaveBeenCalled();
-        expect(requestManual).not.toHaveBeenCalled();
-        expect(requestMike).not.toHaveBeenCalled();
+    it.each(['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'] as const)(
+        'D3 (24/09) - %s -> chiudi_bot sulla coda tennis, con bot/partita/mercato/modalita\' della riga',
+        async (bot) => {
+            const r = await inviaChiusura(riga({
+                bot, id: 77, eventId: '35800001', marketId: '1.200', modalita: 'paper', stato: 'EXECUTABLE',
+            }));
+            expect(r).toEqual({ bot, requestId: 44 });
+            expect(requestTennisChiudiBot).toHaveBeenCalledWith({
+                bot, event_id: '35800001', market_id: '1.200', mode: 'paper', trade_id: 77,
+            });
+            expect(requestSafe).not.toHaveBeenCalled();
+            expect(requestManual).not.toHaveBeenCalled();
+            expect(requestMike).not.toHaveBeenCalled();
+        },
+    );
+
+    it('bot tennis senza mercato della riga -> nessuna richiesta (il runner non indovina)', async () => {
+        await expect(inviaChiusura(riga({ bot: 'tennis_pro', stato: 'EXECUTABLE', marketId: null })))
+            .rejects.toThrow(/mercato/);
+        expect(requestTennisChiudiBot).not.toHaveBeenCalled();
     });
 
     it('modalita\' non dichiarata → nessuna richiesta (mai alla cieca)', async () => {
@@ -91,7 +115,8 @@ describe('chiudibile: il bottone dice sempre perche\'', () => {
         expect(chiudibile(riga({ bot: 'tennis_pro', stato: 'EXECUTION_COMPLETE', regolata: true }))).toBeNull();
     });
     it.each([
-        [riga({ bot: 'tennis_flb', stato: 'EXECUTABLE' }), /bot tennis/],
+        [riga({ bot: 'tennis_flb', stato: 'EXECUTABLE' }), /mercato/],
+        [riga({ bot: 'tennis_swing', stato: 'EXECUTABLE', marketId: '1.2', modalita: null }), /modalita/],
         [riga({ chiudeId: 7 }), /gamba di chiusura/],
         [riga({ stato: 'hedged' }), /coperta/],
         [riga({ stato: 'pending_reconcile' }), /riconciliazione/],
@@ -107,6 +132,14 @@ describe('chiudibile: il bottone dice sempre perche\'', () => {
         expect(chiudibile(riga({ bot: 'safe', stato: 'pending' }))).toEqual({ ok: true });
         expect(chiudibile(riga({ bot: 'mike', stato: 'pending' }))).toEqual({ ok: true });
     });
+    it.each(['tennis_scalper', 'tennis_pro', 'tennis_flb', 'tennis_swing'] as const)(
+        'D3 - %s: riga aperta con partita, mercato e modalita\' -> chiudibile',
+        (bot) => {
+            for (const stato of ['EXECUTABLE', 'EXECUTION_COMPLETE']) {
+                expect(chiudibile(riga({ bot, stato, marketId: '1.200', modalita: 'live' }))).toEqual({ ok: true });
+            }
+        },
+    );
 });
 
 describe('esito dalla coda del bot (chiavi vere delle tabelle)', () => {
@@ -167,6 +200,33 @@ describe('LETTURA: ognuno legge la SUA coda', () => {
         expect((await LETTURA.safe(22))?.status).toBe('rejected');
         expect((await LETTURA.mike(33))?.status).toBe('processing');
         expect(await LETTURA.omega(999)).toBeNull();
+    });
+    it('D3 - i bot tennis leggono la riga di tennis_live_order_queue per id (get_tennis_live_order)', async () => {
+        vi.mocked(fetchTennisOrderRequest).mockResolvedValue({
+            status: 'done', result: { ok: true, esito: 'uscita_avviata', message: 'eseguita: ...' },
+        });
+        const r = await LETTURA.tennis_flb(44);
+        expect(fetchTennisOrderRequest).toHaveBeenCalledWith(44);
+        expect(r).toEqual({ id: 44, status: 'done', result: { ok: true, esito: 'uscita_avviata', message: 'eseguita: ...' } });
+        vi.mocked(fetchTennisOrderRequest).mockResolvedValue(null);
+        expect(await LETTURA.tennis_pro(45)).toBeNull();
+    });
+});
+
+describe('D3 - esito del chiudi ora tennis (chiavi vere della coda tennis)', () => {
+    it('processing -> presa in carico; done -> eseguita col messaggio; error -> rifiutata col motivo', () => {
+        expect(faseDaRichiesta('tennis_scalper', { id: 1, status: 'processing', result: null }).fase)
+            .toBe('presa_in_carico');
+        const ok = faseDaRichiesta('tennis_pro', {
+            id: 2, status: 'done',
+            result: { ok: true, esito: 'gia_in_uscita', message: 'gia\' in uscita: nessun secondo ordine' },
+        });
+        expect(ok).toEqual({ fase: 'eseguita', motivo: 'gia\' in uscita: nessun secondo ordine', chiusa: true });
+        const ko = faseDaRichiesta('tennis_swing', {
+            id: 3, status: 'error',
+            result: { ok: false, error: 'richiesta_ambigua', message: 'rifiutato: modalita\' diversa' },
+        });
+        expect(ko).toEqual({ fase: 'rifiutata', motivo: 'rifiutato: modalita\' diversa', chiusa: true });
     });
 });
 

@@ -10,8 +10,9 @@
 //
 // Cosa dice, sempre, invece di sparire in silenzio:
 //   · riga chiudibile → «Chiudi» acceso, `title` = cosa fara' QUEL bot;
-//   · riga non chiudibile (bot tennis, gamba di chiusura, coperta, in volo,
-//     modalita' ignota) → «Chiudi» spento, `title` = il motivo;
+//   - riga non chiudibile (bot tennis senza partita/mercato, gamba di
+//     chiusura, coperta, in volo, modalita' ignota) -> "Chiudi" spento,
+//     `title` = il motivo (D3, 24/09: i bot tennis ora si chiudono);
 //   · dopo il clic → «richiesta inviata / presa in carico / eseguita /
 //     rifiutata: motivo / esito ignoto» accanto al bottone.
 // ============================================================================

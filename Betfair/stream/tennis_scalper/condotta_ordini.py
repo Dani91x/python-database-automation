@@ -301,3 +301,69 @@ def piatta(market: Any, strategia: Any, selection_id: int,
     if sb is None:
         return False
     return sb <= float(tolleranza)
+
+
+# ---------------------------------------------------------------------------
+# 4. "CHIUDI ORA" - l'uscita MANUALE chiesta dall'utente (D3, 24/09)
+# ---------------------------------------------------------------------------
+# Decisione dell'utente del 24/09: il "Chiudi" della Control Room deve
+# funzionare anche per i quattro bot tennis. NON e' una strategia nuova e non
+# cambia nessuna condizione d'ingresso o d'uscita: e' un COMANDO che il bot
+# esegue con la SUA macchina d'uscita gia' esistente (lo scalper col suo
+# `force_flat`, il pro col suo stato CLOSING, lo swing col suo `closing`, il
+# FLB con la sua copertura di green), con motivo `manuale`:
+#   * annulla gli ordini vivi;
+#   * chiude l'ABBINATO (mai il chiesto) al prezzo di mercato;
+#   * non rientra su quella partita: da qui il bot non apre piu' niente.
+# Il protocollo e' lo stesso per i quattro (una regola, un posto):
+#   * il RUNNER alza `uscita_manuale_chiesta` (`chiedi_uscita_manuale`), dal
+#     suo thread, e non tocca altro;
+#   * il BOT, al primo book utile, decide l'esito UNA volta
+#     (`registra_esito_manuale`) e avvia la sua uscita;
+#   * il BOT dice quando la sua uscita e' finita (`uscita_manuale_finita()`);
+#     la verita' sul flat la dice poi il blotter (`tennis_runner`).
+# ANTI DOPPIA USCITA: se il bot stava GIA' uscendo, l'esito e' "gia' in
+# uscita" e nessun secondo ordine parte: resta in volo la copertura che c'era.
+MOTIVO_USCITA_MANUALE = "manuale"
+ESITO_USCITA_AVVIATA = "uscita_avviata"
+ESITO_GIA_IN_USCITA = "gia_in_uscita"
+ESITO_NESSUNA_POSIZIONE = "nessuna_posizione"
+ESITI_USCITA_MANUALE = frozenset({ESITO_USCITA_AVVIATA, ESITO_GIA_IN_USCITA,
+                                  ESITO_NESSUNA_POSIZIONE})
+
+
+def supporta_uscita_manuale(strategia: Any) -> bool:
+    """Il bot parla il protocollo del "chiudi ora"? Un bot che non lo parla
+    non riceve il comando (il runner rifiuta la richiesta, mai un'alzata di
+    flag che nessuno legge)."""
+    return (hasattr(strategia, "uscita_manuale_chiesta")
+            and hasattr(strategia, "uscita_manuale")
+            and callable(getattr(strategia, "uscita_manuale_finita", None)))
+
+
+def chiedi_uscita_manuale(strategia: Any) -> bool:
+    """Il runner chiede l'uscita manuale. True se la chiede ADESSO, False se
+    era gia' stata chiesta (idempotente: una seconda richiesta non produce un
+    secondo comando)."""
+    if bool(getattr(strategia, "uscita_manuale_chiesta", False)):
+        return False
+    strategia.uscita_manuale_chiesta = True
+    return True
+
+
+def registra_esito_manuale(strategia: Any, esito: str, **dettagli: Any) -> None:
+    """Il bot scrive l'esito della richiesta UNA sola volta (il primo vince) e
+    lo dice nella sua attivita' (`uscita_manuale`)."""
+    if getattr(strategia, "uscita_manuale", None) is not None:
+        return
+    if esito not in ESITI_USCITA_MANUALE:
+        raise ValueError("esito dell'uscita manuale sconosciuto: %s" % esito)
+    payload = {"esito": esito, "motivo": MOTIVO_USCITA_MANUALE}
+    payload.update(dettagli)
+    strategia.uscita_manuale = dict(payload)
+    emit = getattr(strategia, "_emit", None)
+    if callable(emit):
+        try:
+            emit("uscita_manuale", **payload)
+        except Exception:  # noqa: BLE001 - la telemetria non ferma l'uscita
+            logger.debug("[condotta] attivita' uscita manuale KO", exc_info=True)

@@ -60,9 +60,13 @@ from flumine.utils import get_nearest_price, get_price, get_size, price_ticks_aw
 
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
+    ESITO_GIA_IN_USCITA,
+    ESITO_NESSUNA_POSIZIONE,
+    ESITO_USCITA_AVVIATA,
     RESIDUO_ACCETTATO,
     FrenoRifiuti,
     dichiara_chiusura_mercato,
+    registra_esito_manuale,
     sbilancio_selezione,
 )
 
@@ -470,6 +474,11 @@ class TennisScalperStrategy(BaseStrategy):
         # FORCE-FLAT: il servizio lo alza per fermare il bot in sicurezza
         # (stesso percorso del near-KO: cancella tutto e chiude flat).
         self.force_flat: bool = False
+        # "CHIUDI ORA" dell'utente (D3, 24/09): il runner alza la richiesta e
+        # il bot la esegue col suo `force_flat` (motivo `manuale`), cioe' la
+        # chiusura provata del near-KO; `condotta_ordini` sezione 4.
+        self.uscita_manuale_chiesta: bool = False
+        self.uscita_manuale: Optional[Dict[str, Any]] = None
 
         # statistiche cumulative (lette dal servizio per la UI)
         self.stats: Dict[str, float] = {
@@ -773,6 +782,8 @@ class TennisScalperStrategy(BaseStrategy):
         # sola, e da qui lo leggono i contatori a finestra (`_orologio_s`)
         self._now_ms = int(now)
         mid = market_book.market_id
+        if self.uscita_manuale_chiesta and self.uscita_manuale is None:
+            self._avvia_uscita_manuale(mid)
         inplay = bool(getattr(market_book, "inplay", False))
         # TRANSIZIONE PRE-MATCH → IN-PLAY (bug critico: il gap di apertura puo'
         # lasciare una gamba nuda). Al flip False→True, per OGNI ciclo nato
@@ -1095,6 +1106,44 @@ class TennisScalperStrategy(BaseStrategy):
                         continue
                 self._try_enter(market, market_book, runner, slot, now,
                                 best_back, best_lay, size_back, size_lay, mp)
+
+    # ---------------------------------------------- "CHIUDI ORA" dell'utente
+    def _avvia_uscita_manuale(self, mid: str) -> None:
+        """Il "chiudi ora" (D3, 24/09) dello scalper E' il suo `force_flat`: lo
+        stesso percorso provato del near-KO (blocco A di `process_market_book`)
+        annulla gli ordini vivi, chiude col flatten l'ABBINATO dello slot
+        (`_flatten` -> `compute_green` sul matched, mai sul chiesto) al prezzo
+        marketable, e con `force_flat` alzato non apre piu' niente.
+
+        * `force_flat` GIA' alzato (missione compiuta, circuit breaker, disarmo
+          in corso) -> "gia' in uscita": nessun secondo ordine, il flatten in
+          volo resta quello (`_drive_flatten` non ne piazza un altro finche'
+          uno e' vivo);
+        * nessuno slot fuori da IDLE -> "nessuna posizione"."""
+        if self.force_flat:
+            esito = ESITO_GIA_IN_USCITA
+        elif any(s.status != IDLE for (m, _sid), s in self._slots.items()
+                 if m == mid):
+            esito = ESITO_USCITA_AVVIATA
+        else:
+            esito = ESITO_NESSUNA_POSIZIONE
+        self.force_flat = True
+        registra_esito_manuale(self, esito, market_id=str(mid))
+
+    def uscita_manuale_finita(self) -> bool:
+        """Finita per il BOT: esito scritto, ogni slot IDLE o DONE, nessuna
+        sequenza d'uscita esatta in corso e nessun ordine vivo. Il flat VERO lo
+        verifica il runner sul blotter."""
+        if self.uscita_manuale is None:
+            return False
+        for s in self._slots.values():
+            if s.status not in (IDLE, DONE) or s.submins:
+                return False
+            for o in (s.entry, s.entry_back, s.entry_lay, s.close, s.next_entry,
+                      *s.flatten_orders):
+                if self._has_live(o):
+                    return False
+        return True
 
     def process_closed_market(self, market: Any, market_book: Any) -> None:
         md = getattr(market_book, "market_definition", None)

@@ -131,6 +131,13 @@ class Osservazione:
     # una posizione: senza questa distinzione B1 accuserebbe il disarm stesso —
     # e' il falso positivo DEL CONTROLLO contro cui mette in guardia §6.7).
     ordini_nuovi: set = field(default_factory=set)
+    # D3 (24/09) - il "CHIUDI ORA" dell'utente, letto dallo stato VERO del bot
+    # (`uscita_manuale_chiesta` / `uscita_manuale["esito"]`, protocollo di
+    # `condotta_ordini` sezione 4) e gli id degli ordini NATI DOPO che il bot ha
+    # scritto il suo esito (li raccoglie il replay, giro per giro)
+    manuale_chiesta: bool = False
+    manuale_esito: Optional[str] = None
+    ordini_dopo_manuale: set = field(default_factory=set)
 
     def kinds(self) -> List[str]:
         return [k for k, _ in self.attivita]
@@ -563,6 +570,51 @@ def _b8(oss: Osservazione) -> Optional[str]:
             return ("ordine %s %s per %s: sotto il minimo .it di %s -> "
                     "INVALID_BET_SIZE, gamba scoperta"
                     % (r.get("order_id"), side, s, MINIMO_IT[side]))
+    return None
+
+
+# gli stati di un ordine che e' DAVVERO a mercato e non sta morendo: un ordine
+# `Cancelling` ha l'annullo in volo e non e' una seconda uscita decisa dal bot
+_A_MERCATO_NON_IN_ANNULLO = frozenset(
+    s for s in STATI_ORDINE_VIVI
+    if s != getattr(SC.OrderStatus.CANCELLING, "value", "Cancelling"))
+
+
+def _q_manuale(oss: Osservazione) -> bool:
+    return bool(oss.manuale_chiesta) and bool(oss.manuale_esito) and not oss.dry_run
+
+
+@_controllo("B9", "\"chiudi ora\" dell'utente (D3, 24/09): UNA sola chiusura "
+                  "dell'abbinato, poi nessun rientro - dopo l'esito del bot "
+                  "nessun ordine nuovo e' un INGRESSO, mai due ordini di "
+                  "chiusura vivi insieme sulla stessa selezione, e con "
+                  "\"nessuna posizione\" nessun ordine nuovo",
+            quando=_q_manuale)
+def _b9(oss: Osservazione) -> Optional[str]:
+    dopo = {str(x) for x in (oss.ordini_dopo_manuale or set())}
+    if not dopo:
+        return None
+    righe = [r for r in oss.ordini if str(r.get("order_id") or "") in dopo]
+    for r in righe:
+        if str(r.get("order_id") or "") in oss.ids_ingresso:
+            return ("dopo il chiudi ora il bot ha aperto un INGRESSO nuovo (%s %s "
+                    "per %s su %s): e' un rientro sulla partita"
+                    % (r.get("order_id"), r.get("side"), r.get("size"),
+                       r.get("selection_id")))
+    if oss.manuale_esito == CD.ESITO_NESSUNA_POSIZIONE:
+        piazzati = [r for r in righe if not _rifiutato(r)]
+        if piazzati:
+            return ("esito \"nessuna posizione\" ma dopo il chiudi ora il bot ha "
+                    "piazzato %d ordini (%s)"
+                    % (len(piazzati), ", ".join(str(r.get("order_id")) for r in piazzati)))
+    per_sel: Dict[Any, List[str]] = {}
+    for r in righe:
+        if str(r.get("status") or "") in _A_MERCATO_NON_IN_ANNULLO:
+            per_sel.setdefault(r.get("selection_id"), []).append(str(r.get("order_id")))
+    for sel, ids in per_sel.items():
+        if len(ids) > 1:
+            return ("DOPPIA USCITA: dopo il chiudi ora %d ordini di chiusura vivi "
+                    "insieme sulla selezione %s (%s)" % (len(ids), sel, ", ".join(ids)))
     return None
 
 

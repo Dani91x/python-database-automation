@@ -33,6 +33,7 @@ from .. import local_channel as _lc
 from .. import sveglia_canale as _SV
 from ..single_instance import acquire_single_instance_lock
 from . import canale_bot_tennis as _CBT
+from . import chiusura_manuale as _cm
 from . import tennis_db
 
 logger = logging.getLogger(__name__)
@@ -399,6 +400,26 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     # T2 (24/09): a guardia d'avvio ARMATA (controllo d'avvio non ancora
     # riuscito) il ponte NON arma niente; le fermate passano (riducono il rischio).
     bloccato = _GUARDIA_AVVIO.blocca_aperture
+    # D3 (24/09) - "CHIUDI ORA": una (partita, bot) chiusa dall'utente porta
+    # `stats.chiusura_manuale` sulla riga ferma e NON si riarma da qui, anche
+    # con l'interruttore acceso: la riarma l'utente dalla scheda (la RPC
+    # `tennis_bot_arm` azzera le stats). Non letto = non si arma niente in
+    # questo giro (fail-closed); le fermate passano. Si legge SOLO la partita
+    # che si sta per armare (filtrata per evento: niente storico intero ogni
+    # 15 s), una volta per giro.
+    fermi_letti: Dict[str, Optional[set]] = {}
+
+    def _chiusi_su(ev: str) -> Optional[set]:
+        if ev not in fermi_letti:
+            try:
+                fermi_letti[ev] = _cm.chiusi_dall_utente(db.list_tennis_bot_controls(
+                    ev, statuses=["stopped", "error", "done"]))
+            except Exception as e:  # noqa: BLE001 - una select KO non ferma il giro
+                logger.warning("[tennis-bot-svc] righe chiuse dall'utente KO (%s): %s",
+                               ev, str(e)[:160])
+                fermi_letti[ev] = None
+        return fermi_letti[ev]
+
     for bot, d in desiderato.items():
         try:
             attive = {r.get("event_id"): r for r in
@@ -417,6 +438,15 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
             for ev in eventi:
                 if ev in attive:
                     continue
+                chiusi_utente = _chiusi_su(ev)
+                if chiusi_utente is None:
+                    # non letto: questa partita non si arma in questo giro (ma
+                    # NON si ferma niente: l'`else` e' per gli interruttori spenti)
+                    motivo = ("righe chiuse dall'utente non lette: la partita %s "
+                              "non si arma in questo giro" % ev)
+                    continue
+                if (str(ev), bot) in chiusi_utente:
+                    continue        # chiuso dall'utente: lo riarma lui
                 db.upsert_tennis_bot_control({
                     "event_id": ev, "bot_key": bot, "status": "requested",
                     # T1 (24/09): la modalita' del bot viaggia ESPLICITA sulla riga

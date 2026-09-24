@@ -94,6 +94,9 @@ EVENTO_DI_RIFERIMENTO = "35794049"
 # i mercati che i quattro bot usano: uno solo, il MATCH_ODDS (dossier §4)
 MERCATI = ("MATCH_ODDS",)
 
+# D3 (24/09): lo scenario del "chiudi ora" dell'utente (controllo B9)
+SCENARIO_CHIUDI_ORA = "chiudi-ora"
+
 
 # ---------------------------------------------------------------------------
 # GLI SCENARI — cambiano SOLO parametri, freschezza del feed o guasti iniettati.
@@ -140,12 +143,20 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # aprono mai su queste partite e non esisterebbe una chiusura da colpire)
     # piu' il guasto del banco comune.
     CP.SCENARIO: "i gate di `gate-aperto`, ma " + CP.DESCRIZIONE,
+    # D3 (24/09): il "chiudi ora" dell'utente, per la STESSA via di produzione
+    # (`chiusura_manuale.prendi_in_carico` + `avanza` alla cadenza del
+    # `bot_control_worker`). Gate di `gate-aperto`, altrimenti non ci sarebbe
+    # una posizione da chiudere. Lo giudica il controllo B9.
+    SCENARIO_CHIUDI_ORA: (
+        "i gate di `gate-aperto`; a meta' partita l'utente preme \"Chiudi\" "
+        "sulla riga del bot: la richiesta passa da `chiusura_manuale` come in "
+        "produzione, il bot esce con la SUA uscita e non rientra (B9)"),
 }
 
 
 def parametri_scenario(scenario: str, bot: str) -> Dict[str, Any]:
     """I parametri che lo scenario cambia. SOLO numeri gia' esposti dalla UI."""
-    if scenario in ("rifiuti-betfair", "live", CP.SCENARIO):
+    if scenario in ("rifiuti-betfair", "live", CP.SCENARIO, SCENARIO_CHIUDI_ORA):
         # ⚠️ IL CASO VA PROVOCATO, non sperato. Con i parametri di produzione
         # lo scalper e lo swing non tentano MAI un ingresso su questa partita:
         # il rifiuto non sarebbe nemmeno possibile e K2 resterebbe «non lo so»
@@ -480,6 +491,31 @@ def _rifiuta_tutto(quadro: Any):
     return _RifiutaTutto(quadro)
 
 
+class _DbReplay:
+    """Le firme di `tennis_db` che `chiusura_manuale` usa: nel replay il DB non
+    esiste, il CONTENUTO delle scritture si' (finisce nel referto)."""
+
+    def __init__(self) -> None:
+        self.fatte: List[Tuple[Any, Dict[str, Any]]] = []
+        self.errori: List[Tuple[Any, Dict[str, Any]]] = []
+        self.stati: List[Tuple[str, str, str]] = []
+        self.attivita: List[Tuple[str, str, str, Dict[str, Any]]] = []
+
+    def write_tennis_order_done(self, rid: Any, result: Dict[str, Any]) -> None:
+        self.fatte.append((rid, dict(result)))
+
+    def write_tennis_order_error(self, rid: Any, result: Dict[str, Any]) -> None:
+        self.errori.append((rid, dict(result)))
+
+    def set_tennis_bot_status(self, event_id: str, bot_key: str, status: str,
+                              **kw: Any) -> None:
+        self.stati.append((str(event_id), str(bot_key), str(status)))
+
+    def write_tennis_bot_activity(self, event_id: str, bot_key: str, kind: str,
+                                  payload: Dict[str, Any]) -> None:
+        self.attivita.append((str(event_id), str(bot_key), str(kind), dict(payload)))
+
+
 # ---------------------------------------------------------------------------
 # IL PONTE: fa girare i WORKER di produzione alla loro cadenza vera
 # ---------------------------------------------------------------------------
@@ -543,6 +579,10 @@ class _Ponte:
         self._ultimo_book: Any = None
         # scenario `chiusura-abbinata-in-parte` (None negli altri)
         self.sorveglianza_cp: Optional[Any] = None
+        # scenario `chiudi-ora` (D3, 24/09): la sessione/DB del runner per la
+        # via di produzione, e gli id degli ordini che c'erano al clic
+        self._chiudi: Optional[Dict[str, Any]] = None
+        self._ids_prima_manuale: Optional[set] = None
 
     def ruolo_ordine(self, ordine: Any) -> Optional[str]:
         """Il RUOLO di un ordine per il guasto CP, dalla credenza VERA del bot
@@ -570,6 +610,7 @@ class _Ponte:
         self._forse_punteggio(ms)
         self._forse_disarmo(market, ms)
         self._forse_riavvio(market, ms)
+        self._forse_chiudi_ora(market, ms)
         return bool(self.s.check_market_book(market, market_book))
 
     def process_market_book(self, market: Any, market_book: Any) -> None:
@@ -661,6 +702,55 @@ class _Ponte:
             "`_instantiate_bot` e il blotter nuovo e' vuoto, come dopo un "
             "rebuild dello stream")
 
+    def _forse_chiudi_ora(self, market: Any, ms: int) -> None:
+        """Lo scenario `chiudi-ora` (D3, 24/09): a meta' partita l'utente preme
+        "Chiudi". La richiesta passa dalle funzioni VERE del runner
+        (`chiusura_manuale.prendi_in_carico`, poi `avanza` alla cadenza del
+        `bot_control_worker`, con `_strategy_is_flat`/`_disable_strategy` di
+        produzione); il DB e' l'unica cosa finta (registra invece di scrivere)."""
+        if self.scenario != SCENARIO_CHIUDI_ORA:
+            return
+        if self._meta_ms is None or ms < self._meta_ms:
+            return
+        from .. import chiusura_manuale as CMN
+        from ..tennis_runner import (BOT_CONTROL_POLL_SEC, TennisLiveSession,
+                                     _disable_strategy, _strategy_is_flat)
+
+        if self._chiudi is None:
+            sess = TennisLiveSession(trading=None)
+            sess.market_meta = {self.event_id: {"market_id": self.market_id}}
+            sess.hosted = {(self.event_id, self.bot_key): self.s}
+            sess.order_mode = self.modalita
+            db = _DbReplay()
+            # gli ordini che c'erano AL CLIC: tutto cio' che nasce dopo lo
+            # giudica B9
+            self._ids_prima_manuale = {
+                str(getattr(o, "id", "") or "") for o in self.ordini_del_bot(market)}
+            cmd = {"action": CMN.AZIONE, "bot": self.bot_key, "event_id": self.event_id,
+                   "market_id": self.market_id, "mode": self.modalita.lower(),
+                   "trade_id": None, "client_ref": "replay-chiudi-ora"}
+            subito = CMN.prendi_in_carico(sess, 1, cmd, db=db, adesso=ms / 1000.0)
+            self._chiudi = {"sessione": sess, "db": db, "ultimo_ms": ms, "finito": False}
+            self.ref.note.append(
+                "CHIUDI ORA a meta' partita (via di produzione `chiusura_manuale`): %s"
+                % ("preso in carico" if subito is None
+                   else "rifiutato subito: %s" % subito.get("message")))
+            return
+        if self._chiudi["finito"]:
+            return
+        if ms - self._chiudi["ultimo_ms"] < int(float(BOT_CONTROL_POLL_SEC or 3.0) * 1000):
+            return
+        self._chiudi["ultimo_ms"] = ms
+        concluse = CMN.avanza(self.quadro, self._chiudi["sessione"],
+                              e_flat=_strategy_is_flat, disabilita=_disable_strategy,
+                              db=self._chiudi["db"], adesso=ms / 1000.0)
+        if concluse:
+            self._chiudi["finito"] = True
+            db = self._chiudi["db"]
+            esiti = [r.get("message") for _rid, r in db.fatte + db.errori]
+            self.ref.note.append("CHIUDI ORA concluso: stato riga %s; esito: %s"
+                                 % ([s for _e, _b, s in db.stati], esiti))
+
     def imposta_finestra(self, primo_ms: int, ultimo_ms: int) -> None:
         self._meta_ms = primo_ms + (ultimo_ms - primo_ms) // 2
         self._fine_ms = ultimo_ms
@@ -737,10 +827,17 @@ class _Ponte:
         nuovi = tutti - self._ordini_visti
         self._ordini_visti |= tutti
         pt = getattr(market_book, "publish_time", None)
+        # D3: il "chiudi ora" letto dallo stato VERO del bot
+        esito_m = getattr(self.s, "uscita_manuale", None)
+        dopo_m = (tutti - self._ids_prima_manuale
+                  if self._ids_prima_manuale is not None else set())
         oss = CERT.Osservazione(
             bot=self.bot_key,
             scenario=self.scenario,
             quando=pt.isoformat() if pt is not None else "",
+            manuale_chiesta=bool(getattr(self.s, "uscita_manuale_chiesta", False)),
+            manuale_esito=(esito_m or {}).get("esito") if isinstance(esito_m, dict) else None,
+            ordini_dopo_manuale=dopo_m,
             modalita=self.modalita.lower(),
             dry_run=bool(getattr(self.s, "dry_run", False)),
             disabilitato=bool(getattr(self.s, "_tennis_disabled", False)),
@@ -964,7 +1061,8 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             mercato = quadro.markets.markets.get(market_id)
             ponte.chiudi(mercato)
 
-    if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO):
+    if scenario in ("gate-aperto", "parziali", "rifiuti-betfair", "live", CP.SCENARIO,
+                    SCENARIO_CHIUDI_ORA):
         ref.note.append("SCENARIO DICHIARATO: cambiati SOLO i parametri %s "
                         "(numeri che l'utente puo' gia' cambiare dalla UI). La "
                         "strategia e' quella di produzione."

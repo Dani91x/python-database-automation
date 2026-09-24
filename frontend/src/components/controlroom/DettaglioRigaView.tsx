@@ -331,7 +331,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                 Room (contesto), dice sempre perche' e' spento. */}
             <BottoneChiudiRiga
                 riga={{
-                    bot: o.bot, id: o.id, eventId: o.eventId ?? null,
+                    bot: o.bot, id: o.id, eventId: o.eventId ?? null, marketId: o.marketId ?? null,
                     modalita: o.modalita, stato: o.stato, chiudeId: o.chiudeId ?? null,
                     // tennis: lo stato flumine non dice «regolato», il P&L si'
                     regolata: isBotTennis(o.bot) && o.pnl != null,

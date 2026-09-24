@@ -2829,7 +2829,9 @@ export function useControlRoom(): ControlRoomVM {
         const giro = async () => {
             for (const k of daRileggere.split(',')) {
                 const s = chiusureRigheRef.current[k];
-                if (!s || s.requestId == null || isBotTennis(s.bot)) continue;
+                if (!s || s.requestId == null) continue;
+                // D3 (24/09): anche i 4 bot tennis hanno la loro coda (la riga
+                // `chiudi_bot` di `tennis_live_order_queue`), letta per id
                 const botC = s.bot as BotConChiusura;
                 try {
                     const r = await LETTURA[botC](s.requestId);

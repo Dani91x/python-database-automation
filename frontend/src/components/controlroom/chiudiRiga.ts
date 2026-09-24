@@ -17,20 +17,24 @@
 //   · Mike → `mike_request('cashout', {event_id, …})` → `mike_requests` →
 //     `service.process_requests` → `_request_flatten`: Mike chiude la PARTITA
 //     (il ciclo intero), non una riga sola - e' il suo modo di chiudere.
-//   · I 4 bot tennis → NESSUN percorso di chiusura manuale esiste nel loro
-//     servizio: costruirlo vuol dire toccare le loro strategie (decisione
-//     dell'utente). Il bottone lo DICE, non sparisce in silenzio.
+//   - I 4 bot tennis (D3, 24/09: "il Chiudi deve funzionare anche per i 4 bot
+//     tennis") -> `request_tennis_live_order({action:'chiudi_bot', bot,
+//     event_id, market_id, mode})` -> `tennis_live_order_queue` (la coda che il
+//     runner tennis GIA' drena) -> `chiusura_manuale`: il bot della riga annulla
+//     i suoi ordini vivi, chiude l'ABBINATO con la sua uscita e non rientra
+//     sulla partita. Come Mike, chiude la PARTITA del bot, non una riga sola.
 //
 // Il payload porta SEMPRE `bot`, `event_id` e `mode` della riga: il servizio
 // li confronta con la riga vera e rifiuta una richiesta ambigua (fail-closed,
 // mai un ordine «per sicurezza»). Paper e live mai mischiati: la modalita' e'
 // quella DELLA RIGA, dichiarata dal servizio; assente = non si chiude.
 // ============================================================================
-import { isBotTennis, type Bot } from '@/lib/controlRoom';
+import { isBotTennis, type Bot, type BotTennis } from '@/lib/controlRoom';
 import { isSettled, isErrorRow } from '@/lib/eventGroups';
 import { requestManual, fetchManualRequests } from '@/lib/omega';
 import { requestSafe, fetchSafeRequests } from '@/lib/safeBot';
 import { requestMike, fetchMikeRequests } from '@/lib/mike';
+import { requestTennisChiudiBot, fetchTennisOrderRequest } from '@/lib/tennis';
 import { fetchScalperState } from '@/lib/scalper';
 import { stopScalperSessione } from '@/lib/scalperControlRoom';
 
@@ -42,7 +46,7 @@ import { stopScalperSessione } from '@/lib/scalperControlRoom';
 // GUARDIA D'IDENTITA' e' la firma della sessione (`requested_at`) + la
 // modalita': una sessione riarmata nel frattempo, o in un'altra modalita',
 // fa rifiutare la richiesta ('richiesta_ambigua'), mai uno stop a caso.
-export type BotConChiusura = 'omega' | 'safe' | 'mike' | 'scalper';
+export type BotConChiusura = 'omega' | 'safe' | 'mike' | 'scalper' | BotTennis;
 
 /** Cio' che serve per chiudere UNA riga: la sua identita', non il suo aspetto. */
 export interface RigaDaChiudere {
@@ -50,6 +54,9 @@ export interface RigaDaChiudere {
     id: number;
     /** partita della riga (serve a Mike, che chiude per partita) */
     eventId: string | null;
+    /** mercato della riga (serve ai bot tennis: il runner lo confronta con
+     *  quello su cui il bot opera, `richiesta_ambigua` se diverso) */
+    marketId?: string | null;
     /** modalita' DICHIARATA dal servizio; null = non si chiude alla cieca */
     modalita: 'paper' | 'live' | null;
     /** stato della riga come lo scrive il servizio */
@@ -82,13 +89,6 @@ export function chiudibile(r: RigaDaChiudere): Chiudibile | null {
     const s = String(r.stato ?? '').toLowerCase();
     if (r.bot === 'scalper') return chiudibileScalper(r, s);
     if (r.regolata || isSettled(s) || isErrorRow(s) || STATI_NON_POSIZIONE.has(s)) return null;
-    if (isBotTennis(r.bot)) {
-        return {
-            ok: false,
-            motivo: 'chiusura manuale non cablata per i bot tennis: le loro uscite le guida la '
-                + 'strategia del bot (costruirla vuol dire toccarla: decisione dell\'utente)',
-        };
-    }
     if (r.chiudeId != null) {
         return { ok: false, motivo: 'e\' una gamba di chiusura: si chiude con la sua apertura' };
     }
@@ -104,6 +104,13 @@ export function chiudibile(r: RigaDaChiudere): Chiudibile | null {
     }
     if (r.bot === 'mike' && !r.eventId) {
         return { ok: false, motivo: 'partita della riga sconosciuta: Mike chiude per partita' };
+    }
+    if (isBotTennis(r.bot) && (!r.eventId || !r.marketId)) {
+        return {
+            ok: false,
+            motivo: 'partita o mercato della riga sconosciuti: il bot tennis chiude la sua partita '
+                + 'solo se la richiesta dice quale',
+        };
     }
     return { ok: true };
 }
@@ -146,10 +153,28 @@ export function cosaFaIlClic(bot: Bot): string {
     }
     if (bot === 'omega') return 'Omega chiude questa posizione (green-up dell\'abbinato), nella modalita\' della riga';
     if (bot === 'safe') return 'Safe chiude questa posizione (green-up dell\'abbinato), nella modalita\' della riga';
+    if (isBotTennis(bot)) {
+        return 'il bot chiude la sua posizione sulla PARTITA: annulla i suoi ordini vivi, chiude l\'abbinato '
+            + 'al prezzo di mercato e non rientra finche\' non lo riarmi; nella modalita\' della riga';
+    }
     return 'nessuna chiusura manuale per questo bot';
 }
 
-/** I tre percorsi. Sostituibili solo nei test (stesse firme delle vere). */
+/** Il "chiudi ora" di un bot tennis: la SUA partita, il SUO mercato, la
+ *  modalita' della riga. Il runner rifiuta una richiesta ambigua. */
+function invioTennis(r: RigaDaChiudere): Promise<number> {
+    return requestTennisChiudiBot({
+        bot: r.bot, event_id: String(r.eventId ?? ''), market_id: String(r.marketId ?? ''),
+        mode: r.modalita as 'paper' | 'live', trade_id: r.id,
+    });
+}
+
+async function letturaTennis(id: number): Promise<RichiestaLetta | null> {
+    const r = await fetchTennisOrderRequest(id);
+    return r ? { id, status: r.status, result: r.result } : null;
+}
+
+/** I percorsi, uno per bot. Sostituibili solo nei test (stesse firme delle vere). */
 export const INVIO: Record<BotConChiusura, (r: RigaDaChiudere) => Promise<number>> = {
     omega: (r) => requestManual('cashout', {
         trade_id: r.id, fraction: 1, bot: 'omega', event_id: r.eventId, mode: r.modalita,
@@ -166,6 +191,10 @@ export const INVIO: Record<BotConChiusura, (r: RigaDaChiudere) => Promise<number
         await stopScalperSessione(String(r.eventId), String(r.firma), r.modalita as 'paper' | 'live');
         return r.id;
     },
+    tennis_scalper: invioTennis,
+    tennis_pro: invioTennis,
+    tennis_flb: invioTennis,
+    tennis_swing: invioTennis,
 };
 
 /**
@@ -291,6 +320,12 @@ export const LETTURA: Record<BotConChiusura, (id: number) => Promise<RichiestaLe
         const r = righe.find((x) => Number(x.id) === id);
         return r ? { id: Number(r.id), status: String(r.status), result: (r.result ?? null) as Record<string, unknown> | null } : null;
     },
+    // i 4 bot tennis: la riga di `tennis_live_order_queue` per id
+    // (`get_tennis_live_order`): pending / processing / done / error
+    tennis_scalper: letturaTennis,
+    tennis_pro: letturaTennis,
+    tennis_flb: letturaTennis,
+    tennis_swing: letturaTennis,
 };
 
 /** Lo stato che la pagina mostra accanto al bottone. */

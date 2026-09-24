@@ -20,10 +20,15 @@ from flumine.utils import get_price, get_size, price_ticks_away, get_nearest_pri
 
 from ..trading.stato_mercato import AttesaRiapertura, guardia_flumine
 from .condotta_ordini import (
+    ESITO_GIA_IN_USCITA,
+    ESITO_NESSUNA_POSIZIONE,
+    ESITO_USCITA_AVVIATA,
+    MOTIVO_USCITA_MANUALE,
     FrenoRifiuti,
     dichiara_chiusura_mercato,
     ingresso_finito,
     ordini_vivi_su,
+    registra_esito_manuale,
     sbilancio_selezione,
     size_legale,
     stato_ordine,
@@ -93,7 +98,11 @@ class TennisSwingStrategy(BaseStrategy):
         self._hist: Dict[str, deque] = {}       # mid tick history
         self._prev_rsi: Dict[str, float] = {}
         self._tr: Dict[str, Dict[str, Any]] = {}  # trade attivo
-        self.stats = {"entries": 0, "wins": 0, "losses": 0, "pnl": 0.0}
+        self.stats = {"entries": 0, "wins": 0, "losses": 0, "manuali": 0, "pnl": 0.0}
+        # "CHIUDI ORA" (D3, 24/09): il runner alza la richiesta, il bot esce
+        # col SUO stato `closing` e non apre piu' niente (`condotta_ordini` 4).
+        self.uscita_manuale_chiesta: bool = False
+        self.uscita_manuale: Optional[Dict[str, Any]] = None
         self.settled_pnl: float = 0.0
         self._pnl_settled_oids: set = set()
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
@@ -491,6 +500,15 @@ class TennisSwingStrategy(BaseStrategy):
         if _pt is not None:
             self._now_ms = int(_pt)
         mid = mb.market_id
+        if self.uscita_manuale_chiesta:
+            # "CHIUDI ORA" dell'utente (D3, 24/09): si avvia l'uscita, poi la
+            # gestione del trade e' quella di sempre (stato `closing`). Nessun
+            # ingresso: il bot non rientra finche' l'utente non lo riarma.
+            self._avvia_uscita_manuale(market, mb, mid)
+            tr_m = self._tr.get(mid)
+            if tr_m:
+                self._manage_trade(market, mb, mid, tr_m)
+            return
         tr = self._tr.get(mid)
         if tr:  # la GESTIONE della posizione non è mai gateata (né da min_matched
             #     né dal favorito corrente): prima il denaro, poi i segnali.
@@ -542,6 +560,80 @@ class TennisSwingStrategy(BaseStrategy):
                          "t0": getattr(mb, "publish_time_epoch", None)}
         self.stats["entries"] += 1
         self._emit("entry", sel=sel, side=side, z=round(z,2), price=entry_price)
+
+    # ---------------------------------------------- "CHIUDI ORA" dell'utente
+    def _avvia_uscita_manuale(self, market: Any, mb: Any, mid: str) -> None:
+        """Esegue il "chiudi ora" UNA volta (D3, 24/09) con l'uscita dello SWING:
+        la stessa `_close` di target/stop/time, al TOUCH (`bl` per chiudere un
+        BACK, `bb` per un LAY: il prezzo che l'escalation usa gia'), calcolata
+        da `compute_green` sull'ABBINATO del blotter; poi stato `closing`, che
+        la gestione di sempre porta a posizione pari (`_puo_dimenticare`).
+
+        * trade gia' `closing` -> "gia' in uscita", NESSUN secondo ordine;
+        * nessun trade -> "nessuna posizione".
+        Book monco o blotter non letto: si riprova al book dopo."""
+        if self.uscita_manuale is not None:
+            return
+        tr = self._tr.get(mid)
+        if not tr:
+            registra_esito_manuale(self, ESITO_NESSUNA_POSIZIONE, market_id=str(mid))
+            return
+        if tr.get("closing"):
+            registra_esito_manuale(self, ESITO_GIA_IN_USCITA, market_id=str(mid),
+                                   sel=tr.get("sel"))
+            return
+        sel = int(tr.get("sel") or 0)
+        r = self._runner_by_sel(mb, sel)
+        ex = getattr(r, "ex", None) if r is not None else None
+        bb = get_price(ex.available_to_back, 0) if ex is not None else None
+        bl = get_price(ex.available_to_lay, 0) if ex is not None else None
+        if not bb or not bl:
+            return          # book monco: si riprova al prossimo book
+        side = tr["side"]
+        px = bl if side == "BACK" else bb       # TAKER al touch
+        pt = getattr(mb, "publish_time_epoch", None)
+        if self.dry_run:
+            # posizione VIRTUALE come in `_manage_trade` (paper senza ordini)
+            pe = float(tr.get("px") or 0.0)
+            if pe > 1.0:
+                if side == "BACK":
+                    nw, nl = self.stake * (pe - 1.0), -self.stake
+                else:
+                    nw, nl = -self.stake * (pe - 1.0), self.stake
+                g = compute_green(nw, nl, px)
+                locked = float(g[2]) if g is not None else min(nw, nl)
+                self.stats["pnl"] += locked
+                self.stats["wins" if locked > 0 else "losses"] += 1
+                self.stats["manuali"] += 1
+                self._emit("exit", sel=sel, kind=MOTIVO_USCITA_MANUALE,
+                           locked=round(locked, 3), dry=True)
+            self._tr.pop(mid, None)
+            registra_esito_manuale(self, ESITO_USCITA_AVVIATA, market_id=str(mid),
+                                   sel=sel, prezzo=px, dry=True)
+            return
+        b, _ba, l, _la = self._pos(market, sel)
+        if not self._blotter_letto:
+            return          # esposizione non letta: non si chiude al buio
+        locked, close_order = self._close(market, sel, px)
+        self.stats["pnl"] += locked
+        self.stats["wins" if locked > 0 else "losses"] += 1
+        self.stats["manuali"] += 1
+        tr["locked"] = float(locked)
+        self._emit("exit", sel=sel, kind=MOTIVO_USCITA_MANUALE, locked=round(locked, 3))
+        self._cancel(market, tr.get("order"))
+        tr["closing"] = True
+        tr["close_order"] = close_order
+        tr["close_wait"] = 0
+        tr["t_close"] = pt
+        registra_esito_manuale(self, ESITO_USCITA_AVVIATA, market_id=str(mid),
+                               sel=sel, prezzo=px, abbinato=round(b + l, 2))
+
+    def uscita_manuale_finita(self) -> bool:
+        """Finita per il BOT: esito scritto e nessun trade ancora in memoria (lo
+        swing dimentica un trade SOLO a selezione pari e senza ordini vivi)."""
+        if self.uscita_manuale is None:
+            return False
+        return not any(self._tr.values())
 
     def process_closed_market(self, market: Any, mb: Any) -> None:
         # DEDUP PER ORDINE (correzione 17/09, lo stesso fix del PRO e del FLB):
