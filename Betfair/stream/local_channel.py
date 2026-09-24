@@ -19,8 +19,10 @@ Protocollo (JSON, una riga per messaggio):
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -51,6 +53,51 @@ def topic_del_lettore(percorso: Any) -> Optional[frozenset]:
         return None
     coda = percorso[len(PREFISSO_LETTORE):].split("?", 1)[0]
     return frozenset(t.strip() for t in coda.split(",") if t.strip())
+# COMANDI (24/09, motore ordini F3): un client che si collega a
+# ``/comando/<attore>`` parla il protocollo «comando ordine» (busta
+# ``{"t": ..., "d": {...}}``) servito dal MOTORE ORDINI del runner
+# (``motore_ordini.py``). Come i lettori, NON riceve i topic in broadcast e NON
+# conta come desktop collegato: riceve solo i messaggi indirizzati al suo
+# attore (ack, eventi ``order`` con ``seq``). Il token si legge UNA volta
+# all'apertura dall'header ``X-Canale-Token`` e si confronta con
+# ``token_canale()``; il rifiuto per token lo decide il motore (ack con motivo).
+PREFISSO_COMANDO = "/comando/"
+HEADER_TOKEN = "X-Canale-Token"
+_MAX_COMANDI = 200  # stesso tetto anti-runaway della coda di /order
+
+
+def token_canale() -> Optional[str]:
+    """Il token dei comandi del canale (env ``LOCAL_CHANNEL_TOKEN``), o ``None``
+    se non configurato. ``None`` = NESSUN comando accettato (fail-closed): mai
+    "senza token passa tutto"."""
+    t = os.getenv("LOCAL_CHANNEL_TOKEN", "").strip()
+    return t or None
+
+
+def attore_del_comando(percorso: Any) -> Optional[str]:
+    """L'attore di un percorso ``/comando/<attore>``, o ``None`` se il percorso
+    non e' di comando. ``/comando/`` senza attore -> stringa vuota (rifiutata
+    dal motore, mai un attore "di default")."""
+    if not isinstance(percorso, str) or not percorso.startswith(PREFISSO_COMANDO):
+        return None
+    return percorso[len(PREFISSO_COMANDO):].split("?", 1)[0].strip("/").strip()
+
+
+def _token_valido(presentato: Any) -> bool:
+    atteso = token_canale()
+    if not atteso or not isinstance(presentato, str) or not presentato:
+        return False
+    return hmac.compare_digest(presentato.encode("utf-8"), atteso.encode("utf-8"))
+
+
+def _header_token(ws: Any) -> Optional[str]:
+    try:
+        headers = getattr(getattr(ws, "request", None), "headers", None)
+        return headers.get(HEADER_TOKEN) if headers is not None else None
+    except Exception:  # noqa: BLE001 - richiesta inattesa: nessun token
+        return None
+
+
 # invii non ancora completati oltre i quali si smette di pubblicare: con pochi
 # client su 127.0.0.1 non ci si arriva mai, e se ci si arriva vuol dire che il
 # consumatore e' fermo — mandargli altra roba non lo aiuta.
@@ -65,6 +112,20 @@ class LocalRequest:
     msg_id: Any
     method: str
     params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ComandoCanale:
+    """Messaggio di un socket ``/comando/<attore>`` drenato dal motore ordini.
+    ``tipo`` = ``t`` della busta (``comando`` | ``da_seq``); ``ricevuto_ms`` =
+    orologio da parete all'arrivo sul canale (serve al limite d'eta')."""
+
+    ws: Any
+    attore: str
+    token_ok: bool
+    tipo: str
+    d: Dict[str, Any] = field(default_factory=dict)
+    ricevuto_ms: int = 0
 
 
 class LocalChannel:
@@ -95,6 +156,13 @@ class LocalChannel:
         self._hello_extra: Dict[str, Any] = {}
         # F6 (18/09): chi va avvisato quando la pagina manda una SVEGLIA.
         self._su_sveglia: Optional[Any] = None
+        # F2/F3 (24/09): il motore ordini registra qui la sua sveglia: ogni
+        # comando (``/order`` di sempre o ``/comando/<attore>``) la chiama
+        # appena messo in coda, cosi' il thread ordini non dorme 1 s.
+        self._su_comando: Optional[Any] = None
+        self._comandi: "queue.Queue[ComandoCanale]" = queue.Queue(maxsize=_MAX_COMANDI)
+        # ws di comando -> (attore, token_ok). SOLO thread del loop.
+        self._comando_ws: Dict[Any, tuple] = {}
         # --- F1 (18/09), difetto D4: CONTROPRESSIONE PER CLIENT ---------------
         # Prima il tetto degli invii in volo era UNO SOLO per tutto il canale:
         # una Control Room aperta e lenta (browser in secondo piano, DevTools
@@ -151,8 +219,15 @@ class LocalChannel:
             self._started.set()
 
     async def _handler(self, ws: Any) -> None:
-        filtro = topic_del_lettore(getattr(getattr(ws, "request", None), "path", None))
+        percorso = getattr(getattr(ws, "request", None), "path", None)
+        filtro = topic_del_lettore(percorso)
+        attore = attore_del_comando(percorso)
         self._clients.add(ws)
+        if attore is not None:
+            # socket di COMANDO: nessun broadcast (filtro vuoto, come un lettore
+            # senza topic) e non conta come desktop; token letto una volta qui.
+            self._comando_ws[ws] = (attore, _token_valido(_header_token(ws)))
+            filtro = frozenset()
         if filtro is not None:
             self._lettori[ws] = filtro
         self._ricalcola_lettori()
@@ -168,6 +243,7 @@ class LocalChannel:
             self._clients.discard(ws)
             self._in_volo_ws.pop(ws, None)
             self._lettori.pop(ws, None)
+            self._comando_ws.pop(ws, None)
             self._ricalcola_lettori()
             self._n_clients = len(self._clients)
             self._ricalcola_pronti()
@@ -194,6 +270,9 @@ class LocalChannel:
 
     def _on_message(self, ws: Any, raw: Any) -> None:
         """Parse + enqueue (nel thread del loop). MAI eseguire ordini qui."""
+        if ws in self._comando_ws:
+            self._on_comando(ws, raw)
+            return
         try:
             msg = json.loads(raw)
             method = str(msg.get("m") or "")
@@ -231,11 +310,56 @@ class LocalChannel:
                 LocalRequest(ws=ws, msg_id=msg_id, method=method,
                              params=params if isinstance(params, dict) else {})
             )
+            self._sveglia_motore()
         except queue.Full:
             self._send(ws, {"id": msg.get("id"), "ok": False,
                             "e": "coda locale piena: comando NON accettato (riprova)"})
         except Exception as ex:  # noqa: BLE001 - messaggio malformato
             logger.debug("[local-ws] messaggio malformato: %s", str(ex)[:120])
+
+    def _sveglia_motore(self) -> None:
+        cb = self._su_comando
+        if cb is not None:
+            try:
+                cb()
+            except Exception:  # noqa: BLE001 - una sveglia non ferma il canale
+                pass
+
+    def _on_comando(self, ws: Any, raw: Any) -> None:
+        """Messaggio di un socket ``/comando/<attore>`` (thread del loop). MAI
+        eseguire qui: si mette in coda per il motore e lo si sveglia. Rifiuti
+        immediati SOLO quando il motore non puo' nemmeno vederlo (nessun motore,
+        coda piena, busta illeggibile): ack con ``seq`` None."""
+        attore, token_ok = self._comando_ws.get(ws, ("", False))
+        ricevuto_ms = int(time.time() * 1000)
+        ref = None
+        try:
+            msg = json.loads(raw)
+            if not isinstance(msg, dict):
+                raise ValueError("busta non e' un oggetto")
+            tipo = str(msg.get("t") or "")
+            d = msg.get("d") if isinstance(msg.get("d"), dict) else {}
+            ref = d.get("ref") if isinstance(d.get("ref"), str) else None
+        except Exception:  # noqa: BLE001 - messaggio malformato: rifiuto dichiarato
+            self._send(ws, _ack_canale(None, "parametri_invalidi: busta JSON illeggibile",
+                                       ricevuto_ms))
+            return
+        if tipo not in ("comando", "da_seq"):
+            self._send(ws, _ack_canale(ref, f"parametri_invalidi: tipo sconosciuto {tipo!r}",
+                                       ricevuto_ms))
+            return
+        if self._su_comando is None:
+            self._send(ws, _ack_canale(ref, "motore_non_attivo: nessun esecutore ordini "
+                                            "in questo processo", ricevuto_ms))
+            return
+        try:
+            self._comandi.put_nowait(ComandoCanale(ws=ws, attore=attore, token_ok=token_ok,
+                                                   tipo=tipo, d=d, ricevuto_ms=ricevuto_ms))
+        except queue.Full:
+            self._send(ws, _ack_canale(ref, "coda_piena: comando NON accettato",
+                                       ricevuto_ms))
+            return
+        self._sveglia_motore()
 
     def _send(self, ws: Any, payload: Dict[str, Any]) -> None:
         """Send fire-and-forget dal thread del loop."""
@@ -275,6 +399,56 @@ class LocalChannel:
 
     def set_hello(self, **extra: Any) -> None:
         self._hello_extra.update(extra)
+
+    def set_su_comando(self, cb: Optional[Any]) -> None:
+        """F2 (24/09): registra la sveglia del MOTORE ORDINI, chiamata (dal thread
+        del loop) a ogni comando messo in coda. ``None`` = nessun motore: i
+        comandi ``/comando/`` vengono rifiutati subito, ``/order`` resta in coda
+        per il worker di sempre."""
+        self._su_comando = cb
+
+    def pop_comandi(self, max_n: int = 50) -> "list[ComandoCanale]":
+        """Drena fino a max_n messaggi ``/comando/`` (thread del motore)."""
+        out: list = []
+        for _ in range(max_n):
+            try:
+                out.append(self._comandi.get_nowait())
+            except queue.Empty:
+                break
+        return out
+
+    def invia(self, ws: Any, payload: Dict[str, Any]) -> None:
+        """Invio MIRATO a un socket (thread-safe). MAI solleva."""
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            text = json.dumps(payload, default=str)
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            loop.call_soon_threadsafe(lambda: loop.create_task(self._safe_send(ws, text)))
+        except RuntimeError:
+            pass
+
+    def invia_attore(self, attore: str, payload: Dict[str, Any]) -> None:
+        """Invio a TUTTI i socket di comando di un attore (thread-safe)."""
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            text = json.dumps(payload, default=str)
+        except Exception:  # noqa: BLE001
+            return
+
+        def _manda() -> None:
+            for w, (att, _tok) in list(self._comando_ws.items()):
+                if att == attore:
+                    loop.create_task(self._safe_send(w, text))
+        try:
+            loop.call_soon_threadsafe(_manda)
+        except RuntimeError:
+            pass
 
     def set_sveglia(self, cb: Optional[Any]) -> None:
         """F6: registra chi va avvisato all'arrivo di ``{"m": "sveglia"}``.
@@ -372,6 +546,14 @@ class LocalChannel:
             loop.call_soon_threadsafe(lambda: loop.create_task(self._safe_send(req.ws, text)))
         except RuntimeError:
             pass
+
+
+def _ack_canale(ref: Any, motivo: str, ricevuto_ms: int) -> Dict[str, Any]:
+    """Ack di RIFIUTO emesso dal canale stesso (motore assente, coda piena,
+    busta illeggibile): stessa forma dell'ack del motore, ``seq`` None perche'
+    la numerazione per attore e' del motore."""
+    return {"t": "ack", "d": {"ref": ref, "seq": None, "accettato": False,
+                              "motivo": motivo, "ricevuto_ms": ricevuto_ms}}
 
 
 # ---------------------------------------------------------------------------
