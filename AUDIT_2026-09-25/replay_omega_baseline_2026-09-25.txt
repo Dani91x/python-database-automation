@@ -1,0 +1,303 @@
+BOT: omega | spec: Betfair/omega/COSTITUZIONE_OMEGA.md | registrazioni: 1 in C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw
+controlli attivi: 52 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 49c9a30dbb38 (2 file)
+comando: python -m Betfair.stream.backtest.certifica omega 35760084 --scenari v4,v4-riavvio,proposta-approvata
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: v4, v4-riavvio, proposta-approvata
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35760084 [v4]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+      nota: scenario 'v4': IL MOTORE DI DEFAULT dal 17/09 sul percorso di produzione: SOLO Correct Score, due celle diverse in due momenti (1'-44' e 46'-85'), stake fisso 1,00 EUR, fascia di P [1 %, 2 %], margine k = 1,11, tetti 95/190/1.000/300. Il servizio chiama `omega_service._v3_select` e piazza con la catena di sempre (riserva, ordine, conferma, consapevolezza): quello che si misura qui e' quello che diventa un ordine. Il motore v2 NON opera
+      nota: modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)
+      nota: cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+      nota: attivita' del servizio: skip x4
+      nota: righe per stato: {}
+      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3
+      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+      nota: chiamate al mercato: list_today_football_events x444
+      nota: gambe aperte per fase: {}
+      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92
+      nota: V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0
+      nota: V3, perche' non entra: nessun_candidato x216
+      nota: V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2
+      nota: V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti — e' la distanza fra questa partita e un ingresso
+      nota: V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)
+      nota: V3, fonte dei lambda: pre_ko_odds x216
+      nota: V3: il motore di oggi (v2) NON ha operato in questo scenario — la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza).
+      motivo x2: nessun_candidato
+      motivo x1: no_live_state
+      motivo x1: market_suspended
+OK  35760084 [v4-riavvio]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+      nota: scenario 'v4-riavvio': V4 + riavvio a meta' partita con posizione aperta: lo stato si ritrova dal DB, non dalla RAM (difetto 19)
+      nota: modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)
+      nota: cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri
+      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+      nota: attivita' del servizio: 
+      nota: righe per stato: {}
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3
+      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+      nota: chiamate al mercato: list_today_football_events x438
+      nota: scenario riavvio: nessuna posizione aperta da ritrovare, il riavvio non e' mai scattato
+      nota: gambe aperte per fase: {}
+      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92
+      nota: V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0
+      nota: V3, perche' non entra: nessun_candidato x216
+      nota: V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2
+      nota: V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti — e' la distanza fra questa partita e un ingresso
+      nota: V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)
+      nota: V3, fonte dei lambda: pre_ko_odds x216
+      nota: V3: il motore di oggi (v2) NON ha operato in questo scenario — la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza).
+OK  35760084 [proposta-approvata]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+      nota: scenario 'proposta-approvata': LE USCITE SONO PROPOSTE: col green-up automatico spento il bot non chiude piu' da solo — scrive una proposta coi numeri, e il banco la FIRMA al giro dopo come fa il trader dalla Control Room (G1/G2/G3/G4)
+      nota: modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)
+      nota: cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri
+      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+      nota: attivita' del servizio: 
+      nota: righe per stato: {}
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3
+      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+      nota: chiamate al mercato: list_today_football_events x438
+      nota: gambe aperte per fase: {}
+      nota: gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92
+      nota: V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0
+      nota: V3, perche' non entra: nessun_candidato x216
+      nota: V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2
+      nota: V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti — e' la distanza fra questa partita e un ingresso
+      nota: V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)
+      nota: V3, fonte dei lambda: pre_ko_odds x216
+      nota: V3: il motore di oggi (v2) NON ha operato in questo scenario — la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza).
+      nota: scenario proposta-approvata: controlli sollecitati {'G1': 438, 'G2': 0, 'G3': 0, 'G4': 0} — nessuna proposta e' stata scritta su questa registrazione (o il bot non ha mai aperto, o chiudere non ha mai battuto tenere): il caso non e' capitato, e G2/G3/G4 restano «non lo so»
+
+ESITO: 3 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+  ?? A1  x0       una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+  ?? A2  x0       mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_m
+  ?? A3  x0       P del modello entro `model_p_max_pct` e SOTTO la probabilita' impl
+  ?? A4  x0       quota nella banda [price_min, price_max] e liquidita' almeno pari 
+     A5  x648     la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+  ?? A6  x0       veto HT->FT: col punteggio ancora quello del 45' la P usata e' il 
+  ?? A7  x0       solo scoreline numeriche: gli aggregati restano fuori se `include_
+  ?? B1  x0       target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+     B2  x1314    la barra della giornata e' coerente: target partita = 2 x target g
+     B4  x6       feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+  ?? B3  x0       obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA ape
+  ?? C1  x0       `max_liability_per_match`: la liability della gamba non lo supera 
+  ?? C2  x0       `max_open_liability`: non si apre oltre il capitale impegnato amme
+  ?? C3  x0       `daily_loss_cap`: sotto il cap si smette di APRIRE (le uscite rest
+  ?? C4  x0       a bot FERMO nessuna apertura, ma settlement, green-up, riconciliaz
+  ?? D1  x0       distanza maggiore di `greenup_trigger_distance`: nessuna valutazio
+  ?? D2  x0       MAI chiudere sotto l'EV del tenere: si esce solo se il bloccato va
+  ?? D3  x0       in profitto (bloccato >= 0) si esce sempre e subito, a qualunque m
+  ?? D4  x0       modello cieco (P non stimabile) e chiusura in perdita: si TIENE, m
+  ?? D5  x0       il tetto di fine gara non alza la P oltre `greenup_market_floor_ma
+  ?? D6  x0       mai un secondo invio con una chiusura ancora PENDING (§12)
+  ?? E1  x0       MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+  ?? E2  x0       una lay non si SOSTITUISCE con cancel + place nello stesso giro: f
+  ?? E3  x0       le operazioni MANUALI dell'utente non entrano nei numeri con cui i
+  ?? E4  x0       dopo il CASH-OUT GLOBALE dell'utente sulla partita il bot lo capis
+  ?? E5  x0       una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Be
+  ?? J1  x0       `res.ok`: un place NON riuscito non diventa mai una posizione aper
+  ?? J2  x0       `avg_price_matched`: il prezzo confermato e' quello ABBINATO, non 
+  ?? J3  x0       il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+  ?? J4  x0       `closes_trade_id` sta nella COLONNA della riga di chiusura, non so
+     J5  x1314    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+  ?? J6  x0       parziale: abbinato sotto il chiesto -> attivita' `place_parziale` 
+  ?? J7  x0       un annullo si RILEGGE da Betfair prima di qualunque stato terminal
+  ?? F1  x0       settlement: la commissione si applica UNA volta sola, sul netto vi
+  ?? F2  x0       una riga a esito IGNOTO non viene mai data per non piazzata: resta
+     A8  x648     V3: su ogni partita seguita o c'e' la gamba, o c'e' un motivo DICH
+  ?? A9  x0       V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper come
+  ?? A10 x0       V3: margine k — `P_nostra * k <= p_implicita`, con k misurato per 
+  ?? A11 x0       V3: mai il risultato CORRENTE ne' uno raggiungibile senza margine 
+  ?? A12 x0       V3: dove il dato storico parla (n >= `v3_empirical_min_n`) la sua 
+  ?? C5  x0       V3: nessuna gamba oltre `v3_max_liability_per_leg` (progetto V3 §4
+     G1  x1314    V3: NESSUNA chiusura automatica — l'uscita e' una proposta che app
+  ?? G2  x0       V3: la proposta viva porta i numeri della decisione e si AGGIORNA 
+  ?? G3  x0       una proposta APPROVATA dall'utente viene ESEGUITA dalla coda manua
+  ?? G4  x0       IN PERDITA il bot PROPONE (motivo `protezione`/`cap`/`rischio`) e 
+  ?? K1  x0       cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+  ?? K2  x0       una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+  ?? K3  x0       il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+  ?? K4  x0       ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+  ?? K5  x0       una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+  ?? K6  x0       il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+  ?? K7  x0       il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+  -- controlli del banco comune, scenari del modello montato (proposta-approvata):
+  ?? PM1 x0       mai un ordine da una proposta NON approvata: ogni riga strategy='m
+  ?? PM2 x0       mai due proposte VIVE identiche (indice unico uq_safe_requests_pro
+  ?? PM3 x0       prezzo al clic rispettato. D7 (25/09): una proposta con la BANDA d
+  ?? PM4 x0       proposta scaduta, decaduta o RIFIUTATA = nessun ordine; un clic su
+  ?? PM5 x0       parita' paper/live delle proposte: la modalita' della proposta e' 
+  ?? PM7 x0       un PIAZZA con clic fresco su una proposta viva non si perde per l'
+
+?? MAI SOLLECITATI: 52 controlli su 52. Su questi il referto NON dice «sano», dice «non lo so»:
+     A1: una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: due gambe sempre, il 10/09 la 2T non parti' mai)
+     A2: mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_min_goal_distance` gol (§11: il bug del v1, -93,87 EUR il 09/09)
+     A3: P del modello entro `model_p_max_pct` e SOTTO la probabilita' implicita del mercato (§11)
+     A4: quota nella banda [price_min, price_max] e liquidita' almeno pari alla size che serve (§3.1-3.2)
+     A6: veto HT->FT: col punteggio ancora quello del 45' la P usata e' il MASSIMO fra modello e dati storici (§14.2)
+     A7: solo scoreline numeriche: gli aggregati restano fuori se `include_aggregate` e' falso (§3.3)
+     B1: target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+     B3: obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA apertura (§2)
+     C1: `max_liability_per_match`: la liability della gamba non lo supera mai (§2, clamp del sizing)
+     C2: `max_open_liability`: non si apre oltre il capitale impegnato ammesso, contando le perdite gia' bloccate (§12, review H1)
+     C3: `daily_loss_cap`: sotto il cap si smette di APRIRE (le uscite restano, §12)
+     C4: a bot FERMO nessuna apertura, ma settlement, green-up, riconciliazione e missioni continuano a girare (§12, I3)
+     D1: distanza maggiore di `greenup_trigger_distance`: nessuna valutazione di uscita (§19.4)
+     D2: MAI chiudere sotto l'EV del tenere: si esce solo se il bloccato vale almeno EV(tengo) - margine - premio (§18.1, §19.2)
+     D3: in profitto (bloccato >= 0) si esce sempre e subito, a qualunque minuto (§19.4)
+     D4: modello cieco (P non stimabile) e chiusura in perdita: si TIENE, mai cristallizzare su un dato che non c'e' (§19.4)
+     D5: il tetto di fine gara non alza la P oltre `greenup_market_floor_max_ratio` volte il modello: oltre, la quota e' rotta, non informazione (§12, trade 84)
+     D6: mai un secondo invio con una chiusura ancora PENDING (§12)
+     E1: MAI due lay vive o in volo sullo stesso mercato e selezione: se si abbinano entrambe la posizione e' scoperta (regola di piattaforma, ordine dell'utente 16/09)
+     E2: una lay non si SOSTITUISCE con cancel + place nello stesso giro: fra l'annullo e il nuovo ordine la vecchia puo' abbinarsi (regola di piattaforma, 16/09)
+     E3: le operazioni MANUALI dell'utente non entrano nei numeri con cui il bot decide, e il bot non decide sulle righe manuali (ordine dell'utente 16/09 h18)
+     E4: dopo il CASH-OUT GLOBALE dell'utente sulla partita il bot lo capisce e NON FA PIU' NIENTE su quella partita (ordine dell'utente 16/09 h18)
+     E5: una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Betfair) il bot la VEDE, e da li' in poi non gestisce piu' una posizione che non esiste (ordine dell'utente 16/09 sera)
+     J1: `res.ok`: un place NON riuscito non diventa mai una posizione aperta (difetto 2 del 15/09)
+     J2: `avg_price_matched`: il prezzo confermato e' quello ABBINATO, non quello chiesto (difetto 3 del 15/09)
+     J3: il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`, §16 review C1) e non si ripete
+     J4: `closes_trade_id` sta nella COLONNA della riga di chiusura, non solo nel meta (difetto 5 del 15/09)
+     J6: parziale: abbinato sotto il chiesto -> attivita' `place_parziale` col residuo (C.10/C.12a)
+     J7: un annullo si RILEGGE da Betfair prima di qualunque stato terminale (C.12a, `_ordine_ancora_vivo`)
+     F1: settlement: la commissione si applica UNA volta sola, sul netto vincente (§6; doppia commissione corretta l'11/09)
+     F2: una riga a esito IGNOTO non viene mai data per non piazzata: resta in riconciliazione (§I3, difetto 4 del 15/09)
+     A9: V3: il lay e' ESATTAMENTE `v3_stake_eur` (1,00 EUR), in paper come in live (ordine dell'utente 16/09)
+     A10: V3: margine k — `P_nostra * k <= p_implicita`, con k misurato per secchio (K_MISURATO_2026-09-16.md; estende A3)
+     A11: V3: mai il risultato CORRENTE ne' uno raggiungibile senza margine (progetto V3 §5.2; estende A2)
+     A12: V3: dove il dato storico parla (n >= `v3_empirical_min_n`) la sua P e' OBBLIGATORIA — P_nostra = max(modello, storico)
+     C5: V3: nessuna gamba oltre `v3_max_liability_per_leg` (progetto V3 §4.5)
+     G2: V3: la proposta viva porta i numeri della decisione e si AGGIORNA senza perdere l'istante della decisione
+     G3: una proposta APPROVATA dall'utente viene ESEGUITA dalla coda manuale entro pochi giri, e NON marca la partita «chiusa dall'utente» (reperti O-1 e O-3, 17/09)
+     G4: IN PERDITA il bot PROPONE (motivo `protezione`/`cap`/`rischio`) e non chiude mai da solo: la riga resta 'proposed' finche' non la firma una persona (ordine dell'utente 17/09)
+     K1: cio' che il bot CREDE di una gamba coincide con cio' che il MERCATO dice del suo ordine (abbinato e prezzo medio)
+     K2: una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (difetto 2 del 15/09: `res.ok` mai letto)
+     K3: il riferimento con cui il bot ha piazzato si RILEGGE con la stessa grafia (difetto 1 del 15/09: `customerOrderRef` vs `customer_order_ref`)
+     K4: ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (difetto 5 del 15/09: `closes_trade_id` nella COLONNA, non solo nel meta)
+     K5: una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a mercato (nessuna posizione fantasma)
+     K6: il RESIDUO non abbinato e' dichiarato: una riga aperta con meno del chiesto lo dice (C.10/C.12a)
+     K7: il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sulla COLONNA quando il meta ha GIA' il numero giusto (la scrittura non e' passata da X.aggiorna_trade)
+     PM1: mai un ordine da una proposta NON approvata: ogni riga strategy='model' (o con meta.opp_key) nasce da un PIAZZA del trader, mai origin='auto' (ordine utente 17-18/09, anche con auto_trade_* accesi)
+     PM2: mai due proposte VIVE identiche (indice unico uq_safe_requests_proposta_opp_viva) e mai una scrittura di proposta respinta dal DB
+     PM3: prezzo al clic rispettato. D7 (25/09): una proposta con la BANDA della strategia (criteri + p_model) parte A MERCATO (riga chiesta al prezzo di mercato all'esecuzione, meta.esecuzione_al_clic) e SOLO dentro la banda; fuori banda -> rifiuto 'fuori_banda_strategia', mai ordine; mai rifiutata in banda. Senza banda (e combo): l'ordine parte AL prezzo visto e solo se il mercato e' entro la tolleranza (SLIPPAGE_PCT_DEFAULT o quella della scheda); oltre -> rifiuto dichiarato, mai ordine
+     PM4: proposta scaduta, decaduta o RIFIUTATA = nessun ordine; un clic su una scheda non piu' viva non cambia niente; RIFIUTA tiene (nessuna riproposta della stessa chiave)
+     PM5: parita' paper/live delle proposte: la modalita' della proposta e' quella SCRITTA (servizio LIVE + strategy_modes.model='live', altrimenti paper) e la riga nata dall'approvazione ha la modalita' della proposta
+     PM7: un PIAZZA con clic fresco su una proposta viva non si perde per l'eta' della PROPOSTA (mai 'richiesta_scaduta' su un'approvazione appena fatta)
+[
+ {
+  "event_id": "35760084 [v4]",
+  "tick": 483985,
+  "decisioni": 438,
+  "azioni": 0,
+  "stati": [
+   "running"
+  ],
+  "note": [
+   "scenario 'v4': IL MOTORE DI DEFAULT dal 17/09 sul percorso di produzione: SOLO Correct Score, due celle diverse in due momenti (1'-44' e 46'-85'), stake fisso 1,00 EUR, fascia di P [1 %, 2 %], margine k = 1,11, tetti 95/190/1.000/300. Il servizio chiama `omega_service._v3_select` e piazza con la catena di sempre (riserva, ordine, conferma, consapevolezza): quello che si misura qui e' quello che diventa un ordine. Il motore v2 NON opera",
+   "modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)",
+   "cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri",
+   "[NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella",
+   "ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0",
+   "attivita' del servizio: skip x4",
+   "righe per stato: {}",
+   "motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1",
+   "fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])",
+   "P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)",
+   "bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0",
+   "righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3",
+   "catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)",
+   "chiamate al mercato: list_today_football_events x444",
+   "gambe aperte per fase: {}",
+   "gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92",
+   "V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0",
+   "V3, perche' non entra: nessun_candidato x216",
+   "V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2",
+   "V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti \u2014 e' la distanza fra questa partita e un ingresso",
+   "V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)",
+   "V3, fonte dei lambda: pre_ko_odds x216",
+   "V3: il motore di oggi (v2) NON ha operato in questo scenario \u2014 la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza)."
+  ],
+  "violazioni": []
+ },
+ {
+  "event_id": "35760084 [v4-riavvio]",
+  "tick": 483985,
+  "decisioni": 438,
+  "azioni": 0,
+  "stati": [
+   "running"
+  ],
+  "note": [
+   "scenario 'v4-riavvio': V4 + riavvio a meta' partita con posizione aperta: lo stato si ritrova dal DB, non dalla RAM (difetto 19)",
+   "modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)",
+   "cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri",
+   "ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0",
+   "attivita' del servizio: ",
+   "righe per stato: {}",
+   "fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])",
+   "P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)",
+   "bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0",
+   "righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3",
+   "catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)",
+   "chiamate al mercato: list_today_football_events x438",
+   "scenario riavvio: nessuna posizione aperta da ritrovare, il riavvio non e' mai scattato",
+   "gambe aperte per fase: {}",
+   "gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92",
+   "V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0",
+   "V3, perche' non entra: nessun_candidato x216",
+   "V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2",
+   "V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti \u2014 e' la distanza fra questa partita e un ingresso",
+   "V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)",
+   "V3, fonte dei lambda: pre_ko_odds x216",
+   "V3: il motore di oggi (v2) NON ha operato in questo scenario \u2014 la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza)."
+  ],
+  "violazioni": []
+ },
+ {
+  "event_id": "35760084 [proposta-approvata]",
+  "tick": 483985,
+  "decisioni": 438,
+  "azioni": 0,
+  "stati": [
+   "running"
+  ],
+  "note": [
+   "scenario 'proposta-approvata': LE USCITE SONO PROPOSTE: col green-up automatico spento il bot non chiude piu' da solo \u2014 scrive una proposta coi numeri, e il banco la FIRMA al giro dopo come fa il trader dalla Control Room (G1/G2/G3/G4)",
+   "modalita': live | status del control: running | cadenza: poll 20s, a vuoto 60.0s | giri di run_once: 438 (di cui 3 dopo il fischio, per il settlement)",
+   "cap di rischio: {'max_liability_per_match': 0.0, 'max_open_liability': 0.0, 'daily_loss_cap': 0.0, 'max_events': 0} | SPENTI (=0): ['max_liability_per_match', 'max_open_liability', 'daily_loss_cap', 'max_events']: i controlli C1/C2/C3 non hanno un caso da giudicare con questi parametri",
+   "ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0",
+   "attivita' del servizio: ",
+   "righe per stato: {}",
+   "fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])",
+   "P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)",
+   "bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0",
+   "righe di scan scritte dallo SCANNER VERO: 431 | letture del feed di Omega: 353 | giri senza riga nel feed: 3",
+   "catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)",
+   "chiamate al mercato: list_today_football_events x438",
+   "gambe aperte per fase: {}",
+   "gambe NON aperte, per motivo: ht_cs:nessun_candidato x124 | ft_cs:nessun_candidato x92",
+   "V3 (PERCORSO DI PRODUZIONE): 216 occasioni di selezione osservate | gambe scelte da V3: 0",
+   "V3, perche' non entra: nessun_candidato x216",
+   "V3, scarti dei singoli runner: senza_lay x1100 | troppo_vicino_al_punteggio x148 | p_impl_sotto_fascia x18 | p_impl_oltre_fascia x17 | margine insufficiente x8 | liquidita_insufficiente x3 | irraggiungibile x2",
+   "V3, QUANTO MANCAVA: su 8 selezioni scartate per margine, il MIGLIORE offerto dal mercato era 0.65x (mediana 0.64x) contro i 1.11x richiesti \u2014 e' la distanza fra questa partita e un ingresso",
+   "V3: nessuna gamba aperta su questa partita (e' un verdetto sulla partita, non un guasto)",
+   "V3, fonte dei lambda: pre_ko_odds x216",
+   "V3: il motore di oggi (v2) NON ha operato in questo scenario \u2014 la gamba la sceglie, la dimensiona e la piazza V3 lungo la catena di produzione (riserva -> ordine -> conferma -> consapevolezza).",
+   "scenario proposta-approvata: controlli sollecitati {'G1': 438, 'G2': 0, 'G3': 0, 'G4': 0} \u2014 nessuna proposta e' stata scritta su questa registrazione (o il bot non ha mai aperto, o chiudere non ha mai battuto tenere): il caso non e' capitato, e G2/G3/G4 restano \u00abnon lo so\u00bb"
+  ],
+  "violazioni": []
+ }
+]

@@ -1043,16 +1043,31 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
       5. mercato OVER/UNDER live (``payload.ou``, solo con ``state`` e
          ``lambda_live_fallback``): gol residui attesi dal prezzo del mercato.
     None = nessun modello possibile (si salta: mai a occhi chiusi). Ogni λ
-    trovato (non da fixture) viene persistito sull'evento, best-effort."""
+    trovato (non da fixture) viene persistito sull'evento, best-effort.
+
+    O1 (25/09, PREPARATO, DEFAULT SPENTO) -- ``params['lambda_quote_prima']``:
+    a True il gradino 3 (quote 1X2 pre-KO) passa DAVANTI al gradino 1; la
+    fixture (e dopo di lei i lambda persistiti) si usa solo se le quote
+    mancano. Il resto della catena e' identico. Con le quote in testa la
+    ``league_id`` e' quella dell'evento (come oggi nel ramo pre-KO) e la fonte
+    dichiarata e' ``pre_ko_odds``. A interruttore acceso anche un lambda
+    ``fixture`` in cache scade col TTL, cosi' le quote congelate DOPO la prima
+    valutazione possono sostituirlo. Misura: AUDIT_2026-09-25/
+    MISURA_PUNTO8_2026-09-25.md sez. 1 (log-loss CS FT -0,0231 [-0,0359;
+    -0,0103] su 1.995 partite). A False (default) la catena e' quella di sempre."""
+    quote_prima = bool((params or {}).get("lambda_quote_prima", False))
     cached = _LAMBDA_CACHE.get(event_id)
     if cached is not None:
         val, ts = cached if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[0], tuple) else (cached, None)
-        if val[3] == "fixture" or ts is None or (time.time() - ts) < LAMBDA_CACHE_TTL_S:
+        # O1: a interruttore acceso anche la fixture scade col TTL (quote arrivate dopo)
+        if (val[3] == "fixture" and not quote_prima) or ts is None \
+                or (time.time() - ts) < LAMBDA_CACHE_TTL_S:
             return val
     league_id = None
     out = None
     row = None
     stale: Optional[tuple] = None      # M-12: ripiego persistito SCADUTO (ultima risorsa)
+    persist = False
     try:
         get_event = getattr(db, "get_event", None)
         row = get_event(event_id) if callable(get_event) else None
@@ -1060,6 +1075,13 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
         logger.debug("[omega] get_event KO %s: %s", event_id, str(ex)[:100])
     if row:
         league_id = row.get("league_id")
+    if quote_prima and isinstance(payload, dict):
+        # O1: le quote pre-KO devigate PRIMA della fixture (solo a interruttore acceso)
+        lam_q = M.lambdas_from_pre_ko(payload.get("pre_ko"))
+        if lam_q:
+            out = (lam_q[0], lam_q[1], league_id, "pre_ko_odds")
+            persist = True
+    if row and out is None:
         fid = row.get("fixture_id")
         if fid is not None:
             try:
@@ -1080,8 +1102,7 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
                     stale = (saved[0], saved[1], league_id, saved[2])
                 else:
                     out = (saved[0], saved[1], league_id, saved[2])
-    persist = False
-    if out is None and isinstance(payload, dict):
+    if out is None and not quote_prima and isinstance(payload, dict):
         lam2 = M.lambdas_from_pre_ko(payload.get("pre_ko"))
         if lam2:
             out = (lam2[0], lam2[1], league_id, "pre_ko_odds")
@@ -1486,8 +1507,14 @@ def _v3_select(*, db, event_id: str, payload: Optional[dict], snapshot,
         p_empirica=_v3_p_empirica(db, league_id=league_id, state=state, half=False,
                                   payload=payload, params=params,
                                   n_min=int(cfg["empirical_min_n"])),
-        p_mercato=V3.p_mercato_devigata(runners))
+        p_mercato=V3.p_mercato_devigata(runners),
+        # O5 (25/09): i rossi del feed (`LiveState.red_home/red_away`); il
+        # modello li usa SOLO con `model_red_cards` acceso
+        rossi=(int(getattr(state, "red_home", 0) or 0),
+               int(getattr(state, "red_away", 0) or 0)))
     scarti = tuple((n, p) for n, p in (scarti or ()) if n)
+    mult_rossi = E.moltiplicatori_rossi_v3(params, getattr(state, "red_home", 0),
+                                           getattr(state, "red_away", 0))
     audit: dict[str, Any] = {
         "motore": "v3",
         "modello": cfg["modello"],
@@ -1503,6 +1530,11 @@ def _v3_select(*, db, event_id: str, payload: Optional[dict], snapshot,
         "k_minimo": float(cfg["k_minimo"]),
         "scartati": [f"{n}: {p}" for n, p in scarti[:12]],
     }
+    if tuple(mult_rossi) != tuple(V3.MULT_NEUTRO):
+        # O5: la chiave c'e' SOLO quando i rossi hanno cambiato la griglia
+        # (interruttore spento = audit identico a prima)
+        audit["mult_rossi"] = [round(float(mult_rossi[0]), 4),
+                               round(float(mult_rossi[1]), 4)]
     if cand is None:
         return None, audit, "nessun_candidato"
     audit.update({

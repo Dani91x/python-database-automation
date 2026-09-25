@@ -104,6 +104,8 @@ RECUPERO = {PERIODO_HT: 2.0, PERIODO_FT: 4.0}
 MAX_GOL_RESIDUI = {PERIODO_HT: 6, PERIODO_FT: 10}
 STAKE_STANDARD = 1.0        # ordine dell'utente: lay 1,00 EUR
 K_MINIMO = 2.0              # §3.3: il margine non scende mai sotto 2
+# O5 (25/09): moltiplicatori NEUTRI dei rossi (casa, trasferta): griglia di sempre
+MULT_NEUTRO: Tuple[float, float] = (1.0, 1.0)
 
 _SCORELINE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 _ANY_RE = re.compile(r"any\s*(other|unquoted)", re.IGNORECASE)
@@ -265,14 +267,22 @@ _GH5 = ((0.0, 0.9453087204829419), (0.9585724646138185, 0.3936193231522412),
 
 def intensita_residue(*, minuto: float, punteggio: Tuple[int, int], periodo: str,
                       p: Parametri,
-                      lambdas: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
+                      lambdas: Optional[Tuple[float, float]] = None,
+                      mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> Tuple[float, float]:
     """(lambda residuo casa, lambda residuo ospite) fino a fine periodo.
 
     `lambdas` = i lambda PRE-PARTITA a 90' della catena di produzione
     (`omega_service._prematch_lambdas`). Senza, si usa il livello medio dei
     parametri: e' quello che serve al banco, dove i lambda per partita non
-    esistono perche' i conteggi sono aggregati su 1,4 M di partite."""
+    esistono perche' i conteggi sono aggregati su 1,4 M di partite.
+
+    `mult_rossi` (O5, 25/09) = (casa, trasferta): moltiplicatori dell'intensita'
+    RESIDUA per i cartellini rossi (coefficienti GLOBALI di
+    `inplay_intensity_by_league.json`, li calcola il chiamante con
+    `omega_engine.moltiplicatori_rossi_v3`: questo modulo resta puro). Il
+    neutro (1, 1) da' la griglia di sempre al bit."""
     sh, sa = int(punteggio[0]), int(punteggio[1])
+    mh, ma = float(mult_rossi[0]), float(mult_rossi[1])
     consumata, residua = esposizione(minuto, periodo, p)
     if lambdas is not None:
         lh0, la0 = max(1e-6, float(lambdas[0])), max(1e-6, float(lambdas[1]))
@@ -294,25 +304,29 @@ def intensita_residue(*, minuto: float, punteggio: Tuple[int, int], periodo: str
         bh = a / lh0 + consumata
         ba = a / la0 + consumata
         # media posteriore x esposizione residua x effetto squilibrio
-        lh = (a + sh) / max(1e-9, bh) * residua * sq_h
-        la = (a + sa) / max(1e-9, ba) * residua * sq_a
+        lh = (a + sh) / max(1e-9, bh) * residua * sq_h * mh
+        la = (a + sa) / max(1e-9, ba) * residua * sq_a * ma
         return max(1e-9, lh), max(1e-9, la)
 
-    return (max(1e-9, lh0 * residua * sq_h * liv),
-            max(1e-9, la0 * residua * sq_a * liv))
+    return (max(1e-9, lh0 * residua * sq_h * liv * mh),
+            max(1e-9, la0 * residua * sq_a * liv * ma))
 
 
 def griglia_residua(*, minuto: float, punteggio: Tuple[int, int], periodo: str,
                     p: Parametri,
                     lambdas: Optional[Tuple[float, float]] = None,
-                    max_gol: Optional[int] = None) -> Dict[Tuple[int, int], float]:
+                    max_gol: Optional[int] = None,
+                    mult_rossi: Tuple[float, float] = MULT_NEUTRO
+                    ) -> Dict[Tuple[int, int], float]:
     """P(gol residui = (dh, da)) fino a fine periodo, normalizzata sulla griglia.
 
-    PURA e deterministica: stessi ingressi, stessa uscita, sempre."""
+    PURA e deterministica: stessi ingressi, stessa uscita, sempre.
+    `mult_rossi`: vedi `intensita_residue` (O5)."""
     sh, sa = int(punteggio[0]), int(punteggio[1])
     mg = int(max_gol if max_gol is not None else MAX_GOL_RESIDUI[periodo])
+    mh, ma = float(mult_rossi[0]), float(mult_rossi[1])
     lh, la = intensita_residue(minuto=minuto, punteggio=punteggio, periodo=periodo,
-                               p=p, lambdas=lambdas)
+                               p=p, lambdas=lambdas, mult_rossi=(mh, ma))
     applica_tau = (p.modello in ("dixon_coles", "dixon_robinson", "gamma_poisson", "fusione")
                    and (p.dc_sempre or (sh == 0 and sa == 0)))
 
@@ -329,8 +343,11 @@ def griglia_residua(*, minuto: float, punteggio: Tuple[int, int], periodo: str,
             tot = max(1e-6, float(p.gol_totali))
             lh0, la0 = tot * p.quota_casa, tot * (1.0 - p.quota_casa)
         d = sh - sa
-        rh = max(1e-12, residua * math.exp(-p.beta_squilibrio * d))
-        ra = max(1e-12, residua * math.exp(+p.beta_squilibrio * d))
+        # O5: moltiplicare l'INTENSITA' residua per m equivale a moltiplicare
+        # l'esposizione residua per m, cioe' beta -> beta/m (stessa matematica
+        # della misura `misura_punto8/o5_rossi.griglia_con_rossi`)
+        rh = max(1e-12, residua * math.exp(-p.beta_squilibrio * d)) * mh
+        ra = max(1e-12, residua * math.exp(+p.beta_squilibrio * d)) * ma
         # beta del posteriore riscalato sull'esposizione residua
         bh = (a / lh0 + consumata) / rh
         ba = (a / la0 + consumata) / ra
@@ -383,11 +400,13 @@ def griglia_residua(*, minuto: float, punteggio: Tuple[int, int], periodo: str,
 
 def griglia_finale(*, minuto: float, punteggio: Tuple[int, int], periodo: str,
                    p: Parametri, lambdas: Optional[Tuple[float, float]] = None,
-                   max_gol: Optional[int] = None) -> Dict[Tuple[int, int], float]:
+                   max_gol: Optional[int] = None,
+                   mult_rossi: Tuple[float, float] = MULT_NEUTRO
+                   ) -> Dict[Tuple[int, int], float]:
     """Come `griglia_residua`, ma indicizzata sul PUNTEGGIO DI FINE PERIODO."""
     sh, sa = int(punteggio[0]), int(punteggio[1])
     res = griglia_residua(minuto=minuto, punteggio=punteggio, periodo=periodo,
-                          p=p, lambdas=lambdas, max_gol=max_gol)
+                          p=p, lambdas=lambdas, max_gol=max_gol, mult_rossi=mult_rossi)
     return {(sh + h, sa + a): v for (h, a), v in res.items()}
 
 
@@ -470,7 +489,8 @@ def p_mercato_devigata(runners: Sequence[Any]):
 def probabilita_selezioni(*, periodo: str, minuto: float, punteggio: Tuple[int, int],
                           nomi: Sequence[str], p: Parametri,
                           lambdas: Optional[Tuple[float, float]] = None,
-                          max_gol: Optional[int] = None) -> Dict[str, float]:
+                          max_gol: Optional[int] = None,
+                          mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> Dict[str, float]:
     """P(la selezione si verifica a fine periodo | minuto, punteggio) per OGNI nome
     del mercato — scoreline esatte E aggregati.
 
@@ -478,7 +498,7 @@ def probabilita_selezioni(*, periodo: str, minuto: float, punteggio: Tuple[int, 
     celle della griglia che NON sono quotate e che vanno nella sua direzione. E' la
     coda vera del mercato, e il modello la sa gia' calcolare."""
     griglia = griglia_finale(minuto=minuto, punteggio=punteggio, periodo=periodo,
-                             p=p, lambdas=lambdas, max_gol=max_gol)
+                             p=p, lambdas=lambdas, max_gol=max_gol, mult_rossi=mult_rossi)
     if not griglia:
         return {}
     quotate = {sc for sc in (parse_scoreline(n) for n in nomi) if sc is not None}
@@ -827,7 +847,8 @@ def ev_di_tenere(posizione: Posizione, *, p_evento: float,
 
 def p_punteggio_invariato(*, da_minuto: float, a_minuto: float,
                           punteggio: Tuple[int, int], periodo: str, p: Parametri,
-                          lambdas: Optional[Tuple[float, float]] = None) -> float:
+                          lambdas: Optional[Tuple[float, float]] = None,
+                          mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> float:
     """P(nessun gol fra `da_minuto` e `a_minuto`), cioe' che il quadro regga.
 
     E' la probabilita' con cui va PESATO qualunque ragionamento del tipo «se
@@ -841,7 +862,7 @@ def p_punteggio_invariato(*, da_minuto: float, a_minuto: float,
     # intensita' residue misurate sull'intera coda del periodo, riscalate
     # sull'esposizione del solo intervallo [t0, t1]
     lh, la = intensita_residue(minuto=t0, punteggio=punteggio, periodo=periodo,
-                               p=p, lambdas=lambdas)
+                               p=p, lambdas=lambdas, mult_rossi=mult_rossi)
     _, residua_totale = esposizione(t0, periodo, p)
     if residua_totale <= 0:
         return 1.0
@@ -864,7 +885,8 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
                            punteggio: Tuple[int, int], p: Parametri,
                            lambdas: Optional[Tuple[float, float]] = None,
                            passo: int = 5, commissione: float = 0.05,
-                           p_evento_ora: Optional[float] = None
+                           p_evento_ora: Optional[float] = None,
+                           mult_rossi: Tuple[float, float] = MULT_NEUTRO
                            ) -> List[PuntoTraiettoria]:
     """La TRAIETTORIA attesa del profitto bloccabile da qui a fine periodo.
 
@@ -892,7 +914,7 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
     m = float(minuto)
     while m <= fine + 1e-9:
         griglia = griglia_finale(minuto=m, punteggio=punteggio, periodo=posizione.periodo,
-                                 p=p, lambdas=lambdas)
+                                 p=p, lambdas=lambdas, mult_rossi=mult_rossi)
         if sc is not None:
             pe = float(griglia.get(sc, 0.0))
         else:
@@ -908,7 +930,7 @@ def traiettoria_bloccabile(posizione: Posizione, *, minuto: float,
                 ev_ora = ev_di_tenere(posizione, p_evento=pe, commissione=commissione)
             p_inv = p_punteggio_invariato(da_minuto=minuto, a_minuto=m,
                                           punteggio=punteggio, periodo=posizione.periodo,
-                                          p=p, lambdas=lambdas)
+                                          p=p, lambdas=lambdas, mult_rossi=mult_rossi)
             fuori.append(PuntoTraiettoria(
                 minuto=m, p_evento=pe, back_equo=back_equo,
                 bloccabile_atteso=bloccabile, p_invariato=p_inv,
@@ -947,7 +969,8 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
                     commissione: float = 0.05,
                     margine_attesa: float = 0.02,
                     cap_scattato: Optional[str] = None,
-                    p_lose_max: float = 0.0) -> PropostaUscita:
+                    p_lose_max: float = 0.0,
+                    mult_rossi: Tuple[float, float] = MULT_NEUTRO) -> PropostaUscita:
     """Propone (o no) di chiudere la gamba, con il motivo scritto.
 
     La regola NON e' una soglia fissa: si confrontano tre numeri —
@@ -990,7 +1013,7 @@ def proposta_uscita(posizione: Posizione, *, minuto: float, punteggio: Tuple[int
     ev_h = ev_di_tenere(posizione, p_evento=p_evento, commissione=commissione)
     traj = traiettoria_bloccabile(posizione, minuto=minuto, punteggio=punteggio, p=p,
                                   lambdas=lambdas, commissione=commissione,
-                                  p_evento_ora=float(p_evento))
+                                  p_evento_ora=float(p_evento), mult_rossi=mult_rossi)
     futuri = [t for t in traj if t.minuto > minuto + 1e-9]
     # il valore dell'attesa e' PESATO con la probabilita' che il punteggio regga
     max_att = max((t.valore_attesa for t in futuri), default=float("-inf"))

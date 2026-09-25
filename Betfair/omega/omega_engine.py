@@ -1140,6 +1140,39 @@ def cap_di_gamba_v3(size: float, price: float, cap: float) -> float:
     return apply_liability_cap(size, price, cap)
 
 
+def moltiplicatori_rossi_v3(params: Optional[dict], red_home: Any,
+                            red_away: Any) -> tuple:
+    """O5 (25/09) - (casa, trasferta): moltiplicatori dell'intensita' RESIDUA del
+    modello V3 per i cartellini ROSSI del feed (`red_home`/`red_away`).
+
+    Interruttore `model_red_cards` SPENTO (default) -> (1.0, 1.0), cioe' la
+    griglia di sempre al bit, qualunque cosa porti il feed. Acceso -> i
+    coefficienti GLOBALI di `inplay_intensity_by_league.json` letti dalla
+    funzione di produzione `live_engine.red_card_multipliers(rh, ra, None)`:
+    MAI per lega (campione piccolo, rischio di overfitting: e' la variante
+    misurata in AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2).
+    Un solo punto di calcolo per l'ingresso (`seleziona_v3`) e per l'uscita
+    (`omega_proposte`): le due decisioni vedono la stessa P."""
+    from Betfair.omega import omega_config as C
+    from Betfair.omega import omega_v3 as V3
+
+    if not C.parametri_v3(params or {})["rossi"]:
+        return V3.MULT_NEUTRO
+
+    def _n(v: Any) -> int:
+        try:
+            return max(0, int(v or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    rh, ra = _n(red_home), _n(red_away)
+    if rh == 0 and ra == 0:
+        return V3.MULT_NEUTRO
+    from Betfair.stream.engine.live_engine import red_card_multipliers
+    mh, ma = red_card_multipliers(rh, ra, None)
+    return (float(mh), float(ma))
+
+
 def seleziona_v3(runners: list, *, periodo: str, minuto: float,
                  punteggio: tuple, params: dict,
                  lambdas: Optional[tuple] = None,
@@ -1148,7 +1181,8 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
                  p_empirica: Optional[Callable[[str], Optional[tuple]]] = None,
                  p_mercato: Optional[Callable[[str], Optional[float]]] = None,
                  finestra: Optional[tuple] = None,
-                 escludi: Optional[list] = None):
+                 escludi: Optional[list] = None,
+                 rossi: Optional[tuple] = None):
     """(candidato V3 per la gamba | None, motivi di scarto di ogni runner).
 
     `runners`: `ScoreRunner` (gli stessi del v2). `periodo`: 'ht' | 'ft'.
@@ -1177,9 +1211,13 @@ def seleziona_v3(runners: list, *, periodo: str, minuto: float,
         p = p.con(modello=cfg["modello"])
 
     nomi = [str(getattr(r, "name", "") or "") for r in runners]
+    # O5: `rossi` = (red_home, red_away) dal feed; interruttore spento -> neutro
+    mult = (moltiplicatori_rossi_v3(params, rossi[0], rossi[1]) if rossi
+            else V3.MULT_NEUTRO)
     probabilita = V3.probabilita_selezioni(periodo=periodo, minuto=float(minuto),
                                            punteggio=(int(punteggio[0]), int(punteggio[1])),
-                                           nomi=nomi, p=p, lambdas=lambdas)
+                                           nomi=nomi, p=p, lambdas=lambdas,
+                                           mult_rossi=mult)
     if not probabilita:
         return None, (("", "nessuna_probabilita_calcolabile"),)
     # FUSIONE COL MERCATO (candidato 6 del banco): il book sa cose che noi non

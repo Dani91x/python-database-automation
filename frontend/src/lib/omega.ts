@@ -230,6 +230,7 @@ export interface OmegaParams {
     lambda_market_grid: boolean;
     /** λ dal mercato Over/Under LIVE quando mancano fixture e quote pre-KO */
     lambda_live_fallback: boolean;
+    lambda_quote_prima: boolean;
     /** a P equivalente vince il risultato più economico da coprire subito */
     select_cost_aware: boolean;
     /** ampiezza della banda di P considerata "equivalente" (× la più bassa) */
@@ -310,6 +311,8 @@ export interface OmegaParams {
     v3_p_min_pct: number;
     /** fusione col mercato (pool logaritmico): 'auto' | 'off' */
     v3_fusione_mercato: string;
+    /** O5 (25/09): cartellini rossi del feed nel modello V3 (coefficienti GLOBALI), ingresso e uscita. Default SPENTO */
+    model_red_cards: boolean;
     /** proposte di uscita: P massima tollerata che il bancato esca (punti %). 0 = SPENTA */
     proposta_p_lose_max_pct: number;
     /** 24/09 — CHI esegue l'uscita calcolata dal bot: 'avvisa_e_proponi' (default,
@@ -942,6 +945,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     v3_p_max_pct: 2,
     v3_p_min_pct: 1,
     v3_fusione_mercato: 'auto',
+    model_red_cards: false,
     proposta_p_lose_max_pct: 0,
     uscite_protezione: 'avvisa_e_proponi',
     price_min: 20,
@@ -993,6 +997,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     model_empirical_max_minute: 60,
     lambda_market_grid: true,
     lambda_live_fallback: true,
+    lambda_quote_prima: false,
     select_cost_aware: true,
     select_p_band_ratio: 2,
     model_use_yellow_cards: true,
@@ -1069,6 +1074,7 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'model_use_yellow_cards', label: 'Usa i cartellini gialli del feed', type: 'boolean' },
             { key: 'lambda_market_grid', label: 'λ impliciti nell’intero mercato (CS + Over/Under)', type: 'boolean' },
             { key: 'lambda_live_fallback', label: 'λ dall’Over/Under LIVE se mancano fixture e quote pre-KO', type: 'boolean' },
+            { key: 'lambda_quote_prima', label: 'Lambda dalle quote 1X2 pre-KO PRIMA della fixture (O1)', type: 'boolean', hint: 'spento = catena di sempre (fixture prima); si accende solo dopo il replay del banco' },
             { key: 'select_cost_aware', label: 'A pari probabilità scegli il risultato più economico da coprire', type: 'boolean' },
             { key: 'select_p_band_ratio', label: 'Banda di probabilità equivalente (× la più bassa)', type: 'number', step: 0.5, min: 1, max: 10 },
             { key: 'select_k_se', label: 'Selezione conservativa: k × SE', type: 'number', step: 0.1, min: 0, max: 3, hint: '0 = solo il centro (raccomandato finché il banco non misura la SE)' },
@@ -1157,6 +1163,7 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
                 { value: 'auto', label: 'auto (fonde modello e mercato)' },
                 { value: 'off', label: 'off (solo modello)' },
             ] },
+            { key: 'model_red_cards', label: 'v3: cartellini rossi nel modello (O5)', type: 'boolean', hint: 'intensita residua per lato moltiplicata per i coefficienti GLOBALI dei rossi (mai per lega), in ingresso e in uscita; spento = modello di sempre; si accende solo dopo il replay del banco' },
             { key: 'v3_k_minimo', label: 'v3: margine minimo k', type: 'number', step: 0.01, min: 1, max: 20, hint: 'P nostra ≤ P implicita / k. Default 1,11 = il bias PRUDENTE misurato in gioco (M4M5M6 §2.3): alzarlo chiude gli ingressi, abbassarlo li apre sotto il bias dimostrato' },
             { key: 'v3_p_max_pct', label: 'v3: tetto della fascia (p implicita, punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'fa due cose: è il TETTO DELLA FASCIA sulla probabilità implicita al tocco (sopra il 2 % il bias misurato in gioco vale 0,71, cioè EV negativo) ed è anche il tetto duro sulla P del nostro modello' },
             { key: 'v3_p_min_pct', label: 'v3: pavimento della fascia (p implicita, punti %)', type: 'number', step: 0.1, min: 0, max: 50, hint: 'sotto l’ 1 % di probabilità implicita (quote lay sopra ~95) il bias in gioco non è misurato e la liability per unità di EV esplode: quelle celle si scartano' },

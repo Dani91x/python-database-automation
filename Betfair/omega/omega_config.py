@@ -98,6 +98,12 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # (scanner riavviato a partita in corso, lega senza fixture): True = mai
     # una gamba saltata per "no_model_lambdas" se il mercato a gol è in stream
     "lambda_live_fallback": (True, bool, None, None),
+    # O1 (25/09, PREPARATO, SPENTO): True = nella catena dei lambda pre-match le
+    # quote 1X2 pre-KO devigate passano PRIMA della fixture del DB; la fixture
+    # resta il ripiego se le quote mancano (`omega_service._prematch_lambdas`).
+    # Misura fuori campione: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 1.
+    # Si accende SOLO su ordine dell'utente, dopo il replay del banco.
+    "lambda_quote_prima": (False, bool, None, None),
     # §16 — incertezza sui λ (coefficiente di variazione della mistura lognormale:
     # 0 = Poisson puro; 0,30 ≈ coda binomiale negativa osservata sui dati)
     "model_lambda_cv": (0.30, float, 0.0, 1.0),
@@ -277,6 +283,14 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # fusione col mercato (pool logaritmico in logit, pesi misurati per fascia in
     # `tools/banco_fusione.py`): 'auto' = fonde | 'off' = solo modello
     "v3_fusione_mercato": ("auto", str, None, None),
+    # O5 (25/09, PREPARATO, SPENTO): True = i CARTELLINI ROSSI del feed entrano
+    # nel modello V3: intensita' residua per lato moltiplicata con i coefficienti
+    # GLOBALI (mai per lega) di `inplay_intensity_by_league.json`
+    # (`live_engine.red_card_multipliers(rh, ra, None)`), nell'ingresso E
+    # nell'uscita (`omega_engine.moltiplicatori_rossi_v3`). Misura fuori
+    # campione: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2. Si accende
+    # SOLO su ordine dell'utente, dopo il replay del banco.
+    "model_red_cards": (False, bool, None, None),
     # ---- LE PROPOSTE DI USCITA (17/09) ----
     # P MASSIMA TOLLERATA che il risultato bancato esca: oltre, il produttore
     # propone l'uscita col motivo `rischio` — non perche' sia un affare, ma per
@@ -423,5 +437,9 @@ def parametri_v3(params: dict[str, Any]) -> dict[str, Any]:
         "p_max": float(p.get("v3_p_max_pct", DEFAULTS["v3_p_max_pct"])) / 100.0,
         "p_min": float(p.get("v3_p_min_pct", DEFAULTS["v3_p_min_pct"])) / 100.0,
         "fusione": str(p.get("v3_fusione_mercato") or DEFAULTS["v3_fusione_mercato"]) == "auto",
+        # O5 (25/09): rossi nel modello, SPENTO per default
+        # (coercizione della whitelist: la stringa "false" resta spenta)
+        "rossi": bool(_coerce("model_red_cards",
+                              p.get("model_red_cards", DEFAULTS["model_red_cards"]))),
         "commissione": float(p.get("commission_pct", DEFAULTS["commission_pct"])) / 100.0,
     }

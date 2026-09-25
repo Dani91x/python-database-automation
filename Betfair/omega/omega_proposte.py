@@ -378,9 +378,15 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         return False
 
     periodo = "ht" if half else "ft"
+    # O5 (25/09): i rossi del feed, con lo STESSO calcolo dell'ingresso
+    # (`omega_engine.moltiplicatori_rossi_v3`), entrano sia nella P del bancato
+    # sia nella traiettoria dell'uscita: ingresso e uscita vedono la stessa P.
+    # Interruttore `model_red_cards` spento -> neutro, identico a prima.
+    mult_rossi = E.moltiplicatori_rossi_v3(params, payload.get("red_home"),
+                                           payload.get("red_away"))
     p_evento, fonte_p, lambdas = _p_del_bancato(
         db=db, tr=tr, payload=payload, nome=nome, periodo=periodo,
-        minuto=minuto, punteggio=(sh, sa), params=params)
+        minuto=minuto, punteggio=(sh, sa), params=params, mult_rossi=mult_rossi)
     if p_evento is None:
         # il modello non sa dire niente su questa selezione: si TIENE e lo si
         # dichiara (mai una proposta con una P inventata)
@@ -404,7 +410,7 @@ def _una_gamba(*, tr: dict[str, Any], params: dict[str, Any], market: Any, db: A
         commissione=float(commissione), cap_scattato=cap,
         # la soglia arriva in PUNTI PERCENTUALI dal pannello (come `v3_p_max_pct`);
         # `proposta_uscita` ragiona in probabilita'. Zero = spenta (default).
-        p_lose_max=p_lose_max)
+        p_lose_max=p_lose_max, mult_rossi=mult_rossi)
     # 24/09 — gli INGREDIENTI con cui la scheda ricalcola l'uscita al prezzo di
     # adesso (``esito_uscita_al_prezzo``): gli stessi passati qui sopra a
     # ``proposta_uscita``, mai ricopiati a mano.
@@ -464,7 +470,8 @@ def _punteggio_ingresso(tr: dict[str, Any], adesso: tuple) -> tuple:
 
 def _p_del_bancato(*, db: Any, tr: dict[str, Any], payload: dict, nome: str,
                    periodo: str, minuto: int, punteggio: tuple,
-                   params: dict[str, Any]
+                   params: dict[str, Any],
+                   mult_rossi: tuple = V3.MULT_NEUTRO
                    ) -> "tuple[Optional[float], str, Optional[tuple]]":
     """(P che il risultato bancato sia quello finale, fonte, lambda usati).
 
@@ -484,11 +491,14 @@ def _p_del_bancato(*, db: Any, tr: dict[str, Any], payload: dict, nome: str,
                               state=state, params=params)
     lambdas = (float(lam[0]), float(lam[1])) if lam else None
     fonte = f"v3:{lam[3]}" if lam else "v3:senza_lambda"
+    if tuple(mult_rossi) != tuple(V3.MULT_NEUTRO):
+        fonte += "+rossi"            # O5: la P ha visto i cartellini rossi
     nomi = _nomi_del_mercato(payload, tr, nome)
     try:
         probabilita = V3.probabilita_selezioni(
             periodo=periodo, minuto=float(minuto), punteggio=punteggio,
-            nomi=nomi, p=parametri_modello(), lambdas=lambdas)
+            nomi=nomi, p=parametri_modello(), lambdas=lambdas,
+            mult_rossi=mult_rossi)
     except Exception as ex:  # noqa: BLE001 — modello KO: nessuna proposta, mai una P finta
         logger.warning("[omega.proposte] modello KO (trade %s): %s",
                        tr.get("id"), str(ex)[:120])
