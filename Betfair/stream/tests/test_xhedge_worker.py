@@ -149,3 +149,92 @@ def test_xhedge_worker_solo_bot_niente_analisi():
     sb = _Sb(orders)
     assert xw._process_once(sb, _session()) == 0
     assert sb.store["upserts"] == []
+
+
+# ---------------------------------------------------------------------------
+# 25/09 (voce 12 dell'audit tempo reale): la riga scritta esce ANCHE sul canale
+# locale del runner (topic ``betfair_live_xhedge``), con la busta di
+# ``canale_bot`` e SOLO dopo la scrittura riuscita. Il finto della scrittura
+# restituisce la rappresentazione come PostgREST (``return=representation``):
+# la riga della tabella con il suo ``id`` BIGSERIAL
+# (``migrations/betfair_live_xhedge.sql``: id, event_id, mode, analysis,
+# updated_at).
+# ---------------------------------------------------------------------------
+import Betfair.stream.canale_bot as _cb  # noqa: E402
+
+
+class _SelConId(_Sel):
+    def execute(self):
+        if self._op == "upsert":
+            self._store["upserts"].append(self._payload)
+            return SimpleNamespace(data=[{"id": 41, **self._payload}])
+        return super().execute()
+
+
+class _SbConId(_Sb):
+    def table(self, name):
+        return _SelConId(self.store)
+
+
+class _SbUpsertKO(_Sb):
+    def table(self, name):
+        sel = _Sel(self.store)
+        if name == "betfair_live_xhedge":
+            def _ko(*_a, **_k):
+                raise RuntimeError("upsert KO")
+            sel.upsert = _ko  # type: ignore[method-assign]
+        return sel
+
+
+class _CanaleFinto:
+    def __init__(self):
+        self.usciti = []
+
+    def publish(self, topic, payload):
+        self.usciti.append((topic, payload))
+
+
+_ORDINI = [
+    {"event_id": "EVT1", "mode": "paper", "market_id": "1.2", "selection_id": 30,
+     "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0,
+     "client_order_ref": "awlq7"},
+]
+
+
+def test_xhedge_pubblica_la_riga_scritta_sul_canale(monkeypatch):
+    canale = _CanaleFinto()
+    monkeypatch.setattr(_cb, "_canale", lambda: canale)
+    sb = _SbConId(list(_ORDINI))
+    assert xw._process_once(sb, _session()) == 1
+    assert len(canale.usciti) == 1
+    topic, msg = canale.usciti[0]
+    assert topic == "betfair_live_xhedge" == _cb.TOPIC["betfair_live_xhedge"]
+    # il messaggio E' la riga restituita + la busta, nient'altro
+    riga = {k: v for k, v in msg.items() if k not in _cb.CHIAVI_META}
+    assert riga == {"id": 41, **sb.store["upserts"][0]}
+    assert msg["fonte"] == "canale"
+    assert isinstance(msg["_seq"], int) and isinstance(msg["_pubblicato_ms"], int)
+
+
+def test_xhedge_senza_canale_scrive_comunque(monkeypatch):
+    monkeypatch.setattr(_cb, "_canale", lambda: None)
+    sb = _SbConId(list(_ORDINI))
+    assert xw._process_once(sb, _session()) == 1
+    assert len(sb.store["upserts"]) == 1
+
+
+def test_xhedge_scrittura_fallita_niente_sul_canale(monkeypatch):
+    canale = _CanaleFinto()
+    monkeypatch.setattr(_cb, "_canale", lambda: canale)
+    sb = _SbUpsertKO(list(_ORDINI))
+    assert xw._process_once(sb, _session()) == 0
+    assert canale.usciti == []
+
+
+def test_xhedge_canale_rotto_non_ferma_il_worker(monkeypatch):
+    class _Rotto:
+        def publish(self, topic, payload):
+            raise RuntimeError("socket giu'")
+    monkeypatch.setattr(_cb, "_canale", lambda: _Rotto())
+    sb = _SbConId(list(_ORDINI))
+    assert xw._process_once(sb, _session()) == 1

@@ -26,6 +26,18 @@
 // si duplica la formula, si duplica solo l'hook (perché quello di
 // `TennisMatchStats.tsx` non è esportato ed è per-istanza, un canale a
 // componente: qui serve la variante CONDIVISA per evento).
+//
+// 25/09 (voce 5 dell'audit tempo reale) - IL CANALE PRIMA DEL DATABASE. Il
+// runner tennis pubblica la STESSA riga di `tennis_live_now` sul suo canale
+// locale (47332, topic `now`, `Betfair/stream/tennis_live/tennis_db.py:291`:
+// push PRIMA della scrittura cloud), per le partite che SEGUE. La voce
+// condivisa ascolta anche quel topic (stesso singleton `getLocalChannel`,
+// nessun socket nuovo); il realtime Supabase resta il RIPIEGO. Fra le due
+// fonti vince la riga col `updated_at` del produttore strettamente piu'
+// recente (a parita' resta quella gia' mostrata: stessa scrittura). La fonte
+// della riga mostrata si DICHIARA (`fonte`: canale / database).
+// Il topic `scan_tennis` dello scanner (47336) NON si usa qui: porta la riga di
+// `safe_strategy_scan` (altra forma), e tradurla sarebbe una seconda formula.
 // ============================================================================
 import { useEffect, useState } from 'react';
 import {
@@ -34,19 +46,41 @@ import {
 } from '@/lib/tennis';
 import { marketStatusMeta, type MarketStatusMeta } from '@/lib/mike';
 import { freschezza, type Freschezza } from '@/lib/controlRoom';
+import { getLocalChannel } from '@/lib/localChannel';
+import { istanteMicro, leggiPushNow } from '@/lib/canaleRunner';
+
+/** da dove viene la riga mostrata: canale del runner tennis o database */
+export type FonteTennisVivo = 'canale' | 'database';
 
 // -------------------------------------------------------- registro condiviso
 interface Voce {
     row: TennisLiveNowRow | null;
     loaded: boolean;
-    listeners: Set<(row: TennisLiveNowRow | null, loaded: boolean) => void>;
+    /** fonte della riga mostrata; null finche' non c'e' una riga */
+    fonte: FonteTennisVivo | null;
+    listeners: Set<(row: TennisLiveNowRow | null, loaded: boolean, fonte: FonteTennisVivo | null) => void>;
     unsubscribe: () => void;
 }
 
 const registro = new Map<string, Voce>();
 
 function avvisa(v: Voce) {
-    for (const l of v.listeners) l(v.row, v.loaded);
+    for (const l of v.listeners) l(v.row, v.loaded, v.fonte);
+}
+
+/**
+ * La riga nuova sostituisce quella mostrata? Si' se non ce n'e' una, se una
+ * delle due non ha un `updated_at` leggibile (mai bloccarsi su un dato vecchio,
+ * come prima), o se e' STRETTAMENTE piu' recente. A parita' no: e' la stessa
+ * scrittura arrivata dall'altra strada, e la fonte resta quella che l'ha
+ * portata per prima.
+ */
+function sostituisce(prev: TennisLiveNowRow | null, next: TennisLiveNowRow): boolean {
+    if (prev == null) return true;
+    const a = istanteMicro(prev.updated_at);
+    const b = istanteMicro(next.updated_at);
+    if (a == null || b == null) return true;
+    return b > a;
 }
 
 /** Prende (o crea) la voce condivisa di un evento. Chi arriva DOPO trova già
@@ -55,23 +89,36 @@ function avvisa(v: Voce) {
 function ottieni(eventId: string): Voce {
     const esistente = registro.get(eventId);
     if (esistente) return esistente;
-    const v: Voce = { row: null, loaded: false, listeners: new Set(), unsubscribe: () => {} };
+    const v: Voce = { row: null, loaded: false, fonte: null, listeners: new Set(), unsubscribe: () => {} };
     registro.set(eventId, v);
+    const applica = (row: TennisLiveNowRow, fonte: FonteTennisVivo) => {
+        if (!sostituisce(v.row, row)) return false;
+        v.row = row;
+        v.fonte = fonte;
+        return true;
+    };
     fetchTennisNow(eventId)
-        .then((row) => { v.row = row; v.loaded = true; avvisa(v); })
+        .then((row) => { if (row) applica(row, 'database'); v.loaded = true; avvisa(v); })
         .catch(() => { v.loaded = true; avvisa(v); }); // errore = "non lo sappiamo", non un crash
-    v.unsubscribe = subscribeTennisNow(eventId, (row) => {
+    const offDb = subscribeTennisNow(eventId, (row) => {
         // il realtime manda `null` su DELETE: si conserva l'ultimo stato buono
         // (stesso comportamento di `TennisMatchStats.tsx`, mai un flicker).
-        if (row) v.row = row;
+        if (row) applica(row, 'database');
         v.loaded = true;
         avvisa(v);
     });
+    // 25/09 (voce 5): la stessa riga dal canale del runner tennis (47332)
+    const offCanale = getLocalChannel('tennis').subscribe('now', (d) => {
+        const row = leggiPushNow<TennisLiveNowRow>(d);
+        if (!row || row.event_id !== eventId) return;
+        if (applica(row, 'canale') || !v.loaded) { v.loaded = true; avvisa(v); }
+    });
+    v.unsubscribe = () => { offDb(); offCanale(); };
     return v;
 }
 
 /** Un listener in meno. L'ULTIMO che se ne va chiude davvero il canale. */
-function rilascia(eventId: string, cb: (row: TennisLiveNowRow | null, loaded: boolean) => void) {
+function rilascia(eventId: string, cb: (row: TennisLiveNowRow | null, loaded: boolean, fonte: FonteTennisVivo | null) => void) {
     const v = registro.get(eventId);
     if (!v) return;
     v.listeners.delete(cb);
@@ -103,6 +150,9 @@ export interface TennisVivo {
      *  STESSO vocabolario di Mike (`lib/mike.ts::marketStatusMeta`): `null` =
      *  OPEN, cioè "nella norma", niente da segnalare (regola colore/segnale) */
     statoMercato: MarketStatusMeta | null;
+    /** 25/09 (voce 5): da dove viene la riga (canale 47332 o realtime del
+     *  database); null = nessuna riga */
+    fonte: FonteTennisVivo | null;
 }
 
 /** Il timestamp più recente della riga: il punteggio (`score.updated_ms`) se
@@ -123,13 +173,17 @@ function istantePiuRecenteMs(row: TennisLiveNowRow | null): number | null {
 
 /** Costruisce la vista pura da una riga + l'istante "adesso": funzione pura,
  *  testabile senza montare React né aprire un canale. */
-export function vistaTennisVivo(row: TennisLiveNowRow | null, loaded: boolean, nowMs: number): TennisVivo {
+export function vistaTennisVivo(
+    row: TennisLiveNowRow | null, loaded: boolean, nowMs: number,
+    fonte: FonteTennisVivo | null = null,
+): TennisVivo {
     const ms = istantePiuRecenteMs(row);
     const etaS = ms == null ? null : Math.max(0, Math.round((nowMs - ms) / 1000));
     return {
         row, loaded, etaS,
         freschezza: freschezza(etaS),
         statoMercato: marketStatusMeta(row?.status ?? null),
+        fonte: row == null ? null : fonte,
     };
 }
 
@@ -160,16 +214,18 @@ export function nomeSelezioneTennis(
  */
 export function useTennisVivo(eventId: string | null | undefined): TennisVivo {
     const id = eventId || null;
-    const [stato, setStato] = useState<{ row: TennisLiveNowRow | null; loaded: boolean }>(
-        () => (id ? { row: registro.get(id)?.row ?? null, loaded: registro.get(id)?.loaded ?? false } : { row: null, loaded: false }),
+    const [stato, setStato] = useState<{ row: TennisLiveNowRow | null; loaded: boolean; fonte: FonteTennisVivo | null }>(
+        () => (id
+            ? { row: registro.get(id)?.row ?? null, loaded: registro.get(id)?.loaded ?? false, fonte: registro.get(id)?.fonte ?? null }
+            : { row: null, loaded: false, fonte: null }),
     );
     const [nowMs, setNowMs] = useState(() => Date.now());
 
     useEffect(() => {
-        if (!id) { setStato({ row: null, loaded: false }); return; }
+        if (!id) { setStato({ row: null, loaded: false, fonte: null }); return; }
         const v = ottieni(id);
-        setStato({ row: v.row, loaded: v.loaded });
-        const cb = (row: TennisLiveNowRow | null, loaded: boolean) => setStato({ row, loaded });
+        setStato({ row: v.row, loaded: v.loaded, fonte: v.fonte });
+        const cb = (row: TennisLiveNowRow | null, loaded: boolean, fonte: FonteTennisVivo | null) => setStato({ row, loaded, fonte });
         v.listeners.add(cb);
         return () => rilascia(id, cb);
     }, [id]);
@@ -182,7 +238,7 @@ export function useTennisVivo(eventId: string | null | undefined): TennisVivo {
         return () => window.clearInterval(t);
     }, [id]);
 
-    return vistaTennisVivo(stato.row, stato.loaded, nowMs);
+    return vistaTennisVivo(stato.row, stato.loaded, nowMs, stato.fonte);
 }
 
 export default useTennisVivo;

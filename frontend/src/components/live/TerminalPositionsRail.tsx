@@ -22,6 +22,10 @@ import {
 } from '@/lib/liveOrders';
 // C.12b — i formatter UNICI: «—» per il dato assente, mai «0,00»
 import { fmtMoney, fmtOdds } from '@/lib/format';
+import { usePosizioniCanale } from '@/lib/usePosizioniCanale';
+import { vistaPosizioni } from '@/lib/canaleRunner';
+import { useOrdiniCanale } from '@/lib/useOrdiniCanale';
+import { vistaOrdini } from '@/lib/ordiniCanale';
 
 type PanelMode = 'off' | LiveOrderMode;
 
@@ -45,8 +49,17 @@ interface Props {
 }
 
 export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
-    const [orders, setOrders] = useState<LiveOrderRow[]>([]);
-    const [positions, setPositions] = useState<LivePositionRow[]>([]);
+    const [ordersDb, setOrders] = useState<LiveOrderRow[]>([]);
+    // 25/09 (voce 13): push `order` del runner calcio sulle righe del poll
+    // (`lib/ordiniCanale.ts`, mai unione, vince solo se piu' fresco)
+    const sovrOrd = useOrdiniCanale('calcio', ordersDb);
+    const orders = useMemo(() => vistaOrdini(ordersDb, sovrOrd), [ordersDb, sovrOrd]);
+    const [positionsDb, setPositions] = useState<LivePositionRow[]>([]);
+    // 25/09 (voce 13): push `position` del runner calcio (47331) sulle righe del
+    // poll (che resta, ogni POLL_MS, come ripiego): mai unione, vince solo se
+    // piu' fresco (`lib/canaleRunner.ts`, stesso aggancio di SeguiLive/MarketWatch)
+    const sovrPos = usePosizioniCanale('calcio', positionsDb);
+    const positions = useMemo(() => vistaPosizioni(positionsDb, sovrPos), [positionsDb, sovrPos]);
     const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
     const [pollErr, setPollErr] = useState<string | null>(null);
     const [cancelling, setCancelling] = useState<string | null>(null); // bet_id in volo
@@ -150,6 +163,10 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
                 <div className="px-3 py-2 border-b border-white/5 flex items-center gap-1.5">
                     <Wallet className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-[10px] uppercase tracking-widest font-bold text-white/80">Posizioni · P&L</span>
+                    <span className="ml-auto text-[9.5px] text-white/35" data-testid="rail-fonte-posizioni"
+                        title="ordini e posizioni: canale del runner (push order/position, piu' freschi) o database (poll di ripiego)">
+                        {positions !== positionsDb || orders !== ordersDb ? 'canale' : `db (poll ${POLL_MS / 1000} s)`}
+                    </span>
                 </div>
                 {activePositions.length === 0 ? (
                     <p className="px-3 py-2.5 text-[11px] text-muted-foreground">Nessuna posizione aperta sul mercato.</p>

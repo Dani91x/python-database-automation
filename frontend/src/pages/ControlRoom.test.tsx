@@ -98,6 +98,11 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         copertura: { conDato: 1, senzaDato: 0, totale: 1, pct: 100 },
         freni: { daily_loss_stop: -50, loss_stop_active: false },
         runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
+        // 25/09 (voce 6/14): fonte ed eta' di runner e stato scanner
+        fonteRunner: { fonte: 'database', etaS: 30 },
+        runnerTennis: null,
+        fonteRunnerTennis: { fonte: 'database', etaS: null },
+        fonteStatoScanner: 'database',
         mikeRestingLive: true,
         soldiGiornata: {
             realizzato: 96.4,
@@ -594,6 +599,59 @@ describe('runner — tre stati, non due', () => {
     it('stato non letto = «ignoto», e non si spaccia per spento', () => {
         mVm.mockReturnValue(vm({ runner: null }));
         expect(within(mostra().getByTestId('cr-runner')).getByText(/ignoto/)).toBeTruthy();
+    });
+
+    // 25/09 (voce 6): la fonte e l'eta' della riga si DICHIARANO a video
+    it("dichiara la fonte: canale con l'eta' dell'ultimo messaggio, db col battito", () => {
+        mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'canale', etaS: 3 } }));
+        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/canale 3/);
+        cleanup();
+        mVm.mockReturnValue(vm({ fonteRunner: { fonte: 'database', etaS: 41 } }));
+        expect(mostra().getByTestId('cr-runner-fonte').textContent).toMatch(/db 41/);
+    });
+
+    it('runner tennis: canale spento = "canale spento", mai "spento"', () => {
+        mVm.mockReturnValue(vm({ runnerTennis: null }));
+        expect(within(mostra().getByTestId('cr-runner-tennis')).getByText(/canale spento/)).toBeTruthy();
+    });
+
+    it('runner tennis collegato: vivo dal canale 47332, con la fonte', () => {
+        mVm.mockReturnValue(vm({
+            runnerTennis: { ts: '2026-09-14T14:59:58Z', mode: 'PAPER', ageS: 2, up: true, streaming: null },
+            fonteRunnerTennis: { fonte: 'canale', etaS: 2 },
+        }));
+        const el = mostra().getByTestId('cr-runner-tennis');
+        expect(within(el).getByText(/vivo, in attesa/)).toBeTruthy();
+        expect(within(el).getByTestId('cr-runner-tennis-fonte').textContent).toMatch(/canale 2/);
+    });
+});
+
+// 25/09 (voce 4): la fonte dello STATO di un bot si dichiara nel chip
+describe('chip bot - fonte dello stato', () => {
+    it("stato dal canale: 'stato canale' con l'eta' del push", () => {
+        const base = vm();
+        mVm.mockReturnValue(vm({
+            bots: base.bots.map((b) => (b.bot === 'safe' ? { ...b, fonteStato: 'canale' as const, etaStatoS: 1 } : b)),
+        }));
+        expect(mostra().getByTestId('cr-bot-fonte-safe').textContent).toMatch(/stato canale 1/);
+    });
+    it("stato dal database: 'stato db' con l'eta' della lettura", () => {
+        const base = vm();
+        mVm.mockReturnValue(vm({
+            bots: base.bots.map((b) => (b.bot === 'mike' ? { ...b, fonteStato: 'database' as const, etaStatoS: 12 } : b)),
+        }));
+        expect(mostra().getByTestId('cr-bot-fonte-mike').textContent).toMatch(/stato db 12/);
+    });
+});
+
+// 25/09 (voce 14): lo stato dello scanner dichiara la sua fonte
+describe('feed - fonte dello stato dello scanner', () => {
+    it('canale / db', () => {
+        mVm.mockReturnValue(vm({ fonteStatoScanner: 'canale' }));
+        expect(mostra().getByTestId('cr-fonte-stato-scanner').textContent).toMatch(/stato canale/);
+        cleanup();
+        mVm.mockReturnValue(vm({ fonteStatoScanner: 'database' }));
+        expect(mostra().getByTestId('cr-fonte-stato-scanner').textContent).toMatch(/stato db/);
     });
 });
 

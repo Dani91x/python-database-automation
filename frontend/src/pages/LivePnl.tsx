@@ -18,6 +18,8 @@ import {
     type LiveSettledRow, type LiveRiskState, type LivePositionRow,
 } from '@/lib/liveOrders';
 import { fetchTennisPositionsAll } from '@/lib/tennis';
+import { usePosizioniCanale } from '@/lib/usePosizioniCanale';
+import { vistaPosizioni } from '@/lib/canaleRunner';
 import { eventExposure } from '@/lib/eventPnl';
 
 // ---------------------------------------------------------------- helper puri UI
@@ -194,8 +196,20 @@ export default function LivePnl() {
     const [modeF, setModeF] = useState<ModeFilter>('all');
     const [settled, setSettled] = useState<LiveSettledRow[] | null>(null);
     const [risk, setRisk] = useState<LiveRiskState | null>(null);
-    const [positions, setPositions] = useState<LivePositionRow[]>([]);
-    const [tPositions, setTPositions] = useState<LivePositionRow[] | null>(null);
+    const [positionsDb, setPositions] = useState<LivePositionRow[]>([]);
+    const [tPositionsDb, setTPositions] = useState<LivePositionRow[] | null>(null);
+    // 25/09 (voce 13 dell'audit tempo reale): i push `position` dei runner
+    // (calcio 47331, tennis 47332) sovrapposti alle righe del poll di 15 s, che
+    // resta il ripiego: il canale non aggiunge righe, vince solo se piu' fresco
+    // (`lib/canaleRunner.ts`, lo stesso aggancio di MarketWatch e SeguiLive).
+    const sovrPos = usePosizioniCanale('calcio', positionsDb);
+    const sovrPosTennis = usePosizioniCanale('tennis', tPositionsDb);
+    const positions = useMemo(() => vistaPosizioni(positionsDb, sovrPos), [positionsDb, sovrPos]);
+    const tPositions = useMemo(
+        () => (tPositionsDb == null ? null : vistaPosizioni(tPositionsDb, sovrPosTennis)),
+        [tPositionsDb, sovrPosTennis],
+    );
+    const posDalCanale = positions !== positionsDb || (tPositions != null && tPositions !== tPositionsDb);
 
     const isToday = day === toLocalDay(new Date());
 
@@ -344,6 +358,10 @@ export default function LivePnl() {
                         extra={
                             <div className="text-[10px] text-slate-500 tabular-nums">
                                 {positions.length} posizioni aperte · rischio €{eventExposure(positions).toFixed(2)}
+                                <span data-testid="livepnl-fonte-posizioni"
+                                    title="posizioni: canale dei runner (push position, piu' fresco del database) o database (poll di 15 s)">
+                                    {` \u00b7 fonte ${posDalCanale ? 'canale' : 'db (poll 15 s)'}`}
+                                </span>
                             </div>
                         }
                     />

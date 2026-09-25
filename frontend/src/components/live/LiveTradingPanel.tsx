@@ -24,6 +24,10 @@ import {
     type LiveOrderMode, type LiveOrderSide, type LivePersistence,
     type LiveOrderCommand, type LiveOrderRow, type LivePositionRow,
 } from '@/lib/liveOrders';
+import { usePosizioniCanale } from '@/lib/usePosizioniCanale';
+import { vistaPosizioni } from '@/lib/canaleRunner';
+import { useOrdiniCanale } from '@/lib/useOrdiniCanale';
+import { vistaOrdini } from '@/lib/ordiniCanale';
 
 // 'off' = runner senza ordini (zero regressioni): pannello in sola lettura.
 export type PanelMode = 'off' | LiveOrderMode;
@@ -112,8 +116,17 @@ export function LiveTradingPanel({
     const [submitting, setSubmitting] = useState(false);
 
     // -------------------- liste --------------------
-    const [orders, setOrders] = useState<LiveOrderRow[]>([]);
-    const [positions, setPositions] = useState<LivePositionRow[]>([]);
+    const [ordersDb, setOrders] = useState<LiveOrderRow[]>([]);
+    // 25/09 (voce 13): push `order` del runner calcio sulle righe del poll
+    // (`lib/ordiniCanale.ts`, mai unione, vince solo se piu' fresco)
+    const sovrOrd = useOrdiniCanale('calcio', ordersDb);
+    const orders = useMemo(() => vistaOrdini(ordersDb, sovrOrd), [ordersDb, sovrOrd]);
+    const [positionsDb, setPositions] = useState<LivePositionRow[]>([]);
+    // 25/09 (voce 13): push `position` del runner calcio (47331) sulle righe del
+    // poll (che resta, ogni `pollMs`, come ripiego): mai unione, vince solo se
+    // piu' fresco (`lib/canaleRunner.ts`). Solo le righe gia' filtrate per modo.
+    const sovrPos = usePosizioniCanale('calcio', positionsDb);
+    const positions = useMemo(() => vistaPosizioni(positionsDb, sovrPos), [positionsDb, sovrPos]);
     const [loadingLists, setLoadingLists] = useState(false);
     const [listErr, setListErr] = useState<string | null>(null);
     const busyRef = useRef(false);
@@ -526,6 +539,10 @@ export function LiveTradingPanel({
                 <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
                         Posizioni / P&amp;L ({positions.length})
+                    </span>
+                    <span className="text-[10px] text-white/35" data-testid="ltp-fonte-posizioni"
+                        title="ordini e posizioni: canale del runner (push order/position, piu' freschi) o database (poll di ripiego)">
+                        {positions !== positionsDb || orders !== ordersDb ? 'canale' : 'db'}
                     </span>
                     {pollMs > 0 && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/80" title={`Aggiornamento automatico ogni ${(pollMs / 1000).toFixed(0)}s`}>

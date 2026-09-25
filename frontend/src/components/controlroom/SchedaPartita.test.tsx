@@ -92,6 +92,8 @@ describe('SchedaPartita — tennis vivo (Task 2)', () => {
         expect(bar).not.toHaveTextContent('3-2');
         expect(screen.getByTestId('cr-tennis-vivo-server')).toHaveTextContent('P2');
         expect(screen.getByTestId('cr-tennis-vivo-eta')).toBeInTheDocument();
+        // 25/09 (voce 5): canale spento nei test -> la riga e' del database, e lo dice
+        expect(screen.getByTestId('cr-tennis-vivo-fonte')).toHaveTextContent('db');
     });
 
     // REPERTO 2 — nome del giocatore quando il feed lo dichiara

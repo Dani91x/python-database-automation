@@ -207,6 +207,11 @@ function TennisVivoBar({ eventId, abilitato, giocatori }: {
                     data-testid="cr-tennis-vivo-eta"
                     title="età del punteggio/mercato tennis: sopra 20 s il dato è vecchio">
                     {vivo.etaS == null ? 'età ignota' : fmtAge(vivo.etaS)}
+                    {/* 25/09 (voce 5): la FONTE accanto all'eta' */}
+                    <span className="text-white/30" data-testid="cr-tennis-vivo-fonte"
+                        title="canale del runner tennis (47332, topic now) o database (realtime tennis_live_now, ripiego)">
+                        {' \u00b7 '}{vivo.fonte === 'canale' ? 'canale' : 'db'}
+                    </span>
                 </span>
             )}
         </div>

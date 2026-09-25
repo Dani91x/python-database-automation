@@ -26,6 +26,11 @@ import {
     shouldResetLiveConfirm,
     type RiskRuleRow, type XhedgeRow, type XhedgeAnalysis,
 } from '@/lib/liveOrders';
+import { getLocalChannel } from '@/lib/localChannel';
+import {
+    TOPIC_XHEDGE, applicaPushXhedge, chiaveXhedge, leggiPushXhedge, potaXhedge, vistaXhedge,
+    type SovrapposizioniXhedge,
+} from '@/lib/xhedgeCanale';
 
 // Analisi più vecchia di così = suggerimento STANTIO: 1-click disabilitato (il book
 // CS si muove; il worker riscrive ogni ~5s, 30s = 6 cicli di tolleranza).
@@ -155,7 +160,26 @@ function ScorelineMatrix({ analysis }: { analysis: XhedgeAnalysis }) {
 }
 
 export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
-    const [rows, setRows] = useState<XhedgeRow[]>([]);
+    const [rowsDb, setRows] = useState<XhedgeRow[]>([]);
+    // 25/09 (voce 12 dell'audit tempo reale): la riga appena scritta dal worker
+    // arriva anche dal canale del runner calcio (47331, `betfair_live_xhedge`),
+    // sovrapposta alle righe del poll (che resta, ogni `pollMs`, come ripiego):
+    // mai unione, vince solo un `updated_at` piu' recente (`lib/xhedgeCanale.ts`).
+    const [sovr, setSovr] = useState<SovrapposizioniXhedge>(() => new Map());
+    const rowsDbRef = useRef<XhedgeRow[]>(rowsDb);
+    useEffect(() => {
+        rowsDbRef.current = rowsDb;
+        setSovr((p) => potaXhedge(p, rowsDb));
+    }, [rowsDb]);
+    useEffect(() => {
+        setSovr(new Map());
+        return getLocalChannel('calcio').subscribe(TOPIC_XHEDGE, (d) => {
+            const push = leggiPushXhedge(d);
+            if (!push || push.event_id !== eventId) return;
+            setSovr((p) => applicaPushXhedge(p, rowsDbRef.current, push, Date.now()));
+        });
+    }, [eventId]);
+    const rows = useMemo(() => vistaXhedge(rowsDb, sovr), [rowsDb, sovr]);
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState<string | null>(null);
     const [loaded, setLoaded] = useState(false);
@@ -183,6 +207,8 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
     }, [reload, pollMs]);
 
     const row = useMemo(() => pickRow(rows, mode), [rows, mode]);
+    /** la riga mostrata viene dal canale (e non dal poll)? */
+    const rowDaCanale = row != null && sovr.get(chiaveXhedge(row))?.riga === row;
     const analysis = row?.analysis ?? null;
     const summary = analysis?.summary ?? null;
     const suggestion = analysis?.suggestion ?? null;
@@ -373,6 +399,12 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
                         <span className="font-mono text-white/70">{eventId}</span>
                         {analysis ? ` · ${analysis.n_positions} posizioni` : ''}
                         {row ? ` · agg. ${new Date(row.updated_at).toLocaleTimeString('it-IT')}` : ''}
+                        {row && (
+                            <span data-testid="xhedge-fonte"
+                                title="da dove arriva l'analisi: canale del runner (47331, subito dopo la scrittura) o database (poll di ripiego)">
+                                {` \u00b7 fonte ${rowDaCanale ? 'canale' : 'db'}`}
+                            </span>
+                        )}
                     </p>
                 </div>
                 {loading && <Loader2 className="w-4 h-4 animate-spin text-amber-400" />}

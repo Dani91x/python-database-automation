@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Tuple
 
+from . import canale_bot as _cb
 from . import live_order_worker as low
 from .trading import xhedge
 
@@ -115,10 +116,16 @@ def _process_once(sb: Any, session: Any) -> int:
                 orders, meta, cs_odds,
                 cs_market_id=cs_mid or None, cs_sel_by_score=sel_by_score,
             )
-            sb.table("betfair_live_xhedge").upsert(
+            res = sb.table("betfair_live_xhedge").upsert(
                 {"event_id": event_id, "mode": mode, "analysis": analysis, "updated_at": _now_iso()},
                 on_conflict="event_id,mode",
             ).execute()
+            # 25/09 (voce 12): la riga appena scritta anche sul canale locale del
+            # runner (47331), DOPO la scrittura riuscita e con cio' che la
+            # scrittura ha restituito (``canale_bot``: il messaggio E' la riga +
+            # busta). Senza canale non fa nulla; non solleva mai. Il pannello
+            # della UI la sovrappone al suo poll di 5 s (mai unione).
+            _cb.pubblica_scritte(_cb.TOPIC["betfair_live_xhedge"], res)
             handled += 1
         except Exception as ex:  # noqa: BLE001 - un evento KO non ferma gli altri né il runner
             logger.warning("[xhedge] evento %s KO: %s", event_id, str(ex)[:160])

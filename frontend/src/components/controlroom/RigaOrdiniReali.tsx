@@ -17,8 +17,19 @@
 // La lettura e' la RPC owner-only `get_live_settings` (la stessa del
 // kill-switch): una volta all'apertura, dopo ogni comando, e ogni 30 s come
 // ripiego (la riga cambia solo per un gesto dell'utente o all'avvio dell'app).
+//
+// 25/09 (voce 6 dell'audit tempo reale) - IL CANALE DEL RUNNER CALCIO (47331)
+// PRIMA DEL POLL: il tetto e' quello dell'`hello` del runner collegato (il SUO
+// .env), il modo EFFETTIVO quello che il runner dichiara nel `now`
+// (`state.order_mode`, runner.py:292-302) se fresco; se il runner dichiara una
+// SCELTA diversa da quella letta, la riga si rilegge SUBITO (chi/quando stanno
+// solo sul database). Fonte ed eta' scritte a video (`lib/runnerCanale.ts`).
 // ============================================================================
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getLocalChannel } from '@/lib/localChannel';
+import {
+    leggiModoDalNow, sovrapponiModoOrdini, type ModoOrdiniCanale,
+} from '@/lib/runnerCanale';
 import { fmtDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -30,6 +41,14 @@ import type { LiveSettings } from '@/lib/liveOrders';
 /** stessa finestra anti-doppio-clic delle righe dei bot (`PannelloBot`) */
 const ATTESA_CONFERMA_MS = 400;
 const RILETTURA_MS = 30_000;
+/** una rilettura chiesta dal canale al piu' ogni 2 s (anti-tempesta) */
+const RILETTURA_CANALE_MIN_MS = 2_000;
+
+interface CanaleModo {
+    connesso: boolean;
+    hello: Record<string, unknown> | null;
+    modo: ModoOrdiniCanale | null;
+}
 
 const TESTO_MODO: Record<ModoOrdini, string> = {
     OFF: 'nessun ordine',
@@ -66,16 +85,43 @@ export function RigaOrdiniReali({
     const [inCorso, setInCorso] = useState(false);
     const [armatoDa, setArmatoDa] = useState<number | null>(null);
     const [, setTic] = useState(0);
+    /** 25/09: inizio dell'ultima lettura riuscita (per l'eta' e la freschezza) */
+    const [lettoMs, setLettoMs] = useState<number | null>(null);
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    const [canale, setCanale] = useState<CanaleModo>({ connesso: false, hello: null, modo: null });
 
     const ricarica = useCallback(async () => {
+        const inizio = Date.now();
         try {
             const r = await leggi();
             setRiga(r);
             setErroreLettura(null);
+            setLettoMs(inizio);
         } catch (e) {
             setErroreLettura(e instanceof Error ? e.message : String(e));
         }
     }, [leggi]);
+
+    // 25/09 (voce 6): il canale 47331 - stato, hello, `now` col modo ordini
+    useEffect(() => {
+        const ch = getLocalChannel('calcio');
+        const helloDi = () => (typeof ch.getHello === 'function'
+            ? (ch.getHello() as Record<string, unknown> | null) : null);
+        setCanale({ connesso: ch.getStatus() === 'connected', hello: helloDi(), modo: null });
+        const offStato = ch.onStatus((st) => setCanale((p) => (st === 'connected'
+            ? { ...p, connesso: true, hello: helloDi() ?? p.hello }
+            : { connesso: false, hello: null, modo: null })));
+        const offHello = ch.subscribe('hello', (d) => setCanale((p) => ({
+            ...p, hello: d && typeof d === 'object' ? d as Record<string, unknown> : null,
+        })));
+        const offNow = ch.subscribe('now', (d) => {
+            const m = leggiModoDalNow(d);
+            if (!m) return;
+            setCanale((p) => (p.modo != null && p.modo.ms >= m.ms ? p : { ...p, modo: m }));
+        });
+        const t = window.setInterval(() => setNowMs(Date.now()), 1_000);
+        return () => { offStato(); offHello(); offNow(); window.clearInterval(t); };
+    }, []);
 
     useEffect(() => {
         void ricarica();
@@ -89,7 +135,16 @@ export function RigaOrdiniReali({
         return () => window.clearTimeout(t);
     }, [armatoDa]);
 
-    const st = statoOrdiniReali(erroreLettura ? null : riga);
+    const st = sovrapponiModoOrdini(statoOrdiniReali(erroreLettura ? null : riga), lettoMs, canale, nowMs);
+    // il runner dichiara una scelta diversa da quella letta: si rilegge SUBITO
+    const ultimaRiletturaCanale = useRef(0);
+    useEffect(() => {
+        if (!st.daRileggere) return;
+        const ora = Date.now();
+        if (ora - ultimaRiletturaCanale.current < RILETTURA_CANALE_MIN_MS) return;
+        ultimaRiletturaCanale.current = ora;
+        void ricarica();
+    }, [st.daRileggere, ricarica, nowMs]);
     const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
     // LIVE si puo' scegliere solo se il runner ha dichiarato un tetto LIVE
     const liveConsentito = st.tetto === 'LIVE';
@@ -122,6 +177,14 @@ export function RigaOrdiniReali({
                     title="modo effettivo: il piu' restrittivo fra il tetto del .env e la scelta da qui">
                     {st.effettivo} - {TESTO_MODO[st.effettivo]}
                 </span>
+
+                {st.letto && (
+                    <span className="text-[10px] text-white/30" data-testid="cr-ordini-reali-fonte"
+                        title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now) o database (get_live_settings, ogni 30 s)">
+                        {st.fonte === 'canale' ? 'canale' : 'db'}{' '}
+                        {st.etaS == null ? '-' : `${st.etaS} s`}
+                    </span>
+                )}
 
                 {st.tetto != null ? (
                     <span className={`text-[10px] ${st.limitatoDalTetto ? 'text-amber-300' : 'text-white/35'}`}

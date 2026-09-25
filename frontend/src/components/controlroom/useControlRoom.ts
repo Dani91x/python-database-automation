@@ -23,7 +23,7 @@ import {
 } from '@/lib/safeStrategyScan';
 import {
     fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents,
-    type OmegaState, type OmegaTrade, type OmegaStats, type OmegaEvent,
+    type OmegaState, type OmegaTrade, type OmegaEvent,
 } from '@/lib/omega';
 import {
     fetchSafeState, fetchRunnerState, tradeExposureNow,
@@ -46,6 +46,12 @@ import {
 } from '@/lib/righeCanale';
 import { RilettureMirate } from '@/lib/rilettureMirate';
 import { getLocalChannel, svegliaBot, type LocalStatus } from '@/lib/localChannel';
+import {
+    leggiPushStato, sovrapponiControl, statoScannerDalCanale, type BotConStato, type PushStato,
+} from '@/lib/statoBotCanale';
+import {
+    runnerDalCanale, NOTIZIE_VUOTE, type FonteRunner, type NotizieRunner,
+} from '@/lib/runnerCanale';
 import {
     inviaChiusura, faseDaRichiesta, firmaRiga, cambiataPerChiusura, richiestaDaRileggere,
     statoConScadenza, LETTURA, type RigaDaChiudere, type StatoChiusuraRiga,
@@ -292,6 +298,15 @@ export interface StatoBot {
     /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
      *  `null`/assente = non dichiarato (bot spento o ponte di prima) */
     autoTennis?: AutoTennis | null;
+    /**
+     * 25/09 (voce 4) - DA DOVE viene lo stato mostrato (modalita', stato,
+     * parametri, motivo del blocco): 'canale' = il push `*_stato` piu' fresco
+     * della riga di control del database; 'database' = la riga letta al giro
+     * dei 30 s. `etaStatoS` = eta' di quella notizia (null = mai letta).
+     * Assenti per i bot senza push di stato (tennis, scalper).
+     */
+    fonteStato?: 'canale' | 'database';
+    etaStatoS?: number | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -809,6 +824,20 @@ export interface ControlRoomVM {
      * l'unica cosa che un battito dovrebbe voler dire.
      */
     runner: RunnerState | null;
+    /**
+     * 25/09 (voce 6) - da dove viene la riga "Runner": 'canale' = il canale
+     * 47331 e' collegato (processo vivo; eta' = ultimo messaggio: saldo ~20 s,
+     * ladder/now se segue partite); 'database' = `betfair_live_heartbeat` al
+     * giro dei 30 s, eta' ricalcolata adesso. `lib/runnerCanale.ts`.
+     */
+    fonteRunner: { fonte: FonteRunner; etaS: number | null };
+    /** il runner TENNIS (47332): solo dal canale, non ha un battito sul
+     *  database. null = canale spento, stato non noto */
+    runnerTennis: RunnerState | null;
+    fonteRunnerTennis: { fonte: FonteRunner; etaS: number | null };
+    /** 25/09 (voce 14) - lo stato dello scanner: push `scanner_stato` (47336)
+     *  o realtime/giro del database (`safe_strategy_status`) */
+    fonteStatoScanner: 'canale' | 'database';
 
     /**
      * 🔴 L'UNICO INTERRUTTORE che può far divergere demo e live su Mike.
@@ -984,7 +1013,8 @@ export function useControlRoom(): ControlRoomVM {
     // 47336 (v. `fonteScan` nel VM): `null` finché il canale non parla.
     const [ultimoScanLocaleMs, setUltimoScanLocaleMs] = useState<number | null>(null);
     const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
-    const [omega, setOmega] = useState<OmegaState | null>(null);
+    const [statoScannerDaCanale, setStatoScannerDaCanale] = useState(false);
+    const [omegaDb, setOmega] = useState<OmegaState | null>(null);
     // C6 b (23/09) - LE RIGHE DEI BOT IN UNA MAPPA PER RIGA (`lib/righeCanale.ts`),
     // chiave composta bot+id. La alimentano i blocchi del database (come prima,
     // stesso giro di 30 s, nessuna lettura in piu') e i messaggi per riga dei
@@ -1027,18 +1057,45 @@ export function useControlRoom(): ControlRoomVM {
     const [registrazioni, setRegistrazioni] = useState<Set<string>>(new Set());
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mikeDb, setMike] = useState<MikeStateView | null>(null);
+    // 25/09 (voce 4) - IL CONTENUTO dei push `*_stato` (`lib/statoBotCanale.ts`):
+    // sovrapposto alla riga di control del database, mai al posto di una riga
+    // mai letta. Canale giu' -> null, si torna al database (regola 1).
+    const [pushStato, setPushStato] = useState<Record<BotConStato, PushStato | null>>(
+        () => ({ omega: null, safe: null, mike: null }));
+    const omegaVista = useMemo(() => sovrapponiControl(omegaDb?.control, pushStato.omega),
+        [omegaDb?.control, pushStato.omega]);
+    const safeVista = useMemo(() => sovrapponiControl(safeDb?.control, pushStato.safe),
+        [safeDb?.control, pushStato.safe]);
+    const mikeVista = useMemo(() => sovrapponiControl(mikeDb?.control, pushStato.mike),
+        [mikeDb?.control, pushStato.mike]);
+    const omega = useMemo<OmegaState | null>(
+        () => (omegaDb && omegaVista.control !== omegaDb.control
+            ? { ...omegaDb, control: omegaVista.control } : omegaDb),
+        [omegaDb, omegaVista]);
 
     // C6 b - LE VISTE DALLA MAPPA PER RIGA, con i nomi di sempre: tutto cio'
     // che sta sotto (soldi, posizioni, operazioni, chiuse, proposte) legge
     // queste, senza sapere se la riga e' arrivata dal database o dal canale.
     const omegaTrades = useMemo(
         () => righeDi(righePos, 'omega') as OmegaTrade[], [righePos]);
-    const safe = useMemo<SafeState | null>(
-        () => (safeDb ? { ...safeDb, trades: righeDi(righePos, 'safe') as SafeTrade[] } : null),
-        [safeDb, righePos]);
+    const safe = useMemo<SafeState | null>(() => {
+        if (!safeDb) return null;
+        const trades = righeDi(righePos, 'safe') as SafeTrade[];
+        if (safeVista.control === safeDb.control) return { ...safeDb, trades };
+        // 25/09 - i parametri EFFETTIVI viaggiano dentro `stats` (H-15): se lo
+        // stato arriva dal canale, anche loro (stessa lettura di `fetchSafeState`)
+        const pe = (safeVista.control?.stats as { params_effective?: SafeState['params_effective'] } | null)
+            ?.params_effective;
+        return {
+            ...safeDb, trades, control: safeVista.control,
+            params_effective: pe ?? safeDb.params_effective,
+        };
+    }, [safeDb, righePos, safeVista]);
     const mike = useMemo<MikeStateView | null>(
-        () => (mikeDb ? { ...mikeDb, trades: righeDi(righePos, 'mike') as MikeTrade[] } : null),
-        [mikeDb, righePos]);
+        () => (mikeDb ? {
+            ...mikeDb, trades: righeDi(righePos, 'mike') as MikeTrade[], control: mikeVista.control,
+        } : null),
+        [mikeDb, righePos, mikeVista]);
     // una proposta resta in elenco finche' e' 'proposed': le righe del
     // database lo sono per costruzione (filtro della lettura; quelle di Omega
     // non portano `status`), un messaggio del canale con la proposta decaduta
@@ -1063,7 +1120,6 @@ export function useControlRoom(): ControlRoomVM {
     // `stats` spinti dai canali locali: SOVRAPPOSIZIONE sul dato del database,
     // mai sostituzione della pagina intera. Alla caduta si azzerano e si torna
     // al database (regola 1).
-    const [omegaPush, setOmegaPush] = useState<{ stats: OmegaStats; at: number } | null>(null);
     const [canali, setCanali] = useState<Record<Bot, LocalStatus>>(() => perOgniBot<LocalStatus>('off'));
     const [ultimoPush, setUltimoPush] = useState<Record<Bot, number | null>>(() => perOgniBot<number | null>(null));
 
@@ -1200,7 +1256,7 @@ export function useControlRoom(): ControlRoomVM {
                 setScalperLetturaMs(lettoMs);
             }
             if (rScan.status === 'fulfilled') setScan(rScan.value);
-            if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
+            if (rStatus.status === 'fulfilled') { setScanStatus(rStatus.value); setStatoScannerDaCanale(false); }
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
             // 24/09: `bloccoNuovo` - una rilettura mirata partita DOPO questo
             // giro e gia' applicata vince (e' piu' fresca): il giro la salta.
@@ -1288,7 +1344,21 @@ export function useControlRoom(): ControlRoomVM {
     // risultava «vecchio», e con esso le quote FERME diventavano «vecchie» —
     // che e' la distinzione su cui si decide se una chiusura e' approvabile.
     // La sottoscrizione esisteva gia' e non la usava nessuno.
-    useEffect(() => subscribeScanStatus((r) => { if (r) setScanStatus(r); }), []);
+    useEffect(() => subscribeScanStatus((r) => { if (r) { setScanStatus(r); setStatoScannerDaCanale(false); } }), []);
+
+    // 25/09 (voce 14) - LO STATO DELLO SCANNER ANCHE DAL CANALE 47336
+    // (`scanner_stato`, service.py:1519: lo STESSO payload che va su
+    // `safe_strategy_status`, pubblicato un istante prima della scrittura).
+    // Sovrapposto alla riga gia' letta, mai al posto di una riga mai letta.
+    // Il realtime del database resta: e' il ripiego se il canale tace.
+    useEffect(() => getLocalChannel('scanner').subscribe('scanner_stato', (d) => {
+        const ricevutoMs = Date.now();
+        setScanStatus((prev) => {
+            const nuovo = statoScannerDalCanale(prev, d, ricevutoMs);
+            if (nuovo !== prev) setStatoScannerDaCanale(true);
+            return nuovo;
+        });
+    }), []);
 
     // ------------------------------------------------- feed partite in realtime
     //
@@ -1366,16 +1436,16 @@ export function useControlRoom(): ControlRoomVM {
                     // database. Meglio un dato vecchio DICHIARATO di una
                     // fotografia ferma di cui non sappiamo più l'età.
                     setUltimoPush((p) => ({ ...p, [bot]: null }));
-                    if (bot === 'omega') setOmegaPush(null);
+                    setPushStato((p) => ({ ...p, [bot]: null }));
                 }
             }));
             chiusure.push(ch.subscribe(`${bot}_stato`, (d) => {
-                setUltimoPush((p) => ({ ...p, [bot]: Date.now() }));
-                if (bot !== 'omega') return;
-                const msg = d as { stats?: OmegaStats } | null;
-                if (msg && typeof msg === 'object' && msg.stats && typeof msg.stats === 'object') {
-                    setOmegaPush({ stats: msg.stats, at: Date.now() });
-                }
+                const ricevutoMs = Date.now();
+                setUltimoPush((p) => ({ ...p, [bot]: ricevutoMs }));
+                // 25/09 (voce 4): il CONTENUTO, non solo l'orologio. Un
+                // messaggio storto non cancella l'ultimo buono.
+                const push = leggiPushStato(bot, d, ricevutoMs);
+                if (push) setPushStato((p) => ({ ...p, [bot]: push }));
             }));
         });
         return () => { for (const c of chiusure) c(); };
@@ -1601,6 +1671,59 @@ export function useControlRoom(): ControlRoomVM {
         return () => { offStatus(); offStato(); offSessioni(); };
     }, []);
 
+    // ------------------------------------ 25/09 (voce 6): i RUNNER dal canale
+    // Il runner calcio (47331) e quello tennis (47332): connessione, `hello` e
+    // ogni messaggio sono notizie di vita; `ladder`/`now` dicono che segue
+    // partite. Nessuno stato per messaggio (la ladder corre a 200 ms): le
+    // notizie finiscono in un riferimento e la pagina le fotografa una volta
+    // al secondo, col suo orologio. Il poll dei 30 s resta il ripiego.
+    const [notizieRunner, setNotizieRunner] = useState<Record<'calcio' | 'tennis', NotizieRunner>>(
+        () => ({ calcio: NOTIZIE_VUOTE, tennis: NOTIZIE_VUOTE }));
+    useEffect(() => {
+        const rif: Record<'calcio' | 'tennis', NotizieRunner> = {
+            calcio: { ...NOTIZIE_VUOTE }, tennis: { ...NOTIZIE_VUOTE },
+        };
+        const chiusure: (() => void)[] = [];
+        (['calcio', 'tennis'] as const).forEach((sport) => {
+            const ch = getLocalChannel(sport);
+            const n = rif[sport];
+            const suStato = (st: LocalStatus) => {
+                n.connesso = st === 'connected';
+                if (n.connesso) {
+                    n.ultimoMsgMs = Date.now();
+                    // l'hello di una connessione aperta PRIMA di questa pagina
+                    // (canale singleton) non ripassa dall'iscrizione: si legge.
+                    // Controllo di tipo: alcuni finti dei test storici non hanno
+                    // `getHello` (il canale vero si').
+                    const h = typeof ch.getHello === 'function' ? ch.getHello() : null;
+                    n.hello = (h as Record<string, unknown> | null) ?? n.hello;
+                }
+                else { n.hello = null; n.ultimoMsgMs = null; n.ultimoFlussoMs = null; }
+            };
+            suStato(ch.getStatus());
+            chiusure.push(ch.onStatus(suStato));
+            chiusure.push(ch.subscribe('hello', (d) => {
+                n.hello = d && typeof d === 'object' ? d as Record<string, unknown> : {};
+                n.ultimoMsgMs = Date.now();
+            }));
+            for (const t of ['account', 'board', 'order', 'position'] as const) {
+                chiusure.push(ch.subscribe(t, () => { n.ultimoMsgMs = Date.now(); }));
+            }
+            for (const t of ['ladder', 'now'] as const) {
+                chiusure.push(ch.subscribe(t, () => { const ms = Date.now(); n.ultimoMsgMs = ms; n.ultimoFlussoMs = ms; }));
+            }
+        });
+        const fotografa = () => setNotizieRunner((p) => {
+            const uguale = (a: NotizieRunner, b: NotizieRunner) => a.connesso === b.connesso
+                && a.hello === b.hello && a.ultimoMsgMs === b.ultimoMsgMs && a.ultimoFlussoMs === b.ultimoFlussoMs;
+            if (uguale(p.calcio, rif.calcio) && uguale(p.tennis, rif.tennis)) return p;
+            return { calcio: { ...rif.calcio }, tennis: { ...rif.tennis } };
+        });
+        fotografa();
+        const t = window.setInterval(fotografa, TICK_MS);
+        return () => { window.clearInterval(t); for (const c of chiusure) c(); };
+    }, []);
+
     // --------------------------------------------------- conto Betfair (R4)
     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
     // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
@@ -1783,7 +1906,8 @@ export function useControlRoom(): ControlRoomVM {
 
     // Omega è l'unico che pubblica obiettivo e target per partita, e li calcola
     // il SERVIZIO. La pagina li legge: non ne fa una seconda copia.
-    const oStats = omegaPush?.stats ?? omega?.control?.stats ?? null;
+    // 25/09 (voce 4): `omega.control` e' gia' la vista col push sovrapposto
+    const oStats = omega?.control?.stats ?? null;
     const obiettivo = omega?.goal_today ?? oStats?.goal ?? null;
     const realizzato = oStats?.realized_today ?? null;
     const targetServizio = oStats?.target_match ?? null;
@@ -2091,20 +2215,30 @@ export function useControlRoom(): ControlRoomVM {
         };
         const testo = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
         const numero = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        // 25/09 (voce 4): fonte ed eta' dello STATO di Omega/Safe/Mike
+        const etaDa = (ms: number | null | undefined) => (ms == null
+            ? null : Math.max(0, Math.round((nowMs - ms) / 1000)));
+        const fonteDi = (bot: BotConStato, daCanale: boolean): Pick<StatoBot, 'fonteStato' | 'etaStatoS'> => (
+            daCanale
+                ? { fonteStato: 'canale', etaStatoS: etaDa(pushStato[bot]?.ricevutoMs) }
+                : { fonteStato: 'database', etaStatoS: etaDa(lettoAlle) });
         return [
-            riga('omega', modalitaDi(omega?.control?.mode), inCorsaDi(omega?.control?.status),
+            { ...riga('omega', modalitaDi(omega?.control?.mode), inCorsaDi(omega?.control?.status),
                 omega?.control?.heartbeat_at ?? null, testo(omega?.control?.status),
                 (omega?.control?.params ?? null) as Record<string, unknown> | null,
                 (omega?.control?.stats ?? null) as Record<string, unknown> | null,
                 numero((omega?.control as { daily_goal?: unknown } | undefined)?.daily_goal)),
-            riga('safe', modalitaDi(safe?.control?.mode), inCorsaDi(safe?.control?.status),
+            ...fonteDi('omega', omegaVista.daCanale) },
+            { ...riga('safe', modalitaDi(safe?.control?.mode), inCorsaDi(safe?.control?.status),
                 safe?.control?.heartbeat_at ?? null, testo(safe?.control?.status),
                 (safe?.control?.params ?? null) as Record<string, unknown> | null,
                 (safe?.control?.stats ?? null) as Record<string, unknown> | null),
-            riga('mike', modalitaDi(mike?.control?.mode), inCorsaDi(mike?.control?.status),
+            ...fonteDi('safe', safeVista.daCanale) },
+            { ...riga('mike', modalitaDi(mike?.control?.mode), inCorsaDi(mike?.control?.status),
                 mike?.control?.heartbeat_at ?? null, testo(mike?.control?.status),
                 (mike?.control?.params ?? null) as Record<string, unknown> | null,
                 (mike?.control?.stats ?? null) as Record<string, unknown> | null),
+            ...fonteDi('mike', mikeVista.daCanale) },
             // ── I QUATTRO DEL TENNIS, uno per uno ───────────────────────────
             // Nessuna deduzione e nessuna eredita': stato, modalita' e stake
             // escono dalla RIGA DI CONTROL di QUEL bot. Riga assente (o
@@ -2202,6 +2336,7 @@ export function useControlRoom(): ControlRoomVM {
             };
         }
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,
+        omegaVista.daCanale, safeVista.daCanale, mikeVista.daCanale, pushStato, lettoAlle,
         tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs,
         scalperCRVista, scalperVista, scalperEtaLetturaS, scalperOv, scalperLetturaMs]);
 
@@ -3324,6 +3459,11 @@ export function useControlRoom(): ControlRoomVM {
         pnlRealeOggi, scalperVista]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
+    // 25/09 (voce 6): i due runner, canale prima e database come ripiego
+    const runnerVista = useMemo(() => runnerDalCanale(runner, notizieRunner.calcio, nowMs),
+        [runner, notizieRunner.calcio, nowMs]);
+    const runnerTennisVista = useMemo(() => runnerDalCanale(null, notizieRunner.tennis, nowMs),
+        [notizieRunner.tennis, nowMs]);
     const fonteScanEtaS = ultimoScanLocaleMs == null
         ? null : Math.max(0, Math.round((nowMs - ultimoScanLocaleMs) / 1000));
     const fonteScan: 'locale' | 'database' = freschezza(fonteScanEtaS) === 'fresca' ? 'locale' : 'database';
@@ -3366,7 +3506,11 @@ export function useControlRoom(): ControlRoomVM {
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
         bots, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
-        runner,
+        runner: runnerVista.runner,
+        fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },
+        runnerTennis: runnerTennisVista.runner,
+        fonteRunnerTennis: { fonte: runnerTennisVista.fonte, etaS: runnerTennisVista.etaS },
+        fonteStatoScanner: statoScannerDaCanale ? 'canale' : 'database',
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
         mikeEventi,
         schermo, ultimaCatena,

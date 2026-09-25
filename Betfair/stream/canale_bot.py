@@ -108,6 +108,11 @@ TOPIC: Mapping[str, str] = MappingProxyType({
     # quelle righe a ogni giro: nessuna lettura in piu', nessun processo nuovo.
     "scalper_stato": "scalper_stato",
     "scalper_sessioni": "scalper_sessioni",
+    # runner calcio (47331, 25/09 voce 12 dell'audit tempo reale): la riga di
+    # `betfair_live_xhedge` appena scritta dallo `xhedge_worker` (analisi
+    # cross-market, SOLA LETTURA). Esce sul canale del processo del runner; se il
+    # canale non c'e' la pubblicazione non fa nulla (``_invia``).
+    "betfair_live_xhedge": "betfair_live_xhedge",
 })
 
 #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira

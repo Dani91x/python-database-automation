@@ -211,8 +211,11 @@ export default function ControlRoom() {
     const registratori = useMemo(() => {
         // runner non letto = NON LO SAPPIAMO, mai «spento» e mai «vivo»
         const vivo = vm.runner == null ? null : runnerPhase(vm.runner) !== 'off';
-        return { calcio: vivo, tennis: vivo };
-    }, [vm.runner]);
+        // 25/09 (voce 6): il runner TENNIS ha il suo canale (47332); se tace
+        // resta la lettura di prima (quella del runner calcio)
+        const vivoTennis = vm.runnerTennis == null ? vivo : runnerPhase(vm.runnerTennis) !== 'off';
+        return { calcio: vivo, tennis: vivoTennis };
+    }, [vm.runner, vm.runnerTennis]);
 
     /**
      * LA GIORNATA OPERATIVA della pagina (Europe/Rome), una sola volta: la
@@ -945,7 +948,8 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                         ? `${vm.totali.conPosizione - vm.totali.conPosizioneLive} in prova`
                         : undefined} />
                 <Freni freni={vm.freni} />
-                <Runner r={vm.runner} />
+                <Runner r={vm.runner} fonte={vm.fonteRunner} />
+                <Runner r={vm.runnerTennis} fonte={vm.fonteRunnerTennis} tennis />
 
                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
                     {vm.bots.map((b) => <ChipBot key={b.bot} b={b} />)}
@@ -959,11 +963,18 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                         {vm.feedEtaS == null ? FRESCHEZZA_TESTO.ignota : fmtAge(vm.feedEtaS)}
                     </span>
                     {/* STADIO B2c (18/09, raccordo) — sobrio, mai vistoso: quale
-                        canale sta parlando ADESSO. Oggi i canali locali sono
-                        muti, quindi qui resta sempre "database". */}
+                        canale sta parlando ADESSO: "canale locale" se l'ultima
+                        riga dello scanner (47336) e' arrivata da li' da poco,
+                        altrimenti "database" (realtime/giro dei 30 s). */}
                     <span className="text-white/30" data-testid="cr-fonte-scan"
                         title="da dove arriva l'aggiornamento dello scanner: canale locale (push, ~0 latenza) o database (poll/realtime)">
                         · {vm.fonteScan === 'locale' ? 'canale locale' : 'database'}
+                    </span>
+                    {/* 25/09 (voce 14): lo STATO dello scanner (eta' del feed qui
+                        a sinistra): push `scanner_stato` o riga del database */}
+                    <span className="text-white/30" data-testid="cr-fonte-stato-scanner"
+                        title="stato dello scanner: canale locale (push scanner_stato, 47336) o database (safe_strategy_status, realtime)">
+                        {'\u00b7'} stato {vm.fonteStatoScanner === 'canale' ? 'canale' : 'db'}
                     </span>
                     {/* C6 b (23/09) - lo stesso indicatore per le RIGHE dei tre
                         bot (posizioni e proposte): fonte ed eta' dell'ultima
@@ -1003,12 +1014,27 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
  * indicatore che grida guasto su un comportamento normale fa ignorare anche i
  * guasti veri.
  */
-function Runner({ r }: { r: ReturnType<typeof useControlRoom>['runner'] }) {
+function Runner({ r, fonte, tennis = false }: {
+    r: ReturnType<typeof useControlRoom>['runner'];
+    /** 25/09 (voce 6): da dove viene la riga e quanto e' vecchia la notizia */
+    fonte: ReturnType<typeof useControlRoom>['fonteRunner'];
+    /** il runner TENNIS: solo dal canale 47332 (nessun battito sul database) */
+    tennis?: boolean;
+}) {
+    const testid = tennis ? 'cr-runner-tennis' : 'cr-runner';
+    const etichetta = tennis ? 'Runner tennis' : 'Runner';
+    const notaFonte = (
+        <span className="text-[9.5px] text-white/30" data-testid={`${testid}-fonte`}
+            title="canale locale (processo collegato, eta' dell'ultimo messaggio) o database (battito al giro dei 30 s)">
+            {fonte.fonte === 'canale' ? 'canale' : 'db'} {fonte.etaS == null ? DASH : fmtAge(fonte.etaS)}
+        </span>
+    );
     if (r == null) {
         return (
-            <div className="flex flex-col" data-testid="cr-runner" title="stato del runner non letto">
-                <span className="text-[10px] uppercase tracking-wider text-white/40">Runner</span>
-                <span className="font-mono text-sm font-semibold text-white/60">ignoto</span>
+            <div className="flex flex-col" data-testid={testid}
+                title={tennis ? 'canale del runner tennis (47332) spento: stato non noto' : 'stato del runner non letto'}>
+                <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+                <span className="font-mono text-sm font-semibold text-white/60">{tennis ? 'canale spento' : 'ignoto'}</span>
             </div>
         );
     }
@@ -1018,13 +1044,14 @@ function Runner({ r }: { r: ReturnType<typeof useControlRoom>['runner'] }) {
     const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
     const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
     return (
-        <div className="flex flex-col" data-testid="cr-runner"
+        <div className="flex flex-col" data-testid={testid}
             title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
-            <span className="text-[10px] uppercase tracking-wider text-white/40">Runner</span>
+            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
             <span className={`font-mono text-sm font-semibold ${cls}`}>
                 {testo}
                 {r.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
             </span>
+            {notaFonte}
         </div>
     );
 }
@@ -1101,6 +1128,15 @@ function ChipBot({ b }: { b: StatoBot }) {
                     ? <span className="text-orange-400">senza spinta</span>
                     : <span className={FRESCHEZZA_CLS[b.freschezzaPush]}>{fmtAge(b.etaPushS)}</span>}
             </span>
+            {/* 25/09 (voce 4) - da dove viene lo STATO mostrato (modalita',
+                stato, parametri): push del canale o riga del database */}
+            {b.fonteStato != null && (
+                <span className="text-[9.5px] text-white/30" data-testid={`cr-bot-fonte-${b.bot}`}
+                    title="stato del bot: canale locale (push *_stato, piu' fresco del database) o database (giro dei 30 s)">
+                    stato {b.fonteStato === 'canale' ? 'canale' : 'db'}{' '}
+                    {b.etaStatoS == null ? DASH : fmtAge(b.etaStatoS)}
+                </span>
+            )}
         </div>
     );
 }
