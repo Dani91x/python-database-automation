@@ -1109,3 +1109,48 @@ di play-off/playout contate come finali, finali per il 3° posto no (da conferma
 `STRADA_UNICA_BANCO_E_PAPER`, `MISURA_PUNTO8`, `VALIDAZIONE_HAZARD`, `AUDIT3_*`, `AUDIT5_TACTICAI_TAB`,
 `FIX_CIRCOSCRITTI_F1_F4`, `PREPARAZIONE_O1_M1`, `ACTIONS_DIAGNOSI_E_FIX`, `ATLANTE_TUTTE_LE_LEGHE`, `BACKFILL_TRE_CHIUSURE`
 (solo citati tramite la cronostoria).
+
+---
+
+## Esiti fase 1 (admin-26)
+
+Eseguita dal delegato del coordinatore (Sonnet 5, worktree isolato, rebase su
+`origin/master` `d771d05` ≥ `099412c`), 25/09/2026, SOLA LETTURA: sonde REST
+PostgREST dirette (`select`/`limit` espliciti, RPC solo se esposte in GET/`STABLE`),
+introspezione OpenAPI (`GET /rest/v1/`), `.env` del checkout principale (chiavi
+segrete mai stampate), `gh run view --log` sull'ultimo run reale di
+`seasons_catchup.yml`, un dry-run REALE di `python league_orchestrator.py --league
+135 --season 2026 --dry-run` (exit 0, nessuna scrittura, nessuna chiamata API a
+pagamento), e 288 test `pytest` GIA' esistenti nel repo rieseguiti ora (nessuna
+scrittura, mock propri). Referto completo, riga per riga, con evidenza per ognuno dei
+65 controlli 7.1-7.8: `AUDIT_2026-09-25/E2E_FASE1_ADMIN26.md`.
+
+| Sottosezione | PASS | FASE 2 | FAIL |
+|---|---|---|---|
+| 7.1 Feed unico | 0 | 4 | 0 |
+| 7.2 Auto-follow e strada unica ordini | 1 | 12 | 0 |
+| 7.3 Atlante v4 | 4 | 4 | 0 |
+| 7.4 Catchup e referto buchi | 8 | 0 | 0 |
+| 7.5 Schede B17 | 6 | 2 | 0 |
+| 7.6 Scalper auto-mode | 3 | 5 | 0 |
+| 7.7 Tennis auto-mode | 6 | 2 | 0 |
+| 7.8 Safe: veti aggiuntivi | 8 | 0 | 0 |
+| **Totale** | **36** | **29** | **0** |
+
+**Nessun FAIL.** Tre note di trascrizione nel piano (non difetti del codice, dettaglio
+nel referto): (1) §7.4.8 cita un modulo `Betfair.stream.backfill.league_orchestrator`
+inesistente — lo script vero è `league_orchestrator.py` in radice, eseguito con
+successo; (2) §7.3.5 cita `dossier.py:309-321`, le chiavi si scrivono a 340-342 dello
+stesso file; (3) §7.5.1 cita `bot_service.py:2778`, la scrittura vera è a 2825-2827
+dello stesso file.
+
+**Fatto rilevante emerso, non un difetto ma da sapere prima della fase 2:**
+`hazard_atlas_leghe` è **vuota** (0 righe) — nessuna lega ha ancora uno stato v4
+scritto; nessuna tabella di follow (`scalper_control`, `live_follow`,
+`tennis_live_follow`) ha righe `origine='auto'` — l'auto-mode non è mai stato
+esercitato dal vivo su questo DB. La fase 2 su questi fronti (7.1, 7.2, 7.3.3, 7.3.5-6,
+7.6, 7.7.4/7.7.8) parte da zero, coerente con l'attivazione odierna delle funzioni.
+
+I 29 controlli **FASE 2** (elenco id nel referto completo) restano da rifare con l'app
+accesa, nella stessa forma già scritta dal piano in §7.1-§7.8; il valore atteso è
+quello già scritto lì per ciascuno, non alterato da questa sessione.
