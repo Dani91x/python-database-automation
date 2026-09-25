@@ -156,3 +156,97 @@ describe('TennisBotPanel — gate ordini reali (tennis_scalper)', () => {
         expect(p.one_tick_per_phase).not.toBe('off');
     });
 });
+
+// ============================================================================
+// AUDIT3 (25/09) — casi aggiuntivi del reperto «nessun test di componente per
+// il pannello per-partita». Il file sopra (bfd4d1f, gia' su master) copre gia'
+// il gate LIVE con checkbox spuntata/tolta; qui si completano: il default per
+// OGNI modalita' (incluso OFF, mai testato), la scelta ESPLICITA dell'utente
+// in PAPER, il caso OFF per intero e il payload completo (nessuna scrittura
+// parziale verso `tennis_bot_arm`).
+// ============================================================================
+
+describe('TennisBotPanel — default protetto per modalita (AUDIT3 caso 1)', () => {
+    it('PAPER: parte con dry-run TOLTO e lo dichiara a video (ordini simulati, visibili sul ladder)', async () => {
+        const { card } = await montaPannello('PAPER');
+        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'unchecked');
+        expect(card.getByText(/ORDINI SIMULATI/i)).toBeTruthy();
+    });
+
+    it('LIVE: parte con dry-run SPUNTATO (default prudente), nessun avviso "ordini reali"', async () => {
+        const { card } = await montaPannello('LIVE');
+        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'checked');
+        expect(card.queryByText(/ORDINI REALI/i)).toBeNull();
+    });
+
+    it('OFF: parte con dry-run SPUNTATO e dichiara che il runner lo forza comunque', async () => {
+        const { card } = await montaPannello('OFF');
+        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'checked');
+        expect(card.getByText(/runner OFF: dry-run forzato/i)).toBeTruthy();
+    });
+});
+
+describe('TennisBotPanel — PAPER: scelta ESPLICITA di togliere la spunta (AUDIT3 caso 4)', () => {
+    it('PAPER, spunta/tolta a mano (gia\' tolta di default: la rimette e la ritoglie) e arma: nessun confirm, dry_run=false', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const { user, card } = await montaPannello('PAPER');
+        const checkbox = card.getByRole('checkbox');
+        expect(checkbox).toHaveAttribute('data-state', 'unchecked');
+        await user.click(checkbox); // la spunta (dry_run=true)
+        expect(checkbox).toHaveAttribute('data-state', 'checked');
+        await user.click(checkbox); // la toglie di nuovo: scelta esplicita dell'utente
+        expect(checkbox).toHaveAttribute('data-state', 'unchecked');
+        await user.click(card.getByRole('button', { name: /ARMA/i }));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
+    });
+});
+
+describe('TennisBotPanel — orderMode OFF (AUDIT3 caso 5)', () => {
+    it('OFF, default (dry-run spuntato): ARMA senza conferma, dry_run=true', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const { user, card } = await montaPannello('OFF');
+        await user.click(card.getByRole('button', { name: /ARMA/i }));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', true, SCALPER.defaultStake, payloadDefaultAtteso());
+    });
+
+    // REPERTO (non e' un blocco applicativo, e' un comportamento reale da
+    // dichiarare al coordinatore): in OFF il pannello NON impedisce di
+    // togliere la spunta e armare. Nessun window.confirm scatta (la guardia
+    // in handleArm controlla solo `orderMode === 'LIVE'`) e la RPC riceve
+    // dry_run:false. Il backend forza comunque dry_run=True per il
+    // kill-switch di modalita' (Betfair/stream/tennis_live/tennis_runner.py,
+    // commento "OFF: dry-run FORZATO (kill-switch, il control non puo'
+    // aggirarlo)", righe 654-655): quindi NON parte nessun ordine reale, ma
+    // il pannello scrive comunque una riga di control con dry_run:false
+    // senza alcun avviso, mentre il testo a video promette "dry-run forzato".
+    it('OFF, utente toglie la spunta e arma: nessun confirm, e la RPC riceve dry_run=false (backend lo forza comunque)', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const { user, card } = await montaPannello('OFF');
+        const checkbox = card.getByRole('checkbox');
+        expect(checkbox).not.toHaveProperty('disabled', true);
+        await user.click(checkbox);
+        expect(checkbox).toHaveAttribute('data-state', 'unchecked');
+        const armaBtn = card.getByRole('button', { name: /ARMA/i });
+        expect(armaBtn).not.toHaveProperty('disabled', true);
+        await user.click(armaBtn);
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
+    });
+});
+
+describe('TennisBotPanel — payload completo, nessuna scrittura parziale (AUDIT3 caso 7)', () => {
+    it('il payload di armamento porta OGNI chiave che descriptor.params dichiara', async () => {
+        const { user, card } = await montaPannello('PAPER');
+        await user.click(card.getByRole('button', { name: /ARMA/i }));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        const params = mArm.mock.calls[0][4] as Record<string, unknown>;
+        for (const f of SCALPER.params) {
+            expect(params).toHaveProperty(f.key);
+        }
+    });
+});
