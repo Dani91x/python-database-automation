@@ -39,6 +39,14 @@ concurrency:
 
 jobs:
   assemble:
+    # 25/09/2026: se il retrain a monte e' stato SALTATO (nessun job eseguito,
+    # quindi nessun modello nuovo) l'incrementale non ha nulla da fare: prima
+    # leggeva comunque ~18.800 righe di calibration_cells per concludere "niente
+    # da fare" (run 36101662570, 36109665353: success vuoti). Ora la run e'
+    # dichiaratamente skipped. Retrain success/failure (anche parziale: alcuni
+    # shard possono aver salvato modelli) -> gira come prima. Schedule e
+    # workflow_dispatch invariati.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

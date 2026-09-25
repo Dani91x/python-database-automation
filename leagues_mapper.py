@@ -28,8 +28,10 @@ def get_existing_league_season_pairs() -> Set[Tuple[int, int]]:
             .execute()
         )
     except Exception as e:
+        # 25/09/2026: prima ritornava l'insieme VUOTO e si tentava di reinserire
+        # TUTTE le ~8.700 coppie (duplicati "ignorati"): run verde senza lavoro.
         print("[DB] ❌ Errore lettura coppie esistenti:", e)
-        return pairs
+        raise RuntimeError(f"lettura api_coverage_by_season fallita: {e}") from e
 
     data = getattr(res, "data", None) or []
     for item in data:
@@ -126,18 +128,19 @@ def map_leagues_to_coverage_rows(api_json: Optional[Dict[str, Any]]) -> List[Dic
 # Upsert logic (SAFE / IDPOTENTE)
 # =========================================================
 
-def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> None:
+def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> int:
     """
     Inserisce SOLO le righe mancanti in api_coverage_by_season.
     - Nessuna delete
     - Nessuna sovrascrittura
     - Chunk safe
+    Ritorna il numero di batch falliti per errore NON previsto (0 = tutto ok).
     """
     sb = get_supabase_client()
 
     if not rows:
         print("❌ Nessuna riga da processare, stop.")
-        return
+        return 0
 
     existing_pairs = get_existing_league_season_pairs()
 
@@ -174,11 +177,12 @@ def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> None:
 
     if not filtered_rows:
         print("✅ Nessuna nuova lega/stagione da inserire. DB già allineato.")
-        return
+        return 0
 
     CHUNK = 500
     inserted_total = 0
     batch_errors = 0
+    duplicate_residui = 0
 
     for i in range(0, len(filtered_rows), CHUNK):
         chunk = filtered_rows[i : i + CHUNK]
@@ -192,6 +196,7 @@ def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> None:
             batch_errors += 1
             msg = str(e)
             if "duplicate key value violates unique constraint" in msg:
+                duplicate_residui += 1
                 print(f"⚠️ Duplicate residuo batch {batch_index}, ignorato.")
             else:
                 print(f"❌ Errore batch {batch_index} NON previsto:", msg)
@@ -207,6 +212,7 @@ def upsert_coverage_rows(rows: List[Dict[str, Any]]) -> None:
     print(f"   Batch con errori:              {batch_errors}")
     print("   Operazione completata senza cancellazioni.")
     print("==============================================")
+    return batch_errors - duplicate_residui
 
 
 # =========================================================
@@ -222,7 +228,14 @@ def run_full_leagues_backfill_mapping() -> None:
     data = client.get_leagues()
 
     rows = map_leagues_to_coverage_rows(data)
-    upsert_coverage_rows(rows)
+    # 25/09/2026 - FALLIMENTO RUMOROSO: APIFootballClient.call ritorna {} su
+    # qualunque errore e i batch in errore erano solo stampati: il run chiudeva
+    # VERDE anche senza aver fatto nulla. Ora exit != 0 in entrambi i casi.
+    if not rows:
+        raise SystemExit("LEAGUES MAPPER FALLITO: /leagues vuoto o in errore (vedi log [API]).")
+    errori = upsert_coverage_rows(rows)
+    if errori:
+        raise SystemExit(f"LEAGUES MAPPER FALLITO: {errori} batch in errore NON previsto (vedi log).")
 
     print("🏁 SCRIPT COMPLETATO")
 

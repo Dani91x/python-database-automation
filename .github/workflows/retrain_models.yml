@@ -95,6 +95,10 @@ jobs:
     # Su workflow_run parte SOLO se il backfill a monte e' andato a buon fine
     # (inutile ricontrollare se l'ingest dei risultati e' fallito). I run manuali
     # (workflow_dispatch) passano sempre.
+    # 25/09/2026: la conclusion del Daily riflette SOLO il backfill (l'atlante
+    # hazard e' stato spostato in hazard_atlas.yml): un job accessorio non puo'
+    # piu' far saltare il retrain. Se e' il backfill a fallire, il salto qui e'
+    # voluto e il fallback giornaliero (schedule 08:19 UTC) recupera.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8

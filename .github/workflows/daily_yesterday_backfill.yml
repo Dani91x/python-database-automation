@@ -5,6 +5,11 @@ on:
     - cron: '12 1 * * *'   # 01:12 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
   workflow_dispatch:
 
+# Mai due backfill sovrapposti (pianificato + lancio a mano): il secondo attende.
+concurrency:
+  group: daily-yesterday-backfill
+  cancel-in-progress: false
+
 jobs:
   run-backfill:
     runs-on: ubuntu-latest
@@ -30,35 +35,8 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python daily_yesterday_backfill.py
 
-  # 24/09/2026 - ATLANTE HAZARD INCREMENTALE (Betfair/stream/scalper/genera_atlante.py).
-  # Gira DOPO il backfill (gli eventi di ieri sono appena entrati) e anche se il
-  # backfill fallisce (!cancelled: si aggiorna con quello che c'e'). Legge solo
-  # gli eventi oltre la filigrana (match_events.id), aggiorna SOLO le leghe
-  # toccate, da' lo storico ad al massimo 10 leghe nuove per notte e scrive la
-  # versione nuova in hazard_atlas (le ultime 7). Solo libreria standard: niente
-  # pip install. Prerequisiti: migrations/hazard_atlas_2026-09-24.sql applicata
-  # e bootstrap iniziale fatto una volta (vedi referto del 24/09).
-  hazard-atlas:
-    needs: run-backfill
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Rigenera l'atlante hazard (incrementale per lega)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          PYTHONIOENCODING: utf-8
-        run: >
-          python -m Betfair.stream.scalper.genera_atlante
-          --stato-db --incrementale
-          --bootstrap-nuove 10 --stagioni-indietro 10
-          --scrivi-db
+  # 25/09/2026: il job `hazard-atlas` (atlante hazard, montato dal 6070623) e'
+  # stato SPOSTATO nel workflow suo `hazard_atlas.yml`, agganciato alla fine di
+  # questo. Qui dentro un suo fallimento rendeva rossa l'intera run e faceva
+  # SALTARE il retrain (che guarda la conclusion di questa run) anche con il
+  # backfill verde. Ora l'esito di questa run = esito del solo backfill.

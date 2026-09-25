@@ -1,0 +1,90 @@
+name: Hazard Atlas (notturno, dopo il Daily)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 25/09/2026 - ATLANTE HAZARD INCREMENTALE (Betfair/stream/scalper/genera_atlante.py).
+#
+# PRIMA era il job `hazard-atlas` DENTRO "Daily Yesterday Backfill" (commit
+# 6070623). Un suo fallimento rendeva `failure` l'INTERA run del Daily e quindi
+# "Retrain ML Models" (che su workflow_run parte solo con conclusion == success)
+# si SALTAVA, anche con il backfill verde (run 36101390338 del 25/09: backfill
+# success, atlante 404 -> retrain 36101658347 e 36109661044 skipped).
+#
+# ORA vive in un workflow SUO, agganciato alla fine del Daily: stesso momento e
+# stessa regola di prima (gira dopo il backfill, anche se il backfill fallisce,
+# mai se e' stato annullato), ma il suo esito resta SUO: se fallisce questa run e'
+# ROSSA e visibile, e il Daily (quindi il retrain) non ne viene toccato.
+#
+# Prerequisiti (azioni dell'utente, vedi referto del 24/09):
+#   1) migrations/hazard_atlas_2026-09-24.sql applicata (tabelle hazard_atlas e
+#      hazard_atlas_leghe);
+#   2) bootstrap iniziale fatto UNA volta (fissa la filigrana in hazard_atlas).
+# Lo step "Prerequisiti" li controlla e, se mancano, lo DICE con un errore
+# chiaro (run rossa) invece di un traceback 404.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    workflows: ["Daily Yesterday Backfill"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: hazard-atlas
+  cancel-in-progress: false
+
+jobs:
+  hazard-atlas:
+    # Come prima (`needs: run-backfill` + `if: !cancelled()`): gira anche se il
+    # backfill fallisce (si aggiorna con quello che c'e'), mai se e' stato annullato.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Prerequisiti (tabelle migrate + bootstrap fatto)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, sys, urllib.error, urllib.request
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          def leggi(path):
+              req = urllib.request.Request(url + "/rest/v1/" + path,
+                                           headers={"apikey": key, "Authorization": "Bearer " + key})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.loads(r.read().decode("utf-8"))
+          try:
+              leggi("hazard_atlas_leghe?select=league_id&limit=1")
+              ult = leggi("hazard_atlas?select=watermark_event_id&order=generated_at.desc&limit=1")
+          except urllib.error.HTTPError as e:
+              if e.code == 404:
+                  print("::error::Tabelle hazard_atlas / hazard_atlas_leghe ASSENTI sul DB: "
+                        "applicare migrations/hazard_atlas_2026-09-24.sql, poi il bootstrap.")
+                  sys.exit(1)
+              raise
+          if not ult or not ult[0].get("watermark_event_id"):
+              print("::error::Atlante mai inizializzato (hazard_atlas vuota o senza filigrana): "
+                    "lanciare UNA volta il bootstrap (vedi referto del 24/09), poi questa action.")
+              sys.exit(1)
+          print(f"[PRE] tabelle presenti, filigrana={ult[0]['watermark_event_id']}: procedo.")
+          PY
+
+      - name: Rigenera l'atlante hazard (incrementale per lega)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONIOENCODING: utf-8
+        run: >
+          python -m Betfair.stream.scalper.genera_atlante
+          --stato-db --incrementale
+          --bootstrap-nuove 10 --stagioni-indietro 10
+          --scrivi-db

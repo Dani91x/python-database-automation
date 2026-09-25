@@ -316,6 +316,15 @@ def run_daily_backfill_for_date(target_date: str) -> None:
 
     fixtures_json = fetch_fixtures_for_date(api, target_date)
 
+    # 25/09/2026 - FALLIMENTO RUMOROSO. APIFootballClient.call ritorna {} su
+    # QUALUNQUE errore (HTTP, quota, JSON vuoto, rete): prima si finiva nel ramo
+    # "Nessun match FINISHED" e il run chiudeva VERDE senza aver scritto nulla
+    # (e il retrain partiva a valle su dati vecchi). Un giorno intero senza
+    # nemmeno una fixture nel mondo non esiste: risposta vuota = errore.
+    if not fixtures_json:
+        logger.error("API /fixtures?date=%s: risposta VUOTA o in errore (vedi log [API] sopra).", target_date)
+        raise SystemExit(f"DAILY BACKFILL FALLITO: nessuna fixture dall'API per {target_date}")
+
     fixtures_keys = upsert_matches_from_fixtures_finished_only(fixtures_json)
 
     if not fixtures_keys:

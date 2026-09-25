@@ -1,0 +1,18 @@
+== M1 daily: guardia risposta vuota tolta  (sostituito 'if not fixtures_json:' -> 'if False:')
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_daily_api_vuota_o_in_errore_esce_rosso[risposta0]
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_daily_api_vuota_o_in_errore_esce_rosso[risposta1]
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_daily_api_vuota_o_in_errore_esce_rosso[risposta2]
+    3 failed, 8 passed in 2.24s
+== M2 mapper: lettura coppie fallita torna insieme vuoto  (sostituito 'raise RuntimeError(f"lettura api_coverage_by_season fallita: {e}") from e' -> 'return pairs')
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_mapper_lettura_coppie_fallita_esce_rosso_senza_scrivere
+    1 failed, 10 passed in 2.03s
+== M3 mapper: batch in errore non fa uscire rosso  (sostituito 'if errori:' -> 'if False:')
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_mapper_batch_in_errore_non_previsto_esce_rosso
+    1 failed, 10 passed in 2.53s
+== M4 mapper: /leagues vuoto non fa uscire rosso  (sostituito 'if not rows:\n        raise SystemExit' -> 'if False:\n        raise SystemExit')
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_mapper_leagues_vuoto_esce_rosso[risposta0]
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_mapper_leagues_vuoto_esce_rosso[risposta1]
+    2 failed, 9 passed in 2.11s
+== M5 mapper: duplicati residui contati come errori  (sostituito 'return batch_errors - duplicate_residui' -> 'return batch_errors')
+    FAILED test_actions_fail_rumoroso_2026_09_25.py::test_mapper_duplicato_residuo_resta_tollerato
+    1 failed, 10 passed in 1.97s
