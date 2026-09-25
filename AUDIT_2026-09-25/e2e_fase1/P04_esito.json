@@ -1,0 +1,203 @@
+{
+ "percorso": "P04",
+ "titolo": "Omega stake minimo",
+ "azione": "UI jsdom: PannelloBot, campo cr-importo-omega-min-stake + salva",
+ "passi": [
+  "2026-09-25T18:22:27.687Z scrive «0.6» in cr-importo-omega-min-stake",
+  "2026-09-25T18:22:27.702Z clic cr-importo-omega-min-stake-salva («salva»)",
+  "2026-09-25T18:22:36.970Z scrive «0.5» in cr-importo-omega-min-stake",
+  "2026-09-25T18:22:36.975Z clic cr-importo-omega-min-stake-salva («salva»)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P04 solo min_stake cambiato",
+   "atteso": [
+    "min_stake"
+   ],
+   "ottenuto": [
+    "min_stake"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P04 status/mode/daily_goal invariati",
+   "atteso": [
+    "stopped",
+    "paper",
+    100
+   ],
+   "ottenuto": [
+    "stopped",
+    "paper",
+    100
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P04 SONDA resolve_params min_stake",
+   "atteso": 0.6,
+   "ottenuto": 0.6,
+   "ok": true
+  },
+  {
+   "nome": "P04 ripristino dal campo: params = fotografia",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": {
+     "min_stake": 0.6,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 99
+  },
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 95
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  },
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH omega_control:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P04_prima",
+  "b": "P04_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P04_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

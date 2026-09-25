@@ -1,0 +1,13 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "omega": {
+  "status": "stopping",
+  "mode": "paper",
+  "daily_goal": 100,
+  "modo_uscite": "avvisa_e_proponi",
+  "min_stake_resolved": 0.5,
+  "min_stake_raw": 0.5
+ },
+ "thread_fine": 1
+}

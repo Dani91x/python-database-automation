@@ -1,0 +1,334 @@
+{
+ "percorso": "P07_P10",
+ "titolo": "Mike",
+ "azione": "UI jsdom: PannelloBot (scheda calcio) + comandi veri",
+ "passi": [
+  "2026-09-25T18:47:49.008Z clic cr-avvia-paper-mike («avvia in prova»)",
+  "2026-09-25T18:47:58.717Z clic cr-a-live-mike («passa a soldi veri»)",
+  "2026-09-25T18:48:00.121Z clic cr-conferma-live-mike («confermi? sono soldi veri»)",
+  "2026-09-25T18:48:09.515Z clic cr-a-paper-mike («passa a prova»)",
+  "2026-09-25T18:48:09.928Z clic cr-ferma-mike («ferma»)",
+  "preparazione: mike_control.status stopping -> stopped (lo farebbe il servizio al giro dopo)",
+  "2026-09-25T18:48:16.326Z clic cr-avvia-live-mike («avvia con soldi veri»)",
+  "2026-09-25T18:48:17.617Z clic cr-conferma-avvio-live-mike («confermi? ordini reali su Betfair»)",
+  "2026-09-25T18:48:23.431Z clic cr-ferma-mike («ferma»)",
+  "2026-09-25T18:48:28.083Z clic cr-uscite-cambia-mike («passa ad automatiche»)",
+  "2026-09-25T18:48:28.402Z clic cr-uscite-conferma-mike («confermi? passa ad automatiche»)",
+  "2026-09-25T18:48:37.916Z clic cr-uscite-cambia-mike («passa a manuali»)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P07 running paper, params identici",
+   "atteso": [
+    "running",
+    "paper",
+    []
+   ],
+   "ottenuto": [
+    "running",
+    "paper",
+    []
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P07 RPC mike_activate(p_mode=paper) SENZA p_params",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P07 SONDA",
+   "atteso": [
+    "running",
+    "paper"
+   ],
+   "ottenuto": [
+    "running",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P08 un clic su «passa a soldi veri» non scrive",
+   "atteso": "2026-09-25T18:47:49.265339+00:00",
+   "ottenuto": "2026-09-25T18:47:49.265339+00:00",
+   "ok": true
+  },
+  {
+   "nome": "P08 live, status invariato, params identici",
+   "atteso": [
+    "live",
+    "running",
+    []
+   ],
+   "ottenuto": [
+    "live",
+    "running",
+    []
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P08 RPC mike_update_params(p_params INTERI letti, p_mode=live)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P08 SONDA live",
+   "atteso": [
+    "running",
+    "live"
+   ],
+   "ottenuto": [
+    "running",
+    "live"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P09 stopping, paper",
+   "atteso": [
+    "stopping",
+    "paper"
+   ],
+   "ottenuto": [
+    "stopping",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P07 avvia soldi veri: conferma comparsa e inerte",
+   "atteso": [
+    true,
+    true
+   ],
+   "ottenuto": [
+    true,
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P07 un clic su «avvia con soldi veri» non scrive",
+   "atteso": "2026-09-25T18:48:10.174477+00:00",
+   "ottenuto": "2026-09-25T18:48:10.174477+00:00",
+   "ok": true
+  },
+  {
+   "nome": "P07 dopo conferma: running live, params identici",
+   "atteso": [
+    "running",
+    "live",
+    []
+   ],
+   "ottenuto": [
+    "running",
+    "live",
+    []
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P10 a video = servizio (merge_params) prima",
+   "atteso": "manuali",
+   "ottenuto": "manuali",
+   "ok": true
+  },
+  {
+   "nome": "P10 solo uscite_automatiche cambiata",
+   "atteso": [
+    "uscite_automatiche"
+   ],
+   "ottenuto": [
+    "uscite_automatiche"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P10 SONDA merge_params uscite_automatiche",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia di base fotografia_post_migrazione (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "mike_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 107
+  },
+  {
+   "rpc": "mike_update_params",
+   "args": {
+    "p_params": {
+     "stake": 5,
+     "max_open_matches": 2,
+     "uscite_automatiche": false,
+     "entry_hours_before_ko": 1
+    },
+    "p_mode": "live"
+   },
+   "esito": "ok",
+   "ms": 109
+  },
+  {
+   "rpc": "mike_update_params",
+   "args": {
+    "p_params": {
+     "stake": 5,
+     "max_open_matches": 2,
+     "uscite_automatiche": false,
+     "entry_hours_before_ko": 1
+    },
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 92
+  },
+  {
+   "rpc": "mike_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 100
+  },
+  {
+   "rpc": "mike_activate",
+   "args": {
+    "p_mode": "live",
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 102
+  },
+  {
+   "rpc": "mike_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 102
+  },
+  {
+   "rpc": "mike_update_params",
+   "args": {
+    "p_params": {
+     "stake": 5,
+     "max_open_matches": 2,
+     "uscite_automatiche": true,
+     "entry_hours_before_ko": 1
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 159
+  },
+  {
+   "rpc": "mike_update_params",
+   "args": {
+    "p_params": {
+     "stake": 5,
+     "max_open_matches": 2,
+     "uscite_automatiche": false,
+     "entry_hours_before_ko": 1
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 94
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  },
+  {
+   "bot": "mike",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH mike_control:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P07_prima",
+  "b": "P07_P10_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "base": "fotografia_post_migrazione",
+  "a": "fotografia_post_migrazione",
+  "b": "P07_P10_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

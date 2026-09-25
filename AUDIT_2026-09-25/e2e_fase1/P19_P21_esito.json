@@ -1,0 +1,388 @@
+{
+ "percorso": "P19_P21",
+ "titolo": "Bot tennis",
+ "azione": "UI jsdom: PannelloBot scheda TENNIS (P19); funzione TS setTennisBotUscite (P20: il componente UsciteTennis compare solo con stats.auto scritto dal ponte acceso); funzione TS armTennisBot/disarmTennisBot di TennisBotPanel (P21)",
+ "passi": [
+  "preparazione: tennis_flb stopping -> stopped (come ripresa_ponte all'avvio dell'app)",
+  "2026-09-25T18:50:56.678Z clic cr-avvia-paper-tennis_flb («avvia in prova»)",
+  "2026-09-25T18:51:16.899Z clic cr-a-live-tennis_flb («passa a soldi veri»)",
+  "2026-09-25T18:51:17.407Z clic cr-conferma-live-tennis_flb («confermi? sono soldi veri»)",
+  "2026-09-25T18:51:18.393Z clic cr-a-paper-tennis_flb («passa a prova»)",
+  "2026-09-25T18:51:19.507Z scrive «2.5» in cr-importo-tennis_flb-stake",
+  "2026-09-25T18:51:19.514Z clic cr-importo-tennis_flb-stake-salva («salva»)",
+  "2026-09-25T18:51:20.722Z clic cr-ferma-tennis_flb («ferma»)",
+  "P21 re-arm rifiutato: bot già attivo o in chiusura: attendi lo stop prima di riarmare",
+  "preparazione: tennis_bot_control di prova stopping -> stopped (§5.1), poi riarmo con dry-run TOLTO"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P19 riga stopping dal 24/09: a video «sta fermandosi», NESSUN avvia",
+   "atteso": [
+    "sta fermandosi",
+    true,
+    false
+   ],
+   "ottenuto": [
+    "sta fermandosi",
+    true,
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P19 running paper, stake/params conservati",
+   "atteso": [
+    "running",
+    "paper",
+    2,
+    true
+   ],
+   "ottenuto": [
+    "running",
+    "paper",
+    2,
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P19 gli altri tre invariati",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P19 SONDA stato_desiderato acceso paper",
+   "atteso": [
+    true,
+    "paper"
+   ],
+   "ottenuto": [
+    true,
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P19 cambio modalita: live, status running invariato",
+   "atteso": [
+    "live",
+    "running"
+   ],
+   "ottenuto": [
+    "live",
+    "running"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P19 RPC tennis_bot_service_update_params(p_mode=live, stake/params null)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P19 stake colonna cambiata, status/mode/params invariati",
+   "atteso": [
+    2.5,
+    "running",
+    "paper",
+    true
+   ],
+   "ottenuto": [
+    2.5,
+    "running",
+    "paper",
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P19 ferma: stopping, stopped_at valorizzato",
+   "atteso": [
+    "stopping",
+    true
+   ],
+   "ottenuto": [
+    "stopping",
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P20 uscite_automatiche invertita, nient'altro (status/mode/stake/params)",
+   "atteso": [
+    true,
+    "stopping",
+    "paper",
+    2.5,
+    true
+   ],
+   "ottenuto": [
+    true,
+    "stopping",
+    "paper",
+    2.5,
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P20 SONDA stato_desiderato uscite_automatiche",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P20 ritorno",
+   "atteso": false,
+   "ottenuto": false,
+   "ok": true
+  },
+  {
+   "nome": "P21 arma dry_run=true: requested, mode paper, dry_run true",
+   "atteso": [
+    "requested",
+    "paper",
+    true
+   ],
+   "ottenuto": [
+    "requested",
+    "paper",
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P21 guardia anti re-arm su riga attiva",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P21 disarmo: requested -> stopping",
+   "atteso": "stopping",
+   "ottenuto": "stopping",
+   "ok": true
+  },
+  {
+   "nome": "P21 (R1) dry-run tolto: la riga nasce COMUNQUE mode=paper, dry_run=false",
+   "atteso": [
+    "requested",
+    "paper",
+    false
+   ],
+   "ottenuto": [
+    "requested",
+    "paper",
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia di base fotografia_post_migrazione (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 230
+  },
+  {
+   "rpc": "tennis_bot_service_update_params",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": "live",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 262
+  },
+  {
+   "rpc": "tennis_bot_service_update_params",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 102
+  },
+  {
+   "rpc": "tennis_bot_service_update_params",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": null,
+    "p_stake": 2.5,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 233
+  },
+  {
+   "rpc": "tennis_bot_service_stop",
+   "args": {
+    "p_bot_key": "tennis_flb"
+   },
+   "esito": "ok",
+   "ms": 201
+  },
+  {
+   "rpc": "tennis_bot_service_set_uscite",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_automatiche": true
+   },
+   "esito": "ok",
+   "ms": 94
+  },
+  {
+   "rpc": "tennis_bot_service_set_uscite",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_automatiche": false
+   },
+   "esito": "ok",
+   "ms": 80
+  },
+  {
+   "rpc": "tennis_bot_arm",
+   "args": {
+    "p_event_id": "36063889",
+    "p_bot_key": "tennis_flb",
+    "p_dry_run": true,
+    "p_stake": 2,
+    "p_params": {}
+   },
+   "esito": "ok",
+   "ms": 142
+  },
+  {
+   "rpc": "tennis_bot_arm",
+   "args": {
+    "p_event_id": "36063889",
+    "p_bot_key": "tennis_flb",
+    "p_dry_run": false,
+    "p_stake": 2,
+    "p_params": {}
+   },
+   "esito": "errore",
+   "errore": "bot già attivo o in chiusura: attendi lo stop prima di riarmare",
+   "ms": 98
+  },
+  {
+   "rpc": "tennis_bot_disarm",
+   "args": {
+    "p_event_id": "36063889",
+    "p_bot_key": "tennis_flb"
+   },
+   "esito": "ok",
+   "ms": 81
+  },
+  {
+   "rpc": "tennis_bot_arm",
+   "args": {
+    "p_event_id": "36063889",
+    "p_bot_key": "tennis_flb",
+    "p_dry_run": false,
+    "p_stake": 2,
+    "p_params": {}
+   },
+   "esito": "ok",
+   "ms": 154
+  },
+  {
+   "rpc": "tennis_bot_disarm",
+   "args": {
+    "p_event_id": "36063889",
+    "p_bot_key": "tennis_flb"
+   },
+   "esito": "ok",
+   "ms": 89
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "tennis_flb",
+   "motivo": "comando"
+  },
+  {
+   "bot": "tennis_flb",
+   "motivo": "comando"
+  },
+  {
+   "bot": "tennis_flb",
+   "motivo": "comando"
+  },
+  {
+   "bot": "tennis_flb",
+   "motivo": "comando"
+  },
+  {
+   "bot": "tennis_flb",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH tennis_bot_service_control:tennis_flb",
+   "DELETE tennis_bot_control 36063889/tennis_flb"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P19_prima",
+  "b": "P19_P21_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "base": "fotografia_post_migrazione",
+  "a": "fotografia_post_migrazione",
+  "b": "P19_P21_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

@@ -1,0 +1,95 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "omega": {
+  "status": "stopped",
+  "mode": "paper",
+  "daily_goal": 100,
+  "modo_uscite": "avvisa_e_proponi",
+  "min_stake_resolved": 0.5,
+  "min_stake_raw": 0.5
+ },
+ "mike": {
+  "status": "stopped",
+  "mode": "paper",
+  "uscite_automatiche": false,
+  "stake": 5.0
+ },
+ "safe": {
+  "status": "stopped",
+  "mode": "paper",
+  "variants": [
+   "base",
+   "esatto",
+   "punta",
+   "tennis"
+  ],
+  "modalita_per_strategia": {
+   "base": "paper",
+   "esatto": "paper",
+   "punta": "paper",
+   "tennis": "paper",
+   "model": "paper",
+   "manual": "paper"
+  },
+  "uscite_per_strategia": {
+   "base": false,
+   "esatto": false,
+   "punta": false,
+   "tennis": false,
+   "model": false
+  },
+  "stake_per_strategia": {
+   "base": 2,
+   "punta": 3,
+   "esatto": 2,
+   "tennis": 3
+  },
+  "tennis_exit_approval": true
+ },
+ "tennis": {
+  "tennis_swing": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_scalper": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_flb": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_pro": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  }
+ },
+ "scalper": {
+  "status": "stopped",
+  "mode": "paper",
+  "stake": 25,
+  "strategia": "maker",
+  "uscite_automatiche": false
+ },
+ "ordini": {
+  "kill_switch": false,
+  "order_mode": "paper",
+  "motivo_kill_switch": null,
+  "descrivi": {
+   "effettivo": "PAPER",
+   "tetto_ambiente": "LIVE",
+   "scelto_ui": "PAPER",
+   "motivo": "ok"
+  }
+ },
+ "thread_fine": 1
+}

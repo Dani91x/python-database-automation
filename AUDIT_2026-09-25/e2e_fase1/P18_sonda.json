@@ -1,0 +1,36 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "safe": {
+  "status": "running",
+  "mode": "paper",
+  "variants": [
+   "base",
+   "esatto",
+   "punta"
+  ],
+  "modalita_per_strategia": {
+   "base": "paper",
+   "esatto": "paper",
+   "punta": "paper",
+   "tennis": "paper",
+   "model": "paper",
+   "manual": "paper"
+  },
+  "uscite_per_strategia": {
+   "base": true,
+   "esatto": false,
+   "punta": false,
+   "tennis": false,
+   "model": false
+  },
+  "stake_per_strategia": {
+   "base": 2.5,
+   "punta": 3,
+   "esatto": 2,
+   "tennis": 3
+  },
+  "tennis_exit_approval": true
+ },
+ "thread_fine": 1
+}

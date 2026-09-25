@@ -1,0 +1,251 @@
+{
+ "percorso": "P28_P31",
+ "titolo": "Richieste manuali: contratto negativo",
+ "azione": "FUNZIONI TS della UI: approvaPropostaOpportunita/approvaProposta (safeBot.ts, controlRoomProposte.ts), approvaPropostaOmega (omegaProposte.ts), requestSafe, requestMike (mike.ts), requestTennisChiudiBot (tennis.ts)",
+ "passi": [
+  "messaggi: {\"r1\":\"richiesta 999999999 inesistente\",\"r2\":\"la proposta non è più in attesa di approvazione\",\"r2b\":\"la proposta non è più in attesa di approvazione\",\"r3\":\"kind non valido: kind_inventato\",\"r4\":\"richiesta 999999999 inesistente\",\"r5\":\"la proposta non e' piu' in attesa di approvazione\",\"r6\":\"approva_uscita senza chiave della proposta\",\"r7\":\"payload senza event_id\",\"r8\":\"bot non valido per chiudi_bot: bot_inventato\",\"r9\":\"event_id obbligatorio per chiudi_bot\"}"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P28 safe_request_approve id inesistente -> eccezione «inesistente»",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P28 proposta gia chiusa (id 256) -> errore a video (esigiOk)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P28 proposta chiusa con prezzo/contesto -> errore",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P28 safe_request kind inventato -> «kind non valido»",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P29 omega_request_approve id inesistente -> eccezione",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P29 proposta Omega non proposed (48) -> errore",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P30 mike approva_uscita senza chiave -> eccezione",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P30 mike cashout senza event_id -> eccezione",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P31 chiudi_bot bot non valido -> eccezione",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P31 chiudi_bot senza event_id/market_id -> eccezione",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P28-P31 nessuna riga nuova e nessuna riga toccata (max id code, righe 256/48/257/49)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "safe_request_approve",
+   "args": {
+    "p_id": 999999999
+   },
+   "esito": "errore",
+   "errore": "richiesta 999999999 inesistente",
+   "ms": 191
+  },
+  {
+   "rpc": "safe_request_approve",
+   "args": {
+    "p_id": 256
+   },
+   "esito": "ok",
+   "ms": 118
+  },
+  {
+   "rpc": "safe_request_approve",
+   "args": {
+    "p_id": 256,
+    "p_contesto": {
+     "e2e": true
+    },
+    "p_price": 1.5
+   },
+   "esito": "ok",
+   "ms": 76
+  },
+  {
+   "rpc": "safe_request",
+   "args": {
+    "p_kind": "kind_inventato",
+    "p_payload": {}
+   },
+   "esito": "errore",
+   "errore": "kind non valido: kind_inventato",
+   "ms": 81
+  },
+  {
+   "rpc": "omega_request_approve",
+   "args": {
+    "p_id": 999999999
+   },
+   "esito": "errore",
+   "errore": "richiesta 999999999 inesistente",
+   "ms": 80
+  },
+  {
+   "rpc": "omega_request_approve",
+   "args": {
+    "p_id": 48,
+    "p_price": 2,
+    "p_contesto": {
+     "e2e": true
+    }
+   },
+   "esito": "ok",
+   "ms": 73
+  },
+  {
+   "rpc": "mike_request",
+   "args": {
+    "p_kind": "approva_uscita",
+    "p_payload": {
+     "event_id": "x"
+    }
+   },
+   "esito": "errore",
+   "errore": "approva_uscita senza chiave della proposta",
+   "ms": 78
+  },
+  {
+   "rpc": "mike_request",
+   "args": {
+    "p_kind": "cashout",
+    "p_payload": {}
+   },
+   "esito": "errore",
+   "errore": "payload senza event_id",
+   "ms": 69
+  },
+  {
+   "rpc": "request_tennis_live_order",
+   "args": {
+    "p": {
+     "action": "chiudi_bot",
+     "bot": "bot_inventato",
+     "event_id": "1",
+     "market_id": "1.1",
+     "mode": "paper",
+     "client_ref": "274cfc65-894f-4553-973f-62fb58c8b0f7"
+    }
+   },
+   "esito": "errore",
+   "errore": "bot non valido per chiudi_bot: bot_inventato",
+   "ms": 75
+  },
+  {
+   "rpc": "request_tennis_live_order",
+   "args": {
+    "p": {
+     "action": "chiudi_bot",
+     "bot": "tennis_flb",
+     "event_id": "",
+     "market_id": "",
+     "mode": "paper",
+     "client_ref": "726a51ee-71a8-4dd9-aa29-ab31aa8ea6f1"
+    }
+   },
+   "esito": "errore",
+   "errore": "event_id obbligatorio per chiudi_bot",
+   "ms": 78
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [],
+ "ripristino": {
+  "ripristino": []
+ },
+ "confronto_con_prima": {
+  "a": "P28_prima",
+  "b": "P28_P31_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P28_P31_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

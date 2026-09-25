@@ -1,0 +1,16 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "ordini": {
+  "kill_switch": false,
+  "order_mode": "live",
+  "motivo_kill_switch": null,
+  "descrivi": {
+   "effettivo": "LIVE",
+   "tetto_ambiente": "LIVE",
+   "scelto_ui": "LIVE",
+   "motivo": "ok"
+  }
+ },
+ "thread_fine": 1
+}

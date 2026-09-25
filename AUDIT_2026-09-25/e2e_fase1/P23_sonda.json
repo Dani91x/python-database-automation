@@ -1,0 +1,12 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "scalper": {
+  "status": "running",
+  "mode": "paper",
+  "stake": 30,
+  "strategia": "maker",
+  "uscite_automatiche": true
+ },
+ "thread_fine": 1
+}

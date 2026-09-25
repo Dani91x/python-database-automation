@@ -1,0 +1,31 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "tennis": {
+  "tennis_swing": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_scalper": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_flb": {
+   "acceso": true,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  },
+  "tennis_pro": {
+   "acceso": false,
+   "mode": "paper",
+   "stake": 2,
+   "uscite_automatiche": false
+  }
+ },
+ "thread_fine": 1
+}

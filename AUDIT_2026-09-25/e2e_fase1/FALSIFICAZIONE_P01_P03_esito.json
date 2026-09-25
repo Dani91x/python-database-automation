@@ -1,0 +1,339 @@
+{
+ "percorso": "P01_P03",
+ "titolo": "Omega avvia/modalita/ferma",
+ "azione": "UI jsdom: PannelloBot (Control Room, scheda calcio) + comandi veri",
+ "passi": [
+  "2026-09-25T18:39:44.927Z clic cr-avvia-paper-omega («avvia in prova»)",
+  "effetto collaterale omega_snapshot_daily_goal: [{\"day\":\"2026-09-25\",\"goal\":100,\"updated_at\":\"2026-09-25T18:39:45.177448+00:00\"}]",
+  "2026-09-25T18:39:54.829Z clic cr-a-live-omega («passa a soldi veri»)",
+  "2026-09-25T18:40:02.048Z clic cr-conferma-live-omega («confermi? sono soldi veri»)",
+  "2026-09-25T18:40:11.747Z clic cr-a-paper-omega («passa a prova»)",
+  "P03 title del pulsante ferma: ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano",
+  "2026-09-25T18:40:18.497Z clic cr-ferma-omega («ferma»)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P01 riga Omega a video prima: stato",
+   "atteso": "fermo",
+   "ottenuto": "fermo",
+   "ok": true
+  },
+  {
+   "nome": "P01 status",
+   "atteso": "running",
+   "ottenuto": "running",
+   "ok": true
+  },
+  {
+   "nome": "P01 mode",
+   "atteso": "paper",
+   "ottenuto": "paper",
+   "ok": true
+  },
+  {
+   "nome": "P01 daily_goal = fotografia",
+   "atteso": 100,
+   "ottenuto": 100,
+   "ok": true
+  },
+  {
+   "nome": "P01 params IDENTICI alla fotografia (chiavi diverse)",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  },
+  {
+   "nome": "P01 error NULL",
+   "atteso": null,
+   "ottenuto": null,
+   "ok": true
+  },
+  {
+   "nome": "P01 stopped_at NULL",
+   "atteso": null,
+   "ottenuto": null,
+   "ok": true
+  },
+  {
+   "nome": "P01 started_at aggiornato (entro 60 s)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P01 RPC omega_activate con p_mode=paper, p_daily_goal=obiettivo, p_params INTERI",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P01 SONDA read_control: running paper",
+   "atteso": [
+    "running",
+    "paper"
+   ],
+   "ottenuto": [
+    "running",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P01 riga a video dopo la rilettura: stato/modalita",
+   "atteso": [
+    "in esecuzione",
+    "prova"
+   ],
+   "ottenuto": [
+    "in esecuzione",
+    "prova"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P02 conferma comparsa e INERTE subito (troppoPresto)",
+   "atteso": [
+    true,
+    true
+   ],
+   "ottenuto": [
+    true,
+    false
+   ],
+   "ok": false
+  },
+  {
+   "nome": "P02 un solo clic: mode e updated_at invariati",
+   "atteso": [
+    "paper",
+    "2026-09-25T18:39:45.177448+00:00"
+   ],
+   "ottenuto": [
+    "paper",
+    "2026-09-25T18:39:45.177448+00:00"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P02 dopo conferma: mode live, status invariato, params invariati",
+   "atteso": [
+    "live",
+    "running",
+    []
+   ],
+   "ottenuto": [
+    "live",
+    "running",
+    []
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P02 RPC omega_update_params(p_mode=live) senza p_params ne p_daily_goal",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P02 SONDA fra i due clic: running live",
+   "atteso": [
+    "running",
+    "live"
+   ],
+   "ottenuto": [
+    "running",
+    "live"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P02 passa a prova: mode paper, running",
+   "atteso": [
+    "paper",
+    "running"
+   ],
+   "ottenuto": [
+    "paper",
+    "running"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P03 status stopping (servizio spento: resta cosi), mode invariato",
+   "atteso": [
+    "stopping",
+    "paper"
+   ],
+   "ottenuto": [
+    "stopping",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P03 SONDA: stopping",
+   "atteso": "stopping",
+   "ottenuto": "stopping",
+   "ok": true
+  },
+  {
+   "nome": "P03 a video: «sta fermandosi» e nessun avvia",
+   "atteso": [
+    "sta fermandosi",
+    true,
+    false
+   ],
+   "ottenuto": [
+    "sta fermandosi",
+    true,
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "omega_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_daily_goal": 100,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    }
+   },
+   "esito": "ok",
+   "ms": 111
+  },
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": null,
+    "p_mode": "live"
+   },
+   "esito": "ok",
+   "ms": 111
+  },
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": null,
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 99
+  },
+  {
+   "rpc": "omega_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 104
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  },
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  },
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  },
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH omega_control:1",
+   "DELETE omega_daily_goal 2026-09-25"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P01_prima",
+  "b": "P01_P03_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P01_P03_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "KO",
+ "rifiuti_non_gestiti": []
+}

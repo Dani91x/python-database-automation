@@ -1,0 +1,154 @@
+{
+ "percorso": "P06",
+ "titolo": "Omega pagina dedicata",
+ "azione": "FUNZIONI TS della pagina: pages/Omega.tsx:168-173 (serverParams = control.params; params = {...OMEGA_PARAM_DEFAULTS, ...control.params}) e :286 activateOmega(mode, goal, omegaParamsPatch(serverParams, params)); stopOmega. Pagina intera non montata (sottoscrizioni, grafici).",
+ "passi": [
+  "P06 chiavi del patch diverse dal server: []"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P06 omegaParamsPatch(server, stato pagina) = params del server (nessuna chiave tolta o aggiunta)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P06 stessa riga di P01: running paper, params identici",
+   "atteso": [
+    "running",
+    "paper",
+    []
+   ],
+   "ottenuto": [
+    "running",
+    "paper",
+    []
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P06 stop dalla pagina: stopping",
+   "atteso": "stopping",
+   "ottenuto": "stopping",
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "omega_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_daily_goal": 100,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    }
+   },
+   "esito": "ok",
+   "ms": 172
+  },
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": null,
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 78
+  },
+  {
+   "rpc": "omega_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 87
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [],
+ "ripristino": {
+  "ripristino": [
+   "PATCH omega_control:1",
+   "DELETE omega_daily_goal 2026-09-25"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P06_prima",
+  "b": "P06_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P06_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

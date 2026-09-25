@@ -1,0 +1,16 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "ordini": {
+  "kill_switch": false,
+  "order_mode": "paper",
+  "motivo_kill_switch": null,
+  "descrivi": {
+   "effettivo": "PAPER",
+   "tetto_ambiente": "LIVE",
+   "scelto_ui": "PAPER",
+   "motivo": "ok"
+  }
+ },
+ "thread_fine": 1
+}

@@ -1,0 +1,55 @@
+{
+ "percorso": "C295",
+ "titolo": "Login e ruoli",
+ "azione": "UI jsdom: ProtectedRoute VERO con useAuth VERO (client senza sessione) su MemoryRouter; RPC owner-only con la chiave ANON di frontend/.env",
+ "passi": [
+  "anon get_safe_state: permission denied for function get_safe_state",
+  "anon get_live_settings: permission denied for function get_live_settings",
+  "anon select omega_control: permission denied for table omega_control"
+ ],
+ "asserzioni": [
+  {
+   "nome": "C295 /control-room senza sessione -> landing, Control Room NON mostrata",
+   "atteso": [
+    true,
+    false
+   ],
+   "ottenuto": [
+    true,
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "C295 isOwnerEmail: owner si, altro no",
+   "atteso": [
+    true,
+    false
+   ],
+   "ottenuto": [
+    true,
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "C295/C275 chiave anon: RPC owner-only rifiutate, tabella di controllo non leggibile",
+   "atteso": [
+    true,
+    true,
+    true
+   ],
+   "ottenuto": [
+    true,
+    true,
+    true
+   ],
+   "ok": true
+  }
+ ],
+ "rpc": [],
+ "bloccate": [],
+ "sveglie": [],
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

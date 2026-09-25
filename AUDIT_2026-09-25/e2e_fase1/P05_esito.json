@@ -1,0 +1,215 @@
+{
+ "percorso": "P05",
+ "titolo": "Omega uscite",
+ "azione": "UI jsdom: PannelloBot, blocco cr-uscite-omega",
+ "passi": [
+  "2026-09-25T18:24:11.755Z clic cr-uscite-cambia-omega («passa ad automatiche»)",
+  "2026-09-25T18:24:12.653Z clic cr-uscite-conferma-omega («confermi? passa ad automatiche»)",
+  "2026-09-25T18:24:22.364Z clic cr-uscite-cambia-omega («passa a manuali»)",
+  "P05 ritorno: chiavi diverse dalla fotografia [\"uscite_protezione\"]; uscite_protezione foto=undefined dopo=\"avvisa_e_proponi\""
+ ],
+ "asserzioni": [
+  {
+   "nome": "P05 a video prima = DB (avvisa_e_proponi -> manuali)",
+   "atteso": "manuali",
+   "ottenuto": "manuali",
+   "ok": true
+  },
+  {
+   "nome": "P05 primo clic (passa ad automatiche) non scrive",
+   "atteso": "2026-09-24T16:06:03.281711+00:00",
+   "ottenuto": "2026-09-24T16:06:03.281711+00:00",
+   "ok": true
+  },
+  {
+   "nome": "P05 uscite_protezione = automatico e nient'altro",
+   "atteso": [
+    "uscite_protezione"
+   ],
+   "ottenuto": [
+    "uscite_protezione"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P05 SONDA modo_uscite",
+   "atteso": "automatico",
+   "ottenuto": "automatico",
+   "ok": true
+  },
+  {
+   "nome": "P05 a video dopo: automatiche",
+   "atteso": "automatiche",
+   "ottenuto": "automatiche",
+   "ok": true
+  },
+  {
+   "nome": "P05 ritorno a manuali: params = fotografia, salvo uscite_protezione resa esplicita col valore di default",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P05 SONDA modo_uscite dopo",
+   "atteso": "avvisa_e_proponi",
+   "ottenuto": "avvisa_e_proponi",
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5,
+     "uscite_protezione": "automatico"
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 101
+  },
+  {
+   "rpc": "omega_update_params",
+   "args": {
+    "p_daily_goal": null,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "uscite_protezione": "avvisa_e_proponi",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    },
+    "p_mode": null
+   },
+   "esito": "ok",
+   "ms": 98
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  },
+  {
+   "bot": "omega",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH omega_control:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P05_prima",
+  "b": "P05_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P05_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

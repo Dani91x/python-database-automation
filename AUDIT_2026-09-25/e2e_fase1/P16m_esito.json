@@ -1,0 +1,505 @@
+{
+ "percorso": "P16m",
+ "titolo": "Safe a mano",
+ "azione": "UI jsdom: PannelloBot scheda calcio (righe safe-base, safe-manual)",
+ "passi": [
+  "2026-09-25T18:38:35.299Z clic cr-avvia-paper-safe-base («avvia in prova»)",
+  "P16m pulsanti safe-manual: ferma=true a-live=true uscite=false",
+  "2026-09-25T18:38:36.122Z clic cr-ferma-safe-manual («ferma»)",
+  "P16m rifiuti: [\"StrumentoSenzaSpegnimento: «Safe a mano» non si spegne da qui: sceglie solo con che soldi opera. Usa «passa a prova» per non mandare ordini reali; per non ricevere proposte usa i rubinetti «Proponimi…» nei parametri di Safe.\"]",
+  "2026-09-25T18:38:38.066Z clic cr-a-live-safe-manual («passa a soldi veri»)",
+  "2026-09-25T18:38:38.577Z clic cr-conferma-live-safe-manual («confermi? sono soldi veri»)",
+  "2026-09-25T18:38:48.785Z clic cr-a-paper-safe-manual («passa a prova»)",
+  "2026-09-25T18:38:49.728Z clic cr-ferma-safe-base («ferma»)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P16m a mano: nessun pulsante «ferma» (StrumentoSenzaSpegnimento) o, se presente, rifiutato",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P16m «a mano» non ha il blocco uscite",
+   "atteso": false,
+   "ottenuto": false,
+   "ok": true
+  },
+  {
+   "nome": "P16m ferma su «a mano»: rifiutato, nessuna scrittura",
+   "atteso": [
+    true,
+    "2026-09-25T18:38:35.787851+00:00"
+   ],
+   "ottenuto": [
+    true,
+    "2026-09-25T18:38:35.787851+00:00"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P16m manual live: tetto live, base paper, model paper, variants [base]",
+   "atteso": [
+    "live",
+    "live",
+    "paper",
+    "paper",
+    [
+     "base"
+    ]
+   ],
+   "ottenuto": [
+    "live",
+    "live",
+    "paper",
+    "paper",
+    [
+     "base"
+    ]
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P16m SONDA: manual live, base paper",
+   "atteso": [
+    "live",
+    "paper"
+   ],
+   "ottenuto": [
+    "live",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P16m ritorno: manual paper, tetto paper",
+   "atteso": [
+    "paper",
+    "paper"
+   ],
+   "ottenuto": [
+    "paper",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "safe_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_params": {
+     "base": {
+      "dogLayMax": 34,
+      "dogLayMin": 20,
+      "minuteMin": 55,
+      "controlMin": 0.1,
+      "scoreConfirmSec": 30
+     },
+     "risk": {
+      "model_stake": 3,
+      "correlated_cap": 0.7,
+      "daily_loss_stop": -50,
+      "max_open_trades": 0,
+      "daily_liability_cap": 0,
+      "per_event_max_trades": 3,
+      "per_event_liability_cap": 150,
+      "model_daily_liability_cap": 150
+     },
+     "exits": {
+      "enabled": true,
+      "risk_cap": 0.1,
+      "ev_margin": 0.1,
+      "hold_max_risk": 0.02,
+      "base_exit_minute": 80,
+      "exit_max_retries": 3,
+      "residual_retry_s": 20,
+      "risk_premium_pct": 0.05,
+      "model_exit_p_lose": 0.1,
+      "punta_exit_minute": 83,
+      "red_card_fav_exit": true,
+      "esatto_exit_minute": 72,
+      "loss_settle_delay_s": 30,
+      "residual_max_attempts": 15,
+      "model_take_profit_frac": 0.8,
+      "tennis_exit_on_lost_game": false,
+      "model_free_cashout_p_lose": 0.005,
+      "tennis_take_profit_min_eur": 0.01,
+      "tennis_take_profit_min_odds": 1.03,
+      "tennis_take_profit_next_game": true
+     },
+     "punta": {
+      "entryMax": 1.1,
+      "entryMin": 1.03,
+      "minuteMin": 66,
+      "controlMin": 0.1,
+      "minMinutesAfterGoal": 3
+     },
+     "stake": {
+      "laySize": 2,
+      "backSize": 3,
+      "per_strategia": {
+       "base": 2,
+       "punta": 3,
+       "esatto": 2,
+       "tennis": 3
+      }
+     },
+     "esatto": {
+      "entryMax": 70,
+      "entryMin": 30,
+      "minuteMin": 48,
+      "controlMin": 0.1,
+      "maxGoalsLaySide": 1,
+      "scoreConfirmSec": 30
+     },
+     "tennis": {
+      "backMax": 1.1,
+      "backMin": 1.02,
+      "setsLeadMin": 1,
+      "gamesLeadMin": 2,
+      "setsPlayedMax": 1,
+      "scoreConfirmSec": 15
+     },
+     "variants": [
+      "base"
+     ],
+     "min_stake": 2,
+     "opps_stake": 5,
+     "opps_min_edge": 0.03,
+     "commission_pct": 5,
+     "strategy_modes": {
+      "base": "paper",
+      "model": "paper",
+      "punta": "paper",
+      "esatto": "paper",
+      "manual": "paper",
+      "tennis": "paper"
+     },
+     "max_open_trades": 20,
+     "opps_interval_s": 10,
+     "poll_interval_s": 2,
+     "max_spread_ratio": 1.6,
+     "paper_fill_ttl_s": 45,
+     "auto_trade_combos": false,
+     "auto_trade_tennis": true,
+     "place_max_attempts": 3,
+     "opps_min_confidence": 0.7,
+     "auto_trade_anomalies": false,
+     "live_fill_deadline_s": 20,
+     "tennis_exit_approval": true,
+     "max_liability_per_trade": 300,
+     "auto_trade_opportunities": false,
+     "min_size_available_factor": 1
+    }
+   },
+   "esito": "ok",
+   "ms": 83
+  },
+  {
+   "rpc": "safe_activate",
+   "args": {
+    "p_mode": "live",
+    "p_params": {
+     "base": {
+      "dogLayMax": 34,
+      "dogLayMin": 20,
+      "minuteMin": 55,
+      "controlMin": 0.1,
+      "scoreConfirmSec": 30
+     },
+     "risk": {
+      "model_stake": 3,
+      "correlated_cap": 0.7,
+      "daily_loss_stop": -50,
+      "max_open_trades": 0,
+      "daily_liability_cap": 0,
+      "per_event_max_trades": 3,
+      "per_event_liability_cap": 150,
+      "model_daily_liability_cap": 150
+     },
+     "exits": {
+      "enabled": true,
+      "risk_cap": 0.1,
+      "ev_margin": 0.1,
+      "hold_max_risk": 0.02,
+      "base_exit_minute": 80,
+      "exit_max_retries": 3,
+      "residual_retry_s": 20,
+      "risk_premium_pct": 0.05,
+      "model_exit_p_lose": 0.1,
+      "punta_exit_minute": 83,
+      "red_card_fav_exit": true,
+      "esatto_exit_minute": 72,
+      "loss_settle_delay_s": 30,
+      "residual_max_attempts": 15,
+      "model_take_profit_frac": 0.8,
+      "tennis_exit_on_lost_game": false,
+      "model_free_cashout_p_lose": 0.005,
+      "tennis_take_profit_min_eur": 0.01,
+      "tennis_take_profit_min_odds": 1.03,
+      "tennis_take_profit_next_game": true
+     },
+     "punta": {
+      "entryMax": 1.1,
+      "entryMin": 1.03,
+      "minuteMin": 66,
+      "controlMin": 0.1,
+      "minMinutesAfterGoal": 3
+     },
+     "stake": {
+      "laySize": 2,
+      "backSize": 3,
+      "per_strategia": {
+       "base": 2,
+       "punta": 3,
+       "esatto": 2,
+       "tennis": 3
+      }
+     },
+     "esatto": {
+      "entryMax": 70,
+      "entryMin": 30,
+      "minuteMin": 48,
+      "controlMin": 0.1,
+      "maxGoalsLaySide": 1,
+      "scoreConfirmSec": 30
+     },
+     "tennis": {
+      "backMax": 1.1,
+      "backMin": 1.02,
+      "setsLeadMin": 1,
+      "gamesLeadMin": 2,
+      "setsPlayedMax": 1,
+      "scoreConfirmSec": 15
+     },
+     "variants": [
+      "base"
+     ],
+     "min_stake": 2,
+     "opps_stake": 5,
+     "opps_min_edge": 0.03,
+     "commission_pct": 5,
+     "strategy_modes": {
+      "base": "paper",
+      "model": "paper",
+      "punta": "paper",
+      "esatto": "paper",
+      "manual": "live",
+      "tennis": "paper"
+     },
+     "max_open_trades": 20,
+     "opps_interval_s": 10,
+     "poll_interval_s": 2,
+     "max_spread_ratio": 1.6,
+     "paper_fill_ttl_s": 45,
+     "auto_trade_combos": false,
+     "auto_trade_tennis": true,
+     "place_max_attempts": 3,
+     "opps_min_confidence": 0.7,
+     "auto_trade_anomalies": false,
+     "live_fill_deadline_s": 20,
+     "tennis_exit_approval": true,
+     "max_liability_per_trade": 300,
+     "auto_trade_opportunities": false,
+     "min_size_available_factor": 1
+    }
+   },
+   "esito": "ok",
+   "ms": 91
+  },
+  {
+   "rpc": "safe_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_params": {
+     "base": {
+      "dogLayMax": 34,
+      "dogLayMin": 20,
+      "minuteMin": 55,
+      "controlMin": 0.1,
+      "scoreConfirmSec": 30
+     },
+     "risk": {
+      "model_stake": 3,
+      "correlated_cap": 0.7,
+      "daily_loss_stop": -50,
+      "max_open_trades": 0,
+      "daily_liability_cap": 0,
+      "per_event_max_trades": 3,
+      "per_event_liability_cap": 150,
+      "model_daily_liability_cap": 150
+     },
+     "exits": {
+      "enabled": true,
+      "risk_cap": 0.1,
+      "ev_margin": 0.1,
+      "hold_max_risk": 0.02,
+      "base_exit_minute": 80,
+      "exit_max_retries": 3,
+      "residual_retry_s": 20,
+      "risk_premium_pct": 0.05,
+      "model_exit_p_lose": 0.1,
+      "punta_exit_minute": 83,
+      "red_card_fav_exit": true,
+      "esatto_exit_minute": 72,
+      "loss_settle_delay_s": 30,
+      "residual_max_attempts": 15,
+      "model_take_profit_frac": 0.8,
+      "tennis_exit_on_lost_game": false,
+      "model_free_cashout_p_lose": 0.005,
+      "tennis_take_profit_min_eur": 0.01,
+      "tennis_take_profit_min_odds": 1.03,
+      "tennis_take_profit_next_game": true
+     },
+     "punta": {
+      "entryMax": 1.1,
+      "entryMin": 1.03,
+      "minuteMin": 66,
+      "controlMin": 0.1,
+      "minMinutesAfterGoal": 3
+     },
+     "stake": {
+      "laySize": 2,
+      "backSize": 3,
+      "per_strategia": {
+       "base": 2,
+       "punta": 3,
+       "esatto": 2,
+       "tennis": 3
+      }
+     },
+     "esatto": {
+      "entryMax": 70,
+      "entryMin": 30,
+      "minuteMin": 48,
+      "controlMin": 0.1,
+      "maxGoalsLaySide": 1,
+      "scoreConfirmSec": 30
+     },
+     "tennis": {
+      "backMax": 1.1,
+      "backMin": 1.02,
+      "setsLeadMin": 1,
+      "gamesLeadMin": 2,
+      "setsPlayedMax": 1,
+      "scoreConfirmSec": 15
+     },
+     "variants": [
+      "base"
+     ],
+     "min_stake": 2,
+     "opps_stake": 5,
+     "opps_min_edge": 0.03,
+     "commission_pct": 5,
+     "strategy_modes": {
+      "base": "paper",
+      "model": "paper",
+      "punta": "paper",
+      "esatto": "paper",
+      "manual": "paper",
+      "tennis": "paper"
+     },
+     "max_open_trades": 20,
+     "opps_interval_s": 10,
+     "poll_interval_s": 2,
+     "max_spread_ratio": 1.6,
+     "paper_fill_ttl_s": 45,
+     "auto_trade_combos": false,
+     "auto_trade_tennis": true,
+     "place_max_attempts": 3,
+     "opps_min_confidence": 0.7,
+     "auto_trade_anomalies": false,
+     "live_fill_deadline_s": 20,
+     "tennis_exit_approval": true,
+     "max_liability_per_trade": 300,
+     "auto_trade_opportunities": false,
+     "min_size_available_factor": 1
+    }
+   },
+   "esito": "ok",
+   "ms": 90
+  },
+  {
+   "rpc": "safe_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 84
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [
+  {
+   "bot": "safe",
+   "motivo": "comando"
+  },
+  {
+   "bot": "safe",
+   "motivo": "comando"
+  },
+  {
+   "bot": "safe",
+   "motivo": "comando"
+  },
+  {
+   "bot": "safe",
+   "motivo": "comando"
+  }
+ ],
+ "ripristino": {
+  "ripristino": [
+   "PATCH safe_strategy_control:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P16m_prima",
+  "b": "P16m_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P16m_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": [
+  "StrumentoSenzaSpegnimento: «Safe a mano» non si spegne da qui: sceglie solo con che soldi opera. Usa «passa a prova» per non mandare ordini reali; per non ricevere proposte usa i rubinetti «Proponimi…» nei parametri di Safe."
+ ]
+}

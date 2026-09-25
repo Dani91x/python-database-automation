@@ -1,0 +1,231 @@
+{
+ "percorso": "P26_P27",
+ "titolo": "Ordini reali + freno",
+ "azione": "UI jsdom: RigaOrdiniReali e RigaFreno montate dentro PannelloBot (prop ordiniReali, come ControlRoom.tsx:612)",
+ "passi": [
+  "P26 a video al primo disegno (prima della lettura): effettivo=OFF - nessun ordine tetto=null non-letto=modo ordini non letto: il runner lo tratta come OFF",
+  "P26 a video dopo la lettura: effettivo=PAPER - prova tetto=tetto dell'ambiente: LIVE fonte=db 0 s chi=null",
+  "P27 a video freno: stato=rilasciato fonte=db 0 s",
+  "2026-09-25T18:36:42.917Z clic cr-ordini-reali-off («off»)",
+  "P26 order_mode_updated_by dopo OFF: \"service_role\"",
+  "2026-09-25T18:36:46.582Z clic cr-ordini-reali-paper («paper»)",
+  "2026-09-25T18:36:46.995Z clic cr-ordini-reali-live («live»)",
+  "2026-09-25T18:36:48.330Z clic cr-ordini-reali-conferma-live («confermi? ordini reali su Betfair»)",
+  "P26 riga dopo LIVE: order_mode=live updated_by=\"service_role\" tetto=live kill=false",
+  "2026-09-25T18:36:57.324Z clic cr-ordini-reali-paper («paper»)",
+  "2026-09-25T18:36:57.886Z clic cr-freno-tira («tira il freno»)",
+  "2026-09-25T18:37:08.243Z clic cr-freno-rilascia («rilascia»)",
+  "2026-09-25T18:37:08.756Z clic cr-freno-conferma-1 («confermi? i bot accesi tornano ad aprire»)",
+  "2026-09-25T18:37:09.405Z clic cr-freno-conferma-2 («si, rilascia il freno»)",
+  "C230 betfair_live_audit ultimo id dopo P26/P27: [{\"id\":96}] (fotografia: 96)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P26 a video dopo la lettura = DB (scelta paper, tetto live -> effettivo PAPER)",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P26 OFF: order_mode off, kill_switch INVARIATO",
+   "atteso": [
+    "off",
+    false
+   ],
+   "ottenuto": [
+    "off",
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P26 SONDA descrivi(env, db): effettivo OFF",
+   "atteso": "OFF",
+   "ottenuto": "OFF",
+   "ok": true
+  },
+  {
+   "nome": "P26 LIVE: conferma comparsa e inerte",
+   "atteso": [
+    true,
+    true
+   ],
+   "ottenuto": [
+    true,
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P26 un clic su live non scrive",
+   "atteso": "2026-09-25T18:36:46.806688+00:00",
+   "ottenuto": "2026-09-25T18:36:46.806688+00:00",
+   "ok": true
+  },
+  {
+   "nome": "P26 a video dopo LIVE: effettivo LIVE",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P26 SONDA con scelta LIVE: effettivo = min(tetto .env LIVE, LIVE)",
+   "atteso": "LIVE",
+   "ottenuto": "LIVE",
+   "ok": true
+  },
+  {
+   "nome": "P26 finale PAPER, kill_switch invariato",
+   "atteso": [
+    "paper",
+    false
+   ],
+   "ottenuto": [
+    "paper",
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P27 tira il freno (nessuna conferma): kill_switch true, order_mode invariato",
+   "atteso": [
+    true,
+    "paper"
+   ],
+   "ottenuto": [
+    true,
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P27 SONDA motivo_kill_switch",
+   "atteso": "db_kill_switch_attivo",
+   "ottenuto": "db_kill_switch_attivo",
+   "ok": true
+  },
+  {
+   "nome": "P27 dopo 2 clic su 3 il freno e' ancora tirato",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P27 rilascio con doppia conferma: false",
+   "atteso": false,
+   "ottenuto": false,
+   "ok": true
+  },
+  {
+   "nome": "P27 SONDA motivo_kill_switch None",
+   "atteso": null,
+   "ottenuto": null,
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia INIZIALE (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "set_live_order_mode",
+   "args": {
+    "p_mode": "off"
+   },
+   "esito": "ok",
+   "ms": 88
+  },
+  {
+   "rpc": "set_live_order_mode",
+   "args": {
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 88
+  },
+  {
+   "rpc": "set_live_order_mode",
+   "args": {
+    "p_mode": "live"
+   },
+   "esito": "ok",
+   "ms": 78
+  },
+  {
+   "rpc": "set_live_order_mode",
+   "args": {
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 76
+  },
+  {
+   "rpc": "set_live_kill_switch",
+   "args": {
+    "p_on": true
+   },
+   "esito": "ok",
+   "ms": 83
+  },
+  {
+   "rpc": "set_live_kill_switch",
+   "args": {
+    "p_on": false
+   },
+   "esito": "ok",
+   "ms": 81
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [],
+ "ripristino": {
+  "ripristino": [
+   "PATCH betfair_live_settings:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P26_prima",
+  "b": "P26_P27_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "a": "fotografia_iniziale",
+  "b": "P26_P27_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

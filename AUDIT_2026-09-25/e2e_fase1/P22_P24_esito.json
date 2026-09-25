@@ -1,0 +1,240 @@
+{
+ "percorso": "P22_P24",
+ "titolo": "Scalper calcio",
+ "azione": "UI jsdom: PannelloBot scheda calcio (P22, P23); funzione TS attivaScalperAuto per il caso negativo (la UI non offre il cambio); funzione TS activateScalper della card (P24)",
+ "passi": [
+  "2026-09-25T18:52:10.145Z clic cr-avvia-paper-scalper («avvia in prova»)",
+  "P22 rifiuto: scalper gia' acceso in paper: spegnilo e riaccendilo in live (paper e live mai insieme)",
+  "2026-09-25T18:52:19.953Z scrive «30» in cr-importo-scalper-stake",
+  "2026-09-25T18:52:19.959Z clic cr-importo-scalper-stake-salva («salva»)",
+  "P23 a video: manuali — 0 posizioni aperte",
+  "2026-09-25T18:52:20.489Z clic cr-uscite-cambia-scalper («passa ad automatiche»)",
+  "2026-09-25T18:52:20.803Z clic cr-uscite-conferma-scalper («confermi? passa ad automatiche»)",
+  "2026-09-25T18:52:30.088Z clic cr-ferma-scalper («ferma»)",
+  "P24 rifiuto: evento non seguito: E2E_NON_SEGUITO_25092026 (segui prima la partita)"
+ ],
+ "asserzioni": [
+  {
+   "nome": "P22 running paper, stake/strategia/params conservati",
+   "atteso": [
+    "running",
+    "paper",
+    25,
+    "maker",
+    true
+   ],
+   "ottenuto": [
+    "running",
+    "paper",
+    25,
+    "maker",
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P22 SONDA Db().servizio()",
+   "atteso": [
+    "running",
+    "paper"
+   ],
+   "ottenuto": [
+    "running",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P22 a video: nota «modalita solo all'avvio» e nessun «passa a soldi veri»",
+   "atteso": [
+    true,
+    false
+   ],
+   "ottenuto": [
+    true,
+    false
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P22 negativo: live con interruttore acceso in paper -> eccezione, nessuna scrittura",
+   "atteso": [
+    true,
+    "2026-09-25T18:52:10.401019+00:00"
+   ],
+   "ottenuto": [
+    true,
+    "2026-09-25T18:52:10.401019+00:00"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P22 stake: solo la colonna, status/mode invariati",
+   "atteso": [
+    30,
+    "running",
+    "paper"
+   ],
+   "ottenuto": [
+    30,
+    "running",
+    "paper"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P23 RPC scalper_uscite_automatiche, esito ok",
+   "atteso": [
+    "ok",
+    true
+   ],
+   "ottenuto": [
+    "ok",
+    true
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P23 SONDA params.uscite_automatiche",
+   "atteso": true,
+   "ottenuto": true,
+   "ok": true
+  },
+  {
+   "nome": "P22 ferma: stopped; scalper_auto_stop ok",
+   "atteso": [
+    "stopped",
+    "ok"
+   ],
+   "ottenuto": [
+    "stopped",
+    "ok"
+   ],
+   "ok": true
+  },
+  {
+   "nome": "P24 evento non seguito: eccezione «non seguito», nessuna riga",
+   "atteso": [
+    true,
+    25
+   ],
+   "ottenuto": [
+    true,
+    25
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino byte per byte = fotografia PRIMA (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "ripristino = fotografia di base fotografia_post_migrazione (valori, testo grezzo)",
+   "atteso": [
+    0,
+    0
+   ],
+   "ottenuto": [
+    0,
+    0
+   ],
+   "ok": true
+  },
+  {
+   "nome": "nessuna RPC fuori piano, nessuna scrittura diretta della UI",
+   "atteso": [],
+   "ottenuto": [],
+   "ok": true
+  }
+ ],
+ "rpc": [
+  {
+   "rpc": "scalper_auto_activate",
+   "args": {
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 5678
+  },
+  {
+   "rpc": "scalper_auto_activate",
+   "args": {
+    "p_mode": "live"
+   },
+   "esito": "errore",
+   "errore": "scalper gia' acceso in paper: spegnilo e riaccendilo in live (paper e live mai insieme)",
+   "ms": 101
+  },
+  {
+   "rpc": "scalper_auto_update",
+   "args": {
+    "p_stake": 30,
+    "p_params": null,
+    "p_strategia": null
+   },
+   "esito": "ok",
+   "ms": 120
+  },
+  {
+   "rpc": "scalper_uscite_automatiche",
+   "args": {
+    "p_automatiche": true
+   },
+   "esito": "ok",
+   "ms": 92
+  },
+  {
+   "rpc": "scalper_auto_stop",
+   "args": {},
+   "esito": "ok",
+   "ms": 103
+  },
+  {
+   "rpc": "scalper_activate",
+   "args": {
+    "p_event_id": "E2E_NON_SEGUITO_25092026",
+    "p_mode": "maker",
+    "p_dry_run": true,
+    "p_stake": 25,
+    "p_params": {}
+   },
+   "esito": "errore",
+   "errore": "evento non seguito: E2E_NON_SEGUITO_25092026 (segui prima la partita)",
+   "ms": 209
+  }
+ ],
+ "bloccate": [],
+ "sveglie": [],
+ "ripristino": {
+  "ripristino": [
+   "PATCH scalper_service_control:1"
+  ]
+ },
+ "confronto_con_prima": {
+  "a": "P22_prima",
+  "b": "P22_P24_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "confronto_con_fotografia_iniziale": {
+  "base": "fotografia_post_migrazione",
+  "a": "fotografia_post_migrazione",
+  "b": "P22_P24_ripristino",
+  "n_valori": 0,
+  "n_grezzo": 0,
+  "valori": [],
+  "grezzo_diversi": []
+ },
+ "esito": "OK",
+ "rifiuti_non_gestiti": []
+}

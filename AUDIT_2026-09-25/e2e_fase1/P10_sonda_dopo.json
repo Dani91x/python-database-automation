@@ -1,0 +1,11 @@
+{
+ "thread_prima_import": 1,
+ "thread_dopo_import": 1,
+ "mike": {
+  "status": "stopping",
+  "mode": "live",
+  "uscite_automatiche": true,
+  "stake": 5.0
+ },
+ "thread_fine": 1
+}
