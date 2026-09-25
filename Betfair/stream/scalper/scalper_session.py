@@ -72,7 +72,8 @@ UI_PARAM_WHITELIST = {
     "event_profit_target", "event_target_giveback", "event_loss_cap",
     "ht_mode", "one_green_per_phase",
     # 25/09 (ordine dell'utente): chi esegue le uscite discrezionali della
-    # sessione (default True = oggi). Riletto a caldo a ogni battito.
+    # sessione (default False dal 25/09 sera = manuali). Riletto a caldo a
+    # ogni battito.
     "uscite_automatiche",
     "flow_balance_min", "flow_balance_window_ms", "min_inside_flow",
     "require_oscillation", "trend_mode", "max_drift_ticks",
@@ -474,14 +475,15 @@ def applica_uscite_automatiche(db: Any, event_id: str, strategy: Any,
                                params: Optional[Dict[str, Any]]) -> Optional[bool]:
     """25/09 - porta sulla strategia VIVA il valore di `uscite_automatiche`
     appena riletto dalla riga di control. Solo un booleano vero conta; chiave
-    assente = True (comportamento di sempre); lettura fallita (params None) =
-    niente cambia. Il cambio si dichiara UNA volta nel log della sessione.
+    assente = False (DEFAULT dal 25/09 sera, ordine dell'utente: «di default
+    tutte le uscite le voglio spente»); lettura fallita (params None) = niente
+    cambia. Il cambio si dichiara UNA volta nel log della sessione.
     Ritorna il valore applicato (None = nessun cambio)."""
     if strategy is None or params is None:
         return None
-    grezzo = params.get("uscite_automatiche", True)
-    nuovo = grezzo if isinstance(grezzo, bool) else True
-    if bool(getattr(strategy, "uscite_automatiche", True)) == nuovo:
+    grezzo = params.get("uscite_automatiche", False)
+    nuovo = grezzo if isinstance(grezzo, bool) else False
+    if bool(getattr(strategy, "uscite_automatiche", False)) == nuovo:
         return None
     strategy.uscite_automatiche = nuovo
     db.log(event_id, "info", {

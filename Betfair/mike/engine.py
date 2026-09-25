@@ -2221,9 +2221,10 @@ APPROVAZIONE_TTL_S = 120.0
 
 def uscite_automatiche(params: Dict[str, Any]) -> bool:
     """L'interruttore, dai parametri del GIRO (letti a caldo da ``mike_control``).
-    Assente o non booleano = True: il comportamento di sempre."""
-    v = params.get("uscite_automatiche", True)
-    return v if isinstance(v, bool) else True
+    Assente o non booleano = False (25/09 sera, ordine dell'utente: default
+    MANUALE per tutti i bot; prima del 25/09 sera il default era True)."""
+    v = params.get("uscite_automatiche", False)
+    return v if isinstance(v, bool) else False
 
 
 def categoria_uscita(d: Decision) -> Optional[str]:

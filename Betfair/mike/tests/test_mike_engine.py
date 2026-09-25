@@ -29,7 +29,13 @@ DENTRO_FINESTRA = KO - 0.5 * H
 
 
 def params(**over):
+    # 25/09 sera: il DEFAULT di produzione di `uscite_automatiche' e'
+    # diventato False (manuale, ordine dell'utente). Questa suite testa la
+    # MECCANICA del motore, non l'interruttore: nasce quindi con le uscite
+    # automatiche come SEMPRE, sovrascrivibile passando `uscite_automatiche=`
+    # esplicito (lo fa la suite dedicata all'interruttore).
     p = C.merge_params(None)
+    p["uscite_automatiche"] = True
     p.update(over)
     return p
 

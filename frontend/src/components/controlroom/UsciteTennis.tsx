@@ -2,15 +2,18 @@
 // UsciteTennis.tsx — «USCITE AUTOMATICHE» PER BOT TENNIS, E L'AVVISO PERMANENTE.
 //
 // «Tutti i bot tennis devono [...] gestire le uscite in automatico o in manuale
-// sia in paper che in live» (utente, 25/09).
+// sia in paper che in live» (utente, 25/09). 25/09 SERA: «di default tutte le
+// uscite le voglio spente, decido io se uscire o no» — il default e la
+// conferma si sono invertiti rispetto alla prima stesura del 25/09.
 //
 // Un interruttore per bot, accanto alla sua scheda parametri nella plancia:
-//   · AUTOMATICHE (di serie, com'era): il bot prende profitto da solo;
-//   · MANUALI: il bot non prende profitto da solo; stop e protezioni restano;
-//     la posizione la chiude l'utente con «Chiudi» dalla scheda partita.
-// Passare a MANUALI si conferma (secondo clic al posto del primo): da lì una
-// posizione resta esposta finché qualcuno non la chiude. Tornare ad AUTOMATICHE
-// non chiede niente: riduce il rischio.
+//   · MANUALI (di serie, DEFAULT dal 25/09 sera): il bot non prende profitto
+//     da solo; stop e protezioni restano; la posizione la chiude l'utente
+//     con «Chiudi» dalla scheda partita;
+//   · AUTOMATICHE: il bot prende profitto da solo.
+// Passare ad AUTOMATICHE si conferma (secondo clic al posto del primo): da li'
+// il bot decide da solo quando chiudere. Tornare a MANUALI non chiede niente:
+// riduce il rischio.
 //
 // L'interruttore NON compare quando il servizio non lo dichiara (migrazione
 // non applicata: `usciteAutomatiche === null`) né per lo scalper, la cui
@@ -63,27 +66,25 @@ export function UsciteTennis({ botKey, auto, nowMs, onSaved, scrivi }: UsciteTen
     return (
         <span className="flex items-center gap-1.5 flex-wrap" data-testid={`cr-uscite-${botKey}`}>
             {auto.usciteAutomatiche ? (
-                conferma ? (
-                    <button type="button" disabled={occupato}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-amber-400/60 text-amber-300"
-                        data-testid={`cr-uscite-conferma-${botKey}`}
-                        onClick={() => void cambia(false)}>
-                        conferma: uscite MANUALI (chiudi tu)
-                    </button>
-                ) : (
-                    <button type="button" disabled={occupato}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-white/60"
-                        data-testid={`cr-uscite-manuali-${botKey}`}
-                        onClick={() => setConferma(true)}>
-                        uscite: automatiche
-                    </button>
-                )
+                <button type="button" disabled={occupato}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-white/60"
+                    data-testid={`cr-uscite-automatiche-${botKey}`}
+                    onClick={() => void cambia(false)}>
+                    uscite: automatiche (passa a manuali)
+                </button>
+            ) : conferma ? (
+                <button type="button" disabled={occupato}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-amber-400/60 text-amber-300"
+                    data-testid={`cr-uscite-conferma-${botKey}`}
+                    onClick={() => void cambia(true)}>
+                    conferma: uscite AUTOMATICHE (chiude il bot)
+                </button>
             ) : (
                 <button type="button" disabled={occupato}
                     className="text-[10px] px-1.5 py-0.5 rounded border border-amber-400/60 text-amber-300"
-                    data-testid={`cr-uscite-automatiche-${botKey}`}
-                    onClick={() => void cambia(true)}>
-                    uscite: MANUALI (torna automatiche)
+                    data-testid={`cr-uscite-manuali-${botKey}`}
+                    onClick={() => setConferma(true)}>
+                    uscite: MANUALI (passa ad automatiche)
                 </button>
             )}
             {avviso && (

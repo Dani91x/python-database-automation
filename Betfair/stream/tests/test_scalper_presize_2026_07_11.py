@@ -50,8 +50,13 @@ def _strategy(events=None):
     kw = {}
     if events is not None:
         kw["event_sink"] = lambda kind, payload: events.append((kind, payload))
+    # 25/09 sera: il DEFAULT di produzione di `uscite_automatiche` e'
+    # diventato False (manuale, ordine dell'utente). Questa suite testa il
+    # presize/le chiusure meccaniche, non l'interruttore: nasce con le
+    # uscite automatiche come sempre.
     return ScalperStrategy(market_filter={},
-                           scalper_params={"dry_run": False, "stake": 25.0},
+                           scalper_params={"dry_run": False, "stake": 25.0,
+                                          "uscite_automatiche": True},
                            **kw)
 
 

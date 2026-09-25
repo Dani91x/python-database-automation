@@ -83,6 +83,9 @@ def _make_strategy(events=None, **params):
     kw = {}
     if events is not None:
         kw["event_sink"] = lambda kind, payload: events.append((kind, payload))
+    # 25/09 sera: default di produzione ora False (manuale); questa suite
+    # testa altro, nasce con le uscite automatiche come sempre.
+    params.setdefault("uscite_automatiche", True)
     return ScalperStrategy(market_filter={}, scalper_params=params, **kw)
 
 

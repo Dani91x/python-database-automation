@@ -86,8 +86,9 @@ class TennisProStrategy(BaseStrategy):
     """Strategia direzionale multi-setup ancorata al punteggio (best-practice)."""
 
     #: 25/09 - uscite automatiche (scaglione + target). Lo imposta il runner
-    #: tennis dalla riga per partita; di classe = True = comportamento di sempre.
-    uscite_automatiche: bool = True
+    #: tennis dalla riga per partita; di classe = False (DEFAULT dal 25/09
+    #: sera, ordine dell'utente: «di default tutte le uscite le voglio spente»).
+    uscite_automatiche: bool = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ctx_in: Dict[str, Any] = dict(kwargs.pop("pro_params", {}) or {})

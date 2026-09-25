@@ -225,10 +225,14 @@ def test_scegli_tiene_le_armate_e_non_supera_il_tetto():
 
 
 @pytest.mark.parametrize("riga,atteso", [
-    ({}, True), ({"uscite_automatiche": None}, True), ({"uscite_automatiche": "false"}, True),
+    # 25/09 sera (ordine dell'utente: default MANUALE per tutti i bot):
+    # ``True`` conta SOLO se la riga lo scrive esattamente; tutto il resto
+    # (colonna assente, None, stringhe) = MANUALI. Prima del 25/09 sera era
+    # l'opposto (``False`` contava solo se scritto, default automatiche).
+    ({}, False), ({"uscite_automatiche": None}, False), ({"uscite_automatiche": "true"}, False),
     ({"uscite_automatiche": True}, True), ({"uscite_automatiche": False}, False),
 ])
-def test_uscite_false_solo_se_scritto(riga, atteso):
+def test_uscite_true_solo_se_scritto(riga, atteso):
     assert AM.uscite_automatiche_riga(riga) is atteso
     assert AM.uscite_automatiche_bot("tennis_scalper", riga) is True
 
@@ -703,8 +707,9 @@ def test_instantiate_bot_porta_le_uscite_della_riga():
     assert s.uscite_automatiche is False
     ctl2 = dict(ctl)
     ctl2.pop("uscite_automatiche")
+    # 25/09 sera: colonna assente = DEFAULT manuale (prima era automatiche).
     assert TR._instantiate_bot("tennis_flb", ctl2, "1.1", {}, None, df, "PAPER") \
-        .uscite_automatiche is True
+        .uscite_automatiche is False
     sc = TR._instantiate_bot("tennis_scalper", {**ctl, "bot_key": "tennis_scalper"},
                              "1.1", {}, None, df, "PAPER")
     assert sc.uscite_automatiche is True

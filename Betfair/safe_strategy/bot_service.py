@@ -142,21 +142,26 @@ DEFAULT_PARAMS: dict[str, Any] = {
     # CERT. 14/09 — CANCELLETTO DI APPROVAZIONE SULLE CHIUSURE DEL TENNIS.
     # Ordine dell'utente: le aperture restano automatiche, le chiusure gliele
     # si PROPONE e le approva lui dalla Control Room.
-    # Nasce SPENTO. Non e' un'attenuazione dell'ordine: acceso, ogni chiusura
-    # del tennis — compresa l'uscita OBBLIGATORIA del manuale — resta ferma
-    # finche' un essere umano non la promuove. Accenderlo prima che la pagina
-    # sappia mostrare le proposte vorrebbe dire fermare le chiusure senza che
-    # nessuno le veda: si accende quando c'e' chi guarda.
-    "tennis_exit_approval": False,
+    # 25/09 sera (ordine dell'utente: «di default tutte le uscite le voglio
+    # spente, decido io se uscire, per tutti i bot») — nasce ACCESO: ogni
+    # chiusura del tennis — compresa l'uscita OBBLIGATORIA del manuale —
+    # resta ferma finche' un essere umano non la promuove. Prima del 25/09
+    # sera nasceva spento (una strategia ancora in verifica non doveva
+    # trascinare a soldi veri le chiusure automatiche prima che la pagina
+    # sapesse mostrare le proposte).
+    "tennis_exit_approval": True,
     # 25/09 - ORDINE DELL'UTENTE: «tutti i bot DEVONO AVERE L'ABILITAZIONE per
     # le uscite automatiche [...] se disattivo il pulsante (IN UI PER SINGOLO
     # BOT) le uscite le gestisco io manualmente tramite l'apposita scheda».
+    # Poi, stessa sera, ordine successivo: «di default tutte le uscite le
+    # voglio spente, decido io se uscire o no, per tutti i bot».
     # Mappa PARZIALE strategia -> bool (True = il bot esegue da solo le uscite
     # del manuale / del modello; False = ogni uscita diventa una PROPOSTA nella
     # scheda, come il cancelletto del tennis del 14/09). Una strategia non
-    # nominata ha il comportamento di OGGI: base/esatto/punta/model automatiche,
-    # tennis = ``not tennis_exit_approval``. Cambia solo CHI esegue l'uscita,
-    # mai QUANDO/COME la strategia la decide (``uscite_automatiche_di``).
+    # nominata ha il DEFAULT (dal 25/09 sera): base/esatto/punta/model
+    # manuali (proposta), tennis = ``not tennis_exit_approval`` (anch'esso
+    # ora manuale di default). Cambia solo CHI esegue l'uscita, mai
+    # QUANDO/COME la strategia la decide (``uscite_automatiche_di``).
     "uscite_automatiche": {},
     "max_open_trades": 20,
     "max_liability_per_trade": 300,
@@ -415,13 +420,14 @@ STRATEGIE_CON_USCITE = ("base", "esatto", "punta", "tennis", "model")
 
 
 def normalize_uscite_automatiche(raw: Any, tennis_exit_approval: Any) -> dict[str, bool]:
-    """Mappa COMPLETA strategia -> bool delle uscite automatiche (25/09).
+    """Mappa COMPLETA strategia -> bool delle uscite automatiche.
 
     Vale SOLO un booleano vero scritto dall'utente; ogni altra cosa (chiave
-    assente, stringa, None) = il comportamento di OGGI: automatiche, tranne il
-    tennis che segue il cancelletto storico ``tennis_exit_approval`` (acceso =
-    uscite proposte). Cosi' il primo avvio con il codice nuovo non cambia
-    niente a nessuna strategia."""
+    assente, stringa, None) = il DEFAULT dal 25/09 sera (ordine dell'utente:
+    «di default tutte le uscite le voglio spente»): MANUALI, tranne il
+    tennis che segue il cancelletto storico ``tennis_exit_approval`` (spento
+    = uscite automatiche; il default di ``tennis_exit_approval`` e' ora
+    acceso, quindi il tennis nasce manuale anche lui)."""
     src = raw if isinstance(raw, dict) else {}
     out: dict[str, bool] = {}
     for k in STRATEGIE_CON_USCITE:
@@ -431,7 +437,7 @@ def normalize_uscite_automatiche(raw: Any, tennis_exit_approval: Any) -> dict[st
         elif k == "tennis":
             out[k] = not bool(tennis_exit_approval)
         else:
-            out[k] = True
+            out[k] = False
     return out
 
 

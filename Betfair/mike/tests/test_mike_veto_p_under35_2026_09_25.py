@@ -54,7 +54,12 @@ def _analisi(p_over35_cal=None, p_over35_raw=0.40):
 
 
 def _p(**over):
+    # 25/09 sera: default di produzione di `uscite_automatiche' ora False
+    # (manuale, ordine dell'utente su TUTTI i bot, applicato dopo questo
+    # veto). Questa suite testa il veto P(under 3.5), non l'interruttore
+    # delle uscite: nasce con le uscite automatiche come sempre.
     p = C.merge_params(None)
+    p["uscite_automatiche"] = True
     p.update(over)
     return p
 

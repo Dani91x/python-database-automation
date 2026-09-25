@@ -7,8 +7,10 @@ automatica; se disattivo il pulsante (TUTTO DEVE ESSERE IN UI PER SINGOLO BOT),
 le uscite le gestisco io manualmente tramite l'apposita scheda».
 
 Parametro di Safe `uscite_automatiche` = mappa PARZIALE strategia -> bool:
-  * assente / non booleano = comportamento di OGGI (base/esatto/punta/model
-    automatiche; tennis = `not tennis_exit_approval`);
+  * assente / non booleano = DEFAULT dal 25/09 sera (ordine dell'utente: «di
+    default tutte le uscite le voglio spente, per tutti i bot»): MANUALI
+    (base/esatto/punta/model/tennis); prima del 25/09 sera il default era
+    automatiche;
   * False = ogni uscita della strategia diventa una PROPOSTA (kind='cashout',
     status='proposed', stesso corpo del cancelletto del tennis del 14/09);
   * True = il bot esegue da solo, come prima.
@@ -68,23 +70,25 @@ def _trade_tennis(db):
 # ---------------------------------------------------------------------------
 # risoluzione dei parametri: il default e' il comportamento di oggi
 # ---------------------------------------------------------------------------
-def test_default_e_il_comportamento_di_oggi():
+def test_default_ora_e_manuale_per_tutti():
+    """25/09 sera: il default e' cambiato da automatiche a manuali (ordine
+    dell'utente: «di default tutte le uscite le voglio spente»)."""
     p = S.resolve_params(None)
-    assert p["uscite_automatiche"] == {"base": True, "esatto": True, "punta": True,
-                                       "tennis": True, "model": True}
-    assert p["tennis_exit_approval"] is False
-    # il cancelletto storico del tennis acceso = uscite del tennis manuali
-    p = S.resolve_params({"tennis_exit_approval": True})
-    assert p["uscite_automatiche"]["tennis"] is False
-    assert p["uscite_automatiche"]["base"] is True
+    assert p["uscite_automatiche"] == {"base": False, "esatto": False, "punta": False,
+                                       "tennis": False, "model": False}
+    assert p["tennis_exit_approval"] is True
+    # il cancelletto storico del tennis spento = uscite del tennis automatiche
+    p = S.resolve_params({"tennis_exit_approval": False})
+    assert p["uscite_automatiche"]["tennis"] is True
+    assert p["uscite_automatiche"]["base"] is False
 
 
-@pytest.mark.parametrize("grezzo", ["false", 0, None, "no", [], {}])
+@pytest.mark.parametrize("grezzo", ["true", 1, None, "si", [], {}])
 def test_solo_un_booleano_vero_cambia_qualcosa(grezzo):
-    """Una stringa o un numero sul DB non spengono le uscite di nessuno."""
+    """Una stringa o un numero sul DB non riaccendono le uscite di nessuno."""
     p = S.resolve_params({"uscite_automatiche": {"base": grezzo}})
-    assert p["uscite_automatiche"]["base"] is True
-    assert S.uscite_automatiche_di(p, "base") is True
+    assert p["uscite_automatiche"]["base"] is False
+    assert S.uscite_automatiche_di(p, "base") is False
 
 
 def test_la_mappa_vince_sul_cancelletto_storico_e_lo_riallinea():
@@ -152,7 +156,11 @@ def test_spento_la_base_PROPONE_e_non_manda_niente(mode):
 
 
 def test_spento_su_una_strategia_non_tocca_le_altre():
-    db = FakeDB(status="running", params={"uscite_automatiche": {"esatto": False}})
+    # 25/09 sera: il default e' manuale per tutti, quindi "base" va accesa
+    # esplicita per isolare l'effetto di "esatto" (spenta anche lei di
+    # default, qui esplicita per chiarezza) sulle altre.
+    db = FakeDB(status="running",
+               params={"uscite_automatiche": {"esatto": False, "base": True}})
     tid = _auto_trade(db, "base", minute_at_entry=60)
     r = _base_all_81(db, tid)
     assert r["exits"] == 1 and _proposte(db) == []

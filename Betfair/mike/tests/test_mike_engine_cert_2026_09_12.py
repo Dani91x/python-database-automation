@@ -33,7 +33,10 @@ COMM = 0.05
 
 
 def params(**over):
+    # 25/09 sera: default di produzione ora False (manuale); questa suite
+    # testa altro, nasce con le uscite automatiche come sempre.
     p = C.merge_params(None)
+    p["uscite_automatiche"] = True
     p.update(over)
     return p
 

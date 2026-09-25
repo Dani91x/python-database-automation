@@ -31,11 +31,13 @@ from Betfair.stream.tennis_scalper.tests import test_tennis_pro_staged as PS
 from Betfair.stream.tennis_scalper.tests import test_tennis_swing as SW
 
 
-def test_di_classe_le_uscite_sono_automatiche():
-    """Replay, backtest e runner di prima non toccano l'attributo: il default
-    DEVE essere il comportamento di sempre."""
+def test_di_classe_le_uscite_sono_manuali():
+    """25/09 sera (ordine dell'utente: default MANUALE per tutti i bot).
+    Replay e backtest che non passano `uscite_automatiche` esplicito prendono
+    ora questo default: manuali. Prima del 25/09 sera il default di classe
+    era True (automatiche)."""
     for cls in (TennisSwingStrategy, TennisProStrategy, TennisFLBStrategy):
-        assert cls.uscite_automatiche is True
+        assert cls.uscite_automatiche is False
     # lo scalper non ha il cancello (la sua uscita e' la strategia)
     assert "uscite_automatiche" not in vars(TennisScalperStrategy)
 

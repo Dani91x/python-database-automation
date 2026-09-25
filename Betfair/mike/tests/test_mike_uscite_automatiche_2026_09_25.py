@@ -5,7 +5,10 @@ L'ABILITAZIONE per le uscite automatiche e per l'operativita' totalmente
 automatica; se disattivo il pulsante (TUTTO DEVE ESSERE IN UI PER SINGOLO BOT),
 le uscite le gestisco io manualmente tramite l'apposita scheda».
 
-Parametro `uscite_automatiche` (mike_control.params, default True = oggi):
+Parametro `uscite_automatiche` (mike_control.params, DEFAULT False dal 25/09
+sera - ordine dell'utente: «di default tutte le uscite le voglio spente,
+decido io se uscire o no, per tutti i bot»; prima del 25/09 sera il default
+era True):
   * True  -> ``engine.decide`` identico a prima (parita');
   * False -> l'uscita DISCREZIONALE nuova (green pre-match, uscita al fischio,
     green del re-ingresso, cash out / uscita in perdita a modello) non parte:
@@ -56,19 +59,25 @@ def _firma(d):
 # ---------------------------------------------------------------------------
 # il parametro
 # ---------------------------------------------------------------------------
-def test_default_e_il_comportamento_di_oggi():
-    assert C.merge_params(None)["uscite_automatiche"] is True
+def test_default_ora_e_manuale():
+    """25/09 sera: il default e' cambiato da True a False (ordine dell'utente)."""
+    assert C.merge_params(None)["uscite_automatiche"] is False
+    assert C.merge_params({"uscite_automatiche": True})["uscite_automatiche"] is True
     assert C.merge_params({"uscite_automatiche": False})["uscite_automatiche"] is False
     assert C.merge_params({"uscite_automatiche": "false"})["uscite_automatiche"] is False
-    assert E.uscite_automatiche({}) is True
-    assert E.uscite_automatiche({"uscite_automatiche": "boh"}) is True
+    assert E.uscite_automatiche({}) is False
+    assert E.uscite_automatiche({"uscite_automatiche": "boh"}) is False
+    assert E.uscite_automatiche({"uscite_automatiche": True}) is True
 
 
 # ---------------------------------------------------------------------------
 # ACCESO = parita' esatta
 # ---------------------------------------------------------------------------
 def test_acceso_decisione_identica_a_prima_sul_green_pre_match():
-    p0 = params(pre_exit_mode="resting", stake=20.0)
+    # 25/09 sera: il default e' ora manuale, quindi ENTRAMBI i lati del
+    # confronto passano `uscite_automatiche=True` esplicito (prima del 25/09
+    # sera p0 lo ereditava dal default, che era True).
+    p0 = params(pre_exit_mode="resting", stake=20.0, uscite_automatiche=True)
     p1 = params(pre_exit_mode="resting", stake=20.0, uscite_automatiche=True)
     ctx_a, s = _entrata_abbinata(p0)
     ctx_b, _ = _entrata_abbinata(p1)

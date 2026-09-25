@@ -5,11 +5,13 @@ L'ABILITAZIONE per le uscite automatiche [...]; se disattivo il pulsante (TUTTO
 IN UI PER SINGOLO BOT), le uscite le gestisco io manualmente».
 
 `uscite_automatiche` (scalper_control.params, whitelist della sessione):
-  * True (default) = come sempre: close a +scalp_ticks, scratch a pari, gamba
-    opposta del maker come chiusura;
-  * False = queste uscite DISCREZIONALI non partono; la posizione resta in
-    LOCKING senza chiusura e il bot emette 'uscita_proposta' (una volta);
-    stop a N tick / lock_ttl / flatten / pre-KO restano automatici.
+  * True = close a +scalp_ticks, scratch a pari, gamba opposta del maker come
+    chiusura, come sempre;
+  * False (DEFAULT dal 25/09 sera - ordine dell'utente: «di default tutte le
+    uscite le voglio spente»; prima del 25/09 sera il default era True) =
+    queste uscite DISCREZIONALI non partono; la posizione resta in LOCKING
+    senza chiusura e il bot emette 'uscita_proposta' (una volta); stop a N
+    tick / lock_ttl / flatten / pre-KO restano automatici.
 La sessione rilegge il valore a caldo a ogni battito
 (`scalper_session.applica_uscite_automatiche`).
 
@@ -54,9 +56,10 @@ def _proposte(events):
 # ---------------------------------------------------------------------------
 # il parametro
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("grezzo,atteso", [(None, True), (True, True), (False, False),
-                                           ("false", True), (0, True)])
-def test_solo_un_booleano_vero_spegne(grezzo, atteso):
+@pytest.mark.parametrize("grezzo,atteso", [(None, False), (True, True), (False, False),
+                                           ("true", False), (1, False)])
+def test_solo_un_booleano_vero_accende(grezzo, atteso):
+    """25/09 sera: solo un booleano vero ACCENDE (default ora manuale)."""
     params = {} if grezzo is None else {"uscite_automatiche": grezzo}
     s = ScalperStrategy(market_filter={}, scalper_params=params)
     assert s.uscite_automatiche is atteso
@@ -71,7 +74,9 @@ def test_la_sessione_accetta_il_parametro_dalla_ui():
 # ---------------------------------------------------------------------------
 def test_acceso_la_gamba_opposta_del_maker_resta_la_chiusura():
     events = []
-    s = _strategy(events)
+    # 25/09 sera: `uscite_automatiche` esplicito (default di produzione ora
+    # False/manuale).
+    s = _strategy(events, uscite_automatiche=True)
     el = _FakeOrder("LAY", price=2.20, size=25.0, live=True)
     m = _FakeMarket()
     slot = _maker_slot(s, _back_abbinato(), el)
@@ -185,7 +190,11 @@ def test_sessione_applica_il_valore_letto_a_caldo():
     # lettura fallita: niente cambia
     assert SS.applica_uscite_automatiche(db, "E1", strat, None) is None
     assert strat.uscite_automatiche is False
-    # chiave tolta / valore non booleano = comportamento di sempre
-    assert SS.applica_uscite_automatiche(db, "E1", strat, {"uscite_automatiche": "no"}) is True
+    # l'utente riaccende esplicito...
+    assert SS.applica_uscite_automatiche(db, "E1", strat, {"uscite_automatiche": True}) is True
     assert strat.uscite_automatiche is True
-    assert db.righe[-1][1] == "info" and db.righe[-1][2]["uscite_automatiche"] is True
+    # ...poi la chiave sparisce / arriva un valore non booleano: DEFAULT dal
+    # 25/09 sera (manuale), non piu' "comportamento di sempre" (automatiche).
+    assert SS.applica_uscite_automatiche(db, "E1", strat, {"uscite_automatiche": "no"}) is False
+    assert strat.uscite_automatiche is False
+    assert db.righe[-1][1] == "info" and db.righe[-1][2]["uscite_automatiche"] is False

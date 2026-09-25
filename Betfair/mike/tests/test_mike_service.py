@@ -16,7 +16,14 @@ class FakeDB:
     """Specchio in memoria di mike_* (stesse regole del DB reale)."""
 
     def __init__(self, status="running", mode="paper", params=None):
-        self.control = {"id": 1, "status": status, "mode": mode, "params": params or {}}
+        # 25/09 sera: il DEFAULT di produzione di `uscite_automatiche` e'
+        # diventato False (manuale, ordine dell'utente). Le suite che non
+        # testano questo interruttore (qui e altrove) devono continuare a
+        # vedere il motore eseguire le uscite da solo come SEMPRE: il finto
+        # nasce quindi con `uscite_automatiche=True`, sovrascrivibile da chi
+        # lo passa esplicito in `params` (i test dell'interruttore lo fanno).
+        self.control = {"id": 1, "status": status, "mode": mode,
+                        "params": {"uscite_automatiche": True, **(params or {})}}
         self.events: dict[str, dict] = {}
         self.trades: list[dict] = []
         self.activity: list[tuple] = []

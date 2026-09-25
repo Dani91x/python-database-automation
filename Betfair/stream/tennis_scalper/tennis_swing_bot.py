@@ -58,9 +58,11 @@ def _tki(p: float) -> int:
 
 class TennisSwingStrategy(BaseStrategy):
     #: 25/09 - uscite automatiche (presa di profitto). Lo imposta il runner
-    #: tennis dalla riga per partita; di classe = True = comportamento di sempre
-    #: (replay e backtest non lo toccano).
-    uscite_automatiche: bool = True
+    #: tennis dalla riga per partita; di classe = False (DEFAULT dal 25/09
+    #: sera, ordine dell'utente: «di default tutte le uscite le voglio
+    #: spente»; replay e backtest non lo toccano, quindi con questo default
+    #: prendono anche loro il ramo manuale finche' non lo passano esplicito).
+    uscite_automatiche: bool = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ctx_in: Dict[str, Any] = dict(kwargs.pop("swing_params", {}) or {})

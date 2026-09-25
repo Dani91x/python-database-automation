@@ -32,11 +32,16 @@ def _guardia_pulita():
 
 
 def _db(status="running", mode="live", params=None, stats=None) -> FakeDB:
-    db = FakeDB(status=status, mode=mode, params=params or {"stake": 5})
+    # 25/09 sera: default di produzione ora False (manuale); questa suite
+    # testa la FASE A (avvio/fermata), non l'interruttore: nasce con le
+    # uscite automatiche come sempre, sovrascrivibile passando `params=`
+    # con la chiave esplicita.
+    p = {"uscite_automatiche": True, **(params or {"stake": 5})}
+    db = FakeDB(status=status, mode=mode, params=p)
     # la riga vera ha TUTTE le colonne di mike_control, non solo le quattro che
     # servono al ciclo: il finto deve parlare come il vero.
     db.control = riga_control("mike_control", id=1, status=status, mode=mode,
-                              params=params or {"stake": 5}, stats=stats)
+                              params=p, stats=stats)
     return db
 
 

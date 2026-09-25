@@ -20,21 +20,23 @@ function auto(over: Record<string, unknown> = {}) {
 const NOW = Date.parse('2026-09-25T10:00:00Z');
 
 describe('UsciteTennis', () => {
-    it('passare a MANUALI chiede conferma (primo clic non scrive)', async () => {
+    it('passare ad AUTOMATICHE chiede conferma (primo clic non scrive)', async () => {
+        // 25/09 sera: la conferma si e' invertita (default manuale).
         const scrivi = vi.fn(async () => ({}));
-        render(<UsciteTennis botKey="tennis_flb" auto={auto()} nowMs={NOW} scrivi={scrivi} />);
+        render(<UsciteTennis botKey="tennis_flb" auto={auto({ uscite_automatiche: false })}
+            nowMs={NOW} scrivi={scrivi} />);
         fireEvent.click(screen.getByTestId('cr-uscite-manuali-tennis_flb'));
         expect(scrivi).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('cr-uscite-conferma-tennis_flb'));
-        await waitFor(() => expect(scrivi).toHaveBeenCalledWith('tennis_flb', false));
+        await waitFor(() => expect(scrivi).toHaveBeenCalledWith('tennis_flb', true));
     });
 
-    it('tornare ad AUTOMATICHE non chiede niente', async () => {
+    it('passare a MANUALI non chiede niente', async () => {
         const scrivi = vi.fn(async () => ({}));
-        render(<UsciteTennis botKey="tennis_pro" auto={auto({ uscite_automatiche: false })}
+        render(<UsciteTennis botKey="tennis_pro" auto={auto({ uscite_automatiche: true })}
             nowMs={NOW} scrivi={scrivi} />);
         fireEvent.click(screen.getByTestId('cr-uscite-automatiche-tennis_pro'));
-        await waitFor(() => expect(scrivi).toHaveBeenCalledWith('tennis_pro', true));
+        await waitFor(() => expect(scrivi).toHaveBeenCalledWith('tennis_pro', false));
     });
 
     it('a uscite manuali l\'avviso e\' SEMPRE visibile', () => {
@@ -60,8 +62,10 @@ describe('UsciteTennis', () => {
     });
 
     it('errore della RPC: lo dice, lo stato resta quello del servizio', async () => {
+        // 25/09 sera: automatiche -> manuali non chiede conferma, quindi
+        // basta un clic per far partire la RPC che fallisce.
         const scrivi = vi.fn(async () => { throw new Error('non autorizzato (owner-only)'); });
-        render(<UsciteTennis botKey="tennis_flb" auto={auto({ uscite_automatiche: false })}
+        render(<UsciteTennis botKey="tennis_flb" auto={auto({ uscite_automatiche: true })}
             nowMs={NOW} scrivi={scrivi} />);
         fireEvent.click(screen.getByTestId('cr-uscite-automatiche-tennis_flb'));
         await waitFor(() => expect(screen.getByTestId('cr-uscite-errore-tennis_flb').textContent)

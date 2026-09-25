@@ -84,8 +84,11 @@ def esito_abbinato(**kw: Any) -> X.PlaceOutcome:
 
 
 def params_taker(**kw: Any) -> Dict[str, Any]:
+    # 25/09 sera: default di produzione ora False (manuale); questa suite
+    # testa altro, nasce con le uscite automatiche come sempre.
     p = dict(C.merge_params(None))
     p["pre_exit_mode"] = "taker"
+    p["uscite_automatiche"] = True
     p.update(kw)
     return p
 

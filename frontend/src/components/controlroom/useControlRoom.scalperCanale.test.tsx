@@ -183,7 +183,8 @@ describe('la riga Scalper calcio con l\'interruttore globale', () => {
         expect(sc().tettoPartite).toBe(2);
         expect(sc().nota).toMatch(/^auto-mode: nessuna sessione - tetto 2 - feed calcio: 5 partite, scanner 4 s fa \(safe_strategy_scan\) - 0 ordini vivi - nessuna sessione viva - dal database, letto \d+ s fa$/);
         // lo stake delle partite nuove e' nei "params" della riga (campo importo)
-        expect(sc().params).toMatchObject({ stake: 25, uscite_automatiche: true });
+        // 25/09 sera: DEFAULT manuale (prima era true).
+        expect(sc().params).toMatchObject({ stake: 25, uscite_automatiche: false });
     });
 
     it('migrazione non applicata (nessuna chiave servizio): lo dice, la card resta', async () => {

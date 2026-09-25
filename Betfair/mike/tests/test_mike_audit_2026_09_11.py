@@ -149,7 +149,11 @@ def test_c2_engine_decide_con_le_sole_selezioni_vive():
                                                                  best_lay=1.62, lay_size=200.0,
                                                                  inplay=True)})
     # PRIMA: cashout incompleto → "prezzi incompleti", card ferma, niente uscita
-    d = E.decide(ctx, snap, C.merge_params({"stake": 10, "ht_loss_pct": 40, "h2_loss_pct": 40}))
+    # 25/09 sera: `uscite_automatiche` esplicito (default di produzione ora
+    # False/manuale) - questo test valida la MECCANICA dell'uscita in perdita,
+    # non l'interruttore.
+    d = E.decide(ctx, snap, C.merge_params({"stake": 10, "ht_loss_pct": 40, "h2_loss_pct": 40,
+                                            "uscite_automatiche": True}))
     assert d.telemetry["cashout"]["complete"] is True
     assert d.telemetry["cashout"]["decided"] == ["OU35|UNDER"]
     assert d.reason != "prezzi incompleti"
@@ -157,7 +161,8 @@ def test_c2_engine_decide_con_le_sole_selezioni_vive():
     assert d.state == "LIVE_CLOSING"
     assert [a.market for a in d.actions if a.kind == "place"] == [E.MARKET_OU45]
     # con una perdita tollerata piu' stretta si tiene, ma la card resta VIVA
-    d2 = E.decide(ctx, snap, C.merge_params({"stake": 10, "ht_loss_pct": 5, "h2_loss_pct": 5}))
+    d2 = E.decide(ctx, snap, C.merge_params({"stake": 10, "ht_loss_pct": 5, "h2_loss_pct": 5,
+                                             "uscite_automatiche": True}))
     assert d2.state == "LIVE_COVERED" and d2.telemetry["cashout"]["complete"] is True
 
 

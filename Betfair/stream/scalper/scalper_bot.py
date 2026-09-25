@@ -433,17 +433,18 @@ class ScalperStrategy(BaseStrategy):
         self.exact_exits: bool = bool(c.get("exact_exits", False))
         # 25/09 - ORDINE DELL'UTENTE: «tutti i bot DEVONO AVERE L'ABILITAZIONE
         # per le uscite automatiche [...] se disattivo il pulsante le uscite le
-        # gestisco io». True (default, comportamento di sempre) = la chiusura a
-        # +scalp_ticks, lo scratch a pari e la gamba opposta del maker come
-        # chiusura li mette il bot. False = quelle uscite DISCREZIONALI non
+        # gestisco io». True = la chiusura a +scalp_ticks, lo scratch a pari e
+        # la gamba opposta del maker come chiusura li mette il bot. False
+        # (DEFAULT dal 25/09 sera, ordine dell'utente: «di default tutte le
+        # uscite le voglio spente») = quelle uscite DISCREZIONALI non
         # partono: la posizione resta in LOCKING senza chiusura e il bot emette
         # 'uscita_proposta' (una volta per motivo). Restano SEMPRE automatiche le
         # PROTEZIONI: stop a N tick, lock_ttl, flatten del residuo (mai nuda),
         # flatten pre-KO, force-flat, cap di evento. La sessione lo rilegge a
         # caldo da `scalper_control.params` a ogni battito (scalper_session).
-        # Solo un booleano vero conta: ogni altro valore = True (oggi).
-        _ua = c.get("uscite_automatiche", True)
-        self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else True
+        # Solo un booleano vero conta: ogni altro valore = False (25/09 sera).
+        _ua = c.get("uscite_automatiche", False)
+        self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else False
         # tetto TRANSAZIONI/ora (anti transaction-charge): oltre il budget si
         # bloccano i NUOVI ingressi; hedge/close/flatten passano SEMPRE.
         self.max_txn_hour: int = int(c.get("max_txn_hour", 0))

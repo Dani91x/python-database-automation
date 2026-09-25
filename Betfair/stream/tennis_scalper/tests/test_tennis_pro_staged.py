@@ -73,11 +73,16 @@ class _MB:
 
 
 def _make(**p):
-    return TennisProStrategy(
+    s = TennisProStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
         pro_params={"dry_run": False, **p},
         name_to_sel={},
     )
+    # 25/09 sera: default di classe ora False (manuale); questa suite testa
+    # la meccanica delle uscite, non l'interruttore (i test dell'interruttore,
+    # in test_uscite_manuali_bot_tennis_2026_09_25.py, lo sovrascrivono dopo).
+    s.uscite_automatiche = True
+    return s
 
 
 def _open_trade(entry=1.80, target_ticks=4, stop_ticks=3, staged_done=False,

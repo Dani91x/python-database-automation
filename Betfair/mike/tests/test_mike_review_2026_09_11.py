@@ -478,7 +478,9 @@ def test_h8_con_esito_ignoto_il_ciclo_continua_e_riduce_il_rischio():
                                                  lay_size=99.0, inplay=True)}
     snap = E.Snapshot(now=NOW.timestamp(), ko_at=NOW.timestamp() - 1800, inplay=True, minute=30,
                       goals=0, feed_fresh=True, books=books)
-    d = E.decide(ctx, snap, C.merge_params({"stake": 10}))
+    # 25/09 sera: `uscite_automatiche` esplicito (default di produzione ora
+    # False/manuale) - questo test valida altro (esito REST ignoto).
+    d = E.decide(ctx, snap, C.merge_params({"stake": 10, "uscite_automatiche": True}))
     assert d.state == "LIVE_CLOSING"                  # il cash-out a profitto agisce
     assert all(a.role != "over_cover" for a in d.actions)
     # una decisione di sola APERTURA viene svuotata

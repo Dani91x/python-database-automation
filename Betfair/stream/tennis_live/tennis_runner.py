@@ -1610,7 +1610,8 @@ def _aggiorna_uscite(flumine: Any, session: Any, key: tuple, strat: Any,
     try:
         if riga is not None:
             voluto = _AM.uscite_automatiche_bot(key[1], riga)
-            prima = getattr(strat, "uscite_automatiche", True)
+            # 25/09 sera: fallback a False (manuale), il default nuovo.
+            prima = getattr(strat, "uscite_automatiche", False)
             if voluto is not prima:
                 strat.uscite_automatiche = voluto
                 try:
@@ -1624,7 +1625,7 @@ def _aggiorna_uscite(flumine: Any, session: Any, key: tuple, strat: Any,
                 except Exception:  # noqa: BLE001 - l'attivita' e' best-effort
                     pass
         aperte = session_posizioni_aperte(session)
-        if getattr(strat, "uscite_automatiche", True) is False \
+        if getattr(strat, "uscite_automatiche", False) is False \
                 and not _strategy_is_flat(flumine, strat):
             aperte.setdefault(key, datetime.now(timezone.utc).isoformat())
         else:

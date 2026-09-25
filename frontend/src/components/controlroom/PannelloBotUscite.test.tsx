@@ -99,11 +99,16 @@ describe('25/09 uscite automatiche — che cosa viene chiamato', () => {
         expect(c.cambiaUscite).toHaveBeenCalledWith('mike', false);
     });
 
-    it('«passa ad automatiche» chiama cambiaUscite(id, true)', async () => {
+    it('«passa ad automatiche» chiede conferma, poi chiama cambiaUscite(id, true)', async () => {
+        // 25/09 sera: passare ad automatiche e' la direzione che ora si
+        // conferma (il default e' manuale); il primo clic arma, il secondo
+        // manda il comando.
         const c = comandiFinti();
         const s = mostra([riga({ id: 'safe-tennis', bot: 'safe', etichetta: 'Safe tennis' })], c,
             { 'safe-tennis': { automatiche: false, aperte: 1, daMin: 3 } });
-        await act(async () => { fireEvent.click(s.getByTestId('cr-uscite-cambia-safe-tennis')); });
+        fireEvent.click(s.getByTestId('cr-uscite-cambia-safe-tennis'));
+        expect(c.cambiaUscite).not.toHaveBeenCalled();
+        await act(async () => { fireEvent.click(s.getByTestId('cr-uscite-conferma-safe-tennis')); });
         expect(c.cambiaUscite).toHaveBeenCalledWith('safe-tennis', true);
         expect(c.accendi).not.toHaveBeenCalled();
         expect(c.spegni).not.toHaveBeenCalled();

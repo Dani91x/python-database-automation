@@ -72,6 +72,9 @@ def test_hybrid_green_cancels_unmatched_entry_residual():
         flb_params={"exit_mode": "hybrid", "green_ticks": 2, "green_frac": 0.5,
                     "lay_max": 1.10, "min_lay_size": 5.0, "dry_run": False},
     )
+    # 25/09 sera: default di classe ora False (manuale); questo test verifica
+    # la meccanica del green ibrido, non l'interruttore.
+    s.uscite_automatiche = True
     m = _Market()
     # 1) INGRESSO: lay del favorito estremo a 1.05
     s.process_market_book(m, _MB([_Runner(111, (1.04, 200), (1.05, 200), ltp=1.05)]))

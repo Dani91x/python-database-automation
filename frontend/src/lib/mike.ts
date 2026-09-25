@@ -498,8 +498,10 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cover_place_at_ticks', label: 'Copertura N tick sotto il best', kind: 'number', step: 1, min: 0, max: 6, hint: 'cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti', group: 'cover' },
     { key: 'cashout_smart_enabled', label: 'Cash-out intelligente', kind: 'bool', hint: 'chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)', group: 'cashout' },
     // 25/09 — ordine dell'utente: chi esegue le uscite. Specchio di
-    // Betfair/mike/config.py PARAM_SPEC['uscite_automatiche'].
-    { key: 'uscite_automatiche', label: 'Uscite automatiche', kind: 'bool', hint: 'acceso: green-up, cash out e uscite in perdita li esegue il bot. Spento: ogni uscita nuova diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Copertura Over 4.5, cap perdita partita e regolamento restano sempre automatici', group: 'uscite' },
+    // Betfair/mike/config.py PARAM_SPEC['uscite_automatiche']. 25/09 sera:
+    // default cambiato a false (manuale) - ordine dell'utente: «di default
+    // tutte le uscite le voglio spente».
+    { key: 'uscite_automatiche', label: 'Uscite automatiche', kind: 'bool', hint: 'acceso: green-up, cash out e uscite in perdita li esegue il bot. Spento (di serie): ogni uscita nuova diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Copertura Over 4.5, cap perdita partita e regolamento restano sempre automatici', group: 'uscite' },
     { key: 'cashout_smart_min_pct', label: 'Profitto minimo per chiudere prima (%)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'mai sotto questo profitto, qualunque sia il rischio', group: 'cashout' },
     { key: 'cashout_smart_tolerance_pct', label: '"A un passo" dalla soglia = entro (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda', group: 'cashout' },
     { key: 'cashout_smart_hazard_hot', label: 'Fase calda: hazard gol 3′ ≥', kind: 'number', step: 0.01, min: 0, max: 1, hint: 'Atlante + modello + pressione', group: 'cashout' },
@@ -569,7 +571,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
     cover_rifiuti_max: 3, cover_retry_min_s: 15,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
-    uscite_automatiche: true,
+    uscite_automatiche: false,
     cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
     cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
     loss_exit_mode: 'model', loss_exit_risk_premium_pct: 10, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,

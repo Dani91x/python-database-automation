@@ -501,6 +501,10 @@ function RigaBot({
     /** istante in cui la conferma è comparsa; null = non armato */
     const [armatoDa, setArmatoDa] = useState<number | null>(null);
     const [mio, setMio] = useState(false);
+    /** 25/09 sera: conferma per passare le uscite ad AUTOMATICHE (il default
+     *  ora è manuale, quindi la conferma si è invertita: passare a manuali
+     *  non chiede niente, passare ad automatiche sì). */
+    const [confermaUscite, setConfermaUscite] = useState(false);
     /** ridisegna quando l'attesa anti-doppio-clic scade */
     const [, setTic] = useState(0);
     const armato = armatoDa != null;
@@ -680,7 +684,11 @@ function RigaBot({
 
             {/* 25/09 — USCITE AUTOMATICHE / MANUALI (ordine dell'utente, per
                 singolo bot). Lo stato è quello scritto nei parametri del
-                servizio; il pulsante cambia SOLO chi esegue le uscite. */}
+                servizio; il pulsante cambia SOLO chi esegue le uscite.
+                25/09 SERA: il default è manuale («di default tutte le uscite
+                le voglio spente, decido io se uscire o no»): passare a
+                manuali non chiede niente, passare ad AUTOMATICHE si conferma
+                (secondo clic). */}
             {uscite && (
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[10.5px]"
                     data-testid={`cr-uscite-${r.id}`}>
@@ -701,17 +709,36 @@ function RigaBot({
                                 : ''}
                         </span>
                     )}
-                    {uscite.automatiche != null && comandi.cambiaUscite && (
+                    {uscite.automatiche === true && comandi.cambiaUscite && (
                         <Button
                             type="button" size="sm" variant="ghost"
                             disabled={occupato}
-                            onClick={() => void esegui(() => comandi.cambiaUscite!(r.id, !uscite.automatiche))}
+                            onClick={() => void esegui(() => comandi.cambiaUscite!(r.id, false))}
                             data-testid={`cr-uscite-cambia-${r.id}`}
-                            title={uscite.automatiche
-                                ? 'le uscite della strategia diventano PROPOSTE nella scheda: le approvi o chiudi tu. Le protezioni restano automatiche'
-                                : 'il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro'}
+                            title="le uscite della strategia diventano PROPOSTE nella scheda: le approvi o chiudi tu. Le protezioni restano automatiche"
                             className="h-6 px-2 text-[10px]"
-                        >{uscite.automatiche ? 'passa a manuali' : 'passa ad automatiche'}</Button>
+                        >passa a manuali</Button>
+                    )}
+                    {uscite.automatiche === false && comandi.cambiaUscite && (
+                        confermaUscite ? (
+                            <Button
+                                type="button" size="sm" variant="ghost"
+                                disabled={occupato}
+                                onClick={() => { setConfermaUscite(false); void esegui(() => comandi.cambiaUscite!(r.id, true)); }}
+                                data-testid={`cr-uscite-conferma-${r.id}`}
+                                title="confermi? il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro"
+                                className="h-6 px-2 text-[10px] bg-amber-600/70 hover:bg-amber-600 text-white"
+                            >confermi? passa ad automatiche</Button>
+                        ) : (
+                            <Button
+                                type="button" size="sm" variant="ghost"
+                                disabled={occupato}
+                                onClick={() => setConfermaUscite(true)}
+                                data-testid={`cr-uscite-cambia-${r.id}`}
+                                title="il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro"
+                                className="h-6 px-2 text-[10px]"
+                            >passa ad automatiche</Button>
+                        )
                     )}
                 </div>
             )}

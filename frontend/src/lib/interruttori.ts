@@ -1084,20 +1084,23 @@ export class UsciteNonGestiteQui extends Error {
 }
 
 /** Safe: stessa regola del servizio (`normalize_uscite_automatiche`). Solo un
- *  booleano vero conta; altrimenti il comportamento di oggi. */
+ *  booleano vero conta; altrimenti il DEFAULT dal 25/09 sera (ordine
+ *  dell'utente: «di default tutte le uscite le voglio spente»): manuali.
+ *  Prima del 25/09 sera il default era automatiche. */
 export function usciteSafeDi(params: Record<string, unknown> | null | undefined, strategia: string): boolean {
     const mappa = params?.uscite_automatiche;
     const v = mappa != null && typeof mappa === 'object' && !Array.isArray(mappa)
         ? (mappa as Record<string, unknown>)[strategia] : undefined;
     if (typeof v === 'boolean') return v;
-    if (strategia === 'tennis') return params?.tennis_exit_approval !== true;
-    return true;
+    if (strategia === 'tennis') return params?.tennis_exit_approval === false;
+    return false;
 }
 
-/** Mike: stessa coercizione di `config._coerce` per un bool. Assente = true. */
+/** Mike: stessa coercizione di `config._coerce` per un bool. DEFAULT dal
+ *  25/09 sera (ordine dell'utente): assente = false (manuale); prima era true. */
 function usciteMikeDi(params: Record<string, unknown>): boolean {
     const v = params.uscite_automatiche;
-    if (v === undefined || v === null) return true;
+    if (v === undefined || v === null) return false;
     if (typeof v === 'boolean') return v;
     if (typeof v === 'string') return ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase());
     return Boolean(v);
@@ -1198,9 +1201,9 @@ export function conPosizioniAperte(
 
 /**
  * Lo scalper: l'aggregato delle sessioni ATTIVE (`scalper_control.params`).
- * Tutte d'accordo -> quel valore; nessuna attiva -> `true` con la nota (le
- * sessioni nuove nascono con le uscite automatiche); discordi -> `null`.
- * Ritorna i "params" della riga scalper per `statoUscite`.
+ * Tutte d'accordo -> quel valore; nessuna attiva -> `false` con la nota (le
+ * sessioni nuove nascono con le uscite manuali, DEFAULT dal 25/09 sera);
+ * discordi -> `null`. Ritorna i "params" della riga scalper per `statoUscite`.
  */
 export function usciteSessioniScalper(
     sessioni: readonly { status: string; params: Record<string, unknown> | null }[],
@@ -1210,13 +1213,13 @@ export function usciteSessioniScalper(
 ): Record<string, unknown> {
     const attive = sessioni.filter((s) => sessioneAttiva(s));
     if (attive.length === 0) {
-        const nuove = paramsServizio?.uscite_automatiche === false ? false : true;
+        const nuove = paramsServizio?.uscite_automatiche === true;
         return {
             uscite_automatiche: nuove,
             uscite_nota: `nessuna sessione attiva: le nuove nascono con le uscite ${nuove ? 'automatiche' : 'manuali'}`,
         };
     }
-    const valori = new Set(attive.map((s) => (s.params?.uscite_automatiche === false ? false : true)));
+    const valori = new Set(attive.map((s) => s.params?.uscite_automatiche === true));
     if (valori.size === 1) return { uscite_automatiche: [...valori][0] };
     return { uscite_automatiche: null, uscite_nota: 'sessioni con scelte diverse' };
 }

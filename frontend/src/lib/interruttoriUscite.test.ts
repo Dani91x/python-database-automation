@@ -36,19 +36,23 @@ describe('lettura: specchio del servizio', () => {
         expect(statoUscite(o, null)).toEqual({ automatiche: null });
     });
 
-    it('Mike: assente = automatiche; stringhe come config._coerce', () => {
+    it('Mike: assente = manuali (DEFAULT dal 25/09 sera); stringhe come config._coerce', () => {
         const m = interruttoreDi('mike');
-        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: true });
+        expect(statoUscite(m, { stake: 10 })).toEqual({ automatiche: false });
         expect(statoUscite(m, { uscite_automatiche: false })).toEqual({ automatiche: false });
+        expect(statoUscite(m, { uscite_automatiche: true })).toEqual({ automatiche: true });
         expect(statoUscite(m, { uscite_automatiche: 'false' })).toEqual({ automatiche: false });
         expect(statoUscite(m, { uscite_automatiche: 'true' })).toEqual({ automatiche: true });
     });
 
     it('Safe: la mappa per strategia, il tennis ripiega sul cancelletto storico', () => {
-        expect(usciteSafeDi({}, 'base')).toBe(true);
+        // 25/09 sera: assente/non booleano = manuali (DEFAULT), prima era automatiche.
+        expect(usciteSafeDi({}, 'base')).toBe(false);
+        expect(usciteSafeDi({ uscite_automatiche: { base: true } }, 'base')).toBe(true);
         expect(usciteSafeDi({ tennis_exit_approval: true }, 'tennis')).toBe(false);
+        expect(usciteSafeDi({ tennis_exit_approval: false }, 'tennis')).toBe(true);
         expect(usciteSafeDi({ tennis_exit_approval: true, uscite_automatiche: { tennis: true } }, 'tennis')).toBe(true);
-        expect(usciteSafeDi({ uscite_automatiche: { base: 'false' } }, 'base')).toBe(true);
+        expect(usciteSafeDi({ uscite_automatiche: { base: 'true' } }, 'base')).toBe(false);
         expect(usciteSafeDi({ uscite_automatiche: { esatto: false } }, 'esatto')).toBe(false);
         expect(statoUscite(interruttoreDi('safe-punta'), { uscite_automatiche: { punta: false } }))
             .toEqual({ automatiche: false });
@@ -73,17 +77,19 @@ describe('lettura: specchio del servizio', () => {
             ['mike', 'omega', 'safe-base', 'safe-esatto', 'safe-model', 'safe-punta', 'safe-tennis', 'scalper']);
         expect(out.omega?.automatiche).toBe(false);
         expect(out['safe-tennis']?.automatiche).toBe(false);
-        expect(out['safe-base']?.automatiche).toBe(true);
+        // 25/09 sera: il default e' manuale anche per base (prima era true).
+        expect(out['safe-base']?.automatiche).toBe(false);
     });
 
     it('scalper: aggregato delle sessioni attive', () => {
         const attiva = (p: Record<string, unknown> | null) => ({ status: 'running', params: p });
-        expect(usciteSessioniScalper([]).uscite_automatiche).toBe(true);
+        // 25/09 sera: nessuna sessione attiva -> le nuove nascono manuali (DEFAULT).
+        expect(usciteSessioniScalper([]).uscite_automatiche).toBe(false);
         expect(usciteSessioniScalper([attiva({ uscite_automatiche: false }), attiva({ uscite_automatiche: false })]))
             .toEqual({ uscite_automatiche: false });
         expect(usciteSessioniScalper([attiva({}), { status: 'stopped', params: { uscite_automatiche: false } }]))
-            .toEqual({ uscite_automatiche: true });
-        const misto = usciteSessioniScalper([attiva({}), attiva({ uscite_automatiche: false })]);
+            .toEqual({ uscite_automatiche: false });
+        const misto = usciteSessioniScalper([attiva({ uscite_automatiche: true }), attiva({})]);
         expect(misto.uscite_automatiche).toBeNull();
         expect(statoUscite(interruttoreDi('scalper'), misto)).toEqual({ automatiche: null, nota: 'sessioni con scelte diverse' });
     });

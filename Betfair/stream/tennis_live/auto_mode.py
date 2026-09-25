@@ -204,9 +204,11 @@ def scegli_partite(candidate: List[str], gia_armate: Iterable[str],
 # 3. LE USCITE
 # ---------------------------------------------------------------------------
 def uscite_automatiche_riga(riga: Optional[Dict[str, Any]]) -> bool:
-    """``False`` SOLO se la riga lo scrive esattamente. Colonna assente,
-    ``None``, stringhe: AUTOMATICHE, cioe' il comportamento di prima."""
-    return (riga or {}).get("uscite_automatiche") is not False
+    """``True`` SOLO se la riga lo scrive esattamente. Colonna assente,
+    ``None``, stringhe: MANUALI (DEFAULT dal 25/09 sera, ordine dell'utente:
+    «di default tutte le uscite le voglio spente»; prima del 25/09 sera il
+    default era automatiche)."""
+    return (riga or {}).get("uscite_automatiche") is True
 
 
 def uscite_automatiche_bot(bot_key: str, riga: Optional[Dict[str, Any]]) -> bool:

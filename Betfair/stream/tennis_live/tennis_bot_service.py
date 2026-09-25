@@ -354,7 +354,9 @@ def stato_desiderato(righe: Optional[List[Dict[str, Any]]]) -> Optional[Dict[str
             "params": r.get("params") or {},
             "stats": r.get("stats"),
             # 25/09: None = colonna assente (migrazione non applicata): non si
-            # propaga niente e il runner resta sulle uscite AUTOMATICHE.
+            # propaga niente e il runner resta sulle uscite MANUALI (default
+            # dal 25/09 sera, letto direttamente da ``auto_mode`` alla
+            # costruzione della strategia).
             "uscite_automatiche": (_AM.uscite_automatiche_riga(r)
                                    if "uscite_automatiche" in r else None),
         }
@@ -743,7 +745,7 @@ def _propaga_uscite(db: Any, bot: str, d: Dict[str, Any],
     """L'interruttore «uscite automatiche» del bot sulle righe per partita,
     SOLO dove e' diverso (una scrittura al cambio, non a ogni giro). Righe
     senza la colonna = migrazione non applicata su ``tennis_bot_control``:
-    non si tocca niente (il runner resta automatico)."""
+    non si tocca niente (il runner resta manuale, il default dal 25/09 sera)."""
     voluto = d.get("uscite_automatiche")
     fn = getattr(db, "set_tennis_bot_uscite", None)
     if voluto is None or not callable(fn):

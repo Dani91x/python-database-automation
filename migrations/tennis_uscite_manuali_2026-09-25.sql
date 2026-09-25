@@ -19,14 +19,18 @@
 --    sole partite seguite a mano come prima, e la Control Room lo DICE
 --    («auto-mode spento: migrazione ... non applicata»).
 --
--- 2) uscite_automatiche (boolean, DEFAULT true = com'e' oggi) su
+-- 2) uscite_automatiche (boolean, DEFAULT false = MANUALI) su
 --    tennis_bot_service_control (l'interruttore del bot) e su
 --    tennis_bot_control (la riga per partita, che il runner rilegge a caldo).
---    false = il bot non prende profitto da solo (target, scaglione, green
---    sullo swing); stop, time-stop, uscita strutturale, fine mercato,
---    «Chiudi» D3 restano SEMPRE. Lo scalper resta sempre automatico (la sua
---    uscita a target e' la gamba opposta dell'ingresso: spegnerla altera la
---    strategia - decisione dell'utente, non presa qui).
+--    25/09 SERA (ordine dell'utente, successivo a quello del §5.7 sopra: «di
+--    default tutte le uscite le voglio spente, decido io se uscire o no, per
+--    tutti i bot») - il DEFAULT e' cambiato da true a false: false = il bot
+--    non prende profitto da solo (target, scaglione, green sullo swing);
+--    stop, time-stop, uscita strutturale, fine mercato, «Chiudi» D3 restano
+--    SEMPRE. Lo scalper resta sempre automatico (la sua uscita a target e' la
+--    gamba opposta dell'ingresso: spegnerla altera la strategia - decisione
+--    dell'utente, non presa qui). Il codice funziona anche senza questa
+--    migrazione: il default manuale vive gia' in ``auto_mode.py``.
 --
 -- 3) RPC owner-only tennis_bot_service_set_uscite(p_bot_key, p_automatiche):
 --    cambia SOLO l'interruttore delle uscite. Non tocca mai `status` (i bot li
@@ -60,16 +64,21 @@ COMMENT ON COLUMN public.tennis_live_follow.origine IS
     'dal feed unico (auto-mode, 25/09/2026) e chiuso quando nessun bot lo usa.';
 
 -- 2) uscite automatiche --------------------------------------------------------
+-- 25/09 sera: DEFAULT false (manuali), ordine dell'utente. Se questa colonna
+-- fosse gia' stata creata con DEFAULT true da un apply precedente della
+-- versione di questo file, la migrazione additiva
+-- `uscite_manuali_default_2026-09-25.sql` corregge sia il default sia i
+-- valori NULL/assenti gia' scritti.
 ALTER TABLE public.tennis_bot_service_control
-    ADD COLUMN IF NOT EXISTS uscite_automatiche BOOLEAN NOT NULL DEFAULT true;
+    ADD COLUMN IF NOT EXISTS uscite_automatiche BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE public.tennis_bot_control
-    ADD COLUMN IF NOT EXISTS uscite_automatiche BOOLEAN NOT NULL DEFAULT true;
+    ADD COLUMN IF NOT EXISTS uscite_automatiche BOOLEAN NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN public.tennis_bot_service_control.uscite_automatiche IS
-    'true = il bot prende profitto da solo (com''era); false = uscite MANUALI: '
-    'restano stop e protezioni, la posizione la chiude l''utente con «Chiudi». '
-    'Identico in paper e live. Lo scalper e'' sempre automatico.';
+    'true = il bot prende profitto da solo; false (DEFAULT dal 25/09 sera) = '
+    'uscite MANUALI: restano stop e protezioni, la posizione la chiude '
+    'l''utente con «Chiudi». Identico in paper e live. Lo scalper e'' sempre automatico.';
 
 -- 3) RPC: cambia SOLO le uscite -----------------------------------------------
 CREATE OR REPLACE FUNCTION public.tennis_bot_service_set_uscite(

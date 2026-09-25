@@ -218,11 +218,15 @@ class _ProRunner:
 
 
 def _make_pro(**p):
-    return TennisProStrategy(
+    s = TennisProStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
         pro_params={"dry_run": False, **p},
         name_to_sel={},
     )
+    # 25/09 sera: default di classe ora False (manuale); questa suite testa
+    # la meccanica delle uscite, non l'interruttore.
+    s.uscite_automatiche = True
+    return s
 
 
 def _pro_open_trade(entry=1.80):
@@ -342,10 +346,14 @@ class _SwingBlotter(_ProBlotter):
 
 
 def _make_swing(**p):
-    return TennisSwingStrategy(
+    s = TennisSwingStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
         swing_params={"dry_run": False, **p},
     )
+    # 25/09 sera: default di classe ora False (manuale); questa suite testa
+    # la meccanica delle uscite, non l'interruttore.
+    s.uscite_automatiche = True
+    return s
 
 
 def _swing_mb(pt):
@@ -388,10 +396,14 @@ def test_swing_close_escalation_falls_back_to_updates_without_pt():
 # #11 — tennis_flb: green_est esatto con frac < 1
 # ---------------------------------------------------------------------------
 def _make_flb(**p):
-    return TennisFLBStrategy(
+    s = TennisFLBStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
         flb_params={"dry_run": False, **p},
     )
+    # 25/09 sera: default di classe ora False (manuale); questa suite testa
+    # la meccanica delle uscite, non l'interruttore.
+    s.uscite_automatiche = True
+    return s
 
 
 def test_flb_green_est_exact_with_partial_fraction():

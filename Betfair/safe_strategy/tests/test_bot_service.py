@@ -32,6 +32,23 @@ class FakeDB:
         # l'ereditarieta' passa un ``strategy_modes`` proprio.
         if mode == "live" and "strategy_modes" not in params:
             params["strategy_modes"] = {k: "live" for k in S._STRATEGIES}
+        # 25/09 sera: il DEFAULT di produzione di `uscite_automatiche` e'
+        # diventato manuale per tutte le strategie, tennis compreso (ordine
+        # dell'utente: «di default tutte le uscite le voglio spente»). Le
+        # suite che non testano questo interruttore (la stragrande
+        # maggioranza di questo file) devono continuare a vedere le uscite
+        # eseguite dal bot come SEMPRE: il finto nasce quindi acceso per
+        # base/esatto/punta/model, sovrascrivibile da chi passa
+        # `uscite_automatiche` esplicito in `params` (i test dell'interruttore
+        # lo fanno). Il tennis NON entra qui: resta governato dal cancelletto
+        # storico `tennis_exit_approval` (di seguito), che i test del 14/09
+        # (CERT. cancelletto) impostano esplicito e che qui, se assente,
+        # riceve anche lui il default di prima (spento = automatiche).
+        if "uscite_automatiche" not in params:
+            params["uscite_automatiche"] = {k: True for k in S.STRATEGIE_CON_USCITE
+                                            if k != "tennis"}
+        if "tennis_exit_approval" not in params:
+            params["tennis_exit_approval"] = False
         self.control = {"id": 1, "status": status, "mode": mode,
                         "params": params}
         self.trades: list[dict] = []
@@ -3304,8 +3321,13 @@ def test_col_cancelletto_la_chiusura_si_PROPONE_e_non_parte():
 
 
 def test_senza_cancelletto_NIENTE_cambia():
-    """Il default non tocca il comportamento di oggi."""
-    assert S.resolve_params(None)["tennis_exit_approval"] is False
+    """Il default non tocca il comportamento di oggi.
+
+    25/09 sera: il default del cancelletto e' cambiato da spento ad acceso
+    (ordine dell'utente: tutte le uscite manuali di default); questo test
+    prova solo che il cancelletto resta un affare del tennis, non del calcio.
+    """
+    assert S.resolve_params(None)["tennis_exit_approval"] is True
     db, tid = _db_tennis_con_cancelletto(acceso=False)
     _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
     _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
