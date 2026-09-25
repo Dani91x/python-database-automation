@@ -1895,8 +1895,8 @@ class ScalperStrategy(BaseStrategy):
         Park LEGALI e universali: size 2,00 su entrambi i lati (BACK @1000,
         LAY @1.01 → payout 2.02, liability 0.02, guardia-abort di submin).
         """
-        from ..live_order_build import round_to_tick
-        from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
+        from Betfair.stream.live_order_build import round_to_tick
+        from Betfair.stream.trading.submin import FlumineSubminOps, SubminState, SubminStep
 
         smin = self._side_min(side)
         main = round(int(size / 0.5 + 1e-9) * 0.5, 2)   # floor al multiplo 0,50
@@ -1972,7 +1972,7 @@ class ScalperStrategy(BaseStrategy):
         """Avanza le sequenze park-trim-replace dello slot (idempotente)."""
         if not slot.submins:
             return
-        from ..trading.submin import SubminStep, advance_submin
+        from Betfair.stream.trading.submin import SubminStep, advance_submin
 
         for entry in list(slot.submins):
             if entry.get("market_id") != market.market_id:

@@ -6,7 +6,7 @@ servizio/break) e gira una griglia di config score-gated in UNA passata per matc
 (multi-strategia). Fill reali (coda) + delay in-play (dalla base TennisLab).
 
 Uso:
-  python -m Betfair.stream.tennis_scalper.lab_grid_score --data DIR [--top 50]
+  python -m laboratorio.tennis_lab.lab_grid_score --data DIR [--top 50]
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import flumine.config
 from flumine import FlumineSimulation, clients
 
 from .tennis_lab_score import ScoreConditionedLab, SIDE_AGNOSTIC, SIDE_AWARE
-from .tennis_score import TennisScore, parse_tennis_scores
+from Betfair.stream.tennis_scalper.tennis_score import TennisScore, parse_tennis_scores
 
 _MAXEXP = 1_000_000.0
 
@@ -96,7 +96,7 @@ def build_names_cache(data_dir: str, events: List[str]) -> Dict[str, Dict[str, s
     missing = [e for e in events if e not in cache]
     if missing:
         try:
-            from ..auth import build_client
+            from Betfair.stream.auth import build_client
             from betfairlightweight import filters
             trading = build_client(login=True)
             for i in range(0, len(missing), 20):
@@ -229,7 +229,7 @@ def main(argv=None) -> int:
     usable = files if args.all else [f for f in files if is_settled(f)]
     # GUARDIA REGISTRAZIONI (fix 17/07): warning visibile per i raw non-COMPLETE;
     # --min-coverage esclude sotto soglia.
-    from ..tools.validate_recordings import check_raw_paths_for_backtest
+    from Betfair.stream.tools.validate_recordings import check_raw_paths_for_backtest
 
     usable = check_raw_paths_for_backtest(usable, args.min_coverage)
     grid = build_grid()

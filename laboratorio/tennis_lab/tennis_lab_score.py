@@ -31,8 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from flumine.utils import get_price
 
 from .tennis_lab import TennisLabStrategy
-from .tennis_score import TennisScore
-from .tennis_winprob import p_match, estimate_holds
+from Betfair.stream.tennis_scalper.tennis_score import TennisScore
+from Betfair.stream.tennis_scalper.tennis_winprob import p_match, estimate_holds
 
 logger = logging.getLogger(__name__)
 

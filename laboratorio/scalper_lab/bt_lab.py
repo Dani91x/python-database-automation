@@ -11,8 +11,8 @@ Test veritieri: FlumineSimulation, simulation_available_prices=False
 (fill solo sul volume tradato, coda rispettata), commissione 5%.
 
 Uso:
-  python -m Betfair.stream.scalper_lab.bt_lab --mode prematch --stake 25
-  python -m Betfair.stream.scalper_lab.bt_lab --mode inplay --params '{"min_size":20}'
+  python -m laboratorio.scalper_lab.bt_lab --mode prematch --stake 25
+  python -m laboratorio.scalper_lab.bt_lab --mode inplay --params '{"min_size":20}'
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ import flumine.config  # noqa: E402
 from flumine import FlumineSimulation, clients  # noqa: E402
 
 # Usa la COPIA nel lab (l'originale scalper/scalper_bot.py resta intatto).
-from Betfair.stream.scalper_lab.scalper_bot_base import ScalperStrategy  # noqa: E402
+from laboratorio.scalper_lab.scalper_bot_base import ScalperStrategy  # noqa: E402
 
 DATA_DIR = os.path.join(REPO, "_live_raw")
 COMMISSION = 0.05

@@ -38,20 +38,24 @@ Il test e' ROSSO in DUE direzioni (come il contratto del submin,
   b) un modulo e' nell'elenco ma non chiama piu' (elenco stantio, che nasconde
      una strada tolta senza dirlo, o un refuso).
 
-TROVATO DA F10A, NON PREVISTO DALL'AUDIT DEL 24/09 (25/09, non toccato: la
-consegna vieta di modificare file di produzione fuori da questo test+doc):
-  - ``Betfair/stream/scalper_lab/{grid_strategy,scalper_bot_base,theta_strategy}.py``:
-    chiamano ``market.place_order`` ma nessun modulo di produzione le importa
-    (verificato: nessun ``from Betfair.stream.scalper_lab import`` fuori dalla
-    cartella stessa). Le docstring di ``grid_strategy.py`` e ``theta_strategy.py``
-    si dichiarano "LAB separato (NON tocca lo scalper)".
-  - ``Betfair/stream/tennis_scalper/tennis_lab.py``: chiama ``market.place_order``
-    ma ``TennisLabStrategy`` NON e' in ``_BOT_REGISTRY`` di ``tennis_runner.py``
-    (che ha solo tennis_scalper/tennis_pro/tennis_flb/tennis_swing).
-  Sono elencati qui SOLO perche' il test deve vedere quello che c'e' oggi nel
-  sorgente: non sono dichiarati "produzione", il motivo lo dice, e la decisione
-  (chiuderli, spostarli fuori da ``Betfair/``, o registrarli davvero) spetta
-  all'utente. Vedi ``AUDIT_2026-09-25/F10A_CONTRATTO_STRADA_UNICA_2026-09-25.md``.
+TROVATO DA F10A IL 25/09, RISOLTO LO STESSO GIORNO (decisione dell'utente):
+la scansione aveva trovato 4 chiamanti a ``market.place_order`` non previsti
+dall'audit del 24/09 e non importati da nessun runner di produzione —
+``Betfair/stream/scalper_lab/{grid_strategy,scalper_bot_base,theta_strategy}.py``
+e ``Betfair/stream/tennis_scalper/tennis_lab.py`` (dettaglio:
+``AUDIT_2026-09-25/F10A_CONTRATTO_STRADA_UNICA_2026-09-25.md``). L'utente ha
+scelto di spostarli fuori da ``Betfair/``: vivono ora sotto ``laboratorio/``
+(radice del repo, fuori da questo albero), insieme ai moduli del lab che
+dipendevano da loro (``bt_lab.py``/``bt_theta.py``/ecc. per scalper_lab;
+``lab_grid*.py``/``tennis_lab_score.py``/``validate.py`` per il lab tennis).
+La scansione sotto copre solo ``Betfair/``: quei moduli non ci sono piu' e le
+loro 4 righe ``NON_PRODUZIONE?`` sono state tolte da
+``_CHIAMANTI_AUTORIZZATI`` (altrimenti ``test_elenco_non_stantio`` e
+``test_ogni_modulo_autorizzato_esiste_davvero`` diventerebbero rossi).
+``test_laboratorio_non_importato_da_betfair_ne_da_desktop`` sotto verifica che
+nessuno sotto ``Betfair/`` o ``desktop/`` importi da ``laboratorio``: e' la
+condizione perche' lo spostamento non riapra una strada nascosta. Referto
+completo: ``AUDIT_2026-09-25/LABORATORIO_SPOSTAMENTO_2026-09-25.md``.
 """
 from __future__ import annotations
 
@@ -258,37 +262,11 @@ _CHIAMANTI_AUTORIZZATI: Dict[str, _Autorizzato] = {
         motivo="supporto del banco: mercato/strategia di prova del motore ordini in certificazione",
         strade=("BANCO",),
     ),
-    # -- 25/09, F10a: trovati dalla scansione, NON previsti dall'audit del  --
-    # -- 24/09, NON toccati (fuori dal perimetro di questa consegna). Motivo --
-    # -- letterale "trovato da F10a, da decidere": segnalati in cima al      --
-    # -- referto F10A_CONTRATTO_STRADA_UNICA_2026-09-25.md.                  --
-    "Betfair/stream/scalper_lab/grid_strategy.py": _Autorizzato(
-        motivo=(
-            "trovato da F10a, da decidere. GridStrategy: la propria docstring "
-            "dice 'LAB separato (NON tocca lo scalper)'. Nessun modulo di "
-            "produzione importa scalper_lab (verificato: 0 risultati per "
-            "'from Betfair.stream.scalper_lab' fuori dalla cartella stessa; "
-            "non e' in desktop/main.js ne' in scalper_service.py)."
-        ),
-        strade=("NON_PRODUZIONE?",),
-    ),
-    "Betfair/stream/scalper_lab/scalper_bot_base.py": _Autorizzato(
-        motivo="trovato da F10a, da decidere. Base di scalper_lab, stesso status di grid_strategy.py: non wired in produzione.",
-        strade=("NON_PRODUZIONE?",),
-    ),
-    "Betfair/stream/scalper_lab/theta_strategy.py": _Autorizzato(
-        motivo="trovato da F10a, da decidere. ThetaStrategy: docstring 'LAB separato (NON tocca lo scalper)', non wired in produzione.",
-        strade=("NON_PRODUZIONE?",),
-    ),
-    "Betfair/stream/tennis_scalper/tennis_lab.py": _Autorizzato(
-        motivo=(
-            "trovato da F10a, da decidere. TennisLabStrategy per lo sweep "
-            "massivo di backtest; NON e' in _BOT_REGISTRY di tennis_runner.py "
-            "(che ha solo tennis_scalper/tennis_pro/tennis_flb/tennis_swing): "
-            "non risulta wired in produzione."
-        ),
-        strade=("NON_PRODUZIONE?",),
-    ),
+    # -- 25/09, F10a: i 4 "trovati dalla scansione, da decidere" (grid_strategy, --
+    # -- scalper_bot_base, theta_strategy di scalper_lab; tennis_lab.py) sono   --
+    # -- stati spostati fuori da Betfair/ (laboratorio/, decisione utente): non --
+    # -- li vede piu' la scansione, le righe sono state tolte di conseguenza.  --
+    # -- Vedi AUDIT_2026-09-25/LABORATORIO_SPOSTAMENTO_2026-09-25.md.          --
 }
 
 # le sette strade dichiarate dalla tabella par.1.0 dell'audit del 24/09
@@ -361,3 +339,64 @@ def test_mappa_chiamante_strada_coerente_con_tabella_1_0_audit(capsys):
 @pytest.mark.parametrize("modulo", sorted(_CHIAMANTI_AUTORIZZATI), ids=lambda m: m.split("/")[-1])
 def test_ogni_modulo_autorizzato_esiste_davvero(modulo):
     assert (_RADICE / modulo).is_file(), f"{modulo} e' nel contratto ma il file non esiste"
+
+
+def test_laboratorio_non_importato_da_betfair_ne_da_desktop():
+    """25/09: i 4 moduli 'trovati da F10a' (par.0 sopra) sono stati spostati in
+    ``laboratorio/`` (radice del repo). La condizione che rende legittimo lo
+    spostamento e' che NESSUN modulo di produzione o test sotto ``Betfair/`` o
+    ``desktop/`` importi da li': altrimenti riaprirebbe di nascosto la stessa
+    strada verso l'Exchange che questo contratto e' nato per sorvegliare.
+
+    Scandisce ``Betfair/**/*.py`` (test e tools INCLUSI: qui non vale
+    l'esclusione di _escluso, vogliamo zero eccezioni) con ``ast`` per un
+    ``import laboratorio``/``import laboratorio.x``/``from laboratorio...``, e
+    ``desktop/**`` (JS, elettrone: niente ast Python) con una ricerca testuale
+    sulla stringa letterale ``laboratorio`` (un percorso passato a un processo
+    figlio sarebbe una stringa, non un import)."""
+    colpevoli_py: List[str] = []
+    for f in sorted(_BETFAIR.rglob("*.py")):
+        rel = f.relative_to(_RADICE).as_posix()
+        try:
+            testo = f.read_text(encoding="utf-8", errors="ignore")
+            albero = ast.parse(testo, filename=rel)
+        except (SyntaxError, OSError):  # pragma: no cover - file illeggibile
+            continue
+        for nodo in ast.walk(albero):
+            if isinstance(nodo, ast.Import):
+                if any(alias.name == "laboratorio" or alias.name.startswith("laboratorio.")
+                       for alias in nodo.names):
+                    colpevoli_py.append(f"{rel}:{nodo.lineno}")
+            elif isinstance(nodo, ast.ImportFrom):
+                if nodo.module and (nodo.module == "laboratorio" or nodo.module.startswith("laboratorio.")):
+                    colpevoli_py.append(f"{rel}:{nodo.lineno}")
+    assert not colpevoli_py, (
+        "modulo sotto Betfair/ che importa da laboratorio/ (strada nascosta "
+        "verso l'Exchange, riapre esattamente cio' che lo spostamento del "
+        "25/09 doveva chiudere): %s" % colpevoli_py
+    )
+
+    desktop_dir = _RADICE / "desktop"
+    colpevoli_desktop: List[str] = []
+    if desktop_dir.is_dir():
+        # Solo i SORGENTI dell'app (js/ts/json/bat/ps1/md): l'uscita di electron-builder
+        # (`desktop/release/`, `dist/`) e `node_modules/` sono binari/pacchetti di terzi;
+        # il 25/09 la locale finlandese `fi.pak` conteneva la parola "laboratorio" (falso positivo).
+        _EST = {".js", ".cjs", ".mjs", ".ts", ".json", ".bat", ".ps1", ".md", ".txt", ".html"}
+        _CARTELLE_ESCLUSE = {"node_modules", "release", "dist", "build", "out"}
+        for f in sorted(desktop_dir.rglob("*")):
+            if not f.is_file() or _CARTELLE_ESCLUSE.intersection(f.parts):
+                continue
+            if f.suffix.lower() not in _EST:
+                continue
+            try:
+                testo = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:  # pragma: no cover - file illeggibile/binario
+                continue
+            if "laboratorio" in testo:
+                colpevoli_desktop.append(f.relative_to(_RADICE).as_posix())
+    assert not colpevoli_desktop, (
+        "file sotto desktop/ che nomina 'laboratorio' (possibile percorso "
+        "verso un modulo del laboratorio passato a un processo Python): %s"
+        % colpevoli_desktop
+    )

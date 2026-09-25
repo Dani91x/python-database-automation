@@ -9,7 +9,7 @@ P&L totale, poi per numero di match verdi (l'obiettivo: profitto sul maggior
 numero di match).
 
 Uso:
-  python -m Betfair.stream.tennis_scalper.lab_grid --data DIR [--smoke] [--top 40]
+  python -m laboratorio.tennis_lab.lab_grid --data DIR [--smoke] [--top 40]
 """
 from __future__ import annotations
 
@@ -198,7 +198,7 @@ def main(argv=None) -> int:
     settled = files if args.all else [f for f in files if is_settled(f)]
     # GUARDIA REGISTRAZIONI (fix 17/07): warning visibile per i raw non-COMPLETE
     # (buchi/inizio tardivo/fine non confermata); --min-coverage esclude.
-    from ..tools.validate_recordings import check_raw_paths_for_backtest
+    from Betfair.stream.tools.validate_recordings import check_raw_paths_for_backtest
 
     settled = check_raw_paths_for_backtest(settled, args.min_coverage)
     grid = build_grid(args.smoke)

@@ -7,7 +7,7 @@ per chiudere la 2a gamba come nel maker neutro).
 Metrica = P&L REALE flumine (order.simulated.profit, dato il risultato del match)
 + locked = Σ min(P&L vince, P&L perde). Delay in-play 8s. Comm 5%.
 
-Uso: python -m Betfair.stream.scalper_lab.bt_theta [k=v ...]
+Uso: python -m laboratorio.scalper_lab.bt_theta [k=v ...]
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ os.chdir(REPO)
 import flumine.config  # noqa: E402
 from flumine import FlumineSimulation, clients  # noqa: E402
 
-from Betfair.stream.scalper_lab.theta_strategy import ThetaStrategy  # noqa: E402
+from laboratorio.scalper_lab.theta_strategy import ThetaStrategy  # noqa: E402
 from Betfair.stream.scalper.scalper_bot import compute_green  # noqa: E402
 
 DATA = os.path.join(REPO, "_live_raw")

@@ -7,14 +7,14 @@ Se l'harness e' corretto:
 
 Un fallimento su paradise/reversion = i "no edge" sui dati reali sono SOSPETTI.
 
-Uso: python -m Betfair.stream.scalper_lab.validate_synth
+Uso: python -m laboratorio.scalper_lab.validate_synth
 """
 from __future__ import annotations
 
 import os
 
-from Betfair.stream.scalper_lab import bt_lab
-from Betfair.stream.scalper_lab.synth_raw import GENERATORS
+from laboratorio.scalper_lab import bt_lab
+from laboratorio.scalper_lab.synth_raw import GENERATORS
 
 # gate rilassati: isoliamo il pipeline fill->chiusura->metrica (non i gate)
 RELAXED = {

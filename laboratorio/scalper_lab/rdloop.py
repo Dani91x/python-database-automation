@@ -15,8 +15,8 @@ Score (onesto, orientato alle OCCASIONI):
 Knowledge store persistente -> knowledge_store.json (resume-able, mai perde lavoro).
 
 Uso:
-  python -m Betfair.stream.scalper_lab.rdloop --mode prematch --rounds 4 --topk 5
-  python -m Betfair.stream.scalper_lab.rdloop --mode inplay --rounds 4
+  python -m laboratorio.scalper_lab.rdloop --mode prematch --rounds 4 --topk 5
+  python -m laboratorio.scalper_lab.rdloop --mode inplay --rounds 4
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ import os
 import time
 from typing import Any, Dict, List
 
-from Betfair.stream.scalper_lab.bt_lab import COMPLETE, run_config
+from laboratorio.scalper_lab.bt_lab import COMPLETE, run_config
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.join(HERE, "knowledge_store.json")

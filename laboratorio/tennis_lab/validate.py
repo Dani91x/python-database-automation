@@ -11,7 +11,7 @@ il P&L per (config, match), poi:
 Fill reali (coda PIQ) + delay in-play 3s (modellato in TennisLab).
 
 Uso:
-  python -m Betfair.stream.tennis_scalper.validate --data DIR [--min-active 6]
+  python -m laboratorio.tennis_lab.validate --data DIR [--min-active 6]
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from flumine import FlumineSimulation, clients
 from . import lab_grid as PG          # price grid
 from . import lab_grid_score as SG    # score grid
 from .tennis_lab import TennisLabStrategy
-from .tennis_swing_bot import TennisSwingStrategy
+from Betfair.stream.tennis_scalper.tennis_swing_bot import TennisSwingStrategy
 
 # z-swing detector con GATE APERTO (bug #5: i suoi gate z+ER lo bloccano; qui
 # apriamo liquidita' e allarghiamo la banda per vedere se ha segnale).
@@ -92,7 +92,7 @@ def collect(data_dir: str, min_matched=None,
     min_coverage: esclude i raw con copertura registrazione sotto soglia (fix
     17/07 "tuning senza guardia"; None = solo warning visibile)."""
     files = [f for f in PG.find_matches(data_dir) if PG.is_settled(f)]
-    from ..tools.validate_recordings import check_raw_paths_for_backtest
+    from Betfair.stream.tools.validate_recordings import check_raw_paths_for_backtest
 
     files = check_raw_paths_for_backtest(files, min_coverage)
     price_grid = _override_minmatched(PG.build_grid(), min_matched)

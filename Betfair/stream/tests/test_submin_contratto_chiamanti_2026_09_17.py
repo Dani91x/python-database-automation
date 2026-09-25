@@ -44,7 +44,12 @@ _CHIAMANTI_ATTESI = {
     "Betfair/stream/motore_ordini.py",
     "Betfair/stream/scalper/scalper_bot.py",
     "Betfair/stream/scalper/sniper_bot.py",
-    "Betfair/stream/scalper_lab/scalper_bot_base.py",
+    # 25/09 (decisione dell'utente): scalper_lab/ e' un laboratorio MAI wired a
+    # un runner, spostato fuori da Betfair/ in laboratorio/scalper_lab/. La sua
+    # scalper_bot_base.py chiama ancora start_submin/advance_submin (invariato
+    # nel merge), ma la scansione qui sotto copre solo Betfair/: non compare
+    # piu' ne' fra i "trovati" ne' deve comparire qui. Vedi
+    # AUDIT_2026-09-25/LABORATORIO_SPOSTAMENTO_2026-09-25.md.
     "Betfair/stream/tennis_scalper/tennis_scalper_bot.py",
     "Betfair/stream/trading/submin.py",
 }

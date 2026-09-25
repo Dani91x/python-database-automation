@@ -4,13 +4,13 @@ Domanda: quale famiglia CHIUDE round-trip a profitto (non gambe nude) su
 mercati NON-elite? Gira poche config rappresentative su un set veloce, sia
 pre-match che in-play(8s). Guida dove puntare le migliaia di test successive.
 
-Uso: python -m Betfair.stream.scalper_lab.exp_families
+Uso: python -m laboratorio.scalper_lab.exp_families
 """
 from __future__ import annotations
 
 import json
 
-from Betfair.stream.scalper_lab.bt_lab import run_config
+from laboratorio.scalper_lab.bt_lab import run_config
 
 # set veloci (raw piccolo). Pre-match: solo match CON finestra pre-match.
 PRE_SET = ["35760084", "35774000"]           # 55m / 39m pre-match, raw ~7-8MB

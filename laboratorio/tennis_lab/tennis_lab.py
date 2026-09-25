@@ -29,7 +29,7 @@ from flumine.order.trade import Trade
 from flumine.order.ordertype import LimitOrder
 from flumine.utils import get_price, get_size, get_nearest_price, price_ticks_away
 
-from .tennis_scalper_bot import compute_green, ticks_between
+from Betfair.stream.tennis_scalper.tennis_scalper_bot import compute_green, ticks_between
 
 logger = logging.getLogger(__name__)
 MIN_STAKE = 2.0

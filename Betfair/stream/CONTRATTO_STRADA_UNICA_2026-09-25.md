@@ -61,20 +61,34 @@ E' una decisione dell'utente, mai un'iniziativa del delegato o del coordinatore:
 
 ## Stato al 25/09/2026: chiamanti trovati e sorprese
 
-18 moduli di produzione autorizzati (vedi il file per il motivo di ciascuno),
-piu' **4 trovati dalla scansione e NON previsti dall'audit del 24/09**, non
-toccati in questa consegna, marcati `NON_PRODUZIONE?` perche' nessun runner di
-produzione li importa (verificato: nessun modulo fuori dalla propria cartella
-li richiama; `scalper_lab/*` si dichiara "LAB separato" nella propria docstring;
-`tennis_lab.py` non e' in `_BOT_REGISTRY` di `tennis_runner.py`):
+18 moduli di produzione/banco autorizzati (vedi il file per il motivo di
+ciascuno). La scansione del 25/09 (F10a) aveva trovato **4 chiamanti in piu',
+NON previsti dall'audit del 24/09**, marcati `NON_PRODUZIONE?` perche' nessun
+runner di produzione li importava (verificato: nessun modulo fuori dalla
+propria cartella li richiamava; `scalper_lab/*` si dichiara "LAB separato"
+nella propria docstring; `tennis_lab.py` non era in `_BOT_REGISTRY` di
+`tennis_runner.py`):
 - `Betfair/stream/scalper_lab/grid_strategy.py`
 - `Betfair/stream/scalper_lab/scalper_bot_base.py`
 - `Betfair/stream/scalper_lab/theta_strategy.py`
 - `Betfair/stream/tennis_scalper/tennis_lab.py`
 
-Decisione da prendere con l'utente: chiuderli (mai usati), spostarli fuori da
-`Betfair/` (per esempio sotto un `lab/` che il contratto esclude esplicitamente,
-come oggi fa per `tests/`/`tools/`), oppure lasciarli e basta (rimangono nel
-contratto con motivo dichiarato, il test resta verde cosi' com'e').
+**Deciso lo stesso giorno (25/09) dall'utente: spostati fuori da `Betfair/`.**
+Vivono ora sotto `laboratorio/` (radice del repo, fuori da questo albero),
+insieme a ogni file di `scalper_lab/`/`tennis_scalper/` che dipendeva da loro
+(l'intera cartella `scalper_lab/`; per tennis: `tennis_lab_score.py`,
+`lab_grid.py`, `lab_grid_score.py`, `validate.py`, e il test
+`test_harness_golden.py`). Le 4 righe `NON_PRODUZIONE?` sono state tolte da
+`_CHIAMANTI_AUTORIZZATI` (la scansione copre solo `Betfair/`, quindi tenerle
+avrebbe fatto scattare `test_elenco_non_stantio` e
+`test_ogni_modulo_autorizzato_esiste_davvero`). Un test nuovo,
+`test_laboratorio_non_importato_da_betfair_ne_da_desktop`, verifica che
+nessun modulo sotto `Betfair/` o `desktop/` importi (o nomini, per il JS) da
+`laboratorio/`: e' la condizione che rende legittimo lo spostamento, non solo
+oggi ma ad ogni modifica futura.
 
-Dettaglio completo, con riga per riga: `AUDIT_2026-09-25/F10A_CONTRATTO_STRADA_UNICA_2026-09-25.md`.
+Dettaglio F10a (riga per riga della scansione originale, cosa e' stato
+trovato e perche'): `AUDIT_2026-09-25/F10A_CONTRATTO_STRADA_UNICA_2026-09-25.md`.
+Referto dello spostamento (mappa dipendenze, file spostati, import cambiati,
+falsificazione): `AUDIT_2026-09-25/LABORATORIO_SPOSTAMENTO_2026-09-25.md`.
+Cosa sa fare ciascun modulo spostato, come si lanciava, stato: `laboratorio/README.md`.

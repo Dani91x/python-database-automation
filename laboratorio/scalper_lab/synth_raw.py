@@ -13,7 +13,7 @@ Scenari:
   * dead      : spread largo, ZERO volume tradato -> nessuno scalp puo' chiudere
                 (controllo negativo: qui scalp DEVE essere 0).
 
-Uso: python -m Betfair.stream.scalper_lab.synth_raw --scenario paradise --out <path>
+Uso: python -m laboratorio.scalper_lab.synth_raw --scenario paradise --out <path>
 """
 from __future__ import annotations
 
