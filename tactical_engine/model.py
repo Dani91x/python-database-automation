@@ -25,10 +25,17 @@ from scipy.stats import poisson
 
 from .dixon_coles import (
     MatchScoreline, score_matrix, markets_from_matrix,
-    top_correct_scores, expected_goals,
+    top_correct_scores, expected_goals, rho_bounds,
 )
 
 LN2 = log(2.0)
+
+# Box storico di rho (invariato): |rho| <= 0.2.
+RHO_BOX = 0.2
+# Margine minimo della correzione tau sulle celle basse (25/09/2026, P(0-0) negativa):
+# ogni tau(x,y) della griglia di QUALSIASI coppia prevedibile resta >= TAU_MIN, cioe'
+# la cella corretta vale almeno lo 0,1 % del suo valore Poisson indipendente.
+TAU_MIN = 1e-3
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,37 @@ class FitResult:
     eff_matches: float      # somma dei pesi time-decay (n "effettivo")
     converged: bool
     neg_loglik: float
+    # rho del primo stadio (vincolato solo sulle celle OSSERVATE, come prima del
+    # 25/09) e se e' servito il secondo stadio vincolato su TUTTE le coppie.
+    rho_unconstrained: Optional[float] = None
+    rho_constraint_active: bool = False
+
+
+def _rho_limits_all_pairs(attack: np.ndarray, defense: np.ndarray, const: float,
+                          g_eff: float, tau_min: float = TAU_MIN) -> Tuple[float, float]:
+    """Dominio di rho valido per OGNI coppia ordinata (i casa, j trasferta), i != j.
+
+    E' l'intersezione dei domini di Dixon-Coles (dixon_coles.rho_bounds) su tutte le
+    partite che il modello puo' prevedere, non solo su quelle osservate col 0-0:
+      log(lh*la) = 2c + g + (a_i - d_i) + (a_j - d_j)  -> massimo sulla coppia con le
+                   due s = a - d piu' alte;
+      log(lh)    = c + g + a_i - d_j                   -> massimo su i != j.
+    g_eff = max(gamma, 0): copre anche predict(neutral=True) su un modello col campo.
+    Box storico |rho| <= RHO_BOX incluso.
+    """
+    n = attack.shape[0]
+    k = 1.0 - float(tau_min)
+    if n < 2:
+        return -RHO_BOX, RHO_BOX
+    s = attack - defense
+    top2 = np.sort(s)[-2:]
+    log_prod_max = 2.0 * const + g_eff + float(top2.sum())
+    diff = attack.reshape(-1, 1) - defense.reshape(1, -1)
+    np.fill_diagonal(diff, -np.inf)
+    log_lam_max = const + g_eff + float(diff.max())
+    hi = min(RHO_BOX, k * float(np.exp(-log_prod_max)), k)
+    lo = max(-RHO_BOX, -k * float(np.exp(-log_lam_max)))
+    return lo, hi
 
 
 class DixonColesModel:
@@ -123,25 +161,64 @@ class DixonColesModel:
             return -wll + penalty
 
         bounds = ([(-3.0, 3.0)] * n + [(-3.0, 3.0)] * n +
-                  [(-2.0, 2.0), (-1.0, 1.0) if fit_home_adv else (0.0, 0.0), (-0.2, 0.2)])
-        res = minimize(neg_loglik, p0, method="L-BFGS-B", bounds=bounds,
-                       options={"maxiter": 20000, "maxfun": 80000,
-                                "ftol": 1e-8, "gtol": 1e-6})
+                  [(-2.0, 2.0), (-1.0, 1.0) if fit_home_adv else (0.0, 0.0), (-RHO_BOX, RHO_BOX)])
+        opts = {"maxiter": 20000, "maxfun": 80000, "ftol": 1e-8, "gtol": 1e-6}
+        # STADIO 1 (invariato rispetto a prima del 25/09): tau vincolata > 0 solo
+        # sulle partite osservate 0-0/0-1/1-0/1-1.
+        res = minimize(neg_loglik, p0, method="L-BFGS-B", bounds=bounds, options=opts)
+        sol = res.x
+        rho1 = float(sol[2 * n + 2])
 
-        attack = res.x[:n]; defense = res.x[n:2 * n]
+        def _limits(p: np.ndarray) -> Tuple[float, float]:
+            g_eff = max(float(p[2 * n + 1]), 0.0) if fit_home_adv else 0.0
+            return _rho_limits_all_pairs(p[:n], p[n:2 * n], float(p[2 * n]), g_eff)
+
+        # Il vincolo di Dixon-Coles va rispettato su TUTTE le coppie che il modello
+        # prevedera', non solo sulle celle osservate: una coppia forte-contro-debole
+        # che non ha mai fatto 0-0 nello storico non vincola rho nello stadio 1, e in
+        # previsione tau(0,0) = 1 - lh*la*rho puo' diventare negativa (P(0-0) < 0).
+        lo1, hi1 = _limits(sol)
+        active = not (lo1 <= rho1 <= hi1)
+        if active:
+            # STADIO 2 (solo se lo stadio 1 viola il dominio): MLE VINCOLATA.
+            # Riparametrizzazione rho = t * hi(p) per t >= 0, t * |lo(p)| per t < 0,
+            # con t in [-1, 1]: copre esattamente il dominio ammissibile per ogni p.
+            # Se lo stadio 1 e' gia' nel dominio e' anche l'ottimo vincolato (il
+            # dominio e' un sottoinsieme di quello dello stadio 1): per questo lo
+            # stadio 2 gira solo quando serve e le partite "normali" restano identiche.
+            def _rho_of(q: np.ndarray) -> float:
+                lo, hi = _limits(q)
+                t = float(q[2 * n + 2])
+                return t * hi if t >= 0.0 else t * (-lo)
+
+            def neg_loglik_t(q: np.ndarray) -> float:
+                p = q.copy()
+                p[2 * n + 2] = _rho_of(q)
+                return neg_loglik(p)
+
+            t0 = min(1.0, rho1 / hi1) if rho1 >= 0.0 else max(-1.0, rho1 / (-lo1))
+            q0 = sol.copy()
+            q0[2 * n + 2] = t0
+            bounds_t = bounds[:-1] + [(-1.0, 1.0)]
+            res = minimize(neg_loglik_t, q0, method="L-BFGS-B", bounds=bounds_t, options=opts)
+            sol = res.x.copy()
+            sol[2 * n + 2] = _rho_of(res.x)
+
+        attack = sol[:n]; defense = sol[n:2 * n]
         # centra esplicitamente (identificabilita'): mean(attack)=mean(defense)=0,
         # il livello assorbito dal const.
-        c = res.x[2 * n]
+        c = sol[2 * n]
         attack = attack - attack.mean()
         defense = defense - defense.mean()
-        c = c + (res.x[:n].mean()) - (res.x[n:2 * n].mean())  # mantiene i lambda invariati
+        c = c + (sol[:n].mean()) - (sol[n:2 * n].mean())  # mantiene i lambda invariati
 
         self._idx = idx
         self.fit_ = FitResult(
             teams=teams, attack=attack, defense=defense, const=float(c),
-            home_adv=float(res.x[2 * n + 1] if fit_home_adv else 0.0),
-            rho=float(res.x[2 * n + 2]), n_matches=len(matches), eff_matches=eff,
+            home_adv=float(sol[2 * n + 1] if fit_home_adv else 0.0),
+            rho=float(sol[2 * n + 2]), n_matches=len(matches), eff_matches=eff,
             converged=bool(res.success), neg_loglik=float(res.fun),
+            rho_unconstrained=rho1, rho_constraint_active=active,
         )
         return self.fit_
 
@@ -162,11 +239,17 @@ class DixonColesModel:
     def predict(self, home_id: int, away_id: int, neutral: bool = False) -> Dict:
         f = self.fit_
         lh, la = self._lambdas(home_id, away_id, neutral)
-        grid = score_matrix(lh, la, f.rho, self.max_goals)
+        # tau >= TAU_MIN per costruzione: rho nel dominio di Dixon-Coles della coppia.
+        # Dopo il fit vincolato su tutte le coppie e' un'identita' (rho gia' dentro, a
+        # meno dell'arrotondamento in virgola mobile sulla coppia estrema); resta come
+        # garanzia per ogni FitResult (es. costruito a mano). score_matrix rinormalizza.
+        lo, hi = rho_bounds(lh, la, TAU_MIN)
+        rho_eff = min(max(f.rho, lo), hi)
+        grid = score_matrix(lh, la, rho_eff, self.max_goals)
         exg = expected_goals(grid)
         return {
             "home_id": home_id, "away_id": away_id, "neutral": neutral,
-            "lambda_home": lh, "lambda_away": la,
+            "lambda_home": lh, "lambda_away": la, "rho_effective": rho_eff,
             "exp_goals_home": exg[0], "exp_goals_away": exg[1],
             "markets": markets_from_matrix(grid),
             "top_scores": top_correct_scores(grid, 5),

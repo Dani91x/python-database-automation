@@ -1,0 +1,1787 @@
+[
+ {
+  "fixture_id": 1533042,
+  "league_id": 1093,
+  "fixture_date": "2026-07-04T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-04T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.2912,
+    "draw": 0.1468,
+    "home": 0.562,
+    "btts_no": 0.0985,
+    "btts_yes": 0.9015,
+    "over_0_5": 1.0018,
+    "over_1_5": 0.9823,
+    "over_2_5": 0.9482,
+    "over_3_5": 0.8695,
+    "double_12": 0.8532,
+    "double_1x": 0.7088,
+    "double_x2": 0.438,
+    "under_0_5": -0.0018,
+    "under_1_5": 0.0177,
+    "under_2_5": 0.0518,
+    "under_3_5": 0.1305
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.154,
+    "converged": true,
+    "n_matches": 241,
+    "eff_matches": 124.1,
+    "half_life_days": 420.0
+   },
+   "away_name": "South Hobart II",
+   "home_name": "South East Utd. U21",
+   "league_id": 1093,
+   "fixture_id": 1533042,
+   "markets_ht": {
+    "away": 0.3675,
+    "draw": 0.2771,
+    "home": 0.3555,
+    "btts_no": 0.3451,
+    "btts_yes": 0.6549,
+    "over_0_5": 0.9375,
+    "over_1_5": 0.8474,
+    "over_2_5": 0.6162,
+    "over_3_5": 0.3933,
+    "double_12": 0.7229,
+    "double_1x": 0.6325,
+    "double_x2": 0.6445,
+    "under_0_5": 0.0625,
+    "under_1_5": 0.1526,
+    "under_2_5": 0.3838,
+    "under_3_5": 0.6067
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0526
+    },
+    {
+     "a": 3,
+     "h": 3,
+     "p": 0.0471
+    },
+    {
+     "a": 2,
+     "h": 4,
+     "p": 0.0469
+    },
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0443
+    },
+    {
+     "a": 3,
+     "h": 4,
+     "p": 0.042
+    }
+   ],
+   "lambda_away": 2.682,
+   "lambda_home": 3.566,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-04T07:25:59.439923+00:00",
+   "strength_away": {
+    "att": 1.156,
+    "def_factor": 0.837
+   },
+   "strength_home": {
+    "att": 1.427,
+    "def_factor": 0.906
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.681,
+   "exp_goals_home": 3.557,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533034,
+  "league_id": 1093,
+  "fixture_date": "2026-06-26T10:15:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-26T10:15:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.1543,
+    "draw": 0.12,
+    "home": 0.7257,
+    "btts_no": 0.2054,
+    "btts_yes": 0.7946,
+    "over_0_5": 1.0012,
+    "over_1_5": 0.9628,
+    "over_2_5": 0.8995,
+    "over_3_5": 0.7764,
+    "double_12": 0.88,
+    "double_1x": 0.8457,
+    "double_x2": 0.2743,
+    "under_0_5": -0.0012,
+    "under_1_5": 0.0372,
+    "under_2_5": 0.1005,
+    "under_3_5": 0.2236
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.1799,
+    "converged": true,
+    "n_matches": 236,
+    "eff_matches": 120.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "University of Tasmania",
+   "home_name": "Olympia Warriors",
+   "league_id": 1093,
+   "fixture_id": 1533034,
+   "markets_ht": {
+    "away": 0.1656,
+    "draw": 0.3043,
+    "home": 0.5301,
+    "btts_no": 0.5517,
+    "btts_yes": 0.4483,
+    "over_0_5": 0.8778,
+    "over_1_5": 0.6966,
+    "over_2_5": 0.4084,
+    "over_3_5": 0.2041,
+    "double_12": 0.6957,
+    "double_1x": 0.8344,
+    "double_x2": 0.4699,
+    "under_0_5": 0.1222,
+    "under_1_5": 0.3034,
+    "under_2_5": 0.5916,
+    "under_3_5": 0.7959
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0653
+    },
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0585
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0567
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.0547
+    },
+    {
+     "a": 2,
+     "h": 4,
+     "p": 0.0507
+    }
+   ],
+   "lambda_away": 1.735,
+   "lambda_home": 3.581,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-26T09:04:06.153531+00:00",
+   "strength_away": {
+    "att": 0.696,
+    "def_factor": 1.357
+   },
+   "strength_home": {
+    "att": 0.871,
+    "def_factor": 0.986
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.735,
+   "exp_goals_home": 3.572,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533035,
+  "league_id": 1093,
+  "fixture_date": "2026-06-26T10:15:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-26T10:15:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.9339,
+    "draw": 0.0384,
+    "home": 0.0277,
+    "btts_no": 0.3258,
+    "btts_yes": 0.6742,
+    "over_0_5": 1.0003,
+    "over_1_5": 0.9852,
+    "over_2_5": 0.9521,
+    "over_3_5": 0.8773,
+    "double_12": 0.9616,
+    "double_1x": 0.0661,
+    "double_x2": 0.9723,
+    "under_0_5": -0.0003,
+    "under_1_5": 0.0148,
+    "under_2_5": 0.0479,
+    "under_3_5": 0.1227
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.1799,
+    "converged": true,
+    "n_matches": 236,
+    "eff_matches": 120.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "South Hobart II",
+   "home_name": "Glenorchy Knights U21",
+   "league_id": 1093,
+   "fixture_id": 1533035,
+   "markets_ht": {
+    "away": 0.7213,
+    "draw": 0.2078,
+    "home": 0.0709,
+    "btts_no": 0.5907,
+    "btts_yes": 0.4093,
+    "over_0_5": 0.9196,
+    "over_1_5": 0.7759,
+    "over_2_5": 0.5176,
+    "over_3_5": 0.296,
+    "double_12": 0.7922,
+    "double_1x": 0.2787,
+    "double_x2": 0.9291,
+    "under_0_5": 0.0804,
+    "under_1_5": 0.2241,
+    "under_2_5": 0.4824,
+    "under_3_5": 0.704
+   },
+   "top_scores": [
+    {
+     "a": 5,
+     "h": 1,
+     "p": 0.0648
+    },
+    {
+     "a": 4,
+     "h": 1,
+     "p": 0.0619
+    },
+    {
+     "a": 5,
+     "h": 0,
+     "p": 0.0569
+    },
+    {
+     "a": 6,
+     "h": 1,
+     "p": 0.0566
+    },
+    {
+     "a": 4,
+     "h": 0,
+     "p": 0.0543
+    }
+   ],
+   "lambda_away": 5.24,
+   "lambda_home": 1.139,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-26T09:04:06.153531+00:00",
+   "strength_away": {
+    "att": 1.153,
+    "def_factor": 0.857
+   },
+   "strength_home": {
+    "att": 0.439,
+    "def_factor": 1.796
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 5.118,
+   "exp_goals_home": 1.139,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1532295,
+  "league_id": 1117,
+  "fixture_date": "2026-06-26T23:00:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-26T23:00:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.3564,
+    "draw": 0.1654,
+    "home": 0.4782,
+    "btts_no": 0.1497,
+    "btts_yes": 0.8503,
+    "over_0_5": 1.0006,
+    "over_1_5": 0.9605,
+    "over_2_5": 0.893,
+    "over_3_5": 0.7651,
+    "double_12": 0.8346,
+    "double_1x": 0.6436,
+    "double_x2": 0.5218,
+    "under_0_5": -0.0006,
+    "under_1_5": 0.0395,
+    "under_2_5": 0.107,
+    "under_3_5": 0.2349
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.1637,
+    "ridge": 0.08,
+    "home_adv": 0.2437,
+    "converged": true,
+    "n_matches": 1217,
+    "eff_matches": 638.9,
+    "half_life_days": 420.0
+   },
+   "away_name": "Paisley Athletic W",
+   "home_name": "Cedar Stars W",
+   "league_id": 1117,
+   "fixture_id": 1532295,
+   "markets_ht": {
+    "away": 0.4579,
+    "draw": 0.2241,
+    "home": 0.318,
+    "btts_no": 0.553,
+    "btts_yes": 0.447,
+    "over_0_5": 0.9312,
+    "over_1_5": 0.6563,
+    "over_2_5": 0.4191,
+    "over_3_5": 0.2124,
+    "double_12": 0.7759,
+    "double_1x": 0.5421,
+    "double_x2": 0.682,
+    "under_0_5": 0.0688,
+    "under_1_5": 0.3437,
+    "under_2_5": 0.5809,
+    "under_3_5": 0.7876
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0621
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0578
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.051
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0503
+    },
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0475
+    }
+   ],
+   "lambda_away": 2.433,
+   "lambda_home": 2.792,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-26T09:04:06.153531+00:00",
+   "strength_away": {
+    "att": 1.402,
+    "def_factor": 1.331
+   },
+   "strength_home": {
+    "att": 1.3,
+    "def_factor": 1.372
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.432,
+   "exp_goals_home": 2.791,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1521641,
+  "league_id": 1126,
+  "fixture_date": "2026-07-12T14:00:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-12T14:00:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.4504,
+    "draw": 0.1652,
+    "home": 0.3844,
+    "btts_no": 0.1312,
+    "btts_yes": 0.8688,
+    "over_0_5": 1.0004,
+    "over_1_5": 0.968,
+    "over_2_5": 0.9094,
+    "over_3_5": 0.7942,
+    "double_12": 0.8348,
+    "double_1x": 0.5496,
+    "double_x2": 0.6156,
+    "under_0_5": -0.0004,
+    "under_1_5": 0.032,
+    "under_2_5": 0.0906,
+    "under_3_5": 0.2058
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.1475,
+    "ridge": 0.08,
+    "home_adv": 0.2366,
+    "converged": true,
+    "n_matches": 454,
+    "eff_matches": 236.5,
+    "half_life_days": 420.0
+   },
+   "away_name": "Parnu JK Vaprus U21",
+   "home_name": "Johvi Phoenix",
+   "league_id": 1126,
+   "fixture_id": 1521641,
+   "markets_ht": {
+    "away": 0.5715,
+    "draw": 0.2312,
+    "home": 0.1973,
+    "btts_no": 0.6019,
+    "btts_yes": 0.3981,
+    "over_0_5": 0.9106,
+    "over_1_5": 0.6485,
+    "over_2_5": 0.3962,
+    "over_3_5": 0.1947,
+    "double_12": 0.7688,
+    "double_1x": 0.4285,
+    "double_x2": 0.8027,
+    "under_0_5": 0.0894,
+    "under_1_5": 0.3515,
+    "under_2_5": 0.6038,
+    "under_3_5": 0.8053
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0589
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0556
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0517
+    },
+    {
+     "a": 3,
+     "h": 3,
+     "p": 0.0488
+    },
+    {
+     "a": 2,
+     "h": 1,
+     "p": 0.0447
+    }
+   ],
+   "lambda_away": 2.832,
+   "lambda_home": 2.633,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-12T06:35:30.384821+00:00",
+   "strength_away": {
+    "att": 1.507,
+    "def_factor": 1.011
+   },
+   "strength_home": {
+    "att": 1.163,
+    "def_factor": 1.062
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.83,
+   "exp_goals_home": 2.632,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1536096,
+  "league_id": 1091,
+  "fixture_date": "2026-07-25T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-25T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.3341,
+    "draw": 0.1633,
+    "home": 0.5026,
+    "btts_no": 0.1734,
+    "btts_yes": 0.8266,
+    "over_0_5": 1.0015,
+    "over_1_5": 0.95,
+    "over_2_5": 0.8726,
+    "over_3_5": 0.7304,
+    "double_12": 0.8367,
+    "double_1x": 0.6659,
+    "double_x2": 0.4974,
+    "under_0_5": -0.0015,
+    "under_1_5": 0.05,
+    "under_2_5": 0.1274,
+    "under_3_5": 0.2696
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4107,
+    "converged": true,
+    "n_matches": 223,
+    "eff_matches": 117.1,
+    "half_life_days": 420.0
+   },
+   "away_name": "Devonport U21",
+   "home_name": "Ulverstone U21",
+   "league_id": 1091,
+   "fixture_id": 1536096,
+   "markets_ht": {
+    "away": 0.3445,
+    "draw": 0.3509,
+    "home": 0.3046,
+    "btts_no": 0.6747,
+    "btts_yes": 0.3253,
+    "over_0_5": 0.809,
+    "over_1_5": 0.5032,
+    "over_2_5": 0.2365,
+    "over_3_5": 0.0896,
+    "double_12": 0.6491,
+    "double_1x": 0.6555,
+    "double_x2": 0.6954,
+    "under_0_5": 0.191,
+    "under_1_5": 0.4968,
+    "under_2_5": 0.7635,
+    "under_3_5": 0.9104
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.065
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0591
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.058
+    },
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0527
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0485
+    }
+   ],
+   "lambda_away": 2.241,
+   "lambda_home": 2.727,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-25T07:44:49.915198+00:00",
+   "strength_away": {
+    "att": 1.49,
+    "def_factor": 0.986
+   },
+   "strength_home": {
+    "att": 1.004,
+    "def_factor": 0.823
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.24,
+   "exp_goals_home": 2.726,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533116,
+  "league_id": 1091,
+  "fixture_date": "2026-07-04T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-04T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.4133,
+    "draw": 0.1617,
+    "home": 0.425,
+    "btts_no": 0.127,
+    "btts_yes": 0.873,
+    "over_0_5": 1.0021,
+    "over_1_5": 0.9685,
+    "over_2_5": 0.9145,
+    "over_3_5": 0.8036,
+    "double_12": 0.8383,
+    "double_1x": 0.5867,
+    "double_x2": 0.575,
+    "under_0_5": -0.0021,
+    "under_1_5": 0.0315,
+    "under_2_5": 0.0855,
+    "under_3_5": 0.1964
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.3981,
+    "converged": true,
+    "n_matches": 212,
+    "eff_matches": 110.1,
+    "half_life_days": 420.0
+   },
+   "away_name": "Riverside Olympic U21",
+   "home_name": "Burnie Utd.",
+   "league_id": 1091,
+   "fixture_id": 1533116,
+   "markets_ht": {
+    "away": 0.4771,
+    "draw": 0.2631,
+    "home": 0.2598,
+    "btts_no": 0.4718,
+    "btts_yes": 0.5282,
+    "over_0_5": 0.9238,
+    "over_1_5": 0.7463,
+    "over_2_5": 0.4927,
+    "over_3_5": 0.2737,
+    "double_12": 0.7369,
+    "double_1x": 0.5229,
+    "double_x2": 0.7402,
+    "under_0_5": 0.0762,
+    "under_1_5": 0.2537,
+    "under_2_5": 0.5073,
+    "under_3_5": 0.7263
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0577
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0537
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.053
+    },
+    {
+     "a": 3,
+     "h": 3,
+     "p": 0.0493
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.0419
+    }
+   ],
+   "lambda_away": 2.756,
+   "lambda_home": 2.792,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-04T07:25:59.439923+00:00",
+   "strength_away": {
+    "att": 0.943,
+    "def_factor": 1.226
+   },
+   "strength_home": {
+    "att": 0.816,
+    "def_factor": 1.56
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.755,
+   "exp_goals_home": 2.79,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533040,
+  "league_id": 1093,
+  "fixture_date": "2026-07-04T02:15:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-04T02:15:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.0356,
+    "draw": 0.0451,
+    "home": 0.9193,
+    "btts_no": 0.2662,
+    "btts_yes": 0.7338,
+    "over_0_5": 1.0006,
+    "over_1_5": 0.988,
+    "over_2_5": 0.9607,
+    "over_3_5": 0.8961,
+    "double_12": 0.9549,
+    "double_1x": 0.9644,
+    "double_x2": 0.0807,
+    "under_0_5": -0.0006,
+    "under_1_5": 0.012,
+    "under_2_5": 0.0393,
+    "under_3_5": 0.1039
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.154,
+    "converged": true,
+    "n_matches": 241,
+    "eff_matches": 124.1,
+    "half_life_days": 420.0
+   },
+   "away_name": "Hobart Utd.",
+   "home_name": "Taroona",
+   "league_id": 1093,
+   "fixture_id": 1533040,
+   "markets_ht": {
+    "away": 0.0322,
+    "draw": 0.1491,
+    "home": 0.8187,
+    "btts_no": 0.6794,
+    "btts_yes": 0.3206,
+    "over_0_5": 0.9343,
+    "over_1_5": 0.798,
+    "over_2_5": 0.5559,
+    "over_3_5": 0.3319,
+    "double_12": 0.8509,
+    "double_1x": 0.9678,
+    "double_x2": 0.1813,
+    "under_0_5": 0.0657,
+    "under_1_5": 0.202,
+    "under_2_5": 0.4441,
+    "under_3_5": 0.6681
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 5,
+     "p": 0.0622
+    },
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0586
+    },
+    {
+     "a": 1,
+     "h": 6,
+     "p": 0.055
+    },
+    {
+     "a": 0,
+     "h": 5,
+     "p": 0.0463
+    },
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0442
+    }
+   ],
+   "lambda_away": 1.345,
+   "lambda_home": 5.307,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-04T07:25:59.439923+00:00",
+   "strength_away": {
+    "att": 0.736,
+    "def_factor": 1.549
+   },
+   "strength_home": {
+    "att": 1.147,
+    "def_factor": 0.713
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.345,
+   "exp_goals_home": 5.176,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533130,
+  "league_id": 1091,
+  "fixture_date": "2026-08-01T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-08-01T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.0692,
+    "draw": 0.0706,
+    "home": 0.8602,
+    "btts_no": 0.2012,
+    "btts_yes": 0.7988,
+    "over_0_5": 1.0009,
+    "over_1_5": 0.9859,
+    "over_2_5": 0.9558,
+    "over_3_5": 0.8853,
+    "double_12": 0.9294,
+    "double_1x": 0.9308,
+    "double_x2": 0.1398,
+    "under_0_5": -0.0009,
+    "under_1_5": 0.0141,
+    "under_2_5": 0.0442,
+    "under_3_5": 0.1147
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4163,
+    "converged": true,
+    "n_matches": 226,
+    "eff_matches": 118.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "Burnie Utd.",
+   "home_name": "Somerset",
+   "league_id": 1091,
+   "fixture_id": 1533130,
+   "markets_ht": {
+    "away": 0.0889,
+    "draw": 0.1513,
+    "home": 0.7599,
+    "btts_no": 0.4883,
+    "btts_yes": 0.5117,
+    "over_0_5": 0.9651,
+    "over_1_5": 0.8565,
+    "over_2_5": 0.6624,
+    "over_3_5": 0.4438,
+    "double_12": 0.8487,
+    "double_1x": 0.9111,
+    "double_x2": 0.2401,
+    "under_0_5": 0.0349,
+    "under_1_5": 0.1435,
+    "under_2_5": 0.3376,
+    "under_3_5": 0.5562
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0581
+    },
+    {
+     "a": 1,
+     "h": 5,
+     "p": 0.0561
+    },
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0481
+    },
+    {
+     "a": 2,
+     "h": 4,
+     "p": 0.0479
+    },
+    {
+     "a": 2,
+     "h": 5,
+     "p": 0.0462
+    }
+   ],
+   "lambda_away": 1.649,
+   "lambda_home": 4.828,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-08-01T08:34:22.829620+00:00",
+   "strength_away": {
+    "att": 0.839,
+    "def_factor": 1.615
+   },
+   "strength_home": {
+    "att": 1.092,
+    "def_factor": 1.088
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.649,
+   "exp_goals_home": 4.754,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533126,
+  "league_id": 1091,
+  "fixture_date": "2026-07-18T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-18T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.7064,
+    "draw": 0.1193,
+    "home": 0.1744,
+    "btts_no": 0.1216,
+    "btts_yes": 0.8784,
+    "over_0_5": 1.0015,
+    "over_1_5": 0.9844,
+    "over_2_5": 0.9531,
+    "over_3_5": 0.8799,
+    "double_12": 0.8807,
+    "double_1x": 0.2936,
+    "double_x2": 0.8256,
+    "under_0_5": -0.0015,
+    "under_1_5": 0.0156,
+    "under_2_5": 0.0469,
+    "under_3_5": 0.1201
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4157,
+    "converged": true,
+    "n_matches": 219,
+    "eff_matches": 114.5,
+    "half_life_days": 420.0
+   },
+   "away_name": "Devonport U21",
+   "home_name": "Burnie Utd.",
+   "league_id": 1091,
+   "fixture_id": 1533126,
+   "markets_ht": {
+    "away": 0.5063,
+    "draw": 0.2694,
+    "home": 0.2243,
+    "btts_no": 0.51,
+    "btts_yes": 0.49,
+    "over_0_5": 0.9109,
+    "over_1_5": 0.7197,
+    "over_2_5": 0.4562,
+    "over_3_5": 0.2424,
+    "double_12": 0.7306,
+    "double_1x": 0.4937,
+    "double_x2": 0.7757,
+    "under_0_5": 0.0891,
+    "under_1_5": 0.2803,
+    "under_2_5": 0.5438,
+    "under_3_5": 0.7576
+   },
+   "top_scores": [
+    {
+     "a": 4,
+     "h": 2,
+     "p": 0.0521
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0505
+    },
+    {
+     "a": 4,
+     "h": 1,
+     "p": 0.046
+    },
+    {
+     "a": 3,
+     "h": 1,
+     "p": 0.0446
+    },
+    {
+     "a": 5,
+     "h": 2,
+     "p": 0.043
+    }
+   ],
+   "lambda_away": 4.125,
+   "lambda_home": 2.265,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-18T11:22:05.468106+00:00",
+   "strength_away": {
+    "att": 1.446,
+    "def_factor": 1.013
+   },
+   "strength_home": {
+    "att": 0.805,
+    "def_factor": 1.558
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 4.098,
+   "exp_goals_home": 2.264,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1536095,
+  "league_id": 1091,
+  "fixture_date": "2026-07-25T06:45:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-07-25T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.3923,
+    "draw": 0.165,
+    "home": 0.4427,
+    "btts_no": 0.155,
+    "btts_yes": 0.845,
+    "over_0_5": 1.0019,
+    "over_1_5": 0.9565,
+    "over_2_5": 0.887,
+    "over_3_5": 0.7546,
+    "double_12": 0.835,
+    "double_1x": 0.6077,
+    "double_x2": 0.5573,
+    "under_0_5": -0.0019,
+    "under_1_5": 0.0435,
+    "under_2_5": 0.113,
+    "under_3_5": 0.2454
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4107,
+    "converged": true,
+    "n_matches": 223,
+    "eff_matches": 117.1,
+    "half_life_days": 420.0
+   },
+   "away_name": "Somerset",
+   "home_name": "Riverside Olympic U21",
+   "league_id": 1091,
+   "fixture_id": 1536095,
+   "markets_ht": {
+    "away": 0.2689,
+    "draw": 0.2694,
+    "home": 0.4616,
+    "btts_no": 0.4953,
+    "btts_yes": 0.5047,
+    "over_0_5": 0.9158,
+    "over_1_5": 0.7203,
+    "over_2_5": 0.4611,
+    "over_3_5": 0.2465,
+    "double_12": 0.7306,
+    "double_1x": 0.7311,
+    "double_x2": 0.5384,
+    "under_0_5": 0.0842,
+    "under_1_5": 0.2797,
+    "under_2_5": 0.5389,
+    "under_3_5": 0.7535
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0637
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0562
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0531
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.051
+    },
+    {
+     "a": 2,
+     "h": 1,
+     "p": 0.0482
+    }
+   ],
+   "lambda_away": 2.499,
+   "lambda_home": 2.646,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-07-25T07:44:49.915198+00:00",
+   "strength_away": {
+    "att": 1.086,
+    "def_factor": 1.085
+   },
+   "strength_home": {
+    "att": 0.885,
+    "def_factor": 1.259
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.498,
+   "exp_goals_home": 2.645,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533129,
+  "league_id": 1091,
+  "fixture_date": "2026-08-01T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-08-01T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.0442,
+    "draw": 0.0545,
+    "home": 0.9013,
+    "btts_no": 0.3027,
+    "btts_yes": 0.6973,
+    "over_0_5": 1.0004,
+    "over_1_5": 0.9787,
+    "over_2_5": 0.9353,
+    "over_3_5": 0.8432,
+    "double_12": 0.9455,
+    "double_1x": 0.9558,
+    "double_x2": 0.0987,
+    "under_0_5": -0.0004,
+    "under_1_5": 0.0213,
+    "under_2_5": 0.0647,
+    "under_3_5": 0.1568
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4163,
+    "converged": true,
+    "n_matches": 226,
+    "eff_matches": 118.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "Devonport U21",
+   "home_name": "Northern Rangers",
+   "league_id": 1091,
+   "fixture_id": 1533129,
+   "markets_ht": {
+    "away": 0.0683,
+    "draw": 0.1655,
+    "home": 0.7663,
+    "btts_no": 0.6369,
+    "btts_yes": 0.3631,
+    "over_0_5": 0.9345,
+    "over_1_5": 0.7638,
+    "over_2_5": 0.5203,
+    "over_3_5": 0.2985,
+    "double_12": 0.8345,
+    "double_1x": 0.9317,
+    "double_x2": 0.2337,
+    "under_0_5": 0.0655,
+    "under_1_5": 0.2362,
+    "under_2_5": 0.4797,
+    "under_3_5": 0.7015
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0669
+    },
+    {
+     "a": 1,
+     "h": 5,
+     "p": 0.0632
+    },
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0566
+    },
+    {
+     "a": 0,
+     "h": 4,
+     "p": 0.0545
+    },
+    {
+     "a": 0,
+     "h": 5,
+     "p": 0.0516
+    }
+   ],
+   "lambda_away": 1.226,
+   "lambda_home": 4.728,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-08-01T08:34:22.829620+00:00",
+   "strength_away": {
+    "att": 1.477,
+    "def_factor": 0.951
+   },
+   "strength_home": {
+    "att": 1.815,
+    "def_factor": 0.46
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.226,
+   "exp_goals_home": 4.663,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533132,
+  "league_id": 1091,
+  "fixture_date": "2026-08-08T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-08-08T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.9372,
+    "draw": 0.0368,
+    "home": 0.0259,
+    "btts_no": 0.3391,
+    "btts_yes": 0.6609,
+    "over_0_5": 1.0003,
+    "over_1_5": 0.9847,
+    "over_2_5": 0.9506,
+    "over_3_5": 0.8743,
+    "double_12": 0.9632,
+    "double_1x": 0.0628,
+    "double_x2": 0.9741,
+    "under_0_5": -0.0003,
+    "under_1_5": 0.0153,
+    "under_2_5": 0.0494,
+    "under_3_5": 0.1257
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4065,
+    "converged": true,
+    "n_matches": 229,
+    "eff_matches": 120.4,
+    "half_life_days": 420.0
+   },
+   "away_name": "Northern Rangers",
+   "home_name": "Burnie Utd.",
+   "league_id": 1091,
+   "fixture_id": 1533132,
+   "markets_ht": {
+    "away": 0.8277,
+    "draw": 0.1172,
+    "home": 0.0551,
+    "btts_no": 0.5485,
+    "btts_yes": 0.4515,
+    "over_0_5": 0.9698,
+    "over_1_5": 0.8693,
+    "over_2_5": 0.6861,
+    "over_3_5": 0.471,
+    "double_12": 0.8828,
+    "double_1x": 0.1723,
+    "double_x2": 0.9449,
+    "under_0_5": 0.0302,
+    "under_1_5": 0.1307,
+    "under_2_5": 0.3139,
+    "under_3_5": 0.529
+   },
+   "top_scores": [
+    {
+     "a": 5,
+     "h": 1,
+     "p": 0.0651
+    },
+    {
+     "a": 4,
+     "h": 1,
+     "p": 0.0621
+    },
+    {
+     "a": 5,
+     "h": 0,
+     "p": 0.0593
+    },
+    {
+     "a": 6,
+     "h": 1,
+     "p": 0.0569
+    },
+    {
+     "a": 4,
+     "h": 0,
+     "p": 0.0566
+    }
+   ],
+   "lambda_away": 5.241,
+   "lambda_home": 1.098,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-08-08T06:56:00.982804+00:00",
+   "strength_away": {
+    "att": 1.832,
+    "def_factor": 0.491
+   },
+   "strength_home": {
+    "att": 0.823,
+    "def_factor": 1.582
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 5.119,
+   "exp_goals_home": 1.098,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533133,
+  "league_id": 1091,
+  "fixture_date": "2026-08-08T06:45:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-08-08T06:45:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.1155,
+    "draw": 0.1046,
+    "home": 0.7799,
+    "btts_no": 0.2609,
+    "btts_yes": 0.7391,
+    "over_0_5": 1.0003,
+    "over_1_5": 0.9557,
+    "over_2_5": 0.8821,
+    "over_3_5": 0.7463,
+    "double_12": 0.8954,
+    "double_1x": 0.8845,
+    "double_x2": 0.2201,
+    "under_0_5": -0.0003,
+    "under_1_5": 0.0443,
+    "under_2_5": 0.1179,
+    "under_3_5": 0.2537
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.4065,
+    "converged": true,
+    "n_matches": 229,
+    "eff_matches": 120.4,
+    "half_life_days": 420.0
+   },
+   "away_name": "Launceston U21",
+   "home_name": "Devonport U21",
+   "league_id": 1091,
+   "fixture_id": 1533133,
+   "markets_ht": {
+    "away": 0.1228,
+    "draw": 0.2468,
+    "home": 0.6304,
+    "btts_no": 0.6569,
+    "btts_yes": 0.3431,
+    "over_0_5": 0.8832,
+    "over_1_5": 0.6392,
+    "over_2_5": 0.3681,
+    "over_3_5": 0.1739,
+    "double_12": 0.7532,
+    "double_1x": 0.8772,
+    "double_x2": 0.3696,
+    "under_0_5": 0.1168,
+    "under_1_5": 0.3608,
+    "under_2_5": 0.6319,
+    "under_3_5": 0.8261
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0719
+    },
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0653
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.0594
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0522
+    },
+    {
+     "a": 0,
+     "h": 3,
+     "p": 0.0495
+    }
+   ],
+   "lambda_away": 1.452,
+   "lambda_home": 3.632,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-08-08T06:56:00.982804+00:00",
+   "strength_away": {
+    "att": 0.846,
+    "def_factor": 0.884
+   },
+   "strength_home": {
+    "att": 1.514,
+    "def_factor": 0.949
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.452,
+   "exp_goals_home": 3.622,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1532259,
+  "league_id": 1117,
+  "fixture_date": "2026-06-21T22:00:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-21T22:00:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.375,
+    "draw": 0.1629,
+    "home": 0.4621,
+    "btts_no": 0.1267,
+    "btts_yes": 0.8733,
+    "over_0_5": 1.001,
+    "over_1_5": 0.9697,
+    "over_2_5": 0.9148,
+    "over_3_5": 0.8041,
+    "double_12": 0.8371,
+    "double_1x": 0.625,
+    "double_x2": 0.5379,
+    "under_0_5": -0.001,
+    "under_1_5": 0.0303,
+    "under_2_5": 0.0852,
+    "under_3_5": 0.1959
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.1638,
+    "ridge": 0.08,
+    "home_adv": 0.2438,
+    "converged": true,
+    "n_matches": 1217,
+    "eff_matches": 644.2,
+    "half_life_days": 420.0
+   },
+   "away_name": "SoCal Dutch Lions W",
+   "home_name": "AMSG W",
+   "league_id": 1117,
+   "fixture_id": 1532259,
+   "markets_ht": {
+    "away": 0.3484,
+    "draw": 0.5326,
+    "home": 0.119,
+    "btts_no": 0.9419,
+    "btts_yes": 0.0581,
+    "over_0_5": 0.5064,
+    "over_1_5": 0.1419,
+    "over_2_5": 0.0326,
+    "over_3_5": 0.0054,
+    "double_12": 0.4674,
+    "double_1x": 0.6516,
+    "double_x2": 0.881,
+    "under_0_5": 0.4936,
+    "under_1_5": 0.8581,
+    "under_2_5": 0.9674,
+    "under_3_5": 0.9946
+   },
+   "top_scores": [
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0574
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.0556
+    },
+    {
+     "a": 3,
+     "h": 2,
+     "p": 0.0506
+    },
+    {
+     "a": 3,
+     "h": 3,
+     "p": 0.049
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.0434
+    }
+   ],
+   "lambda_away": 2.644,
+   "lambda_home": 2.908,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-21T07:20:29.277668+00:00",
+   "strength_away": {
+    "att": 1.076,
+    "def_factor": 1.886
+   },
+   "strength_home": {
+    "att": 0.956,
+    "def_factor": 1.943
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 2.643,
+   "exp_goals_home": 2.906,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533031,
+  "league_id": 1093,
+  "fixture_date": "2026-06-21T02:15:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-21T02:15:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.1855,
+    "draw": 0.1326,
+    "home": 0.6819,
+    "btts_no": 0.204,
+    "btts_yes": 0.796,
+    "over_0_5": 1.0011,
+    "over_1_5": 0.9562,
+    "over_2_5": 0.8848,
+    "over_3_5": 0.7509,
+    "double_12": 0.8674,
+    "double_1x": 0.8145,
+    "double_x2": 0.3181,
+    "under_0_5": -0.0011,
+    "under_1_5": 0.0438,
+    "under_2_5": 0.1152,
+    "under_3_5": 0.2491
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.1866,
+    "converged": true,
+    "n_matches": 235,
+    "eff_matches": 120.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "Clarence Zebras II",
+   "home_name": "University of Tasmania",
+   "league_id": 1093,
+   "fixture_id": 1533031,
+   "markets_ht": {
+    "away": 0.2088,
+    "draw": 0.3351,
+    "home": 0.4561,
+    "btts_no": 0.5629,
+    "btts_yes": 0.4371,
+    "over_0_5": 0.8572,
+    "over_1_5": 0.6569,
+    "over_2_5": 0.362,
+    "over_3_5": 0.1696,
+    "double_12": 0.6649,
+    "double_1x": 0.7912,
+    "double_x2": 0.5439,
+    "under_0_5": 0.1428,
+    "under_1_5": 0.3431,
+    "under_2_5": 0.638,
+    "under_3_5": 0.8304
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 3,
+     "p": 0.0659
+    },
+    {
+     "a": 1,
+     "h": 2,
+     "p": 0.0594
+    },
+    {
+     "a": 2,
+     "h": 3,
+     "p": 0.059
+    },
+    {
+     "a": 1,
+     "h": 4,
+     "p": 0.0548
+    },
+    {
+     "a": 2,
+     "h": 2,
+     "p": 0.0532
+    }
+   ],
+   "lambda_away": 1.79,
+   "lambda_home": 3.327,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-21T07:20:29.277668+00:00",
+   "strength_away": {
+    "att": 0.518,
+    "def_factor": 1.606
+   },
+   "strength_home": {
+    "att": 0.682,
+    "def_factor": 1.371
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.79,
+   "exp_goals_home": 3.322,
+   "predicted_correct_1x2": null
+  }
+ },
+ {
+  "fixture_id": 1533033,
+  "league_id": 1093,
+  "fixture_date": "2026-06-21T04:30:00+00:00",
+  "tactical_engine_json": {
+   "date": "2026-06-21T04:30:00+00:00",
+   "actual": null,
+   "method": "Dixon-Coles MLE + simmetria casa/trasferta + time-decay (forze inferite), fit leakage-free su partite precedenti",
+   "status": "NS",
+   "markets": {
+    "away": 0.0042,
+    "draw": 0.0083,
+    "home": 0.9875,
+    "btts_no": 0.3651,
+    "btts_yes": 0.6349,
+    "over_0_5": 1.0001,
+    "over_1_5": 0.9978,
+    "over_2_5": 0.9908,
+    "over_3_5": 0.9694,
+    "double_12": 0.9917,
+    "double_1x": 0.9958,
+    "double_x2": 0.0125,
+    "under_0_5": -0.0001,
+    "under_1_5": 0.0022,
+    "under_2_5": 0.0092,
+    "under_3_5": 0.0306
+   },
+   "neutral": false,
+   "training": {
+    "rho": 0.2,
+    "ridge": 0.08,
+    "home_adv": 0.1866,
+    "converged": true,
+    "n_matches": 235,
+    "eff_matches": 120.8,
+    "half_life_days": 420.0
+   },
+   "away_name": "Glenorchy Knights U21",
+   "home_name": "South East Utd. U21",
+   "league_id": 1093,
+   "fixture_id": 1533033,
+   "markets_ht": {
+    "away": 0.0402,
+    "draw": 0.1021,
+    "home": 0.8577,
+    "btts_no": 0.454,
+    "btts_yes": 0.546,
+    "over_0_5": 0.9795,
+    "over_1_5": 0.9379,
+    "over_2_5": 0.8072,
+    "over_3_5": 0.6285,
+    "double_12": 0.8979,
+    "double_1x": 0.9598,
+    "double_x2": 0.1423,
+    "under_0_5": 0.0205,
+    "under_1_5": 0.0621,
+    "under_2_5": 0.1928,
+    "under_3_5": 0.3715
+   },
+   "top_scores": [
+    {
+     "a": 1,
+     "h": 7,
+     "p": 0.0628
+    },
+    {
+     "a": 0,
+     "h": 7,
+     "p": 0.0622
+    },
+    {
+     "a": 1,
+     "h": 8,
+     "p": 0.0606
+    },
+    {
+     "a": 0,
+     "h": 8,
+     "p": 0.06
+    },
+    {
+     "a": 1,
+     "h": 6,
+     "p": 0.057
+    }
+   ],
+   "lambda_away": 1.009,
+   "lambda_home": 7.713,
+   "league_name": null,
+   "season_year": 2026,
+   "generated_at": "2026-06-21T07:20:29.277668+00:00",
+   "strength_away": {
+    "att": 0.439,
+    "def_factor": 1.796
+   },
+   "strength_home": {
+    "att": 1.413,
+    "def_factor": 0.911
+   },
+   "engine_version": "gsg-dc-z2-1.0",
+   "exp_goals_away": 1.009,
+   "exp_goals_home": 6.873,
+   "predicted_correct_1x2": null
+  }
+ }
+]

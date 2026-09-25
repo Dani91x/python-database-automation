@@ -37,6 +37,27 @@ def dc_tau(x: int, y: int, lambda_home: float, lambda_away: float, rho: float) -
     return 1.0
 
 
+def rho_bounds(lambda_home: float, lambda_away: float, tau_min: float = 0.0):
+    """Dominio ammissibile di rho per UNA coppia di lambda (Dixon & Coles 1997).
+
+    tau e' un fattore moltiplicativo su probabilita': deve restare >= tau_min > 0
+    su tutte e quattro le celle basse, altrimenti la "probabilita'" della cella e'
+    negativa e la griglia non e' una distribuzione. Le quattro condizioni:
+        tau(0,0) = 1 - lh*la*rho >= tau_min  ->  rho <= (1-tau_min)/(lh*la)
+        tau(0,1) = 1 + lh*rho    >= tau_min  ->  rho >= -(1-tau_min)/lh
+        tau(1,0) = 1 + la*rho    >= tau_min  ->  rho >= -(1-tau_min)/la
+        tau(1,1) = 1 - rho       >= tau_min  ->  rho <= 1-tau_min
+    cioe' max(-1/lh, -1/la) <= rho <= min(1/(lh*la), 1) a meno del margine.
+    Ritorna (lo, hi).
+    """
+    if lambda_home <= 0 or lambda_away <= 0:
+        raise ValueError("lambda devono essere > 0")
+    k = 1.0 - float(tau_min)
+    lo = -k / max(lambda_home, lambda_away)
+    hi = min(k / (lambda_home * lambda_away), k)
+    return lo, hi
+
+
 def score_matrix(lambda_home: float, lambda_away: float, rho: float,
                  max_goals: int = 10) -> np.ndarray:
     """Matrice P(x,y) normalizzata: riga x = gol casa, colonna y = gol trasferta.
