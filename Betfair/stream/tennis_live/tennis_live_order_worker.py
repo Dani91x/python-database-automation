@@ -30,8 +30,14 @@ from typing import Any, Dict, Optional
 from . import chiusura_manuale as _cm
 from . import guardie_tennis as _gt
 from . import tennis_db
+from .. import tempi_ordine as _TEMPI
 
 logger = logging.getLogger(__name__)
+
+
+def _tempi_on() -> bool:
+    """25/09 F0 (misura): interruttore LIVE_TEMPI_ORDINE (0 = modulo mai chiamato)."""
+    return (os.getenv("LIVE_TEMPI_ORDINE") or "1").strip() != "0"
 
 CUSTOMER_STRATEGY_REF = "tennis"
 
@@ -537,6 +543,7 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
         order_type=LimitOrder(price=price, size=round(float(size), 2),
                               persistence_type=persistence),
     )
+    if _tempi_on(): _TEMPI.place(order)  # noqa: E701 - F0: istante "place" (misura)
     ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF,
                             **_client_kw(flumine, cmd["mode"]))
     if ok is False:
@@ -795,6 +802,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
         order.context["reduces_liability"] = True
     except Exception:  # noqa: BLE001 - context assente su mock: solo metadato
         pass
+    if _tempi_on(): _TEMPI.place(order)  # noqa: E701 - F0: istante "place" (misura)
     ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF,
                             **_client_kw(flumine, cmd["mode"]))
     if ok is False:
@@ -816,6 +824,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
 
 
 def _dispatch(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) -> Dict[str, Any]:
+    if _tempi_on(): _TEMPI.presa(cust_ref)  # noqa: E701 - F0: istante "presa" (misura)
     action = cmd["action"]
     if action == "place":
         return _do_place(flumine, session, cmd, cust_ref)
@@ -881,6 +890,7 @@ def _reconcile_tracked(session: Any, flumine: Any) -> None:
     for cust_ref, rec in list(getattr(session, "tracked_orders", {}).items()):
         try:
             order = _trade_current_order(rec.get("trade"), rec.get("order"))
+            if _tempi_on(): _TEMPI.osserva((order,))  # noqa: E701 - F0: abbinamento (misura)
             # fix audit #8: ordine di un framework SMONTATO (restart avvenuto dopo
             # il piazzamento) non terminale → in paper l'ordine simulato è morto
             # col framework: specchio chiuso UNA volta con stato terminale (VOIDED)
@@ -1207,6 +1217,7 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
     ch = local_channel.get_channel()
     if ch is None:
         return
+    _t_tempi = _TEMPI.ora() if _tempi_on() else None  # F0: istante "ricezione" (misura)
     for req in (ch.pop_requests() if richieste is None else richieste):
         try:
             if req.method == "snapshot":
@@ -1240,6 +1251,10 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
                     continue
             sid = next(_LOCAL_SID)
             cust_ref = ("awtq" + str(sid))[:32]
+            if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
+                cust_ref, "tennis", via="canale", t=_t_tempi, azione=action,
+                mode=runner_mode_l, rif=client_ref,
+                decisione_ms=_TEMPI.decisione_da(cmd, cmd.get("params")))
             status = "done"
             try:
                 cmd_parsed = parse_order_payload({"payload": cmd, "id": sid})
@@ -1250,6 +1265,8 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
                                  cmd=cmd, cust_ref=cust_ref, error=str(ex))
             ch.respond(req, bool(result.get("ok")), result,
                        error=None if result.get("ok") else result.get("error"))
+            if _t_tempi is not None: _TEMPI.fine(  # noqa: E701 - F0 misura
+                cust_ref, bool(result.get("ok")), result.get("error"))
             if client_ref:
                 import time as _t
 
@@ -1359,6 +1376,7 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
     except Exception as e:  # noqa: BLE001
         logger.warning("[tennis-order] list pending KO: %s", e)
         rows = []
+    _t_tempi = _TEMPI.ora() if (rows and _tempi_on()) else None  # F0: "ricezione" (misura)
     for row in rows:
         rid = row.get("id")
         if rid is None:
@@ -1394,10 +1412,16 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
         if not tennis_db.claim_tennis_order(rid):
             continue  # preso da un altro poll
         cust_ref = _cust_ref(rid)
+        if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
+            cust_ref, "tennis", via="coda", t=_t_tempi, azione=_declared_action(row),
+            mode=_declared_mode(row), rif=row.get("client_ref"),
+            decisione_ms=_TEMPI.decisione_da(row.get("payload"), _merged_field(row, "params")),
+            invio=row.get("created_at"), invio_orologio="db")
         result = None
         try:
             cmd = parse_order_payload(row)
             result = _dispatch(flumine, session, cmd, cust_ref)
+            if _t_tempi is not None: _TEMPI.fine(cust_ref, bool(result.get("ok")))  # noqa: E701
             tennis_db.write_tennis_order_done(rid, result)
             if result.get("ok") and cmd["action"] in ("place", "replace", "greenup"):
                 rec = (getattr(session, "tracked_orders", {}) or {}).get(cust_ref) \
@@ -1407,6 +1431,7 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
                               cust_ref, order, cmd)
         except Exception as e:  # noqa: BLE001 - riga in error, mai crash del runner
             logger.warning("[tennis-order] riga %s KO: %s", rid, e)
+            if _t_tempi is not None: _TEMPI.fine(cust_ref, False, e)  # noqa: E701 - F0 misura
             mode = _declared_mode(row)
             # BUG FIX cert 10/07 (VISTO DAL VIVO): se il DISPATCH è riuscito e a fallire
             # è stata solo la SCRITTURA dell'esito, un errore generico fa credere

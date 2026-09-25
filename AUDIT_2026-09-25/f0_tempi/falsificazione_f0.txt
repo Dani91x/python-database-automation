@@ -1,0 +1,18 @@
+M1 tratto al contrario (_d = a - b): ROSSO 3 failed, 10 passed in 2.13s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_b_motore_comando_strada_comando, test_c_tennis_canale_e_coda_strada_tennis
+M2 interruttore ignorato nel worker calcio: ROSSO 2 failed, 11 passed in 1.53s | test_d_interruttore_spento_modulo_mai_chiamato, test_g_traccia_identica_accesa_e_spenta
+M3 interruttore ignorato nel worker tennis: ROSSO 1 failed, 12 passed in 0.81s | test_d_interruttore_spento_modulo_mai_chiamato
+M4 interruttore ignorato nello specchio (process_orders): ROSSO 1 failed, 12 passed in 0.98s | test_d_interruttore_spento_modulo_mai_chiamato
+M5 cache senza tetto: ROSSO 1 failed, 12 passed in 2.05s | test_e_tetto_voci
+M6 TTL ignorato: ROSSO 1 failed, 12 passed in 1.36s | test_e_ttl_scaduto_scrive_e_libera
+M7 strada del canale sbagliata: ROSSO 1 failed, 12 passed in 2.03s | test_b_canale_47331_strada_canale
+M8 strada tennis sbagliata (canale 47332): ROSSO 1 failed, 12 passed in 1.53s | test_c_tennis_canale_e_coda_strada_tennis
+M9 la misura aggiunge IO al giro della coda: ROSSO 1 failed, 12 passed in 1.37s | test_g_traccia_identica_accesa_e_spenta
+M10 percentile a rango piu' vicino: ROSSO 1 failed, 12 passed in 1.06s | test_f_script_p50_p95
+M11 aggancio place tolto (_place_or_raise): ROSSO 4 failed, 9 passed in 1.46s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_a_coda_riga_vera_di_oggi_decisione_assente, test_b_canale_47331_strada_canale, test_b_motore_comando_strada_comando
+M12 aggancio stream tolto (process_orders): ROSSO 3 failed, 10 passed in 4.20s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_a_coda_riga_vera_di_oggi_decisione_assente, test_b_canale_47331_strada_canale
+M13 place_ms misurato dalla ricezione invece che dalla presa: ROSSO 1 failed, 12 passed in 5.95s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti
+M14 abbinato sempre dall'osservazione locale: ROSSO 4 failed, 9 passed in 1.51s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_b_canale_47331_strada_canale, test_b_motore_comando_strada_comando, test_c_tennis_canale_e_coda_strada_tennis
+M15 aggancio presa tolto (_dispatch calcio): ROSSO 5 failed, 8 passed in 1.74s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_a_coda_riga_vera_di_oggi_decisione_assente, test_a_coda_errore_pre_place_scrive_subito, test_b_canale_47331_strada_canale, test_b_motore_comando_strada_comando
+M16 motore: decisione non passata: ROSSO 1 failed, 12 passed in 1.03s | test_b_motore_comando_strada_comando
+M17 orologi misti non dichiarati: ROSSO 2 failed, 11 passed in 4.45s | test_a_coda_tutti_i_tratti_valorizzati_e_coerenti, test_c_tennis_canale_e_coda_strada_tennis
+M18 reconcile tennis senza aggancio: ROSSO 1 failed, 12 passed in 1.55s | test_c_tennis_canale_e_coda_strada_tennis

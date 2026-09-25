@@ -26,12 +26,20 @@ rete, nessun login, nessun ordine reale.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from flumine import BaseStrategy
 
+from .. import tempi_ordine as _TEMPI
+
 logger = logging.getLogger(__name__)
+
+
+def _tempi_on() -> bool:
+    """25/09 F0 (misura): interruttore LIVE_TEMPI_ORDINE (0 = modulo mai chiamato)."""
+    return (os.getenv("LIVE_TEMPI_ORDINE") or "1").strip() != "0"
 
 # Stati terminali flumine: un ordine in questi stati non muterà più → la sua firma
 # write-on-change può essere rimossa dalla cache (evita crescita illimitata del dict).
@@ -173,6 +181,7 @@ class LiveTradingStrategy(BaseStrategy):
         """
         if not orders:
             return
+        if _tempi_on(): _TEMPI.osserva(orders)  # noqa: E701 - F0: risposta/abbinamento (misura)
         try:
             self._mirror_orders(market, orders)
         except Exception as ex:  # noqa: BLE001 - lo specchio non deve mai propagare

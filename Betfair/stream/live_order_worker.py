@@ -47,6 +47,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# 25/09 F0 (misura): i 5 tempi del percorso di un ordine, SOLO log (tempi_ordine.py).
+# Ogni punto di aggancio controlla l'interruttore PRIMA di chiamare il modulo:
+# LIVE_TEMPI_ORDINE=0 -> il modulo non viene nemmeno chiamato (codice di prima).
+from . import tempi_ordine as _TEMPI  # noqa: E402
+
+
+def _tempi_on() -> bool:
+    return (os.getenv("LIVE_TEMPI_ORDINE") or "1").strip() != "0"
+
+
 _TABLE = "betfair_live_order_requests"
 
 # customerStrategyRef passato a market.place_order (<=15 char per Betfair).
@@ -1191,6 +1201,7 @@ def _place_or_raise(market: Any, order: Any, what: str, client: Any = None) -> N
     # 24/09 F1: diario write-ahead del motore PRIMA della chiamata (se fallisce:
     # ValueError pre-place, niente parte). Fuori dal motore e' un no-op.
     _chiama_pre_invio(order, market, what)
+    if _tempi_on(): _TEMPI.place(order)  # noqa: E701 - F0: istante "place" (solo misura)
     try:
         ok = market.place_order(
             order, customer_strategy_ref=_strategy_ref_corrente(), **extra)
@@ -2773,9 +2784,11 @@ class _RecordingFlumineOps:
         _chiama_pre_invio(None, market, "submin place", {
             "side": side, "price": price, "size": size,
             "ref_interno": customer_order_ref})
+        _t_tempi = _TEMPI.ora() if _tempi_on() else None  # F0: istante "place" (misura)
         order = self._base.place(
             market, side=side, price=price, size=size, customer_order_ref=customer_order_ref
         )
+        if _t_tempi is not None: _TEMPI.place(order, _t_tempi)  # noqa: E701 - F0 misura
         self.last_order = order
         return order
 
@@ -3298,6 +3311,7 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
         reqs = ch.pop_requests()
     if not reqs:
         return 0
+    _t_tempi = _TEMPI.ora() if _tempi_on() else None  # F0: istante "ricezione" (misura)
     handled = 0
     for req in reqs:
         handled += 1
@@ -3361,6 +3375,9 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
                     ch.respond(req, False, error=f"diario_non_scrivibile: comando NON "
                                                  f"eseguito ({str(ex_d)[:120]})")
                     continue
+            if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
+                _cust_ref(rid), "canale", t=_t_tempi, azione=action, mode=req_mode,
+                rif=client_ref, decisione_ms=_TEMPI.decisione_da(cmd, cmd.get("params")))
             try:
                 with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
                     _dispatch(lsb, flumine, row, req_mode, strategy)
@@ -3371,6 +3388,7 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
                     logger.error("[local] esito 'error' della richiesta %s NON scritto: %s",
                                  rid, str(ex_w)[:200])
                 ch.respond(req, False, lsb.captured.get("result"), error=str(ex))
+                if _t_tempi is not None: _TEMPI.fine(_cust_ref(rid), False, ex)  # noqa: E701
                 _local_dedup_put(client_ref, False, lsb.captured.get("result"))
                 if diario is not None:
                     diario.esito(row, False, lsb.captured.get("result"), str(ex))
@@ -3383,6 +3401,7 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
             # esito catturato da _write_done → risposta IMMEDIATA al client
             result = lsb.captured.get("result") or {"ok": True, "action": action, "mode": req_mode}
             ch.respond(req, True, result)
+            if _t_tempi is not None: _TEMPI.fine(_cust_ref(rid), True)  # noqa: E701 - F0
             _local_dedup_put(client_ref, True, result)
             if diario is not None:
                 diario.esito(row, True, result, None)
@@ -3419,6 +3438,7 @@ def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     ordine venga costruito o piazzato: la riga finisce in 'error' col motivo
     (``live_client_assente`` / ``paper_client_assente``) e NULLA viene eseguito.
     """
+    if _tempi_on(): _TEMPI.presa(_cust_ref(request_row.get("id")))  # noqa: E701 - F0 misura
     action = str(request_row.get("action") or "")
     client = _client_for_mode(flumine, mode)
     strat = _strategy_for_mode(strategy, mode)
@@ -3588,6 +3608,7 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     except Exception as ex:  # noqa: BLE001 - lettura coda KO: non cadere
         logger.warning("[live-order] lettura coda KO: %s", str(ex)[:160])
         return handled
+    _t_tempi = _TEMPI.ora() if _tempi_on() else None  # F0: istante "ricezione" (misura)
 
     for r in rows:
         # kill-switch RI-LETTO PER-ORDINE (non solo a inizio ciclo): flipparlo a metà
@@ -3631,6 +3652,10 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
         # claim: se un altro l'ha già preso (o non è più pending), salta.
         if not _claim(sb, rid):
             continue
+        if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
+            _cust_ref(rid), "coda", t=_t_tempi, azione=r.get("action"), mode=row_mode,
+            rif=r.get("client_ref"), decisione_ms=_TEMPI.decisione_da(r.get("params")),
+            invio=r.get("requested_at"), invio_orologio="db")
         try:
             # 24/09: il lucchetto copre l'intera riga (anche l'IO di _write_done
             # dentro il dispatch: la coda DB e' il RIPIEGO e resta com'era).
@@ -3643,7 +3668,9 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
             except Exception as ex_w:  # noqa: BLE001 - perfino la scrittura errore è best-effort
                 logger.error("[live-order] esito 'error' della richiesta %s NON scritto: %s",
                              rid, str(ex_w)[:200])
+            if _t_tempi is not None: _TEMPI.fine(_cust_ref(rid), False, ex)  # noqa: E701
         else:
+            if _t_tempi is not None: _TEMPI.fine(_cust_ref(rid), True)  # noqa: E701 - F0
             # E37 — trade journal AUTOMATICO: contesto al momento dell'esecuzione
             # (minuto/score, book, segnali attivi). SOLO dopo un dispatch riuscito;
             # MAI bloccante per l'ordine (best-effort dentro _journal_done).

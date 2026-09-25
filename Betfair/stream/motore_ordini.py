@@ -714,6 +714,7 @@ class MotoreOrdini:
                                                                  c.ricevuto_ms)})
 
     def _gestisci(self, c: Any) -> None:
+        _t_tempi = LOW._TEMPI.ora() if LOW._tempi_on() else None  # F0: "ricezione" (misura)
         self.conti["comandi"] += 1
         d = c.d if isinstance(c.d, dict) else {}
         ref = d.get("ref") if isinstance(d.get("ref"), str) else None
@@ -776,6 +777,9 @@ class MotoreOrdini:
         self._visti[ref] = ack
         self.conti["accettati"] += 1
         self._memorizza_e_invia(c.attore, {"t": "ack", "d": ack}, ws=c.ws)
+        if _t_tempi is not None: LOW._TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
+            LOW._cust_ref(riga["id"]), "comando", t=_t_tempi, azione=piano["azione"],
+            mode=piano["mode"], rif=ref, decisione_ms=piano["creato_ms"], invio=c.ricevuto_ms)
         self._esegui(c.attore, ref, piano)
 
     def _rifiuta_registrato(self, c: Any, ref: str, motivo: str) -> None:
@@ -950,6 +954,7 @@ class MotoreOrdini:
                 logger.error("[motore] esito error di %s non catturato: %s", ref, ex_w)
         finally:
             self._pulisci_contesto()
+        if LOW._tempi_on(): LOW._TEMPI.fine(cust, ok, errore)  # noqa: E701 - F0 misura
         result = lsb.captured.get("result") or {"ok": ok, "action": riga["action"],
                                                 "mode": mode, "error": errore}
         if ok and submin:
