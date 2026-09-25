@@ -60,6 +60,10 @@ IDLE, PENDING, OPEN, DONE = "IDLE", "PENDING", "OPEN", "DONE"
 class TennisFLBStrategy(BaseStrategy):
     """Lay del favorito estremo, no stop (favourite-longshot bias)."""
 
+    #: 25/09 - uscite automatiche (green sullo swing). Lo imposta il runner
+    #: tennis dalla riga per partita; di classe = True = comportamento di sempre.
+    uscite_automatiche: bool = True
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ctx_in: Dict[str, Any] = dict(kwargs.pop("flb_params", {}) or {})
         self.event_sink = kwargs.pop("event_sink", None)
@@ -465,7 +469,11 @@ class TennisFLBStrategy(BaseStrategy):
         entry = st["entry"]
         # green-up sullo swing: la quota (best-back per chiudere un lay) e' RISALITA
         up = ticks_between(entry, bb) if bb > entry else 0
+        # 25/09 USCITE MANUALI: il green sullo swing e' una presa di profitto,
+        # a interruttore spento non scatta (come exit_mode "hold"). Il FLB non
+        # ha stop per progetto: restano chiudi-ora e fine mercato.
         if self.exit_mode in ("green", "hybrid") and not st["greened"] \
+                and self.uscite_automatiche \
                 and up and up >= self.green_ticks:
             frac = 1.0 if self.exit_mode == "green" else self.green_frac
             locked, go = self._green(market, sel, bb, frac)

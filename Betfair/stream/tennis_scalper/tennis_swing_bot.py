@@ -57,6 +57,11 @@ def _tki(p: float) -> int:
 
 
 class TennisSwingStrategy(BaseStrategy):
+    #: 25/09 - uscite automatiche (presa di profitto). Lo imposta il runner
+    #: tennis dalla riga per partita; di classe = True = comportamento di sempre
+    #: (replay e backtest non lo toccano).
+    uscite_automatiche: bool = True
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ctx_in: Dict[str, Any] = dict(kwargs.pop("swing_params", {}) or {})
         self.event_sink = kwargs.pop("event_sink", None)
@@ -459,6 +464,11 @@ class TennisSwingStrategy(BaseStrategy):
         t0 = tr.get("t0")
         timed_out = ((pt is not None and t0 is not None and (pt - t0) / 1000.0 >= self.tmax)
                      or ((pt is None or t0 is None) and tr["held"] >= self.tmax))
+        # 25/09 USCITE MANUALI (interruttore del bot, letto a caldo dal runner):
+        # si spegne SOLO la presa di profitto (target). Stop a tick e time-stop
+        # restano: sono protezioni. Default True = identico a prima.
+        if hit and not self.uscite_automatiche:
+            hit = False
         if hit or adverse or timed_out:
             # esci a quota migliore (maker) o al touch
             px = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)

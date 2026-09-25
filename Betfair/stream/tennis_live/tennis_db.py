@@ -91,8 +91,16 @@ def register_tennis_follow(
     open_date: Optional[str] = None,
     competition_name: Optional[str] = None,
     status: str = "PENDING",
+    origine: Optional[str] = None,
 ) -> None:
-    """Registra/aggiorna un evento tennis da seguire (idempotente su event_id)."""
+    """Registra/aggiorna un evento tennis da seguire (idempotente su event_id).
+
+    ``origine`` (25/09, auto-mode): ``'auto'`` quando il follow lo crea il
+    ponte dal FEED UNICO; ``None`` = non si scrive (la colonna tiene il suo
+    default ``'manuale'``). Colonna assente (migrazione
+    ``tennis_uscite_manuali_2026-09-25.sql`` non applicata) -> ``ColonnaAssente``:
+    un follow automatico che non si puo' marcare come tale NON si scrive
+    (verrebbe scambiato per una scelta dell'utente)."""
     sb = get_tennis_client()
     row = {
         "event_id": event_id,
@@ -104,7 +112,115 @@ def register_tennis_follow(
         "status": status,
         "updated_at": _now_iso(),
     }
-    sb.table("tennis_live_follow").upsert(row, on_conflict="event_id").execute()
+    if origine is not None:
+        row["origine"] = str(origine)
+    try:
+        sb.table("tennis_live_follow").upsert(row, on_conflict="event_id").execute()
+    except Exception as e:  # noqa: BLE001
+        if origine is not None and colonna_assente(e, "origine"):
+            raise ColonnaAssente("tennis_live_follow.origine") from e
+        raise
+
+
+class ColonnaAssente(RuntimeError):
+    """Una colonna di una migrazione additiva non esiste ancora sul DB."""
+
+
+def colonna_assente(e: Exception, colonna: str) -> bool:
+    """PostgREST PGRST204 ("Could not find the 'x' column") o Postgres 42703.
+    Solo questi: un DB giu' non e' una migrazione mancante."""
+    t = str(e)
+    return (("'%s'" % colonna) in t or ('"%s"' % colonna) in t) and (
+        "PGRST204" in t or "42703" in t or "Could not find" in t
+        or "does not exist" in t)
+
+
+# ---------------------------------------------------------------------------
+# 25/09 - AUTO-MODE: la lista partite dal FEED UNICO (sola lettura)
+# ---------------------------------------------------------------------------
+def list_tennis_feed_rows() -> Optional[List[Dict[str, Any]]]:
+    """Le righe TENNIS del feed unico (``safe_strategy_scan``, scritte dallo
+    scanner Safe): la stessa tabella che legge Safe (``bot_db.fetch_scan_rows``),
+    filtrata su ``sport='tennis'``. ``None`` = NON letto (mai «feed vuoto»).
+
+    Si leggono SOLO le chiavi del payload che servono a seguire una partita
+    (``payload->chiave``, tipi JSON conservati), non ``score_raw``/quote: il
+    ponte gira ogni 15 s e l'IO del database e' la risorsa scarsa (13/09).
+    La riga torna nella forma di sempre (``payload`` dizionario)."""
+    sb = get_tennis_client()
+    try:
+        resp = (sb.table("safe_strategy_scan")
+                .select(",".join(["event_id", "sport", "updated_at"]
+                                 + ["%s:payload->%s" % (k, k) for k in _CHIAVI_FEED]))
+                .eq("sport", "tennis").execute())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-db] lettura feed tennis KO: %s", str(e)[:160])
+        return None
+    out: List[Dict[str, Any]] = []
+    for r in (getattr(resp, "data", None) or []):
+        if not isinstance(r, dict):
+            continue
+        out.append({"event_id": r.get("event_id"), "sport": r.get("sport"),
+                    "updated_at": r.get("updated_at"),
+                    "payload": {k: r.get(k) for k in _CHIAVI_FEED}})
+    return out
+
+
+#: le chiavi del payload tennis dello scanner (``safe_strategy/service.py::
+#: build_rows``, ramo tennis) che servono all'auto-mode
+_CHIAVI_FEED = ("p1", "p2", "competition", "open_date", "inplay",
+                "mo_market_id", "mo_status")
+
+
+def scanner_heartbeat() -> Optional[Dict[str, Any]]:
+    """Il battito dello scanner (``safe_strategy_status`` id='scanner'):
+    ``{payload, updated_at}`` o ``None`` (non letto / mai scritto)."""
+    sb = get_tennis_client()
+    try:
+        resp = (sb.table("safe_strategy_status").select("payload,updated_at")
+                .eq("id", "scanner").limit(1).execute())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-db] battito scanner KO: %s", str(e)[:160])
+        return None
+    rows = getattr(resp, "data", None) or []
+    return rows[0] if rows else None
+
+
+def list_tennis_now_status(event_ids: List[str]) -> Optional[Dict[str, str]]:
+    """``{event_id: status}`` da ``tennis_live_now`` (lo scrive il runner dal
+    book dello stream): dice se il mercato di una partita uscita dal feed e'
+    davvero CHIUSO. ``None`` = non letto."""
+    ids = [str(e) for e in event_ids if e]
+    if not ids:
+        return {}
+    sb = get_tennis_client()
+    try:
+        resp = (sb.table("tennis_live_now").select("event_id,status")
+                .in_("event_id", ids).execute())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-db] tennis_live_now KO: %s", str(e)[:160])
+        return None
+    return {str(r.get("event_id")): str(r.get("status") or "")
+            for r in (getattr(resp, "data", None) or []) if r.get("event_id")}
+
+
+def set_tennis_bot_uscite(event_id: str, bot_key: str, automatiche: bool) -> bool:
+    """25/09 - propaga l'interruttore «uscite automatiche» del bot sulla riga
+    PER PARTITA (``tennis_bot_control.uscite_automatiche``), che il runner
+    rilegge a caldo a ogni giro. ``False`` = non scritto (colonna assente o DB
+    KO): il runner resta sull'ultimo valore letto."""
+    sb = get_tennis_client()
+    try:
+        res = (sb.table("tennis_bot_control")
+               .update({"uscite_automatiche": bool(automatiche), "updated_at": _now_iso()})
+               .eq("event_id", str(event_id)).eq("bot_key", str(bot_key)).execute())
+    except Exception as e:  # noqa: BLE001
+        if not colonna_assente(e, "uscite_automatiche"):
+            logger.warning("[tennis-db] uscite %s/%s KO: %s", event_id, bot_key, str(e)[:160])
+        return False
+    if _CANALE_ACCESO:
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
+    return True
 
 
 def set_tennis_follow_status(
@@ -475,8 +591,7 @@ def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
     payload = dict(row)
     payload["updated_at"] = _now_iso()
     try:
-        res = _exec_retry(sb.table("tennis_bot_control").upsert(
-            payload, on_conflict="event_id,bot_key"))
+        res = _upsert_control(sb, payload)
     except Exception as e:  # noqa: BLE001
         # T1 (24/09): la colonna `mode` arriva con la migrazione
         # `tennis_bot_control_mode_2026-09-24.sql`, che applica l'utente. Finche'
@@ -493,13 +608,41 @@ def upsert_tennis_bot_control(row: Dict[str, Any]) -> None:
                 "tennis_bot_control_mode_2026-09-24.sql NON applicata): riga scritta "
                 "SENZA modalita' = PAPER per il runner.")
         senza = {k: v for k, v in payload.items() if k != "mode"}
-        res = _exec_retry(sb.table("tennis_bot_control").upsert(
-            senza, on_conflict="event_id,bot_key"))
+        res = _upsert_control(sb, senza)
     if _CANALE_ACCESO:          # F3: DOPO la scrittura riuscita, mai prima
         _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
 
 
+def _upsert_control(sb: Any, payload: Dict[str, Any]) -> Any:
+    """L'upsert di ``tennis_bot_control``. 25/09: ``uscite_automatiche`` arriva
+    con ``tennis_uscite_manuali_2026-09-25.sql``; finche' manca, la riga si
+    scrive SENZA e il runner la legge AUTOMATICA
+    (``auto_mode.uscite_automatiche_riga``), il comportamento di prima.
+    Qualunque altro errore (compresa la colonna ``mode`` assente, che gestisce
+    il chiamante) risale identico."""
+    global _uscite_assente_detto
+    if _uscite_assente_detto and "uscite_automatiche" in payload:
+        payload = {k: v for k, v in payload.items() if k != "uscite_automatiche"}
+    try:
+        return _exec_retry(sb.table("tennis_bot_control").upsert(
+            payload, on_conflict="event_id,bot_key"))
+    except Exception as e:  # noqa: BLE001
+        if "uscite_automatiche" not in payload \
+                or not colonna_assente(e, "uscite_automatiche"):
+            raise
+        if not _uscite_assente_detto:
+            logger.warning(
+                "[tennis-db] tennis_bot_control.uscite_automatiche non esiste ancora "
+                "(migrazione tennis_uscite_manuali_2026-09-25.sql NON applicata): riga "
+                "scritta SENZA = uscite AUTOMATICHE per il runner.")
+        _uscite_assente_detto = True
+        senza = {k: v for k, v in payload.items() if k != "uscite_automatiche"}
+        return _exec_retry(sb.table("tennis_bot_control").upsert(
+            senza, on_conflict="event_id,bot_key"))
+
+
 _mode_assente_detto = False
+_uscite_assente_detto = False
 
 
 def _colonna_mode_assente(e: Exception) -> bool:

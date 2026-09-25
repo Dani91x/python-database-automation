@@ -902,6 +902,24 @@ export interface TennisBotServiceRow {
     stopped_at: string | null;
     heartbeat_at: string | null;
     updated_at: string | null;
+    /** 25/09 (`migrations/tennis_uscite_manuali_2026-09-25.sql`): assente =
+     *  migrazione non applicata, e allora le uscite sono AUTOMATICHE. */
+    uscite_automatiche?: boolean;
+}
+
+/**
+ * tennis_bot_service_set_uscite(p_bot_key, p_automatiche) — cambia SOLO le
+ * uscite del bot (automatiche / manuali). Non tocca mai lo stato: un bot
+ * spento resta spento. Identico in paper e live.
+ */
+export async function setTennisBotUscite(
+    botKey: TennisBotKey, automatiche: boolean,
+): Promise<TennisBotServiceRow> {
+    const { data, error } = await supabase.rpc('tennis_bot_service_set_uscite', {
+        p_bot_key: botKey, p_automatiche: automatiche,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as TennisBotServiceRow;
 }
 
 function righeDi<T>(data: unknown): T[] {

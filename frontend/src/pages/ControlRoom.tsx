@@ -54,6 +54,7 @@ import {
 import { righeInterruttori } from '@/components/controlroom/righeBot';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
 import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
+import { UsciteTennis } from '@/components/controlroom/UsciteTennis';
 import {
     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
 } from '@/components/controlroom/soloTennis';
@@ -422,13 +423,26 @@ export default function ControlRoom() {
 
         for (const bot of BOT_TENNIS) {
             const rawParams = paramsDi(bot);
-            out[bot] = letto(rawParams) ? (
+            const foglio = letto(rawParams) ? (
                 <TennisBotServiceParamsSheet
                     botKey={bot}
                     rawParams={rawParams}
                     onSaved={() => vm.ricarica()}
                 />
             ) : <ParametriNonLetti bot={BOT_LABEL[bot]} />;
+            // 25/09 (TENNIS AUTO-MODE) - l'interruttore delle uscite e il suo
+            // avviso permanente, accanto al foglio del bot. Righe isolate.
+            out[bot] = (
+                <>
+                    <UsciteTennis
+                        botKey={bot}
+                        auto={vm.bots.find((x) => x.bot === bot)?.autoTennis}
+                        nowMs={Date.now()}
+                        onSaved={() => vm.ricarica()}
+                    />
+                    {foglio}
+                </>
+            );
         }
 
         return out;

@@ -85,6 +85,10 @@ def _point_rank(p: Any) -> Optional[int]:
 class TennisProStrategy(BaseStrategy):
     """Strategia direzionale multi-setup ancorata al punteggio (best-practice)."""
 
+    #: 25/09 - uscite automatiche (scaglione + target). Lo imposta il runner
+    #: tennis dalla riga per partita; di classe = True = comportamento di sempre.
+    uscite_automatiche: bool = True
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         ctx_in: Dict[str, Any] = dict(kwargs.pop("pro_params", {}) or {})
         self.event_sink = kwargs.pop("event_sink", None)
@@ -759,15 +763,18 @@ class TennisProStrategy(BaseStrategy):
         stop_t = ticks_between(min(entry, trade["stop"]),
                                max(entry, trade["stop"])) or 1
 
+        # 25/09 USCITE MANUALI: scaglione e target sono prese di profitto e a
+        # interruttore spento non scattano. Stop e uscita strutturale restano.
+        auto = self.uscite_automatiche
         # scaglione: a meta' strada verso il target, green del frac
-        if (self.staged and not trade["staged_done"] and favorable
+        if (auto and self.staged and not trade["staged_done"] and favorable
                 and move_t >= max(1, target_t // 2)):
             _, staged_o = self._close_at(market, sel, mkt, frac=self.staged_frac)
             trade["staged_done"] = True
             trade["staged_order"] = staged_o
             self._emit("staged_green", sel=sel, price=mkt)
 
-        if favorable and move_t >= target_t:      # TARGET -> green totale
+        if auto and favorable and move_t >= target_t:      # TARGET -> green totale
             self._finish(market, trade, "green", sel,
                          *self._full_close(market, trade, sel, mkt))
             return

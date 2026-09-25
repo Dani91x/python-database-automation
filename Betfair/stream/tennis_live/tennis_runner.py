@@ -62,6 +62,7 @@ from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from ..runner_lifecycle import EXIT_PLANNED_RESTART
 from ..scores.betfair_inplay import BetfairInPlayProvider
 from ..scores.scan_feed import ScanFeedScoreProvider
+from . import auto_mode as _AM
 from . import canale_bot_tennis as _CBT
 from . import chiusura_manuale as _cm
 from . import guardie_tennis as _gt
@@ -713,6 +714,13 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     # ordini/posizioni (``tennis_live_order_worker``) e l'attivita' d'armamento.
     strat._tennis_modalita_riga = _gt.modalita_riga(control)
     strat._tennis_modalita_esecuzione = mode_u
+    # 25/09 - USCITE AUTOMATICHE/MANUALI: dalla riga per partita (il ponte la
+    # allinea all'interruttore del bot), riletta a caldo nel battito del
+    # ``bot_control_worker``. Colonna assente = automatiche (come prima). I bot
+    # leggono ``self.uscite_automatiche`` SOLO nelle prese di profitto: stop e
+    # protezioni non lo guardano. Lo scalper resta sempre automatico
+    # (``auto_mode.BOT_USCITE_SEMPRE_AUTOMATICHE``).
+    strat.uscite_automatiche = _AM.uscite_automatiche_bot(bot_key, control)
     if paper_in_runner_live and client_paper is not None:
         _gt.instrada_ordini_su_client(strat, client_paper)
     # CARRY-OVER delle stats (fix 17/07, incongruenza trovata dal monitor):
@@ -912,14 +920,26 @@ def _clear_waiting_controls(session: TennisLiveSession) -> None:
 def _reset_restart_episode(session: TennisLiveSession) -> None:
     """Chiude l'episodio di rinvio corrente (restart partito o bot tornati flat)."""
     session._restart_deferred_logged = set()
+    session._rinvio_mite_logged = set()     # 25/09
     session.restart_deferred_since = None
     session._restart_blocked_logged_at = None
     # il restart parte: i bot in attesa non sono più bloccati → via il motivo
     _clear_waiting_controls(session)
 
 
-def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> bool:
+def _request_restart(flumine: Any, session: TennisLiveSession, reason: str,
+                     forza: bool = True) -> bool:
     """Richiede il restart del framework SOLO se ogni bot ospitato è FLAT.
+
+    25/09 - ``forza=False`` (AUTO-MODE): restart chiesto da un'infrastruttura
+    che non ha fretta (partite NUOVE arrivate dal feed, oppure un disarmo
+    senza nessun armamento in coda). Con un bot non flat il restart si RINVIA
+    e basta: nessun ``force_flat`` (sarebbe un'uscita imposta alla strategia
+    dall'arrivo di una partita altrui) e nessun restart forzato a fine grazia
+    in PAPER (azzererebbe la posizione simulata). Si riprova al giro dopo.
+    Anche con ``forza=True`` un bot a USCITE MANUALI non viene mai azzerato da
+    un restart forzato in PAPER: la sua posizione la chiude l'utente, come in
+    LIVE (paper = specchio del live).
 
     Fix audit #1 (HIGH): il restart ricostruisce flumine con un blotter VUOTO.
     Riavviare con una posizione MATCHED aperta la renderebbe ORFANA in LIVE
@@ -939,6 +959,9 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
         session.restart_requested.set()
         _stop_framework(flumine)
         return True
+    if not forza:
+        _rinvio_senza_forzare(session, blockers, reason)
+        return False
     now_mono = time.monotonic()
     since = getattr(session, "restart_deferred_since", None)
     if since is None:
@@ -946,7 +969,11 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
         session.restart_deferred_since = since
     grace_expired = (now_mono - since) > _RESTART_GRACE_S
     is_live = (getattr(session, "order_mode", None) or "").upper() == "LIVE"
-    if grace_expired and not is_live:
+    # 25/09: un bloccante a uscite MANUALI tiene una posizione che chiude
+    # l'utente: in PAPER non si azzera, esattamente come in LIVE.
+    manuale = any(getattr(s, "uscite_automatiche", True) is False
+                  for _e, _b, s in blockers)
+    if grace_expired and not is_live and not manuale:
         # PAPER/OFF: posizione SIMULATA — dopo la grazia la liveness vince.
         # Lo stato demo dei bot bloccanti riparte da zero (annunciato); gli
         # ordini tracciati della generazione smontata li chiude framework_gen.
@@ -981,8 +1008,11 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
                     tennis_db.write_tennis_bot_activity(
                         ev, bot_key, "restart_blocked",
                         {"reason": reason, "level": "CRITICAL",
-                         "note": ("restart LIVE bloccato da posizione REALE non "
-                                  f"flat da oltre {int(_RESTART_GRACE_S)}s: "
+                         "note": (("restart LIVE bloccato da posizione REALE non "
+                                   if is_live else
+                                   "restart PAPER bloccato da posizione simulata "
+                                   "a USCITE MANUALI non ")
+                                  + f"flat da oltre {int(_RESTART_GRACE_S)}s: "
                                   "chiudi la posizione a mano (ladder/Betfair) "
                                   "per sbloccare arm/disarm e nuovi follow")},
                     )
@@ -1021,6 +1051,24 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
     # ALTRI eventi) mostrano sul control-row PERCHÉ non stanno tradando.
     _mark_waiting_controls(session, blockers, reason)
     return False
+
+
+def _rinvio_senza_forzare(session: TennisLiveSession, blockers: List[tuple],
+                          reason: str) -> None:
+    """25/09 - il rinvio di un restart che NON ha fretta (``forza=False``):
+    nessun ``force_flat``, nessun orologio di grazia, nessun restart forzato.
+    Resta visibile: una riga di log per episodio e il motivo d'attesa sui bot
+    in coda (``_mark_waiting_controls``), come il rinvio di sempre."""
+    logged = getattr(session, "_rinvio_mite_logged", None)
+    if logged is None:
+        logged = set()
+        session._rinvio_mite_logged = logged
+    chiave = (reason, tuple(sorted((ev, bk) for ev, bk, _s in blockers)))
+    if chiave not in logged:
+        logged.add(chiave)
+        logger.info("[tennis-runner] restart RINVIATO senza forzare (%s): %d bot non "
+                    "flat, si attende che chiudano da soli.", reason, len(blockers))
+    _mark_waiting_controls(session, blockers, reason)
 
 
 # ---------------------------------------------------------------------------
@@ -1256,6 +1304,9 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
     if cancello is not None and not cancello.deve_girare():
         return          # 24/09: ne' cadenza ne' sveglia: nessuna lettura
     need_restart = False
+    # 25/09: il restart serve ad ARMARE qualcuno (forza come sempre) o solo a
+    # ripulire dopo un disarmo (non ha fretta: ``_request_restart(forza=False)``)
+    serve_armare = False
     now_mono = time.monotonic()
     # D3 (24/09) - "CHIUDI ORA" dell'utente: PRIMA di tutto il resto, cosi' un
     # bot che ha finito la sua uscita viene disabilitato e portato a 'stopped'
@@ -1288,6 +1339,7 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         for bot_key in desired:
             if (event_id, bot_key) not in session.hosted and not guardia_armata:
                 need_restart = True
+                serve_armare = True     # 25/09: c'e' qualcuno da armare
         # MISSIONE COMPIUTA (one_tick_per_phase): il bot alza ``mission_done``
         # dopo 1 green pre-match + 1 green in-play (e si e' gia' auto-appiattito
         # via force_flat). Come per il disarm: si disabilita SOLO a flat
@@ -1369,6 +1421,7 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
                 session.stopping_deadline.pop(key, None)
                 session.hosted.pop(key, None)
                 need_restart = True
+                serve_armare = True     # 25/09: l'istanza NUOVA va armata
                 continue
             if bot_key in stopping and not getattr(strat, "_tennis_disabled", False):
                 deadline = session.stopping_deadline.get(key)
@@ -1434,23 +1487,82 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
             if ev != event_id or bot_key not in desired or bot_key in hijacked \
                     or getattr(strat, "_tennis_disabled", False):
                 continue
+            # 25/09 - USCITE a caldo: la riga per partita (allineata dal ponte
+            # all'interruttore del bot) decide; nessuna lettura in piu'.
+            _aggiorna_uscite(flumine, session, (ev, bot_key), strat, desired.get(bot_key))
             try:
                 # ⚠️ ``stats_timbrate``: l'APP_BOOT_ID vive dentro ``stats``, che
                 # qui si riscrive per intero. Senza il timbro l'id sparirebbe al
                 # primo battito e il riavvio successivo del runner (watchdog,
                 # ricambio pianificato) scambierebbe per «avvio nuovo» un bot
                 # che l'utente aveva appena armato, disarmandolo.
+                battito = _aa.stats_timbrate(getattr(strat, "stats", None),
+                                             _aa.boot_id_ambiente())
+                aperta_dal = session_posizioni_aperte(session).get((ev, bot_key))
+                if aperta_dal:
+                    battito[_AM.CHIAVE_POSIZIONE_APERTA] = aperta_dal
                 tennis_db.set_tennis_bot_status(
                     event_id, bot_key, "running",
-                    stats=_aa.stats_timbrate(getattr(strat, "stats", None),
-                                             _aa.boot_id_ambiente()),
+                    stats=battito,
                     heartbeat=True,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.debug("[tennis-runner] heartbeat %s/%s KO: %s", event_id, bot_key, e)
     if need_restart:
         # fix audit #1: restart SOLO a bot flat (altrimenti rinviato al giro dopo)
-        _request_restart(flumine, session, "arm/disarm bot")
+        # 25/09: un restart di sola pulizia (disarmo, nessuno da armare) non
+        # impone uscite agli altri bot ne' azzera posizioni simulate.
+        if serve_armare:
+            _request_restart(flumine, session, "arm/disarm bot")
+        else:
+            _request_restart(flumine, session, "arm/disarm bot", forza=False)
+
+
+# ---------------------------------------------------------------------------
+# 25/09 - USCITE AUTOMATICHE / MANUALI (a caldo, per bot)
+# ---------------------------------------------------------------------------
+def session_posizioni_aperte(session: Any) -> Dict[tuple, str]:
+    """(evento, bot) -> ISO da quando la posizione di un bot a uscite MANUALI
+    e' aperta. Vive nella sessione (un restart la ricomincia: il restart
+    avviene solo a bot flat, quindi non perde una posizione aperta)."""
+    d = getattr(session, "_posizioni_aperte_dal", None)
+    if d is None:
+        d = {}
+        session._posizioni_aperte_dal = d
+    return d
+
+
+def _aggiorna_uscite(flumine: Any, session: Any, key: tuple, strat: Any,
+                     riga: Optional[Dict[str, Any]]) -> None:
+    """Allinea ``strat.uscite_automatiche`` alla riga e, a uscite MANUALI,
+    annota da quando la posizione e' aperta (per l'avviso permanente della
+    Control Room). Il cambio si scrive UNA volta nell'attivita' del bot.
+    Il flat si verifica SOLO per i bot a uscite manuali (costo zero per gli
+    altri). Non solleva mai: le uscite non fermano il battito."""
+    try:
+        if riga is not None:
+            voluto = _AM.uscite_automatiche_bot(key[1], riga)
+            prima = getattr(strat, "uscite_automatiche", True)
+            if voluto is not prima:
+                strat.uscite_automatiche = voluto
+                try:
+                    tennis_db.write_tennis_bot_activity(
+                        key[0], key[1], "uscite",
+                        {"automatiche": bool(voluto),
+                         "note": ("uscite AUTOMATICHE: il bot prende profitto da solo"
+                                  if voluto else
+                                  "uscite MANUALI: il bot non prende profitto da solo, "
+                                  "stop e protezioni restano; chiudi con «Chiudi»")})
+                except Exception:  # noqa: BLE001 - l'attivita' e' best-effort
+                    pass
+        aperte = session_posizioni_aperte(session)
+        if getattr(strat, "uscite_automatiche", True) is False \
+                and not _strategy_is_flat(flumine, strat):
+            aperte.setdefault(key, datetime.now(timezone.utc).isoformat())
+        else:
+            aperte.pop(key, None)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[tennis-runner] uscite %s KO: %s", key, e)
 
 
 # ---------------------------------------------------------------------------
@@ -1549,7 +1661,14 @@ def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
         logger.info("[tennis-follow] %d nuovi eventi → ricostruzione stream.", len(new))
         # fix audit #1: anche il follow nuovo NON può riavviare con bot non flat
         # (il rinvio si risolve da solo: si riprova al prossimo giro del worker).
-        _request_restart(flumine, session, f"{len(new)} nuovi follow")
+        # 25/09 AUTO-MODE: se TUTTI i follow nuovi vengono dal feed
+        # (``origine='auto'``) il restart non ha fretta: nessun force_flat sui
+        # bot in posizione, nessun restart forzato (``forza=False``). Una
+        # partita seguita dall'utente a mano forza come sempre.
+        if all(_AM.origine_follow(f) == _AM.ORIGINE_AUTO for f in new):
+            _request_restart(flumine, session, f"{len(new)} nuovi follow", forza=False)
+        else:
+            _request_restart(flumine, session, f"{len(new)} nuovi follow")
 
 
 def _stop_framework(flumine: Any) -> None:

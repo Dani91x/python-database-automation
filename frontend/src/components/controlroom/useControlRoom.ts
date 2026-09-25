@@ -110,6 +110,7 @@ import {
     type ScalperControlRoom, type SessioneScalper, type OrdineScalper,
 } from '@/lib/scalperControlRoom';
 import type { BotConChiusura } from './chiudiRiga';
+import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -278,6 +279,9 @@ export interface StatoBot {
     pnlOggiPaper: number | null;
     /** 24/09 - scalper calcio: quante sessioni, in che modalita', fonte ed eta' */
     nota?: string | null;
+    /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
+     *  `null`/assente = non dichiarato (bot spento o ponte di prima) */
+    autoTennis?: AutoTennis | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -1954,13 +1958,20 @@ export function useControlRoom(): ControlRoomVM {
                 // espone sotto la chiave 'stake' che l'interruttore legge, e
                 // la colonna vince sempre su un'eventuale omonima nei params.
                 const params = c == null ? null : { ...(c.params ?? {}), stake: c.stake };
-                return riga(
+                const base = riga(
                     k, modalitaDi(c?.mode), inCorsaDi(c?.status),
                     c?.heartbeat_at ?? null,
                     c == null ? null : testo(c.status),
                     params,
                     (c?.stats ?? null) as Record<string, unknown> | null,
                 );
+                // 25/09 - AUTO-MODE: la frase su quante partite e' armato e
+                // com'e' il feed, SOLO a bot acceso (a bot spento il ponte non
+                // scrive `stats.auto`: niente frase vecchia).
+                const auto = base.inCorsa
+                    ? leggiAutoTennis((c?.stats ?? null) as Record<string, unknown> | null)
+                    : null;
+                return { ...base, autoTennis: auto, nota: notaAutoTennis(auto) };
             }),
             rigaScalper(),
         ];

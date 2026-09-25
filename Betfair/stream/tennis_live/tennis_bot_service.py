@@ -25,6 +25,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .. import avvio_app as AA
@@ -32,6 +33,7 @@ from .. import canale_bot as _cb
 from .. import local_channel as _lc
 from .. import sveglia_canale as _SV
 from ..single_instance import acquire_single_instance_lock
+from . import auto_mode as _AM
 from . import canale_bot_tennis as _CBT
 from . import chiusura_manuale as _cm
 from . import tennis_db
@@ -351,20 +353,35 @@ def stato_desiderato(righe: Optional[List[Dict[str, Any]]]) -> Optional[Dict[str
             "stake": r.get("stake"),
             "params": r.get("params") or {},
             "stats": r.get("stats"),
+            # 25/09: None = colonna assente (migrazione non applicata): non si
+            # propaga niente e il runner resta sulle uscite AUTOMATICHE.
+            "uscite_automatiche": (_AM.uscite_automatiche_riga(r)
+                                   if "uscite_automatiche" in r else None),
         }
     return out
 
 
 def _stats_battito(desiderio: Dict[str, Any], eventi: int,
-                   motivo_blocco: Optional[str]) -> Dict[str, Any]:
+                   motivo_blocco: Optional[str],
+                   auto: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Le `stats` che la Control Room legge, con i NOMI del frontend
     (`useControlRoom.ts`: `cadenza_battito_s`, `motivo_blocco`,
     `stop_ferma_solo_aperture`, `fermato_all_avvio_at`). Riscriverli con altre
-    parole vorrebbe dire due verita' diverse — il difetto 33 del catalogo."""
+    parole vorrebbe dire due verita' diverse — il difetto 33 del catalogo.
+
+    25/09: ``auto`` = lo stato dell'AUTO-MODE (partite armate dal feed e a
+    mano, feed letto/vivo con eta' e fonte, tetto, uscite) che la Control Room
+    traduce in parole (``frontend/src/components/controlroom/tennisAuto.ts``).
+    Assente a bot spento."""
     vecchie = desiderio.get("stats")
     out: Dict[str, Any] = dict(vecchie) if isinstance(vecchie, dict) else {}
     out["cadenza_battito_s"] = CADENZA_BATTITO_S
     out["partite_esposte"] = int(eventi)
+    if auto is not None:
+        out["auto"] = auto
+        out["tetto_partite"] = auto.get("tetto")
+    else:
+        out.pop("auto", None)
     # lo STOP ferma le APERTURE, non le uscite: un bot disarmato continua a
     # proteggere la posizione aperta (`_disable_strategy` + finestra di flat).
     # Il pulsante deve dirlo, o promette una cosa che non succede.
@@ -386,16 +403,29 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     """UN giro del ponte. Torna un riepilogo (comodo per i test e per il log).
 
     * interruttore `running` -> la riga (evento, bot) viene ARMATA con la
-      modalita', lo stake e i params dichiarati, su OGNI evento seguito;
+      modalita', lo stake e i params dichiarati, su OGNI evento seguito A MANO
+      e (25/09, AUTO-MODE) sulle partite del FEED UNICO fino al tetto del bot
+      (``auto_mode``): il follow di una partita del feed lo crea il ponte con
+      ``origine='auto'``;
     * interruttore fermo -> le righe attive di quel bot vanno a `stopping`: il
       runner le porta a `stopped` a posizione FLAT verificata (le protezioni
       girano, le aperture no);
+    * una partita AUTOMATICA uscita dal feed non si riarma; se il suo mercato
+      e' CHIUSO (``tennis_live_now.status``) le sue righe vanno a `stopping`;
+      il suo follow si chiude quando nessuna riga la occupa piu';
     * in ogni caso si scrive `heartbeat_at` e le `stats` che la UI legge.
     """
     desiderato = stato_desiderato(db.list_tennis_bot_services())
     if desiderato is None:
         return {"letto": False, "armati": 0, "fermati": 0}
-    eventi = sorted(_followed_event_ids())
+    follows = _follows_attivi(db)
+    # le partite SEGUITE A MANO: quelle di sempre (l'origine assente vale
+    # 'manuale'); le AUTOMATICHE le governa il feed, qui sotto.
+    eventi = sorted({str(f["event_id"]) for f in follows
+                     if _AM.origine_follow(f) == _AM.ORIGINE_MANUALE})
+    seguite_a_mano = set(eventi)
+    auto_seguite = {str(f["event_id"]) for f in follows
+                    if _AM.origine_follow(f) == _AM.ORIGINE_AUTO}
     armati = fermati = 0
     # T2 (24/09): a guardia d'avvio ARMATA (controllo d'avvio non ancora
     # riuscito) il ponte NON arma niente; le fermate passano (riducono il rischio).
@@ -407,18 +437,60 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     # questo giro (fail-closed); le fermate passano. Si legge SOLO la partita
     # che si sta per armare (filtrata per evento: niente storico intero ogni
     # 15 s), una volta per giro.
-    fermi_letti: Dict[str, Optional[set]] = {}
+    fermi_letti: Dict[str, Optional[List[Dict[str, Any]]]] = {}
 
-    def _chiusi_su(ev: str) -> Optional[set]:
+    def _fermi_su(ev: str) -> Optional[List[Dict[str, Any]]]:
+        """Le righe FERME (stopped/error/done) della partita: una lettura per
+        partita e per giro, condivisa fra i 4 bot. ``None`` = non lette."""
         if ev not in fermi_letti:
             try:
-                fermi_letti[ev] = _cm.chiusi_dall_utente(db.list_tennis_bot_controls(
-                    ev, statuses=["stopped", "error", "done"]))
+                fermi_letti[ev] = list(db.list_tennis_bot_controls(
+                    ev, statuses=["stopped", "error", "done"]) or [])
             except Exception as e:  # noqa: BLE001 - una select KO non ferma il giro
                 logger.warning("[tennis-bot-svc] righe chiuse dall'utente KO (%s): %s",
                                ev, str(e)[:160])
                 fermi_letti[ev] = None
         return fermi_letti[ev]
+
+    def _chiusi_su(ev: str) -> Optional[set]:
+        righe = _fermi_su(ev)
+        return None if righe is None else _cm.chiusi_dall_utente(righe)
+
+    # ---- 25/09 AUTO-MODE: il feed si legge SOLO se serve (un bot acceso e
+    # nessuna guardia); a bot tutti spenti niente letture in piu'.
+    ora = time.time()
+    qualcuno_acceso = any(d["acceso"] for d in desiderato.values())
+    feed = (_leggi_feed(db, ora) if (qualcuno_acceso and not bloccato)
+            else _feed_non_letto())
+    candidate = [p["event_id"] for p in feed["partite"]]
+    nel_feed = set(candidate)
+    per_evento = {p["event_id"]: p for p in feed["partite"]}
+    origine_ok = not _origine_assente_ora(ora)
+    # le righe che OCCUPANO una partita (attive o in chiusura): servono a non
+    # riarmare dentro la finestra di disarm e a non chiudere un follow vivo
+    occupate: Optional[List[Dict[str, Any]]] = None
+    if auto_seguite or feed["vivo"]:
+        try:
+            occupate = [r for r in (db.list_tennis_bot_controls(
+                statuses=_STATI_OCCUPATI) or [])
+                if str(r.get("status") or "") in _STATI_OCCUPATI]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[tennis-bot-svc] righe occupate KO: %s", str(e)[:160])
+            occupate = None
+    in_chiusura = {(str(r.get("event_id")), str(r.get("bot_key")))
+                   for r in (occupate or []) if r.get("status") == "stopping"}
+    bersagli: set = set()
+    stato_mercato: Dict[str, Any] = {}
+
+    def _mercato_chiuso(ev: str) -> bool:
+        """Il mercato della partita e' CHIUSO secondo il runner? Una lettura
+        per giro per tutte le partite automatiche uscite dal feed."""
+        if "letto" not in stato_mercato:
+            fuori = sorted(ev2 for ev2 in auto_seguite if ev2 not in nel_feed)
+            fn = getattr(db, "list_tennis_now_status", None)
+            stato_mercato["letto"] = fn(fuori) if callable(fn) else None
+        m = stato_mercato["letto"]
+        return m is not None and str(m.get(ev) or "").upper() == "CLOSED"
 
     for bot, d in desiderato.items():
         try:
@@ -429,11 +501,9 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
             logger.warning("[tennis-bot-svc] controls KO (%s): %s", bot, str(e)[:160])
             continue
         motivo = None
-        if d["acceso"] and not eventi:
-            motivo = "acceso, ma nessun evento tennis seguito in questo momento"
-        if d["acceso"] and bloccato:
-            motivo = ("guardia d'avvio: il controllo d'avvio dell'app non e' ancora "
-                      "riuscito, nessun bot si arma finche' non riesce")
+        tetto = _AM.tetto_partite(d["params"])
+        params_bot = _AM.params_per_strategia(d["params"])
+        nuove_armate: List[str] = []
         if d["acceso"] and not bloccato:
             for ev in eventi:
                 if ev in attive:
@@ -447,33 +517,283 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                     continue
                 if (str(ev), bot) in chiusi_utente:
                     continue        # chiuso dall'utente: lo riarma lui
-                db.upsert_tennis_bot_control({
-                    "event_id": ev, "bot_key": bot, "status": "requested",
-                    # T1 (24/09): la modalita' del bot viaggia ESPLICITA sulla riga
-                    # per partita. Il runner la legge (guardie_tennis.modalita_riga)
-                    # e simula SEMPRE quando e' 'paper', qualunque sia la sua
-                    # modalita' di processo: prima la riga non la portava e un bot
-                    # PAPER su runner LIVE andava sul client REALE.
-                    "mode": d["mode"],
-                    # `dry_run` e' il cancello del BOT su `market.place_order`. In
-                    # PAPER e' FALSO: gli ordini passano dal blotter SIMULATO (client
-                    # paper_trade=True, mai Betfair) e si vedono sul ladder. In LIVE
-                    # resta True finche' l'utente non lo toglie a mano per partita
-                    # (il doppio gesto: il reale vuole mode='live' E dry_run=False).
-                    "dry_run": d["mode"] == "live",
-                    "stake": d["stake"] if d["stake"] is not None else 2,
-                    "params": d["params"],
-                })
+                db.upsert_tennis_bot_control(_riga_armatura(ev, bot, d, params_bot))
+                nuove_armate.append(ev)
                 armati += 1
+            # ---- AUTO-MODE: le partite del FEED UNICO, fino al tetto
+            if origine_ok and tetto > 0 and feed["vivo"] and occupate is not None:
+                def _escludi(ev: str, _bot: str = bot) -> bool:
+                    if ev in seguite_a_mano or (ev, _bot) in in_chiusura:
+                        return True     # a mano: l'ha gia' vista il giro sopra
+                    righe = _fermi_su(ev)
+                    if righe is None:
+                        return True     # non lette: fail-closed, niente armamento
+                    if (ev, _bot) in _cm.chiusi_dall_utente(righe):
+                        return True     # chiusa dall'utente: la riarma lui
+                    return any(str(r.get("bot_key")) == _bot
+                               and str(r.get("status")) in _STATI_NON_RIARMABILI_AUTO
+                               for r in righe)
+                gia = [ev for ev in attive if str(ev) not in seguite_a_mano]
+                scelta = _AM.scegli_partite(candidate, gia, _escludi, tetto)
+                bersagli.update(scelta["tengo"])
+                for ev in scelta["nuove"]:
+                    if ev not in auto_seguite:
+                        esito = _segui_dal_feed(db, per_evento[ev])
+                        if esito == "origine_assente":
+                            origine_ok = False
+                            _segna_origine_assente(ora)
+                            break
+                        if esito != "ok":
+                            continue
+                        auto_seguite.add(ev)
+                    bersagli.add(ev)
+                    db.upsert_tennis_bot_control(_riga_armatura(ev, bot, d, params_bot))
+                    nuove_armate.append(ev)
+                    armati += 1
+            # ---- USCITE: l'interruttore del bot sulle righe per partita (solo
+            # se la colonna c'e' su entrambe le tabelle: altrimenti automatiche)
+            _propaga_uscite(db, bot, d, attive)
+            # ---- partite AUTOMATICHE uscite dal feed a mercato CHIUSO: in
+            # chiusura (il runner le porta a stopped a flat verificato)
+            if feed["vivo"]:
+                for ev in list(attive):
+                    ev_s = str(ev)
+                    if ev_s in auto_seguite and ev_s not in nel_feed \
+                            and ev_s not in seguite_a_mano and _mercato_chiuso(ev_s):
+                        db.set_tennis_bot_status(ev_s, bot, "stopping")
+                        attive.pop(ev, None)
+                        fermati += 1
         else:
             for ev in attive:
                 db.set_tennis_bot_status(ev, bot, "stopping")
                 fermati += 1
+            attive = {}         # in chiusura: non sono piu' partite armate
+        auto_stato = None
+        if d["acceso"]:
+            armate_evs = {str(e) for e in attive} | set(nuove_armate)
+            a_mano = len([e for e in armate_evs if e in seguite_a_mano])
+            in_attesa = len(set(nuove_armate)) + len(
+                [r for r in attive.values()
+                 if str(r.get("status") or "") in ("requested", "arming")])
+            if motivo is None:
+                motivo = _AM.motivo_blocco(
+                    acceso=True, bloccato=bloccato, feed_letto=feed["letto"],
+                    feed_vivo=feed["vivo"], partite_feed=len(candidate),
+                    origine_ok=origine_ok, tetto=tetto, armate=len(armate_evs),
+                    seguite=len(seguite_a_mano))
+            auto_stato = _stato_auto(
+                d, bot, tetto, feed, origine_ok, ora,
+                armate_feed=len(armate_evs) - a_mano, armate_a_mano=a_mano,
+                seguite_a_mano=len(seguite_a_mano), in_attesa=in_attesa,
+                righe_attive=list(attive.values()))
+            esposte = len(armate_evs)
+        else:
+            esposte = 0
         db.set_tennis_bot_service_state(
             bot, heartbeat=True,
-            stats=_stats_battito(d, len(eventi) if d["acceso"] else 0, motivo))
+            stats=_stats_battito(d, esposte, motivo, auto_stato))
+    # ---- i follow AUTOMATICI che non servono piu' si chiudono: nessuna riga
+    # li occupa (attiva o in chiusura) e nessun bot li vuole in questo giro.
+    # Senza questo la lista del runner crescerebbe per tutto il giorno (una
+    # riga `tennis_live_now` ogni 2 s per partita). Occupate NON lette = non si
+    # chiude niente.
+    chiusi_follow = 0
+    if occupate is not None:
+        occupati = {str(r.get("event_id")) for r in occupate}
+        for ev in sorted(auto_seguite - bersagli - occupati - seguite_a_mano):
+            try:
+                db.set_tennis_follow_status(ev, "CLOSED")
+                chiusi_follow += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[tennis-bot-svc] chiusura follow auto %s KO: %s",
+                               ev, str(e)[:160])
     return {"letto": True, "armati": armati, "fermati": fermati,
-            "eventi": len(eventi)}
+            "eventi": len(eventi), "feed": len(candidate),
+            "follow_auto_chiusi": chiusi_follow}
+
+
+# ===========================================================================
+# 25/09 - AUTO-MODE: gli attrezzi del giro (letture/scritture del ponte)
+# ===========================================================================
+_STATI_OCCUPATI = list(_ACTIVE_STATUSES) + ["stopping"]
+#: una partita automatica con una riga cosi' per QUEL bot non si riarma dal
+#: feed: `done` = missione compiuta, `error` = uscita non verificata (va vista
+#: da una persona). `stopped` si riarma (l'utente ha spento e riacceso).
+_STATI_NON_RIARMABILI_AUTO = ("done", "error")
+#: stessa soglia con cui il feed dice «scanner vivo»
+#: (``scores/scan_feed.SCANNER_ALIVE_MAX_AGE_SEC``)
+_SCANNER_VIVO_S = 30.0
+FONTE_FEED = "safe_strategy_scan"
+#: migrazione dell'origine assente: si riprova ogni tanto (l'utente la applica
+#: ad app accesa), non a ogni giro (una scrittura fallita ogni 15 s).
+_RIPROVA_ORIGINE_S = 600.0
+_ORIGINE_ASSENTE: Dict[str, Optional[float]] = {"dal": None}
+
+
+def _origine_assente_ora(ora: float) -> bool:
+    dal = _ORIGINE_ASSENTE.get("dal")
+    return dal is not None and (ora - dal) < _RIPROVA_ORIGINE_S
+
+
+def _segna_origine_assente(ora: float) -> None:
+    if _ORIGINE_ASSENTE.get("dal") is None:
+        logger.error("[tennis-bot-svc] AUTO-MODE spento: tennis_live_follow.origine non "
+                     "esiste (migrazione tennis_uscite_manuali_2026-09-25.sql NON "
+                     "applicata). I bot si armano solo sulle partite seguite a mano.")
+    _ORIGINE_ASSENTE["dal"] = ora
+
+
+def _follows_attivi(db: Any) -> List[Dict[str, Any]]:
+    """I follow PENDING/STREAMING con la loro ``origine``. Un ``db`` che non
+    sa leggerli (i finti di prima del 25/09) ripiega su ``_followed_event_ids``:
+    tutte manuali, cioe' il ponte di prima."""
+    fn = getattr(db, "list_pending_tennis_follows", None)
+    if callable(fn):
+        return [f for f in (fn() or []) if isinstance(f, dict) and f.get("event_id")]
+    return [{"event_id": ev} for ev in _followed_event_ids()]
+
+
+def _feed_non_letto() -> Dict[str, Any]:
+    return {"letto": False, "vivo": False, "partite": [], "eta_scanner_s": None,
+            "righe": 0}
+
+
+def _leggi_feed(db: Any, ora: float) -> Dict[str, Any]:
+    """La lista partite dal FEED UNICO + il battito dello scanner. Il feed
+    conta SOLO se lo scanner e' vivo (battito entro 30 s): righe presenti con
+    lo scanner fermo sono l'ultimo stato di ieri, non partite di adesso."""
+    esito = _feed_non_letto()
+    leggi = getattr(db, "list_tennis_feed_rows", None)
+    if not callable(leggi):
+        return esito
+    try:
+        righe = leggi()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-bot-svc] feed tennis KO: %s", str(e)[:160])
+        righe = None
+    if righe is None:
+        return esito
+    esito["letto"] = True
+    esito["righe"] = len(righe)
+    battito = getattr(db, "scanner_heartbeat", None)
+    hb = None
+    if callable(battito):
+        try:
+            hb = battito()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[tennis-bot-svc] battito scanner KO: %s", str(e)[:160])
+    eta = _AM.eta_s((hb or {}).get("updated_at"), ora) if hb else None
+    esito["eta_scanner_s"] = None if eta is None else round(eta, 1)
+    esito["vivo"] = eta is not None and eta <= _SCANNER_VIVO_S
+    if esito["vivo"]:
+        esito["partite"] = _AM.partite_dal_feed(righe)
+    return esito
+
+
+def _segui_dal_feed(db: Any, p: Dict[str, Any]) -> str:
+    """Il follow di una partita del feed, marcato ``origine='auto'``, con i
+    metadati del feed (nessuna lettura di ``tennis_markets``, nessun REST).
+    ``ok`` | ``origine_assente`` | ``errore``."""
+    try:
+        db.register_tennis_follow(
+            event_id=p["event_id"], market_id=p["market_id"],
+            player1_name=p["p1"], player2_name=p["p2"],
+            open_date=p.get("open_date"), competition_name=p.get("competition"),
+            status="PENDING", origine=_AM.ORIGINE_AUTO)
+    except tennis_db.ColonnaAssente:
+        return "origine_assente"
+    except Exception as e:  # noqa: BLE001 - una partita KO non ferma le altre
+        logger.warning("[tennis-bot-svc] follow dal feed %s KO: %s",
+                       p.get("event_id"), str(e)[:160])
+        return "errore"
+    logger.info("[tennis-bot-svc] AUTO-MODE: follow dal feed per %s (%s - %s)",
+                p["event_id"], p["p1"], p["p2"])
+    return "ok"
+
+
+def _riga_armatura(ev: str, bot: str, d: Dict[str, Any],
+                   params_bot: Dict[str, Any]) -> Dict[str, Any]:
+    """La riga per partita, IDENTICA per le partite seguite a mano e per
+    quelle del feed: stessa modalita', stesso dry_run, stesso stake, stessi
+    params (senza la sola chiave del tetto, che e' del ponte)."""
+    riga = {
+        "event_id": ev, "bot_key": bot, "status": "requested",
+        # T1 (24/09): la modalita' del bot viaggia ESPLICITA sulla riga
+        # per partita. Il runner la legge (guardie_tennis.modalita_riga)
+        # e simula SEMPRE quando e' 'paper', qualunque sia la sua
+        # modalita' di processo: prima la riga non la portava e un bot
+        # PAPER su runner LIVE andava sul client REALE.
+        "mode": d["mode"],
+        # `dry_run` e' il cancello del BOT su `market.place_order`. In
+        # PAPER e' FALSO: gli ordini passano dal blotter SIMULATO (client
+        # paper_trade=True, mai Betfair) e si vedono sul ladder. In LIVE
+        # resta True finche' l'utente non lo toglie a mano per partita
+        # (il doppio gesto: il reale vuole mode='live' E dry_run=False).
+        "dry_run": d["mode"] == "live",
+        "stake": d["stake"] if d["stake"] is not None else 2,
+        "params": params_bot,
+    }
+    if d.get("uscite_automatiche") is not None:
+        riga["uscite_automatiche"] = bool(d["uscite_automatiche"])
+    return riga
+
+
+def _propaga_uscite(db: Any, bot: str, d: Dict[str, Any],
+                    attive: Dict[Any, Dict[str, Any]]) -> int:
+    """L'interruttore «uscite automatiche» del bot sulle righe per partita,
+    SOLO dove e' diverso (una scrittura al cambio, non a ogni giro). Righe
+    senza la colonna = migrazione non applicata su ``tennis_bot_control``:
+    non si tocca niente (il runner resta automatico)."""
+    voluto = d.get("uscite_automatiche")
+    fn = getattr(db, "set_tennis_bot_uscite", None)
+    if voluto is None or not callable(fn):
+        return 0
+    scritte = 0
+    for ev, r in attive.items():
+        if "uscite_automatiche" not in (r or {}):
+            continue
+        if _AM.uscite_automatiche_riga(r) == bool(voluto):
+            continue
+        if fn(str(ev), bot, bool(voluto)):
+            scritte += 1
+    return scritte
+
+
+def _stato_auto(d: Dict[str, Any], bot: str, tetto: int, feed: Dict[str, Any],
+                origine_ok: bool, ora: float, *, armate_feed: int,
+                armate_a_mano: int, seguite_a_mano: int, in_attesa: int,
+                righe_attive: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Lo stato dell'auto-mode di UN bot, con i nomi che la Control Room legge
+    (``tennisAuto.ts``). Solo fatti: le parole le sceglie la pagina."""
+    aperte = []
+    for r in righe_attive:
+        st = r.get("stats") if isinstance(r.get("stats"), dict) else {}
+        dal = st.get(_AM.CHIAVE_POSIZIONE_APERTA)
+        if dal:
+            aperte.append(str(dal))
+    uscite = d.get("uscite_automatiche")
+    return {
+        "attivo": bool(origine_ok and tetto > 0),
+        "tetto": int(tetto),
+        "armate_feed": int(max(0, armate_feed)),
+        "armate_a_mano": int(armate_a_mano),
+        "seguite_a_mano": int(seguite_a_mano),
+        "in_attesa": int(in_attesa),
+        "feed_letto": bool(feed["letto"]),
+        "feed_vivo": bool(feed["vivo"]),
+        "feed_partite": len(feed["partite"]),
+        "feed_eta_s": feed["eta_scanner_s"],
+        "fonte": FONTE_FEED,
+        "origine_ok": bool(origine_ok),
+        "live_in_dry_run": d.get("mode") == "live",
+        # None = colonna assente: la pagina non offre l'interruttore
+        "uscite_automatiche": (None if uscite is None
+                               else _AM.uscite_automatiche_bot(bot, d)),
+        "uscite_sempre_automatiche": bot in _AM.BOT_USCITE_SEMPRE_AUTOMATICHE,
+        "posizioni_aperte_manuali": len(aperte),
+        "posizione_aperta_dal": min(aperte) if aperte else None,
+        "letto_at": datetime.fromtimestamp(ora, tz=timezone.utc).isoformat(),
+    }
 
 
 def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
