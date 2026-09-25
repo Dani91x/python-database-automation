@@ -100,6 +100,14 @@ TOPIC: Mapping[str, str] = MappingProxyType({
     "tennis_bot_stato": "tennis_bot_stato",
     "tennis_bot_posizioni": "tennis_bot_posizioni",
     "tennis_bot_armamento": "tennis_bot_armamento",
+    # scalper calcio (47338, 25/09): `scalper_stato` = riga di
+    # `scalper_service_control` (l'interruttore globale + i fatti dell'auto-
+    # mode), `scalper_sessioni` = riga di `scalper_control` di UNA sessione
+    # (stato, battito, stats della sessione con P&L lordo e ordini vivi).
+    # Pubblica il SUPERVISORE (`scalper/scalper_service.py`), che legge gia'
+    # quelle righe a ogni giro: nessuna lettura in piu', nessun processo nuovo.
+    "scalper_stato": "scalper_stato",
+    "scalper_sessioni": "scalper_sessioni",
 })
 
 #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira
@@ -107,12 +115,21 @@ TOPIC: Mapping[str, str] = MappingProxyType({
 #: Nessun processo nuovo.
 PORTA_TENNIS_BOT = 47337
 
+#: 25/09 - la porta del canale dello SCALPER calcio: NUOVA, ma dentro il
+#: supervisore che l'app avvia gia' (``desktop/main.js``: scalper-service).
+#: Un processo ha UN canale (difetto D1): le sessioni sono processi figli e
+#: non possono pubblicare sul 47338; pubblica il supervisore, che legge gia'
+#: le righe di tutte le sessioni ogni 3 s. Nessun processo nuovo.
+PORTA_SCALPER = 47338
+
 #: Nomi degli interruttori, uno per processo. Default SPENTO, sempre.
 ENV_MIKE = "MIKE_CANALE_POSIZIONI"
 ENV_OMEGA = "OMEGA_CANALE_POSIZIONI"
 ENV_SAFE = "SAFE_CANALE_POSIZIONI"
 ENV_TENNIS_BOT = "TENNIS_BOT_CANALE"
 ENV_PORTA_TENNIS_BOT = "TENNIS_BOT_WS_PORT"
+ENV_SCALPER = "SCALPER_CANALE"
+ENV_PORTA_SCALPER = "SCALPER_WS_PORT"
 
 _lock = threading.Lock()
 _seq = 0

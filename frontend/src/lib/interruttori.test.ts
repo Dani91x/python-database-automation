@@ -467,8 +467,13 @@ describe('importoDi — la chiave per strategia, col ripiego DICHIARATO', () => 
         // 24/09 — model/manual non hanno un importo loro: nessun campo inventato
         expect(m['safe-model']).toEqual([]);
         expect(m['safe-manual']).toEqual([]);
-        // 24/09 - lo stake dello scalper e' della sessione, scelto all'armo
-        expect(m.scalper).toEqual([]);
+        // 25/09 - lo scalper ha lo stake dell'interruttore (colonna `stake` di
+        // scalper_service_control), per le partite armate da ora
+        expect(m.scalper).toEqual([{
+            chiave: 'stake', etichetta: 'stake', valore: null,
+            nota: 'vale per le partite armate da ora: quelle gia’ armate tengono il loro',
+        }]);
+        expect(importoDi(interruttoreDi('scalper'), { stake: 12 }).valore).toBe(12);
     });
 });
 

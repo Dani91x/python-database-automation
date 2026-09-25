@@ -77,6 +77,7 @@ export function righeInterruttori(
             etichetta: etichette?.[i.id] ?? i.etichetta,
             ...(i.descrizione ? { descrizione: i.descrizione } : {}),
             ...(i.armoPerPartita ? { armoPerPartita: i.armoPerPartita } : {}),
+            ...(i.modalitaSoloAllAvvio ? { modalitaSoloAllAvvio: i.modalitaSoloAllAvvio } : {}),
             ...(b.nota ? { nota: b.nota } : {}),
             acceso: st.acceso, modalita: st.modalita, statoNoto: st.noto,
             stato: parolaStato(i, b, st.acceso, st.noto),

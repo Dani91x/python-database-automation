@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 KILL_FILE = "STOP_SCALPER"
 HEARTBEAT_S = 5.0
+#: 25/09 - la `source` delle righe dello specchio della sessione in
+#: `betfair_live_orders` (migrations/scalper_auto_mode_2026-09-25.sql la
+#: ammette nel CHECK; `get_scalper_control_room` la legge gia' dal 24/09).
+SOURCE_SPECCHIO = "scalper"
 
 # default VALIDATI (grid 02/07) + protezioni live
 VALIDATED_PARAMS: Dict[str, Any] = {
@@ -194,6 +198,30 @@ def _dichiarazione_non_flat(framework: Any) -> Optional[str]:
     parti = ["%s/%s residuo accettato %.2f (se vince %.2f, se perde %.2f)"
              % (k[0], k[1], abs(w - l), w, l) for k, w, l in sbil]
     return "posizione NON flat a fine sessione: " + "; ".join(parti)
+
+
+#: stati flumine di un ordine ancora sul book (o in volo verso il book)
+_STATI_VIVI = frozenset({"PENDING", "EXECUTABLE", "UPDATING", "CANCELLING"})
+
+
+def _ordini_vivi(framework: Any) -> Optional[int]:
+    """25/09 - quanti ordini della sessione sono ancora vivi (sola lettura dei
+    blotter di tutti i mercati: nessun ordine, nessuna chiamata). ``None`` =
+    blotter illeggibile (mai "zero" a occhio)."""
+    try:
+        n = 0
+        for m in list(getattr(framework, "markets", None) or []):
+            blotter = getattr(m, "blotter", None)
+            if blotter is None:
+                continue
+            for o in list(blotter):
+                st = getattr(o, "status", None)
+                nome = getattr(st, "name", st)
+                if str(nome or "").upper() in _STATI_VIVI:
+                    n += 1
+        return n
+    except Exception:  # noqa: BLE001 - blotter mutato dal thread flumine
+        return None
 
 
 def _session_bet_ids(framework: Any) -> List[str]:
@@ -366,6 +394,20 @@ def _make_session_mirror(market_ids: List[str], exec_mode: str) -> Any:
     class _SessionOrderMirror(LiveTradingStrategy):
         def _position_row(self, *args: Any, **kwargs: Any) -> None:
             return None  # solo ordini: mai in conflitto col runner
+
+        def _order_row(self, order: Any, *, event_id: Any,
+                       market_id: Any) -> Optional[Dict[str, Any]]:
+            # 25/09 (ordine dell'utente): gli ordini dello scalper finiscono
+            # FLAGGATI col suo nome, in paper e in live. Prima la riga non
+            # portava `source` e valeva il DEFAULT della colonna ('runner'):
+            # il giro dei regolati la contava come "manuale app". TUTTI gli
+            # ordini della sessione (maker, sniper, theta; ingressi, chiusure,
+            # scratch, stop, flatten, force-flat) passano da QUI: e' l'unico
+            # scrittore dello specchio della sessione (`_order_mirror_loop`).
+            riga = super()._order_row(order, event_id=event_id, market_id=market_id)
+            if riga is not None:
+                riga["source"] = SOURCE_SPECCHIO
+            return riga
 
         def _reconcile_ref_by_bet(self, dbm: Any, row: Dict[str, Any]) -> Dict[str, Any]:
             # MAI riconciliare per bet_id (fix HIGH review 16/07): i ref della
@@ -566,6 +608,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
     from betfairlightweight import filters
 
     from ..auth import build_client
+    from .auto_mode import vita_sessione_s
     from .scalper_bot import ScalperStrategy
 
     db = Db()
@@ -930,6 +973,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 s.update({f"sniper_{k}": v for k, v in sniper.stats.items()})
             if theta is not None:
                 s.update({f"theta_{k}": v for k, v in theta.stats.items()})
+            # 25/09 - quanti ordini della sessione sono ancora sul book (sola
+            # lettura del blotter): la Control Room lo mostra dal canale
+            n_vivi = _ordini_vivi(framework)
+            if n_vivi is not None:
+                s["ordini_vivi"] = n_vivi
             return s
 
         db.set_control(ev, status="running", stats=_stats())
@@ -1175,8 +1223,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 break
             # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper/theta
             # fino a fine partita (KO+130', recupero incluso)
-            _life_s = (7800 if (sniper_mode or theta_mode)
-                       else (4200 if ht_mode else 600))
+            # 25/09: gli STESSI numeri di prima, ora da `auto_mode` (li usa
+            # anche l'auto-mode per non armare una partita gia' oltre la vita)
+            _life_s = vita_sessione_s({"sniper_mode": sniper_mode,
+                                       "theta_mode": theta_mode,
+                                       "ht_mode": ht_mode})
             if ko_ts is not None and time.time() > ko_ts + _life_s:
                 # fix 10/07: anche il fine-vita passa dal force-flat (in
                 # ht_mode un ciclo intervallo ancora aperto restava vivo

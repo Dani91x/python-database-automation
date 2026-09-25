@@ -16,10 +16,16 @@
 //     d'identita': stessa `requested_at` (la sessione vista dalla pagina, non
 //     una riarmata nel frattempo) e stessa modalita'.
 //
-// FONTE E ETA'. Lo scalper NON pubblica su un canale locale: la sessione e' un
-// processo suo, e `local_channel.publish` fuori dal runner e' un no-op (nessun
-// canale nel processo). Tutto quello che si vede qui viene dal DATABASE, al
-// giro di ricarica della pagina (30 s), e lo si DICHIARA con l'eta'.
+// FONTE E ETA'. 25/09: il SUPERVISORE pubblica sul canale locale 47338
+// (`scalper_stato` = riga dell'interruttore, `scalper_sessioni` = riga di
+// sessione, `lib/scalperCanale.ts`); il database resta la lista e il ripiego
+// (giro dei 30 s). La fonte si DICHIARA sempre, con l'eta'.
+//
+// 25/09 - AUTO-MODE (ordine dell'utente: «lo scalper deve lavorare da solo su
+// tutte le partite del feed come gli altri bot»): l'interruttore globale
+// `scalper_service_control` si accende da qui (`attivaScalperAuto`) e il
+// supervisore arma da solo le partite del feed unico; la card per partita
+// resta (unione).
 //
 // Tutto PURO tranne le due chiamate: nessun React.
 // ============================================================================
@@ -61,6 +67,29 @@ export interface SessioneScalper {
     kickoff: string | null;
     ultima_attivita_at: string | null;
     ultima_attivita_kind: string | null;
+    /** 25/09 - chi ha armato la sessione: 'auto' (dal feed) | 'manuale' (card).
+     *  Assente = migrazione `scalper_auto_mode_2026-09-25.sql` non applicata. */
+    origine?: string | null;
+}
+
+/**
+ * 25/09 - L'INTERRUTTORE GLOBALE dello scalper: la riga di
+ * `scalper_service_control` (migrations/scalper_auto_mode_2026-09-25.sql),
+ * chiavi VERE di `to_jsonb`. `mode` = paper/live con cui NASCONO le sessioni
+ * automatiche; `strategia` = maker/bias/both; `stats.auto` = i fatti scritti
+ * dal supervisore (`scalper_service.giro_auto`).
+ */
+export interface ServizioScalper {
+    id: number;
+    status: string;
+    mode: string;
+    strategia: string;
+    stake: number | null;
+    params: Record<string, unknown> | null;
+    stats: Record<string, unknown> | null;
+    started_at: string | null;
+    stopped_at: string | null;
+    updated_at: string | null;
 }
 
 /** Una riga di `betfair_live_orders` dello specchio della sessione (chiavi VERE). */
@@ -97,6 +126,11 @@ export interface ScalperControlRoom {
     ordini: OrdineScalper[];
     /** istante della lettura dichiarato dal database */
     lettoAt: string | null;
+    /** 25/09 - l'interruttore globale; `null` = assente o non letto */
+    servizio?: ServizioScalper | null;
+    /** 25/09 - la RPC porta la chiave `servizio` (migrazione dell'auto-mode
+     *  applicata). `false` = auto-mode non disponibile: si dice, non si finge. */
+    servizioLetto?: boolean;
 }
 
 // ------------------------------------------------------------------ chiamate
@@ -105,12 +139,134 @@ export interface ScalperControlRoom {
 export async function fetchScalperControlRoom(): Promise<ScalperControlRoom> {
     const { data, error } = await supabase.rpc('get_scalper_control_room', {});
     if (error) throw new Error(error.message);
-    const d = (data ?? {}) as { sessions?: SessioneScalper[]; orders?: OrdineScalper[]; letto_at?: string };
+    const d = (data ?? {}) as {
+        sessions?: SessioneScalper[]; orders?: OrdineScalper[]; letto_at?: string;
+        servizio?: ServizioScalper | null;
+    };
+    const servizio = d.servizio && typeof d.servizio === 'object' && !Array.isArray(d.servizio)
+        ? d.servizio : null;
     return {
         sessioni: Array.isArray(d.sessions) ? d.sessions : [],
         ordini: Array.isArray(d.orders) ? d.orders : [],
         lettoAt: typeof d.letto_at === 'string' ? d.letto_at : null,
+        servizio,
+        servizioLetto: Object.prototype.hasOwnProperty.call(d, 'servizio'),
     };
+}
+
+// ------------------------------------------------ 25/09 - l'auto-mode
+
+/**
+ * ACCENDE l'auto-mode (o lo conferma acceso) con la modalita' SCRITTA:
+ * `scalper_auto_activate(p_mode)`. Stake, strategia e params restano quelli
+ * della riga (la RPC fa `coalesce`). Gia' acceso nell'altra modalita' = la
+ * RPC rifiuta: paper e live mai insieme.
+ */
+export async function attivaScalperAuto(modalita: ModalitaScalper): Promise<ServizioScalper> {
+    const { data, error } = await supabase.rpc('scalper_auto_activate', { p_mode: modalita });
+    if (error) throw new Error(error.message);
+    return data as unknown as ServizioScalper;
+}
+
+/**
+ * SPEGNE l'auto-mode E ferma tutte le sessioni attive (automatiche e della
+ * card), con le stesse transizioni di `scalper_stop`: e' il FERMA della riga.
+ * Ritorna quante sessioni ha portato a fermarsi.
+ */
+export async function fermaScalperAuto(): Promise<number> {
+    const { data, error } = await supabase.rpc('scalper_auto_stop', {});
+    if (error) throw new Error(error.message);
+    const n = (data as { sessioni_fermate?: unknown } | null)?.sessioni_fermate;
+    return typeof n === 'number' && Number.isFinite(n) ? n : 0;
+}
+
+/** Stake/params dell'auto-mode SENZA accendere niente (`scalper_auto_update`).
+ *  Vale per le partite armate da ora. */
+export async function aggiornaScalperAuto(
+    campi: { stake?: number | null; params?: Record<string, unknown> | null },
+): Promise<ServizioScalper> {
+    const { data, error } = await supabase.rpc('scalper_auto_update', {
+        p_stake: campi.stake ?? null, p_params: campi.params ?? null, p_strategia: null,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as ServizioScalper;
+}
+
+/** L'errore di PostgREST quando una funzione non esiste (migrazione assente). */
+export function rpcAssente(e: unknown): boolean {
+    const m = String((e as Error)?.message ?? e ?? '');
+    return /could not find the function|does not exist|PGRST202/i.test(m);
+}
+
+/** I fatti dell'auto-mode scritti dal supervisore in `stats.auto`. */
+export interface AutoScalper {
+    acceso: boolean;
+    modalita: ModalitaScalper | null;
+    tetto: number | null;
+    sessioni: number | null;
+    sessioniAuto: number | null;
+    motivo: string | null;
+    conflitto: string | null;
+    pnlLordoBot: number | null;
+    ordiniVivi: number | null;
+    feedLetto: boolean;
+    feedVivo: boolean;
+    partiteFeed: number | null;
+    etaScannerS: number | null;
+    fonte: string | null;
+    giroAt: string | null;
+}
+
+/** `stats.auto` della riga dell'interruttore, o `null` se non dichiarato. */
+export function leggiAutoScalper(stats: Record<string, unknown> | null | undefined): AutoScalper | null {
+    const a = stats?.auto;
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
+    const o = a as Record<string, unknown>;
+    const f = (o.feed && typeof o.feed === 'object' ? o.feed : {}) as Record<string, unknown>;
+    const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+    const m = str(o.modalita);
+    return {
+        acceso: o.acceso === true,
+        modalita: m === 'live' ? 'live' : m === 'paper' ? 'paper' : null,
+        tetto: num(o.tetto),
+        sessioni: num(o.sessioni),
+        sessioniAuto: num(o.sessioni_auto),
+        motivo: str(o.motivo_blocco),
+        conflitto: str(o.conflitto),
+        pnlLordoBot: num(o.pnl_lordo_bot),
+        ordiniVivi: num(o.ordini_vivi),
+        feedLetto: f.letto === true,
+        feedVivo: f.vivo === true,
+        partiteFeed: num(f.partite),
+        etaScannerS: num(f.eta_scanner_s),
+        fonte: str(f.fonte),
+        giroAt: str(o.giro_at),
+    };
+}
+
+/**
+ * La frase dell'auto-mode accanto alla riga (solo ad auto-mode ACCESO).
+ * Mai "armato" per una partita che il supervisore non ha dichiarato; in LIVE
+ * dice che le partite del feed nascono con soldi veri.
+ */
+export function notaAutoScalper(auto: AutoScalper | null, tettoRiga: number | null): string | null {
+    if (auto == null || !auto.acceso) return null;
+    const parti: string[] = [];
+    const n = auto.sessioni ?? 0;
+    const dalFeed = auto.sessioniAuto ?? 0;
+    parti.push(n === 0 ? 'auto-mode: nessuna sessione'
+        : `auto-mode: ${n} ${n === 1 ? 'sessione' : 'sessioni'} (${dalFeed} dal feed)`);
+    const tetto = auto.tetto ?? tettoRiga;
+    if (tetto != null) parti.push(`tetto ${tetto}`);
+    if (!auto.feedLetto || !auto.feedVivo) parti.push('feed calcio non disponibile');
+    else {
+        parti.push(`feed calcio: ${auto.partiteFeed ?? 0} partite, scanner `
+            + `${auto.etaScannerS == null ? '?' : Math.round(auto.etaScannerS)} s fa`
+            + `${auto.fonte ? ` (${auto.fonte})` : ''}`);
+    }
+    if (auto.ordiniVivi != null) parti.push(`${auto.ordiniVivi} ordini vivi`);
+    if (auto.modalita === 'live') parti.push('LIVE: le partite del feed nascono con soldi veri');
+    return parti.join(' - ');
 }
 
 /**
@@ -185,13 +341,21 @@ export function sessioneAttiva(s: Pick<SessioneScalper, 'status'>): boolean {
  *               nessuna sessione viva = `null` (non c'e' niente che operi).
  *  - misto    = sessioni vive in paper E in live insieme (lo si dice).
  */
-export function statoBotScalper(sessioni: readonly SessioneScalper[]): {
+export function statoBotScalper(
+    sessioni: readonly SessioneScalper[], servizio: ServizioScalper | null = null,
+): {
     inCorsa: boolean; stato: string; modalita: ModalitaScalper | null; misto: boolean;
     battitoAt: string | null; vive: number; attive: number;
+    /** 25/09 - l'interruttore globale e' acceso (auto-mode) */
+    autoAcceso: boolean;
 } {
     const vive = sessioni.filter(sessioneViva);
     const attive = vive.filter(sessioneAttiva);
     const modi = new Set(vive.map(modalitaSessione).filter((m): m is ModalitaScalper => m != null));
+    // 25/09 - l'interruttore acceso e' "acceso" anche senza sessioni (sta
+    // cercando partite nel feed) e dichiara la SUA modalita'
+    const autoAcceso = String(servizio?.status ?? '') === 'running';
+    if (autoAcceso) modi.add(servizio?.mode === 'live' ? 'live' : 'paper');
     const modalita: ModalitaScalper | null = modi.has('live') ? 'live' : modi.has('paper') ? 'paper' : null;
     let battito: number | null = null;
     let battitoAt: string | null = null;
@@ -200,13 +364,14 @@ export function statoBotScalper(sessioni: readonly SessioneScalper[]): {
         if (t != null && (battito == null || t > battito)) { battito = t; battitoAt = s.heartbeat_at; }
     }
     return {
-        inCorsa: attive.length > 0,
-        stato: attive.length > 0 ? 'running' : vive.length > 0 ? 'stopping' : 'stopped',
+        inCorsa: autoAcceso || attive.length > 0,
+        stato: autoAcceso || attive.length > 0 ? 'running' : vive.length > 0 ? 'stopping' : 'stopped',
         modalita,
         misto: modi.size > 1,
         battitoAt,
         vive: vive.length,
         attive: attive.length,
+        autoAcceso,
     };
 }
 
@@ -420,6 +585,8 @@ function etaS(iso: string | null | undefined, nowMs: number): number | null {
  */
 export function notaSessioneScalper(
     s: SessioneScalper, nowMs: number, etaLetturaS: number | null,
+    /** 25/09 - la riga viene dal canale locale 47338: da quanti secondi */
+    etaCanaleS: number | null = null,
 ): string {
     const parti: string[] = [`sessione ${s.status}`];
     if (s.ultima_attivita_kind) {
@@ -432,8 +599,12 @@ export function notaSessioneScalper(
     }
     const lordo = pnlLordoBot(s);
     if (lordo != null) parti.push(`bloccato dal bot ${lordo >= 0 ? '+' : ''}${lordo.toFixed(2)} EUR lordo`);
+    const vivi = num((s.stats as Record<string, unknown> | null)?.ordini_vivi);
+    if (vivi != null) parti.push(`${vivi} ordini vivi`);
     parti.push('stato dello slot non pubblicato dal bot');
-    parti.push(`fonte: database, letto ${etaLetturaS == null ? 'mai' : `${etaLetturaS} s fa`}`);
+    parti.push(etaCanaleS != null
+        ? `fonte: canale locale, ${etaCanaleS} s fa`
+        : `fonte: database, letto ${etaLetturaS == null ? 'mai' : `${etaLetturaS} s fa`}`);
     return parti.join(' - ');
 }
 

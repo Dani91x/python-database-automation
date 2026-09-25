@@ -35,10 +35,13 @@ import { isBotTennis, type Bot } from '@/lib/controlRoom';
 // connessione/riconnessione/ripiego, aggiunti in coda: oggi il backend non li
 // scrive (porta chiusa), quindi restano in stato `off` senza errori, come i
 // canali bot già esistenti prima del loro avvio.
-export type LocalSport = 'calcio' | 'tennis' | 'mike' | 'omega' | 'safe' | 'scanner' | 'tennis_bot';
+// 25/09 - `scalper` (47338, topic `scalper_stato`/`scalper_sessioni`): il
+// supervisore dello scalper calcio, sola lettura come gli altri bot.
+export type LocalSport = 'calcio' | 'tennis' | 'mike' | 'omega' | 'safe' | 'scanner' | 'tennis_bot'
+    | 'scalper';
 
 /** I canali di sola lettura: nessun comando viaggia su questi. */
-export const CANALI_SOLA_LETTURA: readonly LocalSport[] = ['mike', 'omega', 'safe', 'scanner', 'tennis_bot'] as const;
+export const CANALI_SOLA_LETTURA: readonly LocalSport[] = ['mike', 'omega', 'safe', 'scanner', 'tennis_bot', 'scalper'] as const;
 export type LocalStatus = 'connected' | 'off';
 
 /** Ultimo hello ricevuto dal server ({sport, mode, ...}). */
@@ -61,6 +64,7 @@ const PORTS: Record<LocalSport, number> = {
     mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
     scanner: 47336,     // scanner unico (safe_strategy_scan): scan_calcio/scan_tennis/scanner_stato
     tennis_bot: 47337,  // 4 bot tennis: tennis_bot_stato/tennis_bot_posizioni
+    scalper: 47338,     // 25/09 scalper calcio (supervisore): scalper_stato/scalper_sessioni
 };
 
 const RECONNECT_MIN_MS = 1_000;   // backoff iniziale
@@ -318,8 +322,9 @@ export function getLocalChannel(sport: LocalSport): LocalChannel {
 export type MotivoSveglia = 'approvazione' | 'comando';
 
 function canaleDiBot(bot: Bot): LocalSport | null {
-    // 24/09 - lo SCALPER calcio non ha un canale: ogni sessione e' un processo
-    // suo e il supervisore legge `scalper_control` ogni 3 s. Nessuna sveglia.
+    // 24/09 - lo SCALPER calcio: nessuna sveglia. Dal 25/09 ha un canale
+    // (47338) ma di SOLA pubblicazione: il supervisore rilegge l'interruttore
+    // e le righe di sessione ogni 3 s, una sveglia non accorcerebbe niente.
     if (bot === 'scalper') return null;
     return isBotTennis(bot) ? 'tennis_bot' : bot;
 }

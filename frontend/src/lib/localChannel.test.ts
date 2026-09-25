@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     getLocalChannel, __resetLocalChannels, LOCAL_REQUEST_TIMEOUT_MS, svegliaBot,
+    CANALI_SOLA_LETTURA,
 } from './localChannel';
 
 // ---- mock WebSocket globale (jsdom non lo implementa) ----
@@ -90,6 +91,16 @@ describe('localChannel — porte STADIO B (18/09, raccordo): scanner 47336, bot 
         expect(lastWs().url).toBe('ws://127.0.0.1:47336');
         expect(getLocalChannel('tennis_bot')).toBeDefined();
         expect(lastWs().url).toBe('ws://127.0.0.1:47337');
+    });
+
+    it('25/09: lo scalper calcio sul 47338, sola lettura (nessun token), nessuna sveglia', () => {
+        expect(getLocalChannel('scalper')).toBeDefined();
+        expect(lastWs().url).toBe('ws://127.0.0.1:47338');
+        expect(CANALI_SOLA_LETTURA).toContain('scalper');
+        const ws = lastWs();
+        ws.serverOpen();
+        svegliaBot('scalper', 'comando');
+        expect(ws.sent.length).toBe(0);
     });
 
     it('porta chiusa (nessun server dietro, mai un serverOpen): nessuna eccezione, resta "off"', () => {

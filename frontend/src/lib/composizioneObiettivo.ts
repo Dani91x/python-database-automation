@@ -224,12 +224,15 @@ export function componiObiettivo(input: {
 // Il paper non passa mai di qui: resta il calcolo, sulla sua riga separata.
 // ============================================================================
 
+// 25/09 - 'scalper': gli ordini dello specchio dello scalper calcio
+// (`source='scalper'`, reconcile_worker._fonte_di). Un runner di prima non la
+// scrive: `fontiDichiarate` dice quali voci il conto ha DAVVERO scritto.
 export type FonteReale = 'omega' | 'safe_calcio' | 'safe_tennis' | 'mike' | 'bot_tennis'
-    | 'manuale_app' | 'manuale_sito' | 'altri_bot';
+    | 'manuale_app' | 'manuale_sito' | 'altri_bot' | 'scalper';
 
 export const FONTI_REALI: readonly FonteReale[] = [
     'omega', 'safe_calcio', 'safe_tennis', 'mike', 'bot_tennis',
-    'manuale_app', 'manuale_sito', 'altri_bot',
+    'manuale_app', 'manuale_sito', 'altri_bot', 'scalper',
 ];
 
 export interface PnlRealeOggi {
@@ -246,6 +249,9 @@ export interface PnlRealeOggi {
     /** ordini con un ref ma senza una nostra riga (contati nel sito) */
     sospetti_sito: number;
     letto_at: string | null;
+    /** 25/09 - le voci che il conto ha scritto davvero (le altre valgono 0
+     *  perche' ASSENTI, non perche' zero: es. 'scalper' da un runner di prima) */
+    fontiDichiarate?: FonteReale[];
 }
 
 function finito(v: unknown): number | null {
@@ -280,6 +286,7 @@ export function leggiPnlRealeOggi(grezzo: unknown, oggi: string): PnlRealeOggi |
         senza_commissione: finito(g.senza_commissione) ?? 0,
         sospetti_sito: finito(g.sospetti_sito) ?? 0,
         letto_at: typeof g.letto_at === 'string' ? g.letto_at : null,
+        fontiDichiarate: FONTI_REALI.filter((f) => pf[f] != null && typeof pf[f] === 'object'),
     };
 }
 

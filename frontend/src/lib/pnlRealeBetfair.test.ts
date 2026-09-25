@@ -37,6 +37,8 @@ const REALE = {
         safe_tennis: { netto: 0, ordini: 0 }, mike: { netto: 0, ordini: 0 },
         bot_tennis: { netto: 1.57, ordini: 1 }, manuale_app: { netto: 0, ordini: 0 },
         manuale_sito: { netto: 10.0, ordini: 3 }, altri_bot: { netto: 0, ordini: 0 },
+        // 25/09 - la voce dello scalper calcio (reconcile_worker.FONTI)
+        scalper: { netto: 0, ordini: 0 },
     },
     bet_ids: ['b1', 's1', 's2', 's3', 't1'],
     letto_at: '2026-09-24T12:00:05Z',

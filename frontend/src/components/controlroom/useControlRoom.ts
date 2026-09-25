@@ -108,9 +108,15 @@ import { fetchLiveAccount, subscribeLiveAccount, type LiveAccountRow } from '@/l
 import {
     fetchScalperControlRoom, statoBotScalper, ordiniDellaSessione, esposizioneScalper,
     chiusuraScalper, pnlRealeOrdini, modalitaSessione, sessioneViva, idSessione,
-    notaSessioneScalper,
+    notaSessioneScalper, leggiAutoScalper, notaAutoScalper,
     type ScalperControlRoom, type SessioneScalper, type OrdineScalper,
 } from '@/lib/scalperControlRoom';
+// 25/09 - lo scalper dal SUO canale (47338): overlay sul giro dei 30 s
+import {
+    overlayScalperVuoto, applicaSessioneCanale, applicaServizioCanale, vistaScalper,
+    etaCanaleSessione, ultimoCanaleScalper, TOPIC_SCALPER_STATO, TOPIC_SCALPER_SESSIONI,
+    type OverlayScalper,
+} from '@/lib/scalperCanale';
 import type { BotConChiusura } from './chiudiRiga';
 import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
 // 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
@@ -1116,6 +1122,16 @@ export function useControlRoom(): ControlRoomVM {
      */
     const [scalperCR, setScalperCR] = useState<ScalperControlRoom | null>(null);
     const [scalperLettoMs, setScalperLettoMs] = useState<number | null>(null);
+    /** 25/09 - l'istante in cui e' PARTITA la lettura applicata (per giudicare
+     *  se un messaggio del canale 47338 e' piu' fresco del database) */
+    const [scalperLetturaMs, setScalperLetturaMs] = useState<number | null>(null);
+    /** 25/09 - le righe arrivate dal canale dello scalper (overlay, mai unione) */
+    const [scalperOv, setScalperOv] = useState<OverlayScalper>(overlayScalperVuoto);
+    const scalperCRRef = useRef<ScalperControlRoom | null>(null);
+    const scalperLetturaRef = useRef<number | null>(null);
+    const scalperOvRef = useRef<OverlayScalper>(scalperOv);
+    scalperCRRef.current = scalperCR;
+    scalperLetturaRef.current = scalperLetturaMs;
     /**
      * 18/09 (raccordo, R4) — la riga singleton `betfair_live_account`, GIA'
      * letta/sottoscritta da `SaldoBetfairCard` (autosufficiente, non passa da
@@ -1176,9 +1192,12 @@ export function useControlRoom(): ControlRoomVM {
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
                 rDaily, rDailyPaper, rEventi, rMissioni, rFollowT, rFollowC,
                 rTennisSrv, rTennisDaily, rTennisDailyPaper, rTennisOrdini, rScalper] = r;
-            if (rScalper.status === 'fulfilled') {
+            // 25/09: `bloccoNuovo` anche qui - una rilettura mirata chiesta dal
+            // canale 47338 e gia' applicata e' piu' fresca del giro
+            if (rScalper.status === 'fulfilled' && bloccoNuovo('scalper', lettoMs)) {
                 setScalperCR(rScalper.value);
                 setScalperLettoMs(Date.now());
+                setScalperLetturaMs(lettoMs);
             }
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
@@ -1412,6 +1431,17 @@ export function useControlRoom(): ControlRoomVM {
                 setRighePos((p) => applicaBloccoTennis(p, v ?? [], lettoMs));
             }).catch(() => { /* il giro dei 30 s riprova */ });
         });
+        // 25/09 - lo scalper: UNA lettura (`get_scalper_control_room`) per
+        // sessioni, ordini e interruttore
+        r.registra('scalper', () => {
+            const lettoMs = Date.now();
+            fetchScalperControlRoom().then((v) => {
+                if (!vivo || !bloccoNuovo('scalper', lettoMs)) return;
+                setScalperCR(v);
+                setScalperLettoMs(Date.now());
+                setScalperLetturaMs(lettoMs);
+            }).catch(() => { /* il giro dei 30 s riprova */ });
+        });
         rilettore.current = r;
         return () => { vivo = false; r.chiudi(); rilettore.current = null; };
     }, [bloccoNuovo]);
@@ -1521,6 +1551,56 @@ export function useControlRoom(): ControlRoomVM {
         return () => { offStatus(); offStato(); offPosizioni(); };
     }, [suRigaPosizione]);
 
+    // ------------------------------- 25/09: lo scalper calcio dal canale 47338
+    // «Pubblicalo sul canale come tutti gli altri» (utente). Il supervisore
+    // (`scalper_service.py`) pubblica l'interruttore (`scalper_stato`) e le
+    // righe di sessione che legge ogni 3 s (`scalper_sessioni`), chiavi
+    // identiche al database. OVERLAY sul giro dei 30 s, mai unione: una
+    // sessione nuova (o appena fermata) chiede SUBITO la rilettura mirata
+    // (`RilettureMirate`, anti-tempesta 2 s). Canale giu': stato 'off', eta'
+    // del push azzerata, si torna al database. Sola lettura.
+    useEffect(() => {
+        const ch = getLocalChannel('scalper');
+        setCanali((p) => ({ ...p, scalper: ch.getStatus() }));
+        const offStatus = ch.onStatus((st) => {
+            setCanali((p) => ({ ...p, scalper: st }));
+            if (st !== 'connected') {
+                setUltimoPush((p) => ({ ...p, scalper: null }));
+                scalperOvRef.current = overlayScalperVuoto();
+                setScalperOv(scalperOvRef.current);
+            }
+        });
+        const offStato = ch.subscribe(TOPIC_SCALPER_STATO, (d) => {
+            const msg = leggiMessaggioRiga(d);
+            if (!msg) return;
+            const ricevutoMs = Date.now();
+            setUltimoPush((p) => ({ ...p, scalper: ricevutoMs }));
+            const ov = applicaServizioCanale(scalperOvRef.current, scalperLetturaRef.current, msg, ricevutoMs);
+            if (ov !== scalperOvRef.current) { scalperOvRef.current = ov; setScalperOv(ov); }
+        });
+        const offSessioni = ch.subscribe(TOPIC_SCALPER_SESSIONI, (d) => {
+            const msg = leggiMessaggioRiga(d, 'event_id');
+            if (!msg) return;
+            const ricevutoMs = Date.now();
+            setUltimoPush((p) => ({ ...p, scalper: ricevutoMs }));
+            // calcolo SINCRONO sulle ref (mai dentro una funzione di
+            // aggiornamento di React, che puo' girare dopo): la decisione di
+            // rileggere deve essere presa adesso
+            const r = applicaSessioneCanale(scalperOvRef.current, scalperCRRef.current,
+                scalperLetturaRef.current, msg, ricevutoMs);
+            if (r.ov !== scalperOvRef.current) { scalperOvRef.current = r.ov; setScalperOv(r.ov); }
+            if (r.rileggi) {
+                const nota = scalperCRRef.current?.sessioni.some((s) => String(s.event_id) === String(msg.id));
+                const motivo = `${nota ? 'chiusa' : 'nuova'}:scalper#${String(msg.id)}#${String(msg.riga.requested_at ?? '')}`;
+                if (!giaChieste.current.has(motivo)) {
+                    giaChieste.current.add(motivo);
+                    rilettore.current?.chiedi('scalper');
+                }
+            }
+        });
+        return () => { offStatus(); offStato(); offSessioni(); };
+    }, []);
+
     // --------------------------------------------------- conto Betfair (R4)
     // NON entra nel poll dei 30 s (`FONTI_RICARICA`/`Promise.allSettled`): il
     // 13/09 il database e' andato giu' per budget IO esaurito, ed e' vietato
@@ -1621,14 +1701,20 @@ export function useControlRoom(): ControlRoomVM {
     const oggiScalper = romeDay(new Date(nowMs));
     const scalperEtaLetturaS = scalperLettoMs == null
         ? null : Math.max(0, Math.round((nowMs - scalperLettoMs) / 1000));
+    // 25/09 - la lettura del database con sopra le righe PIU' FRESCHE del
+    // canale 47338 (stesso oggetto se il canale tace: niente ricalcoli)
+    const scalperCRVista = useMemo(
+        () => vistaScalper(scalperCR, scalperLetturaMs, scalperOv),
+        [scalperCR, scalperLetturaMs, scalperOv],
+    );
     const scalperVista = useMemo(() => {
         const oggi = oggiScalper;
         const giornoDi = (iso: string): string => {
             const t = Date.parse(iso);
             return Number.isFinite(t) ? romeDay(new Date(t)) : '';
         };
-        const tuttiOrdini: OrdineScalper[] = scalperCR?.ordini ?? [];
-        const sessioni = (scalperCR?.sessioni ?? []).map((s: SessioneScalper) => {
+        const tuttiOrdini: OrdineScalper[] = scalperCRVista?.ordini ?? [];
+        const sessioni = (scalperCRVista?.sessioni ?? []).map((s: SessioneScalper) => {
             const ordini = ordiniDellaSessione(s, tuttiOrdini);
             const esp = esposizioneScalper(ordini);
             const payload = (feedPerEvento.get(String(s.event_id))?.payload ?? null) as Parameters<typeof chiusuraScalper>[1];
@@ -1648,18 +1734,24 @@ export function useControlRoom(): ControlRoomVM {
         // regolati oggi da Betfair, di qualunque sessione, per partita e per bet
         const realePerPartita = new Map<string, number>();
         const realePerBet = new Map<string, number>();
+        /** 25/09 - la `source` della riga di ogni bet ('scalper' da oggi,
+         *  'runner' prima): serve a non spostarlo due volte dal manuale app */
+        const sourcePerBet = new Map<string, string>();
         for (const o of tuttiOrdini) {
             if (String(o.mode ?? '').toLowerCase() !== 'live') continue;
             const v = typeof o.pnl_betfair === 'number' && Number.isFinite(o.pnl_betfair) ? o.pnl_betfair : null;
             if (v == null || !o.pnl_betfair_settled_at || giornoDi(o.pnl_betfair_settled_at) !== oggi) continue;
             const k = String(o.event_id ?? '');
             realePerPartita.set(k, Math.round(((realePerPartita.get(k) ?? 0) + v) * 100) / 100);
-            if (o.bet_id) realePerBet.set(String(o.bet_id), v);
+            if (o.bet_id) {
+                realePerBet.set(String(o.bet_id), v);
+                sourcePerBet.set(String(o.bet_id), String(o.source ?? 'runner'));
+            }
         }
         let realeOggi: number | null = null;
         for (const v of realePerPartita.values()) realeOggi = Math.round(((realeOggi ?? 0) + v) * 100) / 100;
-        return { sessioni, realePerPartita, realePerBet, realeOggi };
-    }, [scalperCR, feedPerEvento, oggiScalper]);
+        return { sessioni, realePerPartita, realePerBet, sourcePerBet, realeOggi };
+    }, [scalperCRVista, feedPerEvento, oggiScalper]);
 
 
     const soldi = useMemo(() => soldiPerPartita([
@@ -1839,10 +1931,19 @@ export function useControlRoom(): ControlRoomVM {
             // dello SCALPER (il suo specchio non scrive una source sua). Qui
             // si SPOSTANO sulla voce dello scalper, per bet_id, e solo quelli
             // che il conto ha davvero contato: mai due volte gli stessi soldi.
+            //
+            // 25/09 - da oggi lo specchio scrive `source='scalper'` e il giro
+            // dei regolati li conta sotto la SUA voce 'scalper': spostarli di
+            // nuovo li toglierebbe due volte dal "manuale app". Si spostano
+            // quindi SOLO gli ordini di prima (source 'runner'), e tutti solo se
+            // il conto NON dichiara la voce 'scalper' (runner di prima).
             let scalperNelConto = 0;
             const contati = new Set(pnlRealeOggi.bet_ids);
+            const contoConVoceScalper = pnlRealeOggi.fontiDichiarate?.includes('scalper') === true;
             for (const [bet, v] of scalperVista.realePerBet) {
-                if (contati.has(bet)) scalperNelConto = Math.round((scalperNelConto + v) * 100) / 100;
+                if (!contati.has(bet)) continue;
+                if (contoConVoceScalper && scalperVista.sourcePerBet.get(bet) === 'scalper') continue;
+                scalperNelConto = Math.round((scalperNelConto + v) * 100) / 100;
             }
             const manualeApp = nettoFonte('manuale_app');
             manualeAppRighe = soloSe(rigaSintetica(
@@ -2041,44 +2142,68 @@ export function useControlRoom(): ControlRoomVM {
          * e da DOVE viene il dato (database, giro dei 30 s) con la sua eta'.
          */
         function rigaScalper(): StatoBot {
-            if (scalperCR == null) {
+            const cr = scalperCRVista;
+            if (cr == null) {
                 return {
                     ...riga('scalper', null, false, null, null, null),
                     pnlOggi: null, pnlOggiPaper: null,
                     nota: 'sessioni non lette (get_scalper_control_room: migrazione applicata?)',
                 };
             }
-            const st = statoBotScalper(scalperCR.sessioni);
-            let fermatoAt: string | null = null;
-            for (const s of scalperCR.sessioni) {
+            // 25/09 - l'interruttore globale (auto-mode): acceso anche senza
+            // sessioni (sta cercando partite nel feed), con la SUA modalita'
+            const servizio = cr.servizio ?? null;
+            const st = statoBotScalper(cr.sessioni, servizio);
+            let fermatoAt: string | null = testo(
+                (servizio?.stats as Record<string, unknown> | null | undefined)?.fermato_all_avvio_at);
+            for (const s of cr.sessioni) {
                 const f = testo((s.stats as Record<string, unknown> | null)?.fermato_all_avvio_at);
                 if (f && (fermatoAt == null || f > fermatoAt)) fermatoAt = f;
             }
-            const vive = scalperCR.sessioni.filter(sessioneViva);
+            const vive = cr.sessioni.filter(sessioneViva);
             const nLive = vive.filter((s) => modalitaSessione(s) === 'live').length;
             const nPaper = vive.filter((s) => modalitaSessione(s) === 'paper').length;
+            const canaleMs = ultimoCanaleScalper(scalperOv, scalperLetturaMs);
             const eta = scalperEtaLetturaS;
-            const fonte = `dal database, letto ${eta == null ? 'mai' : `${eta} s fa`}`;
+            const fonte = canaleMs != null
+                ? `dal canale locale, ${Math.max(0, Math.round((nowMs - canaleMs) / 1000))} s fa`
+                : `dal database, letto ${eta == null ? 'mai' : `${eta} s fa`}`;
             const quante = vive.length === 0 ? 'nessuna sessione viva'
                 : `${vive.length} ${vive.length === 1 ? 'sessione viva' : 'sessioni vive'}`
                     + ` (${[nLive ? `${nLive} soldi veri` : '', nPaper ? `${nPaper} prova` : '']
                         .filter(Boolean).join(' - ')})`;
+            const auto = st.autoAcceso
+                ? leggiAutoScalper((servizio?.stats ?? null) as Record<string, unknown> | null) : null;
+            const notaAuto = notaAutoScalper(auto, null);
+            const senzaAuto = cr.servizioLetto === false
+                ? 'auto-mode non disponibile (migrazione scalper_auto_mode_2026-09-25.sql non applicata)'
+                : null;
+            // i "fatti" dichiarati dal supervisore, con le chiavi che `riga`
+            // gia' legge per tutti i bot (motivo del blocco, tetto, cadenza)
+            const statsRiga: Record<string, unknown> = {};
+            if (fermatoAt) statsRiga.fermato_all_avvio_at = fermatoAt;
+            if (auto?.motivo) statsRiga.motivo_blocco = auto.motivo;
+            if (auto?.tetto != null) statsRiga.tetto_partite = auto.tetto;
+            if (st.autoAcceso) statsRiga.cadenza_battito_s = 3;
+            // 25/09 - i "params" della riga: l'aggregato delle uscite (sessioni
+            // attive, o l'interruttore per le nuove) + lo stake delle nuove
+            const paramsRiga: Record<string, unknown> = {
+                ...usciteSessioniScalper(cr.sessioni, servizio?.params ?? null),
+                ...(servizio?.stake != null ? { stake: Number(servizio.stake) } : {}),
+            };
             return {
-                // 25/09 — i "params" della riga scalper sono l'aggregato delle
-                // sessioni attive per l'interruttore «uscite automatiche»
                 ...riga('scalper', st.modalita, st.inCorsa, st.battitoAt, st.stato,
-                    usciteSessioniScalper(scalperCR.sessioni),
-                    fermatoAt ? { fermato_all_avvio_at: fermatoAt } : null),
+                    paramsRiga, Object.keys(statsRiga).length ? statsRiga : null),
                 // P&L di oggi: il REALE di Betfair (netto). Il paper dello
                 // scalper e' solo LORDO nel bot: non si mostra come netto.
                 pnlOggi: scalperVista.realeOggi,
                 pnlOggiPaper: null,
-                nota: `${quante} - ${fonte}`,
+                nota: [notaAuto, `${quante} - ${fonte}`, senzaAuto].filter(Boolean).join(' - '),
             };
         }
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control,
         tennisServizi, tennisOggi, tennisOggiPaper, canali, ultimoPush, nowMs,
-        scalperCR, scalperVista, scalperEtaLetturaS]);
+        scalperCRVista, scalperVista, scalperEtaLetturaS, scalperOv, scalperLetturaMs]);
 
     // -- LE POSIZIONI GIA' CHIUSE, vinte e perse -----------------------------
     // Una posizione e apertura + coperture: sul green-up del 14/09 le righe da
@@ -2120,8 +2245,8 @@ export function useControlRoom(): ControlRoomVM {
             const t = Date.parse(iso);
             return Number.isFinite(t) ? romeDay(new Date(t)) : '';
         };
-        const tuttiOrdini: OrdineScalper[] = scalperCR?.ordini ?? [];
-        for (const s of (scalperCR?.sessioni ?? []) as SessioneScalper[]) {
+        const tuttiOrdini: OrdineScalper[] = scalperCRVista?.ordini ?? [];
+        for (const s of (scalperCRVista?.sessioni ?? []) as SessioneScalper[]) {
             const ordini = ordiniDellaSessione(s, tuttiOrdini);
             const esp = esposizioneScalper(ordini);
             const pnl = pnlRealeOrdini(ordini, giornoDi, oggi);
@@ -2160,7 +2285,7 @@ export function useControlRoom(): ControlRoomVM {
             });
         }
         return righe;
-    }, [scalperCR, oggiScalper]);
+    }, [scalperCRVista, oggiScalper]);
 
     const righeChiuse = useMemo<TradeChiudibile[]>(() => {
         const righe: TradeChiudibile[] = [];
@@ -2862,7 +2987,8 @@ export function useControlRoom(): ControlRoomVM {
                 chiudeId: null,
                 firma: v.s.requested_at,
                 residuo: v.residuo,
-                notaSessione: notaSessioneScalper(v.s, nowMs, scalperEtaLetturaS),
+                notaSessione: notaSessioneScalper(v.s, nowMs, scalperEtaLetturaS,
+                    etaCanaleSessione(scalperOv, scalperLetturaMs, String(v.s.event_id), nowMs)),
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);
@@ -2870,7 +2996,7 @@ export function useControlRoom(): ControlRoomVM {
         for (const arr of m.values()) arr.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
         return m;
     }, [omegaTrades, safe?.trades, mike?.trades, tennisOrdini, feedPerEvento, nowMs, libroVivo, chiusuraViva,
-        scalperVista, scalperEtaLetturaS]);
+        scalperVista, scalperEtaLetturaS, scalperOv, scalperLetturaMs]);
 
     // ── B16 (24/09): IL «CHIUDI» DI UNA RIGA, PER SINGOLO BOT ───────────────
     // Prima: `requestSafe('cashout', {trade_id})` per QUALUNQUE bot - su una

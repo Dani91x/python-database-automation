@@ -47,7 +47,7 @@ import { svegliaBot } from '@/lib/localChannel';
 import { getLiveSettings, setLiveOrderMode, type LiveSettings } from '@/lib/liveOrders';
 import {
     fetchScalperControlRoom, stopScalperSessione, sessioneAttiva, modalitaSessione,
-    impostaUsciteScalper,
+    impostaUsciteScalper, attivaScalperAuto, fermaScalperAuto, aggiornaScalperAuto, rpcAssente,
 } from '@/lib/scalperControlRoom';
 
 export type { Bot };
@@ -123,6 +123,13 @@ export interface Interruttore {
      * globale che il supervisore non legge: decisione del coordinatore.
      */
     armoPerPartita?: string;
+    /**
+     * 25/09 - presente = la modalita' (prova/soldi veri) si sceglie SOLO
+     * all'accensione: a bot acceso niente "passa a prova/soldi veri" (le
+     * sessioni dello scalper leggono `dry_run` una volta sola, all'armo). Per
+     * cambiarla si spegne e si riaccende. Questa e' la frase che lo dice.
+     */
+    modalitaSoloAllAvvio?: string;
 }
 
 /**
@@ -141,16 +148,21 @@ export const INTERRUTTORI: readonly Interruttore[] = [
         chiaveImporto: 'stake', chiaveImportoPerLato: null, etichettaImporto: 'stake Under 3.5',
     },
     // -- 24/09 - LO SCALPER CALCIO ("in Control Room come tutti gli altri
-    // bot", utente). Si arma PER PARTITA: acceso = almeno una sessione
-    // attiva, modalita' = quella dichiarata dalle sessioni (`dry_run`), FERMA
-    // = stop di tutte le sessioni attive (force-flat, `scalper_stop_sessione`).
-    // Nessun importo qui: lo stake e' della sessione, scelto all'armo.
+    // bot", utente). 25/09 (ordine dell'utente): \u00ablo scalper deve lavorare da
+    // solo su tutte le partite del feed come gli altri bot\u00bb. AVVIA accende
+    // l'interruttore globale (`scalper_service_control`, prova o soldi veri
+    // SCRITTI): il supervisore arma da solo le partite del feed unico entro il
+    // tetto. FERMA spegne l'interruttore E ferma tutte le sessioni attive
+    // (force-flat, `scalper_auto_stop`). La card per partita resta (unione).
+    // Lo stake e' la COLONNA `stake` dell'interruttore: vale per le partite
+    // armate da ora.
     {
         id: 'scalper', bot: 'scalper', strategia: null, sport: 'calcio',
         etichetta: 'Scalper calcio',
-        descrizione: 'si arma per partita da Segui Live; da qui stato, modalita\u2019 e stop delle sessioni',
-        chiaveImporto: null, chiaveImportoPerLato: null, etichettaImporto: '',
-        armoPerPartita: 'si arma per partita da Segui Live (stake e prova/soldi veri si scelgono li\u2019)',
+        descrizione: 'lavora da solo sulle partite del feed (e su quelle armate a mano da Segui Live)',
+        chiaveImporto: 'stake', chiaveImportoPerLato: null, etichettaImporto: 'stake',
+        notaImporto: 'vale per le partite armate da ora: quelle gia\u2019 armate tengono il loro',
+        modalitaSoloAllAvvio: 'prova o soldi veri si scelgono all\u2019avvio: per cambiare, ferma e riavvia',
     },
     {
         id: 'safe-base', bot: 'safe', strategia: 'base', sport: 'calcio', etichetta: 'Safe base',
@@ -535,15 +547,26 @@ export class StrumentoSenzaSpegnimento extends Error {
 }
 
 /**
- * 24/09 - LO SCALPER CALCIO SI ARMA PER PARTITA. Accenderlo, cambiargli la
- * modalita' o lo stake da qui vorrebbe dire scegliere la partita al posto
- * dell'utente: non si fa, e il gesto lo DICE invece di fingere.
+ * 25/09 - LO SCALPER: LA MODALITA' SI SCEGLIE ALL'AVVIO. Le sessioni leggono
+ * `dry_run` una volta sola, all'armo: cambiare prova/soldi veri a caldo
+ * lascerebbe le sessioni armate nella modalita' vecchia e le nuove nella nuova
+ * (paper e live insieme). Si ferma e si riavvia: il gesto lo DICE.
+ * (Fino al 24/09 lo scalper si armava SOLO per partita e qui non si accendeva
+ * affatto: `ScalperSiArmaPerPartita`, superato dall'ordine del 25/09.)
  */
-export class ScalperSiArmaPerPartita extends Error {
-    constructor(gesto: string) {
-        super(`lo Scalper calcio non si ${gesto} da qui: si arma PER PARTITA da Segui Live `
-            + '(partita, stake, prova o soldi veri). Da qui si vedono le sue sessioni e si fermano.');
-        this.name = 'ScalperSiArmaPerPartita';
+export class ScalperModalitaAllAvvio extends Error {
+    constructor() {
+        super('lo Scalper calcio sceglie prova o soldi veri all’avvio: le sessioni gia’ '
+            + 'armate non cambierebbero. Fermalo e riavvialo nella modalita’ che vuoi.');
+        this.name = 'ScalperModalitaAllAvvio';
+    }
+}
+
+/** 25/09 - lo scalper ha un solo importo qui: lo `stake` dell'interruttore. */
+export class ScalperImportoSconosciuto extends Error {
+    constructor(chiave: string) {
+        super(`lo Scalper calcio non ha un importo «${chiave}» qui: solo lo stake delle partite nuove`);
+        this.name = 'ScalperImportoSconosciuto';
     }
 }
 
@@ -835,8 +858,10 @@ export function creaInterruttori(
     };
 
     const avviaBot = async (bot: Bot, modalita: Modalita) => {
-        // 24/09 - lo scalper calcio si arma per partita: da qui mai
-        if (bot === 'scalper') throw new ScalperSiArmaPerPartita('accende');
+        // 25/09 - lo scalper calcio: l'interruttore globale dell'auto-mode, con
+        // la modalita' SCRITTA (`scalper_auto_activate`). Nessuna sveglia: il
+        // supervisore rilegge l'interruttore ogni 3 s.
+        if (bot === 'scalper') { await attivaScalperAuto(modalita); dopo(); return; }
         // I quattro bot tennis: `stake` e `params` a null CONSERVANO quelli
         // gia' scritti (la RPC fa `coalesce`). La modalita' invece si scrive
         // sempre, ed e' quella che l'utente ha appena scelto col pulsante.
@@ -860,9 +885,17 @@ export function creaInterruttori(
         // OMEGA al posto dello Scalper. Ogni bot ha il suo ramo, per nome.
         if (isBotTennis(bot)) await stopTennisBotService(bot as TennisBotKey);
         else if (bot === 'scalper') {
-            // tutte le sessioni attive, con la guardia d'identita'. Anche se
-            // qualcuna manca, la pagina si rilegge (le altre sono ferme).
-            try { await fermaTutteLeSessioniScalper(); } finally { dopo(); }
+            // 25/09 - UN gesto atomico: interruttore spento + tutte le sessioni
+            // attive in stop (`scalper_auto_stop`). Migrazione non applicata:
+            // il FERMA di prima (sessione per sessione, guardia d'identita').
+            try {
+                try {
+                    await fermaScalperAuto();
+                } catch (e) {
+                    if (!rpcAssente(e)) throw e;
+                    await fermaTutteLeSessioniScalper();
+                }
+            } finally { dopo(); }
             return;
         }
         else if (bot === 'safe') await stopSafe();
@@ -892,7 +925,7 @@ export function creaInterruttori(
         const i = interruttoreDi(id);
         // la sessione legge `dry_run` una volta, all'armo: cambiarlo a sessione
         // in corsa non cambierebbe niente di vero
-        if (i.bot === 'scalper') throw new ScalperSiArmaPerPartita('cambia di modalita\u2019');
+        if (i.bot === 'scalper') throw new ScalperModalitaAllAvvio();
         if (isSoloModalita(i.strategia)) return scriviSoloModalita(i, i.strategia, modalita);
         if (i.strategia != null) {
             const { acc, fresco } = await conCambio(i.strategia, modalita);
@@ -906,7 +939,13 @@ export function creaInterruttori(
 
     const cambiaImporto = async (id: InterruttoreId, chiave: string, importo: number) => {
         const i = interruttoreDi(id);
-        if (i.bot === 'scalper') throw new ScalperSiArmaPerPartita('cambia di stake');
+        // 25/09 - lo stake e' la COLONNA dell'interruttore: `status` e `mode`
+        // non si toccano (`scalper_auto_update`), vale per le partite nuove
+        if (i.bot === 'scalper') {
+            if (chiave !== 'stake') throw new ScalperImportoSconosciuto(chiave);
+            await aggiornaScalperAuto({ stake: importo });
+            dopo(); return;
+        }
         // TENNIS — lo stake e' una COLONNA della riga di control, non una voce
         // di `params`: si scrive da sola, e `status` non lo tocca nessuno. Una
         // chiave diversa da 'stake' finirebbe dentro `params`, e li' si riparte
@@ -946,7 +985,7 @@ export function creaInterruttori(
      * `X_update_params(p_mode)`, che il `status` non lo tocca proprio.
      */
     const cambiaModalitaServizio = async (bot: Bot, modalita: Modalita) => {
-        if (bot === 'scalper') throw new ScalperSiArmaPerPartita('cambia di modalita\u2019');
+        if (bot === 'scalper') throw new ScalperModalitaAllAvvio();
         // TENNIS — `tennis_bot_service_activate` porterebbe `status` a
         // 'running': un cambio di modalita' non accende MAI niente, quindi
         // passa dalla gemella che `status` non lo tocca.
@@ -1165,10 +1204,17 @@ export function conPosizioniAperte(
  */
 export function usciteSessioniScalper(
     sessioni: readonly { status: string; params: Record<string, unknown> | null }[],
+    /** 25/09 - i params dell'interruttore globale: con che uscite NASCONO le
+     *  sessioni dell'auto-mode (la RPC delle uscite scrive anche li') */
+    paramsServizio: Record<string, unknown> | null = null,
 ): Record<string, unknown> {
     const attive = sessioni.filter((s) => sessioneAttiva(s));
     if (attive.length === 0) {
-        return { uscite_automatiche: true, uscite_nota: 'nessuna sessione attiva: le nuove nascono con le uscite automatiche' };
+        const nuove = paramsServizio?.uscite_automatiche === false ? false : true;
+        return {
+            uscite_automatiche: nuove,
+            uscite_nota: `nessuna sessione attiva: le nuove nascono con le uscite ${nuove ? 'automatiche' : 'manuali'}`,
+        };
     }
     const valori = new Set(attive.map((s) => (s.params?.uscite_automatiche === false ? false : true)));
     if (valori.size === 1) return { uscite_automatiche: [...valori][0] };

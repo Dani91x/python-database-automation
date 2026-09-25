@@ -173,7 +173,9 @@ def test_la_riga_dello_specchio_vero_della_sessione_e_presa() -> None:
         assert riga["mode"] == modo
         assert riga["bet_id"] == "228000000001"
         assert riga["event_id"] == "35760084"
-        assert "source" not in riga            # vale il DEFAULT 'runner' della colonna
+        # 25/09 (ordine dell'utente): gli ordini dello scalper portano il SUO
+        # nome; prima la chiave mancava e valeva il DEFAULT 'runner'
+        assert riga["source"] == "scalper"
         assert _predicato_sql(riga) is True
 
 

@@ -205,6 +205,10 @@ export interface RigaInterruttore {
      *  niente cambio di modalita' da qui, solo "ferma"; al loro posto questa
      *  frase. Assente = riga come tutte le altre. */
     armoPerPartita?: string;
+    /** 25/09 - prova/soldi veri si scelgono SOLO all'avvio (scalper calcio):
+     *  a bot acceso niente "passa a prova/soldi veri", al loro posto questa
+     *  frase. Assente = riga come tutte le altre. */
+    modalitaSoloAllAvvio?: string;
     /** 24/09 - una frase dichiarata dal servizio accanto allo stato */
     nota?: string;
 }
@@ -764,7 +768,14 @@ function RigaBot({
                             </span>
                         )}
 
-                        {r.modalita != null && !r.armoPerPartita && (
+                        {r.modalitaSoloAllAvvio && (
+                            <span className="text-[9px] text-white/30"
+                                data-testid={`cr-modalita-all-avvio-${r.id}`}>
+                                {r.modalitaSoloAllAvvio}
+                            </span>
+                        )}
+
+                        {r.modalita != null && !r.armoPerPartita && !r.modalitaSoloAllAvvio && (
                             live ? (
                                 <Button
                                     type="button" size="sm" variant="ghost"

@@ -627,7 +627,15 @@ _BLOCCO_IN = 100  # bet_id per lettura (lunghezza dell'URL PostgREST)
 #: le voci della composizione, nello stesso vocabolario del frontend
 #: (``frontend/src/lib/composizioneObiettivo.ts``)
 FONTI = ("omega", "safe_calcio", "safe_tennis", "mike", "bot_tennis",
-         "manuale_app", "manuale_sito", "altri_bot")
+         "manuale_app", "manuale_sito", "altri_bot",
+         # 25/09: lo scalper calcio ha la SUA voce (specchio con
+         # source='scalper', scalper_session._SessionOrderMirror). Prima i
+         # suoi ordini finivano nel "manuale app".
+         "scalper")
+
+#: la ``source`` delle righe dello specchio dello scalper calcio in
+#: ``betfair_live_orders`` (``scalper_session.SOURCE_SPECCHIO``)
+SOURCE_SCALPER = "scalper"
 
 
 def _classify_cleared_order(order: Any) -> str:
@@ -780,7 +788,10 @@ def _fonte_di(tabella: str, extra: Dict[str, Any], order: Any) -> str:
     if tabella == "tennis_live_orders":
         return "manuale_app" if src in ("", "manual") else "bot_tennis"
     # betfair_live_orders: 'runner' = terminale manuale dell'app;
+    # 'scalper' = specchio di una sessione dello scalper calcio (25/09);
     # 'bot:<ref>' = ordine di un bot visto sul conto
+    if src == SOURCE_SCALPER:
+        return "scalper"
     if src.startswith("bot:"):
         return "bot_tennis" if tennis else "altri_bot"
     return "manuale_app"
