@@ -267,7 +267,12 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # l'ultimo stato visto del mercato Over 4.5. Senza persistenza un
                # riavvio farebbe ricominciare i 104 tentativi da capo (difetto
                # 19 del catalogo: lo stato che vive solo in RAM).
-               "cover_rifiuti", "cover_mercato")
+               "cover_rifiuti", "cover_mercato",
+               # 25/09 — uscite manuali: la proposta viva e l'approvazione
+               # dell'utente (``engine.gate_uscite``). Un riavvio non deve far
+               # sparire dalla scheda un'uscita in attesa di firma, ne' perdere
+               # la firma appena data.
+               "uscita_proposta", "uscita_approvata")
 
 
 # ===========================================================================
@@ -2269,7 +2274,9 @@ def _result(code: str, message: str, **extra: Any) -> Dict[str, Any]:
 # (``kind_non_valido`` compreso: significa contratto rotto fra UI e DB).
 _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "stato_non_riprendibile",
                  "feed_assente", "snapshot_assente", "niente_da_chiudere", "feed_stantio",
-                 "richiesta_ambigua")
+                 "richiesta_ambigua",
+                 # 25/09 — approvazione di un'uscita che non c'e' piu' o e' cambiata
+                 "proposta_non_viva", "proposta_cambiata")
 
 
 def _richiesta_non_di_questa_partita(db: Any, payload: Dict[str, Any],
@@ -2360,6 +2367,8 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
                                        scanner_age=scanner_age, kind=kind)
             elif kind == "cancel":
                 res = _request_cancel(db, ev, events, eid, market)
+            elif kind == "approva_uscita":
+                res = _request_approva_uscita(db, ev, events, eid, payload, now)
             elif kind == "skip_event":
                 ctx = _ctx_from_row(ev, db)
                 if E.open_selections(ctx.legs) or any(l.is_live or l.needs_reconcile for l in ctx.legs):
@@ -2417,6 +2426,38 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
         db.set_request_status(rid, status, res)
         n += 1
     return n
+
+
+def _request_approva_uscita(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[str, Any]],
+                            eid: str, payload: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+    """25/09 — l'utente APPROVA l'uscita proposta (interruttore "uscite
+    automatiche" spento). Non piazza niente da qui: scrive la firma sul contesto
+    della partita (``ctx.uscita_approvata``) e al giro del motore la decisione
+    della strategia con quella chiave passa ESATTAMENTE com'e' (prezzi e size
+    del momento, ``engine.gate_uscite``). Una proposta cambiata nel frattempo
+    (chiave diversa) NON si approva al buio: si rifiuta e la scheda mostra la
+    nuova. Il contesto del clic (prezzo visto, eta', fonte) resta per l'audit."""
+    ctx = _ctx_from_row(ev, db)
+    chiave = str(payload.get("chiave") or "")
+    viva = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    if viva is None:
+        return _result("proposta_non_viva",
+                       "Nessuna uscita in attesa di approvazione su questa partita.")
+    if not chiave or str(viva.get("chiave") or "") != chiave:
+        return _result("proposta_cambiata",
+                       "La proposta e' cambiata: guarda quella nuova prima di approvare.",
+                       chiave_viva=viva.get("chiave"))
+    contesto = payload.get("contesto") if isinstance(payload.get("contesto"), dict) else None
+    ctx.uscita_approvata = {"chiave": chiave, "at": now.timestamp(),
+                            **({"contesto": contesto} if contesto else {})}
+    extra = dict(ev.get("ctx") or {})
+    events[eid] = _row_from_ctx(ev, ctx, extra)
+    db.upsert_event(events[eid])
+    db.log("uscita_approvata", {"by": "utente", "chiave": chiave,
+                                "motivo": viva.get("motivo"),
+                                "contesto": contesto}, eid)
+    return _result("ok", "Uscita approvata: parte al prossimo giro del bot.", ok=True,
+                   chiave=chiave)
 
 
 def _request_cancel(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[str, Any]],
@@ -3598,7 +3639,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                      # da qui in poi il bot non apre piu' niente su quella
                      # partita, e in pagina si deve vedere perche'.
                      "chiuso_dall_utente",
-                     "loss_exit", "loss_exit_deciso"):
+                     "loss_exit", "loss_exit_deciso",
+                     # 25/09 — uscite manuali: la proposta nasce/cambia, decade,
+                     # o parte su approvazione. Il motore le emette SOLO al
+                     # cambiamento, vedi engine.gate_uscite: nessun log a giro.
+                     "uscita_proposta", "uscita_proposta_decaduta",
+                     "uscita_eseguita_su_approvazione"):
                 if k == "cashout":
                     extra["last_cashout"] = v
                 elif k == "cover_wait":

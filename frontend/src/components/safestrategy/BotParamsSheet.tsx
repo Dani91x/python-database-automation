@@ -811,6 +811,17 @@ export function fromValues(
     }
     out.strategy_modes = modi;
     out.variants = variants;
+    // 25/09 — UNA verita' per le uscite del tennis: il servizio fa vincere la
+    // mappa `uscite_automatiche` (interruttore della Control Room) sul
+    // cancelletto storico. Salvare da qui il cancelletto riallinea la mappa,
+    // o la spunta resterebbe senza effetto.
+    if (typeof v.tennis_exit_approval === 'boolean') {
+        const prima = raw?.uscite_automatiche;
+        const mappa = prima != null && typeof prima === 'object' && !Array.isArray(prima)
+            ? { ...(prima as Record<string, unknown>) } : {};
+        mappa.tennis = !v.tennis_exit_approval;
+        out.uscite_automatiche = mappa;
+    }
     return out as Partial<SafeBotParams>;
 }
 

@@ -273,7 +273,8 @@ def test_contratto_kind_delle_richieste_identici():
     for frag in re.findall(r"kind (?:==|!=|in) (\(?[^:\n]+)", body):
         handled |= set(re.findall(r"\"([a-z_]+)\"", frag))
     ui = set(ts_record_keys("MIKE_REQUEST_KIND_LABEL"))
-    assert ui == {"cashout", "flatten", "skip_event", "resume_event", "cancel"}
+    # 25/09: 'approva_uscita' (interruttore "uscite automatiche" spento)
+    assert ui == {"cashout", "flatten", "skip_event", "resume_event", "cancel", "approva_uscita"}
     assert ui - handled == set(), f"kind inviati dalla UI e non gestiti: {sorted(ui - handled)}"
 
 

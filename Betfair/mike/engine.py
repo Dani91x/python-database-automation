@@ -319,6 +319,16 @@ class MatchCtx:
     # diventa terminale: arriva a SETTLED col mercato chiuso.
     # Persistito (``service._CTX_FIELDS``). Controllo R3.
     chiuso_dall_utente: bool = False
+    # 25/09 - ORDINE DELL'UTENTE: «tutti i bot DEVONO AVERE L'ABILITAZIONE per
+    # le uscite automatiche [...] se disattivo il pulsante le uscite le gestisco
+    # io manualmente tramite l'apposita scheda». Con ``uscite_automatiche``
+    # spento l'uscita DISCREZIONALE che la strategia vorrebbe fare adesso non
+    # parte: diventa questa PROPOSTA (vedi ``gate_uscite``), che la scheda mostra
+    # e che l'utente approva (``uscita_approvata``) o chiude a mano (cash out).
+    # Persistite (``service._CTX_FIELDS``): un riavvio non deve dimenticare ne'
+    # la proposta viva ne' un'approvazione appena data.
+    uscita_proposta: Optional[Dict[str, Any]] = None
+    uscita_approvata: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -2168,7 +2178,192 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     d = _una_sola_lay(ctx, d)
     # ORDINE DELL'UTENTE 16/09 sera — «MAI SOVRACOPERTURA». Stessa regola, sul
     # BACK di copertura: vedi ``_mai_sovracopertura``.
-    return _mai_sovracopertura(ctx, d)
+    d = _mai_sovracopertura(ctx, d)
+    # 25/09 — CHI ESEGUE L'USCITA (interruttore "uscite automatiche" in Control
+    # Room). Ultima parola: la decisione qui sopra e' quella di sempre, il gate
+    # cambia solo chi la esegue.
+    return gate_uscite(ctx, d, snap, params)
+
+
+# ---------------------------------------------------------------------------
+# 25/09 — USCITE AUTOMATICHE / MANUALI (ordine dell'utente, "per singolo bot")
+# ---------------------------------------------------------------------------
+# Le uscite DISCREZIONALI di Mike: green-up/target e cash out/uscite in
+# perdita a modello. Sono le gambe di chiusura che il MOTORE decide da solo
+# (non ``manual_close``, che e' gia' dell'utente).
+USCITE_DISCREZIONALI = ("under_green", "ko_green", "under_close", "over_close",
+                        "reentry_green")
+# Motivi di chiusura che sono PROTEZIONI e restano SEMPRE automatici, anche a
+# interruttore spento: il cap di perdita per partita e' uno stop.
+MOTIVI_PROTEZIONE = ("loss_cap",)
+# Stati in cui un'uscita e' GIA' IN CORSO (approvata o partita prima che
+# l'utente spegnesse): riprezzi e residui la stanno solo finendo, e chiedere
+# una seconda firma lascerebbe mezza posizione scoperta in attesa di un clic
+# (stessa regola del residuo di Safe).
+STATI_USCITA_IN_CORSO = ("LIVE_CLOSING", "REENTRY_GREEN_PENDING", "PRE_GREEN_PENDING")
+# Cancel che a interruttore spento restano: annulli di ORDINI D'INGRESSO
+# (ttl, persist tardivo), che non toccano nessuna uscita e riducono il rischio.
+_CANCEL_SEMPRE = ("under_entry", "under_last", "under_second", "reentry")
+# Per quanto un'approvazione resta valida se il motore non ripropone la stessa
+# uscita (poi la proposta si rifa' e si firma di nuovo sul presente).
+APPROVAZIONE_TTL_S = 120.0
+
+
+def uscite_automatiche(params: Dict[str, Any]) -> bool:
+    """L'interruttore, dai parametri del GIRO (letti a caldo da ``mike_control``).
+    Assente o non booleano = True: il comportamento di sempre."""
+    v = params.get("uscite_automatiche", True)
+    return v if isinstance(v, bool) else True
+
+
+def categoria_uscita(d: Decision) -> Optional[str]:
+    """Che uscita discrezionale contiene la decisione (None = nessuna)."""
+    ruoli = {a.role for a in d.actions if a.kind == "place"}
+    if ruoli & {"under_close", "over_close"}:
+        return "chiusura"            # cash out / uscita in perdita a modello
+    if "ko_green" in ruoli:
+        return "ko_green"            # uscita a +N tick al fischio
+    if "under_green" in ruoli:
+        return "green_pre"           # take-profit / green del pre-match
+    if "reentry_green" in ruoli:
+        return "reentry_green"       # green / uscita a tempo del re-ingresso
+    return None
+
+
+def chiave_uscita(ctx: MatchCtx, categoria: str) -> str:
+    return f"{categoria}|c{int(ctx.cycle_no)}"
+
+
+def _uscita_gia_in_corso(ctx: MatchCtx, d: Decision) -> bool:
+    """L'uscita di questa decisione e' il SEGUITO di un'uscita gia' partita
+    (approvata, o partita prima che l'utente spegnesse l'interruttore)?
+
+    - lo stato e' gia' una chiusura in corso (riprezzo, residuo);
+    - nel ciclo corrente esiste gia' una gamba dello stesso ruolo di uscita
+      (viva, abbinata o gia' annullata): e' il riprezzo/riappoggio della stessa
+      uscita. Dal 16/09 il riprezzo di una lay e' in DUE giri (``_una_sola_lay``:
+      prima l'annullo confermato, poi la lay nuova), quindi guardare solo le
+      gambe VIVE chiederebbe una seconda firma a ogni riprezzo.
+    Un'approvazione vale quindi per l'uscita di QUEL ciclo e per i suoi seguiti.
+    """
+    if ctx.state in STATI_USCITA_IN_CORSO:
+        return True
+    ruoli = {a.role for a in d.actions if a.kind == "place" and a.role in USCITE_DISCREZIONALI}
+    return any(l.role in ruoli and not l.archived and int(l.cycle_no) == int(ctx.cycle_no)
+               for l in ctx.legs)
+
+
+def _approvazione_valida(ctx: MatchCtx, chiave: str, now: float) -> bool:
+    a = ctx.uscita_approvata
+    if not isinstance(a, dict) or str(a.get("chiave") or "") != chiave:
+        return False
+    try:
+        return now - float(a.get("at") or 0.0) <= APPROVAZIONE_TTL_S
+    except (TypeError, ValueError):
+        return False
+
+
+def _con(d: Decision, *, updates: Dict[str, Any], telemetry: Dict[str, Any]) -> Decision:
+    return Decision(d.state, list(d.actions), d.reason, updates, telemetry)
+
+
+def _decadi(ctx: MatchCtx, d: Decision, motivo: str) -> Decision:
+    """La proposta viva non regge piu': si toglie e lo si dice UNA volta."""
+    if not isinstance(ctx.uscita_proposta, dict):
+        return d
+    upd = dict(d.updates)
+    upd["uscita_proposta"] = None
+    tele = dict(d.telemetry)
+    tele["uscita_proposta_decaduta"] = {"chiave": ctx.uscita_proposta.get("chiave"),
+                                        "motivo": motivo}
+    return _con(d, updates=upd, telemetry=tele)
+
+
+def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, Any]) -> Decision:
+    """CHI esegue l'uscita discrezionale che la strategia ha appena deciso.
+
+    - interruttore ACCESO (default): la decisione passa INTATTA (parita' con
+      tutto cio' che c'era prima); una proposta rimasta viva decade.
+    - interruttore SPENTO: la decisione con un'uscita discrezionale NUOVA non
+      manda niente e scrive ``uscita_proposta``. Passano comunque: le
+      PROTEZIONI (``MOTIVI_PROTEZIONE``), un'uscita GIA' IN CORSO (riprezzo o
+      residuo), e l'uscita che l'utente ha APPROVATO (stessa chiave, entro
+      ``APPROVAZIONE_TTL_S``: l'approvazione si consuma all'uso).
+
+    I timer della strategia NON si fermano: quando la decisione e' un'"uscita
+    appoggiata" (lo stato resta di posizione aperta: PRE_OPEN, LIVE_KO_GREEN,
+    REENTRY_OPEN) stato e aggiornamenti (orologio della finestra, prezzo
+    d'ingresso) si applicano lo stesso; solo quando la decisione porterebbe in
+    uno stato di chiusura in corso (o a FLAT) si resta nello stato di partenza,
+    senza il motivo di chiusura. Le coperture (``over_cover``) non sono uscite:
+    restano automatiche sempre.
+    """
+    if uscite_automatiche(params):
+        return _decadi(ctx, d, "uscite automatiche: l'uscita la esegue il bot")
+    cat = categoria_uscita(d)
+    if cat is None:
+        return _decadi(ctx, d, "la strategia non vuole piu' uscire: %s" % d.reason)
+    if str(d.updates.get("close_reason") or "") in MOTIVI_PROTEZIONE:
+        return _decadi(ctx, d, "protezione (cap perdita partita): esegue il bot")
+    if _uscita_gia_in_corso(ctx, d):
+        return d
+    chiave = chiave_uscita(ctx, cat)
+    if _approvazione_valida(ctx, chiave, snap.now):
+        # approvata dall'utente: passa ESATTAMENTE la decisione della strategia
+        # (prezzi e size di adesso); approvazione e proposta si consumano.
+        upd = dict(d.updates)
+        upd["uscita_approvata"] = None
+        upd["uscita_proposta"] = None
+        tele = dict(d.telemetry)
+        tele["uscita_eseguita_su_approvazione"] = {
+            "chiave": chiave, "motivo": d.reason,
+            "approvata_at": (ctx.uscita_approvata or {}).get("at"),
+            "contesto": (ctx.uscita_approvata or {}).get("contesto")}
+        return _con(d, updates=upd, telemetry=tele)
+    # --- si PROPONE ----------------------------------------------------------
+    ordini = [{"ruolo": a.role, "mercato": a.market, "selezione": a.selection,
+               "lato": a.side, "prezzo": a.price, "size": a.size}
+              for a in d.actions if a.kind == "place" and a.role in USCITE_DISCREZIONALI]
+    close_reason = d.updates.get("close_reason")
+    sostanza = [chiave, [[o["ruolo"], o["lato"]] for o in ordini], close_reason]
+    prima = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    cash = d.telemetry.get("cashout") if isinstance(d.telemetry.get("cashout"), dict) else {}
+    tele = dict(d.telemetry)
+    if prima is not None and prima.get("sostanza") == sostanza:
+        proposta = prima              # invariata: nessuna scrittura, nessun log
+    else:
+        stessa = prima is not None and prima.get("chiave") == chiave
+        proposta = {
+            "chiave": chiave, "categoria": cat, "ciclo": int(ctx.cycle_no),
+            "stato": ctx.state, "stato_voluto": d.state,
+            "motivo": d.reason, "close_reason": close_reason,
+            "ordini": ordini,
+            # P&L che si bloccherebbe chiudendo ORA (netto commissione, dal
+            # calcolo del cash out del motore), quando la decisione lo porta
+            "bloccabile": cash.get("net"),
+            "urgente": str(close_reason or "").startswith("loss"),
+            "minuto": snap.minute, "gol": snap.goals,
+            # l'istante della DECISIONE resta fermo finche' la chiave e' la
+            # stessa: la latenza fino al clic dev'essere vera
+            "decided_at": (prima.get("decided_at") if stessa else None) or snap.now,
+            "proposed_at": snap.now,
+            "sostanza": sostanza,
+        }
+        tele["uscita_proposta"] = {k: v for k, v in proposta.items() if k != "sostanza"}
+    keep = [a for a in d.actions if a.kind == "cancel" and a.role in _CANCEL_SEMPRE]
+    upd = dict(d.updates)
+    stato = d.state
+    if d.state in STATI_USCITA_IN_CORSO or d.state == "FLAT":
+        # la decisione porterebbe a una chiusura in corso: si resta dove si e'
+        stato = ctx.state
+        upd.pop("close_reason", None)
+        upd.pop("attempts", None)
+    upd["uscita_proposta"] = proposta
+    # un'approvazione per un'altra chiave e' vecchia: non deve sbloccare niente
+    if isinstance(ctx.uscita_approvata, dict) and ctx.uscita_approvata.get("chiave") != chiave:
+        upd["uscita_approvata"] = None
+    return Decision(stato, keep, "uscita proposta all'utente (uscite manuali): %s" % d.reason,
+                    upd, tele)
 
 
 

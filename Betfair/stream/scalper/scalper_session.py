@@ -67,6 +67,9 @@ UI_PARAM_WHITELIST = {
     "entry_ttl_ms", "lock_ttl_ms", "max_cycles", "max_txn_hour",
     "event_profit_target", "event_target_giveback", "event_loss_cap",
     "ht_mode", "one_green_per_phase",
+    # 25/09 (ordine dell'utente): chi esegue le uscite discrezionali della
+    # sessione (default True = oggi). Riletto a caldo a ogni battito.
+    "uscite_automatiche",
     "flow_balance_min", "flow_balance_window_ms", "min_inside_flow",
     "require_oscillation", "trend_mode", "max_drift_ticks",
     # SNIPER in-play (bibbia §6): toggle + stake dedicato (default 10)
@@ -425,6 +428,29 @@ def _theta_atlas_or_none(db: Any, event_id: str,
         return None
 
 
+def applica_uscite_automatiche(db: Any, event_id: str, strategy: Any,
+                               params: Optional[Dict[str, Any]]) -> Optional[bool]:
+    """25/09 - porta sulla strategia VIVA il valore di `uscite_automatiche`
+    appena riletto dalla riga di control. Solo un booleano vero conta; chiave
+    assente = True (comportamento di sempre); lettura fallita (params None) =
+    niente cambia. Il cambio si dichiara UNA volta nel log della sessione.
+    Ritorna il valore applicato (None = nessun cambio)."""
+    if strategy is None or params is None:
+        return None
+    grezzo = params.get("uscite_automatiche", True)
+    nuovo = grezzo if isinstance(grezzo, bool) else True
+    if bool(getattr(strategy, "uscite_automatiche", True)) == nuovo:
+        return None
+    strategy.uscite_automatiche = nuovo
+    db.log(event_id, "info", {
+        "msg": ("uscite automatiche RIACCESE: le chiusure le mette il bot"
+                if nuovo else
+                "uscite automatiche SPENTE: le chiusure a target/scratch le "
+                "decidi tu (stop, flatten e cap restano automatici)"),
+        "uscite_automatiche": nuovo})
+    return nuovo
+
+
 class Db:
     def __init__(self) -> None:
         from db_client import get_supabase_client
@@ -445,6 +471,20 @@ class Db:
             return (r.data or [{}])[0].get("status")
         except Exception:  # noqa: BLE001
             return None
+
+    def control_stato_e_params(self, event_id: str) -> "tuple[Optional[str], Optional[Dict[str, Any]]]":
+        """25/09 - lo stato E i parametri della riga, con UNA lettura (la
+        stessa del battito che prima leggeva solo `status`): serve a rileggere
+        a caldo l'interruttore `uscite_automatiche`. Errore = (None, None):
+        lo stato resta quello di prima e l'interruttore non cambia."""
+        try:
+            r = self.sb.table("scalper_control").select("status,params") \
+                .eq("event_id", event_id).execute()
+            row = (r.data or [{}])[0]
+            params = row.get("params")
+            return row.get("status"), (params if isinstance(params, dict) else None)
+        except Exception:  # noqa: BLE001
+            return None, None
 
     def get_control(self, event_id: str) -> Optional[Dict[str, Any]]:
         r = self.sb.table("scalper_control").select("*") \
@@ -1112,7 +1152,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     _force_flat_all()
             except Exception:  # noqa: BLE001 - guardia best-effort
                 pass
-            status = db.control_status(ev)
+            status, params_vivi = db.control_stato_e_params(ev)
+            # 25/09 - l'interruttore "uscite automatiche" letto A CALDO (stessa
+            # lettura del battito): il cambio vale dal book successivo.
+            applica_uscite_automatiche(db, ev, strategy, params_vivi)
             # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
             # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
             # a tradare su una riga che il resto del sistema considera chiusa.

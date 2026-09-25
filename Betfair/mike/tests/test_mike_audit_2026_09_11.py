@@ -1103,6 +1103,9 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # riconciliazione): e' la scadenza che Betfair applica alla sospensione,
         # e la si legge alla riapertura (§15.6, ramo b).
         "resting_in_sospensione",
+        # 25/09 (ordine dell'utente): uscite manuali. L'utente APPROVA l'uscita
+        # proposta dal bot a interruttore spento.
+        "uscita_approvata",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

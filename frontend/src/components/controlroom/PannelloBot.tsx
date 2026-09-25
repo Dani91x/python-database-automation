@@ -45,7 +45,7 @@ import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
 import { interruttoreDi } from '@/lib/interruttori';
 import type {
-    CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot,
+    CampoImporto, InterruttoreId, Modalita, ComandiInterruttori, SportBot, StatoUscite,
 } from '@/lib/interruttori';
 
 export type { CampoImporto, Modalita } from '@/lib/interruttori';
@@ -259,12 +259,19 @@ export interface PannelloBotProps {
      * Nodo gia' montato dalla pagina (come `parametri`): assente = non mostrata.
      */
     ordiniReali?: ReactNode;
+    /**
+     * 25/09 — «Uscite automatiche» di ciascuna riga (`usciteInterruttori`):
+     * acceso = il bot esegue da solo le uscite della strategia; spento = le
+     * propone nella scheda e decide l'utente. Riga assente = nessun
+     * interruttore delle uscite su quella riga (Safe «a mano», bot tennis).
+     */
+    uscite?: Partial<Record<InterruttoreId, StatoUscite>>;
     testId?: string;
 }
 
 export function PannelloBot({
     righe, importi, comandi, parametri, parametriRiga, titolo = 'Comando dei bot', nota,
-    ambito = 'tutti', serviziAccesi, ordiniReali, testId = 'cr-pannello-bot',
+    ambito = 'tutti', serviziAccesi, ordiniReali, uscite, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<InterruttoreId | 'tutti' | null>(null);
     /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
@@ -418,6 +425,7 @@ export function PannelloBot({
                                                 <RigaBot
                                                     key={`${ambito}:${r.id}`} r={r}
                                                     importi={importi[r.id] ?? []}
+                                                    uscite={uscite?.[r.id] ?? null}
                                                     parametri={r.primaDelBot ? (parametri?.[r.bot] ?? null) : null}
                                                     parametriRiga={parametriRiga?.[r.id] ?? null}
                                                     mostraParametri={r.primaDelBot}
@@ -474,10 +482,11 @@ interface ComandoInAttesa {
 }
 
 function RigaBot({
-    r, importi, parametri, parametriRiga, mostraParametri, comandi, bloccato, segnalaInCorso,
+    r, importi, uscite, parametri, parametriRiga, mostraParametri, comandi, bloccato, segnalaInCorso,
 }: {
     r: RigaInterruttore;
     importi: CampoImporto[];
+    uscite: StatoUscite | null;
     parametri: ReactNode;
     parametriRiga: ReactNode;
     mostraParametri: boolean;
@@ -662,6 +671,44 @@ function RigaBot({
                     <span>
                         fermato all'avvio dell'app: <strong>attivazione manuale richiesta</strong>
                     </span>
+                </div>
+            )}
+
+            {/* 25/09 — USCITE AUTOMATICHE / MANUALI (ordine dell'utente, per
+                singolo bot). Lo stato è quello scritto nei parametri del
+                servizio; il pulsante cambia SOLO chi esegue le uscite. */}
+            {uscite && (
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[10.5px]"
+                    data-testid={`cr-uscite-${r.id}`}>
+                    <span className="text-white/40">uscite:</span>
+                    {uscite.automatiche == null ? (
+                        <span className="text-orange-300" data-testid={`cr-uscite-stato-${r.id}`}>
+                            non lette{uscite.nota ? ` (${uscite.nota})` : ''}
+                        </span>
+                    ) : uscite.automatiche ? (
+                        <span className="text-emerald-300" data-testid={`cr-uscite-stato-${r.id}`}>
+                            automatiche{uscite.nota ? ` (${uscite.nota})` : ''}
+                        </span>
+                    ) : (
+                        <span className="text-amber-300 font-semibold" data-testid={`cr-uscite-stato-${r.id}`}>
+                            manuali{uscite.aperte != null
+                                ? ` — ${uscite.aperte} ${uscite.aperte === 1 ? 'posizione aperta' : 'posizioni aperte'}`
+                                    + (uscite.aperte > 0 && uscite.daMin != null ? ` da ${uscite.daMin} min` : '')
+                                : ''}
+                        </span>
+                    )}
+                    {uscite.automatiche != null && comandi.cambiaUscite && (
+                        <Button
+                            type="button" size="sm" variant="ghost"
+                            disabled={occupato}
+                            onClick={() => void esegui(() => comandi.cambiaUscite!(r.id, !uscite.automatiche))}
+                            data-testid={`cr-uscite-cambia-${r.id}`}
+                            title={uscite.automatiche
+                                ? 'le uscite della strategia diventano PROPOSTE nella scheda: le approvi o chiudi tu. Le protezioni restano automatiche'
+                                : 'il bot esegue da solo le uscite della strategia: quelle già proposte partono al prossimo giro'}
+                            className="h-6 px-2 text-[10px]"
+                        >{uscite.automatiche ? 'passa a manuali' : 'passa ad automatiche'}</Button>
+                    )}
                 </div>
             )}
 

@@ -228,6 +228,14 @@ PARAM_SPEC: dict[str, Spec] = {
     # non vale il rischio (punteggio caldo, hazard/pressione alti vicino alla soglia,
     # valore atteso dell'attesa < valore attuale). MAI sotto cashout_smart_min_pct.
     "cashout_smart_enabled": (True, bool, None, None, None),
+    # 25/09 — ORDINE DELL'UTENTE: CHI esegue le uscite discrezionali (green-up
+    # pre-match e al fischio, green del re-ingresso, cash out e uscite in
+    # perdita a modello). True (default, comportamento di sempre) = il bot da
+    # solo; False = ogni uscita nuova diventa una PROPOSTA nella scheda
+    # (``engine.gate_uscite``) che l'utente approva o chiude a mano. Non cambia
+    # nessun criterio d'uscita. Restano SEMPRE automatici: copertura Over 4.5,
+    # cap perdita per partita, regolamento, annulli e riconciliazione.
+    "uscite_automatiche": (True, bool, None, None, None),
     "cashout_smart_min_pct": (2.0, float, 0.0, 50.0, None),
     "cashout_smart_tolerance_pct": (2.0, float, 0.0, 50.0, None),
     "cashout_smart_hazard_hot": (0.10, float, 0.0, 1.0, None),

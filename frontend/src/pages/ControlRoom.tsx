@@ -70,6 +70,7 @@ import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
 import { creaComandiControlRoom } from '@/components/controlroom/comandiBot';
 import {
     interruttoriDiSport, importiInterruttori, type InterruttoreId,
+    usciteInterruttori, conPosizioniAperte,
 } from '@/lib/interruttori';
 import { BotParamsSheet, type StrategiaFiltro } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
@@ -283,6 +284,8 @@ export default function ControlRoom() {
             cambiaModalita: avvolgi(base.cambiaModalita), cambiaImporto: avvolgi(base.cambiaImporto),
             fermaBot: avvolgi(base.fermaBot), scriviAccensioni: base.scriviAccensioni,
             cambiaModalitaServizio: avvolgi(base.cambiaModalitaServizio),
+            // 25/09 — «Uscite automatiche» per singolo bot
+            ...(base.cambiaUscite ? { cambiaUscite: avvolgi(base.cambiaUscite) } : {}),
         };
     }, [paramsDi, servizioDi, sport, vm.bots, vm.obiettivo, vm.ricarica]);
 
@@ -292,6 +295,16 @@ export default function ControlRoom() {
     const importi = useMemo(
         () => importiInterruttori(interruttoriDiSport(sport), paramsDi),
         [paramsDi, sport],
+    );
+    // 25/09 — «uscite: automatiche / manuali, N posizioni aperte da X min»,
+    // riga per riga, dai parametri del servizio e dalle posizioni gia' lette.
+    const uscite = useMemo(
+        () => conPosizioniAperte(
+            usciteInterruttori(interruttoriDiSport(sport), paramsDi),
+            (vm.posizioni ?? []).map((p) => ({ bot: p.bot, piazzataAt: p.piazzataAt, gamba: p.dettaglio?.gamba ?? null })),
+            vm.nowMs,
+        ),
+        [paramsDi, sport, vm.posizioni, vm.nowMs],
     );
 
     // ── LA PLANCIA, RISTRETTA ALLO SPORT SCELTO ──────────────────────────────
@@ -573,7 +586,7 @@ export default function ControlRoom() {
             />
 
             <PannelloBot
-                righe={righeBot} importi={importi} parametri={fogliParametri}
+                righe={righeBot} importi={importi} uscite={uscite} parametri={fogliParametri}
                 parametriRiga={fogliParametriPerRiga} comandi={comandi}
                 titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
                 ambito={sport ?? 'tutti'}
@@ -602,7 +615,7 @@ export default function ControlRoom() {
                         {approvazioneUscite === false && (
                             <span className="block mt-0.5 text-amber-300/90" data-testid="cr-tennis-uscite">
                                 Le chiusure NON passano dalla tua approvazione: il 14/09 ci passavano.
-                                Si cambia dalla scheda parametri, non da qui.
+                                Si cambia da «uscite» sulla riga del tennis qui sotto (o dalla scheda parametri).
                             </span>
                         )}
                         {/* IL PRESENTE, quando è brutto: una riga sola chiamata

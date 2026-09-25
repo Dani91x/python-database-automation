@@ -47,6 +47,7 @@ import { svegliaBot } from '@/lib/localChannel';
 import { getLiveSettings, setLiveOrderMode, type LiveSettings } from '@/lib/liveOrders';
 import {
     fetchScalperControlRoom, stopScalperSessione, sessioneAttiva, modalitaSessione,
+    impostaUsciteScalper,
 } from '@/lib/scalperControlRoom';
 
 export type { Bot };
@@ -663,6 +664,13 @@ export interface ComandiInterruttori {
      * accenderebbe, e un cambio di modalita' non deve mai accendere niente.
      */
     cambiaModalitaServizio: (bot: Bot, modalita: Modalita) => Promise<void>;
+    /**
+     * 25/09 — «Uscite automatiche» di QUESTO interruttore (acceso = il bot
+     * esegue da solo le uscite della strategia; spento = diventano proposte
+     * nella scheda). Facoltativo: chi non lo fornisce (pagine dei singoli bot,
+     * finti dei test vecchi) non mostra il pulsante. Vedi `paramsConUscite`.
+     */
+    cambiaUscite?: (id: InterruttoreId, automatiche: boolean) => Promise<void>;
 }
 
 export interface OpzioniAccensioni {
@@ -966,10 +974,205 @@ export function creaInterruttori(
         dopo();
     };
 
+    /**
+     * 25/09 — «Uscite automatiche» per singolo bot/strategia. Si riparte
+     * SEMPRE dai parametri correnti (le RPC sostituiscono l'intera colonna):
+     * `paramsConUscite` tocca UNA chiave e basta. Lo scalper non ha una riga di
+     * servizio: la scelta va su TUTTE le sessioni attive (RPC dedicata).
+     */
+    const cambiaUscite = async (id: InterruttoreId, automatiche: boolean) => {
+        const i = interruttoreDi(id);
+        if (isBotTennis(i.bot)) throw new UsciteNonGestiteQui(i.etichetta);
+        if (i.bot === 'scalper') {
+            await impostaUsciteScalper(automatiche);
+            dopo(); return;
+        }
+        if (i.bot === 'safe') {
+            const { correnti } = await statoSafeFresco();
+            await updateSafeParams(paramsConUscite(i, correnti, automatiche) as Partial<SafeBotParams>);
+            svegliaBot('safe', 'comando'); dopo(); return;
+        }
+        const nuovi = paramsConUscite(i, paramsLetti(i.bot), automatiche);
+        if (i.bot === 'mike') await updateMikeParams(nuovi as MikeParams);
+        else await updateOmegaParams({ params: nuovi as Partial<OmegaParams> });
+        svegliaBot(i.bot, 'comando');
+        dopo();
+    };
+
     return {
         accendi, spegni, cambiaModalita, cambiaImporto, fermaBot,
-        scriviAccensioni: scriviSafe, cambiaModalitaServizio,
+        scriviAccensioni: scriviSafe, cambiaModalitaServizio, cambiaUscite,
     };
+}
+
+// ============================================================================
+// 25/09 — USCITE AUTOMATICHE / MANUALI, PER SINGOLO BOT.
+//
+// «Tutti i bot (in live e in paper) DEVONO AVERE L'ABILITAZIONE per le uscite
+// automatiche e per l'operatività totalmente automatica; se disattivo il
+// pulsante (TUTTO DEVE ESSERE IN UI PER SINGOLO BOT), le uscite le gestisco io
+// manualmente tramite l'apposita scheda» (utente, 25/09).
+//
+// DOVE VIVE L'INTERRUTTORE (una chiave per servizio, letta a caldo a ogni giro,
+// identica in prova e con soldi veri; nessuna tabella nuova):
+//   Omega   `params.uscite_protezione`  'automatico' | 'avvisa_e_proponi' (24/09)
+//   Mike    `params.uscite_automatiche` bool (Betfair/mike/config.py)
+//   Safe    `params.uscite_automatiche` = { base, esatto, punta, tennis, model }
+//           (bool per strategia; tennis ripiega su `tennis_exit_approval`)
+//   Scalper `scalper_control.params.uscite_automatiche` di ogni sessione attiva
+// Cambia solo CHI esegue l'uscita, mai QUANDO o COME la strategia la decide.
+// ============================================================================
+
+/** Lo stato delle uscite di UNA riga. `automatiche: null` = non si sa (parametri
+ *  non letti, o sessioni dello scalper in stati diversi): non si comanda. */
+export interface StatoUscite {
+    automatiche: boolean | null;
+    /** una frase in piu' (es. «nessuna sessione attiva») */
+    nota?: string;
+    /** posizioni aperte di questa riga e da quanti minuti la piu' vecchia */
+    aperte?: number | null;
+    daMin?: number | null;
+}
+
+/** Le strategie di Safe che hanno uscite decise dal bot (`bot_service.STRATEGIE_CON_USCITE`). */
+export const STRATEGIE_SAFE_CON_USCITE = ['base', 'esatto', 'punta', 'tennis', 'model'] as const;
+
+export class UsciteNonGestiteQui extends Error {
+    constructor(etichetta: string) {
+        super(`${etichetta}: le uscite di questo bot non si comandano da questo interruttore`);
+        this.name = 'UsciteNonGestiteQui';
+    }
+}
+
+/** Safe: stessa regola del servizio (`normalize_uscite_automatiche`). Solo un
+ *  booleano vero conta; altrimenti il comportamento di oggi. */
+export function usciteSafeDi(params: Record<string, unknown> | null | undefined, strategia: string): boolean {
+    const mappa = params?.uscite_automatiche;
+    const v = mappa != null && typeof mappa === 'object' && !Array.isArray(mappa)
+        ? (mappa as Record<string, unknown>)[strategia] : undefined;
+    if (typeof v === 'boolean') return v;
+    if (strategia === 'tennis') return params?.tennis_exit_approval !== true;
+    return true;
+}
+
+/** Mike: stessa coercizione di `config._coerce` per un bool. Assente = true. */
+function usciteMikeDi(params: Record<string, unknown>): boolean {
+    const v = params.uscite_automatiche;
+    if (v === undefined || v === null) return true;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase());
+    return Boolean(v);
+}
+
+/**
+ * Le uscite di UNA riga, lette dai parametri del SUO servizio. `null` = la riga
+ * non ha un interruttore delle uscite qui (Safe «a mano», bot tennis: altro
+ * perimetro). Parametri non letti = `automatiche: null` (fail-closed).
+ */
+export function statoUscite(i: Interruttore, params: Record<string, unknown> | null | undefined): StatoUscite | null {
+    if (isBotTennis(i.bot)) return null;
+    if (i.bot === 'safe' && (i.strategia == null || !(STRATEGIE_SAFE_CON_USCITE as readonly string[]).includes(i.strategia))) {
+        return null;
+    }
+    if (i.bot === 'scalper') {
+        // lo scalper espone l'aggregato delle sessioni attive (`usciteSessioniScalper`)
+        const v = params?.uscite_automatiche;
+        if (typeof v === 'boolean') return { automatiche: v };
+        return { automatiche: null, nota: typeof params?.uscite_nota === 'string' ? params.uscite_nota : 'sessioni non lette' };
+    }
+    if (params == null || Object.keys(params).length === 0) return { automatiche: null };
+    if (i.bot === 'omega') {
+        return { automatiche: String(params.uscite_protezione ?? '').trim().toLowerCase() === 'automatico' };
+    }
+    if (i.bot === 'mike') return { automatiche: usciteMikeDi(params) };
+    return { automatiche: usciteSafeDi(params, String(i.strategia)) };
+}
+
+/** Le uscite di ogni interruttore di un elenco (come `importiInterruttori`). */
+export function usciteInterruttori(
+    lista: readonly Interruttore[],
+    paramsDi: (bot: Bot) => Record<string, unknown> | null,
+): Partial<Record<InterruttoreId, StatoUscite>> {
+    const out: Partial<Record<InterruttoreId, StatoUscite>> = {};
+    for (const i of lista) {
+        const st = statoUscite(i, paramsDi(i.bot));
+        if (st != null) out[i.id] = st;
+    }
+    return out;
+}
+
+/**
+ * I parametri da SCRIVERE per portare le uscite di `i` a `automatiche`,
+ * partendo da quelli correnti: una chiave sola cambia, tutto il resto resta.
+ * Safe tennis scrive anche il cancelletto storico `tennis_exit_approval`
+ * (una sola verità: la scheda parametri lo mostra ancora).
+ */
+export function paramsConUscite(
+    i: Interruttore, correnti: Record<string, unknown>, automatiche: boolean,
+): Record<string, unknown> {
+    if (i.bot === 'omega') {
+        return { ...correnti, uscite_protezione: automatiche ? 'automatico' : 'avvisa_e_proponi' };
+    }
+    if (i.bot === 'mike') return { ...correnti, uscite_automatiche: automatiche };
+    if (i.bot === 'safe' && i.strategia != null
+        && (STRATEGIE_SAFE_CON_USCITE as readonly string[]).includes(i.strategia)) {
+        const prima = correnti.uscite_automatiche;
+        const mappa = prima != null && typeof prima === 'object' && !Array.isArray(prima)
+            ? { ...(prima as Record<string, unknown>) } : {};
+        mappa[i.strategia] = automatiche;
+        const out: Record<string, unknown> = { ...correnti, uscite_automatiche: mappa };
+        if (i.strategia === 'tennis') out.tennis_exit_approval = !automatiche;
+        return out;
+    }
+    throw new UsciteNonGestiteQui(i.etichetta);
+}
+
+/**
+ * «uscite: manuali, N posizioni aperte da X min»: aggiunge a ogni riga quante
+ * posizioni APERTE ha il suo bot (per Safe: della sua strategia, dalla
+ * `gamba` dichiarata dalla riga) e da quanti minuti c'e' la piu' vecchia.
+ * Puro: le posizioni sono quelle che la pagina ha gia' (`vm.posizioni`).
+ */
+export function conPosizioniAperte(
+    uscite: Partial<Record<InterruttoreId, StatoUscite>>,
+    posizioni: readonly { bot: Bot; piazzataAt: string; gamba?: string | null }[],
+    nowMs: number,
+): Partial<Record<InterruttoreId, StatoUscite>> {
+    const out: Partial<Record<InterruttoreId, StatoUscite>> = {};
+    for (const [id, st] of Object.entries(uscite) as [InterruttoreId, StatoUscite][]) {
+        const i = interruttoreDi(id);
+        const mie = posizioni.filter((p) => p.bot === i.bot
+            && (i.strategia == null || String(p.gamba ?? '').trim().toLowerCase() === i.strategia));
+        let piuVecchia: number | null = null;
+        for (const p of mie) {
+            const t = Date.parse(p.piazzataAt);
+            if (Number.isFinite(t) && (piuVecchia == null || t < piuVecchia)) piuVecchia = t;
+        }
+        out[id] = {
+            ...st,
+            aperte: mie.length,
+            daMin: piuVecchia == null ? null : Math.max(0, Math.floor((nowMs - piuVecchia) / 60_000)),
+        };
+    }
+    return out;
+}
+
+/**
+ * Lo scalper: l'aggregato delle sessioni ATTIVE (`scalper_control.params`).
+ * Tutte d'accordo -> quel valore; nessuna attiva -> `true` con la nota (le
+ * sessioni nuove nascono con le uscite automatiche); discordi -> `null`.
+ * Ritorna i "params" della riga scalper per `statoUscite`.
+ */
+export function usciteSessioniScalper(
+    sessioni: readonly { status: string; params: Record<string, unknown> | null }[],
+): Record<string, unknown> {
+    const attive = sessioni.filter((s) => sessioneAttiva(s));
+    if (attive.length === 0) {
+        return { uscite_automatiche: true, uscite_nota: 'nessuna sessione attiva: le nuove nascono con le uscite automatiche' };
+    }
+    const valori = new Set(attive.map((s) => (s.params?.uscite_automatiche === false ? false : true)));
+    if (valori.size === 1) return { uscite_automatiche: [...valori][0] };
+    return { uscite_automatiche: null, uscite_nota: 'sessioni con scelte diverse' };
 }
 
 // ============================================================================

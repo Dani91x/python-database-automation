@@ -510,6 +510,13 @@ class _DbFinto:
     def control_status(self, event_id: str) -> Optional[str]:
         return self.control.get("status")
 
+    def control_stato_e_params(self, event_id: str) -> "Tuple[Optional[str], Optional[Dict[str, Any]]]":
+        """25/09 - specchio di ``scalper_session.Db.control_stato_e_params``
+        (stessa firma, stesse chiavi: select status,params della riga)."""
+        riga = json.loads(json.dumps(self.control, default=str))
+        params = riga.get("params")
+        return riga.get("status"), (params if isinstance(params, dict) else None)
+
     def get_control(self, event_id: str) -> Optional[Dict[str, Any]]:
         return json.loads(json.dumps(self.control, default=str))
 

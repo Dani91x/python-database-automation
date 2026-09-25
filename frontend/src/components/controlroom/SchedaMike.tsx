@@ -39,6 +39,7 @@ import { fmtMoney, fmtNum, fmtOdds, fmtPct, DASH } from '@/lib/format';
 import { pnlClass } from '@/lib/tradeStatus';
 import { etaQuoteS, feedFreshness, MIKE_TERMINAL_STATES, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
+import { PropostaUscitaMike } from './PropostaUscitaMike';
 
 /** Una coppia «etichetta / valore», il mattone di tutta la scheda. */
 function Voce({ label, children, title, testId }: {
@@ -108,6 +109,10 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                         {freshness.label}
                     </span>}
             </div>
+
+            {/* 25/09 — uscite MANUALI: l'uscita che Mike vorrebbe fare, da
+                approvare (compare solo se c'e' una proposta viva) */}
+            <PropostaUscitaMike ev={ev} testId={`${testId}-proposta`} />
 
             {/* ── P(4 gol): il numero su cui Mike decide ── */}
             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">

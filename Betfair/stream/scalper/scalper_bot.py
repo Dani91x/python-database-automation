@@ -203,6 +203,9 @@ class _Slot:
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     submin_count: int = 0                # sequenze create nel ciclo corrente (tetto)
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
+    # 25/09 - uscite manuali: il motivo dell'ultima proposta emessa su questo
+    # ciclo (una sola 'uscita_proposta' per motivo, mai una a ogni book)
+    proposta: Optional[str] = None
     inplay_cycle: bool = False           # ciclo aperto in-play (per circuit breaker)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
@@ -428,6 +431,19 @@ class ScalperStrategy(BaseStrategy):
         # esatta -> replace alla quota target). Cosi' si esce con QUALSIASI
         # importo e qualsiasi decimale.
         self.exact_exits: bool = bool(c.get("exact_exits", False))
+        # 25/09 - ORDINE DELL'UTENTE: «tutti i bot DEVONO AVERE L'ABILITAZIONE
+        # per le uscite automatiche [...] se disattivo il pulsante le uscite le
+        # gestisco io». True (default, comportamento di sempre) = la chiusura a
+        # +scalp_ticks, lo scratch a pari e la gamba opposta del maker come
+        # chiusura li mette il bot. False = quelle uscite DISCREZIONALI non
+        # partono: la posizione resta in LOCKING senza chiusura e il bot emette
+        # 'uscita_proposta' (una volta per motivo). Restano SEMPRE automatiche le
+        # PROTEZIONI: stop a N tick, lock_ttl, flatten del residuo (mai nuda),
+        # flatten pre-KO, force-flat, cap di evento. La sessione lo rilegge a
+        # caldo da `scalper_control.params` a ogni battito (scalper_session).
+        # Solo un booleano vero conta: ogni altro valore = True (oggi).
+        _ua = c.get("uscite_automatiche", True)
+        self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else True
         # tetto TRANSAZIONI/ora (anti transaction-charge): oltre il budget si
         # bloccano i NUOVI ingressi; hedge/close/flatten passano SEMPRE.
         self.max_txn_hour: int = int(c.get("max_txn_hour", 0))
@@ -1322,9 +1338,12 @@ class ScalperStrategy(BaseStrategy):
         # gamba opposta: e' gia' la chiusura al prezzo di profitto, con la
         # priorita' di coda maturata da quando abbiamo quotato (cancellarla e
         # ripiazzare una close nuova azzererebbe la posizione in coda).
+        # 25/09 - uscite MANUALI: la gamba opposta NON diventa la chiusura
+        # (sarebbe un'uscita del bot). Si passa dal ramo "fill poi chiuso"
+        # qui sotto: la gamba opposta si ritira e ``_open_lock`` propone.
         if mb > 0:
             done = not self._has_live(eb)
-            if done and el is not None and abs(mb - float(
+            if done and el is not None and self.uscite_automatiche and abs(mb - float(
                 getattr(getattr(el, "order_type", None), "size", 0.0) or 0.0
             )) <= 0.01:
                 slot.entry, slot.entry_side = eb, "BACK"
@@ -1366,7 +1385,7 @@ class ScalperStrategy(BaseStrategy):
             return  # parziale vivo entro TTL e non avverso: lascia lavorare
         if ml > 0:
             done = not self._has_live(el)
-            if done and eb is not None and abs(ml - float(
+            if done and eb is not None and self.uscite_automatiche and abs(ml - float(
                 getattr(getattr(eb, "order_type", None), "size", 0.0) or 0.0
             )) <= 0.01:
                 slot.entry, slot.entry_side = el, "LAY"
@@ -1600,6 +1619,13 @@ class ScalperStrategy(BaseStrategy):
             for o in slot.flatten_orders:
                 if self._has_live(o):
                     self._cancel_if_live(market, o)
+            # 25/09 - posizione in attesa dell'utente (uscite manuali) e
+            # l'utente ha RIACCESO le uscite automatiche: il bot mette adesso
+            # la SUA chiusura, calcolata come sempre dal fill d'ingresso.
+            if (slot.close is None and slot.proposta is not None
+                    and self.uscite_automatiche and slot.entry is not None):
+                self._open_lock(market, slot, now, slot.entry, best_back, best_lay)
+                return
             close = slot.close
             c_match = float(getattr(close, "size_matched", 0.0) or 0.0) if close else 0.0
             if close is not None and c_match > 0 and not self._has_live(close):
@@ -1677,6 +1703,23 @@ class ScalperStrategy(BaseStrategy):
             # SCRATCH: il touch ha raggiunto il nostro prezzo d'ingresso ->
             # ripiazza la chiusura A PARI (profitto 0) invece di inseguire
             # +scalp_ticks che ormai non arrivera'. Una sola volta per ciclo.
+            if (
+                self.scratch_enable
+                and scratch_now
+                and not slot.close_scratched
+                and c_match <= _EPS
+                and entry_p is not None
+                and not self.uscite_automatiche
+            ):
+                # 25/09 - uscite MANUALI: lo scratch a pari e' un'uscita
+                # discrezionale. Non si tocca niente (la chiusura a target, se
+                # c'era, resta dov'e'): si dichiara e decide l'utente.
+                nw_s = sb * (ob - 1.0) - sl * (ol - 1.0)
+                g_s = compute_green(nw_s, sl - sb, entry_p)
+                self._proponi_uscita(slot, motivo="scratch", lato=(g_s[0] if g_s else None),
+                                     prezzo=entry_p, size=(g_s[1] if g_s else None),
+                                     bloccabile=(g_s[2] if g_s else None))
+                return
             if (
                 self.scratch_enable
                 and scratch_now
@@ -1779,6 +1822,17 @@ class ScalperStrategy(BaseStrategy):
             self._begin_flatten(slot)
             return
         side, size, _locked = g
+        if not self.uscite_automatiche:
+            # 25/09 - uscite MANUALI: la chiusura a target e' un'uscita
+            # discrezionale, non parte. La posizione entra in LOCKING SENZA
+            # chiusura: stop a N tick e lock_ttl (protezioni) restano armati
+            # dall'istante del fill, esattamente come con la chiusura sul book.
+            slot.close = None
+            slot.t_lock = now
+            slot.status = LOCKING
+            self._proponi_uscita(slot, motivo="target", lato=side, prezzo=target,
+                                 size=size, bloccabile=_locked)
+            return
         # floor_min=False: l'hedge deve coprire ESATTAMENTE la quota matchata.
         # Forzare MIN_STAKE su un fill parziale creerebbe una posizione direzionale.
         order = self._place(market, entry.selection_id, side, target, size, floor_min=False, slot=slot)
@@ -1788,6 +1842,22 @@ class ScalperStrategy(BaseStrategy):
         slot.close = order
         slot.t_lock = now
         slot.status = LOCKING
+
+    def _proponi_uscita(self, slot: _Slot, *, motivo: str, lato: Any, prezzo: Any,
+                        size: Any, bloccabile: Any) -> None:
+        """25/09 - uscita discrezionale NON eseguita (uscite manuali): la si
+        DICHIARA una volta per motivo e per ciclo ('uscita_proposta' nel log
+        della sessione), mai a ogni book."""
+        if slot.proposta == motivo:
+            return
+        slot.proposta = motivo
+        self.stats["uscite_proposte"] = int(self.stats.get("uscite_proposte", 0) or 0) + 1
+        self._emit("uscita_proposta", motivo=motivo,
+                   selection_id=getattr(slot.entry, "selection_id", None),
+                   entry_side=slot.entry_side, lato=lato,
+                   prezzo=(round(float(prezzo), 2) if prezzo else None),
+                   size=(round(float(size), 2) if size is not None else None),
+                   bloccabile=(round(float(bloccabile), 4) if bloccabile is not None else None))
 
     def _begin_flatten(self, slot: _Slot) -> None:
         """Avvia la chiusura GARANTITA della posizione (stato FLATTENING).
@@ -2425,6 +2495,7 @@ class ScalperStrategy(BaseStrategy):
         slot.t_quote = None
         slot.t_lock = None
         slot.ref_price = None
+        slot.proposta = None
         # NB: history/flow/prev_trd/first_seen/cooldown NON si azzerano:
         # sono memoria di mercato, non del ciclo.
 

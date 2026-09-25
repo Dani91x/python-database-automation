@@ -128,6 +128,22 @@ export async function stopScalperSessione(
     return data as unknown as SessioneScalper;
 }
 
+/**
+ * 25/09 — «Uscite automatiche» dello scalper (ordine dell'utente, per singolo
+ * bot). RPC `scalper_uscite_automatiche` (migrations/
+ * uscite_automatiche_scalper_2026-09-25.sql): scrive
+ * `params.uscite_automatiche` su TUTTE le sessioni attive; la sessione la
+ * rilegge a caldo a ogni battito (5 s). Ritorna quante sessioni ha toccato.
+ */
+export async function impostaUsciteScalper(automatiche: boolean): Promise<number> {
+    const { data, error } = await supabase.rpc('scalper_uscite_automatiche', {
+        p_automatiche: automatiche,
+    });
+    if (error) throw new Error(error.message);
+    const n = typeof data === 'number' ? data : Number(data);
+    return Number.isFinite(n) ? n : 0;
+}
+
 // ------------------------------------------------------------------ lettura
 
 function num(v: unknown): number | null {

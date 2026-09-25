@@ -14,7 +14,9 @@ import type { RigaOrdine } from '@/lib/statoOrdine';
 
 export type MikeStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type MikeMode = 'paper' | 'live';
-export type MikeRequestKind = 'cashout' | 'flatten' | 'skip_event' | 'resume_event' | 'cancel';
+export type MikeRequestKind = 'cashout' | 'flatten' | 'skip_event' | 'resume_event' | 'cancel'
+    // 25/09 - l'utente approva l'uscita proposta (interruttore «Uscite automatiche» spento)
+    | 'approva_uscita';
 
 export const MIKE_STATES = [
     'WATCH', 'PRE_ENTRY_PENDING', 'PRE_OPEN', 'PRE_GREEN_PENDING', 'HOLD',
@@ -485,6 +487,9 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cashout_place_at_ticks', label: 'Chiusura N tick oltre il best', kind: 'number', step: 1, min: 0, max: 3, hint: 'fill più sicuro, P&L leggermente peggiore', group: 'cashout' },
     { key: 'cover_place_at_ticks', label: 'Copertura N tick sotto il best', kind: 'number', step: 1, min: 0, max: 6, hint: 'cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti', group: 'cover' },
     { key: 'cashout_smart_enabled', label: 'Cash-out intelligente', kind: 'bool', hint: 'chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)', group: 'cashout' },
+    // 25/09 — ordine dell'utente: chi esegue le uscite. Specchio di
+    // Betfair/mike/config.py PARAM_SPEC['uscite_automatiche'].
+    { key: 'uscite_automatiche', label: 'Uscite automatiche', kind: 'bool', hint: 'acceso: green-up, cash out e uscite in perdita li esegue il bot. Spento: ogni uscita nuova diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Copertura Over 4.5, cap perdita partita e regolamento restano sempre automatici', group: 'uscite' },
     { key: 'cashout_smart_min_pct', label: 'Profitto minimo per chiudere prima (%)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'mai sotto questo profitto, qualunque sia il rischio', group: 'cashout' },
     { key: 'cashout_smart_tolerance_pct', label: '"A un passo" dalla soglia = entro (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda', group: 'cashout' },
     { key: 'cashout_smart_hazard_hot', label: 'Fase calda: hazard gol 3′ ≥', kind: 'number', step: 0.01, min: 0, max: 1, hint: 'Atlante + modello + pressione', group: 'cashout' },
@@ -552,6 +557,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
     cover_rifiuti_max: 3, cover_retry_min_s: 15,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
+    uscite_automatiche: true,
     cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
     cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
     loss_exit_mode: 'model', loss_exit_risk_premium_pct: 10, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,
@@ -1186,6 +1192,11 @@ export const MIKE_ACTIVITY_KINDS = [
     // il modello si accende a partita in corso
     'dossier_risolto',
     'tetto_partite',
+    // 25/09 (ordine dell’utente): uscite MANUALI. A interruttore spento l’uscita
+    // che il bot vorrebbe fare diventa una proposta; l’utente la approva; parte;
+    // oppure decade perché la strategia non la vuole più.
+    'uscita_proposta', 'uscita_proposta_decaduta', 'uscita_approvata',
+    'uscita_eseguita_su_approvazione',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1214,6 +1225,11 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     // il capitale per oggi e' tutto impegnato: la partita resta a guardare e
     // riprova al giro dopo. Non e' un errore, e' il tetto che funziona.
     tetto_partite: { label: 'TETTO PARTITE: NON ENTRA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    // 25/09 — uscite manuali (interruttore «Uscite automatiche» spento)
+    uscita_proposta: { label: 'USCITA PROPOSTA: DECIDI TU', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+    uscita_proposta_decaduta: { label: 'PROPOSTA DI USCITA DECADUTA', cls: 'bg-white/5 text-slate-300 border-white/10' },
+    uscita_approvata: { label: 'USCITA APPROVATA (utente)', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+    uscita_eseguita_su_approvazione: { label: 'USCITA ESEGUITA SU APPROVAZIONE', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
@@ -1372,6 +1388,18 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             const gol = lam.length === 2 ? ` · gol attesi ${Number(lam[0]).toFixed(2)} - ${Number(lam[1]).toFixed(2)}` : '';
             return `modello acceso: partita abbinata${p.fonte ? ` (${String(p.fonte)})` : ''}${gol}`;
         }
+        case 'uscita_proposta': {
+            const ordini = Array.isArray(p.ordini) ? p.ordini as Record<string, unknown>[] : [];
+            const cosa = ordini.map((o) => `${roleLabel(o.ruolo == null ? null : String(o.ruolo))} ${String(o.lato ?? '')} @ ${fmtOdds(Number(o.prezzo))}`).join(' + ');
+            const blocca = Number.isFinite(n('bloccabile')) ? ` · chiudendo ora ${money('bloccabile', true)}` : '';
+            return `il bot vorrebbe uscire (${String(p.motivo ?? 'motivo non dichiarato')}): ${cosa || 'ordine non dichiarato'}${blocca} — aspetta la tua approvazione`;
+        }
+        case 'uscita_proposta_decaduta':
+            return `proposta di uscita decaduta: ${String(p.motivo ?? 'motivo non dichiarato')}`;
+        case 'uscita_approvata':
+            return `hai approvato l’uscita${p.motivo ? ` (${String(p.motivo)})` : ''}: parte al prossimo giro del bot`;
+        case 'uscita_eseguita_su_approvazione':
+            return `uscita eseguita su tua approvazione${p.motivo ? `: ${String(p.motivo)}` : ''}`;
         case 'settle_gambe_non_piazzate':
             return `${String(p.quante ?? '?')} gambe pianificate e mai piazzate (importo sotto il minimo): regolate a zero, nessun effetto sul P&L`;
         case 'loss_exit_deciso': {
@@ -1505,6 +1533,7 @@ export function reasonLabel(raw: unknown): string {
 export const MIKE_REQUEST_KIND_LABEL: Record<MikeRequestKind, string> = {
     cashout: 'Cash out', flatten: 'Flatten', skip_event: 'Salta partita',
     resume_event: 'Riprendi partita', cancel: 'Annulla ordini',
+    approva_uscita: 'Approva uscita',
 };
 
 /** `result.code` del servizio → messaggio italiano (M1: mai un codice nudo). */
@@ -1523,6 +1552,9 @@ export const MIKE_REQUEST_CODE_MESSAGE: Record<string, string> = {
     processing_stale: 'richiesta rimasta in lavorazione',
     // B16 (24/09): richiesta di un altro bot / altra modalita' / riga non di questa partita
     richiesta_ambigua: 'richiesta ambigua: non si esegue',
+    // 25/09 - approvazione di un'uscita (interruttore spento)
+    proposta_non_viva: 'nessuna uscita in attesa di approvazione',
+    proposta_cambiata: 'la proposta è cambiata: guarda quella nuova prima di approvare',
 };
 
 export type MikeOutcomeTone = 'ok' | 'pending' | 'warn' | 'bad';

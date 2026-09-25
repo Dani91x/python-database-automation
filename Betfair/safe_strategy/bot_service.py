@@ -148,6 +148,16 @@ DEFAULT_PARAMS: dict[str, Any] = {
     # sappia mostrare le proposte vorrebbe dire fermare le chiusure senza che
     # nessuno le veda: si accende quando c'e' chi guarda.
     "tennis_exit_approval": False,
+    # 25/09 - ORDINE DELL'UTENTE: «tutti i bot DEVONO AVERE L'ABILITAZIONE per
+    # le uscite automatiche [...] se disattivo il pulsante (IN UI PER SINGOLO
+    # BOT) le uscite le gestisco io manualmente tramite l'apposita scheda».
+    # Mappa PARZIALE strategia -> bool (True = il bot esegue da solo le uscite
+    # del manuale / del modello; False = ogni uscita diventa una PROPOSTA nella
+    # scheda, come il cancelletto del tennis del 14/09). Una strategia non
+    # nominata ha il comportamento di OGGI: base/esatto/punta/model automatiche,
+    # tennis = ``not tennis_exit_approval``. Cambia solo CHI esegue l'uscita,
+    # mai QUANDO/COME la strategia la decide (``uscite_automatiche_di``).
+    "uscite_automatiche": {},
     "max_open_trades": 20,
     "max_liability_per_trade": 300,
     "min_size_available_factor": 1.0,
@@ -339,6 +349,13 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
     # di sempre.
     out["strategy_modes"] = normalize_strategy_modes(out.get("strategy_modes"))
     out["tennis_exit_approval"] = bool(out.get("tennis_exit_approval"))
+    # 25/09 - interruttore "uscite automatiche" per strategia. UNA verita' per il
+    # tennis: se la mappa lo nomina vince la mappa, e il cancelletto storico
+    # viene riallineato (chi legge ``tennis_exit_approval`` - certificazione,
+    # scheda parametri - vede la stessa cosa).
+    out["uscite_automatiche"] = normalize_uscite_automatiche(
+        out.get("uscite_automatiche"), out["tennis_exit_approval"])
+    out["tennis_exit_approval"] = not out["uscite_automatiche"]["tennis"]
     # ``exits`` parziale dell'utente → sezione completa (default + override + clamp)
     out["exits"] = XE.merge_exit_params(raw.get("exits"))
     out["risk"] = RK.merge_risk_params(raw.get("risk"))
@@ -389,6 +406,48 @@ def normalize_strategy_modes(raw: Any) -> dict[str, str]:
         if v in ("paper", "live"):
             out[k] = v
     return out
+
+
+# 25/09 - le strategie di Safe che hanno USCITE decise dal bot (il manuale per
+# base/esatto/punta/tennis, ``_decide_model_exit`` per 'model'). 'manual' non
+# ha uscite automatiche (``exits.decide`` la ignora): non ha un interruttore.
+STRATEGIE_CON_USCITE = ("base", "esatto", "punta", "tennis", "model")
+
+
+def normalize_uscite_automatiche(raw: Any, tennis_exit_approval: Any) -> dict[str, bool]:
+    """Mappa COMPLETA strategia -> bool delle uscite automatiche (25/09).
+
+    Vale SOLO un booleano vero scritto dall'utente; ogni altra cosa (chiave
+    assente, stringa, None) = il comportamento di OGGI: automatiche, tranne il
+    tennis che segue il cancelletto storico ``tennis_exit_approval`` (acceso =
+    uscite proposte). Cosi' il primo avvio con il codice nuovo non cambia
+    niente a nessuna strategia."""
+    src = raw if isinstance(raw, dict) else {}
+    out: dict[str, bool] = {}
+    for k in STRATEGIE_CON_USCITE:
+        v = src.get(k)
+        if isinstance(v, bool):
+            out[k] = v
+        elif k == "tennis":
+            out[k] = not bool(tennis_exit_approval)
+        else:
+            out[k] = True
+    return out
+
+
+def uscite_automatiche_di(params: Optional[dict[str, Any]], strategy: Any) -> bool:
+    """La strategia ``strategy`` esegue DA SOLA le sue uscite? (25/09)
+
+    Letto dai parametri del GIRO (``resolve_params`` a ogni ciclo): il cambio
+    dell'interruttore vale dal giro successivo, identico in paper e in live
+    (la modalita' non entra qui). Una strategia senza uscite proprie ('manual',
+    sconosciute) -> True: non c'e' niente da proporre."""
+    p = params or {}
+    s = str(strategy or "")
+    if s not in STRATEGIE_CON_USCITE:
+        return True
+    return normalize_uscite_automatiche(p.get("uscite_automatiche"),
+                                        p.get("tennis_exit_approval"))[s]
 
 
 def modalita_di_strategia(strategy: str, mode: str, params: dict[str, Any]) -> str:
@@ -463,6 +522,10 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
     # se il cancelletto e' spento la pagina deve dirlo: altrimenti l'utente
     # crede di avere il controllo delle chiusure e non ce l'ha.
     out["tennis_exit_approval"] = bool(resolved.get("tennis_exit_approval"))
+    # 25/09 - chi esegue le uscite, strategia per strategia: la Control Room lo
+    # mostra su ogni riga ("uscite: automatiche" / "uscite: manuali").
+    out["uscite_automatiche"] = normalize_uscite_automatiche(
+        resolved.get("uscite_automatiche"), resolved.get("tennis_exit_approval"))
     # CERT. 14/09 — LO STAKE DELLE 4 STRATEGIE DEL MANUALE, che qui non c'era.
     # `stake.backSize` e' l'importo con cui entrano TENNIS e PUNTA (che puntano)
     # e `stake.laySize` quello di BASE ed ESATTO (che bancano): e' l'importo che
@@ -3716,13 +3779,32 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
     # Il RESIDUO non ripassa di qui: l'utente ha gia' approvato QUELLA chiusura,
     # e il residuo la sta solo finendo — richiedere una seconda approvazione
     # lascerebbe mezza posizione scoperta in attesa di un clic.
-    if (residual is None
-            and bool(params.get("tennis_exit_approval"))
-            and str(trade.get("strategy") or "") == "tennis"
-            and _proponi_chiusura(db=db, trade=trade, meta=meta, decision=decision,
-                                  prices=prices, payload=payload, params=params,
-                                  row=row, now=now)):
-        return False
+    #
+    # 25/09 - ORDINE DELL'UTENTE: lo stesso cancelletto vale per OGNI strategia
+    # con uscite (base/esatto/punta/tennis/model), comandato dall'interruttore
+    # "uscite automatiche" della sua riga in Control Room
+    # (``uscite_automatiche_di``). Il tennis resta com'era: spento l'interruttore
+    # = ``tennis_exit_approval`` acceso. Cambia solo CHI esegue: la decisione
+    # (``decision``) e' quella di sempre, calcolata sopra, e la proposta porta
+    # esattamente quell'uscita. Protezioni che NON passano di qui (restano
+    # automatiche): residuo di un'uscita gia' approvata/inviata, chiusura
+    # solidale della combo, settlement, riconciliazione, kill-switch.
+    if residual is None:
+        automatiche = uscite_automatiche_di(params, trade.get("strategy"))
+        if (not automatiche
+                and _proponi_chiusura(db=db, trade=trade, meta=meta, decision=decision,
+                                      prices=prices, payload=payload, params=params,
+                                      row=row, now=now)):
+            return False
+        if automatiche and isinstance(meta.get(PROPOSTA_KEY), dict):
+            # l'utente ha RIACCESO le uscite automatiche con una proposta viva:
+            # la esegue il bot adesso, e la proposta decade col motivo (senza,
+            # resterebbe in scheda un bottone su una posizione gia' chiusa).
+            _decadi_proposta(db, trade, meta,
+                             "uscite automatiche riaccese: l'uscita la esegue il bot")
+            # ``_send_exit`` scrive a partire da ``meta``: senza riallinearlo il
+            # marcatore appena tolto tornerebbe sulla riga con la chiusura.
+            meta = dict(trade.get("meta") or {})
     sent = _send_exit(db=db, market=market, trade=trade, meta=meta, decision=decision,
                       prices=prices, payload=payload, params=params, xp=xp, now=now,
                       residual=residual, model_info=info)

@@ -111,6 +111,8 @@ import {
 } from '@/lib/scalperControlRoom';
 import type { BotConChiusura } from './chiudiRiga';
 import { leggiAutoTennis, notaAutoTennis, type AutoTennis } from './tennisAuto';
+// 25/09 — interruttore «uscite automatiche» dello scalper (aggregato sessioni)
+import { usciteSessioniScalper } from '@/lib/interruttori';
 
 /** una proposta di OPPORTUNITA' con i numeri vivi che la scheda mostra */
 export interface PropostaOppVista {
@@ -2007,7 +2009,10 @@ export function useControlRoom(): ControlRoomVM {
                     + ` (${[nLive ? `${nLive} soldi veri` : '', nPaper ? `${nPaper} prova` : '']
                         .filter(Boolean).join(' - ')})`;
             return {
-                ...riga('scalper', st.modalita, st.inCorsa, st.battitoAt, st.stato, null,
+                // 25/09 — i "params" della riga scalper sono l'aggregato delle
+                // sessioni attive per l'interruttore «uscite automatiche»
+                ...riga('scalper', st.modalita, st.inCorsa, st.battitoAt, st.stato,
+                    usciteSessioniScalper(scalperCR.sessioni),
                     fermatoAt ? { fermato_all_avvio_at: fermatoAt } : null),
                 // P&L di oggi: il REALE di Betfair (netto). Il paper dello
                 // scalper e' solo LORDO nel bot: non si mostra come netto.
