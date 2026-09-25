@@ -75,6 +75,23 @@ export async function fetchPoisson(fixtureId: string): Promise<PoissonData | nul
     return asObj(data?.db_json_analisi);
 }
 
+// Data della calibrazione Poisson SETTIMANALE (tabella poisson_calibration), con la
+// stessa catena del calibratore: riga della lega, altrimenti la globale (league_id 0).
+// RPC della migrazione migrations/get_direction_eta_2026-09-25.sql (R5, 25/09).
+export interface PoissonCalibrationEta {
+    league_id: number | null;
+    scope: 'lega' | 'globale' | null;
+    generated_at: string | null;
+    now: string;                 // ora del server al momento della lettura
+}
+
+export async function fetchPoissonCalibrationEta(leagueId: number): Promise<PoissonCalibrationEta> {
+    const { data, error } = await supabase.rpc('get_poisson_calibration_eta', { p_league_id: leagueId });
+    if (error) throw new Error(error.message);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('risposta inattesa');
+    return data as PoissonCalibrationEta;
+}
+
 export async function fetchML(fixtureId: string): Promise<MLData | null> {
     const { data, error } = await supabase
         .from('fixture_predictions')

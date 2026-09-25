@@ -1667,6 +1667,12 @@ class MotoreReplay:
     def esegui(self, strategia: Any) -> None:
         from flumine import utils as futils
 
+        from . import trasporto as _trasporto
+
+        # 25/09 (F4): il TRASPORTO dell'ordine scelto da ``certifica --trasporto``
+        # (coda di oggi o canale del runner). Fuori da ``trasporto.contesto`` e'
+        # nullo: i replay di sempre non cambiano di una riga.
+        _trasporto.su_esegui(self, strategia)
         quadro = self.quadro
         with quadro:
             with quadro.simulated_datetime:

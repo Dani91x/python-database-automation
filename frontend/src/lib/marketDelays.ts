@@ -19,6 +19,10 @@ export interface DelayMeta {
     n_effective: number;    // eventi validi = righe DATI MATCH (denominatore)
     uses_ht: boolean;
     ht_coverage_pct: number | null;
+    // Regola HT (migrations/market_delays_ht_2026-09-25.sql): 'escluse' = le partite
+    // senza primo tempo sono ESCLUSE dai mercati HT. Assente = RPC precedente (0-0).
+    ht_missing_rule?: 'escluse';
+    n_ht_missing?: number;  // partite escluse perche' senza HT (0 sui mercati FT)
     date_from: string | null;
     date_to: string | null;
 }

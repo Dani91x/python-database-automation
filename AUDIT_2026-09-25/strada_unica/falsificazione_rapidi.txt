@@ -1,0 +1,2 @@
+ROSSO  reperto 2 rimesso: FOK sotto il minimo       exit=1 ['KO  R8 sotto il minimo  controlli=4  0.0 s'] | ripristino OK
+ROSSO  reperto 1 rimesso: nessuna base del primo seq exit=1 ['KO  R9 sequenza  controlli=2  0.0 s'] | ripristino OK

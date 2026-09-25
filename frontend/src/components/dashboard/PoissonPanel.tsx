@@ -9,7 +9,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Button } from '@/components/ui/button';
 import { Loader2, Sigma, AlertTriangle } from 'lucide-react';
 import { ProbBarChart, ProbBar } from './ProbBarChart';
-import { PoissonData, fetchPoisson, colorForSelection, pctFmt, numFmt } from '@/lib/fixtureModels';
+import {
+    PoissonData, PoissonCalibrationEta, fetchPoisson, fetchPoissonCalibrationEta, colorForSelection, pctFmt, numFmt,
+} from '@/lib/fixtureModels';
+import { EtaDato } from './EtaDato';
+import { SOGLIA_CALIBRAZIONE_ORE, SOGLIA_PREVISIONE_ORE } from '@/lib/etaDato';
 
 interface Props {
     fixtureId: string;
@@ -45,6 +49,8 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [marketId, setMarketId] = useState<string>('1x2');
+    // data della calibrazione settimanale; null = non leggibile (RPC assente o errore)
+    const [calEta, setCalEta] = useState<PoissonCalibrationEta | null>(null);
     const reqRef = useRef(0);
 
     // fetch all'apertura / cambio fixture
@@ -53,8 +59,19 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
         const req = ++reqRef.current;
         setLoading(true);
         setError(null);
+        setCalEta(null);
         fetchPoisson(fixtureId)
-            .then(d => { if (req === reqRef.current) setData(d); })
+            .then(d => {
+                if (req !== reqRef.current) return;
+                setData(d);
+                // eta' della calibrazione settimanale della lega (non bloccante)
+                const lid = d?.league_id;
+                if (typeof lid === 'number') {
+                    fetchPoissonCalibrationEta(lid)
+                        .then(c => { if (req === reqRef.current) setCalEta(c); })
+                        .catch(() => { if (req === reqRef.current) setCalEta(null); });
+                }
+            })
             .catch(e => { if (req === reqRef.current) { setError(e.message || 'Errore di caricamento'); setData(null); } })
             .finally(() => { if (req === reqRef.current) setLoading(false); });
     }, [open, fixtureId]);
@@ -93,7 +110,6 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
 
     const inp = data?.inputs ?? {};
     const fhDetails = market?.id === 'first_half_over_0_5' ? (mkts?.first_half_over_0_5?.details ?? null) : null;
-    const genDate = data?.generated_at ? new Date(data.generated_at) : null;
 
     return (
         <>
@@ -152,7 +168,27 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
                                     <span>ρ DC <span className="font-mono">{numFmt(toNum(inp.dc_rho))}</span></span>
                                     <span>partite <span className="font-mono">{toNum(inp.home_matches_used) ?? '—'}</span> / <span className="font-mono">{toNum(inp.away_matches_used) ?? '—'}</span></span>
                                     <span>xG <span className={`font-bold ${inp.xg_blend_active ? 'text-emerald-400' : 'text-white/50'}`}>{inp.xg_blend_active ? 'attivo' : 'no'}</span></span>
-                                    {genDate && <span className="text-[11px] text-muted-foreground/70">{genDate.toLocaleString('it-IT')}</span>}
+                                </div>
+
+                                {/* eta' dei dati materializzati: previsione + calibrazione settimanale */}
+                                <div className="glass-card rounded-xl border border-white/10 px-4 py-2 flex flex-col gap-1">
+                                    <EtaDato etichetta="Previsione Poisson" at={data.generated_at} sogliaOre={SOGLIA_PREVISIONE_ORE} testId="eta-poisson" />
+                                    {isCalibrated && (
+                                        <>
+                                            <EtaDato
+                                                etichetta={`Calibrazione settimanale${calEta?.scope ? ` (${calEta.scope})` : ''}`}
+                                                at={calEta?.generated_at}
+                                                sogliaOre={SOGLIA_CALIBRAZIONE_ORE}
+                                                testoAssente="data della tabella di calibrazione non disponibile"
+                                                testId="eta-poisson-calibrazione"
+                                            />
+                                            {data.calibrated_at && (
+                                                <span className="text-[11px] text-muted-foreground/70">
+                                                    calibrazione applicata a questa partita il {new Date(data.calibrated_at).toLocaleString('it-IT')}
+                                                </span>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
 
                                 {/* selettore mercato */}

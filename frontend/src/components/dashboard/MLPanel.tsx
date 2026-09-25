@@ -12,6 +12,8 @@ import {
     MLData, fetchML, colorForSelection, pctFmt, numFmt,
     mlTargetLabel, mlClassLabel,
 } from '@/lib/fixtureModels';
+import { EtaDato } from './EtaDato';
+import { SOGLIA_PREVISIONE_ORE } from '@/lib/etaDato';
 
 interface Props {
     fixtureId: string;
@@ -104,7 +106,6 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
     const signal = data?.bet_signals?.find(s => s.market === target) ?? null;
     const rel = data?.reliability ?? null;
     const cov = data?.coverage ?? null;
-    const genDate = data?.generated_at ? new Date(data.generated_at) : null;
     const valueBets = (data?.bet_signals ?? []).filter(s => s.gates_passed);
 
     return (
@@ -159,7 +160,7 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
                                     {rel?.grade && <span>affidabilità dati <span className={`font-bold ${gradeColor(rel.grade)}`}>{rel.grade}</span> {rel.score !== undefined && <span className="font-mono">({numFmt(rel.score)})</span>}</span>}
                                     {cov?.features_pct !== undefined && <span>feature <span className="font-mono">{pctFmt(cov.features_pct)}</span></span>}
                                     {(cov?.matches_home !== undefined || cov?.matches_away !== undefined) && <span>partite <span className="font-mono">{cov?.matches_home ?? '—'}</span> / <span className="font-mono">{cov?.matches_away ?? '—'}</span></span>}
-                                    {genDate && <span className="text-[11px] text-muted-foreground/70">{genDate.toLocaleString('it-IT')}</span>}
+                                    <EtaDato etichetta="Previsione ML" at={data.generated_at} sogliaOre={SOGLIA_PREVISIONE_ORE} testId="eta-ml" />
                                 </div>
 
                                 {/* selettore target, raggruppato per categoria */}

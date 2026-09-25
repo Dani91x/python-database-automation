@@ -453,7 +453,15 @@ def _place_via_canale(porta: Any, *, db, mode: str, market_id: str, selection_id
             # stesse due chiavi che la coda flumine mette gia' oggi
             # (``enqueue_place``): FOK su OGNI place normale (paper e live,
             # apertura e chiusura), reduces_liability SOLO sulle chiusure.
-            time_in_force=PO.FOK, reduces_liability=bool(is_closing))
+            # 25/09 (banco F4, reperto): SOTTO IL MINIMO la coda accoda
+            # ``place_submin`` SENZA FOK (il parcheggio a quota non abbinabile
+            # morirebbe al primo passo). Il canale mandava FOK anche qui e il
+            # motore lo rifiutava (``submin_non_percorribile: FILL_OR_KILL
+            # sotto il minimo``): ogni apertura sotto il minimo moriva sul
+            # canale mentre sulla coda partiva. Ora come la coda: niente FOK,
+            # e il motore sceglie da se' la stessa macchina place-and-trim.
+            time_in_force=(None if sotto_minimo else PO.FOK),
+            reduces_liability=bool(is_closing))
     except ValueError as ex:
         return PlaceOutcome("error", None, 0.0, None, f"canale_comando_non_valido:{ex}"[:160])
     pre = dict(meta)

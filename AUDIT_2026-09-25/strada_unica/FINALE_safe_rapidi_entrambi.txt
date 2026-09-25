@@ -1,0 +1,62 @@
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe non disponibile (socket del banco chiuso)
+PROFILO RAPIDO del trasporto - bot safe_base (attore safe) - registrazione 35760084
+OK  R1 accettato  controlli=7  0.3 s
+      ok esito dell'invio 'pending' (esito dal canale)
+      ok ack accettato dal motore
+      ok evento terminale arrivato al client
+      ok UN solo ordine su flumine per il comando
+      ok nessuna chiamata REST
+      ok riga 'open' con l'abbinato del runner
+      ok bet_id della riga = bet_id dell'evento
+OK  R2 freno  controlli=3  0.0 s
+      ok quota non abbinabile: evento terminale senza abbinato
+      ok abbinato 0
+      ok riga in 'error' (nessun fill inventato)
+OK  R3 parziale  controlli=3  0.0 s
+      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
+      ok riga 'error'
+      ok PAPER senza FOK: N/A per Safe (FOK anche in paper)
+OK  R4 canale giu'  controlli=6  1.6 s
+      ok il client vede il canale giu'
+      ok APERTURA a canale giu': NON inviata, errore certo
+      ok APERTURA mai sul REST (D5)
+      ok nessun comando al motore
+      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
+      ok il client si ricollega da solo
+OK  R5 duplicato  controlli=3  0.0 s
+      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
+      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
+      ok UN solo ordine su flumine
+OK  R6 comando vecchio  controlli=3  0.0 s
+      ok rifiutato 'comando_scaduto'
+      ok esito certo negativo per il bot
+      ok nessun ordine su flumine
+OK  R7 kill-switch  controlli=5  0.0 s
+      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
+      ok esito certo negativo per il bot
+      ok nessun ordine su flumine
+      ok CHIUSURA (riduzione verificata sul blotter) accettata
+      ok la chiusura arriva a un esito
+OK  R8 sotto il minimo  controlli=4  0.0 s
+      ok apertura sotto il minimo ACCETTATA dal motore (place-and-trim)
+      ok fasi della macchina: parcheggiato -> ridotto -> alla quota
+      ok sequenza chiusa (nessun place-and-trim appeso)
+      ok ordine a mercato: 1,50 alla quota chiesta (nessun 2,00 a quota vera)
+OK  R9 sequenza  controlli=2  0.0 s
+      ok richieste da_seq <= riconnessioni (nessuna tempesta)
+      ok seq contiguo (nessun buco aperto)
+OK  R2b mercato sospeso  controlli=3  2.4 s
+      ok mercato SOSPESO: nessun abbinato
+      ok esito terminale negativo
+      ok riga 'error'
+scenari di trasporto: 10, KO 0, durata 4.7 s
+PARITA' coda/canale sullo scenario d'ordine 'ordini-manuali' (partita intera, due replay in sequenza)...
+  35760084 <coda>: pulita=True decisioni=3508 azioni=2 violazioni=0
+  35760084 <canale>: pulita=True decisioni=3512 azioni=2 violazioni=0
+  PARITA' coda/canale: RAGGIUNTA | ordini coda=2 canale=2 | righe coda=2 canale=2 | REST sul canale=0
+     tempi (canale - coda, s di mercato): {'max': 2.1, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 63.8, 'canale': 81.2}
+     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 2.8 s su 340486 book
+DURATA DEL PROFILO RAPIDO (safe_base): 150.7 s
+ESITO: OK
+EXIT=0 DURATA_S=187

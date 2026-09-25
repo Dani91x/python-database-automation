@@ -53,6 +53,28 @@ export async function fetchDirezione(fixtureId: string): Promise<DirezioneData |
     return data as DirezioneData;
 }
 
+// ---------- Eta' dei dati MATERIALIZZATI della Direzione (R5, 25/09) ----------
+// RPC get_direction_eta (migrations/get_direction_eta_2026-09-25.sql):
+//   pagella_generated_at = max(direction_pagella.generated_at) delle righe Poisson
+//   quota_righe / quota_con_prezzo = righe di analytics_bets della partita e quante
+//   hanno una quota. analytics_bets NON ha una colonna di tempo: l'eta' della quota
+//   non e' misurabile (quota_eta sempre null), se ne dichiara solo la presenza.
+export interface DirezioneEta {
+    fixture_id: number;
+    pagella_generated_at: string | null;
+    quota_righe: number;
+    quota_con_prezzo: number;
+    quota_eta: null;
+    now: string;                 // ora del server al momento della lettura
+}
+
+export async function fetchDirezioneEta(fixtureId: string): Promise<DirezioneEta> {
+    const { data, error } = await supabase.rpc('get_direction_eta', { p_fixture_id: Number(fixtureId) });
+    if (error) throw new Error(error.message);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('risposta inattesa');
+    return data as DirezioneEta;
+}
+
 // ---------- Etichette leggibili ----------
 const MARKET_LABELS: Record<string, string> = {
     '1x2': 'Esito finale',

@@ -8,9 +8,20 @@ Per ogni lega con partite quel giorno:
   - fit Dixon-Coles (forze att/dif inferite) sulle partite GIOCATE PRIMA di quel
     giorno (leakage-free), vantaggio-campo per i club (neutro per i Mondiali);
   - predice ogni partita -> tutti i mercati;
-  - UPSERT su fixture_predictions.tactical_engine_json (UPDATE se esiste, INSERT
-    con status='ok' se manca; ht_predictions resta null -> nessuna interferenza
-    con l'idempotenza del motore API).
+  - UPDATE di fixture_predictions.tactical_engine_json sulla riga della partita.
+
+Fonte delle partite del giorno (25/09/2026, reperto R1 dell'audit tab Dashboard):
+`fixture_predictions`, NON `matches`. `matches` e' popolata solo con partite FINITE
+(daily_yesterday_backfill, finished_only): leggere li' le partite di oggi dava quasi
+sempre 0 partite e il motore usciva in silenzio (copertura misurata 4,7 % su 14 gg).
+`fixture_predictions` contiene TUTTE le partite del giorno (le scrive il loop Poisson
+di today_predictions_backfill.py, che gira prima di questo motore), quindi la riga
+esiste sempre: si fa solo UPDATE, nessun INSERT.
+
+Paginazione (reperto R2): ogni lettura e' a pagine KEYSET su fixture_id (chiave
+univoca -> ordine totale), pagine da PAGE_SIZE, uscita SOLO a pagina vuota (stessa
+meccanica di generate_dynamic_cal.py / master_backtest.py). Lo storico e' poi messo in
+ordine cronologico deterministico (fixture_date, fixture_id) prima del fit.
 """
 from __future__ import annotations
 
@@ -18,7 +29,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,6 +46,17 @@ HALF_LIFE_CLUB = 420.0
 HALF_LIFE_NEUTRAL = 1500.0
 RIDGE = 0.08
 MIN_PRIOR = 40
+PAGE_SIZE = 1000               # righe per pagina keyset (= max_rows di default di PostgREST)
+PRIOR_COLS = ("fixture_id,fixture_date,status_short,home_team_id,away_team_id,"
+              "goals_home,goals_away,halftime_home,halftime_away,fulltime_home,fulltime_away")
+# Colonne di fixture_predictions per le partite del giorno. NB: la colonna `status`
+# di fixture_predictions e' lo stato della PREDIZIONE API (ok/empty/no_coverage/
+# error), NON lo stato della partita: lo stato partita e' `result_status_short`
+# (scritto da predictions_results_backfill a partita finita, NULL prima). Il filtro
+# "non giocata" di prima (matches.status_short NOT IN PLAYED) diventa quindi
+# result_status_short NULL oppure NOT IN PLAYED.
+TODAY_COLS = ("fixture_id,league_id,league_name,season_year,fixture_date,"
+              "home_team_id,home_team_name,away_team_id,away_team_name,result_status_short")
 
 log = logging.getLogger("tactical_engine")
 
@@ -58,16 +80,47 @@ def _round_markets(m: Dict[str, float]) -> Dict[str, float]:
     return {k: round(float(v), 4) for k, v in m.items()}
 
 
-def _load_prior(sb, league_id: int, before: datetime, half_life_days: float = HALF_LIFE_CLUB):
+def _leggi_keyset(costruisci: Callable[[], object], page_size: int = PAGE_SIZE) -> List[dict]:
+    """Legge TUTTE le righe di una query a pagine keyset su fixture_id.
+
+    `costruisci()` ritorna la query GIA' filtrata; qui si aggiungono il cursore
+    (fixture_id > ultimo letto), l'ORDER BY fixture_id (ordine totale: fixture_id e'
+    univoco sia in `matches` sia in `fixture_predictions`) e il LIMIT. Si esce SOLO a
+    pagina vuota: fermarsi su "meno righe del limite" darebbe per finita la lettura
+    anche quando e' il server a troncare la pagina (max_rows < page_size), perdendo
+    righe in silenzio.
+    """
+    rows: List[dict] = []
+    cursore: Optional[int] = None
+    while True:
+        q = costruisci()
+        if cursore is not None:
+            q = q.gt("fixture_id", cursore)
+        batch = q.order("fixture_id").limit(page_size).execute().data or []
+        if not batch:
+            break
+        rows.extend(batch)
+        cursore = batch[-1]["fixture_id"]
+    return rows
+
+
+def _load_prior(sb, league_id: int, before: datetime, half_life_days: float = HALF_LIFE_CLUB,
+                page_size: int = PAGE_SIZE):
     # Limite inferiore: oltre ~4 emivite il peso time-decay e' <7% -> trascurabile.
     # Bound la query (perf: evita di caricare 15 anni di storico su leghe vecchie).
     from math import log as _log
     cutoff = before - timedelta(days=4.0 * half_life_days / _log(2.0))
-    rows = sb.table("matches").select(
-        "fixture_date,status_short,home_team_id,away_team_id,"
-        "goals_home,goals_away,halftime_home,halftime_away,fulltime_home,fulltime_away"
-    ).eq("league_id", league_id).lt("fixture_date", before.isoformat()).gte(
-        "fixture_date", cutoff.isoformat()).execute().data
+    rows = _leggi_keyset(lambda: sb.table("matches").select(PRIOR_COLS)
+                         .eq("league_id", league_id)
+                         .lt("fixture_date", before.isoformat())
+                         .gte("fixture_date", cutoff.isoformat()),
+                         page_size=page_size)
+    # Ordine cronologico DETERMINISTICO (tiebreaker fixture_id: i kickoff simultanei
+    # sono comuni). Il fit e' una somma pesata sulle partite e le squadre sono
+    # indicizzate in ordine di id (model.fit): l'ordine delle righe cambia il
+    # risultato solo per l'arrotondamento in virgola mobile; fissarlo rende il
+    # risultato riproducibile fra un run e l'altro.
+    rows.sort(key=lambda r: (r.get("fixture_date") or "", r.get("fixture_id") or 0))
     ft_m: List[MatchScoreline] = []
     ft_d: List[datetime] = []
     ht_m: List[MatchScoreline] = []
@@ -87,6 +140,19 @@ def _load_prior(sb, league_id: int, before: datetime, half_life_days: float = HA
             ht_m.append(MatchScoreline(r["home_team_id"], r["away_team_id"], hg[0], hg[1]))
             ht_d.append(d)
     return ft_m, ft_d, ht_m, ht_d
+
+
+def _load_today(sb, start: datetime, end: datetime) -> List[dict]:
+    """Partite NON giocate del giorno [start, end) lette da fixture_predictions (R1).
+
+    Ritorna righe nella forma interna usata da _build_payload: `status_short` =
+    result_status_short (NULL prima del fischio d'inizio)."""
+    rows = _leggi_keyset(lambda: sb.table("fixture_predictions").select(TODAY_COLS)
+                         .gte("fixture_date", start.isoformat())
+                         .lt("fixture_date", end.isoformat()))
+    today = [dict(r, status_short=r.get("result_status_short")) for r in rows]
+    return [r for r in today if r.get("home_team_id") and r.get("away_team_id")
+            and r["status_short"] not in PLAYED]
 
 
 def _build_payload(fx, pf, ph, st, fit, neutral, generated_at) -> dict:
@@ -123,7 +189,7 @@ def _build_payload(fx, pf, ph, st, fit, neutral, generated_at) -> dict:
 
 
 def run_for_date(target_date: Optional[str] = None, max_leagues: int = 0) -> dict:
-    """Predice le partite della data (default oggi UTC) e fa upsert su DB.
+    """Predice le partite della data (default oggi UTC) e aggiorna il DB.
     Ritorna un riepilogo. Non solleva: logga e ritorna in caso di errore globale."""
     day = (datetime.fromisoformat(target_date).date() if target_date
            else datetime.now(timezone.utc).date())
@@ -133,13 +199,7 @@ def run_for_date(target_date: Optional[str] = None, max_leagues: int = 0) -> dic
     log.info("[tactical_engine] partite del %s (UTC)", day.isoformat())
 
     sb = get_supabase_client()
-    # NB: la tabella `matches` NON ha la colonna league_name (solo league_id).
-    today = sb.table("matches").select(
-        "fixture_id,league_id,season_year,fixture_date,status_short,"
-        "home_team_id,home_team_name,away_team_id,away_team_name"
-    ).gte("fixture_date", start.isoformat()).lt("fixture_date", end.isoformat()).execute().data
-    today = [r for r in today if r.get("home_team_id") and r.get("away_team_id")
-             and r["status_short"] not in PLAYED]
+    today = _load_today(sb, start, end)
     log.info("[tactical_engine] partite di oggi da predire: %d", len(today))
     if not today:
         return {"fixtures": 0, "updated": 0, "inserted": 0}
@@ -193,34 +253,22 @@ def run_for_date(target_date: Optional[str] = None, max_leagues: int = 0) -> dic
     if not upserts:
         return {"fixtures": 0, "updated": 0, "inserted": 0}
 
-    ids = [u["fixture_id"] for u in upserts]
-    existing = set()
-    for i in range(0, len(ids), 100):
-        rs = sb.table("fixture_predictions").select("fixture_id").in_("fixture_id", ids[i:i + 100]).execute().data
-        existing.update(r["fixture_id"] for r in rs)
-    n_upd = n_ins = n_err = 0
+    # La riga esiste sempre (e' quella letta sopra da fixture_predictions): solo UPDATE
+    # della colonna del motore, nessun altro campo toccato. Un UPDATE senza effetto
+    # (riga sparita fra lettura e scrittura) e' contato come errore, non ignorato.
+    n_upd = n_err = 0
     for u in upserts:
-        if u["fixture_id"] in existing:
-            try:
-                resp = sb.table("fixture_predictions").update(
-                    {"tactical_engine_json": u["tactical_engine_json"]}).eq("fixture_id", u["fixture_id"]).execute()
-                if getattr(resp, "data", None):
-                    n_upd += 1
-                else:
-                    n_err += 1
-                    log.warning("[tactical_engine] UPDATE senza effetto fixture_id=%s", u["fixture_id"])
-            except Exception as e:  # noqa: BLE001
-                n_err += 1
-                log.warning("[tactical_engine] UPDATE fallito fixture_id=%s: %s", u["fixture_id"], e)
-    ins = [{"fixture_id": u["fixture_id"], "status": "ok", "tactical_engine_json": u["tactical_engine_json"]}
-           for u in upserts if u["fixture_id"] not in existing]
-    for i in range(0, len(ins), 100):
-        batch = ins[i:i + 100]
         try:
-            sb.table("fixture_predictions").insert(batch).execute()
-            n_ins += len(batch)
+            resp = sb.table("fixture_predictions").update(
+                {"tactical_engine_json": u["tactical_engine_json"]}).eq("fixture_id", u["fixture_id"]).execute()
+            if getattr(resp, "data", None):
+                n_upd += 1
+            else:
+                n_err += 1
+                log.warning("[tactical_engine] UPDATE senza effetto fixture_id=%s", u["fixture_id"])
         except Exception as e:  # noqa: BLE001
-            n_err += len(batch)
-            log.warning("[tactical_engine] INSERT batch fallito (%d righe): %s", len(batch), e)
-    log.info("[tactical_engine] scritte: %d aggiornate, %d inserite, %d errori", n_upd, n_ins, n_err)
-    return {"fixtures": len(upserts), "updated": n_upd, "inserted": n_ins, "errors": n_err}
+            n_err += 1
+            log.warning("[tactical_engine] UPDATE fallito fixture_id=%s: %s", u["fixture_id"], e)
+    log.info("[tactical_engine] scritte: %d aggiornate, %d errori", n_upd, n_err)
+    # "inserted" resta nel riepilogo (sempre 0) per non rompere chi lo legge o lo logga.
+    return {"fixtures": len(upserts), "updated": n_upd, "inserted": 0, "errors": n_err}

@@ -30,7 +30,9 @@ export interface TEFixture {
     fixture_id: number;
     season_year: number | null;
     date: string;
-    status: string;
+    // stato della partita al momento della previsione. Dal 25/09 le partite del giorno
+    // si leggono da fixture_predictions: e' result_status_short, NULL prima del fischio.
+    status: string | null;
     home_name: string;
     away_name: string;
     neutral: boolean;

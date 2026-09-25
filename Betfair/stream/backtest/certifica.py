@@ -240,14 +240,26 @@ def _freni_da_banco() -> Iterator[None]:
 def _lavora(compito: tuple) -> Any:
     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
     inviabile a un processo figlio (su Windows la pool usa `spawn`)."""
-    bot, ev, data_dir, scenario, ogni_ms, campioni_diff = compito
+    bot, ev, data_dir, scenario, ogni_ms, campioni_diff = compito[:6]
+    # 25/09 (F4): il TRASPORTO dell'ordine (``--trasporto``). None = nessun
+    # contesto: il replay di sempre, riga per riga.
+    trasp = compito[6] if len(compito) > 6 else None
     scheda = REG.bot(str(bot))
     certifica_evento = scheda.funzione_replay()
     CERT = scheda.modulo_controlli()
+    traccia = None
     try:
         with _freni_da_banco():
-            r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
-                                 ogni_ms=ogni_ms, campioni_diff=campioni_diff)
+            if trasp is None:
+                r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
+                                     ogni_ms=ogni_ms, campioni_diff=campioni_diff)
+            else:
+                from . import trasporto as TRA
+
+                with TRA.contesto(str(bot), str(trasp)) as st:
+                    r = certifica_evento(ev, data_dir=data_dir, scenario=scenario,
+                                         ogni_ms=ogni_ms, campioni_diff=campioni_diff)
+                traccia = TRA.traccia(st)
     except Exception as ex:  # noqa: BLE001 — un replay che esplode E' un referto
         import traceback
 
@@ -258,6 +270,13 @@ def _lavora(compito: tuple) -> Any:
                          if dove else ""))
         # la violazione la mette `main` (`segna_esplosione`), una volta sola:
         # anche un replay che NON solleva ma non legge niente e' esploso
+    if trasp is not None:
+        # la traccia del trasporto viaggia CON il referto (serve al confronto
+        # coda/canale nel padre); None se il replay e' esploso
+        try:
+            setattr(r, "traccia_trasporto", traccia)
+        except Exception:  # noqa: BLE001 - referto senza __dict__
+            pass
     # la memoria viaggia A PARTE, non dentro il referto: il referto deve restare
     # IDENTICO a quello in serie, e il picco di un processo cambia da giro a giro
     return r, picco_memoria_mb()
@@ -386,6 +405,42 @@ def _stampa_elenco() -> int:
     return 0
 
 
+def _stampa_parita(per_coppia: Dict[Tuple[str, str], Dict[str, Any]], a: Any) -> int:
+    """25/09 (F4): per ogni scenario x registrazione girati nei DUE trasporti,
+    il rapporto di parita' (``trasporto.confronta``). Ritorna quante coppie NON
+    sono in parita' (0 = tutte, o nessuna coppia completa)."""
+    from . import trasporto as TRA
+
+    ko = 0
+    tracce: List[Dict[str, Any]] = []
+    for (sc, ev), per_tr in per_coppia.items():
+        voce: Dict[str, Any] = {"scenario": sc, "evento": ev}
+        for tr, r in per_tr.items():
+            voce[tr] = getattr(r, "traccia_trasporto", None)
+        if voce.get("coda") is not None and voce.get("canale") is not None:
+            rap = TRA.confronta(voce["coda"], voce["canale"])
+            voce["parita"] = rap
+            print()
+            print(f"TRASPORTO {ev} [{sc}]:")
+            for riga in TRA.descrivi(rap):
+                print("  " + riga)
+            if a.diario:
+                with io.open(a.diario, "a", encoding="utf-8") as f:
+                    for riga in TRA.descrivi(rap):
+                        f.write(f"TRASPORTO {ev} [{sc}] {riga}" + chr(10))
+            if not rap["parita"]:
+                ko += 1
+        elif a.trasporto == "entrambi":
+            print(f"TRASPORTO {ev} [{sc}]: traccia mancante (replay esploso?) - "
+                  f"parita' NON verificabile")
+            ko += 1
+        tracce.append(voce)
+    if a.tracce:
+        with io.open(a.tracce, "w", encoding="utf-8") as f:
+            json.dump(tracce, f, indent=1, default=str)
+    return ko
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(
         description="Certificazione di un bot sulle registrazioni reali (banco comune)")
@@ -414,6 +469,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "registrazione in RAM). 1 = tutto nello stesso "
                         "processo, come prima. Il referto e il diario NON "
                         "cambiano: stesso ordine, stessi numeri")
+    p.add_argument("--trasporto", default=None, choices=("coda", "canale", "entrambi"),
+                   help="25/09 (F4) - da dove esce l'ordine del bot: 'coda' = il "
+                        "trasporto di oggi (REST servito da flumine, il riferimento), "
+                        "'canale' = interruttore del bot ACCESO, porta vera -> "
+                        "motore ordini -> _dispatch del runner, 'entrambi' = la STESSA "
+                        "registrazione nei due trasporti + RAPPORTO DI PARITA'. Solo "
+                        "per i bot con la porta a comandi (safe_*, omega)")
+    p.add_argument("--tracce", default=None,
+                   help="file JSON in cui scrivere le tracce del trasporto e i "
+                        "rapporti di parita' (con --trasporto)")
     p.add_argument("--diario", default=None,
                    help="file in cui scrivere il referto DOPO OGNI partita: senza, "
                         "un run lungo resta cieco fino alla fine")
@@ -450,6 +515,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.complete and verdetti:
         eventi = [e for e in eventi if verdetti.get(e) == "COMPLETE"]
 
+    if a.trasporto in ("canale", "entrambi"):
+        from . import trasporto as TRA
+
+        if TRA.attore_di(scheda.nome) is None:
+            print(f"IL BOT '{scheda.nome}' NON HA LA PORTA A COMANDI: "
+                  f"{TRA.SENZA_CANALE.get(scheda.nome, 'non registrato per il canale')}")
+            return 2
+    if a.scenari.strip().lower() == "rapidi":
+        # 25/09 - il profilo «di minuti»: gli scenari di TRASPORTO (canale) sulla
+        # prima registrazione, e con --trasporto entrambi la parita' coda/canale
+        # sullo scenario d'ordine del bot. Vedi ``trasporto_rapido.py``.
+        from . import trasporto_rapido as TRR
+
+        return TRR.main_rapidi(scheda, eventi, data_dir, trasporto=a.trasporto,
+                               diario=a.diario, tracce=a.tracce,
+                               lavora=_lavora, freni=_freni_da_banco)
     noti = scheda.elenco_scenari()
     scelti = (list(noti) if a.scenari.strip().lower() == "tutti"
               else [x.strip() for x in a.scenari.split(",") if x.strip()])
@@ -506,8 +587,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # L'ORDINE CANONICO: per scenario, poi per evento. E' quello di prima, ed e'
     # quello in cui il referto e il diario devono uscire, qualunque sia il
     # numero di processi.
-    compiti = [(scheda.nome, ev, data_dir, sc, a.ogni_ms, int(a.diff or 0))
-               for sc in scelti for ev in eventi]
+    trasporti: List[Optional[str]] = (
+        [None] if not a.trasporto else
+        (["coda", "canale"] if a.trasporto == "entrambi" else [a.trasporto]))
+    compiti = [(scheda.nome, ev, data_dir, sc, a.ogni_ms, int(a.diff or 0), tr)
+               for tr in trasporti for sc in scelti for ev in eventi]
+    per_coppia: Dict[Tuple[str, str], Dict[str, Any]] = {}
     processi = quanti_processi(int(a.worker or 0), len(compiti))
     if processi > 1:
         print(f"worker: {processi} su {core_fisici()} core fisici (un processo "
@@ -517,11 +602,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     picchi: List[float] = []
     esplosi: List[str] = []
     risultati = _esegui_compiti(compiti, processi, picchi)
-    for sc in scelti:
-        for ev in eventi:
+    for tr in trasporti:
+        for sc, ev in [(sc, ev) for sc in scelti for ev in eventi]:
             r = next(risultati)
-            if len(scelti) > 1:
-                r.event_id = f"{ev} [{sc}]"
+            if len(scelti) > 1 or tr:
+                r.event_id = f"{ev} [{sc}]" + (f" <{tr}>" if tr else "")
+            if tr:
+                per_coppia.setdefault((sc, ev), {})[tr] = r
             esploso = segna_esplosione(r, CERT)
             if esploso:
                 esplosi.append(f"{r.event_id}: {esploso}")
@@ -572,8 +659,15 @@ def main(argv: Optional[List[str]] = None) -> int:
               + (f" | RAM libera adesso {libera:.0f} MB -> {quante} worker "
                  f"reggerebbero senza swap, tetto di processo {max(1, core_fisici() - 1)}"
                  if libera else ""))
+    parita_ko = 0
+    if a.trasporto == "entrambi" or a.tracce:
+        parita_ko = _stampa_parita(per_coppia, a)
     print()
     tot, pulite, mute, esito_exit_code = esito_del_banco(referti)
+    if parita_ko:
+        print(f"!! PARITA' coda/canale NON RAGGIUNTA su {parita_ko} coppie scenario x "
+              f"registrazione (exit code 1)")
+        esito_exit_code = 1
     print(f"ESITO: {pulite} partite senza violazioni, "
           f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
     print(f"       {tot} violazioni totali")

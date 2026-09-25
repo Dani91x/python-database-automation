@@ -11,9 +11,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Button } from '@/components/ui/button';
 import { Loader2, Compass, AlertTriangle, ChevronDown, CheckCircle2, Info } from 'lucide-react';
 import {
-    DirezioneData, DirMarket, fetchDirezione, marketLabel, selectionLabel,
+    DirezioneData, DirezioneEta, DirMarket, fetchDirezione, fetchDirezioneEta, marketLabel, selectionLabel,
     ENGINE_LABELS, strength, enginePick,
 } from '@/lib/direzione';
+import { EtaDato } from './EtaDato';
+import { SOGLIA_PAGELLA_ORE } from '@/lib/etaDato';
 import type { EngineProbs } from '@/lib/direzione';
 import { fetchSignalContext, SignalContext } from '@/lib/signalContext';
 import { fetchBetfairDirectionOdds, DirectionOdds } from '@/lib/betfair';
@@ -128,16 +130,22 @@ function SignalContextBlock({ leagueId, market, direction }: { leagueId: number 
                     {/* RITARDO del mercato nella lega */}
                     <div className="glass-card rounded-lg border border-white/10 px-3 py-2">
                         <div className="text-[10px] uppercase text-muted-foreground/70 font-bold mb-1">Ritardo</div>
+                        {/* stessi numeri della tab Studio Ritardi (stessa RPC, tutto lo storico) */}
                         {ctx.delay ? (
-                            <div className="text-[11px] text-white/80 space-y-0.5">
+                            <div className="text-[11px] text-white/80 space-y-0.5" data-testid="contesto-ritardo">
                                 <div>attuale <b className="font-mono">{numFmt(ctx.delay.current, 0)}</b> · media <span className="font-mono">{numFmt(ctx.delay.media, 1)}</span> · record <span className="font-mono">{numFmt(ctx.delay.record, 0)}</span></div>
                                 {ctx.delay.ratio != null && (
                                     <div className={ctx.delay.ratio >= 1.5 ? 'text-amber-400' : 'text-muted-foreground'}>
                                         {ctx.delay.ratio >= 1.5 ? 'molto in ritardo' : ctx.delay.ratio >= 1 ? 'sopra la media' : 'sotto la media'} (×{numFmt(ctx.delay.ratio, 1)})
                                     </div>
                                 )}
+                                <div className="text-muted-foreground">
+                                    su {ctx.delay.n} partite{ctx.delay.n_ht_missing > 0 && <> ({ctx.delay.n_ht_missing} senza primo tempo, escluse)</>}
+                                </div>
                             </div>
-                        ) : <div className="text-[11px] text-white/30">non disponibile per questo mercato</div>}
+                        ) : ctx.delayNote
+                            ? <div className="text-[11px] text-amber-300/80" data-testid="contesto-ritardo-nota">{ctx.delayNote}</div>
+                            : <div className="text-[11px] text-white/30">non disponibile per questo mercato</div>}
                     </div>
                 </div>
             )}
@@ -180,10 +188,18 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
                 </div>
                 {/* quota / valore */}
                 <div className="text-right shrink-0 w-16">
-                    <div className="text-sm font-mono font-bold text-white">{m.odds ? numFmt(m.odds, 2) : '—'}</div>
-                    {value
-                        ? <div className="text-[9px] uppercase font-bold text-emerald-400">valore</div>
-                        : <div className="text-[9px] uppercase text-muted-foreground/60">quota</div>}
+                    {m.odds ? (
+                        <>
+                            <div className="text-sm font-mono font-bold text-white">{numFmt(m.odds, 2)}</div>
+                            {value
+                                ? <div className="text-[9px] uppercase font-bold text-emerald-400">valore</div>
+                                : <div className="text-[9px] uppercase text-muted-foreground/60">quota</div>}
+                        </>
+                    ) : (
+                        // R5 (25/09): la quota viene da analytics_bets (materializzata): se manca
+                        // lo si DICHIARA, non un trattino che sembra "nessun valore".
+                        <div className="text-[10px] uppercase font-bold text-red-400 leading-tight" data-testid="quota-assente">quota assente</div>
+                    )}
                 </div>
                 {/* concordanza */}
                 <div className="text-right shrink-0 w-12 hidden sm:block">
@@ -282,6 +298,8 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
     const [error, setError] = useState<string | null>(null);
     const [openMarket, setOpenMarket] = useState<string | null>(null);
     const [bfOdds, setBfOdds] = useState<DirectionOdds>({});
+    // eta' dei dati materializzati (pagella, quota); null = RPC non leggibile
+    const [eta, setEta] = useState<DirezioneEta | null>(null);
     const reqRef = useRef(0);
 
     useEffect(() => {
@@ -290,8 +308,13 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
         setData(null);          // non mostrare i dati della partita precedente durante il caricamento
         setOpenMarket(null);    // chiudi eventuale mercato espanso di un'altra partita
         setBfOdds({});
+        setEta(null);
         setLoading(true);
         setError(null);
+        // eta' di pagella e quota (parallelo, non bloccante: se la RPC manca lo si dice)
+        fetchDirezioneEta(fixtureId)
+            .then(e => { if (req === reqRef.current) setEta(e); })
+            .catch(() => { if (req === reqRef.current) setEta(null); });
         fetchDirezione(fixtureId)
             .then(d => { if (req === reqRef.current) setData(d); })
             .catch(e => { if (req === reqRef.current) { setError(e.message || 'Errore di caricamento'); setData(null); } })
@@ -353,6 +376,26 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
 
                         {!loading && !error && markets.length > 0 && (
                             <>
+                                {/* R5 (25/09): eta' dei dati MATERIALIZZATI che la Direzione usa */}
+                                <div className="glass-card rounded-xl border border-white/10 px-4 py-2 flex flex-col gap-1" data-testid="direzione-eta">
+                                    <EtaDato
+                                        etichetta="Pagella affidabilita"
+                                        at={eta?.pagella_generated_at}
+                                        sogliaOre={SOGLIA_PAGELLA_ORE}
+                                        testoAssente={eta ? 'pagella vuota' : 'eta non disponibile (RPC get_direction_eta non raggiungibile)'}
+                                        testId="eta-pagella"
+                                    />
+                                    {eta && (eta.quota_con_prezzo > 0 ? (
+                                        <span className="text-[11px] text-emerald-400" data-testid="eta-quota" data-stato="presente">
+                                            Quote (analytics_bets): presenti su {eta.quota_con_prezzo} righe di {eta.quota_righe} (eta non tracciata: la tabella non ha un orario)
+                                        </span>
+                                    ) : (
+                                        <span className="text-[11px] text-red-400 font-bold" data-testid="eta-quota" data-stato="assente">
+                                            Quote (analytics_bets): quota assente per questa partita{eta.quota_righe > 0 ? ` (${eta.quota_righe} righe senza prezzo)` : ''}
+                                        </span>
+                                    ))}
+                                </div>
+
                                 {/* AVVISO: manca Poisson → consigli poco affidabili */}
                                 {poissonMissing && (
                                     <div className="glass-card rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-start gap-2">

@@ -1,0 +1,11 @@
+ROSSO  M1 base del primo seq tolta                    -> 1 failed in 11.79s | ripristino OK (882d2d4a0abf)
+ROSSO  M2 una richiesta da_seq alla volta tolta       -> 1 failed in 11.80s | ripristino OK (882d2d4a0abf)
+ROSSO  M3 risposta da_seq ignorata                    -> 1 failed in 14.71s | ripristino OK (882d2d4a0abf)
+ROSSO  M4 FOK anche sotto il minimo (Safe canale)     -> 1 failed in 14.00s | ripristino OK (a00e1b3c7630)
+ROSSO  M5 cliente live del banco etichettato SIMULATED -> 1 failed in 11.83s | ripristino OK (67a12490e4f1)
+ROSSO  M6 token del WsBanco sempre valido             -> 1 failed in 11.08s | ripristino OK (67a12490e4f1)
+ROSSO  M7 prezzo fuori dalla chiave di parita'        -> 1 failed in 8.89s | ripristino OK (41f88a5b45e0)
+ROSSO  M8 interruttore non ripristinato               -> 1 failed in 8.36s | ripristino OK (41f88a5b45e0)
+ROSSO  M9 ordini del canale non adottati              -> 1 failed in 18.69s | ripristino OK (41f88a5b45e0)
+ROSSO  M10 specchio senza 'sporco' dopo il comando    -> 1 failed, 1 passed in 7.21s | ripristino OK (67a12490e4f1)
+mutazioni sopravvissute: 0 su 10

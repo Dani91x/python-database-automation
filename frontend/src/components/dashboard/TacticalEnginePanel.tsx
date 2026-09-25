@@ -12,6 +12,8 @@ import { Loader2, Network, AlertTriangle, CheckCircle2, XCircle } from 'lucide-r
 import { ProbBarChart, ProbBar } from './ProbBarChart';
 import { pctFmt, numFmt } from '@/lib/fixtureModels';
 import { fetchTacticalEngine, buildAdvice, TEFixture, TEMarkets } from '@/lib/tacticalEngine';
+import { EtaDato } from './EtaDato';
+import { SOGLIA_PREVISIONE_ORE } from '@/lib/etaDato';
 
 interface Props {
     fixtureId: string;
@@ -104,7 +106,6 @@ export function TacticalEnginePanel({ fixtureId, leagueName, homeName, awayName 
         () => bars.reduce<ProbBar | null>((best, b) => (best && best.value >= b.value ? best : b), null),
         [bars],
     );
-    const genDate = f?.generated_at ? new Date(f.generated_at) : null;
 
     return (
         <>
@@ -167,7 +168,7 @@ export function TacticalEnginePanel({ fixtureId, leagueName, homeName, awayName 
                                     <span className={`font-bold ${f.training.converged ? 'text-emerald-400' : 'text-amber-400'}`}>
                                         {f.training.converged ? '✓ converged' : '⚠ non conv.'}
                                     </span>
-                                    {genDate && <span className="text-[11px] text-muted-foreground/70">{genDate.toLocaleString('it-IT')}</span>}
+                                    <EtaDato etichetta="Previsione TacticAI" at={f.generated_at} sogliaOre={SOGLIA_PREVISIONE_ORE} testId="eta-tacticai" />
                                 </div>
 
                                 {/* gol attesi + forze squadre */}

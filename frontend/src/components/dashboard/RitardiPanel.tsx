@@ -287,16 +287,26 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                     )}
                                 </div>
 
-                                {/* avviso copertura PT bassa: i mercati di primo tempo trattano
-                                    le righe senza HT come 0-0 (fedele al foglio) -> possibile distorsione */}
+                                {/* avviso copertura PT bassa. Dal 25/09 (migrations/market_delays_ht_2026-09-25.sql)
+                                    la RPC ESCLUDE le gare senza HT dai mercati di primo tempo e lo dichiara in
+                                    meta.ht_missing_rule; se la RPC deployata e' quella precedente (0-0) l'avviso
+                                    resta quello di prima. Il testo segue la RPC, non una supposizione. */}
                                 {meta.uses_ht && meta.ht_coverage_pct != null && meta.ht_coverage_pct < 90 && (
                                     <div className="glass-card rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
                                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                                        <p className="text-xs text-amber-300/90">
-                                            Copertura primo tempo {num(meta.ht_coverage_pct, 1)}%: come nel foglio, le gare senza
-                                            dato di primo tempo sono trattate come 0-0. Su questo mercato le statistiche possono
-                                            risultare distorte. Per dati puliti usa il box Frequenze Mercati (che esclude quelle gare).
-                                        </p>
+                                        {meta.ht_missing_rule === 'escluse' ? (
+                                            <p className="text-xs text-amber-300/90" data-testid="ritardi-avviso-ht">
+                                                Copertura primo tempo {num(meta.ht_coverage_pct, 1)}%: le {int(meta.n_ht_missing ?? 0)} gare
+                                                senza dato di primo tempo sono ESCLUSE da questo mercato (non contate come 0-0).
+                                                Statistiche calcolate su {int(meta.n_effective)} eventi.
+                                            </p>
+                                        ) : (
+                                            <p className="text-xs text-amber-300/90" data-testid="ritardi-avviso-ht">
+                                                Copertura primo tempo {num(meta.ht_coverage_pct, 1)}%: come nel foglio, le gare senza
+                                                dato di primo tempo sono trattate come 0-0. Su questo mercato le statistiche possono
+                                                risultare distorte. Per dati puliti usa il box Frequenze Mercati (che esclude quelle gare).
+                                            </p>
+                                        )}
                                     </div>
                                 )}
 

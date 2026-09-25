@@ -365,11 +365,26 @@ class MemoriaComandi:
         self.seq_visto = 0
         self._sopra: set = set()
         self.buchi = 0
+        #: risposte ``da_seq`` con ``completo`` False (buco NON colmabile)
+        self.buchi_non_colmati = 0
         self.conti: Dict[str, int] = {"ack": 0, "eventi": 0, "vecchi": 0, "scartati": 0}
 
     def _avanza_seq(self, seq: Optional[int]) -> bool:
-        """Registra ``seq``; True se ha aperto un BUCO (c'e' un seq mancante)."""
-        if seq is None or seq <= self.seq_visto:
+        """Registra ``seq``; True se ha aperto un BUCO (c'e' un seq mancante).
+
+        25/09 (banco F4, reperto): il motore numera per attore a partire
+        dall'istante del suo avvio (``motore_ordini._base_seq`` = epoch in ms),
+        quindi il PRIMO seq che il client vede vale ~1,7e12 e non 1. Senza una
+        base, ``seq_visto`` restava 0 per sempre: OGNI evento ``order`` apriva
+        un "buco", chiedeva ``da_seq`` dal seq 0, il motore rimandava tutta la
+        memoria (fino a 500 messaggi) e ognuno di quelli chiedeva un altro
+        ``da_seq``: una tempesta alla prima accensione. Il primo seq visto
+        (memoria vuota) e' la BASE: la contiguita' parte da li'."""
+        if seq is None:
+            return False
+        if self.seq_visto == 0 and not self._sopra:
+            self.seq_visto = seq - 1          # primo contatto: la base
+        if seq <= self.seq_visto:
             return False
         self._sopra.add(seq)
         while (self.seq_visto + 1) in self._sopra:
@@ -418,6 +433,31 @@ class MemoriaComandi:
                 self._pota(self._per_bet)
             self._pota(self._eventi)
             self.conti["eventi"] += 1
+            self._cond.notify_all()
+        return True
+
+    def chiudi_da_seq(self, d: Any) -> bool:
+        """La risposta ``t="da_seq"`` del motore (``{dal, fino_a, inviati,
+        completo}``): i messaggi rimandati sono gia' arrivati PRIMA di questa
+        risposta (stesso socket, in ordine), quindi fino a ``fino_a`` non c'e'
+        piu' niente da chiedere. Se il motore non li aveva piu' tutti
+        (``completo`` False: riavvio del runner, memoria di 500 superata) il
+        buco non si puo' colmare: si RIPARTE da ``fino_a`` e si conta, e le
+        righe si riallineano per ref (``_risolvi_via_canale`` -> Betfair)."""
+        if not isinstance(d, dict):
+            return False
+        fino = d.get("fino_a")
+        if isinstance(fino, bool) or not isinstance(fino, int):
+            return False
+        with self._cond:
+            if d.get("completo") is False and fino > self.seq_visto:
+                self.buchi_non_colmati += 1
+            if fino > self.seq_visto:
+                self.seq_visto = fino
+            self._sopra = {s for s in self._sopra if s > self.seq_visto}
+            while (self.seq_visto + 1) in self._sopra:
+                self.seq_visto += 1
+                self._sopra.discard(self.seq_visto)
             self._cond.notify_all()
         return True
 
@@ -518,6 +558,7 @@ class PortaCanale:
         self.errori = 0
         self.ultimo_errore: Optional[str] = None
         self.richieste_da_seq = 0
+        self._da_seq_in_corso = False
         self._detto = False
 
     @property
@@ -584,6 +625,7 @@ class PortaCanale:
             self.collegato = True
             self.connessioni += 1
             self._detto = False
+            self._da_seq_in_corso = False   # socket nuovo: nessuna richiesta in volo
             try:
                 if self.memoria.seq_visto > 0:
                     self._chiedi_da_seq()
@@ -598,11 +640,19 @@ class PortaCanale:
                 self._ws = None
 
     def _chiedi_da_seq(self) -> None:
+        """UNA richiesta alla volta (25/09): finche' il motore non ha risposto
+        (``t="da_seq"``) un altro buco non ne manda una seconda — i messaggi
+        rimandati aprirebbero altri "buchi" e ognuno chiederebbe di nuovo."""
         ws = self._ws
-        if ws is None:
+        if ws is None or self._da_seq_in_corso:
             return
-        with self._invio:
-            ws.send(busta("da_seq", {"seq": int(self.memoria.seq_visto)}))
+        self._da_seq_in_corso = True
+        try:
+            with self._invio:
+                ws.send(busta("da_seq", {"seq": int(self.memoria.seq_visto)}))
+        except Exception:
+            self._da_seq_in_corso = False
+            raise
         self.richieste_da_seq += 1
 
     def incassa(self, grezzo: Any) -> bool:
@@ -617,6 +667,9 @@ class PortaCanale:
         d = msg.get("d")
         if t == "ack":
             return self.memoria.ricevi_ack(d)
+        if t == "da_seq":
+            self._da_seq_in_corso = False
+            return self.memoria.chiudi_da_seq(d)
         if t == "order":
             entrato = bool(self.memoria.ricevi_evento(d))
             if getattr(self.memoria, "ultimo_buco", False):
