@@ -165,7 +165,6 @@ def daily(monkeypatch):
 
     monkeypatch.setattr(dyb, "upsert_matches_from_fixtures_finished_only", finto_upsert)
     monkeypatch.setattr(dyb, "run_per_fixture_for_date", finto_per_fixture)
-    monkeypatch.setattr(dyb, "run_aggregates_for_seasons", lambda keys: None)
     return stato
 
 

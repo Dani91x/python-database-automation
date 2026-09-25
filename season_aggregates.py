@@ -22,9 +22,10 @@ Quando un aggregato e' un BUCO (da chiamare) - regola misurabile e leggera:
 Costo API per lega-stagione (chiamate): standings 1, injuries 1, top_scorers 1,
 top_assists 1, top_cards 2 (/players/topyellowcards + /players/topredcards).
 
-Idempotenza: delete per (lega, stagione) + insert. Qui (a differenza degli
-script storici, che se la delete fallisce loggano e INSERISCONO lo stesso =
-righe doppie) la delete che fallisce FERMA l'aggregato (esito 'errore', nessun
+Idempotenza: delete per (lega, stagione) + insert. La delete si RITENTA a
+passo crescente (db_delete_retry.delete_con_ritentativi, 25/09/2026, ordine
+utente: stessa regola applicata anche agli script storici *_backfill.py); se
+fallisce anche l'ultimo tentativo l'aggregato si FERMA (esito 'errore', nessun
 insert), e un insert fallito a meta' e' 'parziale' -> rifatto al giro dopo.
 """
 from __future__ import annotations
@@ -171,11 +172,15 @@ def esegui_aggregato(sb: Any, client: Any, nome: str, league_id: int, season_yea
                      else mappa(dati, league_id, season_year))
     if not righe:
         return "vuoto"
+    from db_delete_retry import delete_con_ritentativi
     try:
-        sb.table(nome).delete().eq("league_id", league_id).eq("season_year", season_year).execute()
+        delete_con_ritentativi(
+            lambda: sb.table(nome).delete().eq("league_id", league_id).eq("season_year", season_year).execute(),
+            etichetta=f"delete {nome} league_id={league_id} season_year={season_year}",
+        )
     except Exception as e:
-        print(f"[AGGREGATI] {nome} lega {league_id} stagione {season_year}: delete fallita ({e}): "
-              f"NESSUN insert (niente doppioni)")
+        print(f"[AGGREGATI] {nome} lega {league_id} stagione {season_year}: delete fallita dopo i "
+              f"ritentativi ({e}): NESSUN insert (niente doppioni)")
         return "errore"
     for i in range(0, len(righe), batch):
         try:

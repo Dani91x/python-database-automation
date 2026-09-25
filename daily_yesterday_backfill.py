@@ -13,12 +13,6 @@ from per_fixture_backfill import get_coverage_for_season, process_single_fixture
 from db_client import get_supabase_client
 import season_gaps
 
-from standings_backfill import backfill_standings_for_league_season
-from top_scorers_backfill import backfill_top_scorers_for_league_season
-from top_assists_backfill import backfill_top_assists_for_league_season
-from top_cards_backfill import backfill_top_cards_for_league_season
-from injuries_backfill import backfill_injuries_for_league_season
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -306,24 +300,10 @@ def run_per_fixture_for_date(
 # =====================================================
 # AGGREGATI
 # =====================================================
-
-def run_aggregates_for_seasons(season_keys: Set[Tuple[int, int]]) -> None:
-    for league_id, season_year in season_keys:
-        coverage = get_coverage_for_season(league_id, season_year)
-        if not coverage:
-            continue
-
-        if coverage.get("standings"):
-            backfill_standings_for_league_season(league_id, season_year)
-        if coverage.get("top_scorers"):
-            backfill_top_scorers_for_league_season(league_id, season_year)
-        if coverage.get("top_assists"):
-            backfill_top_assists_for_league_season(league_id, season_year)
-        if coverage.get("top_cards"):
-            backfill_top_cards_for_league_season(league_id, season_year)
-        if coverage.get("injuries"):
-            backfill_injuries_for_league_season(league_id, season_year)
-
+# 25/09/2026 - ramo morto rimosso (ordine utente): get_coverage_for_season
+# ritorna solo i 5 flag per-partita, coverage.get("standings") era sempre
+# None. Gli aggregati (standings/injuries/top_*) li fa il recupero
+# giornaliero: seasons_catchup.py + season_aggregates.py (commit 9cbfe76).
 
 # =====================================================
 # ORCHESTRATORE
@@ -353,9 +333,7 @@ def run_daily_backfill_for_date(target_date: str) -> None:
         logger.warning("⚠️ Nessun match FINISHED trovato per %s", target_date)
         return
 
-    season_keys = run_per_fixture_for_date(api, fixtures_keys)
-
-    run_aggregates_for_seasons(season_keys)
+    run_per_fixture_for_date(api, fixtures_keys)
 
     logger.info("🏁 DAILY BACKFILL completato per data=%s", target_date)
 

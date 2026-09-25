@@ -46,13 +46,9 @@ def get_supabase():
     return _supabase
 
 
-def refresh_coverage_mv() -> None:
-    """Refresh della MV di reporting (dashboard). Non blocca: logga e continua."""
-    try:
-        get_supabase().rpc("refresh_api_coverage_by_season_v2_mv", {}).execute()
-        logger.info("Refresh MV api_coverage_by_season_v2_mv completato.")
-    except Exception as e:
-        logger.error("Refresh MV fallito (non blocco l'orchestratore): %s", e)
+# 25/09/2026 - refresh_coverage_mv rimossa (ordine utente): la RPC
+# refresh_api_coverage_by_season_v2_mv va in timeout 57014 e nessuno legge
+# la MV; da eliminare con migrazione quando l'utente vorra'.
 
 
 def _flag_str(flags: Dict[str, bool]) -> str:
@@ -192,7 +188,6 @@ def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: 
                f"Margine di oggi: {quota.margine()}. Nulla e' stato chiamato ne' scritto.")
     else:
         stampa(f"Chiamate fatte: {riepilogo['chiamate']}. {quota.stato.riga() if quota.stato else ''}")
-        refresh_coverage_mv()
     return riepilogo
 
 

@@ -266,8 +266,6 @@ class _Rpc:
                 out.append({"league_id": lid, "season_year": sy, "tabella": "_ft", "n": len(date_),
                             "ultimo": max(date_)})
             return _Resp(out)
-        if self.nome == "refresh_api_coverage_by_season_v2_mv":
-            return _Resp(None)
         raise AssertionError(f"rpc inattesa {self.nome}")
 
 

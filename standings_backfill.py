@@ -11,6 +11,7 @@ except ImportError:
 
 from db_client import get_supabase_client
 from api_client import APIFootballClient
+from db_delete_retry import delete_con_ritentativi
 
 
 # ========================
@@ -221,7 +222,10 @@ def map_standings_response_to_rows(
 def delete_existing_standings(league_id: int, season_year: int) -> None:
     """
     Per idempotenza: cancella le righe esistenti in public.standings
-    per (league_id, season_year).
+    per (league_id, season_year). Ritenta a passo crescente (25/09/2026,
+    ordine utente): se la delete fallisce sempre l'eccezione risale al
+    chiamante e NESSUN insert deve seguire, altrimenti restano righe doppie
+    (vecchie mai cancellate + nuove).
     """
     supabase = get_supabase()
     logger.info(
@@ -229,7 +233,8 @@ def delete_existing_standings(league_id: int, season_year: int) -> None:
         league_id,
         season_year,
     )
-    try:
+
+    def _delete() -> None:
         resp = (
             supabase.table("standings")
             .delete()
@@ -244,13 +249,20 @@ def delete_existing_standings(league_id: int, season_year: int) -> None:
             season_year,
             deleted,
         )
+
+    try:
+        delete_con_ritentativi(
+            _delete,
+            etichetta=f"delete standings league_id={league_id} season_year={season_year}",
+        )
     except Exception as e:
         logger.error(
-            "❌ Errore nella cancellazione standings per league_id=%s, season_year=%s: %s",
+            "❌ Cancellazione standings fallita dopo i ritentativi per league_id=%s, season_year=%s: %s",
             league_id,
             season_year,
             e,
         )
+        raise
 
 
 def insert_rows_standings(rows: List[Dict[str, Any]], batch_size: int = 200) -> None:
