@@ -57,11 +57,30 @@ GOAL_KEYS: Tuple[str, ...] = ("0", "1", "2", "3+")
 
 K_LEAGUE = 1500.0            # partite-minuto: shrinkage della cella di lega
 K_TEAM = 12.0                # partite: shrinkage del profilo squadra
-MIN_FIXTURES_LEAGUE = 300    # sotto: la lega non entra in by_league
+# 25/09 (ordine dell'utente: "l'atlante deve adattarsi a OGNI lega che
+# abbiamo nel DB"): ogni lega con dati ha la SUA griglia, shrinkata verso il
+# globale con lo stesso K_LEAGUE (con pochi dati la griglia ~ globale, con
+# molti ~ dati della lega). La soglia qui sotto NON esclude piu' nessuna lega:
+# serve SOLO a (a) scegliere le leghe su cui si stima il GLOBALE (campione
+# affidabile, come nel v1), (b) il livello SQUADRE (i profili si shrinkano
+# verso il side_rate di una lega affidabile) e (c) l'etichetta di confidenza.
+MIN_FIXTURES_LEAGUE = 300    # lega "affidabile": globale, livello squadre, confidenza alta
+MIN_FIXTURES_MEDIA = 100     # confidenza di lega "media" da qui, "bassa" sotto
+# confidenza della CELLA dal peso dei dati della lega nella stima shrinkata,
+# w = n / (n + K_LEAGUE): alta se w >= 0.5 (n >= K), media se w >= 0.2
+# (n >= K/4 = 375 partite-minuto), bassa sotto.
+PESO_ALTA = 0.5
+PESO_MEDIA = 0.2
+# il globale si stima dallo stato solo se le leghe affidabili sommano almeno
+# tante partite; sotto si usa il globale del SEME (v3, 53.187 partite) e lo si
+# dichiara. 10.000 partite: la cella globale meno popolata (85-90, 3+ gol)
+# avrebbe ~4.500 partite-minuto -> errore standard ~0,5 punti su p~0,12.
+MIN_FIXTURES_GLOBALE = 10000
 MIN_TEAM_MATCHES = 10        # sotto: la squadra non entra in by_team
 MIN_H2H = 3                  # scontri diretti minimi per h2h_hint
 M_MAX = 87                   # ogni finestra di 3' cade in [1, 90]
 COPERTURA_MIN = 0.60         # quota minima di partite con gol che hanno gli eventi (v1)
+LOTTO_GOL = 200              # fixture_id per GET dei gol nel bootstrap (indice fixture_id)
 VERSIONE = "hazard_atlas_v3"
 
 
@@ -230,12 +249,43 @@ def _r(x: float) -> float:
     return round(float(x), 5)
 
 
+def confidenza_lega(n_fixtures: int, soglia: int = MIN_FIXTURES_LEAGUE) -> str:
+    """'alta' (>= soglia partite: lega affidabile), 'media' (>= MIN_FIXTURES_MEDIA), 'bassa'."""
+    n = int(n_fixtures or 0)
+    if n >= soglia:
+        return "alta"
+    return "media" if n >= MIN_FIXTURES_MEDIA else "bassa"
+
+
+def confidenza_cella(n: int, k: float = K_LEAGUE) -> str:
+    """Dal peso dei dati della lega nella cella shrinkata, w = n / (n + K)."""
+    n = max(0, int(n or 0))
+    w = n / (n + float(k)) if (n + float(k)) > 0 else 0.0
+    if w >= PESO_ALTA:
+        return "alta"
+    return "media" if w >= PESO_MEDIA else "bassa"
+
+
 def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
              watermark: Optional[int] = None,
-             min_fixtures_league: int = MIN_FIXTURES_LEAGUE) -> Dict[str, Any]:
-    """L'atlante completo dagli stati grezzi di TUTTE le leghe."""
+             min_fixtures_league: int = MIN_FIXTURES_LEAGUE,
+             seme: Optional[Dict[str, Any]] = None,
+             min_fixtures_globale: int = MIN_FIXTURES_GLOBALE) -> Dict[str, Any]:
+    """L'atlante completo dagli stati grezzi di TUTTE le leghe.
+
+    25/09: OGNI lega con almeno una partita contata entra in ``by_league``
+    (griglia shrinkata verso il globale, stesso K); ``min_fixtures_league``
+    decide solo il campione del globale, il livello squadre e la confidenza.
+    ``seme`` (un atlante gia' fatto, il v3): se le leghe affidabili dello stato
+    non bastano a stimare il globale (< ``min_fixtures_globale`` partite) si
+    usa il globale del seme, dichiarato in meta; le leghe/squadre/scontri del
+    seme che lo stato non ha ancora restano disponibili (marcate ``da_seme``).
+    Senza seme il globale si stima come prima."""
     coperte = {k: s for k, s in stati.items() if int(s.get("n_fixtures") or 0) >= min_fixtures_league}
     base = coperte or stati        # il globale si stima sul campione coperto (come il v1)
+    tot_coperte = sum(int(s.get("n_fixtures") or 0) for s in coperte.values())
+    usa_seme = (bool(seme) and isinstance((seme or {}).get("global"), dict)
+                and tot_coperte < int(min_fixtures_globale))
     # --- globale (non shrinkato)
     glob_raw = {b: {k: [0, 0, 0] for k in GOAL_KEYS} for b in BUCKETS}
     for s in base.values():
@@ -254,25 +304,37 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
             # cella vuota: None come nel v1 (mai uno 0.0 che sembra un dato)
             glob[b][k] = {"p_goal_next_3min": _r(s3 / n) if n else None,
                           "p_goal_next_2min": _r(s2 / n) if n else None, "n": n}
-    # --- leghe (shrinkate verso il globale)
+    if usa_seme:
+        # globale del SEME: le leghe affidabili dello stato sono troppo poche
+        # per stimarlo. Stesso formato, celle copiate come sono.
+        vuota = {"p_goal_next_3min": None, "p_goal_next_2min": None, "n": 0}
+        glob = {b: {k: dict(((seme["global"].get(b) or {}).get(k) or vuota))
+                    for k in GOAL_KEYS} for b in BUCKETS}
+    # --- leghe (shrinkate verso il globale): TUTTE quelle con dati
     by_league: Dict[str, Any] = {}
     side_rate: Dict[str, Dict[str, float]] = {}
-    for lid, s in coperte.items():
-        nf = int(s["n_fixtures"])
+    for lid, s in stati.items():
+        nf = int(s.get("n_fixtures") or 0)
+        if nf <= 0:
+            continue                 # nessuna partita contata: nessuna griglia da inventare
         sr = {b: _r(s["side_goals"][b] / (2.0 * nf)) for b in BUCKETS}
-        side_rate[lid] = sr
+        affidabile = lid in coperte
+        if affidabile:
+            side_rate[lid] = sr      # riferimento dei profili squadra: solo leghe affidabili
         grid: Dict[str, Any] = {}
         for b in BUCKETS:
             grid[b] = {}
             for k in GOAL_KEYS:
                 n, s3, s2 = s["cells"][b][k]
                 gp = glob[b][k]
-                if gp["p_goal_next_3min"] is None:
-                    grid[b][k] = {"p_goal_next_3min": None, "p_goal_next_2min": None, "n": n}
+                if gp.get("p_goal_next_3min") is None:
+                    grid[b][k] = {"p_goal_next_3min": None, "p_goal_next_2min": None, "n": n,
+                                  "conf": confidenza_cella(n)}
                     continue
                 p3 = (s3 + K_LEAGUE * gp["p_goal_next_3min"]) / (n + K_LEAGUE)
                 p2 = (s2 + K_LEAGUE * gp["p_goal_next_2min"]) / (n + K_LEAGUE)
-                grid[b][k] = {"p_goal_next_3min": _r(p3), "p_goal_next_2min": _r(p2), "n": n}
+                grid[b][k] = {"p_goal_next_3min": _r(p3), "p_goal_next_2min": _r(p2), "n": n,
+                              "conf": confidenza_cella(n)}
         by_league[lid] = {"meta": {
             "league_name": s.get("league_name"), "n_fixtures": nf,
             "n_goals": int(s["n_goals"]),
@@ -281,6 +343,8 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
             "side_rate_per_bucket": sr,
             "last_fixture_date": s.get("last_fixture_date"),
             "updated_at": s.get("updated_at"),
+            "affidabile": affidabile,
+            "confidenza": confidenza_lega(nf, min_fixtures_league),
         }, "grid": grid}
     # --- squadre: somma su tutte le leghe, lega di riferimento = quella con
     # piu' partite (se coperta), shrink verso il suo side_rate
@@ -334,10 +398,33 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
         h2h[key] = {"n_meetings": n, "team_a": d["team_a"], "team_b": d["team_b"],
                     "ft_scores_a_b": dict(sorted(d["ft"].items(), key=lambda kv: -kv[1])),
                     "ht_scores_a_b": dict(sorted(d["ht"].items(), key=lambda kv: -kv[1]))}
+    # --- SEME: cio' che lo stato non ha ancora resta disponibile, dichiarato
+    n_da_seme = 0
+    if seme:
+        for lid, blk in (seme.get("by_league") or {}).items():
+            if lid in by_league or not isinstance(blk, dict):
+                continue
+            blk = json.loads(json.dumps(blk))          # copia: il seme non si tocca
+            meta_s = blk.setdefault("meta", {})
+            nf_s = int(meta_s.get("n_fixtures") or 0)
+            meta_s["da_seme"] = True
+            meta_s.setdefault("affidabile", nf_s >= min_fixtures_league)
+            meta_s.setdefault("confidenza", confidenza_lega(nf_s, min_fixtures_league))
+            by_league[lid] = blk
+            n_da_seme += 1
+        for tid, t in (seme.get("by_team") or {}).items():
+            if tid not in by_team and str(t.get("league_id")) not in stati:
+                by_team[tid] = dict(t, da_seme=True)
+        for key, h in (seme.get("h2h_hint") or {}).items():
+            h2h.setdefault(key, h)
     n_used = sum(int(s["n_fixtures"]) for s in base.values())
     n_goals = sum(int(s["n_goals"]) for s in base.values())
     per_lega = {lid: {"league_name": s.get("league_name"), "n_fixtures": int(s["n_fixtures"]),
-                      "n_goals": int(s["n_goals"]), "coperta": lid in coperte,
+                      "n_goals": int(s["n_goals"]),
+                      "coperta": lid in by_league and not (by_league[lid]["meta"] or {}).get("da_seme"),
+                      "affidabile": lid in coperte,
+                      "confidenza": confidenza_lega(int(s["n_fixtures"]), min_fixtures_league),
+                      "seasons": list(s.get("seasons") or []),
                       "last_fixture_date": s.get("last_fixture_date"),
                       "updated_at": s.get("updated_at"),
                       "n_discarded": dict(s.get("n_discarded") or {})}
@@ -350,6 +437,18 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
         "n_fixtures_used": n_used, "n_goals": n_goals,
         "avg_goals_per_match": round(n_goals / n_used, 4) if n_used else None,
         "n_leagues": len(by_league), "n_leagues_in_state": len(stati),
+        "n_leagues_affidabili": len(coperte), "n_leagues_da_seme": n_da_seme,
+        "globale": ({"fonte": "seme", "seme": (seme.get("meta") or {}).get("name"),
+                     "seme_generated_at": (seme.get("meta") or {}).get("generated_at"),
+                     "seme_n_fixtures": (seme.get("meta") or {}).get("n_fixtures_used"),
+                     "motivo": f"leghe affidabili dello stato: {tot_coperte} partite "
+                               f"< {int(min_fixtures_globale)}"}
+                    if usa_seme else {"fonte": "stato", "n_fixtures": tot_coperte or
+                                      sum(int(s.get("n_fixtures") or 0) for s in base.values())}),
+        "confidenza": {"lega": f"alta >= {min_fixtures_league} partite, media >= "
+                               f"{MIN_FIXTURES_MEDIA}, bassa sotto",
+                       "cella": f"peso della lega w=n/(n+K): alta >= {PESO_ALTA}, "
+                                f"media >= {PESO_MEDIA}, bassa sotto"},
         "n_teams": len(by_team), "n_teams_fallback_to_league": fallback,
         "n_h2h_pairs": len(h2h),
         "watermark_event_id": watermark,
@@ -365,7 +464,10 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
             "Solo status_short=FT; scartate le partite con n. eventi-gol != punteggio finale.",
             "'Missed Penalty' escluso; autogol: lato dall'evento, corretto se i lati non tornano.",
             "Nessuna distinzione casa/trasferta nei profili squadra.",
-            "Il globale e' stimato sulle leghe coperte (>= min_fixtures_league partite).",
+            "Il globale e' stimato sulle leghe affidabili (>= min_fixtures_league partite); "
+            "ogni lega con dati ha la sua griglia shrinkata verso il globale.",
+            "Livello squadre solo su lega affidabile: i profili si shrinkano verso il "
+            "side_rate di una lega affidabile, altrimenti verso quello globale.",
         ],
         "per_league": per_lega,
     }
@@ -445,8 +547,12 @@ COLONNE_GOL = "id,fixture_id,league_id,season_year,team_id,event_type,detail,min
 
 def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
               stati: Dict[str, Dict[str, Any]], nomi: Dict[str, Optional[str]],
-              adesso: str) -> Dict[str, int]:
-    """Aggiunge le partite agli stati delle loro leghe. Ritorna i conteggi."""
+              adesso: str, *, solo_leghe_in_stato: bool = False) -> Dict[str, int]:
+    """Aggiunge le partite agli stati delle loro leghe. Ritorna i conteggi.
+
+    ``solo_leghe_in_stato``: le partite di una lega che lo stato non ha si
+    IGNORANO (non si crea una lega senza storico: la aggiunge l'atlante a
+    domanda, per intero, quando una sua partita e' da osservare)."""
     per_fixture: Dict[int, List[Dict[str, Any]]] = {}
     for g in gol:
         fid = _int(g.get("fixture_id"))
@@ -460,6 +566,9 @@ def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
             continue
         stato = stati.get(lid)
         if stato is None:
+            if solo_leghe_in_stato:
+                conti["fuori_stato"] = conti.get("fuori_stato", 0) + 1
+                continue
             stato = stati[lid] = stato_lega_vuoto(int(lid), nomi.get(lid))
         seq, motivo = sequenza_partita(m, per_fixture.get(int(m["fixture_id"]), []))
         if seq is None:
@@ -493,12 +602,29 @@ def bootstrap(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], leghe: List[
             matches = lettore.tutte("matches", {"select": COLONNE_MATCH,
                                                 "league_id": f"eq.{lid}",
                                                 "season_year": f"eq.{anno}"}, chiave="fixture_id")
+            chiave_l = str(lid)
+            if chiave_l not in stati:
+                stati[chiave_l] = stato_lega_vuoto(int(lid), nomi.get(chiave_l))
             if not matches:
+                # stagione dichiarata ma senza partite nel DB: si ricorda, non si conta
+                vuote = stati[chiave_l].setdefault("stagioni_vuote", [])
+                if anno not in vuote:
+                    vuote.append(anno)
                 continue
-            gol = lettore.tutte("match_events", {"select": COLONNE_GOL,
-                                                 "league_id": f"eq.{lid}",
-                                                 "season_year": f"eq.{anno}",
-                                                 "event_type": "eq.Goal"}, chiave="id")
+            # 25/09: i gol si leggono PER fixture_id (indice su
+            # match_events.fixture_id, misurato 2,6 ms per 200 partite il
+            # 21/09 - vedi Ai Engine/ai_engine/db_adapter.py) e non per
+            # (league_id, season_year), che su match_events non ha indice e
+            # costringe a scorrere la chiave primaria su 10 milioni di righe.
+            # Stesse righe (i gol delle partite della stagione), meno IO.
+            gol = []
+            fids_stagione = sorted({int(m["fixture_id"]) for m in matches
+                                    if _int(m.get("fixture_id")) is not None})
+            for i in range(0, len(fids_stagione), LOTTO_GOL):
+                lista = ",".join(str(f) for f in fids_stagione[i:i + LOTTO_GOL])
+                gol.extend(lettore.tutte("match_events", {"select": COLONNE_GOL,
+                                                          "fixture_id": f"in.({lista})",
+                                                          "event_type": "eq.Goal"}, chiave="id"))
             # COPERTURA della stagione: se gli eventi mancano per la maggior
             # parte delle partite con gol, la stagione NON si usa. Altrimenti
             # resterebbero solo gli 0-0 (che non hanno gol da registrare) e
@@ -509,24 +635,50 @@ def bootstrap(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], leghe: List[
             con_eventi = {_int(g.get("fixture_id")) for g in gol}
             cop = (len(con_gol & con_eventi) / len(con_gol)) if con_gol else 0.0
             if cop < COPERTURA_MIN:
-                chiave_l = str(lid)
-                if chiave_l not in stati:
-                    stati[chiave_l] = stato_lega_vuoto(int(lid), nomi.get(chiave_l))
-                scarta(stati[chiave_l], "stagione_senza_eventi")
-                stati[chiave_l].setdefault("stagioni_scartate", {})[str(anno)] = round(cop, 3)
+                scartate = stati[chiave_l].setdefault("stagioni_scartate", {})
+                if str(anno) not in scartate:      # un nuovo tentativo non si conta due volte
+                    scarta(stati[chiave_l], "stagione_senza_eventi")
+                scartate[str(anno)] = round(cop, 3)
                 logger.info("[atlante] lega %s stagione %s SALTATA: eventi sul %.0f%% delle "
                             "partite con gol", lid, anno, cop * 100)
                 continue
             c = _sequenze(matches, gol, stati, nomi, adesso)
             for k in tot:
                 tot[k] += c[k]
+            # 25/09: stagione ACQUISITA (serve all'atlante a domanda per sapere
+            # quali stagioni nuove, comparse in coverage, mancano ancora)
+            acq = stati[chiave_l].setdefault("stagioni_acquisite", [])
+            if anno not in acq:
+                stati[chiave_l]["stagioni_acquisite"] = sorted(acq + [anno])
+            (stati[chiave_l].get("stagioni_scartate") or {}).pop(str(anno), None)
             logger.info("[atlante] bootstrap lega %s stagione %s: %s", lid, anno, c)
     return tot
+
+
+def stagioni_con_eventi(lettore: LettoreDB, leghe: List[int]) -> Dict[str, List[int]]:
+    """Stagioni con ``fixtures_events = true`` in ``api_coverage_by_season``,
+    per lega. UNA richiesta ogni 150 leghe, due colonne: le stagioni senza
+    eventi dichiarati non si scaricano nemmeno (prima si scaricavano e poi si
+    scartavano)."""
+    out: Dict[str, List[int]] = {str(int(l)): [] for l in leghe}
+    ids = sorted({int(l) for l in leghe})
+    for i in range(0, len(ids), 150):
+        blocco = ",".join(str(x) for x in ids[i:i + 150])
+        for r in lettore.get("api_coverage_by_season", {
+                "select": "league_id,season_year,fixtures_events",
+                "league_id": f"in.({blocco})", "fixtures_events": "eq.true",
+                "limit": "5000"}):
+            lid, anno = _int(r.get("league_id")), _int(r.get("season_year"))
+            if lid is None or anno is None:
+                continue
+            out.setdefault(str(lid), []).append(anno)
+    return {k: sorted(set(v)) for k, v in out.items()}
 
 
 def incrementale(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], watermark: int,
                  nomi: Dict[str, Optional[str]], adesso: str, *, lotto: int = 100,
                  prepara: Optional[Callable[[List[str]], None]] = None,
+                 solo_leghe_in_stato: bool = False,
                  ) -> Tuple[int, Dict[str, int], List[str]]:
     """Eventi con id > watermark -> partite toccate -> leghe aggiornate.
 
@@ -534,14 +686,19 @@ def incrementale(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], watermark
     rileggono INTERE (tutti i gol, non solo i nuovi): la sequenza e' completa
     e l'idempotenza per fixture_id impedisce doppi conteggi. ``prepara``
     riceve le leghe toccate PRIMA dei conteggi (per caricare dal DB i loro
-    fixture_id gia' contati)."""
+    fixture_id gia' contati). ``solo_leghe_in_stato`` (25/09, rete di
+    sicurezza notturna dell'atlante a domanda): si leggono e si aggiornano
+    SOLO le partite delle leghe gia' nello stato; la filigrana avanza lo
+    stesso."""
     nuovi = lettore.tutte("match_events", {"select": "id,fixture_id,league_id",
                                            "id": f"gt.{int(watermark)}"}, chiave="id")
     if not nuovi:
         return int(watermark), {"aggiunte": 0, "gia_contate": 0, "scartate": 0, "non_ft": 0}, []
+    nuova = max(int(r["id"]) for r in nuovi)
+    if solo_leghe_in_stato:
+        nuovi = [r for r in nuovi if str(_int(r.get("league_id"))) in stati]
     if prepara is not None:
         prepara(sorted({str(_int(r.get("league_id"))) for r in nuovi} - {"None"}))
-    nuova = max(int(r["id"]) for r in nuovi)
     fids = sorted({int(r["fixture_id"]) for r in nuovi if r.get("fixture_id") is not None})
     tot = {"aggiunte": 0, "gia_contate": 0, "scartate": 0, "non_ft": 0}
     toccate: set = set()
@@ -553,10 +710,11 @@ def incrementale(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], watermark
         gol = lettore.get("match_events", {"select": COLONNE_GOL,
                                            "fixture_id": f"in.({lista})",
                                            "event_type": "eq.Goal"})
-        c = _sequenze(matches, gol, stati, nomi, adesso)
+        c = _sequenze(matches, gol, stati, nomi, adesso, solo_leghe_in_stato=solo_leghe_in_stato)
         for k in tot:
             tot[k] += c[k]
-        toccate.update(str(_int(m.get("league_id"))) for m in matches)
+        toccate.update(str(_int(m.get("league_id"))) for m in matches
+                       if not solo_leghe_in_stato or str(_int(m.get("league_id"))) in stati)
     return nuova, tot, sorted(t for t in toccate if t != "None")
 
 
@@ -627,6 +785,12 @@ class _Scrittore:
 
     def salva(self, stati: Dict[str, Dict[str, Any]], toccate: List[str],
               atlas: Dict[str, Any], tieni: int = 7) -> None:
+        self.salva_leghe(stati, toccate)
+        self.salva_versione(atlas, tieni)
+
+    def salva_leghe(self, stati: Dict[str, Dict[str, Any]], toccate: List[str]) -> int:
+        """Upsert per ``league_id`` dello stato grezzo delle leghe indicate
+        (solo quelle con la lista dei contati caricata). Ritorna le righe."""
         righe = []
         for l in toccate:
             s = stati.get(l)
@@ -641,6 +805,11 @@ class _Scrittore:
         for i in range(0, len(righe), 20):
             self._req("POST", "hazard_atlas_leghe?on_conflict=league_id", righe[i:i + 20],
                       "resolution=merge-duplicates,return=minimal")
+        return len(righe)
+
+    def salva_versione(self, atlas: Dict[str, Any], tieni: int = 7) -> None:
+        """Una riga nuova in ``hazard_atlas`` (atlante assemblato + filigrana);
+        tiene le ultime ``tieni``."""
         meta = atlas["meta"]
         self._req("POST", "hazard_atlas", {
             "generated_at": meta["generated_at"], "n_leghe": meta["n_leagues"],
@@ -722,6 +891,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--json", default="", help="scrive l'atlante assemblato in questo file")
     ap.add_argument("--confronta", default="", help="atlante precedente da confrontare")
     ap.add_argument("--nomi-da", default="", help="atlante da cui prendere i nomi di lega")
+    ap.add_argument("--solo-leghe-in-stato", action="store_true",
+                    help="incrementale SOLO sulle leghe gia' nello stato (rete notturna "
+                         "dell'atlante a domanda: nessuna lega nuova senza storico)")
+    ap.add_argument("--filigrana-da-ora-se-assente", action="store_true",
+                    help="senza filigrana l'incrementale parte da ORA (max id) invece di "
+                         "fermarsi: nessun rosso nella catena finche' lo stato e' vuoto")
+    ap.add_argument("--seme", default="",
+                    help="atlante seme (es. hazard_atlas_v3.json): globale se lo stato "
+                         "non basta, leghe non ancora nello stato")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
@@ -749,26 +927,47 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.stato_db:
             carica_fixtures(lettore, stati, leghe)
 
+    def _filigrana_da_ora() -> int:
+        ult = lettore.get("match_events", {"select": "id", "order": "id.desc", "limit": "1"})
+        return int(ult[0]["id"]) if ult else 0
+
     if args.bootstrap:
         leghe = [int(x) for x in args.leghe.split(",") if x.strip()]
-        stagioni = _intervallo(args.stagioni)
-        if not leghe or not stagioni:
+        if not leghe or not args.stagioni:
             raise SystemExit("--bootstrap vuole --leghe e --stagioni")
         if not wm:
             # la filigrana parte da ORA: l'incrementale vedra' solo il dopo
-            ult = lettore.get("match_events", {"select": "id", "order": "id.desc", "limit": "1"})
-            wm = int(ult[0]["id"]) if ult else 0
-        conti["bootstrap"] = bootstrap(lettore, stati, leghe, stagioni, nomi, adesso, prepara)
-        for x in leghe:
-            if str(x) in stati:
-                stati[str(x)]["bootstrapped"] = stagioni
+            wm = _filigrana_da_ora()
+        if args.stagioni.strip() == "auto":
+            # 25/09: SOLO le stagioni con eventi dichiarati in coverage (le
+            # ultime --stagioni-indietro): niente download da scartare dopo
+            cov = stagioni_con_eventi(lettore, leghe)
+            conti["bootstrap"] = {}
+            for x in leghe:
+                st_x = cov.get(str(x), [])[-args.stagioni_indietro:]
+                c = bootstrap(lettore, stati, [x], st_x, nomi, adesso, prepara)
+                conti["bootstrap"][str(x)] = c
+                if str(x) in stati:
+                    stati[str(x)]["bootstrapped"] = st_x
+        else:
+            stagioni = _intervallo(args.stagioni)
+            conti["bootstrap"] = bootstrap(lettore, stati, leghe, stagioni, nomi, adesso, prepara)
+            for x in leghe:
+                if str(x) in stati:
+                    stati[str(x)]["bootstrapped"] = stagioni
         toccate.update(str(x) for x in leghe)
     if args.incrementale:
         if not wm:
-            # senza filigrana l'incrementale leggerebbe TUTTI i 10 milioni di
-            # eventi: prima il bootstrap (che fissa la filigrana), poi le notti
-            raise SystemExit("filigrana assente: lanciare prima --bootstrap (vedi referto)")
-        wm, c, t = incrementale(lettore, stati, wm, nomi, adesso, prepara=prepara)
+            if not args.filigrana_da_ora_se_assente:
+                # senza filigrana l'incrementale leggerebbe TUTTI i 10 milioni
+                # di eventi: prima il bootstrap (che fissa la filigrana)
+                raise SystemExit("filigrana assente: lanciare prima --bootstrap (vedi referto)")
+            # 25/09: atlante a domanda - lo stato lo riempie il PC lega per
+            # lega; la rete notturna parte da ORA e non va mai in rosso
+            wm = _filigrana_da_ora()
+            conti["filigrana_iniziale_da_ora"] = wm
+        wm, c, t = incrementale(lettore, stati, wm, nomi, adesso, prepara=prepara,
+                                solo_leghe_in_stato=args.solo_leghe_in_stato)
         conti["incrementale"] = c
         toccate.update(t)
         # LEGHE NUOVE: la copertura segue i dati. Una lega che compare negli
@@ -789,7 +988,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     for lid, s in stati.items():
         if not s.get("league_name") and nomi.get(lid):
             s["league_name"] = nomi[lid]
-    atlas = assembla(stati, generated_at=adesso, watermark=wm)
+    seme = None
+    if args.seme and os.path.exists(args.seme):
+        with open(args.seme, encoding="utf-8") as fh:
+            seme = json.load(fh)
+    atlas = assembla(stati, generated_at=adesso, watermark=wm, seme=seme)
     atlas["meta"]["run"] = {"conti": conti, "leghe_toccate": sorted(toccate, key=int),
                             "richieste_db": lettore.n_richieste, "righe_lette": lettore.n_righe,
                             "secondi": round(time.time() - t0, 1)}

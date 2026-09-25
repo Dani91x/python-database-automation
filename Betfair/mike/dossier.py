@@ -296,11 +296,21 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     goals = int(score_home) + int(score_away)
     try:
         if atlas is not None:
-            from Betfair.stream.scalper.hazard_atlas import hazard_lookup
+            from Betfair.stream.scalper.hazard_atlas import consulta_atlante
 
-            p, src = hazard_lookup(atlas, float(minute), goals, dossier.get("league_id"), home, away)
+            # 25/09: stesso numero di hazard_lookup + livello, n, confidenza e
+            # nota per la scheda (nessun effetto sulla decisione di copertura)
+            c = consulta_atlante(atlas, float(minute), goals, dossier.get("league_id"),
+                                 home_id=dossier.get("home_team_id"),
+                                 away_id=dossier.get("away_team_id"),
+                                 home_team=home, away_team=away)
+            p, src = c["p"], c["fonte"]
             out["hazard_atlas"] = round(float(p), 4) if p is not None else None
             out["hazard_source"] = src
+            out["hazard_livello"] = c["livello"]
+            out["hazard_n"] = c["n"]
+            out["hazard_confidenza"] = c["confidenza"]
+            out["hazard_nota"] = c["nota"]
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.dossier] hazard atlante KO: %s", str(ex)[:120])
     try:

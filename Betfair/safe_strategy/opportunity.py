@@ -653,7 +653,7 @@ class OpportunityModel:
             return out
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard
-            from Betfair.stream.scalper.hazard_atlas import etichetta_atlante, hazard_lookup
+            from Betfair.stream.scalper.hazard_atlas import consulta_atlante, etichetta_atlante
         except Exception:  # noqa: BLE001
             return out
         # eta' DICHIARATA: "atlante del GG/MM, n partite" (+ VECCHIO se lo e').
@@ -671,18 +671,34 @@ class OpportunityModel:
             red_away=int(payload.get("red_away") or 0),
             horizon_min=horizon,
         )
-        p_atlas, source = hazard_lookup(
+        # 25/09: consulta_atlante = stesso numero di hazard_lookup, in piu'
+        # livello usato (squadra+lega / lega / globale), n della cella e
+        # confidenza. Solo il DATO e la NOTA: soglie e decisione invariate.
+        consulta = consulta_atlante(
             atlas, minute, sh + sa, league_id,
             home_team=payload.get("home"), away_team=payload.get("away"),
         )
+        p_atlas, source = consulta["p"], consulta["fonte"]
+        out["livello"] = consulta["livello"]
+        out["confidenza"] = consulta["confidenza"]
+        out["n"] = consulta["n"]
         # 24/09: la lega e' nell'atlante? Se no, il confronto e' contro lo
         # storico GLOBALE (catena di hazard_lookup) e la nota lo dichiara:
-        # "lega non coperta" non e' "atlante assente".
-        coperta = (league_id is not None
-                   and str(league_id) in (atlas.get("by_league") or {}))
-        prefisso = "" if coperta else (
-            f"atlante: lega non coperta ({league_id if league_id is not None else 'n/d'}), "
-            f"confronto con lo storico globale; ")
+        # "lega non coperta" non e' "atlante assente". 25/09: una lega che
+        # l'atlante a domanda sta calcolando ORA si dichiara "in preparazione".
+        coperta = consulta["lega"]["coperta"]
+        lid_txt = league_id if league_id is not None else "n/d"
+        if coperta:
+            prefisso = ""
+        elif consulta["lega"]["in_preparazione"]:
+            prefisso = f"atlante: lega {lid_txt} in preparazione, confronto con lo storico globale; "
+        else:
+            prefisso = f"atlante: lega non coperta ({lid_txt}), confronto con lo storico globale; "
+        dettaglio = f"{consulta['livello']}"
+        if consulta["n"] is not None:
+            dettaglio += f", n={consulta['n']}"
+        if consulta["confidenza"]:
+            dettaglio += f", confidenza {consulta['confidenza']}"
         if model is None or p_atlas is None or p_atlas <= 0:
             # atlante presente ma nessuna cella per lo stato: e' un'altra cosa
             # dall'atlante assente, e va detta per quello che e'.
@@ -697,11 +713,12 @@ class OpportunityModel:
         out["p_model"] = p_model
         out["p_atlas"] = float(p_atlas)
         numeri = (f"modello {p_model * 100:.1f}% vs storico {float(p_atlas) * 100:.1f}% "
-                  f"[{source}], divergenza {div * 100:.0f}%; {eta}")
+                  f"[{source}] ({dettaglio}), divergenza {div * 100:.0f}%; {eta}")
         if div > float(self.params["hazard_drop"]):
             out.update(ok=False, drop=True, penalty=0.0,
                        note=f"{prefisso}hazard modello {p_model * 100:.1f}% vs atlante "
-                            f"{float(p_atlas) * 100:.1f}%: divergenza {div * 100:.0f}% ({eta})")
+                            f"{float(p_atlas) * 100:.1f}% ({dettaglio}): divergenza "
+                            f"{div * 100:.0f}% ({eta})")
         elif div > float(self.params["hazard_warn"]):
             out.update(penalty=0.5,
                        note=f"{prefisso}hazard divergente dall'atlante ({numeri}, "

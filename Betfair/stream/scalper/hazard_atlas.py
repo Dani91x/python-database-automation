@@ -58,6 +58,11 @@ ATLAS_DEFAULT_PATH = os.path.abspath(os.path.join(
 _DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "omega", "data"))
 ATLAS_V2_PATH = os.path.join(_DATA_DIR, "hazard_atlas_v2.json")
 ATLAS_LIVE_PATH = os.path.join(_DATA_DIR, "hazard_atlas_live.json")
+# 25/09 - atlante A DOMANDA (hazard_atlas_sync, modo 'domanda'): il SEME e'
+# il v3 committato (21 leghe, 2016-2025); lo stato grezzo delle leghe
+# calcolate sul PC vive in un file locale NON committato (.gitignore).
+ATLAS_V3_PATH = os.path.join(_DATA_DIR, "hazard_atlas_v3.json")
+ATLAS_STATO_PATH = os.path.join(_DATA_DIR, "hazard_atlas_stato.json")
 
 # ogni quanto (s) la cache condivisa guarda l'mtime del file: un os.stat, mai
 # nel giro caldo piu' di una volta al minuto
@@ -198,15 +203,201 @@ def hazard_goals_key(goals: int) -> str:
     return "3+" if g >= 3 else str(g)
 
 
-def _find_team(by_team: Dict[str, Any], name: Optional[str]) -> Optional[dict]:
-    """Cerca la squadra PER NOME (case-insensitive). None = fallback lega."""
+def _find_team(by_team: Dict[str, Any], name: Optional[str],
+               league_id: Optional[Any] = None, team_id: Optional[Any] = None) -> Optional[dict]:
+    """La squadra dell'atlante: prima per ID (chiave di ``by_team`` = id
+    API-Football), poi PER NOME (case-insensitive). 25/09: con tutte le leghe
+    i nomi si ripetono ("Nacional", "Sporting"...): fra piu' squadre con lo
+    stesso nome vince quella della lega della partita; se resta ambiguo nessuna
+    (fallback dichiarato alla lega, mai la squadra sbagliata). Sul v2 nessun
+    nome e' ripetuto (632 squadre, verificato il 25/09): stesso esito di prima.
+    None = fallback lega."""
+    if team_id is not None:
+        try:
+            t = by_team.get(str(int(team_id)))
+        except (TypeError, ValueError):
+            t = None
+        if t:
+            return t
     if not name:
         return None
     n = str(name).strip().lower()
-    for t in by_team.values():
-        if str(t.get("team_name", "")).strip().lower() == n:
-            return t
+    trovate = [t for t in by_team.values() if str(t.get("team_name", "")).strip().lower() == n]
+    if len(trovate) <= 1:
+        return trovate[0] if trovate else None
+    if league_id is not None:
+        stessa = [t for t in trovate if str(t.get("league_id")) == str(league_id)]
+        if len(stessa) == 1:
+            return stessa[0]
     return None
+
+
+# 25/09 - confidenza a video (stesse regole del generatore, qui senza
+# importarlo: il modulo resta puro). Per un atlante che non le porta scritte
+# (v1/v2) si calcolano da n e K.
+_K_DEFAULT = 1500.0
+_MIN_LEGA_DEFAULT = 300
+_MIN_LEGA_MEDIA = 100
+_LIVELLI = {"team": "squadra+lega", "league": "lega", "global": "globale", "none": "nessuno"}
+
+
+def _conf_cella(n: Any, k: float) -> str:
+    try:
+        n = max(0, int(n or 0))
+    except (TypeError, ValueError):
+        n = 0
+    w = n / (n + k) if (n + k) > 0 else 0.0
+    return "alta" if w >= 0.5 else ("media" if w >= 0.2 else "bassa")
+
+
+def _conf_lega(n_fixtures: Any, soglia: int) -> str:
+    try:
+        n = int(n_fixtures or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return "alta" if n >= soglia else ("media" if n >= _MIN_LEGA_MEDIA else "bassa")
+
+
+_ORDINE_CONF = {"bassa": 0, "media": 1, "alta": 2}
+
+
+def leghe_in_preparazione(atlas: Optional[Dict[str, Any]]) -> set:
+    """Leghe che l'atlante a domanda sta calcolando ora (scritte nel meta del
+    file live, cosi' le vede ogni processo che legge l'atlante)."""
+    raw = ((atlas or {}).get("meta") or {}).get("leghe_in_preparazione") or []
+    return {str(x) for x in raw}
+
+
+def consulta_atlante(
+    atlas: Optional[Dict[str, Any]],
+    minute: float,
+    goals: int,
+    league_id: Optional[Any] = None,
+    *,
+    home_id: Optional[Any] = None,
+    away_id: Optional[Any] = None,
+    home_team: Optional[str] = None,
+    away_team: Optional[str] = None,
+    horizon: str = "p_goal_next_3min",
+    adesso: Optional[_dt.datetime] = None,
+) -> Dict[str, Any]:
+    """L'atlante per la PARTITA OSSERVATA (lega, squadre, minuto, gol).
+
+    Stessa catena di ``hazard_lookup`` (squadre -> lega -> globale) e stesso
+    numero; in piu' DICHIARA come e' nato:
+      p            probabilita' (None = nessun dato, fail-closed)
+      fonte        'team' | 'league' | 'global' | 'none' (chiave storica)
+      livello      'squadra+lega' | 'lega' | 'globale' | 'nessuno'
+      n            partite-minuto della cella usata (lega o globale)
+      confidenza   'alta' | 'media' | 'bassa' (cella; per la lega il minimo
+                   fra cella e lega: pochi dati di lega = bassa)
+      lega         {'coperta', 'in_preparazione', 'n_partite', 'confidenza',
+                    'nome', 'affidabile', 'da_seme'}
+      atlante      etichetta ('atlante del GG/MM, n partite'), eta_giorni
+      nota         frase breve ASCII per la Control Room.
+    Il livello SQUADRE si usa solo su lega affidabile (>= min_fixtures_league
+    partite): i profili squadra sono shrinkati verso il side_rate di una lega
+    affidabile, altrimenti il rapporto non avrebbe senso. Mai eccezioni."""
+    out: Dict[str, Any] = {"p": None, "fonte": "none", "livello": "nessuno", "n": None,
+                           "confidenza": None, "lega": {"coperta": False, "in_preparazione": False,
+                                                        "n_partite": None, "confidenza": None,
+                                                        "nome": None, "affidabile": False,
+                                                        "da_seme": False},
+                           "atlante": None, "eta_giorni": None, "nota": "atlante assente"}
+    if not atlas:
+        return out
+    try:
+        meta = atlas.get("meta") or {}
+        e = eta_atlante(atlas, adesso)
+        out["atlante"] = etichetta_atlante(atlas, adesso)
+        out["eta_giorni"] = round(e["giorni"], 2) if e["giorni"] is not None else None
+        k = float(((meta.get("shrinkage") or {}).get("K_league_fixture_minutes")) or _K_DEFAULT)
+        soglia = int(meta.get("min_fixtures_league") or _MIN_LEGA_DEFAULT)
+        b = hazard_bucket(minute)
+        gk = hazard_goals_key(goals)
+        lid = str(league_id) if league_id is not None else None
+        lg = (atlas.get("by_league") or {}).get(lid) if lid is not None else None
+        lega = out["lega"]
+        lega["in_preparazione"] = lid is not None and lid in leghe_in_preparazione(atlas)
+        if isinstance(lg, dict):
+            lm = lg.get("meta") or {}
+            nf = lm.get("n_fixtures")
+            if "affidabile" in lm:
+                affidabile = bool(lm["affidabile"])
+            else:
+                # atlante v1/v2 (solo leghe >= soglia) o meta senza conteggio:
+                # comportamento storico, il livello squadre resta ammesso
+                affidabile = nf is None or _conf_lega(nf, soglia) == "alta"
+            lega.update(coperta=True, n_partite=nf, nome=lm.get("league_name"),
+                        confidenza=lm.get("confidenza") or (_conf_lega(nf, soglia)
+                                                            if nf is not None else None),
+                        affidabile=affidabile, da_seme=bool(lm.get("da_seme")))
+        p, fonte, cell = None, "none", None
+        if isinstance(lg, dict):
+            cell = ((lg.get("grid") or {}).get(b) or {}).get(gk)
+            sr = ((lg.get("meta") or {}).get("side_rate_per_bucket") or {}).get(b)
+            by_team = atlas.get("by_team") or {}
+            ta = _find_team(by_team, home_team, league_id, home_id)
+            tb = _find_team(by_team, away_team, league_id, away_id)
+            if lega["affidabile"] and ta and tb and cell and sr and cell.get(horizon) is not None:
+                try:
+                    fa_att = float(ta["att_goals_per_match_by_bucket"].get(b, sr)) / sr
+                    fa_def = float(ta["def_goals_per_match_by_bucket"].get(b, sr)) / sr
+                    fb_att = float(tb["att_goals_per_match_by_bucket"].get(b, sr)) / sr
+                    fb_def = float(tb["def_goals_per_match_by_bucket"].get(b, sr)) / sr
+                    mult = 0.5 * (fa_att * fb_def + fb_att * fa_def)
+                    p = 1.0 - (1.0 - float(cell[horizon])) ** max(0.0, mult)
+                    fonte = "team"
+                except (KeyError, TypeError, ValueError, ZeroDivisionError, AttributeError):
+                    p = None      # fallback dichiarato: lega
+            if p is None and cell is not None and cell.get(horizon) is not None:
+                p, fonte = float(cell[horizon]), "league"
+        if p is None:
+            cell = ((atlas.get("global") or {}).get(b) or {}).get(gk)
+            if cell is not None and cell.get(horizon) is not None:
+                p, fonte = float(cell[horizon]), "global"
+            else:
+                cell = None
+        out.update(p=p, fonte=fonte, livello=_LIVELLI[fonte])
+        if cell is not None:
+            out["n"] = cell.get("n")
+            conf = cell.get("conf") or _conf_cella(cell.get("n"), k)
+            if fonte in ("team", "league") and lega["confidenza"] in _ORDINE_CONF:
+                conf = min(conf, lega["confidenza"], key=lambda c: _ORDINE_CONF.get(c, 0))
+            out["confidenza"] = conf
+        out["nota"] = _nota_consulta(out, lid)
+    except Exception as ex:  # noqa: BLE001 - l'atlante non ferma mai nessuno
+        logger.debug("[hazard-atlas] consulta KO: %s", str(ex)[:120])
+        out.update(p=None, fonte="none", livello="nessuno", nota="atlante illeggibile")
+    return out
+
+
+def _nota_consulta(c: Dict[str, Any], lid: Optional[str]) -> str:
+    """'storico lega Serie B (lega, n=4210, confidenza media; atlante del ...)'."""
+    lega = c["lega"]
+    chi = lega.get("nome") or (f"lega {lid}" if lid else "lega n/d")
+    if c["fonte"] == "none":
+        base = "nessun dato storico per lo stato"
+    elif c["fonte"] == "global":
+        if lega.get("in_preparazione"):
+            base = f"{chi} in preparazione: storico globale"
+        elif lid is None:
+            base = "lega n/d: storico globale"
+        else:
+            base = f"lega {lid} senza dati nel DB: storico globale"
+    else:
+        base = f"storico {chi} ({c['livello']}, {lega.get('n_partite')} partite"
+        if lega.get("da_seme"):
+            base += ", dal seme"
+        base += ")"
+    extra = []
+    if c.get("n") is not None:
+        extra.append(f"n={c['n']}")
+    if c.get("confidenza"):
+        extra.append(f"confidenza {c['confidenza']}")
+    if c.get("atlante"):
+        extra.append(c["atlante"])
+    return base + (f" [{'; '.join(extra)}]" if extra else "")
 
 
 def hazard_lookup(
@@ -220,48 +411,15 @@ def hazard_lookup(
 ) -> Tuple[Optional[float], str]:
     """P(gol nei prossimi 3') per lo stato (minuto, gol) — catena meta.lookup.
 
-    1) SQUADRE: entrambe in by_team + lega in by_league →
+    1) SQUADRE: entrambe in by_team + lega AFFIDABILE in by_league →
        f_att(T,b)=att_rate(T,b)/side_rate(lega,b), f_def analogo;
        M(b)=0.5*[fA_att*fB_def + fB_att*fA_def];
        P = 1 - (1 - P_lega(b,g))^M.
     2) LEGA: by_league[league_id].grid (gia' shrinkata).
     3) GLOBALE: atlas['global'].
     Ritorna (p, fonte) con fonte in {'team','league','global','none'};
-    (None, 'none') = semaforo ROSSO (fail-closed).
-    """
-    if not atlas:
-        return None, "none"
-    b = hazard_bucket(minute)
-    gk = hazard_goals_key(goals)
-    by_league = atlas.get("by_league") or {}
-    lg = by_league.get(str(league_id)) if league_id is not None else None
-
-    # 1) livello SQUADRE (blend moltiplicativo sull'hazard di lega)
-    if lg is not None:
-        by_team = atlas.get("by_team") or {}
-        ta = _find_team(by_team, home_team)
-        tb = _find_team(by_team, away_team)
-        cell = ((lg.get("grid") or {}).get(b) or {}).get(gk)
-        sr = ((lg.get("meta") or {}).get("side_rate_per_bucket") or {}).get(b)
-        if ta and tb and cell and sr:
-            p_lega = cell.get(horizon)
-            if p_lega is not None:
-                try:
-                    fa_att = float(ta["att_goals_per_match_by_bucket"].get(b, sr)) / sr
-                    fa_def = float(ta["def_goals_per_match_by_bucket"].get(b, sr)) / sr
-                    fb_att = float(tb["att_goals_per_match_by_bucket"].get(b, sr)) / sr
-                    fb_def = float(tb["def_goals_per_match_by_bucket"].get(b, sr)) / sr
-                    mult = 0.5 * (fa_att * fb_def + fb_att * fa_def)
-                    p = 1.0 - (1.0 - float(p_lega)) ** max(0.0, mult)
-                    return p, "team"
-                except (KeyError, TypeError, ValueError, ZeroDivisionError):
-                    pass  # fallback dichiarato: lega
-        # 2) livello LEGA
-        if cell is not None and cell.get(horizon) is not None:
-            return float(cell[horizon]), "league"
-
-    # 3) livello GLOBALE
-    cell = ((atlas.get("global") or {}).get(b) or {}).get(gk)
-    if cell is not None and cell.get(horizon) is not None:
-        return float(cell[horizon]), "global"
-    return None, "none"
+    (None, 'none') = semaforo ROSSO (fail-closed). 25/09: e' la forma corta
+    di ``consulta_atlante`` (stesso calcolo, stessi numeri)."""
+    c = consulta_atlante(atlas, minute, goals, league_id, home_team=home_team,
+                         away_team=away_team, horizon=horizon)
+    return c["p"], c["fonte"]

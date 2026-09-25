@@ -1,0 +1,28 @@
+M1 lega ricalcolata a ogni comparsa: ROSSO
+M2 coverage senza filtro eventi: ROSSO
+M2b coverage senza filtro eventi (test dedicato): ROSSO
+M3 nessuna adozione dal DB: ROSSO
+M4 niente attesa degli eventi: ROSSO
+M5 rilettura delle gia' contate: ROSSO
+M6 tetto orario ignorato: ROSSO
+M7 priorita' al contrario: ROSSO
+M8 stagioni nuove mai cercate: ROSSO
+M9 'in preparazione' mai letto: ROSSO
+M10 seme ignorato: ROSSO
+M11 squadre anche su lega non affidabile: ROSSO
+M12 squadra per id ignorata: ROSSO
+M13 omonimi: primo trovato: ROSSO
+M14 globale su tutte le leghe: ROSSO
+M15 soglia media spostata: ROSSO
+M16 notturno legge anche leghe fuori stato: ROSSO
+M17 notturno senza filigrana si ferma: ROSSO
+M18 by_league solo leghe sopra soglia (come prima): ROSSO
+M19 gol per lega/stagione (scansione della pkey): ROSSO
+M20 Safe: 'in preparazione' non dichiarato: ROSSO
+M21 Safe: nota senza livello/n/confidenza: ROSSO
+M22 Mike: livello non passato alla scheda: ROSSO
+M23 attesa riletta a ogni ciclo (niente pausa di 60'): ROSSO
+M24 stagione senza coverage lasciata in attesa: ROSSO
+M25 partita assente da matches ignorata: ROSSO
+M26 scrittura su DB a ogni ciclo: ROSSO
+ripristino: 30 passed in 2.57s

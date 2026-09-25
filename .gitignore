@@ -57,3 +57,7 @@ docs/REPORT_SESSIONE_*.md
 # 24/09 atlante hazard scaricato dal DB (cache locale dei bot, hazard_atlas_sync)
 Betfair/omega/data/hazard_atlas_live.json
 Betfair/omega/data/hazard_atlas_live.json.tmp*
+
+# 25/09 atlante a domanda: stato grezzo locale delle leghe calcolate sul PC
+Betfair/omega/data/hazard_atlas_stato.json
+Betfair/omega/data/hazard_atlas_stato.json.tmp*

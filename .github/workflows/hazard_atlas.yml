@@ -17,9 +17,12 @@ name: Hazard Atlas (notturno, dopo il Daily)
 # Prerequisiti (azioni dell'utente, vedi referto del 24/09):
 #   1) migrations/hazard_atlas_2026-09-24.sql applicata (tabelle hazard_atlas e
 #      hazard_atlas_leghe);
-#   2) bootstrap iniziale fatto UNA volta (fissa la filigrana in hazard_atlas).
-# Lo step "Prerequisiti" li controlla e, se mancano, lo DICE con un errore
-# chiaro (run rossa) invece di un traceback 404.
+#   2) (25/09) NESSUN bootstrap: l'atlante e' A DOMANDA, le leghe le prepara il
+#      PC sulle partite osservate (atlante_a_domanda.py, HAZARD_ATLAS_SYNC=1);
+#      qui di notte si aggiornano SOLO le leghe gia' in stato (--solo-leghe-in-stato)
+#      e il globale parte dal seme v3 finche' le leghe affidabili sono poche.
+# Lo step "Prerequisiti" controlla le tabelle e, se mancano, lo DICE con un
+# errore chiaro (run rossa) invece di un traceback 404.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -71,11 +74,13 @@ jobs:
                         "applicare migrations/hazard_atlas_2026-09-24.sql, poi il bootstrap.")
                   sys.exit(1)
               raise
+          # 25/09: atlante A DOMANDA (le leghe le prepara il PC sulle partite osservate,
+          # Betfair/stream/scalper/atlante_a_domanda.py): nessun bootstrap richiesto.
+          # Stato vuoto = niente da aggiornare stanotte (il comando sotto lo dichiara).
           if not ult or not ult[0].get("watermark_event_id"):
-              print("::error::Atlante mai inizializzato (hazard_atlas vuota o senza filigrana): "
-                    "lanciare UNA volta il bootstrap (vedi referto del 24/09), poi questa action.")
-              sys.exit(1)
-          print(f"[PRE] tabelle presenti, filigrana={ult[0]['watermark_event_id']}: procedo.")
+              print("[PRE] tabelle presenti, atlante ancora senza filigrana: la fissa il comando (--filigrana-da-ora-se-assente).")
+          else:
+              print(f"[PRE] tabelle presenti, filigrana={ult[0]['watermark_event_id']}: procedo.")
           PY
 
       - name: Rigenera l'atlante hazard (incrementale per lega)
@@ -85,6 +90,7 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: >
           python -m Betfair.stream.scalper.genera_atlante
-          --stato-db --incrementale
-          --bootstrap-nuove 10 --stagioni-indietro 10
+          --stato-db --incrementale --solo-leghe-in-stato
+          --filigrana-da-ora-se-assente
+          --seme Betfair/omega/data/hazard_atlas_v3.json
           --scrivi-db

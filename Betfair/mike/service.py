@@ -454,6 +454,8 @@ _LIVE_VOLATILI = frozenset({
     # il book e tutto cio' che ne discende (un tick in piu' o in meno)
     "books", "total_matched", "cashout", "posizioni",
     "hazard", "hazard_atlas", "hazard_model", "pressure",
+    # 25/09 atlante: n della cella e nota cambiano col bucket di 5' (diagnostica)
+    "hazard_n", "hazard_nota",
     "p4_market", "p4_model", "p_total_model", "p_total_emp", "p_over45_model",
     "cover_gain_pct", "model_probs", "ko_drift_ticks",
 })

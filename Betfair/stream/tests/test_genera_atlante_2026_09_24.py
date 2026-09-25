@@ -142,11 +142,16 @@ def test_assemblaggio_shrinkage_formato_e_lookup():
     assert HA.etichetta_atlante(atl).startswith("atlante del 24/09, 8 partite")
 
 
-def test_lega_sotto_soglia_resta_fuori_ma_e_dichiarata():
+def test_lega_sotto_soglia_entra_con_griglia_e_confidenza_dichiarata():
+    """25/09 (ordine dell'utente: TUTTE le leghe con dati): prima una lega
+    sotto la soglia restava fuori da by_league; ora entra, shrinkata verso il
+    globale, e dichiara di non essere affidabile (confidenza bassa)."""
     a = _stato_con(39, [(1, 0, [10])] * 3, 100)
     atl = G.assembla({"39": a}, generated_at="2026-09-24T02:00:00+00:00", min_fixtures_league=300)
-    assert "39" not in atl["by_league"]
-    assert atl["meta"]["per_league"]["39"]["coperta"] is False
+    assert "39" in atl["by_league"]
+    assert atl["meta"]["per_league"]["39"]["coperta"] is True
+    assert atl["meta"]["per_league"]["39"]["affidabile"] is False
+    assert atl["by_league"]["39"]["meta"]["confidenza"] == "bassa"
 
 
 # --------------------------------------------------- 3) incrementale
