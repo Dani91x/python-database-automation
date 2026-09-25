@@ -131,9 +131,13 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
     // money-critical (review 16/07): il passaggio a LIVE ri-applica SEMPRE il default
     // prudente (dry-run ON) e azzera il "touched" — una scelta fatta in PAPER non
     // deve mai restare appiccicata ai soldi veri; in LIVE si toglie consapevolmente.
+    // fix audit3 reperto b (25/09): in OFF il runner Python non registra il worker
+    // ordini e forza comunque dry_run=True (tennis_runner.py:611-655) — la riga
+    // tennis_bot_control NON deve mai mentire promettendo un dry-run che l'utente
+    // potrebbe togliere: OFF si comporta come LIVE, forzato e MAI "touchable".
     useEffect(() => {
         if (active) return;
-        if (orderMode === 'LIVE') { setDryRun(true); setDryRunTouched(false); return; }
+        if (orderMode === 'LIVE' || orderMode === 'OFF') { setDryRun(true); setDryRunTouched(false); return; }
         if (!dryRunTouched) setDryRun(orderMode !== 'PAPER');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orderMode]);
@@ -235,10 +239,15 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                         className="h-8 w-20 bg-white/5 border-white/10 text-white text-xs"
                     />
                 </label>
-                <label className={cn('flex items-center gap-1.5 text-[11px] cursor-pointer select-none', active && 'opacity-60')}>
+                <label
+                    className={cn(
+                        'flex items-center gap-1.5 text-[11px] select-none',
+                        (active || orderMode === 'OFF') ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
+                    )}
+                >
                     <Checkbox
                         checked={dryRun}
-                        disabled={active || busy}
+                        disabled={active || busy || orderMode === 'OFF'}
                         onCheckedChange={(v) => {
                             // scelta esplicita: da ora nessun auto-allineamento (fix audit #4)
                             setDryRunTouched(true);
@@ -261,7 +270,7 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                 )}
                 {orderMode === 'OFF' && !active && (
                     <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                        <AlertTriangle className="h-3.5 w-3.5" /> runner OFF: dry-run forzato
+                        <AlertTriangle className="h-3.5 w-3.5" /> runner OFF: dry-run forzato, nessun ordine possibile
                     </span>
                 )}
             </div>

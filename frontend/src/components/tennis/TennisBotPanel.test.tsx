@@ -179,9 +179,11 @@ describe('TennisBotPanel — default protetto per modalita (AUDIT3 caso 1)', () 
         expect(card.queryByText(/ORDINI REALI/i)).toBeNull();
     });
 
-    it('OFF: parte con dry-run SPUNTATO e dichiara che il runner lo forza comunque', async () => {
+    it('OFF: parte con dry-run SPUNTATO, DISABILITATO, e dichiara che il runner lo forza comunque', async () => {
         const { card } = await montaPannello('OFF');
-        expect(card.getByRole('checkbox')).toHaveAttribute('data-state', 'checked');
+        const checkbox = card.getByRole('checkbox');
+        expect(checkbox).toHaveAttribute('data-state', 'checked');
+        expect(checkbox).toBeDisabled();
         expect(card.getByText(/runner OFF: dry-run forzato/i)).toBeTruthy();
     });
 });
@@ -213,29 +215,80 @@ describe('TennisBotPanel — orderMode OFF (AUDIT3 caso 5)', () => {
         expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', true, SCALPER.defaultStake, payloadDefaultAtteso());
     });
 
-    // REPERTO (non e' un blocco applicativo, e' un comportamento reale da
-    // dichiarare al coordinatore): in OFF il pannello NON impedisce di
-    // togliere la spunta e armare. Nessun window.confirm scatta (la guardia
-    // in handleArm controlla solo `orderMode === 'LIVE'`) e la RPC riceve
-    // dry_run:false. Il backend forza comunque dry_run=True per il
-    // kill-switch di modalita' (Betfair/stream/tennis_live/tennis_runner.py,
-    // commento "OFF: dry-run FORZATO (kill-switch, il control non puo'
-    // aggirarlo)", righe 654-655): quindi NON parte nessun ordine reale, ma
-    // il pannello scrive comunque una riga di control con dry_run:false
-    // senza alcun avviso, mentre il testo a video promette "dry-run forzato".
-    it('OFF, utente toglie la spunta e arma: nessun confirm, e la RPC riceve dry_run=false (backend lo forza comunque)', async () => {
+    // FIX AUDIT3 reperto b (25/09, oggi): prima di questo fix il pannello NON
+    // impediva di togliere la spunta in OFF e la RPC riceveva dry_run:false
+    // mentre il testo a video prometteva "dry-run forzato" (riga mentiva). Ora
+    // la checkbox e' DISABILITATA e resta SEMPRE spuntata quando orderMode e'
+    // OFF (useEffect in TennisBotPanel.tsx forza dryRun=true e azzera
+    // dryRunTouched, come per LIVE): un click su di lei non ha alcun effetto
+    // (Radix Checkbox disabled ignora l'evento) e l'armamento porta sempre
+    // dry_run:true, coerente col kill-switch del runner Python
+    // (Betfair/stream/tennis_live/tennis_runner.py, "OFF: dry-run FORZATO",
+    // righe 654-655): la riga di tennis_bot_control non mente piu'.
+    it('OFF: la checkbox e disabilitata, un click non la tocca, ARMA porta sempre dry_run=true', async () => {
         const confirmSpy = vi.spyOn(window, 'confirm');
         const { user, card } = await montaPannello('OFF');
         const checkbox = card.getByRole('checkbox');
-        expect(checkbox).not.toHaveProperty('disabled', true);
-        await user.click(checkbox);
-        expect(checkbox).toHaveAttribute('data-state', 'unchecked');
+        expect(checkbox).toBeDisabled();
+        await user.click(checkbox); // disabilitata: nessun effetto
+        expect(checkbox).toHaveAttribute('data-state', 'checked');
         const armaBtn = card.getByRole('button', { name: /ARMA/i });
-        expect(armaBtn).not.toHaveProperty('disabled', true);
+        expect(armaBtn).not.toBeDisabled();
         await user.click(armaBtn);
         await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
         expect(confirmSpy).not.toHaveBeenCalled();
-        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', false, SCALPER.defaultStake, payloadDefaultAtteso());
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', true, SCALPER.defaultStake, payloadDefaultAtteso());
+    });
+});
+
+// ============================================================================
+// Mutazione del coordinatore (25/09, dopo la consegna sopra): la copertura
+// precedente monta il pannello GIA' in OFF, quindi non prova che il forzaggio
+// avvenga nell'useEffect (riga 140) quando orderMode CAMBIA a runtime — una
+// mutazione che toglie `|| orderMode === 'OFF'` da quell'effetto, lasciando
+// intatto il `disabled` della checkbox, restava 12/12 verde: la checkbox
+// appariva bloccata ma con lo stato interno `dryRun` rimasto quello che
+// l'utente aveva scelto in PAPER (falso), quindi ARMA avrebbe comunque
+// spedito dry_run:false nonostante il lucchetto a video. Caso reale: il
+// pannello e' montato con orderMode PAPER (LIVE_ORDER_MODE fornito dal
+// padre), l'utente sceglie ESPLICITAMENTE dry_run=false (tocca la checkbox,
+// dryRunTouched=true), poi il padre passa a orderMode OFF con un rerender
+// (downgrade a runtime, non un nuovo mount) — la spunta deve tornare a true
+// e restare disabilitata NONOSTANTE dryRunTouched fosse gia' true.
+// ============================================================================
+describe('TennisBotPanel — downgrade runtime PAPER -> OFF forza dry-run (mutazione coordinatore 25/09)', () => {
+    it('utente sceglie dry_run=false in PAPER (tocco esplicito), poi orderMode passa a OFF a runtime: la spunta torna true e disabilitata, ARMA porta dry_run=true', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const user = userEvent.setup();
+        const { rerender } = render(<TennisBotPanel eventId="evt1" marketId="mkt1" orderMode="PAPER" />);
+        await screen.findByText('Tennis Scalper');
+        const cardElPaper = screen.getByText('Tennis Scalper').closest('div.rounded-xl.border') as HTMLElement;
+        const cardPaper = within(cardElPaper);
+        const checkboxPaper = cardPaper.getByRole('checkbox');
+        // default PAPER: dry-run gia' tolto (ordini simulati per costruzione). Per
+        // rendere il tocco dell'utente ESPLICITO (dryRunTouched=true, condizione
+        // necessaria a rendere il test sensibile alla mutazione: se non touched,
+        // il ramo di fallback dell'effetto forza comunque true per qualsiasi
+        // orderMode != 'PAPER', mascherando la mutazione) la spunto e la ritolgo.
+        expect(checkboxPaper).toHaveAttribute('data-state', 'unchecked');
+        await user.click(checkboxPaper); // la spunta: dry_run=true, touched=true
+        expect(checkboxPaper).toHaveAttribute('data-state', 'checked');
+        await user.click(checkboxPaper); // la ritoglie: dry_run=false, touched resta true
+        expect(checkboxPaper).toHaveAttribute('data-state', 'unchecked');
+
+        // downgrade a runtime: il padre passa orderMode='OFF' (rerender, non un nuovo mount)
+        rerender(<TennisBotPanel eventId="evt1" marketId="mkt1" orderMode="OFF" />);
+
+        const cardElOff = screen.getByText('Tennis Scalper').closest('div.rounded-xl.border') as HTMLElement;
+        const cardOff = within(cardElOff);
+        const checkboxOff = cardOff.getByRole('checkbox');
+        await waitFor(() => expect(checkboxOff).toHaveAttribute('data-state', 'checked'));
+        expect(checkboxOff).toBeDisabled();
+
+        await user.click(cardOff.getByRole('button', { name: /ARMA/i }));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(mArm).toHaveBeenCalledWith('evt1', 'tennis_scalper', true, SCALPER.defaultStake, payloadDefaultAtteso());
     });
 });
 
