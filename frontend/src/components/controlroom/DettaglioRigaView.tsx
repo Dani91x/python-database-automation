@@ -19,7 +19,9 @@ import { pnlClass } from '@/lib/tradeStatus';
 import { comeLabel, marcatoreRiga } from '@/lib/chiusuraUtente';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import { isBotTennis } from '@/lib/controlRoom';
-import { BottoneChiudiRiga } from '@/components/controlroom/BottoneChiudiRiga';
+import { useContext } from 'react';
+import { BottoneChiudiRiga, ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
+import { prezzoAlClic, useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
 import type { DettaglioRiga, QuotaViva } from '@/components/controlroom/dettaglioRiga';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
 
@@ -271,6 +273,11 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
     nomeSelezioneRisolto?: string | null;
 }) {
     const nome = o.selezione ?? nomeSelezioneRisolto;
+    // 25/09 (residui B17) - "se chiudo ora" AL MS prima del clic (ladder del
+    // mercato; ripiego dichiarato sullo scanner). Sorgente dal contesto della
+    // Control Room: senza, resta lo scanner.
+    const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
+    const ch = useChiusuraAlMs(o.chiusura, sorgente);
     return (
         <div className="flex items-baseline gap-1.5 text-[11px] flex-wrap" data-testid={`${testId}-riga`}>
             <ChevronRight className="w-2.5 h-2.5 text-white/25 shrink-0" />
@@ -313,17 +320,28 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                     {fmtAge(o.etaQuoteS)}
                 </span>
             )}
-            {o.chiusura && (
+            {ch && (
                 <span className="text-[10px] text-white/40 flex items-baseline gap-1" data-testid={`${testId}-chiudo-ora`}
-                    title="quanto varrebbe chiudere ADESSO, per intero, al prezzo corrente">
+                    data-fonte={ch.fonte ?? ''}
+                    title={`quanto varrebbe chiudere ADESSO, per intero, al prezzo corrente · ${ch.testoFonte}`}>
                     chiudi ora
-                    {o.chiusura.prezzo == null ? (
+                    {ch.prezzo == null ? (
                         <span className="text-orange-400">{DASH}</span>
                     ) : (
-                        <span className={`font-mono font-semibold ${pnlClass(o.chiusura.bloccabile)}`}>
-                            {fmtMoney(o.chiusura.bloccabile, { signed: true })}
-                        </span>
+                        <>
+                            <span className="font-mono text-white/60" data-testid={`${testId}-chiudo-ora-prezzo`}>
+                                {fmtOdds(ch.prezzo)}
+                            </span>
+                            <span className={`font-mono font-semibold ${pnlClass(ch.bloccabile)}`}
+                                data-testid={`${testId}-chiudo-ora-pnl`}>
+                                {fmtMoney(ch.bloccabile, { signed: true })}
+                            </span>
+                        </>
                     )}
+                    <span className={`text-[9px] ${ch.alMs ? 'text-white/30' : 'text-orange-300/80'}`}
+                        data-testid={`${testId}-chiudo-ora-fonte`}>
+                        {ch.testoFonte}
+                    </span>
                 </span>
             )}
             {/* B16 (24/09) — il «Chiudi» di QUESTA riga, cablato sul SUO bot
@@ -341,6 +359,7 @@ export function RigaOperazione({ o, testId = 'cr-op', nomeSelezioneRisolto = nul
                     ...(o.residuo ? { residuo: true } : {}),
                 }}
                 testId={`${testId}-chiudi`}
+                prezzoAlClic={ch ? () => prezzoAlClic(ch, Date.now()) : undefined}
             />
             {o.quale && (
                 <span className="text-[9px] text-white/30 uppercase"

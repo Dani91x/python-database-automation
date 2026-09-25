@@ -1160,3 +1160,39 @@ describe('scalper calcio: riga, sessioni, posizioni, barra e Chiudi', () => {
         expect(s.motivo).toContain('richiesta_ambigua');
     });
 });
+
+// ============================================================================
+// 25/09 (residui B17) - IL CASH OUT GLOBALE SI SEGUE PER ORDINE: il clic porta
+// l'id della richiesta e `soloIdDichiarati`; la coda (riletta per id) da' gli
+// id degli ordini generati (`closing_trade_ids`) e le posizioni NON chiuse.
+// ============================================================================
+import { cashOutEvento as cashOutEventoFinto, fetchRichiestaSafe } from '@/lib/safeBot';
+import { chiaveCashOutPartita } from '@/lib/esitoAbbinamento';
+
+describe('residui B17: cash out globale seguito per ordine', () => {
+    it('il clic si segue SOLO sugli id dichiarati dal servizio', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(cashOutEventoFinto).mockResolvedValueOnce(88);
+        vi.mocked(fetchRichiestaSafe).mockResolvedValueOnce({
+            id: 88, status: 'done', result: {
+                ok: true, event_id: 'E9', chiuse: [901], riserve_annullate: [],
+                non_chiuse: [{ trade_id: 903, motivo: 'stato_hedged' }],
+                closing_trade_ids: [1001], gambe: [{ trade_id: 901, closing_trade_id: 1001, ok: true }],
+                message: 'cash out globale: 1 posizioni chiuse, 0 riserve annullate, 1 NON chiuse (vedi dettaglio)',
+            },
+        } as never);
+        await act(async () => { await result.current.cashOutEvento('E9'); });
+        const k = chiaveCashOutPartita('safe', 'E9');
+        expect(result.current.esitoOrdine(k)?.clic).toMatchObject({
+            bot: 'safe', tipo: 'chiusura', requestId: 88, eventId: 'E9', soloIdDichiarati: true,
+            tradeIdApertura: null,
+        });
+        await waitFor(() => expect(result.current.esitoOrdine(k)?.richiesta?.tradeIds).toEqual([1001]));
+        expect(result.current.esitoOrdine(k)?.richiesta?.nonChiuse).toEqual([
+            { tradeId: 903, motivo: 'stato hedged', closingTradeId: null }]);
+        // la riga dell'ordine non e' ancora arrivata: si aspetta, non si indovina
+        expect(result.current.esitoOrdine(k)?.gambe).toEqual([]);
+        expect(result.current.esitoOrdine(k)?.esito.testo).toMatch(/^in corso: cash out globale: 1 posizioni chiuse/);
+    });
+});

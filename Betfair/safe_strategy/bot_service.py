@@ -3319,6 +3319,12 @@ def _request_cashout_event(*, db, market, rows_by_event, payload: dict, params: 
     chiuse: list[int] = []
     annullate: list[int] = []
     non_chiuse: list[dict[str, Any]] = []
+    # 25/09 (residui B17) - GLI ORDINI GENERATI, dichiarati per id: la scheda
+    # della Control Room segue ognuno fino all'abbinamento e non deve
+    # indovinarli dalle righe nuove della partita. Solo notizia: nessuna
+    # decisione cambia (stesse righe, stesso ordine, stessi rami).
+    closing_ids: list[int] = []
+    gambe: list[dict[str, Any]] = []
     for tr in list(righe):
         tid = tr.get("id")
         stato = str(tr.get("status") or "")
@@ -3332,12 +3338,20 @@ def _request_cashout_event(*, db, market, rows_by_event, payload: dict, params: 
         res = _request_cashout(db=db, market=market, rows_by_event=rows_by_event,
                                payload={"trade_id": int(tid), "fraction": 1.0},
                                params=params, now=now, come="cashout_event")
+        cid = _id_ordine(res.get("closing_trade_id"))
+        if cid is not None:
+            # anche l'invio FALLITO dopo aver piazzato porta l'id (execution.
+            # close_trade 'chiusura_non_eseguita'): quell'ordine esiste
+            closing_ids.append(cid)
+            gambe.append({"trade_id": int(tid), "closing_trade_id": cid,
+                          "ok": bool(res.get("ok"))})
         if res.get("ok"):
             chiuse.append(int(tid))
         else:
             non_chiuse.append({"trade_id": tid,
                                "motivo": res.get("rejected") or res.get("error")
-                               or res.get("attendi") or "sconosciuto"})
+                               or res.get("attendi") or "sconosciuto",
+                               **({"closing_trade_id": cid} if cid is not None else {})})
     righe = _tutte_le_righe(db, event_id)
     segna_chiuso_dall_utente(
         db, event_id=event_id, righe=righe, come="cashout_event", now=now,
@@ -3349,7 +3363,17 @@ def _request_cashout_event(*, db, market, rows_by_event, payload: dict, params: 
         messaggio += f", {len(non_chiuse)} NON chiuse (vedi dettaglio)"
     return {"ok": True, "event_id": event_id, "chiuse": chiuse,
             "riserve_annullate": annullate, "non_chiuse": non_chiuse,
+            "closing_trade_ids": closing_ids, "gambe": gambe,
             "chiuso_dall_utente": True, "message": messaggio}
+
+
+def _id_ordine(v: Any) -> Optional[int]:
+    """L'id di una riga d'ordine dichiarato dal servizio, o None (mai 0/negativi)."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
 
 
 def _annulla_riserva(db, *, market, trade: dict[str, Any], now: datetime) -> dict:

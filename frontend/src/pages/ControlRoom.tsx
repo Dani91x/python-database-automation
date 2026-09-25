@@ -19,7 +19,7 @@
 // LAYOUT: testata con la giornata · partite per campionato in ordine
 // cronologico · nastro dei segnali · posizioni aperte.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -60,6 +60,9 @@ import {
 } from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
 import { BottoneChiudiRiga, ChiusuraRigaContext, type ChiusuraRigaApi } from '@/components/controlroom/BottoneChiudiRiga';
+import { prezzoAlClic, useChiusuraAlMs } from '@/components/controlroom/useChiusuraAlMs';
+import type { SorgenteLadder } from '@/components/controlroom/usePrezzoAlMs';
+import { sorgenteLadderAlMs } from '@/lib/localTransport';
 import { StatoOrdineCompatto } from '@/components/trading/StatoOrdine';
 import {
     BadgeStato, Ingresso, QuotaOra, PnlVivo, Copertura, Greenup, ModelloP, Uscita,
@@ -138,6 +141,10 @@ const FRESCHEZZA_TESTO: Record<Freschezza, string> = {
     fresca: 'fresco', lenta: 'in ritardo', vecchia: 'vecchio', ignota: 'età sconosciuta',
 };
 
+// 25/09 (residui B17) - la sorgente del ladder al ms per il "se chiudo ora"
+// delle righe (la stessa delle schede delle proposte)
+const SORGENTE_LADDER_RIGHE: SorgenteLadder = (sport) => sorgenteLadderAlMs(sport);
+
 const FRESCHEZZA_CLS: Record<Freschezza, string> = {
     fresca: 'text-emerald-400',
     lenta: 'text-secondary',
@@ -156,6 +163,8 @@ export default function ControlRoom() {
             // B17 (25/09) — l'esito dell'ordine dopo il clic (assenti nei finti storici)
             esito: vm.esitoChiusuraRiga, seguiClic: vm.seguiClic, esitoOrdine: vm.esitoOrdine,
             esitiOrdini: vm.esitiOrdini,
+            // 25/09 (residui B17) - "Chiudi" di riga al prezzo del ms
+            sorgenteLadder: SORGENTE_LADDER_RIGHE,
         }),
         [vm.chiudi, vm.statoChiusuraRiga, vm.esitoChiusuraRiga, vm.seguiClic, vm.esitoOrdine, vm.esitiOrdini],
     );
@@ -1409,6 +1418,8 @@ function AperteTab({
 function RigaPosizioneOrfana({ p }: {
     p: PosizioneAperta;
 }) {
+    // 25/09 (residui B17) - "chiudi ora" AL MS prima del clic (ripiego dichiarato)
+    const ch = useChiusuraAlMs(p.chiusura, useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null);
     return (
         <div className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2" data-testid="cr-posizione">
             <div className="flex items-baseline gap-2">
@@ -1456,28 +1467,32 @@ function RigaPosizioneOrfana({ p }: {
                 regola del manuale scatta, e fa bene. Ma una posizione può
                 essere in profitto molto prima, e va VISTO in continuo invece
                 che scoperto per caso. Mostrarlo non cambia la strategia. */}
-            {p.chiusura && (
+            {ch && (
                 <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 flex-wrap"
-                    data-testid="cr-chiusura-viva">
+                    data-testid="cr-chiusura-viva" data-fonte={ch.fonte ?? ''}>
                     <span className="text-[10px] uppercase tracking-wider text-white/40">chiudi ora</span>
-                    {p.chiusura.prezzo == null ? (
+                    {ch.prezzo == null ? (
                         <span className="text-[11px] text-orange-400">prezzo non disponibile</span>
                     ) : (
                         <>
                             <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
-                                p.chiusura.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
-                            }`}>{p.chiusura.lato === 'lay' ? 'banca' : 'punta'}</span>
-                            <span className="font-mono text-[12px]">{fmtOdds(p.chiusura.prezzo)}</span>
-                            <span className={`font-mono text-[13px] tabular-nums ${pnlClass(p.chiusura.bloccabile)}`}
+                                ch.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                            }`}>{ch.lato === 'lay' ? 'banca' : 'punta'}</span>
+                            <span className="font-mono text-[12px]" data-testid="cr-chiusura-prezzo">{fmtOdds(ch.prezzo)}</span>
+                            <span className={`font-mono text-[13px] tabular-nums ${pnlClass(ch.bloccabile)}`}
                                 data-testid="cr-bloccabile"
                                 title="P&L garantito chiudendo per intero adesso: identico sui due esiti">
-                                {fmtMoney(p.chiusura.bloccabile, { signed: true })}
+                                {fmtMoney(ch.bloccabile, { signed: true })}
                             </span>
-                            {p.chiusura.abbinabile != null && (
+                            {ch.abbinabile != null && (
                                 <span className="text-[10px] text-white/35">
-                                    {fmtMoney(p.chiusura.abbinabile)} abbinabili
+                                    {fmtMoney(ch.abbinabile)} abbinabili
                                 </span>
                             )}
+                            <span className={`text-[10px] ${ch.alMs ? 'text-white/30' : 'text-orange-300/80'}`}
+                                data-testid="cr-chiusura-fonte">
+                                {ch.testoFonte}
+                            </span>
                             {/* B16 (24/09) — stesso posto, stesso testid: ora il
                                 comando va al bot DELLA RIGA, non a Safe per tutti */}
                             <BottoneChiudiRiga
@@ -1489,6 +1504,7 @@ function RigaPosizioneOrfana({ p }: {
                                     ...(p.residuo ? { residuo: true } : {}),
                                 }}
                                 testId="cr-chiudi" variante="orfana"
+                                prezzoAlClic={() => prezzoAlClic(ch, Date.now())}
                             />
                         </>
                     )}

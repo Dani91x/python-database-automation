@@ -20,8 +20,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Bot } from '@/lib/controlRoom';
 import type { MappaRighe } from '@/lib/righeCanale';
 import {
-    aggiungiSeguito, esitoDelClic, idsDaRisultato, SCADENZA_SEGUITO_MS,
-    type ClicOrdine, type EsitoAbbinamento, type GambaSeguita, type RichiestaSeguita,
+    aggiungiSeguito, esitoDelClic, idsDaRisultato, nonChiuseDaRisultato, SCADENZA_SEGUITO_MS,
+    type ClicOrdine, type EsitoAbbinamento, type GambaSeguita, type ModoGambe, type RichiestaSeguita,
 } from '@/lib/esitoAbbinamento';
 import { fetchRichiestaSafe } from '@/lib/safeBot';
 import { faseDaRichiesta, LETTURA, type BotConChiusura, type RichiestaLetta } from './chiudiRiga';
@@ -37,6 +37,10 @@ export interface EsitoSeguito {
     clic: ClicOrdine;
     esito: EsitoAbbinamento;
     gambe: GambaSeguita[];
+    /** 25/09 (residui B17) - come sono state trovate le gambe (id, chiave, ripiego) */
+    modoGambe?: ModoGambe;
+    /** 25/09 (residui B17) - la riga della coda letta (id dichiarati, posizioni non chiuse) */
+    richiesta?: RichiestaSeguita | null;
 }
 
 export type LetturaRichiesta = (clic: ClicOrdine) => Promise<RichiestaLetta | null>;
@@ -52,7 +56,10 @@ export const LEGGI_DI_SERIE: LetturaRichiesta = async (clic) => {
 /** La riga della coda tradotta (pura: la usa anche il test). */
 export function richiestaSeguita(clic: ClicOrdine, r: RichiestaLetta, lettaMs: number): RichiestaSeguita {
     const f = faseDaRichiesta(clic.bot as BotConChiusura, r);
-    return { fase: f.fase, motivo: f.motivo, tradeIds: idsDaRisultato(r.result, clic.tipo), lettaMs };
+    return {
+        fase: f.fase, motivo: f.motivo, tradeIds: idsDaRisultato(r.result, clic.tipo), lettaMs,
+        nonChiuse: nonChiuseDaRisultato(r.result),
+    };
 }
 
 export function useSeguiOrdini(args: {
@@ -77,7 +84,10 @@ export function useSeguiOrdini(args: {
     }, []);
 
     const esiti = useMemo<EsitoSeguito[]>(
-        () => seguiti.map((clic) => ({ clic, ...esitoDelClic(clic, richieste[clic.chiave] ?? null, mappa, nowMs) })),
+        () => seguiti.map((clic) => {
+            const richiesta = richieste[clic.chiave] ?? null;
+            return { clic, richiesta, ...esitoDelClic(clic, richiesta, mappa, nowMs) };
+        }),
         [seguiti, richieste, mappa, nowMs],
     );
 

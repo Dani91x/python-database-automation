@@ -69,6 +69,7 @@ import {
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
+import type { DatiChiusuraAlMs } from '@/lib/chiusuraAlMs';
 import {
     dettaglioDi, eGambaDiChiusura, quotaViva,
     type DettaglioRiga, type QuotaViva, type RigaDettagliabile,
@@ -99,7 +100,7 @@ import {
 } from '@/lib/safeBot';
 import { prezzoSegnaleDi, type ContestoPrezzoVisto } from '@/lib/schedaAlMs';
 import { useSeguiOrdini, type EsitoSeguito } from './useSeguiOrdini';
-import { idsNotiSullaPartita, type ClicOrdine } from '@/lib/esitoAbbinamento';
+import { chiaveCashOutPartita, idsNotiSullaPartita, type ClicOrdine } from '@/lib/esitoAbbinamento';
 import {
     componiObiettivo, righeRealizzatoPerCiclo, righeGiornataPerCiclo, rigaSintetica,
     leggiPnlRealeOggi, pnlRealePiuRecente, differenzaContoRighe,
@@ -430,6 +431,13 @@ export interface PosizioneAperta {
         abbinabile: number | null;
         /** P&L GARANTITO chiudendo per intero adesso; null = non calcolabile */
         bloccabile: number | null;
+        /**
+         * 25/09 (residui B17) - i dati per ricalcolare il «se chiudo ora» AL MS
+         * nella riga (`useChiusuraAlMs`): esposizione, mercato/selezione e i
+         * due lati dello scanner come ripiego dichiarato. Assente sulle righe
+         * costruite a mano (test storici) e dove il bot non li pubblica.
+         */
+        alMs?: DatiChiusuraAlMs;
     } | null;
     /**
      * 17/09 — LO STATO DELL'ORDINE anche qui. La riga della colonna posizioni
@@ -2480,6 +2488,7 @@ export function useControlRoom(): ControlRoomVM {
         side: string | null; price: number | null; size: number | null;
         meta: Record<string, unknown> | null;
         event_id: string; market_id?: string | null; selection_id?: number | null;
+        sport?: string | null;
     }): PosizioneAperta['chiusura'] => {
         const { win, lose } = tradeExposureNow({
             side: t.side, price: t.price, size: t.size, meta: t.meta ?? null,
@@ -2491,11 +2500,30 @@ export function useControlRoom(): ControlRoomVM {
         const vivo = prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, lato);
         const prezzo = greenPrice(win, lose, lato === 'back' ? vivo.prezzo : null,
                                   lato === 'lay' ? vivo.prezzo : null);
+        // 25/09 (residui B17) - i due lati dello scanner (ripiego della riga al
+        // ms) e l'istante del prezzo: `odds_ts_ms` se c'e', se no la riga
+        const altro = prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null,
+                                 lato === 'back' ? 'lay' : 'back');
+        const odds = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
+        const istanteRiga = riga?.updated_at ? Date.parse(riga.updated_at) : NaN;
+        const istanteScannerMs = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
+            ? odds : (Number.isFinite(istanteRiga) ? istanteRiga : null);
+        const sid = t.selection_id == null ? null : Number(t.selection_id);
         return {
             lato,
             prezzo,
             abbinabile: vivo.abbinabile,
                 bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
+            alMs: {
+                win, lose,
+                marketId: t.market_id ? String(t.market_id) : null,
+                selectionId: sid != null && Number.isFinite(sid) ? sid : null,
+                sport: String(t.sport ?? '').toLowerCase() === 'tennis' ? 'tennis' : 'calcio',
+                istanteScannerMs,
+                scanner: lato === 'back'
+                    ? { back: vivo.prezzo, backSize: vivo.abbinabile, lay: altro.prezzo, laySize: altro.abbinabile }
+                    : { back: altro.prezzo, backSize: altro.abbinabile, lay: vivo.prezzo, laySize: vivo.abbinabile },
+            },
         };
     }, [feedPerEvento]);
 
@@ -3205,9 +3233,11 @@ export function useControlRoom(): ControlRoomVM {
                     etichetta: `${BOT_LABEL[riga.bot]} · Chiudi riga #${riga.id}`, requestId,
                     tradeIdApertura: riga.id, eventId: riga.eventId,
                     lato: opposto,
-                    // il prezzo a video accanto al bottone («se chiudo ora»)
-                    prezzoVisto: o?.chiusura?.prezzo ?? null,
-                    prezzoSegnale: null, contesto: null, modo: riga.modalita,
+                    // il prezzo a video accanto al bottone («se chiudo ora»):
+                    // 25/09 (residui B17) quello AL MS della riga, col suo
+                    // contesto (eta', fonte); senza, quello dello scanner
+                    prezzoVisto: riga.prezzoVisto !== undefined ? riga.prezzoVisto : (o?.chiusura?.prezzo ?? null),
+                    prezzoSegnale: null, contesto: riga.contestoVisto ?? null, modo: riga.modalita,
                     clicMs: inviataMs, ruoli: null,
                 });
             }
@@ -3306,10 +3336,29 @@ export function useControlRoom(): ControlRoomVM {
     }, [chiusuraSafe]);
 
     const cashOutEvento = useCallback(async (eventId: string) => {
-        await cashOutEventoSafe(eventId);
+        const clicMs = Date.now();
+        const requestId = await cashOutEventoSafe(eventId);
         svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
+        // 25/09 (residui B17) - il cash out globale manda N ordini: si seguono
+        // TUTTI fino all'abbinamento, ma solo quelli che il servizio dichiara
+        // nel risultato della richiesta (`closing_trade_ids`), mai indovinati
+        // dalle righe nuove sulla partita (`soloIdDichiarati`). La modalita'
+        // e' quella delle righe vive di Safe sulla partita, se una sola.
+        const modi = new Set((safe?.trades ?? [])
+            .filter((t) => String(t.event_id) === String(eventId) && aMercato(t))
+            .map((t) => modalitaDi(t.mode)));
+        const modo = modi.size === 1 ? [...modi][0] : null;
+        seguiClic({
+            chiave: chiaveCashOutPartita('safe', eventId), bot: 'safe', tipo: 'chiusura',
+            etichetta: `${BOT_LABEL.safe} · cash out globale della partita`,
+            requestId: Number.isFinite(Number(requestId)) ? Number(requestId) : null,
+            tradeIdApertura: null, eventId, lato: null,
+            prezzoVisto: null, prezzoSegnale: null, contesto: null,
+            modo: modo === 'paper' || modo === 'live' ? modo : null,
+            clicMs, ruoli: null, soloIdDichiarati: true,
+        });
         ricarica();
-    }, [ricarica]);
+    }, [ricarica, seguiClic, safe?.trades]);
 
     const riprendiEvento = useCallback(async (eventId: string) => {
         await riprendiEventoSafe(eventId);

@@ -37,6 +37,7 @@ import { requestMike, fetchMikeRequests } from '@/lib/mike';
 import { requestTennisChiudiBot, fetchTennisOrderRequest } from '@/lib/tennis';
 import { fetchScalperState } from '@/lib/scalper';
 import { stopScalperSessione } from '@/lib/scalperControlRoom';
+import type { ContestoPrezzoVisto } from '@/lib/schedaAlMs';
 
 // 24/09 - LO SCALPER CALCIO. La sua "riga" in Control Room e' la SESSIONE di
 // una partita (id = event_id numerico). Chiudere = fermare la sessione:
@@ -71,6 +72,14 @@ export interface RigaDaChiudere {
     /** 24/09 - scalper: sessione gia' ferma ma con esposizione abbinata non
      *  coperta (lo stop non ha trovato il flat in 30 s) */
     residuo?: boolean;
+    /**
+     * 25/09 (residui B17) - il prezzo «se chiudo ora» A VIDEO al clic (al ms
+     * se il canale porta il mercato, altrimenti lo scanner) e il suo contesto.
+     * SOLO per la scheda (delta dopo l'abbinamento): NON entra nel payload
+     * della richiesta (`INVIO` costruisce il payload campo per campo).
+     */
+    prezzoVisto?: number | null;
+    contestoVisto?: ContestoPrezzoVisto | null;
 }
 
 /** Gli stati della sessione scalper in cui uno stop ha qualcosa da fermare. */

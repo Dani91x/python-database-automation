@@ -24,7 +24,9 @@ import {
 } from './chiudiRiga';
 import type { Bot } from '@/lib/controlRoom';
 import type { ClicOrdine } from '@/lib/esitoAbbinamento';
+import type { ContestoPrezzoVisto } from '@/lib/schedaAlMs';
 import type { EsitoSeguito } from './useSeguiOrdini';
+import type { SorgenteLadder } from './usePrezzoAlMs';
 
 export interface ChiusuraRigaApi {
     chiudi: (riga: RigaDaChiudere) => Promise<void>;
@@ -35,6 +37,11 @@ export interface ChiusuraRigaApi {
     seguiClic?: (clic: Omit<ClicOrdine, 'idsNotiAlClic'>) => void;
     esitoOrdine?: (chiave: string) => EsitoSeguito | null;
     esitiOrdini?: EsitoSeguito[];
+    /**
+     * 25/09 (residui B17) - la sorgente del ladder AL MS per il "se chiudo
+     * ora" delle righe (`useChiusuraAlMs`). Assente = solo lo scanner, dichiarato.
+     */
+    sorgenteLadder?: SorgenteLadder | null;
 }
 
 export const ChiusuraRigaContext = createContext<ChiusuraRigaApi | null>(null);
@@ -55,10 +62,16 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
 };
 
-export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga' }: {
+export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic }: {
     riga: RigaDaChiudere;
     testId?: string;
     variante?: 'riga' | 'orfana';
+    /**
+     * 25/09 (residui B17) - il prezzo "se chiudo ora" A VIDEO nell'istante del
+     * clic (al ms o scanner) col suo contesto: va alla scheda per il delta dopo
+     * l'abbinamento, MAI nel payload della richiesta.
+     */
+    prezzoAlClic?: () => { prezzo: number | null; contesto: ContestoPrezzoVisto };
 }) {
     const api = useContext(ChiusuraRigaContext);
     const [inVolo, setInVolo] = useState(false);
@@ -90,7 +103,9 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                 onClick={() => {
                     if (!acceso) return;
                     setInVolo(true);
-                    void api.chiudi(riga).finally(() => setInVolo(false));
+                    const visto = prezzoAlClic?.();
+                    void api.chiudi(visto ? { ...riga, prezzoVisto: visto.prezzo, contestoVisto: visto.contesto } : riga)
+                        .finally(() => setInVolo(false));
                 }}
             >Chiudi</button>
             {fase && (

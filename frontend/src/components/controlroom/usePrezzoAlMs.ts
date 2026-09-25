@@ -60,3 +60,64 @@ export function usePrezzoAlMs(args: {
     if (vivo != null) ultimo.current = { prezzo: vivo, istanteMs: prezzo.istanteMs, fonte: prezzo.fonte };
     return { prezzo, ultimoNoto: ultimo.current };
 }
+
+/** Una selezione da seguire al ms (una gamba di una combo). */
+export interface SelezioneAlMs {
+    marketId: string | null | undefined;
+    selectionId: number | null | undefined;
+    lato: 'back' | 'lay' | null;
+    ripiego: PrezzoScheda | null;
+}
+
+/**
+ * 25/09 (residui B17) - come `usePrezzoAlMs`, ma per N selezioni insieme (le
+ * gambe di una combo, anche su mercati diversi): UNA sottoscrizione per
+ * mercato, staccate tutte allo smontaggio. Per ogni selezione: ladder al ms se
+ * porta il lato, altrimenti il ripiego dichiarato (stessa `scegliPrezzo`).
+ */
+export function usePrezziAlMs(args: {
+    sorgente: SorgenteLadder | null | undefined;
+    sport: 'calcio' | 'tennis';
+    selezioni: readonly SelezioneAlMs[];
+}): PrezzoScheda[] {
+    const { sorgente, sport, selezioni } = args;
+    const [ladder, setLadder] = useState<Record<number, PrezzoScheda | null>>({});
+    // la firma delle selezioni: si risottoscrive solo se cambiano mercato/selezione
+    const firma = selezioni.map((s) => `${s.marketId ?? ''}|${s.selectionId ?? ''}`).join(',');
+    const selRef = useRef(selezioni);
+    selRef.current = selezioni;
+
+    useEffect(() => {
+        setLadder({});
+        if (!sorgente) return undefined;
+        const src = sorgente(sport);
+        const fonteDi = (mid: string) => {
+            const f = (src as { fonte?: (m: string) => 'canale' | 'db' | null }).fonte;
+            return typeof f === 'function' ? f(mid) : null;
+        };
+        const perMercato = new Map<string, number[]>();
+        selRef.current.forEach((s, i) => {
+            if (!s.marketId || s.selectionId == null) return;
+            const k = String(s.marketId);
+            const arr = perMercato.get(k);
+            if (arr) arr.push(i); else perMercato.set(k, [i]);
+        });
+        const offs: (() => void)[] = [];
+        for (const [mid, indici] of perMercato) {
+            offs.push(src.subscribe(mid, (row) => {
+                setLadder((p) => {
+                    const n = { ...p };
+                    for (const i of indici) {
+                        const s = selRef.current[i];
+                        n[i] = row && s ? prezzoDaLadder(row, s.selectionId, fonteDi(mid)) : null;
+                    }
+                    return n;
+                });
+            }));
+        }
+        return () => { for (const off of offs) off(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sorgente, sport, firma]);
+
+    return selezioni.map((s, i) => scegliPrezzo(ladder[i] ?? null, s.ripiego, s.lato));
+}

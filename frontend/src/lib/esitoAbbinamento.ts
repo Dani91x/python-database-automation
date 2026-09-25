@@ -102,6 +102,13 @@ export interface ClicOrdine {
     idsNotiAlClic: number[];
     /** Mike: i ruoli delle gambe proposte (una riga nuova d'altro ruolo non e' questa uscita) */
     ruoli: string[] | null;
+    /**
+     * 25/09 (residui B17) - SOLO gli id dichiarati dal servizio nel `result`
+     * della richiesta, mai la correlazione per partita. Il cash out globale di
+     * partita chiude N posizioni: una riga nuova del bot sulla partita puo'
+     * essere un'altra cosa (una protezione, un'apertura) e non si indovina.
+     */
+    soloIdDichiarati?: boolean;
 }
 
 /** La riga della coda del bot, tradotta. */
@@ -112,7 +119,33 @@ export interface RichiestaSeguita {
     tradeIds: number[];
     /** quando la pagina l'ha letta (ms) */
     lettaMs: number | null;
+    /**
+     * 25/09 (residui B17) - cash out globale: le posizioni che il servizio NON
+     * ha chiuso (`result.non_chiuse`), col motivo scritto da lui. Assente o
+     * vuoto = il servizio non ne dichiara.
+     */
+    nonChiuse?: PosizioneNonChiusa[];
 }
+
+/** Una posizione che il cash out globale NON ha chiuso (`result.non_chiuse`). */
+export interface PosizioneNonChiusa {
+    tradeId: number | null;
+    motivo: string;
+    /** l'ordine di chiusura era partito prima del fallimento (`closing_trade_id`) */
+    closingTradeId: number | null;
+}
+
+/**
+ * Come sono state trovate le righe dell'ordine di un clic:
+ *  - `id`: id dichiarati dal servizio nel `result` della richiesta;
+ *  - `chiave`: Mike, la chiave dell'approvazione scritta dal servizio sulla
+ *    riga (`meta.approvazione_id` = id della richiesta `approva_uscita`);
+ *  - `posizione`: chiusure (`closes_trade_id`) della posizione cliccata;
+ *  - `correlazione`: RIPIEGO, le righe nuove del bot sulla partita;
+ *  - `nessuno`: nessuna regola applicabile (apertura senza id, cash out
+ *    globale senza id dichiarati).
+ */
+export type ModoGambe = 'id' | 'chiave' | 'posizione' | 'correlazione' | 'nessuno';
 
 /** Una riga d'ordine trovata per il clic, con la sua provenienza. */
 export interface GambaSeguita {
@@ -132,6 +165,8 @@ export interface RigaCandidata {
     eventId: string | null;
     chiudeId: number | null;
     ruolo: string | null;
+    /** Mike: `meta.approvazione_id` (id della richiesta `approva_uscita`) */
+    approvazioneId?: number | null;
 }
 
 export interface DeltaTick {
@@ -250,35 +285,97 @@ export function idsDaRisultato(result: unknown, tipo: 'apertura' | 'chiusura'): 
     return out;
 }
 
+/**
+ * 25/09 (residui B17) - le posizioni NON chiuse da un cash out globale, dal
+ * `result.non_chiuse` del servizio (Safe `_request_cashout_event`): ogni voce
+ * e' `{trade_id, motivo, closing_trade_id?}`. Mai inventate: niente voce = [].
+ */
+export function nonChiuseDaRisultato(result: unknown): PosizioneNonChiusa[] {
+    const r = oggetto(result);
+    if (!Array.isArray(r.non_chiuse)) return [];
+    return r.non_chiuse.map((v) => {
+        const o = oggetto(v);
+        const tid = num(o.trade_id);
+        const cid = num(o.closing_trade_id);
+        return {
+            tradeId: tid !== null && Number.isInteger(tid) ? tid : null,
+            motivo: (testo(o.motivo) ?? testo(o.message) ?? 'motivo non dichiarato dal servizio').replace(/_/g, ' '),
+            closingTradeId: cid !== null && Number.isInteger(cid) && cid > 0 ? cid : null,
+        };
+    });
+}
+
+/** La chiave del seguito del CASH OUT GLOBALE di una partita (un clic = N ordini). */
+export function chiaveCashOutPartita(bot: Bot, eventId: string): string {
+    return `${bot}:cashout-partita:${eventId}`;
+}
+
+/** Come sono state trovate le gambe, a parole (a video accanto all'esito). */
+export function testoModoGambe(m: ModoGambe): string {
+    switch (m) {
+    case 'id': return 'ordini dichiarati dal servizio (id nel risultato della richiesta)';
+    case 'chiave': return 'ordini con la chiave dell\'approvazione, scritta dal servizio sulla riga';
+    case 'posizione': return 'chiusure della posizione cliccata';
+    case 'correlazione':
+        return 'RIPIEGO: righe nuove del bot sulla partita dopo il clic (nessuna riga porta '
+            + 'la chiave della richiesta)';
+    default: return 'nessun ordine dichiarato dal servizio';
+    }
+}
+
 // ---------------------------------------------------------- quali righe
 /**
  * Le righe che SONO l'ordine di questo clic (id). Regole, in quest'ordine:
  *  1. id dichiarati dal servizio (`richiesta.tradeIds`), se la riga e' nota;
  *  2. un'APERTURA senza id del servizio: nessuna riga (non si indovina);
+ *     idem un clic `soloIdDichiarati` (cash out globale di partita);
  *  3. chiusura di una posizione Omega/Safe: le gambe con `closes_trade_id`
  *     = quella posizione, nate DOPO il clic (non note al clic);
- *  4. Mike / bot tennis (chiudono per partita): le righe NUOVE del bot su
- *     quella partita (non note al clic), del ruolo proposto se dichiarato.
+ *  4. per CHIAVE: le righe che portano `meta.approvazione_id` = id della
+ *     richiesta del clic (Mike, uscita approvata: scritta dal servizio
+ *     all'esecuzione, `Betfair/mike/service.py`);
+ *  5. RIPIEGO dichiarato (Mike senza chiave, bot tennis che chiudono per
+ *     partita): le righe NUOVE del bot su quella partita (non note al clic),
+ *     del ruolo proposto se dichiarato, mai una riga con la chiave di
+ *     un'ALTRA approvazione.
  */
+export function gambeDelClicDettaglio(
+    clic: ClicOrdine, richiesta: RichiestaSeguita | null, candidate: readonly RigaCandidata[],
+): { ids: number[]; modo: ModoGambe } {
+    const delBot = candidate.filter((c) => c.bot === clic.bot);
+    const ids = richiesta?.tradeIds ?? [];
+    if (ids.length) return { ids: ids.filter((id) => delBot.some((c) => c.id === id)), modo: 'id' };
+    if (clic.tipo === 'apertura' || clic.soloIdDichiarati) return { ids: [], modo: 'nessuno' };
+    const noti = new Set(clic.idsNotiAlClic);
+    if (clic.tradeIdApertura !== null && (clic.bot === 'omega' || clic.bot === 'safe')) {
+        return {
+            ids: delBot
+                .filter((c) => c.chiudeId === clic.tradeIdApertura && !noti.has(c.id))
+                .map((c) => c.id),
+            modo: 'posizione',
+        };
+    }
+    if (clic.requestId !== null) {
+        const conChiave = delBot.filter((c) => c.approvazioneId === clic.requestId);
+        if (conChiave.length) return { ids: conChiave.map((c) => c.id), modo: 'chiave' };
+    }
+    if (clic.eventId === null) return { ids: [], modo: 'nessuno' };
+    const ruoli = clic.ruoli && clic.ruoli.length ? new Set(clic.ruoli) : null;
+    return {
+        ids: delBot
+            .filter((c) => c.eventId === clic.eventId && !noti.has(c.id)
+                && c.approvazioneId == null
+                && (ruoli === null || (c.ruolo !== null && ruoli.has(c.ruolo))))
+            .map((c) => c.id),
+        modo: 'correlazione',
+    };
+}
+
+/** Solo gli id (la firma di prima, per i chiamanti che non guardano il modo). */
 export function gambeDelClic(
     clic: ClicOrdine, richiesta: RichiestaSeguita | null, candidate: readonly RigaCandidata[],
 ): number[] {
-    const delBot = candidate.filter((c) => c.bot === clic.bot);
-    const ids = richiesta?.tradeIds ?? [];
-    if (ids.length) return ids.filter((id) => delBot.some((c) => c.id === id));
-    if (clic.tipo === 'apertura') return [];
-    const noti = new Set(clic.idsNotiAlClic);
-    if (clic.tradeIdApertura !== null && (clic.bot === 'omega' || clic.bot === 'safe')) {
-        return delBot
-            .filter((c) => c.chiudeId === clic.tradeIdApertura && !noti.has(c.id))
-            .map((c) => c.id);
-    }
-    if (clic.eventId === null) return [];
-    const ruoli = clic.ruoli && clic.ruoli.length ? new Set(clic.ruoli) : null;
-    return delBot
-        .filter((c) => c.eventId === clic.eventId && !noti.has(c.id)
-            && (ruoli === null || (c.ruolo !== null && ruoli.has(c.ruolo))))
-        .map((c) => c.id);
+    return gambeDelClicDettaglio(clic, richiesta, candidate).ids;
 }
 
 // ----------------------------------------------------- dalla mappa righe
@@ -314,11 +411,14 @@ export function candidateDallaMappa(mappa: MappaRighe<unknown>): RigaCandidata[]
         if (id === null) continue;
         const meta = oggetto(r.meta);
         const chiude = num(r.closes_trade_id) ?? num(meta.closes_trade_id);
+        const appr = num(meta.approvazione_id);
         out.push({
             bot: v.bot, id,
             eventId: testo(r.event_id),
             chiudeId: chiude,
             ruolo: testo(r.role),
+            // la chiave c'e' solo sulle righe che la portano (Mike, uscita approvata)
+            ...(appr !== null && Number.isInteger(appr) && appr > 0 ? { approvazioneId: appr } : {}),
         });
     }
     return out;
@@ -511,6 +611,14 @@ export function esitoAbbinamento(
             return { ...vuoto, fase: 'ignoto', tono: 'ignoto', terminale: true, fonte,
                 testo: `esito ignoto: ${richiesta?.motivo ?? 'stato della richiesta non riconosciuto'}` };
         }
+        if (f === 'eseguita' && clic.soloIdDichiarati && richiesta && richiesta.tradeIds.length === 0) {
+            // 25/09 (residui B17) - cash out globale eseguito SENZA nessun
+            // ordine di chiusura dichiarato: non c'e' niente da aspettare
+            const nc = richiesta.nonChiuse ?? [];
+            return { ...vuoto, fase: nc.length ? 'rifiutato' : 'ignoto', tono: nc.length ? 'ko' : 'ignoto',
+                terminale: true, fonte,
+                testo: `nessun ordine di chiusura partito: ${richiesta.motivo ?? 'il servizio non ne dichiara'}` };
+        }
         if (scaduto) {
             return { ...vuoto, fase: 'ignoto', tono: 'ignoto', terminale: true, fonte,
                 testo: 'esito ignoto: nessuna riga d’ordine da 3 minuti, controlla la riga prima di riprovare' };
@@ -577,12 +685,12 @@ export function esitoAbbinamento(
 export function esitoDelClic(
     clic: ClicOrdine, richiesta: RichiestaSeguita | null,
     mappa: MappaRighe<unknown>, nowMs: number,
-): { esito: EsitoAbbinamento; gambe: GambaSeguita[] } {
-    const ids = gambeDelClic(clic, richiesta, candidateDallaMappa(mappa));
+): { esito: EsitoAbbinamento; gambe: GambaSeguita[]; modoGambe: ModoGambe } {
+    const { ids, modo } = gambeDelClicDettaglio(clic, richiesta, candidateDallaMappa(mappa));
     const gambe = ids
         .map((id) => gambaDallaMappa(mappa, clic.bot, id, nowMs))
         .filter((g): g is GambaSeguita => g !== null);
-    return { esito: esitoAbbinamento(clic, richiesta, gambe, nowMs), gambe };
+    return { esito: esitoAbbinamento(clic, richiesta, gambe, nowMs), gambe, modoGambe: modo };
 }
 
 /** Le righe del bot sulla partita note ADESSO (da salvare nel clic). */

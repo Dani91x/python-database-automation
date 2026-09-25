@@ -49,7 +49,8 @@ import {
     giudica, scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato, prezzoSegnaleDi,
     type ContestoPrezzoVisto, type PrezzoScheda, type Semaforo, type ValutazioneServizio,
 } from '@/lib/schedaAlMs';
-import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
+import { usePrezziAlMs, usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
+import { valutaComboAlMs } from '@/lib/chiusuraAlMs';
 
 /** Oltre questa età le quote non si usano per piazzare: stessa soglia del
  *  resto della piattaforma (`safeBot.FEED_ROW_STALE_MS`). */
@@ -219,6 +220,38 @@ export function SchedaPropostaOpportunita({
     });
     const vivo = prezzoDelLato(alMs, lato);
     const abbinabile = sizeDelLato(alMs, lato);
+
+    // 25/09 (residui B17) - LE GAMBE DELLA COMBO AL MS: ogni gamba dal ladder
+    // del SUO mercato (una sottoscrizione per mercato), ripiego DICHIARATO sul
+    // prezzo dello scanner che la scheda riceveva gia' (`prezziViviGambe`).
+    const legsCombo = isCombo ? (p.legs ?? []) : [];
+    const latoGamba = (v: unknown): 'back' | 'lay' | null => (v === 'back' || v === 'lay' ? v : null);
+    const istanteScanner = etaQuoteS == null ? null : nowMs - etaQuoteS * 1000;
+    const prezziGambe = usePrezziAlMs({
+        sorgente: isCombo ? sorgenteLadder : null,
+        sport: p.sport === 'tennis' ? 'tennis' : 'calcio',
+        selezioni: legsCombo.map((leg, i) => {
+            const lg = latoGamba(leg.side);
+            const v = prezziViviGambe?.[i];
+            const ok = v != null && Number.isFinite(v) && v > 1;
+            return {
+                marketId: leg.market_id ?? null, selectionId: leg.selection_id ?? null, lato: lg,
+                ripiego: ok ? {
+                    back: lg === 'back' ? v : null, backSize: null, lay: lg === 'lay' ? v : null, laySize: null,
+                    istanteMs: istanteScanner, fonte: 'scanner' as const, statoMercato: null,
+                } : null,
+            };
+        }),
+    });
+    const viviGambe: PrezziViviGambe = {};
+    prezziGambe.forEach((pg, i) => { viviGambe[i] = prezzoDelLato(pg, latoGamba(legsCombo[i]?.side)); });
+    const unaGambaViva = Object.values(viviGambe).some((v) => v != null);
+    const comboAlMs = isCombo
+        ? valutaComboAlMs(p.ev, legsCombo.map((leg, i) => ({
+            lato: latoGamba(leg.side), prezzoProposta: Number(leg.price), size: Number(leg.size),
+            prezzoOra: viviGambe[i] ?? null,
+        })))
+        : null;
     // eta' del prezzo mostrato; senza prezzo, quella del feed (se nota)
     const etaS = alMs.istanteMs == null ? etaQuoteS : Math.max(0, (nowMs - alMs.istanteMs) / 1000);
 
@@ -230,7 +263,7 @@ export function SchedaPropostaOpportunita({
         ? giudica({ lato, prezzo: vivo, abbinabile, pModel: p.p_model, criteri, valutazione })
         : null;
     const semaforo: Semaforo | null = isCombo
-        ? (valutazione && valutazione.valida === false ? 'NO' : null)
+        ? (valutazione && valutazione.valida === false ? 'NO' : comboAlMs?.semaforo ?? null)
         : giudizio?.semaforo ?? null;
     const sc = scarto(vivo, p.price_at_decision);
     const ap = giudizio?.alPrezzo ?? null;
@@ -238,7 +271,7 @@ export function SchedaPropostaOpportunita({
     // GLI AVVISI (mai un bottone spento): dati/prezzo, prezzo mosso, criteri.
     const avvisi: string[] = [];
     const base = isCombo
-        ? motivoNonPiazzabileCombo({ legs: p.legs, prezziViviGambe })
+        ? motivoNonPiazzabileCombo({ legs: p.legs, prezziViviGambe: unaGambaViva ? viviGambe : null })
         : motivoNonPiazzabile({ prezzo: p.price, size: p.size, abbinabileOra: abbinabile,
             etaQuoteS: etaS, prezzoVivo: vivo });
     if (base) avvisi.push(base);
@@ -258,6 +291,10 @@ export function SchedaPropostaOpportunita({
     }
     if (giudizio && giudizio.semaforo !== 'SI') {
         avvisi.push(`fuori criterio: ${giudizio.motivi.join('; ')}`);
+    }
+    if (comboAlMs && comboAlMs.semaforo !== 'SI' && comboAlMs.evMinimo != null) {
+        avvisi.push(`combinazione al prezzo di adesso: profitto bloccato almeno ${NUM(comboAlMs.evMinimo)} `
+            + `per euro (proposta ${NUM(p.ev)}): ${comboAlMs.motivi.join('; ')}`);
     }
     // D7 (25/09) — la BANDA della strategia: al clic l'ordine parte A MERCATO
     // (il miglior prezzo di quel momento) solo se sta dentro; fuori banda il
@@ -295,17 +332,30 @@ export function SchedaPropostaOpportunita({
         try {
             const adesso = Date.now();
             if (isCombo) {
+                // 25/09 (residui B17) - partono i prezzi A VIDEO delle gambe (al
+                // ms o dello scanner), col contesto: la fonte PEGGIORE fra le
+                // gambe e l'eta' della gamba piu' vecchia
                 const pulite: PrezziViviGambe = {};
                 let assente = false;
+                const fonti = new Set<string>();
+                let etaMax: number | null = null;
                 (p.legs ?? []).forEach((leg, i) => {
-                    const v = prezziViviGambe?.[i];
-                    if (v != null && Number.isFinite(v) && v > 1) { pulite[i] = v; return; }
+                    const v = viviGambe[i];
+                    if (v != null && Number.isFinite(v) && v > 1) {
+                        pulite[i] = v;
+                        const pg = prezziGambe[i];
+                        if (pg?.fonte) fonti.add(pg.fonte);
+                        if (pg?.istanteMs != null) etaMax = Math.max(etaMax ?? 0, adesso - pg.istanteMs);
+                        return;
+                    }
                     assente = true;
                     const foto = Number(leg.price);
                     if (Number.isFinite(foto) && foto > 1) pulite[i] = foto;
                 });
+                const fonte: ContestoPrezzoVisto['fonte'] = assente ? 'proposta'
+                    : fonti.has('scanner') ? 'scanner' : fonti.has('db') ? 'db' : fonti.has('canale') ? 'canale' : null;
                 await onPiazza(proposta.id, undefined, pulite, slippagePct ?? undefined, {
-                    eta_ms: null, fonte: assente ? 'proposta' : 'scanner',
+                    eta_ms: assente ? null : etaMax, fonte,
                     prezzo_vivo_assente: assente, clic_ms: adesso });
             } else {
                 const scelto = prezzoVistoAlClic({
@@ -362,7 +412,10 @@ export function SchedaPropostaOpportunita({
             {isCombo ? (
                 <div className="border-t border-white/5" data-testid="cr-opp-combo-legs">
                     {(p.legs ?? []).map((leg, i) => {
-                        const vivo = prezziViviGambe?.[i] ?? null;
+                        const vivo = viviGambe[i] ?? null;
+                        const pg = prezziGambe[i];
+                        const tickG = comboAlMs?.tick[i] ?? null;
+                        const controG = comboAlMs?.contro[i] ?? null;
                         return (
                             <div key={i}
                                 className="px-3 py-1.5 flex items-baseline gap-2.5 flex-wrap border-b border-white/5 last:border-b-0"
@@ -383,6 +436,18 @@ export function SchedaPropostaOpportunita({
                                     </span>
                                     <span className="block font-mono text-[9.5px] text-white/40">
                                         proposta {fmtOdds(leg.price)}
+                                        {tickG != null && tickG !== 0 && (
+                                            <span className={controG ? 'text-orange-400' : 'text-emerald-400'}
+                                                data-testid="cr-opp-combo-gamba-tick">
+                                                {' '}({tickG > 0 ? '+' : '-'}{fmtTicks(tickG)}{controG ? ' contro' : ' a favore'})
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className="block text-[9.5px] text-white/40" data-testid="cr-opp-combo-gamba-fonte"
+                                        data-fonte={vivo == null ? '' : pg?.fonte ?? ''}>
+                                        {vivo == null
+                                            ? 'prezzo di adesso non disponibile'
+                                            : etaEFonte(pg?.istanteMs ?? null, pg?.fonte ?? null, nowMs)}
                                     </span>
                                 </span>
                                 <span className="font-mono text-[11px] text-white/50 tabular-nums w-16 text-right">
@@ -456,9 +521,17 @@ export function SchedaPropostaOpportunita({
                         : fmtMoney(abbinabile)}
                     tono={abbinabile != null && Number(p.size) <= abbinabile + 0.005 ? 'buono' : undefined}
                     testId="cr-opp-abbinabile" />
-                <Cella etichetta="Valore atteso (EV)"
-                    valore={NUM(ap?.ev ?? p.ev)} tono={Number(ap?.ev ?? p.ev) > 0 ? 'buono' : 'cattivo'}
-                    testId="cr-opp-ev" />
+                {comboAlMs && comboAlMs.evMinimo != null ? (
+                    // 25/09 (residui B17) - combo: limite INFERIORE certo del
+                    // profitto bloccato per euro al prezzo di adesso
+                    <Cella etichetta="EV ora (almeno)"
+                        valore={`${NUM(comboAlMs.evMinimo)} (proposta ${NUM(p.ev)})`}
+                        tono={comboAlMs.evMinimo > 0 ? 'buono' : 'cattivo'} testId="cr-opp-ev" />
+                ) : (
+                    <Cella etichetta="Valore atteso (EV)"
+                        valore={NUM(ap?.ev ?? p.ev)} tono={Number(ap?.ev ?? p.ev) > 0 ? 'buono' : 'cattivo'}
+                        testId="cr-opp-ev" />
+                )}
             </div>
 
             {/* ---- i numeri del modello (24/09: P del mercato e vantaggio AL PREZZO DI ADESSO) ---- */}

@@ -10,6 +10,7 @@
 // ============================================================================
 import { Loader2 } from 'lucide-react';
 import { fmtOdds } from '@/lib/format';
+import { esitoGamba, testoModoGambe, type FaseEsito } from '@/lib/esitoAbbinamento';
 import type { EsitoSeguito } from './useSeguiOrdini';
 
 const CLS: Record<string, string> = {
@@ -54,6 +55,86 @@ export function EsitoAbbinamentoStriscia({ seguito, testId = 'cr-esito-abbinamen
                 {esito.prezzoMedio !== null && <span>medio abbinato {fmtOdds(esito.prezzoMedio)}</span>}
             </div>
             <div className="text-white/35" data-testid={`${testId}-fonte`}>esito: {esito.fonte}</div>
+            {/* 25/09 (residui B17) - come sono state trovate le gambe: per chiave
+                o, se il servizio non l'ha scritta, per correlazione DICHIARATA */}
+            {(seguito.modoGambe === 'chiave' || seguito.modoGambe === 'correlazione') && (
+                <div className={seguito.modoGambe === 'correlazione' ? 'text-orange-300/80' : 'text-white/35'}
+                    data-testid={`${testId}-modo`} data-modo={seguito.modoGambe}>
+                    gambe: {testoModoGambe(seguito.modoGambe)}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** Una riga del dettaglio per ordine del cash out globale. */
+export interface RigaOrdineCashOut {
+    chiave: string;
+    testo: string;
+    tono: 'ok' | 'parziale' | 'ko' | 'attesa';
+}
+
+const TONO_FASE: Record<FaseEsito, RigaOrdineCashOut['tono']> = {
+    inviato: 'attesa', in_corso: 'attesa', accettato: 'attesa', parziale: 'parziale',
+    totale: 'ok', non_abbinato: 'ko', rifiutato: 'ko', ignoto: 'attesa',
+};
+
+/**
+ * 25/09 (residui B17) - IL DETTAGLIO PER ORDINE del cash out globale (puro,
+ * testato). Una riga per ogni ordine di chiusura DICHIARATO dal servizio
+ * (`result.closing_trade_ids`), nell'ordine del servizio: l'esito della sua
+ * riga (stesse parole di `esitoAbbinamento`) oppure «in attesa della riga».
+ * Poi una riga per ogni posizione che il servizio dichiara NON chiusa
+ * (`result.non_chiuse`), col suo motivo. Nessun id indovinato.
+ */
+export function righeOrdiniCashOut(seguito: EsitoSeguito): RigaOrdineCashOut[] {
+    const dichiarati = seguito.richiesta?.tradeIds ?? [];
+    const out: RigaOrdineCashOut[] = dichiarati.map((id) => {
+        const i = seguito.gambe.findIndex((g) => g.id === id);
+        if (i < 0) {
+            return { chiave: `o${id}`, testo: `ordine #${id}: in attesa della riga dell'ordine`, tono: 'attesa' };
+        }
+        const e = esitoGamba(seguito.gambe[i].riga);
+        return {
+            chiave: `o${id}`,
+            testo: `ordine #${id}: ${seguito.esito.righe[i] ?? seguito.esito.testo}`,
+            tono: TONO_FASE[e.fase],
+        };
+    });
+    for (const n of seguito.richiesta?.nonChiuse ?? []) {
+        out.push({
+            chiave: `n${n.tradeId ?? out.length}`,
+            testo: `posizione #${n.tradeId ?? '?'} NON chiusa: rifiutato: ${n.motivo}`
+                + (n.closingTradeId !== null ? ` (ordine #${n.closingTradeId} partito)` : ''),
+            tono: 'ko',
+        });
+    }
+    return out;
+}
+
+const CLS_RIGA: Record<RigaOrdineCashOut['tono'], string> = {
+    ok: 'text-emerald-300', parziale: 'text-amber-300', ko: 'text-red-300', attesa: 'text-white/60',
+};
+
+/** Il messaggio del clic + il dettaglio per ordine (cash out globale di partita). */
+export function EsitoOrdiniCashOut({ seguito, testId = 'cr-cashout-ordini' }: {
+    seguito: EsitoSeguito;
+    testId?: string;
+}) {
+    const righe = righeOrdiniCashOut(seguito);
+    return (
+        <div data-testid={testId}>
+            <EsitoAbbinamentoStriscia seguito={seguito} testId={`${testId}-esito`} />
+            {righe.length > 0 && (
+                <ul className="px-3 py-1 text-[10.5px] space-y-0.5" data-testid={`${testId}-lista`}>
+                    {righe.map((r) => (
+                        <li key={r.chiave} className={CLS_RIGA[r.tono]} data-testid={`${testId}-riga`}
+                            data-tono={r.tono}>
+                            {r.testo}
+                        </li>
+                    ))}
+                </ul>
+            )}
         </div>
     );
 }

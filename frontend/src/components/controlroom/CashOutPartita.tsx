@@ -21,7 +21,7 @@
 // non e' un clic solo. Stessa forma del cancelletto delle uscite
 // (`SchedaChiusura`): primo clic arma, secondo manda.
 // ============================================================================
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { Loader2, Undo2, XOctagon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtTime } from '@/lib/format';
@@ -29,7 +29,10 @@ import {
     comeLabel, motivoCashoutSpento, motivoRiprendiSpento,
     type StatoChiusuraEvento,
 } from '@/lib/chiusuraUtente';
+import { chiaveCashOutPartita } from '@/lib/esitoAbbinamento';
 import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
+import { ChiusuraRigaContext } from '@/components/controlroom/BottoneChiudiRiga';
+import { EsitoOrdiniCashOut } from '@/components/controlroom/EsitoAbbinamentoStriscia';
 
 export interface CashOutPartitaProps {
     eventId: string;
@@ -58,6 +61,13 @@ export function CashOutPartita({
     const [armato, setArmato] = useState(false);
     const [inCorso, setInCorso] = useState(false);
     const [errore, setErrore] = useState<string | null>(null);
+    // 25/09 (residui B17) - dopo il clic, OGNI ordine del cash out globale fino
+    // all'esito d'abbinamento. Le gambe sono SOLO quelle che il servizio
+    // dichiara nel risultato della richiesta (`closing_trade_ids`): la
+    // Control Room le segue (`useSeguiOrdini`), qui si mostrano. Senza il
+    // contesto (altre pagine, test storici) non si monta niente.
+    const api = useContext(ChiusuraRigaContext);
+    const ordini = api?.esitoOrdine?.(chiaveCashOutPartita('safe', eventId)) ?? null;
 
     // FAIL-CLOSED: una modalita' non dichiarata NON vale «paper». Ai soldi veri
     // si arriva scrivendolo, ma alla doppia conferma si arriva anche per dubbio:
@@ -172,6 +182,12 @@ export function CashOutPartita({
             {esito && (
                 <div className="w-full">
                     <StrisciaEsitoChiusura {...esito} testId={esito.testId ?? 'cr-cashout-partita-esito'} />
+                </div>
+            )}
+
+            {ordini && (
+                <div className="w-full">
+                    <EsitoOrdiniCashOut seguito={ordini} testId="cr-cashout-partita-ordini" />
                 </div>
             )}
         </div>

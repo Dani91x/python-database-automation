@@ -1,0 +1,46 @@
+CONTROLLO vitest run src/components/controlroom/ResiduiB17.schede.test.tsx       VERDE
+CONTROLLO src/components/controlroom/useControlRoom.test.tsx -t residui B17      VERDE
+CONTROLLO vitest run src/lib/chiusuraAlMs.test.ts                                VERDE
+CONTROLLO -q -p no:cacheprovider                                                 VERDE
+CONTROLLO -q -p no:cacheprovider                                                 VERDE
+TS1 cash out: correlazione al posto degli id     ROSSO md5 ripristinato
+TS2 Mike: chiave ignorata                        ROSSO md5 ripristinato
+TS3 Mike: chiave altrui nel ripiego              ROSSO md5 ripristinato
+TS4 cash out: nessun ordine = attesa infinita    ROSSO md5 ripristinato
+TS5 cash out: posizioni non chiuse taciute       ROSSO md5 ripristinato
+TS6 cash out: non_chiuse non lette dalla coda    ROSSO md5 ripristinato
+TS7 cash out: clic senza soloIdDichiarati        ROSSO md5 ripristinato
+TS8 Chiudi: P&L dallo scanner, non dal ms        ROSSO md5 ripristinato
+TS9 Chiudi: ripiego non dichiarato               ROSSO md5 ripristinato
+TS10 Chiudi: prezzo visto non passato al clic    ROSSO md5 ripristinato
+TS11 Chiudi: prezzo visto nel payload            ROSSO md5 ripristinato
+TS12 combo: gamba contro non conta               ROSSO md5 ripristinato
+TS13 combo: niente ladder al ms                  ROSSO md5 ripristinato
+TS14 combo: al clic i prezzi dello scanner       ROSSO md5 ripristinato
+PY1 Safe: id degli ordini non dichiarati         ROSSO md5 ripristinato
+PY2 Safe: closing_trade_ids assente dal risultato ROSSO md5 ripristinato
+PY3 Mike: chiave anche sulle coperture           ROSSO md5 ripristinato
+PY4 Mike: id della richiesta non salvato         ROSSO md5 ripristinato
+PY5 Mike: chiave senza confronto                 ROSSO md5 ripristinato
+PY6 Mike: chiave non scritta sulla riga          ROSSO md5 ripristinato
+---
+TS1 cash out: correlazione al posto degli id     ROSSO md5 ripristinato
+TS2 Mike: chiave ignorata                        ROSSO md5 ripristinato
+TS3 Mike: chiave altrui nel ripiego              ROSSO md5 ripristinato
+TS4 cash out: nessun ordine = attesa infinita    ROSSO md5 ripristinato
+TS5 cash out: posizioni non chiuse taciute       ROSSO md5 ripristinato
+TS6 cash out: non_chiuse non lette dalla coda    ROSSO md5 ripristinato
+TS7 cash out: clic senza soloIdDichiarati        ROSSO md5 ripristinato
+TS8 Chiudi: P&L dallo scanner, non dal ms        ROSSO md5 ripristinato
+TS9 Chiudi: ripiego non dichiarato               ROSSO md5 ripristinato
+TS10 Chiudi: prezzo visto non passato al clic    ROSSO md5 ripristinato
+TS11 Chiudi: prezzo visto nel payload            ROSSO md5 ripristinato
+TS12 combo: gamba contro non conta               ROSSO md5 ripristinato
+TS13 combo: niente ladder al ms                  ROSSO md5 ripristinato
+TS14 combo: al clic i prezzi dello scanner       ROSSO md5 ripristinato
+PY1 Safe: id degli ordini non dichiarati         ROSSO md5 ripristinato
+PY2 Safe: closing_trade_ids assente dal risultato ROSSO md5 ripristinato
+PY3 Mike: chiave anche sulle coperture           ROSSO md5 ripristinato
+PY4 Mike: id della richiesta non salvato         ROSSO md5 ripristinato
+PY5 Mike: chiave senza confronto                 ROSSO md5 ripristinato
+PY6 Mike: chiave non scritta sulla riga          ROSSO md5 ripristinato

@@ -520,10 +520,16 @@ def _signature(row: Dict[str, Any]) -> str:
 def _trade_row(info: F.EventInfo, leg: E.Leg, mode: str, params: Dict[str, Any],
                minute: Optional[int], score: Optional[str],
                closes_trade_id: Optional[int] = None,
-               close_reason: Optional[str] = None) -> Dict[str, Any]:
+               close_reason: Optional[str] = None,
+               approvazione_id: Optional[int] = None) -> Dict[str, Any]:
     sid = info.selection_id(leg.market, leg.selection)
     liability = round(leg.size * (leg.price - 1.0), 2) if leg.side == "lay" else round(leg.size, 2)
     meta: Dict[str, Any] = {"phase": "reserved", "leg_ref": leg.ref, "final": bool(leg.final)}
+    if approvazione_id is not None:
+        # 25/09 (residui B17) - la CHIAVE dell'approvazione dell'utente (id
+        # della richiesta `approva_uscita`): la scheda trova le gambe del clic
+        # per chiave, non per correlazione. Solo notizia sulla riga.
+        meta["approvazione_id"] = int(approvazione_id)
     if leg.role in E.CLOSING_ROLES:
         # H4: la riga di chiusura dice SEMPRE come si e' usciti (contratto UI)
         meta["exit_kind"] = E.exit_kind_for(leg.role, close_reason)
@@ -588,7 +594,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                   minute: Optional[int] = None, score: Optional[str] = None,
                   feed_fresh: bool = True, closes_trade_id: Optional[int] = None,
                   close_reason: Optional[str] = None,
-                  ctx: Optional[E.MatchCtx] = None) -> str:
+                  ctx: Optional[E.MatchCtx] = None,
+                  approvazione_id: Optional[int] = None) -> str:
     """Piazza la gamba (reserve-first). Ritorna 'open' | 'cancelled' | 'pending'.
 
     Regola prezzo TAKER: il fill avviene al prezzo richiesto solo se ANCORA
@@ -703,7 +710,8 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         legal, _ = E.legalize_back_size(leg.size, str(params.get("cover_rounding", "ceil")))
         db.log("size_legalized", {"leg": leg.ref, "from": leg.size, "to": legal}, info.event_id)
         leg.size = legal
-    row = _trade_row(info, leg, mode, params, minute, score, closes_trade_id, close_reason)
+    row = _trade_row(info, leg, mode, params, minute, score, closes_trade_id, close_reason,
+                     approvazione_id=approvazione_id)
     try:
         trade_id = _insert_trade_row(db, row, info.event_id)
     except Exception as ex:  # noqa: BLE001 — riserva fallita: nessun ordine
@@ -1204,7 +1212,8 @@ def _freno_aperture_rest() -> Optional[str]:
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
-                         ev: Dict[str, Any], ctx: Optional[E.MatchCtx] = None) -> None:
+                         ev: Dict[str, Any], ctx: Optional[E.MatchCtx] = None,
+                         approvazione_id: Optional[int] = None) -> None:
     """Piazza in LIVE la lay appoggiata e la lascia sul book.
 
     Nessuna differenza di STRATEGIA rispetto al paper: stessa selezione, stesso
@@ -1252,7 +1261,8 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
 
     try:
         trade_id = _insert_trade_row(
-            db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo), eid)
+            db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo,
+                           approvazione_id=approvazione_id), eid)
     except Exception as ex:  # noqa: BLE001 — riserva fallita: NESSUN ordine reale
         leg.status = "cancelled"
         db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, eid)
@@ -2390,7 +2400,7 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
             elif kind == "cancel":
                 res = _request_cancel(db, ev, events, eid, market)
             elif kind == "approva_uscita":
-                res = _request_approva_uscita(db, ev, events, eid, payload, now)
+                res = _request_approva_uscita(db, ev, events, eid, payload, now, request_id=rid)
             elif kind == "skip_event":
                 ctx = _ctx_from_row(ev, db)
                 if E.open_selections(ctx.legs) or any(l.is_live or l.needs_reconcile for l in ctx.legs):
@@ -2450,8 +2460,44 @@ def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
     return n
 
 
+def _id_approvazione(v: Any) -> Optional[int]:
+    """L'id di una richiesta ``approva_uscita`` (intero > 0), o None."""
+    if isinstance(v, bool):
+        return None
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _approvazione_eseguita(prima: Optional[Dict[str, Any]], d: Any) -> Optional[int]:
+    """25/09 (residui B17) - l'id della richiesta dell'utente che il motore ha
+    appena ESEGUITO in questo giro, o None. Vale solo se la telemetria del
+    motore (``engine.gate_uscite``: ``uscita_eseguita_su_approvazione``) porta
+    la STESSA chiave dell'approvazione letta prima del giro: nessuna
+    deduzione, nessun cambio di decisione."""
+    if not isinstance(prima, dict):
+        return None
+    tele = (getattr(d, "telemetry", None) or {}).get("uscita_eseguita_su_approvazione")
+    if not isinstance(tele, dict) or not tele.get("chiave"):
+        return None
+    if str(tele.get("chiave")) != str(prima.get("chiave") or ""):
+        return None
+    return _id_approvazione(prima.get("request_id"))
+
+
+def _chiave_gamba(approvazione_id: Optional[int], leg: Any) -> Optional[int]:
+    """La chiave va SOLO sulle gambe d'uscita discrezionale (quelle che
+    l'utente ha approvato), mai su una copertura nata nello stesso giro."""
+    if approvazione_id is None or getattr(leg, "role", None) not in E.USCITE_DISCREZIONALI:
+        return None
+    return approvazione_id
+
+
 def _request_approva_uscita(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[str, Any]],
-                            eid: str, payload: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+                            eid: str, payload: Dict[str, Any], now: datetime,
+                            request_id: Optional[int] = None) -> Dict[str, Any]:
     """25/09 — l'utente APPROVA l'uscita proposta (interruttore "uscite
     automatiche" spento). Non piazza niente da qui: scrive la firma sul contesto
     della partita (``ctx.uscita_approvata``) e al giro del motore la decisione
@@ -2470,7 +2516,11 @@ def _request_approva_uscita(db: Any, ev: Dict[str, Any], events: Dict[str, Dict[
                        "La proposta e' cambiata: guarda quella nuova prima di approvare.",
                        chiave_viva=viva.get("chiave"))
     contesto = payload.get("contesto") if isinstance(payload.get("contesto"), dict) else None
+    rid_ok = _id_approvazione(request_id)
     ctx.uscita_approvata = {"chiave": chiave, "at": now.timestamp(),
+                            # 25/09 (residui B17): l'id della richiesta, che il
+                            # servizio scrivera' sulle gambe che ne nascono
+                            **({"request_id": rid_ok} if rid_ok is not None else {}),
                             **({"contesto": contesto} if contesto else {})}
     extra = dict(ev.get("ctx") or {})
     events[eid] = _row_from_ctx(ev, ctx, extra)
@@ -3568,12 +3618,17 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                       mode=mode, params=params, now=now, dry=dry, minute=snap.minute,
                       score=score_str, feed_fresh=snap.feed_fresh,
                       close_reason=ctx.close_reason, closes_trade_id=closes_id(leg),
-                      ctx=ctx)
+                      ctx=ctx, approvazione_id=_id_approvazione(item.get("approvazione_id")))
         n_actions += 1
     extra["deferred"] = still
 
     # -- decisione -----------------------------------------------------------------
+    # 25/09 (residui B17) - l'approvazione dell'utente PRIMA del giro: se il
+    # motore la consuma (``uscita_eseguita_su_approvazione``), le gambe
+    # d'uscita nate adesso portano la sua chiave. Solo notizia sulla riga.
+    approvazione_prima = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
     d = E.decide(ctx, snap, params)
+    approvazione_id = _approvazione_eseguita(approvazione_prima, d)
     # IL TETTO DELLE PARTITE, APPLICATO DOVE NASCONO I SOLDI (13/09).
     # ``max_open_matches`` era controllato solo quando si ARMA una partita, e
     # lo stato ``WATCH`` non contava: il conto si rifaceva da zero a ogni giro,
@@ -3627,11 +3682,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 _piazza_resting_live(db=db, market=market, info=info, leg=leg, mode=mode,
                                      params=params, minuto=snap.minute, score=score_str,
                                      chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev,
-                                     ctx=ctx)
+                                     ctx=ctx, approvazione_id=_chiave_gamba(approvazione_id, leg))
             else:
                 try:
                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,
-                                                     closes_id(leg), ctx.close_reason),
+                                                     closes_id(leg), ctx.close_reason,
+                                                     approvazione_id=_chiave_gamba(approvazione_id, leg)),
                                       ev["event_id"])
                     db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
                                              "size": leg.size}, ev["event_id"])
@@ -3641,15 +3697,23 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             n_actions += 1
             continue
         if mode == "paper" and delay > 0:
-            extra["deferred"].append({"ref": leg.ref, "earliest_at": now_ts + delay})
+            aid = _chiave_gamba(approvazione_id, leg)
+            extra["deferred"].append({"ref": leg.ref, "earliest_at": now_ts + delay,
+                                      **({"approvazione_id": aid} if aid is not None else {})})
             db.log("place_deferred", {"leg": leg.ref, "role": leg.role, "bet_delay": delay,
                                       "price": leg.price, "size": leg.size}, ev["event_id"])
         else:
             execute_place(db=db, market=market, info=info, leg=leg, book=book, mode=mode, params=params,
                           now=now, dry=dry, minute=snap.minute, score=score_str,
                           feed_fresh=snap.feed_fresh, close_reason=ctx.close_reason,
-                          closes_trade_id=closes_id(leg), ctx=ctx)
+                          closes_trade_id=closes_id(leg), ctx=ctx,
+                          approvazione_id=_chiave_gamba(approvazione_id, leg))
         n_actions += 1
+    tele_appr = d.telemetry.get("uscita_eseguita_su_approvazione") \
+        if isinstance(d.telemetry, dict) else None
+    if approvazione_id is not None and isinstance(tele_appr, dict):
+        # l'attivita' dice anche QUALE richiesta e' stata eseguita
+        d.telemetry["uscita_eseguita_su_approvazione"] = {**tele_appr, "approvazione_id": approvazione_id}
     if d.telemetry:
         for k, v in d.telemetry.items():
             # ``settle`` NON e' un kind di ATTIVITA': il regolamento lo scrive il

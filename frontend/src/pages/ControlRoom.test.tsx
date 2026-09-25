@@ -1525,8 +1525,14 @@ describe('TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiung
         fireEvent.click(within(col).getByTestId('cr-chiudi'));
         // B16 (24/09): non piu' il solo id (che andava a Safe per ogni bot), ma
         // l'identita' della riga: il bot la instrada sulla SUA coda.
+        // 25/09 (residui B17): in piu' il prezzo «se chiudo ora» A VIDEO e il
+        // suo contesto, SOLO per la scheda (il payload della richiesta non cambia,
+        // `ResiduiB17.schede.test.tsx`). Qui la riga non porta i dati del ms:
+        // resta il numero dello scanner, dichiarato.
         expect(chiudi).toHaveBeenCalledWith({
             bot: 'safe', id: 55, eventId: 'IGNOTO_XYZ', modalita: 'live', stato: 'open',
+            prezzoVisto: 1.04,
+            contestoVisto: expect.objectContaining({ fonte: 'scanner', eta_ms: null, prezzo_vivo_assente: false }),
         });
     });
 });
