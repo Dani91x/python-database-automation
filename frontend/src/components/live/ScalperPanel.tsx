@@ -1,16 +1,16 @@
-// ============================================================================
-// ScalperPanel — pannello SCALPER BOT (per EVENTO, montato una volta come
+﻿// ============================================================================
+// ScalperPanel â€” pannello SCALPER BOT (per EVENTO, montato una volta come
 // XHedgePanel). Flusso:
-//   1. "Attiva Scalper Bot" → form: MODALITÀ (Tradizionale = maker neutro
+//   1. "Attiva Scalper Bot" â†’ form: MODALITÃ€ (Tradizionale = maker neutro
 //      validato / Direzionale = solo lato dei motori / Entrambe), stake,
 //      parametri (default VALIDATI, modificabili), interruttore ARMATO
-//      (dry-run: tutto cablato, nessun ordine reale — default ON).
+//      (dry-run: tutto cablato, nessun ordine reale â€” default ON).
 //   2. La richiesta va in scalper_control (RPC owner-only); il SERVIZIO locale
 //      (avvia_scalper_service.bat) arma la sessione flumine e scrive stato,
 //      esito del connettore motori (bias), statistiche e log.
 //   3. Il pannello mostra tutto in polling (~4s): stato, consenso motori,
-//      cicli/scratch/stop/P&L bloccato, feed attività per il debug.
-//   Al kickoff il bot chiude tutto da solo (finestre KO validate) → 'done'.
+//      cicli/scratch/stop/P&L bloccato, feed attivitÃ  per il debug.
+//   Al kickoff il bot chiude tutto da solo (finestre KO validate) â†’ 'done'.
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -42,10 +42,10 @@ const MODES: { key: ScalperMode; label: string; desc: string }[] = [
 
 const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
     requested: { label: 'RICHIESTO', cls: 'bg-sky-500/20 text-sky-300' },
-    arming: { label: 'ARMAMENTO…', cls: 'bg-sky-500/20 text-sky-300' },
+    arming: { label: 'ARMAMENTOâ€¦', cls: 'bg-sky-500/20 text-sky-300' },
     armed: { label: 'ARMATO (in attesa)', cls: 'bg-amber-400/20 text-amber-300' },
     running: { label: 'OPERATIVO', cls: 'bg-emerald-500/20 text-emerald-300' },
-    stopping: { label: 'CHIUSURA…', cls: 'bg-amber-400/20 text-amber-300' },
+    stopping: { label: 'CHIUSURAâ€¦', cls: 'bg-amber-400/20 text-amber-300' },
     stopped: { label: 'FERMATO', cls: 'bg-white/10 text-white/60' },
     done: { label: 'COMPLETATO (KO)', cls: 'bg-white/10 text-white/60' },
     error: { label: 'ERRORE', cls: 'bg-red-500/20 text-red-300' },
@@ -73,17 +73,24 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // in-play si fa SOLO nella finestra intervallo certificata).
     const [missionTwoTicks, setMissionTwoTicks] = useState(
         SCALPER_PARAM_DEFAULTS.one_green_per_phase);
-    // SNIPER in-play (bibbia §6, config S16): 1 tick sull'Under al momento
+    // SNIPER in-play (bibbia Â§6, config S16): 1 tick sull'Under al momento
     // letto dal book (cadenza+coda+spread), poi stop. Alternativo a ht_mode.
-    const [sniperMode, setSniperMode] = useState(false);
+    // ACCESO di default (ordine dell'utente 25/09 sera, testuale: <<scalper,
+    // modalita' sniper: acceso>>; regola generale: <<tutti i bot devono avere
+    // gli aiuti e le migliorie accese di default>>). Stesso default lato
+    // Python (scalper_session.sniper_mode, via auto_mode.sniper_mode_acceso):
+    // l'assenza della chiave nei params manda comunque ON, ma la card la
+    // scrive sempre esplicita (true/false) cosi' il gesto dell'utente resta
+    // tracciabile riga per riga.
+    const [sniperMode, setSniperMode] = useState(true);
     const [sniperStake, setSniperStake] = useState(10);
     // CACCIA MULTI-LINEA (F4, 11/07): canne parallele (dinamica +2) +
     // multi-colpo (cap 10, cooldown 120s) + nessun tetto profitto. Conteggio
-    // 10/07: +1.28 €/partita vs +0.10 mono (n=1) — da VALIDARE in paper
-    // prima dei soldi veri (registro ipotesi §11 bibbia).
+    // 10/07: +1.28 â‚¬/partita vs +0.10 mono (n=1) â€” da VALIDARE in paper
+    // prima dei soldi veri (registro ipotesi Â§11 bibbia).
     const [sniperHunt, setSniperHunt] = useState(false);
     // THETA in-play (dossier 15/07, verdetto S4 16/07): scalping post-gol
-    // guidato dall'Atlante hazard. NON validato out-of-sample → v1 SOLO PAPER
+    // guidato dall'Atlante hazard. NON validato out-of-sample â†’ v1 SOLO PAPER
     // (dry_run obbligatorio, gate in handleActivate). Mutuamente esclusivo
     // con sniper/HT. theta_confirm_mode NON esposto: si manda SEMPRE 'auto'
     // (la UI delle conferme manuali non esiste: 'manual' bloccherebbe il bot).
@@ -106,8 +113,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             failsRef.current = 0;
             setStateErr(null);
         } catch (e) {
-            // fix audit #28: un blip è transitorio (il polling riprova); un fallimento
-            // PERSISTENTE va detto — lo stato mostrato potrebbe essere vecchio.
+            // fix audit #28: un blip Ã¨ transitorio (il polling riprova); un fallimento
+            // PERSISTENTE va detto â€” lo stato mostrato potrebbe essere vecchio.
             failsRef.current += 1;
             if (failsRef.current >= 3) {
                 setStateErr(e instanceof Error ? e.message : 'stato scalper non raggiungibile');
@@ -133,7 +140,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     const handleActivate = useCallback(async () => {
         if (busyRef.current) return;
-        // Gate THETA (v1): NON validato out-of-sample → può armarsi SOLO in
+        // Gate THETA (v1): NON validato out-of-sample â†’ puÃ² armarsi SOLO in
         // paper. Con dry_run spento si blocca qui, prima di ogni conferma.
         if (thetaMode && !dryRun) {
             toast.error(
@@ -143,16 +150,16 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             return;
         }
         // Gate money-critical: armare con ORDINI REALI attiva un agente
-        // autonomo che piazza scommesse vere non presidiato → conferma
+        // autonomo che piazza scommesse vere non presidiato â†’ conferma
         // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
         if (!dryRun) {
             const huntWarn = (sniperMode && sniperHunt)
-                ? '\n⚠️ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
-                  'out-of-sample (n=1) — la bibbia prescrive prima il PAPER.\n'
+                ? '\nâš ï¸ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
+                  'out-of-sample (n=1) â€” la bibbia prescrive prima il PAPER.\n'
                 : '';
             const ok = window.confirm(
-                `⚠️ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
-                    `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
+                `âš ï¸ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
+                    `Il bot piazzerÃ  scommesse REALI su Betfair in autonomia (stake â‚¬${stake}).\n` +
                     huntWarn +
                     `Confermi?`,
             );
@@ -161,9 +168,9 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         busyRef.current = true;
         setBusy(true);
         try {
-            // missione ON → one_green_per_phase=true. La gamba HT NON è più
+            // missione ON â†’ one_green_per_phase=true. La gamba HT NON Ã¨ piÃ¹
             // forzata dalla missione (backtest di validazione 11/07: 3/13
-            // intervalli con verde, aggregato −1.74€): resta OPT-IN esplicito.
+            // intervalli con verde, aggregato âˆ’1.74â‚¬): resta OPT-IN esplicito.
             await activateScalper(eventId, mode, dryRun, stake, {
                 ...params,
                 one_green_per_phase: missionTwoTicks,
@@ -179,9 +186,9 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     sniper_profit_target: 0,
                 } : {}),
                 // THETA in-play: chiavi presenti SOLO col toggle acceso.
-                // confirm_mode SEMPRE 'auto' (niente UI conferme → 'manual'
-                // lascerebbe il bot in attesa di conferme che nessuno dà).
-                // max_shots/loss_cap vuoti = default del backend (10 / 5€).
+                // confirm_mode SEMPRE 'auto' (niente UI conferme â†’ 'manual'
+                // lascerebbe il bot in attesa di conferme che nessuno dÃ ).
+                // max_shots/loss_cap vuoti = default del backend (10 / 5â‚¬).
                 ...(thetaMode ? {
                     theta_mode: true,
                     theta_stake: thetaStake,
@@ -195,7 +202,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
-            toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
+            toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} â€” ${eventName}`);
             setShowForm(false);
             void refresh();
         } catch (e) {
@@ -214,8 +221,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         setBusy(true);
         try {
             await stopScalper(eventId);
-            // niente promesse: la chiusura è in corso, l'esito lo dice lo stato
-            toast.success('Stop richiesto: chiusura flat in corso… se una posizione resta aperta comparirà un errore');
+            // niente promesse: la chiusura Ã¨ in corso, l'esito lo dice lo stato
+            toast.success('Stop richiesto: chiusura flat in corsoâ€¦ se una posizione resta aperta comparirÃ  un errore');
             void refresh();
         } catch (e) {
             toast.error(`Stop fallito: ${e instanceof Error ? e.message : e}`);
@@ -229,7 +236,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     if (loading) {
         return (
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-center gap-2 text-white/50 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" /> Scalper Bot…
+                <Loader2 className="h-4 w-4 animate-spin" /> Scalper Botâ€¦
             </div>
         );
     }
@@ -240,10 +247,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     return (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-            {/* fix audit #28: stato NON aggiornabile in modo persistente → avviso esplicito */}
+            {/* fix audit #28: stato NON aggiornabile in modo persistente â†’ avviso esplicito */}
             {stateErr && (
                 <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-bold text-rose-200">
-                    ⚠ Stato scalper NON aggiornato: {stateErr} — i dati mostrati potrebbero essere vecchi.
+                    âš  Stato scalper NON aggiornato: {stateErr} â€” i dati mostrati potrebbero essere vecchi.
                 </div>
             )}
             {/* intestazione */}
@@ -251,18 +258,18 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                 <div className="flex items-center gap-2">
                     <Bot className="h-5 w-5 text-emerald-400" />
                     <span className="font-bold text-white">Scalper Bot</span>
-                    <span className="text-xs text-white/40">pre-match · stop automatico al KO</span>
+                    <span className="text-xs text-white/40">pre-match Â· stop automatico al KO</span>
                 </div>
                 <div className="flex items-center gap-2">
                     {ctrl && st && <Badge className={`${st.cls} border-transparent font-bold`}>{st.label}</Badge>}
                     {ctrl && ctrl.status === 'running' && (
                         heartbeatFresh
-                            ? <Badge className="bg-emerald-500/15 text-emerald-300 border-transparent">servizio ✓</Badge>
+                            ? <Badge className="bg-emerald-500/15 text-emerald-300 border-transparent">servizio âœ“</Badge>
                             : <Badge className="bg-red-500/15 text-red-300 border-transparent">servizio assente?</Badge>
                     )}
                     {ctrl?.dry_run && active && (
                         <Badge className="bg-amber-400/20 text-amber-300 border-transparent font-bold">
-                            ARMATO — nessun ordine
+                            ARMATO â€” nessun ordine
                         </Badge>
                     )}
                 </div>
@@ -301,7 +308,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
                     <div className="flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-2 text-sm text-white/80">
-                            <span className="text-white/50">Stake €</span>
+                            <span className="text-white/50">Stake â‚¬</span>
                             <Input
                                 type="number" min={2} max={500} step={1} value={stake}
                                 onChange={e => setStake(Math.max(2, Math.min(500, Number(e.target.value) || 2)))}
@@ -311,7 +318,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                             <Checkbox checked={dryRun} onCheckedChange={v => setDryRun(v === true)} />
                             <span className={dryRun ? 'text-amber-300 font-semibold' : 'text-white/60'}>
-                                DEMO · PAPER (ordini SIMULATI, ciclo completo — mai soldi veri)
+                                DEMO Â· PAPER (ordini SIMULATI, ciclo completo â€” mai soldi veri)
                             </span>
                         </label>
                         <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -333,8 +340,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 }}
                             />
                             <span className={htMode ? 'text-amber-300 font-semibold' : 'text-white/60'}>
-                                ⚠️ Gamba INTERVALLO (HT, sperimentale): il backtest di validazione la boccia
-                                (3/13 intervalli col verde, aggregato −1.74€). Solo nazionali liquide, mai elite.
+                                âš ï¸ Gamba INTERVALLO (HT, sperimentale): il backtest di validazione la boccia
+                                (3/13 intervalli col verde, aggregato âˆ’1.74â‚¬). Solo nazionali liquide, mai elite.
                             </span>
                         </label>
                         <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -346,14 +353,15 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 }}
                             />
                             <span className={sniperMode ? 'text-sky-300 font-semibold' : 'text-white/60'}>
-                                🎯 SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
-                                (cadenza+coda+spread), poi stop. Backtest: +0.99€/14 eventi, worst −0.49.
+                                ðŸŽ¯ SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
+                                (cadenza+coda+spread), poi stop. Backtest: +0.99â‚¬/14 eventi, worst âˆ’0.49.
                                 In DEMO piazza ordini simulati (paper flumine). Alternativo alla gamba HT.
+                                ACCESO di default (decisione utente 25/09): si spegne qui, per questa sessione.
                             </span>
                         </label>
                         {sniperMode && (
                             <label className="flex items-center gap-2 text-sm text-white/80">
-                                <span className="text-white/50">Stake sniper €</span>
+                                <span className="text-white/50">Stake sniper â‚¬</span>
                                 <Input
                                     type="number" min={2} max={100} step={1} value={sniperStake}
                                     onChange={e => setSniperStake(Math.max(2, Math.min(100, Number(e.target.value) || 2)))}
@@ -368,10 +376,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     onCheckedChange={v => setSniperHunt(v === true)}
                                 />
                                 <span className={sniperHunt ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
-                                    🔫 CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
+                                    ðŸ”« CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
                                     multi-colpo PER LINEA (cap 10/linea, cooldown 120s/linea),
                                     nessun tetto profitto. Conteggio 10/07: +1.28 vs +0.10
-                                    €/partita (n=1) — VALIDARE IN PAPER prima dei soldi veri.
+                                    â‚¬/partita (n=1) â€” VALIDARE IN PAPER prima dei soldi veri.
                                     Semaforo post-gol e cap globale evento sempre attivi.
                                 </span>
                             </label>
@@ -385,11 +393,11 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 }}
                             />
                             <span className={thetaMode ? 'text-violet-300 font-semibold' : 'text-white/60'}>
-                                🔬 THETA in-play (sperimentale): scalp post-gol sull&apos;Under
+                                ðŸ”¬ THETA in-play (sperimentale): scalp post-gol sull&apos;Under
                                 guidato dall&apos;Atlante hazard (coppia atomica entry+green,
                                 scratch a tempo). Alternativo a Sniper e gamba HT.
-                                ⚠️ Theta NON validato out-of-sample (verdetto S4: classico EV−,
-                                overshoot da campionare) — SOLO PAPER: in DEMO piazza ordini
+                                âš ï¸ Theta NON validato out-of-sample (verdetto S4: classico EVâˆ’,
+                                overshoot da campionare) â€” SOLO PAPER: in DEMO piazza ordini
                                 simulati a ciclo completo; con ordini REALI il server lo forza
                                 comunque in paper.
                             </span>
@@ -397,7 +405,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         {thetaMode && (
                             <>
                                 <label className="flex items-center gap-2 text-sm text-white/80">
-                                    <span className="text-white/50">Stake theta €</span>
+                                    <span className="text-white/50">Stake theta â‚¬</span>
                                     <Input
                                         type="number" min={2} max={500} step={1} value={thetaStake}
                                         onChange={e => setThetaStake(Math.max(2, Math.min(500, Number(e.target.value) || 2)))}
@@ -413,7 +421,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                                 : e.target.value === 'cecchino' ? 'cecchino' : 'classico')}
                                         className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-sm text-white [&>option]:bg-slate-900"
                                     >
-                                        <option value="cecchino">🎯 cecchino (3 step)</option>
+                                        <option value="cecchino">ðŸŽ¯ cecchino (3 step)</option>
                                         <option value="classico">classico (C7)</option>
                                         <option value="overshoot">overshoot (C17)</option>
                                     </select>
@@ -428,7 +436,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     />
                                 </label>
                                 <label className="flex items-center gap-2 text-sm text-white/80">
-                                    <span className="text-white/50">Tetto perdita €</span>
+                                    <span className="text-white/50">Tetto perdita â‚¬</span>
                                     <Input
                                         type="number" min={0} max={100} step={0.5} placeholder="5"
                                         value={thetaLossCap}
@@ -500,7 +508,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         <Badge variant="secondary" className="font-bold">
                             {MODES.find(m => m.key === ctrl.mode)?.label ?? ctrl.mode}
                         </Badge>
-                        <span>stake €{ctrl.stake}</span>
+                        <span>stake â‚¬{ctrl.stake}</span>
                         {ctrl.error && (
                             <span className="flex items-center gap-1 text-red-300">
                                 <AlertTriangle className="h-3.5 w-3.5" /> {ctrl.error}
@@ -515,18 +523,18 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 <Brain className="h-4 w-4 text-violet-300" /> Motori
                                 {meta?.consenso
                                     ? <Badge className="bg-violet-500/20 text-violet-300 border-transparent">consenso: {meta?.direzione}</Badge>
-                                    : <Badge variant="secondary">nessun consenso → neutro</Badge>}
+                                    : <Badge variant="secondary">nessun consenso â†’ neutro</Badge>}
                                 {typeof meta?.edge === 'number' && (
                                     <span className="text-white/50">edge {(meta.edge * 100).toFixed(1)}%</span>
                                 )}
                             </div>
                             {(meta?.motivi ?? []).map((r, i) => (
-                                <div key={i} className="text-white/50">• {r}</div>
+                                <div key={i} className="text-white/50">â€¢ {r}</div>
                             ))}
                         </div>
                     )}
 
-                    {/* statistiche — P&L LORDI: flumine non detrae la commissione 4,5-5% */}
+                    {/* statistiche â€” P&L LORDI: flumine non detrae la commissione 4,5-5% */}
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                         {[
                             { l: ctrl.dry_run ? 'Ordini (sim)' : 'Ordini', v: num(stats?.orders_placed), i: Activity },
@@ -535,13 +543,13 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             { l: 'Scratch', v: num(stats?.scratches), i: Activity },
                             { l: 'Stop', v: num(stats?.stops), i: Square },
                             {
-                                l: 'P&L bloccato (lordo)', v: `€${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp,
+                                l: 'P&L bloccato (lordo)', v: `â‚¬${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp,
                                 t: 'P&L LORDO: commissione Betfair (4,5-5%) NON detratta',
                             },
                             // P&L settlato (solo cicli regolati): serve per la validazione
-                            // paper n≥40 — visibile appena il bot lo espone
+                            // paper nâ‰¥40 â€” visibile appena il bot lo espone
                             ...(stats?.pnl_settled !== undefined ? [{
-                                l: 'P&L settlato (lordo)', v: `€${num(stats?.pnl_settled).toFixed(2)}`, i: TrendingUp,
+                                l: 'P&L settlato (lordo)', v: `â‚¬${num(stats?.pnl_settled).toFixed(2)}`, i: TrendingUp,
                                 t: 'P&L LORDO dei soli cicli regolati: commissione NON detratta',
                             }] : []),
                         ].map((s: { l: string; v: string | number; t?: string }, i) => (
@@ -552,28 +560,28 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         ))}
                     </div>
 
-                    {/* missione "2 Tick": contabilità per fase (se il bot la espone) */}
+                    {/* missione "2 Tick": contabilitÃ  per fase (se il bot la espone) */}
                     {stats && (stats.greens_prematch !== undefined || stats.greens_inplay !== undefined) && (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                             {[
                                 {
                                     l: 'Tick pre-match',
-                                    v: num(stats.greens_prematch) >= 1 ? '✓' : '—',
+                                    v: num(stats.greens_prematch) >= 1 ? 'âœ“' : 'â€”',
                                     ok: num(stats.greens_prematch) >= 1,
                                 },
                                 {
                                     l: 'Tick intervallo',
-                                    v: num(stats.greens_inplay) >= 1 ? '✓' : '—',
+                                    v: num(stats.greens_inplay) >= 1 ? 'âœ“' : 'â€”',
                                     ok: num(stats.greens_inplay) >= 1,
                                 },
                                 {
                                     l: 'P&L pre-match',
-                                    v: `€${num(stats.pnl_prematch).toFixed(2)}`,
+                                    v: `â‚¬${num(stats.pnl_prematch).toFixed(2)}`,
                                     ok: num(stats.pnl_prematch) > 0,
                                 },
                                 {
                                     l: 'P&L intervallo',
-                                    v: `€${num(stats.pnl_inplay).toFixed(2)}`,
+                                    v: `â‚¬${num(stats.pnl_inplay).toFixed(2)}`,
                                     ok: num(stats.pnl_inplay) > 0,
                                 },
                             ].map((s, i) => (
@@ -586,8 +594,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     )}
 
                     {/* THETA in-play: contatori dedicati (scalper_session riversa
-                        theta.stats nel control con prefisso theta_*) — visibili
-                        SOLO se il theta è armato e il bot li espone */}
+                        theta.stats nel control con prefisso theta_*) â€” visibili
+                        SOLO se il theta Ã¨ armato e il bot li espone */}
                     {stats && (stats.theta_shots !== undefined || stats.theta_pnl_locked !== undefined) && (
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                             {[
@@ -596,12 +604,12 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 { l: 'Theta scratch', v: num(stats.theta_scratches) },
                                 { l: 'Theta dry-fire', v: num(stats.theta_dry_fires) },
                                 {
-                                    l: 'P&L theta (lordo)', v: `€${num(stats.theta_pnl_locked).toFixed(2)}`,
+                                    l: 'P&L theta (lordo)', v: `â‚¬${num(stats.theta_pnl_locked).toFixed(2)}`,
                                     t: 'P&L LORDO: commissione Betfair (4,5-5%) NON detratta',
                                 },
-                                // settlato theta (validazione paper n≥40), se il bot lo espone
+                                // settlato theta (validazione paper nâ‰¥40), se il bot lo espone
                                 ...(stats.theta_pnl_settled !== undefined ? [{
-                                    l: 'Theta settl. (lordo)', v: `€${num(stats.theta_pnl_settled).toFixed(2)}`,
+                                    l: 'Theta settl. (lordo)', v: `â‚¬${num(stats.theta_pnl_settled).toFixed(2)}`,
                                     t: 'P&L LORDO dei soli colpi regolati: commissione NON detratta',
                                 }] : []),
                             ].map((s: { l: string; v: string | number; t?: string }, i) => (
@@ -613,10 +621,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         </div>
                     )}
 
-                    {/* feed attività (debug veloce) */}
+                    {/* feed attivitÃ  (debug veloce) */}
                     <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 space-y-1">
                         {(state?.activity ?? []).length === 0 && (
-                            <div className="text-xs text-white/40">Nessuna attività ancora…</div>
+                            <div className="text-xs text-white/40">Nessuna attivitÃ  ancoraâ€¦</div>
                         )}
                         {(state?.activity ?? []).map(a => (
                             <div key={a.id} className="text-[11px] font-mono text-white/60">
@@ -649,16 +657,18 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                 <div className="text-xs text-white/50">
                     Ultima sessione: <b className="text-white/80">{STATUS_STYLE[ctrl.status]?.label}</b>
                     {ctrl.stats && (
-                        <> — cicli {num(ctrl.stats.cycles) + num(ctrl.stats.flattens)},
+                        <> â€” cicli {num(ctrl.stats.cycles) + num(ctrl.stats.flattens)},
                         catture {num(ctrl.stats.scalps) + num(ctrl.stats.roundtrips)},
-                        <span title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta"> P&L bloccato (lordo) €{num(ctrl.stats.pnl_locked).toFixed(2)}</span>
+                        <span title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta"> P&L bloccato (lordo) â‚¬{num(ctrl.stats.pnl_locked).toFixed(2)}</span>
                         {ctrl.stats.pnl_settled !== undefined && (
-                            <span title="P&L LORDO dei soli cicli regolati: commissione NON detratta">, settlato (lordo) €{num(ctrl.stats.pnl_settled).toFixed(2)}</span>
+                            <span title="P&L LORDO dei soli cicli regolati: commissione NON detratta">, settlato (lordo) â‚¬{num(ctrl.stats.pnl_settled).toFixed(2)}</span>
                         )}</>
                     )}
-                    {ctrl.error && <span className="text-red-300"> — {ctrl.error}</span>}
+                    {ctrl.error && <span className="text-red-300"> â€” {ctrl.error}</span>}
                 </div>
             )}
         </div>
     );
 }
+
+

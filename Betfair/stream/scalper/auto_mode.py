@@ -151,12 +151,33 @@ def params_per_sessione(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
+def sniper_mode_acceso(params: Optional[Dict[str, Any]]) -> bool:
+    """SNIPER in-play: ACCESO di default (ordine dell'utente 25/09 sera,
+    testuale: <<scalper, modalita' sniper: acceso>>; regola generale
+    dell'utente: <<tutti i bot devono avere gli aiuti e le migliorie accese
+    di default>>). L'ASSENZA della chiave ``sniper_mode`` e' il default ON;
+    SOLO ``sniper_mode=false`` ESPLICITO lo spegne (stesso pattern gia' usato
+    per ``sniper_profit_target``: None e' "non dichiarato", non "spento").
+
+    UNICO punto di risoluzione: lo usa sia la sessione
+    (``scalper_session.run_session``, per armare o no la strategia sniper)
+    sia questo modulo (``vita_sessione_s``/``ha_ancora_vita``, per la
+    finestra di vita usata dall'auto-mode per scegliere le partite
+    armabili): se i due punti vedessero un acceso/spento diverso, l'auto-mode
+    escluderebbe dal feed partite che la sessione arma comunque con lo
+    sniper attivo (finestra di vita piu' corta di quella vera)."""
+    sm = (params or {}).get("sniper_mode")
+    return True if sm is None else bool(sm)
+
+
 def vita_sessione_s(params: Optional[Dict[str, Any]]) -> int:
     """Secondi di vita della sessione dopo il kickoff: STESSA regola che
     ``scalper_session.run_session`` applica per chiudersi (sniper/theta fino a
-    fine partita, ht_mode fino a ~70', il maker pre-match fino a KO+10')."""
+    fine partita, ht_mode fino a ~70', il maker pre-match fino a KO+10').
+    Lo sniper e' ACCESO di default (``sniper_mode_acceso``): la vita lunga
+    (sniper/theta) e' quindi il caso normale, non piu' l'eccezione."""
     p = params or {}
-    if bool(p.get("sniper_mode")) or bool(p.get("theta_mode")):
+    if sniper_mode_acceso(p) or bool(p.get("theta_mode")):
         return VITA_SNIPER_THETA_S
     if bool(p.get("ht_mode")):
         return VITA_HT_S

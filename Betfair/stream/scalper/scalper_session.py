@@ -608,7 +608,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
     from betfairlightweight import filters
 
     from ..auth import build_client
-    from .auto_mode import vita_sessione_s
+    from .auto_mode import sniper_mode_acceso, vita_sessione_s
     from .scalper_bot import ScalperStrategy
 
     db = Db()
@@ -654,7 +654,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # SNIPER: la linea target e' Under (gol totali + 1).5 e in live si
         # SPOSTA coi gol -> a catalogo/stream servono TUTTE le OU (05..85).
         # Il maker resta blindato sui SESSION_MARKET_TYPES (vedi sotto).
-        sniper_mode = bool((control.get("params") or {}).get("sniper_mode"))
+        # ACCESO di default (ordine dell'utente 25/09 sera): l'ASSENZA della
+        # chiave e' ON, solo `sniper_mode=false` ESPLICITO lo spegne
+        # (`auto_mode.sniper_mode_acceso`, stesso punto usato dall'auto-mode
+        # per calcolare la vita della sessione: niente doppio default).
+        sniper_mode = sniper_mode_acceso(control.get("params") or {})
         # THETA: linea Under (gol+2).5, si sposta coi gol → servono TUTTE le
         # OU a stream (stesso requisito dello sniper).
         theta_mode = bool((control.get("params") or {}).get("theta_mode"))

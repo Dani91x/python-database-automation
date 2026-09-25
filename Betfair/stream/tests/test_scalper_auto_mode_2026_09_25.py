@@ -227,14 +227,37 @@ def test_params_per_sessione_toglie_solo_il_tetto() -> None:
     assert p["auto_max_partite"] == 3          # l'originale non si muta
 
 
+def test_sniper_mode_acceso_di_default() -> None:
+    """ordine dell'utente 25/09 sera (testuale): <<scalper, modalita' sniper:
+    acceso>> + regola generale <<tutti i bot devono avere gli aiuti e le
+    migliorie accese di default>>. L'ASSENZA della chiave e' ON; SOLO
+    ``sniper_mode=false`` ESPLICITO spegne. Falsificazione: rimettendo il
+    default a False (``bool(p.get("sniper_mode"))``) le prime due righe
+    diventano rosse."""
+    assert AM.sniper_mode_acceso({}) is True
+    assert AM.sniper_mode_acceso(None) is True
+    assert AM.sniper_mode_acceso({"sniper_mode": True}) is True
+    assert AM.sniper_mode_acceso({"sniper_mode": False}) is False
+    # None esplicito (chiave scritta ma senza valore) = "non dichiarato" = ON
+    assert AM.sniper_mode_acceso({"sniper_mode": None}) is True
+
+
 def test_vita_della_sessione_numeri_di_prima() -> None:
-    assert AM.vita_sessione_s({}) == 600
-    assert AM.vita_sessione_s({"ht_mode": True}) == 4200
+    # 25/09 sera: lo sniper e' ACCESO di default (ordine dell'utente) -> con
+    # params VUOTI la sessione vive ora 7800s (vita sniper/theta), non piu'
+    # 600 (dichiarato: il ramo "solo maker" resta raggiungibile SOLO con
+    # sniper_mode=False esplicito, come manda la card quando l'utente spegne
+    # lo sniper o accende la gamba HT, mutuamente esclusiva).
+    assert AM.vita_sessione_s({}) == 7800
+    assert AM.vita_sessione_s({"sniper_mode": False}) == 600
+    assert AM.vita_sessione_s({"sniper_mode": False, "ht_mode": True}) == 4200
     assert AM.vita_sessione_s({"sniper_mode": True}) == 7800
     assert AM.vita_sessione_s({"theta_mode": True, "ht_mode": True}) == 7800
     ko = _iso(ORA - timedelta(minutes=11))
-    assert AM.ha_ancora_vita(ko, {}, ORA_EP) is False
-    assert AM.ha_ancora_vita(ko, {"ht_mode": True}, ORA_EP) is True
+    assert AM.ha_ancora_vita(ko, {}, ORA_EP) is True
+    assert AM.ha_ancora_vita(ko, {"sniper_mode": False}, ORA_EP) is False
+    assert AM.ha_ancora_vita(
+        ko, {"sniper_mode": False, "ht_mode": True}, ORA_EP) is True
     assert AM.ha_ancora_vita(None, {}, ORA_EP) is True
 
 
@@ -243,6 +266,17 @@ def test_la_sessione_usa_la_stessa_vita() -> None:
     src = (RADICE / "Betfair/stream/scalper/scalper_session.py").read_text(encoding="utf-8")
     assert "_life_s = vita_sessione_s({" in src
     assert "7800 if (sniper_mode or theta_mode)" not in src
+
+
+def test_la_sessione_usa_lo_stesso_default_sniper() -> None:
+    """25/09 sera: la sessione NON deve reintrodurre un bool() locale che
+    riporterebbe il default a spento -- l'unico punto di risoluzione resta
+    ``auto_mode.sniper_mode_acceso`` (falsificazione: sostituendo l'import o
+    la chiamata con ``bool((...).get("sniper_mode"))`` questo test e' rosso)."""
+    src = (RADICE / "Betfair/stream/scalper/scalper_session.py").read_text(encoding="utf-8")
+    assert "from .auto_mode import sniper_mode_acceso" in src
+    assert "sniper_mode = sniper_mode_acceso(control.get(\"params\") or {})" in src
+    assert 'bool((control.get("params") or {}).get("sniper_mode"))' not in src
 
 
 @pytest.mark.parametrize("riga,atteso", [
@@ -388,12 +422,18 @@ def test_mai_riarmare_chiuse_a_mano_errore_concluse_follow_chiusi() -> None:
 
 
 def test_partita_oltre_la_vita_non_si_arma() -> None:
-    db = DbFinto(riga_servizio(), [riga_feed("1", ko_min=-11, inplay=True),
-                                   riga_feed("2", ko_min=5)])
+    # 25/09 sera: lo sniper e' ACCESO di default -> con params VUOTI la vita
+    # e' gia' quella lunga (sniper/theta, 130'). Per vedere il taglio corto
+    # (solo maker, KO+10') va dichiarato sniper_mode=False ESPLICITO.
+    db = DbFinto(riga_servizio(params={"sniper_mode": False}),
+                 [riga_feed("1", ko_min=-11, inplay=True),
+                  riga_feed("2", ko_min=5)])
     es = SVC.giro_auto(db, _stato(), [], ORA_EP)
     assert es["armate"] == ["2"]
-    db2 = DbFinto(riga_servizio(params={"sniper_mode": True}),
-                  [riga_feed("1", ko_min=-11, inplay=True)])
+    # params VUOTI (default): "1" (11' dopo il KO) e' ancora nella vita lunga
+    # dello sniper acceso di default -> SI arma (falsificazione: rimettendo
+    # il default a spento questa riga torna rossa, come prima del 25/09).
+    db2 = DbFinto(riga_servizio(), [riga_feed("1", ko_min=-11, inplay=True)])
     assert SVC.giro_auto(db2, _stato(), [], ORA_EP)["armate"] == ["1"]
 
 
