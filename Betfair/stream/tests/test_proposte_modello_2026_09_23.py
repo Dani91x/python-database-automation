@@ -373,6 +373,75 @@ def test_pm3_rosso_su_rifiuto_falso_entro_tolleranza():
     assert "PM3" in _codici(v)
 
 
+# D7 (25/09) - PM3 sul contratto «a mercato entro la banda della strategia».
+# Criteri e p_model come li scrive il servizio: back sul pareggio (sid 2) con
+# p=0,35 -> banda 3.15-1000 (edge >= 0,03; EV > 0).
+_CRITERI_D7 = {"min_edge": 0.03, "opps_min_edge": 0.0, "commission": 0.05,
+               "max_liability_per_trade": 0.0, "stake": 5.0}
+
+
+def _proposta_d7(db):
+    return _proposta(db, criteri=dict(_CRITERI_D7), p_model=0.35)
+
+
+def _trade_d7(tid, chiesto, attuale):
+    t = _trade(tid, price=chiesto)
+    if attuale is not None:
+        t["meta"]["esecuzione_al_clic"] = {
+            "regola": PO.ESECUZIONE_A_MERCATO, "prezzo_attuale": attuale, "prezzo_visto": 3.5,
+            "banda": PO.banda_della_strategia(side="back", p_model=0.35, criteri=_CRITERI_D7)}
+    return t
+
+
+def test_pm3_d7_la_banda_del_caso_di_prova():
+    assert PO.banda_della_strategia(side="back", p_model=0.35, criteri=_CRITERI_D7) == \
+        {"min": 3.15, "max": 1000.0, "vuota": False}
+
+
+@pytest.mark.parametrize("mercato,chiesto,attuale,rosso", [
+    (3.5, 3.5, 3.5, False),    # a mercato, in banda: sano
+    (3.8, 3.8, 3.8, False),    # +8,6 % dal visto 3,5 ma IN BANDA: col PM3 vecchio era rosso (spurio)
+    (3.1, 3.1, 3.1, True),     # mercato fuori banda eppure ordine (e chiesto fuori banda)
+    (3.1, 3.5, 3.5, True),     # il feed dice fuori banda, la riga dichiara 3,5 in banda: ordine mai
+                               # ammesso (il controllo rilegge il mercato dal feed, non dalla riga)
+    (3.5, 3.5, None, True),    # esecuzione non dichiarata a mercato
+    (3.5, 3.6, 3.5, True),     # chiesto diverso dal mercato all'esecuzione
+])
+def test_pm3_d7_a_mercato_entro_la_banda(mercato, chiesto, attuale, rosso):
+    b, _ = _banco(PM.SCENARIO_APPROVATA)
+    db, _ = _db(params={"strategy_modes": {"model": "live"}})
+    rid = _proposta_d7(db)
+    _clic(b, rid, prezzo=3.5)
+    db.requests[0].update(status="done", result={"ok": True, "trade_id": 1})
+    db.trades.append(_trade_d7(1, chiesto, attuale))
+    v, soll = _verifica(b, db, _riga_feed(mercato))
+    assert ("PM3" in _codici(v)) is rosso, v
+    assert soll["PM3"] == 1
+
+
+def test_pm3_d7_rifiuto_fuori_banda_solo_a_mercato_fuori_banda():
+    for mercato, rosso in ((3.5, True), (3.1, False)):
+        b, _ = _banco(PM.SCENARIO_APPROVATA)
+        db, _ = _db(params={"strategy_modes": {"model": "live"}})
+        rid = _proposta_d7(db)
+        _clic(b, rid, prezzo=3.5)
+        db.requests[0].update(status="error", result={"error": "fuori_banda_strategia"})
+        v, _ = _verifica(b, db, _riga_feed(mercato))
+        assert ("PM3" in _codici(v)) is rosso, (mercato, v)
+
+
+def test_pm3_d7_il_rifiuto_di_tolleranza_in_banda_non_e_piu_la_regola():
+    """Con la banda il vecchio giudizio del 18/09 (tolleranza dal visto) non si
+    applica: nessuna violazione PM3 per un rifiuto di tolleranza in banda."""
+    b, _ = _banco(PM.SCENARIO_APPROVATA)
+    db, _ = _db(params={"strategy_modes": {"model": "live"}})
+    rid = _proposta_d7(db)
+    _clic(b, rid, prezzo=3.5)
+    db.requests[0].update(status="error", result={"error": "prezzo_visto_fuori_tolleranza"})
+    v, _ = _verifica(b, db, _riga_feed(3.52))
+    assert "PM3" not in _codici(v)
+
+
 def test_pm4_rosso_su_ordine_da_proposta_decaduta_o_rifiutata_e_su_riproposta():
     b, oro = _banco(PM.SCENARIO_SCADUTA)
     db, oro = _db()

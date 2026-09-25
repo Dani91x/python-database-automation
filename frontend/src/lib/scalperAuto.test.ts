@@ -120,7 +120,9 @@ describe('la frase dell\'auto-mode', () => {
         const a = leggiAutoScalper({ auto: { ...AUTO, modalita: 'live', sessioni: 1, sessioni_auto: 1, ordini_vivi: null, feed: { letto: true, vivo: false } } });
         expect(notaAutoScalper(a, null)).toBe(
             'auto-mode: 1 sessione (1 dal feed) - tetto 2 - feed calcio non disponibile - '
-            + 'LIVE: le partite del feed nascono con soldi veri');
+            // D3 (25/09): in LIVE le partite del feed nascono in dry-run
+            + 'LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
+            + 'non lo togli per partita (scheda scalper della partita)');
     });
 
     it('spento o non dichiarato: nessuna frase', () => {

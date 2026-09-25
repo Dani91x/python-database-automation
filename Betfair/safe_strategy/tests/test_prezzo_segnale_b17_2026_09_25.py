@@ -119,9 +119,11 @@ def test_una_richiesta_manuale_senza_proposta_non_riceve_il_segnale(esecuzione):
 @pytest.mark.parametrize("prezzo_visto", [1.30, 1.31])
 def test_l_ordine_parte_al_visto_con_o_senza_segnale(esecuzione, prezzo_visto):
     """Parita' della decisione: il prezzo e la size passati all'esecuzione sono
-    gli stessi che senza il segnale (``_execute`` riceve la riga riservata)."""
+    gli stessi che senza il segnale (``_execute`` riceve la riga riservata).
+    D7 (25/09): il prezzo dell'ordine e' quello di MERCATO (1,31, dentro la
+    banda della strategia) qualunque sia il visto; prima era il visto."""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
     out = _piazza(db, _corpo_approvato(db, prezzo_visto))
     assert out.get("ok") is True
-    assert esecuzione[0]["row"]["price"] == prezzo_visto
+    assert esecuzione[0]["row"]["price"] == 1.31

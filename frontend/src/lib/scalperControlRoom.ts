@@ -247,7 +247,7 @@ export function leggiAutoScalper(stats: Record<string, unknown> | null | undefin
 /**
  * La frase dell'auto-mode accanto alla riga (solo ad auto-mode ACCESO).
  * Mai "armato" per una partita che il supervisore non ha dichiarato; in LIVE
- * dice che le partite del feed nascono con soldi veri.
+ * dice che le partite del feed nascono in dry-run (D3, 25/09).
  */
 export function notaAutoScalper(auto: AutoScalper | null, tettoRiga: number | null): string | null {
     if (auto == null || !auto.acceso) return null;
@@ -265,7 +265,13 @@ export function notaAutoScalper(auto: AutoScalper | null, tettoRiga: number | nu
             + `${auto.fonte ? ` (${auto.fonte})` : ''}`);
     }
     if (auto.ordiniVivi != null) parti.push(`${auto.ordiniVivi} ordini vivi`);
-    if (auto.modalita === 'live') parti.push('LIVE: le partite del feed nascono con soldi veri');
+    // D3 (25/09) — «dry run per tutti: decido io cosa attivare, se PAPER o
+    // LIVE»: in LIVE le sessioni armate dal feed nascono in dry-run (ordini
+    // simulati); i soldi veri li mette l'utente sessione per sessione
+    if (auto.modalita === 'live') {
+        parti.push('LIVE: le partite del feed nascono in dry-run, nessun ordine reale finché '
+            + 'non lo togli per partita (scheda scalper della partita)');
+    }
     return parti.join(' - ');
 }
 

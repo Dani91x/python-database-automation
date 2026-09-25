@@ -567,22 +567,44 @@ def test_anomalia_approvazione_sparita_rifiutata(monkeypatch):
     out = S._request_place(db=db, market=None, rows_by_event={EV: riga_senza_ou25},
                            payload=corpo, params={"commission_pct": 5.0},
                            now=NOW, control_mode="paper")
-    assert out.get("error") == "anomalia_sparita"
+    # D7 (25/09): la proposta porta criteri e p_model -> regola «a mercato
+    # entro banda»; senza prezzo sul mercato il codice e' 'prezzo_attuale_assente'
+    # (prima 'anomalia_sparita')
+    assert out.get("error") == "prezzo_attuale_assente"
     assert db.trades == []
 
 
 def test_anomalia_approvazione_fuori_tolleranza_rifiutata(monkeypatch):
-    monkeypatch.setattr(S, "_execute", lambda **kw: (_ for _ in ()).throw(
-        AssertionError("l'anomalia fuori tolleranza non deve arrivare a _execute")))
+    """D7 (25/09): la banda della strategia (criteri dell'anomalia, p_model 0,7)
+    decide, non piu' la tolleranza del 2 % dalla fotografia. Un back salito a
+    2,70 (quota migliore, dentro la banda) PARTE a mercato; sceso a 1,30 (sotto
+    il minimo della banda) NON parte e il rifiuto lo dice."""
+    chiamate = []
+
+    def esecuzione(**kw):
+        chiamate.append(kw["row"]["price"])
+        return _Esito(status="open", price=kw["row"]["price"], size=kw["row"]["size"])
+
+    monkeypatch.setattr(S, "_execute", esecuzione)
     db = DbFinto()
     _ciclo_anomalia(db, [_anomaly()])
     corpo = dict(db.vive()[0]["payload"])
-    riga_mossa = _riga_feed(ou25_back=2.70, ou25_lay=2.74)
-    out = S._request_place(db=db, market=None, rows_by_event={EV: riga_mossa},
+    out = S._request_place(db=db, market=None,
+                           rows_by_event={EV: _riga_feed(ou25_back=2.70, ou25_lay=2.74)},
                            payload=corpo, params={"commission_pct": 5.0},
                            now=NOW, control_mode="paper")
-    assert out.get("error") == "anomalia_fuori_tolleranza"
-    assert db.trades == []
+    assert out.get("ok") is True, out
+    assert chiamate == [2.70] and db.trades[0]["price"] == 2.70
+    db = DbFinto()
+    _ciclo_anomalia(db, [_anomaly()])
+    corpo = dict(db.vive()[0]["payload"])
+    out = S._request_place(db=db, market=None,
+                           rows_by_event={EV: _riga_feed(ou25_back=1.30, ou25_lay=1.32)},
+                           payload=corpo, params={"commission_pct": 5.0},
+                           now=NOW, control_mode="paper")
+    assert out.get("error") == "fuori_banda_strategia"
+    assert out["message"].startswith("rifiutato: prezzo attuale 1.3 (back) fuori dalla banda ")
+    assert chiamate == [2.70] and db.trades == []
 
 
 def test_anomalia_manuale_investi_senza_opp_key_non_ha_la_barriera_nuova(monkeypatch):
@@ -913,9 +935,12 @@ def test_prezzo_visto_diventa_il_prezzo_dell_ordine_non_la_fotografia(monkeypatc
 def test_prezzo_visto_lay_liability_ricalcolata_sul_prezzo_nuovo(monkeypatch):
     """Lay: la liability dipende dal prezzo (stake*(prezzo-1)) — QUESTA si
     ricalcola sul prezzo visto; lo STAKE resta quello di sempre (non tocco la
-    regola, la applico al prezzo nuovo, come ordinato)."""
+    regola, la applico al prezzo nuovo, come ordinato).
+    D7 (25/09): p_model 0,2 (prima 0,7: con 0,7 un lay a 2,2 e' gia' fuori
+    dalla banda della strategia, edge negativo, e non potrebbe partire); il
+    prezzo e' quello di MERCATO, qui uguale al visto (2,5)."""
     db = DbFinto()
-    _ciclo_anomalia(db, [_anomaly(side="lay", price=2.2)])
+    _ciclo_anomalia(db, [_anomaly(side="lay", price=2.2, p_model=0.2)])
     corpo = dict(db.vive()[0]["payload"])
     stake = corpo["size"]
     corpo["price_visto"] = 2.5
@@ -965,19 +990,22 @@ def test_clic_appena_dentro_la_soglia_passa(monkeypatch):
 
 
 def test_prezzo_visto_fuori_tolleranza_rifiutato(monkeypatch):
+    """D7 (25/09): la tolleranza dal visto non decide piu' (3,0 contro un visto
+    2,2 era un rifiuto; ora e' dentro la banda e partirebbe a 3,0). Decide la
+    banda della strategia: il mercato ORA a 1,30 e' sotto il suo minimo."""
     monkeypatch.setattr(S, "_execute", lambda **kw: (_ for _ in ()).throw(
-        AssertionError("prezzo visto fuori tolleranza non deve arrivare a _execute")))
+        AssertionError("prezzo fuori banda non deve arrivare a _execute")))
     db = DbFinto()
     _ciclo_anomalia(db, [_anomaly()])
     corpo = dict(db.vive()[0]["payload"])
     corpo["price_visto"] = 2.2
     corpo["price_visto_at"] = NOW.isoformat()
-    # il mercato ORA e' molto lontano dal prezzo che l'utente diceva di vedere
-    riga = _riga_feed(ou25_back=3.0, ou25_lay=3.05)
+    riga = _riga_feed(ou25_back=1.30, ou25_lay=1.32)
     out = S._request_place(db=db, market=None, rows_by_event={EV: riga},
                            payload=corpo, params={"commission_pct": 5.0},
                            now=NOW, control_mode="paper")
-    assert out.get("error") == "prezzo_visto_fuori_tolleranza"
+    assert out.get("error") == "fuori_banda_strategia"
+    assert out["price_visto"] == 2.2 and out["price_attuale"] == 1.30
     assert db.trades == []
 
 

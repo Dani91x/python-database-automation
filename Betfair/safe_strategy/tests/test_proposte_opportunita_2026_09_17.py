@@ -350,8 +350,13 @@ def test_piazza_esegue_la_richiesta_con_la_consapevolezza_dell_ordine(monkeypatc
         return _Esito()
 
     monkeypatch.setattr(S, "_execute", esecuzione)
-    monkeypatch.setattr(S, "prices_for", lambda **kw: {"back_size": 500.0,
-                                                       "lay_size": 500.0})
+    # D7 (25/09): l'ordine parte al prezzo di ADESSO, quindi il finto di
+    # ``prices_for`` porta anche i prezzi (chiavi del vero: back/lay + size).
+    # 1,40 e non 1,30: con p_model 0,77 la banda della strategia tennis parte
+    # da 1,32 (a 1,30 l'edge vero e' 0,0008 < min_edge 0,015; il finto ``_opp``
+    # dichiara edge 0,2, incoerente coi suoi stessi numeri).
+    monkeypatch.setattr(S, "prices_for", lambda **kw: {"back": 1.40, "back_size": 500.0,
+                                                       "lay": 1.42, "lay_size": 500.0})
     monkeypatch.setattr(S, "_scanner_ts", lambda *_a, **_k: NOW.timestamp())
     monkeypatch.setattr(S, "build_risk_ctx", lambda *_a, **_k: {"unavailable": False})
     monkeypatch.setattr(S, "_risk_gate", lambda *_a, **_k: None)
@@ -383,7 +388,11 @@ def test_servizio_live_e_modello_paper_la_proposta_paper_si_piazza(monkeypatch):
     nudo: col servizio in LIVE e il modello in paper il tasto PIAZZA deve
     funzionare, in PAPER. Senza questa regola sarebbe sempre rifiutato."""
     monkeypatch.setattr(S, "_execute", lambda **kw: _Esito())
-    monkeypatch.setattr(S, "prices_for", lambda **kw: {"back_size": 500.0})
+    # D7 (25/09): l'ordine parte al prezzo di ADESSO, quindi il finto di
+    # ``prices_for`` porta anche i prezzi (chiavi del vero: back/lay + size);
+    # 1,40: dentro la banda (vedi il test sopra)
+    monkeypatch.setattr(S, "prices_for", lambda **kw: {"back": 1.40, "back_size": 500.0,
+                                                       "lay": 1.42, "lay_size": 500.0})
     monkeypatch.setattr(S, "_scanner_ts", lambda *_a, **_k: NOW.timestamp())
     monkeypatch.setattr(S, "build_risk_ctx", lambda *_a, **_k: {"unavailable": False})
     monkeypatch.setattr(S, "_risk_gate", lambda *_a, **_k: None)

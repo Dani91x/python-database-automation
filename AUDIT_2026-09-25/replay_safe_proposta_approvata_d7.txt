@@ -1,0 +1,380 @@
+BOT: safe_base | spec: SPEC_STRATEGIA_S.md | registrazioni: 40 in C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/_live_raw
+controlli attivi: 66 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot ce355b40ef3b (2 file)
+comando: python -m Betfair.stream.backtest.certifica safe_base  --scenari proposta-approvata
+qualita' delle registrazioni: COMPLETE x13, PARTIAL x26, UNKNOWN x1
+
+OK  35674515  tick= 49096 decisioni= 3302 azioni=   3 stati=running/live [COMPLETE]
+      nota: scenario=proposta-approvata | modalita' servizio=live | status=running | strategie accese=base,esatto,punta | strategy_modes={'base': 'live', 'esatto': 'live', 'punta': 'live', 'model': 'live'}
+      nota: giri di run_once: 3302 | ordini reali su flumine: 3 | righe safe_strategy_trades: 3 | place osservati: 3 | uscite valutate: 0
+      nota: [BASE] valutata 3298 volte | stati {'no': 3298} | segnali 0 | scartata per: favPre:no x3298, dogPre:no x3298, dogLay:no x3244, score:no x3041, minute:no x1922, minute:nd x257
+      nota: [ESATTO] valutata 6596 volte | stati {'no': 6596} | segnali 0 | scartata per: entry:no x5589, sideGoals:no x4551, score:no x4506, minute:no x2934, entry:nd x660, minute:nd x514
+      nota: [PUNTA] valutata 3298 volte | stati {'no': 3298} | segnali 0 | scartata per: favPre:no x3298, dogPre:no x3298, score:no x3041, leadFav:no x3041, minute:no x2154, entry:no x1536
+      nota: attivita' del servizio: diagnosi x25, proposta_opportunita x3, place x3, opportunita_piazzata x3
+      nota: righe per stato: {'open': 3}
+      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259401637 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=3.85 prezzo_medio=3.85 scorrimento=0 percorso=rest bet_id=100000000001 chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 2] model/manual back sel=55896077 mkt=1.259401637 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=2.28 prezzo_medio=2.32 scorrimento=-2 percorso=rest bet_id=100000000002 chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 3] model/manual back sel=9654927 mkt=1.259401637 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=3.05 prezzo_medio=3.05 scorrimento=0 percorso=rest bet_id=100000000003 chiude=None liability=5.0 pnl=0.0
+      nota: fill: 3 abbinamenti su 3 ordini per 15.0 EUR (prezzi [2.32, 3.05, 3.85])
+      nota: P&L del replay: lordo +0.25 | commissione 0.01 (5.0%) | NETTO +0.24 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 2686 book passati durante le attese | book in ritardo: 625991 | LAPSE al fischio: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 1849 | giri senza riga nel feed: 4
+      nota: tetti di rischio SPENTI (valore 0): ['model_daily_cap'] | daily_loss_stop=-50.0 | max_liability_per_trade=300.0 | max_open_trades=20
+      nota: metodi di database chiamati dal servizio e ASSENTI dal banco: ['save_event_model']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: get_event: tabella `events` (anagrafica partite): non e' nello stream di mercato registrato
+      nota: [NON ESERCITABILE] minimo di giurisdizione .it e place-and-trim: flumine non ha un minimo, quindi `place_submin_live` piazza diretto (controllo T11)
+      nota: [MODELLO MONTATO, C6 e] opportunita' a modello, anomalie e combo da finti DETERMINISTICI con l'interfaccia del vero (`Betfair/stream/backtest/proposte_modello.py`); il trader firma le schede con le RPC vere; controlli PM1-PM8
+      nota: [PROPOSTE] scenario=proposta-approvata sport=calcio | t0 del piano=2026-06-26T11:35:09.451000+00:00 | emesse dal finto {'A': 86, 'B': 86, 'C': 86} | richieste di proposta 3 per stato {'done': 3} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'ok': 3} | righe nate da proposta 3 [(1, 'open', 'live', 3.85), (2, 'open', 'live', 2.32), (3, 'open', 'live', 3.05)]
+      nota: [PROPOSTE] clic del trader: A/model approva #1 a t0+57s visto=3.85 rilevata=True -> ok=True | B/model approva #2 a t0+57s visto=2.34 rilevata=True -> ok=True | C/model approva #3 a t0+216s visto=3.05 rilevata=True -> ok=True
+      nota: [PROPOSTE] esito per finestra: A:ordine x1, B:ordine x1, C:ordine x1
+      nota: [CHIUSO IL 16/09] 3 righe manuali vive per 15.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+      nota: --- BASE ---
+      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x3298   viol=0   conforme
+      nota:   B2   SPEC §1: BANCA (lay)                                                       x3298   viol=0   conforme
+      nota:   B3   SPEC §1: si banca la squadra che sta PERDENDO                              x0      viol=0   non lo so
+      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x3298   viol=0   conforme
+      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x3298   viol=0   conforme
+      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x3298   viol=0   conforme
+      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x3298   viol=0   conforme
+      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x3298   viol=0   conforme
+      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x3298   viol=0   conforme
+      nota:   B10  SPEC §1: la FAVORITA deve avere il controllo del gioco                     x0      viol=0   non lo so
+      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x3060   viol=0   conforme
+      nota:   B12  SPEC §1 uscita in perdita: la sfavorita PAREGGIA -> accetta subito, non as x0      viol=0   non lo so
+      nota:   B13  SPEC §1 uscita in profitto: la favorita segna il 2° gol -> cashout         x0      viol=0   non lo so
+      nota:   B14  SPEC §1 uscita a tempo: nessun 2° gol ma si arriva all'80-83' -> esci comu x0      viol=0   non lo so
+      nota:   B15  SPEC §1: rosso alla FAVORITA -> esci; rosso alla SFAVORITA -> neutro       x0      viol=0   non lo so
+      nota:   B16  SPEC §1: attendi 20-60 s che le quote si stabilizzino                      x0      viol=0   non lo so
+      nota:   B17  SPEC §1 uscita in profitto: il controllo passa alla sfavorita -> esci in p x0      viol=0   non lo so
+      nota: --- ESATTO ---
+      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x6596   viol=0   conforme
+      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x6596   viol=0   conforme
+      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x6596   viol=0   conforme
+      nota:   E4   SPEC §2: si banca chi ha segnato AL MASSIMO 1 gol                          x0      viol=0   non lo so
+      nota:   E5   SPEC §2: quota di entrata 30-70                                            x6596   viol=0   conforme
+      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo so
+      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x3302   viol=0   conforme
+      nota:   E8   SPEC §2 uscita in profitto: esci comunque entro il 70-75'                  x0      viol=0   non lo so
+      nota:   E9   SPEC §2 uscita in perdita: la squadra BANCATA segna comunque -> esci e acc x0      viol=0   non lo so
+      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi 2-2/3-3, dife x6596   viol=0   conforme
+      nota: --- PUNTA ---
+      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x3298   viol=0   conforme
+      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x3298   viol=0   conforme
+      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x3298   viol=0   conforme
+      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x3298   viol=0   conforme
+      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x3298   viol=0   conforme
+      nota:   P6   SPEC §4: la favorita deve CONTINUARE A SPINGERE                            x0      viol=0   non lo so
+      nota:   P7   SPEC §4 uscita in perdita: QUALSIASI gol subito -> esci immediatamente, an x0      viol=0   non lo so
+      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo so
+      nota:   P9   SPEC §4 uscita a tempo: esci comunque entro l'83'                          x0      viol=0   non lo so
+      nota:   P10  SPEC §4: per la PUNTA il rosso NON e' una regola di uscita                 x0      viol=0   non lo so
+      nota: --- TRASVERSALE ---
+      nota:   T1   B.5 (16/09): stake PER STRATEGIA, con ripiego per lato                     x0      viol=0   non lo so
+      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x3      viol=0   conforme
+      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo so
+      nota:   T4   CERT 13/09 + 12/09: mai chiudere in perdita quando il margine e' ampio (de x0      viol=0   non lo so
+      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x0      viol=0   non lo so
+      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x3302   viol=0   conforme
+      nota:   T7   CERT 13/09: i tetti di rischio a 0 sono SPENTI                             x3302   viol=0   conforme
+      nota:   T8   CERT 14/09: MODALITA' PER STRATEGIA (`strategy_modes`)                     x0      viol=0   non lo so
+      nota:   T9   CERT 12/09: nessun ingresso su una riga del feed NON FRESCA                x0      viol=0   non lo so
+      nota:   T10  CERT 15/09: una variante NON ABILITATA si scarta DICENDOLO                 x0      viol=0   non lo so
+      nota:   T11  PROCESSO §6.4: minimo di giurisdizione .it e place-and-trim                x0      viol=0   non lo so
+      nota:   T12  Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso me x0      viol=0   non lo so
+      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x3033   viol=0   conforme
+      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x0      viol=0   non lo so
+      nota:   T14  Ordine dell'utente (16/09 h18:20): dopo il CASH-OUT GLOBALE del trader il  x0      viol=0   non lo so
+      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x3      viol=0   conforme
+      nota:   J2   Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esecuzione    x3      viol=0   conforme
+      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x3      viol=0   conforme
+      nota:   J4   Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine ancora VI x3302   viol=0   conforme
+      nota:   J5   Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta                  x3302   viol=0   conforme
+      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x3      viol=0   conforme
+      nota:   J7   PROCESSO §6.4: mai due ordini vivi per lo stesso segnale                   x3302   viol=0   conforme
+      nota:   K1   PROCESSO §7.36                                                             x3033   viol=0   conforme
+      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K3   PROCESSO §7.36                                                             x3033   viol=0   conforme
+      nota:   K4   PROCESSO §7.36                                                             x3033   viol=0   conforme
+      nota:   K5   PROCESSO §7.36                                                             x3033   viol=0   conforme
+      nota:   K6   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K7   PROCESSO §7.36                                                             x3033   viol=0   conforme
+      motivo x2761: esatto: no (score,sideGoals,entry)
+      motivo x2173: punta: no (minute,score,leadFav,favPre)
+      motivo x1941: base: no (minute,score,favPre,dogPre)
+      motivo x1427: esatto: no (minute,entry)
+      motivo x1290: esatto: no (minute,score,sideGoals,entry)
+      motivo x1109: base: no (score,favPre,dogPre,dogLay)
+OK  35759636  tick= 43947 decisioni= 2774 azioni=   3 stati=running/live [COMPLETE]
+      nota: scenario=proposta-approvata | modalita' servizio=live | status=running | strategie accese=base,esatto,punta | strategy_modes={'base': 'live', 'esatto': 'live', 'punta': 'live', 'model': 'live'}
+      nota: giri di run_once: 2774 | ordini reali su flumine: 2 | righe safe_strategy_trades: 2 | place osservati: 2 | uscite valutate: 0
+      nota: [BASE] valutata 2773 volte | stati {'nd': 947, 'no': 1826} | segnali 0 | scartata per: score:nd x2773, favPre:nd x2773, dogPre:nd x2773, dogLay:nd x2773, minute:no x1787, scoreConfirmed:no x66
+      nota: [ESATTO] valutata 5546 volte | stati {'no': 5226, 'nd': 320} | segnali 0 | scartata per: minute:no x2912, entry:nd x2877, entry:no x2669, score:no x2016, sideGoals:no x1008, scoreConfirmed:no x132
+      nota: [PUNTA] valutata 2773 volte | stati {'nd': 643, 'no': 2130} | segnali 0 | scartata per: favPre:nd x2773, dogPre:nd x2773, leadFav:nd x2321, minute:no x2049, score:no x1762, entry:nd x1297
+      nota: attivita' del servizio: skip x24, diagnosi x22, proposta_opportunita x5, opportunita_non_piu_valida x2, place_rifiutato x1, place_retry x1, place x1, opportunita_piazzata x1
+      nota: righe per stato: {'error': 1, 'open': 1}
+      nota: scarti dichiarati dal servizio: pre_ko_assente x22 | fuori_banda_strategia x1 |  x1 | live_not_matched:EXECUTION_COMPLETE x1
+      nota: [RIGA 1] model/manual back sel=58805 mkt=1.259542603 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 2] model/manual back sel=6456470 mkt=1.259542603 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=1.16 prezzo_medio=1.16 scorrimento=0 percorso=rest bet_id=100000000002 chiude=None liability=5.0 pnl=0.0
+      nota: fill: 1 abbinamenti su 1 ordini per 5.0 EUR (prezzi [1.16])
+      nota: P&L del replay: lordo +0.80 | commissione 0.04 (5.0%) | NETTO +0.76 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 1773 book passati durante le attese | book in ritardo: 550364 | LAPSE al fischio: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 1508 | giri senza riga nel feed: 1
+      nota: tetti di rischio SPENTI (valore 0): ['model_daily_cap'] | daily_loss_stop=-50.0 | max_liability_per_trade=300.0 | max_open_trades=20
+      nota: metodi di database chiamati dal servizio e ASSENTI dal banco: ['event_lambda_hint']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: get_event: tabella `events` (anagrafica partite): non e' nello stream di mercato registrato | fixtures_for_window: calendario `fixtures` del database calcio: fuori dalla registrazione
+      nota: [NON ESERCITABILE] minimo di giurisdizione .it e place-and-trim: flumine non ha un minimo, quindi `place_submin_live` piazza diretto (controllo T11)
+      nota: [MODELLO MONTATO, C6 e] opportunita' a modello, anomalie e combo da finti DETERMINISTICI con l'interfaccia del vero (`Betfair/stream/backtest/proposte_modello.py`); il trader firma le schede con le RPC vere; controlli PM1-PM8
+      nota: [PROPOSTE] scenario=proposta-approvata sport=calcio | t0 del piano=2026-06-30T15:05:54.452000+00:00 | emesse dal finto {'A': 86, 'B': 86, 'C': 86} | richieste di proposta 5 per stato {'error': 2, 'done': 1, 'proposed': 2} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'non_eseguito': 1, 'fuori_banda_strategia': 1, 'ok': 1} | righe nate da proposta 2 [(1, 'error', 'live', 9.2), (2, 'open', 'live', 1.16)]
+      nota: [PROPOSTE] clic del trader: B/model approva #2 a t0+36s visto=21.0 rilevata=True -> ok=True | A/model approva #1 a t0+51s visto=9.2 rilevata=True -> ok=True | C/model approva #3 a t0+211s visto=1.16 rilevata=True -> ok=True
+      nota: [PROPOSTE] esito per finestra: A:ordine x1, B:fuori_banda_strategia x1, C:ordine x1
+      nota: [CHIUSO IL 16/09] 2 righe manuali vive per 10.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+      nota: --- BASE ---
+      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x2773   viol=0   conforme
+      nota:   B2   SPEC §1: BANCA (lay)                                                       x2773   viol=0   conforme
+      nota:   B3   SPEC §1: si banca la squadra che sta PERDENDO                              x0      viol=0   non lo so
+      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x2773   viol=0   conforme
+      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x2773   viol=0   conforme
+      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x2773   viol=0   conforme
+      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x2773   viol=0   conforme
+      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x2773   viol=0   conforme
+      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x2773   viol=0   conforme
+      nota:   B10  SPEC §1: la FAVORITA deve avere il controllo del gioco                     x0      viol=0   non lo so
+      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x0      viol=0   non lo so
+      nota:   B12  SPEC §1 uscita in perdita: la sfavorita PAREGGIA -> accetta subito, non as x0      viol=0   non lo so
+      nota:   B13  SPEC §1 uscita in profitto: la favorita segna il 2° gol -> cashout         x0      viol=0   non lo so
+      nota:   B14  SPEC §1 uscita a tempo: nessun 2° gol ma si arriva all'80-83' -> esci comu x0      viol=0   non lo so
+      nota:   B15  SPEC §1: rosso alla FAVORITA -> esci; rosso alla SFAVORITA -> neutro       x0      viol=0   non lo so
+      nota:   B16  SPEC §1: attendi 20-60 s che le quote si stabilizzino                      x0      viol=0   non lo so
+      nota:   B17  SPEC §1 uscita in profitto: il controllo passa alla sfavorita -> esci in p x0      viol=0   non lo so
+      nota: --- ESATTO ---
+      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x5546   viol=0   conforme
+      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x5546   viol=0   conforme
+      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x5546   viol=0   conforme
+      nota:   E4   SPEC §2: si banca chi ha segnato AL MASSIMO 1 gol                          x0      viol=0   non lo so
+      nota:   E5   SPEC §2: quota di entrata 30-70                                            x5546   viol=0   conforme
+      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo so
+      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x2774   viol=0   conforme
+      nota:   E8   SPEC §2 uscita in profitto: esci comunque entro il 70-75'                  x0      viol=0   non lo so
+      nota:   E9   SPEC §2 uscita in perdita: la squadra BANCATA segna comunque -> esci e acc x0      viol=0   non lo so
+      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi 2-2/3-3, dife x5546   viol=0   conforme
+      nota: --- PUNTA ---
+      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x2773   viol=0   conforme
+      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x2773   viol=0   conforme
+      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x2773   viol=0   conforme
+      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x2773   viol=0   conforme
+      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x2773   viol=0   conforme
+      nota:   P6   SPEC §4: la favorita deve CONTINUARE A SPINGERE                            x0      viol=0   non lo so
+      nota:   P7   SPEC §4 uscita in perdita: QUALSIASI gol subito -> esci immediatamente, an x0      viol=0   non lo so
+      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo so
+      nota:   P9   SPEC §4 uscita a tempo: esci comunque entro l'83'                          x0      viol=0   non lo so
+      nota:   P10  SPEC §4: per la PUNTA il rosso NON e' una regola di uscita                 x0      viol=0   non lo so
+      nota: --- TRASVERSALE ---
+      nota:   T1   B.5 (16/09): stake PER STRATEGIA, con ripiego per lato                     x0      viol=0   non lo so
+      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x2      viol=0   conforme
+      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo so
+      nota:   T4   CERT 13/09 + 12/09: mai chiudere in perdita quando il margine e' ampio (de x0      viol=0   non lo so
+      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x0      viol=0   non lo so
+      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x2774   viol=0   conforme
+      nota:   T7   CERT 13/09: i tetti di rischio a 0 sono SPENTI                             x2774   viol=0   conforme
+      nota:   T8   CERT 14/09: MODALITA' PER STRATEGIA (`strategy_modes`)                     x0      viol=0   non lo so
+      nota:   T9   CERT 12/09: nessun ingresso su una riga del feed NON FRESCA                x0      viol=0   non lo so
+      nota:   T10  CERT 15/09: una variante NON ABILITATA si scarta DICENDOLO                 x0      viol=0   non lo so
+      nota:   T11  PROCESSO §6.4: minimo di giurisdizione .it e place-and-trim                x0      viol=0   non lo so
+      nota:   T12  Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso me x0      viol=0   non lo so
+      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x2673   viol=0   conforme
+      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x0      viol=0   non lo so
+      nota:   T14  Ordine dell'utente (16/09 h18:20): dopo il CASH-OUT GLOBALE del trader il  x0      viol=0   non lo so
+      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x1      viol=0   conforme
+      nota:   J2   Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esecuzione    x2      viol=0   conforme
+      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x1      viol=0   conforme
+      nota:   J4   Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine ancora VI x2774   viol=0   conforme
+      nota:   J5   Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta                  x2774   viol=0   conforme
+      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x1      viol=0   conforme
+      nota:   J7   PROCESSO §6.4: mai due ordini vivi per lo stesso segnale                   x2774   viol=0   conforme
+      nota:   K1   PROCESSO §7.36                                                             x2673   viol=0   conforme
+      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K3   PROCESSO §7.36                                                             x2749   viol=0   conforme
+      nota:   K4   PROCESSO §7.36                                                             x2673   viol=0   conforme
+      nota:   K5   PROCESSO §7.36                                                             x2673   viol=0   conforme
+      nota:   K6   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K7   PROCESSO §7.36                                                             x2673   viol=0   conforme
+      motivo x2860: esatto: no (minute,entry)
+      motivo x1787: base: no (minute,score,favPre,dogPre)
+      motivo x1762: punta: no (minute,score,leadFav,favPre)
+      motivo x952: esatto: no (score,sideGoals,entry)
+      motivo x952: esatto: no (score,entry)
+      motivo x944: base: nd (score,favPre,dogPre,dogLay)
+OK  35760084  tick= 41178 decisioni= 3506 azioni=   3 stati=running/live [COMPLETE]
+      nota: scenario=proposta-approvata | modalita' servizio=live | status=running | strategie accese=base,esatto,punta | strategy_modes={'base': 'live', 'esatto': 'live', 'punta': 'live', 'model': 'live'}
+      nota: giri di run_once: 3506 | ordini reali su flumine: 3 | righe safe_strategy_trades: 3 | place osservati: 3 | uscite valutate: 0
+      nota: [BASE] valutata 3030 volte | stati {'no': 3030} | segnali 0 | scartata per: favPre:no x3030, dogPre:no x3030, minute:no x1884, score:no x1741, dogLay:nd x1660, dogLay:no x1302
+      nota: [ESATTO] valutata 6060 volte | stati {'no': 6056, 'nd': 4} | segnali 0 | scartata per: score:no x4110, minute:no x3382, entry:no x3341, entry:nd x2719, sideGoals:no x2055, minute:nd x516
+      nota: [PUNTA] valutata 3030 volte | stati {'no': 3030} | segnali 0 | scartata per: favPre:no x3030, dogPre:no x3030, minute:no x2149, entry:nd x1997, score:no x1394, entry:no x824
+      nota: attivita' del servizio: diagnosi x23, proposta_opportunita x4, place x2, opportunita_piazzata x2, opportunita_non_piu_valida x2, place_rifiutato x1, place_retry x1, skip x1
+      nota: righe per stato: {'error': 1, 'open': 2}
+      nota: scarti dichiarati dal servizio:  x1 | live_not_matched:EXECUTION_COMPLETE x1
+      nota: [RIGA 1] model/manual back sel=86159298 mkt=1.259475525 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 2] model/manual back sel=58805 mkt=1.259475525 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=5.7 prezzo_medio=5.7 scorrimento=0 percorso=rest bet_id=100000000002 chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 3] model/manual back sel=206565 mkt=1.259475525 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=1.35 prezzo_medio=1.35 scorrimento=0 percorso=rest bet_id=100000000003 chiude=None liability=5.0 pnl=0.0
+      nota: fill: 2 abbinamenti su 2 ordini per 10.0 EUR (prezzi [1.35, 5.7])
+      nota: P&L del replay: lordo -3.25 | commissione 0.00 (5.0%) | NETTO -3.25 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 1679 book passati durante le attese | book in ritardo: 560388 | LAPSE al fischio: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 1674 | giri senza riga nel feed: 476
+      nota: tetti di rischio SPENTI (valore 0): ['model_daily_cap'] | daily_loss_stop=-50.0 | max_liability_per_trade=300.0 | max_open_trades=20
+      nota: metodi di database chiamati dal servizio e ASSENTI dal banco: ['save_event_model']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: get_event: tabella `events` (anagrafica partite): non e' nello stream di mercato registrato
+      nota: [NON ESERCITABILE] minimo di giurisdizione .it e place-and-trim: flumine non ha un minimo, quindi `place_submin_live` piazza diretto (controllo T11)
+      nota: [MODELLO MONTATO, C6 e] opportunita' a modello, anomalie e combo da finti DETERMINISTICI con l'interfaccia del vero (`Betfair/stream/backtest/proposte_modello.py`); il trader firma le schede con le RPC vere; controlli PM1-PM8
+      nota: [PROPOSTE] scenario=proposta-approvata sport=calcio | t0 del piano=2026-06-30T16:00:30.473000+00:00 | emesse dal finto {'A': 81, 'B': 81, 'C': 81} | richieste di proposta 4 per stato {'done': 2, 'error': 1, 'proposed': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'ok': 2, 'non_eseguito': 1} | righe nate da proposta 3 [(1, 'error', 'live', 9.6), (2, 'open', 'live', 5.7), (3, 'open', 'live', 1.35)]
+      nota: [PROPOSTE] clic del trader: B/model approva #2 a t0+35s visto=9.4 rilevata=True -> ok=True | A/model approva #1 a t0+54s visto=5.7 rilevata=True -> ok=True | C/model approva #3 a t0+215s visto=1.35 rilevata=True -> ok=True
+      nota: [PROPOSTE] esito per finestra: A:ordine x1, B:ordine x1, C:ordine x1
+      nota: [CHIUSO IL 16/09] 3 righe manuali vive per 15.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+      nota: --- BASE ---
+      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x3030   viol=0   conforme
+      nota:   B2   SPEC §1: BANCA (lay)                                                       x3030   viol=0   conforme
+      nota:   B3   SPEC §1: si banca la squadra che sta PERDENDO                              x0      viol=0   non lo so
+      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x3030   viol=0   conforme
+      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x3030   viol=0   conforme
+      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x3030   viol=0   conforme
+      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x3030   viol=0   conforme
+      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x3030   viol=0   conforme
+      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x3030   viol=0   conforme
+      nota:   B10  SPEC §1: la FAVORITA deve avere il controllo del gioco                     x0      viol=0   non lo so
+      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x2807   viol=0   conforme
+      nota:   B12  SPEC §1 uscita in perdita: la sfavorita PAREGGIA -> accetta subito, non as x0      viol=0   non lo so
+      nota:   B13  SPEC §1 uscita in profitto: la favorita segna il 2° gol -> cashout         x0      viol=0   non lo so
+      nota:   B14  SPEC §1 uscita a tempo: nessun 2° gol ma si arriva all'80-83' -> esci comu x0      viol=0   non lo so
+      nota:   B15  SPEC §1: rosso alla FAVORITA -> esci; rosso alla SFAVORITA -> neutro       x0      viol=0   non lo so
+      nota:   B16  SPEC §1: attendi 20-60 s che le quote si stabilizzino                      x0      viol=0   non lo so
+      nota:   B17  SPEC §1 uscita in profitto: il controllo passa alla sfavorita -> esci in p x0      viol=0   non lo so
+      nota: --- ESATTO ---
+      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x6060   viol=0   conforme
+      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x6060   viol=0   conforme
+      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x6060   viol=0   conforme
+      nota:   E4   SPEC §2: si banca chi ha segnato AL MASSIMO 1 gol                          x0      viol=0   non lo so
+      nota:   E5   SPEC §2: quota di entrata 30-70                                            x6060   viol=0   conforme
+      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo so
+      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x3506   viol=0   conforme
+      nota:   E8   SPEC §2 uscita in profitto: esci comunque entro il 70-75'                  x0      viol=0   non lo so
+      nota:   E9   SPEC §2 uscita in perdita: la squadra BANCATA segna comunque -> esci e acc x0      viol=0   non lo so
+      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi 2-2/3-3, dife x6060   viol=0   conforme
+      nota: --- PUNTA ---
+      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x3030   viol=0   conforme
+      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x3030   viol=0   conforme
+      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x3030   viol=0   conforme
+      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x3030   viol=0   conforme
+      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x3030   viol=0   conforme
+      nota:   P6   SPEC §4: la favorita deve CONTINUARE A SPINGERE                            x0      viol=0   non lo so
+      nota:   P7   SPEC §4 uscita in perdita: QUALSIASI gol subito -> esci immediatamente, an x0      viol=0   non lo so
+      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo so
+      nota:   P9   SPEC §4 uscita a tempo: esci comunque entro l'83'                          x0      viol=0   non lo so
+      nota:   P10  SPEC §4: per la PUNTA il rosso NON e' una regola di uscita                 x0      viol=0   non lo so
+      nota: --- TRASVERSALE ---
+      nota:   T1   B.5 (16/09): stake PER STRATEGIA, con ripiego per lato                     x0      viol=0   non lo so
+      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x3      viol=0   conforme
+      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x0      viol=0   non lo so
+      nota:   T4   CERT 13/09 + 12/09: mai chiudere in perdita quando il margine e' ampio (de x0      viol=0   non lo so
+      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x0      viol=0   non lo so
+      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x3506   viol=0   conforme
+      nota:   T7   CERT 13/09: i tetti di rischio a 0 sono SPENTI                             x3506   viol=0   conforme
+      nota:   T8   CERT 14/09: MODALITA' PER STRATEGIA (`strategy_modes`)                     x0      viol=0   non lo so
+      nota:   T9   CERT 12/09: nessun ingresso su una riga del feed NON FRESCA                x0      viol=0   non lo so
+      nota:   T10  CERT 15/09: una variante NON ABILITATA si scarta DICENDOLO                 x0      viol=0   non lo so
+      nota:   T11  PROCESSO §6.4: minimo di giurisdizione .it e place-and-trim                x0      viol=0   non lo so
+      nota:   T12  Regola di piattaforma (utente, 16/09): MAI due lay DEL BOT sullo stesso me x0      viol=0   non lo so
+      nota:   T13  Chiarimento dell'utente (16/09): le operazioni MANUALI del trader non sono x2784   viol=0   conforme
+      nota:   T13-COMBO Decisione dell'utente B25 (24/09): LASCIA E AVVISA: la gamba MANUALE di un x0      viol=0   non lo so
+      nota:   T14  Ordine dell'utente (16/09 h18:20): dopo il CASH-OUT GLOBALE del trader il  x0      viol=0   non lo so
+      nota:   J1   Catalogo §7.1: chiave scritta in una grafia e letta in un'altra            x2      viol=0   conforme
+      nota:   J2   Catalogo §7.2: `res.ok` mai letto — un rifiuto trattato come esecuzione    x3      viol=0   conforme
+      nota:   J3   Catalogo §7.3: campo inesistente letto con getattr -> prezzo medio uguale  x2      viol=0   conforme
+      nota:   J4   Catalogo §7.4/§7.6 + C.12a: nessuna riga TERMINALE con un ordine ancora VI x3506   viol=0   conforme
+      nota:   J5   Catalogo §7.5: `closes_trade_id` in COLONNA, non nel meta                  x3506   viol=0   conforme
+      nota:   J6   Catalogo §7.7: `bet_id` salvato SOLO se abbinato                           x2      viol=0   conforme
+      nota:   J7   PROCESSO §6.4: mai due ordini vivi per lo stesso segnale                   x3506   viol=0   conforme
+      nota:   K1   PROCESSO §7.36                                                             x2784   viol=0   conforme
+      nota:   K2   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K3   PROCESSO §7.36                                                             x2791   viol=0   conforme
+      nota:   K4   PROCESSO §7.36                                                             x2784   viol=0   conforme
+      nota:   K5   PROCESSO §7.36                                                             x2784   viol=0   conforme
+      nota:   K6   PROCESSO §7.36                                                             x0      viol=0   non lo so
+      nota:   K7   PROCESSO §7.36                                                             x2784   viol=0   conforme
+      motivo x1396: esatto: no (minute,entry)
+      motivo x1354: punta: no (minute,favPre,dogPre,entry)
+      motivo x1062: esatto: no (score,sideGoals,entry)
+      motivo x1062: esatto: no (score,entry)
+      motivo x958: esatto: no (minute,score,sideGoals,entry)
+      motivo x958: esatto: no (minute,score,entry)
+OK  35764745  tick=112558 decisioni= 6147 azioni=   5 stati=running/live [COMPLETE]
+      nota: scenario=proposta-approvata | modalita' servizio=live | status=running | strategie accese=base,esatto,punta | strategy_modes={'base': 'live', 'esatto': 'live', 'punta': 'live', 'model': 'live'}
+      nota: giri di run_once: 6147 | ordini reali su flumine: 5 | righe safe_strategy_trades: 5 | place osservati: 5 | uscite valutate: 699
+      nota: [BASE] valutata 3801 volte | stati {'no': 3801} | segnali 0 | scartata per: favPre:no x3801, dogPre:no x3801, dogLay:no x3675, minute:no x2107, score:no x1420, minute:nd x473
+      nota: [ESATTO] valutata 7602 volte | stati {'no': 6189, 'nd': 864, 'signal': 549} | segnali 549 | scartata per: entry:no x4442, minute:no x2974, entry:nd x1154, minute:nd x946, score:nd x946, sideGoals:nd x946
+      nota: [PUNTA] valutata 3801 volte | stati {'no': 3801} | segnali 0 | scartata per: favPre:no x3801, dogPre:no x3801, score:no x3328, minute:no x2447, entry:nd x1893, entry:no x1862
+      nota: attivita' del servizio: diagnosi x25, proposta_opportunita x4, place x3, opportunita_piazzata x2, place_rifiutato x1, place_retry x1, skip x1, opportunita_non_piu_valida x1, cashout x1, exit x1
+      nota: righe per stato: {'open': 3, 'error': 1, 'hedged': 1}
+      nota: scarti dichiarati dal servizio:  x1 | live_not_matched:EXECUTION_COMPLETE x1
+      nota: [RIGA 1] model/manual back sel=30 mkt=1.259526914 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=2.1 prezzo_medio=2.16 scorrimento=-3 percorso=rest bet_id=100000000001 chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 2] model/manual back sel=58805 mkt=1.259526914 stato=error mode=live chiesto=None abbinato=None residuo=None prezzo_chiesto=None prezzo_medio=None scorrimento=None percorso=None bet_id=None chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 3] model/manual back sel=75104 mkt=1.259526914 stato=open mode=live chiesto=5.0 abbinato=5.0 residuo=0.0 prezzo_chiesto=4.0 prezzo_medio=4.0 scorrimento=0 percorso=rest bet_id=100000000003 chiude=None liability=5.0 pnl=0.0
+      nota: [RIGA 4] esatto/auto lay sel=9063255 mkt=1.259526921 stato=hedged mode=live chiesto=2.0 abbinato=2.0 residuo=0.0 prezzo_chiesto=30.0 prezzo_medio=30.0 scorrimento=0 percorso=rest bet_id=100000000004 chiude=None liability=58.0 pnl=0.0
+      nota: [RIGA 5] esatto/auto back sel=9063255 mkt=1.259526921 stato=open mode=live chiesto=0.8 abbinato=0.8 residuo=0.0 prezzo_chiesto=75.0 prezzo_medio=75.0 scorrimento=0 percorso=rest bet_id=100000000005 chiude=4 liability=0.8 pnl=0.0
+      nota: fill: 4 abbinamenti su 4 ordini per 12.8 EUR (prezzi [2.16, 4.0, 30.0, 75.0])
+      nota: P&L del replay: lordo +2.00 | commissione 0.10 (5.0%) | NETTO +1.90 EUR (non e' il metro: il metro e' la condotta)
+      nota: bet delay: 5314 book passati durante le attese | book in ritardo: 1547311 | LAPSE al fischio: 0
+      nota: righe di scan scritte dallo SCANNER VERO: 1955 | giri senza riga nel feed: 2346
+      nota: tetti di rischio SPENTI (valore 0): ['model_daily_cap'] | daily_loss_stop=-50.0 | max_liability_per_trade=300.0 | max_open_trades=20
+      nota: metodi di database chiamati dal servizio e ASSENTI dal banco: ['save_event_model']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: get_event: tabella `events` (anagrafica partite): non e' nello stream di mercato registrato
+      nota: [NON ESERCITABILE] minimo di giurisdizione .it e place-and-trim: flumine non ha un minimo, quindi `place_submin_live` piazza diretto (controllo T11)
+      nota: [MODELLO MONTATO, C6 e] opportunita' a modello, anomalie e combo da finti DETERMINISTICI con l'interfaccia del vero (`Betfair/stream/backtest/proposte_modello.py`); il trader firma le schede con le RPC vere; controlli PM1-PM8
+      nota: [PROPOSTE] scenario=proposta-approvata sport=calcio | t0 del piano=2026-06-30T17:00:24.774000+00:00 | emesse dal finto {'A': 87, 'B': 87, 'C': 87} | richieste di proposta 4 per stato {'error': 1, 'done': 2, 'proposed': 1} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'non_eseguito': 1, 'ok': 2} | righe nate da proposta 3 [(1, 'open', 'live', 2.16), (2, 'error', 'live', 3.45), (3, 'open', 'live', 4.0)]
+      nota: [PROPOSTE] clic del trader: B/model approva #2 a t0+49s visto=2.2 rilevata=True -> ok=True | A/model approva #1 a t0+59s visto=3.45 rilevata=True -> ok=True | C/model approva #3 a t0+218s visto=4.0 rilevata=True -> ok=True
+      nota: [PROPOSTE] esito per finestra: A:ordine x1, B:ordine x1, C:ordine x1
+      nota: [CHIUSO IL 16/09] 3 righe manuali vive per 15.00 EUR di responsabilita': i CAP del bot adesso contano SOLO l'automatico (consegna S1 del 16/09 sera). Il reperto di ieri (`open_trades`/`aggregate_rows` senza filtro `origin`, con le righe del trader dentro `build_risk_ctx`) non vale piu'; restano nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> scartata): il bot non tocca le righe del trader.
+      nota: --- BASE ---
+      nota:   B1   SPEC §1 tabella: Mercato = 1X2                                             x3801   viol=0   conforme
+      nota:   B2   SPEC §1: BANCA (lay)                                                       x3801   viol=0   conforme
+      nota:   B3   SPEC §1: si banca la squadra che sta PERDENDO                              x0      viol=0   non lo so
+      nota:   B4   SPEC §1: minuto ingresso DAL 55' (soglia, non fascia)                      x3801   viol=0   conforme
+      nota:   B5   SPEC §1: punteggio 1-0 / 2-1 / 2-0 (orientato sulla favorita)              x3801   viol=0   conforme
+      nota:   B6   SPEC §1: quota favorita pre-match 1.40-1.80                                x3801   viol=0   conforme
+      nota:   B7   SPEC §1: quota sfavorita pre-match 4-8                                     x3801   viol=0   conforme
+      nota:   B8   SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata 20-34 = QUOTA x3801   viol=0   conforme
+      nota:   B9   decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota live della FAV x3801   viol=0   conforme
+      nota:   B10  SPEC §1: la FAVORITA deve avere il controllo del gioco                     x0      viol=0   non lo so
+      nota:   B11  PROCESSO §6.2 / CERT 13/09: `pre_ko` CONGELATO al primo tick in-play, mai  x3377   viol=0   conforme
+      nota:   B12  SPEC §1 uscita in perdita: la sfavorita PAREGGIA -> accetta subito, non as x0      viol=0   non lo so
+      nota:   B13  SPEC §1 uscita in profitto: la favorita segna il 2° gol -> cashout         x0      viol=0   non lo so
+      nota:   B14  SPEC §1 uscita a tempo: nessun 2° gol ma si arriva all'80-83' -> esci comu x0      viol=0   non lo so
+      nota:   B15  SPEC §1: rosso alla FAVORITA -> esci; rosso alla SFAVORITA -> neutro       x0      viol=0   non lo so
+      nota:   B16  SPEC §1: attendi 20-60 s che le quote si stabilizzino                      x0      viol=0   non lo so
+      nota:   B17  SPEC §1 uscita in profitto: il controllo passa alla sfavorita -> esci in p x0      viol=0   non lo so
+      nota: --- ESATTO ---
+      nota:   E1   SPEC §2: LAY su Risultato Esatto, selezione «Altro risultato»              x7602   viol=0   conforme
+      nota:   E2   SPEC §2: minuto ingresso DAL 48' (soglia)                                  x7602   viol=0   conforme
+      nota:   E3   SPEC §2: punteggio 0-0 / 1-0 / 1-1 / 2-1 (qualsiasi orientamento)          x7602   viol=0   conforme
+      nota:   E4   SPEC §2: si banca chi ha segnato AL MASSIMO 1 gol                          x549    viol=0   conforme
+      nota:   E5   SPEC §2: quota di entrata 30-70                                            x7602   viol=0   conforme
+      nota:   E6   SPEC §2 + «differenze chiave» 1: condizione INVERTITA — la squadra BANCATA x0      viol=0   non lo so
+      nota:   E7   CERT 13/09: UN SOLO lato «Altro risultato» per partita                     x6147   viol=0   conforme
+      nota:   E8   SPEC §2 uscita in profitto: esci comunque entro il 70-75'                  x699    viol=0   conforme
+      nota:   E9   SPEC §2 uscita in perdita: la squadra BANCATA segna comunque -> esci e acc x699    viol=0   conforme
+      nota:   E10  SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi 2-2/3-3, dife x7602   viol=0   conforme
+      nota: --- PUNTA ---
+      nota:   P1   SPEC §4: PUNTA (back) sul 1X2, selezione = la favorita in vantaggio        x3801   viol=0   conforme
+      nota:   P2   SPEC §4: minuto ingresso DAL 66' (soglia)                                  x3801   viol=0   conforme
+      nota:   P3   SPEC §4: punteggio 2-0 / 3-1 / 3-0 (orientato sul leader)                  x3801   viol=0   conforme
+      nota:   P4   SPEC §4: quota di entrata 1.03-1.10                                        x3801   viol=0   conforme
+      nota:   P5   SPEC §4: aspetta 3-4' dopo il gol                                          x3801   viol=0   conforme
+      nota:   P6   SPEC §4: la favorita deve CONTINUARE A SPINGERE                            x0      viol=0   non lo so
+      nota:   P7   SPEC §4 uscita in perdita: QUALSIASI gol subito -> esci immediatamente, an x0      viol=0   non lo so
+      nota:   P8   SPEC §4 uscita in profitto: arriva il gol successivo -> cashout            x0      viol=0   non lo so
+      nota:   P9   SPEC §4 uscita a tempo: esci comunque entro l'83'                          x0      viol=0   non lo so
+      nota:   P10  SPEC §4: per la PUNTA il rosso NON e' una regola di uscita                 x0      viol=0   non lo so
+      nota: --- TRASVERSALE ---
+      nota:   T1   B.5 (16/09): stake PER STRATEGIA, con ripiego per lato                     x1      viol=0   conforme
+      nota:   T2   PROCESSO §6.4 / CERT 12/09: FILL OR KILL — un parziale e' un ERRORE        x5      viol=0   conforme
+      nota:   T3   PROCESSO §6.4: la chiusura si manda al BEST OPPOSTO, spinta dentro di qual x1      viol=0   conforme
+      nota:   T4   CERT 13/09 + 12/09: mai chiudere in perdita quando il margine e' ampio (de x1      viol=0   conforme
+      nota:   T5   Decisione utente 3+4 (16/09): combo «piazza e svolge» UGUALE in paper e in x0      viol=0   non lo so
+      nota:   T6   PROCESSO §6.3 / manuale: lo stop giornaliero e i tetti fermano le APERTURE x6147   viol=0   conforme

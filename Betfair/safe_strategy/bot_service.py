@@ -2678,9 +2678,52 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # troppo vecchio o un prezzo mosso oltre tolleranza dal numero visto è un
     # rifiuto dichiarato, PRIMA di riservare qualunque cosa.
     prezzo_ordine = price
-    if opp_key:
+    esecuzione: Optional[dict[str, Any]] = None
+    # D7 (25/09) — ORDINE DELL'UTENTE: al clic l'ordine parte al MIGLIOR prezzo
+    # disponibile ADESSO (a mercato), purche' dentro la BANDA che la strategia
+    # ammette per questa proposta (``PO.banda_della_strategia``: i criteri di
+    # prezzo del motore scritti nella proposta, mai un numero nuovo); fuori
+    # banda non si piazza e il rifiuto dice «prezzo attuale X fuori dalla banda
+    # Y-Z della strategia». Senza banda (proposta senza ``criteri``/``p_model``)
+    # resta la regola del 18/09 (prezzo visto + tolleranza), dichiarata.
+    banda = PO.banda_della_strategia(side=side, p_model=payload.get("p_model"),
+                                     criteri=payload.get("criteri")) if opp_key else None
+    if opp_key and banda is not None:
+        price_visto_raw = payload.get("price_visto")
+        pv = None
+        if price_visto_raw is not None:
+            pv = PO.prezzo_visto_valido(price_visto_raw)
+            if pv is None:
+                return {"error": "prezzo_visto_non_valido"}
+            if PO.clic_troppo_vecchio(payload.get("price_visto_at"), now.timestamp()):
+                _log(db, "skip", {"event_id": event_id, "reason": "clic_troppo_vecchio",
+                                  "origin": "manual", "market_id": market_id,
+                                  "selection_id": selection_id})
+                return {"error": "clic_troppo_vecchio"}
+        ctx_visto = PO.contesto_prezzo_visto(payload)
+        extra_ctx = {"prezzo_visto_ctx": ctx_visto} if ctx_visto else {}
+        prezzo_attuale = PO.prezzo_visto_valido((prices or {}).get(side))
+        if prezzo_attuale is None or not PO.in_banda(
+                side=side, prezzo=prezzo_attuale, p_model=payload.get("p_model"),
+                criteri=payload.get("criteri")):
+            codice = ("prezzo_attuale_assente" if prezzo_attuale is None
+                      else "fuori_banda_strategia")
+            _log(db, "skip", {"event_id": event_id, "reason": codice,
+                              "origin": "manual", "market_id": market_id,
+                              "selection_id": selection_id, "price_visto": pv,
+                              "price_attuale": prezzo_attuale, "banda": banda,
+                              **extra_ctx})
+            return {"error": codice, "price_visto": pv,
+                    "price_attuale": prezzo_attuale, "banda": banda,
+                    "message": PO.motivo_fuori_banda(prezzo_attuale, banda, side),
+                    **extra_ctx}
+        prezzo_ordine = prezzo_attuale
+        esecuzione = {"regola": PO.ESECUZIONE_A_MERCATO, "banda": banda,
+                      "prezzo_attuale": prezzo_attuale, "prezzo_visto": pv}
+    elif opp_key:
         price_visto_raw = payload.get("price_visto")
         if price_visto_raw is not None:
+            esecuzione = {"regola": PO.ESECUZIONE_PREZZO_VISTO, "banda": None}
             pv = PO.prezzo_visto_valido(price_visto_raw)
             if pv is None:
                 return {"error": "prezzo_visto_non_valido"}
@@ -2782,6 +2825,12 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         segnale = PO.prezzo_segnale(payload)
         if segnale is not None:
             meta["prezzo_segnale"] = segnale
+        # D7 (25/09) - COME e' stato scelto il prezzo dell'ordine (a mercato
+        # entro la banda, oppure il prezzo visto perche' la banda non c'e').
+        # Chiave propria: ``meta.esecuzione`` e' dell'esecuzione (t4/t5, price
+        # richiesto) e al fill la riscrive ``_execute``.
+        if esecuzione is not None:
+            meta["esecuzione_al_clic"] = esecuzione
         # la riga nata da una proposta porta gli STESSI numeri del modello che
         # l'automatico ci metteva (``_model_meta``): senza, la tabella dei
         # trade perderebbe P(perdita) d'ingresso, edge ed EV proprio sulle
@@ -2834,11 +2883,13 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
             "signal_key": payload.get("signal_key"), "side": side,
             "price": out.price, "size_requested": size, "size": out.size,
             "status": out.status, "mode": mode,
+            **({"esecuzione_al_clic": esecuzione} if esecuzione is not None else {}),
             **({"prezzo_visto_ctx": PO.contesto_prezzo_visto(payload)}
                if PO.contesto_prezzo_visto(payload) else {})})
     return {"ok": True, "trade_id": trade_id, "status": out.status,
             "price": out.price, "size": out.size,
-            "pending_fill": out.status == "pending"}
+            "pending_fill": out.status == "pending",
+            **({"esecuzione_al_clic": esecuzione} if esecuzione is not None else {})}
 
 
 def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: dict,

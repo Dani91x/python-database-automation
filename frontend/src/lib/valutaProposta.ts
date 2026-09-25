@@ -20,6 +20,7 @@
 // del modello). Quando non reggono piu' lo dice il servizio
 // (`payload.valutazione.causa === 'modello'`).
 // ============================================================================
+import { tickUp } from './matching';
 
 export interface MotivoValutazione {
     codice: string;
@@ -161,4 +162,85 @@ export function testoMotivo(m: MotivoValutazione): string {
     const base = m.testo || TESTO_MOTIVO[m.codice] || m.codice.replace(/_/g, ' ');
     if (m.valore == null || m.soglia == null) return base;
     return `${base}: ${m.valore} contro soglia ${m.soglia}`;
+}
+
+// ============================================================================
+// D7 (25/09/2026) - LA BANDA DELLA STRATEGIA: al clic l'ordine parte A MERCATO
+// (il miglior prezzo di adesso) solo se sta dentro la banda; fuori banda il
+// servizio non piazza e la scheda lo dice PRIMA del clic.
+//
+// PORTA di `proposte_opportunita.banda_della_strategia` / `in_banda` (Python):
+// la banda sono i tick della scala Betfair dove i criteri DI PREZZO di
+// `valutaAlPrezzo` reggono (quota min/max, edge del motore e del servizio, EV
+// positivo, tetto di responsabilita'); abbinabile e soglie di probabilita' NON
+// sono banda. Legate dal file d'oro `bandaStrategia.golden.json`
+// (`python -m Betfair.safe_strategy.tools.genera_oro_banda_strategia --scrivi`).
+// ============================================================================
+export const CODICI_DI_PREZZO: readonly string[] = [
+    'quota_sotto_minimo', 'quota_sopra_massimo', 'edge_sotto_minimo',
+    'edge_sotto_minimo_servizio', 'ev_non_positivo', 'responsabilita_oltre_tetto',
+];
+
+export interface BandaStrategia {
+    min: number | null;
+    max: number | null;
+    vuota: boolean;
+}
+
+/** La scala Betfair 1.01 .. 1000 (una volta sola). */
+let SCALA: number[] | null = null;
+function scalaBetfair(): number[] {
+    if (SCALA) return SCALA;
+    const out: number[] = [];
+    let p = 1.01;
+    for (;;) {
+        out.push(p);
+        if (p >= 1000) break;
+        const n = tickUp(p);
+        if (!(n > p)) break;
+        p = n;
+    }
+    SCALA = out;
+    return out;
+}
+
+function bandaValutabile(side: unknown, pModel: unknown, criteri: unknown): boolean {
+    const lato = String(side ?? '').toLowerCase();
+    if (lato !== 'back' && lato !== 'lay') return false;
+    if (criteri == null || typeof criteri !== 'object' || Array.isArray(criteri)) return false;
+    const pm = numero(pModel);
+    return pm != null && pm >= 0 && pm <= 1;
+}
+
+/** Il prezzo sta dentro la banda della strategia? Prezzo non valido = no. */
+export function inBanda(args: { side: unknown; prezzo: unknown; p_model: unknown;
+    criteri: CriteriProposta | null | undefined }): boolean {
+    const q = numero(args.prezzo);
+    if (q == null || q <= 1 || !bandaValutabile(args.side, args.p_model, args.criteri)) return false;
+    const v = valutaAlPrezzo({ side: String(args.side).toLowerCase(), prezzo: q, abbinabile: null,
+        p_model: args.p_model, criteri: args.criteri });
+    return v.p_implicita != null && !v.motivi.some((m) => CODICI_DI_PREZZO.includes(m.codice));
+}
+
+/** La banda che la strategia ammette per QUESTA proposta; null = non si puo'
+ *  dire (niente criteri o P del modello): mai un limite inventato. */
+export function bandaDellaStrategia(args: { side: unknown; p_model: unknown;
+    criteri: CriteriProposta | null | undefined }): BandaStrategia | null {
+    if (!bandaValutabile(args.side, args.p_model, args.criteri)) return null;
+    const dentro = scalaBetfair().filter((q) => inBanda({ ...args, prezzo: q }));
+    return {
+        min: dentro.length ? dentro[0] : null,
+        max: dentro.length ? dentro[dentro.length - 1] : null,
+        vuota: dentro.length === 0,
+    };
+}
+
+/** «1.05-1000» (come il messaggio del servizio); `fmt` = come scrivere le
+ *  quote (la scheda passa `fmtOdds`, cosi' la frase parla una lingua sola). */
+export function testoBanda(b: BandaStrategia | null,
+    fmt: (v: number) => string = (v) => String(v)): string {
+    if (!b || b.vuota || b.min == null || b.max == null) {
+        return 'vuota (nessun prezzo la soddisfa con la P del modello di adesso)';
+    }
+    return `${fmt(b.min)}-${fmt(b.max)}`;
 }

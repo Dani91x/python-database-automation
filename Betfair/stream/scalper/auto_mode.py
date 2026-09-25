@@ -42,8 +42,12 @@ e come si pubblica lo stato.
    PRIMA dell'accensione corrente si riarma: spegnere e riaccendere e' un
    gesto dell'utente (come il tennis). Il follow ``live_follow`` chiuso
    (CLOSED/UPLOADED/ERROR) non si riapre.
-5. PAPER E LIVE MAI INSIEME: con una sessione attiva nella modalita' opposta a
-   quella dell'interruttore non si arma niente di nuovo, e lo si dice.
+5. PAPER E LIVE MAI INSIEME: con l'interruttore in prova e una sessione attiva
+   in soldi veri non si arma niente di nuovo, e lo si dice.
+5bis. D3 (25/09, ordine dell'utente «dry run per tutti: decido io cosa
+   attivare, se PAPER o LIVE»): ogni sessione armata dal feed nasce in
+   DRY-RUN (``dry_run=true``), anche con l'interruttore in soldi veri; il
+   dry-run lo toglie l'utente per sessione (``dry_run_alla_nascita``).
 6. PARTITA USCITA DAL FEED: una sessione AUTOMATICA la cui partita manca dal
    feed (scanner vivo) da almeno ``ASSENZA_FEED_S`` va in 'stopping' (la
    sessione fa force-flat e attende il flat: lo stop di sempre). Feed muto o
@@ -264,9 +268,35 @@ def modalita_riga(riga: Dict[str, Any]) -> str:
     return "live" if riga.get("dry_run") is False else "paper"
 
 
+#: D3 (25/09) - ORDINE DELL'UTENTE (testuale): «dry run per tutti: decido io
+#: cosa attivare, se PAPER o LIVE». Una sessione armata DA SOLA dal feed nasce
+#: SEMPRE in dry-run (``dry_run=true``: client simulato, nessun ordine reale),
+#: anche con l'interruttore in soldi veri. I soldi veri su una partita li mette
+#: l'utente, sessione per sessione, dalla scheda scalper della partita
+#: (``ScalperPanel``: ferma la sessione e riarma senza "Solo ARMATO", con la
+#: conferma dei soldi veri): e' il doppio gesto del 14/09, come i bot tennis.
+DRY_RUN_ALLA_NASCITA = True
+
+
+def dry_run_alla_nascita(modalita: str) -> bool:
+    """``dry_run`` di una sessione armata dall'auto-mode: SEMPRE True (D3),
+    qualunque sia la modalita' dell'interruttore. ``modalita`` resta nella
+    firma per dire, a chi legge, che non la decide lei."""
+    del modalita
+    return DRY_RUN_ALLA_NASCITA
+
+
 def conflitto_modalita(righe_vive: Iterable[Dict[str, Any]], modalita: str) -> Optional[str]:
     """Paper e live mai insieme: la modalita' OPPOSTA di una sessione con un
-    processo dietro, se c'e'."""
+    processo dietro, se c'e'.
+
+    D3 (25/09): con l'interruttore in soldi veri le sessioni automatiche
+    nascono in dry-run (prova) e l'utente toglie il dry-run sessione per
+    sessione: in LIVE prova e soldi veri convivono PER SCELTA dell'utente, non
+    c'e' conflitto. Il conflitto resta con l'interruttore in PROVA: una
+    sessione in soldi veri blocca l'armamento (prima di mischiare, si ferma)."""
+    if modalita == "live":
+        return None
     for r in righe_vive or []:
         m = modalita_riga(r)
         if m != modalita:

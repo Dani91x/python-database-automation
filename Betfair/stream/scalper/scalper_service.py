@@ -455,7 +455,9 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
                 campi = {
                     "status": "requested",
                     "mode": str(serv.get("strategia") or "maker"),
-                    "dry_run": modalita != "live",
+                    # D3 (25/09): SEMPRE dry-run alla nascita, anche in live
+                    # (i soldi veri li mette l'utente per sessione)
+                    "dry_run": AM.dry_run_alla_nascita(modalita),
                     "stake": serv.get("stake") if serv.get("stake") is not None else 25,
                     "params": AM.params_per_sessione(params),
                     "bias": None, "bias_meta": None, "error": None,
@@ -478,6 +480,7 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
                     try:
                         db.activity(ev, "auto_armata", {
                             "msg": "armata dal feed (auto-mode)", "modalita": modalita,
+                            "dry_run": campi["dry_run"],
                             "strategia": campi["mode"], "stake": campi["stake"],
                             "home": p["home"], "away": p["away"],
                             "open_date": p.get("open_date"), "fonte": AM.FONTE_FEED})
@@ -508,6 +511,8 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
             pass
     _scrivi_stats(db, st, {
         "acceso": True, "modalita": modalita, "tetto": tetto,
+        # D3 (25/09): la Control Room lo dice («nascono in dry-run»)
+        "nascono_in_dry_run": AM.dry_run_alla_nascita(modalita),
         "sessioni": sessioni,
         "sessioni_auto": len([r for r in con_processo
                               if AM.origine_riga(r) == AM.ORIGINE_AUTO]) + len(esito["armate"]),

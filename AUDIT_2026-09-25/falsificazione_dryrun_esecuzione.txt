@@ -1,0 +1,64 @@
+CONTROLLO Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py -q -p no:cacheprovider VERDE
+CONTROLLO Betfair/safe_strategy/tests/test_esecuzione_a_mercato_d7_2026_09_25.py -q -p no:cacheprovider VERDE
+CONTROLLO Betfair/safe_strategy/tests/test_scheda_al_ms_2026_09_24.py -q -p no:cacheprovider VERDE
+CONTROLLO Betfair/stream/tests/test_proposte_modello_2026_09_23.py -q -p no:cacheprovider VERDE
+CONTROLLO npx.cmd vitest run src/lib/valutaProposta.banda.test.ts                     VERDE
+CONTROLLO npx.cmd vitest run src/components/controlroom/SchedaPropostaOpportunita.banda.test.tsx VERDE
+CONTROLLO npx.cmd vitest run src/components/controlroom/PropostaUscitaMike.test.tsx   VERDE
+CONTROLLO npx.cmd vitest run src/lib/scalperAuto.test.ts                              VERDE
+PY1 in live l'auto-mode nasce con soldi veri            ROSSO md5 ripristinato
+PY2 supervisore torna a dry_run = modalita'             ROSSO md5 ripristinato
+PY3 in live il dry-run blocca l'armamento               ROSSO md5 ripristinato
+PY4 attivita' senza dry_run                             ROSSO md5 ripristinato
+PY5 l'ordine torna al prezzo visto                      ROSSO md5 ripristinato
+PY6 nessun controllo di banda                           ROSSO md5 ripristinato
+PY7 la banda ignora l'edge minimo                       ROSSO md5 ripristinato
+PY8 la banda conta anche abbinabile e probabilita'      ROSSO md5 ripristinato
+PY9 messaggio senza le parole dell'ordine               ROSSO md5 ripristinato
+PY10 esecuzione non scritta sulla riga                  ROSSO md5 ripristinato
+PY11 banda mai usata (sempre la regola del 18/09)       ROSSO md5 ripristinato
+PY12 senza banda si inventa il mercato                  ROSSO md5 ripristinato
+PY13 senza prezzo sul mercato si piazza al visto        ROSSO md5 ripristinato
+PM3a il banco accetta un ordine fuori banda             VERDE (test NON falsificante!) md5 ripristinato
+PM3b PM3 vecchio anche con la banda (spurio)            ROSSO md5 ripristinato
+PM3c rifiuto fuori banda in banda accettato             ROSSO md5 ripristinato
+PM3d chiesto diverso dal mercato accettato              ROSSO md5 ripristinato
+PM3e esecuzione a mercato non pretesa                   ROSSO md5 ripristinato
+TS1 porta TS: banda senza EV                            ROSSO md5 ripristinato
+TS2 porta TS: scala da 1.02                             ROSSO md5 ripristinato
+TS3 scheda: fuori banda non detto                       ROSSO md5 ripristinato
+TS4 scheda: banda congelata (p_model ignorata)          ROSSO md5 ripristinato
+TS5 Mike: ctx.selections ignorato                       ROSSO md5 ripristinato
+TS6 Mike: al clic il prezzo del feed, non quello al ms  ROSSO md5 ripristinato
+TS7 Mike: ordine 1 senza sottoscrizione                 ROSSO md5 ripristinato
+TS8 scalper: frase LIVE di ieri                         ROSSO md5 ripristinato
+---
+PY1 in live l'auto-mode nasce con soldi veri            ROSSO md5 ripristinato
+PY2 supervisore torna a dry_run = modalita'             ROSSO md5 ripristinato
+PY3 in live il dry-run blocca l'armamento               ROSSO md5 ripristinato
+PY4 attivita' senza dry_run                             ROSSO md5 ripristinato
+PY5 l'ordine torna al prezzo visto                      ROSSO md5 ripristinato
+PY6 nessun controllo di banda                           ROSSO md5 ripristinato
+PY7 la banda ignora l'edge minimo                       ROSSO md5 ripristinato
+PY8 la banda conta anche abbinabile e probabilita'      ROSSO md5 ripristinato
+PY9 messaggio senza le parole dell'ordine               ROSSO md5 ripristinato
+PY10 esecuzione non scritta sulla riga                  ROSSO md5 ripristinato
+PY11 banda mai usata (sempre la regola del 18/09)       ROSSO md5 ripristinato
+PY12 senza banda si inventa il mercato                  ROSSO md5 ripristinato
+PY13 senza prezzo sul mercato si piazza al visto        ROSSO md5 ripristinato
+PM3a il banco accetta un ordine fuori banda             VERDE (test NON falsificante!) md5 ripristinato
+PM3b PM3 vecchio anche con la banda (spurio)            ROSSO md5 ripristinato
+PM3c rifiuto fuori banda in banda accettato             ROSSO md5 ripristinato
+PM3d chiesto diverso dal mercato accettato              ROSSO md5 ripristinato
+PM3e esecuzione a mercato non pretesa                   ROSSO md5 ripristinato
+TS1 porta TS: banda senza EV                            ROSSO md5 ripristinato
+TS2 porta TS: scala da 1.02                             ROSSO md5 ripristinato
+TS3 scheda: fuori banda non detto                       ROSSO md5 ripristinato
+TS4 scheda: banda congelata (p_model ignorata)          ROSSO md5 ripristinato
+TS5 Mike: ctx.selections ignorato                       ROSSO md5 ripristinato
+TS6 Mike: al clic il prezzo del feed, non quello al ms  ROSSO md5 ripristinato
+TS7 Mike: ordine 1 senza sottoscrizione                 ROSSO md5 ripristinato
+TS8 scalper: frase LIVE di ieri                         ROSSO md5 ripristinato
+--- (riesecuzione dopo la correzione del test, stessa mutazione, md5 ripristinato)
+PM3a il banco accetta un ordine fuori banda             ROSSO (1 failed, 43 passed) md5 ripristinato
+Nota: al primo giro PM3a era VERDE: nei casi di prova il chiesto era fuori banda anche lui e lo prendeva un altro controllo; aggiunto il caso feed 3,1 / riga dichiarata 3,5.

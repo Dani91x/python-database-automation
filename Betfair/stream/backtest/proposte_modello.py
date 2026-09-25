@@ -130,9 +130,14 @@ _REGOLE: Tuple[Tuple[str, str], ...] = (
     ("PM2", "mai due proposte VIVE identiche (indice unico "
             "uq_safe_requests_proposta_opp_viva) e mai una scrittura di proposta "
             "respinta dal DB"),
-    ("PM3", "prezzo visto rispettato: l'ordine parte AL prezzo visto e solo se il "
-            "mercato e' entro la tolleranza (SLIPPAGE_PCT_DEFAULT o quella della "
-            "scheda); oltre -> rifiuto dichiarato, mai ordine"),
+    ("PM3", "prezzo al clic rispettato. D7 (25/09): una proposta con la BANDA della "
+            "strategia (criteri + p_model) parte A MERCATO (riga chiesta al "
+            "prezzo di mercato all'esecuzione, meta.esecuzione_al_clic) e SOLO "
+            "dentro la banda; fuori banda -> rifiuto 'fuori_banda_strategia', mai "
+            "ordine; mai rifiutata in banda. Senza banda (e combo): l'ordine parte "
+            "AL prezzo visto e solo se il mercato e' entro la tolleranza "
+            "(SLIPPAGE_PCT_DEFAULT o quella della scheda); oltre -> rifiuto "
+            "dichiarato, mai ordine"),
     ("PM4", "proposta scaduta, decaduta o RIFIUTATA = nessun ordine; un clic su una "
             "scheda non piu' viva non cambia niente; RIFIUTA tiene (nessuna "
             "riproposta della stessa chiave)"),
@@ -1144,8 +1149,13 @@ class Sorveglianza:
                                 f"ordine/i su una scheda che al clic "
                                 f"{'la dava ancora per valida' if c.scheda_valida else 'non portava la valutazione'}"
                                 f"{'' if c.prezzo_visto is not None else ' e senza prezzo visto'}")
-            # PM3 - prezzo visto
-            if c.prezzo_visto is not None and c.tipo != "combo":
+            # PM3 - D7 (25/09): con la banda della strategia, a mercato entro banda
+            banda = self._banda(c, p)
+            if banda is not None:
+                _sollecita(sollecitati, "PM3")
+                self._pm3_banda(c, p, banda, res, motivo, nate, riga, mercato, viol)
+            # PM3 - prezzo visto (proposte SENZA banda: la regola del 18/09)
+            elif c.prezzo_visto is not None and c.tipo != "combo":
                 _sollecita(sollecitati, "PM3")
                 vivo = prezzo_in_riga(riga, c.sids[0] if c.sids else None, c.lato)
                 soglia = self._soglia(p)
@@ -1218,6 +1228,56 @@ class Sorveglianza:
                     viol("PM4", f"proposta #{rid} RIFIUTATA dal trader e riproposta "
                                 f"come #{x.get('id')}")
         return out
+
+    @staticmethod
+    def _banda(c: Clic, p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """D7 - la banda della strategia della proposta (None = non c'e': combo,
+        o proposta senza criteri/p_model). La funzione del servizio e' l'unica
+        che la definisce; il controllo qui sotto NON la usa per il prezzo di
+        mercato, che rilegge dalla riga del feed (``prezzo_in_riga``)."""
+        if c.tipo == "combo":
+            return None
+        from Betfair.safe_strategy import proposte_opportunita as PO
+
+        return PO.banda_della_strategia(side=c.lato or p.get("side"),
+                                        p_model=p.get("p_model"), criteri=p.get("criteri"))
+
+    @staticmethod
+    def _pm3_banda(c: Clic, p: Dict[str, Any], banda: Dict[str, Any], res: Dict[str, Any],
+                   motivo: str, nate: List[Dict[str, Any]], riga: Optional[Dict[str, Any]],
+                   mercato: Any, viol: Callable[[str, str], None]) -> None:
+        """PM3 sul contratto D7: ordine A MERCATO, solo DENTRO la banda."""
+        from Betfair.safe_strategy import proposte_opportunita as PO
+
+        lato = c.lato or str(p.get("side") or "")
+        crit, pm = p.get("criteri"), p.get("p_model")
+        vivo = prezzo_in_riga(riga, c.sids[0] if c.sids else p.get("selection_id"), lato)
+        dentro = (vivo is not None
+                  and PO.in_banda(side=lato, prezzo=vivo, p_model=pm, criteri=crit))
+        testo_b = PO.testo_banda(banda)
+        if nate and vivo is not None and not dentro:
+            viol("PM3", f"proposta #{c.req_id}: mercato {vivo} FUORI dalla banda {testo_b} "
+                        f"della strategia eppure ordine #{nate[0].get('id')}")
+        if motivo == "fuori_banda_strategia" and dentro:
+            viol("PM3", f"proposta #{c.req_id}: mercato {vivo} DENTRO la banda {testo_b} "
+                        f"ma rifiutata 'fuori_banda_strategia'")
+        for t in nate:
+            chiesto = _prezzo_chiesto(t, mercato)
+            meta = t.get("meta") if isinstance(t.get("meta"), dict) else {}
+            ea = meta.get("esecuzione_al_clic") if isinstance(meta.get("esecuzione_al_clic"),
+                                                              dict) else {}
+            attuale = _num(ea.get("prezzo_attuale"))
+            if str(ea.get("regola") or "") != PO.ESECUZIONE_A_MERCATO or attuale is None:
+                viol("PM3", f"riga #{t.get('id')}: proposta con banda {testo_b} ma "
+                            f"l'esecuzione non e' dichiarata a mercato ({ea or 'assente'})")
+                continue
+            if chiesto is None or abs(chiesto - attuale) > 1e-6:
+                viol("PM3", f"riga #{t.get('id')} chiesta a {chiesto}, il mercato "
+                            f"all'esecuzione era {attuale}: non a mercato")
+            if chiesto is None or not PO.in_banda(side=lato, prezzo=chiesto, p_model=pm,
+                                                  criteri=crit):
+                viol("PM3", f"riga #{t.get('id')} chiesta a {chiesto} FUORI dalla banda "
+                            f"{testo_b} della strategia")
 
     @staticmethod
     def _soglia(p: Dict[str, Any]) -> float:

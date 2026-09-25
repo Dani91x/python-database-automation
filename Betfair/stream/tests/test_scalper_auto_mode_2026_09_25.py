@@ -158,6 +158,8 @@ class DbFinto:
 
     def activity(self, ev: str, kind: str, payload: Dict[str, Any]) -> None:
         self.chiamate.append(("activity", ev, kind))
+        # D3 (25/09): il payload si conserva a parte (le tuple di sopra restano uguali)
+        self.attivita = getattr(self, "attivita", []) + [(ev, kind, dict(payload))]
 
     def riga_control(self, ev: str) -> Optional[Dict[str, Any]]:
         self.chiamate.append(("riga_control", ev))
@@ -282,7 +284,19 @@ def test_partita_sparita_dopo_60s_e_memoria_pulita() -> None:
 def test_conflitto_modalita() -> None:
     assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "paper") is None
     assert AM.conflitto_modalita([riga_control("1", dry_run=False)], "paper") == "live"
-    assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "live") == "paper"
+    # D3 (25/09): in LIVE le sessioni automatiche nascono in dry-run e l'utente
+    # toglie il dry-run per sessione: prova e soldi veri convivono per sua
+    # scelta, nessun conflitto (prima: "paper")
+    assert AM.conflitto_modalita([riga_control("1", dry_run=True)], "live") is None
+    assert AM.conflitto_modalita([riga_control("1", dry_run=False),
+                                  riga_control("2", dry_run=True)], "live") is None
+
+
+def test_d3_dry_run_alla_nascita_sempre_vero() -> None:
+    """D3 (25/09): «dry run per tutti: decido io cosa attivare, se PAPER o LIVE»."""
+    assert AM.dry_run_alla_nascita("live") is True
+    assert AM.dry_run_alla_nascita("paper") is True
+    assert AM.dry_run_alla_nascita("") is True
 
 
 # ===========================================================================
@@ -316,10 +330,29 @@ def test_acceso_arma_dal_feed_fino_al_tetto_con_i_campi_giusti() -> None:
     assert es["motivo"] is None
 
 
-def test_live_nasce_live() -> None:
+def test_live_nasce_in_dry_run() -> None:
+    """D3 (25/09, ordine dell'utente «dry run per tutti: decido io cosa
+    attivare, se PAPER o LIVE»): con l'interruttore in soldi veri la partita
+    armata dal feed nasce in DRY-RUN (prima di oggi nasceva con soldi veri,
+    ``test_live_nasce_live``). L'attivita' e le stats lo dicono."""
     db = DbFinto(riga_servizio(mode="live"), [riga_feed("1")])
-    SVC.giro_auto(db, _stato(), [], ORA_EP)
-    assert db.nomi("arma")[0][2]["dry_run"] is False
+    es = SVC.giro_auto(db, _stato(), [], ORA_EP)
+    assert es["armate"] == ["1"]
+    assert db.nomi("arma")[0][2]["dry_run"] is True
+    att = [p for ev, kind, p in db.attivita if kind == "auto_armata"]
+    assert att and att[-1]["dry_run"] is True and att[-1]["modalita"] == "live"
+    auto = db.nomi("set_servizio")[-1][1]["stats"]["auto"]
+    assert auto["modalita"] == "live" and auto["nascono_in_dry_run"] is True
+
+
+def test_live_con_sessioni_in_dry_run_continua_ad_armare() -> None:
+    """D3: in live le sessioni automatiche in dry-run NON sono un conflitto
+    (prima bloccavano l'armamento delle partite successive)."""
+    viva = riga_control("7", dry_run=True, origine="auto")
+    db = DbFinto(riga_servizio(mode="live"), [riga_feed("7"), riga_feed("1")])
+    es = SVC.giro_auto(db, _stato(), [viva], ORA_EP)
+    assert es["armate"] == ["1"]
+    assert db.nomi("set_servizio")[-1][1]["stats"]["auto"]["conflitto"] is None
 
 
 def test_il_tetto_conta_anche_le_sessioni_della_card() -> None:

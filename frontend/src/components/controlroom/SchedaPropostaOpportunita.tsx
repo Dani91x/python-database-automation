@@ -37,12 +37,14 @@
 //     parte il prezzo a video (o l'ultimo noto con `prezzo_vivo_assente`),
 //     col suo istante e la sua fonte: decide il servizio con la tolleranza.
 // ============================================================================
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, ShieldAlert, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtAge, fmtTicks, DASH } from '@/lib/format';
 import type { PropostaOpportunita, PropostaOpportunitaLeg, PrezziViviGambe } from '@/lib/safeBot';
-import type { CriteriProposta } from '@/lib/valutaProposta';
+import {
+    bandaDellaStrategia, inBanda, testoBanda, type CriteriProposta,
+} from '@/lib/valutaProposta';
 import {
     giudica, scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato, prezzoSegnaleDi,
     type ContestoPrezzoVisto, type PrezzoScheda, type Semaforo, type ValutazioneServizio,
@@ -257,6 +259,33 @@ export function SchedaPropostaOpportunita({
     if (giudizio && giudizio.semaforo !== 'SI') {
         avvisi.push(`fuori criterio: ${giudizio.motivi.join('; ')}`);
     }
+    // D7 (25/09) — la BANDA della strategia: al clic l'ordine parte A MERCATO
+    // (il miglior prezzo di quel momento) solo se sta dentro; fuori banda il
+    // servizio non piazza. La scheda lo dice PRIMA del clic, con le stesse
+    // parole del rifiuto del servizio (PIAZZA resta acceso: decide il servizio
+    // al prezzo dell'istante, che puo' essere rientrato).
+    const pModel = p.p_model;
+    const banda = useMemo(
+        () => (isCombo ? null : bandaDellaStrategia({ side: lato, p_model: pModel, criteri })),
+        // i criteri arrivano dal servizio: si ricalcola quando cambia la riga
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [isCombo, lato, pModel, JSON.stringify(criteri)],
+    );
+    const vivoInBanda = banda != null && vivo != null
+        ? inBanda({ side: lato, prezzo: vivo, p_model: pModel, criteri })
+        : null;
+    if (banda != null && vivo != null && vivoInBanda === false) {
+        avvisi.push(`prezzo attuale ${fmtOdds(vivo)} fuori dalla banda ${testoBanda(banda, fmtOdds)} `
+            + 'della strategia: al clic l’ordine non parte');
+    }
+    const esecuzioneTesto = isCombo
+        ? 'al clic: partono i prezzi a video delle gambe (per le combinazioni non c’è una banda '
+            + 'della strategia per gamba: il servizio ricontrolla la tolleranza)'
+        : banda != null
+            ? `al clic: a mercato, al miglior prezzo di quel momento${vivo != null ? ` (ora ${fmtOdds(vivo)})` : ''}, `
+                + `solo dentro la banda ${testoBanda(banda, fmtOdds)} della strategia · FILL_OR_KILL in live`
+            : 'al clic: parte il prezzo a video (proposta senza criteri della strategia: nessuna banda, '
+                + 'il servizio ricontrolla la tolleranza)';
 
     // 18/09 + 24/09 — ORDINE DELL'UTENTE: PIAZZA manda ESATTAMENTE il numero
     // a video in quell'istante (con eta' e fonte); senza prezzo vivo manda
@@ -458,6 +487,11 @@ export function SchedaPropostaOpportunita({
                 <span className="block text-[11px] text-white/40 mt-0.5" data-testid="cr-opp-eta">
                     quote {etaS == null ? <span className="text-orange-400">età ignota</span> : fmtAge(etaS)}
                     {' · '}partirebbe in <b className={live ? 'text-orange-300' : 'text-white/60'}>{String(p.mode ?? 'paper').toUpperCase()}</b>
+                </span>
+                {/* D7 (25/09) — come parte l'ordine al clic */}
+                <span className={`block text-[11px] mt-0.5 ${vivoInBanda === false ? 'text-red-300' : 'text-white/55'}`}
+                    data-testid="cr-opp-esecuzione" data-in-banda={vivoInBanda == null ? '' : String(vivoInBanda)}>
+                    {esecuzioneTesto}
                 </span>
             </div>
 

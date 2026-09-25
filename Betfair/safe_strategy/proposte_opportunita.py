@@ -637,3 +637,106 @@ def impronta_valutazione(v: Optional[dict[str, Any]]) -> tuple:
     return (bool(v.get("valida")), v.get("causa"),
             tuple(str((m or {}).get("codice")) for m in (v.get("motivi") or [])),
             ap.get("prezzo"))
+
+
+# ===========================================================================
+# D7 (25/09/2026) - AL CLIC SI PIAZZA A MERCATO, DENTRO LA BANDA DELLA STRATEGIA
+#
+# Ordine dell'utente: «quando clicco devo essere avvisato del prezzo reale di
+# abbinamento e se l'ordine e' stato abbinato»; regola di esecuzione del
+# coordinatore: al clic l'ordine parte al MIGLIOR prezzo disponibile in quel
+# momento (a mercato), purche' dentro la banda che la strategia ammette per
+# quell'operazione; fuori banda NON si piazza e la scheda lo dice («prezzo
+# attuale X fuori dalla banda Y-Z della strategia»).
+#
+# LA BANDA NON E' UN NUMERO NUOVO. E' l'insieme dei prezzi della scala Betfair
+# ai quali i criteri DI PREZZO del motore che ha generato la proposta
+# (``payload.criteri``, scritti dal servizio coi parametri EFFETTIVI del
+# motore, e ``payload.p_model``) reggono: quota minima/massima, edge minimo del
+# motore e del servizio, EV positivo, tetto di responsabilita'. Si calcola con
+# ``valuta_al_prezzo`` STESSA (nessuna seconda copia delle formule), tenendo
+# solo i motivi che dipendono dal prezzo. Restano FUORI dalla banda perche'
+# non sono un prezzo: l'abbinabile minimo (lo decide il FOK), le soglie di
+# probabilita' e la causa 'modello' (le decide l'utente, come dal 24/09).
+# Senza ``criteri`` o senza ``p_model`` (proposta di prima del 24/09, combo)
+# la banda NON esiste: il chiamante usa il prezzo visto come prima e lo dice.
+# La STESSA funzione esiste in TypeScript (``frontend/src/lib/valutaProposta.ts``
+# ``bandaDellaStrategia``), legata dal file d'oro ``bandaStrategia.golden.json``.
+# ===========================================================================
+
+#: i codici di ``valuta_al_prezzo`` che dipendono SOLO dal prezzo (la banda)
+CODICI_DI_PREZZO = ("quota_sotto_minimo", "quota_sopra_massimo", "edge_sotto_minimo",
+                    "edge_sotto_minimo_servizio", "ev_non_positivo",
+                    "responsabilita_oltre_tetto")
+
+#: come e' stato scelto il prezzo dell'ordine (sulla riga e nel risultato)
+ESECUZIONE_A_MERCATO = "a_mercato_entro_banda"
+ESECUZIONE_PREZZO_VISTO = "prezzo_visto_senza_banda"
+
+
+def _scala_betfair() -> tuple:
+    """La scala dei prezzi Betfair (1.01 .. 1000), quella di flumine."""
+    from flumine.utils import PRICES_FLOAT  # import pigro: serve solo alla banda
+
+    return tuple(float(p) for p in PRICES_FLOAT)
+
+
+def motivi_di_prezzo(v: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+    """I motivi di una ``valuta_al_prezzo`` che dipendono dal prezzo."""
+    return [m for m in ((v or {}).get("motivi") or [])
+            if str((m or {}).get("codice")) in CODICI_DI_PREZZO]
+
+
+def _banda_valutabile(side: Any, p_model: Any, criteri: Any) -> bool:
+    if str(side or "").lower() not in ("back", "lay") or not isinstance(criteri, dict):
+        return False
+    pm = _numero(p_model)
+    return pm is not None and 0.0 <= pm <= 1.0
+
+
+def in_banda(*, side: Any, prezzo: Any, p_model: Any, criteri: Any) -> bool:
+    """Il prezzo sta dentro la banda della strategia? Prezzo non valido = no."""
+    q = _numero(prezzo)
+    if q is None or q <= 1.0 or not _banda_valutabile(side, p_model, criteri):
+        return False
+    v = valuta_al_prezzo(side=str(side).lower(), prezzo=q, abbinabile=None,
+                         p_model=p_model, criteri=criteri)
+    return v.get("p_implicita") is not None and not motivi_di_prezzo(v)
+
+
+def banda_della_strategia(*, side: Any, p_model: Any, criteri: Any) -> Optional[dict[str, Any]]:
+    """La banda di prezzo che la strategia ammette per QUESTA proposta.
+
+    ``None`` = la banda non si puo' dire (niente ``criteri`` o ``p_model``
+    valida): il chiamante NON inventa un limite. Altrimenti
+    ``{"min", "max", "vuota"}``: primo e ultimo tick della scala Betfair dentro
+    la banda (``None`` se vuota)."""
+    if not _banda_valutabile(side, p_model, criteri):
+        return None
+    lato = str(side).lower()
+    dentro = [p for p in _scala_betfair()
+              if in_banda(side=lato, prezzo=p, p_model=p_model, criteri=criteri)]
+    return {"min": dentro[0] if dentro else None,
+            "max": dentro[-1] if dentro else None,
+            "vuota": not dentro}
+
+
+def _q(v: Any) -> str:
+    return f"{float(v):g}"
+
+
+def testo_banda(banda: Optional[dict[str, Any]]) -> str:
+    if not banda or banda.get("vuota"):
+        return "vuota (nessun prezzo la soddisfa con la P del modello di adesso)"
+    return f"{_q(banda['min'])}-{_q(banda['max'])}"
+
+
+def motivo_fuori_banda(prezzo_attuale: Optional[float], banda: Optional[dict[str, Any]],
+                       side: str) -> str:
+    """Il rifiuto «fuori banda» con le parole dell'ordine: «prezzo attuale X
+    fuori dalla banda Y-Z della strategia»."""
+    if prezzo_attuale is None:
+        return (f"rifiutato: al clic non c'era un prezzo {side} sul mercato "
+                f"(banda della strategia {testo_banda(banda)})")
+    return (f"rifiutato: prezzo attuale {_q(prezzo_attuale)} ({side}) fuori dalla banda "
+            f"{testo_banda(banda)} della strategia")

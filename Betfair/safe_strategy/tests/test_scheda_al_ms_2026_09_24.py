@@ -21,10 +21,14 @@ Cosa certifica questo file, sul codice di produzione:
      piu' resta VIVA, marcata non piu' valida (causa 'prezzo' coi criteri che
      cadono, o 'modello'), coi numeri al prezzo di adesso; torna valida se il
      motore la ripropone; i numeri della NASCITA non si perdono; write-on-change;
-  4. APPROVAZIONE: l'ordine parte AL PREZZO VISTO AL CLIC con la tolleranza
-     misurata rispetto a QUEL prezzo (mai rispetto al prezzo della proposta); il
-     rifiuto riporta i due prezzi; una proposta marcata non piu' valida si
-     approva lo stesso (decide l'utente) ed e' un ordine MANUALE;
+  4. APPROVAZIONE: D7 (25/09, ordine dell'utente) l'ordine parte A MERCATO
+     (il miglior prezzo di adesso) purche' dentro la BANDA della strategia
+     (``PO.banda_della_strategia``, dai criteri della proposta); fuori banda
+     il rifiuto dice «prezzo attuale X fuori dalla banda Y-Z della strategia»;
+     una proposta marcata non piu' valida per il MODELLO si approva lo stesso
+     (decide l'utente) ed e' un ordine MANUALE. Prima del 25/09 l'ordine
+     partiva al prezzo visto con la tolleranza del 2 %: i test qui sotto sono
+     stati riscritti sul contratto nuovo (ognuno lo dice nel docstring);
   5. PARITA' della strategia automatica: il corpo della proposta, tolti i due
      blocchi nuovi (``criteri``, ``valutazione``), e' identico a quello di
      prima; un giro senza opportunita' non scrive niente nella coda.
@@ -323,9 +327,9 @@ def esecuzione(monkeypatch):
 
 def test_approvato_al_prezzo_visto_lontano_dalla_proposta_ma_vicino_al_mercato(esecuzione):
     """Proposta nata a 1,30; l'utente guarda la scheda viva e clicca a 1,50;
-    all'esecuzione il mercato e' a 1,51 (0,67 %): l'ordine PARTE a 1,50. Col
-    vecchio riferimento (la fotografia a 1,30) sarebbe stato un rifiuto
-    "prezzo cambiato" del 16 %."""
+    all'esecuzione il mercato e' a 1,51. D7 (25/09): l'ordine PARTE A MERCATO,
+    1,51 (dentro la banda 1,05-1000 della strategia), non al visto 1,50 (prima
+    del 25/09 partiva a 1,50). Il prezzo visto resta sulla riga, informativo."""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
     corpo = _corpo_approvato(db, 1.50)
@@ -333,24 +337,41 @@ def test_approvato_al_prezzo_visto_lontano_dalla_proposta_ma_vicino_al_mercato(e
                            payload=corpo, params={"commission_pct": 5.0}, now=NOW,
                            control_mode="paper")
     assert out.get("ok") is True, out
-    assert esecuzione[0]["row"]["price"] == 1.50
+    assert esecuzione[0]["row"]["price"] == 1.51
     t = db.trades[0]
     assert t["origin"] == "manual" and t["strategy"] == "model"
-    assert t["price"] == 1.50
+    assert t["price"] == 1.51
+    assert t["meta"]["esecuzione_al_clic"] == {
+        "regola": "a_mercato_entro_banda", "prezzo_attuale": 1.51, "prezzo_visto": 1.50,
+        "banda": {"min": 1.05, "max": 1000.0, "vuota": False}}
+    assert out["esecuzione_al_clic"] == t["meta"]["esecuzione_al_clic"]
 
 
 def test_rifiuto_prezzo_mosso_fra_clic_ed_esecuzione_riporta_i_due_prezzi(esecuzione):
+    """D7 (25/09): il prezzo si muove fra clic (1,30) ed esecuzione (1,36, +4,6 %)
+    ma resta DENTRO la banda: prima era un rifiuto «oltre la tolleranza del 2 %»,
+    ora l'ordine parte a mercato a 1,36. Fuori banda (1,01, sotto il minimo 1,05
+    della strategia) e' il rifiuto, con i due prezzi e la banda nel messaggio."""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
     corpo = _corpo_approvato(db, 1.30)
     out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.36)},
                            payload=corpo, params={"commission_pct": 5.0}, now=NOW,
                            control_mode="paper")
-    assert out["error"] == "prezzo_visto_fuori_tolleranza"
-    assert out["price_visto"] == 1.30 and out["price_attuale"] == 1.36
-    assert out["soglia_pct"] == PO.SLIPPAGE_PCT_DEFAULT
-    assert "1.3" in out["message"] and "1.36" in out["message"]
-    assert "rifiutato" in out["message"] and db.trades == [] and esecuzione == []
+    assert out.get("ok") is True, out
+    assert db.trades[0]["price"] == 1.36 and esecuzione[0]["row"]["price"] == 1.36
+    db = DbFinto()
+    _giro(db, [_opp_valida(1.30)])
+    esecuzione.clear()
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.01)},
+                           payload=_corpo_approvato(db, 1.30), params={"commission_pct": 5.0},
+                           now=NOW, control_mode="paper")
+    assert out["error"] == "fuori_banda_strategia"
+    assert out["price_visto"] == 1.30 and out["price_attuale"] == 1.01
+    assert out["banda"] == {"min": 1.05, "max": 1000.0, "vuota": False}
+    assert out["message"] == ("rifiutato: prezzo attuale 1.01 (back) fuori dalla banda "
+                              "1.05-1000 della strategia")
+    assert db.trades == [] and esecuzione == []
     # il risultato che finisce sulla riga della coda porta lo stesso motivo
     res = S._request_result(out)
     assert res["message"] == out["message"] and S._request_state(out) == "error"
@@ -365,8 +386,10 @@ def test_rifiuto_prezzo_sparito_lo_dice():
     out = S._request_place(db=db, market=None, rows_by_event={EV: senza},
                            payload=corpo, params={"commission_pct": 5.0}, now=NOW,
                            control_mode="paper")
-    assert out["error"] == "prezzo_visto_sparito" and out["price_visto"] == 1.30
-    assert "1.3" in out["message"] and "non c'era piu'" in out["message"]
+    # D7 (25/09): codice e testo nuovi (prima 'prezzo_visto_sparito')
+    assert out["error"] == "prezzo_attuale_assente" and out["price_visto"] == 1.30
+    assert out["message"] == ("rifiutato: al clic non c'era un prezzo back sul mercato "
+                              "(banda della strategia 1.05-1000)")
 
 
 def test_la_tolleranza_usa_quella_della_scheda(esecuzione):
@@ -380,20 +403,33 @@ def test_la_tolleranza_usa_quella_della_scheda(esecuzione):
 
 
 def test_una_proposta_non_piu_valida_si_approva_lo_stesso_decide_l_utente(esecuzione):
-    """La scheda diceva "fuori criterio": l'utente ha firmato comunque. E' un
-    ordine MANUALE (origin 'manual', strategy 'model'), al prezzo visto."""
+    """La scheda diceva "non la propone piu' il modello" (causa 'modello': al
+    prezzo di adesso i criteri reggono): l'utente ha firmato comunque. E' un
+    ordine MANUALE (origin 'manual', strategy 'model'), a mercato.
+    D7 (25/09): se invece la causa e' il PREZZO fuori banda (1,01) l'ordine
+    NON parte: prima del 25/09 partiva al prezzo visto (decide l'utente)."""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
-    _giro(db, [], riga=_feed(back_p1=1.01), now=NOW + timedelta(seconds=10))
-    assert db.vive()[0]["payload"]["valutazione"]["valida"] is False
+    _giro(db, [], riga=_feed(back_p1=1.30), now=NOW + timedelta(seconds=10))
+    v = db.vive()[0]["payload"]["valutazione"]
+    assert v["valida"] is False and v["causa"] == "modello"
     clic = NOW + timedelta(seconds=12)
-    corpo = _corpo_approvato(db, 1.01, clic=clic)
-    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.01)},
+    corpo = _corpo_approvato(db, 1.30, clic=clic)
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.30)},
                            payload=corpo, params={"commission_pct": 5.0}, now=clic,
                            control_mode="paper")
     assert out.get("ok") is True, out
     t = db.trades[0]
-    assert t["origin"] == "manual" and t["price"] == 1.01 and t["meta"]["da_proposta"]
+    assert t["origin"] == "manual" and t["price"] == 1.30 and t["meta"]["da_proposta"]
+    # causa PREZZO: fuori dalla banda della strategia -> nessun ordine
+    db = DbFinto()
+    _giro(db, [_opp_valida(1.30)])
+    _giro(db, [], riga=_feed(back_p1=1.01), now=NOW + timedelta(seconds=10))
+    assert db.vive()[0]["payload"]["valutazione"]["causa"] == "prezzo"
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.01)},
+                           payload=_corpo_approvato(db, 1.01, clic=clic),
+                           params={"commission_pct": 5.0}, now=clic, control_mode="paper")
+    assert out["error"] == "fuori_banda_strategia" and db.trades == []
 
 
 def test_clic_troppo_vecchio_resta_rifiutato():
@@ -443,8 +479,9 @@ _CTX_ASSENTE = {"eta_ms": 42000, "fonte": "scanner", "prezzo_vivo_assente": True
 
 def test_ultimo_noto_col_flag_entro_tolleranza_parte_e_porta_il_contesto(esecuzione):
     """La scheda non aveva un prezzo vivo: ha mandato l'ultimo noto (1,30, di
-    42 s prima). Il mercato adesso e' 1,31 (entro il 2 %): l'ordine PARTE al
-    prezzo visto, e la riga dice che cosa l'utente ha firmato."""
+    42 s prima). Il mercato adesso e' 1,31: D7 (25/09) l'ordine PARTE a mercato
+    (1,31, dentro la banda; prima del 25/09 al visto 1,30), e la riga dice che
+    cosa l'utente ha firmato."""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
     corpo = _corpo_approvato(db, 1.30, extra={"prezzo_visto_ctx": dict(_CTX_ASSENTE)})
@@ -453,7 +490,8 @@ def test_ultimo_noto_col_flag_entro_tolleranza_parte_e_porta_il_contesto(esecuzi
                            control_mode="paper")
     assert out.get("ok") is True, out
     t = db.trades[0]
-    assert t["price"] == 1.30 and t["origin"] == "manual"
+    assert t["price"] == 1.31 and t["origin"] == "manual"
+    assert t["meta"]["prezzo_visto"] == 1.30
     assert t["meta"]["prezzo_visto_ctx"] == {"eta_ms": 42000.0, "fonte": "scanner",
                                              "prezzo_vivo_assente": True,
                                              "clic_ms": 1790000000000.0}
@@ -462,14 +500,17 @@ def test_ultimo_noto_col_flag_entro_tolleranza_parte_e_porta_il_contesto(esecuzi
 
 
 def test_ultimo_noto_fuori_tolleranza_rifiuto_coi_due_prezzi_e_il_contesto(esecuzione):
+    """D7 (25/09): l'ultimo noto (1,30) e il mercato (1,01, fuori banda):
+    rifiuto coi due prezzi, la banda e il contesto. (Prima del 25/09 il
+    rifiuto era «oltre la tolleranza del 2 %» gia' a 1,40, che ora e' in banda.)"""
     db = DbFinto()
     _giro(db, [_opp_valida(1.30)])
     corpo = _corpo_approvato(db, 1.30, extra={"prezzo_visto_ctx": dict(_CTX_ASSENTE)})
-    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.40)},
+    out = S._request_place(db=db, market=None, rows_by_event={EV: _feed(back_p1=1.01)},
                            payload=corpo, params={"commission_pct": 5.0}, now=NOW,
                            control_mode="paper")
-    assert out["error"] == "prezzo_visto_fuori_tolleranza"
-    assert out["price_visto"] == 1.30 and out["price_attuale"] == 1.40
+    assert out["error"] == "fuori_banda_strategia"
+    assert out["price_visto"] == 1.30 and out["price_attuale"] == 1.01
     assert out["prezzo_visto_ctx"]["prezzo_vivo_assente"] is True
     assert db.trades == [] and esecuzione == []
 
