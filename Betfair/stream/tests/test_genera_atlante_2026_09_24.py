@@ -22,12 +22,15 @@ from Betfair.stream.scalper import hazard_atlas_sync as SY
 # ---------------------------------------------------------------- dati finti
 def _match(fid: int, lid: int, gh: int, ga: int, *, home: int = 1, away: int = 2,
            season: int = 2025, status: str = "FT", date: str = "2026-09-20T15:00:00+00:00",
-           hth: int = 0, hta: int = 0) -> Dict[str, Any]:
-    """Riga con le colonne VERE di ``matches`` (quelle che il generatore legge)."""
+           hth: int = 0, hta: int = 0, extra: Any = None) -> Dict[str, Any]:
+    """Riga con le colonne VERE di ``matches`` (quelle che il generatore legge;
+    25/09 sera anche ``raw_json``, da cui PostgREST estrae fixture.status.extra)."""
     return {"fixture_id": fid, "league_id": lid, "season_year": season, "fixture_date": date,
             "status_short": status, "home_team_id": home, "home_team_name": f"T{home}",
             "away_team_id": away, "away_team_name": f"T{away}", "goals_home": gh,
-            "goals_away": ga, "halftime_home": hth, "halftime_away": hta}
+            "goals_away": ga, "halftime_home": hth, "halftime_away": hta,
+            "raw_json": {"fixture": {"id": fid, "status": {"long": "Match Finished", "short": status,
+                                                           "elapsed": 90, "extra": extra}}}}
 
 
 def _ev(eid: int, fid: int, lid: int, team: int, minute: int, *, detail: str = "Normal Goal",
@@ -36,6 +39,23 @@ def _ev(eid: int, fid: int, lid: int, team: int, minute: int, *, detail: str = "
     return {"id": eid, "fixture_id": fid, "league_id": lid, "season_year": season,
             "team_id": team, "event_type": etype, "detail": detail, "minute": minute,
             "minute_extra": None}
+
+
+def seleziona(r: Dict[str, Any], cols: str) -> Dict[str, Any]:
+    """``select`` come PostgREST: colonna semplice, oppure ``alias:col->a->b``
+    (cammino JSON dentro una colonna jsonb; null se manca un pezzo)."""
+    out: Dict[str, Any] = {}
+    for c in cols.split(","):
+        if ":" in c:
+            alias, cammino = c.split(":", 1)
+            parti = cammino.split("->")
+            v: Any = r.get(parti[0])
+            for k in parti[1:]:
+                v = v.get(k) if isinstance(v, dict) else None
+            out[alias] = v
+        else:
+            out[c] = r.get(c)
+    return out
 
 
 class LettoreFinto(G.LettoreDB):
@@ -67,7 +87,7 @@ class LettoreFinto(G.LettoreDB):
             rows = rows[: int(params["limit"])]
         cols = params.get("select", "*")
         if cols != "*":
-            rows = [{c: r.get(c) for c in cols.split(",")} for r in rows]
+            rows = [seleziona(r, cols) for r in rows]
         self.n_richieste += 1
         return rows
 

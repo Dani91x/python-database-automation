@@ -51,6 +51,13 @@ jobs:
         with:
           python-version: '3.13'
 
+      # 25/09 sera - atlante v4 collegato: lo stato v4 per lega (atlante_v4.py)
+      # si conta con numpy. Senza, il generatore fallirebbe al primo stato con
+      # il v4 (run rossa, mai uno stato v4 a meta'). Solo numpy: scipy serve
+      # al banco di validazione, non qui (import pigro in candidati.py).
+      - name: Dipendenze (numpy per l'atlante v4)
+        run: python -m pip install --disable-pip-version-check "numpy==2.4.6"
+
       - name: Prerequisiti (tabelle migrate + bootstrap fatto)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

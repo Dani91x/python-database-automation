@@ -30,7 +30,14 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy.optimize import minimize_scalar
+
+
+def minimize_scalar(*a: Any, **k: Any) -> Any:
+    """scipy PIGRO (25/09, collegamento del v4): ``atlante_v4`` importa questo
+    modulo per le costanti e le celle, e il processo del feed non deve caricare
+    scipy per consultare l'atlante. Solo l'addestramento del banco lo usa."""
+    from scipy.optimize import minimize_scalar as _ms
+    return _ms(*a, **k)
 
 NT = 28
 TC_REC1 = 18

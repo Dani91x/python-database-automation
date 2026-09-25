@@ -1,0 +1,4 @@
+giro 0 prima: righe 380, byte 108184, 484 ms, con extra 0
+giro 0 dopo: righe 380, byte 112183, 308 ms, con extra 327
+giro 1 prima: righe 380, byte 108184, 250 ms, con extra 0
+giro 1 dopo: righe 380, byte 112183, 190 ms, con extra 327

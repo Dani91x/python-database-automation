@@ -1,0 +1,7 @@
+partite 3800, gol 10423
+bootstrap lega (10 stagioni): senza v4 2376 ms, con v4 7462 ms, v4 = +5086 ms (+1.338 ms a partita)
+matches: righe 3800 = 3800 (invariate); byte risposta 1029801 -> 1076921 (+47120, +12.4 byte a riga, +4.6%)
+stato lega: v3 3512 B + fixtures 34201 B; v4 10839 B (1084 B a stagione)
+assembla 1 leghe: senza v4 0.9 ms, con v4 3.3 ms; blocco v4 per lega 3413 B; file live 15815 -> 22704 B
+assembla 20 leghe: senza v4 9.4 ms, con v4 27.3 ms; blocco v4 per lega 3413 B; file live 149017 -> 220917 B
+consulta_atlante_v4: 0.056 ms

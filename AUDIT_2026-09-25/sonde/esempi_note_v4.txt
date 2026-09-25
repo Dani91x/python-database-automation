@@ -1,0 +1,10 @@
+stato | v3 (ieri, consulta_atlante) | v4 (oggi)
+65' tempo 2 gol 2: v3 0.0817 | v4 0.0763 fase regolare recupero atteso None
+87' tempo 2 gol 1: v3 0.1348 | v4 0.0785 fase regolare recupero atteso None
+93' tempo 2 gol 1: v3 0.1348 | v4 0.0876 fase recupero_2T recupero atteso 3.48
+97' tempo 2 gol 1: v3 0.1348 | v4 0.0538 fase recupero_2T recupero atteso 1.51
+47' tempo 1 gol 1: v3 0.0709 | v4 0.0941 fase recupero_1T recupero atteso None
+Safe PRIMA (senza v4) : hazard coerente con l'atlante (verificato: modello 8.4% vs storico 11.3% [league] (lega, n=510, confidenza media), divergenza 25%; atlante v3: recupero non modellato (blocco v4 assente); atlante del 25/09, 1272 partite)
+Mike PRIMA (senza v4) : storico lega 39 (lega, 636 partite) [n=437; confidenza media; atlante del 25/09, 1272 partite] [atlante v3: recupero non modellato (blocco v4 assente)] | hazard_atlas 0.1348
+Safe DOPO (v4) : hazard coerente con l'atlante (verificato: modello 8.4% vs storico 7.6% [league] (lega, n=427.0, confidenza media), divergenza 11%; atlante v4, recupero_2T, recupero atteso ancora 3.48'; atlante del 25/09, 1272 partite)
+Mike DOPO (v4) : storico v4 lega 39 (lega, 636 partite) [recupero_2T; recupero atteso ancora 3.48'; forza non usata; confidenza bassa; atlante del 25/09, 1272 partite] | hazard_atlas 0.0876

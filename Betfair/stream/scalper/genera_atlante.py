@@ -176,7 +176,45 @@ def stato_lega_vuoto(league_id: int, league_name: Optional[str] = None) -> Dict[
         "side_goals": {b: 0 for b in BUCKETS},
         "teams": {}, "h2h": {}, "seasons": [], "fixtures": [],
         "last_fixture_date": None, "updated_at": None,
+        # 25/09 sera: lo stato del v4 (atlante_v4) cresce INSIEME al v3, dalle
+        # stesse righe. Uno stato di prima (senza "v4") non si completa a
+        # pezzi: la lega la ricalcola per intero il motore a domanda.
+        "v4": _v4_vuoto(),
     }
+
+
+def _v4_vuoto() -> Optional[Dict[str, Any]]:
+    from . import atlante_v4 as V4          # pigro: numpy solo quando serve
+    return V4.stato_v4_vuoto()
+
+
+def aggiungi_v4(stato: Dict[str, Any], match: Dict[str, Any], goal_rows: List[Dict[str, Any]], *,
+                affidabile: Optional[bool] = None) -> bool:
+    """Somma la partita al blocco v4 dello stato (SOLO dopo che
+    ``aggiungi_partita`` l'ha contata nel v3: l'idempotenza e' la sua).
+
+    ``affidabile`` (la stagione registra il recupero dei gol? reperto 6 del
+    25/09): nel bootstrap lo decide la stagione INTERA; None (incrementale) =
+    dai conteggi CUMULATI della stagione nello stato, questa partita compresa.
+    Stato senza "v4" (di prima del collegamento): niente, e False."""
+    v4 = stato.get("v4")
+    if not isinstance(v4, dict):
+        return False
+    from . import atlante_v4 as V4
+    p, motivo = V4.partita_v4(match, goal_rows)
+    if p is None:
+        sc = v4.setdefault("scarti", {})
+        sc[motivo] = int(sc.get(motivo, 0)) + 1
+        return False
+    s = str(p.season)
+    if affidabile is None:
+        con, tot = V4.quota_gol_con_extra(goal_rows)
+        q = v4.setdefault("quota_extra", {}).setdefault(s, [0, 0])
+        q[0] += int(con)
+        q[1] += int(tot)
+        affidabile = V4.affidabile_da_quota(q[0], q[1])
+    v4.setdefault("affidabile", {})[s] = bool(affidabile)
+    return V4.aggiungi_partita_v4(v4, p, set(), recupero_affidabile=bool(affidabile), registra_fixture=False)
 
 
 def scarta(stato: Dict[str, Any], motivo: str) -> None:
@@ -471,8 +509,39 @@ def assembla(stati: Dict[str, Dict[str, Any]], *, generated_at: str,
         ],
         "per_league": per_lega,
     }
-    return {"meta": meta, "global": glob, "by_league": by_league, "by_team": by_team,
-            "h2h_hint": h2h}
+    out = {"meta": meta, "global": glob, "by_league": by_league, "by_team": by_team,
+           "h2h_hint": h2h}
+    # 25/09 sera - ATLANTE v4 (A*, validato fuori campione): blocco accanto ai
+    # v3, dagli stati v4 delle leghe che lo hanno. I blocchi v3 restano (ripiego
+    # dichiarato dei consumatori, h2h_hint di Omega, seme del globale v3).
+    v4 = assembla_blocco_v4(stati, generated_at=generated_at)
+    if v4 is not None:
+        out["v4"] = v4
+        meta["v4"] = {k: v4["meta"].get(k) for k in ("name", "stagione_rif", "n_leghe",
+                                                    "n_leghe_affidabili", "n_partite_affidabili",
+                                                    "globale_solido", "recupero_2T_noto")}
+    return out
+
+
+def assembla_blocco_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str) -> Optional[Dict[str, Any]]:
+    """Il blocco ``atlas['v4']`` dagli stati v4 (``stato['v4']``) delle leghe
+    che lo hanno e hanno almeno una partita. None se nessuna. La stagione a
+    peso 1 e' quella DOPO l'ultima contata (come nel banco: addestra <= S,
+    riferimento S + 1), cosi' i pesi per eta' sono quelli validati."""
+    vista: Dict[str, Dict[str, Any]] = {}
+    for lid, st in stati.items():
+        v4 = st.get("v4")
+        if not isinstance(v4, dict):
+            continue
+        stag = v4.get("stagioni") or {}
+        if not any(int((b or {}).get("n_fixtures") or 0) > 0 for b in stag.values()):
+            continue
+        vista[lid] = {"league_name": st.get("league_name"), "stagioni": stag}
+    if not vista:
+        return None
+    from . import atlante_v4 as V4
+    rif = max(int(x) for v in vista.values() for x in v["stagioni"]) + 1
+    return V4.assembla_v4(vista, generated_at=generated_at, stagione_rif=rif)
 
 
 # ---------------------------------------------------------------------------
@@ -539,20 +608,29 @@ class LettoreDB:
             ultimo = rows[-1][chiave]
 
 
+# 25/09 sera (atlante v4 collegato): + la durata del RECUPERO DEL 2T
+# (``raw_json.fixture.status.extra`` di API-Football, nel DB dal 2024; nessuna
+# colonna vera la porta, ``fixtures_backfill`` salva solo short/long/elapsed).
+# Stesse righe, ~10 byte in piu' a riga nella risposta (misura nel referto
+# ATLANTE_V4_COLLEGATO). I gol hanno gia' ``minute_extra`` in COLONNE_GOL.
 COLONNE_MATCH = ("fixture_id,league_id,season_year,fixture_date,status_short,home_team_id,"
                  "home_team_name,away_team_id,away_team_name,goals_home,goals_away,"
-                 "halftime_home,halftime_away")
+                 "halftime_home,halftime_away,extra:raw_json->fixture->status->extra")
 COLONNE_GOL = "id,fixture_id,league_id,season_year,team_id,event_type,detail,minute,minute_extra"
 
 
 def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
               stati: Dict[str, Dict[str, Any]], nomi: Dict[str, Optional[str]],
-              adesso: str, *, solo_leghe_in_stato: bool = False) -> Dict[str, int]:
+              adesso: str, *, solo_leghe_in_stato: bool = False,
+              affidabile_v4: Optional[bool] = None) -> Dict[str, int]:
     """Aggiunge le partite agli stati delle loro leghe. Ritorna i conteggi.
 
     ``solo_leghe_in_stato``: le partite di una lega che lo stato non ha si
     IGNORANO (non si crea una lega senza storico: la aggiunge l'atlante a
-    domanda, per intero, quando una sua partita e' da osservare)."""
+    domanda, per intero, quando una sua partita e' da osservare).
+    25/09 sera: ogni partita contata nel v3 entra anche nel v4
+    (``aggiungi_v4``); ``affidabile_v4`` = decisione della stagione intera
+    (bootstrap), None = dai conteggi cumulati (incrementale)."""
     per_fixture: Dict[int, List[Dict[str, Any]]] = {}
     for g in gol:
         fid = _int(g.get("fixture_id"))
@@ -585,6 +663,7 @@ def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
         if aggiungi_partita(stato, seq, vs):
             conti["aggiunte"] += 1
             stato["updated_at"] = adesso
+            aggiungi_v4(stato, m, per_fixture.get(int(m["fixture_id"]), []), affidabile=affidabile_v4)
         else:
             conti["gia_contate"] += 1
     return conti
@@ -642,7 +721,18 @@ def bootstrap(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], leghe: List[
                 logger.info("[atlante] lega %s stagione %s SALTATA: eventi sul %.0f%% delle "
                             "partite con gol", lid, anno, cop * 100)
                 continue
-            c = _sequenze(matches, gol, stati, nomi, adesso)
+            # 25/09 sera - v4: la stagione registra il minuto di recupero dei
+            # gol? (reperto 6: 2025 europeo senza minute_extra). Si decide
+            # sulla stagione INTERA, gia' letta; i conteggi restano nello stato
+            # (l'incrementale continua da li'). Stesse righe, nessuna lettura.
+            aff_v4 = None
+            v4 = stati[chiave_l].get("v4")
+            if isinstance(v4, dict):
+                from . import atlante_v4 as V4
+                con, tot_e = V4.quota_gol_con_extra(gol)
+                v4.setdefault("quota_extra", {})[str(anno)] = [int(con), int(tot_e)]
+                aff_v4 = V4.affidabile_da_quota(con, tot_e)
+            c = _sequenze(matches, gol, stati, nomi, adesso, affidabile_v4=aff_v4)
             for k in tot:
                 tot[k] += c[k]
             # 25/09: stagione ACQUISITA (serve all'atlante a domanda per sapere

@@ -461,6 +461,10 @@ _LIVE_VOLATILI = frozenset({
     "hazard", "hazard_atlas", "hazard_model", "pressure",
     # 25/09 atlante: n della cella e nota cambiano col bucket di 5' (diagnostica)
     "hazard_n", "hazard_nota",
+    # 25/09 sera atlante v4: il recupero atteso cambia a ogni minuto del
+    # recupero (diagnostica per la scheda, nessun gate). Versione e fase no:
+    # cambiano poche volte a partita e sono fatti da scrivere.
+    "hazard_recupero_atteso_min",
     "p4_market", "p4_model", "p_total_model", "p_total_emp", "p_over45_model",
     "cover_gain_pct", "model_probs", "ko_drift_ticks",
 })

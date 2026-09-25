@@ -653,7 +653,8 @@ class OpportunityModel:
             return out
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard
-            from Betfair.stream.scalper.hazard_atlas import consulta_atlante, etichetta_atlante
+            from Betfair.stream.scalper.atlante_v4 import consulta_atlante_v4, tempo_da_payload
+            from Betfair.stream.scalper.hazard_atlas import etichetta_atlante
         except Exception:  # noqa: BLE001
             return out
         # eta' DICHIARATA: "atlante del GG/MM, n partite" (+ VECCHIO se lo e').
@@ -674,14 +675,32 @@ class OpportunityModel:
         # 25/09: consulta_atlante = stesso numero di hazard_lookup, in piu'
         # livello usato (squadra+lega / lega / globale), n della cella e
         # confidenza. Solo il DATO e la NOTA: soglie e decisione invariate.
-        consulta = consulta_atlante(
-            atlas, minute, sh + sa, league_id,
+        # 25/09 sera ("D2: COLLEGALO!"): il dato viene dall'atlante v4 (A*,
+        # validato fuori campione: recupero modellato per lega, verita' senza
+        # clamp, stagioni pesate) col TEMPO dal feed (matchStatus IPS: nel
+        # recupero del 1T il minuto e' 46, 47... cumulato). I lambda pre-partita
+        # NON si passano: quelli di fixture_predictions predicono peggio di un
+        # Poisson-Elo e col v4 la forza non aggiunge nulla (referto §4.5).
+        # Senza blocco v4 (o lega non ancora nel v4): v3, dichiarato in nota.
+        # Le squadre servono solo al ripiego v3 (livello squadre del v3).
+        consulta = consulta_atlante_v4(
+            atlas, minute, sh + sa, league_id, tempo=tempo_da_payload(payload),
             home_team=payload.get("home"), away_team=payload.get("away"),
         )
         p_atlas, source = consulta["p"], consulta["fonte"]
         out["livello"] = consulta["livello"]
         out["confidenza"] = consulta["confidenza"]
         out["n"] = consulta["n"]
+        out["versione"] = consulta.get("versione")
+        out["fase"] = consulta.get("fase")
+        out["recupero_atteso_min"] = consulta.get("recupero_atteso_min")
+        if consulta.get("versione") == "v4":
+            versione_txt = f"atlante v4, {consulta.get('fase')}"
+            if consulta.get("recupero_atteso_min") is not None:
+                versione_txt += f", recupero atteso ancora {consulta['recupero_atteso_min']}'"
+        else:
+            versione_txt = ("atlante v3: recupero non modellato ("
+                            f"{consulta.get('ripiego_v3') or 'blocco v4 assente'})")
         # 24/09: la lega e' nell'atlante? Se no, il confronto e' contro lo
         # storico GLOBALE (catena di hazard_lookup) e la nota lo dichiara:
         # "lega non coperta" non e' "atlante assente". 25/09: una lega che
@@ -704,7 +723,7 @@ class OpportunityModel:
             # dall'atlante assente, e va detta per quello che e'.
             out.update(note=f"{prefisso}hazard non verificato (nessun dato "
                             f"{'storico' if model is not None else 'del modello'} per lo stato; "
-                            f"{eta})")
+                            f"{versione_txt}; {eta})")
             return out
         p_model = float(model.get("p_next") or 0.0)
         div = abs(p_model - float(p_atlas)) / float(p_atlas)
@@ -713,12 +732,12 @@ class OpportunityModel:
         out["p_model"] = p_model
         out["p_atlas"] = float(p_atlas)
         numeri = (f"modello {p_model * 100:.1f}% vs storico {float(p_atlas) * 100:.1f}% "
-                  f"[{source}] ({dettaglio}), divergenza {div * 100:.0f}%; {eta}")
+                  f"[{source}] ({dettaglio}), divergenza {div * 100:.0f}%; {versione_txt}; {eta}")
         if div > float(self.params["hazard_drop"]):
             out.update(ok=False, drop=True, penalty=0.0,
                        note=f"{prefisso}hazard modello {p_model * 100:.1f}% vs atlante "
                             f"{float(p_atlas) * 100:.1f}% ({dettaglio}): divergenza "
-                            f"{div * 100:.0f}% ({eta})")
+                            f"{div * 100:.0f}% ({versione_txt}; {eta})")
         elif div > float(self.params["hazard_warn"]):
             out.update(penalty=0.5,
                        note=f"{prefisso}hazard divergente dall'atlante ({numeri}, "

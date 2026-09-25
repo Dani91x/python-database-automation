@@ -1,7 +1,13 @@
 """atlante_v4.py - ATLANTE HAZARD v4: la variante vincente del banco di validazione.
 
-NON COLLEGATO IN PRODUZIONE (25/09/2026): lo integra il coordinatore dopo la
-verifica. Referto: ``AUDIT_2026-09-25/VALIDAZIONE_HAZARD.md``.
+COLLEGATO (25/09/2026 sera, ordine dell'utente "D2: COLLEGALO!"): il
+generatore (``genera_atlante``) e il motore a domanda accumulano lo stato v4
+per lega insieme al v3 e scrivono il blocco ``atlas['v4']``; Safe
+(``_hazard_check``) e Mike (``live_frame``) consultano ``consulta_atlante_v4``
+col ``tempo`` dal feed (``tempo_da_payload``). Senza blocco v4 (o per una lega
+non ancora nel v4) si ripiega sul v3 e lo si DICHIARA nella nota. Soglie e
+decisioni delle strategie invariate. Referti:
+``AUDIT_2026-09-25/VALIDAZIONE_HAZARD.md``, ``AUDIT_2026-09-25/ATLANTE_V4_COLLEGATO.md``.
 
 Cosa cambia rispetto al v3 (misurato fuori campione, 2025, vedi referto):
   1. VERITA' A TEMPO REALE: i gol del recupero stanno nel recupero (45+e, 90+e),
@@ -42,7 +48,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 
 from Betfair.stream.scalper import genera_atlante as G
-from Betfair.stream.scalper.hazard_atlas import _conf_cella, consulta_atlante, etichetta_atlante, eta_atlante
+from Betfair.stream.scalper.hazard_atlas import (_conf_cella, consulta_atlante, eta_atlante, etichetta_atlante,
+                                                  leghe_in_preparazione)
 from Betfair.stream.scalper.validazione_hazard import candidati as CA
 from Betfair.stream.scalper.validazione_hazard.dati import (EXTRA_MAX_VALIDO, MIN_GOL_BLOCCO,
                                                             SOGLIA_RECUPERO_REGISTRATO, Partita, lati_gol,
@@ -135,15 +142,38 @@ def stagione_recupero_affidabile(goal_rows: Iterable[Dict[str, Any]]) -> bool:
     return tot < MIN_GOL_BLOCCO or (con / tot) >= SOGLIA_RECUPERO_REGISTRATO
 
 
+def affidabile_da_quota(con: int, tot: int) -> bool:
+    """La stessa regola di ``stagione_recupero_affidabile`` sui conteggi
+    (gol di fine tempo con extra, gol di fine tempo): serve all'incrementale,
+    che vede la stagione a pezzi e ne tiene i conteggi CUMULATI nello stato."""
+    return int(tot) < MIN_GOL_BLOCCO or (int(con) / int(tot)) >= SOGLIA_RECUPERO_REGISTRATO
+
+
+def stato_v4_vuoto() -> Dict[str, Any]:
+    """Il blocco v4 DENTRO lo stato grezzo di una lega del generatore
+    (``stato['v4']``). Niente lista di fixture_id propria: l'idempotenza e'
+    quella del v3 (``aggiungi_partita``), la partita entra nel v4 solo se il v3
+    l'ha appena contata. ``quota_extra[stagione] = [con, tot]`` (gol di fine
+    tempo con/senza minute_extra) e ``affidabile[stagione]`` servono alla
+    regola del reperto 6; ``scarti`` conta le partite che il v3 ha preso e il
+    v4 no (atteso: zero, stesse regole)."""
+    return {"versione": 1, "stagioni": {}, "quota_extra": {}, "affidabile": {}, "scarti": {}}
+
+
 def aggiungi_partita_v4(stato: Dict[str, Any], p: Partita, visti: Optional[set] = None, *,
-                        recupero_affidabile: bool = True) -> bool:
+                        recupero_affidabile: bool = True, registra_fixture: bool = True) -> bool:
     """Somma una partita. False se gia' contata (idempotenza per fixture_id).
 
     ``recupero_affidabile=False`` (vedi ``stagione_recupero_affidabile``): si
     contano SOLO gli stati le cui finestre non toccano la fine del tempo
     (t <= 41 in ogni tempo); niente recupero, niente durata. I gol del recupero
     registrati al 45'/90' altrimenti gonfierebbero le celle 40-45/85-90 e
-    svuoterebbero il recupero."""
+    svuoterebbero il recupero.
+
+    ``registra_fixture=False`` (generatore, 25/09 sera): il fixture_id NON si
+    aggiunge a ``stato['fixtures']`` (l'idempotenza e' del v3: niente seconda
+    lista di ~40 KB per lega). I conteggi si salvano INTERI (sono conteggi:
+    stesso valore, JSON piu' corto)."""
     if visti is None:
         visti = set(stato.get("fixtures") or [])
     if p.fixture_id in visti:
@@ -160,20 +190,29 @@ def aggiungi_partita_v4(stato: Dict[str, Any], p: Partita, visti: Optional[set] 
     np.add.at(celle, (tc, gk, 0), 1.0)
     np.add.at(celle, (tc, gk, 1), S["y2"].astype(float))
     np.add.at(celle, (tc, gk, 2), S["y3"].astype(float))
-    blk["celle"] = celle.reshape(-1).tolist()
+    blk["celle"] = _conteggi(celle)
     rec = (S["stop"] == 1) & (S["tempo"] == 2)
     if rec.any():
         r2 = np.asarray(blk["rec2"], dtype=float).reshape(NG, 2)
         np.add.at(r2, (gk[rec], 0), 1.0)
         np.add.at(r2, (gk[rec], 1), S["g1"][rec].astype(float))
-        blk["rec2"] = r2.reshape(-1).tolist()
+        blk["rec2"] = _conteggi(r2)
         d = str(min(int(p.d2 or 0), D_MAX))
         blk["durate"][d] = int(blk["durate"].get(d, 0)) + 1
     blk["n_fixtures"] += 1
     blk["gol"] += int(sum(p.ft))
-    stato.setdefault("fixtures", []).append(p.fixture_id)
+    if registra_fixture:
+        stato.setdefault("fixtures", []).append(p.fixture_id)
     visti.add(p.fixture_id)
     return True
+
+
+def _conteggi(a: np.ndarray) -> List[Any]:
+    """Conteggi (interi per costruzione) come lista JSON: interi se lo sono."""
+    piatto = np.asarray(a, dtype=float).reshape(-1)
+    if np.all(piatto == np.round(piatto)):
+        return piatto.astype(np.int64).tolist()
+    return piatto.tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +257,23 @@ def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione
             part_w[i] += w * int(blk["n_fixtures"])
             gol_w[i] += w * int(blk["gol"])
     affid = part >= MIN_PARTITE_AFFIDABILE
+    n_affid = int(part[affid].sum())
+    # 25/09 sera (collegamento): il globale v4 si stima sulle leghe affidabili
+    # come nel banco; e' "solido" (usabile per una lega che il v4 non ha, o
+    # per shrinkare una lega piccola) solo da MIN_FIXTURES_GLOBALE partite,
+    # la stessa soglia del globale v3 (sotto, il v3 usa il seme; qui il
+    # consumatore ripiega sul v3 e lo dichiara). Nessuna lega affidabile:
+    # il globale si stima su tutte (come il v3, ``base = coperte or stati``),
+    # mai una cella NaN.
+    globale_solido = n_affid >= G.MIN_FIXTURES_GLOBALE
+    if L and not affid.any():
+        affid = np.ones(L, dtype=bool)
     out: Dict[str, Any] = {"meta": {
         "name": VERSIONE, "generated_at": generated_at, "stagione_rif": stagione_rif,
         "emivita": emivita, "k_celle": k_celle, "beta": {str(k): v for k, v in beta.items()},
-        "n_leghe": L, "n_leghe_affidabili": int(affid.sum()), "ripieghi": [],
+        "n_leghe": L, "n_leghe_affidabili": int((part >= MIN_PARTITE_AFFIDABILE).sum()),
+        "n_partite_affidabili": n_affid, "globale_solido": bool(globale_solido),
+        "min_partite_globale": int(G.MIN_FIXTURES_GLOBALE), "ripieghi": [],
         "etichette_tc": ETICHETTE_TC,
         "metodo": "vedi docstring di Betfair/stream/scalper/atlante_v4.py e "
                   "AUDIT_2026-09-25/VALIDAZIONE_HAZARD.md"}, "global": {}, "by_league": {}}
@@ -279,7 +331,7 @@ def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione
     for i, lid in enumerate(leghe):
         out["by_league"][lid] = {
             "league_name": stati[lid].get("league_name"), "n_fixtures": int(part[i]),
-            "affidabile": bool(affid[i]),
+            "affidabile": bool(part[i] >= MIN_PARTITE_AFFIDABILE),
             "p2": _r(p_lega[2][i]), "p3": _r(p_lega[3][i]), "n": _r(n_eff[i], 1),
             "r_rec2": _r(r_lega[i]), "esposizione_rec2": _r(E[i], 1),
             "pi_durata": _r(pi_lega[i]) if ha_durate else None,
@@ -295,6 +347,77 @@ def _r(a: np.ndarray, nd: int = 7) -> Any:
 # ---------------------------------------------------------------------------
 # 4) consultazione in live
 # ---------------------------------------------------------------------------
+# Il TEMPO (1T/2T) dal feed. MISURATO il 25/09 sulle 60 registrazioni vere dei
+# punteggi IPS Betfair (``_live_raw/<id>/<id>.scores.jsonl``, 7.539 righe;
+# sonda ``AUDIT_2026-09-25/sonde/sonda_minuto_ips_recupero.py``):
+#   * ``matchStatus`` nel 1T e' 'KickOff' (mai 'FirstHalf' sul vero; 'FirstHalf'
+#     solo nei sintetici), all'intervallo 'FirstHalfEnd', nel 2T
+#     'SecondHalfKickOff', a fine partita 'Finished';
+#   * nel RECUPERO del 1T il minuto e' CUMULATO: timeElapsed 46, 47, ... con
+#     elapsedRegularTime 45 e elapsedAddedTime 1, 2, ... (NON 45 fisso); il
+#     ``minute`` del feed e' timeElapsed. Senza il tempo un 46' del recupero
+#     del 1T e' indistinguibile dal 46' della ripresa;
+#   * nel recupero del 2T: timeElapsed 91.. con elapsedRegularTime 90 e
+#     elapsedAddedTime = minuto - 90 (il GIOCATO, non l'annunciato: la durata
+#     annunciata non c'e', quindi resta la stima per lega);
+#   * all'INTERVALLO ('FirstHalfEnd') timeElapsed riparte da 45 e continua a
+#     contare (35674515: 45 -> 56 in 13'): e' ancora tempo 1 (nessun atlante
+#     modella l'intervallo; il v4 da' la cella 40-45, il v3 dava 45-55);
+#   * uno stato puo' restare VECCHIO (35833626: 'KickOff' con timeElapsed 88 e
+#     elapsedRegularTime 35): un 1T IN GIOCO dichiarato con un minuto oltre
+#     ``_MAX_MINUTO_1T`` non si crede, si torna alla regola del minuto.
+_MAX_MINUTO_1T = 60          # 45 + 15 di recupero: oltre, uno stato "1T in gioco" e' vecchio
+_STATI_INTERVALLO = ("firsthalfend", "halftime")
+_STATI_1T = ("firsthalf",)
+_STATI_2T = ("secondhalf", "extratime", "penalt")
+
+
+def tempo_da_stato_ips(raw: Optional[Dict[str, Any]], minute: Optional[float]) -> Optional[int]:
+    """1 o 2 (tempo in corso) dallo stato IPS grezzo (``score_raw``) e dal
+    minuto del feed; None se non si sa (il v4 allora fa come il v3: dal 46'
+    e' ripresa). PURO, mai eccezioni."""
+    try:
+        m = int(minute) if minute is not None else None
+    except (TypeError, ValueError):
+        m = None
+    st = ""
+    if isinstance(raw, dict):
+        st = "".join(ch for ch in str(raw.get("matchStatus") or raw.get("status") or "").lower()
+                     if ch.isalpha())
+    if st:
+        if any(k in st for k in _STATI_2T):
+            return 2
+        if any(k in st for k in _STATI_INTERVALLO):
+            return 1
+        if any(k in st for k in _STATI_1T) or st == "kickoff":
+            if m is None or m <= _MAX_MINUTO_1T:
+                return 1
+    if isinstance(raw, dict):
+        try:
+            reg = raw.get("elapsedRegularTime")
+            reg = int(reg) if reg is not None else None
+        except (TypeError, ValueError):
+            reg = None
+        if reg is not None and raw.get("elapsedAddedTime") is not None and reg in (45, 90) \
+                and (m is None or m <= reg + 30):
+            return 1 if reg == 45 else 2
+    if m is None:
+        return None
+    if m < 45:
+        return 1
+    if m >= 90:
+        return 2
+    return None               # 45-89 senza stato: ambiguo, si lascia la regola del v3
+
+
+def tempo_da_payload(payload: Optional[Dict[str, Any]]) -> Optional[int]:
+    """``tempo_da_stato_ips`` sul payload del feed unico (``score_raw`` +
+    ``minute``), la riga che Safe e Mike ricevono."""
+    if not isinstance(payload, dict):
+        return None
+    return tempo_da_stato_ips(payload.get("score_raw"), payload.get("minute"))
+
+
 def _fase(minute: float, tempo: Optional[int]) -> Tuple[str, int, int]:
     """(fase, cella di tempo, j). tempo=1 e minuto >= 45: recupero del 1T;
     minuto >= 90: recupero del 2T (j = minuto - 90); altrimenti bucket regolare.
@@ -324,6 +447,56 @@ def _p_recupero2(r: float, pi: Optional[List[float]], j: int, k: int) -> Tuple[f
     return 1.0 - sopr / massa, atteso
 
 
+def _motivo_ripiego_v3(atlas: Dict[str, Any], v4: Dict[str, Any], league_id: Optional[Any]) -> Optional[str]:
+    """Perche' questa consultazione va sul v3 (None = si usa il v4).
+
+    Solo quando l'atlante porta ANCHE i blocchi v3 (``global``: in produzione
+    sempre, nel banco mai - li' il comportamento resta quello validato):
+      * la lega non e' nel v4 ma il v3 la conosce (stato di prima del
+        collegamento non ancora ricalcolato, o lega del seme): la lega del v3
+        batte il globale v4 per la parte regolare, ed e' cio' che si usava ieri;
+      * la lega non e' nel v4 e il globale v4 non e' ancora solido;
+      * la lega e' nel v4 con poche partite (non affidabile) e il globale v4,
+        verso cui la si shrinka, non e' ancora solido.
+    ``meta.globale_solido`` assente (blocco del banco) = solido."""
+    if not isinstance((atlas or {}).get("global"), dict) or not atlas.get("global"):
+        return None
+    meta = v4.get("meta") or {}
+    solido = bool(meta.get("globale_solido", True))
+    lid = str(league_id) if league_id is not None else None
+    lg = (v4.get("by_league") or {}).get(lid) if lid is not None else None
+    if isinstance(lg, dict):
+        if lg.get("affidabile") or solido:
+            return None
+        return f"lega {lid} con {lg.get('n_fixtures')} partite nel v4 e globale v4 non ancora solido"
+    if lid is not None and lid in (atlas.get("by_league") or {}):
+        return f"lega {lid} non ancora nel v4"
+    if not solido:
+        return (f"globale v4 non ancora solido ({meta.get('n_partite_affidabili')} partite "
+                f"< {meta.get('min_partite_globale')})")
+    return None
+
+
+def _ripiego_v3(atlas: Optional[Dict[str, Any]], minute: float, goals: int, league_id: Optional[Any],
+                motivo: str, *, tempo: Optional[int], horizon: str, adesso: Optional[_dt.datetime],
+                **kw_v3: Any) -> Dict[str, Any]:
+    """``consulta_atlante`` (v3) con le chiavi del v4 e il ripiego DICHIARATO.
+    Il minuto al v3 e' quello di sempre (il v3 non conosce il tempo: un 46' del
+    recupero del 1T per il v3 e' la ripresa, com'era ieri)."""
+    out = consulta_atlante(atlas, minute, goals, league_id, horizon=horizon, adesso=adesso, **kw_v3)
+    try:
+        fase = _fase(minute, tempo)[0]
+    except (TypeError, ValueError):
+        fase = None
+    k = "p_goal_next_2min" if "2min" in horizon else "p_goal_next_3min"
+    out.update(versione="v3", fase=fase, recupero_atteso_min=None,
+               p_2min=out["p"] if k.endswith("2min") else None,
+               p_3min=out["p"] if k.endswith("3min") else None,
+               forza={"moltiplicatore": 1.0, "usata": False}, ripiego_v3=motivo)
+    out["nota"] = f"{out.get('nota')} [atlante v3: recupero non modellato ({motivo})]"
+    return out
+
+
 def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: int,
                         league_id: Optional[Any] = None, *, tempo: Optional[int] = None,
                         lambda_home: Optional[float] = None, lambda_away: Optional[float] = None,
@@ -343,9 +516,12 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
     (referto §4): resta disponibile solo per misure."""
     v4 = (atlas or {}).get("v4")
     if not isinstance(v4, dict):
-        out = consulta_atlante(atlas, minute, goals, league_id, horizon=horizon, adesso=adesso, **kw_v3)
-        out["versione"] = "v3"
-        return out
+        return _ripiego_v3(atlas, minute, goals, league_id, "blocco v4 assente", tempo=tempo,
+                           horizon=horizon, adesso=adesso, **kw_v3)
+    motivo = _motivo_ripiego_v3(atlas, v4, league_id)
+    if motivo:
+        return _ripiego_v3(atlas, minute, goals, league_id, motivo, tempo=tempo, horizon=horizon,
+                           adesso=adesso, **kw_v3)
     k_req = 2 if "2min" in horizon else 3
     out: Dict[str, Any] = {"p": None, "fonte": "none", "livello": "nessuno", "n": None, "confidenza": None,
                            "lega": {"coperta": False, "in_preparazione": False, "n_partite": None,
@@ -353,7 +529,7 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
                            "atlante": etichetta_atlante(atlas, adesso), "eta_giorni": None,
                            "nota": "atlante assente", "versione": "v4", "fase": None,
                            "p_2min": None, "p_3min": None, "recupero_atteso_min": None,
-                           "forza": {"moltiplicatore": 1.0, "usata": False}}
+                           "forza": {"moltiplicatore": 1.0, "usata": False}, "ripiego_v3": None}
     try:
         e = eta_atlante(atlas, adesso)
         out["eta_giorni"] = round(e["giorni"], 2) if e["giorni"] is not None else None
@@ -374,6 +550,8 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
                                affidabile=bool(lg.get("affidabile")),
                                confidenza="alta" if (nf or 0) >= MIN_PARTITE_AFFIDABILE else
                                ("media" if (nf or 0) >= 100 else "bassa"))
+        elif lid is not None and lid in leghe_in_preparazione(atlas):
+            out["lega"]["in_preparazione"] = True     # il motore a domanda la sta calcolando
         ref = (lg or {}).get("gol_medi") or glob.get("gol_medi")
         mult = 1.0
         if lambda_home and lambda_away and ref:

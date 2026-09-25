@@ -202,6 +202,10 @@ class MotoreAtlante:
             return None
         if not rows or not isinstance(rows[0].get("stato"), dict):
             return None
+        if not isinstance(rows[0]["stato"].get("v4"), dict):
+            # 25/09 sera: uno stato scritto prima del collegamento del v4 non
+            # si adotta (il v4 non si completa a pezzi): si ricalcola la lega
+            return None
         st = dict(rows[0]["stato"])
         st["fixtures"] = [int(x) for x in (rows[0].get("fixtures") or [])]
         return st
@@ -229,6 +233,9 @@ class MotoreAtlante:
         if self.scrittore is not None:
             self.scrittore.salva_leghe(self.leghe, [lid])
         return "calcolata"
+
+    def _ha_v4(self, lid: str) -> bool:
+        return isinstance((self.leghe.get(lid) or {}).get("v4"), dict)
 
     def _budget(self, adesso: float) -> int:
         self.calcolate_ts = [t for t in self.calcolate_ts if adesso - t < 3600.0]
@@ -364,6 +371,9 @@ class MotoreAtlante:
                     st["updated_at"] = _iso(adesso)
                     conti["aggiunte"] += 1
                     toccate.add(lid)
+                    # 25/09 sera: stessa partita, stesse righe, anche nel v4
+                    # (recupero affidabile dai conteggi cumulati della stagione)
+                    G.aggiungi_v4(st, m, gg)
                 self.in_attesa.pop(str(fid), None)
                 self.tentativi.pop(str(fid), None)
         conti["toccate"] = sorted(toccate, key=int)
@@ -403,7 +413,12 @@ class MotoreAtlante:
                 osservate_ora.append(lid)
             primo_ko[lid] = min(primo_ko.get(lid, ko), ko)
         # leghe nuove, prima quelle che giocano prima (in-play in testa)
-        nuove = [l for l in osservate_ora if l not in self.leghe
+        # 25/09 sera: una lega nello stato SENZA il v4 (calcolata prima del
+        # collegamento) si ricalcola per intero come una nuova, con lo stesso
+        # tetto: il v4 non si completa a pezzi (le partite gia' contate nel
+        # v3 non si rileggono una per una). Finche' non e' pronta, i bot la
+        # consultano sul v3 e la nota lo dichiara.
+        nuove = [l for l in osservate_ora if (l not in self.leghe or not self._ha_v4(l))
                  and adesso - self.senza_dati.get(l, -1e18) > 86400.0]
         nuove.sort(key=lambda l: primo_ko.get(l, adesso))
         budget = self._budget(adesso)

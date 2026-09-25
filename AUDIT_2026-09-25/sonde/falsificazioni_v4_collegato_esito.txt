@@ -1,0 +1,31 @@
+('M1 select senza la durata del recupero', 'ROSSA', '1 failed in 8.32s | ripristino OK')
+('M2 _sequenze non somma il v4', 'ROSSA', '1 failed in 7.28s | ripristino OK')
+('M3 motore: incrementale senza v4', 'ROSSA', '1 failed, 5 passed in 10.04s | ripristino OK')
+('M4 bootstrap: stagione sempre affidabile', 'ROSSA', '1 failed, 4 passed in 9.18s | ripristino OK')
+('M5 incrementale: conteggi non cumulati', 'ROSSA', '1 failed, 5 passed in 8.77s | ripristino OK')
+('M6 tempo: matchStatus ignorato', 'ROSSA', '1 failed, 12 passed in 13.01s | ripristino OK')
+('M7 tempo: stato vecchio creduto', 'ROSSA', '1 failed, 16 passed in 13.91s | ripristino OK')
+('M8 tempo: intervallo con la regola del 1T in gioco', 'VERDE (!)', '31 passed in 15.50s | ripristino OK')
+('M9 Safe: tempo non passato', 'ROSSA', '1 failed, 25 passed in 19.21s | ripristino OK')
+('M10 Safe: lambda della fixture passati', 'ROSSA', '1 failed, 23 passed in 17.68s | ripristino OK')
+('M11 Mike: tempo non passato', 'ROSSA', '1 failed, 27 passed in 13.67s | ripristino OK')
+('M12 ripiego v3 per lega mai', 'ROSSA', '1 failed, 2 passed in 9.55s | ripristino OK')
+('M13 ripiego v3 non dichiarato in nota', 'ROSSA', '1 failed, 2 passed in 12.71s | ripristino OK')
+('M14 motore: adotta dal DB uno stato senza v4', 'ROSSA', '1 failed, 6 passed in 5.85s | ripristino OK')
+('M15 motore: lega senza v4 non ricalcolata', 'ROSSA', '1 failed, 6 passed in 9.46s | ripristino OK')
+('M16 stagione di riferimento = ultima contata', 'ROSSA', '1 failed in 3.67s | ripristino OK')
+('M17 assembla_v4 senza leghe affidabili: NaN', 'ROSSA', '1 failed, 7 passed, 3 warnings in 10.12s | ripristino OK')
+('M18 globale v4 sempre solido', 'ROSSA', '1 failed, 2 passed in 6.57s | ripristino OK')
+('M19 v4 con la seconda lista di fixture_id', 'ROSSA', '1 failed, 3 passed in 9.86s | ripristino OK')
+('M20 Mike: recupero atteso non volatile', 'ROSSA', '1 failed, 29 passed in 16.10s | ripristino OK')
+('M21 Safe: nota senza versione', 'ROSSA', '1 failed, 23 passed in 15.79s | ripristino OK')
+('M22 workflow senza numpy', 'ROSSA', '1 failed, 9 passed in 5.67s | ripristino OK')
+('M23 candidati: scipy di nuovo in testa', 'ROSSA', '1 failed, 30 passed in 16.77s | ripristino OK')
+('M24 v4: minuto del recupero 1T come ripresa (cella propria off, tempo ignorato)', 'ROSSA', '1 failed, 22 passed in 13.06s | ripristino OK')
+
+suite dopo i ripristini: VERDE 31 passed in 17.86s
+rotture rosse: 23/24
+
+# giro 2 (caso intervallo oltre 60 aggiunto a test_tempo_dai_record_ips_veri):
+# M8 -> ROSSA (1 failed, 13 passed) | ripristino OK; suite VERDE 32 passed
+# totale: 24/24 rosse

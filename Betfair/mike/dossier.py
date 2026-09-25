@@ -296,14 +296,21 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     goals = int(score_home) + int(score_away)
     try:
         if atlas is not None:
-            from Betfair.stream.scalper.hazard_atlas import consulta_atlante
+            from Betfair.stream.scalper.atlante_v4 import consulta_atlante_v4, tempo_da_payload
 
             # 25/09: stesso numero di hazard_lookup + livello, n, confidenza e
             # nota per la scheda (nessun effetto sulla decisione di copertura)
-            c = consulta_atlante(atlas, float(minute), goals, dossier.get("league_id"),
-                                 home_id=dossier.get("home_team_id"),
-                                 away_id=dossier.get("away_team_id"),
-                                 home_team=home, away_team=away)
+            # 25/09 sera ("D2: COLLEGALO!"): il numero viene dall'atlante v4
+            # (A*: recupero del 2T modellato per lega, verita' senza clamp) col
+            # TEMPO dal feed; senza blocco v4 o lega non ancora nel v4 -> v3,
+            # dichiarato in hazard_nota/hazard_versione. Lambda pre-partita NON
+            # passati (fixture_predictions: forza inutile, referto §4.5). La
+            # regola di Mike (combine_hazard, soglie del timing) non cambia.
+            c = consulta_atlante_v4(atlas, float(minute), goals, dossier.get("league_id"),
+                                    tempo=tempo_da_payload(dict(payload or {}, minute=minute)),
+                                    home_id=dossier.get("home_team_id"),
+                                    away_id=dossier.get("away_team_id"),
+                                    home_team=home, away_team=away)
             p, src = c["p"], c["fonte"]
             out["hazard_atlas"] = round(float(p), 4) if p is not None else None
             out["hazard_source"] = src
@@ -311,6 +318,9 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
             out["hazard_n"] = c["n"]
             out["hazard_confidenza"] = c["confidenza"]
             out["hazard_nota"] = c["nota"]
+            out["hazard_versione"] = c.get("versione")
+            out["hazard_fase"] = c.get("fase")
+            out["hazard_recupero_atteso_min"] = c.get("recupero_atteso_min")
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.dossier] hazard atlante KO: %s", str(ex)[:120])
     try:

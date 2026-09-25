@@ -39,8 +39,9 @@ LOTTO_EVENTI = 250
 LOTTO_PRED = 200
 CACHE_DEFAULT = os.path.join("AUDIT_2026-09-25", "validazione_hazard", "cache")
 
+# 25/09 sera: ``extra`` (raw_json->fixture->status->extra) e' ora in COLONNE_MATCH
+# (atlante v4 collegato): qui non si ripete, stessa lista di colonne di prima.
 COLONNE_MATCH_BANCO = (COLONNE_MATCH + ",status_elapsed,"
-                       "extra:raw_json->fixture->status->extra,"
                        "p1:raw_json->fixture->periods->first,"
                        "p2:raw_json->fixture->periods->second")
 FILTRO_EVENTI = 'or=(event_type.eq.Goal,detail.eq."Red Card",detail.eq."Second Yellow card")'

@@ -50,18 +50,22 @@ def _cov(lid: int, anno: int, eventi: bool) -> Dict[str, Any]:
 
 
 def _match(fid: int, lid: int, anno: int, gh: int, ga: int, *, home: int = 1, away: int = 2,
-           status: str = "FT", data: str = "2025-10-01T15:00:00+00:00") -> Dict[str, Any]:
+           status: str = "FT", data: str = "2025-10-01T15:00:00+00:00", extra: Any = None) -> Dict[str, Any]:
     return {"fixture_id": fid, "league_id": lid, "season_year": anno, "fixture_date": data,
             "status_short": status, "home_team_id": home, "home_team_name": f"T{home}",
             "away_team_id": away, "away_team_name": f"T{away}", "goals_home": gh,
-            "goals_away": ga, "halftime_home": 0, "halftime_away": 0}
+            "goals_away": ga, "halftime_home": 0, "halftime_away": 0,
+            # 25/09 sera: raw_json (API-Football), da cui PostgREST estrae
+            # fixture.status.extra (``G.COLONNE_MATCH``)
+            "raw_json": {"fixture": {"id": fid, "status": {"long": "Match Finished", "short": status,
+                                                           "elapsed": 90, "extra": extra}}}}
 
 
 def _ev(eid: int, fid: int, lid: int, anno: int, team: int, minute: int, *,
-        etype: str = "Goal", detail: str = "Normal Goal") -> Dict[str, Any]:
+        etype: str = "Goal", detail: str = "Normal Goal", extra: Any = None) -> Dict[str, Any]:
     return {"id": eid, "fixture_id": fid, "league_id": lid, "season_year": anno,
             "team_id": team, "event_type": etype, "detail": detail, "minute": minute,
-            "minute_extra": None}
+            "minute_extra": extra}
 
 
 # --------------------------------------------------------- PostgREST finto
@@ -94,6 +98,23 @@ def _filtra(rows: List[Dict[str, Any]], col: str, espr: str) -> List[Dict[str, A
     return [r for r in rows if _cmp(r.get(col), val) is not None and ops[op](_cmp(r.get(col), val))]
 
 
+def seleziona(r: Dict[str, Any], cols: str) -> Dict[str, Any]:
+    """``select`` come PostgREST: colonna semplice, oppure ``alias:col->a->b``
+    (cammino JSON dentro una colonna jsonb; null se manca un pezzo)."""
+    out: Dict[str, Any] = {}
+    for c in cols.split(","):
+        if ":" in c:
+            alias, cammino = c.split(":", 1)
+            parti = cammino.split("->")
+            v: Any = r.get(parti[0])
+            for k in parti[1:]:
+                v = v.get(k) if isinstance(v, dict) else None
+            out[alias] = v
+        else:
+            out[c] = r.get(c)
+    return out
+
+
 class DBFinto(G.LettoreDB):
     def __init__(self, tabelle: Dict[str, List[Dict[str, Any]]]) -> None:
         super().__init__("http://finto", "x", pausa=0.0)
@@ -120,7 +141,7 @@ class DBFinto(G.LettoreDB):
             rows = rows[: int(params["limit"])]
         cols = params.get("select", "*")
         if cols != "*":
-            rows = [{c: r.get(c) for c in cols.split(",")} for r in rows]
+            rows = [seleziona(r, cols) for r in rows]
         self.n_richieste += 1
         self.n_righe += len(rows)
         return rows
