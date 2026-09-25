@@ -317,8 +317,25 @@ function esigiOk(data: unknown, ripiego: string): void {
 }
 
 /** APPROVA: `proposed → pending`. Da lì il percorso è quello di sempre. */
-export async function approvaPropostaOmega(id: number): Promise<void> {
-    const { data, error } = await supabase.rpc('omega_request_approve', { p_id: id });
+export async function approvaPropostaOmega(
+    id: number,
+    opts?: {
+        /** B17 (25/09) — il prezzo di BACK a video al clic */
+        prezzoVisto?: number | null;
+        /** eta', fonte, `prezzo_vivo_assente`, istante del clic, prezzo del segnale */
+        contesto?: Record<string, unknown> | object | null;
+    },
+): Promise<void> {
+    // B17 (25/09) — i due parametri nuovi SOLO se ci sono: senza, la chiamata
+    // e' identica a prima (firma `omega_request_approve(bigint)`). Con, serve
+    // la migrazione `omega_request_approve_contesto_2026-09-25.sql` (il
+    // chiamante ripiega sul solo p_id su PGRST202).
+    const params: Record<string, unknown> = { p_id: id };
+    if (typeof opts?.prezzoVisto === 'number' && Number.isFinite(opts.prezzoVisto) && opts.prezzoVisto > 1) {
+        params.p_price = opts.prezzoVisto;
+    }
+    if (opts?.contesto && typeof opts.contesto === 'object') params.p_contesto = opts.contesto;
+    const { data, error } = await supabase.rpc('omega_request_approve', params as never);
     if (error) throw new Error(error.message);
     esigiOk(data, 'la proposta non è più in attesa di approvazione');
 }

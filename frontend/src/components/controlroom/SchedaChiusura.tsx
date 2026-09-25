@@ -164,7 +164,12 @@ export function SchedaChiusura({
                 ultimoNotoFonte: ultimoNoto?.fonte ?? null, prezzoProposta: p.price_at_decision,
                 nowMs: adesso,
             });
-            await onApprova(proposta.id, scelto.prezzo ?? undefined, scelto.contesto);
+            // B17 (25/09) — col prezzo visto parte anche quello del SEGNALE
+            const segnale = Number(p.price_at_decision);
+            await onApprova(proposta.id, scelto.prezzo ?? undefined, {
+                ...scelto.contesto,
+                prezzo_segnale: Number.isFinite(segnale) && segnale > 1 ? segnale : null,
+            });
         } finally { setInCorso(false); setArmato(false); }
     };
 

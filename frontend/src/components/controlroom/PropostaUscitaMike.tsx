@@ -18,11 +18,13 @@
 // stessa freschezza della scheda (`feedFreshness`): con il feed fermo o
 // ignoto il bottone si spegne, come `MikeMatchCard` (regola della scheda).
 // ============================================================================
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { fmtMoney, fmtOdds, DASH } from '@/lib/format';
 import { etaQuoteS, feedFreshness, requestMike, roleLabel, type MikeEvent } from '@/lib/mike';
 import { useSecondTick } from '@/components/mike/useMikeClock';
+import { ChiusuraRigaContext } from './BottoneChiudiRiga';
+import { EsitoAbbinamentoStriscia } from './EsitoAbbinamentoStriscia';
 
 /** La proposta come la scrive `engine.gate_uscite` (chiavi VERE). */
 export interface PropostaUscitaMikeDati {
@@ -57,12 +59,25 @@ export function propostaDi(ev: MikeEvent): PropostaUscitaMikeDati | null {
     return d as PropostaUscitaMikeDati;
 }
 
+/** B17 (25/09) — la chiave del seguito di un'uscita di Mike (per partita + proposta). */
+export function chiaveUscitaMike(eventId: string, chiaveProposta: string): string {
+    return `mike:uscita:${eventId}:${chiaveProposta}`;
+}
+
 export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta' }: { ev: MikeEvent; testId?: string }) {
     const prop = propostaDi(ev);
     const adesso = useSecondTick(prop != null);
     const [esito, setEsito] = useState<string | null>(null);
     const [inVolo, setInVolo] = useState(false);
-    if (prop == null) return null;
+    // B17 (25/09) — dopo APPROVA la proposta sparisce (il motore la consuma):
+    // l'esito dell'uscita resta qui, seguito fino all'abbinamento delle gambe
+    const api = useContext(ChiusuraRigaContext);
+    const prefisso = `mike:uscita:${ev.event_id}:`;
+    const esitiEvento = (api?.esitiOrdini ?? []).filter((e) => e.clic.chiave.startsWith(prefisso));
+    const striscie = esitiEvento.map((e) => (
+        <EsitoAbbinamentoStriscia key={e.clic.chiave} seguito={e} testId={`${testId}-ordine`} />
+    ));
+    if (prop == null) return striscie.length ? <div data-testid={`${testId}-esiti`}>{striscie}</div> : null;
 
     const live = ev.live ?? {};
     const eta = etaQuoteS(live, adesso);
@@ -76,16 +91,34 @@ export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta' }: { ev: Mi
         setInVolo(true); setEsito(null);
         const o = prop.ordini[0];
         const bk = o ? books[`${o.mercato}|${o.selezione}`] : undefined;
+        const visto = bk ? (o.lato === 'lay' ? bk.best_lay : bk.best_back) : null;
+        const clicMs = Date.now();
         try {
-            await requestMike('approva_uscita', {
+            const requestId = await requestMike('approva_uscita', {
                 event_id: ev.event_id, bot: 'mike', mode: ev.mode, chiave: prop.chiave,
                 contesto: {
-                    prezzo_visto: bk ? (o.lato === 'lay' ? bk.best_lay : bk.best_back) : null,
+                    prezzo_visto: visto,
+                    // B17 (25/09) — il prezzo del SEGNALE (quello della decisione della strategia)
+                    prezzo_segnale: o?.prezzo ?? null,
                     eta_ms: eta == null ? null : Math.round(eta * 1000),
                     fonte: 'mike_events.live (get_mike_state)',
+                    clic_ms: clicMs,
                 },
             });
             setEsito('approvazione inviata: parte al prossimo giro del bot');
+            const lato = o?.lato === 'back' || o?.lato === 'lay' ? o.lato : null;
+            api?.seguiClic?.({
+                chiave: chiaveUscitaMike(ev.event_id, prop.chiave), bot: 'mike', tipo: 'chiusura',
+                etichetta: `Mike · uscita (${CATEGORIA[prop.categoria] ?? prop.categoria})`,
+                requestId: typeof requestId === 'number' ? requestId : Number(requestId) || null,
+                tradeIdApertura: null, eventId: ev.event_id, lato,
+                prezzoVisto: typeof visto === 'number' ? visto : null,
+                prezzoSegnale: o?.prezzo ?? null, contesto: null,
+                modo: ev.mode === 'live' || ev.mode === 'paper' ? ev.mode : null,
+                clicMs,
+                // le gambe NUOVE di Mike sulla partita coi ruoli proposti sono l'uscita
+                ruoli: prop.ordini.map((x) => x.ruolo),
+            });
         } catch (e) {
             setEsito(`approvazione non inviata: ${e instanceof Error ? e.message : String(e)}`);
         } finally { setInVolo(false); }
@@ -127,6 +160,7 @@ export function PropostaUscitaMike({ ev, testId = 'cr-mike-proposta' }: { ev: Mi
                 <span className="text-[10px] text-white/40">oppure chiudi a mano con «Chiudi» di Mike</span>
             </div>
             {esito && <div className="text-[10px] text-white/60" data-testid={`${testId}-esito`}>{esito}</div>}
+            {striscie}
         </div>
     );
 }

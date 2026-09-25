@@ -44,7 +44,7 @@ import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtAge, fmtTicks, DASH } from '@/lib
 import type { PropostaOpportunita, PropostaOpportunitaLeg, PrezziViviGambe } from '@/lib/safeBot';
 import type { CriteriProposta } from '@/lib/valutaProposta';
 import {
-    giudica, scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato,
+    giudica, scarto, prezzoVistoAlClic, etaEFonte, prezzoDelLato, sizeDelLato, prezzoSegnaleDi,
     type ContestoPrezzoVisto, type PrezzoScheda, type Semaforo, type ValutazioneServizio,
 } from '@/lib/schedaAlMs';
 import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
@@ -286,8 +286,11 @@ export function SchedaPropostaOpportunita({
                     ultimoNotoFonte: ultimoNoto?.fonte ?? null,
                     prezzoProposta: p.price, nowMs: adesso,
                 });
+                // B17 (25/09) — col prezzo visto parte anche quello del SEGNALE
+                // (alla nascita della proposta): dopo il clic la colonna dice a
+                // quanti tick da tutti e due si e' abbinato l'ordine
                 await onPiazza(proposta.id, scelto.prezzo ?? undefined, undefined,
-                    slippagePct ?? undefined, scelto.contesto);
+                    slippagePct ?? undefined, { ...scelto.contesto, prezzo_segnale: prezzoSegnaleDi(p) });
             }
         } finally { setInCorso(false); setArmato(false); }
     };

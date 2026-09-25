@@ -2775,6 +2775,13 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         if PO.contesto_prezzo_visto(payload):
             meta["prezzo_visto_ctx"] = PO.contesto_prezzo_visto(payload)
             meta["prezzo_visto"] = payload.get("price_visto")
+        # B17 (25/09) - il prezzo del SEGNALE (nascita della proposta) sulla
+        # riga: con il prezzo visto e il medio abbinato la scheda dice di
+        # quanti tick l'ordine si e' abbinato rispetto a tutti e due. Solo
+        # informativo: il prezzo dell'ordine resta quello visto.
+        segnale = PO.prezzo_segnale(payload)
+        if segnale is not None:
+            meta["prezzo_segnale"] = segnale
         # la riga nata da una proposta porta gli STESSI numeri del modello che
         # l'automatico ci metteva (``_model_meta``): senza, la tabella dei
         # trade perderebbe P(perdita) d'ingresso, edge ed EV proprio sulle

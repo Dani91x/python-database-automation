@@ -71,7 +71,7 @@ import {
     costruisciGiornata, soldiPerPartita, marca, marcaTennis, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
     type ArricchimentoPartita, type RigaTennisPerSoldi,
-    BOT_TENNIS, isBotTennis,
+    BOT_TENNIS, isBotTennis, BOT_LABEL,
     type Bot, type BotTennis, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
@@ -91,7 +91,9 @@ import {
     isPropostaOpportunita, approvaPropostaOpportunita, fetchEsitiApprovazioni,
     type PropostaOpportunita, type PrezziViviGambe, type EsitoApprovazione,
 } from '@/lib/safeBot';
-import type { ContestoPrezzoVisto } from '@/lib/schedaAlMs';
+import { prezzoSegnaleDi, type ContestoPrezzoVisto } from '@/lib/schedaAlMs';
+import { useSeguiOrdini, type EsitoSeguito } from './useSeguiOrdini';
+import { idsNotiSullaPartita, type ClicOrdine } from '@/lib/esitoAbbinamento';
 import {
     componiObiettivo, righeRealizzatoPerCiclo, righeGiornataPerCiclo, rigaSintetica,
     leggiPnlRealeOggi, pnlRealePiuRecente, differenzaContoRighe,
@@ -901,7 +903,8 @@ export interface ControlRoomVM {
      *  quando il runner non segue quel mercato. */
     vivoOmegaScanner: Map<number, { vivo: PrezzoVivo; etaQuoteS: number | null }>;
     erroreProposteOmega: string | null;
-    approvaOmega: (id: number) => Promise<void>;
+    /** 25/09 (B17) — anche l'uscita di Omega manda il prezzo VISTO al clic (col contesto) */
+    approvaOmega: (id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto) => Promise<void>;
     ignoraOmega: (id: number) => Promise<void>;
 
     /** sorgente del feed: fra `stream` e `rest` c'è un ordine di grandezza */
@@ -932,7 +935,35 @@ export interface ControlRoomVM {
      */
     etaRiga: (bot: Bot, id: number) => { fonte: FonteRiga; etaS: number } | null;
 
+    /**
+     * B17 (25/09) — GLI ORDINI DEI CLIC, seguiti fino all'esito terminale col
+     * messaggio (`lib/esitoAbbinamento`): inviato / accettato / abbinato
+     * totalmente o parzialmente a prezzo medio (Δ in tick vs visto e vs
+     * segnale) / NON abbinato (FOK) / rifiutato, con fonte ed eta'.
+     */
+    esitiOrdini: EsitoSeguito[];
+    /** B17 — l'esito di UN clic per chiave (`${bot}:${tipo}:${riferimento}`) */
+    esitoOrdine: (chiave: string) => EsitoSeguito | null;
+    /** B17 — l'esito del «Chiudi» di UNA riga */
+    esitoChiusuraRiga: (bot: Bot, id: number) => EsitoSeguito | null;
+    /** B17 — segue un clic fatto da una scheda fuori dal VM (Mike: proposta d'uscita) */
+    seguiClic: (clic: Omit<ClicOrdine, 'idsNotiAlClic'>) => void;
+
     ricarica: () => void;
+}
+
+// B17 (25/09) — lato e modalita' dal payload di una proposta, mai indovinati
+function latoProposta(v: unknown): 'back' | 'lay' | null {
+    const s = String(v ?? '').toLowerCase();
+    return s === 'back' || s === 'lay' ? s : null;
+}
+function modoProposta(v: unknown): 'paper' | 'live' | null {
+    const s = String(v ?? '').toLowerCase();
+    return s === 'paper' || s === 'live' ? s : null;
+}
+function numeroValido(v: unknown): number | null {
+    const n = typeof v === 'number' ? v : Number(v);
+    return v == null || v === '' || !Number.isFinite(n) ? null : n;
 }
 
 export function useControlRoom(): ControlRoomVM {
@@ -1012,6 +1043,12 @@ export function useControlRoom(): ControlRoomVM {
     const proposteOmega = useMemo(
         () => (righeDi(righeProp, 'omega') as PropostaUscitaOmega[]).filter(propostaViva),
         [righeProp]);
+    // B17 (25/09) — le proposte all'istante del clic (lato, segnale, modalita'):
+    // letti da un riferimento, cosi' le callback non cambiano a ogni tick
+    const proposteRef = useRef(proposte);
+    proposteRef.current = proposte;
+    const proposteOmegaRef = useRef(proposteOmega);
+    proposteOmegaRef.current = proposteOmega;
 
     const [caricamento, setCaricamento] = useState(true);
     const [errore, setErrore] = useState<string | null>(null);
@@ -1378,6 +1415,24 @@ export function useControlRoom(): ControlRoomVM {
         rilettore.current = r;
         return () => { vivo = false; r.chiudi(); rilettore.current = null; };
     }, [bloccoNuovo]);
+
+    // B17 (25/09) — il seguito degli ordini dei clic: la riga dal canale del bot
+    // o dal database, la coda del bot riletta per id, le riletture mirate
+    // (anti-tempesta di `RilettureMirate`) solo mentre il canale tace.
+    const chiediRiletturaBot = useCallback((bot: Bot) => {
+        rilettore.current?.chiedi(isBotTennis(bot) ? GRUPPO_TENNIS : bot);
+    }, []);
+    const seguiOrdini = useSeguiOrdini({
+        mappa: righePos as MappaRighe<unknown>, nowMs, chiediRilettura: chiediRiletturaBot,
+    });
+    const seguiInterno = seguiOrdini.segui;
+    const seguiClic = useCallback((clic: Omit<ClicOrdine, 'idsNotiAlClic'>) => {
+        // le righe del bot sulla partita GIA' note: non sono l'ordine di questo clic
+        seguiInterno({
+            ...clic,
+            idsNotiAlClic: idsNotiSullaPartita(righePosRef.current as MappaRighe<unknown>, clic.bot, clic.eventId),
+        });
+    }, [seguiInterno]);
 
     /** Un messaggio per riga di una POSIZIONE: rilettura se serve, poi overlay. */
     const suRigaPosizione = useCallback((
@@ -2460,6 +2515,19 @@ export function useControlRoom(): ControlRoomVM {
             }
         }
         setAvvisoOpportunita(avviso);
+        // B17 (25/09) — da qui la scheda SEGUE l'ordine fino all'abbinamento
+        {
+            const pp = ((proposteRef.current.find((x) => x.id === id)?.payload) ?? {}) as unknown as Record<string, unknown>;
+            seguiClic({
+                chiave: `safe:apertura:${id}`, bot: 'safe', tipo: 'apertura',
+                etichetta: `Safe · opportunità #${id}`, requestId: id, tradeIdApertura: null,
+                eventId: pp.event_id != null ? String(pp.event_id) : null,
+                lato: latoProposta(pp.side), prezzoVisto: prezzoVisto ?? null,
+                prezzoSegnale: contesto?.prezzo_segnale ?? prezzoSegnaleDi(pp),
+                contesto: contesto ?? null, modo: modoProposta(pp.mode),
+                clicMs: Date.now(), ruoli: null,
+            });
+        }
         // 24/09 — l'esito a video: la riga si segue finche' il servizio non la chiude
         setEsitiOpportunita((prima) => [
             { id, stato: 'inviata' as const, testo: 'inviata: il servizio la sta eseguendo' },
@@ -2467,7 +2535,7 @@ export function useControlRoom(): ControlRoomVM {
         ].slice(0, 5));
         svegliaBot('safe', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposte();
-    }, [ricaricaProposte]);
+    }, [ricaricaProposte, seguiClic]);
 
     // 24/09 — gli esiti ancora 'inviata' si rileggono (una lettura, solo quegli
     // id) a ogni ricarica delle proposte: il realtime della coda la sveglia.
@@ -2510,9 +2578,23 @@ export function useControlRoom(): ControlRoomVM {
                 await approvaProposta(id);
             }
         }
+        // B17 (25/09) — la chiusura si segue fino all'abbinamento della gamba
+        {
+            const pp = ((proposteRef.current.find((x) => x.id === id)?.payload) ?? {}) as unknown as Record<string, unknown>;
+            seguiClic({
+                chiave: `safe:chiusura:${id}`, bot: 'safe', tipo: 'chiusura',
+                etichetta: `Safe · uscita #${id}`, requestId: id,
+                tradeIdApertura: numeroValido(pp.trade_id),
+                eventId: pp.event_id != null ? String(pp.event_id) : null,
+                lato: latoProposta(pp.side), prezzoVisto: prezzoVisto ?? null,
+                prezzoSegnale: contesto?.prezzo_segnale ?? prezzoSegnaleDi(pp),
+                contesto: contesto ?? null, modo: modoProposta(pp.mode),
+                clicMs: Date.now(), ruoli: null,
+            });
+        }
         svegliaBot('safe', 'approvazione');
         await ricaricaProposte();
-    }, [ricaricaProposte]);
+    }, [ricaricaProposte, seguiClic]);
 
     const ignora = useCallback(async (id: number) => {
         await ignoraProposta(id);
@@ -2532,11 +2614,43 @@ export function useControlRoom(): ControlRoomVM {
         }
     }, []);
 
-    const approvaOmega = useCallback(async (id: number) => {
-        await approvaPropostaOmega(id);
+    const approvaOmega = useCallback(async (
+        id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto,
+    ) => {
+        // B17 (25/09) — il prezzo VISTO e il segnale vanno nel payload della
+        // richiesta (`omega_request_approve_contesto_2026-09-25.sql`); senza la
+        // migrazione (PGRST202) si ripiega sul solo p_id, UNA volta, mai dopo
+        // un rifiuto vero. Il servizio esegue ancora a mercato (B17 aperto).
+        let avviso: string | null = null;
+        if (prezzoVisto == null && !contesto) {
+            await approvaPropostaOmega(id);
+        } else {
+            try {
+                await approvaPropostaOmega(id, { prezzoVisto: prezzoVisto ?? null, contesto: contesto ?? null });
+            } catch (e) {
+                if (!/PGRST202|schema cache|does not exist|not find the function/i
+                    .test(e instanceof Error ? e.message : String(e))) throw e;
+                await approvaPropostaOmega(id);
+                avviso = 'prezzo visto non salvato: migrazione del 25/09 non applicata';
+            }
+        }
+        const pr = proposteOmegaRef.current.find((x) => x.id === id);
+        const pp = (pr?.payload ?? {}) as unknown as Record<string, unknown>;
+        seguiClic({
+            chiave: `omega:chiusura:${id}`, bot: 'omega', tipo: 'chiusura',
+            etichetta: `Omega · uscita #${id}${avviso ? ` (${avviso})` : ''}`, requestId: id,
+            tradeIdApertura: numeroValido(pp.trade_id),
+            eventId: pp.event_id != null ? String(pp.event_id) : null,
+            // la chiusura di una BANCATA e' una PUNTATA (Omega banca sempre)
+            lato: 'back', prezzoVisto: prezzoVisto ?? null,
+            prezzoSegnale: contesto?.prezzo_segnale
+                ?? numeroValido(pp.back_price) ?? numeroValido(pp.price_at_decision),
+            contesto: contesto ?? null, modo: modoProposta(pp.mode),
+            clicMs: Date.now(), ruoli: null,
+        });
         svegliaBot('omega', 'approvazione'); // STADIO C — DOPO la scrittura riuscita, mai prima
         await ricaricaProposteOmega();
-    }, [ricaricaProposteOmega]);
+    }, [ricaricaProposteOmega, seguiClic]);
 
     const ignoraOmega = useCallback(async (id: number) => {
         await ignoraPropostaOmega(id);
@@ -2804,6 +2918,21 @@ export function useControlRoom(): ControlRoomVM {
                 },
             }));
             svegliaBot(bot, 'comando'); // STADIO C — DOPO la scrittura riuscita, mai prima
+            // B17 (25/09) — il «Chiudi» si segue fino all'abbinamento della gamba
+            // di chiusura (lo scalper ferma una SESSIONE: non e' un ordine)
+            if (bot !== 'scalper') {
+                const opposto = o?.lato === 'back' ? 'lay' : o?.lato === 'lay' ? 'back' : null;
+                seguiClic({
+                    chiave: `${riga.bot}:chiusura-riga:${riga.id}`, bot: riga.bot, tipo: 'chiusura',
+                    etichetta: `${BOT_LABEL[riga.bot]} · Chiudi riga #${riga.id}`, requestId,
+                    tradeIdApertura: riga.id, eventId: riga.eventId,
+                    lato: opposto,
+                    // il prezzo a video accanto al bottone («se chiudo ora»)
+                    prezzoVisto: o?.chiusura?.prezzo ?? null,
+                    prezzoSegnale: null, contesto: null, modo: riga.modalita,
+                    clicMs: inviataMs, ruoli: null,
+                });
+            }
         } catch (e) {
             setChiusureRighe((p) => ({
                 ...p,
@@ -2814,7 +2943,7 @@ export function useControlRoom(): ControlRoomVM {
                 },
             }));
         }
-    }, [trovaOperazione]);
+    }, [trovaOperazione, seguiClic]);
 
     // (a) il CANALE: la riga cambia nel senso di una chiusura -> eseguita
     useEffect(() => {
@@ -2864,6 +2993,11 @@ export function useControlRoom(): ControlRoomVM {
         const t = window.setInterval(() => { void giro(); }, 2_000);
         return () => { vivo = false; window.clearInterval(t); };
     }, [daRileggere]);
+
+    const esitoPerChiave = seguiOrdini.esitoPer;
+    const esitoChiusuraRiga = useCallback(
+        (bot: Bot, id: number) => esitoPerChiave(`${bot}:chiusura-riga:${id}`),
+        [esitoPerChiave]);
 
     const statoChiusuraRiga = useCallback((bot: Bot, id: number): StatoChiusuraRiga | null => {
         const s = chiusureRighe[`${bot}:${id}`];
@@ -3116,6 +3250,7 @@ export function useControlRoom(): ControlRoomVM {
         piazzaOpportunita,
         rifiutaOpportunita, avvisoOpportunita, esitiOpportunita,
         slippagePct, setSlippagePct, approva, ignora, chiudi, statoChiusuraRiga,
+        esitiOrdini: seguiOrdini.esiti, esitoOrdine: seguiOrdini.esitoPer, esitoChiusuraRiga, seguiClic,
         statoChiusura, cashOutEvento, riprendiEvento, eventiChiusiOmega,
         proposteOmega: ordinaProposteOmega(proposteOmega), vivoOmegaScanner, erroreProposteOmega,
         approvaOmega, ignoraOmega,

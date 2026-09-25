@@ -1,0 +1,25 @@
+CONTROLLO vitest run src/lib/esitoAbbinamento.test.ts                            VERDE
+CONTROLLO vitest run src/components/controlroom/EsitoAbbinamento.schede.test.tsx VERDE
+CONTROLLO vitest run src/components/controlroom/SchedaChiusuraOmega.test.tsx     VERDE
+CONTROLLO vitest run src/components/controlroom/SchedaPropostaOpportunita.alms.test.tsx VERDE
+CONTROLLO src/components/controlroom/useControlRoom.test.tsx -t B17              VERDE
+CONTROLLO -q -p no:cacheprovider                                                 VERDE
+CONTROLLO -q -p no:cacheprovider                                                 VERDE
+TS1 a favore invertito per la punta           ROSSO md5 ripristinato
+TS2 FOK ucciso letto come rifiuto             ROSSO md5 ripristinato
+TS3 righe note al clic contate come ordine    ROSSO md5 ripristinato
+TS4 apertura indovinata senza id del servizio ROSSO md5 ripristinato
+TS5 prezzo chiesto spacciato per medio        ROSSO md5 ripristinato
+TS6 tennis: nomi dello specchio ignorati      ROSSO md5 ripristinato
+TS7 rilettura anche col canale fresco         ROSSO md5 ripristinato
+TS8 coda chiusa riletta all'infinito          ROSSO md5 ripristinato
+TS9 doppia riga d'esito nella colonna         ROSSO md5 ripristinato
+TS10 Omega approva senza prezzo visto         ROSSO md5 ripristinato
+TS11 segnale = price riscritto                ROSSO md5 ripristinato
+TS12 Omega: ripiego anche su un rifiuto vero  ROSSO md5 ripristinato
+TS13 Mike: segnale non mandato                ROSSO md5 ripristinato
+PY1 segnale non scritto sulla riga            ROSSO md5 ripristinato
+PY2 segnale sporco accettato nel contesto     ROSSO md5 ripristinato
+PY3 segnale = price riscritto                 ROSSO md5 ripristinato
+SQL1 funzione aperta ad anon                  ROSSO md5 ripristinato
+SQL2 payload rifatto da zero                  ROSSO md5 ripristinato

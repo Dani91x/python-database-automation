@@ -198,3 +198,29 @@ describe('al clic parte il prezzo VISTO, con età, fonte e flag', () => {
         expect(ctx.eta_ms).toBeGreaterThanOrEqual(5000);
     });
 });
+
+// B17 (25/09) — col prezzo visto parte il prezzo del SEGNALE: quello alla
+// NASCITA della proposta (`price_at_decision`), anche quando il servizio ha
+// riscritto `price` col prezzo di adesso.
+describe('B17: al clic parte anche il prezzo del segnale', () => {
+    it('segnale = price_at_decision, non il price riscritto', async () => {
+        const f = sorgenteFinta();
+        const onPiazza = vi.fn().mockResolvedValue(undefined);
+        render(<SchedaPropostaOpportunita proposta={proposta({ price: 1.15, price_at_decision: 1.1 })}
+            sorgenteLadder={f.sorgente} onPiazza={onPiazza} onRifiuta={vi.fn()} />);
+        f.spingi(1.12);
+        fireEvent.click(screen.getByTestId('cr-opp-piazza'));
+        await waitFor(() => expect(onPiazza).toHaveBeenCalled());
+        const [, prezzo, , , ctx] = onPiazza.mock.calls[0];
+        expect(prezzo).toBe(1.12);
+        expect(ctx.prezzo_segnale).toBe(1.1);
+    });
+    it('senza price_at_decision: il price della proposta', async () => {
+        const onPiazza = vi.fn().mockResolvedValue(undefined);
+        render(<SchedaPropostaOpportunita proposta={proposta({ price: 1.15, price_at_decision: null })}
+            onPiazza={onPiazza} onRifiuta={vi.fn()} />);
+        fireEvent.click(screen.getByTestId('cr-opp-piazza'));
+        await waitFor(() => expect(onPiazza).toHaveBeenCalled());
+        expect(onPiazza.mock.calls[0][4].prezzo_segnale).toBe(1.15);
+    });
+});

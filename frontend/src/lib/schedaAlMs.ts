@@ -157,6 +157,18 @@ export interface ContestoPrezzoVisto {
     prezzo_vivo_assente: boolean;
     /** istante del clic, ms epoch del browser */
     clic_ms: number;
+    /**
+     * B17 (25/09) — il prezzo del SEGNALE (quello con cui la strategia ha
+     * generato la proposta), salvato accanto al prezzo visto: dopo il clic
+     * la scheda dice di quanti tick il prezzo medio abbinato dista da tutti e
+     * due. Assente = nessun segnale (chiusura manuale).
+     */
+    prezzo_segnale?: number | null;
+}
+
+/** Il prezzo del segnale di una proposta: quello alla nascita, altrimenti quello del payload. */
+export function prezzoSegnaleDi(p: { price_at_decision?: unknown; price?: unknown } | null | undefined): number | null {
+    return prezzoValido(p?.price_at_decision) ?? prezzoValido(p?.price);
 }
 
 /**

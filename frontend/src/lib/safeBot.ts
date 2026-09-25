@@ -1393,6 +1393,26 @@ export async function fetchEsitiApprovazioni(ids: number[]): Promise<EsitoApprov
     return ids.map((id) => esitoApprovazione(righe.find((x) => Number(x.id) === id), id));
 }
 
+/**
+ * B17 (25/09) — UNA riga della coda per id, GREZZA (`status` + `result`):
+ * serve a seguire un clic fino all'ordine (`result.trade_id`/`trade_ids`/
+ * `closing_trade_id`). Stessa lettura di `fetchEsitiApprovazioni` (una
+ * select per id), ma senza tradurre: la traduzione la fa `faseDaRichiesta`
+ * di `chiudiRiga.ts`, la stessa degli altri bot.
+ */
+export async function fetchRichiestaSafe(
+    id: number,
+): Promise<{ id: number; status: string; result: Record<string, unknown> | null } | null> {
+    const { data, error } = await supabase
+        .from('safe_strategy_requests')
+        .select('id,status,result')
+        .eq('id', id)
+        .limit(1);
+    if (error) throw new Error(error.message);
+    const r = ((data ?? []) as unknown as { id: number; status: string; result: Record<string, unknown> | null }[])[0];
+    return r ? { id: Number(r.id), status: String(r.status), result: r.result ?? null } : null;
+}
+
 // --------------------------------------------------------------- realtime
 /** UN solo canale per control + trades + requests (mai N canali). */
 export function subscribeSafeBot(onChange: () => void): () => void {

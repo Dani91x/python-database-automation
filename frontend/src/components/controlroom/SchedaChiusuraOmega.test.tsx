@@ -63,7 +63,12 @@ describe('doppia conferma in live', () => {
     it('in paper un clic basta', async () => {
         const { onApprova } = monta(proposta({ mode: 'paper' }));
         fireEvent.click(screen.getByTestId('cr-omega-approva'));
-        await waitFor(() => expect(onApprova).toHaveBeenCalledWith(9));
+        // B17 (25/09) — contratto nuovo: con l'id partono il prezzo di back a video
+        // (qui nessun prezzo vivo: l'ultimo noto = quello della proposta, col flag)
+        // e il contesto col prezzo del SEGNALE
+        await waitFor(() => expect(onApprova).toHaveBeenCalledWith(9, 31, expect.objectContaining({
+            fonte: 'proposta', prezzo_vivo_assente: true, prezzo_segnale: 31,
+        })));
     });
 
     it('in live il primo clic ARMA e non manda niente', () => {
@@ -77,7 +82,12 @@ describe('doppia conferma in live', () => {
         const { onApprova } = monta(proposta({ mode: 'live' }));
         fireEvent.click(screen.getByTestId('cr-omega-approva'));
         fireEvent.click(screen.getByTestId('cr-omega-conferma-live'));
-        await waitFor(() => expect(onApprova).toHaveBeenCalledWith(9));
+        // B17 (25/09) — contratto nuovo: con l'id partono il prezzo di back a video
+        // (qui nessun prezzo vivo: l'ultimo noto = quello della proposta, col flag)
+        // e il contesto col prezzo del SEGNALE
+        await waitFor(() => expect(onApprova).toHaveBeenCalledWith(9, 31, expect.objectContaining({
+            fonte: 'proposta', prezzo_vivo_assente: true, prezzo_segnale: 31,
+        })));
     });
 
     it('«Ignora» non chiede conferma: non muove soldi', async () => {
@@ -188,5 +198,22 @@ describe('l errore del servizio si LEGGE', () => {
             expect(screen.getByTestId('cr-proposta-omega-errore').textContent)
                 .toMatch(/does not exist/);
         });
+    });
+});
+
+// B17 (25/09) — AL CLIC parte il prezzo di BACK A VIDEO (quello al ms) col suo
+// contesto e il prezzo del SEGNALE (back della proposta): dopo il clic la
+// colonna dice a quanti tick da tutti e due si e' abbinata la chiusura.
+describe('B17: al clic il prezzo visto e il segnale', () => {
+    it('manda il back al ms (fonte canale) e il segnale della proposta', async () => {
+        const f = sorgenteFinta();
+        const onApprova = vi.fn().mockResolvedValue(undefined);
+        render(<SchedaChiusuraOmega proposta={conIngredienti({ mode: 'paper' })}
+            onApprova={onApprova} onIgnora={vi.fn()} sorgenteLadder={f.sorgente} />);
+        f.spingi('1.245', 10.0, 100);
+        fireEvent.click(screen.getByTestId('cr-omega-approva'));
+        await waitFor(() => expect(onApprova).toHaveBeenCalledWith(9, 10, expect.objectContaining({
+            fonte: 'canale', prezzo_vivo_assente: false, prezzo_segnale: 6,
+        })));
     });
 });

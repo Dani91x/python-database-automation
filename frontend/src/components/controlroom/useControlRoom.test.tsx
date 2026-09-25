@@ -61,6 +61,11 @@ vi.mock('@/lib/safeBot', async (orig) => ({
     fetchEsitiApprovazioni: vi.fn(async (ids: number[]) => ids.map((id) => ({
         id, stato: 'rifiutata', testo: 'rifiutato: prezzo cambiato fra il clic e l’esecuzione - visto 1.3, all’esecuzione 1.4',
     }))),
+    // B17 (25/09) - la riga della coda per id, grezza (chiavi vere: id/status/result)
+    fetchRichiestaSafe: vi.fn(async (id: number) => ({
+        id, status: 'error', result: { error: 'prezzo_visto_fuori_tolleranza', price_visto: 1.3,
+            price_attuale: 1.4, message: 'rifiutato: visto 1,30, adesso 1,40' },
+    })),
 }));
 
 vi.mock('@/lib/mike', async (orig) => ({
@@ -148,6 +153,7 @@ import { fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents, updateOmegaParams 
 import { fetchSafeState, fetchRunnerState, approvaPropostaOpportunita, type SafeTrade } from '@/lib/safeBot';
 import { fetchMikeState } from '@/lib/mike';
 import { fetchProposte } from '@/lib/controlRoomProposte';
+import { approvaPropostaOmega } from '@/lib/omegaProposte';
 import { fetchMissions } from '@/lib/omegaMissions';
 import { fetchLiveFollows } from '@/lib/live';
 import { fetchSafeDaily } from '@/lib/dailyHistory';
@@ -735,6 +741,58 @@ describe('piazzaOpportunita manda ESATTAMENTE il prezzo che la scheda mostra', (
         await waitFor(() => expect(result.current.esitiOpportunita[0]?.stato).toBe('rifiutata'));
         expect(result.current.esitiOpportunita[0].id).toBe(56);
         expect(result.current.esitiOpportunita[0].testo).toMatch(/visto 1\.3, all’esecuzione 1\.4/);
+    });
+
+    // B17 (25/09) — dopo PIAZZA la Control Room SEGUE l'ordine: il clic porta
+    // prezzo visto, segnale, lato, modalita'; la coda (riletta per id) dice
+    // l'esito, che diventa il messaggio.
+    it('B17: il clic si segue con visto e segnale, e l’esito della coda diventa il messaggio', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOpportunita).mockReset().mockResolvedValue(undefined);
+        await act(async () => {
+            await result.current.piazzaOpportunita(57, 1.3, undefined, undefined, { ...CTX, prezzo_segnale: 1.25 });
+        });
+        const e = result.current.esitiOrdini[0];
+        expect(e.clic).toMatchObject({ chiave: 'safe:apertura:57', bot: 'safe', tipo: 'apertura',
+            requestId: 57, prezzoVisto: 1.3, prezzoSegnale: 1.25 });
+        await waitFor(() => expect(result.current.esitiOrdini[0].esito.fase).toBe('rifiutato'));
+        expect(result.current.esitiOrdini[0].esito.testo).toBe('rifiutato: rifiutato: visto 1,30, adesso 1,40');
+        expect(result.current.esitoOrdine('safe:apertura:57')?.clic.requestId).toBe(57);
+    });
+});
+
+// B17 (25/09) — l'uscita di Omega manda il prezzo visto e il contesto; senza
+// la migrazione del 25/09 UN ripiego sul solo p_id, mai dopo un rifiuto vero.
+describe('B17: approvaOmega col prezzo visto', () => {
+    const CTX = { eta_ms: 10, fonte: 'canale' as const, prezzo_vivo_assente: false, clic_ms: 1, prezzo_segnale: 6 };
+    it('prezzo e contesto arrivano alla RPC, e il clic si segue (lato back)', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOmega).mockReset().mockResolvedValue(undefined);
+        await act(async () => { await result.current.approvaOmega(9, 10, CTX); });
+        expect(approvaPropostaOmega).toHaveBeenCalledTimes(1);
+        expect(approvaPropostaOmega).toHaveBeenCalledWith(9, { prezzoVisto: 10, contesto: CTX });
+        expect(result.current.esitiOrdini[0].clic).toMatchObject({
+            chiave: 'omega:chiusura:9', bot: 'omega', lato: 'back', prezzoVisto: 10, prezzoSegnale: 6 });
+    });
+    it('migrazione assente (PGRST202): UN ripiego sul solo p_id, e l’etichetta lo dice', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOmega).mockReset()
+            .mockRejectedValueOnce(new Error('PGRST202 function not found'))
+            .mockResolvedValueOnce(undefined);
+        await act(async () => { await result.current.approvaOmega(9, 10, CTX); });
+        expect(vi.mocked(approvaPropostaOmega).mock.calls).toEqual([[9, { prezzoVisto: 10, contesto: CTX }], [9]]);
+        expect(result.current.esitiOrdini[0].clic.etichetta).toMatch(/migrazione del 25\/09 non applicata/);
+    });
+    it('un rifiuto VERO non si ripiega', async () => {
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        vi.mocked(approvaPropostaOmega).mockReset()
+            .mockRejectedValueOnce(new Error('la proposta non e piu in attesa di approvazione'));
+        await expect(result.current.approvaOmega(9, 10, CTX)).rejects.toThrow(/in attesa/);
+        expect(approvaPropostaOmega).toHaveBeenCalledTimes(1);
     });
 });
 

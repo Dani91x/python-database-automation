@@ -370,10 +370,38 @@ def contesto_prezzo_visto(payload: Any) -> Optional[dict[str, Any]]:
         return fv if math.isfinite(fv) and fv >= 0 else None
 
     fonte = ctx.get("fonte")
-    return {"eta_ms": _n(ctx.get("eta_ms")),
-            "fonte": fonte if fonte in _FONTI_PREZZO_VISTO else None,
-            "prezzo_vivo_assente": ctx.get("prezzo_vivo_assente") is True,
-            "clic_ms": _n(ctx.get("clic_ms"))}
+    out = {"eta_ms": _n(ctx.get("eta_ms")),
+           "fonte": fonte if fonte in _FONTI_PREZZO_VISTO else None,
+           "prezzo_vivo_assente": ctx.get("prezzo_vivo_assente") is True,
+           "clic_ms": _n(ctx.get("clic_ms"))}
+    # B17 (25/09) - il prezzo del SEGNALE che la scheda mostrava accanto al
+    # prezzo visto: si conserva SOLO se e' una quota valida (> 1), e la chiave
+    # compare solo se c'e' (un contesto di ieri resta identico).
+    segnale = _n(ctx.get("prezzo_segnale"))
+    if segnale is not None and segnale > 1.0:
+        out["prezzo_segnale"] = segnale
+    return out
+
+
+def prezzo_segnale(payload: Any) -> Optional[float]:
+    """B17 (25/09) - il prezzo del SEGNALE di una proposta: quello alla NASCITA
+    (``price_at_decision``, conservato da ``_nascita_della_proposta``),
+    altrimenti il ``price`` del payload. Solo una quota valida (> 1), mai un
+    default. SOLO informativo: non decide niente (la decisione resta la
+    tolleranza fra prezzo visto e mercato)."""
+    if not isinstance(payload, dict):
+        return None
+    for k in ("price_at_decision", "price"):
+        v = payload.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(fv) and fv > 1.0:
+            return fv
+    return None
 
 
 def slippage_pct_effettivo(payload: dict[str, Any]) -> float:

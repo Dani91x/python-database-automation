@@ -37,13 +37,16 @@ import {
 } from '@/lib/omegaProposte';
 import type { PrezzoVivo } from '@/lib/controlRoomProposte';
 import { tickDown } from '@/lib/matching';
-import { scarto, etaEFonte, type PrezzoScheda, type Semaforo } from '@/lib/schedaAlMs';
+import {
+    scarto, etaEFonte, prezzoVistoAlClic, type ContestoPrezzoVisto, type PrezzoScheda, type Semaforo,
+} from '@/lib/schedaAlMs';
 import { usePrezzoAlMs, type SorgenteLadder } from './usePrezzoAlMs';
 import { StrisciaEsitoChiusura, type StrisciaEsitoChiusuraProps } from '@/components/controlroom/StrisciaEsitoChiusura';
 
 export interface SchedaChiusuraOmegaProps {
     proposta: PropostaUscitaOmega;
-    onApprova: (id: number) => Promise<void>;
+    /** B17 (25/09) — APPROVA manda il prezzo di back a video e il suo contesto (col segnale) */
+    onApprova: (id: number, prezzoVisto?: number, contesto?: ContestoPrezzoVisto) => Promise<void>;
     onIgnora: (id: number) => Promise<void>;
     /** LA STRISCIA DI ESITO (18/09, additiva): v. `SchedaChiusura.tsx`. OPZIONALE. */
     esito?: StrisciaEsitoChiusuraProps;
@@ -127,6 +130,24 @@ export function SchedaChiusuraOmega({
             // migrazione non applicata → la RPC non esiste: si mostra, non si nasconde
             setErrore(e instanceof Error ? e.message : String(e));
         } finally { setInCorso(false); setArmato(false); }
+    };
+
+    // B17 (25/09) — APPROVA manda il prezzo di BACK a video in quell'istante
+    // (o l'ultimo noto col flag), eta', fonte e il prezzo del SEGNALE (back
+    // della proposta): dopo il clic la colonna dice a che prezzo si e' abbinato.
+    const approvaConPrezzo = (id: number) => {
+        const adesso = Date.now();
+        const scelto = prezzoVistoAlClic({
+            vivo: backOra, vivoIstanteMs: alMs.istanteMs, vivoFonte: alMs.fonte,
+            ultimoNoto: ultimoNoto?.prezzo ?? null, ultimoNotoIstanteMs: ultimoNoto?.istanteMs ?? null,
+            ultimoNotoFonte: ultimoNoto?.fonte ?? null,
+            prezzoProposta: p.back_price ?? p.price_at_decision, nowMs: adesso,
+        });
+        const segnale = Number(p.back_price ?? p.price_at_decision);
+        return onApprova(id, scelto.prezzo ?? undefined, {
+            ...scelto.contesto,
+            prezzo_segnale: Number.isFinite(segnale) && segnale > 1 ? segnale : null,
+        });
     };
 
     return (
@@ -242,7 +263,7 @@ export function SchedaChiusuraOmega({
             <div className="grid grid-cols-2 gap-px bg-white/5 border-t border-white/5">
                 {armato ? (
                     <Button
-                        onClick={() => void azione(onApprova)} disabled={inCorso}
+                        onClick={() => void azione(approvaConPrezzo)} disabled={inCorso}
                         className="rounded-none h-10 bg-orange-500 text-black hover:bg-orange-400 font-bold uppercase tracking-wider text-[12px]"
                         data-testid="cr-omega-conferma-live"
                     >
@@ -250,7 +271,7 @@ export function SchedaChiusuraOmega({
                     </Button>
                 ) : (
                     <Button
-                        onClick={() => (live ? setArmato(true) : void azione(onApprova))}
+                        onClick={() => (live ? setArmato(true) : void azione(approvaConPrezzo))}
                         disabled={inCorso}
                         className={`rounded-none h-10 text-white font-bold uppercase tracking-wider text-[12px] disabled:opacity-40 ${
                             protezione ? 'bg-red-600/80 hover:bg-red-600' : 'bg-emerald-600/80 hover:bg-emerald-600'

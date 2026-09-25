@@ -151,8 +151,13 @@ export default function ControlRoom() {
     const vm = useControlRoom();
     // B16 (24/09) — il «Chiudi» per singolo bot, portato alle righe dal contesto
     const chiusuraRiga = useMemo<ChiusuraRigaApi>(
-        () => ({ chiudi: vm.chiudi, stato: vm.statoChiusuraRiga }),
-        [vm.chiudi, vm.statoChiusuraRiga],
+        () => ({
+            chiudi: vm.chiudi, stato: vm.statoChiusuraRiga,
+            // B17 (25/09) — l'esito dell'ordine dopo il clic (assenti nei finti storici)
+            esito: vm.esitoChiusuraRiga, seguiClic: vm.seguiClic, esitoOrdine: vm.esitoOrdine,
+            esitiOrdini: vm.esitiOrdini,
+        }),
+        [vm.chiudi, vm.statoChiusuraRiga, vm.esitoChiusuraRiga, vm.seguiClic, vm.esitoOrdine, vm.esitiOrdini],
     );
     // LO SPORT SCELTO filtra il banco: `null` = tutti e due.
     const [sport, setSport] = useState<SportKey | null>(null);

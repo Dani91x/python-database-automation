@@ -13,6 +13,7 @@ import { BOT_LABEL, affidabilePerPiazzare } from '@/lib/controlRoom';
 import { SchedaChiusura } from './SchedaChiusura';
 import { SchedaChiusuraOmega } from './SchedaChiusuraOmega';
 import { trovaEsitoUscita } from './trovaEsitoUscita';
+import { EsitoAbbinamentoStriscia } from './EsitoAbbinamentoStriscia';
 import type { SportKey } from './SplitSport';
 import type { useControlRoom } from './useControlRoom';
 import { sorgenteLadderAlMs } from '@/lib/localTransport';
@@ -72,6 +73,13 @@ export function UsciteColonna({
                 />
                 <span>%</span>
             </div>
+
+            {/* B17 (25/09) — le USCITE approvate, seguite fino all'abbinamento della
+                gamba di chiusura (la scheda sparisce al clic: l'esito resta qui) */}
+            {(vm.esitiOrdini ?? [])
+                .filter((e) => e.clic.tipo === 'chiusura'
+                    && (e.clic.chiave.startsWith('safe:chiusura:') || e.clic.chiave.startsWith('omega:chiusura:')))
+                .map((e) => <EsitoAbbinamentoStriscia key={e.clic.chiave} seguito={e} testId="cr-esito-uscita" />)}
 
             <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2.5">
                 {vm.erroreProposteOmega && (

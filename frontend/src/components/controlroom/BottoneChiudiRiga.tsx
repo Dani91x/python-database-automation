@@ -23,10 +23,18 @@ import {
     type RigaDaChiudere, type StatoChiusuraRiga, type FaseChiusura,
 } from './chiudiRiga';
 import type { Bot } from '@/lib/controlRoom';
+import type { ClicOrdine } from '@/lib/esitoAbbinamento';
+import type { EsitoSeguito } from './useSeguiOrdini';
 
 export interface ChiusuraRigaApi {
     chiudi: (riga: RigaDaChiudere) => Promise<void>;
     stato: (bot: Bot, id: number) => StatoChiusuraRiga | null;
+    /** B17 (25/09) — l'esito dell'ORDINE di chiusura (abbinato a che prezzo). Opzionale. */
+    esito?: (bot: Bot, id: number) => EsitoSeguito | null;
+    /** B17 — per le schede nella partita (Mike): seguire un clic e leggerne l'esito */
+    seguiClic?: (clic: Omit<ClicOrdine, 'idsNotiAlClic'>) => void;
+    esitoOrdine?: (chiave: string) => EsitoSeguito | null;
+    esitiOrdini?: EsitoSeguito[];
 }
 
 export const ChiusuraRigaContext = createContext<ChiusuraRigaApi | null>(null);
@@ -66,6 +74,8 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
             ? 'richiesta di chiusura gia\' in corso su questa riga'
             : `${BOT_LABEL[riga.bot]}: ${cosaFaIlClic(riga.bot)}`;
     const fase = s ? faseMostrata(s) : null;
+    // B17 (25/09) — dopo la richiesta, l'ORDINE: a che prezzo e quanto abbinato
+    const es = api.esito?.(riga.bot, riga.id) ?? null;
     return (
         <span className="inline-flex items-baseline gap-1" data-testid={`${testId}-box`}>
             <button
@@ -88,6 +98,12 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                     data-fase={fase} title={s?.motivo ?? undefined}>
                     {TESTO_FASE[fase]}{s?.motivo && (fase === 'rifiutata' || fase === 'ignota'
                         || fase === 'presa_in_carico' || fase === 'inviata') ? `: ${s.motivo}` : ''}
+                </span>
+            )}
+            {es && (es.gambe.length > 0 || es.esito.terminale) && (
+                <span className="text-[9px] text-white/70" data-testid={`${testId}-ordine`}
+                    data-fase={es.esito.fase} title={`esito: ${es.esito.fonte}`}>
+                    {es.esito.simulato ? '[paper] ' : ''}{es.esito.testo}
                 </span>
             )}
         </span>

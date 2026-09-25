@@ -13,6 +13,7 @@ import { Fragment } from 'react';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/trading/EmptyState';
 import { organizzaOpportunita, type VoceOrdinabile } from '@/lib/opportunitaOrdine';
+import { EsitoAbbinamentoStriscia } from './EsitoAbbinamentoStriscia';
 import { SchedaPropostaOpportunita } from './SchedaPropostaOpportunita';
 import type { SportKey } from './SplitSport';
 import type { useControlRoom, PropostaOppVista } from './useControlRoom';
@@ -70,7 +71,16 @@ export function OpportunitaColonna({
             {/* 24/09 — l'ESITO delle ultime approvazioni: la scheda sparisce al
                 clic, quello che il servizio ha fatto (coi due prezzi se ha
                 rifiutato) resta qui, nello stesso riquadro degli avvisi. */}
-            {(vm.esitiOpportunita ?? []).map((e) => (
+            {/* B17 (25/09) — l'ORDINE di ogni clic seguito fino all'esito: prezzo
+                medio abbinato, Δ in tick vs visto e vs segnale, parziale/totale,
+                NON abbinato (FOK), rifiutato — con fonte ed eta'. Sostituisce la
+                riga dell'esito della richiesta per le proposte che segue. */}
+            {(vm.esitiOrdini ?? [])
+                .filter((e) => e.clic.bot === 'safe' && e.clic.tipo === 'apertura')
+                .map((e) => <EsitoAbbinamentoStriscia key={e.clic.chiave} seguito={e} />)}
+            {(vm.esitiOpportunita ?? [])
+                .filter((e) => !(vm.esitiOrdini ?? []).some((s) => s.clic.chiave === `safe:apertura:${e.id}`))
+                .map((e) => (
                 <div key={`esito-${e.id}`}
                     className={`px-3 py-1.5 border-b text-[10.5px] ${
                         e.stato === 'eseguita' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
