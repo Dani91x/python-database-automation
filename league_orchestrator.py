@@ -26,6 +26,7 @@ import sys
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import season_aggregates as sa
 import season_backfill as sb_mod
 import season_gaps as sg
 from api_quota import GestoreQuota, QuotaNonLeggibile
@@ -81,6 +82,7 @@ def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: 
     else:
         # anche il dry-run ha bisogno della RPC per contare le mancanze
         sg.lacune_stagione(sb, 0, 0)
+    sa.verifica_migrazione(sb)      # aggregati: migrations/season_aggregates_2026-09-25.sql
 
     coperture = sg.leggi_coverage(sb, league_id)
     if season is not None:
@@ -110,6 +112,9 @@ def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: 
     stampa("(n) = partite senza righe ma flag False: NON si chiamano (se l'API ha acceso il flag, lo aggiorna il "
            "mapper). Att. = vuote in attesa del 2o tentativo; Vuoti = vuote definitive dell'API;"
            " N.disp = quote di partite oltre 7 gg (storico API 7 gg: non recuperabili, non si chiamano).")
+    stampa("Riga 'aggregati' per stagione: nome=stato(ultimo aggiornamento) ~chiamate. Stati: ok, mancante, "
+           "da_aggiornare (cadenza: standings dopo ogni giornata, injuries ogni giorno, top_* settimanale), errore,"
+           " vuoto_api (l'API non ha dati), flag_false (coverage False: non si chiama). Chiam.~ li include.")
     stampa("-" * 118)
     stampa(f"{'':<6}{'':<33}{'':<11}{'':<11}{'':>8} {'--- mancano (partite FT) ---':^30}")
     stampa(f"{'Stag.':<6}{'Stato DB -> calcolato':<33}{'Fine':<11}{'Flag':<11}{'FT':>8} "
@@ -151,6 +156,7 @@ def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: 
         stampa(f"{sy:<6}{stato_str:<33}{str(row.get('season_end') or '?')[:10]:<11}{_flag_str(piano.flags):<11}"
                f"{ft:>8} {_mancanti_str(piano)}{piano.lacune.in_attesa(piano.flags):>6}"
                f"{vuoti:>6}{piano.lacune.non_disponibili(piano.flags):>7}{piano.costo:>9}  {decisione}")
+        stampa("      " + sa.riga_dry_run(piano.lacune.aggregati))
         spenti_con_buchi = [c for c, on in piano.flags.items()
                             if not on and piano.lacune.n(sg.ENDPOINTS[c][0], sg.STATI_DA_CHIAMARE)]
         if spenti_con_buchi and sg.e_corrente_o_recente(row, oggi):

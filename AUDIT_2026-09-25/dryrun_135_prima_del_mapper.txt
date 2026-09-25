@@ -1,0 +1,50 @@
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/api_coverage_by_season?select=league_id%2Cleague_name%2Ccountry_name%2Cseason_year%2Cseason_start%2Cseason_end%2Ccurrent%2Cfixtures_events%2Cfixtures_lineups%2Cfixtures_statistics_fixtures%2Cfixtures_statistics_players%2Cstandings%2Cplayers%2Ctop_scorers%2Ctop_assists%2Ctop_cards%2Cinjuries%2Cpredictions%2Codds&league_id=eq.135&order=league_id.asc%2Cseason_year.asc&offset=0&limit=1000 "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/season_backfill_state?select=league_id%2Cseason_year%2Cstatus%2Clast_run_at%2Cstats_json&league_id=eq.135&order=league_id.asc%2Cseason_year.asc&offset=0&limit=1000 "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/api_call_log?select=id&order=id.desc&limit=1 "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: GET https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/api_call_log?select=id&id=gt.3045084&created_at=gte.2026-09-25T00%3A00%3A00%2B00%3A00&limit=1 "HTTP/2 206 Partial Content"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+INFO:httpx:HTTP Request: POST https://dqbwaocvlzbxfrpacsac.supabase.co/rest/v1/rpc/season_detail_gaps "HTTP/2 200 OK"
+======================================================================================================================
+ORCHESTRATORE - DRY-RUN (nessuna chiamata API, nessuna scrittura)  lega 135 (Serie A, Italy)  oggi 2026-09-25 UTC
+Quota API-Football: contatore API 1077/7500 (fonte /status), riserva action 3000, margine 3423
+Flag = coverage per-partita ev/fo/sg/ss/qu = eventi/formazioni/stat. giocatori/stat. squadra/quote (S=True). Mancano = partite FT da chiamare;
+(n) = partite senza righe ma flag False: NON si chiamano (se l'API ha acceso il flag, lo aggiorna il mapper). Att. = vuote in attesa del 2o tentativo; Vuoti = vuote definitive dell'API; N.disp = quote di partite oltre 7 gg (storico API 7 gg: non recuperabili, non si chiamano).
+----------------------------------------------------------------------------------------------------------------------
+                                                                       --- mancano (partite FT) --- 
+Stag. Stato DB -> calcolato            Fine       Flag             FT     ev    fo    sg    ss    qu  Att. Vuoti N.disp  Chiam.~  Decisione
+2010  completed -> completed           2011-05-22 S S - - -       380      0     0 (380)   (1)     -     0     0      0        0  niente da fare (0 chiamate)
+2011  completed -> completed           2012-05-13 S S - - -       380      0     0 (380)   (1)     -     0     0      0        0  niente da fare (0 chiamate)
+2012  completed -> in_progress RIAP    2013-05-19 S S - - -       380      1     1 (380)   (3)     -     0     0      0        7  procederei
+2013  completed -> completed           2014-05-18 S S - - -       380      0     0 (380)     -     -     0     0      0        0  niente da fare (0 chiamate)
+2014  completed -> completed           2015-05-31 S S - - -       380      0     0 (380)     -     -     0     0      0        0  niente da fare (0 chiamate)
+2015  completed -> completed           2016-05-15 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2016  completed -> completed           2017-05-28 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2017  completed -> completed           2018-05-20 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2018  completed -> in_progress RIAP    2019-05-26 S S S S -       380      0     0     1     0     -     0     0      0        6  procederei
+2019  completed -> completed           2020-08-02 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2020  completed -> completed           2021-05-23 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2021  completed -> completed           2022-05-22 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2022  completed -> completed           2023-06-11 S S S S -       381      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2023  completed -> completed           2024-05-26 S S S S -       380      0     0     0     0     -     0     0      0        0  niente da fare (0 chiamate)
+2024  completed -> in_progress RIAP    2025-05-25 S S S S -       380      0     0     0     1     -     0     0      0        7  procederei
+2025  completed -> in_progress RIAP    2026-05-24 S S S S S       380      0     0     0     0     0     0     0    120        0  niente da fare (0 chiamate)
+2026  completed -> in_progress RIAP    2027-05-30 - - - - -        50   (50)  (50)  (50)  (50)  (10)     0     0      0        0  niente da fare (0 chiamate)
+      ATTENZIONE 2026: stagione viva con partite FT senza dati e flag False (events, lineups, player_stats, team_stats, odds): se API-Football li ha accesi, `python leagues_mapper.py` (1 chiamata) li aggiorna e il rilancio li recupera.
+----------------------------------------------------------------------------------------------------------------------
+Totale chiamate stimate per chiudere tutti i buchi della lega: ~20. Margine di oggi: 3423. Nulla e' stato chiamato ne' scritto.

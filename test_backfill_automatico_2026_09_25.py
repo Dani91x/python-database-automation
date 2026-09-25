@@ -43,7 +43,7 @@ import fixtures_backfill  # noqa: E402
 import league_orchestrator as lo  # noqa: E402
 import leagues_mapper as lm  # noqa: E402
 import per_fixture_backfill as pfb  # noqa: E402
-import season_backfill as sbk  # noqa: E402
+import season_aggregates as sa  # noqa: E402
 import season_gaps as sg  # noqa: E402
 import seasons_catchup as sc  # noqa: E402
 
@@ -199,6 +199,9 @@ class _Q:
                     trovata.update(nuova)
                     continue
             nuova.setdefault("id", db.nuovo_id())
+            if self.op == "insert":                    # default del DB: created_at/updated_at = now()
+                nuova.setdefault("created_at", db.adesso.isoformat())
+                nuova.setdefault("updated_at", db.adesso.isoformat())
             righe.append(nuova)
         return _Resp(lista)
 
@@ -243,6 +246,26 @@ class _Rpc:
                 c["ultimo_controllo_at"] = db.adesso
                 n += 1
             return _Resp(n)
+        if self.nome == "season_aggregates_summary":
+            # modello Python di public.season_aggregates_summary (stessa regola dell'SQL)
+            coppie = set(zip(self.params["p_league_ids"], self.params["p_season_years"]))
+            out = []
+            for tab in ("standings", "injuries", "top_scorers", "top_assists", "top_cards"):
+                gruppi: Dict[Tuple[int, int], List[Dict[str, Any]]] = defaultdict(list)
+                for r in db.t[tab]:
+                    if (r["league_id"], r["season_year"]) in coppie:
+                        gruppi[(r["league_id"], r["season_year"])].append(r)
+                for (lid, sy), rr in gruppi.items():
+                    out.append({"league_id": lid, "season_year": sy, "tabella": tab, "n": len(rr),
+                                "ultimo": max(r.get("updated_at") or r.get("created_at") for r in rr)})
+            gruppi_ft: Dict[Tuple[int, int], List[str]] = defaultdict(list)
+            for m in db.t["matches"]:
+                if (m["league_id"], m["season_year"]) in coppie and m["status_short"] in FT:
+                    gruppi_ft[(m["league_id"], m["season_year"])].append(m["fixture_date"])
+            for (lid, sy), date_ in gruppi_ft.items():
+                out.append({"league_id": lid, "season_year": sy, "tabella": "_ft", "n": len(date_),
+                            "ultimo": max(date_)})
+            return _Resp(out)
         if self.nome == "refresh_api_coverage_by_season_v2_mv":
             return _Resp(None)
         raise AssertionError(f"rpc inattesa {self.nome}")
@@ -379,6 +402,9 @@ class FintoServer:
         self.fixtures_stagione: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
         self.status_giu = False
         self.status_chiamate = 0
+        # (endpoint aggregato, lega) -> response (struttura reale); default [] = vuoto
+        self.aggregati: Dict[Tuple[str, Any], List[Dict[str, Any]]] = {}
+        self.errore_aggregati: set = set()
 
     def rispondi(self, endpoint: str, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         self.current += 1
@@ -390,8 +416,10 @@ class FintoServer:
             k = ((params or {}).get("league"), (params or {}).get("season"))
             return _busta(endpoint, params, self.fixtures_stagione.get(k, []))
         if endpoint in ("/standings", "/players/topscorers", "/players/topassists", "/players/topyellowcards",
-                        "/injuries"):
-            return _busta(endpoint, params, [])
+                        "/players/topredcards", "/injuries"):
+            if (endpoint, (params or {}).get("league")) in self.errore_aggregati:
+                return _busta(endpoint, params, [], {"requests": "You have reached the request limit for the day"})
+            return _busta(endpoint, params, self.aggregati.get((endpoint, (params or {}).get("league")), []))
         if (endpoint, fid) in self.vuote:
             return _busta(endpoint, params, [])
         return _busta(endpoint, params, risposta_dettaglio(endpoint, fid))
@@ -455,21 +483,7 @@ def mondo(monkeypatch):
     monkeypatch.setattr(fixtures_backfill.time, "sleep", lambda s: None)
     monkeypatch.setattr(lo, "get_supabase", lambda: db)
     monkeypatch.setattr(sg, "_oggi", lambda: OGGI)
-
-    def aggregati_finti(lid, sy, row):
-        c = FintoClient(server)
-        esiti = {}
-        percorsi = {"standings": "/standings", "top_scorers": "/players/topscorers",
-                    "top_assists": "/players/topassists", "top_cards": "/players/topyellowcards",
-                    "injuries": "/injuries"}
-        for nome, on in sg.flag_aggregati(row).items():
-            if on:
-                c.call(percorsi[nome], {"league": lid, "season": sy})
-                esiti[nome] = "ok"
-            else:
-                esiti[nome] = "saltato"
-        return esiti
-    monkeypatch.setattr(sbk, "_aggregati", aggregati_finti)
+    monkeypatch.setattr(sa, "adesso", lambda: db.adesso)   # ora unica per lo stato degli aggregati
     return db, server
 
 
@@ -1110,3 +1124,148 @@ def test_r5_retrain_tra_le_action_esclusive_e_buco_vecchio_per_concorrenza_esce_
     assert "Fermato per: action concorrente in_progress: retrain_models.yml" in testo
     assert "RINVIATO (quota/tempo/action concorrente): lega 999 stagione 2026 aperto da 5 gg" in testo
     assert "BUCO VECCHIO" not in testo
+
+
+# ===========================================================================
+# 8. AGGREGATI per lega-stagione (seguito 25/09)
+# ===========================================================================
+TOP_ENDPOINTS = ("/players/topscorers", "/players/topassists", "/players/topyellowcards", "/players/topredcards")
+
+
+def classifica_api(lid: int, sy: int) -> List[Dict[str, Any]]:
+    """/standings con la struttura reale (response[].league.standings = lista di gruppi)."""
+    def riga(rank, tid, nome, punti):
+        return {"rank": rank, "team": {"id": tid, "name": nome, "logo": ""}, "points": punti, "goalsDiff": 3,
+                "group": "Serie A", "form": "WWD", "status": "same", "description": None,
+                "all": {"played": 4, "win": 3, "draw": 1, "lose": 0, "goals": {"for": 8, "against": 5}},
+                "home": {}, "away": {}, "update": "2026-09-24T00:00:00+00:00"}
+    return [{"league": {"id": lid, "name": "Serie A", "country": "Italy", "logo": "", "flag": "", "season": sy,
+                        "standings": [[riga(1, 489, "AC Milan", 10), riga(2, 505, "Inter", 9)]]}}]
+
+
+def infortuni_api(lid: int, sy: int) -> List[Dict[str, Any]]:
+    return [{"player": {"id": 1100, "name": "O. Giroud", "photo": "", "type": "Missing Fixture",
+                        "reason": "Knee Injury"},
+             "team": {"id": 489, "name": "AC Milan", "logo": ""},
+             "fixture": {"id": 777, "timezone": "UTC", "date": "2026-09-27T18:45:00+00:00", "timestamp": 1790000000},
+             "league": {"id": lid, "season": sy, "name": "Serie A", "country": "Italy", "logo": "", "flag": ""}}]
+
+
+def _stagione_piena(db: FintoDB, lid: int, fid: int, giorni_fa: int = 2) -> None:
+    db.partita(fid, lid, 2026, giorni_fa=giorni_fa)
+    for tab in TABELLE:
+        db.dettaglio(tab, fid, lid, 2026)
+
+
+def _aggregato_presente(db: FintoDB, tab: str, lid: int, quando: datetime) -> None:
+    db.t[tab].append({"id": db.nuovo_id(), "league_id": lid, "season_year": 2026, "team_id": 489,
+                      "created_at": quando.isoformat(), "updated_at": quando.isoformat()})
+
+
+def test_agg_mancante_va_in_coda_ed_e_chiamato_poi_db_senza_buchi(mondo):
+    db, server = mondo
+    db.t["api_coverage_by_season"].append(coverage(555, 2026, aggregati=True))
+    _stagione_piena(db, 555, 60)                                  # per-partita completo: solo aggregati
+    server.aggregati[("/standings", 555)] = classifica_api(555, 2026)
+    server.aggregati[("/injuries", 555)] = infortuni_api(555, 2026)
+    ris, righe, _ = _catchup(db, server)
+    chiamati = sorted(e for e, p in server.chiamate)
+    assert chiamati == sorted(["/standings", "/injuries", *TOP_ENDPOINTS])      # 6 chiamate = costo
+    assert ris.chiamate == 6 and ris.codice == 0
+    assert len([r for r in db.t["standings"] if r["league_id"] == 555]) == 2
+    assert len([r for r in db.t["injuries"] if r["league_id"] == 555]) == 1
+    assert righe[-1] == "DB SENZA BUCHI"                           # top_* vuoti = vuoto_api, dichiarati
+    stato = next(r for r in db.t["season_backfill_state"] if r["league_id"] == 555)
+    assert stato["stats_json"]["aggregati"]["top_scorers"] == "vuoto_api"
+    assert stato["stats_json"]["aggregati_tentativi"]["top_scorers"]["esito"] == "vuoto"
+    # giro dopo, stesso giorno: tutto fresco o dichiarato vuoto -> ZERO chiamate
+    n = len(server.chiamate)
+    _catchup(db, server)
+    assert len(server.chiamate) == n
+
+
+def test_agg_presente_e_fresco_zero_chiamate(mondo):
+    db, server = mondo
+    db.t["api_coverage_by_season"].append(coverage(555, 2026, aggregati=True))
+    _stagione_piena(db, 555, 61, giorni_fa=3)
+    for tab in ("standings", "top_scorers", "top_assists", "top_cards"):
+        _aggregato_presente(db, tab, 555, ADESSO - timedelta(days=2))   # dopo l'ultima partita (3 gg fa)
+    _aggregato_presente(db, "injuries", 555, ADESSO - timedelta(hours=5))  # oggi
+    ris, righe, _ = _catchup(db, server)
+    assert server.chiamate == [] and ris.chiamate == 0
+    assert righe[-1] == "DB SENZA BUCHI"
+
+
+def test_agg_cadenza_classifica_dopo_giornata_injuries_giornaliero_top_settimanale(mondo):
+    db, server = mondo
+    riga = coverage(555, 2026, aggregati=True)
+    ultimo_ft = (ADESSO - timedelta(days=1)).isoformat()
+    info = {"_ft": ultimo_ft,
+            "standings": {"n": 20, "ultimo": (ADESSO - timedelta(days=2)).isoformat()},     # prima dell'ultima FT
+            "injuries": {"n": 5, "ultimo": (ADESSO - timedelta(hours=30)).isoformat()},     # > 20 h
+            "top_scorers": {"n": 20, "ultimo": (ADESSO - timedelta(days=3)).isoformat()},   # < 7 gg: aspetta
+            "top_assists": {"n": 20, "ultimo": (ADESSO - timedelta(days=9)).isoformat()},   # > 7 gg e FT nuove
+            "top_cards": {"n": 20, "ultimo": (ADESSO - timedelta(hours=2)).isoformat()}}
+    agg = sa.calcola(riga, info, {}, True, ADESSO)
+    assert {n: a["stato"] for n, a in agg.items()} == {
+        "standings": "da_aggiornare", "injuries": "da_aggiornare", "top_scorers": "ok",
+        "top_assists": "da_aggiornare", "top_cards": "ok"}
+    assert sum(a["costo"] for a in agg.values()) == 3
+    passata = sa.calcola(riga, info, {}, False, ADESSO)             # stagione finita: injuries non si rifanno
+    assert passata["injuries"]["stato"] == "ok" and passata["top_scorers"]["stato"] == "da_aggiornare"
+
+
+def test_agg_flag_false_non_chiamato_e_dichiarato(mondo):
+    db, server = mondo
+    db.t["api_coverage_by_season"].append(coverage(555, 2026, aggregati=False))
+    _stagione_piena(db, 555, 62)
+    ris, righe, _ = _catchup(db, server)
+    assert server.chiamate == []
+    assert any(r.startswith("  injuries") and "flag_false 1" in r and "NON chiamato" in r for r in righe)
+    assert righe[-1] == "DB SENZA BUCHI"
+
+
+def test_agg_idempotente_nessuna_riga_doppia_e_delete_fallita_non_inserisce(mondo):
+    db, server = mondo
+    server.aggregati[("/standings", 555)] = classifica_api(555, 2026)
+    client = FintoClient(server)
+    assert sa.esegui_aggregato(db, client, "standings", 555, 2026) == "righe"
+    assert sa.esegui_aggregato(db, client, "standings", 555, 2026) == "righe"
+    assert len(db.t["standings"]) == 2                                 # rieseguito: stesse 2 righe, non 4
+    db.errori_tabella["standings"] = {"delete": "{'code': '57014'}"}
+    assert sa.esegui_aggregato(db, client, "standings", 555, 2026) == "errore"
+    assert len(db.t["standings"]) == 2                                 # delete fallita: NESSUN insert
+    db.errori_tabella["standings"] = {"insert": "{'code': '57014'}"}
+    assert sa.esegui_aggregato(db, client, "standings", 555, 2026) == "parziale"
+    stato = sa.stato_aggregato("standings", True, True, 0, None, None,
+                               {"at": ADESSO.isoformat(), "esito": "parziale"}, ADESSO)
+    assert stato == "errore"                                          # parziale -> si rifa' al giro dopo
+
+
+def test_agg_errore_api_non_e_vuoto_e_resta_buco(mondo):
+    db, server = mondo
+    db.t["api_coverage_by_season"].append(coverage(555, 2026, aggregati=True))
+    _stagione_piena(db, 555, 63)
+    server.errore_aggregati.add(("/standings", 555))
+    ris, righe, _ = _catchup(db, server)
+    stato = next(r for r in db.t["season_backfill_state"] if r["league_id"] == 555)
+    assert stato["stats_json"]["aggregati_tentativi"]["standings"]["esito"] == "errore"
+    assert stato["stats_json"]["aggregati"]["standings"] == "errore"
+    assert righe[-1].startswith("BUCHI APERTI: 1 lega-stagioni, ~1 chiamate")
+    assert any("aggregati da fare: standings=errore" in r for r in righe)
+
+
+def test_agg_dry_run_mostra_gli_aggregati_per_stagione(mondo):
+    db, server = mondo
+    db.t["api_coverage_by_season"].append(coverage(135, 2026, aggregati=True))
+    _stagione_piena(db, 135, 64)
+    _aggregato_presente(db, "standings", 135, ADESSO - timedelta(days=5))       # prima dell'ultima FT
+    out = io.StringIO()
+    with redirect_stdout(out):
+        lo.backfill_full_league(135, dry_run=True, sb=db, quota=quota_per(db, server, None), oggi=OGGI)
+    testo = out.getvalue()
+    assert server.chiamate == []
+    assert "aggregati: standings=da_aggiornare(2026-09-20) ~1  injuries=mancante(-) ~1" in testo
+    assert "top_cards=mancante(-) ~2" in testo
+    riga_2026 = next(r for r in testo.splitlines() if r.startswith("2026"))
+    assert riga_2026.split()[-2:] == ["6", "procederei"]            # Chiam.~ include gli aggregati (1+1+1+1+2)

@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+import season_aggregates as sa
 import season_backfill as sbk
 import season_gaps as sg
 from api_quota import GestoreQuota, QuotaNonLeggibile
@@ -141,7 +142,7 @@ class Voce:
 
     @property
     def chiamate(self) -> int:
-        return self.lacune.chiamate_per_fixture(self.flags)
+        return self.lacune.chiamate_per_fixture(self.flags) + self.lacune.chiamate_aggregati()
 
 
 def seleziona_candidati(coperture: List[Dict[str, Any]], stati: Dict[Tuple[int, int], Dict[str, Any]],
@@ -210,6 +211,7 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
 
     # 1) pre-controlli (fail-loud: li gestisce main)
     sg.verifica_migrazione(sb)
+    sa.verifica_migrazione(sb)
     st = quota.aggiorna()
     stampa(f"[CATCHUP] quota all'avvio: {st.riga()}")
 
@@ -223,6 +225,8 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
            f"passate mai caricate: {conti['passate_mai_caricate']})")
     righe_per_k = {(int(r["league_id"]), int(r["season_year"])): r for r in vive + passate}
     lacune = sg.riepilogo_lacune(sb, list(righe_per_k))
+    # aggregati di TUTTE le stagioni verificate (vive ogni giorno, per cadenza): il Daily non li fa
+    sa.attacca(sb, lacune, righe_per_k, stati, sa.adesso())
     voci: List[Voce] = []
     stati_da_scrivere: List[Dict[str, Any]] = []
     for k, row in righe_per_k.items():
@@ -241,7 +245,8 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
     coda = costruisci_coda(voci)
     stampa(f"[CATCHUP] coda: {len(coda)} lega-stagioni con partite da chiamare "
            f"(P1 {sum(1 for v in coda if v.priorita == 1)}, P2 {sum(1 for v in coda if v.priorita == 2)}, "
-           f"P3 {sum(1 for v in coda if v.priorita == 3)}), ~{sum(v.chiamate for v in coda)} chiamate per-partita")
+           f"P3 {sum(1 for v in coda if v.priorita == 3)}), ~{sum(v.chiamate for v in coda)} chiamate "
+           f"(per-partita + aggregati)")
 
     def deve_fermarsi() -> Optional[str]:
         if (orologio() - t0) / 60.0 >= max_min:
@@ -283,7 +288,7 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
                 ris.errori.append(f"lega {k[0]} stagione {k[1]}: {es.errore}")
             if es.fermato_per and es.fermato_per != "errori_api":
                 ris.fermato_per = es.fermato_per         # quota / tempo / action concorrente: stop della run
-            ris.lacune_dopo[k] = sg.lacune_stagione(sb, k[0], k[1])
+            ris.lacune_dopo[k] = es.lacune_dopo or sg.lacune_stagione(sb, k[0], k[1])
             quota.aggiorna()                               # RICALCOLO dopo ogni lega-stagione
             prossima = coda[i + 1].chiamate if i + 1 < len(coda) else None
             stampa("[CATCHUP] " + sbk.riga_log_dopo(es, quota, prossima))
@@ -307,6 +312,9 @@ def _cause(lac: sg.Lacune, flags: Dict[str, bool], fermato: Optional[str]) -> st
         cause.append(f"API vuota su {lac.in_attesa(flags)} partite-tabella (in attesa del 2o tentativo)")
     if fermato == "errori_api":
         cause.append("10 partite di fila con tutti gli endpoint in errore")
+    agg = [f"{n}={a.get('stato')}" for n, a in lac.aggregati.items() if n in lac.agg_da_fare()]
+    if agg:
+        cause.append("aggregati ancora da fare: " + ", ".join(agg))
     if not cause:
         cause.append("partite da chiamare NON tentate nonostante il budget (da indagare)")
     spenti = [sg.ENDPOINTS[c][0] for c, on in flags.items() if not on]
@@ -318,7 +326,7 @@ def _cause(lac: sg.Lacune, flags: Dict[str, bool], fermato: Optional[str]) -> st
 def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int, conti: Dict[str, int],
                   stampa: Callable[[str], None], oggi: date) -> int:
     stampa("=" * 110)
-    stampa("REFERTO BUCHI (partite FT senza dati, solo tabelle con flag di coverage True)")
+    stampa("REFERTO BUCHI (partite FT senza dati e aggregati da fare; solo flag di coverage True)")
     stampa(f"{'Lega':>6} {'Stag':>5} P  {'FT':>5}  da chiamare ev/fo/sg/ss/qu   att.  {'costo~':>7}  aperto da")
     aperte = 0
     costo_tot = 0
@@ -339,7 +347,7 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
         if n_aperti == 0:
             continue
         aperte += 1
-        costo = lac.chiamate_per_fixture(flags)
+        costo = lac.chiamate_per_fixture(flags) + lac.chiamate_aggregati()
         costo_tot += costo
         dal = ris.aperto_dal.get(k) or oggi.isoformat()
         giorni = (oggi - date.fromisoformat(dal[:10])).days
@@ -348,6 +356,10 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                          for c in sg.ENDPOINTS)
         stampa(f"{k[0]:>6} {k[1]:>5} {v.priorita}  {lac.ft_totali:>5}  {per_t}   {lac.in_attesa(flags):>4}  "
                f"{costo:>7}  {dal} ({giorni} gg)")
+        if lac.agg_da_fare():
+            stampa("                aggregati da fare: " + ", ".join(
+                f"{n}={lac.aggregati[n]['stato']}({str(lac.aggregati[n].get('ultimo') or '-')[:10]})"
+                for n in lac.agg_da_fare()))
         if giorni > max_giorni:
             fermata = ris.fermate_per.get(k)
             if k in rimaste or (fermata and fermata != "errori_api"):
@@ -357,6 +369,16 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                 falliti.append(f"lega {k[0]} stagione {k[1]} aperto da {giorni} gg (> {max_giorni}) "
                                f"con budget disponibile: {_cause(lac, flags, ris.fermate_per.get(k))}")
     stampa("-" * 110)
+    stampa("AGGREGATI (lega-stagioni verificate stanotte): cadenza standings dopo ogni giornata, injuries ogni "
+           "giorno (stagioni vive), top_* settimanale")
+    for nome in sa.ORDINE:
+        conta: Dict[str, int] = {}
+        for v in voci:
+            a = ris.lacune_dopo.get(v.chiave, v.lacune).aggregati.get(nome)
+            if a:
+                conta[a["stato"]] = conta.get(a["stato"], 0) + 1
+        stampa(f"  {nome:<12} " + ", ".join(f"{st} {n}" for st, n in sorted(conta.items()))
+               + "   (flag_false = coverage False: NON chiamato; vuoto_api = l'API non ha dati: dichiarato)")
     stampa(f"Chiamate fatte stanotte: {ris.chiamate}. Lega-stagioni lavorate: {len(ris.fatte)}, "
            f"rimaste in coda: {len(ris.rimaste)}. Quota: {quota.stato.riga() if quota.stato else '?'}")
     if ris.fermato_per:

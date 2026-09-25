@@ -5,8 +5,9 @@ recupero giornaliero (seasons_catchup.py): stessi controlli, stesso stato.
 
 Sequenza (mai a meta' partita, ripartibile):
   1. lacune dai DATI (season_gaps.lacune_stagione, 1 RPC);
-  2. costo stimato = partite/endpoint da chiamare + chiamate fisse
-     (1 /fixtures + 1 per aggregato con flag True) se c'e' lavoro;
+  2. costo stimato = partite/endpoint da chiamare + 1 /fixtures (se c'e' lavoro
+     per-partita e la stagione non e' viva nel recupero) + aggregati DA FARE
+     (season_aggregates: solo quelli mancanti/da aggiornare/in errore, per cadenza);
   3. controllo quota PRIMA (margine >= costo, vedi `decidi`);
   4. /fixtures della stagione (1 chiamata: allinea `matches`, anche partite
      saltate da un Daily fallito), ricalcolo lacune, per-fixture SOLO sulle
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Callable, Dict, Optional
 
+import season_aggregates as sa
 import season_gaps as sg
 
 logger = logging.getLogger(__name__)
@@ -40,10 +42,11 @@ class Piano:
     chiamate_fisse: int
     stato_attuale: Optional[str]
     stato_calcolato: str
+    chiamate_aggregati: int = 0
 
     @property
     def costo(self) -> int:
-        return self.chiamate_partite + self.chiamate_fisse
+        return self.chiamate_partite + self.chiamate_fisse + self.chiamate_aggregati
 
     @property
     def c_e_lavoro(self) -> bool:
@@ -61,16 +64,17 @@ class Esito:
     stato: Optional[str] = None
     buchi_aperti: int = 0
     stats: Dict[str, Any] = field(default_factory=dict)
+    lacune_dopo: Optional[sg.Lacune] = None
 
 
 def pianifica(sb: Any, coverage_row: Dict[str, Any], stato_prec: Optional[Dict[str, Any]] = None,
               includi_mai_caricate: bool = True, oggi: Optional[date] = None,
               fisse_su_stagione_viva: bool = True) -> Piano:
     """fisse_su_stagione_viva=False (recupero giornaliero): sulle stagioni vive
-    NON si rifanno /fixtures e aggregati (li aggiorna gia' il Daily ogni giorno
-    per le leghe che hanno giocato): con centinaia di leghe vive, 1-6 chiamate
-    fisse per lega ogni notte sarebbero quota sprecata. Restano per le stagioni
-    passate e per l'orchestratore a mano."""
+    NON si rifa' /fixtures (le partite le scrive il Daily). Gli aggregati NON sono
+    piu' "fissi": si chiamano solo quelli DA FARE secondo le lacune degli
+    aggregati (season_aggregates), anche sulle stagioni vive (25/09: il Daily non
+    li ha MAI chiamati, vedi referto par. 9)."""
     league_id, season_year = int(coverage_row["league_id"]), int(coverage_row["season_year"])
     lac = sg.lacune_stagione(sb, league_id, season_year)
     flags = sg.flag_per_fixture(coverage_row)
@@ -83,13 +87,14 @@ def pianifica(sb: Any, coverage_row: Dict[str, Any], stato_prec: Optional[Dict[s
         if flags.get("odds") and not sg.e_corrente_o_recente(coverage_row, oggi):
             n_attivi -= 1
         chiamate_partite = STIMA_PARTITE_STAGIONE_VUOTA * n_attivi
-    n_agg = sum(1 for v in sg.flag_aggregati(coverage_row).values() if v)
-    fisse = (1 + n_agg) if (chiamate_partite > 0 or serve_fixtures) else 0
+    fisse = 1 if (chiamate_partite > 0 or serve_fixtures) else 0
     if not fisse_su_stagione_viva and sg.e_corrente_o_recente(coverage_row, oggi):
         fisse = 0
+    k = (league_id, season_year)
+    sa.attacca(sb, {k: lac}, {k: coverage_row}, {k: stato_prec or {}}, sa.adesso())
     return Piano(league_id, season_year, coverage_row, lac, flags, serve_fixtures,
                  chiamate_partite, fisse, (stato_prec or {}).get("status"),
-                 sg.calcola_stato(coverage_row, lac, oggi))
+                 sg.calcola_stato(coverage_row, lac, oggi), lac.chiamate_aggregati())
 
 
 def decidi(piano: Piano, quota: Any) -> str:
@@ -110,31 +115,21 @@ def decidi(piano: Piano, quota: Any) -> str:
     return "mi_fermo"
 
 
-def _aggregati(league_id: int, season_year: int, coverage_row: Dict[str, Any]) -> Dict[str, Any]:
-    from injuries_backfill import backfill_injuries_for_league_season
-    from standings_backfill import backfill_standings_for_league_season
-    from top_assists_backfill import backfill_top_assists_for_league_season
-    from top_cards_backfill import backfill_top_cards_for_league_season
-    from top_scorers_backfill import backfill_top_scorers_for_league_season
-    funzioni = {
-        "standings": backfill_standings_for_league_season,
-        "top_scorers": backfill_top_scorers_for_league_season,
-        "top_assists": backfill_top_assists_for_league_season,
-        "top_cards": backfill_top_cards_for_league_season,
-        "injuries": backfill_injuries_for_league_season,
-    }
-    esiti: Dict[str, Any] = {}
-    for nome, on in sg.flag_aggregati(coverage_row).items():
-        if not on:
-            esiti[nome] = "saltato"
-            continue
+def _aggregati(sb: Any, client: Any, quota: Any, piano: Piano) -> Dict[str, Dict[str, Any]]:
+    """Solo gli aggregati DA FARE, con il client condiviso (chiamate contate nella
+    quota), controllo quota prima di ciascuno. -> {nome: {at, esito}}."""
+    tentativi: Dict[str, Dict[str, Any]] = {}
+    for nome in piano.lacune.agg_da_fare():
+        if quota is not None and not quota.copre(sa.COSTO[nome]):
+            logger.warning("Quota: aggregato %s rinviato (margine %s)", nome, quota.margine())
+            break
         try:
-            funzioni[nome](league_id, season_year)
-            esiti[nome] = "ok"
+            esito = sa.esegui_aggregato(sb, client, nome, piano.league_id, piano.season_year)
         except Exception as e:
-            logger.error("aggregato %s lega %s stagione %s: %s", nome, league_id, season_year, e)
-            esiti[nome] = f"errore: {e}"
-    return esiti
+            logger.error("aggregato %s lega %s stagione %s: %s", nome, piano.league_id, piano.season_year, e)
+            esito = "errore"
+        tentativi[nome] = {"at": sa.adesso().isoformat(timespec="seconds"), "esito": esito}
+    return tentativi
 
 
 def esegui(sb: Any, client: Any, quota: Any, piano: Piano, stato_prec: Optional[Dict[str, Any]],
@@ -160,23 +155,29 @@ def esegui(sb: Any, client: Any, quota: Any, piano: Piano, stato_prec: Optional[
             lid, sy, lacune=lac, coverage=piano.flags, client=client, quota=quota,
             deve_fermarsi=deve_fermarsi, registro_obbligatorio=True) or {}
         es.fermato_per = st.get("fermato_per")
-        # 3) aggregati (solo se non ci si e' fermati per quota)
+        # 3) aggregati DA FARE (solo se non ci si e' fermati per quota)
         agg: Dict[str, Any] = {}
-        if con_fisse and es.fermato_per != "quota":
-            agg = _aggregati(lid, sy, piano.coverage_row)
-            fisse_fatte += sum(1 for v in agg.values() if v != "saltato")
+        if es.fermato_per != "quota":
+            agg = _aggregati(sb, client, quota, piano)
         es.stats = {"per_fixture": st, "aggregati": agg}
     except sg.MigrazioneMancante:
         raise
     except Exception as e:
         es.errore = f"{type(e).__name__}: {e}"
         logger.error("lega %s stagione %s: ERRORE %s", lid, sy, es.errore)
-    # chiamate: quelle del client condiviso + le fisse (fixtures/aggregati usano un client loro)
+    # chiamate: quelle del client condiviso (per-partita e aggregati) + /fixtures (client suo)
     es.chiamate = int(getattr(client, "richieste_http", 0) or 0) - prima + fisse_fatte
     if hasattr(quota, "aggiungi_chiamate_esterne"):
         quota.aggiungi_chiamate_esterne(fisse_fatte)
     # 4) stato DERIVATO dai dati dopo il lavoro
     lac_dopo = sg.lacune_stagione(sb, lid, sy)
+    tentativi = (es.stats.get("aggregati") or {})
+    prec_agg = {**(stato_prec or {})}
+    prec_agg["stats_json"] = {**((stato_prec or {}).get("stats_json") or {})}
+    prec_agg["stats_json"]["aggregati_tentativi"] = {
+        **(prec_agg["stats_json"].get("aggregati_tentativi") or {}), **tentativi}
+    k = (lid, sy)
+    sa.attacca(sb, {k: lac_dopo}, {k: piano.coverage_row}, {k: prec_agg}, sa.adesso())
     es.stato = sg.calcola_stato(piano.coverage_row, lac_dopo, oggi)
     es.buchi_aperti = lac_dopo.aperti(piano.flags)
     esito_json = {"chiamate_fatte": es.chiamate, "fermato_per": es.fermato_per, "errore": es.errore,
@@ -184,7 +185,9 @@ def esegui(sb: Any, client: Any, quota: Any, piano: Piano, stato_prec: Optional[
                   "errori_api": (es.stats.get("per_fixture") or {}).get("errori_api", 0),
                   "aggregati": es.stats.get("aggregati", {})}
     sg.scrivi_stato(sb, lid, sy, es.stato,
-                    sg.costruisci_stats_json(piano.coverage_row, lac_dopo, stato_prec, fonte, esito_json, oggi))
+                    sg.costruisci_stats_json(piano.coverage_row, lac_dopo, stato_prec, fonte, esito_json, oggi,
+                                             tentativi_aggregati=tentativi))
+    es.lacune_dopo = lac_dopo
     return es
 
 

@@ -426,3 +426,130 @@ Suite: `pytest test_actions_fail_rumoroso_2026_09_25.py test_backfill_automatico
 Mutazioni: **49/49 ROSSE** (M12 aggiornata al nuovo bersaglio `q.execute()`), ripristino verificato con sha256.
 
 Patch completa: `AUDIT_2026-09-25/backfill_automatico.patch` (diff dei file tracciati + `--no-index` dei file nuovi).
+
+---
+
+## 9. Aggregati per lega-stagione (seguito 25/09, base `f015204`)
+
+Worktree riallineato: le modifiche locali (identiche a `f015204`: nessuna differenza sui file tracciati e sui file
+nuovi) sono state messe da parte con `git stash push -u -m agent-a51c4dd9-backfill-prima-del-rebase-f015204`
+(sha `48d753ba`), poi `git merge --ff-only origin/master` -> `f015204`. Delta di questo seguito:
+`AUDIT_2026-09-25/backfill_aggregati.patch`. Nessuna lettura/scrittura del DB; nessuna chiamata API.
+
+### 9.1 Diagnosi del fermo di `injuries` (e di tutti gli aggregati)
+
+1. **Il Daily non chiama MAI nessun aggregato** (prima causa, indipendente dai flag).
+   `daily_yesterday_backfill.py:310-325` `run_aggregates_for_seasons` legge il coverage con
+   `per_fixture_backfill.get_coverage_for_season` (`per_fixture_backfill.py:97-146`), che seleziona e restituisce SOLO
+   i 5 flag per-partita (`events, lineups, team_stats, player_stats, odds`). Quindi `coverage.get("standings")`,
+   `.get("injuries")`, `.get("top_scorers")`... sono SEMPRE `None`: il ramo non scatta mai, per nessuna lega.
+   Prova dal log del Daily di oggi (`gh run view 36101390338 --log`, 3.576 righe del job `run-backfill`): **0** righe con
+   `injur`, **0** `/standings per`, **0** `topscorers`/`topassists`/`topyellowcards`; 68 letture di coverage per-partita.
+   Gli aggregati si aggiornano quindi SOLO quando l'utente lancia a mano l'orchestratore (es. 135 oggi alle 08:13,
+   `standings=True` -> la classifica "aggiornata oggi"); `injuries` 2026 ferma al 03/06 = ultimo lancio manuale sulle 3
+   leghe col flag True (31, 71, 952).
+2. **Flag fermi** (seconda causa, gia' chiusa dal mapper che aggiorna): `injuries=true` su 3/792 righe 2026 perche' il
+   mapper scriveva i flag solo al primo inserimento (`leagues_mapper.py` prima di `f015204`).
+3. **Anche col flag giusto** il Daily aggregherebbe solo le stagioni delle partite di ieri: le stagioni vive senza
+   partite ieri non si aggiornerebbero.
+
+**Proposta (implementata): li fa il recupero giornaliero, per CADENZA, su TUTTE le stagioni vive**, non il Daily.
+Motivo: un solo posto, costo proporzionale al bisogno reale (non 6 chiamate per ogni lega che ha giocato ieri), stop e
+quota gia' governati. Il Daily NON e' stato toccato: il suo ramo aggregati resta codice morto (0 chiamate). Decisione
+per l'utente: rimuoverlo (consigliato: evita che una "correzione" futura lo riaccenda con +~420 chiamate/giorno doppie)
+oppure lasciarlo.
+
+### 9.2 Definizione di "buco" per aggregato (`season_aggregates.py`, misurabile e leggera)
+
+Dati: RPC `season_aggregates_summary` (nuova, `migrations/season_aggregates_2026-09-25.sql`) -> per (lega, stagione) e
+per tabella: righe presenti e `ultimo = max(coalesce(updated_at, created_at))`; piu' la data dell'ultima partita FT.
+Una aggregazione per tabella filtrata su (league_id, season_year), a blocchi di 150 coppie (<= 900 righe).
+Piu' `season_backfill_state.stats_json.aggregati_tentativi[nome] = {at, esito}` (ultimo tentativo del recupero).
+
+| Stato | Regola | Si chiama? | Buco? |
+|---|---|---|---|
+| `flag_false` | flag di coverage False | no | no, dichiarato nel referto |
+| `errore` | ultimo tentativo `errore` (API/delete) o `parziale` (insert a meta') | si' | si' |
+| `mancante` | nessuna riga e nessun tentativo riuscito | si' | si' |
+| `da_aggiornare` | per cadenza (T = ultimo aggiornamento o ultimo tentativo riuscito): **standings** partite FT dopo T (dopo ogni giornata); **injuries** stagione viva e T > 20 h fa (ogni giorno, 2 finestre del recupero); **top_scorers/top_assists/top_cards** partite FT dopo T e, se viva, T > 7 gg fa (settimanale), se passata una volta dopo l'ultima partita | si' | si' |
+| `vuoto_api` | 0 righe, ultimo tentativo `vuoto`, nulla da aggiornare | no | no, dichiarato |
+| `ok` | altrimenti | no | no |
+
+Gli aggregati da fare entrano in `Lacune.aperti` (quindi in `completed`, in `buco_aperto_dal`, nel fail-loud dei buchi
+vecchi con la causa "aggregati ancora da fare: ...") e nel costo (`Lacune.chiamate_aggregati`).
+
+### 9.3 Idempotenza degli script storici (verificata nel codice)
+
+`standings_backfill.py`, `injuries_backfill.py`, `top_scorers_backfill.py`, `top_assists_backfill.py`,
+`top_cards_backfill.py`: delete per (league_id, season_year) + insert -> una riesecuzione normale NON duplica.
+**Ma** `delete_existing_*` (`standings_backfill.py:221`, `injuries_backfill.py:191`, `top_scorers_backfill.py:217`,
+`top_assists_backfill.py:217`, `top_cards_backfill.py:226`) cattura l'eccezione della delete, la logga e l'insert parte
+lo stesso: **una delete fallita (es. 57014) = righe DOPPIE**. Inoltre `fetch_*` restituisce `None` sia su errore sia su
+risposta vuota. Il recupero NON usa piu' i loro orchestratori: `season_aggregates.esegui_aggregato` usa le loro
+funzioni di MAPPING (colonne vere invariate) con: client condiviso (chiamate contate nella quota), errore != vuoto
+(`_risposta_o_none`), delete fallita -> nessun insert (esito `errore`), insert fallito -> `parziale` (rifatto al giro
+dopo). Proposta per l'utente: correggere `delete_existing_*` (rilanciare l'eccezione) negli script, usati ancora dalle
+CLI manuali; non toccati qui.
+
+### 9.4 Costo API e quota
+
+Chiamate per lega-stagione: standings 1, injuries 1, top_scorers 1, top_assists 1, **top_cards 2**
+(`/players/topyellowcards` + `/players/topredcards`) = 6 al massimo. Nel piano: `costo = per-partita + /fixtures (se
+serve) + aggregati DA FARE`; prima di ogni aggregato `quota.copre(costo)`; stop pulito. Prima (f015204) gli aggregati
+erano stimati "1 per flag True" (top_cards sottostimato di 1) e rifatti tutti a ogni lavoro sulla stagione.
+
+Stima di regime (dati del coordinatore: 792 righe coverage 2026, `standings=true` 453, `injuries=true` 3 oggi;
+2025 `injuries=true` 126/998 = 12,6%):
+- standings dopo ogni giornata: ~le leghe che hanno giocato dall'ultimo aggiornamento, ~70-150/giorno;
+- injuries ogni giorno: ~100 stagioni vive col flag dopo il mapper (12,6% di 792) -> ~100/giorno;
+- top_* settimanale con partite nuove: ~453 x 4 / 7 ~ 260/giorno (numero dei flag top_* non misurato: assunto = standings);
+- totale di regime ~430-510 chiamate/giorno, dentro la capacita' 4.500 (7.500 - riserva 3.000).
+
+**Primo giorno dopo il mapper aggiornato** (tutto "mancante" o "da_aggiornare"): standings ~453 + injuries ~100 +
+top_* ~453 x 4 = 1.812 -> **~2.365 chiamate** per le stagioni 2026 (piu' le 2025 ancora vive, non misurabili senza DB),
+in concorrenza con il recupero per-partita nella stessa coda (P1 leghe dei bot prima). Con il margine di oggi (3.424)
+ci stanno in un giorno se il per-partita non e' grande; altrimenti si chiude in 2 giorni, dichiarato nel referto
+("RINVIATO ... stima giorni"). Nessun rischio di quota: stop prima di ogni aggregato.
+
+### 9.5 Referto e dry-run
+
+- REFERTO BUCHI: sotto ogni lega-stagione con buchi, riga `aggregati da fare: standings=errore(2026-09-20), ...`;
+  sezione **AGGREGATI** con i conteggi per stato di ciascun aggregato (`flag_false N` = non chiamato, `vuoto_api N` =
+  l'API non ha dati) e la cadenza; il costo della riga include gli aggregati.
+- Dry-run dell'orchestratore: per ogni stagione una riga
+  `aggregati: standings=da_aggiornare(2026-09-20) ~1  injuries=mancante(-) ~1  top_scorers=... top_cards=mancante(-) ~2`,
+  e `Chiam.~` li include. Serve la migrazione nuova anche per il dry-run (senza: exit 2 con il nome del file).
+
+### 9.6 Migrazioni (le applica l'utente, in quest'ordine)
+
+1. `migrations/season_gaps_2026-09-25.sql` (gia' in `f015204`);
+2. **`migrations/season_aggregates_2026-09-25.sql`** (nuova, additiva: 1 funzione, avviso se manca l'indice
+   (league_id, season_year));
+3. `migrations/aggregati_idx_2026-09-25_SOLO_SE_MANCANO.sql` (opzionale, solo se il punto 2 lo chiede).
+SQL riletto con il parser di PostgreSQL (pglast); NON eseguito su un Postgres.
+
+### 9.7 Test e falsificazione
+
+Nuovi test (`test_backfill_automatico_2026_09_25.py`, sezione 8; finti: `/standings` e `/injuries` con la struttura
+reale, righe aggregati con `created_at/updated_at`, RPC `season_aggregates_summary` riprodotta in Python):
+
+| Requisito | Test | Mutazione (ROSSA) |
+|---|---|---|
+| aggregato mancante -> in coda e chiamato; rilancio -> 0 chiamate | `test_agg_mancante_va_in_coda_ed_e_chiamato_poi_db_senza_buchi` (6 chiamate, 2 righe classifica, 1 infortunio, top_* vuoti dichiarati, secondo giro 0) | M50 mai chiamati; M51 costo fuori coda; M58 vuoto non ricordato; M60 catchup senza aggregati |
+| presente e fresco -> 0 chiamate | `test_agg_presente_e_fresco_zero_chiamate` | M53 classifica sempre da rifare |
+| cadenze | `test_agg_cadenza_classifica_dopo_giornata_injuries_giornaliero_top_settimanale` | M54, M55 |
+| flag False -> non chiamato e dichiarato | `test_agg_flag_false_non_chiamato_e_dichiarato` | M52 |
+| idempotenza; delete fallita -> nessun insert; parziale -> errore | `test_agg_idempotente_nessuna_riga_doppia_e_delete_fallita_non_inserisce` | M56, M61 |
+| errore API != vuoto, resta buco nel referto | `test_agg_errore_api_non_e_vuoto_e_resta_buco` | M57 |
+| dry-run mostra gli aggregati | `test_agg_dry_run_mostra_gli_aggregati_per_stagione` | M59 |
+
+Suite: `pytest test_actions_fail_rumoroso_2026_09_25.py test_backfill_automatico_2026_09_25.py` -> **55 passed**
+(48 + 7 nuovi; i 48 precedenti sono rimasti verdi senza cambiarne le aspettative: i mondi dei vecchi test hanno i flag
+aggregati False). Mutazioni: `python AUDIT_2026-09-25/mutazioni_backfill_automatico.py` -> **61/61 ROSSE**
+(M16 riallineata al nuovo bersaglio `fisse = 1 if ...`: senza aggregati "fissi" il rilancio resta a 0 chiamate),
+ripristino verificato con sha256. SQL nuovo riletto con pglast: 7 statement, corpo della funzione e blocco DO OK.
+
+Non verificato: SQL non eseguito; stima dei costi basata sui numeri del coordinatore (flag top_* 2026 non misurati);
+paginazione di `/injuries` per lega+stagione assunta assente (come negli script storici, che fanno 1 chiamata);
+la colonna `updated_at` degli aggregati assunta con default `now()` all'insert (lo schema la ha; se fosse sempre NULL
+vale `created_at`, gia' gestito con `coalesce`).

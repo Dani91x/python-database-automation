@@ -131,6 +131,15 @@ class Lacune:
     per_tabella: Dict[str, Dict[str, Set[int]]] = field(default_factory=dict)
     # tabella -> stato -> n (quando si hanno solo i conteggi: season_gaps_summary)
     conteggi: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    # 25/09 (seguito): aggregati per lega-stagione, nome -> {stato, n, ultimo, costo}
+    # (season_aggregates.calcola); vuoto = non ancora calcolati
+    aggregati: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    def agg_da_fare(self) -> List[str]:
+        return [nome for nome, a in self.aggregati.items() if a.get("stato") in ("mancante", "da_aggiornare", "errore")]
+
+    def chiamate_aggregati(self) -> int:
+        return sum(int(a.get("costo") or 0) for a in self.aggregati.values())
 
     def n(self, tabella: str, stati: Sequence[str]) -> int:
         if self.per_tabella:
@@ -156,7 +165,8 @@ class Lacune:
         return sum(self.n(t, STATI_DA_CHIAMARE) for t in self.tabelle_attive(flags))
 
     def aperti(self, flags: Dict[str, bool]) -> int:
-        return sum(self.n(t, STATI_APERTI) for t in self.tabelle_attive(flags))
+        """Buchi aperti: partite-tabella + aggregati da fare (mancanti/da aggiornare/in errore)."""
+        return sum(self.n(t, STATI_APERTI) for t in self.tabelle_attive(flags)) + len(self.agg_da_fare())
 
     def in_attesa(self, flags: Dict[str, bool]) -> int:
         return sum(self.n(t, ("in_attesa",)) for t in self.tabelle_attive(flags))
@@ -288,7 +298,8 @@ def calcola_stato(coverage_row: Dict[str, Any], lacune: Lacune, oggi: Optional[d
 
 def costruisci_stats_json(coverage_row: Dict[str, Any], lacune: Lacune, stato_precedente: Optional[Dict[str, Any]],
                           fonte: str, esito: Optional[Dict[str, Any]] = None,
-                          oggi: Optional[date] = None) -> Dict[str, Any]:
+                          oggi: Optional[date] = None,
+                          tentativi_aggregati: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """stats_json v2. `fixtures.matches_count` resta (lo legge training_planner nel fallback)."""
     oggi = oggi or _oggi()
     flags = flag_per_fixture(coverage_row)
@@ -308,6 +319,9 @@ def costruisci_stats_json(coverage_row: Dict[str, Any], lacune: Lacune, stato_pr
         "chiamate_stimate": lacune.chiamate_per_fixture(flags),
         "buco_aperto_dal": aperto_dal,
         "ultimo_esito": esito or {},
+        "aggregati": {n: a.get("stato") for n, a in lacune.aggregati.items()},
+        # ultimo tentativo per aggregato {at, esito}: serve a non richiamare un aggregato vuoto
+        "aggregati_tentativi": {**(prec.get("aggregati_tentativi") or {}), **(tentativi_aggregati or {})},
     }
 
 
@@ -341,7 +355,8 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
     inizio = 0
     leggero = league_id is None
     colonne = ("league_id,season_year,status,last_run_at,versione:stats_json->meta->>version,"
-               "buco_aperto_dal:stats_json->>buco_aperto_dal,ft_count:stats_json->fixtures->>ft_count"
+               "buco_aperto_dal:stats_json->>buco_aperto_dal,ft_count:stats_json->fixtures->>ft_count,"
+               "aggregati_tentativi:stats_json->aggregati_tentativi"
                if leggero else "league_id,season_year,status,last_run_at,stats_json")
     while True:
         q = sb.table("season_backfill_state").select(colonne)
@@ -356,7 +371,8 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                          "status": r.get("status"), "last_run_at": r.get("last_run_at"),
                          "stats_json": {"meta": {"version": r.get("versione")},
                                         "buco_aperto_dal": r.get("buco_aperto_dal"),
-                                        "fixtures": {"ft_count": r.get("ft_count")}}}
+                                        "fixtures": {"ft_count": r.get("ft_count")},
+                                        "aggregati_tentativi": r.get("aggregati_tentativi") or {}}}
                 out[(int(r["league_id"]), int(r["season_year"]))] = r
             except (KeyError, TypeError, ValueError):
                 continue
