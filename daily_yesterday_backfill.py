@@ -11,6 +11,7 @@ from api_client import APIFootballClient
 from fixtures_backfill import map_fixture_to_row
 from per_fixture_backfill import get_coverage_for_season, process_single_fixture
 from db_client import get_supabase_client
+import season_gaps
 
 from standings_backfill import backfill_standings_for_league_season
 from top_scorers_backfill import backfill_top_scorers_for_league_season
@@ -248,6 +249,27 @@ def run_per_fixture_for_date(
         if not coverage:
             logger.warning("⚠️ Nessun coverage per league_id=%s season=%s → skip gruppo (%s fixtures)",
                            league_id, season_year, len(fx_ids))
+            continue
+
+        # 25/09/2026 - stesse funzioni "cosa manca" del recupero (season_gaps):
+        # per ogni fixture di ieri solo gli endpoint MANCANTI (flag True); le
+        # risposte vuote/errori vengono registrate (fixture_detail_checks) e la
+        # partita resta un buco visibile che seasons_catchup ritenta: prima una
+        # fixture vuota spariva in silenzio (nessuno la rivedeva piu').
+        lavoro = None
+        try:
+            lac = season_gaps.lacune_stagione(sb, league_id, season_year, fixture_ids=[int(x) for x in fx_ids])
+            lavoro = lac.da_chiamare_per_fixture(coverage)
+        except season_gaps.MigrazioneMancante as e:
+            logger.warning("ATTENZIONE %s -> uso il controllo di prima (presenza in tutte le tabelle).", e)
+
+        if lavoro is not None:
+            season_keys.add((league_id, season_year))
+            skipped_already += len({int(x) for x in fx_ids} - set(lavoro))
+            for fixture_id, endpoints in lavoro.items():
+                process_single_fixture(api, int(fixture_id), league_id, season_year, coverage,
+                                       endpoints=endpoints)
+                processed += 1
             continue
 
         required_tables = coverage_required_tables(coverage)

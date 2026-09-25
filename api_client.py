@@ -7,9 +7,22 @@ from logger import log_api_call
 
 API_BASE = "https://v3.football.api-sports.io"
 
+def _int_o_none(valore: Any) -> Optional[int]:
+    try:
+        return int(str(valore).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 class APIFootballClient:
     def __init__(self):
         self.base_url = API_BASE
+        # 25/09/2026 - quota: richieste HTTP fatte da QUESTO client (ogni tentativo,
+        # retry compresi: API-Football conta le richieste, non le "chiamate logiche")
+        # e ultimi header di quota giornaliera letti dalla risposta. Letti da
+        # api_quota.GestoreQuota; la firma di call() non cambia.
+        self.richieste_http = 0
+        self.ultimo_ratelimit: Optional[Dict[str, Any]] = None
         self.session = requests.Session()
         self.session.headers.update({
             "x-apisports-key": API_FOOTBALL_KEY,
@@ -36,8 +49,10 @@ class APIFootballClient:
                 start_time = time.time()
 
             try:
+                self.richieste_http += 1
                 resp = self.session.get(self.base_url + endpoint, params=params, timeout=30)
                 http_status = resp.status_code
+                self._leggi_header_quota(resp, endpoint)
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 # Rate limit 429
@@ -99,6 +114,23 @@ class APIFootballClient:
                     retry_done += 1
                     continue
                 return {}
+
+    def _leggi_header_quota(self, resp: Any, endpoint: str) -> None:
+        """Header di quota GIORNALIERA di API-Football (x-ratelimit-requests-*).
+        Non solleva mai: un header assente o strano non deve fermare la chiamata."""
+        try:
+            headers = getattr(resp, "headers", None) or {}
+            limite = _int_o_none(headers.get("x-ratelimit-requests-limit"))
+            rimaste = _int_o_none(headers.get("x-ratelimit-requests-remaining"))
+            if limite is None or rimaste is None:
+                return
+            self.ultimo_ratelimit = {"limit_day": limite, "remaining": rimaste,
+                                     "at": time.time(), "endpoint": endpoint}
+            # Log a campione (1a richiesta e poi ogni 50) o sempre sotto 500 rimaste.
+            if self.richieste_http % 50 == 1 or rimaste < 500:
+                print(f"[API] quota giornaliera: {limite - rimaste}/{limite} usate, rimaste {rimaste} ({endpoint})")
+        except Exception as e:  # pragma: no cover - difensivo
+            print(f"[API] header di quota non leggibili: {e}")
 
     def get_leagues(self):
         """ Wrapper diretto per chiamare /leagues """

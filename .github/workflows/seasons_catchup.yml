@@ -1,0 +1,67 @@
+name: Seasons Catchup (buchi di dati)
+# 25/09/2026 - Recupero giornaliero dei buchi (seasons_catchup.py): partite FT senza
+# eventi/formazioni/statistiche/quote, solo endpoint con flag di coverage True, dentro la
+# quota API (riserva per le action giornaliere), stop a fine partita / lega-stagione.
+#
+# Catena: Daily Yesterday Backfill -> Monthly Leagues Mapping (ora anche giornaliero,
+# aggiorna i flag) -> QUESTO. Non gira mai insieme a Daily/Today/Results/Retrain (quota e DB,
+# stesso DB): oltre all'aggancio dopo il mapper, lo script chiede a GitHub prima di ogni
+# lega-stagione (e ogni 2 min durante) se una di quelle action e' in corso o in coda e,
+# se si', si ferma a fine partita (exit 0, dichiarato). Il cron di GitHub parte con ~5 h
+# di ritardo mediano (AUDIT_2026-09-25/ACTIONS_DIAGNOSI_E_FIX.md par. 5.3): il cron sotto
+# (13:47 UTC, reale ~18:45 UTC) e' la seconda finestra del giorno, dopo Today/Results, e la
+# rete di sicurezza se il workflow_run si perde. Con la quota gia' consumata non fa nulla.
+#
+# Exit: 0 lavoro fatto o fermato per quota/tempo/action concorrente; 1 lega-stagione in
+# errore o buco aperto > BACKFILL_BUCHI_MAX_GIORNI con budget disponibile; 2 pre-controlli
+# (migrazione season_gaps_2026-09-25.sql non applicata, contatore quota non leggibile).
+
+on:
+  workflow_run:
+    workflows: ["Monthly Leagues Mapping"]
+    types: [completed]
+  schedule:
+    - cron: '47 13 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: seasons-catchup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read        # per leggere lo stato delle action concorrenti
+
+jobs:
+  catchup:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    # CATCHUP_MAX_MINUTI=150 (nessuna lega-stagione nuova dopo 150 min) + l'ultima in corso
+    # si ferma a fine partita entro ~2 min + referto: 180 min di tetto.
+    timeout-minutes: 180
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run seasons catchup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_FOOTBALL_RISERVA_GIORNALIERA: '3000'
+          CATCHUP_MAX_MINUTI: '150'
+          CATCHUP_MAX_VERIFICHE_PASSATE: '150'
+          BACKFILL_BUCHI_MAX_GIORNI: '3'
+        run: python seasons_catchup.py

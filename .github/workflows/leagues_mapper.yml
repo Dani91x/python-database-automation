@@ -1,13 +1,29 @@
 name: Monthly Leagues Mapping
+# 25/09/2026: il nome resta (lo usano seasons_catchup.yml e AUDIT_2026-09-25/misure_action.py)
+# ma ora gira anche OGNI GIORNO, in coda al Daily: il mapper AGGIORNA i flag di coverage
+# delle stagioni vive (API-Football li accende a stagione iniziata; prima restavano False
+# per sempre) e inserisce le leghe/stagioni nuove. 1 chiamata API (/leagues) per run.
+# Il cron mensile resta come rete di sicurezza se l'evento workflow_run si perde.
 
 on:
+  workflow_run:
+    workflows: ["Daily Yesterday Backfill"]
+    types: [completed]
   schedule:
     - cron: '12 0 1 * *'   # giorno 1 del mese 00:12 UTC (minuto off-peak, non in fila a :00)
   workflow_dispatch:
 
+# Mai due mapper sovrapposti (Daily + mensile + manuale): il secondo attende, nessuno e' cancellato.
+concurrency:
+  group: leagues-mapper
+  cancel-in-progress: false
+
 jobs:
   run-leagues-mapper:
+    # Gira anche se il Daily e' fallito (i flag vanno aggiornati comunque); non se annullato.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

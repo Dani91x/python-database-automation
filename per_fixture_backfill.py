@@ -291,47 +291,43 @@ def insert_rows(table: str, rows: List[Dict[str, Any]], batch_size: int = 200) -
 # ========================
 
 
-def _api_get_fixture_events(client: APIFootballClient, fixture_id: int) -> List[Dict[str, Any]]:
-    data = client.call("/fixtures/events", params={"fixture": fixture_id})
-    resp_list = (data or {}).get("response") or []
+def _risposta_o_none(data: Any) -> Optional[List[Dict[str, Any]]]:
+    """25/09/2026 - distingue ERRORE da risposta VUOTA.
+    APIFootballClient.call ritorna {} su QUALUNQUE errore (HTTP, rete, JSON) e
+    API-Football risponde HTTP 200 con `errors` non vuoto quando la quota e'
+    finita o i parametri non vanno: in entrambi i casi -> None (errore, da
+    ritentare). Solo una risposta valida con `response: []` e' VUOTA ([])."""
+    if not isinstance(data, dict) or not data:
+        return None
+    if data.get("errors"):
+        return None
+    resp_list = data.get("response")
     if not isinstance(resp_list, list):
-        return []
+        return None
     return [x for x in resp_list if isinstance(x, dict)]
 
 
-def _api_get_fixture_lineups(client: APIFootballClient, fixture_id: int) -> List[Dict[str, Any]]:
-    data = client.call("/fixtures/lineups", params={"fixture": fixture_id})
-    resp_list = (data or {}).get("response") or []
-    if not isinstance(resp_list, list):
-        return []
-    return [x for x in resp_list if isinstance(x, dict)]
+def _api_get_fixture_events(client: APIFootballClient, fixture_id: int) -> Optional[List[Dict[str, Any]]]:
+    return _risposta_o_none(client.call("/fixtures/events", params={"fixture": fixture_id}))
 
 
-def _api_get_fixture_players(client: APIFootballClient, fixture_id: int) -> List[Dict[str, Any]]:
-    data = client.call("/fixtures/players", params={"fixture": fixture_id})
-    resp_list = (data or {}).get("response") or []
-    if not isinstance(resp_list, list):
-        return []
-    return [x for x in resp_list if isinstance(x, dict)]
+def _api_get_fixture_lineups(client: APIFootballClient, fixture_id: int) -> Optional[List[Dict[str, Any]]]:
+    return _risposta_o_none(client.call("/fixtures/lineups", params={"fixture": fixture_id}))
 
 
-def _api_get_fixture_odds(client: APIFootballClient, fixture_id: int) -> List[Dict[str, Any]]:
-    data = client.call("/odds", params={"fixture": fixture_id})
-    resp_list = (data or {}).get("response") or []
-    if not isinstance(resp_list, list):
-        return []
-    return [x for x in resp_list if isinstance(x, dict)]
+def _api_get_fixture_players(client: APIFootballClient, fixture_id: int) -> Optional[List[Dict[str, Any]]]:
+    return _risposta_o_none(client.call("/fixtures/players", params={"fixture": fixture_id}))
 
 
-def _api_get_fixture_team_stats(client: APIFootballClient, fixture_id: int) -> List[Dict[str, Any]]:
+def _api_get_fixture_odds(client: APIFootballClient, fixture_id: int) -> Optional[List[Dict[str, Any]]]:
+    return _risposta_o_none(client.call("/odds", params={"fixture": fixture_id}))
+
+
+def _api_get_fixture_team_stats(client: APIFootballClient, fixture_id: int) -> Optional[List[Dict[str, Any]]]:
     """
     Chiama /fixtures/statistics per ottenere le statistiche di squadra.
     """
-    data = client.call("/fixtures/statistics", params={"fixture": fixture_id})
-    resp_list = (data or {}).get("response") or []
-    if not isinstance(resp_list, list):
-        return []
-    return [x for x in resp_list if isinstance(x, dict)]
+    return _risposta_o_none(client.call("/fixtures/statistics", params={"fixture": fixture_id}))
 
 
 # ========================
@@ -917,160 +913,130 @@ def map_odds(
 # ========================
 
 
+# chiave endpoint -> (tabella, funzione API, funzione di mapping, etichetta log)
+_PIPELINE = {
+    "events": ("match_events", "_api_get_fixture_events", "map_events", "/fixtures/events"),
+    "lineups": ("match_lineups", "_api_get_fixture_lineups", "map_lineups", "/fixtures/lineups"),
+    "player_stats": ("match_player_stats", "_api_get_fixture_players", "map_player_stats", "/fixtures/players"),
+    "team_stats": ("match_team_stats", "_api_get_fixture_team_stats", "map_team_stats", "/fixtures/statistics"),
+    "odds": ("match_odds", "_api_get_fixture_odds", "map_odds", "/odds"),
+}
+
+
+def _sostituisci_righe(table: str, fixture_id: int, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    """Cancella le righe di QUESTA tabella per la fixture e inserisce le nuove.
+    Chiamata SOLO dopo una risposta API valida e non vuota: un errore API non
+    cancella mai piu' dati gia' presenti (prima: delete di tutto in testa).
+    match_odds ha DUE fonti per la stessa partita: 'api_football' (scritta qui)
+    e 'football_data_csv' (quote di chiusura importate da CSV, usate da ML e
+    backtest): si cancella SOLO snapshot_type='api_football', mai altre fonti.
+    Le altre 4 tabelle non hanno una colonna di fonte: per fixture_id."""
+    supabase = get_supabase()
+    try:
+        q = supabase.table(table).delete().eq("fixture_id", fixture_id)
+        if table == "match_odds":
+            q = q.eq("snapshot_type", "api_football")
+        q.execute()
+    except Exception as e:
+        logger.error("   Errore cancellazione in %s per fixture_id=%s: %s", table, fixture_id, e)
+        return 0, 1
+    return insert_rows(table, rows)
+
+
 def process_single_fixture(
     client: APIFootballClient,
     fixture_id: int,
     league_id: int,
     season_year: int,
     coverage: Dict[str, bool],
+    endpoints: Optional[List[str]] = None,
+    registra: bool = True,
+    registro_obbligatorio: bool = False,
 ) -> Dict[str, Any]:
     """
-    Processa TUTTI gli endpoint per un singolo fixture, in base al coverage.
-    Ritorna un dict con contatori di righe inserite/errori per endpoint.
-    NON solleva eccezioni verso l'alto: logga tutto e continua.
+    Processa gli endpoint per-fixture di UNA partita.
+
+    25/09/2026:
+    - `endpoints` (opzionale): chiavi da chiamare (events/lineups/player_stats/
+      team_stats/odds); None = tutte. In ogni caso si chiama SOLO se il flag di
+      coverage e' True.
+    - niente piu' delete di tutte le tabelle in testa: per ogni endpoint si
+      cancella e si reinserisce SOLO dopo una risposta valida e non vuota
+      (match_odds compreso: prima non veniva cancellata -> doppioni al rilancio).
+    - esito per endpoint in stats["esiti"]: righe / vuoto / errore / saltato.
+      Vuoti ed errori vengono registrati in fixture_detail_checks (RPC
+      record_fixture_detail_checks) cosi' il recupero sa che la partita e' stata
+      interrogata: niente richiamate ogni notte, niente buchi persi in silenzio.
+    NON solleva eccezioni verso l'alto (salvo registro_obbligatorio senza
+    migrazione): logga tutto e continua.
     """
     logger.info("==============================================")
     logger.info(
-        "⚙️  Process single fixture_id=%s (league_id=%s, season_year=%s)",
+        "Process single fixture_id=%s (league_id=%s, season_year=%s, endpoints=%s)",
         fixture_id,
         league_id,
         season_year,
+        endpoints or "tutti",
     )
 
-    # Per idempotenza, cancelliamo prima tutto
-    delete_existing_for_fixture(fixture_id)
+    stats: Dict[str, Any] = {"fixture_id": fixture_id, "esiti": {}}
+    for chiave in _PIPELINE:
+        stats[f"{chiave}_rows"] = 0
+        stats[f"{chiave}_errors"] = 0
 
-    stats = {
-        "fixture_id": fixture_id,
-        "events_rows": 0,
-        "events_errors": 0,
-        "lineups_rows": 0,
-        "lineups_errors": 0,
-        "player_stats_rows": 0,
-        "player_stats_errors": 0,
-        "team_stats_rows": 0,
-        "team_stats_errors": 0,
-        "odds_rows": 0,
-        "odds_errors": 0,
-    }
+    da_registrare: List[Dict[str, Any]] = []
+    richiesti = list(_PIPELINE) if endpoints is None else [e for e in _PIPELINE if e in endpoints]
 
-    # EVENTS
-    if coverage.get("events"):
+    for chiave, (tabella, nome_api, nome_map, etichetta) in _PIPELINE.items():
+        if chiave not in richiesti:
+            stats["esiti"][chiave] = "saltato"
+            continue
+        if not coverage.get(chiave):
+            logger.info("   Coverage.%s=false -> skip %s", chiave, etichetta)
+            stats["esiti"][chiave] = "saltato"
+            continue
         try:
-            events_list = _api_get_fixture_events(client, fixture_id)
-            logger.info(
-                "   📡 API /fixtures/events fixture_id=%s → %s eventi grezzi",
-                fixture_id,
-                len(events_list),
-            )
-            rows = map_events(events_list, fixture_id, league_id, season_year)
-            inserted, batch_err = insert_rows("match_events", rows)
-            stats["events_rows"] = inserted
-            stats["events_errors"] = batch_err
+            grezzi = globals()[nome_api](client, fixture_id)
+            if grezzi is None:
+                stats[f"{chiave}_errors"] += 1
+                stats["esiti"][chiave] = "errore"
+                logger.error("   API %s fixture_id=%s: errore/risposta non valida", etichetta, fixture_id)
+                da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
+                                      "season_year": season_year, "esito": "errore"})
+                continue
+            logger.info("   API %s fixture_id=%s -> %s elementi grezzi", etichetta, fixture_id, len(grezzi))
+            rows = globals()[nome_map](grezzi, fixture_id, league_id, season_year)
+            if not rows:
+                stats["esiti"][chiave] = "vuoto"
+                da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
+                                      "season_year": season_year, "esito": "vuoto"})
+                continue
+            inserted, batch_err = _sostituisci_righe(tabella, fixture_id, rows)
+            stats[f"{chiave}_rows"] = inserted
+            stats[f"{chiave}_errors"] = batch_err
+            stats["esiti"][chiave] = "errore" if batch_err else "righe"
+            # Insert fallito a meta' (o delete fallita): le righe presenti sono
+            # PARZIALI e la sonda "esiste almeno una riga" le vedrebbe piene ->
+            # buco invisibile per sempre. Si registra 'parziale': la lacuna resta
+            # 'errore' e al giro dopo si rifa' delete+insert. (Nessun ritentativo
+            # immediato: un insert fallito sotto carico, es. 57014, fallirebbe di
+            # nuovo; la ripresa dal giro dopo e' gia' garantita.) Esito pieno ->
+            # 'ok' cancella un'eventuale riga di controllo vecchia.
+            da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
+                                  "season_year": season_year, "esito": "parziale" if batch_err else "ok"})
         except Exception as e:
-            stats["events_errors"] += 1
-            logger.error(
-                "❌ Errore generale su /fixtures/events per fixture_id=%s: %s",
-                fixture_id,
-                e,
-            )
-    else:
-        logger.info("   ⏭️ Coverage.events=false → skip /fixtures/events")
+            stats[f"{chiave}_errors"] += 1
+            stats["esiti"][chiave] = "errore"
+            logger.error("Errore generale su %s per fixture_id=%s: %s", etichetta, fixture_id, e)
+            da_registrare.append({"fixture_id": fixture_id, "tabella": tabella, "league_id": league_id,
+                                  "season_year": season_year, "esito": "parziale"})
 
-    # LINEUPS
-    if coverage.get("lineups"):
-        try:
-            lineups_list = _api_get_fixture_lineups(client, fixture_id)
-            logger.info(
-                "   📡 API /fixtures/lineups fixture_id=%s → %s blocchi lineup",
-                fixture_id,
-                len(lineups_list),
-            )
-            rows = map_lineups(lineups_list, fixture_id, league_id, season_year)
-            inserted, batch_err = insert_rows("match_lineups", rows)
-            stats["lineups_rows"] = inserted
-            stats["lineups_errors"] = batch_err
-        except Exception as e:
-            stats["lineups_errors"] += 1
-            logger.error(
-                "❌ Errore generale su /fixtures/lineups per fixture_id=%s: %s",
-                fixture_id,
-                e,
-            )
-    else:
-        logger.info("   ⏭️ Coverage.lineups=false → skip /fixtures/lineups")
-
-    # PLAYER STATS
-    if coverage.get("player_stats"):
-        try:
-            players_list = _api_get_fixture_players(client, fixture_id)
-            logger.info(
-                "   📡 API /fixtures/players fixture_id=%s → %s blocchi teams+players",
-                fixture_id,
-                len(players_list),
-            )
-            rows = map_player_stats(players_list, fixture_id, league_id, season_year)
-            inserted, batch_err = insert_rows("match_player_stats", rows)
-            stats["player_stats_rows"] = inserted
-            stats["player_stats_errors"] = batch_err
-        except Exception as e:
-            stats["player_stats_errors"] += 1
-            logger.error(
-                "❌ Errore generale su /fixtures/players per fixture_id=%s: %s",
-                fixture_id,
-                e,
-            )
-    else:
-        logger.info("   ⏭️ Coverage.player_stats=false → skip /fixtures/players")
-
-    # TEAM STATS
-    if coverage.get("team_stats"):
-        try:
-            team_stats_list = _api_get_fixture_team_stats(client, fixture_id)
-            logger.info(
-                "   📡 API /fixtures/statistics fixture_id=%s → %s entries grezze",
-                fixture_id,
-                len(team_stats_list),
-            )
-            rows = map_team_stats(team_stats_list, fixture_id, league_id, season_year)
-            inserted, batch_err = insert_rows("match_team_stats", rows)
-            stats["team_stats_rows"] = inserted
-            stats["team_stats_errors"] = batch_err
-        except Exception as e:
-            stats["team_stats_errors"] += 1
-            logger.error(
-                "❌ Errore generale su /fixtures/statistics per fixture_id=%s: %s",
-                fixture_id,
-                e,
-            )
-    else:
-        logger.info("   ⏭️ Coverage.team_stats=false → skip /fixtures/statistics")
-
-    # ODDS
-    if coverage.get("odds"):
-        try:
-            odds_list = _api_get_fixture_odds(client, fixture_id)
-            logger.info(
-                "   📡 API /odds fixture_id=%s → %s blocchi odds grezzi",
-                fixture_id,
-                len(odds_list),
-            )
-            rows = map_odds(odds_list, fixture_id, league_id, season_year)
-            inserted, batch_err = insert_rows("match_odds", rows)
-            stats["odds_rows"] = inserted
-            stats["odds_errors"] = batch_err
-        except Exception as e:
-            stats["odds_errors"] += 1
-            logger.error(
-                "❌ Errore generale su /odds per fixture_id=%s: %s",
-                fixture_id,
-                e,
-            )
-    else:
-        logger.info("   ⏭️ Coverage.odds=false → skip /odds")
+    if registra and da_registrare:
+        from season_gaps import registra_esiti
+        registra_esiti(get_supabase(), da_registrare, obbligatorio=registro_obbligatorio)
 
     logger.info(
-        "✅ Riepilogo fixture_id=%s → events_rows=%s, lineups_rows=%s, player_stats_rows=%s, team_stats_rows=%s, odds_rows=%s",
+        "Riepilogo fixture_id=%s -> events_rows=%s, lineups_rows=%s, player_stats_rows=%s, team_stats_rows=%s, odds_rows=%s",
         fixture_id,
         stats["events_rows"],
         stats["lineups_rows"],
@@ -1086,123 +1052,99 @@ def process_single_fixture(
 # Orchestratore per tutta la stagione (per-fixture)
 # ========================
 
+_CHIAVI_TOTALI = [f"{c}_{t}" for c in _PIPELINE for t in ("rows", "errors")]
 
-def backfill_per_fixture_for_league_season(league_id: int, season_year: int) -> Optional[Dict[str, Any]]:
-    """
-    Legge fixtures da matches per (league_id, season_year),
-    legge il coverage, e per ogni fixture:
-      - chiama gli endpoint per-fixture in base al coverage
-      - inserisce nelle tabelle per-fixture
-      - logga un riepilogo finale per la stagione.
-    Ritorna un dict con le statistiche totali della stagione (per audit),
-    oppure None se coverage o fixtures mancano.
-    """
-    logger.info("==============================================")
-    logger.info(
-        "🚀 Inizio per-fixture backfill per league_id=%s, season_year=%s",
-        league_id,
-        season_year,
-    )
-    logger.info("==============================================")
 
-    coverage = get_coverage_for_season(league_id, season_year)
+def backfill_per_fixture_for_league_season(
+    league_id: int,
+    season_year: int,
+    *,
+    lacune: Any = None,
+    coverage: Optional[Dict[str, bool]] = None,
+    client: Optional[APIFootballClient] = None,
+    quota: Any = None,
+    deve_fermarsi: Any = None,
+    registro_obbligatorio: bool = True,
+) -> Optional[Dict[str, Any]]:
+    """
+    25/09/2026 - RIPARTIBILE: chiama l'API SOLO per le partite FT che mancano
+    (season_gaps.lacune_stagione, dati veri del DB) e SOLO per gli endpoint con
+    flag di coverage True. Prima: tutte le fixture della stagione, 5 chiamate
+    ciascuna, a ogni rilancio (get_fixtures_from_matches, senza controllo).
+
+    Si ferma SEMPRE a fine partita (mai a meta'):
+      - quota: prima di ogni partita `quota.copre(costo_partita)`;
+      - `deve_fermarsi()` (action concorrente in corso / tempo finito): ogni 25 partite.
+    Ritorna le statistiche (con `fermato_per`), oppure None se manca la coverage.
+    """
+    from season_gaps import lacune_stagione
+
+    if coverage is None:
+        coverage = get_coverage_for_season(league_id, season_year)
     if not coverage:
         logger.warning(
-            "⚠️ Coverage mancante per league_id=%s, season_year=%s → per-fixture backfill SKIPPATO.",
+            "Coverage mancante per league_id=%s, season_year=%s -> per-fixture backfill SKIPPATO.",
             league_id,
             season_year,
         )
         return None
 
-    fixtures = get_fixtures_from_matches(league_id, season_year)
-    if not fixtures:
-        logger.warning(
-            "⚠️ Nessun fixture in matches per league_id=%s, season_year=%s → nulla da processare.",
-            league_id,
-            season_year,
-        )
-        return None
+    if lacune is None:
+        lacune = lacune_stagione(get_supabase(), league_id, season_year)
+    lavoro = lacune.da_chiamare_per_fixture(coverage)
 
-    client = APIFootballClient()
+    total_stats: Dict[str, Any] = {k: 0 for k in _CHIAVI_TOTALI}
+    total_stats.update({"fixtures_ft": lacune.ft_totali, "fixtures_da_fare": len(lavoro),
+                        "fixtures_fatte": 0, "chiamate": 0, "fermato_per": None,
+                        "vuoti": 0, "errori_api": 0})
 
-    total_stats: Dict[str, Any] = {
-        "fixtures_total": len(fixtures),
-        "events_rows": 0,
-        "events_errors": 0,
-        "lineups_rows": 0,
-        "lineups_errors": 0,
-        "player_stats_rows": 0,
-        "player_stats_errors": 0,
-        "team_stats_rows": 0,
-        "team_stats_errors": 0,
-        "odds_rows": 0,
-        "odds_errors": 0,
-    }
+    if not lavoro:
+        logger.info("Nessuna partita FT mancante per league_id=%s season=%s: zero chiamate.", league_id, season_year)
+        return total_stats
 
-    for idx, fixture_id in enumerate(fixtures):
-        logger.info(
-            "▶️ [Fixture %s/%s] Elaboro fixture_id=%s",
-            idx + 1,
-            len(fixtures),
-            fixture_id,
-        )
-        fixture_stats = process_single_fixture(
-            client, fixture_id, league_id, season_year, coverage
-        )
+    client = client or APIFootballClient()
+    di_fila_tutto_errore = 0
 
-        # accumula a livello stagione
-        for key in [
-            "events_rows",
-            "events_errors",
-            "lineups_rows",
-            "lineups_errors",
-            "player_stats_rows",
-            "player_stats_errors",
-            "team_stats_rows",
-            "team_stats_errors",
-            "odds_rows",
-            "odds_errors",
-        ]:
-            total_stats[key] += fixture_stats.get(key, 0)
-
-        # piccola pausa per non stressare troppo l'API
+    for idx, (fixture_id, endpoints) in enumerate(lavoro.items()):
+        costo = len(endpoints)
+        if quota is not None and not quota.copre(costo):
+            total_stats["fermato_per"] = "quota"
+            logger.warning("Quota: margine %s < costo partita %s -> mi fermo a fine partita (%s/%s fatte).",
+                           quota.margine(), costo, idx, len(lavoro))
+            break
+        if deve_fermarsi is not None and idx and idx % 25 == 0:
+            motivo = deve_fermarsi()
+            if motivo:
+                total_stats["fermato_per"] = motivo
+                logger.warning("Stop a fine partita: %s (%s/%s fatte).", motivo, idx, len(lavoro))
+                break
+        logger.info("[Fixture %s/%s] fixture_id=%s endpoint=%s", idx + 1, len(lavoro), fixture_id, endpoints)
+        prima = int(getattr(client, "richieste_http", 0) or 0)
+        fs = process_single_fixture(client, fixture_id, league_id, season_year, coverage,
+                                    endpoints=endpoints, registra=True,
+                                    registro_obbligatorio=registro_obbligatorio)
+        dopo = int(getattr(client, "richieste_http", 0) or 0)
+        total_stats["chiamate"] += (dopo - prima) if hasattr(client, "richieste_http") else costo
+        total_stats["fixtures_fatte"] += 1
+        for k in _CHIAVI_TOTALI:
+            total_stats[k] += fs.get(k, 0)
+        esiti = [fs["esiti"].get(e) for e in endpoints]
+        total_stats["vuoti"] += esiti.count("vuoto")
+        total_stats["errori_api"] += esiti.count("errore")
+        di_fila_tutto_errore = di_fila_tutto_errore + 1 if esiti and all(x == "errore" for x in esiti) else 0
+        if di_fila_tutto_errore >= 10:
+            total_stats["fermato_per"] = "errori_api"
+            logger.error("10 partite di fila con TUTTI gli endpoint in errore: interrompo la lega-stagione.")
+            break
         time.sleep(0.1)
 
-    # Riepilogo stagione
     logger.info("==============================================")
-    logger.info(
-        "📊 RIEPILOGO per-fixture stagione league_id=%s, season_year=%s",
-        league_id,
-        season_year,
-    )
-    logger.info("   Fixtures totali: %s", total_stats["fixtures_total"])
-    logger.info(
-        "   Events → righe=%s, batch_error=%s",
-        total_stats["events_rows"],
-        total_stats["events_errors"],
-    )
-    logger.info(
-        "   Lineups → righe=%s, batch_error=%s",
-        total_stats["lineups_rows"],
-        total_stats["lineups_errors"],
-    )
-    logger.info(
-        "   Player stats → righe=%s, batch_error=%s",
-        total_stats["player_stats_rows"],
-        total_stats["player_stats_errors"],
-    )
-    logger.info(
-        "   Team stats → righe=%s, batch_error=%s",
-        total_stats["team_stats_rows"],
-        total_stats["team_stats_errors"],
-    )
-    logger.info(
-        "   Odds → righe=%s, batch_error=%s",
-        total_stats["odds_rows"],
-        total_stats["odds_errors"],
-    )
+    logger.info("RIEPILOGO per-fixture league_id=%s, season_year=%s: FT=%s, da fare=%s, fatte=%s, "
+                "chiamate=%s, vuoti=%s, errori=%s, fermato_per=%s",
+                league_id, season_year, total_stats["fixtures_ft"], total_stats["fixtures_da_fare"],
+                total_stats["fixtures_fatte"], total_stats["chiamate"], total_stats["vuoti"],
+                total_stats["errori_api"], total_stats["fermato_per"])
     logger.info("==============================================")
-
     return total_stats
 
 

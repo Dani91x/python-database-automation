@@ -98,7 +98,13 @@ class _Query:
         self.op = "select"
         return self
 
+    # 25/09/2026 (backfill automatico): il mapper ora legge a pagine ordinate
+    # (order + range veri) e aggiorna le righe vive (update().eq().eq()).
+    def order(self, colonna: str, desc: bool = False) -> "_Query":
+        return self
+
     def range(self, a: int, b: int) -> "_Query":
+        self.intervallo = (a, b)
         return self
 
     def upsert(self, righe: List[Dict[str, Any]]) -> "_Query":
@@ -106,13 +112,25 @@ class _Query:
         self.payload = righe
         return self
 
+    def update(self, payload: Dict[str, Any]) -> "_Query":
+        self.op = "update"
+        self.payload = payload
+        return self
+
+    def eq(self, colonna: str, valore: Any) -> "_Query":
+        return self
+
     def execute(self) -> _Risposta:
         if self.op == "select":
             if self.sb.errore_lettura:
                 raise RuntimeError("{'message': 'canceling statement due to statement timeout', 'code': '57014'}")
-            return _Risposta(list(self.sb.righe))
+            a, b = getattr(self, "intervallo", (0, 999))
+            return _Risposta(list(self.sb.righe)[a:b + 1])
         if self.sb.errore_upsert:
             raise RuntimeError(self.sb.errore_upsert)
+        if self.op == "update":
+            self.sb.aggiornate.append(self.payload)
+            return _Risposta([])
         self.sb.upsertate.extend(self.payload)
         return _Risposta([])
 
@@ -123,6 +141,7 @@ class FintoSupabase:
         self.errore_lettura = False
         self.errore_upsert: Optional[str] = None
         self.upsertate: List[Dict[str, Any]] = []
+        self.aggiornate: List[Dict[str, Any]] = []
 
     def table(self, nome: str) -> _Query:
         assert nome == "api_coverage_by_season"
@@ -222,7 +241,12 @@ def test_mapper_inserisce_solo_le_mancanti_ed_esce_pulito(monkeypatch):
 
 
 def test_mapper_db_gia_allineato_esce_pulito(monkeypatch):
-    sb = FintoSupabase([{"league_id": 135, "season_year": 2026}])
+    # 25/09/2026: la riga del DB ha ora le colonne VERE (come le scrive il mapper):
+    # "allineato" significa stessi flag/date/current dell'API. Prima il finto aveva
+    # solo (league_id, season_year) perche' il mapper non confrontava nulla.
+    riga = lm.map_leagues_to_coverage_rows({"response": [lega_api(135, [2026])]})[0]
+    sb = FintoSupabase([riga])
     _mapper(monkeypatch, {"response": [lega_api(135, [2026])]}, sb)
     lm.run_full_leagues_backfill_mapping()
     assert sb.upsertate == []
+    assert sb.aggiornate == []
