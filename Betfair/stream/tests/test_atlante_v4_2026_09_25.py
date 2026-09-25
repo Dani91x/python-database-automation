@@ -144,7 +144,8 @@ def test_recupero_2T_scende_col_tempo_giocato():
 def test_forza_dichiarata_e_monotona():
     atlas = _atlas_semplice()
     senza = V4.consulta_atlante_v4(atlas, 60, 1, 39)
-    assert senza["forza"] == {"moltiplicatore": 1.0, "usata": False}
+    # 25/09 notte: la forza non usata dichiara il MOTIVO (id squadra assenti)
+    assert senza["forza"] == {"moltiplicatore": 1.0, "usata": False, "motivo": "id squadra assenti"}
     basso = V4.consulta_atlante_v4(atlas, 60, 1, 39, lambda_home=0.8, lambda_away=0.7)
     alto = V4.consulta_atlante_v4(atlas, 60, 1, 39, lambda_home=2.2, lambda_away=1.8)
     assert basso["forza"]["usata"] and alto["p"] > senza["p"] > basso["p"]

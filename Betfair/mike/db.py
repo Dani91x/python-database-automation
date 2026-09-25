@@ -512,13 +512,16 @@ def fixture_id_for_event(event_id: str) -> Optional[int]:
 
 
 def fixture_lambdas(fixture_id: Optional[int]) -> Optional[tuple]:
-    """(λ_casa, λ_trasferta, league_id) dal DB — delega a Betfair/stream/db."""
+    """(lambda_casa, lambda_trasferta, league_id, home_team_id, away_team_id) dal DB -
+    delega a Betfair/stream/db. 25/09 notte: gli id squadra API-Football
+    arrivano dalla STESSA riga di fixture_predictions (stessa richiesta,
+    ``con_squadre``) e servono alla forza dell'atlante v4 (A*)."""
     if fixture_id is None:
         return None
     try:
         from Betfair.stream import db as _sdb
 
-        return _sdb.get_fixture_prematch_lambdas(int(fixture_id))
+        return _sdb.get_fixture_prematch_lambdas(int(fixture_id), con_squadre=True)
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.db] fixture_lambdas KO %s: %s", fixture_id, str(ex)[:120])
         return None

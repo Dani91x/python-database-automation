@@ -424,7 +424,9 @@ def test_safe_usa_il_v4_col_tempo_e_lo_dichiara(banco_e_generatore, minuto, ips,
     assert atteso["versione"] == "v4" and atteso["fase"] == fase
     assert hz["p_atlas"] == pytest.approx(atteso["p"], abs=1e-12)
     assert hz["versione"] == "v4" and hz["fase"] == fase
-    assert f"atlante v4, {fase}" in hz["note"]
+    # 25/09 notte: la nota dice A1+A2 e perche' la forza non e' usata (payload senza id squadra)
+    assert f"atlante v4 (A1+A2), {fase}" in hz["note"]
+    assert "forza non usata: id squadra assenti" in hz["note"]
     if fase == "recupero_2T":
         assert hz["recupero_atteso_min"] is not None and "recupero atteso ancora" in hz["note"]
     # nessuna forza dai lambda della fixture: il p e' quello SENZA lambda

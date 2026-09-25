@@ -189,14 +189,19 @@ def _v4_vuoto() -> Optional[Dict[str, Any]]:
 
 
 def aggiungi_v4(stato: Dict[str, Any], match: Dict[str, Any], goal_rows: List[Dict[str, Any]], *,
-                affidabile: Optional[bool] = None) -> bool:
+                affidabile: Optional[bool] = None, coda_forza: Optional[List[Any]] = None) -> bool:
     """Somma la partita al blocco v4 dello stato (SOLO dopo che
     ``aggiungi_partita`` l'ha contata nel v3: l'idempotenza e' la sua).
 
     ``affidabile`` (la stagione registra il recupero dei gol? reperto 6 del
     25/09): nel bootstrap lo decide la stagione INTERA; None (incrementale) =
     dai conteggi CUMULATI della stagione nello stato, questa partita compresa.
-    Stato senza "v4" (di prima del collegamento): niente, e False."""
+    Stato senza "v4" (di prima del collegamento): niente, e False.
+
+    25/09 notte - FORZA (Poisson-Elo del banco): la partita contata va anche
+    nei rating delle squadre. Con ``coda_forza`` si ACCODA e il chiamante la
+    applica a fine lotto in ordine cronologico (``applica_coda_forza``): il
+    DB la restituisce per fixture_id, il banco la vede per data."""
     v4 = stato.get("v4")
     if not isinstance(v4, dict):
         return False
@@ -214,7 +219,21 @@ def aggiungi_v4(stato: Dict[str, Any], match: Dict[str, Any], goal_rows: List[Di
         q[1] += int(tot)
         affidabile = V4.affidabile_da_quota(q[0], q[1])
     v4.setdefault("affidabile", {})[s] = bool(affidabile)
-    return V4.aggiungi_partita_v4(v4, p, set(), recupero_affidabile=bool(affidabile), registra_fixture=False)
+    ok = V4.aggiungi_partita_v4(v4, p, set(), recupero_affidabile=bool(affidabile), registra_fixture=False)
+    if ok and isinstance(v4.get("forza"), dict):
+        if coda_forza is not None:
+            coda_forza.append((v4, p))
+        else:
+            V4.aggiungi_forza(v4, p)
+    return ok
+
+
+def applica_coda_forza(coda: List[Any]) -> int:
+    """Le partite accodate da ``aggiungi_v4`` nei rating, in ordine cronologico."""
+    if not coda:
+        return 0
+    from . import atlante_v4 as V4
+    return V4.applica_coda_forza(coda)
 
 
 def scarta(stato: Dict[str, Any], motivo: str) -> None:
@@ -536,7 +555,7 @@ def assembla_blocco_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str) -
         stag = v4.get("stagioni") or {}
         if not any(int((b or {}).get("n_fixtures") or 0) > 0 for b in stag.values()):
             continue
-        vista[lid] = {"league_name": st.get("league_name"), "stagioni": stag}
+        vista[lid] = {"league_name": st.get("league_name"), "stagioni": stag, "forza": v4.get("forza")}
     if not vista:
         return None
     from . import atlante_v4 as V4
@@ -622,7 +641,8 @@ COLONNE_GOL = "id,fixture_id,league_id,season_year,team_id,event_type,detail,min
 def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
               stati: Dict[str, Dict[str, Any]], nomi: Dict[str, Optional[str]],
               adesso: str, *, solo_leghe_in_stato: bool = False,
-              affidabile_v4: Optional[bool] = None) -> Dict[str, int]:
+              affidabile_v4: Optional[bool] = None,
+              coda_forza: Optional[List[Any]] = None) -> Dict[str, int]:
     """Aggiunge le partite agli stati delle loro leghe. Ritorna i conteggi.
 
     ``solo_leghe_in_stato``: le partite di una lega che lo stato non ha si
@@ -630,7 +650,12 @@ def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
     domanda, per intero, quando una sua partita e' da osservare).
     25/09 sera: ogni partita contata nel v3 entra anche nel v4
     (``aggiungi_v4``); ``affidabile_v4`` = decisione della stagione intera
-    (bootstrap), None = dai conteggi cumulati (incrementale)."""
+    (bootstrap), None = dai conteggi cumulati (incrementale).
+    25/09 notte: la forza delle squadre si applica a fine lotto in ordine
+    cronologico; ``coda_forza`` data dal chiamante = la applica lui (piu'
+    lotti di un incrementale in un ordine solo)."""
+    propria = coda_forza is None
+    coda: List[Any] = [] if propria else coda_forza
     per_fixture: Dict[int, List[Dict[str, Any]]] = {}
     for g in gol:
         fid = _int(g.get("fixture_id"))
@@ -638,34 +663,39 @@ def _sequenze(matches: List[Dict[str, Any]], gol: List[Dict[str, Any]],
             per_fixture.setdefault(fid, []).append(g)
     visti: Dict[str, set] = {}
     conti = {"aggiunte": 0, "gia_contate": 0, "scartate": 0, "non_ft": 0}
-    for m in matches:
-        lid = str(_int(m.get("league_id")))
-        if lid == "None":
-            continue
-        stato = stati.get(lid)
-        if stato is None:
-            if solo_leghe_in_stato:
-                conti["fuori_stato"] = conti.get("fuori_stato", 0) + 1
+    try:     # la forza delle partite GIA' contate si applica anche se il lotto si rompe
+        for m in matches:
+            lid = str(_int(m.get("league_id")))
+            if lid == "None":
                 continue
-            stato = stati[lid] = stato_lega_vuoto(int(lid), nomi.get(lid))
-        seq, motivo = sequenza_partita(m, per_fixture.get(int(m["fixture_id"]), []))
-        if seq is None:
-            if motivo == "non_ft":
-                conti["non_ft"] += 1
+            stato = stati.get(lid)
+            if stato is None:
+                if solo_leghe_in_stato:
+                    conti["fuori_stato"] = conti.get("fuori_stato", 0) + 1
+                    continue
+                stato = stati[lid] = stato_lega_vuoto(int(lid), nomi.get(lid))
+            seq, motivo = sequenza_partita(m, per_fixture.get(int(m["fixture_id"]), []))
+            if seq is None:
+                if motivo == "non_ft":
+                    conti["non_ft"] += 1
+                else:
+                    conti["scartate"] += 1
+                    scarta(stato, motivo)
+                continue
+            if stato.get("fixtures") is None:
+                # fail-closed: senza la lista dei gia' contati si conterebbe due volte
+                raise RuntimeError(f"fixture_id gia' contati non caricati per la lega {lid}")
+            vs = visti.setdefault(lid, set(stato["fixtures"]))
+            if aggiungi_partita(stato, seq, vs):
+                conti["aggiunte"] += 1
+                stato["updated_at"] = adesso
+                aggiungi_v4(stato, m, per_fixture.get(int(m["fixture_id"]), []), affidabile=affidabile_v4,
+                            coda_forza=coda)
             else:
-                conti["scartate"] += 1
-                scarta(stato, motivo)
-            continue
-        if stato.get("fixtures") is None:
-            # fail-closed: senza la lista dei gia' contati si conterebbe due volte
-            raise RuntimeError(f"fixture_id gia' contati non caricati per la lega {lid}")
-        vs = visti.setdefault(lid, set(stato["fixtures"]))
-        if aggiungi_partita(stato, seq, vs):
-            conti["aggiunte"] += 1
-            stato["updated_at"] = adesso
-            aggiungi_v4(stato, m, per_fixture.get(int(m["fixture_id"]), []), affidabile=affidabile_v4)
-        else:
-            conti["gia_contate"] += 1
+                conti["gia_contate"] += 1
+    finally:
+        if propria:
+            applica_coda_forza(coda)
     return conti
 
 
@@ -792,19 +822,24 @@ def incrementale(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], watermark
     fids = sorted({int(r["fixture_id"]) for r in nuovi if r.get("fixture_id") is not None})
     tot = {"aggiunte": 0, "gia_contate": 0, "scartate": 0, "non_ft": 0}
     toccate: set = set()
-    for i in range(0, len(fids), lotto):
-        blocco = fids[i:i + lotto]
-        lista = ",".join(str(f) for f in blocco)
-        matches = lettore.get("matches", {"select": COLONNE_MATCH,
-                                          "fixture_id": f"in.({lista})"})
-        gol = lettore.get("match_events", {"select": COLONNE_GOL,
-                                           "fixture_id": f"in.({lista})",
-                                           "event_type": "eq.Goal"})
-        c = _sequenze(matches, gol, stati, nomi, adesso, solo_leghe_in_stato=solo_leghe_in_stato)
-        for k in tot:
-            tot[k] += c[k]
-        toccate.update(str(_int(m.get("league_id"))) for m in matches
-                       if not solo_leghe_in_stato or str(_int(m.get("league_id"))) in stati)
+    coda_forza: List[Any] = []          # forza: tutti i lotti, un ordine cronologico solo
+    try:
+        for i in range(0, len(fids), lotto):
+            blocco = fids[i:i + lotto]
+            lista = ",".join(str(f) for f in blocco)
+            matches = lettore.get("matches", {"select": COLONNE_MATCH,
+                                              "fixture_id": f"in.({lista})"})
+            gol = lettore.get("match_events", {"select": COLONNE_GOL,
+                                               "fixture_id": f"in.({lista})",
+                                               "event_type": "eq.Goal"})
+            c = _sequenze(matches, gol, stati, nomi, adesso, solo_leghe_in_stato=solo_leghe_in_stato,
+                          coda_forza=coda_forza)
+            for k in tot:
+                tot[k] += c[k]
+            toccate.update(str(_int(m.get("league_id"))) for m in matches
+                           if not solo_leghe_in_stato or str(_int(m.get("league_id"))) in stati)
+    finally:     # le partite gia' contate nel v3/v4 entrano anche nei rating
+        applica_coda_forza(coda_forza)
     return nuova, tot, sorted(t for t in toccate if t != "None")
 
 

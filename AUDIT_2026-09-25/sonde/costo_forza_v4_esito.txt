@@ -1,0 +1,9 @@
+partite 3800, squadre 20, forza n=3800 fuori_ordine=0
+bootstrap lega (10 stagioni): senza forza 10375 ms, con forza 7414 ms, forza = -2961 ms (-0.7792 ms a partita; rumore di misura dello stesso ordine)
+richieste al DB (lettore finto): senza forza 30, con forza 30
+forza pura: 42.7 ms per 3800 partite (11.2 us a partita, ordinamento compreso)
+stato grezzo: forza 1283 B su stato v4 12726 B
+file live: forza per lega 799 B (20 squadre)
+assembla 20 leghe: senza forza 79.1 ms, con forza 100.8 ms; file live 276678 -> 292579 B
+consulta_atlante_v4 senza id: 0.0641 ms
+consulta_atlante_v4 con id: 0.1008 ms

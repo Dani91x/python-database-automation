@@ -1,0 +1,10 @@
+beta stimato dal banco su questi dati: {2: 0.685902680683773, 3: 0.6946617715428394}
+parita' col banco: lambda max diff 6.35e-08; p (2' e 3') max diff 8.04e-08 su 79068 stati
+Safe prima (senza id): p_atlas 0.0811 drop=False penalty=1.0
+  > hazard coerente con l'atlante (verificato: modello 8.3% vs storico 8.1% [league] (lega, n=751.7, confidenza media), divergenza 2%; atlante v4 (A1+A2), regolare, forza non usata: id squadra assenti; atlante del 25/09, 1920 partite)
+Safe dopo (id 1004-1011): p_atlas 0.0765 drop=False penalty=1.0
+  > hazard coerente con l'atlante (verificato: modello 8.3% vs storico 7.7% [league] (lega, n=751.7, confidenza media), divergenza 9%; atlante v4 (A*), regolare, forza usata: casa 0,88 / trasferta 0,96; atlante del 25/09, 1920 partite)
+Mike prima (dossier senza id): hazard_atlas 0.0656
+  > storico v4 (A1+A2) lega 39 (lega, 960 partite) [regolare; forza non usata: id squadra assenti; confidenza media; atlante del 25/09, 1920 partite]
+Mike dopo (dossier con id): hazard_atlas 0.0619
+  > storico v4 (A*) lega 39 (lega, 960 partite) [regolare; forza usata: casa 0,88 / trasferta 0,96; confidenza media; atlante del 25/09, 1920 partite]

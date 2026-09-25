@@ -56,12 +56,21 @@ def p4_from_lambdas(lh: Optional[float], la: Optional[float], rho: float) -> Opt
         return None
 
 
+def _id_int(v: Any) -> Optional[int]:
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
     """Dossier pre-match: {fixture_id, league_id, lambda_home, lambda_away, rho,
+    home_team_id, away_team_id (id API-Football, 25/09 notte),
     p4_pre, p_under35_cal, p_over45_cal, source}. Chiavi None se non disponibili."""
     out: Dict[str, Any] = {"fixture_id": None, "league_id": None, "lambda_home": None,
                            "lambda_away": None, "rho": DEFAULT_RHO, "p4_pre": None,
-                           "p_under35_cal": None, "p_over45_cal": None, "source": "none"}
+                           "p_under35_cal": None, "p_over45_cal": None, "source": "none",
+                           "home_team_id": None, "away_team_id": None}
     try:
         fid = db.fixture_id_for_event(str(event_id))
         out["fixture_id"] = fid
@@ -70,6 +79,12 @@ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
             out["lambda_home"], out["lambda_away"] = float(lam[0]), float(lam[1])
             out["league_id"] = lam[2] if len(lam) > 2 else None
             out["source"] = "fixture"
+            # 25/09 notte (atlante v4 A*): id squadra API-Football dalla stessa
+            # riga di fixture_predictions; ``live_frame`` li passa all'atlante
+            # per la FORZA (Poisson-Elo per squadra). Assenti -> None, dichiarato.
+            if len(lam) > 4:
+                out["home_team_id"] = _id_int(lam[3])
+                out["away_team_id"] = _id_int(lam[4])
         an = db.fixture_analysis(fid) if fid is not None else None
         if isinstance(an, dict):
             inputs = an.get("inputs") or {}
@@ -306,6 +321,10 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
             # dichiarato in hazard_nota/hazard_versione. Lambda pre-partita NON
             # passati (fixture_predictions: forza inutile, referto §4.5). La
             # regola di Mike (combine_hazard, soglie del timing) non cambia.
+            # 25/09 notte (A* COMPLETO): gli id squadra del dossier (dalla
+            # fixture) accendono la FORZA del v4 (rating Poisson-Elo della
+            # lega); senza id la nota dice "forza non usata: id squadra
+            # assenti". Gli id NON arrivano al ripiego v3 (li consuma il v4).
             c = consulta_atlante_v4(atlas, float(minute), goals, dossier.get("league_id"),
                                     tempo=tempo_da_payload(dict(payload or {}, minute=minute)),
                                     home_id=dossier.get("home_team_id"),

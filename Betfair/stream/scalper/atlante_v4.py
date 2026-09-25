@@ -25,9 +25,17 @@ Cosa cambia rispetto al v3 (misurato fuori campione, 2025, vedi referto):
      gli stati lontani dalla fine dei tempi entrano nei conteggi.
   4. STAGIONI PESATE: emivita ``EMIVITA`` stagioni (scelta in validazione).
   5. FORZA PRE-PARTITA: moltiplicatore hazard ((lambda_casa+lambda_trasf) /
-     gol medi della lega) ** beta, se il chiamante passa i lambda (Safe li ha:
-     ``_hazard_check(lambdas=...)``; Mike ``lambdas_con_ripiego``). Senza lambda
-     il moltiplicatore e' 1 e lo si dichiara.
+     gol medi della lega) ** beta. 25/09 notte (A* COMPLETO, "D2: collegalo"):
+     i lambda sono quelli del PROXY POISSON-ELO del banco
+     (``validazione_hazard/forza.py``), calcolati per lega dallo STESSO storico
+     che il generatore gia' legge (``aggiungi_forza``, in ordine cronologico) e
+     scritti nel blocco v4 (``by_league[lid]['forza']``). Il consumatore passa
+     gli id squadra API-Football (``home_id``/``away_id``: Safe dalla fixture
+     abbinata, Mike dal dossier). NON i lambda di ``fixture_predictions``:
+     predicono peggio del proxy e con loro la forza non aggiunge nulla
+     (referto par. 4.5). Senza id (o lega senza forze) il moltiplicatore e' 1 e
+     lo si dichiara ("forza non usata: <motivo>"). I lambda espliciti
+     (``lambda_home``/``lambda_away``) restano per il banco.
 NON entrano (misurato: nessun guadagno fuori campione): differenza reti/chi
 conduce oltre ai gol totali, moltiplicatore dei rossi, K dal metodo dei momenti
 per le celle (resta 1500).
@@ -51,6 +59,7 @@ from Betfair.stream.scalper import genera_atlante as G
 from Betfair.stream.scalper.hazard_atlas import (_conf_cella, consulta_atlante, eta_atlante, etichetta_atlante,
                                                   leghe_in_preparazione)
 from Betfair.stream.scalper.validazione_hazard import candidati as CA
+from Betfair.stream.scalper.validazione_hazard import forza as _FZ
 from Betfair.stream.scalper.validazione_hazard.dati import (EXTRA_MAX_VALIDO, MIN_GOL_BLOCCO,
                                                             SOGLIA_RECUPERO_REGISTRATO, Partita, lati_gol,
                                                             posizione, quota_gol_con_extra)
@@ -65,6 +74,20 @@ K_CELLE = 1500.0                  # come il v3 (il metodo dei momenti non ha vin
 # <=2024 coi lambda del proxy Poisson-Elo: 0,612 (2') e 0,610 (3'). ATTENZIONE
 # (referto §4): coi lambda di fixture_predictions il guadagno della forza sparisce.
 BETA_DEFAULT = {2: 0.612, 3: 0.610}
+# Proxy POISSON-ELO della forza pre-partita (``validazione_hazard/forza.py``,
+# parametri CONGELATI dal banco (artefatto risultati_validazione.json, forza.scelta): eta 0,035 e
+# rientro 1,0 scelti su 2018-2023 per verosimiglianza di Poisson; alfa di lega
+# e mu iniziali = i default di ``lambda_prepartita``). Con rientro 1,0 il cambio
+# di stagione non tocca i rating.
+FORZA_ETA = 0.035
+FORZA_RIENTRO = 1.0
+FORZA_ALFA_LEGA = 0.01
+FORZA_MU_INIZIALE = tuple(_FZ.MU_INIZIALE)      # (1,45, 1,15)
+# una partita ARRIVATA dopo altre piu' recenti (fuori ordine cronologico) si
+# applica se e' indietro di al piu' tanti giorni (stessa giornata / recuperi):
+# oltre, si SALTA e si conta (una stagione vecchia acquisita dopo non deve
+# riscrivere i rating di oggi con risultati di anni fa).
+FORZA_MAX_RITARDO_GIORNI = 60
 MIN_PARTITE_AFFIDABILE = CA.MIN_PARTITE_AFFIDABILE
 NT, NG, D_MAX = CA.NT, CA.NG, CA.D_MAX
 ETICHETTE_TC = ([f"{5 * b}-{5 * b + 5}" for b in range(18)] + ["45+"]
@@ -157,7 +180,134 @@ def stato_v4_vuoto() -> Dict[str, Any]:
     tempo con/senza minute_extra) e ``affidabile[stagione]`` servono alla
     regola del reperto 6; ``scarti`` conta le partite che il v3 ha preso e il
     v4 no (atteso: zero, stesse regole)."""
-    return {"versione": 1, "stagioni": {}, "quota_extra": {}, "affidabile": {}, "scarti": {}}
+    return {"versione": 1, "stagioni": {}, "quota_extra": {}, "affidabile": {}, "scarti": {},
+            "forza": forza_vuota()}
+
+
+# ---------------------------------------------------------------------------
+# 2-bis) forza pre-partita: il Poisson-Elo del banco, per lega, incrementale
+# ---------------------------------------------------------------------------
+def forza_vuota() -> Dict[str, Any]:
+    """Lo stato della forza di una lega (dentro ``stato['v4']['forza']``).
+
+    ``squadre[tid] = [log_attacco, log_difesa, ultima_stagione]``; ``mu`` =
+    gol medi casa/trasferta della lega (media mobile esponenziale); ``ultima``
+    = [data, fixture_id] dell'ultima partita applicata (l'ordine del banco:
+    data AAAA-MM-GG, poi fixture_id). ``n`` partite applicate, ``fuori_ordine``
+    arrivate dopo una piu' recente (applicate se entro
+    ``FORZA_MAX_RITARDO_GIORNI``), ``saltate`` oltre quel ritardo.
+    Niente lista di fixture_id: l'idempotenza e' quella del v3 (la partita
+    arriva qui solo se ``aggiungi_partita`` l'ha appena contata)."""
+    return {"versione": 1, "eta": FORZA_ETA, "rientro": FORZA_RIENTRO, "alfa_lega": FORZA_ALFA_LEGA,
+            "mu": [float(FORZA_MU_INIZIALE[0]), float(FORZA_MU_INIZIALE[1])], "squadre": {},
+            "stagione": None, "n": 0, "ultima": None, "fuori_ordine": 0, "saltate": 0}
+
+
+def _giorni_fra(a: str, b: str) -> Optional[int]:
+    try:
+        return (_dt.date.fromisoformat(str(b)[:10]) - _dt.date.fromisoformat(str(a)[:10])).days
+    except (TypeError, ValueError):
+        return None
+
+
+def aggiungi_forza(v4: Dict[str, Any], p: Partita) -> bool:
+    """Applica UNA partita al Poisson-Elo della lega: lo STESSO passo di
+    ``validazione_hazard.forza.lambda_prepartita`` (stesse operazioni nello
+    stesso ordine: la parita' col banco e' esatta se le partite arrivano in
+    ordine cronologico, come nel bootstrap). False se lo stato non ha la forza
+    (stato di prima: non si completa a pezzi) o se la partita e' saltata."""
+    fz = v4.get("forza") if isinstance(v4, dict) else None
+    if not isinstance(fz, dict):
+        return False
+    chiave = [str(p.date or ""), int(p.fixture_id)]
+    ult = fz.get("ultima")
+    if isinstance(ult, list) and len(ult) == 2 and (chiave[0], chiave[1]) < (str(ult[0]), int(ult[1])):
+        fz["fuori_ordine"] = int(fz.get("fuori_ordine") or 0) + 1
+        ritardo = _giorni_fra(chiave[0], str(ult[0]))
+        if ritardo is not None and ritardo > FORZA_MAX_RITARDO_GIORNI:
+            fz["saltate"] = int(fz.get("saltate") or 0) + 1
+            return False
+    eta = float(fz.get("eta", FORZA_ETA))
+    rientro = float(fz.get("rientro", FORZA_RIENTRO))
+    alfa = float(fz.get("alfa_lega", FORZA_ALFA_LEGA))
+    sq = fz.setdefault("squadre", {})
+    h, a = str(int(p.home_id)), str(int(p.away_id))
+    for tid in (h, a):
+        v = sq.get(tid)
+        if v is not None and v[2] != int(p.season):
+            v[0] = v[0] * rientro
+            v[1] = v[1] * rientro
+        if v is None:
+            v = sq[tid] = [0.0, 0.0, int(p.season)]
+        v[2] = int(p.season)
+    m = fz["mu"]
+    lh = m[0] * math.exp(sq[h][0] + sq[a][1])
+    la = m[1] * math.exp(sq[a][0] + sq[h][1])
+    gh, ga = int(p.ft[0]), int(p.ft[1])
+    eh, ea = gh - lh, ga - la
+    sq[h][0] = sq[h][0] + eta * eh
+    sq[a][1] = sq[a][1] + eta * eh
+    sq[a][0] = sq[a][0] + eta * ea
+    sq[h][1] = sq[h][1] + eta * ea
+    m[0] += alfa * (gh - m[0])
+    m[1] += alfa * (ga - m[1])
+    fz["n"] = int(fz.get("n") or 0) + 1
+    if not isinstance(ult, list) or (chiave[0], chiave[1]) > (str(ult[0]), int(ult[1])):
+        fz["ultima"] = chiave
+    fz["stagione"] = max(int(fz.get("stagione") or p.season), int(p.season))
+    return True
+
+
+def applica_coda_forza(coda: List[Tuple[Dict[str, Any], Partita]]) -> int:
+    """Applica le partite accumulate da un lotto (bootstrap di una stagione,
+    incrementale) in ORDINE CRONOLOGICO (data, poi fixture_id: l'ordine del
+    banco), non in quello di lettura (per fixture_id). Ritorna quante."""
+    n = 0
+    for v4, p in sorted(coda, key=lambda x: (str(x[1].date or ""), int(x[1].fixture_id))):
+        n += int(aggiungi_forza(v4, p))
+    coda.clear()
+    return n
+
+
+def _forza_blocco(fz: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """La forza di una lega come va nel file live (rating a 7 decimali)."""
+    if not isinstance(fz, dict) or int(fz.get("n") or 0) <= 0:
+        return None
+    return {"mu": [round(float(x), 7) for x in fz["mu"]],
+            "squadre": {t: [round(float(v[0]), 7), round(float(v[1]), 7), int(v[2])]
+                        for t, v in (fz.get("squadre") or {}).items()},
+            "stagione": fz.get("stagione"), "rientro": float(fz.get("rientro", FORZA_RIENTRO)),
+            "n": int(fz.get("n") or 0), "fuori_ordine": int(fz.get("fuori_ordine") or 0),
+            "saltate": int(fz.get("saltate") or 0)}
+
+
+def lambda_da_forza(forza: Dict[str, Any], home_id: Any, away_id: Any
+                    ) -> Tuple[float, float, Dict[str, Any]]:
+    """(lambda_casa, lambda_trasferta, dettaglio) per la PROSSIMA partita fra
+    le due squadre: lo stesso lambda che ``lambda_prepartita`` darebbe prima di
+    vederla. Squadra mai vista nella lega: rating 0 (come nel banco), e lo si
+    dice in ``senza_storico``."""
+    sq = forza.get("squadre") or {}
+    mu = forza["mu"]
+    rientro = float(forza.get("rientro", FORZA_RIENTRO))
+    s_lega = forza.get("stagione")
+    senza = []
+
+    def _r(tid: Any, lato: str) -> Tuple[float, float]:
+        v = sq.get(str(int(tid)))
+        if v is None:
+            senza.append(lato)
+            return 0.0, 0.0
+        att, dif = float(v[0]), float(v[1])
+        if rientro != 1.0 and s_lega is not None and int(v[2]) != int(s_lega):
+            att, dif = att * rientro, dif * rientro
+        return att, dif
+
+    ah, dh = _r(home_id, "casa")
+    aa, da = _r(away_id, "trasferta")
+    lh = float(mu[0]) * math.exp(ah + da)
+    la = float(mu[1]) * math.exp(aa + dh)
+    return lh, la, {"casa": lh / float(mu[0]), "trasferta": la / float(mu[1]), "senza_storico": senza}
 
 
 def aggiungi_partita_v4(stato: Dict[str, Any], p: Partita, visti: Optional[set] = None, *,
@@ -336,7 +486,13 @@ def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione
             "r_rec2": _r(r_lega[i]), "esposizione_rec2": _r(E[i], 1),
             "pi_durata": _r(pi_lega[i]) if ha_durate else None,
             "durata_media": round(float((pi_lega[i] * dd).sum()), 3) if ha_durate else None,
-            "gol_medi": round(float(gol_medi[i]), 5) if np.isfinite(gol_medi[i]) else None}
+            "gol_medi": round(float(gol_medi[i]), 5) if np.isfinite(gol_medi[i]) else None,
+            # 25/09 notte: rating Poisson-Elo per squadra (A5 del banco)
+            "forza": _forza_blocco(stati[lid].get("forza"))}
+    out["meta"]["forza"] = {
+        "metodo": "Poisson-Elo del banco (validazione_hazard/forza.py), per lega, cronologico",
+        "eta": FORZA_ETA, "rientro": FORZA_RIENTRO, "alfa_lega": FORZA_ALFA_LEGA,
+        "n_leghe_con_forza": sum(1 for v in out["by_league"].values() if v.get("forza"))}
     return out
 
 
@@ -492,7 +648,8 @@ def _ripiego_v3(atlas: Optional[Dict[str, Any]], minute: float, goals: int, leag
     out.update(versione="v3", fase=fase, recupero_atteso_min=None,
                p_2min=out["p"] if k.endswith("2min") else None,
                p_3min=out["p"] if k.endswith("3min") else None,
-               forza={"moltiplicatore": 1.0, "usata": False}, ripiego_v3=motivo)
+               forza={"moltiplicatore": 1.0, "usata": False, "motivo": "ripiego sul v3"},
+               ripiego_v3=motivo)
     out["nota"] = f"{out.get('nota')} [atlante v3: recupero non modellato ({motivo})]"
     return out
 
@@ -500,12 +657,13 @@ def _ripiego_v3(atlas: Optional[Dict[str, Any]], minute: float, goals: int, leag
 def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: int,
                         league_id: Optional[Any] = None, *, tempo: Optional[int] = None,
                         lambda_home: Optional[float] = None, lambda_away: Optional[float] = None,
+                        home_id: Optional[Any] = None, away_id: Optional[Any] = None,
                         horizon: str = "p_goal_next_3min", usa_cella_recupero_1t: bool = False,
                         adesso: Optional[_dt.datetime] = None, **kw_v3: Any) -> Dict[str, Any]:
     """Stesse chiavi di ``hazard_atlas.consulta_atlante`` (p, fonte, livello, n,
     confidenza, lega, atlante, eta_giorni, nota) + ``versione``, ``fase``
     ('regolare'|'recupero_1T'|'recupero_2T'), ``p_2min``, ``p_3min``,
-    ``recupero_atteso_min`` (solo 2T), ``forza`` {'moltiplicatore', 'usata'}.
+    ``recupero_atteso_min`` (solo 2T), ``forza`` {'moltiplicatore', 'usata', 'motivo', ...}.
     Senza blocco v4 nell'atlante: ripiego su ``consulta_atlante`` (dichiarato,
     ``versione='v3'``). Mai eccezioni.
 
@@ -513,7 +671,16 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
     lega (``usa_cella_recupero_1t=False``). La cella propria del recupero 1T non
     e' mai stata validata (il DB non ha la durata del recupero del 1T; il
     campione "vivo per evento successivo" e' parziale) e sul test 2025 non vince
-    (referto §4): resta disponibile solo per misure."""
+    (referto §4): resta disponibile solo per misure.
+
+    FORZA (A5): con ``home_id``/``away_id`` (id squadra API-Football) i lambda
+    sono quelli del Poisson-Elo della lega nel blocco (``lambda_da_forza``);
+    ``forza`` porta allora ``usata``, ``casa``/``trasferta`` (lambda / gol medi
+    casa-trasferta della lega), ``lambda_casa``/``lambda_trasferta``,
+    ``senza_storico``; altrimenti ``motivo`` ('id squadra assenti', ...).
+    ``lambda_home``/``lambda_away`` espliciti (il banco) hanno la precedenza.
+    Gli id NON vanno al ripiego v3: il livello squadre del v3 peggiora le
+    previsioni (referto par. 4, A0_squadre) e il ripiego resta quello di ieri."""
     v4 = (atlas or {}).get("v4")
     if not isinstance(v4, dict):
         return _ripiego_v3(atlas, minute, goals, league_id, "blocco v4 assente", tempo=tempo,
@@ -529,7 +696,8 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
                            "atlante": etichetta_atlante(atlas, adesso), "eta_giorni": None,
                            "nota": "atlante assente", "versione": "v4", "fase": None,
                            "p_2min": None, "p_3min": None, "recupero_atteso_min": None,
-                           "forza": {"moltiplicatore": 1.0, "usata": False}, "ripiego_v3": None}
+                           "forza": {"moltiplicatore": 1.0, "usata": False,
+                                     "motivo": "id squadra assenti"}, "ripiego_v3": None}
     try:
         e = eta_atlante(atlas, adesso)
         out["eta_giorni"] = round(e["giorni"], 2) if e["giorni"] is not None else None
@@ -554,14 +722,37 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
             out["lega"]["in_preparazione"] = True     # il motore a domanda la sta calcolando
         ref = (lg or {}).get("gol_medi") or glob.get("gol_medi")
         mult = 1.0
+        fz_det: Dict[str, Any] = {}
+        if not (lambda_home and lambda_away) and home_id is not None and away_id is not None:
+            fz = (lg or {}).get("forza")
+            if not isinstance(lg, dict):
+                out["forza"]["motivo"] = "lega non nel v4: forze squadra assenti"
+            elif not isinstance(fz, dict):
+                out["forza"]["motivo"] = "forze squadra della lega non ancora calcolate"
+            else:
+                try:
+                    lambda_home, lambda_away, fz_det = lambda_da_forza(fz, home_id, away_id)
+                except (TypeError, ValueError, KeyError, IndexError):
+                    lambda_home = lambda_away = None
+                    out["forza"]["motivo"] = "id squadra illeggibili"
         if lambda_home and lambda_away and ref:
             try:
                 lt = float(lambda_home) + float(lambda_away)
                 if lt > 0 and math.isfinite(lt):
                     mult = min(5.0, max(0.2, lt / float(ref)))
                     out["forza"]["usata"] = True
+                    out["forza"]["motivo"] = None
+                    out["forza"]["fonte"] = "poisson_elo" if fz_det else "lambda_passati"
+                    out["forza"]["lambda_casa"] = round(float(lambda_home), 4)
+                    out["forza"]["lambda_trasferta"] = round(float(lambda_away), 4)
+                    if fz_det:
+                        out["forza"]["casa"] = round(fz_det["casa"], 4)
+                        out["forza"]["trasferta"] = round(fz_det["trasferta"], 4)
+                        out["forza"]["senza_storico"] = fz_det["senza_storico"]
             except (TypeError, ValueError):
                 mult = 1.0
+        if fz_det and not out["forza"]["usata"]:
+            out["forza"]["motivo"] = "gol medi di riferimento della lega assenti"
         beta = meta.get("beta") or {}
         ps = {}
         for k in (2, 3):
@@ -600,14 +791,39 @@ def consulta_atlante_v4(atlas: Optional[Dict[str, Any]], minute: float, goals: i
 def _nota(c: Dict[str, Any], lid: Optional[str]) -> str:
     lega = c["lega"]
     chi = lega.get("nome") or (f"lega {lid}" if lid else "lega n/d")
-    base = (f"storico v4 {chi} ({c['livello']}, {lega.get('n_partite')} partite)" if c["fonte"] == "league"
-            else f"storico v4 globale (lega {lid or 'n/d'} senza dati)")
+    v = "v4 (A*)" if (c.get("forza") or {}).get("usata") else "v4 (A1+A2)"
+    base = (f"storico {v} {chi} ({c['livello']}, {lega.get('n_partite')} partite)" if c["fonte"] == "league"
+            else f"storico {v} globale (lega {lid or 'n/d'} senza dati)")
     extra = [c["fase"]]
     if c.get("recupero_atteso_min") is not None:
         extra.append(f"recupero atteso ancora {c['recupero_atteso_min']}'")
-    extra.append(f"forza x{c['forza']['moltiplicatore']}" if c["forza"]["usata"] else "forza non usata")
+    extra.append(testo_forza(c))
     if c.get("confidenza"):
         extra.append(f"confidenza {c['confidenza']}")
     if c.get("atlante"):
         extra.append(c["atlante"])
     return base + " [" + "; ".join(extra) + "]"
+
+
+def _virgola(x: float) -> str:
+    return f"{float(x):.2f}".replace(".", ",")
+
+
+def testo_forza(c: Dict[str, Any]) -> str:
+    """'forza usata: casa 1,08 / trasferta 0,93' | 'forza non usata: <motivo>'
+    (note a video di Safe e Mike). Squadra senza storico nella lega: rating
+    neutro come nel banco, e lo si dice."""
+    fz = (c or {}).get("forza") or {}
+    if not fz.get("usata"):
+        return f"forza non usata: {fz.get('motivo') or 'id squadra assenti'}"
+    if fz.get("casa") is None:
+        return f"forza x{fz.get('moltiplicatore')} (lambda passati)"
+    txt = f"forza usata: casa {_virgola(fz['casa'])} / trasferta {_virgola(fz['trasferta'])}"
+    if fz.get("senza_storico"):
+        txt += f" ({' e '.join(fz['senza_storico'])} senza storico in lega: neutra)"
+    return txt
+
+
+def etichetta_versione(c: Dict[str, Any]) -> str:
+    """'atlante v4 (A*)' con la forza, 'atlante v4 (A1+A2)' senza."""
+    return "atlante v4 (A*)" if ((c or {}).get("forza") or {}).get("usata") else "atlante v4 (A1+A2)"

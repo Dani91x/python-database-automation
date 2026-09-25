@@ -81,6 +81,13 @@ PARAMETRI_DEFAULT: Dict[str, float] = {
 _STATI_CHIUSI = {"AET", "PEN", "AWD", "WO", "CANC", "PST", "ABD"}
 
 
+def _v4_completo(stato: Dict[str, Any]) -> bool:
+    """Lo stato della lega ha il v4 CON la forza delle squadre (25/09 notte)?
+    Se no la lega si ricalcola per intero (stesso tetto delle leghe nuove)."""
+    v4 = (stato or {}).get("v4")
+    return isinstance(v4, dict) and isinstance(v4.get("forza"), dict)
+
+
 def _iso(ts: float) -> str:
     return dt.datetime.fromtimestamp(ts, dt.timezone.utc).isoformat(timespec="seconds")
 
@@ -202,9 +209,11 @@ class MotoreAtlante:
             return None
         if not rows or not isinstance(rows[0].get("stato"), dict):
             return None
-        if not isinstance(rows[0]["stato"].get("v4"), dict):
+        if not _v4_completo(rows[0]["stato"]):
             # 25/09 sera: uno stato scritto prima del collegamento del v4 non
-            # si adotta (il v4 non si completa a pezzi): si ricalcola la lega
+            # si adotta (il v4 non si completa a pezzi): si ricalcola la lega.
+            # 25/09 notte: idem uno stato v4 SENZA la forza delle squadre
+            # (i rating sono cronologici: non si ricostruiscono a pezzi)
             return None
         st = dict(rows[0]["stato"])
         st["fixtures"] = [int(x) for x in (rows[0].get("fixtures") or [])]
@@ -235,7 +244,7 @@ class MotoreAtlante:
         return "calcolata"
 
     def _ha_v4(self, lid: str) -> bool:
-        return isinstance((self.leghe.get(lid) or {}).get("v4"), dict)
+        return _v4_completo(self.leghe.get(lid) or {})
 
     def _budget(self, adesso: float) -> int:
         self.calcolate_ts = [t for t in self.calcolate_ts if adesso - t < 3600.0]
@@ -303,79 +312,83 @@ class MotoreAtlante:
                 continue
             da_leggere.append(fid)
         toccate: Set[str] = set()
+        coda_forza: List[Any] = []   # 25/09 notte: forza squadre, in ordine cronologico a fine giro
         lotto = int(self.p["lotto"])
-        for i in range(0, len(da_leggere), lotto):
-            blocco = da_leggere[i:i + lotto]
-            lista = ",".join(str(f) for f in blocco)
-            matches = self.lettore.get("matches", {"select": G.COLONNE_MATCH,
-                                                   "fixture_id": f"in.({lista})"})
-            gol = self.lettore.get("match_events", {"select": G.COLONNE_GOL,
-                                                    "fixture_id": f"in.({lista})",
-                                                    "event_type": "eq.Goal"})
-            per_f: Dict[int, List[Dict[str, Any]]] = {}
-            for g in gol:
-                f = G._int(g.get("fixture_id"))
-                if f is not None:
-                    per_f.setdefault(f, []).append(g)
-            # 0-0 finiti: contano solo se hanno ALMENO un evento nel DB
-            zero = [int(m["fixture_id"]) for m in matches if str(m.get("status_short")) == "FT"
-                    and (G._int(m.get("goals_home")) or 0) + (G._int(m.get("goals_away")) or 0) == 0]
-            con_eventi: Set[int] = set()
-            # partita osservata ma non ancora in ``matches``: si aspetta
-            presenti = {G._int(m.get("fixture_id")) for m in matches}
-            for fid in blocco:
-                if fid not in presenti:
-                    self._attendi(fid, adesso, attesa, conti)
-            if zero:
-                ev = self.lettore.get("match_events", {
-                    "select": "fixture_id", "fixture_id": f"in.({','.join(str(z) for z in zero)})",
-                    "limit": str(len(zero) * 60)})
-                con_eventi = {int(e["fixture_id"]) for e in ev if G._int(e.get("fixture_id")) is not None}
-            for m in matches:
-                fid = G._int(m.get("fixture_id"))
-                lid = str(G._int(m.get("league_id")))
-                if fid is None or lid not in self.leghe:
-                    continue
-                stato_p = str(m.get("status_short") or "")
-                if stato_p != "FT":
-                    if stato_p in _STATI_CHIUSI:
-                        self._chiudi(fid)
-                        conti["chiuse"] += 1
-                    else:
+        try:
+            for i in range(0, len(da_leggere), lotto):
+                blocco = da_leggere[i:i + lotto]
+                lista = ",".join(str(f) for f in blocco)
+                matches = self.lettore.get("matches", {"select": G.COLONNE_MATCH,
+                                                       "fixture_id": f"in.({lista})"})
+                gol = self.lettore.get("match_events", {"select": G.COLONNE_GOL,
+                                                        "fixture_id": f"in.({lista})",
+                                                        "event_type": "eq.Goal"})
+                per_f: Dict[int, List[Dict[str, Any]]] = {}
+                for g in gol:
+                    f = G._int(g.get("fixture_id"))
+                    if f is not None:
+                        per_f.setdefault(f, []).append(g)
+                # 0-0 finiti: contano solo se hanno ALMENO un evento nel DB
+                zero = [int(m["fixture_id"]) for m in matches if str(m.get("status_short")) == "FT"
+                        and (G._int(m.get("goals_home")) or 0) + (G._int(m.get("goals_away")) or 0) == 0]
+                con_eventi: Set[int] = set()
+                # partita osservata ma non ancora in ``matches``: si aspetta
+                presenti = {G._int(m.get("fixture_id")) for m in matches}
+                for fid in blocco:
+                    if fid not in presenti:
                         self._attendi(fid, adesso, attesa, conti)
-                    continue
-                gg = per_f.get(fid, [])
-                tot_gol = (G._int(m.get("goals_home")) or 0) + (G._int(m.get("goals_away")) or 0)
-                senza_eventi = (not gg) if tot_gol > 0 else (fid not in con_eventi)
-                if senza_eventi:
-                    cov_l = self.leghe[lid].get("stagioni_coverage")
-                    anno_m = G._int(m.get("season_year"))
-                    if cov_l is not None and anno_m is not None and anno_m not in cov_l:
-                        # la coverage dice che per questa stagione gli eventi
-                        # non arrivano: inutile riprovare (la acquisira'
-                        # stagioni_nuove quando la coverage cambia)
-                        self._chiudi(fid)
-                        conti["chiuse"] += 1
+                if zero:
+                    ev = self.lettore.get("match_events", {
+                        "select": "fixture_id", "fixture_id": f"in.({','.join(str(z) for z in zero)})",
+                        "limit": str(len(zero) * 60)})
+                    con_eventi = {int(e["fixture_id"]) for e in ev if G._int(e.get("fixture_id")) is not None}
+                for m in matches:
+                    fid = G._int(m.get("fixture_id"))
+                    lid = str(G._int(m.get("league_id")))
+                    if fid is None or lid not in self.leghe:
                         continue
-                    self._attendi(fid, adesso, attesa, conti)
-                    continue
-                seq, motivo = G.sequenza_partita(m, gg)
-                st = self.leghe[lid]
-                if seq is None:
-                    G.scarta(st, motivo)
-                    self._chiudi(fid)
-                    conti["scartate"] += 1
-                    toccate.add(lid)
-                    continue
-                if G.aggiungi_partita(st, seq, visti[lid]):
-                    st["updated_at"] = _iso(adesso)
-                    conti["aggiunte"] += 1
-                    toccate.add(lid)
-                    # 25/09 sera: stessa partita, stesse righe, anche nel v4
-                    # (recupero affidabile dai conteggi cumulati della stagione)
-                    G.aggiungi_v4(st, m, gg)
-                self.in_attesa.pop(str(fid), None)
-                self.tentativi.pop(str(fid), None)
+                    stato_p = str(m.get("status_short") or "")
+                    if stato_p != "FT":
+                        if stato_p in _STATI_CHIUSI:
+                            self._chiudi(fid)
+                            conti["chiuse"] += 1
+                        else:
+                            self._attendi(fid, adesso, attesa, conti)
+                        continue
+                    gg = per_f.get(fid, [])
+                    tot_gol = (G._int(m.get("goals_home")) or 0) + (G._int(m.get("goals_away")) or 0)
+                    senza_eventi = (not gg) if tot_gol > 0 else (fid not in con_eventi)
+                    if senza_eventi:
+                        cov_l = self.leghe[lid].get("stagioni_coverage")
+                        anno_m = G._int(m.get("season_year"))
+                        if cov_l is not None and anno_m is not None and anno_m not in cov_l:
+                            # la coverage dice che per questa stagione gli eventi
+                            # non arrivano: inutile riprovare (la acquisira'
+                            # stagioni_nuove quando la coverage cambia)
+                            self._chiudi(fid)
+                            conti["chiuse"] += 1
+                            continue
+                        self._attendi(fid, adesso, attesa, conti)
+                        continue
+                    seq, motivo = G.sequenza_partita(m, gg)
+                    st = self.leghe[lid]
+                    if seq is None:
+                        G.scarta(st, motivo)
+                        self._chiudi(fid)
+                        conti["scartate"] += 1
+                        toccate.add(lid)
+                        continue
+                    if G.aggiungi_partita(st, seq, visti[lid]):
+                        st["updated_at"] = _iso(adesso)
+                        conti["aggiunte"] += 1
+                        toccate.add(lid)
+                        # 25/09 sera: stessa partita, stesse righe, anche nel v4
+                        # (recupero affidabile dai conteggi cumulati della stagione)
+                        G.aggiungi_v4(st, m, gg, coda_forza=coda_forza)
+                    self.in_attesa.pop(str(fid), None)
+                    self.tentativi.pop(str(fid), None)
+        finally:     # le partite gia' contate entrano nei rating anche se un lotto si rompe
+            G.applica_coda_forza(coda_forza)
         conti["toccate"] = sorted(toccate, key=int)
         return conti
 

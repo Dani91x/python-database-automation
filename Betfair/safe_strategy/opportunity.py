@@ -653,7 +653,8 @@ class OpportunityModel:
             return out
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard
-            from Betfair.stream.scalper.atlante_v4 import consulta_atlante_v4, tempo_da_payload
+            from Betfair.stream.scalper.atlante_v4 import (consulta_atlante_v4, etichetta_versione,
+                                                           tempo_da_payload, testo_forza)
             from Betfair.stream.scalper.hazard_atlas import etichetta_atlante
         except Exception:  # noqa: BLE001
             return out
@@ -683,8 +684,15 @@ class OpportunityModel:
         # Poisson-Elo e col v4 la forza non aggiunge nulla (referto §4.5).
         # Senza blocco v4 (o lega non ancora nel v4): v3, dichiarato in nota.
         # Le squadre servono solo al ripiego v3 (livello squadre del v3).
+        # 25/09 notte (A* COMPLETO): la FORZA pre-partita arriva dagli id
+        # squadra API-Football (``home_team_id``/``away_team_id`` messi nel
+        # payload dal servizio, dalla fixture abbinata): il v4 usa i rating
+        # Poisson-Elo della lega (NON i lambda della fixture). Senza id la
+        # nota dice "forza non usata: id squadra assenti". Gli id non vanno
+        # al ripiego v3 (il suo livello squadre peggiora: referto, A0_squadre).
         consulta = consulta_atlante_v4(
             atlas, minute, sh + sa, league_id, tempo=tempo_da_payload(payload),
+            home_id=payload.get("home_team_id"), away_id=payload.get("away_team_id"),
             home_team=payload.get("home"), away_team=payload.get("away"),
         )
         p_atlas, source = consulta["p"], consulta["fonte"]
@@ -694,10 +702,12 @@ class OpportunityModel:
         out["versione"] = consulta.get("versione")
         out["fase"] = consulta.get("fase")
         out["recupero_atteso_min"] = consulta.get("recupero_atteso_min")
+        out["forza"] = consulta.get("forza")
         if consulta.get("versione") == "v4":
-            versione_txt = f"atlante v4, {consulta.get('fase')}"
+            versione_txt = f"{etichetta_versione(consulta)}, {consulta.get('fase')}"
             if consulta.get("recupero_atteso_min") is not None:
                 versione_txt += f", recupero atteso ancora {consulta['recupero_atteso_min']}'"
+            versione_txt += f", {testo_forza(consulta)}"
         else:
             versione_txt = ("atlante v3: recupero non modellato ("
                             f"{consulta.get('ripiego_v3') or 'blocco v4 assente'})")

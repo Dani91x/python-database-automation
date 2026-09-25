@@ -210,19 +210,29 @@ def list_pending_follows() -> List[Dict[str, Any]]:
 
 def get_fixture_prematch_lambdas(
     fixture_id: Optional[int],
+    *,
+    con_squadre: bool = False,
 ) -> Optional[tuple]:
     """λ pre-match PER-SQUADRA (Dixon-Coles) dal DB → (λ_casa, λ_trasferta, league_id).
 
     È il PRIOR migliore per il motore live: forza attacco/difesa per-squadra stimata
     sullo storico di lega (tactical_engine), non un totale generico. Catena:
     ``tactical_engine_json.lambda_*`` → ``db_json_analisi.inputs.lambda_*``. None se assente.
+
+    25/09 notte (atlante v4 A*): ``con_squadre=True`` legge nella STESSA riga
+    (stessa richiesta) anche ``home_team_id``/``away_team_id`` (id API-Football)
+    e ritorna (lambda_casa, lambda_trasferta, league_id, home_team_id, away_team_id).
+    Il default resta identico (stessa select, tupla di 3) per Omega e runner.
     """
     if fixture_id is None:
         return None
     sb = get_supabase_client()
+    colonne = "league_id,tactical_engine_json,db_json_analisi"
+    if con_squadre:
+        colonne += ",home_team_id,away_team_id"
     resp = (
         sb.table("fixture_predictions")
-        .select("league_id,tactical_engine_json,db_json_analisi")
+        .select(colonne)
         .eq("fixture_id", int(fixture_id))
         .limit(1)
         .execute()
@@ -246,6 +256,9 @@ def get_fixture_prematch_lambdas(
             lh, la = node.get("lambda_home"), node.get("lambda_away")
             try:
                 if lh is not None and la is not None and float(lh) > 0 and float(la) > 0:
+                    if con_squadre:
+                        return (float(lh), float(la), league_id,
+                                row.get("home_team_id"), row.get("away_team_id"))
                     return (float(lh), float(la), league_id)
             except (TypeError, ValueError):
                 pass

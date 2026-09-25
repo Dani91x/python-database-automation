@@ -6594,7 +6594,49 @@ def _lambdas_from_fixture(db, fixture: dict, opp_mod: Any) -> Optional[dict]:
             "league_id": int(league_id) if league_id is not None else None,
             "source": "fixture_match",
             "ht_ratio": ht(analysis) if callable(ht) else None,
-            "fixture_id": int(fid)}
+            "fixture_id": int(fid),
+            # 25/09 notte (atlante v4 A*): id squadra API-Football della riga di
+            # fixture_predictions GIA' letta (fixtures_for_window), per la forza
+            **_ids_squadra(fixture)}
+
+
+def _ids_squadra(fixture: Optional[dict]) -> dict:
+    """{'home_team_id', 'away_team_id'} (int o None) dalla riga fixture."""
+    out: dict = {"home_team_id": None, "away_team_id": None}
+    if not isinstance(fixture, dict):
+        return out
+    for k in list(out):
+        try:
+            v = fixture.get(k)
+            out[k] = int(v) if v is not None else None
+        except (TypeError, ValueError):
+            out[k] = None
+    return out
+
+
+def _ids_squadra_da_finestra(payload: dict, state: dict, league_id: Any) -> dict:
+    """Id squadra per un evento risolto da un'altra fonte (catena di Omega,
+    quote pre-KO, default): abbinamento sulla finestra delle fixture GIA' in
+    cache (nessuna lettura: se la finestra non e' mai stata letta gli id
+    restano assenti e l'atlante lo dichiara). Una fixture di un'altra lega
+    non si usa."""
+    rows = ((state.get("fixtures") or {}).get("rows")) or []
+    if not rows:
+        return _ids_squadra(None)
+    try:
+        fx = _match_fixture(payload, rows)
+    except Exception as ex:  # noqa: BLE001 - un id in meno non ferma nulla
+        logger.debug("[safe.bot] ids squadra KO: %s", str(ex)[:120])
+        fx = None
+    if not isinstance(fx, dict):
+        return _ids_squadra(None)
+    try:
+        if league_id is not None and fx.get("league_id") is not None \
+                and int(fx["league_id"]) != int(league_id):
+            return _ids_squadra(None)
+    except (TypeError, ValueError):
+        return _ids_squadra(None)
+    return _ids_squadra(fx)
 
 
 def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
@@ -6650,6 +6692,12 @@ def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
         if hit is None:
             logger.info("[safe.bot] λ di default per %s (%s): nessuna fonte pre-match",
                         event_id, payload.get("event_name"))
+    # 25/09 notte (atlante v4 A*): gli id squadra servono alla FORZA dell'atlante
+    # (Poisson-Elo per squadra), non ai lambda del modello (che restano quelli
+    # della catena). La fixture abbinata li porta gia'; per le altre fonti si
+    # abbina sulla finestra GIA' in cache (zero letture). league_id invariato.
+    if "home_team_id" not in out:
+        out.update(_ids_squadra_da_finestra(payload, state, out.get("league_id")))
     out["ts"] = now_ts
     if len(cache) >= _LAMBDA_CACHE_MAX:
         cache.clear()
@@ -6847,8 +6895,15 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             lam = {"lambdas": DEFAULT_LAMBDAS, "league_id": None, "source": "default",
                    "ht_ratio": None}
         lambdas, league_id, source = lam["lambdas"], lam.get("league_id"), lam.get("source")
+        # 25/09 notte (atlante v4 A*): gli id squadra API-Football viaggiano nel
+        # payload che arriva a ``_hazard_check`` (una COPIA: la riga del feed
+        # non si tocca; la firma di ``evaluate`` resta quella del banco).
+        payload_eval = payload
+        if lam.get("home_team_id") is not None and lam.get("away_team_id") is not None:
+            payload_eval = dict(payload, home_team_id=lam["home_team_id"],
+                                away_team_id=lam["away_team_id"])
         try:
-            opps = list(model.evaluate(payload, sport="calcio", lambdas=lambdas,
+            opps = list(model.evaluate(payload_eval, sport="calcio", lambdas=lambdas,
                                        league_id=league_id, now_ts=now_ts,
                                        lambda_source=source,
                                        ht_ratio=lam.get("ht_ratio")) or [])
