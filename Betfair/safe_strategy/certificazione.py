@@ -59,14 +59,18 @@ STRATEGIE_CALCIO: Tuple[str, ...] = ("base", "esatto", "punta")
 # il controllo direbbe sempre «conforme», perche' sta confrontando il parametro
 # con se stesso. Qui i valori vengono da `SPEC_STRATEGIA_S.md`, trascritti una
 # volta, e il controllo confronta IL PARAMETRO IN USO con la SPEC.
-# Le eccezioni gia' decise dall'utente (minuti come soglia, quota di banca
-# libera, stake fisso, Lettura A) sono dichiarate nei singoli controlli.
+# Le eccezioni gia' decise dall'utente (minuti come soglia, stake fisso,
+# quota di banca 20-34 del 25/09) sono dichiarate nei singoli controlli.
 SPEC_BASE = {
     "minuteMin": 55.0,                       # «dal 55'»
     "scores": ("1-0", "2-1", "2-0"),
     "favPre": (1.40, 1.80),
     "dogPre": (4.0, 8.0),
-    "favLive": (1.20, 1.34),                 # Lettura A: quota LIVE della favorita
+    # Q1, decisione dell'utente 25/09: la quota di entrata e' la QUOTA DI BANCA
+    # della squadra che perde, 20-34 (corso, «4. STRATEGIA/2. Entrata a
+    # mercato» @93.0). Sostituisce la «Lettura A» del 14/09 (back live della
+    # favorita 1,20-1,34), che non e' piu' un filtro.
+    "dogLay": (20.0, 34.0),
     "uscita": (80, 83),                      # «80-83'»
     "assestamento": (20.0, 60.0),            # «attendi 20-60 s»
 }
@@ -394,40 +398,52 @@ def _b7(v: Valutazione) -> Optional[str]:
     return None
 
 
-@_controllo("B8", "SPEC §1 + eccezione 14/09 (Lettura A): quota di entrata "
-                  "1.20-1.34 = quota LIVE DELLA FAVORITA",
-            "il filtro d'ingresso e' il BACK live della favorita, non il prezzo di banca",
+@_controllo("B8", "SPEC §1 + decisione dell'utente 25/09 (Q1): quota di entrata "
+                  "20-34 = QUOTA DI BANCA della squadra che perde",
+            "si entra solo se il lay della sfavorita sta in [20, 34], estremi inclusi",
             Valutazione, quando=_valutazione("base"))
 def _b8(v: Valutazione) -> Optional[str]:
-    if _manca(v, "favLive"):
-        return "il check della quota live della favorita non esiste piu'"
-    if not _banda_uguale((v.par.get("favLiveMin"), v.par.get("favLiveMax")),
-                         SPEC_BASE["favLive"]):
-        return (f"banda della quota di entrata [{v.par.get('favLiveMin')}, "
-                f"{v.par.get('favLiveMax')}] invece di {list(SPEC_BASE['favLive'])}")
+    if _manca(v, "dogLay"):
+        return "il check della quota di banca della sfavorita non esiste piu'"
+    # la banda IN USO confrontata con quella del corso, scritta qui e non letta
+    # dai parametri: spostarla nel codice o dal DB deve diventare rosso.
+    if not _banda_uguale((v.par.get("dogLayMin"), v.par.get("dogLayMax")),
+                         SPEC_BASE["dogLay"]):
+        return (f"banda della quota di banca [{v.par.get('dogLayMin')}, "
+                f"{v.par.get('dogLayMax')}] invece di {list(SPEC_BASE['dogLay'])}")
     if not v.segnale:
         return None
-    fav = _fav(v)
-    coppia = E._side_pair(v.ctx.odds, fav) if fav else None
-    q = getattr(coppia, "back", None) if coppia is not None else None
-    lo, hi = _num(v.par.get("favLiveMin")), _num(v.par.get("favLiveMax"))
-    if q is None or lo is None or hi is None:
-        return None
-    if not E.in_range(float(q), lo, hi):
-        return f"quota live favorita {q} fuori da [{lo}, {hi}]"
+    lo, hi = SPEC_BASE["dogLay"]
+    # il prezzo VERO della riga (il lay della sfavorita) e quello con cui
+    # l'ordine partirebbe (`entry_odds`): tutti e due dentro la banda.
+    dog = _dog(v)
+    coppia = E._side_pair(v.ctx.odds, dog) if dog else None
+    q = getattr(coppia, "lay", None) if coppia is not None else None
+    if q is not None and not E.in_range(float(q), lo, hi):
+        return f"quota di banca della sfavorita {q} fuori da [{lo:g}, {hi:g}]"
+    e = _num(v.ev.entry_odds)
+    if e is not None and not E.in_range(float(e), lo, hi):
+        return f"ingresso a quota di banca {e} fuori da [{lo:g}, {hi:g}]"
     return None
 
 
-@_controllo("B9", "SPEC eccezione 14/09: QUOTA DI BANCA senza limite",
-            "nessun filtro sulla quota di banca (argomento chiuso dall'utente)",
-            Valutazione, quando=_segnale("base"))
+@_controllo("B9", "decisione dell'utente 25/09 (Q1): NESSUN filtro sulla quota "
+                  "live della FAVORITA (la «Lettura A» 1,20-1,34 e' tolta)",
+            "l'ingresso non dipende dal back live della favorita",
+            Valutazione, quando=_valutazione("base"))
 def _b9(v: Valutazione) -> Optional[str]:
-    # il prezzo d'ingresso della BASE e' il lay della sfavorita, qualunque sia.
-    # Se comparisse un check che lo respinge, la strategia sarebbe stata alterata.
-    for cid, ck in v.check.items():
-        if cid in ("dogLay",) and ck.ok is False:
-            return ("un check respinge la quota di BANCA: la SPEC dice "
-                    f"esplicitamente «nessun limite» ({ck.label} = {ck.value})")
+    # La Lettura A del 14/09 filtrava sul back live della favorita (check
+    # `favLive`, parametri `favLiveMin/Max`). Il 25/09 l'utente l'ha sostituita
+    # con la banda della quota di banca (B8). Se il filtro ricomparisse — come
+    # check o come parametro risolto — la strategia sarebbe stata alterata.
+    if "favLive" in v.check:
+        ck = v.check["favLive"]
+        return ("la valutazione filtra ancora sulla quota live della favorita "
+                f"({ck.label} = {ck.value}): tolto dall'utente il 25/09")
+    for k in ("favLiveMin", "favLiveMax"):
+        if k in (v.par or {}):
+            return (f"il parametro '{k}' e' ancora fra quelli risolti della BASE: "
+                    f"la Lettura A e' tolta dal 25/09")
     return None
 
 
@@ -790,23 +806,25 @@ def _e10(v: Valutazione) -> Optional[str]:
     subiti_da = (hint or {}).get("conceded") if isinstance(hint, dict) else None
     avversaria = "away" if lato == "home" else "home"
     subiti = _num(subiti_da.get(avversaria)) if isinstance(subiti_da, dict) else None
-    completo = (incontri is not None and incontri > 0
-                and alti is not None and subiti is not None)
-    if not completo:
-        if ck.ok is not None:
-            return (f"dato della selezione aggiuntiva incompleto (incontri={incontri}, "
-                    f"2-2/3-3={alti}, difesa {avversaria}={subiti}) ma il check "
-                    f"vale {ck.ok}: un dato assente non e' un verdetto")
-        return None
     rate_max = _num(v.par.get("h2hBigDrawRateMax"))
     conceded_max = _num(v.par.get("oppConcededMax"))
     if rate_max is None or conceded_max is None:
         return "soglie della selezione aggiuntiva assenti dai parametri"
-    atteso = (float(alti) / float(incontri) <= rate_max) and (float(subiti) <= conceded_max)
+    # Q7 (ordine dell'utente 25/09): «dove disponibile». Ogni parte si
+    # giudica per conto suo: col dato si applica la soglia, senza dato NON
+    # blocca. Il conto si rifa' qui a mano, parte per parte.
+    h2h_ok = (float(alti) / float(incontri) <= rate_max
+              if incontri is not None and incontri > 0 and alti is not None else None)
+    dif_ok = float(subiti) <= conceded_max if subiti is not None else None
+    atteso = h2h_ok is not False and dif_ok is not False
+    if ck.ok is None:
+        return ("il check della selezione aggiuntiva e' n/d: dal 25/09 un dato "
+                "assente NON blocca, deve dirlo e lasciar passare")
     if bool(ck.ok) is not atteso:
-        return (f"verdetto {ck.ok} ma dai numeri ({int(alti)}/{int(incontri)} 2-2/3-3, "
-                f"difesa {avversaria} {subiti}) ci si aspetta {atteso}: "
-                f"soglie {rate_max} / {conceded_max}")
+        return (f"verdetto {ck.ok} ma dai numeri (scontri {alti}/{incontri} 2-2/3-3 -> "
+                f"{h2h_ok}, difesa {avversaria} {subiti} -> {dif_ok}; None = dato "
+                f"assente, non blocca) ci si aspetta {atteso}: soglie "
+                f"{rate_max} / {conceded_max}")
     if v.segnale and ck.ok is not True:
         return f"segnale con la selezione aggiuntiva non superata (check={ck.ok})"
     return None

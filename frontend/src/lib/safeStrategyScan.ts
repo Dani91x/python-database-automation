@@ -252,6 +252,9 @@ export interface TennisScanPayload {
     mo_selections?: ScanCsSelection[];
     sets: { p1: number; p2: number } | null;
     games: { p1: number; p2: number } | null;
+    /** Q12 (25/09), OPZIONALE: quota pre-partita congelata al primo tick
+     *  in-play (`scanner.freeze_pre_ko_tennis`); righe vecchie senza il campo. */
+    pre_ko?: { p1: number; p2: number; captured_at?: string } | null;
 }
 
 export interface ScanRow {

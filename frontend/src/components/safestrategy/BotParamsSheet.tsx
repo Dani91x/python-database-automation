@@ -213,8 +213,8 @@ const EXIT_NUM_FIELDS: Num[] = [
 
 const STRATEGY_FIELDS: Num[] = [
     { key: 'base.minuteMin', label: 'BASE · dal minuto', step: 1, min: 0, max: 120 },
-    { key: 'base.favLiveMin', label: 'BASE · quota live favorita MIN', step: 0.01, min: 1 },
-    { key: 'base.favLiveMax', label: 'BASE · quota live favorita MAX', step: 0.01, min: 1 },
+    { key: 'base.dogLayMin', label: 'BASE · quota di banca sfavorita MIN', step: 0.5, min: 1.01 },
+    { key: 'base.dogLayMax', label: 'BASE · quota di banca sfavorita MAX', step: 0.5, min: 1.01 },
     { key: 'base.scoreConfirmSec', label: 'BASE · punteggio stabile (s)', step: 5, min: 0 },
     { key: 'esatto.minuteMin', label: 'R. ESATTO · dal minuto', step: 1, min: 0, max: 120 },
     { key: 'esatto.entryMin', label: 'R. ESATTO · quota MIN', step: 1, min: 1 },
@@ -231,6 +231,7 @@ const STRATEGY_FIELDS: Num[] = [
     { key: 'tennis.backMax', label: 'TENNIS · quota leader MAX', step: 0.01, min: 1 },
     { key: 'tennis.scoreConfirmSec', label: 'TENNIS · punteggio stabile (s)', step: 5, min: 0 },
     { key: 'tennis.setsPlayedMax', label: 'TENNIS · set già giocati MAX', step: 1, min: 0, max: 5, hint: 'il vantaggio di un set deve venire dal solo set disputato (regola del manuale). 0 = controllo spento' },
+    { key: 'tennis.leaderPreMax', label: 'TENNIS · quota pre-partita MAX di chi si punta', step: 0.1, min: 0, hint: 'corso: «meglio non andare su uno sfavorito davvero troppo sfavorito». 4,0 è una proposta (il video non dà un numero). Se la quota pre-partita manca il controllo non blocca. 0 = spento' },
     // CERT. 14/09 — soglia dell'indice di "controllo del gioco" (corner in
     // finestra mobile + cartellini), da 0 a 1. Vale solo se l'interruttore
     // sotto è acceso.

@@ -57,7 +57,7 @@ function liveNow(over: {
 }): LiveNowRow {
     const {
         minute = 58, sh = 1, sa = 0, inplay = true,
-        favBack = 1.28, favLay = 1.3, dogBack = 8.0, dogLay = 8.4,
+        favBack = 1.28, favLay = 1.3, dogBack = 24.0, dogLay = 25.0,
         anyOtherHomeLay = 45, anyOtherAwayLay = 50, withCs = true,
         moStatus = 'OPEN', csStatus = 'OPEN',
         redHome, redAway,
@@ -168,7 +168,7 @@ describe('buildFootballCtx', () => {
     it('mappa MATCH_ODDS per nome, draw per esclusione, CS "Any Other" e pre-match', () => {
         const ctx = ctxOf();
         expect(ctx.odds?.home).toEqual({ back: 1.28, lay: 1.3 });
-        expect(ctx.odds?.away).toEqual({ back: 8.0, lay: 8.4 });
+        expect(ctx.odds?.away).toEqual({ back: 24.0, lay: 25.0 });
         expect(ctx.odds?.draw).toEqual({ back: 5.0, lay: 5.2 });
         expect(ctx.anyOther?.home?.lay).toBe(45);
         expect(ctx.anyOther?.away?.lay).toBe(50);
@@ -209,7 +209,7 @@ describe('evaluateBase', () => {
         expect(ev.state).toBe('signal');
         expect(ev.headline).toBe('BANCA Sud FC');
         expect(ev.side).toBe('LAY');
-        expect(ev.entryOdds).toBe(8.4); // lay della sfavorita
+        expect(ev.entryOdds).toBe(25.0); // lay della sfavorita
     });
     it('NO: minuto PRIMA della soglia (54′ con soglia 55′)', () => {
         const ev = evaluateBase(ctxOf({ minute: 54 }), DEFAULT_PARAMS.base);
@@ -226,8 +226,25 @@ describe('evaluateBase', () => {
     it('NO: favorita NON in vantaggio (0-1)', () => {
         expect(evaluateBase(ctxOf({ sh: 0, sa: 1 }), DEFAULT_PARAMS.base).state).toBe('no');
     });
-    it('NO: quota live favorita fuori range', () => {
-        expect(evaluateBase(ctxOf({ favBack: 1.5 }), DEFAULT_PARAMS.base).state).toBe('no');
+    // Q1 (utente 25/09): la «Lettura A» è tolta. Prima: 'NO: quota live
+    // favorita fuori range' (favBack 1.5 → no). Ora la favorita live non decide.
+    it('Q1: la quota live della favorita non filtra più', () => {
+        const ev = evaluateBase(ctxOf({ favBack: 1.5 }), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.checks.find((c) => c.id === 'favLive')).toBeUndefined();
+    });
+    it('Q1: banda della quota di BANCA della sfavorita 20–34, estremi inclusi', () => {
+        const ev = (lay: number) => evaluateBase(ctxOf({ dogBack: lay - 1, dogLay: lay }), DEFAULT_PARAMS.base);
+        for (const dentro of [20, 25, 34]) {
+            expect(ev(dentro).state).toBe('signal');
+            expect(ev(dentro).entryOdds).toBe(dentro);
+        }
+        for (const fuori of [19.5, 34.5, 8.4, 60]) {
+            const e = ev(fuori);
+            expect(e.state).toBe('no');
+            expect(e.checks.filter((c) => c.ok === false).map((c) => c.id)).toEqual(['dogLay']);
+        }
+        expect(ev(34).checks.find((c) => c.id === 'dogLay')?.label).toBe('Quota banca sfavorita 20–34');
     });
     it('NO: favorita pre-match fuori range (1.15)', () => {
         const ev = evaluateBase(ctxOf({ preMatch: { home: 1.15, draw: 6.0, away: 12.0 } }), DEFAULT_PARAMS.base);
@@ -247,13 +264,13 @@ describe('evaluateBase', () => {
     it('SEGNALE con favorita in TRASFERTA: 0-1 vale come "1-0" (punteggi orientati alla favorita)', () => {
         const ev = evaluateBase(ctxOf({
             sh: 0, sa: 1,
-            favBack: 8.0, favLay: 8.4,   // Nord (casa) = qui SFAVORITA
+            favBack: 24.0, favLay: 25.0,  // Nord (casa) = qui SFAVORITA
             dogBack: 1.28, dogLay: 1.3,  // Sud (trasferta) = qui FAVORITA
             preMatch: { home: 5.5, draw: 4.0, away: 1.65 },
         }), DEFAULT_PARAMS.base);
         expect(ev.state).toBe('signal');
         expect(ev.headline).toBe('BANCA Nord FC'); // si banca la squadra di casa che perde
-        expect(ev.entryOdds).toBe(8.4);
+        expect(ev.entryOdds).toBe(25.0);
     });
     it('N/D: stabilità punteggio non osservabile (anti-blip)', () => {
         expect(evaluateBase(ctxOf({ observedSec: null }), DEFAULT_PARAMS.base).state).toBe('nd');
@@ -505,7 +522,7 @@ describe('build*CtxFromScan', () => {
             odds: {
                 home: { back: 1.28, lay: 1.3 },
                 draw: { back: 5.0, lay: 5.2 },
-                away: { back: 8.0, lay: 8.4 },
+                away: { back: 24.0, lay: 25.0 },
             },
             minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
             pre_ko: { home: 1.65, draw: 4.0, away: 5.5, captured_at: 'x' },
@@ -638,7 +655,7 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
             odds: {
                 home: { back: 1.28, lay: 1.3, back_size: 152.4, lay_size: 41.26 },
                 draw: { back: 5.0, lay: 5.2, back_size: 10, lay_size: 12 },
-                away: { back: 8.0, lay: 8.4, back_size: 7.5, lay_size: 120 },
+                away: { back: 24.0, lay: 25.0, back_size: 7.5, lay_size: 120 },
             },
             minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
             pre_ko: { home: 1.65, draw: 4.0, away: 5.5 },
@@ -653,9 +670,9 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
     it('Base (LAY sfavorita): size = denaro in attesa al miglior lay della sfavorita', () => {
         const ev = evaluateBase(scanCalcio(), DEFAULT_PARAMS.base);
         expect(ev.state).toBe('signal');
-        expect(ev.entryOdds).toBe(8.4);
+        expect(ev.entryOdds).toBe(25.0);
         expect(ev.entrySize).toBe(120);
-        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8,40 · 120 € abbinabili');
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('25,00 · 120 € abbinabili');
     });
     it('R.E. (LAY "Altro risultato"): size del lay al miglior prezzo, anche decimale', () => {
         const ev = evaluateEsatto(scanCalcio(), DEFAULT_PARAMS.esatto, 'home');
@@ -693,9 +710,9 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
         const ev = evaluateBase(ctxOf(), DEFAULT_PARAMS.base);
         expect(ev.state).toBe('signal');
         expect(ev.entrySize).toBeNull();
-        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8,40');
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('25,00');
         const scan = evaluateBase(scanCalcio({
-            odds: { home: { back: 1.28, lay: 1.3 }, draw: { back: 5, lay: 5.2 }, away: { back: 8, lay: 8.4 } },
+            odds: { home: { back: 1.28, lay: 1.3 }, draw: { back: 5, lay: 5.2 }, away: { back: 24, lay: 25 } },
         }), DEFAULT_PARAMS.base);
         expect(scan.entrySize).toBeNull();
     });
@@ -726,7 +743,7 @@ describe('controllo del gioco — la condizione INVERTITA del Risultato Esatto',
             odds: {
                 home: { back: 1.28, lay: 1.3, back_size: 152.4, lay_size: 41.26 },
                 draw: { back: 5.0, lay: 5.2, back_size: 10, lay_size: 12 },
-                away: { back: 8.0, lay: 8.4, back_size: 7.5, lay_size: 120 },
+                away: { back: 24.0, lay: 25.0, back_size: 7.5, lay_size: 120 },
             },
             minute: 60, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
             pre_ko: { home: 1.65, draw: 4.0, away: 5.5 },

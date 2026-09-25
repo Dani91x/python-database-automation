@@ -47,6 +47,8 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from . import veto_campionati as _veto
+
 # ------------------------------------------------------------ caratteri speciali
 PRIME = "′"      # minuto: 58'
 GEQ = "≥"        # >=
@@ -194,9 +196,20 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "favPreMax": 1.8,
         "dogPreMin": 4,
         "dogPreMax": 8,
-        "favLiveMin": 1.2,
-        "favLiveMax": 1.34,
+        # ORDINE DELL'UTENTE 25/09 (Q1): la banda d'ingresso della BASE e' la
+        # QUOTA DI BANCA della squadra che PERDE, 20-34 estremi inclusi. Corso,
+        # "4. STRATEGIA/2. Entrata a mercato" @69.8-93.0: «Le quote ideali per
+        # entrare a mercato [...] vanno dal 20 al 34, a dir tanto». Sostituisce
+        # la «Lettura A» del 14/09 (1,20-1,34 = back LIVE della favorita), che
+        # e' TOLTA: le chiavi `favLiveMin`/`favLiveMax` sono DEPRECATE e
+        # `merge_params` le ignora anche se restano sul DB. Stake fisso (2 EUR):
+        # la scala per quota del foglio Excel del corso NON si applica.
+        "dogLayMin": 20,
+        "dogLayMax": 34,
         "scoreConfirmSec": 30,
+        # ORDINE DELL'UTENTE 25/09 (Q4): veto dei campionati del corso
+        # (`veto_campionati.py`). Acceso di default; False = nessun controllo.
+        "vetoCampionati": True,
     },
     "esatto": {
         "requireControl": False,
@@ -216,7 +229,11 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         # che e' la regola di tutto il modulo. I due numeri qui sotto NON
         # sono nella SPEC (che dice "troppi" e "solida" senza quantificarli):
         # sono la lettura dichiarata, misurata sullo stesso atlante.
-        "requireSelection": False,
+        # ORDINE DELL'UTENTE 25/09 (Q7): «questi dati vanno usati e sfruttati
+        # dove disponibile [...] lo voglio assolutamente dove disponibile» ->
+        # ACCESO. Semantica nuova di `selection_check`: una parte senza dato
+        # NON blocca (lo dichiara nel valore), una parte col dato si applica.
+        "requireSelection": True,
         # "senza TROPPI 2-2/3-3": quota di scontri diretti finiti 2-2 o 3-3.
         # Misura sull'atlante (4.838 coppie, 47.460 incontri): 2-2/3-3 sono il
         # 6,04% degli incontri. "Troppi" = il DOPPIO della norma -> 0,12.
@@ -225,6 +242,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         # deve fermare la bancata. Misura sull'atlante: 2,7403 gol per partita
         # -> 1,37 per lato. "Solida" = non peggio della media.
         "oppConcededMax": 1.37,
+        # Q4 (25/09): veto dei campionati del corso, come la BASE
+        "vetoCampionati": True,
     },
     "punta": {
         "requireControl": False,
@@ -234,11 +253,14 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "entryMin": 1.03,
         "entryMax": 1.1,
         "minMinutesAfterGoal": 3,
+        # Q4 (25/09): veto dei campionati del corso, come la BASE
+        "vetoCampionati": True,
     },
     "tennis": {
         "setsLeadMin": 1,
         "gamesLeadMin": 2,
-        "backMin": 1.01,
+        # ORDINE DELL'UTENTE 25/09 (Q5): quota minima d'ingresso da 1,01 a 1,02.
+        "backMin": 1.02,
         "backMax": 1.1,
         "excludeDoubles": True,
         # CERT. 14/09 — il manuale: "evita gli Slam maschili (al meglio dei 5
@@ -254,6 +276,15 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         # maschile/femminile - la lista la compila l'utente.
         "excludeCompetitions": [],
         "scoreConfirmSec": 15,
+        # ORDINE DELL'UTENTE 25/09 (Q12): «sfavoriti estremi» ESCLUSI, sulla
+        # quota PRE-PARTITA congelata del giocatore che si punta (il leader).
+        # Corso, TENNIS «2. Parametri» @56.3-93.6: «meglio non andare su uno
+        # sfavorito, davvero troppo sfavorito [...] la loss diventerebbe troppo
+        # alta [...] prediligere sempre [...] almeno un leggero favorito».
+        # IL VIDEO NON DA' UN NUMERO: 4,0 (probabilita' implicita 25 %) e' una
+        # PROPOSTA dichiarata, da confermare con l'utente. 0 = controllo spento.
+        # Dato pre-partita assente -> NON blocca (lo dichiara), come Q7.
+        "leaderPreMax": 4.0,
     },
     # EXTRA rispetto al TS: stake operativo dei segnali (il motore web non
     # piazza ordini, il server si). Minimo Betfair = 2 EUR.
@@ -332,9 +363,11 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "favPreMax": _num(b.get("favPreMax"), d["base"]["favPreMax"]),
             "dogPreMin": _num(b.get("dogPreMin"), d["base"]["dogPreMin"]),
             "dogPreMax": _num(b.get("dogPreMax"), d["base"]["dogPreMax"]),
-            "favLiveMin": _num(b.get("favLiveMin"), d["base"]["favLiveMin"]),
-            "favLiveMax": _num(b.get("favLiveMax"), d["base"]["favLiveMax"]),
+            # Q1 (25/09): `favLiveMin/Max` deprecate, qui non si leggono piu'.
+            "dogLayMin": _num(b.get("dogLayMin"), d["base"]["dogLayMin"]),
+            "dogLayMax": _num(b.get("dogLayMax"), d["base"]["dogLayMax"]),
             "scoreConfirmSec": _num(b.get("scoreConfirmSec"), d["base"]["scoreConfirmSec"]),
+            "vetoCampionati": _bool(b.get("vetoCampionati"), d["base"]["vetoCampionati"]),
         },
         "esatto": {
             "minuteMin": _num(e.get("minuteMin"), d["esatto"]["minuteMin"]),
@@ -350,6 +383,7 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 e.get("h2hBigDrawRateMax"), d["esatto"]["h2hBigDrawRateMax"]
             ),
             "oppConcededMax": _num(e.get("oppConcededMax"), d["esatto"]["oppConcededMax"]),
+            "vetoCampionati": _bool(e.get("vetoCampionati"), d["esatto"]["vetoCampionati"]),
         },
         "punta": {
             "minuteMin": _num(u.get("minuteMin"), d["punta"]["minuteMin"]),
@@ -361,6 +395,7 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "minMinutesAfterGoal": _num(
                 u.get("minMinutesAfterGoal"), d["punta"]["minMinutesAfterGoal"]
             ),
+            "vetoCampionati": _bool(u.get("vetoCampionati"), d["punta"]["vetoCampionati"]),
         },
         "tennis": {
             "setsLeadMin": _num(t.get("setsLeadMin"), d["tennis"]["setsLeadMin"]),
@@ -374,6 +409,7 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 t.get("excludeCompetitions"), d["tennis"]["excludeCompetitions"]
             ),
             "scoreConfirmSec": _num(t.get("scoreConfirmSec"), d["tennis"]["scoreConfirmSec"]),
+            "leaderPreMax": _num(t.get("leaderPreMax"), d["tennis"]["leaderPreMax"]),
         },
         "stake": {
             # accettato sia annidato in "stake" sia al livello superiore
@@ -539,6 +575,10 @@ class TennisMatchCtx:
     competition: Optional[str]
     score_observed_sec: Optional[float]
     event_name: Optional[str] = None
+    # Q12 (25/09): quota PRE-PARTITA congelata {"p1", "p2"} (back), come il
+    # `pre_ko` del calcio: la scrive lo scanner (`scanner.freeze_pre_ko_tennis`)
+    # e si congela al primo tick in-play. None = dato assente.
+    pre_match: Optional[Dict[str, float]] = None
 
 
 # --------------------------------------------------- contesti dallo SCANNER
@@ -738,7 +778,20 @@ def build_tennis_ctx_from_scan(
         competition=_text_or_none(p.get("competition")),
         score_observed_sec=score_observed_sec,
         event_name=p.get("event_name"),
+        pre_match=_tennis_pre_match(p.get("pre_ko")),
     )
+
+
+def _tennis_pre_match(pre: Any) -> Optional[Dict[str, float]]:
+    """Q12: riferimento pre-partita del tennis, solo se la COPPIA e' completa
+    e sensata (quote > 1). Parziale = assente: meglio "non lo so" che mezzo
+    dato (stessa regola del `pre_ko` calcio, `db.is_usable_pre_ko`)."""
+    if not isinstance(pre, dict):
+        return None
+    p1, p2 = num_or_none(pre.get("p1")), num_or_none(pre.get("p2"))
+    if p1 is None or p2 is None or p1 <= 1.0 or p2 <= 1.0:
+        return None
+    return {"p1": float(p1), "p2": float(p2)}
 
 
 def favorite_side(pre_match: Optional[Dict[str, float]]) -> Optional[str]:
@@ -825,25 +878,80 @@ def selection_check(hint: Optional[Dict[str, Any]], lato_bancato: Optional[str],
     Casa/Ospite»), quindi la difesa che deve reggere e' quella dell'altra.
     Invertire i due lati renderebbe il filtro una moneta.
 
-    Dato assente -> ``ok=None``: nessun segnale su un dato che non c'e'
-    (stessa regola di ``control_check`` e del resto del modulo).
+    ORDINE DELL'UTENTE 25/09 (Q7): «questi dati vanno usati e sfruttati DOVE
+    DISPONIBILE». Le due parti (scontri diretti, difesa avversaria) si
+    giudicano OGNUNA per conto suo:
+      * parte col dato  -> si applica la regola del corso con la soglia;
+      * parte senza dato -> NON blocca, e il valore lo dichiara
+        («dato assente»): si entra come prima del filtro.
+    Il verdetto e' vero se tutte le parti CON dato passano (nessuna parte
+    col dato = vero, «dato assente»). Fino al 25/09 un dato assente valeva
+    ``ok=None`` e bloccava l'ingresso (n/d).
+    Unico ``ok=None`` rimasto: lato bancato non valido (errore di chiamata).
     """
     etichetta = (f"Scontri diretti con max {js_num(round(rate_max * 100))}% di 2-2/3-3 "
                  f"e difesa avversaria entro {fmt_odds(conceded_max)} gol subiti")
-    if not isinstance(hint, dict) or lato_bancato not in ("home", "away"):
+    if lato_bancato not in ("home", "away"):
         return ConditionCheck("h2hDifesa", etichetta, "n/d", None)
-    incontri = num_or_none(hint.get("h2h_meetings"))
-    alti = num_or_none(hint.get("h2h_big_draws"))
-    subiti_da = (hint.get("conceded") or {}) if isinstance(hint.get("conceded"), dict) else {}
+    h = hint if isinstance(hint, dict) else {}
+    incontri = num_or_none(h.get("h2h_meetings"))
+    alti = num_or_none(h.get("h2h_big_draws"))
+    subiti_da = h.get("conceded") if isinstance(h.get("conceded"), dict) else {}
     avversaria = "away" if lato_bancato == "home" else "home"
     subiti = num_or_none(subiti_da.get(avversaria))
-    if incontri is None or incontri <= 0 or alti is None or subiti is None:
-        return ConditionCheck("h2hDifesa", etichetta, "n/d", None)
-    quota = float(alti) / float(incontri)
-    valore = (f"{js_num(int(alti))}/{js_num(int(incontri))} 2-2{MIDDOT}3-3 {MIDDOT} "
-              f"difesa {fmt_odds(subiti)}")
-    return ConditionCheck("h2hDifesa", etichetta, valore,
-                          quota <= rate_max and float(subiti) <= conceded_max)
+    h2h_ok: Optional[bool] = None
+    dif_ok: Optional[bool] = None
+    parti: List[str] = []
+    if incontri is not None and incontri > 0 and alti is not None:
+        h2h_ok = float(alti) / float(incontri) <= rate_max
+        parti.append(f"{js_num(int(alti))}/{js_num(int(incontri))} 2-2{MIDDOT}3-3")
+    else:
+        parti.append(SELEZIONE_H2H_ASSENTE)
+    if subiti is not None:
+        dif_ok = float(subiti) <= conceded_max
+        parti.append(f"difesa {fmt_odds(subiti)}")
+    else:
+        parti.append(SELEZIONE_DIFESA_ASSENTE)
+    if h2h_ok is None and dif_ok is None:
+        return ConditionCheck("h2hDifesa", etichetta, SELEZIONE_DATO_ASSENTE, True)
+    ok = h2h_ok is not False and dif_ok is not False
+    return ConditionCheck("h2hDifesa", etichetta, f" {MIDDOT} ".join(parti), ok)
+
+
+# Q12 (25/09): stesso principio per la quota pre-partita del tennis.
+TENNIS_PRE_ASSENTE = "pre-partita: dato assente (non blocca)"
+
+# Q7 (25/09): le parole con cui il check DICHIARA un dato assente (non blocca).
+SELEZIONE_DATO_ASSENTE = "dato assente (non blocca)"
+SELEZIONE_H2H_ASSENTE = "scontri diretti: dato assente"
+SELEZIONE_DIFESA_ASSENTE = "difesa: dato assente"
+
+
+def campionato_check(competition: Optional[str],
+                     params: Dict[str, Any]) -> Optional[ConditionCheck]:
+    """Q4 (ordine dell'utente 25/09) — VETO dei campionati del corso.
+
+    Lista negativa (`veto_campionati.VOCI`, ogni voce con la citazione del
+    video): se la competizione ci ricade, ``ok=False`` e il valore e' il motivo
+    di scarto dichiarato («veto campionato: Bundesliga 2 (corso)»).
+
+    Ritorna None (nessun check) in due casi, entrambi DICHIARATI:
+      * ``vetoCampionati`` spento dai parametri;
+      * nome della competizione ASSENTE nella riga. Stessa regola dei
+        cartellini rossi qui sotto: l'assenza del DATO non e' l'appartenenza
+        alla lista nera. Il banco di replay (`banco_comune`, LIMITE 1) non ha
+        il catalogo e lascia `competition` a None: li' il veto non e'
+        esercitabile, e il resto della strategia resta certificabile.
+    """
+    if not params.get("vetoCampionati", True) or competition is None:
+        return None
+    voce = _veto.voce_vietata(competition)
+    return ConditionCheck(
+        "campionato",
+        "Campionato non vietato dal corso",
+        competition if voce is None else _veto.motivo(voce),
+        voce is None,
+    )
 
 
 def minute_check(check_id: str, minute: Optional[int], from_minute: Any) -> ConditionCheck:
@@ -888,6 +996,30 @@ def _side_pair(odds: Optional[FootballOdds], side: Optional[str]) -> Optional[Od
     return odds.home if side == "home" else odds.away
 
 
+def pre_bands_checks(pre_match: Optional[Dict[str, float]], fav: Optional[str],
+                     bande: Dict[str, Any]) -> List[ConditionCheck]:
+    """Bande pre-partita favorita/sfavorita (1,40-1,80 / 4-8 di default),
+    lette dalla sezione ``base`` dei parametri. Una sola implementazione per
+    BASE e PUNTA (Q10, 25/09): le due varianti non possono divergere."""
+    fav_pre_label = (
+        f"Favorita pre-match {js_num(bande['favPreMin'])}{NDASH}{js_num(bande['favPreMax'])}"
+    )
+    dog_pre_label = (
+        f"Sfavorita pre-match {js_num(bande['dogPreMin'])}{NDASH}{js_num(bande['dogPreMax'])}"
+    )
+    if pre_match is None or fav is None:
+        return [ConditionCheck("favPre", fav_pre_label, "n/d", None),
+                ConditionCheck("dogPre", dog_pre_label, "n/d", None)]
+    fav_pre = pre_match["home"] if fav == "home" else pre_match["away"]
+    dog_pre = pre_match["away"] if fav == "home" else pre_match["home"]
+    return [
+        ConditionCheck("favPre", fav_pre_label, fmt_odds(fav_pre),
+                       in_range(fav_pre, bande["favPreMin"], bande["favPreMax"])),
+        ConditionCheck("dogPre", dog_pre_label, fmt_odds(dog_pre),
+                       in_range(dog_pre, bande["dogPreMin"], bande["dogPreMax"])),
+    ]
+
+
 def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvaluation:
     """1 . Calcio Base - banca (lay) la squadra che perde sul mercato 1X2."""
     checks: List[ConditionCheck] = []
@@ -897,6 +1029,9 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
+    veto = campionato_check(ctx.competition, params)
+    if veto is not None:
+        checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
     # BASE: "la favorita deve avere il controllo del gioco" (specifica).
     if params.get("requireControl"):
@@ -922,47 +1057,12 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
         )
 
     # quote pre-match favorita / sfavorita
-    fav_pre_label = (
-        f"Favorita pre-match {js_num(params['favPreMin'])}{NDASH}{js_num(params['favPreMax'])}"
-    )
-    dog_pre_label = (
-        f"Sfavorita pre-match {js_num(params['dogPreMin'])}{NDASH}{js_num(params['dogPreMax'])}"
-    )
-    if ctx.pre_match is None or fav is None:
-        checks.append(ConditionCheck("favPre", fav_pre_label, "n/d", None))
-        checks.append(ConditionCheck("dogPre", dog_pre_label, "n/d", None))
-    else:
-        fav_pre = ctx.pre_match["home"] if fav == "home" else ctx.pre_match["away"]
-        dog_pre = ctx.pre_match["away"] if fav == "home" else ctx.pre_match["home"]
-        checks.append(
-            ConditionCheck(
-                "favPre",
-                fav_pre_label,
-                fmt_odds(fav_pre),
-                in_range(fav_pre, params["favPreMin"], params["favPreMax"]),
-            )
-        )
-        checks.append(
-            ConditionCheck(
-                "dogPre",
-                dog_pre_label,
-                fmt_odds(dog_pre),
-                in_range(dog_pre, params["dogPreMin"], params["dogPreMax"]),
-            )
-        )
+    checks.extend(pre_bands_checks(ctx.pre_match, fav, params))
 
-    # quota live (back) della favorita - valida solo a mercato aperto
+    # quote live valide solo a mercato aperto. Q1 (25/09): il filtro sul back
+    # live della FAVORITA («Lettura A», 1,20-1,34) e' TOLTO; la banda d'ingresso
+    # e' la quota di BANCA della sfavorita, nel check `dogLay` qui sotto.
     checks.append(market_open_check("Mercato Match Odds aperto", ctx.match_odds_open))
-    fav_pair = _side_pair(ctx.odds, fav)
-    fav_live = fav_pair.back if fav_pair is not None else None
-    checks.append(
-        ConditionCheck(
-            "favLive",
-            f"Quota live favorita {js_num(params['favLiveMin'])}{NDASH}{js_num(params['favLiveMax'])}",
-            fmt_odds(fav_live),
-            None if fav_live is None else in_range(fav_live, params["favLiveMin"], params["favLiveMax"]),
-        )
-    )
 
     checks.append(_score_confirm_check(ctx.score_observed_sec, params["scoreConfirmSec"]))
 
@@ -983,13 +1083,21 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
     dog_pair = _side_pair(ctx.odds, dog)
     dog_lay = dog_pair.lay if dog_pair is not None else None
     dog_lay_size = dog_pair.lay_size if dog_pair is not None else None
-    # senza un prezzo LAY reale della sfavorita non c'e' nulla da bancare
+    # Q1 (ordine dell'utente 25/09): si banca la squadra che PERDE solo se la
+    # sua QUOTA DI BANCA sta nella banda del corso, 20-34 estremi inclusi
+    # («4. STRATEGIA/2. Entrata a mercato» @93.0: «vanno dal 20 al 34, a dir
+    # tanto»). Stessa fonte del prezzo di prima: il miglior LAY disponibile
+    # della sfavorita nella riga dello scanner (`odds.<lato>.lay`), cioe' il
+    # prezzo a cui l'ordine verrebbe piazzato (`entry_odds`). Senza un prezzo
+    # LAY reale non c'e' nulla da bancare: n/d, mai un ingresso al buio.
     checks.append(
         ConditionCheck(
             "dogLay",
-            "Quota banca sfavorita disponibile",
+            f"Quota banca sfavorita {js_num(params['dogLayMin'])}{NDASH}"
+            f"{js_num(params['dogLayMax'])}",
             fmt_odds_with_size(dog_lay, dog_lay_size),
-            None if dog_lay is None else True,
+            None if dog_lay is None else in_range(dog_lay, params["dogLayMin"],
+                                                  params["dogLayMax"]),
         )
     )
 
@@ -1018,6 +1126,9 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
+    veto = campionato_check(ctx.competition, params)
+    if veto is not None:
+        checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
     # RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
     # squadra BANCATA non deve avere il controllo. Se comanda il gioco e'
@@ -1099,8 +1210,16 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     )
 
 
-def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvaluation:
-    """3 . Calcio Variante Punta - punta (back) la squadra avanti di 2 gol."""
+def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any],
+                   bande_pre: Optional[Dict[str, Any]] = None) -> VariantEvaluation:
+    """3 . Calcio Variante Punta - punta (back) la squadra avanti di 2 gol.
+
+    Q10 (ordine dell'utente 25/09): la PUNTA ha le STESSE bande pre-partita
+    della BASE (favorita 1,40-1,80, sfavorita 4-8), lette dalla sezione
+    ``base`` dei parametri (``bande_pre``), mai duplicate. Chi non le passa
+    (chiamata diretta) usa i default del codice, cosi' la regola non si spegne
+    per una firma dimenticata; `evaluate_football_all` passa quelle in uso."""
+    bande = bande_pre if isinstance(bande_pre, dict) else DEFAULT_PARAMS["base"]
     checks: List[ConditionCheck] = []
     sh, sa = ctx.score_home, ctx.score_away
     lead = leader_side(sh, sa) if sh is not None and sa is not None else None
@@ -1108,6 +1227,9 @@ def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEval
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
+    veto = campionato_check(ctx.competition, params)
+    if veto is not None:
+        checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
     # PUNTA: "la favorita deve continuare a spingere" (specifica). Stessa
     # semantica della BASE: la squadra PROTETTA deve avere il controllo.
@@ -1147,6 +1269,9 @@ def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEval
                 "leadFav", lead_fav_label, ctx.home if lead == "home" else ctx.away, lead == fav
             )
         )
+
+    # Q10 (25/09): bande pre-partita della BASE (stessa funzione, stessi numeri)
+    checks.extend(pre_bands_checks(ctx.pre_match, fav, bande))
 
     # rosso a CHI SI PUNTA: enforced solo quando il dato cartellini e' esposto
     if ctx.red is not None and lead is not None:
@@ -1212,7 +1337,7 @@ def evaluate_football_all(
         evaluate_base(ctx, params["base"]),
         evaluate_esatto(ctx, params["esatto"], "home"),
         evaluate_esatto(ctx, params["esatto"], "away"),
-        evaluate_punta(ctx, params["punta"]),
+        evaluate_punta(ctx, params["punta"], params["base"]),
     ]
 
 
@@ -1275,6 +1400,19 @@ def evaluate_tennis(ctx: TennisMatchCtx, params: Dict[str, Any]) -> VariantEvalu
                 abs(diff) >= params["setsLeadMin"],
             )
         )
+
+    # Q12 (25/09): «sfavoriti estremi» esclusi, sulla quota PRE-PARTITA del
+    # giocatore che si punta. Dato assente -> NON blocca (lo dichiara).
+    lead_pre_max = num_or_none(params.get("leaderPreMax")) or 0.0
+    if lead_pre_max > 0 and leader is not None:
+        pre_label = f"Leader non sfavorito estremo (pre-partita {LEQ}{fmt_odds(lead_pre_max)})"
+        if ctx.pre_match is None:
+            checks.append(ConditionCheck("leaderPre", pre_label, TENNIS_PRE_ASSENTE, True))
+        else:
+            q_pre = ctx.pre_match["p1"] if leader == 1 else ctx.pre_match["p2"]
+            checks.append(ConditionCheck("leaderPre", pre_label,
+                                         f"pre-partita {fmt_odds(q_pre)}",
+                                         q_pre <= lead_pre_max))
 
     # vantaggio game nel set corrente, dello STESSO giocatore avanti nei set
     games_label = f"{js_num(params['gamesLeadMin'])}+ game di vantaggio nel set corrente"

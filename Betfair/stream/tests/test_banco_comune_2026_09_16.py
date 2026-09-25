@@ -77,6 +77,10 @@ PAYLOAD_VERO_TENNIS = {
     # lavorazione non era misurabile, e senza ``bet_delay`` il bot non sapeva a
     # quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
     "odds_pt_ms", "bet_delay",
+    # Q12 (ordine dell'utente 25/09), chiave ADDITIVA: quota pre-partita
+    # congelata al primo tick in-play (`scanner.freeze_pre_ko_tennis`), stesso
+    # nome e schema del `pre_ko` calcio (coppia p1/p2 invece della tripla).
+    "pre_ko",
 }
 OU_BLOCCO_VERO = {"bet_delay", "inplay", "line", "market_id", "market_type",
                   "seen_ms", "selections", "status", "total_matched", "ts_ms"}

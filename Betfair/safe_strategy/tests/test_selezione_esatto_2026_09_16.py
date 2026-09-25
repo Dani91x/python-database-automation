@@ -110,12 +110,18 @@ def _ck(ev, cid: str):
     return {c.id: c for c in ev.checks}.get(cid)
 
 
-def test_spento_di_default_non_aggiunge_nessun_check() -> None:
-    """Il default non cambia una virgola del comportamento di prima."""
-    assert E.DEFAULT_PARAMS["esatto"]["requireSelection"] is False
+def test_spento_non_aggiunge_nessun_check() -> None:
+    """Spento dal parametro il filtro non aggiunge niente. Q7 (25/09): prima
+    era `test_spento_di_default_...` e pretendeva il default SPENTO; l'utente
+    lo ha acceso («dove disponibile»), vedi il test sotto."""
     ev = _valuta(_hint(10, 9, 3.0, 3.0), acceso=False)
     assert _ck(ev, "h2hDifesa") is None
     assert ev.state == "signal"
+
+
+def test_q7_acceso_di_default() -> None:
+    assert E.DEFAULT_PARAMS["esatto"]["requireSelection"] is True
+    assert E.merge_params(None)["esatto"]["requireSelection"] is True
 
 
 def test_acceso_e_selezione_buona_il_filtro_TACE() -> None:
@@ -153,14 +159,40 @@ def test_la_difesa_guardata_e_quella_AVVERSARIA_non_quella_bancata() -> None:
     assert _ck(_valuta(h, sub="away"), "h2hDifesa").ok is True    # avversaria = casa
 
 
-def test_dato_assente_non_e_un_verdetto() -> None:
-    """Nessun blocco, o scontri diretti mancanti: «n/d» e nessun segnale —
-    la stessa regola di `control_check` e del resto del motore."""
-    for h in (None, _hint(None, None, 0.9, 0.9), _hint(10, 0, None, None)):
+def test_q7_dato_del_tutto_assente_non_blocca_e_lo_dichiara() -> None:
+    """Q7 (utente 25/09): «dove disponibile». Prima di oggi questo test si
+    chiamava `test_dato_assente_non_e_un_verdetto` e pretendeva «n/d» e nessun
+    segnale; ora il dato assente NON blocca e il valore lo dice."""
+    for h in (None, _hint(None, None, None, None)):
         ev = _valuta(h)
         ck = _ck(ev, "h2hDifesa")
-        assert ck is not None and ck.ok is None and ck.value == "n/d"
-        assert ev.state == "nd"
+        assert ck is not None and ck.ok is True
+        assert ck.value == E.SELEZIONE_DATO_ASSENTE == "dato assente (non blocca)"
+        assert ev.state == "signal"
+
+
+def test_q7_manca_solo_lo_scontro_diretto_si_giudica_la_difesa() -> None:
+    """Scontri diretti assenti: si applica la sola difesa avversaria."""
+    buona = _ck(_valuta(_hint(None, None, 3.0, 0.90), sub="home"), "h2hDifesa")
+    assert buona.ok is True
+    assert buona.value == E.SELEZIONE_H2H_ASSENTE + " " + E.MIDDOT + " difesa 0,90"
+    cattiva = _valuta(_hint(None, None, 3.0, 1.80), sub="home")
+    assert _ck(cattiva, "h2hDifesa").ok is False and cattiva.state == "no"
+
+
+def test_q7_manca_solo_la_difesa_si_giudicano_gli_scontri() -> None:
+    """Difesa avversaria assente: si applica il solo scontro diretto."""
+    buona = _ck(_valuta(_hint(10, 0, None, None)), "h2hDifesa")
+    assert buona.ok is True
+    assert buona.value == "0/10 2-2" + E.MIDDOT + "3-3 " + E.MIDDOT + " " + E.SELEZIONE_DIFESA_ASSENTE
+    cattiva = _valuta(_hint(10, 3, None, None))
+    assert _ck(cattiva, "h2hDifesa").ok is False and cattiva.state == "no"
+
+
+def test_q7_zero_incontri_vale_come_dato_assente() -> None:
+    """0 incontri non e' un campione: la parte non si giudica (non blocca)."""
+    ck = _ck(_valuta(_hint(0, 0, 3.0, 0.90)), "h2hDifesa")
+    assert ck.ok is True and ck.value.startswith(E.SELEZIONE_H2H_ASSENTE)
 
 
 def test_i_numeri_della_lettura_dichiarata_sono_quelli_del_referto() -> None:
@@ -180,7 +212,8 @@ def test_merge_params_difende_le_chiavi_nuove() -> None:
     chiave (merge difensivo)."""
     m = E.merge_params({"esatto": {"requireSelection": "si", "h2hBigDrawRateMax": None,
                                    "oppConcededMax": "molto"}})["esatto"]
-    assert m["requireSelection"] is False
+    # Q7 (25/09): il default e' ACCESO, un valore malformato torna li'
+    assert m["requireSelection"] is True
     assert m["h2hBigDrawRateMax"] == 0.12 and m["oppConcededMax"] == 1.37
     m2 = E.merge_params({"esatto": {"requireSelection": True,
                                     "h2hBigDrawRateMax": 0.5}})["esatto"]
@@ -245,10 +278,52 @@ def test_e10_scatta_sui_lati_invertiti() -> None:
     assert "E10" in _codici(_oss(ev_storto, par, p))
 
 
-def test_e10_scatta_se_un_dato_assente_diventa_un_verdetto() -> None:
+def test_e10_scatta_se_un_dato_assente_blocca() -> None:
+    """Q7 (25/09): il rovescio di prima. Prima E10 accusava un dato assente
+    trasformato in verdetto; ora accusa un dato assente che BLOCCA (False),
+    perche' l'utente ha chiesto «dove disponibile». (Era
+    `test_e10_scatta_se_un_dato_assente_diventa_un_verdetto`.)"""
     par = dict(E.merge_params(None)["esatto"], requireSelection=True)
-    p = _riga(_hint(None, None, 0.9, 0.9))
+    p = _riga(_hint(None, None, None, None))
     ev = E.evaluate_esatto(contesto(p), par, "home")
+    storti = tuple(
+        E.ConditionCheck(c.id, c.label, c.value, False) if c.id == "h2hDifesa" else c
+        for c in ev.checks
+    )
+    ev_storto = E.VariantEvaluation(
+        variant=ev.variant, state=ev.state, checks=storti, headline=ev.headline,
+        side=ev.side, selection=ev.selection, entry_odds=ev.entry_odds,
+        entry_size=ev.entry_size, market_type=ev.market_type,
+        market_id=ev.market_id, selection_id=ev.selection_id, sub_id=ev.sub_id)
+    assert "E10" in _codici(_oss(ev_storto, par, p))
+
+
+def test_e10_scatta_se_un_dato_assente_torna_n_d() -> None:
+    """Q7: il vecchio comportamento (n/d -> nessun segnale) e' ora un difetto.
+    Numeri scelti perche' il verdetto atteso sia False (3/10 2-2/3-3): cosi' a
+    parlare e' SOLO la regola «n/d non e' ammesso», non il confronto col conto."""
+    par = dict(E.merge_params(None)["esatto"], requireSelection=True)
+    p = _riga(_hint(10, 3, None, None))
+    ev = E.evaluate_esatto(contesto(p), par, "home")
+    storti = tuple(
+        E.ConditionCheck(c.id, c.label, "n/d", None) if c.id == "h2hDifesa" else c
+        for c in ev.checks
+    )
+    ev_storto = E.VariantEvaluation(
+        variant=ev.variant, state="nd", checks=storti, headline=None,
+        side=ev.side, selection=ev.selection, entry_odds=ev.entry_odds,
+        entry_size=ev.entry_size, market_type=ev.market_type,
+        market_id=ev.market_id, selection_id=ev.selection_id, sub_id=ev.sub_id)
+    assert "E10" in _codici(_oss(ev_storto, par, p))
+
+
+def test_e10_parte_mancante_ignorata_ma_parte_presente_violata_scatta() -> None:
+    """Scontri diretti assenti, difesa avversaria a 1,80: il verdetto giusto e'
+    False. Un motore che ignorasse anche la parte presente (True) e' rosso."""
+    par = dict(E.merge_params(None)["esatto"], requireSelection=True)
+    p = _riga(_hint(None, None, 3.0, 1.80))
+    ev = E.evaluate_esatto(contesto(p), par, "home")
+    assert _ck(ev, "h2hDifesa").ok is False
     storti = tuple(
         E.ConditionCheck(c.id, c.label, c.value, True) if c.id == "h2hDifesa" else c
         for c in ev.checks
@@ -263,8 +338,8 @@ def test_e10_scatta_se_un_dato_assente_diventa_un_verdetto() -> None:
 
 def test_e10_senza_il_parametro_non_ha_casi() -> None:
     """Spento il filtro, E10 non e' «sano»: e' «non lo so» (stessa disciplina
-    di B10 ed E6)."""
-    par = dict(E.merge_params(None)["esatto"])
+    di B10 ed E6). Q7: il default e' acceso, lo si spegne a mano."""
+    par = dict(E.merge_params(None)["esatto"], requireSelection=False)
     p = _riga(None)
     ev = E.evaluate_esatto(contesto(p), par, "home")
     assert not _sollecitato(_oss(ev, par, p), "E10")

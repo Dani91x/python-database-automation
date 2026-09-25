@@ -5995,6 +5995,43 @@ def _rossi_al_piazzamento(feed_row: Any) -> dict[str, Any]:
     return {"red_home": int(rh), "red_away": int(ra)}
 
 
+_VARIANTI_CON_USCITA_A_TEMPO = ("base", "esatto", "punta")
+
+
+def _minuti_di_uscita(params: dict[str, Any]) -> dict[str, int]:
+    """Q8 (25/09): minuto di uscita a tempo per variante calcio, dalla sezione
+    ``exits`` in uso (`exits.exit_params`: stessi valori e clamp delle uscite)."""
+    xp = XE.exit_params(params)
+    return {v: int(xp[f"{v}_exit_minute"]) for v in _VARIANTI_CON_USCITA_A_TEMPO}
+
+
+def _minuto_oltre_uscita(variant: str, minuto: Any,
+                         minuti_uscita: dict[str, int]) -> Optional[tuple[int, int]]:
+    """(minuto, minuto_uscita) se il segnale arriva AL minuto di uscita o dopo;
+    None se l'ingresso e' lecito o se non c'e' un minuto da confrontare (il
+    motore non da' segnale calcio senza minuto: qui non si inventa)."""
+    uscita = minuti_uscita.get(str(variant))
+    if uscita is None or isinstance(minuto, bool):
+        return None
+    try:
+        m = int(minuto)
+    except (TypeError, ValueError):
+        return None
+    return (m, uscita) if m >= uscita else None
+
+
+def _variante_gia_entrata(traded: Any, event_id: Any, variant: str) -> bool:
+    """Q9 (25/09): l'automatico ha GIA' un ingresso di questa variante su questa
+    partita? Le chiavi sono ``<event_id>:<variante>[:<lato>]:<situazione>``
+    (`engine.signal_key`): basta il prefisso ``<event_id>:<variante>:``."""
+    eid = str(event_id or "")
+    prefisso = f"{eid}:{variant}:"
+    for ev_id, k in (traded or ()):
+        if str(ev_id) == eid and str(k).startswith(prefisso):
+            return True
+    return False
+
+
 def _esatto_gia_su_evento(risk_ctx: dict[str, Any], event_id: Any) -> bool:
     """C'e' gia' una posizione VIVA della variante ESATTO su questa partita?
 
@@ -6114,6 +6151,8 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     now_ts = now.timestamp()
     if not scanner_ts_known:
         scanner_ts = _scanner_ts(db, now_ts)
+    # Q8 (25/09): i minuti di USCITA in uso, letti una volta per giro
+    minuti_uscita = _minuti_di_uscita(params)
     placed = 0
     for s in signals:
         key = _sig(s, "key")
@@ -6127,6 +6166,17 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "strategy": variant,
                                         "reason": "variante_non_abilitata"})
+            continue
+        # Q8 (ordine dell'utente 25/09): mai un ingresso AL minuto di uscita o
+        # dopo. Il minuto d'ingresso e' una soglia aperta (regola del 14/09):
+        # senza questa guardia un segnale all'81' della BASE entrava e usciva a
+        # tempo nello stesso giro, pagando due spread per niente.
+        oltre = _minuto_oltre_uscita(variant, _sig(s, "minute"), minuti_uscita)
+        if oltre is not None:
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "strategy": variant,
+                                        "reason": "minuto_ingresso_oltre_uscita",
+                                        "minuto": oltre[0], "minuto_uscita": oltre[1]})
             continue
         # ⚠️ ORDINE DELL'UTENTE 16/09 h18:20 — PARTITA CHIUSA DALL'UTENTE.
         # Il controllo sta QUI, PRIMA della riserva: non basta impedire
@@ -6166,6 +6216,19 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "strategy": variant,
                                         "reason": "esatto_lato_gia_aperto"})
+            continue
+        # Q9 (ordine dell'utente 25/09): UN SOLO ingresso per variante e per
+        # partita. La chiave di idempotenza `(event_id, signal_key)` contiene il
+        # PUNTEGGIO, quindi a ogni punteggio nuovo nasceva un segnale nuovo e il
+        # bot rientrava: la chiave resta com'e' (e' anche l'indice unico del
+        # DB), si aggiunge questa guardia sui segnali gia' presi dall'automatico
+        # nella stessa modalita' (`traded_signal_keys`, righe 'error' escluse).
+        # Sta DOPO la guardia ESATTO (posizione viva sull'altro lato), che resta
+        # il motivo piu' preciso quando scattano tutte e due.
+        if _variante_gia_entrata(traded_s, event_id, variant):
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "strategy": variant,
+                                        "reason": "un_solo_ingresso_per_partita"})
             continue
         # 12/09: mai un ingresso su una riga del feed NON FRESCA (scanner fermo
         # o partita non riscritta da >120 s): il paper riempirebbe a quote

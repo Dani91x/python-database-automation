@@ -32,8 +32,8 @@ def calcio_payload(
     inplay: bool = True,
     fav_back: Optional[float] = 1.28,
     fav_lay: Optional[float] = 1.3,
-    dog_back: Optional[float] = 8.0,
-    dog_lay: Optional[float] = 8.4,
+    dog_back: Optional[float] = 24.0,
+    dog_lay: Optional[float] = 25.0,
     any_other_home_lay: Optional[float] = 45,
     any_other_away_lay: Optional[float] = 50,
     with_cs: bool = True,
@@ -275,7 +275,7 @@ def test_state_from_checks_false_vince_su_null_null_vince_su_true():
 def test_build_ctx_mappa_odds_any_other_e_pre_match():
     ctx = ctx_of()
     assert (ctx.odds.home.back, ctx.odds.home.lay) == (1.28, 1.3)
-    assert (ctx.odds.away.back, ctx.odds.away.lay) == (8.0, 8.4)
+    assert (ctx.odds.away.back, ctx.odds.away.lay) == (24.0, 25.0)
     assert (ctx.odds.draw.back, ctx.odds.draw.lay) == (5.0, 5.2)
     assert ctx.any_other.home.lay == 45
     assert ctx.any_other.away.lay == 50
@@ -303,7 +303,7 @@ def test_base_segnale_favorita_1_0_al_58():
     assert ev.state == "signal"
     assert ev.headline == "BANCA Sud FC"
     assert ev.side == "LAY"
-    assert ev.entry_odds == 8.4
+    assert ev.entry_odds == 25.0
 
 
 def test_base_no_minuto_prima_della_soglia():
@@ -321,8 +321,47 @@ def test_base_no_favorita_non_in_vantaggio():
     assert eng.evaluate_base(ctx_of(sh=0, sa=1), eng.DEFAULT_PARAMS["base"]).state == "no"
 
 
-def test_base_no_quota_live_favorita_fuori_range():
-    assert eng.evaluate_base(ctx_of(fav_back=1.5), eng.DEFAULT_PARAMS["base"]).state == "no"
+def test_base_quota_live_favorita_non_filtra_piu():
+    """Q1 (utente 25/09): la «Lettura A» (back live della favorita 1,20-1,34)
+    e' TOLTA. Prima di oggi questo test si chiamava
+    `test_base_no_quota_live_favorita_fuori_range` e voleva "no" con la favorita
+    a 1,50: ora la favorita live non decide piu', e nessun check `favLive`
+    esiste."""
+    ev = eng.evaluate_base(ctx_of(fav_back=1.5), eng.DEFAULT_PARAMS["base"])
+    assert ev.state == "signal"
+    assert check(ev, "favLive") is None
+
+
+def test_base_banda_quota_di_banca_20_34_estremi_inclusi():
+    """Q1 (utente 25/09, corso «Entrata a mercato» @93.0: «vanno dal 20 al 34,
+    a dir tanto»): si banca la perdente solo con il suo LAY in [20, 34]."""
+    par = eng.DEFAULT_PARAMS["base"]
+
+    def ev(lay):
+        return eng.evaluate_base(ctx_of(dog_back=round(lay - 1, 2), dog_lay=lay), par)
+
+    for dentro in (20.0, 25.0, 34.0):
+        assert ev(dentro).state == "signal", dentro
+        assert ev(dentro).entry_odds == dentro
+    for fuori in (19.5, 34.5, 8.4, 60.0):
+        e = ev(fuori)
+        assert e.state == "no", fuori
+        # e il check che respinge e' proprio quello della quota di banca
+        rossi = [c.id for c in e.checks if c.ok is False]
+        assert rossi == ["dogLay"], (fuori, rossi)
+    assert check(ev(34.0), "dogLay").label == "Quota banca sfavorita 20" + eng.NDASH + "34"
+
+
+def test_base_banda_quota_di_banca_dai_parametri():
+    """La banda e' un parametro (`dogLayMin/Max`), con default 20/34 anche
+    senza migrazione; le chiavi vecchie `favLiveMin/Max` sono ignorate."""
+    assert eng.merge_params(None)["base"]["dogLayMin"] == 20
+    assert eng.merge_params(None)["base"]["dogLayMax"] == 34
+    vecchi = eng.merge_params({"base": {"favLiveMin": 1.2, "favLiveMax": 1.34}})["base"]
+    assert "favLiveMin" not in vecchi and "favLiveMax" not in vecchi
+    stretta = eng.merge_params({"base": {"dogLayMin": 26, "dogLayMax": 30}})["base"]
+    assert eng.evaluate_base(ctx_of(), stretta).state == "no"          # 25 fuori
+    assert eng.evaluate_base(ctx_of(dog_lay=27.0), stretta).state == "signal"
 
 
 def test_base_no_favorita_pre_match_fuori_range():
@@ -348,8 +387,8 @@ def test_base_segnale_con_favorita_in_trasferta():
     ctx = ctx_of(
         sh=0,
         sa=1,
-        fav_back=8.0,
-        fav_lay=8.4,      # Nord (casa) qui SFAVORITA
+        fav_back=24.0,
+        fav_lay=25.0,     # Nord (casa) qui SFAVORITA
         dog_back=1.28,
         dog_lay=1.3,      # Sud (trasferta) qui FAVORITA
         pre_match={"home": 5.5, "draw": 4.0, "away": 1.65},
@@ -357,7 +396,7 @@ def test_base_segnale_con_favorita_in_trasferta():
     ev = eng.evaluate_base(ctx, eng.DEFAULT_PARAMS["base"])
     assert ev.state == "signal"
     assert ev.headline == "BANCA Nord FC"
-    assert ev.entry_odds == 8.4
+    assert ev.entry_odds == 25.0
 
 
 def test_base_nd_stabilita_punteggio_non_osservabile():
@@ -635,7 +674,7 @@ def test_scan_calcio_payload_completo_da_segnale_base():
             "odds": {
                 "home": {"back": 1.28, "lay": 1.3},
                 "draw": {"back": 5.0, "lay": 5.2},
-                "away": {"back": 8.0, "lay": 8.4},
+                "away": {"back": 24.0, "lay": 25.0},
             },
             "minute": 58,
             "score_home": 1,
@@ -796,9 +835,9 @@ def test_tennis_candidates_chiave_con_punteggio_set():
 def test_size_base_lay_sfavorita():
     ev = eng.evaluate_base(ctx_of(with_sizes=True), eng.DEFAULT_PARAMS["base"])
     assert ev.state == "signal"
-    assert ev.entry_odds == 8.4
+    assert ev.entry_odds == 25.0
     assert ev.entry_size == 120
-    assert check(ev, "dogLay").value == "8,40 " + eng.MIDDOT + " 120 " + eng.EURO + " abbinabili"
+    assert check(ev, "dogLay").value == "25,00 " + eng.MIDDOT + " 120 " + eng.EURO + " abbinabili"
 
 
 def test_size_esatto_lay_altro_risultato_anche_decimale():
@@ -852,7 +891,7 @@ def test_size_fonte_senza_size_entry_size_none():
     ev = eng.evaluate_base(ctx_of(), eng.DEFAULT_PARAMS["base"])
     assert ev.state == "signal"
     assert ev.entry_size is None
-    assert check(ev, "dogLay").value == "8,40"
+    assert check(ev, "dogLay").value == "25,00"
 
 
 def test_size_quota_assente_niente_size_senza_prezzo():
@@ -905,7 +944,7 @@ def test_engine_evaluate_produce_il_segnale_base_completo():
     assert s.selection_id == 2
     assert s.selection_name == "Sud FC"
     assert s.side == "lay"
-    assert s.price == 8.4
+    assert s.price == 25.0
     assert s.size_available == 120
     assert s.size == eng.DEFAULT_PARAMS["stake"]["laySize"]
     assert s.headline == "BANCA Sud FC"

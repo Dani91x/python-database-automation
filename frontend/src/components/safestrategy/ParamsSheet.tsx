@@ -32,7 +32,7 @@ import { useSafeStrategy } from './SafeStrategyProvider';
 
 // ---- bozza testuale (permette digitazione libera, validata al salvataggio) ----
 interface Draft {
-    base: { minuteMin: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; favLiveMin: string; favLiveMax: string; scoreConfirmSec: string };
+    base: { minuteMin: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; dogLayMin: string; dogLayMax: string; scoreConfirmSec: string };
     esatto: { minuteMin: string; scores: string; maxGoalsLaySide: string; entryMin: string; entryMax: string; scoreConfirmSec: string };
     punta: { minuteMin: string; scores: string; entryMin: string; entryMax: string; minMinutesAfterGoal: string };
     tennis: { setsLeadMin: string; gamesLeadMin: string; backMin: string; backMax: string; scoreConfirmSec: string; excludeCompetitions: string; excludeDoubles: boolean };
@@ -45,7 +45,7 @@ function toDraft(p: SafeStrategyParams): Draft {
             minuteMin: s(p.base.minuteMin), scores: p.base.scores.join(', '),
             favPreMin: s(p.base.favPreMin), favPreMax: s(p.base.favPreMax),
             dogPreMin: s(p.base.dogPreMin), dogPreMax: s(p.base.dogPreMax),
-            favLiveMin: s(p.base.favLiveMin), favLiveMax: s(p.base.favLiveMax),
+            dogLayMin: s(p.base.dogLayMin), dogLayMax: s(p.base.dogLayMax),
             scoreConfirmSec: s(p.base.scoreConfirmSec),
         },
         esatto: {
@@ -96,14 +96,17 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             favPreMax: parseNum('Base · favorita pre max', d.base.favPreMax, errors),
             dogPreMin: parseNum('Base · sfavorita pre min', d.base.dogPreMin, errors),
             dogPreMax: parseNum('Base · sfavorita pre max', d.base.dogPreMax, errors),
-            favLiveMin: parseNum('Base · quota live min', d.base.favLiveMin, errors),
-            favLiveMax: parseNum('Base · quota live max', d.base.favLiveMax, errors),
+            dogLayMin: parseNum('Base · quota banca sfavorita min', d.base.dogLayMin, errors),
+            dogLayMax: parseNum('Base · quota banca sfavorita max', d.base.dogLayMax, errors),
             scoreConfirmSec: parseNum('Base · conferma punteggio (s)', d.base.scoreConfirmSec, errors),
             // CERT. 14/09 — "controllo del gioco": pannello LEGACY, non lo
             // espone. Si tengono i default del motore (oggi OFF) invece di
             // inventare un valore: vedi la stessa scelta per il tennis sotto.
             requireControl: DEFAULT_PARAMS.base.requireControl,
             controlMin: DEFAULT_PARAMS.base.controlMin,
+            // Q4 (25/09) — veto campionati del corso: pannello LEGACY, non lo
+            // espone. Default del motore (acceso).
+            vetoCampionati: DEFAULT_PARAMS.base.vetoCampionati,
         },
         esatto: {
             minuteMin: parseNum('R.E. · dal minuto', d.esatto.minuteMin, errors),
@@ -119,6 +122,7 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             requireSelection: DEFAULT_PARAMS.esatto.requireSelection,
             h2hBigDrawRateMax: DEFAULT_PARAMS.esatto.h2hBigDrawRateMax,
             oppConcededMax: DEFAULT_PARAMS.esatto.oppConcededMax,
+            vetoCampionati: DEFAULT_PARAMS.esatto.vetoCampionati,
         },
         punta: {
             minuteMin: parseNum('Punta · dal minuto', d.punta.minuteMin, errors),
@@ -128,6 +132,7 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             minMinutesAfterGoal: parseNum('Punta · minuti post-gol', d.punta.minMinutesAfterGoal, errors),
             requireControl: DEFAULT_PARAMS.punta.requireControl,
             controlMin: DEFAULT_PARAMS.punta.controlMin,
+            vetoCampionati: DEFAULT_PARAMS.punta.vetoCampionati,
         },
         tennis: {
             setsLeadMin: parseNum('Tennis · set di vantaggio', d.tennis.setsLeadMin, errors),
@@ -146,11 +151,13 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             // attive invece di sparire passando di qui.
             excludeBestOf5: DEFAULT_PARAMS.tennis.excludeBestOf5,
             setsPlayedMax: DEFAULT_PARAMS.tennis.setsPlayedMax,
+            // Q12 (25/09) — sfavorito estremo: pannello LEGACY, default del motore
+            leaderPreMax: DEFAULT_PARAMS.tennis.leaderPreMax,
         },
     };
     checkRange('Base · favorita pre-match', params.base.favPreMin, params.base.favPreMax, errors);
     checkRange('Base · sfavorita pre-match', params.base.dogPreMin, params.base.dogPreMax, errors);
-    checkRange('Base · quota live', params.base.favLiveMin, params.base.favLiveMax, errors);
+    checkRange('Base · quota banca sfavorita', params.base.dogLayMin, params.base.dogLayMax, errors);
     checkRange('R.E. · quota', params.esatto.entryMin, params.esatto.entryMax, errors);
     checkRange('Punta · quota', params.punta.entryMin, params.punta.entryMax, errors);
     checkRange('Tennis · back leader', params.tennis.backMin, params.tennis.backMax, errors);
@@ -268,8 +275,8 @@ export function ParamsSheet() {
                         <NumField label="Favorita pre-match max" value={draft.base.favPreMax} onChange={(v) => set('base', { favPreMax: v })} />
                         <NumField label="Sfavorita pre-match min" value={draft.base.dogPreMin} onChange={(v) => set('base', { dogPreMin: v })} />
                         <NumField label="Sfavorita pre-match max" value={draft.base.dogPreMax} onChange={(v) => set('base', { dogPreMax: v })} />
-                        <NumField label="Quota live favorita min" value={draft.base.favLiveMin} onChange={(v) => set('base', { favLiveMin: v })} />
-                        <NumField label="Quota live favorita max" value={draft.base.favLiveMax} onChange={(v) => set('base', { favLiveMax: v })} />
+                        <NumField label="Quota banca sfavorita min" value={draft.base.dogLayMin} onChange={(v) => set('base', { dogLayMin: v })} />
+                        <NumField label="Quota banca sfavorita max" value={draft.base.dogLayMax} onChange={(v) => set('base', { dogLayMax: v })} />
                     </Section>
 
                     <Section title="2 · Calcio — Risultato Esatto (banca “Altro risultato”)">

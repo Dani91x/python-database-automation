@@ -107,8 +107,24 @@ def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Optional[Dict[str, Any]]
                    for r in (getattr(res, "data", None) or [])}
         for eid in chunk:
             pre = trovati.get(eid)
-            out[eid] = dict(pre) if is_usable_pre_ko(pre) else None
+            # Q12 (25/09): anche la coppia pre-partita del TENNIS si reidrata
+            usabile = is_usable_pre_ko(pre) or is_usable_pre_ko_tennis(pre)
+            out[eid] = dict(pre) if usabile else None
     return out
+
+
+def is_usable_pre_ko_tennis(pre: Any) -> bool:
+    """Q12 (25/09): coppia pre-partita del tennis {p1, p2} completa e sensata:
+    la STESSA condizione di `engine._tennis_pre_match`."""
+    if not isinstance(pre, dict):
+        return False
+    for k in ("p1", "p2"):
+        v = pre.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return False
+        if not (v > 1.0):
+            return False
+    return True
 
 
 def is_usable_pre_ko(pre: Any) -> bool:

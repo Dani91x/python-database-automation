@@ -17,6 +17,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 """
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from typing import Any, Dict, Optional
 
@@ -42,7 +43,7 @@ def coppia(back: Optional[float] = None, lay: Optional[float] = None,
 def payload(*, minute: int = 60, sh: int = 1, sa: int = 0,
             pre: Optional[Dict[str, float]] = None,
             home_back: float = 1.25, home_lay: float = 1.27,
-            away_back: float = 12.0, away_lay: float = 13.0,
+            away_back: float = 24.0, away_lay: float = 25.0,
             any_home: Optional[float] = 40.0, any_away: Optional[float] = 45.0,
             inplay: bool = True, osservato: float = 60.0,
             stabile_da: Optional[int] = None) -> Dict[str, Any]:
@@ -152,11 +153,78 @@ def test_b7_sfavorita_pre_match_fuori_banda_scatta() -> None:
     assert "B7" in codici(v)
 
 
-def test_b8_quota_live_favorita_fuori_banda_scatta() -> None:
-    v = valutazione("base", payload(home_back=1.60),
-                    par={"favLiveMin": 1.0, "favLiveMax": 2.0})
+def test_b8_banda_della_quota_di_banca_spostata_scatta() -> None:
+    """Q1 (25/09). Prima di oggi: `test_b8_quota_live_favorita_fuori_banda_scatta`
+    (Lettura A). Ora B8 difende la banda 20-34 della QUOTA DI BANCA: allargata
+    nei parametri, il segnale a 40 passa il motore ma B8 lo accusa."""
+    v = valutazione("base", payload(away_back=39.0, away_lay=40.0),
+                    par={"dogLayMin": 1.01, "dogLayMax": 1000.0})
     assert v.segnale
     assert "B8" in codici(v)
+
+
+def test_b8_banda_in_uso_diversa_dal_corso_scatta_anche_senza_segnale() -> None:
+    """Lo specchio non basta: una banda diversa da 20-34 e' rossa sempre."""
+    v = valutazione("base", payload(), par={"dogLayMin": 20.0, "dogLayMax": 35.0})
+    assert solo(v, "B8")
+    assert "B8" in codici(v)
+
+
+def test_b8_motore_che_ignora_la_banda_scatta() -> None:
+    """Banda in uso GIUSTA (20-34) ma un motore alterato che desse segnale col
+    lay della perdente a 40: B8 guarda il prezzo vero della riga e lo accusa.
+    Il segnale si forza sul contesto vero, come per B3."""
+    v = valutazione("base", payload(away_back=39.0, away_lay=40.0))
+    assert not v.segnale                      # il motore vero lo respinge
+    # `entry_odds` dentro la banda: cosi' a parlare e' SOLO il prezzo della riga
+    ev = dataclasses.replace(v.ev, state="signal", entry_odds=25.0)
+    oss = CERT.Valutazione(strategia="base", ctx=v.ctx, ev=ev, par=v.par,
+                           params=v.params)
+    viol = [x for x in CERT.verifica(oss) if x.codice == "B8"]
+    assert len(viol) == 1 and "40" in viol[0].dettaglio, viol
+
+
+def test_b8_ordine_a_un_prezzo_fuori_banda_scatta() -> None:
+    """La riga dice 25 (dentro), ma l'ordine partirebbe a 36: B8 guarda anche
+    `entry_odds`, il prezzo con cui il bot piazza davvero."""
+    v = valutazione("base", payload())
+    assert v.segnale
+    ev = dataclasses.replace(v.ev, entry_odds=36.0)
+    oss = CERT.Valutazione(strategia="base", ctx=v.ctx, ev=ev, par=v.par,
+                           params=v.params)
+    viol = [x for x in CERT.verifica(oss) if x.codice == "B8"]
+    assert len(viol) == 1 and "36" in viol[0].dettaglio, viol
+
+
+def test_b8_bordi_20_e_34_tacciono() -> None:
+    for lay in (20.0, 34.0):
+        v = valutazione("base", payload(away_back=lay - 1, away_lay=lay))
+        assert v.segnale, lay
+        assert solo(v, "B8") and "B8" not in codici(v), lay
+
+
+def test_b9_il_filtro_sulla_favorita_live_ricompare_scatta() -> None:
+    """Q1 (25/09): nessun filtro sulla quota live della favorita. Se il check
+    `favLive` ricomparisse nella valutazione, B9 deve accusarlo."""
+    v = valutazione("base", payload())
+    assert solo(v, "B9") and "B9" not in codici(v)
+    finto = E.ConditionCheck("favLive", "Quota live favorita 1.2-1.34", "1,25", True)
+    ev = dataclasses.replace(v.ev, checks=tuple(v.ev.checks) + (finto,))
+    oss = CERT.Valutazione(strategia="base", ctx=v.ctx, ev=ev, par=v.par,
+                           params=v.params)
+    assert "B9" in codici(oss)
+
+
+def test_b9_i_parametri_della_lettura_a_risolti_scattano() -> None:
+    v = valutazione("base", payload(), par={"favLiveMin": 1.2, "favLiveMax": 1.34})
+    assert "B9" in codici(v)
+
+
+def test_b9_la_favorita_live_fuori_dalla_vecchia_banda_non_e_un_veto() -> None:
+    """La favorita a 1,60 live: prima era "no" (Lettura A), ora si entra."""
+    v = valutazione("base", payload(home_back=1.60, home_lay=1.62))
+    assert v.segnale
+    assert codici(v) == set()
 
 
 def test_b3_selezione_bancata_non_e_la_sfavorita_scatta() -> None:
@@ -285,18 +353,28 @@ def test_e5_quota_di_entrata_fuori_banda_scatta() -> None:
 
 
 def test_e10_selezione_aggiuntiva_spenta_non_ha_casi() -> None:
-    """16/09: la voce della SPEC ORA E' IMPLEMENTATA (`requireSelection`), ma
-    nasce spenta. Spenta, E10 non e' «sano»: non ha nessun caso, come B10 ed
-    E6 con `requireControl` spento."""
-    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away")
+    """Spenta, E10 non e' «sano»: non ha nessun caso, come B10 ed E6 con
+    `requireControl` spento. Q7 (25/09): il DEFAULT e' ora ACCESO, quindi il
+    caso spento si costruisce spegnendo il parametro (prima era il default)."""
+    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away",
+                    par={"requireSelection": False})
     assert "E10" not in codici(v)
     assert not solo(v, "E10")
+
+
+def test_e10_accesa_di_default_ha_casi_e_tace_senza_dato() -> None:
+    """Q7 (25/09): acceso di default; riga senza `selection_hint` -> il check
+    esiste, dichiara «dato assente» e NON blocca: E10 lo giudica e tace."""
+    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away")
+    assert v.segnale
+    assert solo(v, "E10") and "E10" not in codici(v)
 
 
 def test_e10_accesa_senza_il_check_scatta() -> None:
     """Il difetto che E10 nasce per prendere: il parametro e' acceso e nessun
     check guarda la voce della SPEC."""
-    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away")
+    v = valutazione("esatto", payload(minute=50, sh=1, sa=0), sub="away",
+                    par={"requireSelection": False})
     par = dict(v.par)
     par["requireSelection"] = True
     v2 = CERT.Valutazione(strategia="esatto", ctx=v.ctx, ev=v.ev, par=par,

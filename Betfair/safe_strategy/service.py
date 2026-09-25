@@ -218,6 +218,15 @@ _FLUMINE = "flumine"
 _SENZA_QUOTE_ELENCO_MAX = 30
 
 
+def _pre_ko_usabile(ev: Dict[str, Any]) -> bool:
+    """Il riferimento pre-partita dell'evento e' completo PER IL SUO SPORT:
+    tripla 1X2 nel calcio, coppia p1/p2 nel tennis (Q12, 25/09)."""
+    pre = ev.get("pre_ko")
+    if ev.get("sport") == "tennis":
+        return scan_db.is_usable_pre_ko_tennis(pre)
+    return scan_db.is_usable_pre_ko(pre)
+
+
 def _pre_ko_ou_hours() -> float:
     raw = (os.getenv(_PRE_KO_OU_ENV) or "").strip()
     if not raw:
@@ -865,8 +874,12 @@ class Scanner:
         ev["odds_seen_ms"] = ora_ms          # ultima osservazione CON prezzi
         self._segna_prezzi(meta["market_id"], dallo_stream)
         # riferimento pre-KO: aggiorna pre-KO, congela al primo in-play
-        ev["pre_ko"] = scanner.freeze_pre_ko(
-            ev.get("pre_ko"), ev["inplay"], odds if sport == "calcio" else None,
+        # Q12 (25/09): anche il tennis ha il suo riferimento pre-partita
+        # congelato, con lo stesso schema (coppia p1/p2 invece della tripla).
+        _congela = (scanner.freeze_pre_ko if sport == "calcio"
+                    else scanner.freeze_pre_ko_tennis)
+        ev["pre_ko"] = _congela(
+            ev.get("pre_ko"), ev["inplay"], odds,
             # in PRODUZIONE si passa None e `freeze_pre_ko` chiama `now_iso()`
             # solo quando il riferimento lo costruisce davvero: questo e' il
             # percorso caldo dello stream (migliaia di book al minuto) e non ci
@@ -1620,6 +1633,9 @@ class Scanner:
                         # a quale ritardo era soggetto (3 s, 5 s su alcuni ITF).
                         "odds_pt_ms": ev.get("odds_pt_ms"),
                         "bet_delay": ev.get("bet_delay"),
+                        # Q12 (25/09), chiave ADDITIVA: quota pre-partita
+                        # congelata {p1, p2} (stesso nome e schema del calcio)
+                        "pre_ko": ev.get("pre_ko"),
                     }
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
@@ -1688,11 +1704,12 @@ class Scanner:
         non si legge nulla. Torna quanti riferimenti sono stati recuperati."""
         if self.dry:
             return 0
+        # Q12 (25/09): anche il tennis (coppia p1/p2), con la sua condizione
         da_cercare = [
             eid for eid, ev in self.events.items()
-            if ev.get("sport") == "calcio"
+            if ev.get("sport") in ("calcio", "tennis")
             and ev.get("inplay")
-            and not scan_db.is_usable_pre_ko(ev.get("pre_ko"))
+            and not _pre_ko_usabile(ev)
             and eid not in self.pre_ko_tried
         ]
         if not da_cercare:
@@ -1719,7 +1736,10 @@ class Scanner:
             if pre is None:
                 continue
             ev = self.events.get(eid)
-            if ev is None or scan_db.is_usable_pre_ko(ev.get("pre_ko")):
+            if ev is None or _pre_ko_usabile(ev):
+                continue
+            # la forma deve essere quella dello SPORT dell'evento
+            if not _pre_ko_usabile({"sport": ev.get("sport"), "pre_ko": pre}):
                 continue
             # si conserva il ``captured_at`` originale e si dichiara che il
             # riferimento arriva dal DB, non da una cattura in diretta

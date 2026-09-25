@@ -439,6 +439,32 @@ def freeze_pre_ko(
     return {**triple, "captured_at": adesso_iso or now_iso()}
 
 
+def freeze_pre_ko_tennis(
+    prev: Optional[Dict[str, Any]],
+    inplay: bool,
+    odds: Optional[Dict[str, Any]],
+    adesso_iso: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Q12 (ordine dell'utente 25/09) — riferimento PRE-PARTITA del tennis, con
+    lo STESSO schema di ``freeze_pre_ko`` del calcio: si aggiorna solo prima
+    dell'inizio (closing line), si CONGELA al primo tick in-play, mai quote
+    in-play nel riferimento. La coppia e' {p1, p2} (back del Match Odds);
+    riferimento solo se completa.
+    """
+    if inplay:
+        return prev
+    if not odds:
+        return prev
+    coppia = {}
+    for side in ("p1", "p2"):
+        pair = odds.get(side) or {}
+        back = pair.get("back")
+        if isinstance(back, bool) or not isinstance(back, (int, float)):
+            return prev
+        coppia[side] = float(back)
+    return {**coppia, "captured_at": adesso_iso or now_iso()}
+
+
 def books_period_calcio(any_inplay: bool, any_hot: bool) -> float:
     """Cadenza (s) del poll quote MATCH_ODDS calcio: fitta solo quando serve."""
     if any_hot:

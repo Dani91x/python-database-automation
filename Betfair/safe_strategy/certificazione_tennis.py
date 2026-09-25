@@ -237,12 +237,23 @@ def _check_di(oss: Osservazione, ident: str):
 # ===========================================================================
 # T. LA STRATEGIA DEL MANUALE (SPEC_STRATEGIA_S.md §3)
 # ===========================================================================
+# Q5, DECISIONE DELL'UTENTE 25/09: la quota minima d'ingresso del tennis e'
+# 1,02 (prima 1,01). Il numero e' scritto QUI, non letto dai parametri: finche'
+# T1 confrontava il prezzo con il `backMin` in uso, spostare `backMin` (nel
+# codice o sul DB) non produceva nessuna violazione — era uno specchio, non un
+# controllo (stessa lezione di `certificazione.SPEC_BASE`).
+SPEC_TENNIS_BACK_MIN = 1.02
+
+
 @_controllo("T1", "SPEC §3 tennis: si PUNTA (back) chi sta vincendo, alla quota "
-                  "della banda d'ingresso (backMin..backMax)",
+                  "della banda d'ingresso (backMin = 1,02 decisione 25/09 .. backMax)",
             quando=lambda o: bool(_aperture_tennis(o)))
 def _t1(oss: Osservazione) -> Optional[str]:
     par = _par_tennis(oss)
     lo, hi = _num(par.get("backMin")), _num(par.get("backMax"))
+    if lo is None or abs(lo - SPEC_TENNIS_BACK_MIN) > 1e-9:
+        return (f"backMin in uso {par.get('backMin')!r} invece di "
+                f"{SPEC_TENNIS_BACK_MIN} (decisione dell'utente 25/09)")
     for a in _aperture_tennis(oss):
         tr = a["trade"]
         lato = str(tr.get("side") or "").lower()
