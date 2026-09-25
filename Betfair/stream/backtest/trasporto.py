@@ -55,14 +55,19 @@ ATTORI: Dict[str, tuple] = {
     "safe_esatto": ("safe", "SAFE_ORDINI_VIA_CANALE"),
     "safe_punta": ("safe", "SAFE_ORDINI_VIA_CANALE"),
     "omega": ("omega", "OMEGA_ORDINI_VIA_CANALE"),
+    # 25/09 (F8): Safe tennis sul canale 47332 del runner TENNIS (motore con
+    # l'esecutore tennis, ``porta_banco.PortaBanco(sport="tennis")``)
+    "safe_tennis": ("safe_tennis", "SAFE_TENNIS_ORDINI_VIA_CANALE"),
 }
+
+#: lo sport del runner di ogni attore (quale motore, quale porta del bot)
+SPORT_ATTORE: Dict[str, str] = {"safe": "calcio", "omega": "calcio",
+                                "safe_tennis": "tennis"}
 
 #: perche' gli altri bot non hanno ancora il canale (F7/F8 dell'audit)
 SENZA_CANALE: Dict[str, str] = {
     "mike": "F7 non fatta: Mike piazza sempre in REST (execute_place, lay appoggiate, "
             "submin sincrono); nessuna porta a comandi nel suo codice",
-    "safe_tennis": "F8 non fatta: canale 47332 + controllo su tennis_live_follow; ref "
-                   "safe-t<id> diverso dal prefisso safe_tennis- preteso dal motore",
 }
 
 _STATO: Optional[Dict[str, Any]] = None
@@ -179,7 +184,9 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
     from .porta_banco import PortaBanco, TOKEN_BANCO
 
     modo = "LIVE" if str(getattr(strategia, "mode", "live")) == "live" else "PAPER"
-    pb = PortaBanco(motore.quadro, strategia, attore=st["attore"], modo_processo=modo)
+    sport = SPORT_ATTORE.get(str(st["attore"]), "calcio")
+    pb = PortaBanco(motore.quadro, strategia, attore=st["attore"], modo_processo=modo,
+                    sport=sport)
     pb.orologio_mercato = lambda: _ora_mercato(motore)
     st["porta_banco"] = pb
     if st["attore"] == "omega":
@@ -192,10 +199,10 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
     else:
         from ...safe_strategy import porta_ordini as SPO
 
-        client = SPO.PortaCanale(porta_ws=0, attore="safe", sport="calcio",
+        client = SPO.PortaCanale(porta_ws=0, attore=st["attore"], sport=sport,
                                  connetti=pb.connetti, token_fn=lambda: TOKEN_BANCO)
-        st["_ripristina"] = ("safe", SPO._PORTE.get("calcio"))
-        SPO._PORTE["calcio"] = client
+        st["_ripristina"] = ("safe:" + sport, SPO._PORTE.get(sport))
+        SPO._PORTE[sport] = client
     st["client"] = client
     client.avvia()
     fine = time.monotonic() + 5.0
@@ -259,10 +266,11 @@ def _smonta(st: Dict[str, Any]) -> None:
         else:
             from ...safe_strategy import porta_ordini as SPO
 
+            sport = chi.split(":", 1)[1] if ":" in chi else "calcio"
             if prima is None:
-                SPO._PORTE.pop("calcio", None)
+                SPO._PORTE.pop(sport, None)
             else:
-                SPO._PORTE["calcio"] = prima
+                SPO._PORTE[sport] = prima
 
 
 # ---------------------------------------------------------------------------

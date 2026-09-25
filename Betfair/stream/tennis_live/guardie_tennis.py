@@ -306,6 +306,16 @@ RIPRESA_ETA_MAX_S = 120.0
 MOTIVO_GUARDIA_LOCALE = "runner tennis in ripresa: comando NON eseguito, riprova"
 
 
+# 25/09 (F8): la ripresa del DIARIO del motore ordini tennis (comandi in volo al
+# riavvio verificati su Betfair per ref, ``MotoreOrdini.riprendi_da_diario``).
+# None = motore non montato (come prima). False = guardia ARMATA, si riprova.
+_RIPRESA_MOTORE: Dict[str, Any] = {"fn": None}
+
+
+def imposta_ripresa_motore(fn: Any) -> None:
+    _RIPRESA_MOTORE["fn"] = fn
+
+
 def arma_guardia_runner() -> None:
     """Chiamata una volta all'avvio del runner (PAPER/LIVE)."""
     GUARDIA_RUNNER.attiva = True
@@ -336,6 +346,11 @@ def ripresa_all_avvio(db: Any = None) -> bool:
             return False
         n_stale = d.fail_stale_pending_tennis_orders(RIPRESA_ETA_MAX_S)
         n_ord, n_pos = d.chiudi_specchio_paper_orfano()
+        fn_motore = _RIPRESA_MOTORE.get("fn")
+        if fn_motore is not None and not fn_motore():
+            logger.error("[tennis-runner] ripresa dal diario del motore ordini NON completa: "
+                         "guardia d'avvio armata, riprovo")
+            return False
     except Exception as ex:  # noqa: BLE001 - la guardia resta armata, si riprova
         logger.error("[tennis-runner] ripresa KO: bot e coda FERMI (guardia d'avvio "
                      "armata) finche' non riesce: %s", str(ex)[:200])

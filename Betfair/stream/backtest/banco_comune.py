@@ -2076,6 +2076,9 @@ def _replay_evento(*, event_id: str, cartella: str, servizio: Callable[..., Any]
             # il motore lo si aggancia dopo (serve il `quadro`): e' lui che fa
             # scorrere il tempo di mercato durante il piazzamento
             self.mercato = MercatoFlumine(self)
+            # 25/09 (F8): le righe del servizio, lette dalla traccia del
+            # trasporto (``trasporto.traccia``) come per Safe calcio
+            self.db = memoria
             self._ultimo_ms = 0
             self._i_punteggi = 0
             super().__init__(**kw)

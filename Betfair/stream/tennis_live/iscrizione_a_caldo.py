@@ -16,11 +16,11 @@ QUI (tutto sulla STESSA connessione, senza ricostruire niente):
 * RISOTTOSCRIZIONE A CALDO (``sottoscrivi``): Betfair Stream API sostituisce la
   sottoscrizione con un nuovo ``marketSubscription`` sulla stessa connessione.
   Si usa ``BetfairStream.subscribe_to_markets`` di betfairlightweight (lo
-  stesso che flumine chiama all'avvio, ``MarketStream.run``). Stesso schema di
-  ``auto_follow.SottoscrittoreStream.applica`` del calcio (non ancora su master
-  al momento di questo lavoro: meccanismo replicato 1:1, da unificare quando
-  entra). Blotter, posizioni (paper e live), ordini vivi e worker restano quelli
-  di prima.
+  stesso che flumine chiama all'avvio, ``MarketStream.run``). 25/09
+  UNIFICATO: il meccanismo e' ``Betfair/stream/sottoscrizione_a_caldo.py``,
+  lo STESSO di ``auto_follow.SottoscrittoreStream.applica`` del calcio (qui
+  restano i nomi di sempre, riesportati). Blotter, posizioni (paper e live),
+  ordini vivi e worker restano quelli di prima.
 * LAVORO NEL THREAD DI FLUMINE (``esegui_nel_thread_di_flumine``): la
   risottoscrizione e l'``add_strategy`` dei bot nuovi girano DENTRO il ciclo
   principale di flumine (``CustomEvent`` sulla ``handler_queue``), cioe' fra un
@@ -30,7 +30,9 @@ QUI (tutto sulla STESSA connessione, senza ricostruire niente):
   200 mercati per connessione (limite Betfair). Il tennis sottoscrive UN
   mercato per partita (Match Odds), quindi il tetto conta partite = mercati.
   Priorita': POSIZIONI VIVE (mai espulse, mai tolte) > seguita A MANO (mai
-  espulsa) > partita ARMATA (almeno un bot) > candidata. Una partita nuova entra
+  espulsa) > COMANDO di un bot (25/09, F8: l'ordine di Safe tennis su una
+  partita non seguita, ``esecutore_tennis.AgganciaTennis``) > partita ARMATA
+  (almeno un bot) > candidata. Una partita nuova entra
   se c'e' posto; a tetto pieno espelle la partita meno prioritaria e piu'
   vecchia SOLO se di priorita' STRETTAMENTE piu' bassa (niente giostra fra
   pari) e senza posizioni. Niente di espellibile: rifiuto DICHIARATO (resta in
@@ -47,12 +49,13 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-#: limite Betfair: 200 mercati per connessione (accertato 09/09, config_stream)
-LIMITE_BETFAIR_MERCATI = 200
+#: limite Betfair: 200 mercati per connessione (accertato 09/09, config_stream).
+#: 25/09: UNA definizione per calcio e tennis (``sottoscrizione_a_caldo``).
+from ..sottoscrizione_a_caldo import LIMITE_BETFAIR_MERCATI  # noqa: E402
 
 ENV_INTERRUTTORE = "TENNIS_ISCRIZIONE_A_CALDO"
 ENV_TETTO = "TENNIS_TETTO_MERCATI"
@@ -70,7 +73,8 @@ GRAZIA_USCITA_DEFAULT_S = 30.0
 PRI_IN_USCITA = 0      # follow sparito, in grazia: la prima a lasciare il posto
 PRI_CANDIDATA = 1      # follow senza bot armati
 PRI_ARMATA = 2         # almeno un bot armato (riga in requested/arming/armed/running)
-PRI_MANUALE = 3        # seguita a mano dall'utente: mai espulsa
+PRI_COMANDO = 3        # 25/09 (F8): un bot ha mandato un ORDINE su questa partita
+PRI_MANUALE = 4        # seguita a mano dall'utente: mai espulsa
 
 
 def acceso(env: Optional[Dict[str, str]] = None) -> bool:
@@ -120,6 +124,8 @@ class Evento:
     armata: bool = False
     posizioni: bool = False
     in_uscita: bool = False
+    #: 25/09 (F8): chiesta da un COMANDO d'ordine di un bot (aggancio a comando)
+    comando: bool = False
 
     @property
     def priorita(self) -> int:
@@ -127,6 +133,8 @@ class Evento:
             return PRI_IN_USCITA
         if self.manuale:
             return PRI_MANUALE
+        if self.comando:
+            return PRI_COMANDO
         if self.armata:
             return PRI_ARMATA
         return PRI_CANDIDATA
@@ -180,7 +188,8 @@ def pianifica(seguiti: List[Evento], voluti: List[Evento], tetto: int,
         if s.event_id in ids_voluti:
             occupati.append(s)
             continue
-        uscente = Evento(s.event_id, s.manuale, s.armata, s.posizioni, in_uscita=True)
+        uscente = Evento(s.event_id, s.manuale, s.armata, s.posizioni, in_uscita=True,
+                         comando=s.comando)
         if s.posizioni:
             piano.tenuti_per_posizioni.append(s.event_id)
             occupati.append(uscente)
@@ -268,76 +277,17 @@ def esegui_nel_thread_di_flumine(framework: Any, fn: Callable[[Any], Any],
 # ---------------------------------------------------------------------------
 # la risottoscrizione a caldo
 # ---------------------------------------------------------------------------
-class NonPronto(RuntimeError):
-    """Lo stream di mercato non e' (ancora) connesso: si riprova al giro dopo."""
-
-
-def stream_di_mercato(framework: Any, capture: Any = None) -> Any:
-    """LA MarketStream del runner: quella della capture condivisa se nota,
-    altrimenti la prima MarketStream (non storica) del framework."""
-    try:
-        from flumine.streams.historicalstream import HistoricalStream
-        from flumine.streams.marketstream import MarketStream
-    except Exception:  # noqa: BLE001
-        return None
-    for s in list(getattr(capture, "streams", []) or []):
-        if isinstance(s, MarketStream) and not isinstance(s, HistoricalStream):
-            return s
-    for s in list(getattr(framework, "streams", []) or []):
-        if isinstance(s, MarketStream) and not isinstance(s, HistoricalStream):
-            return s
-    return None
-
-
-def filtro_mercati(market_ids: Iterable[str]) -> Dict[str, Any]:
-    """Il filtro CANONICO (mercati ordinati): capture, bot e stream devono
-    avere lo STESSO dizionario, o flumine apre una seconda sottoscrizione."""
-    from betfairlightweight.filters import streaming_market_filter
-
-    return streaming_market_filter(market_ids=sorted({str(m) for m in market_ids}))
-
-
-def sottoscrivi(framework: Any, stream: Any, market_ids: Iterable[str]) -> int:
-    """Sostituisce la sottoscrizione della MarketStream con ``market_ids`` sulla
-    STESSA connessione (nessun restart, blotter intatto). Da chiamare DENTRO il
-    ciclo di flumine (``esegui_nel_thread_di_flumine``). Ritorna il nuovo id.
-
-    Mai un filtro vuoto (Betfair lo leggerebbe come «tutto»), mai oltre 200."""
-    ids = [str(m) for m in market_ids if m]     # l'ordine canonico lo da' filtro_mercati
-    if not ids:
-        raise ValueError("sottoscrizione vuota rifiutata")
-    if len(set(ids)) > LIMITE_BETFAIR_MERCATI:
-        raise ValueError("oltre il limite Betfair: %d mercati" % len(ids))
-    if stream is None:
-        raise NonPronto("nessuna MarketStream nel framework")
-    bs = getattr(stream, "_stream", None)
-    if bs is None or not getattr(bs, "running", False):
-        raise NonPronto("stream di mercato non ancora connesso")
-    filtro = filtro_mercati(ids)
-    # l'id nuovo e' prevedibile (``new_unique_id`` = +1): assegnato PRIMA
-    # dell'invio, cosi' i primi book della nuova sottoscrizione trovano gia' lo
-    # stream_id giusto nelle strategie (``strategy.stream_ids``)
-    previsto = int(getattr(bs, "_unique_id", 0) or 0) + 1
-    vecchio = stream.stream_id
-    stream.stream_id = previsto
-    try:
-        nuovo = bs.subscribe_to_markets(
-            market_filter=filtro, market_data_filter=stream.market_data_filter,
-            conflate_ms=stream.conflate_ms)
-    except Exception:
-        stream.stream_id = vecchio
-        raise
-    stream.stream_id = nuovo
-    stream.market_filter = filtro            # la riconnessione di flumine lo riusa
-    for strat in list(getattr(framework, "strategies", []) or []):
-        if stream in list(getattr(strat, "streams", []) or []):
-            strat.market_filter = filtro
-    return int(nuovo)
-
-
-def mercati_dello_stream(stream: Any) -> List[str]:
-    filtro = getattr(stream, "market_filter", None) or {}
-    return sorted(str(m) for m in (filtro.get("marketIds") or []))
+# 25/09 UNIFICAZIONE: nuovo marketSubscription sulla stessa connessione,
+# stream_id, filtro canonico, book vecchi scartati = ``sottoscrizione_a_caldo``,
+# lo STESSO modulo che usa il calcio (``auto_follow.SottoscrittoreStream``).
+# I nomi di sempre restano qui (riesportati): runner e test non cambiano.
+from ..sottoscrizione_a_caldo import (  # noqa: E402,F401 - riesportati
+    NonPronto,
+    filtro_mercati,
+    mercati_dello_stream,
+    sottoscrivi,
+    stream_di_mercato,
+)
 
 
 def aggiungi_strategia_sullo_stream(framework: Any, stream: Any, strat: Any) -> None:

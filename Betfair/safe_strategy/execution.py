@@ -551,7 +551,8 @@ def _annulla_via_canale(porta: Any, *, bet_id: str, market_id: Optional[str],
         return _RIPIEGO_REST if mode == "live" else None
     try:
         comando = PO.costruisci_comando(
-            ref=PO.ref_annullo(bet_id, size_reduction), attore=porta.attore,
+            ref=PO.ref_annullo(bet_id, size_reduction, attore=porta.attore),
+            attore=porta.attore,
             azione="cancel", mode=mode, market_id=(str(market_id) if market_id else None),
             bet_id=bet_id, size_reduction=size_reduction, max_eta_ms=PO.MAX_ETA_MS)
     except ValueError:

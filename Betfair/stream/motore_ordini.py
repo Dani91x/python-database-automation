@@ -543,8 +543,15 @@ class MotoreOrdini:
                  modo_processo: Optional[str] = None,
                  blocco_modo: Optional[Callable[..., Optional[str]]] = None,
                  eta_settings: Optional[Callable[[], float]] = None,
-                 aggancio: Optional[Any] = None) -> None:
+                 aggancio: Optional[Any] = None,
+                 esecutore: Optional[Any] = None) -> None:
         self.sport = sport
+        # 25/09 (tennis, F8): l'ESECUTORE dello sport, cioe' il modulo che espone
+        # le funzioni del worker (``_dispatch``, guardie, client per modalita',
+        # contesto sul thread). None = ``live_order_worker`` del calcio, come
+        # prima. Il runner tennis passa ``tennis_live.esecutore_tennis`` (il
+        # ``_dispatch`` vero di ``tennis_live_order_worker``).
+        self._low = esecutore if esecutore is not None else LOW
         # 25/09 AUTO-FOLLOW: chi segue da solo i mercati (``AutoFollow`` del
         # runner: ``servibile``/``richiedi``). None = comportamento di prima
         # (mercato non seguito -> ``_resolve_market`` rifiuta).
@@ -565,8 +572,8 @@ class MotoreOrdini:
         # e ``eta_settings`` sostituiscono le letture dei settings. In produzione
         # restano None = funzioni del worker (nessun comportamento diverso).
         self._modo_processo_forzato = modo_processo
-        self._blocco_modo = blocco_modo or LOW._blocco_apertura_modo
-        self._eta_settings = eta_settings or LOW.eta_settings_s
+        self._blocco_modo = blocco_modo or self._low._blocco_apertura_modo
+        self._eta_settings = eta_settings or self._low.eta_settings_s
         # place-and-trim in corso: ref interno awlq<rid> -> stato in RAM
         self._submin: Dict[str, Dict[str, Any]] = {}
         self.canale = canale
@@ -611,6 +618,7 @@ class MotoreOrdini:
     # ------------------------------------------------------------ ciclo di vita
     def avvia(self) -> None:
         """Carica il dedup dal diario, collega canale/specchio/worker, avvia il thread."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         self._carica_visti()
         self.scrittore.avvia()
         from . import db as dbm
@@ -626,6 +634,7 @@ class MotoreOrdini:
         self._thread.start()
 
     def ferma(self, timeout: float = 2.0) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         from . import db as dbm
 
         if self.canale is not None:
@@ -658,6 +667,7 @@ class MotoreOrdini:
         self._evento.set()
 
     def _ciclo(self) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         self.thread_ident = threading.get_ident()
         while not self._stop.is_set():
             # timeout di sicurezza: se una sveglia andasse persa, il comando
@@ -749,6 +759,7 @@ class MotoreOrdini:
                                                                  c.ricevuto_ms)})
 
     def _gestisci(self, c: Any) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         _t_tempi = LOW._TEMPI.ora() if LOW._tempi_on() else None  # F0: "ricezione" (misura)
         self.conti["comandi"] += 1
         d = c.d if isinstance(c.d, dict) else {}
@@ -837,6 +848,7 @@ class MotoreOrdini:
     def _controlla(self, piano: Dict[str, Any], ricevuto_ms: int) -> None:
         """Le guardie del runner, TUTTE da RAM (zero IO). Ordine: eta', aggancio,
         modalita' servibile, guardia d'avvio, kill-switch, freschezza settings."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         eta = ricevuto_ms - int(piano["creato_ms"])
         if eta > int(piano["max_eta_ms"]):
             raise Rifiuto(M_ETA, f"eta' {eta} ms > max_eta_ms {piano['max_eta_ms']}")
@@ -940,6 +952,7 @@ class MotoreOrdini:
         """Il place riduce DAVVERO la posizione abbinata del runner? Legge le
         esposizioni dal blotter di flumine (``_read_matched_exposures``, le
         stesse dello specchio posizioni). Qualunque dubbio -> False."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         try:
             market = LOW._resolve_market(flumine, riga.get("market_id"))
             strat = LOW._strategy_for_mode(self._strategie, mode)
@@ -976,6 +989,7 @@ class MotoreOrdini:
 
     def _esegui(self, attore: str, ref: str, piano: Dict[str, Any],
                 errore_forzato: Optional[str] = None) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         riga = piano["riga"]
         mode = piano["mode"]
         rid = riga["id"]
@@ -1164,6 +1178,7 @@ class MotoreOrdini:
     def avanza_submin(self) -> int:
         """UN passo per ogni place-and-trim in corso (``_advance_submin_row`` del
         worker, ``allow_place=False``: mai un secondo place). Nessun sonno."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         n = 0
         for cust in list(self._submin):
             s = self._submin.get(cust)
@@ -1221,6 +1236,7 @@ class MotoreOrdini:
     def _abbandona_submin(self, cust: str, lsb: Any, motivo: str) -> None:
         """Timeout: il residuo si RITIRA (mai un parcheggio lasciato a mercato
         senza dirlo), poi errore esplicito."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         s = self._submin[cust]
         result = s["captured"].get("result") or {}
         try:
@@ -1240,6 +1256,7 @@ class MotoreOrdini:
         self._chiudi_submin(cust, False, motivo)
 
     def _chiudi_submin(self, cust: str, ok: bool, errore: Optional[str]) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         s = self._submin.pop(cust, None)
         if s is None:
             return
@@ -1287,10 +1304,13 @@ class MotoreOrdini:
         """Osservatore dello specchio (thread PRINCIPALE di flumine): SOLO un
         lookup in RAM e un invio. Righe non nate da un comando: ignorate."""
         cor = payload.get("client_order_ref")
-        if not isinstance(cor, str) or not cor.startswith("awlq") or len(cor) < 14:
+        # 25/09: il prefisso del ref interno e' quello dell'esecutore
+        # (calcio ``awlq``, tennis ``awtq``), sempre seguito da 10 cifre
+        pref = self._low._cust_ref("")
+        if not isinstance(cor, str) or not cor.startswith(pref) or len(cor) < len(pref) + 10:
             return
         with self._lock_seq:
-            info = self._rif_interni.get(cor[:14])
+            info = self._rif_interni.get(cor[:len(pref) + 10])
             if info is None or payload.get("mode") != info["mode"]:
                 return
             if not info["pronto"]:
@@ -1321,6 +1341,7 @@ class MotoreOrdini:
         """Il ``/order`` del desktop di sempre, stesse regole e stesse risposte
         di ``_process_local_requests``; in piu': diario write-ahead e IO DB
         differito. Guardia armata -> come B-1 (solo ``cancel``)."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         ch = self.canale
         if self._guardia_armata():
             annulli = []
@@ -1366,6 +1387,7 @@ class MotoreOrdini:
 
     # interfaccia ``diario`` di _process_local_requests
     def inviato(self, row: Dict[str, Any], cmd: Dict[str, Any]) -> None:
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
         cref = cmd.get("client_ref")
         ref = f"order-{cref}" if cref else f"order-local{row['id']}"
         self._ref_corrente = ref

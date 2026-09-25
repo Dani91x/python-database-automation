@@ -1,0 +1,101 @@
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe_tennis non disponibile (socket del banco chiuso)
+WARNING:Betfair.stream.tennis_live.esecutore_tennis:[tennis-aggancio] comando su 1.000000002 NON agganciabile: tetto di 1 mercati pieno sulla connessione del runner tennis (limite Betfair 200) e nessuna partita espellibile (posizioni vive, a mano o comandi in corso)
+WARNING:Betfair.stream.tennis_live.esecutore_tennis:[tennis-aggancio] comando su 1.259820036 NON agganciabile: tetto di 1 mercati pieno sulla connessione del runner tennis (limite Betfair 200) e nessuna partita espellibile (posizioni vive, a mano o comandi in corso)
+WARNING:Betfair.stream.tennis_live.esecutore_tennis:[tennis-aggancio] 1.999999999: catalogo non risolto (il comando scade in_aggancio, il bot ripete la decisione)
+WARNING:Betfair.stream.motore_ordini:[motore] safe_tennis-t15 NON eseguito: in_aggancio: mercato 1.999999999 non sottoscritto entro 300 ms (aggancio richiesto: il bot ripete la decisione)
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/safe_tennis non disponibile (socket del banco chiuso)
+PROFILO RAPIDO del trasporto - bot safe_tennis (attore safe_tennis) - registrazione 35795993
+OK  R1 accettato  controlli=7  0.2 s
+      ok esito dell'invio 'pending' (esito dal canale)
+      ok ack accettato dal motore
+      ok evento terminale arrivato al client
+      ok UN solo ordine su flumine per il comando
+      ok nessuna chiamata REST
+      ok riga 'open' con l'abbinato del runner
+      ok bet_id della riga = bet_id dell'evento
+OK  R2 freno  controlli=3  0.0 s
+      ok quota non abbinabile: evento terminale senza abbinato
+      ok abbinato 0
+      ok riga in 'error' (nessun fill inventato)
+OK  R3 parziale  controlli=3  0.0 s
+      ok LIVE FOK oltre la liquidita': ucciso, 0 abbinato (mai un parziale)
+      ok riga 'error'
+      ok PAPER senza FOK: N/A per Safe (FOK anche in paper)
+OK  R4 canale giu'  controlli=6  1.5 s
+      ok il client vede il canale giu'
+      ok APERTURA a canale giu': NON inviata, errore certo
+      ok APERTURA mai sul REST (D5)
+      ok nessun comando al motore
+      ok CHIUSURA a canale giu': sul REST di oggi (D5, ripiego dichiarato)
+      ok il client si ricollega da solo
+OK  R5 duplicato  controlli=3  0.0 s
+      ok secondo invio: ack 'ref_gia_visto', nessuna seconda esecuzione
+      ok il bot non lo tratta come rifiuto (pending, attende l'esito del primo)
+      ok UN solo ordine su flumine
+OK  R6 comando vecchio  controlli=3  0.0 s
+      ok rifiutato 'comando_scaduto'
+      ok esito certo negativo per il bot
+      ok nessun ordine su flumine
+OK  R7 kill-switch  controlli=5  0.0 s
+      ok APERTURA a kill-switch acceso: rifiutata 'kill_switch'
+      ok esito certo negativo per il bot
+      ok nessun ordine su flumine
+      ok CHIUSURA (riduzione verificata sul blotter) accettata
+      ok la chiusura arriva a un esito
+OK  R8 sotto il minimo  controlli=5  0.0 s
+      ok evento terminale 'rifiutato' (mai in silenzio)
+      ok motivo dichiarato 'submin_non_percorribile' nel diario del runner
+      ok nessun ordine, nessun REST
+      ok nessun place-and-trim appeso
+      ok riga 'error' (nessun fill inventato)
+OK  R9 sequenza  controlli=2  0.0 s
+      ok richieste da_seq <= riconnessioni (nessuna tempesta)
+      ok seq contiguo (nessun buco aperto)
+OK  R10 mercato non seguito  controlli=10  0.0 s
+      ok prima del comando il runner NON segue il mercato
+      ok esito dell'invio 'pending' (il bot attende l'esito)
+      ok ack ACCETTATO con motivo 'in_aggancio' (dichiarato)
+      ok partita nel piano come COMANDO, con l'event_id vero del catalogo
+      ok sottoscrizione (allineamento) col mercato del comando
+      ok evento terminale arrivato al client
+      ok UN solo ordine su flumine per il comando
+      ok nessuna chiamata REST
+      ok mai 'non sottoscritto' negli eventi
+      ok riga 'open' con l'abbinato del runner
+OK  R10b tetto pieno  controlli=4  0.0 s
+      ok ack accettato in_aggancio
+      ok la candidata SENZA posizioni e' espulsa, entra la partita del comando
+      ok comando eseguito dopo l'espulsione: ordine ed evento terminale
+      ok mai piu' partite del tetto
+OK  R10c mai espulsi  controlli=8  0.0 s
+      ok [posizioni] rifiuto dichiarato 'tetto_mercati_pieno'
+      ok [posizioni] niente espulso: le partite seguite sono quelle di prima
+      ok [posizioni] nessun ordine, nessun REST
+      ok [posizioni] esito certo negativo per il bot
+      ok [manuale] rifiuto dichiarato 'tetto_mercati_pieno'
+      ok [manuale] niente espulso: le partite seguite sono quelle di prima
+      ok [manuale] nessun ordine, nessun REST
+      ok [manuale] esito certo negativo per il bot
+OK  R10d aggancio mai in silenzio  controlli=7  0.3 s
+      ok ack accettato in_aggancio
+      ok evento terminale 'rifiutato' (mai in silenzio)
+      ok esito nel diario del runner col motivo 'in_aggancio'
+      ok catalogo non risolto contato (mercato inesistente)
+      ok nessun ordine, nessun REST
+      ok nessun comando rimasto parcheggiato
+      ok riga 'error'
+OK  R2b mercato sospeso  controlli=3  1.6 s
+      ok mercato SOSPESO: nessun abbinato
+      ok esito terminale negativo
+      ok riga 'error'
+scenari di trasporto: 14, KO 0, durata 4.3 s
+PARITA' coda/canale sullo scenario d'ordine 'posizione-iniettata' (partita intera, due replay in sequenza)...
+  35795993 <coda>: pulita=True decisioni=1053 azioni=2 violazioni=0
+  35795993 <canale>: pulita=True decisioni=1054 azioni=2 violazioni=2
+      J4C-DICHIARATA: DICHIARATA: ordine 100000000001 del canale con ref Betfair '36b1eb45560b0-140096475649328120' (flumine): rilettura per ref solo dagli eventi del runner
+      J4C-DICHIARATA: DICHIARATA: ordine 100000000002 del canale con ref Betfair '36b1eb45560b0-140096475651881479' (flumine): rilettura per ref solo dagli eventi del runner
+  PARITA' coda/canale: RAGGIUNTA | ordini coda=2 canale=2 | righe coda=2 canale=2 | REST sul canale=0
+     tempi (canale - coda, s di mercato): {'max': 0.0, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 4.1, 'canale': 5.4}
+     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 2, 'accettati': 2, 'rifiutati': 0, 'order': 6} | costo del banco sul canale: 0.1 s su 4423 book
+DURATA DEL PROFILO RAPIDO (safe_tennis): 14.0 s
+ESITO: OK

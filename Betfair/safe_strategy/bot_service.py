@@ -934,6 +934,21 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
         pulita = dict(tr)
         pulita["meta"] = {k: v for k, v in meta.items() if k not in ("reason", "err")}
         if matched > 0:
+            # 25/09 (F8, C.12a): la riga risolta dal canale porta CHIESTO,
+            # ABBINATO, RESIDUO e PREZZO MEDIO come quella del REST
+            # (``meta.esecuzione`` + colonne via ``requested_size``): prima il
+            # canale confermava senza, e la consapevolezza dell'ordine si perdeva
+            # (controllo C1 del tennis, visto dal banco sul canale).
+            chiesto = float(tr.get("size") or 0.0)
+            medio = float(ev.get("average_price_matched") or 0.0)
+            pulita["meta"].setdefault("requested_size", round(chiesto, 2))
+            pulita["meta"].setdefault("esecuzione", {
+                "percorso": "canale", "canale_ref": ref, "fase": fase,
+                "price_richiesto": tr.get("price"),
+                "price_medio": (medio if medio > 1.0 else None),
+                "size_richiesta": round(chiesto, 2),
+                "size_abbinata": round(matched, 2),
+                "size_residua": round(float(ev.get("size_remaining") or 0.0), 2)})
             os_mod._flumine_confirm(pulita, db=db, matched=matched,
                                     avg=float(ev.get("average_price_matched") or 0.0),
                                     bet_id=ev.get("bet_id"), min_stake=_CANALE_MIN_STAKE,

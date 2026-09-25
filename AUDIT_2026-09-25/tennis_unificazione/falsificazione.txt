@@ -1,0 +1,24 @@
+M1 ROSSO - sottoscrizione condivisa: il filtro nuovo non va sulla MarketStream | 1 failed in 2.68s | ripristino sha1 OK
+M2 ROSSO - calcio: applica NON passa dal modulo condiviso (copia sua) | 1 failed in 3.04s | ripristino sha1 OK
+M3 ROSSO - tennis: sottoscrivi di nuovo una copia (non la funzione condivisa) | 1 failed in 4.48s | ripristino sha1 OK
+M4 ROSSO - motore: ignora l'esecutore (sempre il worker del calcio) | 1 failed in 47.51s | ripristino sha1 OK
+M5 ROSSO - motore: prefisso del ref interno fisso 'awlq' (eventi tennis persi) | 1 failed in 49.25s | ripristino sha1 OK
+M6 ROSSO - worker tennis: time_in_force non letto dal comando | 1 failed in 27.47s | ripristino sha1 OK
+M7 ROSSO - worker tennis: la chiusura dichiarata non vale per il minimo | 1 failed in 36.88s | ripristino sha1 OK
+M8 ROSSO - worker tennis: nessun diario write-ahead prima del place | 1 failed in 69.16s (0:01:09) | ripristino sha1 OK
+M9 ROSSO - worker tennis: customerStrategyRef fisso 'tennis' anche dal motore | 1 failed in 67.24s (0:01:07) | ripristino sha1 OK
+M10 ROSSO - esecutore: place_submin non rifiutato col motivo dichiarato | 1 failed in 53.04s | ripristino sha1 OK
+M11 ROSSO - esecutore: il motore drena anche il /order del desktop | 1 failed in 22.18s | ripristino sha1 OK
+M12 ROSSO - aggancio: servibile anche col libro di prima | 1 failed in 12.45s | ripristino sha1 OK
+M13 ROSSO - aggancio: la partita a mano diventa espellibile | 1 failed, 1 passed in 26.65s | ripristino sha1 OK
+M14 ROSSO - piano: il comando sotto la partita armata | 1 failed in 18.82s | ripristino sha1 OK
+M15 ROSSO - runner: la partita di un comando trattata come seguita a mano | 1 failed in 27.37s | ripristino sha1 OK
+M16 ROSSO - runner: nessun libro registrato alla sottoscrizione | 1 failed in 17.09s | ripristino sha1 OK
+M17 ROSSO - runner: il follow_worker dimentica le partite dei comandi | 1 failed in 9.51s | ripristino sha1 OK
+M18 ROSSO - guardia d'avvio: disarmata senza il diario del motore | 1 failed in 19.30s | ripristino sha1 OK
+M19 ROSSO - Safe: annullo col prefisso del calcio per ogni attore | 1 failed in 12.82s | ripristino sha1 OK
+M20 ROSSO - Safe: la riga risolta dal canale senza chiesto/abbinato/residuo | 1 failed in 16.85s | ripristino sha1 OK
+M21 ROSSO - J4: ogni ref estraneo passa per ordine del motore | 1 failed in 11.91s | ripristino sha1 OK
+M22 ROSSO - esecutore: annullo cross-mode non fermato | 1 failed in 10.54s | ripristino sha1 OK
+M23 ROSSO - banco tennis: lo specchio non arriva al motore (profilo rapido) | 1 failed in 10.54s | ripristino sha1 OK
+TOTALE: 23 mutazioni, 0 sopravvissute

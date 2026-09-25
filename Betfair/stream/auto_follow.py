@@ -81,8 +81,9 @@ PRI_CANDIDATA = 1
 PRI_COMANDO = 2
 NOMI_PRIORITA = {PRI_CANDIDATA: "candidata", PRI_COMANDO: "comando"}
 
-#: limite Betfair: 200 mercati per connessione (accertato 09/09, config_stream)
-LIMITE_BETFAIR_MERCATI = 200
+#: limite Betfair: 200 mercati per connessione (accertato 09/09, config_stream).
+#: 25/09: UNA definizione per calcio e tennis (``sottoscrizione_a_caldo``).
+from .sottoscrizione_a_caldo import LIMITE_BETFAIR_MERCATI  # noqa: E402
 
 #: chiave di un evento chiesto da un comando prima di conoscerne l'event_id
 PREFISSO_SOLO_MERCATO = "m:"
@@ -337,63 +338,28 @@ class PianoFollow:
 # ---------------------------------------------------------------------------
 # il sottoscrittore: risottoscrizione a caldo sulla connessione di mercato
 # ---------------------------------------------------------------------------
-class NonPronto(RuntimeError):
-    """Lo stream di mercato non e' (ancora) connesso: si riprova al giro dopo."""
+# 25/09 UNIFICAZIONE: il meccanismo (nuovo marketSubscription sulla stessa
+# connessione, stream_id, filtro canonico, book vecchi scartati dal listener)
+# vive in ``sottoscrizione_a_caldo`` ed e' lo STESSO del runner tennis
+# (``tennis_live.iscrizione_a_caldo``). Qui restano i nomi di sempre.
+from .sottoscrizione_a_caldo import NonPronto  # noqa: E402,F401 - riesportato
+from . import sottoscrizione_a_caldo as _SC  # noqa: E402
 
 
 def stream_di_mercato(framework: Any) -> Any:
     """LA MarketStream del runner (recorder + strategie la condividono: stesso
     filtro -> ``Streams.add_stream`` la riusa). None se non c'e'."""
-    try:
-        from flumine.streams.marketstream import MarketStream
-        from flumine.streams.historicalstream import HistoricalStream
-    except Exception:  # noqa: BLE001
-        return None
-    for s in list(getattr(framework, "streams", []) or []):
-        if isinstance(s, MarketStream) and not isinstance(s, HistoricalStream):
-            return s
-    return None
+    return _SC.stream_di_mercato(framework)
 
 
 class SottoscrittoreStream:
     """Sostituisce la sottoscrizione della MarketStream del runner con i
     ``market_ids`` dati, sulla STESSA connessione (nessun restart, blotter
-    intatto). Chiamato SOLO dal thread dell'auto-follow."""
+    intatto). Chiamato SOLO dal thread dell'auto-follow. Il meccanismo e'
+    ``sottoscrizione_a_caldo.sottoscrivi``, lo stesso del runner tennis."""
 
     def applica(self, framework: Any, market_ids: List[str]) -> int:
-        from betfairlightweight.filters import streaming_market_filter
-
-        if not market_ids:
-            # mai un filtro vuoto: Betfair lo leggerebbe come "tutto"
-            raise ValueError("sottoscrizione vuota rifiutata")
-        if len(market_ids) > LIMITE_BETFAIR_MERCATI:
-            raise ValueError("oltre il limite Betfair: %d mercati" % len(market_ids))
-        stream = stream_di_mercato(framework)
-        if stream is None:
-            raise NonPronto("nessuna MarketStream nel framework")
-        bs = getattr(stream, "_stream", None)
-        if bs is None or not getattr(bs, "running", False):
-            raise NonPronto("stream di mercato non ancora connesso")
-        filtro = streaming_market_filter(market_ids=sorted(str(m) for m in market_ids))
-        # l'id nuovo e' prevedibile (``new_unique_id`` = +1): assegnato PRIMA
-        # dell'invio, cosi' i primi book della nuova sottoscrizione trovano gia'
-        # lo stream_id giusto nelle strategie (``strategy.stream_ids``)
-        previsto = int(getattr(bs, "_unique_id", 0) or 0) + 1
-        vecchio = stream.stream_id
-        stream.stream_id = previsto
-        try:
-            nuovo = bs.subscribe_to_markets(
-                market_filter=filtro, market_data_filter=stream.market_data_filter,
-                conflate_ms=stream.conflate_ms)
-        except Exception:
-            stream.stream_id = vecchio
-            raise
-        stream.stream_id = nuovo
-        stream.market_filter = filtro            # la riconnessione di flumine lo riusa
-        for strat in list(getattr(framework, "strategies", []) or []):
-            if stream in list(getattr(strat, "streams", []) or []):
-                strat.market_filter = filtro
-        return int(nuovo)
+        return _SC.sottoscrivi(framework, _SC.stream_di_mercato(framework), market_ids)
 
 
 # ---------------------------------------------------------------------------

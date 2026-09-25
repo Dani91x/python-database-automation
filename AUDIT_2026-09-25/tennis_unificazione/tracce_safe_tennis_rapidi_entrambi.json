@@ -1,0 +1,160 @@
+{
+ "scenario": "posizione-iniettata",
+ "evento": "35795993",
+ "coda": {
+  "trasporto": "coda",
+  "bot": "safe_tennis",
+  "ordini": [
+   {
+    "azione": "place",
+    "ref": "safe_tennis-t1",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "side": "BACK",
+    "price": 1.22,
+    "size": 2.0,
+    "fok": true,
+    "t_mercato": "2026-07-07T14:29:08.112000+00:00"
+   },
+   {
+    "azione": "place",
+    "ref": "safe_tennis-t2",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "side": "LAY",
+    "price": 1.2,
+    "size": 2.03,
+    "fok": true,
+    "t_mercato": "2026-07-07T14:35:35.548000+00:00"
+   }
+  ],
+  "righe": [
+   {
+    "id": 1,
+    "status": "won",
+    "side": "back",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "price": 1.22,
+    "size": 2.0,
+    "mode": "live"
+   },
+   {
+    "id": 2,
+    "status": "lost",
+    "side": "lay",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "price": 1.2,
+    "size": 2.03,
+    "mode": "live"
+   }
+  ],
+  "durata_s": 4.1,
+  "rest_sul_canale": []
+ },
+ "canale": {
+  "trasporto": "canale",
+  "bot": "safe_tennis",
+  "ordini": [
+   {
+    "azione": "place",
+    "ref": "safe_tennis-t1",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "side": "BACK",
+    "price": 1.22,
+    "size": 2.0,
+    "fok": true,
+    "t_mercato": "2026-07-07T14:29:08.112000+00:00",
+    "accettato": true,
+    "motivo": null
+   },
+   {
+    "azione": "place",
+    "ref": "safe_tennis-t2",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "side": "LAY",
+    "price": 1.2,
+    "size": 2.03,
+    "fok": true,
+    "t_mercato": "2026-07-07T14:35:35.548000+00:00",
+    "accettato": true,
+    "motivo": null
+   }
+  ],
+  "righe": [
+   {
+    "id": 1,
+    "status": "won",
+    "side": "back",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "price": 1.22,
+    "size": 2.0,
+    "mode": "live"
+   },
+   {
+    "id": 2,
+    "status": "lost",
+    "side": "lay",
+    "market_id": "1.259820036",
+    "selection_id": 27997072,
+    "price": 1.2,
+    "size": 2.03,
+    "mode": "live"
+   }
+  ],
+  "durata_s": 5.4,
+  "rest_sul_canale": [],
+  "client": {
+   "da_seq": 0,
+   "buchi": 0,
+   "connessioni": 1
+  },
+  "motore": {
+   "comandi": 2,
+   "accettati": 2,
+   "rifiutati": 0,
+   "order": 6
+  },
+  "costo_banco_s": 0.1,
+  "book": 4423
+ },
+ "parita": {
+  "parita": true,
+  "ordini_coda": 2,
+  "ordini_canale": 2,
+  "ordini_uguali": true,
+  "primo_scarto": null,
+  "scarto_coda": null,
+  "scarto_canale": null,
+  "righe_coda": 2,
+  "righe_canale": 2,
+  "righe_diverse": [],
+  "rest_sul_canale": 0,
+  "scarto_tempi_s": {
+   "max": 0.0,
+   "min": 0.0,
+   "n": 2
+  },
+  "durata_s": {
+   "coda": 4.1,
+   "canale": 5.4
+  },
+  "client": {
+   "da_seq": 0,
+   "buchi": 0,
+   "connessioni": 1
+  },
+  "motore": {
+   "comandi": 2,
+   "accettati": 2,
+   "rifiutati": 0,
+   "order": 6
+  },
+  "costo_banco_s": 0.1,
+  "book": 4423
+ }
+}

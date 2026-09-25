@@ -201,10 +201,17 @@ def ref_ordine(trade_id: Any, sport: Any = "calcio") -> str:
     return (prefisso_ref(sport) + "%d" % int(trade_id))[:REF_MAX]
 
 
-def ref_annullo(bet_id: Any, size_reduction: Optional[float] = None) -> str:
+def ref_annullo(bet_id: Any, size_reduction: Optional[float] = None,
+                attore: str = ATTORE_CALCIO) -> str:
     """Il ref di un ``cancel``: deterministico dal bet_id (e dalla riduzione,
-    se parziale). Un secondo annullo identico e' un doppione per il runner."""
-    ref = "safe-c%s" % str(bet_id).strip()
+    se parziale). Un secondo annullo identico e' un doppione per il runner.
+
+    25/09 (F8): il prefisso e' quello dell'ATTORE che lo manda, come per il
+    place (F1): il motore pretende ``f"{attore}-"`` e Safe tennis e' l'attore
+    ``safe_tennis``. Prima ogni annullo di Safe tennis sul canale sarebbe stato
+    rifiutato (``safe-c...`` non inizia per ``safe_tennis-``). Calcio invariato
+    (``safe-c<bet_id>``)."""
+    ref = "%s-c%s" % (str(attore or ATTORE_CALCIO), str(bet_id).strip())
     if size_reduction is not None:
         ref += "-%d" % int(round(float(size_reduction) * 100))
     return ref[:REF_MAX]
