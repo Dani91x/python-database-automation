@@ -2799,3 +2799,165 @@ delegato confronto vs codice Safe; 7) test mancanti dichiarati: conclusione non 
 worker; 8) replay uno per bot su tutti i bot toccati stasera; 9) decisioni (a)-(i).
 **h19:25 — TRASCRIZIONI FINITE: 57/57 video (faster-whisper small), 0 errori, un .txt per video in `Desktop\Strategia S - Giuseppe Bentivegna\TRASCRIZIONI\` (stessa struttura di cartelle del corso). Confronto trascrizioni vs codice Safe: DOMANI con un delegato (punto 6 della ripresa). Chiudi tennis: test sulla conclusione non pari aggiunto e pushato (`c2d8826`). Action rilanciata: run 36030163506 su `551d7cd`, esito da leggere domani (punto 5).**
 **h20:00 — ACTION VERDE PER MERITO: run 36030163506 su `551d7cd` conclusa `success`, gate «errori nascosti» verde (risultati/signals/merge/enrich/bets/pagella tutti success). Enrich 64 min, leghe fallite 0 (lega 667: target 27.507, aggiornate 35.326); bets 53 s; pagella 60 s. Da domani la run notturna gira sullo stesso codice: monitoraggio 7 giorni (A4) con `gh run list` + grep 57014.**
+
+## 2026-09-25 (coordinatore Fable 5.1; ripresa dal testimone della sessione «piano-completamento-database»)
+
+**STATO DI PARTENZA VERIFICATO (h09:50, sola lettura):** git `master` = `origin/master` = `84cf1e6`, albero pulito (solo
+i soliti file non tracciati). APP NON IN ESECUZIONE (nessun processo Electron/python): sul DB Omega, Mike, Safe, scalper
+`status=stopped` in `mode=paper`; servizio tennis `stopping` (stato residuo). MIGRAZIONI del 24/09 NON APPLICATE, provato
+sull'OpenAPI di PostgREST: `get_posizioni_chiuse_giornata`/`posizioni_chiuse_tabella` assenti (1), `get_scalper_control_room`/
+`scalper_stop_sessione` assenti (2), `safe_request_approve` ancora SENZA `p_contesto` (3), tabelle `hazard_atlas*` assenti (5);
+la 4 (`request_tennis_live_order`, stessa firma `p jsonb`) non è distinguibile dalla firma. ACTION: la run notturna
+«Predictions Results Backfill» (cron 03:23 UTC) alle 07:50 UTC NON è ancora partita (ieri GitHub l'ha lanciata alle 08:34
+UTC); «Daily Yesterday Backfill» 36101390338: `run-backfill` success, job `hazard-atlas` ROSSO con HTTP 404 su
+`hazard_atlas_leghe` → il job notturno dell'atlante È GIÀ montato sul master (commit `6070623`), contrariamente alla nota
+di ieri sera, e resta rosso ogni mattina finché la migrazione 5 non è applicata (non blocca il backfill: `needs` con
+`!cancelled()`). MCP Supabase non collegato in questa sessione (ENOTFOUND all'avvio; DNS ora risponde): sonde DB via REST.
+**h10:15 — MIGRAZIONI 1-5 APPLICATE dall'utente e verificate da me sull'OpenAPI/RPC (firme nuove presenti, tabelle
+atlante presenti; la 4 provata con payload volutamente incompleto → «bot non valido per chiudi_bot», nessuna scrittura).**
+**h10:40 — ACTION, commit `703a33a` PUSHATO (delegato Opus, worktree agent-a25083f10210d5c55, referto
+`AUDIT_2026-09-25/ACTIONS_DIAGNOSI_E_FIX.md`):** causa del retrain saltato = job accessorio `hazard-atlas` dentro il
+Daily (404 tabelle) → run Daily `failure` → `plan.if` (conclusion == success) → retrain e post-cal a vuoto. Fix:
+`hazard_atlas.yml` separato (workflow_run sul Daily, step Prerequisiti con errori chiari), Daily = solo backfill +
+concurrency, post-cal `skipped` se retrain skipped, `daily_yesterday_backfill.py` e `leagues_mapper.py` falliscono
+rumorosamente (logica di inserimento del mapper INVARIATA). Verificato da me: 11 test verdi (worktree e master), prova a
+secco Prerequisiti 404/vuota/ok/500 → exit 1/1/0/1, YAML 9/9, 3 mutazioni mie rosse (3+1+1) con ripristino `cmp`.
+Reperti del referto: ritardo del cron di GitHub mediana ~5 h (le run si accavallano: decisione utente §5.3);
+mapper mensile NON aggiorna mai le righe esistenti → coverage 2026 ferma a luglio (§6); `.range(0, 9999)` del
+mapper satura in ~8 mesi; fixture del 24/09 solo 95 (da capire). Da verificare a GitHub: prima catena notturna con
+`hazard_atlas.yml` su master (piano §7). NB: l'ordine dell'utente delle 10:30 rende l'atlante «a domanda» sul PC:
+il job notturno resta rete di sicurezza, comando da rivedere al referto del delegato atlante.
+**h10:50 — ORDINE UTENTE: atlante hazard LEGGERO e A DOMANDA** (leghe delle partite osservate, storico per lega+partita,
+incrementale per lega, budget IO dichiarato): delegato Opus (worktree agent-ab520d20ea240f66f) con brief rivisto; il
+bootstrap massivo delle 1.095 leghe NON si fa.
+**h11:20 — DECISIONI UTENTE:** (1) cron di GitHub in ritardo (mediana ~5 h, run che si accavallano): SI LASCIA COSÌ per
+ora; (2) il Daily di stanotte NON si rilancia (dati di ieri già nel DB: 90 FINISHED scritte, «DAILY BACKFILL completato»;
+rosso solo l'atlante; 44/81 partite con 0 eventi per flag coverage 2026 False = il buco da chiudere); (3) ORDINE
+TASSATIVO: DB sempre aggiornato e senza buchi in automatico, quota API (Pro 7.500/g) mai superata, consumo ricalcolato
+dopo ogni lega, orchestratore che popola tutta la stagione → delegato Opus (worktree agent-a51c4dd9bd46941d6): mapper che
+aggiorna i flag, stato stagione dai dati, backfill ripartibile, gestore quota (riserva 3000), catchup giornaliero con
+referto buchi fail-loud, `--dry-run` obbligatorio; memoria `feedback_db_sempre_aggiornato_senza_buchi_2026-09-25.md`.
+Priorità di oggi: action senza errori + buchi chiusi, POI il resto (audit, replay, decisioni (a)-(i)).
+**h12:40 — ATLANTE A DOMANDA, commit `372158e` PUSHATO (delegato Opus, worktree agent-ab520d20ea240f66f, referto
+`AUDIT_2026-09-25/ATLANTE_TUTTE_LE_LEGHE.md`):** motore `atlante_a_domanda.py` nel thread di sync (SPENTO finché
+`HAZARD_ATLAS_SYNC=1` nel `.env`), leghe delle partite osservate (fixture_predictions), preparazione una volta sola,
+tetti 10/ciclo 40/ora, incrementale per fixture_id, stagioni nuove da sole; griglia per OGNI lega con dati (K
+invariato), `consulta_atlante` con livello/n/confidenza; Safe e Mike solo dato+nota; `hazard_atlas.yml` senza
+bootstrap. Verificato da me: 142 test verdi su master, 5 mutazioni mie rosse (cmp), misura reale in sola lettura:
+lega 135 = 31 richieste / 14.325 righe / 11,9 s. Stima primo giorno (delegato): ~2.460 GET, ~127 leghe in ~3,2 h.
+DA DECIDERE (utente): seme = globale v3 finché le leghe affidabili < 10.000 partite (proposta del delegato, io
+d'accordo); `HAZARD_ATLAS_SYNC=1` lo mette l'utente; id squadra non ancora collegati (Safe/Mike passano i nomi).
+Delegato action: referto finale ricevuto (run Results 36115600892 creata 08:55 UTC, in corso alle 12:30 in parallelo
+a Today 36110273147).
+**h13:05 — ORDINE UTENTE: strumenti al massimo livello predittivo (trader che investono soldi).** `HAZARD_ATLAS_SYNC=1`
+messo nel `.env` da me (parte al prossimo avvio dell'app). Lanciato delegato Opus «banco di validazione hazard»
+(worktree agent-a6eb18085de040ec8): walk-forward ≤2024 → test 2025 su ~12 leghe grandi + 3 piccole, candidati A0
+(attuale) … A7 (recupero 45+/90+, decadimento per età, chi conduce, rossi, casa/trasferta, K empirical-Bayes,
+fusione seme↔stato) e B1/B2 (hazard a tempo discreto con regressione + rating squadra + λ di mercato); metriche
+log-loss/Brier/calibrazione/AUC/divergenza spuria con IC bootstrap; referto `AUDIT_2026-09-25/VALIDAZIONE_HAZARD.md`;
+il vincitore pronto ma NON collegato: lo integro io dopo verifica. Memoria:
+`feedback_massimo_livello_predittivo_strumenti_trader_2026-09-25.md`.
+**h14:10 — DECISIONI UTENTE sui 18 punti aperti:** 1 catena action → domani; 2 buchi DB → chiudere OGGI, test su una
+lega, poi automatico con stima leghe/giorno fino al completamento (costi delle action inclusi); 3-4 ok; 5 (recupero
+arbitro) da spiegare; 6 replay già fatti, bot in paper oggi; OBBLIGO: i 4 bot tennis devono PARTIRE all'attivazione e
+lavorare dal feed unico (oggi non partono: messaggio in UI); 7 sì: fedeltà di TUTTI i bot Safe alle trascrizioni (sola
+lettura, prima comunicare); 8 TUTTI i bot, paper e live, con interruttore in UI per bot «uscite/operatività automatiche»,
+spento = uscite manuali dalla scheda; 9 sì: bot tennis in auto-mode se attivati, uscite auto o manuali, paper e live;
+10-11 da spiegare; 12 unificare ref Safe tennis; 13 guardia sorelle combo; 14 il trader deve sapere prezzo di
+abbinamento vs segnale e se abbinato del tutto/in parte, con messaggio (B17 → da fare); 15 TUTTI i bot devono conoscere
+lo stato del mercato (aperto/chiuso/sospeso/senza prezzi); 16 test guardia tennis worker; 17 95 fixture = calendario
+reale (chiuso); 18 pulizia worktree la fa il coordinatore, con massima attenzione, alla fine.
+Verifica cantiere buchi: 41 test verdi, 3 mutazioni mie rosse (margine senza riserva 5, completed con buchi 1, exit 0 con
+errori 2) MA: R1 `_sostituisci_righe` cancellava anche le quote `football_data_csv` (42-52 righe/partita, sole quote
+delle stagioni vecchie: 135/2024) → perdita dati; R2 mutazione SOPRAVVISSUTA (risposta vuota che cancella); R3 insert
+parziale = buco invisibile; R4 quote fuori finestra API; R5 Retrain fra le action esclusive. Rimandato al delegato.
+Delegati lanciati h14:10 (worktree): tennis auto-mode (agent-a7cfa100adc76db4a, Opus), uscite automatiche per bot
+(agent-a4b549aa8052e68d0, Opus), fedeltà Safe vs trascrizioni (agent-aed0527b2a58a621a, Opus, sola lettura), fix F1-F4
+(agent-a1b8fe16c17661655, Sonnet). In coda: B17 abbinamento/prezzo (14), pulizia worktree (18, io).
+**h14:30 — DECISIONI UTENTE:** 5 recupero = stima media per lega (girata al delegato hazard); 10 scalper = auto-mode su
+tutte le partite del feed, ordini flaggati «scalper», stato sul canale; REGOLA per TUTTI i bot presenti e futuri: UN
+solo canale dati alimenta tutti i bot (memoria `feedback_un_canale_dati_tutti_i_bot_auto_mode_2026-09-25.md`); 11 porte
+via canale = sì, ENTRO OGGI con test «di minuti» e partenza in paper: delegato Opus «strada unica: PortaBanco sul banco,
+profilo rapido, parità coda/canale, accensione paper» (worktree agent-aaea84f2835da9f8d). Scalper auto-mode in coda
+(7 delegati attivi: limite del PC).
+**h14:45 — DUE SESSIONI in parallelo (ordine utente):** questa («admin-26», Fable) tiene i cantieri attivi (a-h della
+lista nel messaggio di passaggio); la sessione B («admin-9d») gestisce gli AUDIT del 24/09 (voci assegnate: O2 e job
+quote Betfair/standings/injuries dell'audit 1; audit 3 residui; T1/T2/C1 e F0/F9/F10a dell'audit 4 SOLO dopo le mie
+integrazioni tennis e strada unica; audit 5 tutto; audit 6 voci 5,6,12-xhedge,13,14 + decisioni 7/9). Protocollo:
+proprietà dei file per sessione, SendMessage prima di toccare file altrui, avviso a ogni integrazione su master,
+`git fetch`+rebase prima del push, replay e suite intere solo concordati, max 2 delegati della sessione B finché i miei
+7 non calano. Le righe di cronostoria della sessione B hanno prefisso «[sessione B, audit]».
+**h15:05 — BACKFILL AUTOMATICO, commit `f015204` PUSHATO** (delegato Opus agent-a51c4dd9bd46941d6, referto
+`AUDIT_2026-09-25/BACKFILL_AUTOMATICO_STAGIONI.md`): mapper che aggiorna i flag + giornaliero, lacune dai dati (RPC
+`season_detail_gaps`, `fixture_detail_checks`), stato stagione dai dati, per-fixture ripartibile (delete solo
+api_football sulle quote, parziale registrato, quote > 7 gg non chiamate), `api_quota.py` (riserva 3000), catchup
+giornaliero con REFERTO BUCHI, orchestratore `--league --season --dry-run`. Verificato da me: 48 test verdi (worktree e
+master), 5 mutazioni mie rosse (compresa quella prima sopravvissuta), R1-R5 riverificati, dry-run reale su 135 senza
+migrazione = exit 2 pulito. DA FARE UTENTE: applicare `migrations/season_gaps_2026-09-25.sql` (se avvisa sugli indici,
+anche `detail_fixture_idx_2026-09-25_SOLO_SE_MANCANO.sql`); poi io: dry-run 135 → mapper (1 chiamata) → dry-run →
+`--season 2026` vera col suo ok → primo catchup. Sessione B avvisata dell'integrazione.
+**[sessione B, audit] h15:05 — PRESA IN CARICO degli audit del 24/09 (sessione «admin-9d», Fable 5.1).** Stato verificato: checkout `372158e`, origin/master `f015204` (cantiere (a) di admin-26 pushato). Letti i 5 referti di competenza (1,3,4,5,6; il 2 resta al delegato (e) di admin-26). Sonde DB in SOLA LETTURA (MCP, progetto dqbwaocvlzbxfrpacsac) che CORREGGONO i referti: (i) audit 5 R1: `matches` HA le partite non finite (242 oggi+domani) ma solo 33 delle 263 fixture di oggi → TacticAI 34/263 oggi, 374/7.977 negli ultimi 14 gg (4,7 %): reperto CONFERMATO, causa = fonte `matches` invece di `fixture_predictions`; (ii) R2: n_matches max 39.560, nessun taglio a 1.000 → declassato a perf/ORDER BY; (iii) audit 1: `standings` NON vuota (98.369 righe, 179 leghe 2026, aggiornata 25/09 08:13), `injuries` NON vuota (163.176 righe) ma FERMA al 03/06 e 4 leghe 2026; (iv) O2 CONFERMATO: transizioni Omega built_at 11/09, job `done=true`, pg_cron attivo ma NESSUN job omega schedulato; (v) `betfair_market_odds` NON ferma all'11/09: run 17/09 e 23/09 (dal report locale `aggiorna_report.bat:30`), quindi manuale e saltuaria; (vi) R3 confermato: engine_signals kickoff max 17/09; (vii) R4 confermato: analytics_bets 0 righe per oggi e domani, 263/263 fixture di oggi senza quota nella Direzione. Nessun file toccato. Prossimo passo: decisioni dell'utente sulle voci di strategia/processo, poi delegati (max 2).
+**h15:15 — Reperto da sessione B (sonde DB sola lettura):** `standings` NON vuota (98.369 righe, 179 leghe 2026,
+aggiornata oggi), `injuries` NON vuota (163.176) ma FERMA al 03/06/2026 (4 leghe 2026): causa probabile = flag
+`injuries` False nella coverage 2026 (stessa radice dei buchi). Il catchup di f015204 copre SOLO le 5 tabelle
+per-partita: gli AGGREGATI per lega-stagione (standings, injuries, top_*) non sono nelle lacune → seguito assegnato
+allo stesso delegato (lacune degli aggregati + referto + dry-run + diagnosi injuries). TacticAI 34/263 fixture oggi.
+**h15:30 — FEDELTÀ SAFE ALLE TRASCRIZIONI (delegato Opus agent-aed0527b2a58a621a, sola lettura, referto
+`AUDIT_2026-09-25/FEDELTA_SAFE_TRASCRIZIONI.md`, 57 trascrizioni + 3 fogli Excel del corso):** verdetto PARZIALE per
+tutte e 4 le varianti. SCOPERTA VERIFICATA DA ME sulle trascrizioni (`4. STRATEGIA/2. Entrata a mercato.txt` @93.0
+«[le quote di bancata] vanno dal 20 al 34, a dir tanto»; `11. Uscita emergenza` @67.7 «bancato con 200 € di
+responsabilità a quota 20 → profitto 10,52 €»; «1,28» ASSENTE in tutte le trascrizioni): la BASE del corso banca la
+squadra che perde a QUOTA 20-34, NON filtra la favorita a 1,20-1,34 (Lettura A, `engine.py:957-968`, certificata da
+B8/B9 del banco). Foglio `Operazioni.xlsx`: stake per quota di banca (≤26 → 4 % cassa, 27-33 → 3 %, ≥34 → 2 %).
+Tennis: «lay 18-34» = back ~1,03 (equivalenti); stake scalato 1,02-1,10 (100 % a 1,02-1,04 … 50 % a 1,07-1,10).
+Domande all'utente Q1-Q13 (Q1 banca 20-34; Q2 controllo del gioco/osservazione 3-5' spento; Q3 uscite «esci comunque»
+filtrate dal modello; Q4 nessun filtro campionati (video: no femminile/amichevoli/coppe/Bundesliga/Eredivisie/serie B);
+Q5 tennis backMin 1,01 vs 1,02). NESSUNA modifica fatta: decisioni dell'utente.
+**h15:30 — Reperto injuries confermato da sessione B (sola lettura):** coverage 2026 `injuries=true` su 3/792 righe
+(71, 31, 952), updated_at 01/09; `injuries` 2026 = esattamente quelle 3 leghe → il backfill funziona, il FLAG è fermo;
+il Daily aggrega SOLO le stagioni delle partite di ieri → il catchup degli aggregati deve coprire TUTTE le stagioni vive.
+**h15:50 — DECISIONI UTENTE su Safe (dal referto fedeltà):** Q1 SÌ: BASE banca la perdente a quota 20-34 (via il filtro
+favorita 1,20-1,34), «cambio semplice, niente replay, assicurarsi che sia corretto nel codice»; Q2 NO (nessuno strumento
+per vedere le partite: resta spento); Q3 NO (uscite a modello restano: «decido io quando uscire»); Q4 SÌ veto campionati
+del corso (serie B = quelle dei campionati elencati: Bundesliga e 2. Bundesliga, Eredivisie ed Eerste Divisie, femminile,
+amichevoli, coppe); Q5 SÌ tennis 1,02. Delegato Opus lanciato (worktree agent-a7e908d15031bcc8b): engine + banco B8/B9
+riscritti + veto campionati + T1 tennis vero; Q6-Q13 presentate all'utente.
+**h16:10 — MIGRAZIONE `season_gaps_2026-09-25.sql` APPLICATA dall'utente. Dry-run 135 (reale, sola lettura):** 17
+stagioni, tutte «completed» sul DB; ricalcolo: 2012/2018/2024 riaperte per 1 partita mancante ciascuna (~7 chiamate),
+2025 con 120 partite senza quote API (fuori finestra 7 gg: non recuperabili), 2026 con 50 FT senza NULLA e flag False
+→ avviso «lancia il mapper». MAPPER lanciato da me (1 chiamata /leagues): inserite 49, AGGIORNATE 1.667 righe (flag
+delle stagioni vive), invariate 7.025, 0 errori. Dry-run dopo: 2026 flag tutti True, 50 partite da chiamare su tutte
+le tabelle, ~216 chiamate (236 per l'intera lega), quote di 40 partite su 50 PERSE per sempre (oltre 7 gg: conseguenza
+dei flag fermi da agosto). Contatore API 1078/7500, margine 3422. In attesa dell'ok dell'utente per la 135 vera.
+**h16:25 — LEGA 135 POPOLATA PER INTERO con la strada nuova (ok utente):** `python league_orchestrator.py --league 135`:
+gli stati «completed» NON hanno saltato nulla (2012/2018/2024 riaperte → 6-7 chiamate ciascuna; 2026 riaperta → 216
+chiamate: 50/50 partite FT con eventi 806, formazioni 2.399, stat. giocatori 2.399, stat. squadra 1.800, quote
+api_football 44.964 per le 10 partite entro 7 gg; standings/top/injuries rifatti); contatore API 1078 → 1318;
+stato 2026 = in_progress (stagione viva), 2024/2025 completed; dry-run dopo = 0 chiamate. Le 3 partite vecchie senza
+dati → «vuoto» (1 ritentativo fra 2 gg, poi definitivo). Log: `AUDIT_2026-09-25/run_135_2026-09-25.log`. Reperto:
+`refresh_api_coverage_by_season_v2_mv` fallisce con 57014 (non blocca): da sistemare (MV lenta). PRIMO CATCHUP AUTOMATICO
+lanciato su GitHub: run 36122837946 (Today e Results di oggi entrambi success). Da qui in poi: mapper + catchup ogni
+giorno dopo il Daily + cron 13:47 UTC, referto buchi a ogni run. Aperto: stagioni passate MAI caricate (0 partite)
+restano fuori (costo di anni di quota: decisione utente); aggregati nelle lacune (delegato in corso).
+**h16:50 — AGGREGATI, commit `9cbfe76` PUSHATO:** standings/injuries/top_* nelle lacune, nel catchup (tutte le stagioni
+vive, per cadenza) e nel dry-run; esecutore proprio senza doppioni; diagnosi: il Daily NON ha mai chiamato un aggregato
+(ramo morto). Verificato da me: 55 test verdi (worktree e master), 2 mutazioni mie rosse (8+1). DA APPLICARE UTENTE:
+`migrations/season_aggregates_2026-09-25.sql` (senza: prossimo catchup exit 2). Aperti: ramo morto del Daily da
+rimuovere (decisione), delete degli script storici che inghiotte l'errore, refresh MV coverage 57014.
+**[sessione B, audit] h16:10 — DECISIONI UTENTE sugli audit del 24/09:** (1) quote Betfair pre-match: NESSUN job, le lancia lui a mano (motivi di IP) → chiuso; (2) engine_signals: si lascia → chiuso; (3) Safe «model»/«manual» in UI: SÌ (dopo integrazione (d) di admin-26); (4) conflate 1 s → tick: RIMANDATA, tornare con misure; (5) giro Omega 20 s: da misurare sul banco A/B 5 s vs 20 s prima di decidere; (6) premio Mike: già allineato al 10 % (D8 del 24/09), niente da fare; (7) T1/T2/C1 tennis+Origin: «fixate ogni cosa, paper e live distinti» (dopo integrazioni (c) e (g)); (8) miglioramenti strategia con dati (O1, O5, O6, M1, M2, S2, T1 superficie, X1): sì, ma PRIMA la misura fuori campione con numeri, poi il codice con il suo ok. ORDINE: battere OGNI voce degli audit; nessuna iniziativa; ogni cambio di strategia o di struttura lo decide lui; interpellarlo solo quando serve. Delegati lanciati h15:45: A Opus audit 5 (R1 TacticAI da fixture_predictions, R2 ORDER BY+keyset, R5 età a video, R7 ritardo unico); B Opus O2 (migrazione additiva con registro per partita, nightly pg_cron 04:00 UTC, tool di verifica). Brief pronti (scratchpad): C misura punto 8, T tennis, S Safe UI.
+**h17:30 — FIX F1-F4, commit PUSHATO (delegato Sonnet agent-a1b8fe16c17661655, referto
+`AUDIT_2026-09-25/FIX_CIRCOSCRITTI_F1_F4.md`):** ref Safe tennis `safe_tennis-t<id>` (il motore avrebbe rifiutato ogni
+comando tennis dal canale), guardia mercato sulle sorelle combo, Omega stato mancante → rilettura → rifiuto dichiarato,
+4 test guardia worker tennis. Verificato da me: 193 verdi, tsc 0, 3 mutazioni mie rosse (1+3+3).
+**h17:30 — DECISIONI UTENTE backfill: 1A togliere il ramo morto del Daily; 2A delete fallita → SI RIPROVA, mai buchi né
+doppioni; 3A togliere il refresh MV.** Delegato Sonnet lanciato (worktree agent-a6b9f9e7eb5f83ecc). Migrazione
+`season_aggregates_2026-09-25.sql` applicata e verificata (4 RPC + tabella); dry-run 135 mostra la riga aggregati.
+**[sessione B, audit] h17:05 — AUDIT 4, reperti GRAVI T1/T2/C1: già costruiti il 24/09 (commit `eccb001` T1+T2 con `guardie_tennis.py`, `46e6667` C1 Origin+token), oggi CERTIFICATI da me sul master `442d21c`:** `test_modalita_e_guardie_tennis_2026_09_24.py` 55 verdi; mutazione mia (bot paper in runner LIVE non più instradato sul client simulato) → 7 rossi; `test_canale_origine_token_c1_2026_09_24.py` 18 verdi; mutazione mia (accetta qualunque Origin) → 2 rossi; ripristini con `git diff` vuoto. Nessun delegato lanciato per questi: il brief T del 24/09 era stato eseguito prima del passaggio del testimone. Residuo aperto (decisione utente): lo stop giornaliero E34 conta il P&L del runner CALCIO; il tennis è fermato dallo stesso kill-switch ma le sue perdite non entrano nel conteggio (da verificare in `daily_stop_worker.py`). Terzo delegato (Opus, worktree) lanciato: MISURA fuori campione del punto 8 (O1, O5, O6, M1/M2, S2, T1 superficie, X1, procedura A/B giro Omega), sola lettura, nessun file dei bot.
+**[sessione B, audit] h17:15 — DECISIONE UTENTE: stop giornaliero E34 resta com'è (NO all'inclusione di esposizione aperta e paper del tennis).** Voce chiusa.
+**h18:20 — INTEGRATI E PUSHATI:** `442d21c` TENNIS auto-mode dal feed unico + uscite manuali per bot (570 pytest, 103
+vitest, tsc 0; 3 mutazioni mie rosse; migrazione `tennis_uscite_manuali_2026-09-25.sql` DA APPLICARE); `b4fef79`
+USCITE AUTOMATICHE per bot Omega/Mike/Safe/scalper (943 pytest, vitest 37/38 file + 1 test di velocità rosso solo sotto
+carico e verde da solo, tsc 0; 3 mutazioni mie rosse 13+6+1; conflitto import in useControlRoom.ts fuso a mano;
+migrazioni `uscite_automatiche_mike` e `uscite_automatiche_scalper` DA APPLICARE); `306fd11` TRE CHIUSURE backfill
+(81 test, 2 mutazioni mie rosse 13+2). Sessione B: T1/T2/C1 già costruiti il 24/09 e certificati da lei su 442d21c;
+E34 stop giornaliero: utente ha deciso di lasciare. Delegati attivi: hazard, Safe Q1-Q12. Strada unica: in verifica.
