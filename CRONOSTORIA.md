@@ -2988,3 +2988,51 @@ BASE banca la perdente 20-34, veto campionati del corso, tennis 1,02, Esatto con
 verificato da me: Safe intera 1702 verdi, vitest 18 file, tsc 0, 3 mutazioni mie rosse (7+12+3). DB vero: `tennis.backMin`
 = 1,01 sul DB → migrazione `safe_tennis_backmin_102_2026-09-25.sql` NECESSARIA; `safe_base_banca_20_34` facoltativa.
 Safe sul DB: mode paper, status STOPPED (da segnalare all'utente). Dubbi §11 da confermare.
+**CORREZIONE ORARI (ora reale del PC: 14:02 del 25/09):** le etichette «hXX:XX» che ho scritto da «h14:10» in poi sono
+in ANTICIPO di 2-7 ore rispetto all'orologio reale (errore mio di stima). Ancore reali: verifica migrazioni 1-5 ≈ 10:10;
+commit action 703a33a ≈ 10:40; lega 135 popolata 12:09; primo catchup lanciato 12:14; Safe Q1-Q12 pushato ≈ 13:55.
+Le righe restano in ordine cronologico corretto; fa fede l'ora dei commit (`git log --date=local`).
+**h14:30 (ora reale) — VALIDAZIONE HAZARD, commit `7211ac2` PUSHATO** (delegato Opus agent-a6eb18085de040ec8, referto
+`AUDIT_2026-09-25/VALIDAZIONE_HAZARD.md`): banco walk-forward (≤2023→2024 scelte, TEST 2025; 42.882 partite); A0 = v3
+riprodotto 792/792; reperti: atlante tarato male nel recupero (14 % fisso vs vero 10,7→3,0 %), livello squadre del v3
+peggiora, λ di fixture_predictions peggio di Poisson-Elo; A* batte A0 (−0,00156, IC<0; recupero −7,3 %; divergenze
+spurie vs modello Safe 10 %→5 %), B1 LightGBM batte A*; DIFETTO DATI 2025 europee: gol del recupero senza minuto extra.
+Modulo `atlante_v4.py` pronto, NON collegato. Verificato da me: 76 test verdi, banco --fumo riproduce (2,9e-7), 2
+mutazioni mie rosse (2+2). DECISIONI: collegare A* (serve status.extra nel generatore, tempo 1T/2T dal feed); B1 dopo
+(id squadra, action di riaddestramento); indagare il difetto minute_extra 2025.
+**h14:45 (reale) — DIFETTO DATI «minute_extra» VERIFICATO DA ME:** Serie A gol al 90'+: 2024 = 55/66 con extra, 2025 =
+13/77, 2026 = 0/11; il codice mappa `time.extra` correttamente (`per_fixture_backfill.py:368,384`); il raw_json salvato
+ha `{'extra': None, 'elapsed': 90}`; RICHIAMATA OGGI l'API per la fixture 1377865 (24/08/2025): il gol al 90' torna
+ancora `extra: None` → è API-Football che NON fornisce il minuto di recupero per la stagione 2025-26 (almeno leghe
+europee), non un nostro bug; non recuperabile con un re-fetch. Il modulo v4 lo gestisce (`stagione_recupero_affidabile`).
+**h15:05 (reale) — SCHEDE B17, commit `fcc99e7` PUSHATO** (delegato Opus agent-a7b971258796d041a, referto
+`AUDIT_2026-09-25/SCHEDE_ABBINAMENTO_PREZZO.md`): dopo il clic la scheda segue l'ordine fino all'esito (canale del bot
+al ms, ripiego DB) e dice «ABBINATO TOTALMENTE/PARZIALMENTE a prezzo medio Y (Δ tick vs visto e vs segnale)», «NON
+abbinato (FOK)», «rifiutato»; prezzo visto + prezzo del segnale nel contesto per Safe/Omega/Mike (migrazione
+`omega_request_approve_contesto_2026-09-25.sql`, facoltativa: senza, ripiego dichiarato). Verificato da me: 84 pytest,
+39 file vitest, tsc 0, 2 mutazioni mie rosse (6+2). Aperti: Mike prima del clic non al ms; gambe Mike/tennis per
+correlazione; B17 «a mercato vs prezzo visto» resta decisione utente. Delegato residuo: scalper auto-mode.
+**[sessione B, audit] h15:20 — MISURA PUNTO 8 INTEGRATA E PUSHATA (`39d9402`, solo file nuovi: `Betfair/stream/backtest/tools/misura_punto8/`, referto `AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md`, dati).** Verdetti fuori campione (IC 95 %): O1 quote prima della fixture MIGLIORA (log-loss CS FT −0,0238 [−0,0450; −0,0038], 734 partite); O5 rossi nel V3 MIGLIORA su 77 partite (−0,113 [−0,187; −0,046]); M1 P calibrata Under 3.5 di Mike MIGLIORA come informazione (Brier −0,0093, 243 partite), veto da misurare; O6 coda calibrata (nessuna correzione); S2 NON MIGLIORA; X1 PEGGIORA; M2 non realizzabile (over_4_5 assente); T1 NON MISURABILE. Verificato da me: 52 test, mutazione mia rossa, estrazioni DB in sola lettura lanciate da me (finestre di un giorno dopo due timeout 57014). ORDINE UTENTE h15:00: accelerare, altri delegati ok, NIENTE replay se non di pochi minuti → A/B giro Omega (9 replay ≈ 1 h) e parte B di M1 RIMANDATI. Delegati attivi: audit 6 (voci 4/5/6/12-xhedge/13/14, Opus), F10a (Sonnet), test pannello tennis per partita (Sonnet), preparazione O1+M1 con interruttori default spenti in worktree NON integrato (Opus, integrazione solo col sì dell'utente).
+**h15:45 (reale) — SCALPER AUTO-MODE, commit `3084d3b` PUSHATO** (delegato Opus agent-a0adba3f895716ae6, referto
+`AUDIT_2026-09-25/SCALPER_AUTO_MODE.md`): interruttore globale + supervisore dal feed unico (tetto 2, max 4), ordini
+`source='scalper'`, canale 47338 (`SCALPER_CANALE=1`); verificato da me: 118 pytest, 145 file vitest, tsc 0, 2 mutazioni
+mie rosse (5+3). Migrazione `scalper_auto_mode_2026-09-25.sql` DA APPLICARE.
+**h15:50 — PULIZIA WORKTREE FATTA (io):** 95 worktree rimossi con procedura junction→rmdir→scansione reparse point→remove
+→ramo cancellato; `.venv` e `node_modules` del checkout principale verificati intatti (6 e 236 voci prima e dopo).
+Restano SOLO i 5 attivi della sessione B (audit 6, F10a, test pannello tennis, preparazione O1/M1, F0).
+**TUTTI I CANTIERI DELLA SESSIONE A (admin-26) SONO INTEGRATI E PUSHATI.** Commit del giorno (miei): 703a33a action,
+372158e atlante a domanda, f015204/9cbfe76/306fd11 backfill senza buchi, c5c8a92 fix F1-F4, 442d21c tennis auto-mode,
+b4fef79 uscite automatiche per bot, 5139d2b strada unica, e35e70e Safe Q1-Q12, 7211ac2 validazione hazard + v4,
+fcc99e7 schede B17, 3084d3b scalper auto-mode (+ docs d1ef6cb, 22bae8b). Sessione B: 42a7b92, ae1a184, misura punto 8.
+
+**PUNTO DI RIPRESA (26/09):** 1) leggere questa sezione + il messaggio finale del 25/09 all'utente (elenco migrazioni e
+decisioni); 2) verificare: catena action di stanotte (Daily verde con un solo job, Retrain ESEGUITO, Post-Cal, Hazard
+Atlas, Mapper giornaliero, Seasons Catchup con REFERTO BUCHI), contatore API, `gh run list`; 3) app: l'utente applica le
+migrazioni residue e riavvia; controllo a monitor: bot tennis armati dal feed, uscite automatiche per bot, schede con
+esito di abbinamento, scalper auto-mode, Control Room; 4) replay uno per bot in sequenza su TUTTI i bot toccati il 25/09
+(Safe con banca 20-34 e veto, tennis, Omega stato mercato, scalper, strada unica `--scenari tutti --trasporto entrambi`):
+nessun replay completo è stato eseguito oggi (ordine dell'utente: solo test di minuti); 5) decisioni residue (vedi
+messaggio finale): D-1 canale (bot solo su partite seguite) prima di accendere il paper via canale; collegare l'atlante
+v4 (A*); live automatico tennis/scalper; dubbi Safe §11 e uscite §7; 6) integrazioni residue della sessione B (audit 6,
+F10a, F0, test pannello tennis, O1/M1 solo col sì dell'utente); 7) stagioni passate mai caricate (decisione); 8) difetto
+`minute_extra` 2025 di API-Football (non nostro): tenere `stagione_recupero_affidabile`.
