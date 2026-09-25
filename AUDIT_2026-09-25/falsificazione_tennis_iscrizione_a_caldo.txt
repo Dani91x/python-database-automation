@@ -1,0 +1,24 @@
+base (codice intatto): VERDE
+M1 follow_worker senza via a caldo                   ROSSO (ok), sha1 ok
+M2 bot_control senza armamento a caldo               ROSSO (ok), sha1 ok
+M3 filtro dello stream non aggiornato                ROSSO (ok), sha1 ok
+M4 filtro delle strategie non aggiornato             ROSSO (ok), sha1 ok
+M5 filtro non canonico (non ordinato)                ROSSO (ok), sha1 ok
+M6 posizioni ignorate                                ROSSO (ok), sha1 ok
+M7 posizioni non ricontrollate nel ciclo di flumine  ROSSO (ok), sha1 ok
+M8 espulsione anche fra pari                         ROSSO (ok), sha1 ok
+M9 manuali espellibili                               ROSSO (ok), sha1 ok
+M10 tetto ignorato nel piano                         ROSSO (ok), sha1 ok
+M11 grazia d'uscita ignorata                         ROSSO (ok), sha1 ok
+M12 sottoscrizione vuota permessa                    ROSSO (ok), sha1 ok
+M13 client paper non passato a caldo                 ROSSO (ok), sha1 ok
+M14 modalita' LIVE a caldo in un runner PAPER        ROSSO (ok), sha1 ok
+M15 guardia d'avvio ignorata a caldo                 ROSSO (ok), sha1 ok
+M16 stream spurio non tolto                          ROSSO (ok), sha1 ok
+M17 bot della partita uscita non disabilitato        ROSSO (ok), sha1 ok
+M18 caldo che chiede anche la ricostruzione          ROSSO (ok), sha1 ok
+M19 build oltre il tetto                             ROSSO (ok), sha1 ok
+M20 tetto ignorato nel ciclo di flumine              ROSSO (ok), sha1 ok
+M21 lavoro annullato eseguito lo stesso              ROSSO (ok), sha1 ok
+M22 data_filter non verificato                       ROSSO (ok), sha1 ok
+dopo (codice ripristinato): VERDE

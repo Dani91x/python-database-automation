@@ -19,6 +19,14 @@ Quando un bot viene armato/disarmato a runtime (tabella ``tennis_bot_control``) 
 stream aggiungendo/togliendo i bot, SEMPRE sullo stesso filtro per-evento (mirror del
 pattern F3 del runner calcio). Nessuno stream nuovo viene aperto per-bot.
 
+25/09 - ISCRIZIONE E ARMAMENTO A CALDO (``iscrizione_a_caldo``, interruttore
+``TENNIS_ISCRIZIONE_A_CALDO``, acceso di serie): con il framework vivo una partita
+nuova entra con un nuovo ``marketSubscription`` sulla STESSA connessione e i suoi
+bot si armano nel framework che gira (``_allinea_follow_a_caldo``,
+``_arma_a_caldo``); nessuna ricostruzione, quindi nessun rinvio per i bot in
+posizione. La ricostruzione resta per: avvio/ripresa del runner, errore di
+``framework.run``, lista dei follow vuota (verso l'attesa), interruttore spento.
+
 Scrive SOLO tabelle ``tennis_*``. Riusa VERBATIM le strategie tennis, ``tennis_score`` e
 il modello ``tennis_winprob`` (import, nessuna modifica).
 """
@@ -66,6 +74,7 @@ from . import auto_mode as _AM
 from . import canale_bot_tennis as _CBT
 from . import chiusura_manuale as _cm
 from . import guardie_tennis as _gt
+from . import iscrizione_a_caldo as _IAC
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
 from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
@@ -475,11 +484,23 @@ class TennisLiveSession:
         # (`chiusura_manuale`). NON si svuota a `reset_streams`: il comando va
         # ridato all'istanza nuova dopo un rebuild.
         self.chiusure_manuali: Dict[tuple, Dict[str, Any]] = {}
+        # 25/09 - ISCRIZIONE/ARMAMENTO A CALDO (``iscrizione_a_caldo``): il
+        # contesto del framework VIVO (None fra una build e l'altra), il lock
+        # che serializza follow_worker e bot_control_worker sulle operazioni a
+        # caldo, da quando un follow e' sparito (grazia d'uscita) e i rifiuti
+        # per tetto gia' annotati (una scrittura per episodio).
+        self.caldo: Optional["ContestoCaldo"] = None
+        self.caldo_lock = threading.RLock()
+        self.follow_assenti_dal: Dict[str, float] = {}
+        self.caldo_rifiuti_annotati: set = set()
 
     def reset_streams(self) -> None:
         self.capture.clear()
         self.hosted.clear()
         self.stopping_deadline.clear()
+        # il framework vecchio non esiste piu': niente operazioni a caldo su di lui
+        self.caldo = None
+        self.follow_assenti_dal.clear()
         # nuovo framework in arrivo: gli Order del vecchio blotter sono orfani
         self.framework_gen += 1
 
@@ -528,6 +549,16 @@ def _catalog_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> None:
     event_id = follow["event_id"]
     if event_id in session.market_meta:
         return
+    meta = _risolvi_follow(session, follow)
+    if meta is not None:
+        session.market_meta[event_id] = meta
+
+
+def _risolvi_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Il catalogo MATCH_ODDS di un follow (REST), SENZA toccare la sessione:
+    la build lo scrive subito in ``market_meta``, l'iscrizione a caldo solo
+    dopo che la risottoscrizione e' riuscita. None = follow marcato ERROR."""
+    event_id = follow["event_id"]
     try:
         meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
     except Exception as e:  # noqa: BLE001
@@ -541,8 +572,8 @@ def _catalog_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> None:
         except Exception as e2:  # noqa: BLE001
             logger.warning("[tennis-runner] catalogo KO anche dopo relogin %s: %s", event_id, e2)
             tennis_db.set_tennis_follow_status(event_id, "ERROR", str(e2))
-            return
-    session.market_meta[event_id] = meta
+            return None
+    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -1319,6 +1350,12 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
     # T2 (24/09): a guardia d'avvio armata un bot nuovo NON provoca il restart
     # che lo armerebbe (si riprova la ripresa; disarmi e protezioni girano).
     guardia_armata = _gt.guardia_blocca()
+    # 25/09 - ARMAMENTO A CALDO: con il framework vivo un bot richiesto si
+    # arma nel framework che gira (``_arma_a_caldo``), senza ricostruire; il
+    # disarmo non chiede piu' nessuna ricostruzione di pulizia (il bot
+    # disabilitato resta inerte). Senza contesto a caldo: come prima.
+    caldo = _caldo_attivo(flumine, session)
+    da_armare: List[tuple] = []
     for event_id in list(session.market_meta.keys()):
         desired = _desired_controls(event_id)
         stopping = _stopping_controls(event_id)
@@ -1508,6 +1545,17 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
                 )
             except Exception as e:  # noqa: BLE001
                 logger.debug("[tennis-runner] heartbeat %s/%s KO: %s", event_id, bot_key, e)
+        if caldo is not None and not guardia_armata:
+            # i richiesti non ospitati (nuovi, o riarmati dopo che l'istanza
+            # vecchia e' uscita da hosted qui sopra) si armano a caldo
+            for bot_key, ctrl in desired.items():
+                if (event_id, bot_key) not in session.hosted:
+                    da_armare.append((event_id, bot_key, ctrl))
+    if caldo is not None:
+        if da_armare:
+            with session.caldo_lock:
+                _arma_a_caldo(flumine, session, caldo, da_armare)
+        return
     if need_restart:
         # fix audit #1: restart SOLO a bot flat (altrimenti rinviato al giro dopo)
         # 25/09: un restart di sola pulizia (disarmo, nessuno da armare) non
@@ -1636,6 +1684,372 @@ def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) ->
     _stop_framework(flumine)
 
 
+# ---------------------------------------------------------------------------
+# 25/09 - ISCRIZIONE E ARMAMENTO A CALDO (``iscrizione_a_caldo``)
+# ---------------------------------------------------------------------------
+class ContestoCaldo:
+    """Quello che serve per sottoscrivere e armare a framework VIVO: gli stessi
+    oggetti con cui la build ha costruito capture e bot (``data_filter``,
+    modalita' CATTURATA al build, client paper affiancato in LIVE)."""
+
+    def __init__(self, framework: Any, capture: Any, data_filter: Dict[str, Any],
+                 mode: str, client_paper: Any = None) -> None:
+        self.framework = framework
+        self.capture = capture
+        self.data_filter = data_filter
+        self.mode = mode
+        self.client_paper = client_paper
+
+
+#: attesa massima del ciclo di flumine per un lavoro a caldo (poi si riprova)
+_CALDO_TIMEOUT_S = 5.0
+
+
+def _caldo_attivo(flumine: Any, session: Any) -> Optional[ContestoCaldo]:
+    """Il contesto a caldo se il framework vivo e' QUELLO del worker e
+    l'interruttore e' acceso (riletto a ogni giro: spento = come prima)."""
+    caldo = getattr(session, "caldo", None)
+    if caldo is None or not _IAC.acceso():
+        return None
+    if flumine is not None and caldo.framework is not flumine:
+        return None
+    return caldo
+
+
+def _mercato_con_posizioni(flumine: Any, market_id: Optional[str]) -> bool:
+    """True se sul mercato c'e' un ordine VIVO o un'esposizione MATCHED non
+    pari, di QUALUNQUE strategia (bot, capture degli ordini manuali). Fonte:
+    SOLO il blotter flumine. Mercato mai arrivato = niente posizioni; mercato
+    CHIUSO (regolato) = niente rischio vivo. In dubbio: True (protetto)."""
+    if not market_id or flumine is None:
+        return False
+    try:
+        market = flumine.markets.markets.get(str(market_id))
+    except Exception:  # noqa: BLE001 - struttura illeggibile: protetto
+        return True
+    if market is None:
+        return False
+    if getattr(market, "closed", False) is True:
+        return False
+    blotter = getattr(market, "blotter", None)
+    if blotter is None:
+        return False
+    try:
+        per_strategia: Dict[Any, set] = {}
+        for o in list(blotter):
+            st = getattr(o, "status", None)
+            st_name = getattr(st, "name", None) or (str(st) if st is not None else "")
+            if st_name in _LIVE_ORDER_STATUSES:
+                return True
+            sel = getattr(o, "selection_id", None)
+            strat = getattr(getattr(o, "trade", None), "strategy", None)
+            if sel is None or strat is None:
+                continue
+            hcap = float(getattr(o, "handicap", 0.0) or 0.0)
+            per_strategia.setdefault(strat, set()).add((str(market_id), int(sel), hcap))
+        for strat, lookups in per_strategia.items():
+            for lookup in lookups:
+                exp = blotter.get_exposures(strat, lookup)
+                if not isinstance(exp, dict):
+                    return True
+                w = float(exp.get("matched_profit_if_win") or 0.0)
+                l = float(exp.get("matched_profit_if_lose") or 0.0)
+                if abs(w - l) >= 0.01:
+                    return True
+    except Exception:  # noqa: BLE001 - blotter illeggibile: protetto
+        return True
+    return False
+
+
+def _evento_con_posizioni(flumine: Any, session: Any, event_id: str) -> bool:
+    """Posizioni vive sulla partita (blotter del suo mercato) o un «chiudi ora»
+    in corso su uno dei suoi bot: la partita non esce e non si espelle."""
+    meta = (getattr(session, "market_meta", {}) or {}).get(event_id) or {}
+    if _mercato_con_posizioni(flumine, meta.get("market_id")):
+        return True
+    for (ev, bot_key) in list((getattr(session, "hosted", {}) or {}).keys()):
+        if ev == event_id and _cm.in_chiusura(session, (ev, bot_key)):
+            return True
+    return False
+
+
+def _eventi_armati() -> set:
+    """Le partite con almeno una riga bot armata (UNA lettura). KO = vuoto:
+    le partite valgono «candidate» (meno prioritarie), mai piu' prioritarie."""
+    try:
+        rows = tennis_db.list_tennis_bot_controls(statuses=list(_ARMED_STATUSES))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[tennis-follow] righe armate illeggibili: %s", e)
+        return set()
+    return {str(r.get("event_id")) for r in rows or []
+            if r.get("bot_key") in _BOT_REGISTRY and r.get("event_id")}
+
+
+def _entro_il_tetto_al_build(follows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Alla BUILD la lista dei follow rientra nel tetto (limite Betfair 200 per
+    connessione). Nessuna posizione esiste (la build parte solo a bot flat):
+    a mano > armate > candidate, a parita' l'ordine della lista. Sotto il
+    tetto: la lista com'e' (nessuna lettura in piu')."""
+    tetto = _IAC.tetto_mercati()
+    visti: Dict[str, Dict[str, Any]] = {}
+    for f in follows:
+        ev = str(f.get("event_id") or "")
+        if ev and ev not in visti:
+            visti[ev] = f
+    if len(visti) <= tetto:
+        return follows
+    armate = _eventi_armati()
+    voluti = [_IAC.Evento(ev, manuale=_AM.origine_follow(f) != _AM.ORIGINE_AUTO,
+                          armata=ev in armate) for ev, f in visti.items()]
+    piano = _IAC.pianifica([], voluti, tetto)
+    for ev in piano.rifiutati:
+        try:
+            tennis_db.set_tennis_follow_status(
+                ev, "PENDING", f"in attesa: tetto di {tetto} mercati sulla connessione pieno")
+        except Exception:  # noqa: BLE001 - annotazione best-effort
+            pass
+    tenuti = set(piano.aggiungi)
+    logger.warning("[tennis-runner] %d follow oltre il tetto di %d mercati: %d in attesa.",
+                   len(visti), tetto, len(piano.rifiutati))
+    return [f for f in follows if str(f.get("event_id") or "") in tenuti]
+
+
+def _allinea_follow_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo,
+                            follows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Porta lo stream alla lista dei follow SENZA ricostruire il framework.
+
+    1. piano (``_IAC.pianifica``): nuove dentro il tetto per priorita', follow
+       spariti fuori dopo la grazia, espulsioni solo di priorita' piu' bassa e
+       senza posizioni;
+    2. catalogo REST delle nuove FUORI dal ciclo di flumine;
+    3. nel ciclo di flumine: posizioni RICONTROLLATE (una partita che ha
+       aperto nel frattempo non esce), risottoscrizione sulla stessa
+       connessione, poi (solo se riuscita) sessione aggiornata; i bot delle
+       partite che escono si disabilitano (sono flat per costruzione);
+    4. fuori: stati DB (follow STREAMING, bot 'stopped' col motivo) e
+       armamento a caldo dei bot delle partite entrate.
+    Ritorna l'esito (per i test e il log) o None se non c'era niente da fare."""
+    ora = time.monotonic()
+    voluti_righe: Dict[str, Dict[str, Any]] = {}
+    for f in follows or []:
+        ev = str(f.get("event_id") or "")
+        if ev and ev not in voluti_righe:
+            voluti_righe[ev] = f
+    assenti = session.follow_assenti_dal
+    for ev in list(assenti):
+        if ev in voluti_righe or ev not in session.market_meta:
+            assenti.pop(ev, None)
+    for ev in list(session.market_meta):
+        if ev not in voluti_righe:
+            assenti.setdefault(ev, ora)
+    grazia = _IAC.grazia_uscita_s()
+    pronti = {ev for ev, t0 in assenti.items() if ora - t0 >= grazia}
+    nuovi = [ev for ev in voluti_righe if ev not in session.market_meta]
+    if not nuovi and not pronti:
+        return None                      # niente da fare: zero letture in piu'
+    tetto = _IAC.tetto_mercati()
+    armate = _eventi_armati()
+    attivi = {ev for (ev, _bk), st in list(session.hosted.items())
+              if not getattr(st, "_tennis_disabled", False)}
+    seguiti = [
+        _IAC.Evento(ev,
+                    manuale=(ev in voluti_righe
+                             and _AM.origine_follow(voluti_righe[ev]) != _AM.ORIGINE_AUTO),
+                    armata=(ev in armate or ev in attivi),
+                    posizioni=_evento_con_posizioni(flumine, session, ev))
+        for ev in list(session.market_meta)
+    ]
+    voluti = [_IAC.Evento(ev, manuale=_AM.origine_follow(f) != _AM.ORIGINE_AUTO,
+                          armata=ev in armate)
+              for ev, f in voluti_righe.items()]
+    piano = _IAC.pianifica(seguiti, voluti, tetto, pronti)
+    for ev in piano.rifiutati:
+        if ev in session.caldo_rifiuti_annotati:
+            continue
+        session.caldo_rifiuti_annotati.add(ev)
+        logger.warning("[tennis-follow] %s in attesa: tetto di %d mercati pieno e nessuna "
+                       "partita espellibile (posizioni vive, a mano o piu' prioritarie).",
+                       ev, tetto)
+        try:
+            tennis_db.set_tennis_follow_status(
+                ev, "PENDING", f"in attesa: tetto di {tetto} mercati sulla connessione pieno")
+        except Exception:  # noqa: BLE001 - annotazione best-effort
+            pass
+    if not piano.cambia:
+        return None
+    metas: Dict[str, Dict[str, Any]] = {}
+    for ev in piano.aggiungi:
+        meta = _risolvi_follow(session, voluti_righe[ev])
+        if meta is not None:
+            metas[ev] = meta
+    uscenti = list(piano.togli) + list(piano.espulsi)
+    if not metas and not uscenti:
+        return None
+    restano = [ev for ev in session.market_meta if ev not in uscenti]
+    if not restano and not metas:
+        # nessuna partita resta: un filtro vuoto non esiste (Betfair lo legge
+        # come «tutto»). Framework senza partite = ricostruzione verso l'attesa,
+        # che a questo punto e' sicura (niente posizioni, forza=False).
+        _request_restart(flumine, session, "nessuna partita seguita", forza=False)
+        return {"entrati": [], "usciti": [], "disarmati": [], "restart": True}
+
+    def _applica(fw: Any) -> Dict[str, Any]:
+        usciti = [ev for ev in uscenti if not _evento_con_posizioni(fw, session, ev)]
+        trattenuti = [ev for ev in uscenti if ev not in usciti]
+        base = [ev for ev in session.market_meta if ev not in usciti]
+        entrano = []
+        for ev in metas:
+            if len(base) + len(entrano) < tetto:
+                entrano.append(ev)
+        mids = ([session.market_meta[ev]["market_id"] for ev in base]
+                + [metas[ev]["market_id"] for ev in entrano])
+        if not mids:
+            return {"entrati": [], "usciti": [], "disarmati": [],
+                    "trattenuti": trattenuti, "vuoto": True}
+        stream = _IAC.stream_di_mercato(fw, caldo.capture)
+        if sorted({str(m) for m in mids}) != _IAC.mercati_dello_stream(stream):
+            _IAC.sottoscrivi(fw, stream, mids)
+        disarmati = []
+        for ev in usciti:
+            for (e, bk), st in list(session.hosted.items()):
+                if e != ev:
+                    continue
+                if not getattr(st, "_tennis_disabled", False):
+                    _disable_strategy(st)
+                    disarmati.append((e, bk))
+                session.hosted.pop((e, bk), None)
+                session.stopping_deadline.pop((e, bk), None)
+            session.market_meta.pop(ev, None)
+            session.capture.pop(ev, None)
+        for ev in entrano:
+            session.market_meta[ev] = metas[ev]
+            session.capture[ev] = caldo.capture
+        return {"entrati": entrano, "usciti": usciti, "disarmati": disarmati,
+                "trattenuti": trattenuti}
+
+    try:
+        esito = _IAC.esegui_nel_thread_di_flumine(caldo.framework, _applica, _CALDO_TIMEOUT_S)
+    except _IAC.NonPronto as e:
+        logger.info("[tennis-follow] iscrizione a caldo rinviata: %s", e)
+        return None
+    except Exception as e:  # noqa: BLE001 - niente e' cambiato: si riprova al giro dopo
+        logger.warning("[tennis-follow] iscrizione a caldo KO (si riprova): %s", e)
+        return None
+    for ev in esito.get("entrati", []):
+        session.caldo_rifiuti_annotati.discard(ev)
+        try:
+            tennis_db.set_tennis_follow_status(ev, "STREAMING")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-follow] status STREAMING %s KO: %s", ev, e)
+    espulsi = set(piano.espulsi)
+    for ev, bk in esito.get("disarmati", []):
+        motivo = ((f"partita tolta dallo stream per far posto (tetto {tetto} mercati): "
+                   "bot fermato a posizione flat")
+                  if ev in espulsi else
+                  "partita non piu' seguita (follow chiuso): bot fermato a posizione flat")
+        try:
+            tennis_db.set_tennis_bot_status(ev, bk, "stopped", stopped=True, error=motivo)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-follow] status stopped %s/%s KO: %s", ev, bk, e)
+    for ev in esito.get("usciti", []):
+        assenti.pop(ev, None)
+        if ev in espulsi:
+            try:
+                tennis_db.set_tennis_follow_status(
+                    ev, "PENDING", f"in attesa: tolta per far posto (tetto {tetto} mercati)")
+            except Exception:  # noqa: BLE001
+                pass
+    logger.info("[tennis-follow] a caldo sulla stessa connessione: +%d -%d (espulse %d, "
+                "trattenute per posizioni %d), %d/%d mercati (limite Betfair %d).",
+                len(esito.get("entrati", [])), len(esito.get("usciti", [])),
+                len([e for e in esito.get("usciti", []) if e in espulsi]),
+                len(esito.get("trattenuti", [])), len(session.market_meta), tetto,
+                _IAC.LIMITE_BETFAIR_MERCATI)
+    # i bot delle partite appena entrate si armano SUBITO (non al giro dopo)
+    if esito.get("entrati") and not _gt.guardia_blocca():
+        richieste = []
+        for ev in esito["entrati"]:
+            for bk, ctrl in _desired_controls(ev).items():
+                richieste.append((ev, bk, ctrl))
+        if richieste:
+            esito["armati"] = _arma_a_caldo(flumine, session, caldo, richieste)
+    return esito
+
+
+def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo,
+                  richieste: List[tuple]) -> List[tuple]:
+    """Arma i bot sulle partite GIA' nello stream, nel framework vivo.
+
+    Istanza costruita FUORI dal ciclo di flumine con la stessa
+    ``_instantiate_bot`` della build (stessa guardia paper/live: modalita' di
+    build, client paper affiancato, dry_run); ``add_strategy`` DENTRO il ciclo,
+    sulla MarketStream esistente (``_IAC.aggiungi_strategia_sullo_stream``). Stati
+    DB come alla build: 'arming' -> 'running' (o 'error' col motivo). Ritorna
+    le chiavi (evento, bot) armate."""
+    del flumine  # il framework e' quello del contesto
+    pronti: List[tuple] = []
+    for ev, bot_key, ctrl in richieste:
+        if (ev, bot_key) in session.hosted or ev not in session.market_meta:
+            continue
+        meta = session.market_meta[ev]
+        try:
+            tennis_db.set_tennis_bot_status(ev, bot_key, "arming")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-runner] status arming %s/%s KO: %s", ev, bot_key, e)
+        try:
+            bot = _instantiate_bot(
+                bot_key, ctrl, meta["market_id"], meta["name_to_sel"],
+                _make_sink(ev, bot_key), caldo.data_filter, caldo.mode,
+                market_ids=sorted(str(m.get("market_id")) for m in session.market_meta.values()),
+                client_paper=caldo.client_paper,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[tennis-runner] arm a caldo KO %s/%s: %s", ev, bot_key, e)
+            tennis_db.set_tennis_bot_status(ev, bot_key, "error", error=str(e))
+            continue
+        pronti.append((ev, bot_key, bot))
+    if not pronti:
+        return []
+
+    def _aggiungi(fw: Any) -> List[tuple]:
+        stream = _IAC.stream_di_mercato(fw, caldo.capture)
+        esiti = []
+        for ev, bot_key, bot in pronti:
+            if (ev, bot_key) in session.hosted or ev not in session.market_meta:
+                esiti.append((ev, bot_key, bot, "saltato"))
+                continue
+            try:
+                _IAC.aggiungi_strategia_sullo_stream(fw, stream, bot)
+            except Exception as e:  # noqa: BLE001
+                _disable_strategy(bot)
+                esiti.append((ev, bot_key, bot, e))
+                continue
+            session.hosted[(ev, bot_key)] = bot
+            esiti.append((ev, bot_key, bot, None))
+        return esiti
+
+    try:
+        esiti = _IAC.esegui_nel_thread_di_flumine(caldo.framework, _aggiungi, _CALDO_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001 - nessun bot aggiunto: righe 'arming', si riprova
+        logger.warning("[tennis-runner] armamento a caldo rinviato: %s", e)
+        return []
+    armati: List[tuple] = []
+    for ev, bot_key, bot, err in esiti:
+        if err == "saltato":
+            continue
+        if err is not None:
+            logger.error("[tennis-runner] arm a caldo %s/%s: %s", ev, bot_key, err)
+            tennis_db.set_tennis_bot_status(ev, bot_key, "error", error=str(err)[:300])
+            continue
+        tennis_db.set_tennis_bot_status(ev, bot_key, "running", started=True)
+        _scrivi_attivita_modalita(ev, bot_key, bot, caldo.mode)
+        armati.append((ev, bot_key))
+    if armati:
+        logger.info("[tennis-runner] %d bot armati A CALDO (nessuna ricostruzione): %s",
+                    len(armati), ", ".join(f"{bk}@{ev}" for ev, bk in armati))
+    return armati
+
+
 def record_flag_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     """REGISTRAZIONE OPT-IN per-partita (17/07): rilegge periodicamente il flag
     ``record`` da ``tennis_live_follow`` e allinea il tee raw (tennis_recorder).
@@ -1655,6 +2069,14 @@ def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
         follows = tennis_db.list_pending_tennis_follows()
     except Exception as e:  # noqa: BLE001
         logger.warning("[tennis-follow] list KO: %s", e)
+        return
+    # 25/09 - ISCRIZIONE A CALDO: con il framework vivo le partite nuove entrano
+    # (e quelle chiuse escono) sulla STESSA connessione, senza ricostruire:
+    # nessun rinvio per i bot in posizione, blotter e posizioni intatti.
+    caldo = _caldo_attivo(flumine, session)
+    if caldo is not None:
+        with session.caldo_lock:
+            _allinea_follow_a_caldo(flumine, session, caldo, follows)
         return
     new = [f for f in follows if f["event_id"] not in session.market_meta]
     if new:
@@ -1824,6 +2246,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
 
             session.market_meta.clear()
             session.reset_streams()
+            # 25/09: la build rientra nel tetto (limite Betfair 200 per connessione)
+            follows = _entro_il_tetto_al_build(follows)
             for f in follows:
                 _catalog_follow(session, f)
             if not session.market_meta:
@@ -1878,7 +2302,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             # UNA capture per TUTTI gli eventi (stream unico cross-evento, vedi
             # _make_capture): mappata sotto ogni event_id per i consumer esistenti
             # (ladder/now/ordini leggono il PROPRIO mercato via latest_for).
-            all_market_ids = [m["market_id"] for m in session.market_meta.values()]
+            # 25/09: filtro CANONICO (ordinato): l'iscrizione a caldo e i bot armati
+            # a caldo usano lo stesso dizionario, o flumine aprirebbe un'altra
+            # sottoscrizione (``_IAC.filtro_mercati``)
+            all_market_ids = sorted({str(m["market_id"]) for m in session.market_meta.values()})
             shared_cap = _make_capture(all_market_ids[0], "*", market_ids=all_market_ids)
             shared_cap.market_data_filter = data_filter
             framework.add_strategy(shared_cap)
@@ -1968,6 +2395,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
 
             for event_id in session.market_meta:
                 tennis_db.set_tennis_follow_status(event_id, "STREAMING")
+            # 25/09 - ISCRIZIONE/ARMAMENTO A CALDO: da qui in poi partite nuove e
+            # bot nuovi entrano nel framework VIVO (stessi data_filter, modalita'
+            # di build e client paper di questa build), senza ricostruire.
+            session.caldo = (ContestoCaldo(framework, shared_cap, data_filter, mode,
+                                           client_paper)
+                             if _IAC.acceso() else None)
             logger.info("[tennis-runner] stream avviato: %d eventi, %d bot ospitati, "
                         "1 connessione Betfair (%d mercati).",
                         len(session.market_meta), len(session.hosted), len(all_market_ids))
@@ -1981,8 +2414,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 if only_event:
                     interrupted = True
                 else:
+                    session.caldo = None
                     time.sleep(5.0)
                     continue
+            session.caldo = None     # framework fermo: niente piu' lavori a caldo
             if session.shutdown_requested.is_set():
                 logger.info("[tennis-runner] auto-spegnimento: esco.")
                 break
