@@ -178,9 +178,13 @@ def test_m3_cache_lambda_ttl_solo_sulle_fonti_di_ripiego(monkeypatch):
     S._LAMBDA_CACHE["e1"] = (val, ts - S.LAMBDA_CACHE_TTL_S - 1)
     db.events["e1"]["model"] = {"lambda_pre": [1.7, 0.8], "lambda_source": "pre_ko_odds"}
     assert S._prematch_lambdas(db, "e1", None)[:2] == (1.7, 0.8)
-    # una FIXTURE in cache non scade mai (i λ pre-match non cambiano)
+    # una FIXTURE in cache non scade mai (i λ pre-match non cambiano) -- con la
+    # catena di PRIMA (`lambda_quote_prima` spento). 25/09 sera: O1 e' ACCESO di
+    # default per ordine dell'utente e, acceso, la fixture in cache scade col TTL
+    # (test_o1_quote_prima_2026_09_25): qui si prova il ramo spento, dichiarato.
     S._LAMBDA_CACHE["e1"] = ((1.0, 1.0, 135, "fixture"), 0.0)
-    assert S._prematch_lambdas(db, "e1", None) == (1.0, 1.0, 135, "fixture")
+    assert S._prematch_lambdas(db, "e1", None, params={"lambda_quote_prima": False}) \
+        == (1.0, 1.0, 135, "fixture")
 
 
 # ---------------------------------------------------------------- M5 meta fuso nel reconcile

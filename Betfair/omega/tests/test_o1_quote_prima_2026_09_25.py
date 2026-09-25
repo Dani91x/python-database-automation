@@ -1,8 +1,10 @@
 """O1 (25/09) -- le quote 1X2 pre-KO PRIMA della fixture nella catena dei lambda.
 
-PREPARAZIONE, interruttore ``lambda_quote_prima`` DEFAULT SPENTO: finche'
-l'utente non lo accende la catena di ``omega_service._prematch_lambdas`` deve
-restare IDENTICA a quella di sempre (fixture -> lambda salvati -> pre-KO -> ...).
+Interruttore ``lambda_quote_prima`` DEFAULT ACCESO (ordine dell'utente del
+25/09 sera: "per TUTTI i bot i valori statistici e gli aiuti di default accesi").
+SPENTO ESPLICITO la catena di ``omega_service._prematch_lambdas`` resta IDENTICA a
+quella di sempre (fixture -> lambda salvati -> pre-KO -> ...): i test del ramo
+spento lo passano sempre per esteso.
 
 I finti parlano come il vero:
 - ``get_event`` restituisce una riga di ``omega_events`` (``event_id``,
@@ -131,9 +133,11 @@ def _cache_pulita():
 
 
 # ---------------------------------------------------------------- whitelist
-def test_parametro_esiste_spento_di_default_e_passa_dalla_whitelist():
-    assert C._SPEC["lambda_quote_prima"] == (False, bool, None, None)
-    assert C.resolve_params({})["lambda_quote_prima"] is False
+def test_parametro_esiste_acceso_di_default_e_passa_dalla_whitelist():
+    assert C._SPEC["lambda_quote_prima"] == (True, bool, None, None)
+    assert C.resolve_params({})["lambda_quote_prima"] is True
+    assert C.resolve_params({"lambda_quote_prima": "off"})["lambda_quote_prima"] is False
+    assert C.resolve_params({"lambda_quote_prima": False})["lambda_quote_prima"] is False
     assert C.resolve_params({"lambda_quote_prima": "on"})["lambda_quote_prima"] is True
     assert C.resolve_params({"lambda_quote_prima": True})["lambda_quote_prima"] is True
 
@@ -142,14 +146,27 @@ def test_parametro_esiste_spento_di_default_e_passa_dalla_whitelist():
 def test_spento_quote_e_fixture_presenti_vince_la_fixture_come_oggi(client):
     db = _DB({"e1": _evento("e1")})
     payload = {"pre_ko": _pre_ko()}
-    # default (nessun params) e interruttore esplicito a False: STESSO numero
-    out_default = S._prematch_lambdas(db, "e1", payload)
+    # interruttore spento ESPLICITO, grezzo e passato dalla whitelist: STESSO numero
+    out_grezzo = S._prematch_lambdas(db, "e1", payload, params={"lambda_quote_prima": False})
     S._LAMBDA_CACHE.clear()
     out_spento = S._prematch_lambdas(db, "e1", payload,
                                      params=C.resolve_params({"lambda_quote_prima": False}))
-    assert out_default == (1.9, 0.7, LEGA, "fixture")
-    assert out_spento == out_default
+    assert out_grezzo == (1.9, 0.7, LEGA, "fixture")
+    assert out_spento == out_grezzo
     assert db.salvati == []              # la fixture non si persiste (come oggi)
+
+
+def test_default_senza_params_e_whitelist_vuota_quote_in_testa(client):
+    """25/09 sera: il DEFAULT e' acceso anche quando il chiamante non passa la
+    chiave (``params`` assente) o passa la whitelist risolta da vuoto."""
+    pk = _pre_ko()
+    atteso = M.lambdas_from_pre_ko(pk)
+    db = _DB({"e1b": _evento("e1b")})
+    assert S._prematch_lambdas(db, "e1b", {"pre_ko": pk}) == (atteso[0], atteso[1], LEGA,
+                                                              "pre_ko_odds")
+    S._LAMBDA_CACHE.clear()
+    assert S._prematch_lambdas(db, "e1b", {"pre_ko": pk}, params=C.resolve_params({}))[3] \
+        == "pre_ko_odds"
 
 
 def test_acceso_quote_e_fixture_presenti_vince_pre_ko(client):
@@ -222,7 +239,8 @@ def test_acceso_la_fixture_in_cache_scade_e_le_quote_arrivate_dopo_la_sostituisc
 
 def test_spento_la_fixture_in_cache_non_scade_mai_come_oggi(client):
     db = _DB({"e8": _evento("e8")})
-    assert S._prematch_lambdas(db, "e8", {})[3] == "fixture"
+    p_off = {"lambda_quote_prima": False}
+    assert S._prematch_lambdas(db, "e8", {}, params=p_off)[3] == "fixture"
     val, ts = S._LAMBDA_CACHE["e8"]
     S._LAMBDA_CACHE["e8"] = (val, ts - S.LAMBDA_CACHE_TTL_S - 1)
-    assert S._prematch_lambdas(db, "e8", {"pre_ko": _pre_ko()})[3] == "fixture"
+    assert S._prematch_lambdas(db, "e8", {"pre_ko": _pre_ko()}, params=p_off)[3] == "fixture"

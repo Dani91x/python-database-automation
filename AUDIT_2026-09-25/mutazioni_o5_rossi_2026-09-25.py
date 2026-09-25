@@ -41,8 +41,9 @@ MUT = [
      "mh, ma = red_card_multipliers(rh, ra, None)", "mh, ma = red_card_multipliers(rh, ra, 39)", 1),
     ("F7 casa/trasferta invertiti", EN,
      "return (float(mh), float(ma))", "return (float(ma), float(mh))", 1),
-    ("F8 default della whitelist acceso", CF,
-     '"model_red_cards": (False, bool, None, None)', '"model_red_cards": (True, bool, None, None)', 1),
+    # 25/09 sera: il default e' ACCESO per ordine dell'utente; la mutazione lo spegne
+    ("F8 default della whitelist spento", CF,
+     '"model_red_cards": (True, bool, None, None)', '"model_red_cards": (False, bool, None, None)', 1),
     ("F9 fonte della P senza +rossi", PR,
      'fonte += "+rossi"', 'fonte += ""', 1),
 ]

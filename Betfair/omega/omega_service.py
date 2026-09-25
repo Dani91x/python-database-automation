@@ -1045,7 +1045,7 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
     None = nessun modello possibile (si salta: mai a occhi chiusi). Ogni λ
     trovato (non da fixture) viene persistito sull'evento, best-effort.
 
-    O1 (25/09, PREPARATO, DEFAULT SPENTO) -- ``params['lambda_quote_prima']``:
+    O1 (25/09, DEFAULT ACCESO per ordine dell'utente) -- ``params['lambda_quote_prima']``:
     a True il gradino 3 (quote 1X2 pre-KO) passa DAVANTI al gradino 1; la
     fixture (e dopo di lei i lambda persistiti) si usa solo se le quote
     mancano. Il resto della catena e' identico. Con le quote in testa la
@@ -1054,8 +1054,10 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
     ``fixture`` in cache scade col TTL, cosi' le quote congelate DOPO la prima
     valutazione possono sostituirlo. Misura: AUDIT_2026-09-25/
     MISURA_PUNTO8_2026-09-25.md sez. 1 (log-loss CS FT -0,0231 [-0,0359;
-    -0,0103] su 1.995 partite). A False (default) la catena e' quella di sempre."""
-    quote_prima = bool((params or {}).get("lambda_quote_prima", False))
+    -0,0103] su 1.995 partite). A False la catena e' quella di sempre; chiave
+    assente = il default della whitelist (acceso)."""
+    quote_prima = bool((params or {}).get("lambda_quote_prima",
+                                          omega_config.DEFAULTS["lambda_quote_prima"]))
     cached = _LAMBDA_CACHE.get(event_id)
     if cached is not None:
         val, ts = cached if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[0], tuple) else (cached, None)

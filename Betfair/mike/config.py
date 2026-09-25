@@ -141,6 +141,20 @@ PARAM_SPEC: dict[str, Spec] = {
     "pre_last_entry_min": (10, int, 1, 120, None),
     "last_entry_persist": (True, bool, None, None, None),
     "last_entry_ticks_above": (0, int, 0, 3, None),
+    # M1 (25/09, ACCESO di default: ordine dell'utente "per TUTTI i bot i valori
+    # statistici e gli aiuti di default accesi") -- VETO sulla P CALIBRATA dell'Under 3.5
+    # (``dossier.p_under35_cal`` da ``markets_calibrated.over_3_5``) nel
+    # passaggio pre-match -> live: all'ultimo ingresso una posizione in perdita
+    # si tiene, e il PERSIST si piazza, solo se P >= soglia(quota del back
+    # Under). Soglie = curva isotonica della misura (AUDIT_2026-09-25/
+    # MISURA_PUNTO8_2026-09-25.md sez. 4), interpolate fra i nodi (engine
+    # ``soglia_veto_under35``). Spento = condotta identica a prima.
+    "veto_p_under35_cal": (True, bool, None, None, None),
+    "veto_p_under35_soglia_130": (0.807, float, 0.0, 1.0, None),
+    "veto_p_under35_soglia_150": (0.684, float, 0.0, 1.0, None),
+    "veto_p_under35_soglia_200": (0.514, float, 0.0, 1.0, None),
+    "veto_p_under35_soglia_250": (0.385, float, 0.0, 1.0, None),
+    "veto_p_under35_soglia_300": (0.275, float, 0.0, 1.0, None),
     "cancel_unmatched_after_ko_s": (120, int, 0, 900, None),
     # ---- dal fischio d'inizio: uscita a +N tick e gol precoce (13/09) ----
     # La posizione Under 3.5 portata in gioco tenta PRIMA di uscire in profitto:

@@ -66,10 +66,14 @@ def _id_int(v: Any) -> Optional[int]:
 def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
     """Dossier pre-match: {fixture_id, league_id, lambda_home, lambda_away, rho,
     home_team_id, away_team_id (id API-Football, 25/09 notte),
-    p4_pre, p_under35_cal, p_over45_cal, source}. Chiavi None se non disponibili."""
+    p4_pre, p_under35_cal, p_under35_fonte, p_over45_cal, source}. Chiavi None se
+    non disponibili. ``p_under35_fonte`` (M1, 25/09) dice da dove viene
+    ``p_under35_cal``: 'calibrated' (``markets_calibrated``) o 'raw' (``markets``
+    grezzi, ripiego di sempre): il veto M1 di ``engine`` legge solo la calibrata."""
     out: Dict[str, Any] = {"fixture_id": None, "league_id": None, "lambda_home": None,
                            "lambda_away": None, "rho": DEFAULT_RHO, "p4_pre": None,
-                           "p_under35_cal": None, "p_over45_cal": None, "source": "none",
+                           "p_under35_cal": None, "p_under35_fonte": None,
+                           "p_over45_cal": None, "source": "none",
                            "home_team_id": None, "away_team_id": None}
     try:
         fid = db.fixture_id_for_event(str(event_id))
@@ -91,10 +95,12 @@ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
             rho = inputs.get("dc_rho")
             if isinstance(rho, (int, float)):
                 out["rho"] = float(rho)
-            mk = an.get("markets_calibrated") or an.get("markets") or {}
+            mkc = an.get("markets_calibrated")
+            mk = mkc or an.get("markets") or {}
             o35 = (mk.get("over_3_5") or {}) if isinstance(mk, dict) else {}
             if isinstance(o35, dict) and o35.get("True") is not None:
                 out["p_under35_cal"] = round(1.0 - float(o35["True"]), 4)
+                out["p_under35_fonte"] = "calibrated" if (isinstance(mkc, dict) and mk is mkc) else "raw"
         out["p4_pre"] = p4_from_lambdas(out["lambda_home"], out["lambda_away"], out["rho"])
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.dossier] build_prematch %s KO: %s", event_id, str(ex)[:120])

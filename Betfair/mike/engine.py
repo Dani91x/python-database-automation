@@ -199,6 +199,11 @@ class Snapshot:
     # ripiego, quando modello ed empirico mancano: e' pur sempre il consenso di
     # chi scommette, ed e' molto meglio di una soglia percentuale fissa.
     p_total_market: Optional[Dict[int, float]] = None
+    # M1 (25/09, PREPARATO): P CALIBRATA dell'Under 3.5 dal dossier pre-match
+    # (``fixture_predictions.db_json_analisi.markets_calibrated.over_3_5``).
+    # None se il dossier non ce l'ha o se la P viene dai mercati GREZZI: il
+    # veto ``veto_p_under35_cal`` legge SOLO la calibrata.
+    p_under35_cal: Optional[float] = None
 
     def book(self, market: str, selection: str) -> Optional[Book]:
         return self.books.get((market, selection))
@@ -329,6 +334,11 @@ class MatchCtx:
     # la proposta viva ne' un'approvazione appena data.
     uscita_proposta: Optional[Dict[str, Any]] = None
     uscita_approvata: Optional[Dict[str, Any]] = None
+    # M1 (25/09, PREPARATO, interruttore ``veto_p_under35_cal`` SPENTO): il veto
+    # sulla P calibrata dell'Under 3.5 e' SCATTATO su questa partita (dict con P,
+    # soglia, quota, punto). Da li' in poi niente ultimo ingresso PERSIST.
+    # Persistito (``service._CTX_FIELDS``): un riavvio non deve far rientrare.
+    veto_u35: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -2473,6 +2483,93 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
     return None
 
 
+# ---------------------------------------------------------------------------
+# M1 (25/09) -- VETO SULLA P CALIBRATA DELL'UNDER 3.5. PREPARATO, SPENTO.
+# ---------------------------------------------------------------------------
+# Misura: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 4. La P calibrata
+# (``markets_calibrated.over_3_5``) batte la grezza fuori campione (Brier
+# -0,0093 [-0,0155; -0,0034] su 243 partite dal 21/09). Le soglie sono i punti
+# della curva isotonica (P dichiarata -> Under osservato) in cui il back
+# dell'Under alla quota q raggiunge il pareggio al netto del 5 %:
+# 1,30 -> 0,807; 1,50 -> 0,684; 2,00 -> 0,514; 2,50 -> 0,385; 3,00 -> 0,275
+# (quest'ultima incerta: pochi nodi). Fra i nodi si interpola linearmente;
+# fuori dalla banda si usa il nodo di estremita'.
+# Dove agisce, SOLO a interruttore acceso e SOLO nel passaggio pre-match -> live:
+#   - PRE_OPEN all'ultimo ingresso, posizione in perdita (oggi: HOLD, "tengo"):
+#     con P < soglia(quota del back Under adesso) la posizione si CHIUDE (lay
+#     finale al best, come la chiusura in profitto) invece di tenerla;
+#   - ultimo ingresso PERSIST (``_after_final_green``): con P < soglia(quota del
+#     back PERSIST) non si rientra; dopo un veto scattato non si rientra mai.
+# Senza P calibrata o senza quota: nessun veto (condotta di oggi), e l'attivita'
+# lo dichiara. Stake, banda, copertura, cash out e uscite in perdita invariati.
+VETO_U35_NODI: Tuple[Tuple[float, str, float], ...] = (
+    (1.30, "veto_p_under35_soglia_130", 0.807),
+    (1.50, "veto_p_under35_soglia_150", 0.684),
+    (2.00, "veto_p_under35_soglia_200", 0.514),
+    (2.50, "veto_p_under35_soglia_250", 0.385),
+    (3.00, "veto_p_under35_soglia_300", 0.275),
+)
+VETO_U35_NOTE = "veto P calibrata Under 3.5: chiusura in perdita"
+
+
+def veto_u35_acceso(params: Dict[str, Any]) -> bool:
+    """L'interruttore. Assente = il default della whitelist (ACCESO dal 25/09,
+    ordine dell'utente sugli aiuti statistici accesi); non booleano = SPENTO."""
+    if "veto_p_under35_cal" not in params:
+        from Betfair.mike import config as _CFG
+        return bool(_CFG.PARAM_SPEC["veto_p_under35_cal"][0])
+    v = params.get("veto_p_under35_cal")
+    return v if isinstance(v, bool) else False
+
+
+def soglia_veto_under35(quota: float, params: Dict[str, Any]) -> float:
+    """Soglia su ``p_under35_cal`` alla quota ``quota`` del back Under:
+    interpolazione lineare fra i nodi, nodo di estremita' fuori dalla banda."""
+    nodi: List[Tuple[float, float]] = []
+    for q_nodo, chiave, default in VETO_U35_NODI:
+        try:
+            s = float(params.get(chiave, default))
+        except (TypeError, ValueError):
+            s = default
+        nodi.append((q_nodo, s))
+    q = float(quota)
+    if q <= nodi[0][0]:
+        return nodi[0][1]
+    if q >= nodi[-1][0]:
+        return nodi[-1][1]
+    for (q0, s0), (q1, s1) in zip(nodi, nodi[1:]):
+        if q0 <= q <= q1:
+            return s0 + (s1 - s0) * (q - q0) / (q1 - q0)
+    return nodi[-1][1]          # irraggiungibile: i nodi sono ordinati
+
+
+def valuta_veto_under35(snap: Snapshot, params: Dict[str, Any], quota: Optional[float],
+                        punto: str) -> Optional[Dict[str, Any]]:
+    """None = interruttore spento (nessuna traccia, condotta di sempre).
+    Altrimenti il referto per l'attivita': ``esito`` = 'veto' | 'nessun_veto' |
+    'non_valutabile' (P calibrata o quota assente: nessun veto)."""
+    if not veto_u35_acceso(params):
+        return None
+    p = snap.p_under35_cal
+    out: Dict[str, Any] = {"punto": punto, "p_under35_cal": p, "quota": quota, "soglia": None}
+    if p is None:
+        out.update(esito="non_valutabile",
+                   motivo="P calibrata Under 3.5 assente nel dossier: nessun veto")
+        return out
+    if quota is None or not price_ok(quota):
+        out.update(esito="non_valutabile", motivo="quota del back Under assente: nessun veto")
+        return out
+    s = round(soglia_veto_under35(float(quota), params), 4)
+    out["soglia"] = s
+    if float(p) < s:
+        out.update(esito="veto", motivo="P calibrata %.3f < soglia %.3f a quota %.2f"
+                   % (float(p), s, float(quota)))
+    else:
+        out.update(esito="nessun_veto", motivo="P calibrata %.3f >= soglia %.3f a quota %.2f"
+                   % (float(p), s, float(quota)))
+    return out
+
+
 def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     st = ctx.state
     stake = float(params["stake"])
@@ -2552,6 +2649,12 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             if flat:
                 return _cycle_done(ctx, snap, S, Pe, green, w)
             if bk is None or bk.best_lay is None:
+                veto = valuta_veto_under35(snap, params, bk.best_back if bk else None, "hold")
+                if veto is not None:
+                    # M1: senza prezzo lay non si puo' chiudere comunque; si dichiara
+                    veto["eseguito"] = False
+                    return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo",
+                                    telemetry={"veto_under_calibrata": veto})
                 return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo")
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                    best_lay_price=bk.best_lay, fraction=1.0)
@@ -2561,6 +2664,27 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                                    plan.size, final=True, note="ultimo ingresso: chiusura in profitto"))
                 return Decision("PRE_GREEN_PENDING", acts, f"ultimo ingresso: locked {locked:.2f} > 0",
                                 telemetry={"last_entry_locked": round(locked, 2)})
+            veto = valuta_veto_under35(snap, params, bk.best_back, "hold")
+            if veto is not None:
+                # M1 (interruttore acceso): la posizione in perdita si tiene SOLO se
+                # la P calibrata dell'Under regge la quota di adesso
+                if veto["esito"] == "veto" and plan.actionable:
+                    veto["eseguito"] = True
+                    acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
+                                       plan.size, final=True, note=VETO_U35_NOTE))
+                    # una volta sola: con le uscite manuali la proposta si ripete a
+                    # ogni giro, e con la green ancora viva la lay arriva al giro dopo
+                    # (``_una_sola_lay``): l'attivita' si scrive quando la lay parte
+                    gia_detto = isinstance(ctx.veto_u35, dict) \
+                        or lay_in_volo(ctx, MARKET_OU35, SEL_UNDER) is not None
+                    tele = {} if gia_detto else {"veto_under_calibrata": veto}
+                    return Decision("PRE_GREEN_PENDING", acts,
+                                    f"ultimo ingresso: locked {locked:.2f} <= 0, "
+                                    f"{veto['motivo']}: chiudo",
+                                    updates={"veto_u35": veto}, telemetry=tele)
+                veto["eseguito"] = False
+                return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo",
+                                telemetry={"veto_under_calibrata": veto})
             return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo")
         # esposizione piatta (green abbinata per intero) -> ciclo chiuso
         if flat and (green is None or not green.is_live):
@@ -2681,6 +2805,10 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     upd = {"cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now, "attempts": 0, "_archive_legs": True}
     if not params["last_entry_persist"]:
         return Decision("IDLE_LIVE", [], "ultimo ingresso disabilitato", updates=upd)
+    if veto_u35_acceso(params) and isinstance(ctx.veto_u35, dict):
+        # M1: la posizione e' stata chiusa per il veto: non si rientra
+        return Decision("IDLE_LIVE", [], "ultimo ingresso: non si rientra dopo il veto "
+                        "sulla P calibrata Under 3.5", updates=upd)
     # ⚠️ 15/09 — UNA SOSPENSIONE NON E' UNA RINUNCIA.
     # Prima qualunque stato diverso da OPEN mandava in IDLE_LIVE archiviando le
     # gambe e incrementando il ciclo: il bot non riprovava PIU'. Ma a KO-10' una
@@ -2704,6 +2832,21 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     n_up = int(params["last_entry_ticks_above"])
     if n_up > 0:
         price = float(ticks_away(price, n_up))
+    veto = valuta_veto_under35(snap, params, price, "persist")
+    if veto is not None:
+        # M1 (interruttore acceso): l'ultimo ingresso porta la posizione in gioco;
+        # si fa SOLO se la P calibrata dell'Under regge la quota del PERSIST
+        if veto["esito"] == "veto":
+            veto["eseguito"] = True
+            return Decision("IDLE_LIVE", [], "ultimo ingresso: %s, non rientro" % veto["motivo"],
+                            updates={**upd, "veto_u35": veto},
+                            telemetry={"veto_under_calibrata": veto})
+        veto["eseguito"] = False
+        return Decision("PRE_LAST_ENTRY_PENDING",
+                        [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake,
+                                persistence="PERSIST")],
+                        "ultimo ingresso PERSIST", updates=upd,
+                        telemetry={"veto_under_calibrata": veto})
     return Decision("PRE_LAST_ENTRY_PENDING",
                     [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake,
                             persistence="PERSIST")],

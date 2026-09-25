@@ -6639,6 +6639,20 @@ def _ids_squadra_da_finestra(payload: dict, state: dict, league_id: Any) -> dict
     return _ids_squadra(fx)
 
 
+def _omega_params_catena_lambda() -> dict[str, Any]:
+    """I params di Omega RISOLTI dalla whitelist (`omega_config.resolve_params`),
+    passati alla catena dei lambda di Omega: `lambda_quote_prima` = il default
+    della whitelist (ACCESO dal 25/09, ordine dell'utente). Vuoto se Omega non
+    e' importabile: la catena usa comunque il suo default."""
+    try:
+        from Betfair.omega import omega_config as _oc
+
+        return _oc.resolve_params({})
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[safe.bot] params Omega non risolti: %s", str(ex)[:120])
+        return {}
+
+
 def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
                           now: datetime, state: dict) -> dict[str, Any]:
     """{'lambdas', 'league_id', 'source', 'ht_ratio', 'ts'} — MAI None: l'ultimo
@@ -6656,9 +6670,13 @@ def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
             return hit
     out: Optional[dict] = None
     # 1) catena di Omega (omega_events → fixture del DB → pre-KO)
+    # 25/09 sera (O1): con i params RISOLTI di Omega, cosi' Safe segue lo stesso
+    # ordine della catena che segue Omega (`lambda_quote_prima`, default ACCESO:
+    # quote pre-KO prima della fixture) invece di dipendere da un default implicito
     try:
         fn = getattr(_omega_service(), "_prematch_lambdas", None)
-        res = fn(db, event_id, payload) if callable(fn) else None
+        res = (fn(db, event_id, payload, params=_omega_params_catena_lambda())
+               if callable(fn) else None)
         if res and res[0] and res[1]:
             out = {"lambdas": (float(res[0]), float(res[1])),
                    "league_id": res[2] if len(res) > 2 else None,

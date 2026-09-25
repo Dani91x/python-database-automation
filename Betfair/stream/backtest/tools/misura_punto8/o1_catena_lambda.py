@@ -166,7 +166,11 @@ def lambda_attuale(fid: int, league_id: Any, fp_postgrest: Optional[dict],
         OS._LAMBDA_CACHE.pop(eid, None)
         db = OmegaDbFinto({eid: {"event_id": eid, "fixture_id": int(fid),
                                  "league_id": league_id, "model": None}})
-        out = OS._prematch_lambdas(db, eid, {"pre_ko": pre_ko} if pre_ko else {})
+        # 25/09 sera: in produzione O1 e' ACCESO di default (ordine dell'utente);
+        # il braccio ATTUALE della misura resta la catena di PRIMA (fixture in
+        # testa), dichiarata esplicitamente, cosi' la misura e' riproducibile
+        out = OS._prematch_lambdas(db, eid, {"pre_ko": pre_ko} if pre_ko else {},
+                                   params={"lambda_quote_prima": False})
         OS._LAMBDA_CACHE.pop(eid, None)
     finally:
         SDB.get_supabase_client = vecchio   # type: ignore[assignment]

@@ -299,6 +299,8 @@ export interface MikeDossier {
     rho: number | null;
     p4_pre: number | null;
     p_under35_cal: number | null;
+    // M1 (25/09): 'calibrated' | 'raw' | null (dossier scritti prima del 25/09)
+    p_under35_fonte?: string | null;
     source: string;
 }
 
@@ -451,6 +453,14 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'pre_last_entry_min', label: 'Ultimo ingresso (min prima del KO)', kind: 'number', step: 1, min: 1, max: 120, hint: 'in profitto chiude e rientra in PERSIST; in perdita tiene', group: 'pre' },
     { key: 'last_entry_persist', label: 'Ultimo ingresso in PERSIST', kind: 'bool', hint: 'la posizione entra in live', group: 'pre' },
     { key: 'last_entry_ticks_above', label: 'Ultimo ingresso: tick sopra il best', kind: 'number', step: 1, min: 0, max: 3, hint: '0 = taker al best', group: 'pre' },
+    // M1 (25/09, PREPARATO, SPENTO): veto sulla P calibrata dell'Under 3.5.
+    // Specchio di Betfair/mike/config.py PARAM_SPEC['veto_p_under35_*'].
+    { key: 'veto_p_under35_cal', label: 'Veto P calibrata Under 3.5 (M1)', kind: 'bool', hint: 'ACCESO di default (misura 25/09: migliora); spento = condotta di sempre. Acceso: all\'ultimo ingresso la posizione in perdita si tiene, e il PERSIST si piazza, solo se la P calibrata dell\'Under 3.5 del dossier regge la quota (soglie qui sotto, interpolate). Senza P calibrata: nessun veto', group: 'pre' },
+    { key: 'veto_p_under35_soglia_130', label: 'Veto M1: P minima a quota 1,30', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,807', group: 'pre' },
+    { key: 'veto_p_under35_soglia_150', label: 'Veto M1: P minima a quota 1,50', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,684', group: 'pre' },
+    { key: 'veto_p_under35_soglia_200', label: 'Veto M1: P minima a quota 2,00', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,514', group: 'pre' },
+    { key: 'veto_p_under35_soglia_250', label: 'Veto M1: P minima a quota 2,50', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,385', group: 'pre' },
+    { key: 'veto_p_under35_soglia_300', label: 'Veto M1: P minima a quota 3,00', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,275 (incerta: pochi casi)', group: 'pre' },
     { key: 'cancel_unmatched_after_ko_s', label: 'Cancella residuo PERSIST dopo KO (s)', kind: 'number', step: 10, min: 0, max: 900, hint: 'evita fill su spike dopo un gol', group: 'pre' },
     { key: 'ko_green_enabled', label: 'Uscita al fischio attiva', kind: 'bool', hint: 'la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta', group: 'fischio' },
     { key: 'ko_green_ticks', label: 'Uscita a (+tick dall’ingresso)', kind: 'number', step: 1, min: 1, max: 10, hint: 'lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio', group: 'fischio' },
@@ -548,6 +558,8 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     pre_max_spread_ticks: 6, pre_green_ticks: 2, pre_exit_mode: 'resting', pre_entry_ttl_s: 60,
     pre_max_cycles: 10, pre_reentry_cooldown_s: 60, pre_last_entry_min: 10, last_entry_persist: true,
     last_entry_ticks_above: 0, cancel_unmatched_after_ko_s: 120,
+    veto_p_under35_cal: true, veto_p_under35_soglia_130: 0.807, veto_p_under35_soglia_150: 0.684,
+    veto_p_under35_soglia_200: 0.514, veto_p_under35_soglia_250: 0.385, veto_p_under35_soglia_300: 0.275,
     ko_green_enabled: true, ko_green_ticks: 2, ko_green_window_s: 180, ko_green_retry_s: 5,
     second_entry_enabled: true, second_entry_stake_pct: 50,
     early_goal_cover_delay_s: 120, early_goal_cover_pct: 50, early_goal_cover2_delay_s: 180,
@@ -1197,6 +1209,8 @@ export const MIKE_ACTIVITY_KINDS = [
     // oppure decade perché la strategia non la vuole più.
     'uscita_proposta', 'uscita_proposta_decaduta', 'uscita_approvata',
     'uscita_eseguita_su_approvazione',
+    // M1 (25/09, interruttore spento): il veto sulla P calibrata dell'Under 3.5
+    'veto_under_calibrata',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1230,6 +1244,7 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     uscita_proposta_decaduta: { label: 'PROPOSTA DI USCITA DECADUTA', cls: 'bg-white/5 text-slate-300 border-white/10' },
     uscita_approvata: { label: 'USCITA APPROVATA (utente)', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     uscita_eseguita_su_approvazione: { label: 'USCITA ESEGUITA SU APPROVAZIONE', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
+    veto_under_calibrata: { label: 'VETO P CALIBRATA UNDER 3.5', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
@@ -1400,6 +1415,14 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `hai approvato l’uscita${p.motivo ? ` (${String(p.motivo)})` : ''}: parte al prossimo giro del bot`;
         case 'uscita_eseguita_su_approvazione':
             return `uscita eseguita su tua approvazione${p.motivo ? `: ${String(p.motivo)}` : ''}`;
+        case 'veto_under_calibrata': {
+            // M1: dove (tenere in perdita / PERSIST), esito e i tre numeri che decidono
+            const dove = p.punto === 'persist' ? 'ultimo ingresso PERSIST' : 'posizione in perdita all\'ultimo ingresso';
+            const esito = p.esito === 'veto'
+                ? (p.eseguito ? 'VETO: non si tiene / non si rientra' : 'VETO, ma non eseguibile (prezzo assente)')
+                : p.esito === 'nessun_veto' ? 'nessun veto' : 'non valutabile: nessun veto';
+            return `${dove}: ${esito} (${String(p.motivo ?? 'motivo non dichiarato')})`;
+        }
         case 'settle_gambe_non_piazzate':
             return `${String(p.quante ?? '?')} gambe pianificate e mai piazzate (importo sotto il minimo): regolate a zero, nessun effetto sul P&L`;
         case 'loss_exit_deciso': {

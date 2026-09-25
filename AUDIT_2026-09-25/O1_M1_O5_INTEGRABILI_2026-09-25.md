@@ -1,30 +1,153 @@
 # O1 + M1 + O5 INTEGRABILI - 25/09/2026 (delegato Opus, sessione B)
 
 Mandato: consegnare INTEGRABILI le tre modifiche decise dall'utente alle 18:00, ognuna
-dietro il suo interruttore **DEFAULT SPENTO** nel codice (il coordinatore li accende dopo
-il replay di parita'):
+dietro il suo interruttore:
 - O1 Omega, quote pre-KO PRIMA della fixture nella catena lambda: `lambda_quote_prima`;
 - M1 Mike, veto sull'ingresso live con la P calibrata dell'Under 3.5: `veto_p_under35_cal`;
 - O5 Omega V3, cartellini rossi nel modello con i moltiplicatori GLOBALI: `model_red_cards`.
+
+**AGGIORNAMENTO 25/09 sera - DEFAULT ACCESI.** Ordine dell'utente (testuale, via il
+coordinatore): «per TUTTI i bot i valori statistici e gli aiuti devono essere di default
+accesi». I tre interruttori sono ora **DEFAULT ACCESO** (sez. 0). Dove sotto (sez. 1-3,
+scritte prima) si legge «default spento» vale la sez. 0; le parti «spento = identico a
+prima» restano vere, ma ora si provano passando lo SPENTO per esteso.
 
 Worktree `agent-aac4a32e334c9b596`, base `origin/master` **43e1468** (contiene 1ba167e
 «atlante v4»). Niente commit, niente `git add`, niente replay, niente DB vero (ogni pytest
 con `SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=x SUPABASE_KEY=x`).
 
 **Patch unica pronta**: `AUDIT_2026-09-25/o1_m1_o5_integrabili_2026-09-25.patch` (base
-43e1468, 15 file, +1304 -40, fine riga LF; `git apply --check --reverse` nel worktree = OK).
-Si rigenera con `python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`. ATTENZIONE: se la
-patch passa da un commit e torna in un checkout con `core.autocrlf=true` diventa CRLF e
+43e1468, **17 file, +1373 -43**, fine riga LF; `git apply --check --reverse` nel worktree
+= OK). Si rigenera con `python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`. ATTENZIONE: se
+la patch passa da un commit e torna in un checkout con `core.autocrlf=true` diventa CRLF e
 `git apply` la rifiuta (e' successo con la patch O1/M1 di stamattina, vedi sez. 1):
 applicarla dal file del worktree, o riconvertirla in LF prima.
 
-## Riga di params per ACCENDERLI (l'utente ha gia' deciso; dopo il replay di parita')
+## REBASE su origin/master 099412c + d771d05 e Safe (25/09 sera, ultimo giro)
 
-- Omega (`omega_config`, pannello «Modello» e pannello v3):
-  `{"lambda_quote_prima": true, "model_red_cards": true}`
-- Mike (`mike/config.py`, pannello Mike):
-  `{"veto_p_under35_cal": true}` (soglie gia' ai default misurati:
-  `veto_p_under35_soglia_130/150/200/250/300` = 0,807 / 0,684 / 0,514 / 0,385 / 0,275)
+**Base**: `origin/master` = **d771d05** (fetch del 25/09 sera; contiene da21cf8 = parte Omega
+di O1/O5 a default SPENTI, 82cf793 = id squadra in `mike/dossier.py`/`mike/db.py`,
+099412c = punto 6 su `omega_service.py`/`bot_service.py`). Il mio lavoro e' un commit
+WIP locale (`git add` con percorsi espliciti) ribasato sopra; niente push.
+
+**Patch**: `AUDIT_2026-09-25/o1_m1_o5_default_acceso_su_d771d05.patch` = `git diff
+origin/master` (patch escluse), rigenerabile con `genera_patch_o1_m1_o5.py`. La patch
+vecchia `o1_m1_o5_integrabili_2026-09-25.patch` (tracciata sul master, base 43e1468) e'
+SUPERATA: non va applicata.
+
+**Conflitti risolti**
+| File | Tipo | Come |
+|---|---|---|
+| `Betfair/omega/omega_config.py` | 3 blocchi | lato mio (default ACCESO, commenti) |
+| `Betfair/omega/omega_service.py` | 2 blocchi (docstring e lettura di `lambda_quote_prima`) | lato mio (chiave assente = default whitelist); il punto 6 di 099412c e' fuori dai blocchi, fuso da git e intatto |
+| `frontend/src/lib/omega.ts` | 4 blocchi | lato mio (default `true` e hint) |
+| `Betfair/mike/dossier.py` | 1 blocco (docstring + dict di `build_prematch`) | UNIONE: `home_team_id`/`away_team_id` di 82cf793 + `p_under35_fonte` di M1 |
+| `Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py`, `test_o5_rossi_v3_2026_09_25.py` | add/add | versione mia (superset: default acceso + ramo spento esplicito) |
+| `AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md`, `genera_patch_o1_m1_o5.py`, `mutazioni_o5_rossi_2026-09-25.py` | add/add | versione mia (aggiornata) |
+Senza conflitti: `mike/config.py`, `engine.py`, `feed.py`, `service.py`, `mike.ts`,
+`test_omega_certificazione_2026_09_11.py`, `o1_catena_lambda.py`, test M1.
+
+**Safe (autorizzato dall'utente e dall'altra sessione)**: `Betfair/safe_strategy/bot_service.py`
+`resolve_event_lambdas` chiamava `omega_service._prematch_lambdas(db, event_id, payload)`
+SENZA params. Ora passa `params=_omega_params_catena_lambda()` = `omega_config.resolve_params({})`
+(nuova funzione accanto, `{}` se Omega non e' importabile). Nient'altro di Safe cambia;
+punto 6 e D3/D7 di admin-26 intatti (il file non era in conflitto). Nota: col mio
+`omega_service` anche la chiamata senza params avrebbe gia' preso il default acceso;
+ora e' esplicito e governato dalla whitelist di Omega.
+- `Betfair/safe_strategy/tests/test_bot_service.py`: `OmegaStub._prematch_lambdas` portato
+  alla firma del vero (`*, state=None, params=None`) e registra i params (finto = vero).
+- NUOVO `Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py` (4 test,
+  catena VERA di Omega, finti del test O1): default -> `pre_ko_odds` e nessuna lettura
+  della fixture; Safe passa params risolti con `lambda_quote_prima` True; params con
+  `lambda_quote_prima=False` -> fixture prima come oggi; senza quote -> fixture.
+- Falsificazione (`AUDIT_2026-09-25/mutazioni_safe_lambda_2026-09-25.py`): S1 params tolti
+  dalla chiamata -> ROSSO 2 failed; S2 Safe passa lo spento -> ROSSO 2 failed; ripristino OK.
+- Esistenti (`test_bot_service`, `test_audit_2026_09_11`, `test_atlante_v4_forza_id_squadra`):
+  **prima (file di HEAD) 277 passed, dopo 277 passed**. Tutti i 43 file di test Safe che
+  importano `bot_service`/opportunita': **1291 passed, 3 skipped, 1 xfailed**.
+
+**Numeri dopo il rebase (default ACCESI)**
+- 3 file nuovi + `test_omega_certificazione_2026_09_11.py`: **116 passed**.
+- Omega (50 file che importano i moduli toccati, inclusi i 2 nuovi, + 4 del banco):
+  **1291 passed, 3 skipped** (= 1244 di prima + 47 dei due file nuovi).
+- Mike `Betfair/mike/tests`: **889 passed**.
+- Safe: vedi sopra. tsc **0 errori**; vitest 5 file Omega/Mike **159 passed**.
+
+## Params: nessuno da mettere per accenderli (sono gia' accesi di default)
+
+Per SPEGNERLI (ramo di sempre): Omega `{"lambda_quote_prima": false, "model_red_cards":
+false}`, Mike `{"veto_p_under35_cal": false}`. Soglie M1 ai default misurati:
+`veto_p_under35_soglia_130/150/200/250/300` = 0,807 / 0,684 / 0,514 / 0,385 / 0,275.
+
+## 0. Il passaggio a DEFAULT ACCESO (25/09 sera)
+
+**Codice**
+- `Betfair/omega/omega_config.py:101-107` `"lambda_quote_prima": (True, bool, None, None)`;
+  `:288-295` `"model_red_cards": (True, bool, None, None)`.
+- `Betfair/omega/omega_service.py:1059-1060`: con la chiave ASSENTE dai params
+  `_prematch_lambdas` usa `omega_config.DEFAULTS["lambda_quote_prima"]` (prima: `False`
+  cablato). Chi chiama senza params (proposte, test, strumenti) ha la catena nuova.
+  `omega_engine.moltiplicatori_rossi_v3` passava gia' dalla whitelist (`parametri_v3`):
+  chiave assente = default = acceso.
+- `Betfair/mike/config.py:144-152` `"veto_p_under35_cal": (True, bool, None, None, None)`.
+- `Betfair/mike/engine.py:2515-2523` `veto_u35_acceso`: chiave ASSENTE = default della
+  whitelist (`config.PARAM_SPEC`, import locale: il motore resta senza dipendenze in
+  testa); valore non booleano = spento (come prima).
+- `frontend/src/lib/omega.ts:948, :1000` default `true`; hint dei due campi «ACCESO di
+  default (misura 25/09: migliora); spento = ...». `frontend/src/lib/mike.ts:561` default
+  `true`, hint `:458` idem.
+
+**Test esistenti ADEGUATI (strategia decisa dall'utente, non un bug)**
+1. `Betfair/omega/test_omega_certificazione_2026_09_11.py::test_m3_cache_lambda_ttl_solo_sulle_fonti_di_ripiego`:
+   l'ultima asserzione («una FIXTURE in cache non scade mai») e' la catena di PRIMA; ora
+   passa `params={"lambda_quote_prima": False}` esplicito (acceso la fixture scade col
+   TTL, provato in `test_o1_quote_prima`). Nessun'altra riga cambiata.
+2. `Betfair/stream/backtest/tools/misura_punto8/test_misura_punto8.py::test_o1_catena_attuale_e_quella_di_produzione`:
+   NON ho cambiato il test ma lo STRUMENTO di misura `o1_catena_lambda.lambda_attuale`
+   (`:169-173`): il suo braccio «attuale» chiamava la produzione senza params e ora
+   avrebbe preso le quote (il confronto attuale/variante sarebbe diventato pre_ko contro
+   pre_ko, e cosi' anche i bracci «attuali» di `o5_rossi` e `o6_coda`, che lo usano).
+   Ora passa `params={"lambda_quote_prima": False}`: la misura resta riproducibile e
+   identica a quella del mattino.
+Nessun altro test esistente e' cambiato: su Mike nessun test esistente ha una
+`p_under35_cal` nello snapshot, quindi il veto acceso non ha P e tace (condotta identica).
+
+**Test nuovi adeguati**
+- `test_o1_quote_prima`: whitelist -> `test_parametro_esiste_acceso_di_default...`
+  (True, "off"/False spengono); ramo spento con `{"lambda_quote_prima": False}` per
+  esteso (2 test); NUOVO `test_default_senza_params_e_whitelist_vuota_quote_in_testa`
+  (senza params e con `resolve_params({})` -> `pre_ko_odds`). 12 test.
+- `test_o5_rossi_v3`: costante `SPENTO = {"model_red_cards": False}` usata in tutti i test
+  del ramo spento (neutro al 1e-12 «spento_con_rossi», `seleziona_v3` spento, spento coi
+  rossi = senza, `_v3_select` spento, uscita spenta, `p_fonte` senza `+rossi`); whitelist ->
+  `test_interruttore_in_whitelist_default_acceso` (anche `parametri_v3({})`); NUOVO
+  `test_default_acceso_i_rossi_entrano_senza_toccare_niente` (params di default e `None`
+  -> coefficienti JSON). 35 test.
+- `test_mike_veto_p_under35`: whitelist -> `test_parametri_nella_whitelist_accesi_di_default`
+  (+ `veto_u35_acceso({})` True, False/"si" spenti); HOLD/PERSIST/servizio spenti con
+  `veto_p_under35_cal=False` per esteso; NUOVO `test_hold_coi_parametri_di_default_il_veto_scatta`.
+  30 test.
+
+**Falsificazione dei «default acceso»**
+(`AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py`, ripristino byte per byte OK)
+| Mutazione | Esito |
+|---|---|
+| D1 O1 default whitelist spento | ROSSO 2 failed |
+| D2 O1 chiave assente = spento nel servizio | ROSSO 1 failed |
+| D3 O5 default whitelist spento | ROSSO 2 failed |
+| D4 M1 default whitelist spento | ROSSO 2 failed |
+| D5 M1 chiave assente = spento nel motore | ROSSO 1 failed |
+Rilanciate anche le 14 mutazioni O5 (F8 ora = «default spento»): **14/14 rosse**,
+ripristino OK.
+
+**Numeri prima/dopo il passaggio a default acceso**
+| Suite | 43e1468 pulito | default SPENTI | default ACCESI |
+|---|---|---|---|
+| Omega 48 file + 4 del banco | 1244 passed, 3 skip | 1244 passed, 3 skip | al primo giro 15 failed (2 esistenti + 13 nuovi), dopo gli adeguamenti **1244 passed, 3 skip** |
+| Mike `Betfair/mike/tests` | 859 | 888 | al primo giro 4 failed (tutti nuovi), dopo **889** (+1 test nuovo) |
+| Extra `omega_engine` (Omega/Safe/stream) | - | 607 | **607** |
+| Nuovi O1+O5+M1 | - | 74 | **77** (12 + 35 + 30) |
+| tsc / vitest 5 file | 0 / 159 | 0 / 159 | **0 / 159** |
 
 ---
 
@@ -244,8 +367,25 @@ e' fuori stima: dirlo all'utente prima di lanciare gli altri.**
 Dal **worktree** serve `--data-dir` (lezione del 18/09: senza, NO_RAW e BANCO-ESPLOSO):
 `--data-dir "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw"`.
 
-**A. Parita' a interruttori SPENTI** (master = baseline, worktree = variante; stessi
-comandi, confronto riga per riga dei `--json`):
+**AGGIORNAMENTO default ACCESI (25/09 sera).** Ora il worktree gira GIA' coi tre
+interruttori accesi senza toccare niente: il confronto master (= catena di prima) contro
+worktree (= default nuovi) e' direttamente «prima/dopo». Set minimo consigliato, stessi
+comandi sui due lati:
+```
+python -m Betfair.stream.backtest.certifica omega 35760084 35794996 --scenari v4,v4-riavvio,proposta-approvata --worker 1 --json --diario omega_default.txt
+python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,riavvio --worker 1 --json --diario mike_default.txt
+```
+Atteso: su 35760084 Omega IDENTICO al master (il banco non ha fixture: O1 non cambia le
+lambda; niente rossi attesi: O5 neutro); su 35794996 le differenze possibili sono SOLO dopo
+il rosso del 75' (`audit.mult_rossi`, `p_fonte` `+rossi`), zero violazioni; Mike IDENTICO
+salvo attivita' `veto_under_calibrata` `non_valutabile` a ogni HOLD/PERSIST, `veto_u35:
+null` nel ctx e `p_under35_fonte` nel dossier. Stima: ~8-12 min in tutto. Il vecchio
+giro «spento contro master» (A qui sotto) servirebbe solo a provare che lo SPENTO e'
+identico al master: e' gia' provato nei test al 1e-12; per farlo sul banco servirebbe uno
+scenario con i tre `False` (non esiste; `certifica` non prende params).
+
+**A (superato dal default acceso). Parita' a interruttori SPENTI** (master = baseline,
+worktree = variante; stessi comandi, confronto riga per riga dei `--json`):
 ```
 python -m Betfair.stream.backtest.certifica omega 35760084 --scenari v4,v4-riavvio,proposta-approvata --worker 1 --json --diario omega_spento.txt
 python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,riavvio --worker 1 --json --diario mike_spento.txt
@@ -306,6 +446,10 @@ patch, invariati); `Betfair/omega/omega_config.py` (O1 + O5), `Betfair/omega/ome
 (O1 + O5), `Betfair/omega/omega_engine.py` (O5), `Betfair/omega/omega_proposte.py` (O5),
 `Betfair/omega/omega_v3.py` (O5), `frontend/src/lib/mike.ts` (M1),
 `frontend/src/lib/omega.ts` (O1 + O5).
+Modificati per il DEFAULT ACCESO (25/09 sera, +2):
+`Betfair/omega/test_omega_certificazione_2026_09_11.py` (una asserzione: spento esplicito),
+`Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py` (braccio «attuale» con
+lo spento esplicito). Totale modificati: 14.
 Nuovi (test): `Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py`,
 `Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py`,
 `Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py`.
@@ -313,6 +457,7 @@ Nuovi (referto e strumenti): questo referto,
 `AUDIT_2026-09-25/o1_m1_o5_integrabili_2026-09-25.patch`,
 `AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`,
 `AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py`,
+`AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py`,
 `AUDIT_2026-09-25/oro_o5_griglia_v3_2026-09-25.py`.
 Junction nel worktree: `.venv`, `frontend/node_modules` (togliere con `cmd /c rmdir`,
 MAI `git worktree remove --force`).
@@ -331,3 +476,9 @@ MAI `git worktree remove --force`).
 - 14 mutazioni O5: 14 rosse, ripristino byte per byte OK.
 - `npx tsc -p tsconfig.app.json --noEmit`: exit 0, 0 righe; `npx vitest run` 5 file: 159 passed.
 - `git apply --check --reverse` della patch unica nel worktree: OK.
+- 25/09 sera, DEFAULT ACCESI: flip in config/servizio/motore/UI; primo giro Omega 15
+  failed + 1274 passed (2 esistenti, 13 nuovi), Mike 4 failed (nuovi); adeguati i test
+  (sez. 0); poi Omega 48+4 file **1244 passed, 3 skipped**, Mike **889 passed**, extra
+  **607 passed**, nuovi **77 passed** (12 + 35 + 30); 5 mutazioni «default acceso» rosse,
+  14 mutazioni O5 rosse, ripristino OK; tsc 0 errori, vitest 5 file 159 passed; patch
+  rigenerata (17 file, +1373 -43), `git apply --check --reverse` OK.

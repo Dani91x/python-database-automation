@@ -1,0 +1,1651 @@
+diff --git a/AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md b/AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md
+index 0e8408d..cfaa81c 100644
+--- a/AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md
++++ b/AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md
+@@ -1,30 +1,153 @@
+ # O1 + M1 + O5 INTEGRABILI - 25/09/2026 (delegato Opus, sessione B)
+ 
+ Mandato: consegnare INTEGRABILI le tre modifiche decise dall'utente alle 18:00, ognuna
+-dietro il suo interruttore **DEFAULT SPENTO** nel codice (il coordinatore li accende dopo
+-il replay di parita'):
++dietro il suo interruttore:
+ - O1 Omega, quote pre-KO PRIMA della fixture nella catena lambda: `lambda_quote_prima`;
+ - M1 Mike, veto sull'ingresso live con la P calibrata dell'Under 3.5: `veto_p_under35_cal`;
+ - O5 Omega V3, cartellini rossi nel modello con i moltiplicatori GLOBALI: `model_red_cards`.
+ 
++**AGGIORNAMENTO 25/09 sera - DEFAULT ACCESI.** Ordine dell'utente (testuale, via il
++coordinatore): «per TUTTI i bot i valori statistici e gli aiuti devono essere di default
++accesi». I tre interruttori sono ora **DEFAULT ACCESO** (sez. 0). Dove sotto (sez. 1-3,
++scritte prima) si legge «default spento» vale la sez. 0; le parti «spento = identico a
++prima» restano vere, ma ora si provano passando lo SPENTO per esteso.
++
+ Worktree `agent-aac4a32e334c9b596`, base `origin/master` **43e1468** (contiene 1ba167e
+ «atlante v4»). Niente commit, niente `git add`, niente replay, niente DB vero (ogni pytest
+ con `SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=x SUPABASE_KEY=x`).
+ 
+ **Patch unica pronta**: `AUDIT_2026-09-25/o1_m1_o5_integrabili_2026-09-25.patch` (base
+-43e1468, 15 file, +1304 -40, fine riga LF; `git apply --check --reverse` nel worktree = OK).
+-Si rigenera con `python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`. ATTENZIONE: se la
+-patch passa da un commit e torna in un checkout con `core.autocrlf=true` diventa CRLF e
++43e1468, **17 file, +1373 -43**, fine riga LF; `git apply --check --reverse` nel worktree
++= OK). Si rigenera con `python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`. ATTENZIONE: se
++la patch passa da un commit e torna in un checkout con `core.autocrlf=true` diventa CRLF e
+ `git apply` la rifiuta (e' successo con la patch O1/M1 di stamattina, vedi sez. 1):
+ applicarla dal file del worktree, o riconvertirla in LF prima.
+ 
+-## Riga di params per ACCENDERLI (l'utente ha gia' deciso; dopo il replay di parita')
+-
+-- Omega (`omega_config`, pannello «Modello» e pannello v3):
+-  `{"lambda_quote_prima": true, "model_red_cards": true}`
+-- Mike (`mike/config.py`, pannello Mike):
+-  `{"veto_p_under35_cal": true}` (soglie gia' ai default misurati:
+-  `veto_p_under35_soglia_130/150/200/250/300` = 0,807 / 0,684 / 0,514 / 0,385 / 0,275)
++## REBASE su origin/master 099412c + d771d05 e Safe (25/09 sera, ultimo giro)
++
++**Base**: `origin/master` = **d771d05** (fetch del 25/09 sera; contiene da21cf8 = parte Omega
++di O1/O5 a default SPENTI, 82cf793 = id squadra in `mike/dossier.py`/`mike/db.py`,
++099412c = punto 6 su `omega_service.py`/`bot_service.py`). Il mio lavoro e' un commit
++WIP locale (`git add` con percorsi espliciti) ribasato sopra; niente push.
++
++**Patch**: `AUDIT_2026-09-25/o1_m1_o5_default_acceso_su_d771d05.patch` = `git diff
++origin/master` (patch escluse), rigenerabile con `genera_patch_o1_m1_o5.py`. La patch
++vecchia `o1_m1_o5_integrabili_2026-09-25.patch` (tracciata sul master, base 43e1468) e'
++SUPERATA: non va applicata.
++
++**Conflitti risolti**
++| File | Tipo | Come |
++|---|---|---|
++| `Betfair/omega/omega_config.py` | 3 blocchi | lato mio (default ACCESO, commenti) |
++| `Betfair/omega/omega_service.py` | 2 blocchi (docstring e lettura di `lambda_quote_prima`) | lato mio (chiave assente = default whitelist); il punto 6 di 099412c e' fuori dai blocchi, fuso da git e intatto |
++| `frontend/src/lib/omega.ts` | 4 blocchi | lato mio (default `true` e hint) |
++| `Betfair/mike/dossier.py` | 1 blocco (docstring + dict di `build_prematch`) | UNIONE: `home_team_id`/`away_team_id` di 82cf793 + `p_under35_fonte` di M1 |
++| `Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py`, `test_o5_rossi_v3_2026_09_25.py` | add/add | versione mia (superset: default acceso + ramo spento esplicito) |
++| `AUDIT_2026-09-25/O1_M1_O5_INTEGRABILI_2026-09-25.md`, `genera_patch_o1_m1_o5.py`, `mutazioni_o5_rossi_2026-09-25.py` | add/add | versione mia (aggiornata) |
++Senza conflitti: `mike/config.py`, `engine.py`, `feed.py`, `service.py`, `mike.ts`,
++`test_omega_certificazione_2026_09_11.py`, `o1_catena_lambda.py`, test M1.
++
++**Safe (autorizzato dall'utente e dall'altra sessione)**: `Betfair/safe_strategy/bot_service.py`
++`resolve_event_lambdas` chiamava `omega_service._prematch_lambdas(db, event_id, payload)`
++SENZA params. Ora passa `params=_omega_params_catena_lambda()` = `omega_config.resolve_params({})`
++(nuova funzione accanto, `{}` se Omega non e' importabile). Nient'altro di Safe cambia;
++punto 6 e D3/D7 di admin-26 intatti (il file non era in conflitto). Nota: col mio
++`omega_service` anche la chiamata senza params avrebbe gia' preso il default acceso;
++ora e' esplicito e governato dalla whitelist di Omega.
++- `Betfair/safe_strategy/tests/test_bot_service.py`: `OmegaStub._prematch_lambdas` portato
++  alla firma del vero (`*, state=None, params=None`) e registra i params (finto = vero).
++- NUOVO `Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py` (4 test,
++  catena VERA di Omega, finti del test O1): default -> `pre_ko_odds` e nessuna lettura
++  della fixture; Safe passa params risolti con `lambda_quote_prima` True; params con
++  `lambda_quote_prima=False` -> fixture prima come oggi; senza quote -> fixture.
++- Falsificazione (`AUDIT_2026-09-25/mutazioni_safe_lambda_2026-09-25.py`): S1 params tolti
++  dalla chiamata -> ROSSO 2 failed; S2 Safe passa lo spento -> ROSSO 2 failed; ripristino OK.
++- Esistenti (`test_bot_service`, `test_audit_2026_09_11`, `test_atlante_v4_forza_id_squadra`):
++  **prima (file di HEAD) 277 passed, dopo 277 passed**. Tutti i 43 file di test Safe che
++  importano `bot_service`/opportunita': **1291 passed, 3 skipped, 1 xfailed**.
++
++**Numeri dopo il rebase (default ACCESI)**
++- 3 file nuovi + `test_omega_certificazione_2026_09_11.py`: **116 passed**.
++- Omega (50 file che importano i moduli toccati, inclusi i 2 nuovi, + 4 del banco):
++  **1291 passed, 3 skipped** (= 1244 di prima + 47 dei due file nuovi).
++- Mike `Betfair/mike/tests`: **889 passed**.
++- Safe: vedi sopra. tsc **0 errori**; vitest 5 file Omega/Mike **159 passed**.
++
++## Params: nessuno da mettere per accenderli (sono gia' accesi di default)
++
++Per SPEGNERLI (ramo di sempre): Omega `{"lambda_quote_prima": false, "model_red_cards":
++false}`, Mike `{"veto_p_under35_cal": false}`. Soglie M1 ai default misurati:
++`veto_p_under35_soglia_130/150/200/250/300` = 0,807 / 0,684 / 0,514 / 0,385 / 0,275.
++
++## 0. Il passaggio a DEFAULT ACCESO (25/09 sera)
++
++**Codice**
++- `Betfair/omega/omega_config.py:101-107` `"lambda_quote_prima": (True, bool, None, None)`;
++  `:288-295` `"model_red_cards": (True, bool, None, None)`.
++- `Betfair/omega/omega_service.py:1059-1060`: con la chiave ASSENTE dai params
++  `_prematch_lambdas` usa `omega_config.DEFAULTS["lambda_quote_prima"]` (prima: `False`
++  cablato). Chi chiama senza params (proposte, test, strumenti) ha la catena nuova.
++  `omega_engine.moltiplicatori_rossi_v3` passava gia' dalla whitelist (`parametri_v3`):
++  chiave assente = default = acceso.
++- `Betfair/mike/config.py:144-152` `"veto_p_under35_cal": (True, bool, None, None, None)`.
++- `Betfair/mike/engine.py:2515-2523` `veto_u35_acceso`: chiave ASSENTE = default della
++  whitelist (`config.PARAM_SPEC`, import locale: il motore resta senza dipendenze in
++  testa); valore non booleano = spento (come prima).
++- `frontend/src/lib/omega.ts:948, :1000` default `true`; hint dei due campi «ACCESO di
++  default (misura 25/09: migliora); spento = ...». `frontend/src/lib/mike.ts:561` default
++  `true`, hint `:458` idem.
++
++**Test esistenti ADEGUATI (strategia decisa dall'utente, non un bug)**
++1. `Betfair/omega/test_omega_certificazione_2026_09_11.py::test_m3_cache_lambda_ttl_solo_sulle_fonti_di_ripiego`:
++   l'ultima asserzione («una FIXTURE in cache non scade mai») e' la catena di PRIMA; ora
++   passa `params={"lambda_quote_prima": False}` esplicito (acceso la fixture scade col
++   TTL, provato in `test_o1_quote_prima`). Nessun'altra riga cambiata.
++2. `Betfair/stream/backtest/tools/misura_punto8/test_misura_punto8.py::test_o1_catena_attuale_e_quella_di_produzione`:
++   NON ho cambiato il test ma lo STRUMENTO di misura `o1_catena_lambda.lambda_attuale`
++   (`:169-173`): il suo braccio «attuale» chiamava la produzione senza params e ora
++   avrebbe preso le quote (il confronto attuale/variante sarebbe diventato pre_ko contro
++   pre_ko, e cosi' anche i bracci «attuali» di `o5_rossi` e `o6_coda`, che lo usano).
++   Ora passa `params={"lambda_quote_prima": False}`: la misura resta riproducibile e
++   identica a quella del mattino.
++Nessun altro test esistente e' cambiato: su Mike nessun test esistente ha una
++`p_under35_cal` nello snapshot, quindi il veto acceso non ha P e tace (condotta identica).
++
++**Test nuovi adeguati**
++- `test_o1_quote_prima`: whitelist -> `test_parametro_esiste_acceso_di_default...`
++  (True, "off"/False spengono); ramo spento con `{"lambda_quote_prima": False}` per
++  esteso (2 test); NUOVO `test_default_senza_params_e_whitelist_vuota_quote_in_testa`
++  (senza params e con `resolve_params({})` -> `pre_ko_odds`). 12 test.
++- `test_o5_rossi_v3`: costante `SPENTO = {"model_red_cards": False}` usata in tutti i test
++  del ramo spento (neutro al 1e-12 «spento_con_rossi», `seleziona_v3` spento, spento coi
++  rossi = senza, `_v3_select` spento, uscita spenta, `p_fonte` senza `+rossi`); whitelist ->
++  `test_interruttore_in_whitelist_default_acceso` (anche `parametri_v3({})`); NUOVO
++  `test_default_acceso_i_rossi_entrano_senza_toccare_niente` (params di default e `None`
++  -> coefficienti JSON). 35 test.
++- `test_mike_veto_p_under35`: whitelist -> `test_parametri_nella_whitelist_accesi_di_default`
++  (+ `veto_u35_acceso({})` True, False/"si" spenti); HOLD/PERSIST/servizio spenti con
++  `veto_p_under35_cal=False` per esteso; NUOVO `test_hold_coi_parametri_di_default_il_veto_scatta`.
++  30 test.
++
++**Falsificazione dei «default acceso»**
++(`AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py`, ripristino byte per byte OK)
++| Mutazione | Esito |
++|---|---|
++| D1 O1 default whitelist spento | ROSSO 2 failed |
++| D2 O1 chiave assente = spento nel servizio | ROSSO 1 failed |
++| D3 O5 default whitelist spento | ROSSO 2 failed |
++| D4 M1 default whitelist spento | ROSSO 2 failed |
++| D5 M1 chiave assente = spento nel motore | ROSSO 1 failed |
++Rilanciate anche le 14 mutazioni O5 (F8 ora = «default spento»): **14/14 rosse**,
++ripristino OK.
++
++**Numeri prima/dopo il passaggio a default acceso**
++| Suite | 43e1468 pulito | default SPENTI | default ACCESI |
++|---|---|---|---|
++| Omega 48 file + 4 del banco | 1244 passed, 3 skip | 1244 passed, 3 skip | al primo giro 15 failed (2 esistenti + 13 nuovi), dopo gli adeguamenti **1244 passed, 3 skip** |
++| Mike `Betfair/mike/tests` | 859 | 888 | al primo giro 4 failed (tutti nuovi), dopo **889** (+1 test nuovo) |
++| Extra `omega_engine` (Omega/Safe/stream) | - | 607 | **607** |
++| Nuovi O1+O5+M1 | - | 74 | **77** (12 + 35 + 30) |
++| tsc / vitest 5 file | 0 / 159 | 0 / 159 | **0 / 159** |
+ 
+ ---
+ 
+@@ -244,8 +367,25 @@ e' fuori stima: dirlo all'utente prima di lanciare gli altri.**
+ Dal **worktree** serve `--data-dir` (lezione del 18/09: senza, NO_RAW e BANCO-ESPLOSO):
+ `--data-dir "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw"`.
+ 
+-**A. Parita' a interruttori SPENTI** (master = baseline, worktree = variante; stessi
+-comandi, confronto riga per riga dei `--json`):
++**AGGIORNAMENTO default ACCESI (25/09 sera).** Ora il worktree gira GIA' coi tre
++interruttori accesi senza toccare niente: il confronto master (= catena di prima) contro
++worktree (= default nuovi) e' direttamente «prima/dopo». Set minimo consigliato, stessi
++comandi sui due lati:
++```
++python -m Betfair.stream.backtest.certifica omega 35760084 35794996 --scenari v4,v4-riavvio,proposta-approvata --worker 1 --json --diario omega_default.txt
++python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,riavvio --worker 1 --json --diario mike_default.txt
++```
++Atteso: su 35760084 Omega IDENTICO al master (il banco non ha fixture: O1 non cambia le
++lambda; niente rossi attesi: O5 neutro); su 35794996 le differenze possibili sono SOLO dopo
++il rosso del 75' (`audit.mult_rossi`, `p_fonte` `+rossi`), zero violazioni; Mike IDENTICO
++salvo attivita' `veto_under_calibrata` `non_valutabile` a ogni HOLD/PERSIST, `veto_u35:
++null` nel ctx e `p_under35_fonte` nel dossier. Stima: ~8-12 min in tutto. Il vecchio
++giro «spento contro master» (A qui sotto) servirebbe solo a provare che lo SPENTO e'
++identico al master: e' gia' provato nei test al 1e-12; per farlo sul banco servirebbe uno
++scenario con i tre `False` (non esiste; `certifica` non prende params).
++
++**A (superato dal default acceso). Parita' a interruttori SPENTI** (master = baseline,
++worktree = variante; stessi comandi, confronto riga per riga dei `--json`):
+ ```
+ python -m Betfair.stream.backtest.certifica omega 35760084 --scenari v4,v4-riavvio,proposta-approvata --worker 1 --json --diario omega_spento.txt
+ python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,riavvio --worker 1 --json --diario mike_spento.txt
+@@ -306,6 +446,10 @@ patch, invariati); `Betfair/omega/omega_config.py` (O1 + O5), `Betfair/omega/ome
+ (O1 + O5), `Betfair/omega/omega_engine.py` (O5), `Betfair/omega/omega_proposte.py` (O5),
+ `Betfair/omega/omega_v3.py` (O5), `frontend/src/lib/mike.ts` (M1),
+ `frontend/src/lib/omega.ts` (O1 + O5).
++Modificati per il DEFAULT ACCESO (25/09 sera, +2):
++`Betfair/omega/test_omega_certificazione_2026_09_11.py` (una asserzione: spento esplicito),
++`Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py` (braccio «attuale» con
++lo spento esplicito). Totale modificati: 14.
+ Nuovi (test): `Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py`,
+ `Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py`,
+ `Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py`.
+@@ -313,6 +457,7 @@ Nuovi (referto e strumenti): questo referto,
+ `AUDIT_2026-09-25/o1_m1_o5_integrabili_2026-09-25.patch`,
+ `AUDIT_2026-09-25/genera_patch_o1_m1_o5.py`,
+ `AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py`,
++`AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py`,
+ `AUDIT_2026-09-25/oro_o5_griglia_v3_2026-09-25.py`.
+ Junction nel worktree: `.venv`, `frontend/node_modules` (togliere con `cmd /c rmdir`,
+ MAI `git worktree remove --force`).
+@@ -331,3 +476,9 @@ MAI `git worktree remove --force`).
+ - 14 mutazioni O5: 14 rosse, ripristino byte per byte OK.
+ - `npx tsc -p tsconfig.app.json --noEmit`: exit 0, 0 righe; `npx vitest run` 5 file: 159 passed.
+ - `git apply --check --reverse` della patch unica nel worktree: OK.
++- 25/09 sera, DEFAULT ACCESI: flip in config/servizio/motore/UI; primo giro Omega 15
++  failed + 1274 passed (2 esistenti, 13 nuovi), Mike 4 failed (nuovi); adeguati i test
++  (sez. 0); poi Omega 48+4 file **1244 passed, 3 skipped**, Mike **889 passed**, extra
++  **607 passed**, nuovi **77 passed** (12 + 35 + 30); 5 mutazioni «default acceso» rosse,
++  14 mutazioni O5 rosse, ripristino OK; tsc 0 errori, vitest 5 file 159 passed; patch
++  rigenerata (17 file, +1373 -43), `git apply --check --reverse` OK.
+diff --git a/AUDIT_2026-09-25/genera_patch_o1_m1_o5.py b/AUDIT_2026-09-25/genera_patch_o1_m1_o5.py
+index 87c366a..a410e31 100644
+--- a/AUDIT_2026-09-25/genera_patch_o1_m1_o5.py
++++ b/AUDIT_2026-09-25/genera_patch_o1_m1_o5.py
+@@ -1,22 +1,15 @@
+-# Genera la patch unica O1+M1+O5 (base = HEAD del worktree) con i file nuovi.
+-# Uso (dalla radice del worktree): python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py
++# Genera la patch O1+M1+O5 (default ACCESI) + Safe come `git diff origin/master`
++# (albero di lavoro contro origin/master, file nuovi compresi se committati o in stage).
++# Uso (dalla radice del worktree, dopo `git fetch`):
++#     python AUDIT_2026-09-25/genera_patch_o1_m1_o5.py
++# Le patch stesse sono escluse dal diff (una patch non contiene se stessa).
+ import subprocess
+ 
+-OUT = "AUDIT_2026-09-25/o1_m1_o5_integrabili_2026-09-25.patch"
+-MODIFICATI = ["Betfair/mike/config.py", "Betfair/mike/dossier.py", "Betfair/mike/engine.py",
+-              "Betfair/mike/feed.py", "Betfair/mike/service.py",
+-              "Betfair/omega/omega_config.py", "Betfair/omega/omega_engine.py",
+-              "Betfair/omega/omega_proposte.py", "Betfair/omega/omega_service.py",
+-              "Betfair/omega/omega_v3.py", "frontend/src/lib/mike.ts",
+-              "frontend/src/lib/omega.ts"]
+-NUOVI = ["Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py",
+-         "Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py",
+-         "Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py"]
+-parti = [subprocess.run(["git", "diff", "HEAD", "--"] + MODIFICATI, capture_output=True,
+-                        check=True).stdout]
+-for f in NUOVI:
+-    r = subprocess.run(["git", "diff", "--no-index", "--", "/dev/null", f], capture_output=True)
+-    parti.append(r.stdout)
+-dati = b"".join(parti).replace(b"\r\n", b"\n")
++base = subprocess.run(["git", "rev-parse", "--short", "origin/master"], capture_output=True,
++                      check=True, text=True).stdout.strip()
++OUT = f"AUDIT_2026-09-25/o1_m1_o5_default_acceso_su_{base}.patch"
++dati = subprocess.run(["git", "diff", "origin/master", "--", ".",
++                       ":(exclude)AUDIT_2026-09-25/*.patch"],
++                      capture_output=True, check=True).stdout.replace(b"\r\n", b"\n")
+ open(OUT, "wb").write(dati)
+-print(OUT, len(dati), "byte")
++print(OUT, len(dati), "byte, base origin/master", base)
+diff --git a/AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py b/AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py
+new file mode 100644
+index 0000000..a71aee8
+--- /dev/null
++++ b/AUDIT_2026-09-25/mutazioni_default_acceso_2026-09-25.py
+@@ -0,0 +1,62 @@
++# Falsificazione dei test "default ACCESO" (ordine dell'utente 25/09 sera): si rimette
++# il default SPENTO (o si rompe il ripiego della chiave assente) e i test devono
++# diventare ROSSI. Ripristino dei byte originali in finally, hash prima/dopo.
++import hashlib
++import os
++import re
++import subprocess
++import sys
++
++T_O1 = "Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py"
++T_O5 = "Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py"
++T_M1 = "Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py"
++CF = "Betfair/omega/omega_config.py"
++SV = "Betfair/omega/omega_service.py"
++MC = "Betfair/mike/config.py"
++ME = "Betfair/mike/engine.py"
++
++MUT = [
++    ("D1 O1 default whitelist spento", CF,
++     '"lambda_quote_prima": (True, bool, None, None)',
++     '"lambda_quote_prima": (False, bool, None, None)', T_O1),
++    ("D2 O1 chiave assente = spento nel servizio", SV,
++     'omega_config.DEFAULTS["lambda_quote_prima"]))', 'False))', T_O1),
++    ("D3 O5 default whitelist spento", CF,
++     '"model_red_cards": (True, bool, None, None)',
++     '"model_red_cards": (False, bool, None, None)', T_O5),
++    ("D4 M1 default whitelist spento", MC,
++     '"veto_p_under35_cal": (True, bool, None, None, None)',
++     '"veto_p_under35_cal": (False, bool, None, None, None)', T_M1),
++    ("D5 M1 chiave assente = spento nel motore", ME,
++     'return bool(_CFG.PARAM_SPEC["veto_p_under35_cal"][0])', 'return False', T_M1),
++]
++
++
++def h(path):
++    return hashlib.sha256(open(path, "rb").read()).hexdigest()
++
++
++def main():
++    env = dict(os.environ, SUPABASE_URL="http://127.0.0.1:9", SUPABASE_SERVICE_ROLE_KEY="x",
++               SUPABASE_KEY="x")
++    prima = {f: h(f) for f in (CF, SV, MC, ME)}
++    for nome, path, old, new, test in MUT:
++        orig = open(path, "rb").read()
++        testo = orig.decode("utf-8")
++        assert testo.count(old) == 1, (nome, testo.count(old))
++        try:
++            open(path, "wb").write(testo.replace(old, new).encode("utf-8"))
++            r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
++                                test], capture_output=True, text=True, env=env, timeout=600)
++            coda = [x for x in r.stdout.splitlines() if re.search(r"passed|failed|error", x)]
++            riga = coda[-1] if coda else r.stdout[-200:]
++        finally:
++            open(path, "wb").write(orig)
++        rosso = "failed" in riga or "error" in riga
++        print(("ROSSO " if rosso else "VERDE ") + nome + " -> " + riga.strip(), flush=True)
++    dopo = {f: h(f) for f in (CF, SV, MC, ME)}
++    print("ripristino byte per byte:", "OK" if prima == dopo else "DIVERSO")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py b/AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py
+index eaa9c3b..d870e5d 100644
+--- a/AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py
++++ b/AUDIT_2026-09-25/mutazioni_o5_rossi_2026-09-25.py
+@@ -41,8 +41,9 @@ MUT = [
+      "mh, ma = red_card_multipliers(rh, ra, None)", "mh, ma = red_card_multipliers(rh, ra, 39)", 1),
+     ("F7 casa/trasferta invertiti", EN,
+      "return (float(mh), float(ma))", "return (float(ma), float(mh))", 1),
+-    ("F8 default della whitelist acceso", CF,
+-     '"model_red_cards": (False, bool, None, None)', '"model_red_cards": (True, bool, None, None)', 1),
++    # 25/09 sera: il default e' ACCESO per ordine dell'utente; la mutazione lo spegne
++    ("F8 default della whitelist spento", CF,
++     '"model_red_cards": (True, bool, None, None)', '"model_red_cards": (False, bool, None, None)', 1),
+     ("F9 fonte della P senza +rossi", PR,
+      'fonte += "+rossi"', 'fonte += ""', 1),
+ ]
+diff --git a/AUDIT_2026-09-25/mutazioni_safe_lambda_2026-09-25.py b/AUDIT_2026-09-25/mutazioni_safe_lambda_2026-09-25.py
+new file mode 100644
+index 0000000..bb110b7
+--- /dev/null
++++ b/AUDIT_2026-09-25/mutazioni_safe_lambda_2026-09-25.py
+@@ -0,0 +1,60 @@
++# Safe e la catena lambda di Omega (O1): numeri PRIMA (file di HEAD) e falsificazione.
++# Ogni file toccato si ripristina byte per byte in finally.
++import hashlib
++import os
++import re
++import subprocess
++import sys
++
++BS = "Betfair/safe_strategy/bot_service.py"
++TB = "Betfair/safe_strategy/tests/test_bot_service.py"
++NUOVO = "Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py"
++ESISTENTI = [TB, "Betfair/safe_strategy/tests/test_audit_2026_09_11.py",
++             "Betfair/stream/tests/test_atlante_v4_forza_id_squadra_2026_09_25.py"]
++ENV = dict(os.environ, SUPABASE_URL="http://127.0.0.1:9", SUPABASE_SERVICE_ROLE_KEY="x",
++           SUPABASE_KEY="x")
++
++
++def h(p):
++    return hashlib.sha256(open(p, "rb").read()).hexdigest()
++
++
++def pytest(files):
++    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"] + files,
++                       capture_output=True, text=True, env=ENV, timeout=900)
++    coda = [x for x in r.stdout.splitlines() if re.search(r"passed|failed|error", x)]
++    return coda[-1].strip() if coda else r.stdout[-200:]
++
++
++def con_file(sostituzioni, files):
++    orig = {p: open(p, "rb").read() for p in sostituzioni}
++    try:
++        for p, nuovo in sostituzioni.items():
++            open(p, "wb").write(nuovo)
++        return pytest(files)
++    finally:
++        for p, b in orig.items():
++            open(p, "wb").write(b)
++
++
++def main():
++    prima = {p: h(p) for p in (BS, TB)}
++    head = {p: subprocess.run(["git", "show", "HEAD:" + p], capture_output=True,
++                              check=True).stdout for p in (BS, TB)}
++    print("PRIMA (bot_service e test_bot_service di HEAD), esistenti:", con_file(head, ESISTENTI))
++    print("DOPO, esistenti:", pytest(ESISTENTI))
++    testo = open(BS, "rb").read().decode("utf-8")
++    old = "fn(db, event_id, payload, params=_omega_params_catena_lambda())"
++    assert testo.count(old) == 1
++    mut = {BS: testo.replace(old, "fn(db, event_id, payload)").encode("utf-8")}
++    print("S1 params tolti dalla chiamata di Safe:", con_file(mut, [NUOVO]))
++    old2 = "return _oc.resolve_params({})"
++    assert testo.count(old2) == 1
++    mut2 = {BS: testo.replace(old2, 'return {"lambda_quote_prima": False}').encode("utf-8")}
++    print("S2 Safe passa lo SPENTO invece dei params risolti:", con_file(mut2, [NUOVO]))
++    dopo = {p: h(p) for p in (BS, TB)}
++    print("ripristino byte per byte:", "OK" if prima == dopo else "DIVERSO")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/Betfair/mike/config.py b/Betfair/mike/config.py
+index 92cde54..6f2fd06 100644
+--- a/Betfair/mike/config.py
++++ b/Betfair/mike/config.py
+@@ -141,6 +141,20 @@ PARAM_SPEC: dict[str, Spec] = {
+     "pre_last_entry_min": (10, int, 1, 120, None),
+     "last_entry_persist": (True, bool, None, None, None),
+     "last_entry_ticks_above": (0, int, 0, 3, None),
++    # M1 (25/09, ACCESO di default: ordine dell'utente "per TUTTI i bot i valori
++    # statistici e gli aiuti di default accesi") -- VETO sulla P CALIBRATA dell'Under 3.5
++    # (``dossier.p_under35_cal`` da ``markets_calibrated.over_3_5``) nel
++    # passaggio pre-match -> live: all'ultimo ingresso una posizione in perdita
++    # si tiene, e il PERSIST si piazza, solo se P >= soglia(quota del back
++    # Under). Soglie = curva isotonica della misura (AUDIT_2026-09-25/
++    # MISURA_PUNTO8_2026-09-25.md sez. 4), interpolate fra i nodi (engine
++    # ``soglia_veto_under35``). Spento = condotta identica a prima.
++    "veto_p_under35_cal": (True, bool, None, None, None),
++    "veto_p_under35_soglia_130": (0.807, float, 0.0, 1.0, None),
++    "veto_p_under35_soglia_150": (0.684, float, 0.0, 1.0, None),
++    "veto_p_under35_soglia_200": (0.514, float, 0.0, 1.0, None),
++    "veto_p_under35_soglia_250": (0.385, float, 0.0, 1.0, None),
++    "veto_p_under35_soglia_300": (0.275, float, 0.0, 1.0, None),
+     "cancel_unmatched_after_ko_s": (120, int, 0, 900, None),
+     # ---- dal fischio d'inizio: uscita a +N tick e gol precoce (13/09) ----
+     # La posizione Under 3.5 portata in gioco tenta PRIMA di uscire in profitto:
+diff --git a/Betfair/mike/dossier.py b/Betfair/mike/dossier.py
+index 938521f..98719c7 100644
+--- a/Betfair/mike/dossier.py
++++ b/Betfair/mike/dossier.py
+@@ -66,10 +66,14 @@ def _id_int(v: Any) -> Optional[int]:
+ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
+     """Dossier pre-match: {fixture_id, league_id, lambda_home, lambda_away, rho,
+     home_team_id, away_team_id (id API-Football, 25/09 notte),
+-    p4_pre, p_under35_cal, p_over45_cal, source}. Chiavi None se non disponibili."""
++    p4_pre, p_under35_cal, p_under35_fonte, p_over45_cal, source}. Chiavi None se
++    non disponibili. ``p_under35_fonte`` (M1, 25/09) dice da dove viene
++    ``p_under35_cal``: 'calibrated' (``markets_calibrated``) o 'raw' (``markets``
++    grezzi, ripiego di sempre): il veto M1 di ``engine`` legge solo la calibrata."""
+     out: Dict[str, Any] = {"fixture_id": None, "league_id": None, "lambda_home": None,
+                            "lambda_away": None, "rho": DEFAULT_RHO, "p4_pre": None,
+-                           "p_under35_cal": None, "p_over45_cal": None, "source": "none",
++                           "p_under35_cal": None, "p_under35_fonte": None,
++                           "p_over45_cal": None, "source": "none",
+                            "home_team_id": None, "away_team_id": None}
+     try:
+         fid = db.fixture_id_for_event(str(event_id))
+@@ -91,10 +95,12 @@ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
+             rho = inputs.get("dc_rho")
+             if isinstance(rho, (int, float)):
+                 out["rho"] = float(rho)
+-            mk = an.get("markets_calibrated") or an.get("markets") or {}
++            mkc = an.get("markets_calibrated")
++            mk = mkc or an.get("markets") or {}
+             o35 = (mk.get("over_3_5") or {}) if isinstance(mk, dict) else {}
+             if isinstance(o35, dict) and o35.get("True") is not None:
+                 out["p_under35_cal"] = round(1.0 - float(o35["True"]), 4)
++                out["p_under35_fonte"] = "calibrated" if (isinstance(mkc, dict) and mk is mkc) else "raw"
+         out["p4_pre"] = p4_from_lambdas(out["lambda_home"], out["lambda_away"], out["rho"])
+     except Exception as ex:  # noqa: BLE001
+         logger.debug("[mike.dossier] build_prematch %s KO: %s", event_id, str(ex)[:120])
+diff --git a/Betfair/mike/engine.py b/Betfair/mike/engine.py
+index f2e0197..bdeff83 100644
+--- a/Betfair/mike/engine.py
++++ b/Betfair/mike/engine.py
+@@ -199,6 +199,11 @@ class Snapshot:
+     # ripiego, quando modello ed empirico mancano: e' pur sempre il consenso di
+     # chi scommette, ed e' molto meglio di una soglia percentuale fissa.
+     p_total_market: Optional[Dict[int, float]] = None
++    # M1 (25/09, PREPARATO): P CALIBRATA dell'Under 3.5 dal dossier pre-match
++    # (``fixture_predictions.db_json_analisi.markets_calibrated.over_3_5``).
++    # None se il dossier non ce l'ha o se la P viene dai mercati GREZZI: il
++    # veto ``veto_p_under35_cal`` legge SOLO la calibrata.
++    p_under35_cal: Optional[float] = None
+ 
+     def book(self, market: str, selection: str) -> Optional[Book]:
+         return self.books.get((market, selection))
+@@ -329,6 +334,11 @@ class MatchCtx:
+     # la proposta viva ne' un'approvazione appena data.
+     uscita_proposta: Optional[Dict[str, Any]] = None
+     uscita_approvata: Optional[Dict[str, Any]] = None
++    # M1 (25/09, PREPARATO, interruttore ``veto_p_under35_cal`` SPENTO): il veto
++    # sulla P calibrata dell'Under 3.5 e' SCATTATO su questa partita (dict con P,
++    # soglia, quota, punto). Da li' in poi niente ultimo ingresso PERSIST.
++    # Persistito (``service._CTX_FIELDS``): un riavvio non deve far rientrare.
++    veto_u35: Optional[Dict[str, Any]] = None
+ 
+ 
+ @dataclass(frozen=True)
+@@ -2473,6 +2483,93 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
+     return None
+ 
+ 
++# ---------------------------------------------------------------------------
++# M1 (25/09) -- VETO SULLA P CALIBRATA DELL'UNDER 3.5. PREPARATO, SPENTO.
++# ---------------------------------------------------------------------------
++# Misura: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 4. La P calibrata
++# (``markets_calibrated.over_3_5``) batte la grezza fuori campione (Brier
++# -0,0093 [-0,0155; -0,0034] su 243 partite dal 21/09). Le soglie sono i punti
++# della curva isotonica (P dichiarata -> Under osservato) in cui il back
++# dell'Under alla quota q raggiunge il pareggio al netto del 5 %:
++# 1,30 -> 0,807; 1,50 -> 0,684; 2,00 -> 0,514; 2,50 -> 0,385; 3,00 -> 0,275
++# (quest'ultima incerta: pochi nodi). Fra i nodi si interpola linearmente;
++# fuori dalla banda si usa il nodo di estremita'.
++# Dove agisce, SOLO a interruttore acceso e SOLO nel passaggio pre-match -> live:
++#   - PRE_OPEN all'ultimo ingresso, posizione in perdita (oggi: HOLD, "tengo"):
++#     con P < soglia(quota del back Under adesso) la posizione si CHIUDE (lay
++#     finale al best, come la chiusura in profitto) invece di tenerla;
++#   - ultimo ingresso PERSIST (``_after_final_green``): con P < soglia(quota del
++#     back PERSIST) non si rientra; dopo un veto scattato non si rientra mai.
++# Senza P calibrata o senza quota: nessun veto (condotta di oggi), e l'attivita'
++# lo dichiara. Stake, banda, copertura, cash out e uscite in perdita invariati.
++VETO_U35_NODI: Tuple[Tuple[float, str, float], ...] = (
++    (1.30, "veto_p_under35_soglia_130", 0.807),
++    (1.50, "veto_p_under35_soglia_150", 0.684),
++    (2.00, "veto_p_under35_soglia_200", 0.514),
++    (2.50, "veto_p_under35_soglia_250", 0.385),
++    (3.00, "veto_p_under35_soglia_300", 0.275),
++)
++VETO_U35_NOTE = "veto P calibrata Under 3.5: chiusura in perdita"
++
++
++def veto_u35_acceso(params: Dict[str, Any]) -> bool:
++    """L'interruttore. Assente = il default della whitelist (ACCESO dal 25/09,
++    ordine dell'utente sugli aiuti statistici accesi); non booleano = SPENTO."""
++    if "veto_p_under35_cal" not in params:
++        from Betfair.mike import config as _CFG
++        return bool(_CFG.PARAM_SPEC["veto_p_under35_cal"][0])
++    v = params.get("veto_p_under35_cal")
++    return v if isinstance(v, bool) else False
++
++
++def soglia_veto_under35(quota: float, params: Dict[str, Any]) -> float:
++    """Soglia su ``p_under35_cal`` alla quota ``quota`` del back Under:
++    interpolazione lineare fra i nodi, nodo di estremita' fuori dalla banda."""
++    nodi: List[Tuple[float, float]] = []
++    for q_nodo, chiave, default in VETO_U35_NODI:
++        try:
++            s = float(params.get(chiave, default))
++        except (TypeError, ValueError):
++            s = default
++        nodi.append((q_nodo, s))
++    q = float(quota)
++    if q <= nodi[0][0]:
++        return nodi[0][1]
++    if q >= nodi[-1][0]:
++        return nodi[-1][1]
++    for (q0, s0), (q1, s1) in zip(nodi, nodi[1:]):
++        if q0 <= q <= q1:
++            return s0 + (s1 - s0) * (q - q0) / (q1 - q0)
++    return nodi[-1][1]          # irraggiungibile: i nodi sono ordinati
++
++
++def valuta_veto_under35(snap: Snapshot, params: Dict[str, Any], quota: Optional[float],
++                        punto: str) -> Optional[Dict[str, Any]]:
++    """None = interruttore spento (nessuna traccia, condotta di sempre).
++    Altrimenti il referto per l'attivita': ``esito`` = 'veto' | 'nessun_veto' |
++    'non_valutabile' (P calibrata o quota assente: nessun veto)."""
++    if not veto_u35_acceso(params):
++        return None
++    p = snap.p_under35_cal
++    out: Dict[str, Any] = {"punto": punto, "p_under35_cal": p, "quota": quota, "soglia": None}
++    if p is None:
++        out.update(esito="non_valutabile",
++                   motivo="P calibrata Under 3.5 assente nel dossier: nessun veto")
++        return out
++    if quota is None or not price_ok(quota):
++        out.update(esito="non_valutabile", motivo="quota del back Under assente: nessun veto")
++        return out
++    s = round(soglia_veto_under35(float(quota), params), 4)
++    out["soglia"] = s
++    if float(p) < s:
++        out.update(esito="veto", motivo="P calibrata %.3f < soglia %.3f a quota %.2f"
++                   % (float(p), s, float(quota)))
++    else:
++        out.update(esito="nessun_veto", motivo="P calibrata %.3f >= soglia %.3f a quota %.2f"
++                   % (float(p), s, float(quota)))
++    return out
++
++
+ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
+     st = ctx.state
+     stake = float(params["stake"])
+@@ -2552,6 +2649,12 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+             if flat:
+                 return _cycle_done(ctx, snap, S, Pe, green, w)
+             if bk is None or bk.best_lay is None:
++                veto = valuta_veto_under35(snap, params, bk.best_back if bk else None, "hold")
++                if veto is not None:
++                    # M1: senza prezzo lay non si puo' chiudere comunque; si dichiara
++                    veto["eseguito"] = False
++                    return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo",
++                                    telemetry={"veto_under_calibrata": veto})
+                 return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo")
+             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
+                                    best_lay_price=bk.best_lay, fraction=1.0)
+@@ -2561,6 +2664,27 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
+                                    plan.size, final=True, note="ultimo ingresso: chiusura in profitto"))
+                 return Decision("PRE_GREEN_PENDING", acts, f"ultimo ingresso: locked {locked:.2f} > 0",
+                                 telemetry={"last_entry_locked": round(locked, 2)})
++            veto = valuta_veto_under35(snap, params, bk.best_back, "hold")
++            if veto is not None:
++                # M1 (interruttore acceso): la posizione in perdita si tiene SOLO se
++                # la P calibrata dell'Under regge la quota di adesso
++                if veto["esito"] == "veto" and plan.actionable:
++                    veto["eseguito"] = True
++                    acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
++                                       plan.size, final=True, note=VETO_U35_NOTE))
++                    # una volta sola: con le uscite manuali la proposta si ripete a
++                    # ogni giro, e con la green ancora viva la lay arriva al giro dopo
++                    # (``_una_sola_lay``): l'attivita' si scrive quando la lay parte
++                    gia_detto = isinstance(ctx.veto_u35, dict) \
++                        or lay_in_volo(ctx, MARKET_OU35, SEL_UNDER) is not None
++                    tele = {} if gia_detto else {"veto_under_calibrata": veto}
++                    return Decision("PRE_GREEN_PENDING", acts,
++                                    f"ultimo ingresso: locked {locked:.2f} <= 0, "
++                                    f"{veto['motivo']}: chiudo",
++                                    updates={"veto_u35": veto}, telemetry=tele)
++                veto["eseguito"] = False
++                return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo",
++                                telemetry={"veto_under_calibrata": veto})
+             return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo")
+         # esposizione piatta (green abbinata per intero) -> ciclo chiuso
+         if flat and (green is None or not green.is_live):
+@@ -2681,6 +2805,10 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+     upd = {"cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now, "attempts": 0, "_archive_legs": True}
+     if not params["last_entry_persist"]:
+         return Decision("IDLE_LIVE", [], "ultimo ingresso disabilitato", updates=upd)
++    if veto_u35_acceso(params) and isinstance(ctx.veto_u35, dict):
++        # M1: la posizione e' stata chiusa per il veto: non si rientra
++        return Decision("IDLE_LIVE", [], "ultimo ingresso: non si rientra dopo il veto "
++                        "sulla P calibrata Under 3.5", updates=upd)
+     # ⚠️ 15/09 — UNA SOSPENSIONE NON E' UNA RINUNCIA.
+     # Prima qualunque stato diverso da OPEN mandava in IDLE_LIVE archiviando le
+     # gambe e incrementando il ciclo: il bot non riprovava PIU'. Ma a KO-10' una
+@@ -2704,6 +2832,21 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+     n_up = int(params["last_entry_ticks_above"])
+     if n_up > 0:
+         price = float(ticks_away(price, n_up))
++    veto = valuta_veto_under35(snap, params, price, "persist")
++    if veto is not None:
++        # M1 (interruttore acceso): l'ultimo ingresso porta la posizione in gioco;
++        # si fa SOLO se la P calibrata dell'Under regge la quota del PERSIST
++        if veto["esito"] == "veto":
++            veto["eseguito"] = True
++            return Decision("IDLE_LIVE", [], "ultimo ingresso: %s, non rientro" % veto["motivo"],
++                            updates={**upd, "veto_u35": veto},
++                            telemetry={"veto_under_calibrata": veto})
++        veto["eseguito"] = False
++        return Decision("PRE_LAST_ENTRY_PENDING",
++                        [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake,
++                                persistence="PERSIST")],
++                        "ultimo ingresso PERSIST", updates=upd,
++                        telemetry={"veto_under_calibrata": veto})
+     return Decision("PRE_LAST_ENTRY_PENDING",
+                     [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake,
+                             persistence="PERSIST")],
+diff --git a/Betfair/mike/feed.py b/Betfair/mike/feed.py
+index 994b53a..2967e4b 100644
+--- a/Betfair/mike/feed.py
++++ b/Betfair/mike/feed.py
+@@ -304,7 +304,8 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
+                       cover_gain_pct: Optional[float] = None, pressure: float = 1.0,
+                       model_probs: Optional[Dict[str, float]] = None,
+                       p_total_model: Optional[Dict[int, float]] = None,
+-                      p_total_emp: Optional[Dict[int, float]] = None) -> Optional[E.Snapshot]:
++                      p_total_emp: Optional[Dict[int, float]] = None,
++                      p_under35_cal: Optional[float] = None) -> Optional[E.Snapshot]:
+     payload = row.get("payload") if isinstance(row, dict) else None
+     if not isinstance(payload, dict) or info.ko_at is None:
+         return None
+@@ -339,6 +340,7 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
+         cover_gain_pct=cover_gain_pct, pressure=float(pressure or 1.0), model_probs=model_probs,
+         p_total_model=p_total_model, p_total_emp=p_total_emp,
+         p_total_market=market_totals(blocks, info),
++        p_under35_cal=p_under35_cal,
+     )
+ 
+ 
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index 5e047e6..64bcadb 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -272,7 +272,25 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
+                # dell'utente (``engine.gate_uscite``). Un riavvio non deve far
+                # sparire dalla scheda un'uscita in attesa di firma, ne' perdere
+                # la firma appena data.
+-               "uscita_proposta", "uscita_approvata")
++               "uscita_proposta", "uscita_approvata",
++               # M1 (25/09, PREPARATO, SPENTO): il veto sulla P calibrata
++               # dell'Under 3.5 scattato su questa partita. Un riavvio non deve
++               # far rientrare col PERSIST una posizione chiusa per il veto.
++               "veto_u35")
++
++
++def _p_under35_calibrata(dossier: Dict[str, Any]) -> Optional[float]:
++    """M1 (25/09): la P dell'Under 3.5 del dossier SOLO se viene da
++    ``markets_calibrated`` (``dossier.p_under35_fonte == 'calibrated'``). Il
++    ripiego sui mercati grezzi, e un dossier scritto prima del 25/09 (senza la
++    fonte), danno None: il veto non ha una P su cui decidere e tace."""
++    if not isinstance(dossier, dict) or dossier.get("p_under35_fonte") != "calibrated":
++        return None
++    try:
++        p = float(dossier.get("p_under35_cal"))
++    except (TypeError, ValueError):
++        return None
++    return p if 0.0 <= p <= 1.0 else None
+ 
+ 
+ # ===========================================================================
+@@ -3396,7 +3414,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+                                cover_gain_pct=live.get("cover_gain_pct"),
+                                pressure=float(live.get("pressure") or 1.0),
+                                model_probs=live.get("model_probs"),
+-                               p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"))
++                               p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"),
++                               p_under35_cal=_p_under35_calibrata(dossier))
+     if snap is None:
+         # payload senza ``open_date`` (o non leggibile): la partita smetterebbe di
+         # essere decisa SENZA dire niente. Con una posizione aperta e' un allarme.
+@@ -3648,7 +3667,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+                      # o parte su approvazione. Il motore le emette SOLO al
+                      # cambiamento, vedi engine.gate_uscite: nessun log a giro.
+                      "uscita_proposta", "uscita_proposta_decaduta",
+-                     "uscita_eseguita_su_approvazione"):
++                     "uscita_eseguita_su_approvazione",
++                     # M1 25/09, interruttore SPENTO: il veto sulla P
++                     # calibrata dell'Under 3.5, con P, soglia e quota. Nasce
++                     # SOLO nei due passaggi una-tantum all'ultimo ingresso;
++                     # niente parentesi qui: il contratto UI legge la tupla.
++                     "veto_under_calibrata"):
+                 if k == "cashout":
+                     extra["last_cashout"] = v
+                 elif k == "cover_wait":
+diff --git a/Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py b/Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py
+new file mode 100644
+index 0000000..4adb682
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py
+@@ -0,0 +1,344 @@
++"""M1 (25/09) -- veto sulla P CALIBRATA dell'Under 3.5 nel passaggio pre-match -> live.
++
++Interruttore ``veto_p_under35_cal`` DEFAULT ACCESO (ordine dell'utente del
++25/09 sera: "per TUTTI i bot i valori statistici e gli aiuti di default accesi").
++SPENTO ESPLICITO Mike si comporta ESATTAMENTE come prima (all'ultimo ingresso: in
++perdita tiene, in profitto chiude e rientra in PERSIST): i test del ramo spento
++passano sempre ``veto_p_under35_cal=False`` per esteso.
++
++I finti parlano come il vero: la riga di ``fixture_predictions.db_json_analisi``
++ha le chiavi del motore Poisson (``inputs``, ``markets``, ``markets_calibrated``)
++e i nodi Over hanno le chiavi ``{"True": p, "False": 1-p}`` (formato verificato
++sul DB il 25/09, MISURA_PUNTO8 sez. 4 Q6). Il ciclo del servizio gira con i
++finti di ``test_mike_service`` (stesse porte del DB vero).
++
++Misura e soglie: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 4.
++File ASCII-only.
++"""
++from __future__ import annotations
++
++from dataclasses import replace
++from datetime import timedelta
++
++import pytest
++
++from Betfair.mike import config as C
++from Betfair.mike import dossier as D
++from Betfair.mike import engine as E
++from Betfair.mike import feed as F
++from Betfair.mike import service as S
++from Betfair.mike.tests.test_mike_engine import KO, _open_prematch, book, conferma_annulli, fill, snap
++from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
++from Betfair.mike.tests.test_mike_service import FakeDB, FakeMarket, legs, run, state
++
++TELE = "veto_under_calibrata"
++
++
++def _analisi(p_over35_cal=None, p_over35_raw=0.40):
++    """db_json_analisi come lo scrive il motore Poisson (chiavi vere)."""
++    an = {
++        "inputs": {"lambda_home": 1.45, "lambda_away": 1.10, "dc_rho": -0.11},
++        "markets": {
++            "1x2": {"1": 0.45, "X": 0.27, "2": 0.28},
++            "over_2_5": {"True": 0.52, "False": 0.48},
++            "over_3_5": {"True": p_over35_raw, "False": round(1.0 - p_over35_raw, 4)},
++        },
++    }
++    if p_over35_cal is not None:
++        an["markets_calibrated"] = {
++            "1x2": {"1": 0.44, "X": 0.28, "2": 0.28},
++            "over_2_5": {"True": 0.50, "False": 0.50},
++            "over_3_5": {"True": p_over35_cal, "False": round(1.0 - p_over35_cal, 4)},
++        }
++    return an
++
++
++def _p(**over):
++    p = C.merge_params(None)
++    p.update(over)
++    return p
++
++
++def _snap_p(now, p_cal, **kw):
++    """snapshot dei test engine + la P calibrata (come la mette il servizio)."""
++    s = snap(now, **kw)
++    return replace(s, p_under35_cal=p_cal)
++
++
++# ============================================================ whitelist
++def test_parametri_nella_whitelist_accesi_di_default():
++    assert C.PARAM_SPEC["veto_p_under35_cal"] == (True, bool, None, None, None)
++    attese = {"130": 0.807, "150": 0.684, "200": 0.514, "250": 0.385, "300": 0.275}
++    for k, v in attese.items():
++        assert C.PARAM_SPEC[f"veto_p_under35_soglia_{k}"] == (v, float, 0.0, 1.0, None)
++    p = C.merge_params(None)
++    assert p["veto_p_under35_cal"] is True
++    assert C.merge_params({"veto_p_under35_cal": "off"})["veto_p_under35_cal"] is False
++    assert C.merge_params({"veto_p_under35_cal": "on"})["veto_p_under35_cal"] is True
++    # il motore: chiave assente = default della whitelist (acceso); non booleano = spento
++    assert E.veto_u35_acceso({}) is True
++    assert E.veto_u35_acceso({"veto_p_under35_cal": False}) is False
++    assert E.veto_u35_acceso({"veto_p_under35_cal": "si"}) is False
++    assert C.merge_params({"veto_p_under35_soglia_150": 7})["veto_p_under35_soglia_150"] == 1.0
++
++
++# ============================================================ soglia
++@pytest.mark.parametrize("quota,attesa", [
++    (1.30, 0.807), (1.50, 0.684), (2.00, 0.514), (2.50, 0.385), (3.00, 0.275),
++    (1.75, (0.684 + 0.514) / 2), (2.25, (0.514 + 0.385) / 2),
++    (1.40, 0.807 + (0.684 - 0.807) * 0.5), (2.80, 0.385 + (0.275 - 0.385) * 0.6),
++    (1.20, 0.807), (3.40, 0.275),          # fuori banda: nodo di estremita'
++])
++def test_soglia_interpolata_fra_i_nodi(quota, attesa):
++    assert E.soglia_veto_under35(quota, _p()) == pytest.approx(attesa, abs=1e-9)
++
++
++def test_nodi_del_motore_uguali_ai_default_della_whitelist():
++    """I default di ripiego del motore (parametri assenti) sono gli STESSI della
++    whitelist: una tabella doppia non deve poter divergere in silenzio."""
++    for quota, chiave, default in E.VETO_U35_NODI:
++        assert C.PARAM_SPEC[chiave][0] == default, chiave
++        assert E.soglia_veto_under35(quota, {}) == pytest.approx(default)
++
++
++def test_soglia_legge_i_parametri_non_le_costanti():
++    p = _p(veto_p_under35_soglia_150=0.70, veto_p_under35_soglia_200=0.50)
++    assert E.soglia_veto_under35(1.75, p) == pytest.approx(0.60, abs=1e-9)
++
++
++# ============================================================ HOLD (in perdita)
++def _in_perdita(p_cal, **over):
++    ctx, p = _open_prematch()
++    p.update(over)
++    s = _snap_p(KO - 9 * 60, p_cal, u35=book(1.50, bl=1.52))
++    d = E.decide(ctx, s, p)
++    return ctx, p, s, d
++
++
++def test_hold_spento_tiene_come_oggi_anche_con_p_bassissima():
++    ctx, p, s, d = _in_perdita(0.10, veto_p_under35_cal=False)
++    assert d.state == "HOLD" and [a.kind for a in d.actions] == ["cancel"]
++    assert TELE not in d.telemetry and "veto_u35" not in d.updates
++
++
++def test_hold_acceso_p_sotto_soglia_a_quota_150_chiude():
++    ctx, p, s, d = _in_perdita(0.60, veto_p_under35_cal=True)
++    # giro 1: la green appoggiata si ANNULLA e basta (mai due lay a mercato)
++    assert [a.kind for a in d.actions] == ["cancel"] and d.state == "PRE_OPEN"
++    assert TELE not in d.telemetry
++    E.apply_decision(ctx, d, s.now)
++    conferma_annulli(ctx, d)
++    d = E.decide(ctx, s, p)
++    assert d.state == "PRE_GREEN_PENDING"
++    a = d.actions[-1]
++    assert (a.role, a.side, a.final, a.price) == ("under_green", "lay", True, 1.52)
++    assert a.note == E.VETO_U35_NOTE
++    v = d.telemetry[TELE]
++    assert v["esito"] == "veto" and v["eseguito"] is True and v["punto"] == "hold"
++    assert v["p_under35_cal"] == 0.60 and v["quota"] == 1.50 and v["soglia"] == pytest.approx(0.684)
++    assert d.updates["veto_u35"]["esito"] == "veto"
++    # la chiusura si abbina: niente ultimo ingresso PERSIST, si va in gioco senza posizione
++    E.apply_decision(ctx, d, s.now)
++    fill([l for l in ctx.legs if l.role == "under_green" and l.status == "pending"][-1])
++    d2 = E.decide(ctx, _snap_p(KO - 8 * 60, 0.60, u35=book(1.44, bl=1.45)), p)
++    assert d2.state == "IDLE_LIVE" and d2.actions == []
++    assert "non si rientra dopo il veto" in d2.reason
++
++
++def test_hold_acceso_p_sopra_soglia_a_quota_150_tiene():
++    ctx, p, s, d = _in_perdita(0.70, veto_p_under35_cal=True)
++    assert d.state == "HOLD" and [a.kind for a in d.actions] == ["cancel"]
++    v = d.telemetry[TELE]
++    assert v["esito"] == "nessun_veto" and v["eseguito"] is False
++    assert v["soglia"] == pytest.approx(0.684) and v["p_under35_cal"] == 0.70
++    assert "veto_u35" not in d.updates
++
++
++def test_hold_coi_parametri_di_default_il_veto_scatta():
++    """25/09 sera: coi parametri di DEFAULT (nessuna chiave toccata) il veto e'
++    acceso: P 0,60 a quota 1,50 (soglia 0,684) -> la green si annulla per
++    chiudere, non si tiene."""
++    ctx, p, s, d = _in_perdita(0.60)
++    assert p["veto_p_under35_cal"] is True
++    assert [a.kind for a in d.actions] == ["cancel"] and d.state == "PRE_OPEN"
++
++
++def test_hold_acceso_senza_p_calibrata_tiene_e_lo_dichiara():
++    ctx, p, s, d = _in_perdita(None, veto_p_under35_cal=True)
++    assert d.state == "HOLD"
++    v = d.telemetry[TELE]
++    assert v["esito"] == "non_valutabile" and v["soglia"] is None
++    assert "assente" in v["motivo"]
++
++
++# ============================================================ PERSIST (in profitto)
++def _open_a(prezzo, p):
++    ctx = E.MatchCtx()
++    s0 = snap(KO - 0.5 * 3600, u35=book(prezzo))
++    E.apply_decision(ctx, E.decide(ctx, s0, p), s0.now)
++    fill(ctx.legs[0])
++    s1 = snap(KO - 0.5 * 3600 + 5, u35=book(prezzo))
++    E.apply_decision(ctx, E.decide(ctx, s1, p), s1.now)
++    return ctx
++
++
++def _fino_al_persist(prezzo_in, prezzo_ora, p_cal, **over):
++    """Ingresso a prezzo_in, all'ultimo ingresso il mercato e' sceso a
++    prezzo_ora (profitto): chiusura finale abbinata, poi la decisione PERSIST."""
++    p = _p(stake=20.0, **over)
++    ctx = _open_a(prezzo_in, p)
++    s = _snap_p(KO - 9 * 60, p_cal, u35=book(prezzo_ora))
++    d = E.decide(ctx, s, p)
++    E.apply_decision(ctx, d, s.now)
++    conferma_annulli(ctx, d)
++    d = E.decide(ctx, s, p)
++    assert d.state == "PRE_GREEN_PENDING"
++    E.apply_decision(ctx, d, s.now)
++    g = [l for l in ctx.legs if l.role == "under_green" and l.status == "pending"][-1]
++    # abbinata per l'importo ESATTO che pareggia la posizione (la size chiesta e'
++    # arrotondata al centesimo e lascerebbe un residuo: non e' lo scenario qui)
++    fill(g, size=20.0 * prezzo_in / g.price)
++    return E.decide(ctx, _snap_p(KO - 8 * 60, p_cal, u35=book(prezzo_ora)), p)
++
++
++def test_persist_spento_rientra_come_oggi():
++    d = _fino_al_persist(2.60, 2.50, 0.10, veto_p_under35_cal=False)
++    assert d.state == "PRE_LAST_ENTRY_PENDING"
++    assert (d.actions[0].role, d.actions[0].persistence, d.actions[0].price) == ("under_last", "PERSIST", 2.50)
++    assert TELE not in d.telemetry
++
++
++def test_persist_acceso_quota_250_p_sotto_soglia_non_rientra():
++    d = _fino_al_persist(2.60, 2.50, 0.35, veto_p_under35_cal=True)
++    assert d.state == "IDLE_LIVE" and d.actions == []
++    v = d.telemetry[TELE]
++    assert v["esito"] == "veto" and v["punto"] == "persist" and v["quota"] == 2.50
++    assert v["soglia"] == pytest.approx(0.385)
++    assert d.updates["veto_u35"]["esito"] == "veto" and d.updates["_archive_legs"] is True
++
++
++def test_persist_acceso_quota_250_p_sopra_soglia_rientra():
++    d = _fino_al_persist(2.60, 2.50, 0.40, veto_p_under35_cal=True)
++    assert d.state == "PRE_LAST_ENTRY_PENDING" and d.actions[0].role == "under_last"
++    assert d.telemetry[TELE]["esito"] == "nessun_veto"
++
++
++@pytest.mark.parametrize("p_cal,stato", [(0.71, "IDLE_LIVE"), (0.73, "PRE_LAST_ENTRY_PENDING")])
++def test_persist_acceso_quota_144_interpola_fra_130_e_150(p_cal, stato):
++    # 1,44: soglia 0,807 + (0,684 - 0,807) * 0,7 = 0,7209
++    d = _fino_al_persist(1.50, 1.44, p_cal, veto_p_under35_cal=True)
++    assert d.state == stato
++    assert d.telemetry[TELE]["soglia"] == pytest.approx(0.7209, abs=1e-4)
++
++
++def test_persist_acceso_senza_p_calibrata_rientra_e_lo_dichiara():
++    d = _fino_al_persist(2.60, 2.50, None, veto_p_under35_cal=True)
++    assert d.state == "PRE_LAST_ENTRY_PENDING"
++    assert d.telemetry[TELE]["esito"] == "non_valutabile"
++
++
++# ============================================================ dossier -> snapshot
++class _DBDossier:
++    def __init__(self, an):
++        self.an = an
++
++    def fixture_id_for_event(self, event_id):
++        return 1_208_021
++
++    def fixture_lambdas(self, fid):
++        return (1.45, 1.10, 135)
++
++    def fixture_analysis(self, fid):
++        return self.an
++
++
++def test_dossier_dichiara_la_fonte_e_il_servizio_passa_solo_la_calibrata():
++    cal = D.build_prematch("E1", _DBDossier(_analisi(p_over35_cal=0.40)))
++    assert cal["p_under35_cal"] == 0.60 and cal["p_under35_fonte"] == "calibrated"
++    assert S._p_under35_calibrata(cal) == 0.60
++    grezza = D.build_prematch("E1", _DBDossier(_analisi(p_over35_cal=None, p_over35_raw=0.30)))
++    # comportamento di sempre: la grezza finisce comunque in p_under35_cal ...
++    assert grezza["p_under35_cal"] == 0.70 and grezza["p_under35_fonte"] == "raw"
++    # ... ma il veto non la vede
++    assert S._p_under35_calibrata(grezza) is None
++    # dossier scritto prima del 25/09 (senza fonte): nessuna P per il veto
++    assert S._p_under35_calibrata({"p_under35_cal": 0.6, "source": "fixture"}) is None
++    assert S._p_under35_calibrata({}) is None
++
++
++def test_snapshot_porta_la_p_calibrata():
++    info = F.event_info("E1", payload())
++    s = F.snapshot_from_row(row(payload()), info, now=KO_IN_FINESTRA.timestamp() - 1800,
++                            params=C.merge_params(None), scanner_age_s=1.0, p_under35_cal=0.61)
++    assert s is not None and s.p_under35_cal == 0.61
++    s0 = F.snapshot_from_row(row(payload()), info, now=KO_IN_FINESTRA.timestamp() - 1800,
++                             params=C.merge_params(None), scanner_age_s=1.0)
++    assert s0.p_under35_cal is None
++
++
++# ============================================================ ciclo del servizio
++class _FakeDBFixture(FakeDB):
++    """FakeDB del servizio con una fixture abbinata e la sua analisi."""
++
++    def __init__(self, an, **kw):
++        super().__init__(**kw)
++        self.an = an
++
++    def fixture_id_for_event(self, event_id):
++        return 1_208_021
++
++    def fixture_lambdas(self, fid):
++        return (1.45, 1.10, 135)
++
++    def fixture_analysis(self, fid):
++        return self.an
++
++
++def _giro_ultimo_ingresso(params, p_over35_cal):
++    db = _FakeDBFixture(_analisi(p_over35_cal=p_over35_cal), params=params)
++    mk = FakeMarket()
++    t0 = KO_IN_FINESTRA - timedelta(minutes=30)
++    run(db, mk, t0, [row(payload(), updated=t0)])
++    t1 = t0 + timedelta(seconds=2)
++    run(db, mk, t1, [row(payload(), updated=t1)])
++    assert state(db) == "PRE_OPEN"
++    assert db.events["E1"]["dossier"]["p_under35_fonte"] == "calibrated"
++    perdita = payload(u35=(1.54, 1.55, 30.0, 25.0))
++    for k in range(3):
++        t = KO_IN_FINESTRA - timedelta(minutes=9) + timedelta(seconds=2 * k)
++        db.scanner["updated_at"] = t.isoformat()
++        run(db, mk, t, [row(perdita, updated=t)])
++    return db
++
++
++def test_servizio_spento_in_perdita_tiene_come_oggi():
++    db = _giro_ultimo_ingresso({"stake": 10, "veto_p_under35_cal": False},
++                               p_over35_cal=0.45)     # P Under 0,55
++    assert state(db) == "HOLD"
++    assert TELE not in db.kinds()
++    assert db.events["E1"]["ctx"].get("veto_u35") is None
++
++
++def test_servizio_acceso_in_perdita_p_sotto_soglia_chiude_e_lo_scrive():
++    db = _giro_ultimo_ingresso({"stake": 10, "veto_p_under35_cal": True}, p_over35_cal=0.45)
++    # giro 1: annullo della green appoggiata; giro 2: lay finale al best, abbinata
++    # in paper; giro 3: nessun ultimo ingresso PERSIST -> in gioco senza posizione
++    assert state(db) == "IDLE_LIVE"
++    chiusure = [l for l in legs(db) if l["role"] == "under_green" and l["final"]]
++    assert chiusure and chiusure[-1]["side"] == "lay" and chiusure[-1]["price"] == 1.55
++    assert chiusure[-1]["matched"] > 0
++    assert not [l for l in legs(db) if l["role"] == "under_last"]
++    righe = [pl for k, pl, _ in db.activity if k == TELE]
++    assert len(righe) == 1                       # una volta sola
++    v = righe[0]
++    # quota 1,54: soglia 0,684 + (0,514 - 0,684) * 0,08 = 0,6704
++    assert v["esito"] == "veto" and v["p_under35_cal"] == 0.55
++    assert v["soglia"] == pytest.approx(0.6704, abs=1e-4) and v["quota"] == 1.54
++    assert db.events["E1"]["ctx"]["veto_u35"]["esito"] == "veto"      # persistito
++
++
++def test_servizio_acceso_in_perdita_p_sopra_soglia_tiene_e_lo_scrive():
++    db = _giro_ultimo_ingresso({"stake": 10, "veto_p_under35_cal": True}, p_over35_cal=0.25)
++    assert state(db) == "HOLD"
++    righe = [pl for k, pl, _ in db.activity if k == TELE]
++    assert len(righe) == 1 and righe[0]["esito"] == "nessun_veto" and righe[0]["p_under35_cal"] == 0.75
+diff --git a/Betfair/omega/omega_config.py b/Betfair/omega/omega_config.py
+index 732ba31..07254d3 100644
+--- a/Betfair/omega/omega_config.py
++++ b/Betfair/omega/omega_config.py
+@@ -98,12 +98,13 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
+     # (scanner riavviato a partita in corso, lega senza fixture): True = mai
+     # una gamba saltata per "no_model_lambdas" se il mercato a gol è in stream
+     "lambda_live_fallback": (True, bool, None, None),
+-    # O1 (25/09, PREPARATO, SPENTO): True = nella catena dei lambda pre-match le
++    # O1 (25/09, ACCESO di default: ordine dell'utente "per TUTTI i bot i valori
++    # statistici e gli aiuti di default accesi"): True = nella catena dei lambda pre-match le
+     # quote 1X2 pre-KO devigate passano PRIMA della fixture del DB; la fixture
+     # resta il ripiego se le quote mancano (`omega_service._prematch_lambdas`).
+     # Misura fuori campione: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 1.
+-    # Si accende SOLO su ordine dell'utente, dopo il replay del banco.
+-    "lambda_quote_prima": (False, bool, None, None),
++    # False = catena di sempre (fixture prima).
++    "lambda_quote_prima": (True, bool, None, None),
+     # §16 — incertezza sui λ (coefficiente di variazione della mistura lognormale:
+     # 0 = Poisson puro; 0,30 ≈ coda binomiale negativa osservata sui dati)
+     "model_lambda_cv": (0.30, float, 0.0, 1.0),
+@@ -283,14 +284,15 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
+     # fusione col mercato (pool logaritmico in logit, pesi misurati per fascia in
+     # `tools/banco_fusione.py`): 'auto' = fonde | 'off' = solo modello
+     "v3_fusione_mercato": ("auto", str, None, None),
+-    # O5 (25/09, PREPARATO, SPENTO): True = i CARTELLINI ROSSI del feed entrano
++    # O5 (25/09, ACCESO di default: ordine dell'utente sugli aiuti statistici
++    # accesi): True = i CARTELLINI ROSSI del feed entrano
+     # nel modello V3: intensita' residua per lato moltiplicata con i coefficienti
+     # GLOBALI (mai per lega) di `inplay_intensity_by_league.json`
+     # (`live_engine.red_card_multipliers(rh, ra, None)`), nell'ingresso E
+     # nell'uscita (`omega_engine.moltiplicatori_rossi_v3`). Misura fuori
+-    # campione: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2. Si accende
+-    # SOLO su ordine dell'utente, dopo il replay del banco.
+-    "model_red_cards": (False, bool, None, None),
++    # campione: AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2. False =
++    # modello di sempre (rossi ignorati).
++    "model_red_cards": (True, bool, None, None),
+     # ---- LE PROPOSTE DI USCITA (17/09) ----
+     # P MASSIMA TOLLERATA che il risultato bancato esca: oltre, il produttore
+     # propone l'uscita col motivo `rischio` — non perche' sia un affare, ma per
+diff --git a/Betfair/omega/omega_service.py b/Betfair/omega/omega_service.py
+index 8bed354..0e1487c 100644
+--- a/Betfair/omega/omega_service.py
++++ b/Betfair/omega/omega_service.py
+@@ -1045,7 +1045,7 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
+     None = nessun modello possibile (si salta: mai a occhi chiusi). Ogni λ
+     trovato (non da fixture) viene persistito sull'evento, best-effort.
+ 
+-    O1 (25/09, PREPARATO, DEFAULT SPENTO) -- ``params['lambda_quote_prima']``:
++    O1 (25/09, DEFAULT ACCESO per ordine dell'utente) -- ``params['lambda_quote_prima']``:
+     a True il gradino 3 (quote 1X2 pre-KO) passa DAVANTI al gradino 1; la
+     fixture (e dopo di lei i lambda persistiti) si usa solo se le quote
+     mancano. Il resto della catena e' identico. Con le quote in testa la
+@@ -1054,8 +1054,10 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
+     ``fixture`` in cache scade col TTL, cosi' le quote congelate DOPO la prima
+     valutazione possono sostituirlo. Misura: AUDIT_2026-09-25/
+     MISURA_PUNTO8_2026-09-25.md sez. 1 (log-loss CS FT -0,0231 [-0,0359;
+-    -0,0103] su 1.995 partite). A False (default) la catena e' quella di sempre."""
+-    quote_prima = bool((params or {}).get("lambda_quote_prima", False))
++    -0,0103] su 1.995 partite). A False la catena e' quella di sempre; chiave
++    assente = il default della whitelist (acceso)."""
++    quote_prima = bool((params or {}).get("lambda_quote_prima",
++                                          omega_config.DEFAULTS["lambda_quote_prima"]))
+     cached = _LAMBDA_CACHE.get(event_id)
+     if cached is not None:
+         val, ts = cached if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[0], tuple) else (cached, None)
+diff --git a/Betfair/omega/test_omega_certificazione_2026_09_11.py b/Betfair/omega/test_omega_certificazione_2026_09_11.py
+index ca52cd9..a6100c9 100644
+--- a/Betfair/omega/test_omega_certificazione_2026_09_11.py
++++ b/Betfair/omega/test_omega_certificazione_2026_09_11.py
+@@ -178,9 +178,13 @@ def test_m3_cache_lambda_ttl_solo_sulle_fonti_di_ripiego(monkeypatch):
+     S._LAMBDA_CACHE["e1"] = (val, ts - S.LAMBDA_CACHE_TTL_S - 1)
+     db.events["e1"]["model"] = {"lambda_pre": [1.7, 0.8], "lambda_source": "pre_ko_odds"}
+     assert S._prematch_lambdas(db, "e1", None)[:2] == (1.7, 0.8)
+-    # una FIXTURE in cache non scade mai (i λ pre-match non cambiano)
++    # una FIXTURE in cache non scade mai (i λ pre-match non cambiano) -- con la
++    # catena di PRIMA (`lambda_quote_prima` spento). 25/09 sera: O1 e' ACCESO di
++    # default per ordine dell'utente e, acceso, la fixture in cache scade col TTL
++    # (test_o1_quote_prima_2026_09_25): qui si prova il ramo spento, dichiarato.
+     S._LAMBDA_CACHE["e1"] = ((1.0, 1.0, 135, "fixture"), 0.0)
+-    assert S._prematch_lambdas(db, "e1", None) == (1.0, 1.0, 135, "fixture")
++    assert S._prematch_lambdas(db, "e1", None, params={"lambda_quote_prima": False}) \
++        == (1.0, 1.0, 135, "fixture")
+ 
+ 
+ # ---------------------------------------------------------------- M5 meta fuso nel reconcile
+diff --git a/Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py b/Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py
+index 461d449..c83d8b6 100644
+--- a/Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py
++++ b/Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py
+@@ -1,8 +1,10 @@
+ """O1 (25/09) -- le quote 1X2 pre-KO PRIMA della fixture nella catena dei lambda.
+ 
+-PREPARAZIONE, interruttore ``lambda_quote_prima`` DEFAULT SPENTO: finche'
+-l'utente non lo accende la catena di ``omega_service._prematch_lambdas`` deve
+-restare IDENTICA a quella di sempre (fixture -> lambda salvati -> pre-KO -> ...).
++Interruttore ``lambda_quote_prima`` DEFAULT ACCESO (ordine dell'utente del
++25/09 sera: "per TUTTI i bot i valori statistici e gli aiuti di default accesi").
++SPENTO ESPLICITO la catena di ``omega_service._prematch_lambdas`` resta IDENTICA a
++quella di sempre (fixture -> lambda salvati -> pre-KO -> ...): i test del ramo
++spento lo passano sempre per esteso.
+ 
+ I finti parlano come il vero:
+ - ``get_event`` restituisce una riga di ``omega_events`` (``event_id``,
+@@ -131,9 +133,11 @@ def _cache_pulita():
+ 
+ 
+ # ---------------------------------------------------------------- whitelist
+-def test_parametro_esiste_spento_di_default_e_passa_dalla_whitelist():
+-    assert C._SPEC["lambda_quote_prima"] == (False, bool, None, None)
+-    assert C.resolve_params({})["lambda_quote_prima"] is False
++def test_parametro_esiste_acceso_di_default_e_passa_dalla_whitelist():
++    assert C._SPEC["lambda_quote_prima"] == (True, bool, None, None)
++    assert C.resolve_params({})["lambda_quote_prima"] is True
++    assert C.resolve_params({"lambda_quote_prima": "off"})["lambda_quote_prima"] is False
++    assert C.resolve_params({"lambda_quote_prima": False})["lambda_quote_prima"] is False
+     assert C.resolve_params({"lambda_quote_prima": "on"})["lambda_quote_prima"] is True
+     assert C.resolve_params({"lambda_quote_prima": True})["lambda_quote_prima"] is True
+ 
+@@ -142,16 +146,29 @@ def test_parametro_esiste_spento_di_default_e_passa_dalla_whitelist():
+ def test_spento_quote_e_fixture_presenti_vince_la_fixture_come_oggi(client):
+     db = _DB({"e1": _evento("e1")})
+     payload = {"pre_ko": _pre_ko()}
+-    # default (nessun params) e interruttore esplicito a False: STESSO numero
+-    out_default = S._prematch_lambdas(db, "e1", payload)
++    # interruttore spento ESPLICITO, grezzo e passato dalla whitelist: STESSO numero
++    out_grezzo = S._prematch_lambdas(db, "e1", payload, params={"lambda_quote_prima": False})
+     S._LAMBDA_CACHE.clear()
+     out_spento = S._prematch_lambdas(db, "e1", payload,
+                                      params=C.resolve_params({"lambda_quote_prima": False}))
+-    assert out_default == (1.9, 0.7, LEGA, "fixture")
+-    assert out_spento == out_default
++    assert out_grezzo == (1.9, 0.7, LEGA, "fixture")
++    assert out_spento == out_grezzo
+     assert db.salvati == []              # la fixture non si persiste (come oggi)
+ 
+ 
++def test_default_senza_params_e_whitelist_vuota_quote_in_testa(client):
++    """25/09 sera: il DEFAULT e' acceso anche quando il chiamante non passa la
++    chiave (``params`` assente) o passa la whitelist risolta da vuoto."""
++    pk = _pre_ko()
++    atteso = M.lambdas_from_pre_ko(pk)
++    db = _DB({"e1b": _evento("e1b")})
++    assert S._prematch_lambdas(db, "e1b", {"pre_ko": pk}) == (atteso[0], atteso[1], LEGA,
++                                                              "pre_ko_odds")
++    S._LAMBDA_CACHE.clear()
++    assert S._prematch_lambdas(db, "e1b", {"pre_ko": pk}, params=C.resolve_params({}))[3] \
++        == "pre_ko_odds"
++
++
+ def test_acceso_quote_e_fixture_presenti_vince_pre_ko(client):
+     db = _DB({"e2": _evento("e2")})
+     pk = _pre_ko()
+@@ -222,7 +239,8 @@ def test_acceso_la_fixture_in_cache_scade_e_le_quote_arrivate_dopo_la_sostituisc
+ 
+ def test_spento_la_fixture_in_cache_non_scade_mai_come_oggi(client):
+     db = _DB({"e8": _evento("e8")})
+-    assert S._prematch_lambdas(db, "e8", {})[3] == "fixture"
++    p_off = {"lambda_quote_prima": False}
++    assert S._prematch_lambdas(db, "e8", {}, params=p_off)[3] == "fixture"
+     val, ts = S._LAMBDA_CACHE["e8"]
+     S._LAMBDA_CACHE["e8"] = (val, ts - S.LAMBDA_CACHE_TTL_S - 1)
+-    assert S._prematch_lambdas(db, "e8", {"pre_ko": _pre_ko()})[3] == "fixture"
++    assert S._prematch_lambdas(db, "e8", {"pre_ko": _pre_ko()}, params=p_off)[3] == "fixture"
+diff --git a/Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py b/Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py
+index b5d1a1d..89a1485 100644
+--- a/Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py
++++ b/Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py
+@@ -6,6 +6,10 @@ Decisione dell'utente (25/09 h18): "SE MIGLIORA AGGIUNGILO". Misura:
+ AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2 (77 partite fuori dal fit,
+ log-loss CS FT al primo rosso -0,113 [-0,187; -0,046]).
+ 
++Interruttore DEFAULT ACCESO (ordine dell'utente del 25/09 sera: "per TUTTI i
++bot i valori statistici e gli aiuti di default accesi"): il ramo spento si prova
++passando SEMPRE `model_red_cards=False` per esteso (`SPENTO`).
++
+ Cosa si prova:
+   * neutro (rossi 0-0, o interruttore spento) = la griglia di PRIMA al 1e-12,
+     contro valori d'oro calcolati dal `omega_v3.py` di `origin/master` 43e1468;
+@@ -63,15 +67,18 @@ def _p(**kw: Any) -> Dict[str, Any]:
+ 
+ 
+ ACCESO = {"model_red_cards": True}
++SPENTO = {"model_red_cards": False}
+ 
+ 
+ # ---------------------------------------------------------------------------
+ # 0. whitelist
+ # ---------------------------------------------------------------------------
+-def test_interruttore_in_whitelist_default_spento():
+-    assert C.DEFAULTS["model_red_cards"] is False
+-    assert _p()["model_red_cards"] is False
+-    assert C.parametri_v3(_p())["rossi"] is False
++def test_interruttore_in_whitelist_default_acceso():
++    assert C.DEFAULTS["model_red_cards"] is True
++    assert _p()["model_red_cards"] is True
++    assert C.parametri_v3(_p())["rossi"] is True
++    assert C.parametri_v3({})["rossi"] is True
++    assert C.parametri_v3(_p(**SPENTO))["rossi"] is False
+     assert C.parametri_v3(_p(**ACCESO))["rossi"] is True
+     # la stringa "false" dalla UI resta SPENTA, anche su params gia' risolti
+     assert C.parametri_v3({"strategy_version": 3, "model_red_cards": "false"})["rossi"] is False
+@@ -104,7 +111,7 @@ def test_neutro_griglia_identica_a_prima_al_1e_12(stato, firma, cella, intens, m
+     elif modo == "acceso_senza_rossi":
+         kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(**ACCESO), 0, 0)}
+     else:
+-        kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(), 1, 1)}
++        kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(**SPENTO), 1, 1)}
+     g = V3.griglia_finale(minuto=m, punteggio=sc, periodo=per, p=p, lambdas=lam, **kw)
+     assert abs(sum(v * (1 + 7 * h + 13 * a) for (h, a), v in g.items()) - firma) < 1e-12
+     assert abs(g[(sc[0] + 1, sc[1] + 1)] - cella) < 1e-12
+@@ -115,6 +122,14 @@ def test_neutro_griglia_identica_a_prima_al_1e_12(stato, firma, cella, intens, m
+ # ---------------------------------------------------------------------------
+ # 2. i moltiplicatori vengono dal JSON GLOBALE
+ # ---------------------------------------------------------------------------
++def test_default_acceso_i_rossi_entrano_senza_toccare_niente():
++    """25/09 sera: coi parametri di DEFAULT (whitelist risolta da vuoto, e
++    anche senza params) un rosso cambia i moltiplicatori."""
++    carded, opp = _coeff_globali()
++    assert E.moltiplicatori_rossi_v3(_p(), 1, 0) == pytest.approx((carded, opp), abs=1e-12)
++    assert E.moltiplicatori_rossi_v3(None, 1, 0) == pytest.approx((carded, opp), abs=1e-12)
++
++
+ def test_rosso_in_casa_intensita_moltiplicate_dal_json():
+     carded, opp = _coeff_globali()
+     mult = E.moltiplicatori_rossi_v3(_p(**ACCESO), 1, 0)
+@@ -212,7 +227,7 @@ def _spia_probabilita(monkeypatch: pytest.MonkeyPatch) -> List[dict]:
+     ("acceso", None, "neutro"), ("acceso", (0, 0), "neutro"), ("acceso", (1, 0), "json")])
+ def test_seleziona_v3_usa_i_rossi_solo_ad_acceso(monkeypatch, params, rossi, atteso):
+     chiamate = _spia_probabilita(monkeypatch)
+-    pr = _p(**ACCESO) if params == "acceso" else _p()
++    pr = _p(**ACCESO) if params == "acceso" else _p(**SPENTO)
+     E.seleziona_v3(_runners(), periodo="ft", minuto=74.0, punteggio=(0, 0), params=pr,
+                    lambdas=LAMBDA, parametri_modello=PR.parametri_modello(), rossi=rossi)
+     assert len(chiamate) == 1
+@@ -224,7 +239,7 @@ def test_seleziona_v3_usa_i_rossi_solo_ad_acceso(monkeypatch, params, rossi, att
+ 
+ 
+ def test_seleziona_v3_spento_coi_rossi_identico_a_senza_rossi():
+-    pr = _p()
++    pr = _p(**SPENTO)
+     kw = dict(periodo="ft", minuto=74.0, punteggio=(0, 0), params=pr, lambdas=LAMBDA,
+               parametri_modello=PR.parametri_modello())
+     a = E.seleziona_v3(_runners(), **kw)
+@@ -263,7 +278,7 @@ def test_v3_select_passa_i_rossi_del_feed_e_li_scrive_in_audit(monkeypatch):
+ 
+ def test_v3_select_spento_audit_identico_senza_chiave(monkeypatch):
+     chiamate = _spia_probabilita(monkeypatch)
+-    visti, audit = _v3_select(monkeypatch, _p(), 1, 0)
++    visti, audit = _v3_select(monkeypatch, _p(**SPENTO), 1, 0)
+     assert visti == [(1, 0)]
+     assert chiamate[-1]["mult"] == (1.0, 1.0)
+     assert "mult_rossi" not in audit
+@@ -323,8 +338,8 @@ def test_uscita_acceso_vede_i_rossi_con_la_stessa_p_dell_ingresso(_uscita):
+ 
+ 
+ def test_uscita_spento_coi_rossi_identica_a_senza_rossi(_uscita):
+-    _gira_uscita(_p(), _payload_con_rossi(1, 0))
+-    _gira_uscita(_p(), _payload_con_rossi(0, 0))
++    _gira_uscita(_p(**SPENTO), _payload_con_rossi(1, 0))
++    _gira_uscita(_p(**SPENTO), _payload_con_rossi(0, 0))
+     assert len(_uscita) == 2
+     assert _uscita[0]["mult"] == (1.0, 1.0) == _uscita[1]["mult"]
+     assert _uscita[0]["p_evento"] == _uscita[1]["p_evento"]
+@@ -337,7 +352,7 @@ def test_uscita_acceso_fonte_della_p_dichiara_i_rossi(_uscita):
+     fonti = [str((r.get("payload") or {}).get("p_fonte")) for r in db.richieste]
+     fonti += [str(p.get("p_fonte")) for _k, p in db.attivita if p.get("p_fonte")]
+     assert fonti and all(f.endswith("+rossi") for f in fonti)
+-    db0 = _gira_uscita(_p(), _payload_con_rossi(1, 0))
++    db0 = _gira_uscita(_p(**SPENTO), _payload_con_rossi(1, 0))
+     fonti0 = [str((r.get("payload") or {}).get("p_fonte")) for r in db0.richieste]
+     assert fonti0 and not any("+rossi" in f for f in fonti0)
+ 
+diff --git a/Betfair/safe_strategy/bot_service.py b/Betfair/safe_strategy/bot_service.py
+index 2f74fcf..7933661 100644
+--- a/Betfair/safe_strategy/bot_service.py
++++ b/Betfair/safe_strategy/bot_service.py
+@@ -6639,6 +6639,20 @@ def _ids_squadra_da_finestra(payload: dict, state: dict, league_id: Any) -> dict
+     return _ids_squadra(fx)
+ 
+ 
++def _omega_params_catena_lambda() -> dict[str, Any]:
++    """I params di Omega RISOLTI dalla whitelist (`omega_config.resolve_params`),
++    passati alla catena dei lambda di Omega: `lambda_quote_prima` = il default
++    della whitelist (ACCESO dal 25/09, ordine dell'utente). Vuoto se Omega non
++    e' importabile: la catena usa comunque il suo default."""
++    try:
++        from Betfair.omega import omega_config as _oc
++
++        return _oc.resolve_params({})
++    except Exception as ex:  # noqa: BLE001
++        logger.debug("[safe.bot] params Omega non risolti: %s", str(ex)[:120])
++        return {}
++
++
+ def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
+                           now: datetime, state: dict) -> dict[str, Any]:
+     """{'lambdas', 'league_id', 'source', 'ht_ratio', 'ts'} — MAI None: l'ultimo
+@@ -6656,9 +6670,13 @@ def resolve_event_lambdas(*, db, event_id: str, payload: dict, opp_mod: Any,
+             return hit
+     out: Optional[dict] = None
+     # 1) catena di Omega (omega_events → fixture del DB → pre-KO)
++    # 25/09 sera (O1): con i params RISOLTI di Omega, cosi' Safe segue lo stesso
++    # ordine della catena che segue Omega (`lambda_quote_prima`, default ACCESO:
++    # quote pre-KO prima della fixture) invece di dipendere da un default implicito
+     try:
+         fn = getattr(_omega_service(), "_prematch_lambdas", None)
+-        res = fn(db, event_id, payload) if callable(fn) else None
++        res = (fn(db, event_id, payload, params=_omega_params_catena_lambda())
++               if callable(fn) else None)
+         if res and res[0] and res[1]:
+             out = {"lambdas": (float(res[0]), float(res[1])),
+                    "league_id": res[2] if len(res) > 2 else None,
+diff --git a/Betfair/safe_strategy/tests/test_bot_service.py b/Betfair/safe_strategy/tests/test_bot_service.py
+index 3383845..9da1f03 100644
+--- a/Betfair/safe_strategy/tests/test_bot_service.py
++++ b/Betfair/safe_strategy/tests/test_bot_service.py
+@@ -1509,9 +1509,13 @@ class OmegaStub:
+ 
+     def __init__(self, result=None, raises=False):
+         self.result, self.raises, self.calls = result, raises, 0
++        self.params = []
+ 
+-    def _prematch_lambdas(self, db, event_id, payload):
++    # firma del vero (`omega_service._prematch_lambdas`): dal 25/09 sera Safe
++    # passa i params risolti di Omega (O1, `lambda_quote_prima`)
++    def _prematch_lambdas(self, db, event_id, payload, *, state=None, params=None):
+         self.calls += 1
++        self.params.append(params)
+         if self.raises:
+             raise RuntimeError("omega rotto")
+         return self.result
+diff --git a/Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py b/Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py
+new file mode 100644
+index 0000000..7be9c91
+--- /dev/null
++++ b/Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py
+@@ -0,0 +1,87 @@
++# -*- coding: utf-8 -*-
++"""O1 lato Safe (25/09 sera): Safe usa la catena dei lambda di Omega
++(`bot_service.resolve_event_lambdas` -> `omega_service._prematch_lambdas`) e le
++passa i params RISOLTI di Omega, cosi' segue lo stesso ordine di Omega:
++`lambda_quote_prima` ACCESO di default (ordine dell'utente: "per TUTTI i bot i
++valori statistici e gli aiuti di default accesi") = quote 1X2 pre-KO prima
++della fixture.
++
++Si usa la catena VERA di Omega; i finti sono quelli di
++`Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py` (riga `omega_events`
++con `fixture_id`, client PostgREST con la query vera di
++`get_fixture_prematch_lambdas`, `pre_ko` costruito dal produttore vero
++`safe_strategy.scanner.freeze_pre_ko`).
++"""
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from typing import Any
++
++import pytest
++
++from Betfair.omega import omega_model as M
++from Betfair.omega import omega_service as OS
++from Betfair.omega.tests.test_o1_quote_prima_2026_09_25 import (LEGA, _DB, _evento,
++                                                               _pre_ko, client)  # noqa: F401
++from Betfair.safe_strategy import bot_service as S
++
++ADESSO = datetime(2026, 9, 25, 18, 0, tzinfo=timezone.utc)
++
++
++class _OppNessuno:
++    """Il modulo opportunita': qui non deve servire (risponde la catena di Omega)."""
++
++    @staticmethod
++    def resolve_lambdas(payload, fixture=None):
++        raise AssertionError("la catena di Omega doveva rispondere")
++
++
++@pytest.fixture(autouse=True)
++def _cache_pulita():
++    OS._LAMBDA_CACHE.clear()
++    yield
++    OS._LAMBDA_CACHE.clear()
++
++
++def _risolvi(eid: str, payload: dict) -> dict:
++    db = _DB({eid: _evento(eid)})
++    return S.resolve_event_lambdas(db=db, event_id=eid, payload=payload,
++                                   opp_mod=_OppNessuno, now=ADESSO, state={})
++
++
++def test_safe_default_quote_pre_ko_prima_della_fixture(client):  # noqa: F811
++    pk = _pre_ko()
++    atteso = M.lambdas_from_pre_ko(pk)
++    out = _risolvi("s1", {"pre_ko": pk})
++    assert out["source"] == "pre_ko_odds"
++    assert out["lambdas"] == (atteso[0], atteso[1]) and out["league_id"] == LEGA
++    assert client.letture == 0                 # la fixture non si legge
++
++
++def test_safe_passa_i_params_risolti_di_omega(monkeypatch, client):  # noqa: F811
++    visti: list = []
++    vero = OS._prematch_lambdas
++
++    def _spia(db, event_id, payload, **kw):
++        visti.append(kw.get("params"))
++        return vero(db, event_id, payload, **kw)
++
++    monkeypatch.setattr(OS, "_prematch_lambdas", _spia)
++    _risolvi("s2", {"pre_ko": _pre_ko()})
++    assert len(visti) == 1 and isinstance(visti[0], dict)
++    assert visti[0]["lambda_quote_prima"] is True
++
++
++def test_safe_con_lambda_quote_prima_spento_fixture_prima_come_oggi(monkeypatch, client):  # noqa: F811
++    """Con i params di Omega a `lambda_quote_prima=False` (esplicito) Safe torna
++    alla catena di prima: la fixture vince sulle quote."""
++    monkeypatch.setattr(S, "_omega_params_catena_lambda",
++                        lambda: {"lambda_quote_prima": False})
++    out = _risolvi("s3", {"pre_ko": _pre_ko()})
++    assert out["source"] == "fixture"
++    assert out["lambdas"] == (1.9, 0.7) and out["league_id"] == LEGA
++
++
++def test_safe_senza_quote_fixture(client):  # noqa: F811
++    out = _risolvi("s4", {})
++    assert out["source"] == "fixture" and out["lambdas"] == (1.9, 0.7)
+diff --git a/Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py b/Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py
+index d4988ee..7c79d1c 100644
+--- a/Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py
++++ b/Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py
+@@ -166,7 +166,11 @@ def lambda_attuale(fid: int, league_id: Any, fp_postgrest: Optional[dict],
+         OS._LAMBDA_CACHE.pop(eid, None)
+         db = OmegaDbFinto({eid: {"event_id": eid, "fixture_id": int(fid),
+                                  "league_id": league_id, "model": None}})
+-        out = OS._prematch_lambdas(db, eid, {"pre_ko": pre_ko} if pre_ko else {})
++        # 25/09 sera: in produzione O1 e' ACCESO di default (ordine dell'utente);
++        # il braccio ATTUALE della misura resta la catena di PRIMA (fixture in
++        # testa), dichiarata esplicitamente, cosi' la misura e' riproducibile
++        out = OS._prematch_lambdas(db, eid, {"pre_ko": pre_ko} if pre_ko else {},
++                                   params={"lambda_quote_prima": False})
+         OS._LAMBDA_CACHE.pop(eid, None)
+     finally:
+         SDB.get_supabase_client = vecchio   # type: ignore[assignment]
+diff --git a/frontend/src/lib/mike.ts b/frontend/src/lib/mike.ts
+index 05e1624..181e0c4 100644
+--- a/frontend/src/lib/mike.ts
++++ b/frontend/src/lib/mike.ts
+@@ -299,6 +299,8 @@ export interface MikeDossier {
+     rho: number | null;
+     p4_pre: number | null;
+     p_under35_cal: number | null;
++    // M1 (25/09): 'calibrated' | 'raw' | null (dossier scritti prima del 25/09)
++    p_under35_fonte?: string | null;
+     source: string;
+ }
+ 
+@@ -451,6 +453,14 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
+     { key: 'pre_last_entry_min', label: 'Ultimo ingresso (min prima del KO)', kind: 'number', step: 1, min: 1, max: 120, hint: 'in profitto chiude e rientra in PERSIST; in perdita tiene', group: 'pre' },
+     { key: 'last_entry_persist', label: 'Ultimo ingresso in PERSIST', kind: 'bool', hint: 'la posizione entra in live', group: 'pre' },
+     { key: 'last_entry_ticks_above', label: 'Ultimo ingresso: tick sopra il best', kind: 'number', step: 1, min: 0, max: 3, hint: '0 = taker al best', group: 'pre' },
++    // M1 (25/09, PREPARATO, SPENTO): veto sulla P calibrata dell'Under 3.5.
++    // Specchio di Betfair/mike/config.py PARAM_SPEC['veto_p_under35_*'].
++    { key: 'veto_p_under35_cal', label: 'Veto P calibrata Under 3.5 (M1)', kind: 'bool', hint: 'ACCESO di default (misura 25/09: migliora); spento = condotta di sempre. Acceso: all\'ultimo ingresso la posizione in perdita si tiene, e il PERSIST si piazza, solo se la P calibrata dell\'Under 3.5 del dossier regge la quota (soglie qui sotto, interpolate). Senza P calibrata: nessun veto', group: 'pre' },
++    { key: 'veto_p_under35_soglia_130', label: 'Veto M1: P minima a quota 1,30', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,807', group: 'pre' },
++    { key: 'veto_p_under35_soglia_150', label: 'Veto M1: P minima a quota 1,50', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,684', group: 'pre' },
++    { key: 'veto_p_under35_soglia_200', label: 'Veto M1: P minima a quota 2,00', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,514', group: 'pre' },
++    { key: 'veto_p_under35_soglia_250', label: 'Veto M1: P minima a quota 2,50', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,385', group: 'pre' },
++    { key: 'veto_p_under35_soglia_300', label: 'Veto M1: P minima a quota 3,00', kind: 'number', step: 0.001, min: 0, max: 1, hint: 'misura 25/09: 0,275 (incerta: pochi casi)', group: 'pre' },
+     { key: 'cancel_unmatched_after_ko_s', label: 'Cancella residuo PERSIST dopo KO (s)', kind: 'number', step: 10, min: 0, max: 900, hint: 'evita fill su spike dopo un gol', group: 'pre' },
+     { key: 'ko_green_enabled', label: 'Uscita al fischio attiva', kind: 'bool', hint: 'la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta', group: 'fischio' },
+     { key: 'ko_green_ticks', label: 'Uscita a (+tick dall’ingresso)', kind: 'number', step: 1, min: 1, max: 10, hint: 'lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio', group: 'fischio' },
+@@ -548,6 +558,8 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
+     pre_max_spread_ticks: 6, pre_green_ticks: 2, pre_exit_mode: 'resting', pre_entry_ttl_s: 60,
+     pre_max_cycles: 10, pre_reentry_cooldown_s: 60, pre_last_entry_min: 10, last_entry_persist: true,
+     last_entry_ticks_above: 0, cancel_unmatched_after_ko_s: 120,
++    veto_p_under35_cal: true, veto_p_under35_soglia_130: 0.807, veto_p_under35_soglia_150: 0.684,
++    veto_p_under35_soglia_200: 0.514, veto_p_under35_soglia_250: 0.385, veto_p_under35_soglia_300: 0.275,
+     ko_green_enabled: true, ko_green_ticks: 2, ko_green_window_s: 180, ko_green_retry_s: 5,
+     second_entry_enabled: true, second_entry_stake_pct: 50,
+     early_goal_cover_delay_s: 120, early_goal_cover_pct: 50, early_goal_cover2_delay_s: 180,
+@@ -1197,6 +1209,8 @@ export const MIKE_ACTIVITY_KINDS = [
+     // oppure decade perché la strategia non la vuole più.
+     'uscita_proposta', 'uscita_proposta_decaduta', 'uscita_approvata',
+     'uscita_eseguita_su_approvazione',
++    // M1 (25/09, interruttore spento): il veto sulla P calibrata dell'Under 3.5
++    'veto_under_calibrata',
+ ] as const;
+ 
+ /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
+@@ -1230,6 +1244,7 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
+     uscita_proposta_decaduta: { label: 'PROPOSTA DI USCITA DECADUTA', cls: 'bg-white/5 text-slate-300 border-white/10' },
+     uscita_approvata: { label: 'USCITA APPROVATA (utente)', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+     uscita_eseguita_su_approvazione: { label: 'USCITA ESEGUITA SU APPROVAZIONE', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
++    veto_under_calibrata: { label: 'VETO P CALIBRATA UNDER 3.5', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+     settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
+     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+@@ -1400,6 +1415,14 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown>
+             return `hai approvato l’uscita${p.motivo ? ` (${String(p.motivo)})` : ''}: parte al prossimo giro del bot`;
+         case 'uscita_eseguita_su_approvazione':
+             return `uscita eseguita su tua approvazione${p.motivo ? `: ${String(p.motivo)}` : ''}`;
++        case 'veto_under_calibrata': {
++            // M1: dove (tenere in perdita / PERSIST), esito e i tre numeri che decidono
++            const dove = p.punto === 'persist' ? 'ultimo ingresso PERSIST' : 'posizione in perdita all\'ultimo ingresso';
++            const esito = p.esito === 'veto'
++                ? (p.eseguito ? 'VETO: non si tiene / non si rientra' : 'VETO, ma non eseguibile (prezzo assente)')
++                : p.esito === 'nessun_veto' ? 'nessun veto' : 'non valutabile: nessun veto';
++            return `${dove}: ${esito} (${String(p.motivo ?? 'motivo non dichiarato')})`;
++        }
+         case 'settle_gambe_non_piazzate':
+             return `${String(p.quante ?? '?')} gambe pianificate e mai piazzate (importo sotto il minimo): regolate a zero, nessun effetto sul P&L`;
+         case 'loss_exit_deciso': {
+diff --git a/frontend/src/lib/omega.ts b/frontend/src/lib/omega.ts
+index 1212f4a..a9aaeaf 100644
+--- a/frontend/src/lib/omega.ts
++++ b/frontend/src/lib/omega.ts
+@@ -945,7 +945,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
+     v3_p_max_pct: 2,
+     v3_p_min_pct: 1,
+     v3_fusione_mercato: 'auto',
+-    model_red_cards: false,
++    model_red_cards: true,
+     proposta_p_lose_max_pct: 0,
+     uscite_protezione: 'avvisa_e_proponi',
+     price_min: 20,
+@@ -997,7 +997,7 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
+     model_empirical_max_minute: 60,
+     lambda_market_grid: true,
+     lambda_live_fallback: true,
+-    lambda_quote_prima: false,
++    lambda_quote_prima: true,
+     select_cost_aware: true,
+     select_p_band_ratio: 2,
+     model_use_yellow_cards: true,
+@@ -1074,7 +1074,7 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
+             { key: 'model_use_yellow_cards', label: 'Usa i cartellini gialli del feed', type: 'boolean' },
+             { key: 'lambda_market_grid', label: 'λ impliciti nell’intero mercato (CS + Over/Under)', type: 'boolean' },
+             { key: 'lambda_live_fallback', label: 'λ dall’Over/Under LIVE se mancano fixture e quote pre-KO', type: 'boolean' },
+-            { key: 'lambda_quote_prima', label: 'Lambda dalle quote 1X2 pre-KO PRIMA della fixture (O1)', type: 'boolean', hint: 'spento = catena di sempre (fixture prima); si accende solo dopo il replay del banco' },
++            { key: 'lambda_quote_prima', label: 'Lambda dalle quote 1X2 pre-KO PRIMA della fixture (O1)', type: 'boolean', hint: 'ACCESO di default (misura 25/09: migliora); spento = catena di sempre (fixture prima)' },
+             { key: 'select_cost_aware', label: 'A pari probabilità scegli il risultato più economico da coprire', type: 'boolean' },
+             { key: 'select_p_band_ratio', label: 'Banda di probabilità equivalente (× la più bassa)', type: 'number', step: 0.5, min: 1, max: 10 },
+             { key: 'select_k_se', label: 'Selezione conservativa: k × SE', type: 'number', step: 0.1, min: 0, max: 3, hint: '0 = solo il centro (raccomandato finché il banco non misura la SE)' },
+@@ -1163,7 +1163,7 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
+                 { value: 'auto', label: 'auto (fonde modello e mercato)' },
+                 { value: 'off', label: 'off (solo modello)' },
+             ] },
+-            { key: 'model_red_cards', label: 'v3: cartellini rossi nel modello (O5)', type: 'boolean', hint: 'intensita residua per lato moltiplicata per i coefficienti GLOBALI dei rossi (mai per lega), in ingresso e in uscita; spento = modello di sempre; si accende solo dopo il replay del banco' },
++            { key: 'model_red_cards', label: 'v3: cartellini rossi nel modello (O5)', type: 'boolean', hint: 'intensita residua per lato moltiplicata per i coefficienti GLOBALI dei rossi (mai per lega), in ingresso e in uscita; ACCESO di default (misura 25/09: migliora); spento = modello di sempre (rossi ignorati)' },
+             { key: 'v3_k_minimo', label: 'v3: margine minimo k', type: 'number', step: 0.01, min: 1, max: 20, hint: 'P nostra ≤ P implicita / k. Default 1,11 = il bias PRUDENTE misurato in gioco (M4M5M6 §2.3): alzarlo chiude gli ingressi, abbassarlo li apre sotto il bias dimostrato' },
+             { key: 'v3_p_max_pct', label: 'v3: tetto della fascia (p implicita, punti %)', type: 'number', step: 0.5, min: 0.01, max: 50, hint: 'fa due cose: è il TETTO DELLA FASCIA sulla probabilità implicita al tocco (sopra il 2 % il bias misurato in gioco vale 0,71, cioè EV negativo) ed è anche il tetto duro sulla P del nostro modello' },
+             { key: 'v3_p_min_pct', label: 'v3: pavimento della fascia (p implicita, punti %)', type: 'number', step: 0.1, min: 0, max: 50, hint: 'sotto l’ 1 % di probabilità implicita (quote lay sopra ~95) il bias in gioco non è misurato e la liability per unità di EV esplode: quelle celle si scartano' },

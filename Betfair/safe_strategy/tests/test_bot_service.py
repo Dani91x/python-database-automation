@@ -1509,9 +1509,13 @@ class OmegaStub:
 
     def __init__(self, result=None, raises=False):
         self.result, self.raises, self.calls = result, raises, 0
+        self.params = []
 
-    def _prematch_lambdas(self, db, event_id, payload):
+    # firma del vero (`omega_service._prematch_lambdas`): dal 25/09 sera Safe
+    # passa i params risolti di Omega (O1, `lambda_quote_prima`)
+    def _prematch_lambdas(self, db, event_id, payload, *, state=None, params=None):
         self.calls += 1
+        self.params.append(params)
         if self.raises:
             raise RuntimeError("omega rotto")
         return self.result

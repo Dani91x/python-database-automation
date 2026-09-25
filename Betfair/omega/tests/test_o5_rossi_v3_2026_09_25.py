@@ -6,6 +6,10 @@ Decisione dell'utente (25/09 h18): "SE MIGLIORA AGGIUNGILO". Misura:
 AUDIT_2026-09-25/MISURA_PUNTO8_2026-09-25.md sez. 2 (77 partite fuori dal fit,
 log-loss CS FT al primo rosso -0,113 [-0,187; -0,046]).
 
+Interruttore DEFAULT ACCESO (ordine dell'utente del 25/09 sera: "per TUTTI i
+bot i valori statistici e gli aiuti di default accesi"): il ramo spento si prova
+passando SEMPRE `model_red_cards=False` per esteso (`SPENTO`).
+
 Cosa si prova:
   * neutro (rossi 0-0, o interruttore spento) = la griglia di PRIMA al 1e-12,
     contro valori d'oro calcolati dal `omega_v3.py` di `origin/master` 43e1468;
@@ -63,15 +67,18 @@ def _p(**kw: Any) -> Dict[str, Any]:
 
 
 ACCESO = {"model_red_cards": True}
+SPENTO = {"model_red_cards": False}
 
 
 # ---------------------------------------------------------------------------
 # 0. whitelist
 # ---------------------------------------------------------------------------
-def test_interruttore_in_whitelist_default_spento():
-    assert C.DEFAULTS["model_red_cards"] is False
-    assert _p()["model_red_cards"] is False
-    assert C.parametri_v3(_p())["rossi"] is False
+def test_interruttore_in_whitelist_default_acceso():
+    assert C.DEFAULTS["model_red_cards"] is True
+    assert _p()["model_red_cards"] is True
+    assert C.parametri_v3(_p())["rossi"] is True
+    assert C.parametri_v3({})["rossi"] is True
+    assert C.parametri_v3(_p(**SPENTO))["rossi"] is False
     assert C.parametri_v3(_p(**ACCESO))["rossi"] is True
     # la stringa "false" dalla UI resta SPENTA, anche su params gia' risolti
     assert C.parametri_v3({"strategy_version": 3, "model_red_cards": "false"})["rossi"] is False
@@ -104,7 +111,7 @@ def test_neutro_griglia_identica_a_prima_al_1e_12(stato, firma, cella, intens, m
     elif modo == "acceso_senza_rossi":
         kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(**ACCESO), 0, 0)}
     else:
-        kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(), 1, 1)}
+        kw = {"mult_rossi": E.moltiplicatori_rossi_v3(_p(**SPENTO), 1, 1)}
     g = V3.griglia_finale(minuto=m, punteggio=sc, periodo=per, p=p, lambdas=lam, **kw)
     assert abs(sum(v * (1 + 7 * h + 13 * a) for (h, a), v in g.items()) - firma) < 1e-12
     assert abs(g[(sc[0] + 1, sc[1] + 1)] - cella) < 1e-12
@@ -115,6 +122,14 @@ def test_neutro_griglia_identica_a_prima_al_1e_12(stato, firma, cella, intens, m
 # ---------------------------------------------------------------------------
 # 2. i moltiplicatori vengono dal JSON GLOBALE
 # ---------------------------------------------------------------------------
+def test_default_acceso_i_rossi_entrano_senza_toccare_niente():
+    """25/09 sera: coi parametri di DEFAULT (whitelist risolta da vuoto, e
+    anche senza params) un rosso cambia i moltiplicatori."""
+    carded, opp = _coeff_globali()
+    assert E.moltiplicatori_rossi_v3(_p(), 1, 0) == pytest.approx((carded, opp), abs=1e-12)
+    assert E.moltiplicatori_rossi_v3(None, 1, 0) == pytest.approx((carded, opp), abs=1e-12)
+
+
 def test_rosso_in_casa_intensita_moltiplicate_dal_json():
     carded, opp = _coeff_globali()
     mult = E.moltiplicatori_rossi_v3(_p(**ACCESO), 1, 0)
@@ -212,7 +227,7 @@ def _spia_probabilita(monkeypatch: pytest.MonkeyPatch) -> List[dict]:
     ("acceso", None, "neutro"), ("acceso", (0, 0), "neutro"), ("acceso", (1, 0), "json")])
 def test_seleziona_v3_usa_i_rossi_solo_ad_acceso(monkeypatch, params, rossi, atteso):
     chiamate = _spia_probabilita(monkeypatch)
-    pr = _p(**ACCESO) if params == "acceso" else _p()
+    pr = _p(**ACCESO) if params == "acceso" else _p(**SPENTO)
     E.seleziona_v3(_runners(), periodo="ft", minuto=74.0, punteggio=(0, 0), params=pr,
                    lambdas=LAMBDA, parametri_modello=PR.parametri_modello(), rossi=rossi)
     assert len(chiamate) == 1
@@ -224,7 +239,7 @@ def test_seleziona_v3_usa_i_rossi_solo_ad_acceso(monkeypatch, params, rossi, att
 
 
 def test_seleziona_v3_spento_coi_rossi_identico_a_senza_rossi():
-    pr = _p()
+    pr = _p(**SPENTO)
     kw = dict(periodo="ft", minuto=74.0, punteggio=(0, 0), params=pr, lambdas=LAMBDA,
               parametri_modello=PR.parametri_modello())
     a = E.seleziona_v3(_runners(), **kw)
@@ -263,7 +278,7 @@ def test_v3_select_passa_i_rossi_del_feed_e_li_scrive_in_audit(monkeypatch):
 
 def test_v3_select_spento_audit_identico_senza_chiave(monkeypatch):
     chiamate = _spia_probabilita(monkeypatch)
-    visti, audit = _v3_select(monkeypatch, _p(), 1, 0)
+    visti, audit = _v3_select(monkeypatch, _p(**SPENTO), 1, 0)
     assert visti == [(1, 0)]
     assert chiamate[-1]["mult"] == (1.0, 1.0)
     assert "mult_rossi" not in audit
@@ -323,8 +338,8 @@ def test_uscita_acceso_vede_i_rossi_con_la_stessa_p_dell_ingresso(_uscita):
 
 
 def test_uscita_spento_coi_rossi_identica_a_senza_rossi(_uscita):
-    _gira_uscita(_p(), _payload_con_rossi(1, 0))
-    _gira_uscita(_p(), _payload_con_rossi(0, 0))
+    _gira_uscita(_p(**SPENTO), _payload_con_rossi(1, 0))
+    _gira_uscita(_p(**SPENTO), _payload_con_rossi(0, 0))
     assert len(_uscita) == 2
     assert _uscita[0]["mult"] == (1.0, 1.0) == _uscita[1]["mult"]
     assert _uscita[0]["p_evento"] == _uscita[1]["p_evento"]
@@ -337,7 +352,7 @@ def test_uscita_acceso_fonte_della_p_dichiara_i_rossi(_uscita):
     fonti = [str((r.get("payload") or {}).get("p_fonte")) for r in db.richieste]
     fonti += [str(p.get("p_fonte")) for _k, p in db.attivita if p.get("p_fonte")]
     assert fonti and all(f.endswith("+rossi") for f in fonti)
-    db0 = _gira_uscita(_p(), _payload_con_rossi(1, 0))
+    db0 = _gira_uscita(_p(**SPENTO), _payload_con_rossi(1, 0))
     fonti0 = [str((r.get("payload") or {}).get("p_fonte")) for r in db0.richieste]
     assert fonti0 and not any("+rossi" in f for f in fonti0)
 

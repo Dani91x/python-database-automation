@@ -272,7 +272,25 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                # dell'utente (``engine.gate_uscite``). Un riavvio non deve far
                # sparire dalla scheda un'uscita in attesa di firma, ne' perdere
                # la firma appena data.
-               "uscita_proposta", "uscita_approvata")
+               "uscita_proposta", "uscita_approvata",
+               # M1 (25/09, PREPARATO, SPENTO): il veto sulla P calibrata
+               # dell'Under 3.5 scattato su questa partita. Un riavvio non deve
+               # far rientrare col PERSIST una posizione chiusa per il veto.
+               "veto_u35")
+
+
+def _p_under35_calibrata(dossier: Dict[str, Any]) -> Optional[float]:
+    """M1 (25/09): la P dell'Under 3.5 del dossier SOLO se viene da
+    ``markets_calibrated`` (``dossier.p_under35_fonte == 'calibrated'``). Il
+    ripiego sui mercati grezzi, e un dossier scritto prima del 25/09 (senza la
+    fonte), danno None: il veto non ha una P su cui decidere e tace."""
+    if not isinstance(dossier, dict) or dossier.get("p_under35_fonte") != "calibrated":
+        return None
+    try:
+        p = float(dossier.get("p_under35_cal"))
+    except (TypeError, ValueError):
+        return None
+    return p if 0.0 <= p <= 1.0 else None
 
 
 # ===========================================================================
@@ -3396,7 +3414,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                cover_gain_pct=live.get("cover_gain_pct"),
                                pressure=float(live.get("pressure") or 1.0),
                                model_probs=live.get("model_probs"),
-                               p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"))
+                               p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"),
+                               p_under35_cal=_p_under35_calibrata(dossier))
     if snap is None:
         # payload senza ``open_date`` (o non leggibile): la partita smetterebbe di
         # essere decisa SENZA dire niente. Con una posizione aperta e' un allarme.
@@ -3648,7 +3667,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                      # o parte su approvazione. Il motore le emette SOLO al
                      # cambiamento, vedi engine.gate_uscite: nessun log a giro.
                      "uscita_proposta", "uscita_proposta_decaduta",
-                     "uscita_eseguita_su_approvazione"):
+                     "uscita_eseguita_su_approvazione",
+                     # M1 25/09, interruttore SPENTO: il veto sulla P
+                     # calibrata dell'Under 3.5, con P, soglia e quota. Nasce
+                     # SOLO nei due passaggi una-tantum all'ultimo ingresso;
+                     # niente parentesi qui: il contratto UI legge la tupla.
+                     "veto_under_calibrata"):
                 if k == "cashout":
                     extra["last_cashout"] = v
                 elif k == "cover_wait":
