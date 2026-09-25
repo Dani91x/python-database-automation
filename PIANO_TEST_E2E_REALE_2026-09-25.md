@@ -38,6 +38,60 @@ Come si legge ogni controllo: **cosa fa ora → cosa ci aspettiamo → come si v
 
 ---
 
+## 0-bis. Inventario e regola della certificazione globale (aggiunta del coordinatore, 25/09 sera)
+
+Ordine dell'utente (testuale, 25/09 sera): «certificazione globale di ogni singola componente, non date nulla
+per scontato, tutte le pagine campo per campo verificate col database». Base dell'inventario: commit `e7d7553`
+(11 fork Opus in parallelo, sola lettura su `c9c9a84`) —
+`INVENTARIO_COMPONENTI_2026-09-25.md` (482 componenti, `C001`-`C482`, con avvio/vita/spegnimento di ognuna) e
+`INVENTARIO_CAMPI_UI_2026-09-25.md` (542 campi a video, `U0001`-`U0542`). Questo piano (§3, §7) copre i
+PERCORSI (clic → RPC → DB → servizio) e le PROVE di sistema (§4, §7.1-§7.9); l'inventario copre l'ESAUSTIVITÀ:
+ogni componente e ogni campo devono comparire in QUALCHE controllo di QUALCHE fase, con un'evidenza propria
+(query, log, screenshot). **Regola dell'utente: senza evidenza = NON CERTIFICATO.** Non basta che un controllo
+generico «passi»: se un componente o un campo dell'inventario non ha una riga di evidenza che lo cita per
+`id` (C-xxx o U-xxxx), quel componente resta NON CERTIFICATO e va scritto così nel referto finale, non
+sottinteso come «coperto dagli altri controlli». La sessione admin-26 (o chi certifica) tiene la mappa
+id-inventario → controllo che lo copre; i buchi (componenti/campi senza controllo) si portano all'utente,
+non si chiudono da soli.
+
+## 3-bis. Verifica semantica (in aggiunta ai percorsi UI→RPC→DB→servizio di §3 e alle prove di sistema di §7)
+
+Per ogni bot/pagina, oltre a «il clic scrive la riga giusta» (§3) e «il servizio la rilegge» (§4/§7), si verifica
+il CONTENUTO nel merito, in sei passi:
+- **A — dati in ingresso vs libro vero/IPS a campione:** un campione di righe di `safe_strategy_scan`/feed
+  confrontato a mano col book Betfair (Exchange Stream o sito) e con l'IPS (punteggio/minuto) nello stesso istante.
+- **B — decisioni ricalcolate con le funzioni di produzione:** MAI reimplementare la logica; si importano le
+  STESSE funzioni di produzione (`omega_config.resolve_params`, `bot_service.modalita_di_strategia`,
+  `mike/engine.decide`, ecc., già elencate come sonde in §1.7) e si ricalcola la decisione dagli STESSI input
+  letti dal DB, confrontando col trade/proposta che è uscito davvero.
+- **C — condizioni del manuale per ogni ingresso/mancato ingresso:** per ogni trade aperto (o proposta
+  scartata), si verifica che le condizioni documentate della strategia (soglie, veti, banda) fossero TUTTE
+  vere (o che almeno una fosse falsa, per uno scarto); si usa la stessa lista di condizioni di §4/§7, non una
+  nuova.
+- **D — numeri a video vs DB/ricalcolo:** ogni numero mostrato (P&L, esposizione, prezzo medio, stake) si
+  confronta con la somma/aggregazione delle righe DB dello stesso perimetro (stesso bot, stessa modalità,
+  stesso giorno) E col ricalcolo indipendente del passo B.
+- **E — casi subdoli:** righe con `NULL` in un campo atteso, doppie scritture ravvicinate (reperto A del 18/09,
+  P12), letture "vince il più recente" quando due fonti (canale/DB) discordano, arrotondamenti al centesimo,
+  fusi orari (`updated_at` UTC vs ora locale a video).
+- **F — KO con evidenza, nessuna correzione:** ogni divergenza trovata in A-E si scrive come KO con file:riga
+  o query di evidenza (stesso formato del catalogo §9-bis) e si porta al coordinatore/all'utente; il test NON
+  corregge il codice per farla sparire (regola generale, CLAUDE.md).
+
+## 3-ter. Fase 3 — pagine, campo per campo (dopo la fase 2, su indicazione dell'utente)
+
+Ogni PAGINA della UI, campo per campo, con lo schema: **visto a video → riga DB che lo alimenta → ricalcolo
+indipendente (passo B di §3-bis) → tolleranza dichiarata (es. arrotondamento al centesimo, età in secondi) →
+coerenza con le ALTRE pagine che mostrano lo stesso numero (mai due verità per lo stesso dato) → caso limite
+(riga assente, `NULL`, doppia fonte)**. Ogni campo trovato si spunta con l'`id` di `INVENTARIO_CAMPI_UI` (§0-bis);
+un campo non in inventario si aggiunge lì prima di certificarlo. Divisione del lavoro fra le due sessioni
+(decisione del coordinatore, evita sovrapposizioni):
+- **sessione B:** Dashboard (le 6 tab), Analytics/Reportistiche, pagine Omega/Safe/Mike dedicate, Live P&L
+  (`/live-pnl`), sheet dei parametri (`OmegaParamsSheet`/`MikeParamsSheet`/`SafeStrategy` params).
+- **sessione admin-26:** Control Room, Segui Live, Market Watch, Tennis Terminal.
+
+---
+
 ## 1. Prerequisiti
 
 ### 1.1 Migrazioni: applicate / da applicare (verificare PRIMA, in sola lettura)
@@ -60,6 +114,7 @@ Fonte: cronostoria 25/09 e file in `migrations/`. «Applicata» = dichiarata app
 | `safe_tennis_backmin_102_2026-09-25.sql` | **NECESSARIA** (cronostoria h20:40: sul DB `tennis.backMin`=1,01) | Safe tennis 1,02 (Q5) | `select params->'tennis'->>'backMin' from safe_strategy_control;` → `1.02` |
 | `safe_base_banca_20_34_2026-09-25.sql` | facoltativa (il default del codice vale già) | pulizia `favLive*` | `select params->'base' from safe_strategy_control;` |
 | `get_direction_eta_2026-09-25.sql`, `market_delays_ht_2026-09-25.sql` | da verificare in cronostoria (sessione B, audit 5: «DA APPLICARE (utente): 3 migrazioni + indice») | dashboard (fuori dai bot) | firme RPC |
+| `uscite_manuali_default_2026-09-25.sql` | **DA APPLICARE PRIMA della fase 2** (aggiunta dal coordinatore, verificata sul codice: la migrazione esiste, non risulta ancora applicata) | porta a MANUALE il default delle uscite discrezionali di TUTTI i bot (Mike, Safe base/esatto/punta/tennis/model, scalper, i 4 bot tennis), decisione utente 25/09 sera, commit `890992f`; ADDITIVA e idempotente, aggiorna anche le righe GIA' scritte, non solo il default SQL | verifica dopo l'apply (dalla stessa migrazione, righe 133-138): `select id, params->'uscite_automatiche' from public.mike_control;`, `select id, params->'tennis_exit_approval', params->'uscite_automatiche' from public.safe_strategy_control;`, `select event_id, params->'uscite_automatiche' from public.scalper_control;`, `select bot_key, uscite_automatiche from public.tennis_bot_service_control;` → tutto `false` (Safe: mappa con le 5 strategie a `false`, `tennis_exit_approval=true`) |
 
 **Criterio:** ogni riga «DA APPLICARE» è applicata o dichiarata «non applicata, il percorso X si salta». Un percorso
 che dipende da una migrazione non applicata **non si testa** e si scrive nel referto (non si «prova lo stesso»).
@@ -85,6 +140,19 @@ di questi nomi (es. `Select-String -Path .env -Pattern '^(NOME1|NOME2|...)='`), 
 | `HAZARD_ATLAS_SYNC` | 1 (messo dal coordinatore il 25/09 h13:05) | atlante a domanda + v4 | cronostoria 25/09 |
 | `LIVE_TEMPI_ORDINE` | assente o 1 (acceso di serie) | righe `tempi_ordine` nel log (Z5) | `F0_TEMPI_ORDINE` §0 |
 | `TENNIS_AUTO_MAX_PARTITE`, `SCALPER_AUTO_MAX_PARTITE` | assenti (default 5 e 2) | tetti auto-mode | `tennis_live/auto_mode.py`; `scalper/auto_mode.py:66-67,130` |
+
+**Correzione (verificata sul codice di oggi):** la riga `MOTORE_ORDINI_CANALE` sopra descrive il DEFAULT di
+baseline (assente). Per provare **§7.2** (auto-follow calcio + strada canale) serve un `.env` DIVERSO, acceso
+apposta per quel blocco, PRIMA di avviare l'app:
+`MOTORE_ORDINI_CANALE=1` (l'AUTO-FOLLOW stesso non nasce senza: è costruito DENTRO lo stesso `if` del motore,
+`Betfair/stream/runner.py:1896-1903` — vedi §7.2), `SCALPER_CANALE=1` (per leggere Z11 dal canale 47338, come
+già detto sopra), `LIVE_MARKET_TYPES` coi 13 nomi della whitelist committata (`Betfair/stream/config_stream.py:188-192
+LIVE_MARKET_TYPES_PROPOSTA`, valore da riportare uguale nel `.env`: `MATCH_ODDS`, `CORRECT_SCORE`,
+`HALF_TIME_SCORE`, `HALF_TIME`, `BOTH_TEAMS_TO_SCORE`, `OVER_UNDER_05`, `OVER_UNDER_15`, `OVER_UNDER_25`,
+`OVER_UNDER_35`, `OVER_UNDER_45`, `OVER_UNDER_55`, `OVER_UNDER_65`, `OVER_UNDER_75` — riduce i mercati per evento,
+decisione dell'utente non presa: la costante resta vuota finché non si decide, `config_stream.py:183-187`).
+`SAFE_ORDINI_VIA_CANALE`/`OMEGA_ORDINI_VIA_CANALE` restano un gradino SUCCESSIVO (solo l'instradamento degli
+ordini), non servono per far nascere l'auto-follow.
 
 **Se non torna:** un interruttore di canale spento non rompe niente (il ripiego è il DB) ma la fase 2 misurerà la
 fonte «db» invece di «canale»: va saputo PRIMA, non scoperto a video.
@@ -124,7 +192,17 @@ union all select 'omega_manual_requests', status, count(*) from public.omega_man
 union all select 'mike_requests', status, count(*) from public.mike_requests where status in ('pending','processing') group by status
 union all select 'tennis_live_order_queue', status, count(*) from public.tennis_live_order_queue where status in ('pending','processing') group by status
 union all select 'betfair_live_order_requests', status, count(*) from public.betfair_live_order_requests where status in ('pending','processing') group by status;
+-- righe di follow tennis GIA' presenti PRIMA del test (aprire il Tennis Terminal ne scrive di nuove: vedi nota sotto)
+select event_id, market_id, status, created_at from public.tennis_live_follow order by created_at desc;
 ```
+
+**Nota (verificata sul codice):** aprire la pagina **Tennis Terminal** su una partita (`frontend/src/pages/TennisTerminal.tsx:112-116`,
+`useEffect` che chiama `followTennisEvent(eventId, marketId)`) scrive SEMPRE, anche ad app spenta (è una RPC
+Supabase diretta, non serve il runner), una riga in `tennis_live_follow` tramite la RPC `tennis_follow_event`
+(`frontend/src/lib/tennis.ts:179-186`; RPC in `migrations/tennis_live.sql:189-256`, upsert su `event_id` con
+`status='PENDING'`). La query sopra fotografa lo stato PRIMA: se durante la fase 1 (P19-P21, tennis) si apre il
+Terminal per guardare una partita, quella riga (`event_id`) NON era nella fotografia e va cancellata esplicitamente
+nel ripristino (§5.1), non solo confrontata col diff.
 
 Colonne verificate sulle migrazioni: `omega_control`/`mike_control`/`safe_strategy_control` (id, status, mode,
 params, stats, error, started_at, stopped_at, updated_at; Omega anche `daily_goal`), `tennis_bot_service_control`
@@ -313,7 +391,9 @@ vuol dire login sbagliato, non un difetto del percorso.
 - **Riga attesa:** `params->'uscite_automatiche'` = `false` poi `true`; il resto invariato.
 - **Servizio:** `Betfair/mike/engine.py:2282 gate_uscite` (ultima parola di `decide`), costanti `:2194-2209`.
   Sonda S-MIKE (`merge_params` → `uscite_automatiche`).
-- **Ripristino:** valore della fotografia (default assente = `true`).
+- **Ripristino:** valore della fotografia. **Corretto:** il default NON è più `true` — decisione utente 25/09 sera
+  (commit `890992f`, migrazione `uscite_manuali_default_2026-09-25.sql`, §1.1): il default applicativo e quello
+  scritto sul DB sono ora `false` (uscite manuali) per Mike come per tutti i bot.
 
 ### Safe (base / esatto / punta / tennis / modello / a mano)
 
@@ -426,11 +506,13 @@ select status, mode, params->'variants' as varianti, params->'strategy_modes' as
   tre invariati. Dopo ferma: `status='stopping'`, `stopped_at`≈ora.
 - **Servizio:** `Betfair/stream/tennis_live/tennis_bot_service.py:402 riconcilia_interruttori` (legge
   `list_tennis_bot_services`, `stato_desiderato` `:336-362`). Sonda S-TENNIS.
-- **Ripristino:** ferma → §5.1. **Nota:** a un avvio nuovo il ponte riporta a `stopped` SOLO lo `status`, NON la
-  `mode` (`tennis_bot_service.py:799-846`, `set_tennis_bot_service_state` `tennis_db.py:550-573` non scrive `mode`):
-  il test lascia la `mode` a `paper` a mano (§5.1). **Reperto da portare**: diverso da Omega/Mike/Safe
-  (`avvio_app.py:212-220` scrive `mode='paper'`). Non pericoloso oggi perché ogni accensione riscrive la modalità
-  (`avviaBot` la passa sempre), ma è un'asimmetria.
+- **Ripristino:** ferma → §5.1. **Nota (corretta, R2 chiuso da `6ac2543`):** a un avvio nuovo il ponte riporta a
+  `stopped` SIA lo `status` SIA la `mode='paper'` (`tennis_bot_service.py:806-855 ferma_interruttori_al_nuovo_avvio`,
+  riga 847-848: `db.set_tennis_bot_service_state(bot, status="stopped", stopped=True, stats=stats, mode="paper")`),
+  come Omega/Mike/Safe (`avvio_app.py:212-220`). **Reperto R2 chiuso**, non più aperto (§9 aggiornato): la versione
+  precedente di questa riga diceva «SOLO lo `status`, NON la `mode`» — era vera prima del commit `6ac2543` (25/09
+  sera), non più oggi. La riga da controllare in fase 2 (Z0.2) è che una riga rimasta `stopping` da PRIMA del fix
+  (residuo del 24/09) venga effettivamente ripresa al prossimo avvio nuovo: vedi Z0.2.
 
 #### P20 — Tennis: uscite automatiche/manuali per bot
 - **UI:** componente `UsciteTennis` montato nella riga dei 4 bot (`frontend/src/pages/ControlRoom.tsx:458`,
@@ -532,18 +614,26 @@ select status, mode, params->'variants' as varianti, params->'strategy_modes' as
   `live_order_mode_avvio` `:108-160`).
 - **Se non torna:** `kill_switch` cambiato = la RPC viva non è quella del file.
 
-#### P27 — Kill-switch (freno globale)
-- **UI (NON è in Control Room):** pagina Segui Live → `LiveControlsPanel` (`frontend/src/pages/SeguiLive.tsx:857`,
+#### P27 — Kill-switch / freno unico (R3, commit `6ac2543`)
+- **UI:** DUE punti, stessa RPC. (a) pagina Segui Live → `LiveControlsPanel` (`frontend/src/pages/SeguiLive.tsx:857`,
   `components/live/LiveControlsPanel.tsx:137-160`): attivazione SENZA conferma, disattivazione con `window.confirm`;
-  scorciatoia `Esc` in Segui Live (`SeguiLive.tsx:451-460,476`, con `window.confirm` in attivazione).
+  scorciatoia `Esc` in Segui Live (`SeguiLive.tsx:451-460,476`, con `window.confirm` in attivazione). (b) **Corretto
+  (reperto chiuso, non più aperto come nella versione precedente di questa riga):** ORA c'è anche una riga in
+  Control Room, accanto a «Ordini reali» — `frontend/src/components/controlroom/RigaFreno.tsx`
+  (`data-testid="cr-freno"`, stato `cr-freno-stato`, fonte `cr-freno-fonte`, età `cr-freno-quando`): `cr-freno-tira`
+  = TIRA IL FRENO, un clic, nessuna domanda (come «FERMA TUTTI»); `cr-freno-rilascia` → doppia conferma
+  (`cr-freno-conferma-1`, `cr-freno-conferma-2`) per rialzarlo — mai automatico.
 - **Codice/RPC:** `liveOrders.ts:683-688 setKillSwitch` → `set_live_kill_switch(p_on)` —
   `migrations/betfair_live_controls.sql:85-110`.
 - **Riga attesa:** `betfair_live_settings.kill_switch=true`, poi `false`; `order_mode` INVARIATO.
 - **Servizio:** `trading/controls.py:107 motivo_kill_switch` (env + DB, cache 2 s) → S-ORDINI stampa
   `db_kill_switch_attivo`; worker `live_order_worker.py:3576-3580` (ciclo), `:3622-3633` (per riga: apertura
-  rifiutata, chiusura servita), canale `:3346-3349`; tennis `guardie_tennis.py:236,281-294`.
-- **Ripristino:** `false` (confermando il dialogo). **Reperto per l'utente:** il kill-switch non ha una riga in
-  Control Room (solo Segui Live): da decidere se serve lì.
+  rifiutata, chiusura servita), canale `:3346-3349`; tennis `guardie_tennis.py:236,281-294`. **Corretto:** con
+  `6ac2543` il freno tirato ferma ANCHE Mike (`execution._freno_aperture`, `_freno_resting_paper`) e lo scalper
+  calcio (`scalper_service.py:613-619 freno_supervisore`/`scalper_session.motivo_freno`), non più solo
+  runner/tennis come nella versione precedente di questa riga (vedi Z13.4).
+- **Ripristino:** rilasciare da entrambi i punti UI porta alla stessa riga: verificare `kill_switch=false` una
+  volta sola (confermando il dialogo).
 
 #### P28 — Richieste manuali Safe (`safe_request_*`)
 - **In fase 1 solo il contratto, senza righe nuove** (con bot fermi non esistono proposte vere, e una riga
@@ -610,7 +700,8 @@ esegue il blocco del bot (Z4) prima della successiva.
 | # | cosa fa ora | cosa ci aspettiamo | come si verifica | se non torna |
 |---|---|---|---|---|
 | Z0.1 | `avvio_app.ferma_al_nuovo_avvio` (`Betfair/stream/avvio_app.py:151-254`) a ogni avvio NUOVO (`APP_BOOT_ID` nuovo, `desktop/main.js:42,230`) scrive `status='stopped'`, `mode='paper'`, timbra `stats.boot_id` | Omega/Mike/Safe `stopped`+`paper`; Safe tutte le `strategy_modes` a `paper` (`bot_service.py:8755 strategy_modes_a_paper`); attività `avvio_app_bot_fermato` SOLO se c'era qualcosa da fermare | query §1.5 dopo 60 s dall'avvio; `select ts, kind, payload from omega_activity where kind='avvio_app_bot_fermato' order by ts desc limit 3;` (idem `safe_strategy_activity`, `mike_activity`) | un bot `running` senza clic = difetto 22 del catalogo: **FERMA TUTTI e stop del test** |
-| Z0.2 | tennis: `ripresa_ponte` (`tennis_bot_service.py:849-868`) ferma righe per partita e interruttori di un avvio vecchio; runner tennis `guardie_tennis.py:317 ripresa_all_avvio` | tutti i `tennis_bot_service_control` `stopped` (mode invariata, vedi P19); nessuna `tennis_bot_control` attiva | query §1.5 | righe attive = guardia del ponte non riuscita (log `[tennis-bot-svc] controllo d'avvio del ponte NON riuscito`) |
+| Z0.2 | tennis: `ripresa_ponte` (**corretto**: `tennis_bot_service.py:862-881`, non `:849-868`) chiama `ferma_bot_al_nuovo_avvio` (righe per partita) POI `ferma_interruttori_al_nuovo_avvio` (`:806-855`, interruttori) di un avvio vecchio; runner tennis `guardie_tennis.py:317 ripresa_all_avvio` | tutti i `tennis_bot_service_control` `status='stopped'` **E `mode='paper'`** per i 4 bot (fix R2, `6ac2543`, non più «mode invariata» come diceva P19 in precedenza); nessuna `tennis_bot_control` attiva | query §1.5 | righe attive = guardia del ponte non riuscita (log `[tennis-bot-svc] controllo d'avvio del ponte NON riuscito`) |
+| Z0.2bis | **[coordinatore, verifica aggiunta]** una riga `tennis_bot_service_control` rimasta `status='stopping'` da PRIMA del fix R2 (residuo noto sul DB del 24/09, non ancora passato da un avvio nuovo con `6ac2543` in produzione) | dopo un avvio NUOVO dell'app (boot_id diverso, non un riavvio del watchdog: `ferma_interruttori_al_nuovo_avvio` salta se `AA.stesso_avvio(r.get("stats"), boot)`, `:839-840`) | `select bot_key, status, mode from tennis_bot_service_control;` → tutti e 4 `status='stopped'`, `mode='paper'` | coerente | un bot ancora `status='stopping'` dopo l'avvio nuovo = KO del fix R2 (`6ac2543`): il residuo del 24/09 non è stato ripreso, `acceso = status in ('running','stopping')` a `:833` non l'ha intercettato — fermarsi e portarlo al coordinatore |
 | Z0.3 | scalper: guardia `scalper-auto` (`scalper_service.py:295,363`) + `ferma_sessioni_al_nuovo_avvio` (`:225`) | `scalper_service_control` `stopped/paper`; nessuna sessione attiva | `select status, mode from scalper_service_control; select status, count(*) from scalper_control group by 1;` | sessione viva = scalper riparte da solo |
 | Z0.4 | runner calcio dichiara il tetto e scende la scelta a `paper` all'avvio nuovo (`live_order_mode_avvio`, `runner.py:1641`, `modo_ordini.py:300-315`) | `order_mode='paper'` (mai salito), `order_mode_tetto` = `LIVE_ORDER_MODE` del `.env`, `order_mode_boot_id` nuovo | `select order_mode, order_mode_tetto, order_mode_tetto_at, order_mode_boot_id, order_mode_updated_by from betfair_live_settings;` | `order_mode='live'` dopo un avvio nuovo = regola «mai ereditare» violata |
 | Z0.5 | processi e porte | ~16 processi dell'app (24/09: 15 + ora lo scalper-service), porte 47330-47338 in ascolto (47338 solo con `SCALPER_CANALE=1`) | `Get-NetTCPConnection -State Listen \| ? LocalPort -in 47330..47338` | porta mancante = processo non partito: log della console |
@@ -738,13 +829,20 @@ dati giusti; (d) ordini paper ed esiti; (e) informazioni a video corrette; (f) u
     from public.fixture_predictions
    where (tactical_engine_json->>'generated_at')::timestamptz >= '<istante del primo run dopo 43e1468>';
   ```
-  → `negativi = 0`. Chi rigenera i payload (action o processo) è **da verificare**.
+  → `negativi = 0`. **Chi rigenera (verificato):** l'action `today_predictions_backfill`
+  (`.github/workflows/today_predictions_backfill.yml:44,46`, esegue `python -m Prediction.today_predictions_backfill`),
+  che in coda chiama il terzo motore additivo (`Prediction/today_predictions_backfill.py:2741-2746`:
+  `from tactical_engine.serving import run_for_date as _tactical_run; _te_res = _tactical_run(target_date)`,
+  avvolto in try/except non-fatale). Il controllo `negativi=0` va quindi fatto sui payload con `generated_at`
+  successivo all'ultimo run di QUESTA action dopo `43e1468` (`gh run list --workflow
+  today_predictions_backfill.yml -L 3`).
 - **Se non torna:** negativi > 0 dopo il fix = il run non usa il codice nuovo o il fix non copre la previsione.
 
 ### Z9 — Catchup e quota API
 
 - **Atteso:** `gh run list --workflow seasons_catchup.yml -L 3` verde; nel log il **REFERTO BUCHI**
-  (`seasons_catchup.py:318-379`) con il conto delle lega-stagioni aperte in calo rispetto a 961 (25/09 h19:20);
+  (**corretto**: `seasons_catchup.py:799` e seguenti — funzione `referto_buchi`, stampa `"REFERTO BUCHI"` a `:803`;
+  non `:318-379` come nella versione precedente di questa riga) con il conto delle lega-stagioni aperte in calo rispetto a 961 (25/09 h19:20);
   contatore API sotto 7.500 con riserva 3.000 (`api_quota.py`).
 - **Se non torna:** exit 1 con «BUCO VECCHIO» = buco > 3 giorni con budget (regola fail-loud).
 
@@ -767,7 +865,7 @@ righe `stopping` (tennis).
 | Z13.1 | nessun bot opera all'avvio | Z0 | tutto `stopped/paper` | STOP del test |
 | Z13.2 | paper e live mai insieme | (a) scalper: acceso paper → tentativo live → rifiuto SQL (P22); (b) Safe: con una strategia paper e il tetto paper nessuna riga `live` in nessuna tabella; (c) P&L a video mai sommati: `cr-bot-pnl-<id>` porta «in prova» | `select mode, count(*) from <ogni tabella trade/ordini> where …::date=current_date group by 1;` → solo `paper` | una riga `live` = STOP |
 | Z13.3 | calcio e tennis distinti | P15 («solo tennis» dichiarato), topic separati (`safe_posizioni_calcio/tennis`, `canale_bot.py:89-93`), scheda calcio senza tennis e viceversa (`interruttoriDiSport`) | nessuna riga tennis nella scheda calcio | — |
-| Z13.4 | kill-switch lascia passare solo le chiusure | con posizioni paper aperte: kill-switch ON (P27) → attendere un'apertura → OFF | coda calcio: aperture `error` «kill-switch ATTIVO: apertura RIFIUTATA», chiusure servite (`live_order_worker.py:3622-3633`); tennis: `TENNIS_KILL_SWITCH` rifiuta le aperture (`guardie_tennis.py:281-294`); **Mike paper e scalper calcio: dal codice il freno NON li ferma** (Mike: freno solo sulle aperture REST/appoggiate live, `mike/service.py:1219-1230`; scalper: solo il file `STOP_SCALPER`, `scalper_service.py:13,41`) | se Mike/scalper aprono col freno tirato: è il comportamento del codice → **reperto da portare all'utente** (non un guasto del test) |
+| Z13.4 | kill-switch lascia passare solo le chiusure | con posizioni paper aperte: freno ON (P27, `RigaFreno.tsx`) → attendere un'apertura → OFF | coda calcio: aperture `error` «kill-switch ATTIVO: apertura RIFIUTATA», chiusure servite (`live_order_worker.py:3622-3633`); tennis: `TENNIS_KILL_SWITCH` rifiuta le aperture (`guardie_tennis.py:281-294`); **Corretto (R3 chiuso, commit `6ac2543`, non più aperto come nella versione precedente di questa riga): il freno ora è UNICO e ferma OGNI apertura, live E paper, di TUTTI i bot**, Mike e scalper calcio compresi: Safe calcio/tennis e Mike via `execution._freno_aperture` (+ Mike `_freno_resting_paper`), Omega via percorso paper col freno, scalper via `scalper_service.py:613-619 freno_supervisore()`/`scalper_session.motivo_freno()` (sessione non si arma, sorvegliante 2 s → force-flat e sessione `stopped`, supervisore non riavvia) | un'apertura passata col freno tirato, su QUALUNQUE bot = R3 rotto, **STOP** immediato (money-critical) |
 | Z13.5 | uscite manuali = proposte, protezioni sempre automatiche | per ogni bot: uscite manuali → attendere una condizione d'uscita | proposta a video e sul DB, nessun ordine d'uscita discrezionale; stop/cap eseguiti | ordine d'uscita discrezionale a uscite manuali = gate rotto |
 
 ### Z14 — Confronto finale con il DB (il più approfondito)
@@ -801,13 +899,20 @@ update public.tennis_bot_service_control set status='stopped', mode='paper', sto
  where status in ('stopping','running');
 update public.tennis_bot_control set status='stopped', stopped_at=now(), updated_at=now()
  where status in ('requested','arming','armed','running','stopping');   -- solo righe create dal test (filtrare per event_id)
+-- righe di tennis_live_follow scritte APRENDO il Tennis Terminal durante la fase 1 (§1.5): cancellare
+-- SOLO gli event_id assenti dalla fotografia iniziale (ON DELETE CASCADE ripulisce anche tennis_live_now/
+-- tennis_live_ladder collegate, migrations/tennis_live.sql:56-65,73-82)
+delete from public.tennis_live_follow where event_id in (<event_id aperti nel Terminal durante il test, non nella fotografia>);
 ```
 Poi P32 (diff con la fotografia). Se `params` differisce, si rimette la colonna della fotografia **per intero**
 (`update ... set params = '<json fotografato>'::jsonb`) — è l'unico caso in cui si riscrive `params`.
 
 Rete di sicurezza (non sostituisce il ripristino): al primo avvio NUOVO dell'app Omega/Mike/Safe tornano
-`stopped/paper` (`avvio_app.py:212-220`), il ponte tennis ferma gli interruttori (`tennis_bot_service.py:799-846`,
-senza toccare `mode`), lo scalper ferma l'interruttore (guardia `scalper-auto`), `order_mode` scende a `paper`.
+`stopped/paper` (`avvio_app.py:212-220`), il ponte tennis ferma gli interruttori **E la modalità**
+(`tennis_bot_service.py:806-855 ferma_interruttori_al_nuovo_avvio`, riga 847-848: `status="stopped"`,
+`mode="paper"` — fix R2, commit `6ac2543`, §9 aggiornato; NON più «senza toccare `mode`» come diceva la
+versione precedente di questa riga), lo scalper ferma l'interruttore (guardia `scalper-auto`), `order_mode`
+scende a `paper`.
 
 ### 5.2 Fine fase 2
 
@@ -831,7 +936,7 @@ senza toccare `mode`), lo scalper ferma l'interruttore (guardia `scalper-auto`),
 | approvazione della singola chiusura dello scalper | non implementata (dubbio 4 del referto uscite) |
 | trading manuale dal ladder in LIVE | fuori dal perimetro paper; il PAPER del ladder si può provare in Z6 se l'utente vuole |
 | B17 «a mercato vs prezzo visto» per le uscite Omega/Safe | decisione aperta dell'utente: oggi il servizio esegue a mercato, il prezzo visto si salva soltanto |
-| kill-switch in Control Room | non esiste (solo Segui Live): da decidere, non da testare |
+| ~~kill-switch in Control Room | non esiste (solo Segui Live): da decidere, non da testare~~ | **corretto (6ac2543): ORA esiste** (`RigaFreno.tsx`, P27): SI TESTA, non va più tolto dal perimetro |
 | stop giornaliero del tennis (E34) | decisione dell'utente del 25/09 h17:15: resta com'è |
 | forza pre-partita nell'atlante v4 | non collegata (servono id squadra): decisione dell'utente |
 | scanner/Betfair sotto carico, riconnessioni, 10 connessioni per app key | non provocabili senza toccare il sistema in esercizio |
@@ -870,11 +975,16 @@ loro.
 
 ### 7.2 Auto-follow degli eventi dei bot e strada unica degli ordini (decisione D-1)
 
-Fonte: `AUTO_FOLLOW_TUTTI_I_BOT.md` (intero) e `STRADA_UNICA_BANCO_E_PAPER.md` §5 (intero). Le due cose
-condividono la stessa decisione dell'utente (D-1, §1.2 e §6 del piano): SENZA `MOTORE_ORDINI_CANALE`,
-`SAFE_ORDINI_VIA_CANALE`, `OMEGA_ORDINI_VIA_CANALE` accesi, l'auto-follow funziona lo stesso (i bot
-seguono le partite da soli) ma l'INVIO ordini resta sulla coda DB di sempre: sono due interruttori
-distinti, testabili separatamente. **Prima di accendere, in quest'ordine** (`STRADA_UNICA_BANCO_E_PAPER.md`
+Fonte: `AUTO_FOLLOW_TUTTI_I_BOT.md` (intero) e `STRADA_UNICA_BANCO_E_PAPER.md` §5 (intero). **Correzione
+(verificata sul codice di oggi, il file è cambiato dopo la stesura di questa sezione):** l'auto-follow NON
+è indipendente dal motore. In `Betfair/stream/runner.py:1896` la costruzione dell'auto-follow
+(`_costruisci_auto_follow`, riga 1903) sta DENTRO lo stesso `if ch is not None and modo_avvio in ("PAPER",
+"LIVE") and _motore_abilitato():` che costruisce il motore — `_motore_abilitato()` (`:1680-1681`) è
+`MOTORE_ORDINI_CANALE=1`. **Senza quella variabile il blocco intero non gira: l'auto-follow non nasce
+proprio** (nessun thread, `_MOTORE["auto"]` resta `None`), non solo l'invio ordini via canale. Quello che
+RESTA indipendente e testabile separatamente è solo la STRADA degli ordini per singolo bot
+(`SAFE_ORDINI_VIA_CANALE`, `OMEGA_ORDINI_VIA_CANALE`): con motore acceso e questi spenti, gli ordini dei
+bot seguiti dall'auto-follow passano ancora sulla coda DB di sempre. **Prima di accendere, in quest'ordine** (`STRADA_UNICA_BANCO_E_PAPER.md`
 §5): (1) applicare `migrations/live_follow_origine_2026-09-25.sql` (altrimenti l'auto-follow lavora solo
 in RAM: nessuna riga, nessun badge, log «live_follow.origine NON disponibile»); (2) integrare il lavoro
 auto-follow su master; (3) seguire in «Segui live» solo le partite che si vogliono vedere nel Terminale
@@ -882,7 +992,7 @@ completo (gli eventi automatici sono «silenziosi»: niente `live_now`/ladder/se
 
 | # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
 |---|---|---|---|---|---|
-| 7.2.1 | auto-follow attivo di serie col motore (`RUNNER_AUTO_FOLLOW` non serve, acceso) | grep log avvio runner: `[runner] AUTO-FOLLOW ATTIVO: i bot operano da soli su tutte le partite (aggancio al volo + feed), tetto 180 mercati …` | riga presente all'avvio | comparso | assente = auto-follow non montato (verificare integrazione su master) |
+| 7.2.1 | auto-follow attivo SOLO se `MOTORE_ORDINI_CANALE=1` (nasce dentro lo stesso `if` del motore, `runner.py:1896-1903`; `RUNNER_AUTO_FOLLOW=0` lo spegne separatamente col motore comunque acceso) | grep log avvio runner: `[runner] AUTO-FOLLOW ATTIVO: i bot operano da soli su tutte le partite (aggancio al volo + feed), tetto 180 mercati …` | riga presente all'avvio, SOLO con `MOTORE_ORDINI_CANALE=1` | comparso | assente con `MOTORE_ORDINI_CANALE=1` e `RUNNER_AUTO_FOLLOW≠0` = auto-follow non montato (verificare integrazione su master); assente con `MOTORE_ORDINI_CANALE` spento = atteso, non un difetto |
 | 7.2.2 | motore ordini sul canale acceso (`MOTORE_ORDINI_CANALE=1`) | grep `[runner] motore ordini ATTIVO sul canale 47331 (diario …\_diario_ordini)` | riga presente | comparso | assente = interruttore non letto (riavvio mancato) |
 | 7.2.3 | Safe calcio passa sul canale di comando (`SAFE_ORDINI_VIA_CANALE=1`, DOPO aver visto il motore attivo) | grep `[safe.bot] ordini calcio via canale di comando ws://127.0.0.1:47331/comando/safe`; poi un'apertura Safe base in paper | attività `canale_inviato` `{trade_id, mode:"paper", ref:"safe-t<id>", seq, price, size, chiusura}`: `select ts, kind, payload from safe_strategy_activity where kind='canale_inviato' order by ts desc limit 5;` | riga presente entro pochi secondi dall'ordine | assente = Safe non è passato dal canale (ripiego coda DB silenzioso: verificare log d'errore) |
 | 7.2.4 | sulla riga del trade compaiono le marcature del canale | dopo 7.2.3, sulla stessa riga | `select id, meta->>'canale_ref', meta->>'canale_ack_seq', meta->>'canale_ack_ms', meta->>'canale_fase' from safe_strategy_trades where id = <trade_id>;` → tutte e 4 valorizzate | valorizzate | NULL = la scrittura delle marcature non è arrivata |
@@ -898,9 +1008,12 @@ completo (gli eventi automatici sono «silenziosi»: niente `live_now`/ladder/se
 
 **Ripristino (in questo ordine, «10 secondi» per la strada canale, §5 STRADA_UNICA):** (1) spegnere
 `SAFE_ORDINI_VIA_CANALE`/`OMEGA_ORDINI_VIA_CANALE`; (2) riavvio dell'app; (3) `MOTORE_ORDINI_CANALE`
-spento per ultimo. L'auto-follow non si spegne a parte: segue `RUNNER_AUTO_FOLLOW=0` se serve tornare al
-comportamento di prima; altrimenti resta acceso anche a motore spento (un bot che apre con motore spento
-riceve `motore_non_attivo`, rifiuto certo, fail-closed — comportamento atteso, non un guasto).
+spento per ultimo — SPEGNENDO il motore si spegne ANCHE l'auto-follow (stesso `if`, `runner.py:1896-1903`):
+non è un interruttore a parte, non resta acceso a motore spento. `RUNNER_AUTO_FOLLOW=0` resta utile SOLO
+per tornare al comportamento di prima TENENDO il motore acceso (motore attivo, auto-follow spento: un bot
+che tenta un ordine su una partita non seguita riceve `mercato … non sottoscritto nel runner`, il rifiuto
+di sempre — non `motore_non_attivo`, che è la risposta a motore spento del tutto, guardia
+`_GUARDIA_AVVIO`/`_motore_attivo() is None`).
 **Superamento della sottosezione:** tutti i controlli 7.2.1-7.2.13 passano, nessuna riga live in nessuna
 tabella (Z13.2 già lo verifica trasversalmente), nessuna riga duplicata sulla coda DB.
 
@@ -988,7 +1101,7 @@ globale, sui tetti e sulla decisione aperta del live automatico.
 | 7.6.5 | stop pulito delle sole sessioni `origine='auto'` quando la partita esce dal feed da ≥ 60 s | osservare una sessione auto su una partita appena finita | `select event_id, status, origine from scalper_control where origine='auto' and status in ('stopping');` entro ~60-75 s dall'uscita dal feed; le sessioni `origine='manuale'` sulla stessa partita NON toccate | coerente | sessione manuale fermata insieme all'auto = filtro `origine` non applicato (money-critical se in live) |
 | 7.6.6 | riarmo dopo spegni/riaccendi (gesto dell'utente) | fermare l'interruttore globale e riaccenderlo | le righe `stopped` DA PRIMA dell'accensione corrente si riarmano; quelle `stopped` a mano DOPO l'accensione corrente NO | coerente | riarmo di una sessione chiusa a mano nello stesso giro = regola di non-riarmo rotta |
 | 7.6.7 | avvio nuovo dell'app: interruttore torna `stopped/paper` (già in Z0.3, qui il dettaglio della guardia) | riavvio dell'app | guardia «scalper-auto» in `avvio_app.ferma_al_nuovo_avvio`: nessun armamento finché il controllo d'avvio non riesce | coerente | armamento prima del controllo d'avvio = guardia bucata |
-| 7.6.8 | `[DECISIONE UTENTE]` live automatico: in soldi veri le partite del feed nascerebbero con `dry_run=false` (ordini reali), diverso dal tennis che nasce sempre in dry-run | non provare in live in questa fase 2 (§0 regola 3); solo verificare che l'interruttore resti su `paper` | `select mode from scalper_service_control;` = `paper` per tutta la fase 2 | `paper` | `live` = violazione della regola 3, **STOP** immediato |
+| 7.6.8 | **Corretto (verificato sul codice, D3 25/09):** `auto_mode.py:299 DRY_RUN_ALLA_NASCITA = True` e `:302-307 dry_run_alla_nascita(modalita)` tornano SEMPRE `True`, qualunque sia la modalità dell'interruttore (`del modalita` in corpo: il valore non la guarda nemmeno) — una sessione armata DA SOLA dal feed nasce SEMPRE in dry-run, **anche con l'interruttore in soldi veri**; uguale al tennis (7.7.7), non diverso come diceva la versione precedente di questo controllo. I soldi veri su una sessione li mette l'utente per SESSIONE, dallo `ScalperPanel` (ferma+riarma senza «Solo ARMATO», doppio gesto). In questa fase 2 non si prova il live (§0 regola 3): si verifica SOLO che (a) l'interruttore resti `paper` e (b) ogni riga armata dal feed nasca con `dry_run=true` | `select mode from scalper_service_control;` = `paper` per tutta la fase 2; `select event_id, dry_run, origine from scalper_control where origine='auto';` → `dry_run=true` su tutte | `paper`; `dry_run=true` su tutte le righe `origine='auto'` | `mode='live'` = violazione della regola 3, **STOP** immediato; una riga `origine='auto'` con `dry_run=false` = D3 rotta (money-critical), **STOP** |
 
 **Ripristino:** `scalper_auto_stop()` dalla UI (ferma l'interruttore E tutte le sessioni attive in un solo
 gesto); verificare `select status, mode from scalper_service_control;` → `stopped, paper` a fine fase 2
@@ -1013,8 +1126,10 @@ tetto per bot e sulla classificazione delle uscite (quali sono gatabili e quali 
 | 7.7.7 | `[DECISIONE UTENTE]` live + auto-mode: le righe nascono SEMPRE `dry_run=true` anche in live (doppio gesto, come oggi) | non provare in live in questa fase 2; solo verificare la nota | in LIVE la nota aggiunge «LIVE: le partite nascono in dry-run, nessun ordine reale finché non lo togli per partita» | dichiarato | riga LIVE nata con `dry_run=false` senza gesto dell'utente per partita = violazione money-critical |
 | 7.7.8 | partita automatica uscita dal feed: righe a `stopping`, follow chiuso solo se nessun bot lo vuole più | osservare una partita finita seguita solo in automatico | `tennis_bot_control` di quel bot va a `stopping`; `tennis_live_follow.status` passa `CLOSED` solo quando tutte le righe di quella partita sono chiuse | coerente | follow chiuso con righe ancora attive = perdita di sorveglianza su una posizione viva |
 
-**Ripristino:** i bot li ferma l'utente dalla UI; `tennis_bot_service_set_uscite` riporta le uscite ad
-automatiche se cambiate durante il test (default). Verifica finale: nessuna riga `tennis_live_follow`
+**Ripristino:** i bot li ferma l'utente dalla UI; `tennis_bot_service_set_uscite` riporta le uscite al valore
+della fotografia se cambiate durante il test. **Corretto:** il default NON è più «automatiche» — dal 25/09 sera
+(commit `890992f`, `uscite_manuali_default_2026-09-25.sql`, §1.1) il default di TUTTI i bot, tennis compreso, è
+MANUALE (`uscite_automatiche=false`). Verifica finale: nessuna riga `tennis_live_follow`
 `origine='auto'` rimasta `STREAMING` dopo il FERMA TUTTI. **Non verificato dal referto (§7):** la sintassi
 PostgREST `alias:payload->chiave` e il valore `CLOSED` di `tennis_live_now.status` non sono stati
 osservati dal vivo, solo dedotti dal codice.
@@ -1206,19 +1321,119 @@ esito ricalcolato coincidono, e il motivo scritto è sempre quello vero.
 8. Colonne di `betfair_live_heartbeat` (Z2.1) e di `hazard_atlas_leghe` (Z10).
 9. Colonna del ref interno negli ordini dello specchio (Z4.S5).
 10. Dove finisce oggi la console dell'app, per `leggi_tempi_ordine` (Z5; referto F0 §7).
-11. Quale job/processo rigenera i payload TacticAI dopo `43e1468` (Z8).
+11. ~~Quale job/processo rigenera i payload TacticAI dopo `43e1468` (Z8).~~ **Risolto:** action
+    `today_predictions_backfill` → `Prediction/today_predictions_backfill.py:2741-2746` → `tactical_engine.serving.run_for_date`.
 12. Stato di applicazione di `get_direction_eta_2026-09-25.sql` e `market_delays_ht_2026-09-25.sql` (§1.1).
-13. Comportamento del kill-switch sulle aperture PAPER di Mike e dello scalper calcio (Z13.4): dal codice NON li
-    ferma; da confermare dal vivo e portare all'utente.
+13. ~~Comportamento del kill-switch sulle aperture PAPER di Mike e dello scalper calcio (Z13.4): dal codice NON li
+    ferma; da confermare dal vivo e portare all'utente.~~ **Risolto (chiuso col fix, non più da verificare a
+    parte):** con `6ac2543` (R3) il freno È UNICO e ferma anche Mike e lo scalper calcio, in paper come in live
+    (vedi Z13.4, P27). Resta da CONFERMARE dal vivo in fase 2 (non più «da portare all'utente» come reperto
+    aperto: è già un fix applicato, la fase 2 lo certifica).
+14. **[coordinatore]** Se `migrations/uscite_manuali_default_2026-09-25.sql` (§1.1) risulti già applicata al
+    momento del test: da controllare con le query della riga stessa PRIMA di avviare la fase 2.
+15. **[coordinatore]** Se, dopo l'avvio nuovo dell'app, un residuo `tennis_bot_service_control.status='stopping'`
+    del 24/09 sia stato davvero ripreso a `stopped`/`paper` dal fix R2 (Z0.2bis): il coordinatore riporta oggi
+    sul DB una riga così residua, non ancora passata da un avvio con `6ac2543` in produzione.
 
 ## 9. Reperti emersi scrivendo il piano (da portare all'utente, nessuna correzione fatta)
 
 - **R1 — tennis per partita:** il confirm dice «ORDINI REALI», la RPC scrive sempre `mode='paper'` (P21).
-- **R2 — tennis all'avvio:** gli interruttori tornano `stopped` ma la `mode` NON torna `paper` (P19), a differenza di
-  Omega/Mike/Safe/scalper.
-- **R3 — kill-switch:** non ferma le aperture paper di Mike né lo scalper calcio (Z13.4); non ha una riga in
-  Control Room (P27).
+- **R2 — tennis all'avvio — CHIUSO (commit `6ac2543`, 25/09 sera):** era «gli interruttori tornano `stopped` ma
+  la `mode` NON torna `paper` (P19), a differenza di Omega/Mike/Safe/scalper». Ora `ferma_interruttori_al_nuovo_avvio`
+  (`tennis_bot_service.py:806-855`) scrive `status='stopped'` **E** `mode='paper'` per i 4 bot, come gli altri.
+  Resta da confermare dal vivo che un residuo `stopping` di PRIMA del fix venga ripreso al prossimo avvio nuovo
+  (§8 punto 15, Z0.2bis) — non è più una divergenza di comportamento, è la fase 2 che lo certifica.
+- **R3 — kill-switch — CHIUSO (commit `6ac2543`, 25/09 sera, «freno unico»):** era «non ferma le aperture paper
+  di Mike né lo scalper calcio (Z13.4); non ha una riga in Control Room (P27)». Ora il freno è UNICO (ferma ogni
+  apertura, live e paper, di tutti i bot: Safe, Omega, Mike, scalper) e ha una riga dedicata in Control Room
+  (`RigaFreno.tsx`, accanto a «Ordini reali»), oltre al punto storico in Segui Live. Vedi Z13.4 e P27 aggiornati.
 - **R4 — replay:** nessun replay completo sui cambi del 25/09 (§0.5).
+
+**Altre decisioni della sera del 25/09 verificate contro questo piano (coordinatore):** aiuti statistici O1/O5/M1
+accesi di default (`lambda_quote_prima`, `model_red_cards`, `veto_p_under35_cal`, commit `931c11b`), sniper mode
+dello scalper acceso di default (`auto_mode.sniper_mode_acceso`, commit `fae8ce1`), moduli di laboratorio fuori da
+`Betfair/` (`laboratorio/scalper_lab`, `laboratorio/tennis_lab`, commit `4021453`) — **nessuna riga di questo piano
+le contraddice**: nessuna sezione le dava per spente/dentro `Betfair/`, quindi non serve correzione, solo la
+conferma che restano valide per il test.
+
+## 9-bis. KO candidati noti prima del test (da confermare in fase 2/3, NON corretti)
+
+Trovati leggendo il codice per scrivere questo piano (coordinatore, 25/09 sera). Sono KO CANDIDATI, non
+KO certi: vanno confermati dal vivo in fase 2/3 con l'evidenza indicata, e portati all'utente — **non si
+corregge il codice per farli sparire durante il test** (CLAUDE.md, regola generale).
+
+1. **P&L per bot (`cr-bot-pnl-<id>`) sempre NULL per Omega/Safe/Mike.** `PannelloBot.tsx:596 data-testid="cr-bot-pnl-${r.id}"`
+   mostra `pnlOggi`; ma in `frontend/src/components/controlroom/useControlRoom.ts:2236-2238` la funzione `riga(...)`
+   scrive `pnlOggi: isBotTennis(bot) ? pnlTennisDi(...) : null` — per `bot` in `('omega','safe','mike')` questo è
+   **sempre `null`** (solo i 4 bot tennis e lo scalper, quest'ultimo a parte a `:2358`, hanno un valore). **Cosa si
+   vede:** la riga di Omega/Safe/Mike in Control Room mostra sempre il trattino al posto del P&L di oggi. **Come
+   si conferma:** in fase 2, con un trade paper regolato su uno dei tre bot, verificare che `cr-bot-pnl-omega`
+   (o safe/mike) resti `—` mentre il DB ha righe `settled` col `pnl` valorizzato.
+2. **Paper e live sommati a video col filtro «tutte».** `frontend/src/pages/LivePnl.tsx:192,269,272`: `modeF`
+   può essere `'all'`, e con `'all'` il filtro `s => modeF === 'all' || s.mode === modeF` (`:269`) NON esclude
+   nulla — `realized` (`:272`) somma `profit` su TUTTE le righe, paper e live insieme. In Market Watch, la
+   tessera «Rischio» (`MarketWatch.tsx:354-356`, `eventExposure(positions)`) usa `get_live_positions_event`
+   (`migrations/betfair_live_pnl_journal.sql:258-280`), che NON filtra per `mode`, e `eventExposure`
+   (`frontend/src/lib/eventPnl.ts:68-75`) somma `selection_exposure` su tutte le righe passate, senza distinguere
+   modalità. **Cosa si vede:** con filtro «tutte» selezionato, il numero mostrato non è la somma dichiarata di
+   UNA modalità. **Come si conferma:** in fase 2 (tutto paper, quindi il caso non si manifesta da solo), verificare
+   col codice/con una riga `live` residua storica se presente che il numero con filtro «tutte» ≠ somma dei soli
+   `mode='paper'`.
+3. **Le tessere Calcio/Tennis della Control Room mostrano solo il P&L di Safe.** `useControlRoom.ts:3480`
+   `perSport: safeOggi?.by_sport ?? null` (commento a `:3483-3484`: «QUI C'ERANO I CONTATORI DI `get_safe_daily`,
+   che legge la SOLA tabella di Safe»): il componente `SplitSport.tsx` («due entità, calcio e tennis») riceve dati
+   SOLO da `get_safe_daily`, non un aggregato di Omega/Mike/scalper/tennis sullo stesso sport. **Cosa si vede:**
+   le tessere ⚽/🎾 in Control Room non includono il contributo di Omega (calcio), Mike (calcio), scalper (calcio)
+   né dei 4 bot tennis. **Come si conferma:** in fase 2, con Omega o Mike che regola un trade calcio, verificare
+   che la tessera Calcio NON si muova per quel trade.
+4. **Safe (pagina dedicata) senza fonte/età del canale 47335 a video.** `frontend/src/pages/Omega.tsx:511-518`
+   ha il badge `data-testid="omega-canale-locale"` («Canale LOCALE attivo (ws://127.0.0.1:47334)…»);
+   `frontend/src/pages/Mike.tsx:384-391` ha l'equivalente `data-testid="mike-canale-locale"` (ws 47333).
+   `frontend/src/pages/SafeStrategy.tsx` NON ha alcun badge equivalente (nessuna occorrenza di
+   `canaleLocale`/`canale-locale`/`47335`/`ws://127`). **Cosa si vede:** sulla pagina Safe dedicata non c'è modo
+   di sapere se i numeri di testata arrivano dal canale 47335 o dal ripiego DB, a differenza di Omega/Mike. **Come
+   si conferma:** aprire `/safe-strategy` in fase 2 e verificare che manchi un badge equivalente a quello di
+   Omega/Mike (la Control Room, invece, il fonte/età di Safe ce l'ha: `ControlRoom.tsx:1143-1147
+   cr-bot-fonte-safe` — il buco è solo sulla pagina dedicata).
+5. **5 topic pubblicati sui canali che la UI non legge mai (0 occorrenze in `frontend/src`, test compresi):**
+   `mike_attivita` (pubblicato `Betfair/mike/db.py:78`), `omega_attivita` (`Betfair/omega/omega_db.py:67`),
+   `safe_attivita` (`Betfair/safe_strategy/bot_db.py:83`), `tennis_bot_armamento`
+   (`Betfair/stream/tennis_live/tennis_db.py:222,362,636`), `auto_follow` (`Betfair/stream/runner.py:1703`,
+   §7.2). **Cosa si vede:** questi 5 topic viaggiano sul canale locale del processo ma nessun componente
+   frontend li sottoscrive: l'unico modo di vederne l'effetto oggi è il DB (poll) o i log, mai un push realtime
+   dedicato. **Come si conferma:** durante la fase 2, con l'auto-follow attivo (§7.2), verificare che non ci sia
+   nessuna sottoscrizione realtime a questi 5 topic in nessuna pagina aperta (Network/WS del browser).
+6. **`scalper-service` e il ponte tennis (`tennis-bot-service --bridge-only`) senza watchdog.** `desktop/main.js:288,289,304,311,317,322`
+   avviano runner-calcio, runner-tennis, safe-strategy-service, omega-service, safe-strategy-bot, mike-service
+   tutti dentro `-m Betfair.stream.watchdog -- <modulo>`; `desktop/main.js:292`
+   (`spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service'])`) e `:298`
+   (`spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service', '--bridge-only'])`)
+   sono lanciati SENZA il wrapper watchdog. **Cosa si vede:** se il processo dello scalper o il ponte tennis
+   crashano, nessun riavvio automatico (a differenza degli altri sei processi); i bot tennis/scalper restano
+   fermi finché l'utente non riavvia l'app. **Come si conferma:** non provocabile in modo pulito durante il
+   test (andrebbe ucciso un processo); da segnalare come reperto, eventualmente verificabile a parte se
+   l'utente lo autorizza.
+7. **L'action Poisson settimanale committa `Betfair/money_management.py`.** `.github/workflows/weekly_poisson_calibration.yml:38,60,67-70,76`:
+   `git add dynamic_cal.json Betfair/money_management.py dc_rho_by_league.json` seguito da `git commit`/`git push`
+   automatici. **Cosa si vede:** un file di codice della strategia (non solo dati) viene scritto e pubblicato da
+   un'action schedulata, senza revisione umana per singola modifica. **Come si conferma:** `git log -- Betfair/money_management.py`
+   mostra commit automatici dell'action; da portare all'utente (le strategie non si alterano di iniziativa,
+   CLAUDE.md) — non è un bug del test e2e, è una policy da rivedere.
+8. **3 RPC vivono in `sql/`, non in `migrations/`.** `sql/leagues_needing_retrain_rpc.sql`,
+   `sql/market_delays_rpc.sql`, `sql/market_frequency_rpc.sql` (più `sql/perf_indexes.sql`, indici non RPC).
+   **Cosa si vede:** queste 3 funzioni non passano dal punto d'ingresso unico `migrations/` che il resto del
+   piano usa per «applicata/da applicare» (§1.1): non c'è modo di sapere se sono applicate sul DB vivo dalla
+   stessa fonte usata per tutto il resto. **Come si conferma:** `select proname from pg_information_schema...`
+   o `pg_get_functiondef` sulle 3 firme, confrontato col contenuto dei file in `sql/`.
+9. **`LIVE_ORDER_QUEUE_POLL_SEC` ha DUE default diversi nel codice, e l'app ne passa un terzo.**
+   `Betfair/order_worker.py:26`: `float(os.getenv("LIVE_ORDER_QUEUE_POLL_SEC", "2"))`;
+   `Betfair/stream/config_stream.py:223`: `float(os.getenv("LIVE_ORDER_QUEUE_POLL_SEC", "1.0"))`;
+   `desktop/main.js:233`: l'app imposta sempre `LIVE_ORDER_QUEUE_POLL_SEC: '0.15'` nell'ambiente dei processi
+   figli. **Cosa si vede:** col `.env` passato dall'app il valore vero è sempre `0.15` (Z5 già lo usa come
+   riferimento); MA uno script/tool lanciato fuori dall'app (a mano, senza l'ambiente di `main.js`) userebbe `2`
+   o `1.0` a seconda del modulo che legge la env — due «verità» diverse per lo stesso nome. **Come si conferma:**
+   non è un guasto della fase 2 (l'app imposta sempre `0.15`); da portare all'utente come pulizia di codice (un
+   solo default, in un solo posto).
 
 ## 10. Fonti lette (sola lettura)
 
