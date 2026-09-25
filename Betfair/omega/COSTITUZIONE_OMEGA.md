@@ -963,6 +963,17 @@ moltiplicatore resta 1 — non esistono dati storici di corner per minuto per ca
 le 26–40 registrazioni sono troppo poche; si accende solo dopo una calibrazione
 sulle registrazioni REC (banco di validazione riusabile), mai a occhio.
 
+### 15.6-bis Stato 25/09/2026: costruzione AUTOMATICA delle transizioni (i passi manuali di §14.4 e §15.6 sono superati)
+Dal 25/09 (`migrations/omega_transitions_catchup_2026-09-25.sql`, decisione dell'utente) le tabelle
+`omega_minute_transitions` e `omega_ht_ft_transitions` NON si costruiscono piu' a mano: un registro per
+partita (`omega_transitions_ledger`) e un giro notturno pg_cron (`omega_transitions_nightly`, 04:00 UTC,
+budget 600 s) contano solo le partite mai contate, senza doppi conteggi, e le pubblicano ai bot solo con
+`SELECT public.omega_transitions_publish('PUBBLICA');` (reversibile con `_unpublish('RITORNA')`).
+I vecchi costruttori `omega_build_ht_ft_transitions`, `omega_build_minute_transitions_*` RIFIUTANO di
+girare ("dismessa il 25/09"): un rilancio conterebbe due volte. L'app/exe non li richiama da nessuna
+parte (verificato con grep su desktop/, Betfair/, frontend/, script). Procedura e verifica:
+`Betfair/omega/TRANSIZIONI_NOTTURNE_2026-09-25.md`, tool `Betfair/omega/tools/verifica_transizioni_2026_09_25.py`.
+
 ### 15.6 Migrazione e passi
 `migrations/omega_models_v3.sql` (dopo omega_daily_v2), poi `omega_models_v4.sql` (§16.4: un passo manuale risponde `busy` se pg_cron sta lavorando). Costruzione INCREMENTALE (l'SQL
 editor ha un timeout del gateway di ~2 min): `SELECT public.omega_build_minute_transitions_schedule();`
