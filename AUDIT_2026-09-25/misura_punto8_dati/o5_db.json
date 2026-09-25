@@ -1,0 +1,125 @@
+{
+ "estrazione": {
+  "conteggi": {
+   "partite_con_rosso": 113,
+   "scartate_gol_incoerenti": 2,
+   "scartate_senza_lambda": 0
+  },
+  "misura_tutte": {
+   "al_primo_rosso": {
+    "n_punti": 90,
+    "n_partite": 90,
+    "ll": {
+     "attuale": 1.9010793593831878,
+     "variante": 1.812644922283872,
+     "diff": {
+      "media": -0.08843443709931587,
+      "lo": -0.1537414987555932,
+      "hi": -0.02522874497894196,
+      "n": 90,
+      "n_unita": 90
+     },
+     "verdetto": "MIGLIORA"
+    },
+    "br": {
+     "attuale": 0.7241846279436484,
+     "variante": 0.7078235281907901,
+     "diff": {
+      "media": -0.016361099752858363,
+      "lo": -0.029375996764582166,
+      "hi": -0.0036070985425603473,
+      "n": 90,
+      "n_unita": 90
+     },
+     "verdetto": "MIGLIORA"
+    }
+   },
+   "ogni_10_minuti": {
+    "n_punti": 311,
+    "n_partite": 90,
+    "ll": {
+     "attuale": 1.9447845664570922,
+     "variante": 1.8560070277759388,
+     "diff": {
+      "media": -0.08877753868115337,
+      "lo": -0.15990317966165404,
+      "hi": -0.021885791069465168,
+      "n": 311,
+      "n_unita": 90
+     },
+     "verdetto": "MIGLIORA"
+    },
+    "br": {
+     "attuale": 0.7738639701697361,
+     "variante": 0.7564879585752712,
+     "diff": {
+      "media": -0.017376011594464846,
+      "lo": -0.03220149822973987,
+      "hi": -0.0018314199832268692,
+      "n": 311,
+      "n_unita": 90
+     },
+     "verdetto": "MIGLIORA"
+    }
+   }
+  },
+  "misura_dopo_29_06_fuori_dal_fit_dei_coefficienti": {
+   "al_primo_rosso": {
+    "n_punti": 77,
+    "n_partite": 77,
+    "ll": {
+     "attuale": 1.9530990800713606,
+     "variante": 1.8404836245947591,
+     "diff": {
+      "media": -0.11261545547660136,
+      "lo": -0.18719897315086031,
+      "hi": -0.046206724538181955,
+      "n": 77,
+      "n_unita": 77
+     },
+     "verdetto": "MIGLIORA"
+    },
+    "br": {
+     "attuale": 0.7274579004990147,
+     "variante": 0.7061303181136978,
+     "diff": {
+      "media": -0.021327582385317012,
+      "lo": -0.03569331082052366,
+      "hi": -0.00712299786537721,
+      "n": 77,
+      "n_unita": 77
+     },
+     "verdetto": "MIGLIORA"
+    }
+   },
+   "ogni_10_minuti": {
+    "n_punti": 272,
+    "n_partite": 77,
+    "ll": {
+     "attuale": 1.9862478768068599,
+     "variante": 1.8817235589743548,
+     "diff": {
+      "media": -0.10452431783250493,
+      "lo": -0.18324972309823678,
+      "hi": -0.031332766742326594,
+      "n": 272,
+      "n_unita": 77
+     },
+     "verdetto": "MIGLIORA"
+    },
+    "br": {
+     "attuale": 0.771622458524241,
+     "variante": 0.752196784254952,
+     "diff": {
+      "media": -0.01942567426928904,
+      "lo": -0.03515655980120349,
+      "hi": -0.003924462850994486,
+      "n": 272,
+      "n_unita": 77
+     },
+     "verdetto": "MIGLIORA"
+    }
+   }
+  }
+ }
+}

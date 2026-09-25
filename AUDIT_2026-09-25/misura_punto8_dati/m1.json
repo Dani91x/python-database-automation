@@ -1,0 +1,399 @@
+{
+ "over_3_5": {
+  "n": 8589,
+  "tutte": {
+   "n": 8589,
+   "freq": 0.3578996390732332,
+   "decili_calibrata": [
+    {
+     "decile": "0.0-0.1",
+     "n": 46,
+     "p_media": 0.0698,
+     "freq_osservata": 0.1087,
+     "wilson_lo": 0.0473,
+     "wilson_hi": 0.2304,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.1-0.2",
+     "n": 811,
+     "p_media": 0.1627,
+     "freq_osservata": 0.1911,
+     "wilson_lo": 0.1655,
+     "wilson_hi": 0.2196,
+     "dentro_IC": false
+    },
+    {
+     "decile": "0.2-0.3",
+     "n": 2054,
+     "p_media": 0.2542,
+     "freq_osservata": 0.2819,
+     "wilson_lo": 0.2629,
+     "wilson_hi": 0.3017,
+     "dentro_IC": false
+    },
+    {
+     "decile": "0.3-0.4",
+     "n": 2944,
+     "p_media": 0.3487,
+     "freq_osservata": 0.3438,
+     "wilson_lo": 0.3268,
+     "wilson_hi": 0.3611,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.4-0.5",
+     "n": 1861,
+     "p_media": 0.4422,
+     "freq_osservata": 0.4503,
+     "wilson_lo": 0.4278,
+     "wilson_hi": 0.473,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.5-0.6",
+     "n": 625,
+     "p_media": 0.5395,
+     "freq_osservata": 0.5328,
+     "wilson_lo": 0.4936,
+     "wilson_hi": 0.5716,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.6-0.7",
+     "n": 213,
+     "p_media": 0.6329,
+     "freq_osservata": 0.6009,
+     "wilson_lo": 0.5339,
+     "wilson_hi": 0.6644,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.7-0.8",
+     "n": 31,
+     "p_media": 0.722,
+     "freq_osservata": 0.6452,
+     "wilson_lo": 0.4695,
+     "wilson_hi": 0.7888,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.8-0.9",
+     "n": 1,
+     "p_media": 0.8251,
+     "freq_osservata": 1.0,
+     "wilson_lo": 0.2065,
+     "wilson_hi": 1.0,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.9-1.0",
+     "n": 3,
+     "p_media": 0.9584,
+     "freq_osservata": 1.0,
+     "wilson_lo": 0.4385,
+     "wilson_hi": 1.0,
+     "dentro_IC": true
+    }
+   ],
+   "brier_calibrata": 0.21969379116195134,
+   "brier_grezza": 0.22220257326813364,
+   "diff_brier_calibrata_meno_grezza": {
+    "media": -0.002508782106182326,
+    "lo": -0.003480162407265106,
+    "hi": -0.0016207701515892437,
+    "n": 8589,
+    "n_unita": 8589
+   },
+   "verdetto_brier": "MIGLIORA",
+   "logloss_calibrata": 0.6299952409234068,
+   "logloss_grezza": 0.6377854336810129,
+   "diff_logloss_calibrata_meno_grezza": {
+    "media": -0.007790192757606157,
+    "lo": -0.010472387148636306,
+    "hi": -0.005404412010745757,
+    "n": 8589,
+    "n_unita": 8589
+   },
+   "verdetto_logloss": "MIGLIORA"
+  },
+  "prima_del_21_09 (in campione per la calibrazione)": {
+   "n": 8346,
+   "freq": 0.3569374550682962,
+   "decili_calibrata": [
+    {
+     "decile": "0.0-0.1",
+     "n": 46,
+     "p_media": 0.0698,
+     "freq_osservata": 0.1087,
+     "wilson_lo": 0.0473,
+     "wilson_hi": 0.2304,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.1-0.2",
+     "n": 769,
+     "p_media": 0.1625,
+     "freq_osservata": 0.1834,
+     "wilson_lo": 0.1576,
+     "wilson_hi": 0.2123,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.2-0.3",
+     "n": 1997,
+     "p_media": 0.2541,
+     "freq_osservata": 0.2784,
+     "wilson_lo": 0.2592,
+     "wilson_hi": 0.2985,
+     "dentro_IC": false
+    },
+    {
+     "decile": "0.3-0.4",
+     "n": 2870,
+     "p_media": 0.3487,
+     "freq_osservata": 0.3463,
+     "wilson_lo": 0.3291,
+     "wilson_hi": 0.3639,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.4-0.5",
+     "n": 1817,
+     "p_media": 0.4422,
+     "freq_osservata": 0.4485,
+     "wilson_lo": 0.4258,
+     "wilson_hi": 0.4715,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.5-0.6",
+     "n": 606,
+     "p_media": 0.5393,
+     "freq_osservata": 0.5297,
+     "wilson_lo": 0.4899,
+     "wilson_hi": 0.5691,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.6-0.7",
+     "n": 207,
+     "p_media": 0.6327,
+     "freq_osservata": 0.5942,
+     "wilson_lo": 0.5262,
+     "wilson_hi": 0.6588,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.7-0.8",
+     "n": 30,
+     "p_media": 0.7225,
+     "freq_osservata": 0.6667,
+     "wilson_lo": 0.4878,
+     "wilson_hi": 0.8077,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.8-0.9",
+     "n": 1,
+     "p_media": 0.8251,
+     "freq_osservata": 1.0,
+     "wilson_lo": 0.2065,
+     "wilson_hi": 1.0,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.9-1.0",
+     "n": 3,
+     "p_media": 0.9584,
+     "freq_osservata": 1.0,
+     "wilson_lo": 0.4385,
+     "wilson_hi": 1.0,
+     "dentro_IC": true
+    }
+   ],
+   "brier_calibrata": 0.21915840446681045,
+   "brier_grezza": 0.2214685304001917,
+   "diff_brier_calibrata_meno_grezza": {
+    "media": -0.0023101259333812604,
+    "lo": -0.0032208335910016775,
+    "hi": -0.001410066996734964,
+    "n": 8346,
+    "n_unita": 8346
+   },
+   "verdetto_brier": "MIGLIORA",
+   "logloss_calibrata": 0.6286671710321079,
+   "logloss_grezza": 0.6357468564294232,
+   "diff_logloss_calibrata_meno_grezza": {
+    "media": -0.007079685397315272,
+    "lo": -0.009541142197362445,
+    "hi": -0.004550708924526603,
+    "n": 8346,
+    "n_unita": 8346
+   },
+   "verdetto_logloss": "MIGLIORA"
+  },
+  "dal_21_09 (FUORI CAMPIONE)": {
+   "n": 243,
+   "freq": 0.39094650205761317,
+   "decili_calibrata": [
+    {
+     "decile": "0.1-0.2",
+     "n": 42,
+     "p_media": 0.166,
+     "freq_osservata": 0.3333,
+     "wilson_lo": 0.2101,
+     "wilson_hi": 0.4845,
+     "dentro_IC": false
+    },
+    {
+     "decile": "0.2-0.3",
+     "n": 57,
+     "p_media": 0.2554,
+     "freq_osservata": 0.4035,
+     "wilson_lo": 0.2862,
+     "wilson_hi": 0.533,
+     "dentro_IC": false
+    },
+    {
+     "decile": "0.3-0.4",
+     "n": 74,
+     "p_media": 0.3485,
+     "freq_osservata": 0.2432,
+     "wilson_lo": 0.1598,
+     "wilson_hi": 0.3521,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.4-0.5",
+     "n": 44,
+     "p_media": 0.4413,
+     "freq_osservata": 0.5227,
+     "wilson_lo": 0.3794,
+     "wilson_hi": 0.6625,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.5-0.6",
+     "n": 19,
+     "p_media": 0.546,
+     "freq_osservata": 0.6316,
+     "wilson_lo": 0.4104,
+     "wilson_hi": 0.8085,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.6-0.7",
+     "n": 6,
+     "p_media": 0.6384,
+     "freq_osservata": 0.8333,
+     "wilson_lo": 0.4365,
+     "wilson_hi": 0.9699,
+     "dentro_IC": true
+    },
+    {
+     "decile": "0.7-0.8",
+     "n": 1,
+     "p_media": 0.7071,
+     "freq_osservata": 0.0,
+     "wilson_lo": 0.0,
+     "wilson_hi": 0.7935,
+     "dentro_IC": true
+    }
+   ],
+   "brier_calibrata": 0.23808201074074076,
+   "brier_grezza": 0.24741377399176953,
+   "diff_brier_calibrata_meno_grezza": {
+    "media": -0.0093317632510288,
+    "lo": -0.015449682345679004,
+    "hi": -0.0034243508559670785,
+    "n": 243,
+    "n_unita": 243
+   },
+   "verdetto_brier": "MIGLIORA",
+   "logloss_calibrata": 0.6756087031159193,
+   "logloss_grezza": 0.7078017536059851,
+   "diff_logloss_calibrata_meno_grezza": {
+    "media": -0.03219305049006587,
+    "lo": -0.05056005393916674,
+    "hi": -0.015094688057307227,
+    "n": 243,
+    "n_unita": 243
+   },
+   "verdetto_logloss": "MIGLIORA"
+  }
+ },
+ "over_4_5": {
+  "n": 0,
+  "tutte": {
+   "n": 0
+  },
+  "prima_del_21_09 (in campione per la calibrazione)": {
+   "n": 0
+  },
+  "dal_21_09 (FUORI CAMPIONE)": {
+   "n": 0
+  }
+ },
+ "curva_under35": {
+  "nodi": [
+   [
+    0.0416,
+    0.0,
+    3
+   ],
+   [
+    0.1749,
+    0.0,
+    1
+   ],
+   [
+    0.278,
+    0.3548,
+    31
+   ],
+   [
+    0.3671,
+    0.3991,
+    213
+   ],
+   [
+    0.4604,
+    0.4687,
+    623
+   ],
+   [
+    0.5576,
+    0.5488,
+    1855
+   ],
+   [
+    0.6511,
+    0.6564,
+    2948
+   ],
+   [
+    0.7458,
+    0.7177,
+    2058
+   ],
+   [
+    0.8373,
+    0.8089,
+    811
+   ],
+   [
+    0.9302,
+    0.8913,
+    46
+   ]
+  ],
+  "soglie": {
+   "1.30": 0.8065,
+   "1.50": 0.6844,
+   "2.00": 0.5139,
+   "2.50": 0.3849,
+   "3.00": 0.2751
+  }
+ }
+}

@@ -1,0 +1,89 @@
+﻿   cache costruita: 36106722
+{
+ "origine_mobile_partite_di_prova": 11,
+ "origine_mobile_giorni": [
+  "2026-07-06",
+  "2026-07-07",
+  "2026-07-10",
+  "2026-07-16",
+  "2026-09-01"
+ ],
+ "registrazioni_con_campioni": 19,
+ "taglio_prima_data_di_prova": "2026-07-10",
+ "campioni_stima": 40112,
+ "campioni_prova": 3618,
+ "fonti_lambda": {
+  "pre_ko": 19,
+  "default": 0
+ },
+ "solo_pre_ko": true,
+ "giri": 2000
+}
+TAGLIO UNICO: {
+ "n": 3618,
+ "n_partite": 5,
+ "freq_reale": 0.2810945273631841,
+ "brier_grezza": 0.07401067828479803,
+ "brier_isotonica_stima": 0.071961557375927,
+ "diff_brier_isotonica_stima": {
+  "media": -0.0020491209088710494,
+  "lo": -0.003161552540936222,
+  "hi": -0.0008665957402765063,
+  "n": 3618,
+  "n_unita": 5
+ },
+ "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+ "brier_produzione_10_09_IN_CAMPIONE": 0.0704299881165134,
+ "diff_brier_produzione_10_09_IN_CAMPIONE": {
+  "media": -0.0035806901682846454,
+  "lo": -0.005814598632192195,
+  "hi": -0.0013561297961243144,
+  "n": 3618,
+  "n_unita": 5
+ },
+ "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+ "logloss_grezza": 0.24577040163625294,
+ "logloss_isotonica_stima": 0.2445099316932985,
+ "diff_logloss_isotonica_stima": {
+  "media": -0.0012604699429544404,
+  "lo": -0.024286774797935683,
+  "hi": -0.0007287959537828275,
+  "n": 3618,
+  "n_unita": 5
+ },
+ "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+ "logloss_produzione_10_09_IN_CAMPIONE": 0.23606269757810863,
+ "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+  "media": -0.009707704058144351,
+  "lo": -0.033745478416096895,
+  "hi": -0.009212910820877149,
+  "n": 3618,
+  "n_unita": 5
+ },
+ "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+}
+ORIGINE MOBILE: {
+ "n": 16702,
+ "n_partite": 11,
+ "freq_reale": 0.2639204885642438,
+ "brier_grezza": 0.07709460310504242,
+ "brier_isotonica_origine_mobile": 0.07836281697843997,
+ "diff_brier_isotonica_origine_mobile": {
+  "media": 0.001268213873397546,
+  "lo": -0.0028300527937096566,
+  "hi": 0.006698031386123275,
+  "n": 16702,
+  "n_unita": 11
+ },
+ "verdetto_brier_isotonica_origine_mobile": "NON MIGLIORA",
+ "logloss_grezza": 0.24893948869848254,
+ "logloss_isotonica_origine_mobile": 0.25666959251267196,
+ "diff_logloss_isotonica_origine_mobile": {
+  "media": 0.007730103814189374,
+  "lo": -0.011933267800578665,
+  "hi": 0.029667683301990246,
+  "n": 16702,
+  "n_unita": 11
+ },
+ "verdetto_logloss_isotonica_origine_mobile": "NON MIGLIORA"
+}

@@ -1,0 +1,83 @@
+{
+ "live_raw": {
+  "conteggi": {
+   "registrazioni": 52,
+   "con_rosso": 2,
+   "con_rosso_e_pre_ko": 1
+  },
+  "misura": {
+   "al_primo_rosso": {
+    "n_punti": 1,
+    "n_partite": 1,
+    "ll": {
+     "attuale": 1.0657154503681843,
+     "variante": 1.1629885997332534,
+     "diff": {
+      "media": 0.09727314936506914,
+      "lo": 0.09727314936506914,
+      "hi": 0.09727314936506914,
+      "n": 1,
+      "n_unita": 1
+     },
+     "verdetto": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+    },
+    "br": {
+     "attuale": 0.5110206988969249,
+     "variante": 0.5656775489976572,
+     "diff": {
+      "media": 0.05465685010073229,
+      "lo": 0.05465685010073229,
+      "hi": 0.05465685010073229,
+      "n": 1,
+      "n_unita": 1
+     },
+     "verdetto": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+    }
+   },
+   "ogni_10_minuti": {
+    "n_punti": 2,
+    "n_partite": 1,
+    "ll": {
+     "attuale": 0.9281885356473831,
+     "variante": 1.0133104012539902,
+     "diff": {
+      "media": 0.08512186560660712,
+      "lo": 0.08512186560660712,
+      "hi": 0.08512186560660712,
+      "n": 2,
+      "n_unita": 1
+     },
+     "verdetto": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+    },
+    "br": {
+     "attuale": 0.4403914623045282,
+     "variante": 0.49232977086270263,
+     "diff": {
+      "media": 0.05193830855817447,
+      "lo": 0.05193830855817447,
+      "hi": 0.05193830855817447,
+      "n": 2,
+      "n_unita": 1
+     },
+     "verdetto": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+    }
+   }
+  },
+  "partite": [
+   {
+    "id": "35794996",
+    "finale": [
+     0,
+     2
+    ],
+    "rossi": [
+     {
+      "minute": 75,
+      "tipo": "rosso",
+      "lato": "home"
+     }
+    ]
+   }
+  ]
+ }
+}

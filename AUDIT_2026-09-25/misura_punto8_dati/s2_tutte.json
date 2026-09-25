@@ -1,0 +1,2880 @@
+{
+ "meta": {
+  "origine_mobile_partite_di_prova": 14,
+  "origine_mobile_giorni": [
+   "2026-07-10",
+   "2026-07-16",
+   "2026-07-17",
+   "2026-09-01"
+  ],
+  "registrazioni_con_campioni": 32,
+  "stima": [
+   [
+    "35674515",
+    "2026-06-26 11:35",
+    "pre_ko"
+   ],
+   [
+    "35774000",
+    "2026-06-30 15:00",
+    "pre_ko"
+   ],
+   [
+    "35759636",
+    "2026-06-30 15:06",
+    "default"
+   ],
+   [
+    "35772591",
+    "2026-06-30 15:06",
+    "default"
+   ],
+   [
+    "35760084",
+    "2026-06-30 16:01",
+    "pre_ko"
+   ],
+   [
+    "35764745",
+    "2026-06-30 17:01",
+    "pre_ko"
+   ],
+   [
+    "35768365",
+    "2026-07-02 19:01",
+    "pre_ko"
+   ],
+   [
+    "35768297",
+    "2026-07-02 23:00",
+    "pre_ko"
+   ],
+   [
+    "35765620",
+    "2026-07-03 18:01",
+    "pre_ko"
+   ],
+   [
+    "35777617",
+    "2026-07-05 20:00",
+    "pre_ko"
+   ],
+   [
+    "35781607",
+    "2026-07-06 15:47",
+    "pre_ko"
+   ],
+   [
+    "35780184",
+    "2026-07-06 16:00",
+    "pre_ko"
+   ],
+   [
+    "35797538",
+    "2026-07-07 15:33",
+    "pre_ko"
+   ],
+   [
+    "35787218",
+    "2026-07-07 16:47",
+    "default"
+   ],
+   [
+    "35796504",
+    "2026-07-07 16:47",
+    "default"
+   ],
+   [
+    "35796477",
+    "2026-07-07 18:42",
+    "pre_ko"
+   ],
+   [
+    "35794996",
+    "2026-07-07 18:44",
+    "pre_ko"
+   ],
+   [
+    "35787327",
+    "2026-07-07 20:00",
+    "pre_ko"
+   ],
+   [
+    "35792347",
+    "2026-07-10 12:20",
+    "default"
+   ],
+   [
+    "35788728",
+    "2026-07-10 12:43",
+    "default"
+   ],
+   [
+    "35804974",
+    "2026-07-10 14:26",
+    "default"
+   ],
+   [
+    "35804211",
+    "2026-07-10 14:45",
+    "default"
+   ],
+   [
+    "35797769",
+    "2026-07-10 19:01",
+    "pre_ko"
+   ]
+  ],
+  "prova": [
+   [
+    "35823368",
+    "2026-07-16 12:38",
+    "default"
+   ],
+   [
+    "35823409",
+    "2026-07-16 12:38",
+    "default"
+   ],
+   [
+    "35823369",
+    "2026-07-16 14:10",
+    "default"
+   ],
+   [
+    "35826515",
+    "2026-07-16 14:10",
+    "default"
+   ],
+   [
+    "35817305",
+    "2026-07-16 15:06",
+    "pre_ko"
+   ],
+   [
+    "35817332",
+    "2026-07-16 15:06",
+    "pre_ko"
+   ],
+   [
+    "35817978",
+    "2026-07-16 15:06",
+    "pre_ko"
+   ],
+   [
+    "35812264",
+    "2026-07-17 12:36",
+    "default"
+   ],
+   [
+    "36006953",
+    "2026-09-01 16:01",
+    "pre_ko"
+   ]
+  ],
+  "taglio_prima_data_di_prova": "2026-07-16",
+  "campioni_stima": 56251,
+  "campioni_prova": 3901,
+  "fonti_lambda": {
+   "pre_ko": 19,
+   "default": 13
+  },
+  "solo_pre_ko": false,
+  "giri": 2000
+ },
+ "risultati_taglio_unico": {
+  "TUTTE": {
+   "n": 3901,
+   "n_partite": 9,
+   "freq_reale": 0.2850551140733145,
+   "brier_grezza": 0.07026856713857026,
+   "brier_isotonica_stima": 0.07489957985955249,
+   "diff_brier_isotonica_stima": {
+    "media": 0.004631012720982236,
+    "lo": -0.004658479696855049,
+    "hi": 0.00819428080177103,
+    "n": 3901,
+    "n_unita": 9
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.07246999189360094,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.0022014247550306773,
+    "lo": -0.00941318095346016,
+    "hi": 0.006266493679418486,
+    "n": 3901,
+    "n_unita": 9
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "logloss_grezza": 0.22688195563750616,
+   "logloss_isotonica_stima": 0.23664293923535176,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.009760983597845623,
+    "lo": -0.022122911532410534,
+    "hi": 0.021437673737908666,
+    "n": 3901,
+    "n_unita": 9
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2305931108045246,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.0037111551670184944,
+    "lo": -0.03508299253540515,
+    "hi": 0.017273679231409392,
+    "n": 3901,
+    "n_unita": 9
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)"
+  },
+  "btts": {
+   "n": 126,
+   "n_partite": 3,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.17576283550886443,
+   "brier_isotonica_stima": 0.19003245012639233,
+   "diff_brier_isotonica_stima": {
+    "media": 0.014269614617527925,
+    "lo": -0.002285832655269858,
+    "hi": 0.03573258925262717,
+    "n": 126,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.1866153782867801,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.010852542777915676,
+    "lo": -0.02118362023955896,
+    "hi": 0.03536633591760766,
+    "n": 126,
+    "n_unita": 3
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.5305335902252686,
+   "logloss_isotonica_stima": 0.5646441920546887,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.03411060182942014,
+    "lo": -0.0068596601548874085,
+    "hi": 0.07249229429320736,
+    "n": 126,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.556338510555733,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.025804920330464432,
+    "lo": -0.07013716763741366,
+    "hi": 0.07169475826253933,
+    "n": 126,
+    "n_unita": 3
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "btts|0-15": {
+   "n": 8,
+   "n_partite": 1,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.04577826737365191,
+   "brier_isotonica_stima": 0.04349243471838205,
+   "diff_brier_isotonica_stima": {
+    "media": -0.002285832655269858,
+    "lo": -0.002285832655269858,
+    "hi": -0.002285832655269858,
+    "n": 8,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.02459464713409295,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.021183620239558963,
+    "lo": -0.021183620239558963,
+    "hi": -0.021183620239558963,
+    "n": 8,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.24072006033868149,
+   "logloss_isotonica_stima": 0.23386040018379406,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.0068596601548874085,
+    "lo": -0.0068596601548874085,
+    "hi": -0.0068596601548874085,
+    "n": 8,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.1705828927012678,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.07013716763741366,
+    "lo": -0.07013716763741366,
+    "hi": -0.07013716763741366,
+    "n": 8,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "btts|30-45": {
+   "n": 40,
+   "n_partite": 2,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.25981231411266237,
+   "brier_isotonica_stima": 0.251772933383429,
+   "diff_brier_isotonica_stima": {
+    "media": -0.008039380729233391,
+    "lo": -0.05505154387729312,
+    "hi": 0.03897278241882633,
+    "n": 40,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.25409104061484566,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.005721273497816701,
+    "lo": -0.04986594941193047,
+    "hi": 0.03842340241629706,
+    "n": 40,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.7131506013627775,
+   "logloss_isotonica_stima": 0.6967056739077618,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.016444927455015725,
+    "lo": -0.11233325150095774,
+    "hi": 0.0794433965909263,
+    "n": 40,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.7013731494454918,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.011777451917285736,
+    "lo": -0.10180199637949575,
+    "hi": 0.07824709254492426,
+    "n": 40,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "btts|45-60": {
+   "n": 28,
+   "n_partite": 2,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.23996636008168828,
+   "brier_isotonica_stima": 0.24913538670397764,
+   "diff_brier_isotonica_stima": {
+    "media": 0.009169026622289364,
+    "lo": -0.0019882935432325704,
+    "hi": 0.02925220292022885,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.24949262175902123,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.009526261677332967,
+    "lo": -0.0014325945687202993,
+    "hi": 0.02925220292022885,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.673047132494463,
+   "logloss_isotonica_stima": 0.6914166802824546,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.018369547787991637,
+    "lo": -0.0039751977174404506,
+    "hi": 0.058590089697769396,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.692132234243166,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.01908510174870296,
+    "lo": -0.0028621137785561695,
+    "hi": 0.058590089697769396,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "btts|60-75": {
+   "n": 26,
+   "n_partite": 1,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.1395655177005087,
+   "brier_isotonica_stima": 0.1794873060250818,
+   "diff_brier_isotonica_stima": {
+    "media": 0.0399217883245731,
+    "lo": 0.0399217883245731,
+    "hi": 0.0399217883245731,
+    "n": 26,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.1611800254144805,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.021614507713971817,
+    "lo": 0.021614507713971817,
+    "hi": 0.021614507713971817,
+    "n": 26,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.4663427850873409,
+   "logloss_isotonica_stima": 0.5506814065879502,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.08433862150060935,
+    "lo": 0.08433862150060935,
+    "hi": 0.08433862150060935,
+    "n": 26,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.5131936015169237,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.046850816429582894,
+    "lo": 0.046850816429582894,
+    "hi": 0.046850816429582894,
+    "n": 26,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "btts|75-90": {
+   "n": 24,
+   "n_partite": 1,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.043318209505029535,
+   "brier_isotonica_stima": 0.07844879660323832,
+   "diff_brier_isotonica_stima": {
+    "media": 0.0351305870982088,
+    "lo": 0.0351305870982088,
+    "hi": 0.0351305870982088,
+    "n": 24,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.0823610330182764,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.03904282351324687,
+    "lo": 0.03904282351324687,
+    "hi": 0.03904282351324687,
+    "n": 24,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.2260506545436445,
+   "logloss_isotonica_stima": 0.32202810091310513,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.0959774463694606,
+    "lo": 0.0959774463694606,
+    "hi": 0.0959774463694606,
+    "n": 24,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.3315136255143286,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.10546297097068408,
+    "lo": 0.10546297097068408,
+    "hi": 0.10546297097068408,
+    "n": 24,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "cs_any_other": {
+   "n": 243,
+   "n_partite": 2,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.001677955406749296,
+   "brier_isotonica_stima": 0.001031823671515289,
+   "diff_brier_isotonica_stima": {
+    "media": -0.0006461317352340072,
+    "lo": -0.001089779490211367,
+    "hi": -0.00011855062120687661,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.0011097325078144272,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0005682228989348688,
+    "lo": -0.000942311912355657,
+    "hi": -0.0001233602883804179,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.01803199765455617,
+   "logloss_isotonica_stima": 0.011847548898310885,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.0061844487562452855,
+    "lo": -0.008602519717748053,
+    "hi": -0.003308904910133885,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.012372853972208797,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0056591436823473715,
+    "lo": -0.007503319598934288,
+    "hi": -0.0034660696193791456,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_any_other|30-45": {
+   "n": 30,
+   "n_partite": 1,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.005801486833130369,
+   "brier_isotonica_stima": 0.004733006297476537,
+   "diff_brier_isotonica_stima": {
+    "media": -0.001068480535653833,
+    "lo": -0.001068480535653833,
+    "hi": -0.001068480535653833,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.005564750747472502,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.00023673608565786782,
+    "lo": -0.00023673608565786782,
+    "hi": -0.00023673608565786782,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.045330358288446705,
+   "logloss_isotonica_stima": 0.034832665106011435,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.010497693182435276,
+    "lo": -0.010497693182435276,
+    "hi": -0.010497693182435276,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.04048119553102678,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.004849162757419926,
+    "lo": -0.004849162757419926,
+    "hi": -0.004849162757419926,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "cs_any_other|45-60": {
+   "n": 63,
+   "n_partite": 2,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.0026561588205692914,
+   "brier_isotonica_stima": 0.0011217660670182874,
+   "diff_brier_isotonica_stima": {
+    "media": -0.001534392753551004,
+    "lo": -0.0031124041700608444,
+    "hi": -0.0003508841911686236,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.0010202788373675647,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0016358799832017262,
+    "lo": -0.00332938066541169,
+    "hi": -0.0003657544715442535,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.027975380275395097,
+   "logloss_isotonica_stima": 0.01607918877916966,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.011896191496225434,
+    "lo": -0.01786169418192016,
+    "hi": -0.007422064481954389,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.01511399796354917,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.012861382311845929,
+    "lo": -0.019500855033190743,
+    "hi": -0.007881777770837317,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_any_other|60-75": {
+   "n": 57,
+   "n_partite": 2,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.0010631311215803798,
+   "brier_isotonica_stima": 0.0006414124114306089,
+   "diff_brier_isotonica_stima": {
+    "media": -0.00042171871014977077,
+    "lo": -0.0006057023475678811,
+    "hi": -2.308749574386517e-05,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.0006386471886243601,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0004244839329560198,
+    "lo": -0.0006097291548593549,
+    "hi": -2.3119285498793802e-05,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.017199247596639308,
+   "logloss_isotonica_stima": 0.012312837571861312,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.004886410024777996,
+    "lo": -0.005576841197013612,
+    "hi": -0.0033904758182674963,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.012268583754622238,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.00493066384201707,
+    "lo": -0.00563007065903286,
+    "hi": -0.0034152824051495263,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_any_other|75-90": {
+   "n": 93,
+   "n_partite": 2,
+   "freq_reale": 0.0,
+   "brier_grezza": 6.195784107764345e-05,
+   "brier_isotonica_stima": 1.6249393335723902e-05,
+   "diff_brier_isotonica_stima": {
+    "media": -4.570844774191954e-05,
+    "lo": -0.0001149770136526452,
+    "hi": -1.9598797983033363e-06,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 2.1957209343931618e-05,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -4.000063173371183e-05,
+    "lo": -0.00010028819043278404,
+    "hi": -1.9242788711399015e-06,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.003000630226294801,
+   "logloss_isotonica_stima": 0.0012812235959722466,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.0017194066303225545,
+    "lo": -0.0033566460465085913,
+    "hi": -0.0006853606832576891,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.0015126505763319285,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0014879796499628725,
+    "lo": -0.0027463184093971353,
+    "hi": -0.0006932393808464961,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_cell": {
+   "n": 741,
+   "n_partite": 2,
+   "freq_reale": 0.10931174089068826,
+   "brier_grezza": 0.04731292975398364,
+   "brier_isotonica_stima": 0.05898207056872596,
+   "diff_brier_isotonica_stima": {
+    "media": 0.011669140814742313,
+    "lo": 0.006829867293900251,
+    "hi": 0.016469387936222747,
+    "n": 741,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.05565662014067109,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.00834369038668744,
+    "lo": 0.005186450764882495,
+    "hi": 0.011475468398639117,
+    "n": 741,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.16607507597173565,
+   "logloss_isotonica_stima": 0.20210920406630212,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.03603412809456645,
+    "lo": 0.022378500411984595,
+    "hi": 0.04957962974745007,
+    "n": 741,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.1933521469517211,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.027277070979985434,
+    "lo": 0.018367908621832504,
+    "hi": 0.03611438525460487,
+    "n": 741,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_cell|30-45": {
+   "n": 100,
+   "n_partite": 1,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.07767987791551816,
+   "brier_isotonica_stima": 0.08435237421190214,
+   "diff_brier_isotonica_stima": {
+    "media": 0.006672496296383993,
+    "lo": 0.006672496296383993,
+    "hi": 0.006672496296383993,
+    "n": 100,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.08393476078674376,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.006254882871225608,
+    "lo": 0.006254882871225608,
+    "hi": 0.006254882871225608,
+    "n": 100,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.2542911810415956,
+   "logloss_isotonica_stima": 0.28467213181560647,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.03038095077401086,
+    "lo": 0.03038095077401086,
+    "hi": 0.03038095077401086,
+    "n": 100,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2846897295281422,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.030398548486546603,
+    "lo": 0.030398548486546603,
+    "hi": 0.030398548486546603,
+    "n": 100,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "cs_cell|45-60": {
+   "n": 216,
+   "n_partite": 2,
+   "freq_reale": 0.09722222222222222,
+   "brier_grezza": 0.07226118215477176,
+   "brier_isotonica_stima": 0.0770869885424005,
+   "diff_brier_isotonica_stima": {
+    "media": 0.004825806387628732,
+    "lo": -0.0029422601996717274,
+    "hi": 0.02036193956222965,
+    "n": 216,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.07565514501558306,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.00339396286081129,
+    "lo": -0.00276615163353319,
+    "hi": 0.01571419184950025,
+    "n": 216,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.23204844571418135,
+   "logloss_isotonica_stima": 0.2523997501399526,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.0203513044257712,
+    "lo": -0.0019395945633445316,
+    "hi": 0.06493310240400267,
+    "n": 216,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.24791395355053444,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.015865507836353043,
+    "lo": -0.0011872845789657142,
+    "hi": 0.049971092666990555,
+    "n": 216,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_cell|60-75": {
+   "n": 158,
+   "n_partite": 2,
+   "freq_reale": 0.12025316455696203,
+   "brier_grezza": 0.04653109668973859,
+   "brier_isotonica_stima": 0.06045006432751407,
+   "diff_brier_isotonica_stima": {
+    "media": 0.013918967637775495,
+    "lo": 0.006151388667936928,
+    "hi": 0.017952133641345517,
+    "n": 158,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.054489389488646206,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.00795829279890762,
+    "lo": 0.0056946943510717786,
+    "hi": 0.009133622762206998,
+    "n": 158,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.16528593591421525,
+   "logloss_isotonica_stima": 0.2047196659467567,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.03943373003254146,
+    "lo": 0.022557907348470924,
+    "hi": 0.04819617642619348,
+    "n": 158,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.18635879269956565,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.021072856785350393,
+    "lo": 0.01677558599935243,
+    "hi": 0.02330413200115703,
+    "n": 158,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_cell|75-90": {
+   "n": 267,
+   "n_partite": 2,
+   "freq_reale": 0.11610486891385768,
+   "brier_grezza": 0.01621934282299876,
+   "brier_isotonica_stima": 0.03396470854430708,
+   "diff_brier_isotonica_stima": {
+    "media": 0.017745365721308314,
+    "lo": 0.01527328369668613,
+    "hi": 0.02214876182766659,
+    "n": 267,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.029577695067381515,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.013358352244382749,
+    "lo": 0.011722881125804354,
+    "hi": 0.016271535174350513,
+    "n": 267,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.08013060315425981,
+   "logloss_isotonica_stima": 0.1289575048005689,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.04882690164630909,
+    "lo": 0.04280024135863448,
+    "hi": 0.05956189028372947,
+    "n": 267,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.11914181544930448,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.03901121229504468,
+    "lo": 0.03533827846118262,
+    "hi": 0.045553625686611476,
+    "n": 267,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "ht": {
+   "n": 288,
+   "n_partite": 4,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.20733492772556514,
+   "brier_isotonica_stima": 0.19970440856522842,
+   "diff_brier_isotonica_stima": {
+    "media": -0.007630519160336729,
+    "lo": -0.027901068388081634,
+    "hi": 0.0056851834103055525,
+    "n": 288,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.19603624418671395,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.011298683538851181,
+    "lo": -0.047133353039594504,
+    "hi": 0.013421124689632946,
+    "n": 288,
+    "n_unita": 4
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.6129431526560593,
+   "logloss_isotonica_stima": 0.5804435335641047,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.03249961909195451,
+    "lo": -0.13387969333715824,
+    "hi": 0.019226879151945556,
+    "n": 288,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.5672196866172831,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.045723466038776216,
+    "lo": -0.20784447246835025,
+    "hi": 0.04307488862786431,
+    "n": 288,
+    "n_unita": 4
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "hts_cell": {
+   "n": 870,
+   "n_partite": 4,
+   "freq_reale": 0.1103448275862069,
+   "brier_grezza": 0.07643078773074649,
+   "brier_isotonica_stima": 0.0744402324146511,
+   "diff_brier_isotonica_stima": {
+    "media": -0.001990555316095407,
+    "lo": -0.007293281447908703,
+    "hi": 0.000839267638698906,
+    "n": 870,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.07211713381991518,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.004313653910831316,
+    "lo": -0.02071952853294022,
+    "hi": 0.0015692474664529713,
+    "n": 870,
+    "n_unita": 4
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.23259755341133068,
+   "logloss_isotonica_stima": 0.22600304957730022,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.006594503834030446,
+    "lo": -0.020046289278601147,
+    "hi": 0.0017467405175960605,
+    "n": 870,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2192292998505425,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0133682535607882,
+    "lo": -0.06882524031046022,
+    "hi": 0.00424052164745711,
+    "n": 870,
+    "n_unita": 4
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "hts_cell|0-15": {
+   "n": 160,
+   "n_partite": 2,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.06410483351328364,
+   "brier_isotonica_stima": 0.062216020388416796,
+   "diff_brier_isotonica_stima": {
+    "media": -0.0018888131248668383,
+    "lo": -0.006421236571618812,
+    "hi": 0.002643610321885135,
+    "n": 160,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.06353355203631206,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0005712814769715719,
+    "lo": -0.0011905633715502142,
+    "hi": 4.8000417607070385e-05,
+    "n": 160,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.2053386443500777,
+   "logloss_isotonica_stima": 0.19610950075076974,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.009229143599307994,
+    "lo": -0.022423605702755343,
+    "hi": 0.0039653185041393525,
+    "n": 160,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.20200618705293755,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0033324572971401662,
+    "lo": -0.00538136351609877,
+    "hi": -0.001283551078181563,
+    "n": 160,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "hts_cell|15-30": {
+   "n": 300,
+   "n_partite": 2,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.06404762565819956,
+   "brier_isotonica_stima": 0.06380821634102665,
+   "diff_brier_isotonica_stima": {
+    "media": -0.00023940931717290082,
+    "lo": -0.00036301753516628795,
+    "hi": -0.00011580109917951368,
+    "n": 300,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.06369513335667344,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.00035249230152610225,
+    "lo": -0.0023848316193835553,
+    "hi": 0.001679847016331351,
+    "n": 300,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.19748671347635863,
+   "logloss_isotonica_stima": 0.19512115816651693,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.0023655553098416936,
+    "lo": -0.004378849610715377,
+    "hi": -0.0003522610089680104,
+    "n": 300,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.1966011630653945,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0008855504109641528,
+    "lo": -0.007237583593266279,
+    "hi": 0.005466482771337973,
+    "n": 300,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "hts_cell|30-45": {
+   "n": 410,
+   "n_partite": 4,
+   "freq_reale": 0.12195121951219512,
+   "brier_grezza": 0.09030176650283954,
+   "brier_isotonica_stima": 0.0869901805763214,
+   "diff_brier_isotonica_stima": {
+    "media": -0.0033115859265181453,
+    "lo": -0.007293281447908703,
+    "hi": 0.0010469331853809073,
+    "n": 410,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.08162926363540059,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.008672502867438937,
+    "lo": -0.02071952853294022,
+    "hi": 0.0021756503400640163,
+    "n": 410,
+    "n_unita": 4
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.26892603494862843,
+   "logloss_isotonica_stima": 0.26026533063944624,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.008660704309182194,
+    "lo": -0.020046289278601147,
+    "hi": 0.0025392250756411405,
+    "n": 410,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2425076878582527,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.026418347090375757,
+    "lo": -0.06882524031046022,
+    "hi": 0.006288084382887881,
+    "n": 410,
+    "n_unita": 4
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "ht|0-15": {
+   "n": 48,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.20090857725589037,
+   "brier_isotonica_stima": 0.19295246855757997,
+   "diff_brier_isotonica_stima": {
+    "media": -0.00795610869831037,
+    "lo": -0.022997888228985724,
+    "hi": 0.007085670832364986,
+    "n": 48,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.19350518715737383,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.007403390098516538,
+    "lo": -0.03236246908703831,
+    "hi": 0.017555688890005236,
+    "n": 48,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.5853568989372062,
+   "logloss_isotonica_stima": 0.5648029382649885,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.020553960672217726,
+    "lo": -0.05746039267501629,
+    "hi": 0.01635247133058084,
+    "n": 48,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.5686390018438313,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.01671789709337485,
+    "lo": -0.07642698833810375,
+    "hi": 0.04299119415135405,
+    "n": 48,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "ht|15-30": {
+   "n": 90,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.20941307814592808,
+   "brier_isotonica_stima": 0.2115778426148684,
+   "diff_brier_isotonica_stima": {
+    "media": 0.0021647644689403163,
+    "lo": -0.0034465583216101332,
+    "hi": 0.007776087259490765,
+    "n": 90,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.20935491315393712,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -5.8164991990966584e-05,
+    "lo": -0.0077577062825882346,
+    "hi": 0.007641376298606301,
+    "n": 90,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.6040973411464974,
+   "logloss_isotonica_stima": 0.6104709299040552,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.006373588757557713,
+    "lo": -0.012162833744804822,
+    "hi": 0.024910011259920248,
+    "n": 90,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.6055386402092086,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.001441299062711126,
+    "lo": -0.01814049742114985,
+    "hi": 0.0210230955465721,
+    "n": 90,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "ht|30-45": {
+   "n": 150,
+   "n_partite": 4,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.20814446962364333,
+   "brier_isotonica_stima": 0.19474096893789192,
+   "diff_brier_isotonica_stima": {
+    "media": -0.01340350068575139,
+    "lo": -0.03752307384589873,
+    "hi": 0.010716072474395944,
+    "n": 150,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.18885498105576892,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.01928948856787439,
+    "lo": -0.05414489031587858,
+    "hi": 0.015565913180129799,
+    "n": 150,
+    "n_unita": 4
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.6270782407518293,
+   "logloss_isotonica_stima": 0.5674320862558516,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.059646154495977606,
+    "lo": -0.18568204779940675,
+    "hi": 0.03898051739283249,
+    "n": 150,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.5437741335896321,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.08330410716219704,
+    "lo": -0.2814263671675446,
+    "hi": 0.056332746709122944,
+    "n": 150,
+    "n_unita": 4
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "mo": {
+   "n": 243,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.08087714651107608,
+   "brier_isotonica_stima": 0.09074273822441917,
+   "diff_brier_isotonica_stima": {
+    "media": 0.009865591713343096,
+    "lo": -2.472122129458705e-05,
+    "hi": 0.02162704493291223,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.07737236528174785,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0035047812293282276,
+    "lo": -0.007706475102216251,
+    "hi": 2.8461345600337564e-05,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.26059029787830973,
+   "logloss_isotonica_stima": 0.28902152579659973,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.02843122791828996,
+    "lo": 0.005686697070763883,
+    "hi": 0.055478778115348,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2560122807328115,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.004578017145498176,
+    "lo": -0.0201046803084865,
+    "hi": 0.008478495059742006,
+    "n": 243,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "mo|30-45": {
+   "n": 30,
+   "n_partite": 1,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.03800963862061049,
+   "brier_isotonica_stima": 0.0348305253462846,
+   "diff_brier_isotonica_stima": {
+    "media": -0.0031791132743258996,
+    "lo": -0.0031791132743258996,
+    "hi": -0.0031791132743258996,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.034702301567661326,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.003307337052949165,
+    "lo": -0.003307337052949165,
+    "hi": -0.003307337052949165,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_grezza": 0.1858351596582479,
+   "logloss_isotonica_stima": 0.17805513933117828,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.007780020327069631,
+    "lo": -0.007780020327069631,
+    "hi": -0.007780020327069631,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.18228243388513293,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.0035527257731149875,
+    "lo": -0.0035527257731149875,
+    "hi": -0.0035527257731149875,
+    "n": 30,
+    "n_unita": 1
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 1 partite indipendenti)"
+  },
+  "mo|45-60": {
+   "n": 63,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.22923475337397775,
+   "brier_isotonica_stima": 0.23278457277517334,
+   "diff_brier_isotonica_stima": {
+    "media": 0.003549819401195578,
+    "lo": -0.0008802054074975711,
+    "hi": 0.00687233800771544,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.193577832059663,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.035656921314314756,
+    "lo": -0.06231754750426445,
+    "hi": -0.00010941972771515084,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.6051068106034994,
+   "logloss_isotonica_stima": 0.6161083776263291,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.011001567022829698,
+    "lo": -0.004982269159600128,
+    "hi": 0.022989444159652067,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.5153633465435722,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.08974346405992718,
+    "lo": -0.15613908063910334,
+    "hi": -0.0012159752876923233,
+    "n": 63,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "mo|60-75": {
+   "n": 57,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.032294309654213434,
+   "brier_isotonica_stima": 0.037650547533494914,
+   "diff_brier_isotonica_stima": {
+    "media": 0.0053562378792814825,
+    "lo": 0.0029040197910480234,
+    "hi": 0.010669377070453977,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.03719776016410383,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.004903450509890403,
+    "lo": 0.0020563460538948913,
+    "hi": 0.01107217683121401,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.140509980849837,
+   "logloss_isotonica_stima": 0.16329377616124527,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.022783795311408256,
+    "lo": 0.012853675411453656,
+    "hi": 0.027366927572925765,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.16066207540787242,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.02015209455803539,
+    "lo": 0.020064785219973864,
+    "hi": 0.020341264790502047,
+    "n": 57,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "mo|75-90": {
+   "n": 93,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.023981637964757076,
+   "brier_isotonica_stima": 0.04509742294516334,
+   "diff_brier_isotonica_stima": {
+    "media": 0.021115784980406255,
+    "lo": 7.274919917924991e-05,
+    "hi": 0.034406123368549625,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.037040214702389246,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.013058576737632168,
+    "lo": 0.0007148290487257732,
+    "hi": 0.02085462790957305,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.1249203184754909,
+   "logloss_isotonica_stima": 0.18030111351600714,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.055380795040516205,
+    "lo": 0.0014237698643894496,
+    "hi": 0.08945891620438573,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.1625471190432843,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.03762680056779341,
+    "lo": 0.01322355084078075,
+    "hi": 0.05303937934274878,
+    "n": 93,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "ou_line": {
+   "n": 1390,
+   "n_partite": 9,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.050823415761870494,
+   "brier_isotonica_stima": 0.05752112778166804,
+   "diff_brier_isotonica_stima": {
+    "media": 0.006697712019797552,
+    "lo": -0.00400790562921092,
+    "hi": 0.009509205855650295,
+    "n": 1390,
+    "n_unita": 9
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.05732291415582893,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.006499498393958436,
+    "lo": -0.005613227335404719,
+    "hi": 0.00978205382284134,
+    "n": 1390,
+    "n_unita": 9
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "logloss_grezza": 0.17882368923106642,
+   "logloss_isotonica_stima": 0.19088808747878416,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.012064398247717725,
+    "lo": -0.025022550780194993,
+    "hi": 0.02148860567506989,
+    "n": 1390,
+    "n_unita": 9
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.1919890530058514,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.013165363774784968,
+    "lo": -0.028062533554381878,
+    "hi": 0.02398702010616327,
+    "n": 1390,
+    "n_unita": 9
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 9 partite indipendenti)"
+  },
+  "ou_line|0-15": {
+   "n": 108,
+   "n_partite": 6,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.006973897489176006,
+   "brier_isotonica_stima": 0.0054128395462903255,
+   "diff_brier_isotonica_stima": {
+    "media": -0.001561057942885681,
+    "lo": -0.0024681984493316734,
+    "hi": -0.0007029892724861769,
+    "n": 108,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.004418390023111041,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.002555507466064965,
+    "lo": -0.004344863237530754,
+    "hi": -0.0010894172752953263,
+    "n": 108,
+    "n_unita": 6
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.07655266163141448,
+   "logloss_isotonica_stima": 0.06695126914132,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.009601392490094472,
+    "lo": -0.013511608434181076,
+    "hi": -0.004516622986302263,
+    "n": 108,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.060729589350546884,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.015823072280867594,
+    "lo": -0.024401577843931686,
+    "hi": -0.007284354448797151,
+    "n": 108,
+    "n_unita": 6
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "ou_line|15-30": {
+   "n": 114,
+   "n_partite": 5,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.014221909522491062,
+   "brier_isotonica_stima": 0.0029076432488135606,
+   "diff_brier_isotonica_stima": {
+    "media": -0.011314266273677504,
+    "lo": -0.017146015120243444,
+    "hi": -0.00327858990187802,
+    "n": 114,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.004598162581443678,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.009623746941047385,
+    "lo": -0.014380228455150688,
+    "hi": -0.003059173674435964,
+    "n": 114,
+    "n_unita": 5
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.11255238740489955,
+   "logloss_isotonica_stima": 0.048683535959371416,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.06386885144552813,
+    "lo": -0.09048160394976157,
+    "hi": -0.02657881409941839,
+    "n": 114,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.06012111907788502,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.052431268327014544,
+    "lo": -0.07129425195054225,
+    "hi": -0.025862013411755053,
+    "n": 114,
+    "n_unita": 5
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "ou_line|30-45": {
+   "n": 238,
+   "n_partite": 5,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.08868638951216358,
+   "brier_isotonica_stima": 0.09136929930097967,
+   "diff_brier_isotonica_stima": {
+    "media": 0.002682909788816086,
+    "lo": -0.0004859107648959615,
+    "hi": 0.0038909935325762658,
+    "n": 238,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.09180476414196102,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.003118374629797454,
+    "lo": -0.0017494497738683458,
+    "hi": 0.004512940540036845,
+    "n": 238,
+    "n_unita": 5
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.29595641806733775,
+   "logloss_isotonica_stima": 0.29393896807756376,
+   "diff_logloss_isotonica_stima": {
+    "media": -0.0020174499897739596,
+    "lo": -0.009915534252991168,
+    "hi": 0.003347017597955082,
+    "n": 238,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2940767649453403,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": -0.001879653121997399,
+    "lo": -0.013595133427676908,
+    "hi": 0.002159851923884997,
+    "n": 238,
+    "n_unita": 5
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "ou_line|45-60": {
+   "n": 322,
+   "n_partite": 4,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.07895598256572775,
+   "brier_isotonica_stima": 0.08972912328833209,
+   "diff_brier_isotonica_stima": {
+    "media": 0.010773140722604343,
+    "lo": 0.0014676754633545926,
+    "hi": 0.017329609691001162,
+    "n": 322,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.08706913827749445,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.008113155711766698,
+    "lo": -0.006920840501096173,
+    "hi": 0.01347347029601794,
+    "n": 322,
+    "n_unita": 4
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.2570105175578674,
+   "logloss_isotonica_stima": 0.28272305536400066,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.025712537806133223,
+    "lo": 0.005016372278823847,
+    "hi": 0.03789853489864511,
+    "n": 322,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2775048809137777,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.020494363355910223,
+    "lo": -0.01877024545507349,
+    "hi": 0.03508382858674847,
+    "n": 322,
+    "n_unita": 4
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "ou_line|60-75": {
+   "n": 236,
+   "n_partite": 3,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.06292928214495119,
+   "brier_isotonica_stima": 0.07477528012625535,
+   "diff_brier_isotonica_stima": {
+    "media": 0.011845997981304163,
+    "lo": -0.03096876662232713,
+    "hi": 0.01694662134010419,
+    "n": 236,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.07330415910975455,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.010374876964803357,
+    "lo": -0.01719889576209189,
+    "hi": 0.013364324016312183,
+    "n": 236,
+    "n_unita": 3
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.19633660115010534,
+   "logloss_isotonica_stima": 0.22938974642057905,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.03305314527047373,
+    "lo": -0.06750561691855743,
+    "hi": 0.044576010061763476,
+    "n": 236,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.2281665706614349,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.03182996951132958,
+    "lo": -0.0370241439729298,
+    "hi": 0.03861929619318831,
+    "n": 236,
+    "n_unita": 3
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "ou_line|75-90": {
+   "n": 372,
+   "n_partite": 2,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.018514977468648497,
+   "brier_isotonica_stima": 0.02890503379807023,
+   "diff_brier_isotonica_stima": {
+    "media": 0.010390056329421733,
+    "lo": 0.009598412174919997,
+    "hi": 0.011643492907382817,
+    "n": 372,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "brier_produzione_10_09_IN_CAMPIONE": 0.030892193760160263,
+   "diff_brier_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.012377216291511766,
+    "lo": 0.011504063297614414,
+    "hi": 0.013759708531849235,
+    "n": 372,
+    "n_unita": 2
+   },
+   "verdetto_brier_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.07509628060684535,
+   "logloss_isotonica_stima": 0.10060081463428502,
+   "diff_logloss_isotonica_stima": {
+    "media": 0.02550453402743969,
+    "lo": 0.023771629109584167,
+    "hi": 0.028248300147377597,
+    "n": 372,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_stima": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_produzione_10_09_IN_CAMPIONE": 0.10822050555395012,
+   "diff_logloss_produzione_10_09_IN_CAMPIONE": {
+    "media": 0.03312422494710476,
+    "lo": 0.03114341980287092,
+    "hi": 0.03626049975880836,
+    "n": 372,
+    "n_unita": 2
+   },
+   "verdetto_logloss_produzione_10_09_IN_CAMPIONE": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  }
+ },
+ "risultati_origine_mobile": {
+  "TUTTE": {
+   "n": 11451,
+   "n_partite": 14,
+   "freq_reale": 0.2804995196926033,
+   "brier_grezza": 0.07321221185007233,
+   "brier_isotonica_origine_mobile": 0.07498203183796795,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0017698199878956192,
+    "lo": -0.0023002842488688714,
+    "hi": 0.005688874161285809,
+    "n": 11451,
+    "n_unita": 14
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MIGLIORA",
+   "logloss_grezza": 0.23734879561386135,
+   "logloss_isotonica_origine_mobile": 0.24197832196591673,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.004629526352055362,
+    "lo": -0.005671883420733485,
+    "hi": 0.013801721963349552,
+    "n": 11451,
+    "n_unita": 14
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MIGLIORA"
+  },
+  "btts": {
+   "n": 368,
+   "n_partite": 7,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.16255579527466452,
+   "brier_isotonica_origine_mobile": 0.1845901287209204,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0220343334462559,
+    "lo": -0.002133781274962173,
+    "hi": 0.04400004092103733,
+    "n": 368,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.49828282205245583,
+   "logloss_isotonica_origine_mobile": 0.5515312619561143,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.05324843990365853,
+    "lo": -0.0008959038200567982,
+    "hi": 0.10275111005906745,
+    "n": 368,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "btts|0-15": {
+   "n": 38,
+   "n_partite": 3,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.19465768583472423,
+   "brier_isotonica_origine_mobile": 0.20652472309860676,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.011867037263882505,
+    "lo": -0.002285832655269858,
+    "hi": 0.03723170364664233,
+    "n": 38,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.5731648952559434,
+   "logloss_isotonica_origine_mobile": 0.5964552267965451,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.02329033154060157,
+    "lo": -0.0068596601548874085,
+    "hi": 0.0746098731542163,
+    "n": 38,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "btts|15-30": {
+   "n": 70,
+   "n_partite": 3,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.23011784304043037,
+   "brier_isotonica_origine_mobile": 0.2389599142791652,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.008842071238734829,
+    "lo": -0.05058695362611826,
+    "hi": 0.056095780623442185,
+    "n": 70,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.652642444469991,
+   "logloss_isotonica_origine_mobile": 0.6710126032783129,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0183701588083218,
+    "lo": -0.10194606105373032,
+    "hi": 0.11492124171662464,
+    "n": 70,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "btts|30-45": {
+   "n": 100,
+   "n_partite": 5,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.20670073557106103,
+   "brier_isotonica_origine_mobile": 0.23070972657531333,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.024008991004252276,
+    "lo": -0.024786579402928815,
+    "hi": 0.06408801764366424,
+    "n": 100,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.6031952225612858,
+   "logloss_isotonica_origine_mobile": 0.6540059594270942,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.050810736865808476,
+    "lo": -0.05047436594447159,
+    "hi": 0.13436013857654042,
+    "n": 100,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "btts|45-60": {
+   "n": 60,
+   "n_partite": 4,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.15630774102091494,
+   "brier_isotonica_origine_mobile": 0.17206425223201627,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.01575651121110134,
+    "lo": -0.008981840926703491,
+    "hi": 0.030078715080356762,
+    "n": 60,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.48773260027661597,
+   "logloss_isotonica_origine_mobile": 0.526436079927553,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.03870347965093706,
+    "lo": -0.017993169993188132,
+    "hi": 0.07152785576069377,
+    "n": 60,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "btts|60-75": {
+   "n": 28,
+   "n_partite": 2,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.1360486419010763,
+   "brier_isotonica_origine_mobile": 0.1755010868547659,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0394524449536896,
+    "lo": 0.03335098113220416,
+    "hi": 0.0399217883245731,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.45856533466697863,
+   "logloss_isotonica_origine_mobile": 0.5423023047559337,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.083736970088955,
+    "lo": 0.07591550173744857,
+    "hi": 0.08433862150060935,
+    "n": 28,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "btts|75-90": {
+   "n": 72,
+   "n_partite": 3,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.03413043881855214,
+   "brier_isotonica_origine_mobile": 0.07007188428644912,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.03594144546789699,
+    "lo": 0.016079682739622465,
+    "hi": 0.0404003130353648,
+    "n": 72,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.18721574637885546,
+   "logloss_isotonica_origine_mobile": 0.2938346983412603,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.10661895196240484,
+    "lo": 0.0875222126187916,
+    "hi": 0.11682320318689404,
+    "n": 72,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "cs_any_other": {
+   "n": 915,
+   "n_partite": 7,
+   "freq_reale": 0.05245901639344262,
+   "brier_grezza": 0.0033278175410484992,
+   "brier_isotonica_origine_mobile": 0.0025385094103985715,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0007893081306499277,
+    "lo": -0.0017061308464686375,
+    "hi": -0.00022111388911647982,
+    "n": 915,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.022510003001990457,
+   "logloss_isotonica_origine_mobile": 0.016441746282395118,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.006068256719595341,
+    "lo": -0.00780584389463774,
+    "hi": -0.004527740422329635,
+    "n": 915,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "cs_any_other|0-15": {
+   "n": 45,
+   "n_partite": 2,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.004405705551688044,
+   "brier_isotonica_origine_mobile": 0.0029076519843002748,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0014980535673877699,
+    "lo": -0.001602175366436516,
+    "hi": -4.0348380705322e-05,
+    "n": 45,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.04414093744443633,
+   "logloss_isotonica_origine_mobile": 0.036297869583950246,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.007843067860486086,
+    "lo": -0.008356131509676198,
+    "hi": -0.0006601767718245078,
+    "n": 45,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_any_other|15-30": {
+   "n": 105,
+   "n_partite": 3,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.0010485484244746415,
+   "brier_isotonica_origine_mobile": 0.0013030341875665261,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0002544857630918847,
+    "lo": -0.0002344676113842496,
+    "hi": 0.0008890826665547168,
+    "n": 105,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.020135563542510452,
+   "logloss_isotonica_origine_mobile": 0.016450376319399624,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.003685187223110825,
+    "lo": -0.009133153351334643,
+    "hi": 0.0035384167756803255,
+    "n": 105,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "cs_any_other|30-45": {
+   "n": 135,
+   "n_partite": 4,
+   "freq_reale": 0.0,
+   "brier_grezza": 0.004116517280611017,
+   "brier_isotonica_origine_mobile": 0.0035727153648583455,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0005438019157526722,
+    "lo": -0.0009316982642876059,
+    "hi": -0.00010535982246919544,
+    "n": 135,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.03362862311961292,
+   "logloss_isotonica_origine_mobile": 0.02614545639588898,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.007483166723723943,
+    "lo": -0.009388779750600314,
+    "hi": -0.006529727617664382,
+    "n": 135,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "cs_any_other|45-60": {
+   "n": 198,
+   "n_partite": 6,
+   "freq_reale": 0.0707070707070707,
+   "brier_grezza": 0.010428080744923855,
+   "brier_isotonica_origine_mobile": 0.007629551502163498,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.002798529242760356,
+    "lo": -0.006373417992751346,
+    "hi": -0.00045173959123953166,
+    "n": 198,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.044298395420534535,
+   "logloss_isotonica_origine_mobile": 0.031360629307778574,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.012937766112755959,
+    "lo": -0.01939992221653907,
+    "hi": -0.006621210442292781,
+    "n": 198,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "cs_any_other|60-75": {
+   "n": 150,
+   "n_partite": 5,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.0005200534575599968,
+   "brier_isotonica_origine_mobile": 0.0002966156313379204,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0002234378262220764,
+    "lo": -0.0004849035667547624,
+    "hi": -1.813502471159657e-05,
+    "n": 150,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.011273484075336848,
+   "logloss_isotonica_origine_mobile": 0.00751099947006365,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.0037624846052731974,
+    "lo": -0.005232946812823542,
+    "hi": -0.0017811140019629637,
+    "n": 150,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "cs_any_other|75-90": {
+   "n": 282,
+   "n_partite": 6,
+   "freq_reale": 0.0673758865248227,
+   "brier_grezza": 0.00013510949167435093,
+   "brier_isotonica_origine_mobile": 6.245767780765183e-05,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -7.26518138666991e-05,
+    "lo": -0.00012553890969379776,
+    "hi": -2.3761144181130883e-05,
+    "n": 282,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.005298253064340168,
+   "logloss_isotonica_origine_mobile": 0.002900046335752103,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.002398206728588065,
+    "lo": -0.003455905873556032,
+    "hi": -0.0013217093842180791,
+    "n": 282,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "cs_cell": {
+   "n": 2936,
+   "n_partite": 7,
+   "freq_reale": 0.08753405994550409,
+   "brier_grezza": 0.05539249800984836,
+   "brier_isotonica_origine_mobile": 0.05861996827492866,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0032274702650802933,
+    "lo": 6.793732569668013e-05,
+    "hi": 0.009866881232379042,
+    "n": 2936,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.19277423238514405,
+   "logloss_isotonica_origine_mobile": 0.20818082827352932,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.015406595888385242,
+    "lo": 0.005348291519456074,
+    "hi": 0.031571644989362914,
+    "n": 2936,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "cs_cell|0-15": {
+   "n": 240,
+   "n_partite": 2,
+   "freq_reale": 0.0625,
+   "brier_grezza": 0.05495442931737163,
+   "brier_isotonica_origine_mobile": 0.05687898494270247,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.001924555625330841,
+    "lo": -0.002316808299865547,
+    "hi": 0.002227510191416297,
+    "n": 240,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.19800413608276196,
+   "logloss_isotonica_origine_mobile": 0.2128141344626116,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.014809998379849667,
+    "lo": -0.011383852142564847,
+    "hi": 0.016680987702879273,
+    "n": 240,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "cs_cell|15-30": {
+   "n": 560,
+   "n_partite": 3,
+   "freq_reale": 0.0625,
+   "brier_grezza": 0.05782997962055016,
+   "brier_isotonica_origine_mobile": 0.05756272630905803,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0002672533114921295,
+    "lo": -0.003555431276573243,
+    "hi": 0.00543268736820383,
+    "n": 560,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.21495912925050017,
+   "logloss_isotonica_origine_mobile": 0.2182867594645124,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0033276302140122084,
+    "lo": -0.018263323944541474,
+    "hi": 0.035699231586079024,
+    "n": 560,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "cs_cell|30-45": {
+   "n": 581,
+   "n_partite": 4,
+   "freq_reale": 0.0774526678141136,
+   "brier_grezza": 0.06705013960659034,
+   "brier_isotonica_origine_mobile": 0.06831417054938813,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0012640309427977988,
+    "lo": -0.0035079028071813246,
+    "hi": 0.005870273963682535,
+    "n": 581,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.23561203522107757,
+   "logloss_isotonica_origine_mobile": 0.2433956048103592,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.007783569589281656,
+    "lo": -0.014545141512608469,
+    "hi": 0.027882961453256392,
+    "n": 581,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "cs_cell|45-60": {
+   "n": 623,
+   "n_partite": 6,
+   "freq_reale": 0.08346709470304976,
+   "brier_grezza": 0.06384937069314142,
+   "brier_isotonica_origine_mobile": 0.06822414628612117,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.004374775592979757,
+    "lo": -0.002637643488081446,
+    "hi": 0.013287637399663238,
+    "n": 623,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.20797967113719473,
+   "logloss_isotonica_origine_mobile": 0.2300386998006041,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.022059028663409357,
+    "lo": -0.0002091951889879913,
+    "hi": 0.04913343489762015,
+    "n": 623,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "cs_cell|60-75": {
+   "n": 301,
+   "n_partite": 4,
+   "freq_reale": 0.11627906976744186,
+   "brier_grezza": 0.06268239571434091,
+   "brier_isotonica_origine_mobile": 0.06794241885860354,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.005260023144262632,
+    "lo": -0.0033455804016241856,
+    "hi": 0.01685113867848242,
+    "n": 301,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.20252448328171815,
+   "logloss_isotonica_origine_mobile": 0.22427694840478637,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.021752465123068204,
+    "lo": 0.005115602407930155,
+    "hi": 0.04575482414513144,
+    "n": 301,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "cs_cell|75-90": {
+   "n": 631,
+   "n_partite": 5,
+   "freq_reale": 0.11885895404120443,
+   "brier_grezza": 0.030834916592654218,
+   "brier_isotonica_origine_mobile": 0.03736497533119141,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.006530058738537188,
+    "lo": -0.013621736767960921,
+    "hi": 0.01882035130779815,
+    "n": 631,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.11198929349116395,
+   "logloss_isotonica_origine_mobile": 0.1357664285253448,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.023777135034180854,
+    "lo": -0.02143276837466542,
+    "hi": 0.05240714874042307,
+    "n": 631,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "ht": {
+   "n": 543,
+   "n_partite": 7,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.23424937896792974,
+   "brier_isotonica_origine_mobile": 0.2294056099007677,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.004843769067162059,
+    "lo": -0.014552396465555626,
+    "hi": 0.002554338121315496,
+    "n": 543,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.6910169903864988,
+   "logloss_isotonica_origine_mobile": 0.6738885174627304,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.017128472923768467,
+    "lo": -0.06827257053186897,
+    "hi": 0.01164541784727546,
+    "n": 543,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "hts_cell": {
+   "n": 1662,
+   "n_partite": 7,
+   "freq_reale": 0.10890493381468111,
+   "brier_grezza": 0.09095181917074487,
+   "brier_isotonica_origine_mobile": 0.09240304035361306,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0014512211828681925,
+    "lo": -0.0029243317307260895,
+    "hi": 0.004991250411304756,
+    "n": 1662,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.2794846839974926,
+   "logloss_isotonica_origine_mobile": 0.2835625200505911,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.004077836053098497,
+    "lo": -0.009328147247720372,
+    "hi": 0.016311105262750918,
+    "n": 1662,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "hts_cell|0-15": {
+   "n": 310,
+   "n_partite": 4,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.0818275746841513,
+   "brier_isotonica_origine_mobile": 0.08605042995195299,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.004222855267801674,
+    "lo": -0.005802770846454835,
+    "hi": 0.011281364185801161,
+    "n": 310,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.26590231691641375,
+   "logloss_isotonica_origine_mobile": 0.273389079684722,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0074867627683082635,
+    "lo": -0.02083375480245325,
+    "hi": 0.026872040126035474,
+    "n": 310,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "hts_cell|15-30": {
+   "n": 650,
+   "n_partite": 5,
+   "freq_reale": 0.1,
+   "brier_grezza": 0.08360428954932886,
+   "brier_isotonica_origine_mobile": 0.08689292535208477,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0032886358027558976,
+    "lo": -0.0008346976106698779,
+    "hi": 0.007082083024598078,
+    "n": 650,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.2610396606781936,
+   "logloss_isotonica_origine_mobile": 0.2698179094607392,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.008778248782545548,
+    "lo": -0.004111916596139157,
+    "hi": 0.025985411360240216,
+    "n": 650,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "hts_cell|30-45": {
+   "n": 702,
+   "n_partite": 7,
+   "freq_reale": 0.12108262108262108,
+   "brier_grezza": 0.10178431211200469,
+   "brier_isotonica_origine_mobile": 0.10031028248396634,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0014740296280383405,
+    "lo": -0.004807475364863825,
+    "hi": 0.001262527445427531,
+    "n": 702,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.3025613206822202,
+   "logloss_isotonica_origine_mobile": 0.30078155622840186,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.0017797644538183317,
+    "lo": -0.012186357345513684,
+    "hi": 0.0064313715507830944,
+    "n": 702,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "ht|0-15": {
+   "n": 93,
+   "n_partite": 4,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.18701568611163025,
+   "brier_isotonica_origine_mobile": 0.17550695773042657,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.011508728381203655,
+    "lo": -0.020971239976066824,
+    "hi": 0.008018925289939383,
+    "n": 93,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.5516177146105237,
+   "logloss_isotonica_origine_mobile": 0.5163490016667704,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.0352687129437533,
+    "lo": -0.057992355633817,
+    "hi": 0.020277969187513546,
+    "n": 93,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "ht|15-30": {
+   "n": 195,
+   "n_partite": 5,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.20928247483556783,
+   "brier_isotonica_origine_mobile": 0.2127252291258406,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0034427542902727534,
+    "lo": -0.005001785927337284,
+    "hi": 0.011505812707356363,
+    "n": 195,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.6081211486888027,
+   "logloss_isotonica_origine_mobile": 0.620743308232011,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.012622159543208262,
+    "lo": -0.018856845895105123,
+    "hi": 0.04375302249350098,
+    "n": 195,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "ht|30-45": {
+   "n": 255,
+   "n_partite": 7,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.27056812305203337,
+   "brier_isotonica_origine_mobile": 0.2618183506966599,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.00874977235537351,
+    "lo": -0.02486567051766785,
+    "hi": 0.0067148535904483515,
+    "n": 255,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.8052476640265632,
+   "logloss_isotonica_origine_mobile": 0.7719845596941599,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.033263104332403266,
+    "lo": -0.1116376040772252,
+    "hi": 0.029831073697156603,
+    "n": 255,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "mo": {
+   "n": 915,
+   "n_partite": 7,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.10728394534592305,
+   "brier_isotonica_origine_mobile": 0.10517986225832057,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0021040830876024696,
+    "lo": -0.008361705672870565,
+    "hi": 0.008444292951904882,
+    "n": 915,
+    "n_unita": 7
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)",
+   "logloss_grezza": 0.326646125001947,
+   "logloss_isotonica_origine_mobile": 0.3260118182463215,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.0006343067556254993,
+    "lo": -0.015400714952919753,
+    "hi": 0.023795831094118224,
+    "n": 915,
+    "n_unita": 7
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 7 partite indipendenti)"
+  },
+  "mo|0-15": {
+   "n": 45,
+   "n_partite": 2,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.09816464856496958,
+   "brier_isotonica_origine_mobile": 0.0982394597868192,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 7.481122184960235e-05,
+    "lo": -0.0013479039364188083,
+    "hi": 0.01999282343760735,
+    "n": 45,
+    "n_unita": 2
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)",
+   "logloss_grezza": 0.35893672307679986,
+   "logloss_isotonica_origine_mobile": 0.35932887922208306,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0003921561452832123,
+    "lo": -0.003174472322198759,
+    "hi": 0.05032495469003081,
+    "n": 45,
+    "n_unita": 2
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 2 partite indipendenti)"
+  },
+  "mo|15-30": {
+   "n": 105,
+   "n_partite": 3,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.18125392397094559,
+   "brier_isotonica_origine_mobile": 0.17694943885011538,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.004304485120830198,
+    "lo": -0.006665562961835015,
+    "hi": -0.00219982276430528,
+    "n": 105,
+    "n_unita": 3
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)",
+   "logloss_grezza": 0.5455094950233864,
+   "logloss_isotonica_origine_mobile": 0.5400729872257983,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.005436507797588106,
+    "lo": -0.009267488371400057,
+    "hi": -0.0008606531860852423,
+    "n": 105,
+    "n_unita": 3
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 3 partite indipendenti)"
+  },
+  "mo|30-45": {
+   "n": 135,
+   "n_partite": 4,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.1323080354410723,
+   "brier_isotonica_origine_mobile": 0.12844092036517288,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0038671150758993987,
+    "lo": -0.014466163984358052,
+    "hi": 0.009320711103631727,
+    "n": 135,
+    "n_unita": 4
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)",
+   "logloss_grezza": 0.4163889642370069,
+   "logloss_isotonica_origine_mobile": 0.4085582989295855,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.007830665307421387,
+    "lo": -0.031006926049938693,
+    "hi": 0.02152359650587106,
+    "n": 135,
+    "n_unita": 4
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 4 partite indipendenti)"
+  },
+  "mo|45-60": {
+   "n": 198,
+   "n_partite": 6,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.16010331724778956,
+   "brier_isotonica_origine_mobile": 0.16122283979137508,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0011195225435855077,
+    "lo": -0.0063493084221075856,
+    "hi": 0.00803677097196793,
+    "n": 198,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.45619364597703677,
+   "logloss_isotonica_origine_mobile": 0.46009045300988816,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.003896807032851363,
+    "lo": -0.014661902130601714,
+    "hi": 0.01987982050857277,
+    "n": 198,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "mo|60-75": {
+   "n": 150,
+   "n_partite": 5,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.07491855933774932,
+   "brier_isotonica_origine_mobile": 0.0710935216911561,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0038250376465932307,
+    "lo": -0.014583237468343993,
+    "hi": 0.006387437924852644,
+    "n": 150,
+    "n_unita": 5
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)",
+   "logloss_grezza": 0.23144915454289583,
+   "logloss_isotonica_origine_mobile": 0.2320748467288083,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0006256921859124911,
+    "lo": -0.024257828804281296,
+    "hi": 0.02515156927594207,
+    "n": 150,
+    "n_unita": 5
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 5 partite indipendenti)"
+  },
+  "mo|75-90": {
+   "n": 282,
+   "n_partite": 6,
+   "freq_reale": 0.3333333333333333,
+   "brier_grezza": 0.0493472102442453,
+   "brier_isotonica_origine_mobile": 0.047210753244788385,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0021364569994569075,
+    "lo": -0.025075995279810626,
+    "hi": 0.019760121812980758,
+    "n": 282,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.15671748086519993,
+   "logloss_isotonica_origine_mobile": 0.15730086315925002,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.0005833822940500667,
+    "lo": -0.05216829665991459,
+    "hi": 0.05290146924351456,
+    "n": 282,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "ou_line": {
+   "n": 4112,
+   "n_partite": 14,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.05747349994996207,
+   "brier_isotonica_origine_mobile": 0.058822578558215446,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0013490786082533761,
+    "lo": -0.006801380008314677,
+    "hi": 0.00768986353172462,
+    "n": 4112,
+    "n_unita": 14
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MIGLIORA",
+   "logloss_grezza": 0.1968200890245465,
+   "logloss_isotonica_origine_mobile": 0.19605154760959617,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.0007685414149503442,
+    "lo": -0.019105627563701315,
+    "hi": 0.014668982167470732,
+    "n": 4112,
+    "n_unita": 14
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MIGLIORA"
+  },
+  "ou_line|0-15": {
+   "n": 348,
+   "n_partite": 8,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.03644576969874313,
+   "brier_isotonica_origine_mobile": 0.030092106585571158,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.00635366311317197,
+    "lo": -0.007910530947416753,
+    "hi": -0.0012800735469407354,
+    "n": 348,
+    "n_unita": 8
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)",
+   "logloss_grezza": 0.16011045590624887,
+   "logloss_isotonica_origine_mobile": 0.1379096017376533,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.022200854168595578,
+    "lo": -0.026418638096576186,
+    "hi": -0.007967702626458555,
+    "n": 348,
+    "n_unita": 8
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)"
+  },
+  "ou_line|15-30": {
+   "n": 674,
+   "n_partite": 8,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.04510263407057465,
+   "brier_isotonica_origine_mobile": 0.04301852095728224,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0020841131132924204,
+    "lo": -0.009752000630564604,
+    "hi": -0.00011543291610443016,
+    "n": 674,
+    "n_unita": 8
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)",
+   "logloss_grezza": 0.17724842201433363,
+   "logloss_isotonica_origine_mobile": 0.15433957475714752,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.022908847257186123,
+    "lo": -0.05602373382690403,
+    "hi": -0.014794971351484531,
+    "n": 674,
+    "n_unita": 8
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)"
+  },
+  "ou_line|30-45": {
+   "n": 756,
+   "n_partite": 8,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.06044377105685437,
+   "brier_isotonica_origine_mobile": 0.06303448233900923,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0025907112821548575,
+    "lo": 0.00029629592471724225,
+    "hi": 0.006567117125509075,
+    "n": 756,
+    "n_unita": 8
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)",
+   "logloss_grezza": 0.21690869108979044,
+   "logloss_isotonica_origine_mobile": 0.21252902493686032,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": -0.004379666152930128,
+    "lo": -0.013377504509184244,
+    "hi": 0.00612646485277359,
+    "n": 756,
+    "n_unita": 8
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)"
+  },
+  "ou_line|45-60": {
+   "n": 854,
+   "n_partite": 8,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.07767396484218136,
+   "brier_isotonica_origine_mobile": 0.08447974620411018,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.00680578136192882,
+    "lo": -0.008356023353452114,
+    "hi": 0.014749534275953446,
+    "n": 854,
+    "n_unita": 8
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)",
+   "logloss_grezza": 0.253987405868259,
+   "logloss_isotonica_origine_mobile": 0.2700531909465052,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.01606578507824616,
+    "lo": -0.018971579234673155,
+    "hi": 0.03446391386291178,
+    "n": 854,
+    "n_unita": 8
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 8 partite indipendenti)"
+  },
+  "ou_line|60-75": {
+   "n": 518,
+   "n_partite": 6,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.08839779764468542,
+   "brier_isotonica_origine_mobile": 0.08786963558893549,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": -0.0005281620557499383,
+    "lo": -0.026406943671172894,
+    "hi": 0.012457397093050496,
+    "n": 518,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.26798950163476093,
+   "logloss_isotonica_origine_mobile": 0.27182865199722184,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.003839150362460913,
+    "lo": -0.06031549698244353,
+    "hi": 0.03429199271363494,
+    "n": 518,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  },
+  "ou_line|75-90": {
+   "n": 962,
+   "n_partite": 6,
+   "freq_reale": 0.5,
+   "brier_grezza": 0.03682911902428513,
+   "brier_isotonica_origine_mobile": 0.03856098094877888,
+   "diff_brier_isotonica_origine_mobile": {
+    "media": 0.0017318619244937553,
+    "lo": -0.011606178511019256,
+    "hi": 0.009591333776046403,
+    "n": 962,
+    "n_unita": 6
+   },
+   "verdetto_brier_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)",
+   "logloss_grezza": 0.11895379839263921,
+   "logloss_isotonica_origine_mobile": 0.12686272279053634,
+   "diff_logloss_isotonica_origine_mobile": {
+    "media": 0.007908924397897161,
+    "lo": -0.020433804171579268,
+    "hi": 0.02429893338748888,
+    "n": 962,
+    "n_unita": 6
+   },
+   "verdetto_logloss_isotonica_origine_mobile": "NON MISURABILE con i dati di oggi (solo 6 partite indipendenti)"
+  }
+ }
+}

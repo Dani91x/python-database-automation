@@ -1,0 +1,90 @@
+{
+ "risultati": {
+  "M2 tutte (24/06-11/09)": {
+   "p_modello": {
+    "<=1%": {
+     "n_selezioni": 4700,
+     "n_partite": 1963,
+     "usciti": 22.0,
+     "attesi": 21.747,
+     "rapporto": 1.0116246317213853,
+     "ic_lo": 0.6124408273897187,
+     "ic_hi": 1.4380363505333338,
+     "verdetto": "calibrata entro l'IC"
+    },
+    "1-2%": {
+     "n_selezioni": 4447,
+     "n_partite": 1862,
+     "usciti": 59.0,
+     "attesi": 66.98,
+     "rapporto": 0.8808566654110347,
+     "ic_lo": 0.6610782157895013,
+     "ic_hi": 1.1063910743753373,
+     "verdetto": "calibrata entro l'IC"
+    },
+    "2-5%": {
+     "n_selezioni": 12233,
+     "n_partite": 1994,
+     "usciti": 425.0,
+     "attesi": 420.461,
+     "rapporto": 1.0107959927617591,
+     "ic_lo": 0.9258644175190224,
+     "ic_hi": 1.098202067324602,
+     "verdetto": "calibrata entro l'IC"
+    }
+   }
+  },
+  "run 09-11/09": {
+   "p_modello": {
+    "<=1%": {
+     "n_selezioni": 559,
+     "n_partite": 239,
+     "usciti": 3.0,
+     "attesi": 2.648,
+     "rapporto": 1.1330778191714383,
+     "ic_lo": 0.0,
+     "ic_hi": 2.529194764185915,
+     "verdetto": "calibrata entro l'IC"
+    },
+    "1-2%": {
+     "n_selezioni": 513,
+     "n_partite": 225,
+     "usciti": 8.0,
+     "attesi": 7.783,
+     "rapporto": 1.0278606663872731,
+     "ic_lo": 0.3801727982601642,
+     "ic_hi": 1.7944768465594203,
+     "verdetto": "calibrata entro l'IC"
+    },
+    "2-5%": {
+     "n_selezioni": 1513,
+     "n_partite": 241,
+     "usciti": 58.0,
+     "attesi": 52.248,
+     "rapporto": 1.1100864276297757,
+     "ic_lo": 0.8699597908317439,
+     "ic_hi": 1.3629298884023147,
+     "verdetto": "calibrata entro l'IC"
+    }
+   }
+  },
+  "estensione (run 17/09, 23/09)": {
+   "p_modello": {
+    "<=1%": {
+     "n_selezioni": 0
+    },
+    "1-2%": {
+     "n_selezioni": 0
+    },
+    "2-5%": {
+     "n_selezioni": 0
+    }
+   }
+  }
+ },
+ "meta": {
+  "o1": "AUDIT_2026-09-25\\misura_punto8_dati\\o1_catena_lambda.json",
+  "estensione": null,
+  "giri": 2000
+ }
+}

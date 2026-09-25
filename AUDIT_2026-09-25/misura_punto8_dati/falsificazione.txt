@@ -1,0 +1,27 @@
+﻿[OK] log-loss senza logaritmo                                -> test_log_loss_e_meno_log_p: ROSSO
+[OK] IC senza ricampionamento                                -> test_bootstrap_ricampiona_davvero: ROSSO
+[OK] bootstrap sulle righe invece che sulle partite          -> test_bootstrap_a_grappolo_non_a_riga: ROSSO
+[OK] MIGLIORA con l'IC che contiene lo zero                  -> test_verdetto: ROSSO
+[OK] catena attuale che non vede la fixture                  -> test_o1_catena_attuale_e_quella_di_produzione: ROSSO
+[OK] eventi senza modello esclusi dal denominatore           -> test_o1_distribuzione_lambda_source: ROSSO
+[OK] moltiplicatore del rosso applicato al contrario         -> test_o5_rosso_di_casa_abbassa_i_gol_di_casa: ROSSO
+[OK] posteriore senza l'esposizione consumata                -> test_o5_moltiplicatore_neutro_e_la_produzione: ROSSO
+[OK] aggregato che vince anche su un risultato quotato       -> test_o6_esito_aggregati: ROSSO
+[OK] taglio dentro la stessa giornata                        -> test_s2_taglio_mai_nella_stessa_giornata: ROSSO
+[OK] tabella stimata anche sul giorno di prova               -> test_s2_origine_mobile_non_guarda_il_futuro: ROSSO
+[OK] P dell'Over presa come P dell'Under                     -> test_m1_affidabilita_su_dati_finti: ROSSO
+[OK] chiave che il resolver non legge                        -> test_x1_calibra_con_la_pagella_e_chiavi_lette_dal_resolver: ROSSO
+[OK] blocco pieno accettato (troncamento)                    -> test_estrai_a_blocchi_dimezza_se_pieno: ROSSO
+[OK] finestra senza il limite superiore del giorno           -> test_estrai_per_giorno_legge_tutto_senza_timeout: ROSSO
+[OK] finestre sovrapposte (righe duplicate)                  -> test_estrai_per_giorno_legge_tutto_senza_timeout: ROSSO
+[OK] nessun ritentativo sul 57014                            -> test_estrai_ritenta_su_57014_con_pagina_dimezzata: ROSSO
+[OK] ritentativo senza dimezzare la pagina                   -> test_estrai_ritenta_su_57014_con_pagina_dimezzata: ROSSO
+[OK] blocchi senza ritentativo sul 57014                     -> test_estrai_a_blocchi_dimezza_su_57014: ROSSO
+[OK] omega_events filtrata su created_at (inesistente)       -> test_estrai_o1o6_con_le_colonne_vere: ROSSO
+[OK] una scrittura nel file delle estrazioni                 -> test_estrai_nessuna_scrittura_nel_sorgente: ROSSO
+[OK] stdout di certifica non letto                           -> test_estrai_eventi_da_file: ROSSO
+[OK] rigore sbagliato contato come gol                       -> test_o5_estrazione_finta_con_le_chiavi_di_match_events: ROSSO
+[OK] concordanza invertita                                   -> test_x1_concordanza_su_finestra_finta: ROSSO
+[OK] differenza di Brier al contrario                        -> test_x1_brier_grezza_contro_calibrata: ROSSO
+[OK] soglia diversa da quella del bot                        -> test_t1_soglie_uguali_al_bot: ROSSO
+ripristino: SHA-256 identici su tutti i file; suite dopo il ripristino: VERDE
