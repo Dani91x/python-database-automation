@@ -11,19 +11,23 @@
 //
 // I messaggi VERI (copiati dai produttori, busta `{"t": topic, "d": ...}` di
 // `Betfair/stream/local_channel.py`):
-//   omega_stato <- Betfair/omega/omega_service.py:7816
-//                  d = {"stats": <dict>, "last_cycle": <ISO>}
-//   safe_stato  <- Betfair/safe_strategy/bot_service.py:9310
-//                  d = {"stats": <dict>, "last_cycle": <ISO>}
+//   omega_stato <- Betfair/omega/omega_service.py (`_pubblica_stato`)
+//                  d = {"stats": <dict>, "last_cycle": <ISO>,
+//                       "control": {status, mode, params, updated_at}}
+//   safe_stato  <- Betfair/safe_strategy/bot_service.py (`_pubblica_stato`)
+//                  d = {"stats": <dict>, "last_cycle": <ISO>,
+//                       "control": {status, mode, params, updated_at}}
+//                  (`control` dal 25/09, punto 6: colonne della riga letta a
+//                  inizio giro; un bot di prima non lo manda)
 //   mike_stato  <- Betfair/mike/service.py:4904
 //                  d = {"control": <riga mike_control letta a inizio giro>,
 //                       "aggregates": <dict>, "stats": <dict>,
 //                       "published_ts": <float, secondi epoch>}
 // `stats` e' lo STESSO oggetto che il bot scrive subito dopo in
 // `*_control.stats` (Omega/Safe: "lo schermo prima del disco"), e contiene
-// `last_cycle` (ISO del giro). Solo Mike porta la riga di control intera:
-// Omega e Safe NON pubblicano status/mode/params (vedi il referto: "cosa manca
-// lato bot"), quindi per loro modalita' e interruttori restano del database.
+// `last_cycle` (ISO del giro). Mike porta la riga di control intera; dal
+// 25/09 (punto 6) Omega e Safe ne portano status/mode/params/updated_at:
+// modalita' e interruttori arrivano al ritmo del bot anche per loro.
 //
 // LE REGOLE ("overlay sul poll, mai unione", come `righeCanale.ts`):
 //  1. riga di control MAI letta dal database -> nessuna vista dal canale
@@ -33,7 +37,7 @@
 //     CHIAVE (`{...db.stats, ...push.stats}`): le chiavi che il bot aggiunge
 //     solo scrivendo sul database (timbro d'avvio, `fermato_all_avvio_at`)
 //     restano quelle del database;
-//  3. colonne della riga (solo Mike: status, mode, params...): il push vince
+//  3. colonne della riga (status, mode, params...): il push vince
 //     solo se la SUA versione della riga (`updated_at`) e' STRETTAMENTE piu'
 //     recente di quella letta dal database. A parita' vince il database: un
 //     parametro appena salvato dalla pagina non torna indietro per un giro
@@ -49,7 +53,8 @@ export type BotConStato = 'omega' | 'safe' | 'mike';
 export interface PushStato {
     /** `stats` del giro (oggetto), o null se il messaggio non lo porta */
     stats: Record<string, unknown> | null;
-    /** solo Mike: la riga di control letta a inizio giro (senza `stats`) */
+    /** la riga di control letta a inizio giro (senza `stats`): Mike intera,
+     *  Omega/Safe status/mode/params/updated_at (25/09) */
     control: Record<string, unknown> | null;
     /** quando la pagina l'ha ricevuto (orologio della pagina): serve all'eta' */
     ricevutoMs: number;
@@ -70,22 +75,25 @@ function istanteMs(v: unknown): number | null {
 /**
  * Valida un push `*_stato`. `null` = non e' uno stato (si ignora, non si
  * indovina): payload non oggetto, oppure ne' `stats` ne' `control` oggetti.
- * Il `control` si accetta SOLO da Mike (e' l'unico che lo pubblica): un
- * `control` su un altro topic e' un guasto di pubblicazione, non una notizia.
+ * Il `control` si accetta da Mike (riga intera) e, dal 25/09 (punto 6), da
+ * Omega e Safe (status/mode/params/updated_at). Senza `updated_at` leggibile
+ * `sovrapponiControl` non lo applica mai.
  */
 export function leggiPushStato(bot: BotConStato, d: unknown, ricevutoMs: number): PushStato | null {
     const o = oggetto(d);
     if (!o) return null;
     const stats = oggetto(o.stats);
     let control: Record<string, unknown> | null = null;
-    if (bot === 'mike') {
-        const c = oggetto(o.control);
-        if (c) {
-            // lo `stats` dentro la riga e' quello del giro PRIMA: vale `o.stats`
-            const { stats: _vecchie, ...resto } = c;
-            void _vecchie;
-            control = resto;
-        }
+    // 25/09 (punto 6): anche Omega e Safe pubblicano `control` (le colonne
+    // status/mode/params/updated_at della riga letta a inizio giro); vale per
+    // tutti la stessa regola 3 (versione della riga strettamente piu' nuova).
+    void bot;
+    const c = oggetto(o.control);
+    if (c) {
+        // lo `stats` dentro la riga (Mike) e' quello del giro PRIMA: vale `o.stats`
+        const { stats: _vecchie, ...resto } = c;
+        void _vecchie;
+        control = resto;
     }
     if (!stats && !control) return null;
     return { stats, control, ricevutoMs };
@@ -117,7 +125,7 @@ export function sovrapponiControl<C extends ControlLike>(
     let out: C = db;
     let daCanale = false;
 
-    // colonne della riga (solo Mike): versione della riga strettamente piu' nuova
+    // colonne della riga: versione della riga strettamente piu' nuova
     if (push.control) {
         const tPush = istanteMs(push.control.updated_at);
         const tDb = istanteMs(db.updated_at);

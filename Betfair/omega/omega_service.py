@@ -7618,7 +7618,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     # ``omega_control`` fallisse o fosse lenta, il trader vedrebbe comunque i
     # numeri di questo giro. La scrittura resta e resta obbligatoria: il socket
     # e' un'accelerazione, non una sostituzione.
-    _pubblica_stato(stats, now.isoformat())
+    # 25/09 (punto 6): anche le colonne della riga di control gia' letta
+    _pubblica_stato(stats, now.isoformat(), control)
     try:
         # ``timbra``: l'APP_BOOT_ID vive dentro ``stats``, che qui si riscrive
         # per intero (vedi Betfair/stream/avvio_app.py).
@@ -7838,14 +7839,37 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
 
 
-def _pubblica_stato(stats: dict, now_iso: str) -> None:
+#: 25/09 (punto 6 dell'audit tempo reale): le colonne della riga di control che
+#: viaggiano col push ``omega_stato``, come fa Mike (``mike/service.py``
+#: ``_pubblica_stato``). Stessi nomi di colonna di ``omega_control``.
+CONTROL_SUL_CANALE = ("status", "mode", "params", "updated_at")
+
+
+def _control_per_canale(control: Any) -> Optional[dict]:
+    """Le colonne ``CONTROL_SUL_CANALE`` della riga di control GIA' LETTA a
+    inizio giro (nessuna lettura in piu'). ``updated_at`` e' la VERSIONE della
+    riga: la pagina le applica solo se piu' recente di quella che ha letto."""
+    if not isinstance(control, dict):
+        return None
+    return {k: control.get(k) for k in CONTROL_SUL_CANALE if k in control}
+
+
+def _pubblica_stato(stats: dict, now_iso: str, control: Any = None) -> None:
     """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
 
     E' lo STESSO oggetto che va in ``set_control``: schermo e database non
     possono divergere perche' non sono due calcoli, sono uno solo.
+
+    25/09 (punto 6): con ``control`` (la riga letta a inizio giro) il push
+    porta anche ``control`` = {status, mode, params, updated_at}: modalita' e
+    interruttori arrivano al ritmo del bot, non al poll dei 30 s.
     """
     try:
-        _lc.publish("omega_stato", {"stats": stats, "last_cycle": now_iso})
+        msg: dict = {"stats": stats, "last_cycle": now_iso}
+        riga = _control_per_canale(control)
+        if riga:
+            msg["control"] = riga
+        _lc.publish("omega_stato", msg)
     except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
         logger.debug("[omega] publish stato KO: %s", str(ex)[:120])
 

@@ -113,6 +113,15 @@ TOPIC: Mapping[str, str] = MappingProxyType({
     # cross-market, SOLA LETTURA). Esce sul canale del processo del runner; se il
     # canale non c'e' la pubblicazione non fa nulla (``_invia``).
     "betfair_live_xhedge": "betfair_live_xhedge",
+    # RUNNER calcio (47331) e tennis (47332), 25/09 punto 6 dell'audit tempo
+    # reale. NON sono righe del database: sono lo STATO DEL PROCESSO del runner,
+    # gia' in memoria, e viaggiano SENZA busta (``pubblica_stato_processo``).
+    # `battito` = il battito del runner (``battito_runner``), dove oggi si
+    # scrive `betfair_live_heartbeat` (calcio) e al giro di attesa (tennis);
+    # `modo_ordini` = ``modo_ordini.stato_corrente()`` + ``ts``, pubblicato SOLO
+    # AL CAMBIO dal worker che lo registra (``live_order_worker._refresh_settings``).
+    "battito": "battito",
+    "modo_ordini": "modo_ordini",
 })
 
 #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira
@@ -224,6 +233,55 @@ def pubblica(topic: str, riga: Mapping[str, Any]) -> bool:
     silenzio.
     """
     return _invia(str(topic), busta(riga))
+
+
+# --- 25/09 punto 6: lo STATO DEL PROCESSO del runner (non una riga) ---------
+#: Le chiavi del battito del runner, in UN POSTO SOLO: calcio e tennis le
+#: scrivono con la stessa funzione, la UI (``frontend/src/lib/runnerCanale.ts``,
+#: ``leggiBattito``) le legge con questi nomi.
+CHIAVI_BATTITO = ("ts", "mode", "streaming")
+
+
+def battito_runner(mode: Any, streaming: Optional[int]) -> Dict[str, Any]:
+    """Il messaggio del topic ``battito``: ``{ts, mode, streaming}``.
+
+    * ``ts``: millisecondi epoch del PRODUTTORE (quando il battito e' uscito);
+    * ``mode``: le modalita' servite, lo STESSO valore scritto in
+      ``betfair_live_heartbeat.mode`` (``runner.heartbeat_mode()``: 'LIVE+PAPER',
+      'PAPER', 'OFF'); per il tennis la modalita' del suo processo;
+    * ``streaming``: quante partite il runner sta seguendo ADESSO secondo la
+      SUA memoria (nessuna lettura in piu'); ``None`` = non contabile (mai un
+      numero inventato: la UI tiene allora quello del database).
+    """
+    modo = str(mode or "").strip().upper()
+    return {
+        "ts": int(time.time() * 1000),
+        "mode": modo or None,
+        "streaming": None if streaming is None else int(streaming),
+    }
+
+
+def pubblica_stato_processo(topic: str, payload: Mapping[str, Any]) -> bool:
+    """Lo stato del PROCESSO (battito, modo ordini) sul canale del processo.
+
+    Non e' una riga del database, quindi NIENTE busta (le regole 1-2 valgono per
+    le righe): il payload esce com'e' (copia). Stessa consegna di ``pubblica``:
+    canale assente -> nessuna chiamata; eccezione -> inghiottita e CONTATA; non
+    solleva mai, non blocca mai.
+
+    Interruttore (regola 5): per i topic del RUNNER l'interruttore del processo
+    e' il suo canale (``LIVE_LOCAL_WS_PORT`` 47331 / ``TENNIS_LOCAL_WS_PORT``
+    47332), come per ``ladder``/``now``/``auto_follow``/``betfair_live_xhedge``:
+    senza canale non esce niente. Nessuna variabile ``.env`` in piu'.
+    """
+    try:
+        msg = dict(payload)
+    except Exception as ex:  # noqa: BLE001 - payload storto: contato, mai sollevato
+        with _lock:
+            _conti["errori"] = int(_conti["errori"]) + 1
+            _conti["ultimo_errore"] = str(ex)[:200]
+        return False
+    return _invia(str(topic), msg)
 
 
 def righe_scritte(res: Any) -> List[Dict[str, Any]]:

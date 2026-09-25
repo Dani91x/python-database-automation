@@ -1,0 +1,602 @@
+diff --git a/Betfair/omega/omega_service.py b/Betfair/omega/omega_service.py
+index 293810d..b37785f 100644
+--- a/Betfair/omega/omega_service.py
++++ b/Betfair/omega/omega_service.py
+@@ -7586,7 +7586,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
+     # ``omega_control`` fallisse o fosse lenta, il trader vedrebbe comunque i
+     # numeri di questo giro. La scrittura resta e resta obbligatoria: il socket
+     # e' un'accelerazione, non una sostituzione.
+-    _pubblica_stato(stats, now.isoformat())
++    # 25/09 (punto 6): anche le colonne della riga di control gia' letta
++    _pubblica_stato(stats, now.isoformat(), control)
+     try:
+         # ``timbra``: l'APP_BOOT_ID vive dentro ``stats``, che qui si riscrive
+         # per intero (vedi Betfair/stream/avvio_app.py).
+@@ -7806,14 +7807,37 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
+     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))
+ 
+ 
+-def _pubblica_stato(stats: dict, now_iso: str) -> None:
++#: 25/09 (punto 6 dell'audit tempo reale): le colonne della riga di control che
++#: viaggiano col push ``omega_stato``, come fa Mike (``mike/service.py``
++#: ``_pubblica_stato``). Stessi nomi di colonna di ``omega_control``.
++CONTROL_SUL_CANALE = ("status", "mode", "params", "updated_at")
++
++
++def _control_per_canale(control: Any) -> Optional[dict]:
++    """Le colonne ``CONTROL_SUL_CANALE`` della riga di control GIA' LETTA a
++    inizio giro (nessuna lettura in piu'). ``updated_at`` e' la VERSIONE della
++    riga: la pagina le applica solo se piu' recente di quella che ha letto."""
++    if not isinstance(control, dict):
++        return None
++    return {k: control.get(k) for k in CONTROL_SUL_CANALE if k in control}
++
++
++def _pubblica_stato(stats: dict, now_iso: str, control: Any = None) -> None:
+     """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
+ 
+     E' lo STESSO oggetto che va in ``set_control``: schermo e database non
+     possono divergere perche' non sono due calcoli, sono uno solo.
++
++    25/09 (punto 6): con ``control`` (la riga letta a inizio giro) il push
++    porta anche ``control`` = {status, mode, params, updated_at}: modalita' e
++    interruttori arrivano al ritmo del bot, non al poll dei 30 s.
+     """
+     try:
+-        _lc.publish("omega_stato", {"stats": stats, "last_cycle": now_iso})
++        msg: dict = {"stats": stats, "last_cycle": now_iso}
++        riga = _control_per_canale(control)
++        if riga:
++            msg["control"] = riga
++        _lc.publish("omega_stato", msg)
+     except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
+         logger.debug("[omega] publish stato KO: %s", str(ex)[:120])
+ 
+diff --git a/Betfair/safe_strategy/bot_service.py b/Betfair/safe_strategy/bot_service.py
+index e905df4..75b3027 100644
+--- a/Betfair/safe_strategy/bot_service.py
++++ b/Betfair/safe_strategy/bot_service.py
+@@ -9138,7 +9138,8 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
+     _aperte_tutte = risk_ctx.get("open_all") if isinstance(risk_ctx, dict) else None
+     _APERTE["n"] = (len(_aperte_tutte) if isinstance(_aperte_tutte, list)
+                     else int(stats.get("trades_open") or 0))
+-    _pubblica_stato(stats, now.isoformat())
++    # 25/09 (punto 6): anche le colonne della riga di control gia' letta
++    _pubblica_stato(stats, now.isoformat(), control)
+     try:
+         # ⚠️ ``timbra``: l'APP_BOOT_ID vive dentro ``stats``, che qui si riscrive
+         # per INTERO. Senza il timbro l'id sparirebbe al primo battito e il crash
+@@ -9298,16 +9299,39 @@ def _avvia_canale() -> None:
+         logger.warning("[safe.bot] canale locale KO: %s", str(ex)[:160])
+ 
+ 
+-def _pubblica_stato(stats: dict, now_iso: str) -> None:
++#: 25/09 (punto 6 dell'audit tempo reale): le colonne della riga di control che
++#: viaggiano col push ``safe_stato``, come fa Mike (``mike/service.py``
++#: ``_pubblica_stato``). Stessi nomi di colonna di ``safe_strategy_control``.
++CONTROL_SUL_CANALE = ("status", "mode", "params", "updated_at")
++
++
++def _control_per_canale(control: Any) -> Optional[dict]:
++    """Le colonne ``CONTROL_SUL_CANALE`` della riga di control GIA' LETTA a
++    inizio giro (nessuna lettura in piu'). ``updated_at`` e' la VERSIONE della
++    riga: la pagina le applica solo se piu' recente di quella che ha letto (una
++    riga della cache degradata e' vecchia per costruzione, e non vince)."""
++    if not isinstance(control, dict):
++        return None
++    return {k: control.get(k) for k in CONTROL_SUL_CANALE if k in control}
++
++
++def _pubblica_stato(stats: dict, now_iso: str, control: Any = None) -> None:
+     """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
+ 
+     E' lo STESSO oggetto che va in ``set_control``: schermo e database non
+     possono divergere perche' non sono due calcoli, e' uno solo.
++
++    25/09 (punto 6): con ``control`` (la riga letta a inizio giro) il push
++    porta anche ``control`` = {status, mode, params, updated_at}.
+     """
+     from Betfair.stream import local_channel as _lc
+ 
+     try:
+-        _lc.publish("safe_stato", {"stats": stats, "last_cycle": now_iso})
++        msg: dict = {"stats": stats, "last_cycle": now_iso}
++        riga = _control_per_canale(control)
++        if riga:
++            msg["control"] = riga
++        _lc.publish("safe_stato", msg)
+     except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
+         logger.debug("[safe.bot] publish stato KO: %s", str(ex)[:120])
+ 
+diff --git a/Betfair/stream/tennis_live/tennis_runner.py b/Betfair/stream/tennis_live/tennis_runner.py
+index 47c9d98..ce97f0a 100644
+--- a/Betfair/stream/tennis_live/tennis_runner.py
++++ b/Betfair/stream/tennis_live/tennis_runner.py
+@@ -1747,6 +1747,24 @@ def _cleanup_orphan_bot_controls(max_hb_age_s: float = 600.0) -> int:
+     return n
+ 
+ 
++def _pubblica_battito_attesa() -> None:
++    """25/09 (punto 6 dell'audit tempo reale) - il BATTITO del runner tennis
++    PARCHEGGIATO in attesa, sul suo canale (47332), topic ``battito``
++    ``{ts, mode, streaming}`` (``canale_bot.battito_runner``, le stesse chiavi
++    del calcio). Il tennis non ha una riga di battito sul database e in attesa
++    non pubblicava nulla (il saldo esce solo su evento): la pagina vedeva il
++    socket vivo con l'eta' ferma all'hello. ``mode`` = la modalita' di questo
++    processo (la stessa dell'hello); ``streaming`` = 0 (in attesa nessuna
++    partita e' seguita). Nessun IO; senza canale non esce niente; mai solleva."""
++    try:
++        from .. import canale_bot as _cb
++
++        _cb.pubblica_stato_processo(_cb.TOPIC["battito"],
++                                    _cb.battito_runner(live_order_mode(), 0))
++    except Exception as e:  # noqa: BLE001 - mostrare non ferma mai il runner
++        logger.debug("[tennis-runner] battito sul canale KO: %s", str(e)[:120])
++
++
+ def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
+     """Rilettura del saldo su evento d'ordine (``stream/saldo_evento.py``) con
+     il client Betfair di QUESTO processo. Mai solleva."""
+@@ -1805,6 +1823,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
+                     # 2s (SELECT leggera), env per tarare.
+                     _idle_s = float(os.getenv("TENNIS_IDLE_FOLLOW_POLL_SEC", "2.0")) or 2.0
+                     logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
++                    _pubblica_battito_attesa()   # 25/09 (punto 6), a ogni giro di attesa
+                     time.sleep(_idle_s)
+                     # sessione .it: keepAlive ogni ~8 min o scade per inattività
+                     # (soglia in CICLI derivata dallo sleep: ~480s reali).
+@@ -1829,6 +1848,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
+             if not session.market_meta:
+                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                     logger.info("[tennis-runner] nessun mercato: attendo (keep-alive desktop).")
++                    _pubblica_battito_attesa()   # 25/09 (punto 6)
+                     time.sleep(15)
+                     continue
+                 logger.warning("[tennis-runner] nessun mercato sottoscrivibile.")
+diff --git a/Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py b/Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py
+new file mode 100644
+index 0000000..755cb39
+--- /dev/null
++++ b/Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py
+@@ -0,0 +1,212 @@
++"""Punto 6 dell'audit tempo reale (25/09) - PATCH B: bot Omega/Safe e runner tennis.
++
++* ``omega_stato`` e ``safe_stato`` portano anche ``control`` = {status, mode,
++  params, updated_at} della riga di control GIA' LETTA a inizio giro (come
++  ``mike_stato``). Provato sul ``run_once`` VERO dei due bot, con i finti dei
++  loro test e la riga costruita dalle COLONNE VERE della migrazione
++  (``riga_control``).
++* Il runner tennis in attesa pubblica ``battito`` sul suo canale (47332), con le
++  stesse chiavi del calcio (``canale_bot.battito_runner``). Provato su
++  ``setup_and_run`` VERO, fermato al primo sonno del giro di attesa.
++
++Nessuna strategia toccata: solo pubblicazione di dati gia' in memoria.
++"""
++from __future__ import annotations
++
++import json
++import os
++from typing import Any, Dict, List, Tuple
++
++import pytest
++
++from Betfair.stream import canale_bot as CB
++from Betfair.stream import local_channel as LC
++from Betfair.stream.tests.test_avvio_app_2026_09_16 import riga_control
++
++_RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
++_FINTI_UI = os.path.join(_RADICE, "frontend", "src", "lib", "__fixtures__",
++                         "statoBotCanaleFinti.json")
++T_RIGA = "2026-09-25T13:00:05.123456+00:00"
++
++
++def _registra(monkeypatch) -> List[Tuple[str, Any]]:
++    usciti: List[Tuple[str, Any]] = []
++
++    def _publish(topic: str, payload: Any) -> None:
++        json.dumps({"t": topic, "d": payload}, default=str)   # come il vero
++        usciti.append((topic, payload))
++    monkeypatch.setattr(LC, "publish", _publish)
++    return usciti
++
++
++# ------------------------------------------------------------------ Omega
++def _omega_giro(monkeypatch) -> Tuple[Dict[str, Any], Dict[str, Any]]:
++    from Betfair.omega import omega_service as S
++    from Betfair.omega.test_omega_service import (
++        NOW, FakeDB, FakeMarket, _cs, _event, _open_snapshot,
++    )
++    usciti = _registra(monkeypatch)
++    riga = riga_control("omega_control", id=1, status="running", mode="paper",
++                        daily_goal=250, params={"stake_lay": 1.0}, updated_at=T_RIGA)
++    db = FakeDB(riga)
++    S.run_once(market=FakeMarket([_event()], _cs(), _open_snapshot()), db=db, now=NOW)
++    stati = [d for t, d in usciti if t == "omega_stato"]
++    assert stati, usciti
++    return stati[-1], riga
++
++
++def test_omega_stato_porta_le_colonne_della_riga_letta(monkeypatch):
++    msg, riga = _omega_giro(monkeypatch)
++    assert set(msg.keys()) == {"stats", "last_cycle", "control"}
++    assert set(msg["control"].keys()) == {"status", "mode", "params", "updated_at"}
++    for k in ("status", "mode", "params", "updated_at"):
++        assert msg["control"][k] == riga[k], k
++    # gli stats restano quelli di sempre (lo STESSO oggetto del set_control)
++    assert msg["stats"]["last_cycle"] == msg["last_cycle"]
++
++
++def test_omega_senza_control_il_messaggio_resta_quello_di_prima(monkeypatch):
++    from Betfair.omega import omega_service as S
++    usciti = _registra(monkeypatch)
++    S._pubblica_stato({"last_cycle": "x"}, "x")
++    assert usciti == [("omega_stato", {"stats": {"last_cycle": "x"}, "last_cycle": "x"})]
++
++
++# ------------------------------------------------------------------- Safe
++def _safe_giro(monkeypatch) -> Tuple[Dict[str, Any], Dict[str, Any]]:
++    from Betfair.safe_strategy import bot_service as S
++    from Betfair.safe_strategy.tests.test_bot_service import (
++        NOW, FakeDB, FakeMarket, _feed_row, _reset_module_state,
++    )
++    _reset_module_state()
++    S._GUARDIA_AVVIO.azzera()
++    usciti = _registra(monkeypatch)
++    db = FakeDB(status="running", mode="paper")
++    db.control = riga_control("safe_strategy_control", id=1, status="running", mode="paper",
++                              params={"variants": ["base"], "strategy_modes": {"base": "paper"}},
++                              updated_at=T_RIGA)
++    db.scan_rows = [_feed_row()]
++    try:
++        S.run_once(db=db, market=FakeMarket(), now=NOW)
++    finally:
++        _reset_module_state()
++        S._GUARDIA_AVVIO.azzera()
++    stati = [d for t, d in usciti if t == "safe_stato"]
++    assert stati, usciti
++    return stati[-1], db.control
++
++
++def test_safe_stato_porta_le_colonne_della_riga_letta(monkeypatch):
++    msg, riga = _safe_giro(monkeypatch)
++    assert set(msg.keys()) == {"stats", "last_cycle", "control"}
++    assert set(msg["control"].keys()) == {"status", "mode", "params", "updated_at"}
++    assert msg["control"]["updated_at"] == T_RIGA
++    assert msg["control"]["mode"] == "paper"
++    assert msg["control"]["params"] == riga["params"]
++
++
++def test_safe_senza_control_il_messaggio_resta_quello_di_prima(monkeypatch):
++    from Betfair.safe_strategy import bot_service as S
++    usciti = _registra(monkeypatch)
++    S._pubblica_stato({"last_cycle": "x"}, "x")
++    assert usciti == [("safe_stato", {"stats": {"last_cycle": "x"}, "last_cycle": "x"})]
++
++
++def test_canale_che_solleva_non_ferma_i_bot(monkeypatch):
++    from Betfair.omega import omega_service as SO
++    from Betfair.safe_strategy import bot_service as SS
++
++    def _rotto(*_a, **_k):
++        raise OSError("socket chiuso")
++    monkeypatch.setattr(LC, "publish", _rotto)
++    riga = riga_control("omega_control", id=1, status="running", updated_at=T_RIGA)
++    SO._pubblica_stato({}, "x", riga)
++    SS._pubblica_stato({}, "x", riga)
++
++
++# ----------------------------------------------------------- runner tennis
++class _Fermo(Exception):
++    """Ferma ``setup_and_run`` al primo sonno del giro di attesa."""
++
++
++class _CanaleTennis(LC.LocalChannel):
++    def __init__(self) -> None:
++        super().__init__(47332, "tennis")
++        self.usciti: List[Tuple[str, Any]] = []
++
++    def publish(self, topic: str, payload: Any) -> None:  # type: ignore[override]
++        json.dumps({"t": topic, "d": payload}, default=str)
++        self.usciti.append((topic, payload))
++
++
++def _tennis_fino_al_sonno(monkeypatch, follows: List[Dict[str, Any]]) -> _CanaleTennis:
++    from Betfair.stream.tennis_live import tennis_runner as TR
++    from Betfair.stream.tennis_live import tennis_bot_service as TBS
++
++    ch = _CanaleTennis()
++
++    def _start(port, sport, solo_lettura=False):
++        assert (port, sport) == (47332, "tennis")
++        monkeypatch.setattr(LC, "_CHANNEL", ch)
++        return ch
++    monkeypatch.setenv("TENNIS_LIVE_ORDER_MODE", "OFF")
++    monkeypatch.setenv("LIVE_RUNNER_KEEP_ALIVE", "1")
++    monkeypatch.setattr(TR, "build_client", lambda login=True: object())
++    monkeypatch.setattr(TBS, "ferma_bot_al_nuovo_avvio", lambda *a, **k: None)
++    monkeypatch.setattr(TR, "_cleanup_orphan_bot_controls", lambda: None)
++    monkeypatch.setattr(TR, "_avvia_sveglia_armamento", lambda s: None)
++    monkeypatch.setattr(TR, "_announce_order_mode", lambda m: None)
++    monkeypatch.setattr(TR, "_catalog_follow", lambda s, f: None)
++    monkeypatch.setattr(TR, "safe_logout", lambda t: None)
++    monkeypatch.setattr(TR.tennis_db, "list_pending_tennis_follows", lambda: list(follows))
++    monkeypatch.setattr(LC, "start_channel", _start)
++    sonni: List[float] = []
++
++    def _sonno(s):
++        sonni.append(s)
++        raise _Fermo()
++    monkeypatch.setattr(TR.time, "sleep", _sonno)
++    with pytest.raises(_Fermo):
++        TR.setup_and_run()
++    assert sonni, "il giro di attesa non e' stato raggiunto"
++    return ch
++
++
++def test_tennis_in_attesa_senza_eventi_pubblica_il_battito(monkeypatch):
++    ch = _tennis_fino_al_sonno(monkeypatch, [])
++    battiti = [d for t, d in ch.usciti if t == "battito"]
++    assert len(battiti) == 1, ch.usciti
++    b = battiti[0]
++    assert tuple(b.keys()) == CB.CHIAVI_BATTITO
++    assert isinstance(b["ts"], int)
++    assert b["mode"] == "OFF" == ch._hello_extra["mode"]     # la modalita' dell'hello
++    assert b["streaming"] == 0
++
++
++def test_tennis_in_attesa_senza_mercati_pubblica_il_battito(monkeypatch):
++    ch = _tennis_fino_al_sonno(monkeypatch, [{"event_id": "35000001"}])
++    battiti = [d for t, d in ch.usciti if t == "battito"]
++    assert len(battiti) == 1, ch.usciti
++    assert battiti[0]["streaming"] == 0
++
++
++def test_tennis_battito_senza_canale_nessun_errore(monkeypatch):
++    from Betfair.stream.tennis_live import tennis_runner as TR
++    monkeypatch.setattr(LC, "_CHANNEL", None)
++    CB.azzera_statistiche()
++    TR._pubblica_battito_attesa()
++    assert CB.statistiche()["pubblicati"] == 0
++    assert CB.statistiche()["errori"] == 0
++
++
++# ---------------------------------------------- finti del frontend = veri
++def test_i_finti_del_frontend_hanno_le_chiavi_dei_messaggi_veri(monkeypatch):
++    with open(_FINTI_UI, encoding="utf-8") as fh:
++        finti = json.load(fh)
++    omega, _ = _omega_giro(monkeypatch)
++    safe, _ = _safe_giro(monkeypatch)
++    for nome, vero in (("omega_stato", omega), ("safe_stato", safe)):
++        assert set(finti[nome].keys()) == set(vero.keys()), nome
++        assert set(finti[nome]["control"].keys()) == set(vero["control"].keys()), nome
++        for k, v in vero["control"].items():
++            assert type(finti[nome]["control"][k]) is type(v), (nome, k)
+diff --git a/frontend/src/lib/__fixtures__/statoBotCanaleFinti.json b/frontend/src/lib/__fixtures__/statoBotCanaleFinti.json
+new file mode 100644
+index 0000000..9ac3bb0
+--- /dev/null
++++ b/frontend/src/lib/__fixtures__/statoBotCanaleFinti.json
+@@ -0,0 +1,23 @@
++{
++  "_origine": "Generato il 25/09 dal run_once VERO di Omega (Betfair/omega/omega_service.py, _pubblica_stato) e Safe (Betfair/safe_strategy/bot_service.py, _pubblica_stato) con i finti dei loro test e la riga di control costruita dalle colonne vere (riga_control). Chiavi e tipi di control verificati da Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py (ultimo test). stats ridotti alle chiavi usate dai test della pagina; last_cycle/updated_at fissati attorno a 2026-09-25T13:00Z.",
++  "omega_stato": {
++    "stats": { "last_cycle": "2026-09-25T13:00:06.000000+00:00", "realized_today": 2.25, "bot_running": true },
++    "last_cycle": "2026-09-25T13:00:06.000000+00:00",
++    "control": {
++      "status": "running",
++      "mode": "live",
++      "params": { "stake_lay": 1.0, "engine": "single" },
++      "updated_at": "2026-09-25T13:00:05.123456+00:00"
++    }
++  },
++  "safe_stato": {
++    "stats": { "last_cycle": "2026-09-25T13:00:06.000000+00:00", "motivo_blocco": null },
++    "last_cycle": "2026-09-25T13:00:06.000000+00:00",
++    "control": {
++      "status": "running",
++      "mode": "live",
++      "params": { "variants": ["base"], "strategy_modes": { "base": "paper" } },
++      "updated_at": "2026-09-25T13:00:05.123456+00:00"
++    }
++  }
++}
+diff --git a/frontend/src/lib/statoBotCanale.test.ts b/frontend/src/lib/statoBotCanale.test.ts
+index ede8778..95d51c0 100644
+--- a/frontend/src/lib/statoBotCanale.test.ts
++++ b/frontend/src/lib/statoBotCanale.test.ts
+@@ -11,11 +11,15 @@
+ //  - mike_stato: Betfair/mike/service.py:4904 {"control", "aggregates",
+ //    "stats", "published_ts"}; `control` = riga intera di `mike_control`
+ //    (`db.read_control`, select *), `stats` a :2872-2918;
++//  - dal 25/09 (punto 6) omega_stato e safe_stato portano anche `control` =
++//    {status, mode, params, updated_at} (`_pubblica_stato(..., control)`):
++//    finti in __fixtures__/statoBotCanaleFinti.json, generati dal run_once vero;
+ //  - scanner_stato: Betfair/safe_strategy/service.py:1519 = il `payload` di
+ //    `safe_strategy_status` (service.py:1797-1845).
+ // ============================================================================
+ import { describe, it, expect } from 'vitest';
+ import { leggiPushStato, sovrapponiControl, statoScannerDalCanale } from './statoBotCanale';
++import finti from './__fixtures__/statoBotCanaleFinti.json';
+ 
+ const T0 = '2026-09-25T13:00:00.000000+00:00';
+ const T1 = '2026-09-25T13:00:02.000000+00:00';
+@@ -67,8 +71,21 @@ describe('leggiPushStato - valida il messaggio vero', () => {
+         expect(p?.control && 'stats' in p.control).toBe(false);
+         expect(p?.stats?.last_cycle).toBe(T1);
+     });
+-    it('un control su omega/safe si ignora (nessun produttore lo manda)', () => {
+-        const p = leggiPushStato('omega', { control: { status: 'stopped' }, stats: { last_cycle: T1 } }, 1);
++    // 25/09 (punto 6): Omega e Safe pubblicano `control` = {status, mode,
++    // params, updated_at} della riga letta a inizio giro. Messaggi VERI in
++    // __fixtures__/statoBotCanaleFinti.json (chiavi e tipi verificati da
++    // Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py)
++    it('omega_stato / safe_stato con control: le quattro colonne della riga', () => {
++        for (const bot of ['omega', 'safe'] as const) {
++            const vero = finti[`${bot}_stato`];
++            const p = leggiPushStato(bot, vero, 3);
++            expect(p?.control).toEqual(vero.control);
++            expect(Object.keys(p?.control ?? {}).sort()).toEqual(['mode', 'params', 'status', 'updated_at']);
++            expect(p?.stats?.last_cycle).toBe(vero.last_cycle);
++        }
++    });
++    it('un bot di prima (senza control): nessun control', () => {
++        const p = leggiPushStato('omega', { stats: { last_cycle: T1 }, last_cycle: T1 }, 1);
+         expect(p?.control).toBeNull();
+     });
+     it('messaggi storti: null', () => {
+@@ -137,6 +154,56 @@ describe('sovrapponiControl - mai unione, vince solo il piu\' recente', () => {
+         expect((v.control?.params as Record<string, unknown>).live_resting_enabled).toBe(true);
+         expect(v.control).toBe(db);
+     });
++
++    // 25/09 (punto 6) - Omega e Safe
++    function rigaOmega(updatedAt: string, over: Record<string, unknown> = {}) {
++        // colonne di omega_control (riga_control dei test Python): daily_goal fuori da params
++        return {
++            id: 1, status: 'running', mode: 'paper', daily_goal: 250,
++            params: { stake_lay: 1.0, engine: 'single', greenup_mode: 'off' },
++            stats: { last_cycle: T0, realized_today: 1.5, fermato_all_avvio_at: T0 }, error: null,
++            started_at: T0, stopped_at: null, heartbeat_at: T0, updated_at: updatedAt, created_at: T0,
++            ...over,
++        };
++    }
++    it('Omega: modalita\' e parametri dal push con una versione della riga piu\' nuova', () => {
++        const db = rigaOmega(T0);
++        const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
++        expect(v.daCanale).toBe(true);
++        expect(v.control?.mode).toBe('live');
++        expect(v.control?.updated_at).toBe(finti.omega_stato.control.updated_at);
++        // le colonne che il push non porta restano del database
++        expect(v.control?.daily_goal).toBe(250);
++        expect(v.control?.started_at).toBe(T0);
++    });
++    it('mai unione: i params del push SOSTITUISCONO quelli del database (non si fondono)', () => {
++        const db = rigaOmega(T0);
++        const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
++        expect(v.control?.params).toEqual(finti.omega_stato.control.params);
++        expect(v.control?.params).not.toHaveProperty('greenup_mode');
++    });
++    it('Omega/Safe: versione della riga PARI o piu\' vecchia -> vince il database, stesso oggetto', () => {
++        const t = finti.omega_stato.control.updated_at;
++        for (const dbAt of [t, '2026-09-25T13:00:09.000000+00:00']) {
++            const db = rigaOmega(dbAt, { stats: { last_cycle: '2026-09-25T13:00:09.000000+00:00' } });
++            const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
++            expect(v.control).toBe(db);
++            expect(v.control?.mode).toBe('paper');
++            expect(v.daCanale).toBe(false);
++        }
++        const dbSafe = { ...controlSafe(statsSafe('2026-09-25T13:00:09.000000+00:00')), mode: 'paper', updated_at: t };
++        const w = sovrapponiControl(dbSafe, leggiPushStato('safe', finti.safe_stato, 1));
++        expect(w.control).toBe(dbSafe);
++    });
++    it('Safe: modalita\' dal push; control senza updated_at leggibile non vince mai', () => {
++        const db = { ...controlSafe(statsSafe(T0)), mode: 'paper' };
++        const v = sovrapponiControl(db, leggiPushStato('safe', finti.safe_stato, 1));
++        expect(v.control?.mode).toBe('live');
++        expect(v.control?.params).toEqual(finti.safe_stato.control.params);
++        const senzaVersione = { ...finti.safe_stato, control: { ...finti.safe_stato.control, updated_at: null } };
++        const w = sovrapponiControl(db, leggiPushStato('safe', senzaVersione, 1));
++        expect(w.control?.mode).toBe('paper');
++    });
+ });
+ 
+ describe('statoScannerDalCanale - scanner_stato sulla riga letta', () => {
+diff --git a/frontend/src/lib/statoBotCanale.ts b/frontend/src/lib/statoBotCanale.ts
+index 84c668b..2349540 100644
+--- a/frontend/src/lib/statoBotCanale.ts
++++ b/frontend/src/lib/statoBotCanale.ts
+@@ -11,19 +11,23 @@
+ //
+ // I messaggi VERI (copiati dai produttori, busta `{"t": topic, "d": ...}` di
+ // `Betfair/stream/local_channel.py`):
+-//   omega_stato <- Betfair/omega/omega_service.py:7816
+-//                  d = {"stats": <dict>, "last_cycle": <ISO>}
+-//   safe_stato  <- Betfair/safe_strategy/bot_service.py:9310
+-//                  d = {"stats": <dict>, "last_cycle": <ISO>}
++//   omega_stato <- Betfair/omega/omega_service.py (`_pubblica_stato`)
++//                  d = {"stats": <dict>, "last_cycle": <ISO>,
++//                       "control": {status, mode, params, updated_at}}
++//   safe_stato  <- Betfair/safe_strategy/bot_service.py (`_pubblica_stato`)
++//                  d = {"stats": <dict>, "last_cycle": <ISO>,
++//                       "control": {status, mode, params, updated_at}}
++//                  (`control` dal 25/09, punto 6: colonne della riga letta a
++//                  inizio giro; un bot di prima non lo manda)
+ //   mike_stato  <- Betfair/mike/service.py:4904
+ //                  d = {"control": <riga mike_control letta a inizio giro>,
+ //                       "aggregates": <dict>, "stats": <dict>,
+ //                       "published_ts": <float, secondi epoch>}
+ // `stats` e' lo STESSO oggetto che il bot scrive subito dopo in
+ // `*_control.stats` (Omega/Safe: "lo schermo prima del disco"), e contiene
+-// `last_cycle` (ISO del giro). Solo Mike porta la riga di control intera:
+-// Omega e Safe NON pubblicano status/mode/params (vedi il referto: "cosa manca
+-// lato bot"), quindi per loro modalita' e interruttori restano del database.
++// `last_cycle` (ISO del giro). Mike porta la riga di control intera; dal
++// 25/09 (punto 6) Omega e Safe ne portano status/mode/params/updated_at:
++// modalita' e interruttori arrivano al ritmo del bot anche per loro.
+ //
+ // LE REGOLE ("overlay sul poll, mai unione", come `righeCanale.ts`):
+ //  1. riga di control MAI letta dal database -> nessuna vista dal canale
+@@ -33,7 +37,7 @@
+ //     CHIAVE (`{...db.stats, ...push.stats}`): le chiavi che il bot aggiunge
+ //     solo scrivendo sul database (timbro d'avvio, `fermato_all_avvio_at`)
+ //     restano quelle del database;
+-//  3. colonne della riga (solo Mike: status, mode, params...): il push vince
++//  3. colonne della riga (status, mode, params...): il push vince
+ //     solo se la SUA versione della riga (`updated_at`) e' STRETTAMENTE piu'
+ //     recente di quella letta dal database. A parita' vince il database: un
+ //     parametro appena salvato dalla pagina non torna indietro per un giro
+@@ -49,7 +53,8 @@ export type BotConStato = 'omega' | 'safe' | 'mike';
+ export interface PushStato {
+     /** `stats` del giro (oggetto), o null se il messaggio non lo porta */
+     stats: Record<string, unknown> | null;
+-    /** solo Mike: la riga di control letta a inizio giro (senza `stats`) */
++    /** la riga di control letta a inizio giro (senza `stats`): Mike intera,
++     *  Omega/Safe status/mode/params/updated_at (25/09) */
+     control: Record<string, unknown> | null;
+     /** quando la pagina l'ha ricevuto (orologio della pagina): serve all'eta' */
+     ricevutoMs: number;
+@@ -70,22 +75,25 @@ function istanteMs(v: unknown): number | null {
+ /**
+  * Valida un push `*_stato`. `null` = non e' uno stato (si ignora, non si
+  * indovina): payload non oggetto, oppure ne' `stats` ne' `control` oggetti.
+- * Il `control` si accetta SOLO da Mike (e' l'unico che lo pubblica): un
+- * `control` su un altro topic e' un guasto di pubblicazione, non una notizia.
++ * Il `control` si accetta da Mike (riga intera) e, dal 25/09 (punto 6), da
++ * Omega e Safe (status/mode/params/updated_at). Senza `updated_at` leggibile
++ * `sovrapponiControl` non lo applica mai.
+  */
+ export function leggiPushStato(bot: BotConStato, d: unknown, ricevutoMs: number): PushStato | null {
+     const o = oggetto(d);
+     if (!o) return null;
+     const stats = oggetto(o.stats);
+     let control: Record<string, unknown> | null = null;
+-    if (bot === 'mike') {
+-        const c = oggetto(o.control);
+-        if (c) {
+-            // lo `stats` dentro la riga e' quello del giro PRIMA: vale `o.stats`
+-            const { stats: _vecchie, ...resto } = c;
+-            void _vecchie;
+-            control = resto;
+-        }
++    // 25/09 (punto 6): anche Omega e Safe pubblicano `control` (le colonne
++    // status/mode/params/updated_at della riga letta a inizio giro); vale per
++    // tutti la stessa regola 3 (versione della riga strettamente piu' nuova).
++    void bot;
++    const c = oggetto(o.control);
++    if (c) {
++        // lo `stats` dentro la riga (Mike) e' quello del giro PRIMA: vale `o.stats`
++        const { stats: _vecchie, ...resto } = c;
++        void _vecchie;
++        control = resto;
+     }
+     if (!stats && !control) return null;
+     return { stats, control, ricevutoMs };
+@@ -117,7 +125,7 @@ export function sovrapponiControl<C extends ControlLike>(
+     let out: C = db;
+     let daCanale = false;
+ 
+-    // colonne della riga (solo Mike): versione della riga strettamente piu' nuova
++    // colonne della riga: versione della riga strettamente piu' nuova
+     if (push.control) {
+         const tPush = istanteMs(push.control.updated_at);
+         const tDb = istanteMs(db.updated_at);

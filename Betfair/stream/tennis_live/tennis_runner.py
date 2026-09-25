@@ -2169,6 +2169,24 @@ def _cleanup_orphan_bot_controls(max_hb_age_s: float = 600.0) -> int:
     return n
 
 
+def _pubblica_battito_attesa() -> None:
+    """25/09 (punto 6 dell'audit tempo reale) - il BATTITO del runner tennis
+    PARCHEGGIATO in attesa, sul suo canale (47332), topic ``battito``
+    ``{ts, mode, streaming}`` (``canale_bot.battito_runner``, le stesse chiavi
+    del calcio). Il tennis non ha una riga di battito sul database e in attesa
+    non pubblicava nulla (il saldo esce solo su evento): la pagina vedeva il
+    socket vivo con l'eta' ferma all'hello. ``mode`` = la modalita' di questo
+    processo (la stessa dell'hello); ``streaming`` = 0 (in attesa nessuna
+    partita e' seguita). Nessun IO; senza canale non esce niente; mai solleva."""
+    try:
+        from .. import canale_bot as _cb
+
+        _cb.pubblica_stato_processo(_cb.TOPIC["battito"],
+                                    _cb.battito_runner(live_order_mode(), 0))
+    except Exception as e:  # noqa: BLE001 - mostrare non ferma mai il runner
+        logger.debug("[tennis-runner] battito sul canale KO: %s", str(e)[:120])
+
+
 def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
     """Rilettura del saldo su evento d'ordine (``stream/saldo_evento.py``) con
     il client Betfair di QUESTO processo. Mai solleva."""
@@ -2227,6 +2245,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                     # 2s (SELECT leggera), env per tarare.
                     _idle_s = float(os.getenv("TENNIS_IDLE_FOLLOW_POLL_SEC", "2.0")) or 2.0
                     logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
+                    _pubblica_battito_attesa()   # 25/09 (punto 6), a ogni giro di attesa
                     time.sleep(_idle_s)
                     # sessione .it: keepAlive ogni ~8 min o scade per inattività
                     # (soglia in CICLI derivata dallo sleep: ~480s reali).
@@ -2253,6 +2272,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             if not session.market_meta:
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[tennis-runner] nessun mercato: attendo (keep-alive desktop).")
+                    _pubblica_battito_attesa()   # 25/09 (punto 6)
                     time.sleep(15)
                     continue
                 logger.warning("[tennis-runner] nessun mercato sottoscrivibile.")

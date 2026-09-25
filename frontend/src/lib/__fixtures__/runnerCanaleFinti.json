@@ -1,0 +1,42 @@
+{
+  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z.",
+  "battito": {
+    "ts": 1790341198000,
+    "mode": "LIVE+PAPER",
+    "streaming": 2
+  },
+  "modo_ordini": {
+    "effettivo": "PAPER",
+    "tetto_ambiente": "LIVE",
+    "scelto_ui": "PAPER",
+    "motivo": "ok",
+    "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
+    "scelto_ui_da": "avvio_app",
+    "eta_lettura_s": 0.0,
+    "ts": 1790341195000
+  },
+  "modo_ordini_live": {
+    "effettivo": "LIVE",
+    "tetto_ambiente": "LIVE",
+    "scelto_ui": "LIVE",
+    "motivo": "ok",
+    "scelto_ui_at": "2026-09-25T12:05:00.000000+00:00",
+    "scelto_ui_da": "utente",
+    "eta_lettura_s": 0.0,
+    "ts": 1790341199000
+  },
+  "hello": {
+    "sport": "calcio",
+    "mode": "LIVE",
+    "modo_ordini": {
+      "effettivo": "PAPER",
+      "tetto_ambiente": "LIVE",
+      "scelto_ui": "PAPER",
+      "motivo": "ok",
+      "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
+      "scelto_ui_da": "avvio_app",
+      "eta_lettura_s": 0.0,
+      "ts": 1790341195000
+    }
+  }
+}

@@ -124,6 +124,7 @@ import { fetchMikeState } from '@/lib/mike';
 import { fetchOmegaState } from '@/lib/omega';
 import { fetchScanStatus } from '@/lib/safeStrategyScan';
 import { useControlRoom } from '@/components/controlroom/useControlRoom';
+import finti from '@/lib/__fixtures__/runnerCanaleFinti.json';
 
 const T0 = '2026-09-25T13:00:00.000000+00:00';
 const T1 = '2026-09-25T13:00:02.000000+00:00';
@@ -308,6 +309,42 @@ describe('voce 6 - i runner dal canale', () => {
         expect(h.result.current.fonteRunner.fonte).toBe('database');
         expect(h.result.current.runnerTennis).toBeNull();
     });
+
+    // 25/09 (punto 6): topic `battito` {ts, mode, streaming}
+    // (canale_bot.battito_runner, runner._pubblica_battito); messaggio vero in
+    // lib/__fixtures__/runnerCanaleFinti.json
+    it('battito del runner calcio: l\'eta\' torna a zero a ogni battito, mode e streaming dal battito', async () => {
+        statoCanale.set('calcio', 'connected');
+        hello.set('calcio', { sport: 'calcio', mode: 'LIVE' });
+        vi.mocked(fetchRunnerState).mockResolvedValue({
+            ts: new Date(Date.now() - 60_000).toISOString(), mode: 'LIVE+PAPER', ageS: 60, up: true, streaming: 0,
+        });
+        const h = await montato();
+        // si lascia invecchiare l'ultima notizia (l'hello della connessione)
+        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
+        act(() => spingi('calcio', 'battito', { ...finti.battito, ts: Date.now() }));
+        await waitFor(() => expect(h.result.current.fonteRunner.etaS).toBe(0), { timeout: 3000 });
+        expect(h.result.current.fonteRunner.fonte).toBe('canale');
+        expect(h.result.current.runner?.streaming).toBe(2);
+        expect(h.result.current.runner?.mode).toBe('LIVE+PAPER');
+        // di nuovo vecchio, di nuovo un battito: di nuovo zero
+        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
+        act(() => spingi('calcio', 'battito', { ...finti.battito, ts: Date.now(), streaming: 1 }));
+        await waitFor(() => expect(h.result.current.fonteRunner.etaS).toBe(0), { timeout: 3000 });
+        expect(h.result.current.runner?.streaming).toBe(1);
+    }, 10_000);
+
+    it('battito storto (senza ts): non e\' una notizia di vita', async () => {
+        statoCanale.set('calcio', 'connected');
+        const h = await montato();
+        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
+        const storto: Record<string, unknown> = { ...finti.battito };
+        delete storto.ts;
+        act(() => spingi('calcio', 'battito', storto));
+        await act(async () => { await new Promise((r) => setTimeout(r, 1200)); });
+        expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1);
+        expect(h.result.current.runner?.streaming ?? null).not.toBe(2);
+    }, 10_000);
 
     it('runner tennis collegato: noto dal solo canale 47332', async () => {
         statoCanale.set('tennis', 'connected');

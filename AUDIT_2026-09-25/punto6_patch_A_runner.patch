@@ -1,0 +1,1197 @@
+diff --git a/Betfair/stream/canale_bot.py b/Betfair/stream/canale_bot.py
+index 32b4cf0..c517a99 100644
+--- a/Betfair/stream/canale_bot.py
++++ b/Betfair/stream/canale_bot.py
+@@ -113,6 +113,15 @@ TOPIC: Mapping[str, str] = MappingProxyType({
+     # cross-market, SOLA LETTURA). Esce sul canale del processo del runner; se il
+     # canale non c'e' la pubblicazione non fa nulla (``_invia``).
+     "betfair_live_xhedge": "betfair_live_xhedge",
++    # RUNNER calcio (47331) e tennis (47332), 25/09 punto 6 dell'audit tempo
++    # reale. NON sono righe del database: sono lo STATO DEL PROCESSO del runner,
++    # gia' in memoria, e viaggiano SENZA busta (``pubblica_stato_processo``).
++    # `battito` = il battito del runner (``battito_runner``), dove oggi si
++    # scrive `betfair_live_heartbeat` (calcio) e al giro di attesa (tennis);
++    # `modo_ordini` = ``modo_ordini.stato_corrente()`` + ``ts``, pubblicato SOLO
++    # AL CAMBIO dal worker che lo registra (``live_order_worker._refresh_settings``).
++    "battito": "battito",
++    "modo_ordini": "modo_ordini",
+ })
+ 
+ #: La porta del canale dei 4 bot tennis: NUOVA, ma dentro un processo che gira
+@@ -226,6 +235,55 @@ def pubblica(topic: str, riga: Mapping[str, Any]) -> bool:
+     return _invia(str(topic), busta(riga))
+ 
+ 
++# --- 25/09 punto 6: lo STATO DEL PROCESSO del runner (non una riga) ---------
++#: Le chiavi del battito del runner, in UN POSTO SOLO: calcio e tennis le
++#: scrivono con la stessa funzione, la UI (``frontend/src/lib/runnerCanale.ts``,
++#: ``leggiBattito``) le legge con questi nomi.
++CHIAVI_BATTITO = ("ts", "mode", "streaming")
++
++
++def battito_runner(mode: Any, streaming: Optional[int]) -> Dict[str, Any]:
++    """Il messaggio del topic ``battito``: ``{ts, mode, streaming}``.
++
++    * ``ts``: millisecondi epoch del PRODUTTORE (quando il battito e' uscito);
++    * ``mode``: le modalita' servite, lo STESSO valore scritto in
++      ``betfair_live_heartbeat.mode`` (``runner.heartbeat_mode()``: 'LIVE+PAPER',
++      'PAPER', 'OFF'); per il tennis la modalita' del suo processo;
++    * ``streaming``: quante partite il runner sta seguendo ADESSO secondo la
++      SUA memoria (nessuna lettura in piu'); ``None`` = non contabile (mai un
++      numero inventato: la UI tiene allora quello del database).
++    """
++    modo = str(mode or "").strip().upper()
++    return {
++        "ts": int(time.time() * 1000),
++        "mode": modo or None,
++        "streaming": None if streaming is None else int(streaming),
++    }
++
++
++def pubblica_stato_processo(topic: str, payload: Mapping[str, Any]) -> bool:
++    """Lo stato del PROCESSO (battito, modo ordini) sul canale del processo.
++
++    Non e' una riga del database, quindi NIENTE busta (le regole 1-2 valgono per
++    le righe): il payload esce com'e' (copia). Stessa consegna di ``pubblica``:
++    canale assente -> nessuna chiamata; eccezione -> inghiottita e CONTATA; non
++    solleva mai, non blocca mai.
++
++    Interruttore (regola 5): per i topic del RUNNER l'interruttore del processo
++    e' il suo canale (``LIVE_LOCAL_WS_PORT`` 47331 / ``TENNIS_LOCAL_WS_PORT``
++    47332), come per ``ladder``/``now``/``auto_follow``/``betfair_live_xhedge``:
++    senza canale non esce niente. Nessuna variabile ``.env`` in piu'.
++    """
++    try:
++        msg = dict(payload)
++    except Exception as ex:  # noqa: BLE001 - payload storto: contato, mai sollevato
++        with _lock:
++            _conti["errori"] = int(_conti["errori"]) + 1
++            _conti["ultimo_errore"] = str(ex)[:200]
++        return False
++    return _invia(str(topic), msg)
++
++
+ def righe_scritte(res: Any) -> List[Dict[str, Any]]:
+     """Le righe che la scrittura ha RESTITUITO (``res.data``), mai altro.
+ 
+diff --git a/Betfair/stream/live_order_worker.py b/Betfair/stream/live_order_worker.py
+index a383365..3147891 100644
+--- a/Betfair/stream/live_order_worker.py
++++ b/Betfair/stream/live_order_worker.py
+@@ -506,6 +506,61 @@ def _refresh_settings(sb: Any) -> None:
+             _mo.registra_settings(data)
+     except Exception:  # noqa: BLE001 - settings opzionali; il worker resta operativo
+         pass
++    # 25/09 (punto 6 dell'audit tempo reale): il modo ordini sul canale del
++    # processo, SOLO AL CAMBIO. Fuori dal try della lettura: anche una lettura
++    # fallita puo' cambiare il modo (lettura scaduta -> OFF), e va detto.
++    _pubblica_modo_ordini_se_cambiato()
++
++
++# 25/09 (punto 6): l'ultima firma del modo ordini uscita sul canale. Condivisa
++# dai thread che rileggono i settings (worker ordini, risk, daily stop): un solo
++# messaggio per cambio, qualunque thread lo veda per primo.
++_MODO_CANALE_LOCK = _threading.Lock()
++_MODO_CANALE_FIRMA: Optional[tuple] = None
++#: le chiavi di ``modo_ordini.stato_corrente()`` che fanno un CAMBIO (l'eta'
++#: della lettura cambia a ogni giro e non lo e')
++_MODO_CANALE_CHIAVI = ("effettivo", "tetto_ambiente", "scelto_ui", "motivo",
++                       "scelto_ui_at", "scelto_ui_da")
++
++
++def _pubblica_modo_ordini_se_cambiato() -> bool:
++    """Topic ``modo_ordini`` = ``modo_ordini.stato_corrente()`` + ``ts`` (ms del
++    produttore), SOLO se diverso dall'ultimo uscito. Nessun IO: lo stato e' gia'
++    in memoria. Anche nell'``hello`` del canale (chi si collega dopo il cambio lo
++    riceve subito). Senza canale non esce niente e la firma NON si segna (al primo
++    canale il modo esce). Mai solleva. Torna True se e' uscito un messaggio."""
++    global _MODO_CANALE_FIRMA
++    try:
++        from . import canale_bot as _cb
++        from . import local_channel as _lc
++        from . import modo_ordini as _mo
++
++        ch = _lc.get_channel()
++        if ch is None:
++            return False
++        # SOLO nel runner CALCIO: anche il runner tennis rilegge i settings con
++        # questa funzione (``guardie_tennis.aggiorna_impostazioni``, per il
++        # kill-switch), ma il suo tetto e' ``TENNIS_LIVE_ORDER_MODE``, non il
++        # ``LIVE_ORDER_MODE`` che ``modo_ordini`` legge: sul 47332 il messaggio
++        # direbbe il falso. Calcio e tennis non si mischiano.
++        if getattr(ch, "sport", None) != "calcio":
++            return False
++        stato = _mo.stato_corrente()
++        firma = tuple(stato.get(k) for k in _MODO_CANALE_CHIAVI)
++        with _MODO_CANALE_LOCK:
++            if firma == _MODO_CANALE_FIRMA:
++                return False
++            _MODO_CANALE_FIRMA = firma
++        msg = dict(stato)
++        msg["ts"] = int(time.time() * 1000)
++        try:
++            ch.set_hello(modo_ordini=msg)
++        except Exception:  # noqa: BLE001 - l'hello e' un di piu'
++            pass
++        return _cb.pubblica_stato_processo(_cb.TOPIC["modo_ordini"], msg)
++    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il worker
++        logger.debug("[live-order] modo_ordini sul canale KO: %s", str(ex)[:120])
++        return False
+ 
+ 
+ # 24/09 (motore ordini F2): istante (monotonic) dell'ultima lettura RIUSCITA dei
+diff --git a/Betfair/stream/runner.py b/Betfair/stream/runner.py
+index 7e2c026..f9e4354 100644
+--- a/Betfair/stream/runner.py
++++ b/Betfair/stream/runner.py
+@@ -80,6 +80,7 @@ from .config_stream import (
+     XHEDGE_POLL_SEC,
+ )
+ from . import local_channel as _lc
++from . import canale_bot as _cb
+ from . import ladder_canale as _lcad
+ from .config_stream import LADDER_CANALE_MS
+ from . import avvio_app as AA
+@@ -1102,6 +1103,58 @@ _STREAM_KEEPALIVE_SEC = float(os.getenv("LIVE_STREAM_KEEPALIVE_SEC", "480"))
+ _STREAM_KA_LAST = 0.0
+ 
+ 
++def _partite_in_streaming(session: Any) -> Optional[int]:
++    """Quante partite il runner sta seguendo ADESSO, dalla SUA memoria.
++
++    25/09 (punto 6 dell'audit tempo reale): e' il numero ``streaming`` del
++    battito sul canale. Nessuna lettura DB: gli eventi catalogati (follow
++    manuali portati a STREAMING da ``_catalog_event``) meno quelli finalizzati,
++    piu' gli eventi dell'AUTO-FOLLOW (righe ``origine='auto'`` STREAMING).
++    ``None`` se non contabile (strutture cambiate sotto mano): mai un numero
++    inventato."""
++    try:
++        eventi = set(getattr(session, "cataloged_events", None) or ()) - set(
++            getattr(session, "finished_events", None) or ())
++        auto = _auto_attivo()
++        if auto is not None:
++            for voce in auto.piano.voci().values():
++                if voce.event_id:
++                    eventi.add(str(voce.event_id))
++        return len(eventi)
++    except Exception:  # noqa: BLE001 - conteggio best-effort, mai fermare il battito
++        return None
++
++
++def _pubblica_battito(session: Any) -> None:
++    """25/09 (punto 6) - il battito del runner anche sul canale 47331, topic
++    ``battito`` ``{ts, mode, streaming}`` (``canale_bot.battito_runner``).
++
++    Esce DOVE si scrive ``betfair_live_heartbeat`` (worker e attesa), con lo
++    stesso ``mode``; prima di questo la UI deduceva il battito dal saldo (~20 s).
++    Senza canale non esce niente; non solleva mai (``pubblica_stato_processo``)."""
++    try:
++        _cb.pubblica_stato_processo(
++            _cb.TOPIC["battito"],
++            _cb.battito_runner(heartbeat_mode(), _partite_in_streaming(session)))
++    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il runner
++        logger.debug("[runner] battito sul canale KO: %s", str(ex)[:120])
++
++
++def _battito_in_attesa(session: Any, adesso: float) -> None:
++    """Il battito del runner PARCHEGGIATO in attesa di eventi (14/09): stessa
++    cadenza di ``heartbeat_worker`` (``HEARTBEAT_SEC``), sul DB come prima e, dal
++    25/09 (punto 6), anche sul canale. Estratto dal ciclo di attesa senza
++    cambiarne la logica, per poterlo provare."""
++    if (adesso - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
++        session._idle_hb_ts = adesso
++        try:
++            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
++        except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
++            logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
++        # 25/09 (punto 6): stesso battito sul canale (in attesa)
++        _pubblica_battito(session)
++
++
+ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
+     """A5 — battito del runner → betfair_live_heartbeat (singleton, realtime).
+ 
+@@ -1112,6 +1165,9 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
+         db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
+     except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
+         logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
++    # 25/09 (punto 6): lo stesso battito sul canale locale (anche se il DB e' KO:
++    # il processo e' vivo comunque, ed e' questo che il battito dice)
++    _pubblica_battito(session)
+     # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
+     # vedi _STREAM_KEEPALIVE_SEC): best-effort, mai far cadere il runner.
+     global _STREAM_KA_LAST
+@@ -1954,12 +2010,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
+                     #   battito VECCHIO                      -> runner spento
+                     #   battito FRESCO + nessun follow STREAMING -> vivo, in attesa
+                     #   battito FRESCO + follow STREAMING        -> in streaming
+-                    if (_now_i - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
+-                        session._idle_hb_ts = _now_i
+-                        try:
+-                            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
+-                        except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
+-                            logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
++                    _battito_in_attesa(session, _now_i)
+                     # A2 (fix 18/09 sera, reperto del coordinatore) — STESSO motivo del
+                     # battito appena sopra: sync_account_worker e' un BackgroundWorker,
+                     # vive SOLO dentro framework.run(); qui, parcheggiati in idle SENZA
+diff --git a/Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py b/Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py
+new file mode 100644
+index 0000000..8a7ba88
+--- /dev/null
++++ b/Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py
+@@ -0,0 +1,278 @@
++"""Punto 6 dell'audit tempo reale (25/09) - lato RUNNER calcio.
++
++Due topic nuovi sul canale locale del runner (47331), entrambi STATO DEL
++PROCESSO gia' in memoria, nessun IO in piu':
++
++* ``battito`` ``{ts, mode, streaming}`` dove si scrive ``betfair_live_heartbeat``
++  (``runner.heartbeat_worker`` e ``runner._battito_in_attesa``);
++* ``modo_ordini`` = ``modo_ordini.stato_corrente()`` + ``ts``, SOLO AL CAMBIO,
++  dove il worker lo registra (``live_order_worker._refresh_settings``).
++
++Il canale finto e' un ``LocalChannel`` VERO (non avviato) con il solo
++``publish`` registrato: ``set_hello``/``_hello_extra`` sono quelli veri.
++Il JSON dei finti del frontend (``frontend/src/lib/__fixtures__/runnerCanaleFinti.json``)
++deve avere le STESSE chiavi dei messaggi veri: lo controlla l'ultimo test.
++"""
++from __future__ import annotations
++
++import json
++import os
++import threading
++import time as _time
++from types import SimpleNamespace
++from typing import Any, Dict, List, Tuple
++
++import pytest
++
++from Betfair.stream import canale_bot as CB
++from Betfair.stream import live_order_worker as W
++from Betfair.stream import local_channel as LC
++from Betfair.stream import modo_ordini as MO
++from Betfair.stream import runner as R
++
++_RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
++_FINTI_UI = os.path.join(_RADICE, "frontend", "src", "lib", "__fixtures__",
++                         "runnerCanaleFinti.json")
++
++
++class _CanaleRegistrato(LC.LocalChannel):
++    """Il canale VERO, non avviato, con ``publish`` che registra."""
++
++    def __init__(self) -> None:
++        super().__init__(47331, "calcio")
++        self.usciti: List[Tuple[str, Any]] = []
++
++    def publish(self, topic: str, payload: Any) -> None:  # type: ignore[override]
++        # come il vero: il payload deve essere serializzabile (json.dumps)
++        json.dumps({"t": topic, "d": payload}, default=str)
++        self.usciti.append((topic, payload))
++
++
++@pytest.fixture
++def canale(monkeypatch):
++    ch = _CanaleRegistrato()
++    monkeypatch.setattr(LC, "_CHANNEL", ch)
++    CB.azzera_statistiche()
++    yield ch
++    CB.azzera_statistiche()
++
++
++@pytest.fixture(autouse=True)
++def _pulito(monkeypatch):
++    MO.azzera()
++    monkeypatch.setattr(W, "_MODO_CANALE_FIRMA", None)
++    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
++    yield
++    MO.azzera()
++
++
++def _battiti(ch: _CanaleRegistrato) -> List[Dict[str, Any]]:
++    return [d for t, d in ch.usciti if t == "battito"]
++
++
++def _modi(ch: _CanaleRegistrato) -> List[Dict[str, Any]]:
++    return [d for t, d in ch.usciti if t == "modo_ordini"]
++
++
++def _ambiente_worker(monkeypatch, upsert=None):
++    """``heartbeat_worker`` senza rete: niente keepAlive, recorder spento."""
++    import Betfair.stream.raw_listener as RL
++
++    monkeypatch.setattr(R, "_STREAM_KA_LAST", _time.monotonic())
++    monkeypatch.setattr(R.db, "upsert_live_heartbeat", upsert or (lambda **k: None))
++    monkeypatch.setattr(RL.RAW_STATE, "health", lambda: {"enabled": False})
++    monkeypatch.setattr(R, "_MOTORE", {"motore": None, "api": None, "auto": None})
++    return R.LiveSession()
++
++
++# ---------------------------------------------------------------- battito
++def test_battito_a_ogni_giro_del_heartbeat_worker_con_le_chiavi_giuste(canale, monkeypatch):
++    session = _ambiente_worker(monkeypatch)
++    prima = int(_time.time() * 1000)
++    R.heartbeat_worker({}, None, session)
++    R.heartbeat_worker({}, None, session)
++    dopo = int(_time.time() * 1000)
++    b = _battiti(canale)
++    assert len(b) == 2, canale.usciti
++    for m in b:
++        assert tuple(m.keys()) == CB.CHIAVI_BATTITO == ("ts", "mode", "streaming")
++        assert isinstance(m["ts"], int) and prima <= m["ts"] <= dopo
++        assert m["mode"] == R.heartbeat_mode() == "LIVE+PAPER"
++        assert m["streaming"] == 0
++
++
++def test_battito_esce_anche_col_database_giu(canale, monkeypatch):
++    def _ko(**_k):
++        raise RuntimeError("503 PGRST002")
++    session = _ambiente_worker(monkeypatch, upsert=_ko)
++    R.heartbeat_worker({}, None, session)
++    assert len(_battiti(canale)) == 1
++
++
++def test_battito_in_attesa_alla_cadenza_del_heartbeat(canale, monkeypatch):
++    scritti = []
++    monkeypatch.setattr(R.db, "upsert_live_heartbeat", lambda **k: scritti.append(k))
++    monkeypatch.setattr(R, "_MOTORE", {"motore": None, "api": None, "auto": None})
++    monkeypatch.setattr(R, "HEARTBEAT_SEC", 10.0)
++    session = R.LiveSession()
++    R._battito_in_attesa(session, 1000.0)
++    R._battito_in_attesa(session, 1005.0)      # dentro la cadenza: niente
++    R._battito_in_attesa(session, 1010.0)      # cadenza compiuta: battito
++    b = _battiti(canale)
++    assert len(b) == 2 == len(scritti)
++    assert all(tuple(m.keys()) == CB.CHIAVI_BATTITO for m in b)
++    assert all(m["mode"] == scritti[0]["mode"] for m in b)   # stesso mode del DB
++    assert all(m["streaming"] == 0 for m in b)               # in attesa: nessuna partita
++
++
++def test_streaming_conta_le_partite_della_memoria_del_runner(canale, monkeypatch):
++    from Betfair.stream import auto_follow as AF
++
++    piano = AF.PianoFollow(tetto=50)
++    esito = piano.richiedi("E3", {"1.30"}, priorita=1, protetti=set(),
++                           puo_espellere=False, ora=_time.monotonic())
++    assert esito.ok
++    auto = SimpleNamespace(piano=piano)
++    monkeypatch.setattr(R, "_MOTORE", {"motore": None, "api": None, "auto": auto})
++    session = R.LiveSession()
++    session.cataloged_events.update({"E1", "E2"})
++    session.finished_events.add("E2")
++    assert R._partite_in_streaming(session) == 2          # E1 manuale + E3 auto
++    R._pubblica_battito(session)
++    assert _battiti(canale)[-1]["streaming"] == 2
++
++
++def test_streaming_non_contabile_vale_none_non_zero(monkeypatch):
++    monkeypatch.setattr(R, "_MOTORE", {"motore": None, "api": None, "auto": None})
++    rotta = SimpleNamespace(cataloged_events=object(), finished_events=set())
++    assert R._partite_in_streaming(rotta) is None
++    assert CB.battito_runner("LIVE+PAPER", None)["streaming"] is None
++
++
++def test_canale_assente_nessuna_chiamata_nessun_errore(monkeypatch):
++    monkeypatch.setattr(LC, "_CHANNEL", None)
++    CB.azzera_statistiche()
++    session = _ambiente_worker(monkeypatch)
++    R.heartbeat_worker({}, None, session)
++    R._battito_in_attesa(session, 5000.0)
++    MO.registra_settings({"order_mode": "PAPER"})
++    assert W._pubblica_modo_ordini_se_cambiato() is False
++    # la firma NON si segna senza canale: al primo canale il modo esce
++    assert W._MODO_CANALE_FIRMA is None
++    st = CB.statistiche()
++    assert st["pubblicati"] == 0 and st["errori"] == 0
++
++
++def test_canale_che_solleva_non_ferma_il_runner(monkeypatch):
++    class _Rotto(_CanaleRegistrato):
++        def publish(self, topic, payload):  # type: ignore[override]
++            raise OSError("socket chiuso")
++    monkeypatch.setattr(LC, "_CHANNEL", _Rotto())
++    CB.azzera_statistiche()
++    session = _ambiente_worker(monkeypatch)
++    R.heartbeat_worker({}, None, session)          # non solleva
++    assert CB.statistiche()["errori"] == 1
++
++
++# ------------------------------------------------------------ modo ordini
++class _SbFinto:
++    """``sb.rpc('get_live_settings', {}).execute().data`` come PostgREST: la
++    riga di ``betfair_live_settings`` (migrations/live_order_mode_control_2026-09-24.sql)."""
++
++    def __init__(self) -> None:
++        self.riga: Dict[str, Any] = {
++            "kill_switch": False, "order_mode": "PAPER",
++            "order_mode_updated_at": "2026-09-25T12:00:00.123456+00:00",
++            "order_mode_updated_by": "avvio_app",
++        }
++        self.errore = False
++
++    def rpc(self, nome, _args):
++        assert nome == "get_live_settings"
++        sb = self
++
++        class _Q:
++            def execute(self_inner):
++                if sb.errore:
++                    raise RuntimeError("DB giu'")
++                return SimpleNamespace(data=dict(sb.riga))
++        return _Q()
++
++
++def test_modo_ordini_solo_al_cambio(canale):
++    sb = _SbFinto()
++    W._refresh_settings(sb)
++    W._refresh_settings(sb)                    # due giri uguali: UNA pubblicazione
++    m = _modi(canale)
++    assert len(m) == 1
++    atteso = set(MO.stato_corrente().keys()) | {"ts"}
++    assert set(m[0].keys()) == atteso
++    assert m[0]["effettivo"] == "PAPER" and m[0]["tetto_ambiente"] == "LIVE"
++    assert m[0]["scelto_ui"] == "PAPER" and m[0]["motivo"] == "ok"
++    assert isinstance(m[0]["ts"], int)
++    # chi si collega dopo lo riceve nell'hello (il vero ``_hello_extra``)
++    assert canale._hello_extra["modo_ordini"] == m[0]
++
++    sb.riga.update({"order_mode": "LIVE", "order_mode_updated_by": "utente",
++                    "order_mode_updated_at": "2026-09-25T12:05:00+00:00"})
++    W._refresh_settings(sb)
++    m = _modi(canale)
++    assert len(m) == 2
++    assert m[1]["effettivo"] == "LIVE" and m[1]["scelto_ui_da"] == "utente"
++    W._refresh_settings(sb)
++    assert len(_modi(canale)) == 2
++
++
++def test_modo_ordini_lettura_scaduta_esce_off(canale, monkeypatch):
++    sb = _SbFinto()
++    orologio = {"t": 100.0}
++    monkeypatch.setattr(MO, "_ora", lambda: orologio["t"])
++    W._refresh_settings(sb)
++    sb.errore = True
++    orologio["t"] += MO.VALIDITA_S + 1         # la lettura buona scade
++    W._refresh_settings(sb)
++    m = _modi(canale)
++    assert [x["effettivo"] for x in m] == ["PAPER", "OFF"]
++    assert m[1]["motivo"] == "db_assente"
++
++
++def test_modo_ordini_mai_sul_canale_del_runner_tennis(monkeypatch):
++    """Il runner tennis rilegge i settings con la stessa funzione (kill-switch),
++    ma il suo tetto e' TENNIS_LIVE_ORDER_MODE: il modo del calcio sul 47332
++    sarebbe falso. Canale tennis -> nessun messaggio, firma non segnata."""
++    ch = _CanaleRegistrato()
++    ch.sport = "tennis"
++    monkeypatch.setattr(LC, "_CHANNEL", ch)
++    W._refresh_settings(_SbFinto())
++    assert _modi(ch) == []
++    assert "modo_ordini" not in ch._hello_extra
++    assert W._MODO_CANALE_FIRMA is None
++
++
++def test_modo_ordini_nessuna_lettura_in_piu(canale):
++    chiamate = []
++
++    class _Contato(_SbFinto):
++        def rpc(self, nome, args):
++            chiamate.append(nome)
++            return super().rpc(nome, args)
++    sb = _Contato()
++    W._refresh_settings(sb)
++    assert chiamate == ["get_live_settings"]   # la sola lettura che c'era gia'
++
++
++# ---------------------------------------------- finti del frontend = veri
++def test_i_finti_del_frontend_hanno_le_chiavi_dei_messaggi_veri(canale):
++    with open(_FINTI_UI, encoding="utf-8") as fh:
++        finti = json.load(fh)
++    vero_battito = CB.battito_runner("LIVE+PAPER", 2)
++    assert set(finti["battito"].keys()) == set(vero_battito.keys())
++    for k, v in vero_battito.items():
++        assert type(finti["battito"][k]) is type(v), k
++    sb = _SbFinto()
++    W._refresh_settings(sb)
++    vero_modo = _modi(canale)[0]
++    for nome in ("modo_ordini", "modo_ordini_live"):
++        assert set(finti[nome].keys()) == set(vero_modo.keys()), nome
++    assert set(finti["hello"].keys()) >= {"sport", "mode", "modo_ordini"}
++    assert set(finti["hello"]["modo_ordini"].keys()) == set(vero_modo.keys())
+diff --git a/frontend/src/components/controlroom/RigaOrdiniReali.canale.test.tsx b/frontend/src/components/controlroom/RigaOrdiniReali.canale.test.tsx
+index af45555..82a7158 100644
+--- a/frontend/src/components/controlroom/RigaOrdiniReali.canale.test.tsx
++++ b/frontend/src/components/controlroom/RigaOrdiniReali.canale.test.tsx
+@@ -42,6 +42,7 @@ vi.mock('@/lib/localChannel', async (orig) => ({
+ vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: vi.fn() } }));
+ 
+ import { RigaOrdiniReali } from './RigaOrdiniReali';
++import finti from '@/lib/__fixtures__/runnerCanaleFinti.json';
+ 
+ function riga(over: Partial<LiveSettings> = {}): LiveSettings {
+     return {
+@@ -116,6 +117,50 @@ describe('Ordini reali dal canale 47331', () => {
+         expect((s.getByTestId('cr-ordini-reali-live') as HTMLButtonElement).disabled).toBe(true);
+     });
+ 
++    // 25/09 (punto 6): topic `modo_ordini` = modo_ordini.stato_corrente() + ts,
++    // SOLO al cambio (live_order_worker._pubblica_modo_ordini_se_cambiato);
++    // messaggi veri in lib/__fixtures__/runnerCanaleFinti.json
++    it('modo_ordini al cambio, SENZA partite seguite: aggiorna senza poll e rilegge chi/quando', async () => {
++        stato = 'connected';
++        helloCorrente = { sport: 'calcio', mode: 'LIVE' };
++        const leggi = vi.fn(async () => riga());
++        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
++        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
++        await act(async () => { await new Promise((r) => setTimeout(r, 15)); });
++        act(() => spingi('modo_ordini', { ...finti.modo_ordini_live, ts: Date.now() }));
++        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/LIVE/));
++        expect(s.getByTestId('cr-ordini-reali-fonte').textContent).toMatch(/^canale /);
++        // il poll e' a un'ora: la seconda lettura l'ha chiesta il cambio del runner
++        await waitFor(() => expect(leggi).toHaveBeenCalledTimes(2));
++    });
++
++    it('modo_ordini dall\'hello: chi si collega dopo il cambio lo vede subito', async () => {
++        stato = 'connected';
++        const leggi = vi.fn(async () => riga());
++        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
++        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
++        await act(async () => { await new Promise((r) => setTimeout(r, 15)); });
++        act(() => spingi('hello', {
++            ...finti.hello, modo_ordini: { ...finti.hello.modo_ordini, effettivo: 'OFF', motivo: 'db_assente', scelto_ui: null, ts: Date.now() },
++        }));
++        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/OFF/));
++        expect(s.getByTestId('cr-ordini-reali-fonte').textContent).toMatch(/^canale /);
++    });
++
++    it('modo_ordini storto (senza ts): nessun effetto', async () => {
++        stato = 'connected';
++        helloCorrente = { sport: 'calcio', mode: 'LIVE' };
++        const leggi = vi.fn(async () => riga());
++        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
++        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
++        const storto: Record<string, unknown> = { ...finti.modo_ordini_live };
++        delete storto.ts;
++        act(() => spingi('modo_ordini', storto));
++        await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
++        expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/);
++        expect(leggi).toHaveBeenCalledTimes(1);
++    });
++
+     it('now di un runner di prima (senza order_mode): nessun effetto', async () => {
+         stato = 'connected';
+         const leggi = vi.fn(async () => riga());
+diff --git a/frontend/src/components/controlroom/RigaOrdiniReali.tsx b/frontend/src/components/controlroom/RigaOrdiniReali.tsx
+index fe503cd..c7d6059 100644
+--- a/frontend/src/components/controlroom/RigaOrdiniReali.tsx
++++ b/frontend/src/components/controlroom/RigaOrdiniReali.tsx
+@@ -24,11 +24,16 @@
+ // (`state.order_mode`, runner.py:292-302) se fresco; se il runner dichiara una
+ // SCELTA diversa da quella letta, la riga si rilegge SUBITO (chi/quando stanno
+ // solo sul database). Fonte ed eta' scritte a video (`lib/runnerCanale.ts`).
++//
++// 25/09 (punto 6) - anche SENZA partite seguite: il runner pubblica il topic
++// `modo_ordini` (`modo_ordini.stato_corrente()` + `ts`) a OGNI CAMBIO, e lo
++// mette nell'hello per chi si collega dopo. Vale finche' il canale e'
++// collegato; fra `now` e `modo_ordini` vince il piu' recente, intero.
+ // ============================================================================
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { getLocalChannel } from '@/lib/localChannel';
+ import {
+-    leggiModoDalNow, sovrapponiModoOrdini, type ModoOrdiniCanale,
++    leggiModoDalNow, leggiModoOrdiniCanale, sovrapponiModoOrdini, type ModoOrdiniCanale,
+ } from '@/lib/runnerCanale';
+ import { fmtDateTime } from '@/lib/format';
+ import { Button } from '@/components/ui/button';
+@@ -48,6 +53,16 @@ interface CanaleModo {
+     connesso: boolean;
+     hello: Record<string, unknown> | null;
+     modo: ModoOrdiniCanale | null;
++    /** 25/09 (punto 6): ultimo `modo_ordini` (topic o `hello.modo_ordini`) */
++    modoAlCambio: ModoOrdiniCanale | null;
++}
++
++const CANALE_SPENTO: CanaleModo = { connesso: false, hello: null, modo: null, modoAlCambio: null };
++
++/** tiene il piu' recente (per `ts` del produttore): un oggetto intero, mai unione */
++function piuRecente(p: ModoOrdiniCanale | null, m: ModoOrdiniCanale | null): ModoOrdiniCanale | null {
++    if (m == null) return p;
++    return p != null && p.ms >= m.ms ? p : m;
+ }
+ 
+ const TESTO_MODO: Record<ModoOrdini, string> = {
+@@ -88,7 +103,7 @@ export function RigaOrdiniReali({
+     /** 25/09: inizio dell'ultima lettura riuscita (per l'eta' e la freschezza) */
+     const [lettoMs, setLettoMs] = useState<number | null>(null);
+     const [nowMs, setNowMs] = useState(() => Date.now());
+-    const [canale, setCanale] = useState<CanaleModo>({ connesso: false, hello: null, modo: null });
++    const [canale, setCanale] = useState<CanaleModo>(CANALE_SPENTO);
+ 
+     const ricarica = useCallback(async () => {
+         const inizio = Date.now();
+@@ -107,20 +122,37 @@ export function RigaOrdiniReali({
+         const ch = getLocalChannel('calcio');
+         const helloDi = () => (typeof ch.getHello === 'function'
+             ? (ch.getHello() as Record<string, unknown> | null) : null);
+-        setCanale({ connesso: ch.getStatus() === 'connected', hello: helloDi(), modo: null });
+-        const offStato = ch.onStatus((st) => setCanale((p) => (st === 'connected'
+-            ? { ...p, connesso: true, hello: helloDi() ?? p.hello }
+-            : { connesso: false, hello: null, modo: null })));
+-        const offHello = ch.subscribe('hello', (d) => setCanale((p) => ({
+-            ...p, hello: d && typeof d === 'object' ? d as Record<string, unknown> : null,
+-        })));
++        // 25/09 (punto 6): l'hello porta anche `modo_ordini` (l'ultimo cambio)
++        const modoDaHello = (h: Record<string, unknown> | null) => leggiModoOrdiniCanale(h?.modo_ordini);
++        const h0 = helloDi();
++        setCanale({
++            connesso: ch.getStatus() === 'connected', hello: h0, modo: null, modoAlCambio: modoDaHello(h0),
++        });
++        const offStato = ch.onStatus((st) => setCanale((p) => {
++            if (st !== 'connected') return CANALE_SPENTO;
++            const h = helloDi() ?? p.hello;
++            return { ...p, connesso: true, hello: h, modoAlCambio: piuRecente(p.modoAlCambio, modoDaHello(h)) };
++        }));
++        const offHello = ch.subscribe('hello', (d) => setCanale((p) => {
++            const h = d && typeof d === 'object' ? d as Record<string, unknown> : null;
++            return { ...p, hello: h, modoAlCambio: piuRecente(p.modoAlCambio, modoDaHello(h)) };
++        }));
+         const offNow = ch.subscribe('now', (d) => {
+             const m = leggiModoDalNow(d);
+             if (!m) return;
+             setCanale((p) => (p.modo != null && p.modo.ms >= m.ms ? p : { ...p, modo: m }));
+         });
++        // 25/09 (punto 6): il modo ordini AL CAMBIO, anche senza partite seguite
++        const offModo = ch.subscribe('modo_ordini', (d) => {
++            const m = leggiModoOrdiniCanale(d);
++            if (!m) return;
++            setCanale((p) => {
++                const nuovo = piuRecente(p.modoAlCambio, m);
++                return nuovo === p.modoAlCambio ? p : { ...p, modoAlCambio: nuovo };
++            });
++        });
+         const t = window.setInterval(() => setNowMs(Date.now()), 1_000);
+-        return () => { offStato(); offHello(); offNow(); window.clearInterval(t); };
++        return () => { offStato(); offHello(); offNow(); offModo(); window.clearInterval(t); };
+     }, []);
+ 
+     useEffect(() => {
+@@ -180,7 +212,7 @@ export function RigaOrdiniReali({
+ 
+                 {st.letto && (
+                     <span className="text-[10px] text-white/30" data-testid="cr-ordini-reali-fonte"
+-                        title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now) o database (get_live_settings, ogni 30 s)">
++                        title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now/modo_ordini: eta' dell'ultima notizia, il modo_ordini vale fino al cambio successivo) o database (get_live_settings, ogni 30 s)">
+                         {st.fonte === 'canale' ? 'canale' : 'db'}{' '}
+                         {st.etaS == null ? '-' : `${st.etaS} s`}
+                     </span>
+diff --git a/frontend/src/components/controlroom/useControlRoom.statoCanale.test.tsx b/frontend/src/components/controlroom/useControlRoom.statoCanale.test.tsx
+index 8e30694..cb0b7c6 100644
+--- a/frontend/src/components/controlroom/useControlRoom.statoCanale.test.tsx
++++ b/frontend/src/components/controlroom/useControlRoom.statoCanale.test.tsx
+@@ -124,6 +124,7 @@ import { fetchMikeState } from '@/lib/mike';
+ import { fetchOmegaState } from '@/lib/omega';
+ import { fetchScanStatus } from '@/lib/safeStrategyScan';
+ import { useControlRoom } from '@/components/controlroom/useControlRoom';
++import finti from '@/lib/__fixtures__/runnerCanaleFinti.json';
+ 
+ const T0 = '2026-09-25T13:00:00.000000+00:00';
+ const T1 = '2026-09-25T13:00:02.000000+00:00';
+@@ -309,6 +310,42 @@ describe('voce 6 - i runner dal canale', () => {
+         expect(h.result.current.runnerTennis).toBeNull();
+     });
+ 
++    // 25/09 (punto 6): topic `battito` {ts, mode, streaming}
++    // (canale_bot.battito_runner, runner._pubblica_battito); messaggio vero in
++    // lib/__fixtures__/runnerCanaleFinti.json
++    it('battito del runner calcio: l\'eta\' torna a zero a ogni battito, mode e streaming dal battito', async () => {
++        statoCanale.set('calcio', 'connected');
++        hello.set('calcio', { sport: 'calcio', mode: 'LIVE' });
++        vi.mocked(fetchRunnerState).mockResolvedValue({
++            ts: new Date(Date.now() - 60_000).toISOString(), mode: 'LIVE+PAPER', ageS: 60, up: true, streaming: 0,
++        });
++        const h = await montato();
++        // si lascia invecchiare l'ultima notizia (l'hello della connessione)
++        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
++        act(() => spingi('calcio', 'battito', { ...finti.battito, ts: Date.now() }));
++        await waitFor(() => expect(h.result.current.fonteRunner.etaS).toBe(0), { timeout: 3000 });
++        expect(h.result.current.fonteRunner.fonte).toBe('canale');
++        expect(h.result.current.runner?.streaming).toBe(2);
++        expect(h.result.current.runner?.mode).toBe('LIVE+PAPER');
++        // di nuovo vecchio, di nuovo un battito: di nuovo zero
++        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
++        act(() => spingi('calcio', 'battito', { ...finti.battito, ts: Date.now(), streaming: 1 }));
++        await waitFor(() => expect(h.result.current.fonteRunner.etaS).toBe(0), { timeout: 3000 });
++        expect(h.result.current.runner?.streaming).toBe(1);
++    }, 10_000);
++
++    it('battito storto (senza ts): non e\' una notizia di vita', async () => {
++        statoCanale.set('calcio', 'connected');
++        const h = await montato();
++        await waitFor(() => expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1), { timeout: 3000 });
++        const storto: Record<string, unknown> = { ...finti.battito };
++        delete storto.ts;
++        act(() => spingi('calcio', 'battito', storto));
++        await act(async () => { await new Promise((r) => setTimeout(r, 1200)); });
++        expect(h.result.current.fonteRunner.etaS ?? 0).toBeGreaterThanOrEqual(1);
++        expect(h.result.current.runner?.streaming ?? null).not.toBe(2);
++    }, 10_000);
++
+     it('runner tennis collegato: noto dal solo canale 47332', async () => {
+         statoCanale.set('tennis', 'connected');
+         hello.set('tennis', { sport: 'tennis', mode: 'PAPER' });
+diff --git a/frontend/src/components/controlroom/useControlRoom.ts b/frontend/src/components/controlroom/useControlRoom.ts
+index 1514f55..ad9c452 100644
+--- a/frontend/src/components/controlroom/useControlRoom.ts
++++ b/frontend/src/components/controlroom/useControlRoom.ts
+@@ -50,7 +50,7 @@ import {
+     leggiPushStato, sovrapponiControl, statoScannerDalCanale, type BotConStato, type PushStato,
+ } from '@/lib/statoBotCanale';
+ import {
+-    runnerDalCanale, NOTIZIE_VUOTE, type FonteRunner, type NotizieRunner,
++    runnerDalCanale, leggiBattito, NOTIZIE_VUOTE, type FonteRunner, type NotizieRunner,
+ } from '@/lib/runnerCanale';
+ import {
+     inviaChiusura, faseDaRichiesta, firmaRiga, cambiataPerChiusura, richiestaDaRileggere,
+@@ -1684,6 +1684,13 @@ export function useControlRoom(): ControlRoomVM {
+             calcio: { ...NOTIZIE_VUOTE }, tennis: { ...NOTIZIE_VUOTE },
+         };
+         const chiusure: (() => void)[] = [];
++        const fotografa = () => setNotizieRunner((p) => {
++            const uguale = (a: NotizieRunner, b: NotizieRunner) => a.connesso === b.connesso
++                && a.hello === b.hello && a.ultimoMsgMs === b.ultimoMsgMs && a.ultimoFlussoMs === b.ultimoFlussoMs
++                && a.battito === b.battito;
++            if (uguale(p.calcio, rif.calcio) && uguale(p.tennis, rif.tennis)) return p;
++            return { calcio: { ...rif.calcio }, tennis: { ...rif.tennis } };
++        });
+         (['calcio', 'tennis'] as const).forEach((sport) => {
+             const ch = getLocalChannel(sport);
+             const n = rif[sport];
+@@ -1698,7 +1705,7 @@ export function useControlRoom(): ControlRoomVM {
+                     const h = typeof ch.getHello === 'function' ? ch.getHello() : null;
+                     n.hello = (h as Record<string, unknown> | null) ?? n.hello;
+                 }
+-                else { n.hello = null; n.ultimoMsgMs = null; n.ultimoFlussoMs = null; }
++                else { n.hello = null; n.ultimoMsgMs = null; n.ultimoFlussoMs = null; n.battito = null; }
+             };
+             suStato(ch.getStatus());
+             chiusure.push(ch.onStatus(suStato));
+@@ -1712,12 +1719,22 @@ export function useControlRoom(): ControlRoomVM {
+             for (const t of ['ladder', 'now'] as const) {
+                 chiusure.push(ch.subscribe(t, () => { const ms = Date.now(); n.ultimoMsgMs = ms; n.ultimoFlussoMs = ms; }));
+             }
+-        });
+-        const fotografa = () => setNotizieRunner((p) => {
+-            const uguale = (a: NotizieRunner, b: NotizieRunner) => a.connesso === b.connesso
+-                && a.hello === b.hello && a.ultimoMsgMs === b.ultimoMsgMs && a.ultimoFlussoMs === b.ultimoFlussoMs;
+-            if (uguale(p.calcio, rif.calcio) && uguale(p.tennis, rif.tennis)) return p;
+-            return { calcio: { ...rif.calcio }, tennis: { ...rif.tennis } };
++            // 25/09 (punto 6): il BATTITO del runner (calcio: dove scrive
++            // `betfair_live_heartbeat`; tennis: al giro di attesa). L'eta' torna
++            // a zero a ogni battito; mode/streaming vanno a `runnerDalCanale`.
++            // Un battito storto (senza `ts`) non e' una notizia di vita.
++            // Il battito e' raro (~10 s): la pagina lo fotografa SUBITO, con
++            // l'orologio allineato, cosi' l'eta' mostrata e' davvero 0 (col
++            // solo giro da 1 s arrivava gia' arrotondata a 1).
++            chiusure.push(ch.subscribe('battito', (d) => {
++                const b = leggiBattito(d);
++                if (!b) return;
++                const ms = Date.now();
++                n.battito = b;
++                n.ultimoMsgMs = ms;
++                setNowMs(ms);
++                fotografa();
++            }));
+         });
+         fotografa();
+         const t = window.setInterval(fotografa, TICK_MS);
+diff --git a/frontend/src/lib/__fixtures__/runnerCanaleFinti.json b/frontend/src/lib/__fixtures__/runnerCanaleFinti.json
+new file mode 100644
+index 0000000..bb40f42
+--- /dev/null
++++ b/frontend/src/lib/__fixtures__/runnerCanaleFinti.json
+@@ -0,0 +1,42 @@
++{
++  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z.",
++  "battito": {
++    "ts": 1790341198000,
++    "mode": "LIVE+PAPER",
++    "streaming": 2
++  },
++  "modo_ordini": {
++    "effettivo": "PAPER",
++    "tetto_ambiente": "LIVE",
++    "scelto_ui": "PAPER",
++    "motivo": "ok",
++    "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
++    "scelto_ui_da": "avvio_app",
++    "eta_lettura_s": 0.0,
++    "ts": 1790341195000
++  },
++  "modo_ordini_live": {
++    "effettivo": "LIVE",
++    "tetto_ambiente": "LIVE",
++    "scelto_ui": "LIVE",
++    "motivo": "ok",
++    "scelto_ui_at": "2026-09-25T12:05:00.000000+00:00",
++    "scelto_ui_da": "utente",
++    "eta_lettura_s": 0.0,
++    "ts": 1790341199000
++  },
++  "hello": {
++    "sport": "calcio",
++    "mode": "LIVE",
++    "modo_ordini": {
++      "effettivo": "PAPER",
++      "tetto_ambiente": "LIVE",
++      "scelto_ui": "PAPER",
++      "motivo": "ok",
++      "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
++      "scelto_ui_da": "avvio_app",
++      "eta_lettura_s": 0.0,
++      "ts": 1790341195000
++    }
++  }
++}
+diff --git a/frontend/src/lib/runnerCanale.test.ts b/frontend/src/lib/runnerCanale.test.ts
+index 36bb319..f317e62 100644
+--- a/frontend/src/lib/runnerCanale.test.ts
++++ b/frontend/src/lib/runnerCanale.test.ts
+@@ -15,10 +15,13 @@
+ import { describe, it, expect } from 'vitest';
+ import {
+     runnerDalCanale, leggiModoDalNow, sovrapponiModoOrdini, NOTIZIE_VUOTE,
+-    FLUSSO_VIVO_S, MODO_CANALE_VALIDO_S,
++    FLUSSO_VIVO_S, MODO_CANALE_VALIDO_S, leggiBattito, leggiModoOrdiniCanale,
+ } from './runnerCanale';
+ import { statoOrdiniReali } from './interruttori';
+ import type { RunnerState } from './safeBot';
++// 25/09 (punto 6): messaggi VERI generati dal codice Python (chiavi e tipi
++// controllati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py)
++import finti from './__fixtures__/runnerCanaleFinti.json';
+ 
+ const NOW = Date.parse('2026-09-25T13:00:00Z');
+ 
+@@ -149,3 +152,133 @@ describe('sovrapponiModoOrdini', () => {
+         expect(v.fonte).toBe('canale');
+     });
+ });
++
++// ------------------------------------------------ 25/09 punto 6: battito
++describe('leggiBattito (topic `battito`, canale_bot.battito_runner)', () => {
++    it('il messaggio vero: ts, mode, streaming', () => {
++        expect(leggiBattito(finti.battito)).toEqual({ ts: finti.battito.ts, mode: 'LIVE+PAPER', streaming: 2 });
++    });
++    it('senza ts numerico non e\' un battito', () => {
++        const senzaTs: Record<string, unknown> = { ...finti.battito };
++        delete senzaTs.ts;
++        expect(leggiBattito(senzaTs)).toBeNull();
++        expect(leggiBattito({ ...finti.battito, ts: 'ieri' })).toBeNull();
++        expect(leggiBattito(null)).toBeNull();
++    });
++    it('streaming null (non contabile) resta null, mai zero inventato', () => {
++        expect(leggiBattito({ ...finti.battito, streaming: null })?.streaming).toBeNull();
++    });
++});
++
++describe('runnerDalCanale con il battito', () => {
++    const conn = { connesso: true, hello: { sport: 'calcio', mode: 'LIVE' }, ultimoFlussoMs: null };
++    it('battito piu\' recente della riga del database: mode e streaming dal battito (oggetto intero)', () => {
++        const b = leggiBattito(finti.battito)!;               // ts = NOW - 2 s, streaming 2
++        const v = runnerDalCanale({ ...DB, mode: 'PAPER', streaming: 0 }, {
++            ...conn, ultimoMsgMs: NOW - 2000, battito: b,
++        }, NOW);
++        expect(v.fonte).toBe('canale');
++        expect(v.runner?.mode).toBe('LIVE+PAPER');
++        expect(v.runner?.streaming).toBe(2);
++        expect(v.etaS).toBe(2);
++    });
++    it('battito piu\' vecchio della riga del database: resta tutto il database', () => {
++        const b = { ...leggiBattito(finti.battito)!, ts: Date.parse(DB.ts!) - 1000 };
++        const v = runnerDalCanale({ ...DB, mode: 'PAPER', streaming: 0 }, {
++            ...conn, ultimoMsgMs: NOW - 1000, battito: b,
++        }, NOW);
++        expect(v.runner?.mode).toBe('PAPER');
++        expect(v.runner?.streaming).toBe(0);
++    });
++    it('battito con streaming non contabile: resta il numero del database', () => {
++        const b = { ...leggiBattito(finti.battito)!, streaming: null };
++        const v = runnerDalCanale({ ...DB, streaming: 3 }, { ...conn, ultimoMsgMs: NOW, battito: b }, NOW);
++        expect(v.runner?.streaming).toBe(3);
++        expect(v.runner?.mode).toBe('LIVE+PAPER');
++    });
++    it('runner tennis in attesa (nessuna riga di database): mode e streaming dal battito', () => {
++        const v = runnerDalCanale(null, {
++            connesso: true, hello: { sport: 'tennis', mode: 'LIVE' }, ultimoFlussoMs: null,
++            ultimoMsgMs: NOW, battito: { ts: NOW, mode: 'PAPER', streaming: 0 },
++        }, NOW);
++        expect(v.runner?.mode).toBe('PAPER');
++        expect(v.runner?.streaming).toBe(0);
++        expect(v.etaS).toBe(0);
++    });
++    it('canale spento: il battito ricevuto prima non conta', () => {
++        const v = runnerDalCanale(DB, { ...NOTIZIE_VUOTE, battito: leggiBattito(finti.battito) }, NOW);
++        expect(v.fonte).toBe('database');
++        expect(v.runner?.streaming).toBe(0);
++    });
++});
++
++// -------------------------------------------- 25/09 punto 6: modo_ordini
++describe('leggiModoOrdiniCanale (topic `modo_ordini` e hello.modo_ordini)', () => {
++    it('il messaggio vero', () => {
++        expect(leggiModoOrdiniCanale(finti.modo_ordini)).toEqual({
++            effettivo: 'PAPER', tetto: 'LIVE', scelto: 'PAPER', ms: finti.modo_ordini.ts, alCambio: true,
++        });
++        expect(leggiModoOrdiniCanale(finti.hello.modo_ordini)?.effettivo).toBe('PAPER');
++    });
++    it('senza ts o senza effettivo: null', () => {
++        const senzaTs: Record<string, unknown> = { ...finti.modo_ordini };
++        delete senzaTs.ts;
++        expect(leggiModoOrdiniCanale(senzaTs)).toBeNull();
++        expect(leggiModoOrdiniCanale({ ...finti.modo_ordini, effettivo: 'boh' })).toBeNull();
++        expect(leggiModoOrdiniCanale(undefined)).toBeNull();
++    });
++});
++
++describe('sovrapponiModoOrdini con il modo al cambio', () => {
++    const riga = {
++        id: 1, kill_switch: false, max_exposure_per_selection: null, max_orders_per_min: null,
++        order_poll_sec: null, risk_poll_sec: null, daily_loss_limit: null, max_exposure_per_event: null,
++        max_exposure_per_league: null, updated_at: '2026-09-25T12:00:00Z',
++        order_mode: 'paper', order_mode_updated_at: '2026-09-25T12:00:00Z', order_mode_updated_by: 'avvio_app',
++        order_mode_boot_id: 'b1', order_mode_tetto: 'LIVE', order_mode_tetto_at: '2026-09-25T11:59:00Z',
++    };
++    const st = statoOrdiniReali(riga);
++    const letto = NOW - 20_000;
++    const hello = { sport: 'calcio', mode: 'LIVE' };
++
++    it('senza partite (nessun now): il cambio del runner vale subito e chiede la rilettura', () => {
++        const m = leggiModoOrdiniCanale(finti.modo_ordini_live)!;       // ts = NOW - 1 s
++        const v = sovrapponiModoOrdini(st, letto, { connesso: true, hello, modo: null, modoAlCambio: m }, NOW);
++        expect(v.fonte).toBe('canale');
++        expect(v.effettivo).toBe('LIVE');
++        expect(v.etaS).toBe(1);
++        expect(v.daRileggere).toBe(true);
++        expect(v.scelto).toBe('PAPER');        // chi/quando restano del database
++    });
++    it('al cambio NON scade dopo 15 s: vale finche\' il canale e\' collegato', () => {
++        const m = { ...leggiModoOrdiniCanale(finti.modo_ordini_live)!, ms: NOW - 600_000 };
++        const v = sovrapponiModoOrdini(st, NOW - 700_000, { connesso: true, hello, modo: null, modoAlCambio: m }, NOW);
++        expect(v.fonte).toBe('canale');
++        expect(v.effettivo).toBe('LIVE');
++        expect(v.etaS).toBe(600);
++    });
++    it('lettura piu\' recente del cambio: effettivo del runner (e\' quello che applica), nessuna rilettura', () => {
++        const m = { ...leggiModoOrdiniCanale(finti.modo_ordini_live)!, ms: letto - 5000 };
++        const v = sovrapponiModoOrdini(st, letto, { connesso: true, hello, modo: null, modoAlCambio: m }, NOW);
++        expect(v.effettivo).toBe('LIVE');
++        expect(v.daRileggere).toBe(false);
++    });
++    it('mai unione: fra now e modo_ordini vince il piu\' recente, intero', () => {
++        const alCambio = { ...leggiModoOrdiniCanale(finti.modo_ordini)!, ms: NOW - 3000 };   // PAPER
++        const dalNow = { effettivo: 'LIVE' as const, tetto: 'LIVE' as const, scelto: 'LIVE' as const, ms: NOW - 1000 };
++        const v = sovrapponiModoOrdini(st, letto, { connesso: true, hello, modo: dalNow, modoAlCambio: alCambio }, NOW);
++        expect(v.effettivo).toBe('LIVE');
++        expect(v.etaS).toBe(1);
++        const w = sovrapponiModoOrdini(st, letto, {
++            connesso: true, hello, modo: { ...dalNow, ms: NOW - 5000 }, modoAlCambio: alCambio,
++        }, NOW);
++        expect(w.effettivo).toBe('PAPER');
++        expect(w.etaS).toBe(3);
++    });
++    it('canale scollegato: il modo al cambio non vale piu\'', () => {
++        const m = leggiModoOrdiniCanale(finti.modo_ordini_live)!;
++        const v = sovrapponiModoOrdini(st, letto, { connesso: false, hello: null, modo: null, modoAlCambio: m }, NOW);
++        expect(v.fonte).toBe('database');
++        expect(v.effettivo).toBe('PAPER');
++    });
++});
+diff --git a/frontend/src/lib/runnerCanale.ts b/frontend/src/lib/runnerCanale.ts
+index af45fd9..bc0f47d 100644
+--- a/frontend/src/lib/runnerCanale.ts
++++ b/frontend/src/lib/runnerCanale.ts
+@@ -22,6 +22,19 @@
+ //             `order_mode` (EFFETTIVO), `order_mode_tetto`, `order_mode_scelto`
+ //             e `updated_ms` (runner.py:292-302)
+ //   board/order/position: altri push del runner (notizie di vita anch'esse)
++//   battito <- 25/09 punto 6: `canale_bot.battito_runner` {ts, mode,
++//             streaming}, pubblicato da `runner._pubblica_battito` DOVE si
++//             scrive `betfair_live_heartbeat` (heartbeat_worker e attesa) e
++//             dal runner tennis al suo giro di attesa. `mode` = lo STESSO della
++//             riga del database (`heartbeat_mode()`: 'LIVE+PAPER'); `streaming`
++//             = partite seguite dalla memoria del runner (null = non contabile)
++//   modo_ordini <- 25/09 punto 6: `modo_ordini.stato_corrente()` + `ts`,
++//             SOLO AL CAMBIO (`live_order_worker._pubblica_modo_ordini_se_cambiato`);
++//             anche nell'hello (`hello.modo_ordini`) per chi si collega dopo
++//
++// Il battito e' un OGGETTO INTERO: se e' piu' recente della riga del
++// database, `mode` e `streaming` vengono dal battito (mai meta' e meta'),
++// salvo `streaming` null ("non contabile": resta il numero del database).
+ //
+ // LE REGOLE
+ //  - canale CONNESSO = processo vivo: il socket e' servito dal processo del
+@@ -46,6 +59,30 @@ export const MODO_CANALE_VALIDO_S = 15;
+ 
+ export type FonteRunner = 'canale' | 'database';
+ 
++/** Il battito del runner sul canale (topic `battito`, 25/09 punto 6). */
++export interface BattitoRunner {
++    /** ms epoch del PRODUTTORE */
++    ts: number;
++    /** modalita' servite ('LIVE+PAPER', 'PAPER', 'OFF'); null = non dichiarata */
++    mode: string | null;
++    /** partite seguite dalla memoria del runner; null = non contabile */
++    streaming: number | null;
++}
++
++/**
++ * Legge un push `battito`. `null` = messaggio storto (senza `ts` numerico):
++ * un battito senza istante non dice quando il runner era vivo.
++ */
++export function leggiBattito(d: unknown): BattitoRunner | null {
++    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
++    const o = d as Record<string, unknown>;
++    if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
++    const mode = typeof o.mode === 'string' && o.mode.trim() ? o.mode.trim().toUpperCase() : null;
++    const streaming = typeof o.streaming === 'number' && Number.isFinite(o.streaming) && o.streaming >= 0
++        ? Math.floor(o.streaming) : null;
++    return { ts: o.ts, mode, streaming };
++}
++
+ /** Le notizie di un runner raccolte dal canale (orologio della pagina). */
+ export interface NotizieRunner {
+     connesso: boolean;
+@@ -55,6 +92,8 @@ export interface NotizieRunner {
+     ultimoMsgMs: number | null;
+     /** ultimo `ladder`/`now` */
+     ultimoFlussoMs: number | null;
++    /** ultimo `battito` valido (25/09 punto 6); assente = nessuno ricevuto */
++    battito?: BattitoRunner | null;
+ }
+ 
+ export interface RunnerVista {
+@@ -66,7 +105,7 @@ export interface RunnerVista {
+ }
+ 
+ export const NOTIZIE_VUOTE: NotizieRunner = {
+-    connesso: false, hello: null, ultimoMsgMs: null, ultimoFlussoMs: null,
++    connesso: false, hello: null, ultimoMsgMs: null, ultimoFlussoMs: null, battito: null,
+ };
+ 
+ function etaDa(ms: number | null, nowMs: number): number | null {
+@@ -92,15 +131,22 @@ export function runnerDalCanale(
+     const modeHello = typeof n.hello?.mode === 'string' && n.hello.mode.trim()
+         ? n.hello.mode.trim().toUpperCase() : null;
+     const streamingDb = db?.streaming ?? null;
++    // 25/09 (punto 6): il battito del runner, se piu' recente della riga del
++    // database, e' la notizia intera (mode + streaming): mai meta' e meta'.
++    const b = n.battito ?? null;
++    const dbMs = db?.ts ? Date.parse(db.ts) : NaN;
++    const battitoVince = b != null && (!Number.isFinite(dbMs) || b.ts > dbMs);
++    // il database dichiara le modalita' SERVITE ('LIVE+PAPER'): se c'e',
++    // vince sull'hello; il battito porta lo stesso valore, piu' fresco
++    const mode = battitoVince ? (b.mode ?? modeHello) : (db?.mode ?? modeHello);
++    const streamingBase = battitoVince && b.streaming != null ? b.streaming : streamingDb;
+     return {
+         runner: {
+             ts: new Date(n.ultimoMsgMs).toISOString(),
+-            // il database dichiara le modalita' SERVITE ('LIVE+PAPER'): se c'e',
+-            // vince; senza, il tetto dell'hello
+-            mode: db?.mode ?? modeHello,
++            mode,
+             ageS,
+             up: true,
+-            streaming: flusso ? Math.max(streamingDb ?? 0, 1) : streamingDb,
++            streaming: flusso ? Math.max(streamingBase ?? 0, 1) : streamingBase,
+         },
+         fonte: 'canale',
+         etaS: ageS == null ? null : Math.round(ageS),
+@@ -114,8 +160,35 @@ export interface ModoOrdiniCanale {
+     effettivo: ModoOrdini | null;
+     tetto: ModoOrdini | null;
+     scelto: ModoOrdini | null;
+-    /** `state.updated_ms` del produttore */
++    /** `state.updated_ms` (now) o `ts` (modo_ordini) del produttore */
+     ms: number;
++    /**
++     * true = viene dal topic `modo_ordini` (o dall'hello), che il runner
++     * pubblica AD OGNI CAMBIO: vale finche' il canale resta collegato, senza
++     * la scadenza dei 15 s del `now`.
++     */
++    alCambio?: boolean;
++}
++
++/**
++ * Legge il push `modo_ordini` (o `hello.modo_ordini`) del runner calcio:
++ * `modo_ordini.stato_corrente()` + `ts` (chiavi `effettivo`,
++ * `tetto_ambiente`, `scelto_ui`, `motivo`, `scelto_ui_at`, `scelto_ui_da`,
++ * `eta_lettura_s`, `ts`). `null` = messaggio storto o assente.
++ */
++export function leggiModoOrdiniCanale(d: unknown): ModoOrdiniCanale | null {
++    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
++    const o = d as Record<string, unknown>;
++    if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
++    const effettivo = normalizzaModoOrdini(o.effettivo);
++    if (effettivo == null) return null;
++    return {
++        effettivo,
++        tetto: normalizzaModoOrdini(o.tetto_ambiente),
++        scelto: normalizzaModoOrdini(o.scelto_ui),
++        ms: o.ts,
++        alCambio: true,
++    };
+ }
+ 
+ /**
+@@ -162,19 +235,30 @@ export interface StatoOrdiniVista extends StatoOrdiniReali {
+  */
+ export function sovrapponiModoOrdini(
+     st: StatoOrdiniReali, lettoMs: number | null,
+-    canale: { connesso: boolean; hello: Record<string, unknown> | null; modo: ModoOrdiniCanale | null },
++    canale: {
++        connesso: boolean; hello: Record<string, unknown> | null; modo: ModoOrdiniCanale | null;
++        /** 25/09 (punto 6): l'ultimo `modo_ordini` (topic o hello), al cambio */
++        modoAlCambio?: ModoOrdiniCanale | null;
++    },
+     nowMs: number,
+ ): StatoOrdiniVista {
+     const etaDb = lettoMs == null ? null : Math.max(0, Math.round((nowMs - lettoMs) / 1000));
+     const base: StatoOrdiniVista = { ...st, fonte: 'database', etaS: etaDb, daRileggere: false };
+     if (!st.letto || st.migrazioneMancante || !canale.connesso) return base;
+     const tettoHello = normalizzaModoOrdini(canale.hello?.mode);
+-    const m = canale.modo;
+-    const modoFresco = m != null && (nowMs - m.ms) / 1000 <= MODO_CANALE_VALIDO_S
+-        && (lettoMs == null || m.ms > lettoMs);
+-    const tetto = tettoHello ?? (modoFresco ? m.tetto : null) ?? st.tetto;
+-    if (!modoFresco && tetto === st.tetto) return base;
+-    const effettivo = modoFresco && m.effettivo != null ? m.effettivo : modoOrdiniEffettivo(tetto, st.scelto);
++    const mNow = canale.modo;
++    const nowValido = mNow != null && (nowMs - mNow.ms) / 1000 <= MODO_CANALE_VALIDO_S
++        && (lettoMs == null || mNow.ms > lettoMs);
++    // il `modo_ordini` al cambio vale finche' il canale e' collegato (il runner
++    // ne manda uno nuovo a OGNI cambio, anche lettura scaduta -> OFF): e' il
++    // modo che il worker APPLICA, anche se la lettura della pagina e' piu' recente
++    const mCambio = canale.modoAlCambio ?? null;
++    // UN oggetto intero, il piu' recente fra i due validi: mai unione
++    let m: ModoOrdiniCanale | null = nowValido ? mNow : null;
++    if (mCambio != null && (m == null || mCambio.ms >= m.ms)) m = mCambio;
++    const tetto = tettoHello ?? (m != null ? m.tetto : null) ?? st.tetto;
++    if (m == null && tetto === st.tetto) return base;
++    const effettivo = m != null && m.effettivo != null ? m.effettivo : modoOrdiniEffettivo(tetto, st.scelto);
+     return {
+         ...st,
+         tetto,
+@@ -182,7 +266,11 @@ export function sovrapponiModoOrdini(
+         limitatoDalTetto: st.scelto != null && tetto != null
+             && modoOrdiniEffettivo(tetto, st.scelto) !== st.scelto,
+         fonte: 'canale',
+-        etaS: modoFresco ? Math.max(0, Math.round((nowMs - m.ms) / 1000)) : etaDb,
+-        daRileggere: modoFresco && m.scelto != null && m.scelto !== st.scelto,
++        etaS: m != null ? Math.max(0, Math.round((nowMs - m.ms) / 1000)) : etaDb,
++        // si rilegge solo se la notizia del runner e' PIU' RECENTE della lettura
++        // (una lettura piu' nuova e diversa = scelta appena fatta: il runner la
++        // dira' al prossimo giro, niente rilettura a vuoto)
++        daRileggere: m != null && m.scelto != null && m.scelto !== st.scelto
++            && (lettoMs == null || m.ms > lettoMs),
+     };
+ }

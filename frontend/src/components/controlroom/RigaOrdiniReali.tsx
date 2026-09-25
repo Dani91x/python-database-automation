@@ -24,11 +24,16 @@
 // (`state.order_mode`, runner.py:292-302) se fresco; se il runner dichiara una
 // SCELTA diversa da quella letta, la riga si rilegge SUBITO (chi/quando stanno
 // solo sul database). Fonte ed eta' scritte a video (`lib/runnerCanale.ts`).
+//
+// 25/09 (punto 6) - anche SENZA partite seguite: il runner pubblica il topic
+// `modo_ordini` (`modo_ordini.stato_corrente()` + `ts`) a OGNI CAMBIO, e lo
+// mette nell'hello per chi si collega dopo. Vale finche' il canale e'
+// collegato; fra `now` e `modo_ordini` vince il piu' recente, intero.
 // ============================================================================
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLocalChannel } from '@/lib/localChannel';
 import {
-    leggiModoDalNow, sovrapponiModoOrdini, type ModoOrdiniCanale,
+    leggiModoDalNow, leggiModoOrdiniCanale, sovrapponiModoOrdini, type ModoOrdiniCanale,
 } from '@/lib/runnerCanale';
 import { fmtDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -48,6 +53,16 @@ interface CanaleModo {
     connesso: boolean;
     hello: Record<string, unknown> | null;
     modo: ModoOrdiniCanale | null;
+    /** 25/09 (punto 6): ultimo `modo_ordini` (topic o `hello.modo_ordini`) */
+    modoAlCambio: ModoOrdiniCanale | null;
+}
+
+const CANALE_SPENTO: CanaleModo = { connesso: false, hello: null, modo: null, modoAlCambio: null };
+
+/** tiene il piu' recente (per `ts` del produttore): un oggetto intero, mai unione */
+function piuRecente(p: ModoOrdiniCanale | null, m: ModoOrdiniCanale | null): ModoOrdiniCanale | null {
+    if (m == null) return p;
+    return p != null && p.ms >= m.ms ? p : m;
 }
 
 const TESTO_MODO: Record<ModoOrdini, string> = {
@@ -88,7 +103,7 @@ export function RigaOrdiniReali({
     /** 25/09: inizio dell'ultima lettura riuscita (per l'eta' e la freschezza) */
     const [lettoMs, setLettoMs] = useState<number | null>(null);
     const [nowMs, setNowMs] = useState(() => Date.now());
-    const [canale, setCanale] = useState<CanaleModo>({ connesso: false, hello: null, modo: null });
+    const [canale, setCanale] = useState<CanaleModo>(CANALE_SPENTO);
 
     const ricarica = useCallback(async () => {
         const inizio = Date.now();
@@ -107,20 +122,37 @@ export function RigaOrdiniReali({
         const ch = getLocalChannel('calcio');
         const helloDi = () => (typeof ch.getHello === 'function'
             ? (ch.getHello() as Record<string, unknown> | null) : null);
-        setCanale({ connesso: ch.getStatus() === 'connected', hello: helloDi(), modo: null });
-        const offStato = ch.onStatus((st) => setCanale((p) => (st === 'connected'
-            ? { ...p, connesso: true, hello: helloDi() ?? p.hello }
-            : { connesso: false, hello: null, modo: null })));
-        const offHello = ch.subscribe('hello', (d) => setCanale((p) => ({
-            ...p, hello: d && typeof d === 'object' ? d as Record<string, unknown> : null,
-        })));
+        // 25/09 (punto 6): l'hello porta anche `modo_ordini` (l'ultimo cambio)
+        const modoDaHello = (h: Record<string, unknown> | null) => leggiModoOrdiniCanale(h?.modo_ordini);
+        const h0 = helloDi();
+        setCanale({
+            connesso: ch.getStatus() === 'connected', hello: h0, modo: null, modoAlCambio: modoDaHello(h0),
+        });
+        const offStato = ch.onStatus((st) => setCanale((p) => {
+            if (st !== 'connected') return CANALE_SPENTO;
+            const h = helloDi() ?? p.hello;
+            return { ...p, connesso: true, hello: h, modoAlCambio: piuRecente(p.modoAlCambio, modoDaHello(h)) };
+        }));
+        const offHello = ch.subscribe('hello', (d) => setCanale((p) => {
+            const h = d && typeof d === 'object' ? d as Record<string, unknown> : null;
+            return { ...p, hello: h, modoAlCambio: piuRecente(p.modoAlCambio, modoDaHello(h)) };
+        }));
         const offNow = ch.subscribe('now', (d) => {
             const m = leggiModoDalNow(d);
             if (!m) return;
             setCanale((p) => (p.modo != null && p.modo.ms >= m.ms ? p : { ...p, modo: m }));
         });
+        // 25/09 (punto 6): il modo ordini AL CAMBIO, anche senza partite seguite
+        const offModo = ch.subscribe('modo_ordini', (d) => {
+            const m = leggiModoOrdiniCanale(d);
+            if (!m) return;
+            setCanale((p) => {
+                const nuovo = piuRecente(p.modoAlCambio, m);
+                return nuovo === p.modoAlCambio ? p : { ...p, modoAlCambio: nuovo };
+            });
+        });
         const t = window.setInterval(() => setNowMs(Date.now()), 1_000);
-        return () => { offStato(); offHello(); offNow(); window.clearInterval(t); };
+        return () => { offStato(); offHello(); offNow(); offModo(); window.clearInterval(t); };
     }, []);
 
     useEffect(() => {
@@ -180,7 +212,7 @@ export function RigaOrdiniReali({
 
                 {st.letto && (
                     <span className="text-[10px] text-white/30" data-testid="cr-ordini-reali-fonte"
-                        title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now) o database (get_live_settings, ogni 30 s)">
+                        title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now/modo_ordini: eta' dell'ultima notizia, il modo_ordini vale fino al cambio successivo) o database (get_live_settings, ogni 30 s)">
                         {st.fonte === 'canale' ? 'canale' : 'db'}{' '}
                         {st.etaS == null ? '-' : `${st.etaS} s`}
                     </span>

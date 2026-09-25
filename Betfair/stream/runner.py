@@ -80,6 +80,7 @@ from .config_stream import (
     XHEDGE_POLL_SEC,
 )
 from . import local_channel as _lc
+from . import canale_bot as _cb
 from . import ladder_canale as _lcad
 from .config_stream import LADDER_CANALE_MS
 from . import avvio_app as AA
@@ -1102,6 +1103,58 @@ _STREAM_KEEPALIVE_SEC = float(os.getenv("LIVE_STREAM_KEEPALIVE_SEC", "480"))
 _STREAM_KA_LAST = 0.0
 
 
+def _partite_in_streaming(session: Any) -> Optional[int]:
+    """Quante partite il runner sta seguendo ADESSO, dalla SUA memoria.
+
+    25/09 (punto 6 dell'audit tempo reale): e' il numero ``streaming`` del
+    battito sul canale. Nessuna lettura DB: gli eventi catalogati (follow
+    manuali portati a STREAMING da ``_catalog_event``) meno quelli finalizzati,
+    piu' gli eventi dell'AUTO-FOLLOW (righe ``origine='auto'`` STREAMING).
+    ``None`` se non contabile (strutture cambiate sotto mano): mai un numero
+    inventato."""
+    try:
+        eventi = set(getattr(session, "cataloged_events", None) or ()) - set(
+            getattr(session, "finished_events", None) or ())
+        auto = _auto_attivo()
+        if auto is not None:
+            for voce in auto.piano.voci().values():
+                if voce.event_id:
+                    eventi.add(str(voce.event_id))
+        return len(eventi)
+    except Exception:  # noqa: BLE001 - conteggio best-effort, mai fermare il battito
+        return None
+
+
+def _pubblica_battito(session: Any) -> None:
+    """25/09 (punto 6) - il battito del runner anche sul canale 47331, topic
+    ``battito`` ``{ts, mode, streaming}`` (``canale_bot.battito_runner``).
+
+    Esce DOVE si scrive ``betfair_live_heartbeat`` (worker e attesa), con lo
+    stesso ``mode``; prima di questo la UI deduceva il battito dal saldo (~20 s).
+    Senza canale non esce niente; non solleva mai (``pubblica_stato_processo``)."""
+    try:
+        _cb.pubblica_stato_processo(
+            _cb.TOPIC["battito"],
+            _cb.battito_runner(heartbeat_mode(), _partite_in_streaming(session)))
+    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il runner
+        logger.debug("[runner] battito sul canale KO: %s", str(ex)[:120])
+
+
+def _battito_in_attesa(session: Any, adesso: float) -> None:
+    """Il battito del runner PARCHEGGIATO in attesa di eventi (14/09): stessa
+    cadenza di ``heartbeat_worker`` (``HEARTBEAT_SEC``), sul DB come prima e, dal
+    25/09 (punto 6), anche sul canale. Estratto dal ciclo di attesa senza
+    cambiarne la logica, per poterlo provare."""
+    if (adesso - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
+        session._idle_hb_ts = adesso
+        try:
+            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
+        except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
+            logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
+        # 25/09 (punto 6): stesso battito sul canale (in attesa)
+        _pubblica_battito(session)
+
+
 def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
     """A5 — battito del runner → betfair_live_heartbeat (singleton, realtime).
 
@@ -1112,6 +1165,9 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
     except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
         logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
+    # 25/09 (punto 6): lo stesso battito sul canale locale (anche se il DB e' KO:
+    # il processo e' vivo comunque, ed e' questo che il battito dice)
+    _pubblica_battito(session)
     # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
     # vedi _STREAM_KEEPALIVE_SEC): best-effort, mai far cadere il runner.
     global _STREAM_KA_LAST
@@ -1954,12 +2010,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     #   battito VECCHIO                      -> runner spento
                     #   battito FRESCO + nessun follow STREAMING -> vivo, in attesa
                     #   battito FRESCO + follow STREAMING        -> in streaming
-                    if (_now_i - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
-                        session._idle_hb_ts = _now_i
-                        try:
-                            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
-                        except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
-                            logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
+                    _battito_in_attesa(session, _now_i)
                     # A2 (fix 18/09 sera, reperto del coordinatore) — STESSO motivo del
                     # battito appena sopra: sync_account_worker e' un BackgroundWorker,
                     # vive SOLO dentro framework.run(); qui, parcheggiati in idle SENZA

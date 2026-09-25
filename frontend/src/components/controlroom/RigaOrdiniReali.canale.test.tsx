@@ -42,6 +42,7 @@ vi.mock('@/lib/localChannel', async (orig) => ({
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: vi.fn() } }));
 
 import { RigaOrdiniReali } from './RigaOrdiniReali';
+import finti from '@/lib/__fixtures__/runnerCanaleFinti.json';
 
 function riga(over: Partial<LiveSettings> = {}): LiveSettings {
     return {
@@ -114,6 +115,50 @@ describe('Ordini reali dal canale 47331', () => {
         const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
         await waitFor(() => expect(s.getByTestId('cr-ordini-reali-tetto').textContent).toMatch(/PAPER/));
         expect((s.getByTestId('cr-ordini-reali-live') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    // 25/09 (punto 6): topic `modo_ordini` = modo_ordini.stato_corrente() + ts,
+    // SOLO al cambio (live_order_worker._pubblica_modo_ordini_se_cambiato);
+    // messaggi veri in lib/__fixtures__/runnerCanaleFinti.json
+    it('modo_ordini al cambio, SENZA partite seguite: aggiorna senza poll e rilegge chi/quando', async () => {
+        stato = 'connected';
+        helloCorrente = { sport: 'calcio', mode: 'LIVE' };
+        const leggi = vi.fn(async () => riga());
+        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
+        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
+        await act(async () => { await new Promise((r) => setTimeout(r, 15)); });
+        act(() => spingi('modo_ordini', { ...finti.modo_ordini_live, ts: Date.now() }));
+        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/LIVE/));
+        expect(s.getByTestId('cr-ordini-reali-fonte').textContent).toMatch(/^canale /);
+        // il poll e' a un'ora: la seconda lettura l'ha chiesta il cambio del runner
+        await waitFor(() => expect(leggi).toHaveBeenCalledTimes(2));
+    });
+
+    it('modo_ordini dall\'hello: chi si collega dopo il cambio lo vede subito', async () => {
+        stato = 'connected';
+        const leggi = vi.fn(async () => riga());
+        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
+        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
+        await act(async () => { await new Promise((r) => setTimeout(r, 15)); });
+        act(() => spingi('hello', {
+            ...finti.hello, modo_ordini: { ...finti.hello.modo_ordini, effettivo: 'OFF', motivo: 'db_assente', scelto_ui: null, ts: Date.now() },
+        }));
+        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/OFF/));
+        expect(s.getByTestId('cr-ordini-reali-fonte').textContent).toMatch(/^canale /);
+    });
+
+    it('modo_ordini storto (senza ts): nessun effetto', async () => {
+        stato = 'connected';
+        helloCorrente = { sport: 'calcio', mode: 'LIVE' };
+        const leggi = vi.fn(async () => riga());
+        const s = render(<RigaOrdiniReali leggi={leggi} riletturaMs={3_600_000} />);
+        await waitFor(() => expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/));
+        const storto: Record<string, unknown> = { ...finti.modo_ordini_live };
+        delete storto.ts;
+        act(() => spingi('modo_ordini', storto));
+        await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+        expect(s.getByTestId('cr-ordini-reali-effettivo').textContent).toMatch(/PAPER/);
+        expect(leggi).toHaveBeenCalledTimes(1);
     });
 
     it('now di un runner di prima (senza order_mode): nessun effetto', async () => {

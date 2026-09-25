@@ -11,11 +11,15 @@
 //  - mike_stato: Betfair/mike/service.py:4904 {"control", "aggregates",
 //    "stats", "published_ts"}; `control` = riga intera di `mike_control`
 //    (`db.read_control`, select *), `stats` a :2872-2918;
+//  - dal 25/09 (punto 6) omega_stato e safe_stato portano anche `control` =
+//    {status, mode, params, updated_at} (`_pubblica_stato(..., control)`):
+//    finti in __fixtures__/statoBotCanaleFinti.json, generati dal run_once vero;
 //  - scanner_stato: Betfair/safe_strategy/service.py:1519 = il `payload` di
 //    `safe_strategy_status` (service.py:1797-1845).
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import { leggiPushStato, sovrapponiControl, statoScannerDalCanale } from './statoBotCanale';
+import finti from './__fixtures__/statoBotCanaleFinti.json';
 
 const T0 = '2026-09-25T13:00:00.000000+00:00';
 const T1 = '2026-09-25T13:00:02.000000+00:00';
@@ -67,8 +71,21 @@ describe('leggiPushStato - valida il messaggio vero', () => {
         expect(p?.control && 'stats' in p.control).toBe(false);
         expect(p?.stats?.last_cycle).toBe(T1);
     });
-    it('un control su omega/safe si ignora (nessun produttore lo manda)', () => {
-        const p = leggiPushStato('omega', { control: { status: 'stopped' }, stats: { last_cycle: T1 } }, 1);
+    // 25/09 (punto 6): Omega e Safe pubblicano `control` = {status, mode,
+    // params, updated_at} della riga letta a inizio giro. Messaggi VERI in
+    // __fixtures__/statoBotCanaleFinti.json (chiavi e tipi verificati da
+    // Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py)
+    it('omega_stato / safe_stato con control: le quattro colonne della riga', () => {
+        for (const bot of ['omega', 'safe'] as const) {
+            const vero = finti[`${bot}_stato`];
+            const p = leggiPushStato(bot, vero, 3);
+            expect(p?.control).toEqual(vero.control);
+            expect(Object.keys(p?.control ?? {}).sort()).toEqual(['mode', 'params', 'status', 'updated_at']);
+            expect(p?.stats?.last_cycle).toBe(vero.last_cycle);
+        }
+    });
+    it('un bot di prima (senza control): nessun control', () => {
+        const p = leggiPushStato('omega', { stats: { last_cycle: T1 }, last_cycle: T1 }, 1);
         expect(p?.control).toBeNull();
     });
     it('messaggi storti: null', () => {
@@ -136,6 +153,56 @@ describe('sovrapponiControl - mai unione, vince solo il piu\' recente', () => {
         const v = sovrapponiControl(db, vecchia);
         expect((v.control?.params as Record<string, unknown>).live_resting_enabled).toBe(true);
         expect(v.control).toBe(db);
+    });
+
+    // 25/09 (punto 6) - Omega e Safe
+    function rigaOmega(updatedAt: string, over: Record<string, unknown> = {}) {
+        // colonne di omega_control (riga_control dei test Python): daily_goal fuori da params
+        return {
+            id: 1, status: 'running', mode: 'paper', daily_goal: 250,
+            params: { stake_lay: 1.0, engine: 'single', greenup_mode: 'off' },
+            stats: { last_cycle: T0, realized_today: 1.5, fermato_all_avvio_at: T0 }, error: null,
+            started_at: T0, stopped_at: null, heartbeat_at: T0, updated_at: updatedAt, created_at: T0,
+            ...over,
+        };
+    }
+    it('Omega: modalita\' e parametri dal push con una versione della riga piu\' nuova', () => {
+        const db = rigaOmega(T0);
+        const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
+        expect(v.daCanale).toBe(true);
+        expect(v.control?.mode).toBe('live');
+        expect(v.control?.updated_at).toBe(finti.omega_stato.control.updated_at);
+        // le colonne che il push non porta restano del database
+        expect(v.control?.daily_goal).toBe(250);
+        expect(v.control?.started_at).toBe(T0);
+    });
+    it('mai unione: i params del push SOSTITUISCONO quelli del database (non si fondono)', () => {
+        const db = rigaOmega(T0);
+        const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
+        expect(v.control?.params).toEqual(finti.omega_stato.control.params);
+        expect(v.control?.params).not.toHaveProperty('greenup_mode');
+    });
+    it('Omega/Safe: versione della riga PARI o piu\' vecchia -> vince il database, stesso oggetto', () => {
+        const t = finti.omega_stato.control.updated_at;
+        for (const dbAt of [t, '2026-09-25T13:00:09.000000+00:00']) {
+            const db = rigaOmega(dbAt, { stats: { last_cycle: '2026-09-25T13:00:09.000000+00:00' } });
+            const v = sovrapponiControl(db, leggiPushStato('omega', finti.omega_stato, 1));
+            expect(v.control).toBe(db);
+            expect(v.control?.mode).toBe('paper');
+            expect(v.daCanale).toBe(false);
+        }
+        const dbSafe = { ...controlSafe(statsSafe('2026-09-25T13:00:09.000000+00:00')), mode: 'paper', updated_at: t };
+        const w = sovrapponiControl(dbSafe, leggiPushStato('safe', finti.safe_stato, 1));
+        expect(w.control).toBe(dbSafe);
+    });
+    it('Safe: modalita\' dal push; control senza updated_at leggibile non vince mai', () => {
+        const db = { ...controlSafe(statsSafe(T0)), mode: 'paper' };
+        const v = sovrapponiControl(db, leggiPushStato('safe', finti.safe_stato, 1));
+        expect(v.control?.mode).toBe('live');
+        expect(v.control?.params).toEqual(finti.safe_stato.control.params);
+        const senzaVersione = { ...finti.safe_stato, control: { ...finti.safe_stato.control, updated_at: null } };
+        const w = sovrapponiControl(db, leggiPushStato('safe', senzaVersione, 1));
+        expect(w.control?.mode).toBe('paper');
     });
 });
 

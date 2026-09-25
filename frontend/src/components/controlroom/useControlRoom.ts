@@ -50,7 +50,7 @@ import {
     leggiPushStato, sovrapponiControl, statoScannerDalCanale, type BotConStato, type PushStato,
 } from '@/lib/statoBotCanale';
 import {
-    runnerDalCanale, NOTIZIE_VUOTE, type FonteRunner, type NotizieRunner,
+    runnerDalCanale, leggiBattito, NOTIZIE_VUOTE, type FonteRunner, type NotizieRunner,
 } from '@/lib/runnerCanale';
 import {
     inviaChiusura, faseDaRichiesta, firmaRiga, cambiataPerChiusura, richiestaDaRileggere,
@@ -1684,6 +1684,13 @@ export function useControlRoom(): ControlRoomVM {
             calcio: { ...NOTIZIE_VUOTE }, tennis: { ...NOTIZIE_VUOTE },
         };
         const chiusure: (() => void)[] = [];
+        const fotografa = () => setNotizieRunner((p) => {
+            const uguale = (a: NotizieRunner, b: NotizieRunner) => a.connesso === b.connesso
+                && a.hello === b.hello && a.ultimoMsgMs === b.ultimoMsgMs && a.ultimoFlussoMs === b.ultimoFlussoMs
+                && a.battito === b.battito;
+            if (uguale(p.calcio, rif.calcio) && uguale(p.tennis, rif.tennis)) return p;
+            return { calcio: { ...rif.calcio }, tennis: { ...rif.tennis } };
+        });
         (['calcio', 'tennis'] as const).forEach((sport) => {
             const ch = getLocalChannel(sport);
             const n = rif[sport];
@@ -1698,7 +1705,7 @@ export function useControlRoom(): ControlRoomVM {
                     const h = typeof ch.getHello === 'function' ? ch.getHello() : null;
                     n.hello = (h as Record<string, unknown> | null) ?? n.hello;
                 }
-                else { n.hello = null; n.ultimoMsgMs = null; n.ultimoFlussoMs = null; }
+                else { n.hello = null; n.ultimoMsgMs = null; n.ultimoFlussoMs = null; n.battito = null; }
             };
             suStato(ch.getStatus());
             chiusure.push(ch.onStatus(suStato));
@@ -1712,12 +1719,22 @@ export function useControlRoom(): ControlRoomVM {
             for (const t of ['ladder', 'now'] as const) {
                 chiusure.push(ch.subscribe(t, () => { const ms = Date.now(); n.ultimoMsgMs = ms; n.ultimoFlussoMs = ms; }));
             }
-        });
-        const fotografa = () => setNotizieRunner((p) => {
-            const uguale = (a: NotizieRunner, b: NotizieRunner) => a.connesso === b.connesso
-                && a.hello === b.hello && a.ultimoMsgMs === b.ultimoMsgMs && a.ultimoFlussoMs === b.ultimoFlussoMs;
-            if (uguale(p.calcio, rif.calcio) && uguale(p.tennis, rif.tennis)) return p;
-            return { calcio: { ...rif.calcio }, tennis: { ...rif.tennis } };
+            // 25/09 (punto 6): il BATTITO del runner (calcio: dove scrive
+            // `betfair_live_heartbeat`; tennis: al giro di attesa). L'eta' torna
+            // a zero a ogni battito; mode/streaming vanno a `runnerDalCanale`.
+            // Un battito storto (senza `ts`) non e' una notizia di vita.
+            // Il battito e' raro (~10 s): la pagina lo fotografa SUBITO, con
+            // l'orologio allineato, cosi' l'eta' mostrata e' davvero 0 (col
+            // solo giro da 1 s arrivava gia' arrotondata a 1).
+            chiusure.push(ch.subscribe('battito', (d) => {
+                const b = leggiBattito(d);
+                if (!b) return;
+                const ms = Date.now();
+                n.battito = b;
+                n.ultimoMsgMs = ms;
+                setNowMs(ms);
+                fotografa();
+            }));
         });
         fotografa();
         const t = window.setInterval(fotografa, TICK_MS);

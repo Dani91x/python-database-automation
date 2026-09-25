@@ -22,6 +22,19 @@
 //             `order_mode` (EFFETTIVO), `order_mode_tetto`, `order_mode_scelto`
 //             e `updated_ms` (runner.py:292-302)
 //   board/order/position: altri push del runner (notizie di vita anch'esse)
+//   battito <- 25/09 punto 6: `canale_bot.battito_runner` {ts, mode,
+//             streaming}, pubblicato da `runner._pubblica_battito` DOVE si
+//             scrive `betfair_live_heartbeat` (heartbeat_worker e attesa) e
+//             dal runner tennis al suo giro di attesa. `mode` = lo STESSO della
+//             riga del database (`heartbeat_mode()`: 'LIVE+PAPER'); `streaming`
+//             = partite seguite dalla memoria del runner (null = non contabile)
+//   modo_ordini <- 25/09 punto 6: `modo_ordini.stato_corrente()` + `ts`,
+//             SOLO AL CAMBIO (`live_order_worker._pubblica_modo_ordini_se_cambiato`);
+//             anche nell'hello (`hello.modo_ordini`) per chi si collega dopo
+//
+// Il battito e' un OGGETTO INTERO: se e' piu' recente della riga del
+// database, `mode` e `streaming` vengono dal battito (mai meta' e meta'),
+// salvo `streaming` null ("non contabile": resta il numero del database).
 //
 // LE REGOLE
 //  - canale CONNESSO = processo vivo: il socket e' servito dal processo del
@@ -46,6 +59,30 @@ export const MODO_CANALE_VALIDO_S = 15;
 
 export type FonteRunner = 'canale' | 'database';
 
+/** Il battito del runner sul canale (topic `battito`, 25/09 punto 6). */
+export interface BattitoRunner {
+    /** ms epoch del PRODUTTORE */
+    ts: number;
+    /** modalita' servite ('LIVE+PAPER', 'PAPER', 'OFF'); null = non dichiarata */
+    mode: string | null;
+    /** partite seguite dalla memoria del runner; null = non contabile */
+    streaming: number | null;
+}
+
+/**
+ * Legge un push `battito`. `null` = messaggio storto (senza `ts` numerico):
+ * un battito senza istante non dice quando il runner era vivo.
+ */
+export function leggiBattito(d: unknown): BattitoRunner | null {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+    const o = d as Record<string, unknown>;
+    if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
+    const mode = typeof o.mode === 'string' && o.mode.trim() ? o.mode.trim().toUpperCase() : null;
+    const streaming = typeof o.streaming === 'number' && Number.isFinite(o.streaming) && o.streaming >= 0
+        ? Math.floor(o.streaming) : null;
+    return { ts: o.ts, mode, streaming };
+}
+
 /** Le notizie di un runner raccolte dal canale (orologio della pagina). */
 export interface NotizieRunner {
     connesso: boolean;
@@ -55,6 +92,8 @@ export interface NotizieRunner {
     ultimoMsgMs: number | null;
     /** ultimo `ladder`/`now` */
     ultimoFlussoMs: number | null;
+    /** ultimo `battito` valido (25/09 punto 6); assente = nessuno ricevuto */
+    battito?: BattitoRunner | null;
 }
 
 export interface RunnerVista {
@@ -66,7 +105,7 @@ export interface RunnerVista {
 }
 
 export const NOTIZIE_VUOTE: NotizieRunner = {
-    connesso: false, hello: null, ultimoMsgMs: null, ultimoFlussoMs: null,
+    connesso: false, hello: null, ultimoMsgMs: null, ultimoFlussoMs: null, battito: null,
 };
 
 function etaDa(ms: number | null, nowMs: number): number | null {
@@ -92,15 +131,22 @@ export function runnerDalCanale(
     const modeHello = typeof n.hello?.mode === 'string' && n.hello.mode.trim()
         ? n.hello.mode.trim().toUpperCase() : null;
     const streamingDb = db?.streaming ?? null;
+    // 25/09 (punto 6): il battito del runner, se piu' recente della riga del
+    // database, e' la notizia intera (mode + streaming): mai meta' e meta'.
+    const b = n.battito ?? null;
+    const dbMs = db?.ts ? Date.parse(db.ts) : NaN;
+    const battitoVince = b != null && (!Number.isFinite(dbMs) || b.ts > dbMs);
+    // il database dichiara le modalita' SERVITE ('LIVE+PAPER'): se c'e',
+    // vince sull'hello; il battito porta lo stesso valore, piu' fresco
+    const mode = battitoVince ? (b.mode ?? modeHello) : (db?.mode ?? modeHello);
+    const streamingBase = battitoVince && b.streaming != null ? b.streaming : streamingDb;
     return {
         runner: {
             ts: new Date(n.ultimoMsgMs).toISOString(),
-            // il database dichiara le modalita' SERVITE ('LIVE+PAPER'): se c'e',
-            // vince; senza, il tetto dell'hello
-            mode: db?.mode ?? modeHello,
+            mode,
             ageS,
             up: true,
-            streaming: flusso ? Math.max(streamingDb ?? 0, 1) : streamingDb,
+            streaming: flusso ? Math.max(streamingBase ?? 0, 1) : streamingBase,
         },
         fonte: 'canale',
         etaS: ageS == null ? null : Math.round(ageS),
@@ -114,8 +160,35 @@ export interface ModoOrdiniCanale {
     effettivo: ModoOrdini | null;
     tetto: ModoOrdini | null;
     scelto: ModoOrdini | null;
-    /** `state.updated_ms` del produttore */
+    /** `state.updated_ms` (now) o `ts` (modo_ordini) del produttore */
     ms: number;
+    /**
+     * true = viene dal topic `modo_ordini` (o dall'hello), che il runner
+     * pubblica AD OGNI CAMBIO: vale finche' il canale resta collegato, senza
+     * la scadenza dei 15 s del `now`.
+     */
+    alCambio?: boolean;
+}
+
+/**
+ * Legge il push `modo_ordini` (o `hello.modo_ordini`) del runner calcio:
+ * `modo_ordini.stato_corrente()` + `ts` (chiavi `effettivo`,
+ * `tetto_ambiente`, `scelto_ui`, `motivo`, `scelto_ui_at`, `scelto_ui_da`,
+ * `eta_lettura_s`, `ts`). `null` = messaggio storto o assente.
+ */
+export function leggiModoOrdiniCanale(d: unknown): ModoOrdiniCanale | null {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+    const o = d as Record<string, unknown>;
+    if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
+    const effettivo = normalizzaModoOrdini(o.effettivo);
+    if (effettivo == null) return null;
+    return {
+        effettivo,
+        tetto: normalizzaModoOrdini(o.tetto_ambiente),
+        scelto: normalizzaModoOrdini(o.scelto_ui),
+        ms: o.ts,
+        alCambio: true,
+    };
 }
 
 /**
@@ -162,19 +235,30 @@ export interface StatoOrdiniVista extends StatoOrdiniReali {
  */
 export function sovrapponiModoOrdini(
     st: StatoOrdiniReali, lettoMs: number | null,
-    canale: { connesso: boolean; hello: Record<string, unknown> | null; modo: ModoOrdiniCanale | null },
+    canale: {
+        connesso: boolean; hello: Record<string, unknown> | null; modo: ModoOrdiniCanale | null;
+        /** 25/09 (punto 6): l'ultimo `modo_ordini` (topic o hello), al cambio */
+        modoAlCambio?: ModoOrdiniCanale | null;
+    },
     nowMs: number,
 ): StatoOrdiniVista {
     const etaDb = lettoMs == null ? null : Math.max(0, Math.round((nowMs - lettoMs) / 1000));
     const base: StatoOrdiniVista = { ...st, fonte: 'database', etaS: etaDb, daRileggere: false };
     if (!st.letto || st.migrazioneMancante || !canale.connesso) return base;
     const tettoHello = normalizzaModoOrdini(canale.hello?.mode);
-    const m = canale.modo;
-    const modoFresco = m != null && (nowMs - m.ms) / 1000 <= MODO_CANALE_VALIDO_S
-        && (lettoMs == null || m.ms > lettoMs);
-    const tetto = tettoHello ?? (modoFresco ? m.tetto : null) ?? st.tetto;
-    if (!modoFresco && tetto === st.tetto) return base;
-    const effettivo = modoFresco && m.effettivo != null ? m.effettivo : modoOrdiniEffettivo(tetto, st.scelto);
+    const mNow = canale.modo;
+    const nowValido = mNow != null && (nowMs - mNow.ms) / 1000 <= MODO_CANALE_VALIDO_S
+        && (lettoMs == null || mNow.ms > lettoMs);
+    // il `modo_ordini` al cambio vale finche' il canale e' collegato (il runner
+    // ne manda uno nuovo a OGNI cambio, anche lettura scaduta -> OFF): e' il
+    // modo che il worker APPLICA, anche se la lettura della pagina e' piu' recente
+    const mCambio = canale.modoAlCambio ?? null;
+    // UN oggetto intero, il piu' recente fra i due validi: mai unione
+    let m: ModoOrdiniCanale | null = nowValido ? mNow : null;
+    if (mCambio != null && (m == null || mCambio.ms >= m.ms)) m = mCambio;
+    const tetto = tettoHello ?? (m != null ? m.tetto : null) ?? st.tetto;
+    if (m == null && tetto === st.tetto) return base;
+    const effettivo = m != null && m.effettivo != null ? m.effettivo : modoOrdiniEffettivo(tetto, st.scelto);
     return {
         ...st,
         tetto,
@@ -182,7 +266,11 @@ export function sovrapponiModoOrdini(
         limitatoDalTetto: st.scelto != null && tetto != null
             && modoOrdiniEffettivo(tetto, st.scelto) !== st.scelto,
         fonte: 'canale',
-        etaS: modoFresco ? Math.max(0, Math.round((nowMs - m.ms) / 1000)) : etaDb,
-        daRileggere: modoFresco && m.scelto != null && m.scelto !== st.scelto,
+        etaS: m != null ? Math.max(0, Math.round((nowMs - m.ms) / 1000)) : etaDb,
+        // si rilegge solo se la notizia del runner e' PIU' RECENTE della lettura
+        // (una lettura piu' nuova e diversa = scelta appena fatta: il runner la
+        // dira' al prossimo giro, niente rilettura a vuoto)
+        daRileggere: m != null && m.scelto != null && m.scelto !== st.scelto
+            && (lettoMs == null || m.ms > lettoMs),
     };
 }

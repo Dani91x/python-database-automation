@@ -1,0 +1,23 @@
+{
+  "_origine": "Generato il 25/09 dal run_once VERO di Omega (Betfair/omega/omega_service.py, _pubblica_stato) e Safe (Betfair/safe_strategy/bot_service.py, _pubblica_stato) con i finti dei loro test e la riga di control costruita dalle colonne vere (riga_control). Chiavi e tipi di control verificati da Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py (ultimo test). stats ridotti alle chiavi usate dai test della pagina; last_cycle/updated_at fissati attorno a 2026-09-25T13:00Z.",
+  "omega_stato": {
+    "stats": { "last_cycle": "2026-09-25T13:00:06.000000+00:00", "realized_today": 2.25, "bot_running": true },
+    "last_cycle": "2026-09-25T13:00:06.000000+00:00",
+    "control": {
+      "status": "running",
+      "mode": "live",
+      "params": { "stake_lay": 1.0, "engine": "single" },
+      "updated_at": "2026-09-25T13:00:05.123456+00:00"
+    }
+  },
+  "safe_stato": {
+    "stats": { "last_cycle": "2026-09-25T13:00:06.000000+00:00", "motivo_blocco": null },
+    "last_cycle": "2026-09-25T13:00:06.000000+00:00",
+    "control": {
+      "status": "running",
+      "mode": "live",
+      "params": { "variants": ["base"], "strategy_modes": { "base": "paper" } },
+      "updated_at": "2026-09-25T13:00:05.123456+00:00"
+    }
+  }
+}

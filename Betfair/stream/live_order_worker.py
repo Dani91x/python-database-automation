@@ -506,6 +506,61 @@ def _refresh_settings(sb: Any) -> None:
             _mo.registra_settings(data)
     except Exception:  # noqa: BLE001 - settings opzionali; il worker resta operativo
         pass
+    # 25/09 (punto 6 dell'audit tempo reale): il modo ordini sul canale del
+    # processo, SOLO AL CAMBIO. Fuori dal try della lettura: anche una lettura
+    # fallita puo' cambiare il modo (lettura scaduta -> OFF), e va detto.
+    _pubblica_modo_ordini_se_cambiato()
+
+
+# 25/09 (punto 6): l'ultima firma del modo ordini uscita sul canale. Condivisa
+# dai thread che rileggono i settings (worker ordini, risk, daily stop): un solo
+# messaggio per cambio, qualunque thread lo veda per primo.
+_MODO_CANALE_LOCK = _threading.Lock()
+_MODO_CANALE_FIRMA: Optional[tuple] = None
+#: le chiavi di ``modo_ordini.stato_corrente()`` che fanno un CAMBIO (l'eta'
+#: della lettura cambia a ogni giro e non lo e')
+_MODO_CANALE_CHIAVI = ("effettivo", "tetto_ambiente", "scelto_ui", "motivo",
+                       "scelto_ui_at", "scelto_ui_da")
+
+
+def _pubblica_modo_ordini_se_cambiato() -> bool:
+    """Topic ``modo_ordini`` = ``modo_ordini.stato_corrente()`` + ``ts`` (ms del
+    produttore), SOLO se diverso dall'ultimo uscito. Nessun IO: lo stato e' gia'
+    in memoria. Anche nell'``hello`` del canale (chi si collega dopo il cambio lo
+    riceve subito). Senza canale non esce niente e la firma NON si segna (al primo
+    canale il modo esce). Mai solleva. Torna True se e' uscito un messaggio."""
+    global _MODO_CANALE_FIRMA
+    try:
+        from . import canale_bot as _cb
+        from . import local_channel as _lc
+        from . import modo_ordini as _mo
+
+        ch = _lc.get_channel()
+        if ch is None:
+            return False
+        # SOLO nel runner CALCIO: anche il runner tennis rilegge i settings con
+        # questa funzione (``guardie_tennis.aggiorna_impostazioni``, per il
+        # kill-switch), ma il suo tetto e' ``TENNIS_LIVE_ORDER_MODE``, non il
+        # ``LIVE_ORDER_MODE`` che ``modo_ordini`` legge: sul 47332 il messaggio
+        # direbbe il falso. Calcio e tennis non si mischiano.
+        if getattr(ch, "sport", None) != "calcio":
+            return False
+        stato = _mo.stato_corrente()
+        firma = tuple(stato.get(k) for k in _MODO_CANALE_CHIAVI)
+        with _MODO_CANALE_LOCK:
+            if firma == _MODO_CANALE_FIRMA:
+                return False
+            _MODO_CANALE_FIRMA = firma
+        msg = dict(stato)
+        msg["ts"] = int(time.time() * 1000)
+        try:
+            ch.set_hello(modo_ordini=msg)
+        except Exception:  # noqa: BLE001 - l'hello e' un di piu'
+            pass
+        return _cb.pubblica_stato_processo(_cb.TOPIC["modo_ordini"], msg)
+    except Exception as ex:  # noqa: BLE001 - mostrare non ferma mai il worker
+        logger.debug("[live-order] modo_ordini sul canale KO: %s", str(ex)[:120])
+        return False
 
 
 # 24/09 (motore ordini F2): istante (monotonic) dell'ultima lettura RIUSCITA dei
