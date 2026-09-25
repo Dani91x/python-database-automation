@@ -129,8 +129,10 @@ def _partite_banco(righe):
 
 
 def _lam_banco(partite):
-    # valori LETTERALI del banco (risultati_validazione.json forza.scelta), non le costanti di produzione
-    return lambda_prepartita(partite, eta=0.035, rientro=1.0, alfa_lega=0.01)
+    # valori LETTERALI del banco (risultati_validazione.json forza.scelta, corsa
+    # COMPLETA 25/09: AUDIT_2026-09-25/LIVE_MARKET_TYPES_E_BETA.md), non le
+    # costanti di produzione
+    return lambda_prepartita(partite, eta=0.015, rientro=1.0, alfa_lega=0.01)
 
 
 def _prossima(partite, lid, h, a):
@@ -454,7 +456,7 @@ def test_blocco_forza_nel_file_live_piccolo(banco):
     fz = banco["atlas"]["v4"]["by_league"]["39"]["forza"]
     assert len(json.dumps(fz)) < 2048
     assert banco["atlas"]["v4"]["meta"]["forza"]["n_leghe_con_forza"] == 2
-    assert banco["atlas"]["v4"]["meta"]["forza"]["eta"] == V4.FORZA_ETA == 0.035
+    assert banco["atlas"]["v4"]["meta"]["forza"]["eta"] == V4.FORZA_ETA == 0.015
 
 
 # ------------------------------------------------------ 3) consumatori

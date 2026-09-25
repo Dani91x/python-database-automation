@@ -165,6 +165,31 @@ HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "180"))
 # Whitelist OPZIONALE dei market type sottoscritti per evento (CSV, es.
 # "MATCH_ODDS,OVER_UNDER_25,CORRECT_SCORE"). Vuota = tutti i mercati dell'evento
 # (comportamento storico: registrazione completa per il Replay).
+#
+# 25/09 (AUDIT_2026-09-25/LIVE_MARKET_TYPES_E_BETA.md): unione dei market type
+# letti DAVVERO dai bot di produzione (fonte: registro_bot.py, campo `mercati`,
+# la stessa che il test di contratto verifica contro i moduli veri; + lo
+# scanner Safe condiviso, opportunity/anomaly) piu' le due gambe Omega:
+#   MATCH_ODDS, CORRECT_SCORE, HALF_TIME_SCORE, HALF_TIME, BOTH_TEAMS_TO_SCORE,
+#   OVER_UNDER_05, OVER_UNDER_15, OVER_UNDER_25, OVER_UNDER_35, OVER_UNDER_45,
+#   OVER_UNDER_55, OVER_UNDER_65, OVER_UNDER_75  (13 tipi)
+# Misura sulle registrazioni _live_raw/* (40 eventi con dati, script del
+# referto): media 19,8 mercati/evento SENZA whitelist, 12,0 CON questa lista
+# (-39%). ATTENZIONE (decisione dell'utente, non presa qui): attivarla riduce
+# anche la registrazione raw per il Replay (niente piu' DOUBLE_CHANCE,
+# HALF_TIME_FULL_TIME, FIRST_HALF_GOALS_*, TO_QUALIFY, FIRST_GOAL_SCORER,
+# EXTRA_TIME, OVER_UNDER_85 nelle registrazioni future: nessun bot li legge
+# oggi, ma un bot futuro che li usasse non li troverebbe piu' nel raw). Il
+# valore va impostato nel .env del checkout principale (LIVE_MARKET_TYPES=...),
+# non qui: la costante resta vuota (tutti i mercati) finche' l'utente non
+# decide. ``LIVE_MARKET_TYPES_PROPOSTA`` sotto e' SOLO documentazione
+# eseguibile (letta da un test di falsificazione, mai da LIVE_MARKET_TYPES):
+# non cambia il comportamento di default.
+LIVE_MARKET_TYPES_PROPOSTA: frozenset = frozenset({
+    "MATCH_ODDS", "CORRECT_SCORE", "HALF_TIME_SCORE", "HALF_TIME", "BOTH_TEAMS_TO_SCORE",
+    "OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45",
+    "OVER_UNDER_55", "OVER_UNDER_65", "OVER_UNDER_75",
+})
 LIVE_MARKET_TYPES: frozenset = frozenset(
     t.strip().upper() for t in os.getenv("LIVE_MARKET_TYPES", "").split(",") if t.strip()
 )

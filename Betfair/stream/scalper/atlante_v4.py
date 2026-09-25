@@ -70,16 +70,28 @@ logger = logging.getLogger(__name__)
 VERSIONE = "hazard_atlas_v4"
 EMIVITA = 3.0                     # stagioni (validazione 2024: migliore fra 2, 3, 5, nessuna)
 K_CELLE = 1500.0                  # come il v3 (il metodo dei momenti non ha vinto)
-# beta della forza pre-partita, stimato dal banco (massima verosimiglianza) su
-# <=2024 coi lambda del proxy Poisson-Elo: 0,612 (2') e 0,610 (3'). ATTENZIONE
-# (referto §4): coi lambda di fixture_predictions il guadagno della forza sparisce.
-BETA_DEFAULT = {2: 0.612, 3: 0.610}
+# beta della forza pre-partita, stimato dal banco (massima verosimiglianza) in
+# fase di validazione (addestra <=2023, valuta 2024: 4.396 partite, 420.150
+# stati) coi lambda del proxy Poisson-Elo ALL'ETA scelta sotto (FORZA_ETA):
+# 0,628 (2') e 0,627 (3'). Fonte: AUDIT_2026-09-25/validazione_hazard/
+# risultati_validazione.json -> catena[passo="A5"].esiti[0].info.beta, dalla
+# corsa COMPLETA (non --fumo) del banco (25/09, referto
+# AUDIT_2026-09-25/LIVE_MARKET_TYPES_E_BETA.md §2). Il valore committato in
+# precedenza (0,612 / 0,610) veniva da un risultati_validazione.json che era
+# in realta' l'esito di una corsa --fumo (1 partita su 10: 439 partite, non
+# 4.396) sovrascritta per errore sul percorso di output di default, con
+# eta scelto 0,035 anziche' 0,015: il beta CAMBIA con l'eta (vedi sotto), la
+# coppia doveva restare accoppiata. ATTENZIONE (referto §4): coi lambda di
+# fixture_predictions il guadagno della forza sparisce.
+BETA_DEFAULT = {2: 0.628, 3: 0.627}
 # Proxy POISSON-ELO della forza pre-partita (``validazione_hazard/forza.py``,
-# parametri CONGELATI dal banco (artefatto risultati_validazione.json, forza.scelta): eta 0,035 e
-# rientro 1,0 scelti su 2018-2023 per verosimiglianza di Poisson; alfa di lega
-# e mu iniziali = i default di ``lambda_prepartita``). Con rientro 1,0 il cambio
-# di stagione non tocca i rating.
-FORZA_ETA = 0.035
+# parametri CONGELATI dal banco (artefatto risultati_validazione.json, forza.scelta,
+# corsa COMPLETA 25/09): eta 0,015 e rientro 1,0, scelti su 2018-2023 per
+# verosimiglianza di Poisson su una griglia fissa (0,005/0,01/0,015/0,02/0,035/0,05
+# x rientro 0,7/0,8/0,9/1,0, vedi banco.scegli_forza); alfa di lega e mu iniziali
+# = i default di ``lambda_prepartita``. Con rientro 1,0 il cambio di stagione
+# non tocca i rating.
+FORZA_ETA = 0.015
 FORZA_RIENTRO = 1.0
 FORZA_ALFA_LEGA = 0.01
 FORZA_MU_INIZIALE = tuple(_FZ.MU_INIZIALE)      # (1,45, 1,15)
