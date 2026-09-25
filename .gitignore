@@ -61,3 +61,6 @@ Betfair/omega/data/hazard_atlas_live.json.tmp*
 # 25/09 atlante a domanda: stato grezzo locale delle leghe calcolate sul PC
 Betfair/omega/data/hazard_atlas_stato.json
 Betfair/omega/data/hazard_atlas_stato.json.tmp*
+
+# 25/09 banco di validazione hazard: cache locale delle letture del DB (mai in repo)
+AUDIT_2026-09-25/validazione_hazard/cache/

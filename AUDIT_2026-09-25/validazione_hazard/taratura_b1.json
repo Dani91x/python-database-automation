@@ -1,0 +1,53 @@
+{
+ "base": {
+  "parametri": {},
+  "senza": null,
+  "giri": {
+   "2": 53,
+   "3": 57
+  },
+  "logloss": {
+   "2": 0.2121099688529819,
+   "3": 0.2815731579951852
+  },
+  "somma": 0.49368312684816706,
+  "secondi": 178.7
+ },
+ "regolarizzato": {
+  "parametri": {
+   "num_leaves": 15,
+   "min_data_in_leaf": 3000,
+   "learning_rate": 0.03
+  },
+  "senza": null,
+  "giri": {
+   "2": 213,
+   "3": 206
+  },
+  "logloss": {
+   "2": 0.212099437331575,
+   "3": 0.2815438013537623
+  },
+  "somma": 0.49364323868533727,
+  "secondi": 499.9
+ },
+ "regolarizzato_senza_stagione": {
+  "parametri": {
+   "num_leaves": 15,
+   "min_data_in_leaf": 3000,
+   "learning_rate": 0.03
+  },
+  "senza": "stagione",
+  "giri": {
+   "2": 196,
+   "3": 174
+  },
+  "logloss": {
+   "2": 0.21212671203288613,
+   "3": 0.28159299021076156
+  },
+  "somma": 0.4937197022436477,
+  "secondi": 369.8
+ },
+ "scelta": "regolarizzato"
+}
