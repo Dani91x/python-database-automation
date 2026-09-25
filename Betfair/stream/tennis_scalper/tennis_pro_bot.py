@@ -114,18 +114,29 @@ class TennisProStrategy(BaseStrategy):
         c = {**(self.context or {}), **ctx_in}
 
         self.stake: float = max(MIN_STAKE, float(c.get("stake", 2.0)))
+        # SUPERFICIE (25/09, decisione utente): in produzione la passa il runner
+        # (`tennis_runner._instantiate_bot`) dalla competizione della partita,
+        # con la sua fonte (`superficie.risolvi`: 'nome' | 'mappa' | 'default').
+        # Il default "grass" della classe resta SOLO per chi istanzia il bot a
+        # mano (backtest_pro, run_tennis_pro, test): e lo dichiara.
         self.surface: str = str(c.get("surface", "grass")).lower()
+        self.surface_fonte: str = str(
+            c.get("surface_fonte") or "non passata: default della classe (erba)")
         # lay-reversione (lay del dominante): funziona su superfici break-friendly
         # (clay/WTA), NON su erba/fast dove il servizio tiene e servi il set.
         _lay_rev = self.surface not in ("grass", "fast")
         # TREND-FOLLOWING: i dati mostrano che il tennis TRENDA (il dominante
         # continua). Con trend=True i setup di dominio si FLIPPANO: BACK del
         # dominante (cavalca) invece di LAY (rientro). Attivi su ogni superficie.
-        self.trend: bool = bool(c.get("trend", False))
+        # ACCESO di default (decisione utente 25/09: "tutti i bot devono avere
+        # gli aiuti e le migliorie accese di default"); spento solo con False
+        # esplicito. Mai certificato sul banco fuori dall'erba.
+        self.trend: bool = bool(c.get("trend", True))
         # ADATTIVO: il bot rileva il REGIME dal prezzo live (efficiency ratio di
         # Kaufman) e sceglie la direzione da solo: trend->BACK (cavalca),
         # range->LAY (fade), neutro->non entra. Si adatta a QUALSIASI scenario.
-        self.adapt: bool = bool(c.get("adapt", False))
+        # ACCESO di default (decisione utente 25/09), spento con False esplicito.
+        self.adapt: bool = bool(c.get("adapt", True))
         self.er_window_ms: int = int(c.get("er_window_ms", 60_000))
         self.er_trend: float = float(c.get("er_trend", 0.45))   # >= => trend
         self.er_range: float = float(c.get("er_range", 0.30))   # <= => range
@@ -146,7 +157,8 @@ class TennisProStrategy(BaseStrategy):
             c.get("entry_timeout_s", c.get("entry_timeout_ticks", 25)))
         # MAKER: entra a quota MIGLIORE del touch (in coda) -> INCASSA lo spread
         # invece di pagarlo ("bancare"). Fill non garantito (gestito dal timeout).
-        self.maker: bool = bool(c.get("maker", False))
+        # ACCESO di default (decisione utente 25/09), spento con False esplicito.
+        self.maker: bool = bool(c.get("maker", True))
         self.maker_offset: int = int(c.get("maker_offset", 1))
         # CLOSING (fix audit #7): secondi di publish_time tra i re-hedge della
         # sorveglianza post-chiusura; senza pt (replay/backtest) il fallback

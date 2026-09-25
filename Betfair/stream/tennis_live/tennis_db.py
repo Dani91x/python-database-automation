@@ -362,6 +362,20 @@ def set_tennis_bot_status(
         _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
 
 
+def set_tennis_bot_params(event_id: str, bot_key: str, params: Dict[str, Any]) -> None:
+    """25/09 - riscrive i ``params`` (JSON gia' esistente) della riga di un bot.
+
+    La usa SOLO il runner per mettere a video la SUPERFICIE che ha deciso per
+    tennis_pro (``surface``/``surface_fonte``/...): nessuna colonna nuova. Il
+    chiamante passa i params COMPLETI (quelli della riga + le chiavi nuove):
+    la colonna si sostituisce intera, come fa la RPC d'armamento."""
+    sb = get_tennis_client()
+    res = sb.table("tennis_bot_control").update({"params": dict(params)}).eq(
+        "event_id", event_id).eq("bot_key", bot_key).execute()
+    if _CANALE_ACCESO:
+        _cb.pubblica_scritte(_cb.TOPIC["tennis_bot_armamento"], res)
+
+
 # Marker che distingue un motivo d'ATTESA (benigno) da un errore terminale nel
 # campo condiviso ``error``: la UI lo renderizza come stato informativo, e la
 # pulizia NON può cancellare un errore reale scritto nel frattempo.

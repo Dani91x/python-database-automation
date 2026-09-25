@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import {
     TENNIS_BOT_REGISTRY, TENNIS_BOT_STATUS_LABEL,
     fetchTennisBotsState, armTennisBot, disarmTennisBot, subscribeTennisBots,
+    superficieDaParams,
     type TennisBotDescriptor, type TennisBotControl, type TennisBotActivityRow,
     type TennisBotKey, type TennisBotStatus,
 } from '@/lib/tennis';
@@ -223,6 +224,30 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                     </div>
                 )
             )}
+
+            {/* 25/09: la SUPERFICIE della partita per tennis_pro, decisa dal runner
+                dal nome del torneo (mappa in tennis_scalper/superficie.py) e scritta
+                nei params della riga, con la sua FONTE. Mai inventata qui. */}
+            {descriptor.key === 'tennis_pro' && (() => {
+                const sup = superficieDaParams(control?.params);
+                return (
+                    <div
+                        data-testid="tennis-pro-superficie"
+                        className={cn(
+                            'rounded-md px-2 py-1 text-[11px]',
+                            !sup ? 'bg-white/5 text-white/45'
+                                : !sup.fonte ? 'bg-red-500/10 text-red-300 font-bold'
+                                    : sup.fonte === 'default' ? 'bg-amber-500/10 text-amber-300'
+                                        : 'bg-white/5 text-white/70',
+                        )}
+                        title={sup?.torneo ? `torneo: ${sup.torneo}` : undefined}
+                    >
+                        {sup
+                            ? `superficie: ${sup.testo}`
+                            : 'superficie: la decide il runner all\'armamento, dal nome del torneo'}
+                    </div>
+                );
+            })()}
 
             {/* riga controlli: stake + solo-armato + toggle ARMA/DISARMA */}
             <div className="flex items-center gap-2 flex-wrap">

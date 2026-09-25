@@ -58,6 +58,7 @@ from ..runner_lifecycle import any_follow_alive, uptime_exceeded
 from ..single_instance import acquire_single_instance_lock
 from ..tennis_scalper.run_tennis_scalper import TENNIS_PARAMS as SCALPER_TENNIS_PARAMS
 from ..tennis_scalper.tennis_flb_bot import TennisFLBStrategy
+from ..tennis_scalper import superficie as _SUP
 from ..tennis_scalper.tennis_pro_bot import TennisProStrategy
 from ..tennis_scalper.tennis_scalper_bot import TennisScalperStrategy
 from ..tennis_scalper.tennis_score import (
@@ -541,7 +542,9 @@ def _resolve_market(trading: Any, market_id: Optional[str], event_id: Optional[s
         )
     )
     cat = trading.betting.list_market_catalogue(
-        filter=filt, market_projection=["RUNNER_DESCRIPTION", "EVENT"],
+        # COMPETITION (25/09): il nome del torneo, da cui tennis_pro ricava la
+        # SUPERFICIE (`tennis_scalper/superficie.py`). Stessa chiamata, peso 0.
+        filter=filt, market_projection=["RUNNER_DESCRIPTION", "EVENT", "COMPETITION"],
         sort="MAXIMUM_TRADED", max_results=5,
     )
     if not cat:
@@ -550,6 +553,7 @@ def _resolve_market(trading: Any, market_id: Optional[str], event_id: Optional[s
     name_to_sel = {r.runner_name: r.selection_id for r in (mo.runners or [])}
     selection_names = {str(r.selection_id): r.runner_name for r in (mo.runners or [])}
     ev = getattr(getattr(mo, "event", None), "id", None) or event_id
+    comp = getattr(getattr(mo, "competition", None), "name", None)
     return {
         "market_id": mo.market_id,
         "event_id": str(ev) if ev else event_id,
@@ -557,6 +561,7 @@ def _resolve_market(trading: Any, market_id: Optional[str], event_id: Optional[s
         "market_name": "Match Odds",
         "name_to_sel": name_to_sel,
         "selection_names": selection_names,
+        "competition_name": str(comp) if comp else None,
     }
 
 
@@ -578,7 +583,7 @@ def _risolvi_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> Optio
     # dall'aggancio (nessuna seconda chiamata REST, nessuna riga di follow)
     gia = _ET.meta_da_catalogo(follow.get("_meta"))
     if gia is not None:
-        return gia
+        return _con_competizione(gia, follow)
     try:
         meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
     except Exception as e:  # noqa: BLE001
@@ -593,6 +598,16 @@ def _risolvi_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> Optio
             logger.warning("[tennis-runner] catalogo KO anche dopo relogin %s: %s", event_id, e2)
             tennis_db.set_tennis_follow_status(event_id, "ERROR", str(e2))
             return None
+    return _con_competizione(meta, follow)
+
+
+def _con_competizione(meta: Dict[str, Any], follow: Dict[str, Any]) -> Dict[str, Any]:
+    """25/09 - il nome del TORNEO nella meta della partita (serve a tennis_pro
+    per la superficie). Prima il catalogo Betfair (``_resolve_market``), poi
+    la riga di follow (``tennis_live_follow.competition_name``, che il ponte
+    copia da ``tennis_markets`` o dal feed unico). Nessuna chiamata in piu'."""
+    if not meta.get("competition_name") and follow.get("competition_name"):
+        meta["competition_name"] = str(follow.get("competition_name"))
     return meta
 
 
@@ -649,7 +664,8 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
                      name_to_sel: Dict[str, int], sink: Any,
                      data_filter: Dict[str, Any], mode: str,
                      market_ids: Optional[List[str]] = None,
-                     client_paper: Any = None) -> Any:
+                     client_paper: Any = None,
+                     competition_name: Optional[str] = None) -> Any:
     """Istanzia un bot AGGANCIATO allo stream unico dell'evento.
 
     STREAM UNICO (#1): passa lo STESSO ``market_data_filter`` (``data_filter``) della
@@ -680,6 +696,13 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     nasce in ``dry_run`` FORZATO: non puo' piazzare niente, ne' finto ne' vero.
     Il reale, infine, vuole ``dry_run`` ESATTAMENTE ``False`` sulla riga (prima
     bastava un ``null``: ``bool(None)`` era gia' "reale").
+
+    SUPERFICIE (25/09, decisione utente) - solo ``tennis_pro``: la decide il
+    runner dal nome del TORNEO (``competition_name``; senza, il
+    ``params['surface_torneo']`` di un armamento precedente) con
+    ``superficie.risolvi``. Torneo sconosciuto = ``'hard'`` DICHIARATO
+    (``surface_fonte='default'``). Vince SEMPRE sul ``surface`` dei params: la
+    vecchia UI salvava ``'grass'`` di default, indistinguibile da una scelta.
     """
     cls, params_kw, needs_names = _BOT_REGISTRY[bot_key]
     params = dict(control.get("params") or {})
@@ -742,6 +765,14 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
         # e arrotondare falserebbe il confronto fra replay e paper.
         params["size_step"] = 0.0
         params["live_min_bet"] = 0.0
+    sup = None
+    if bot_key == "tennis_pro":
+        sup = superficie_della_partita(competition_name, params)
+        richiesta = params.get("surface")
+        params.update(sup.come_params())
+        if richiesta not in (None, "", sup.superficie):
+            logger.info("[tennis-runner] tennis_pro: surface=%r dei params IGNORATA, "
+                        "decide la partita: %s", richiesta, sup.testo())
     stake = params["stake"]
     cap = stake * (float(params.get("price_max", 6.0)) + 2.0) * 3.0
     kwargs: Dict[str, Any] = {
@@ -760,6 +791,9 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
         kwargs["name_to_sel"] = name_to_sel
     strat = cls(**kwargs)
     _scope_to_market(strat, market_id)
+    # 25/09: la superficie decisa viaggia con l'istanza (la scrive
+    # ``_scrivi_superficie`` sulla riga e nell'attivita' all'armamento)
+    strat._tennis_superficie = sup
     # T1: la modalita' viaggia con l'istanza. La leggono il trading control
     # ``ControlloModalitaBotTennis`` (seconda rete, dentro flumine), lo specchio
     # ordini/posizioni (``tennis_live_order_worker``) e l'attivita' d'armamento.
@@ -788,6 +822,49 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
                     and isinstance(st.get(k), (int, float))):
                 st[k] = v
     return strat
+
+
+def superficie_della_partita(competition_name: Optional[str],
+                             params: Optional[Dict[str, Any]] = None) -> "_SUP.Superficie":
+    """La superficie di tennis_pro per UNA partita (25/09). Il nome del
+    torneo: ``competition_name`` (catalogo Betfair / riga di follow); se
+    assente, il ``surface_torneo`` gia' scritto sulla riga a un armamento
+    precedente. Nessun nome = default DICHIARATO (``superficie.risolvi``)."""
+    comp = competition_name
+    if not comp and isinstance(params, dict):
+        comp = params.get("surface_torneo") or None
+    return _SUP.risolvi(comp)
+
+
+def _scrivi_superficie(event_id: str, bot_key: str, strat: Any,
+                       control: Dict[str, Any]) -> None:
+    """25/09 - la superficie decisa per tennis_pro, A VIDEO: nei ``params``
+    della riga ``tennis_bot_control`` (il pannello per partita la legge da
+    li') e una riga di attivita' ``superficie``. Si scrive SOLO se la riga non
+    la porta gia' identica. Mai solleva: la scrittura non ferma l'armamento."""
+    sup = getattr(strat, "_tennis_superficie", None)
+    if sup is None:
+        return
+    chiavi = sup.come_params()
+    vecchi = dict(control.get("params") or {})
+    if all(vecchi.get(k) == v for k, v in chiavi.items()):
+        return
+    try:
+        tennis_db.set_tennis_bot_params(event_id, bot_key, {**vecchi, **chiavi})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-runner] superficie sulla riga %s/%s KO: %s",
+                       event_id, bot_key, str(e)[:160])
+    ignorata = vecchi.get("surface")
+    if ignorata in (None, "", sup.superficie) or vecchi.get("surface_fonte"):
+        ignorata = None
+    try:
+        tennis_db.write_tennis_bot_activity(event_id, bot_key, "superficie", {
+            "superficie": sup.superficie, "fonte": sup.fonte, "voce": sup.voce,
+            "torneo": sup.competizione, "testo": sup.testo(),
+            "richiesta_ignorata": ignorata,
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[tennis-runner] attivita' superficie %s/%s KO: %s", event_id, bot_key, e)
 
 
 def _scope_to_market(strat: Any, market_id: str) -> None:
@@ -2037,6 +2114,7 @@ def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo
     le chiavi (evento, bot) armate."""
     del flumine  # il framework e' quello del contesto
     pronti: List[tuple] = []
+    ctrl_di = {(ev, bk): c for ev, bk, c in richieste}
     for ev, bot_key, ctrl in richieste:
         if (ev, bot_key) in session.hosted or ev not in session.market_meta:
             continue
@@ -2051,6 +2129,7 @@ def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo
                 _make_sink(ev, bot_key), caldo.data_filter, caldo.mode,
                 market_ids=sorted(str(m.get("market_id")) for m in session.market_meta.values()),
                 client_paper=caldo.client_paper,
+                competition_name=meta.get("competition_name"),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[tennis-runner] arm a caldo KO %s/%s: %s", ev, bot_key, e)
@@ -2092,6 +2171,7 @@ def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo
             continue
         tennis_db.set_tennis_bot_status(ev, bot_key, "running", started=True)
         _scrivi_attivita_modalita(ev, bot_key, bot, caldo.mode)
+        _scrivi_superficie(ev, bot_key, bot, ctrl_di.get((ev, bot_key)) or {})
         armati.append((ev, bot_key))
     if armati:
         logger.info("[tennis-runner] %d bot armati A CALDO (nessuna ricostruzione): %s",
@@ -2535,6 +2615,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                             bot_key, ctrl, meta["market_id"], meta["name_to_sel"], sink,
                             data_filter, mode, market_ids=all_market_ids,
                             client_paper=client_paper,
+                            competition_name=meta.get("competition_name"),
                         )
                     except Exception as e:  # noqa: BLE001
                         logger.warning("[tennis-runner] arm KO %s/%s: %s", event_id, bot_key, e)
@@ -2554,6 +2635,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                     session.hosted[(event_id, bot_key)] = bot
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "running", started=True)
                     _scrivi_attivita_modalita(event_id, bot_key, bot, mode)
+                    _scrivi_superficie(event_id, bot_key, bot, ctrl)
 
             # 23/09: il worker gira alla cadenza del CANALE (mai < 20 ms); il DB
             # resta a LADDER_PUBLISH_SEC dentro il worker (ladder_canale.py).

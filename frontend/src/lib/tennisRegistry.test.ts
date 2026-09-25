@@ -12,7 +12,7 @@ vi.mock('@/integrations/supabase/client', () => ({
     supabase: { rpc: vi.fn() },
 }));
 
-import { TENNIS_BOT_REGISTRY } from './tennis';
+import { TENNIS_BOT_REGISTRY, HINT_ACCESO_DI_DEFAULT } from './tennis';
 
 function proField(key: string) {
     const pro = TENNIS_BOT_REGISTRY.find((d) => d.key === 'tennis_pro');
@@ -23,9 +23,27 @@ function proField(key: string) {
 }
 
 describe('TENNIS_BOT_REGISTRY tennis_pro (fix audit #9)', () => {
-    it('surface copre anche fast (veloce/indoor) e wta', () => {
-        const values = (proField('surface').options ?? []).map((o) => o.value);
-        expect(values).toEqual(expect.arrayContaining(['hard', 'clay', 'grass', 'fast', 'wta']));
+    // 25/09 (decisione utente): la superficie NON e' piu' un parametro della
+    // scheda: la decide il runner per OGNI partita dal nome del torneo
+    // (tennis_scalper/superficie.py). Il vecchio select mandava 'grass' ovunque.
+    it('surface non e\' piu\' un parametro: la decide il runner dalla partita', () => {
+        const pro = TENNIS_BOT_REGISTRY.find((d) => d.key === 'tennis_pro')!;
+        expect(pro.params.find((p) => p.key === 'surface')).toBeUndefined();
+        expect(pro.defaults).not.toHaveProperty('surface');
+    });
+
+    it('trend/adapt/maker ACCESI di default, con la dicitura della decisione utente', () => {
+        const pro = TENNIS_BOT_REGISTRY.find((d) => d.key === 'tennis_pro')!;
+        for (const k of ['trend', 'adapt', 'maker']) {
+            expect(pro.defaults[k]).toBe('on');
+            const f = proField(k);
+            expect(f.bool).toBe(true);
+            expect(f.hint).toContain(HINT_ACCESO_DI_DEFAULT);
+            // spegnibili: l'opzione off c'e'
+            expect((f.options ?? []).map((o) => o.value)).toEqual(expect.arrayContaining(['on', 'off']));
+        }
+        expect(HINT_ACCESO_DI_DEFAULT).toMatch(/ACCESO di default \(decisione utente 25\/09\)/);
+        expect(HINT_ACCESO_DI_DEFAULT).toMatch(/mai certificato sul banco fuori dall'erba/);
     });
 
     it('hint di trend descrive il flip trend-following (BACK del dominante)', () => {

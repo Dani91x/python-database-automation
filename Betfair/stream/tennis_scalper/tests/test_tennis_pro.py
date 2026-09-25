@@ -108,7 +108,11 @@ class _FakeMarket:
 
 
 def _dry(**params):
-    return _make(dry_run=True, **params)
+    # 25/09: trend/adapt/maker sono ACCESI di default (decisione utente). Questi
+    # test descrivono la variante BASE (LAY di reversione, ingresso al touch):
+    # la chiedono spegnendo le varianti con False ESPLICITO.
+    base = {"trend": False, "adapt": False, "maker": False}
+    return _make(dry_run=True, **{**base, **params})
 
 
 def _book(bb, bl, sb=100.0, sl=100.0, ltp=None):

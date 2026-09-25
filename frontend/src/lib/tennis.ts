@@ -663,6 +663,44 @@ export interface TennisBotDescriptor {
     defaults: Record<string, number | string>;
 }
 
+/** 25/09 (decisione utente "tutti i bot devono avere gli aiuti e le migliorie
+ *  accese di default"): la dicitura delle varianti di tennis_pro accese. */
+export const HINT_ACCESO_DI_DEFAULT =
+    'ACCESO di default (decisione utente 25/09); mai certificato sul banco fuori dall\'erba.';
+
+/** Nomi italiani delle superfici che il runner scrive in `params.surface`. */
+export const NOME_SUPERFICIE: Record<string, string> = {
+    grass: 'erba', clay: 'terra', hard: 'cemento',
+};
+
+export interface SuperficieVista {
+    /** "terra (mappa: Roland Garros)" / "cemento (default: torneo sconosciuto)" */
+    testo: string;
+    superficie: string;
+    /** 'nome' | 'mappa' | 'default' (null = la riga non la dichiara: difetto) */
+    fonte: string | null;
+    torneo: string | null;
+}
+
+/** La superficie che il runner ha deciso per tennis_pro su QUESTA partita,
+ *  letta dai params della riga `tennis_bot_control` (chiavi scritte da
+ *  `tennis_runner._scrivi_superficie`: surface, surface_fonte, surface_voce,
+ *  surface_torneo). null = il runner non l'ha ancora scritta. Una superficie
+ *  SENZA fonte si mostra come tale ("fonte non dichiarata"): mai inventata. */
+export function superficieDaParams(params: Record<string, unknown> | null | undefined): SuperficieVista | null {
+    const p = params ?? {};
+    const sup = typeof p.surface === 'string' ? p.surface : null;
+    if (!sup) return null;
+    const fonte = typeof p.surface_fonte === 'string' && p.surface_fonte ? p.surface_fonte : null;
+    const voce = typeof p.surface_voce === 'string' && p.surface_voce ? p.surface_voce : null;
+    const torneo = typeof p.surface_torneo === 'string' && p.surface_torneo ? p.surface_torneo : null;
+    const nome = NOME_SUPERFICIE[sup] ?? sup;
+    const testo = fonte
+        ? `${nome} (${fonte}: ${voce ?? 'voce non indicata'})`
+        : `${nome} (fonte non dichiarata)`;
+    return { testo, superficie: sup, fonte, torneo };
+}
+
 // NB: default validati in backtest (dossier tennis_scalper). Rifiniti dopo la lettura
 // diretta dei bot Python — vedi tennis_bot_service.py per la whitelist speculare.
 export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
@@ -719,33 +757,29 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'fade_target_ticks', label: 'Fade: tick target', step: 1, min: 2, max: 40, hint: 'obiettivo fade over-reaction' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.1, max: 10, hint: 'non entrare sopra questa quota' },
-            // fix audit #9: il bot Python distingue ("grass","fast") vs il resto (clay/hard/WTA):
-            // le opzioni devono coprire TUTTE le chiavi su cui la logica si biforca.
-            { key: 'surface', label: 'Superficie', step: 0, min: 0, max: 0, type: 'select',
-              options: [
-                  { value: 'hard', label: 'hard' },
-                  { value: 'clay', label: 'clay' },
-                  { value: 'grass', label: 'grass' },
-                  { value: 'fast', label: 'Veloce/indoor' },
-                  { value: 'wta', label: 'WTA' },
-              ],
-              hint: 'ATTENZIONE: su grass/veloce il bot BACKa chi serve sui break point e DISATTIVA serving-for-set / doppio break / favorito compresso (attivi su clay/hard/WTA). Imposta la superficie reale del match.' },
-            // fix audit #9: hint VERITIERI — trend FLIPPA i setup di dominio in
-            // trend-following (BACK del dominante), non è un filtro expected-rate.
+            // 25/09 (decisione utente): la SUPERFICIE non si sceglie piu' qui. La
+            // decide il runner per OGNI partita dal nome del torneo
+            // (`Betfair/stream/tennis_scalper/superficie.py`, via
+            // `tennis_runner._instantiate_bot`) e la scrive nei params della riga:
+            // il pannello la mostra con la sua fonte (`superficieDaParams`). Il
+            // vecchio select mandava 'grass' di default su OGNI partita.
+            // fix audit #9: hint VERITIERI - trend FLIPPA i setup di dominio in
+            // trend-following (BACK del dominante), non e' un filtro expected-rate.
+            // 25/09: trend/adapt/maker ACCESI di default (decisione utente).
             { key: 'trend', label: 'Trend-following', step: 0, min: 0, max: 0, type: 'select', bool: true,
-              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
-              hint: 'FLIPPA i setup di dominio (serving-for-set, doppio break, set transition, favorito compresso) da LAY di reversione a BACK trend-following: cavalca il dominante invece di puntare sul rientro' },
+              options: [{ value: 'on', label: 'on' }, { value: 'off', label: 'off' }],
+              hint: 'FLIPPA i setup di dominio (serving-for-set, doppio break, set transition, favorito compresso) da LAY di reversione a BACK trend-following: cavalca il dominante invece di puntare sul rientro. ' + HINT_ACCESO_DI_DEFAULT },
             // fix audit #9: adapt sceglie la DIREZIONE dal regime di prezzo (Kaufman ER),
             // non riduce lo stake dopo perdite.
             { key: 'adapt', label: 'Direzione adattiva', step: 0, min: 0, max: 0, type: 'select', bool: true,
-              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
-              hint: 'sceglie la DIREZIONE dei setup di dominio dal regime di prezzo live (Efficiency Ratio di Kaufman): trend → BACK del dominante, range → LAY, regime neutro → nessun ingresso. Con on ignora il flag trend' },
+              options: [{ value: 'on', label: 'on' }, { value: 'off', label: 'off' }],
+              hint: 'sceglie la DIREZIONE dei setup di dominio dal regime di prezzo live (Efficiency Ratio di Kaufman): trend -> BACK del dominante, range -> LAY, regime neutro -> nessun ingresso. Con on ignora il flag trend. ' + HINT_ACCESO_DI_DEFAULT },
             { key: 'maker', label: 'Ingresso maker', step: 0, min: 0, max: 0, type: 'select', bool: true,
-              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
-              hint: 'entra passivo a maker_offset tick dal best (fill non garantito)' },
+              options: [{ value: 'on', label: 'on' }, { value: 'off', label: 'off' }],
+              hint: 'entra passivo a maker_offset tick dal best (fill non garantito). ' + HINT_ACCESO_DI_DEFAULT },
         ],
         defaults: { bp_target_ticks: 5, bp_stop_ticks: 3, fade_target_ticks: 4, min_matched: 50000, price_max: 3.6,
-            surface: 'grass', trend: 'off', adapt: 'off', maker: 'off' },
+            trend: 'on', adapt: 'on', maker: 'on' },
     },
     {
         key: 'tennis_flb',
