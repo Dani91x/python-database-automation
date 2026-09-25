@@ -1,0 +1,10 @@
+coverage 8742, stati 8662, righe vista con conteggio vivo 2692
+stato vs conteggio vivo: {'uguale': 2651, 'diverso (entrambi >0)': 25, 'stato assente': 15, 'stato 0, DB >0': 1}
+atlante 21 leghe, modelli ML 1014 leghe
+P4 (0 partite, eventi True): 1; esclusi: {'senza_eventi': 0, 'api_senza_partite': 0, 'in_attesa_ritentativo': 0}
+  lega 111 stagione 2023 fascia 1 importanza 7 current=False fine=2024-04-13 costo~518
+costo totale stimato: 518
+con CATCHUP_P4_ANCHE_SENZA_EVENTI=1: 1, costo 518
+stagioni passate per data con almeno un flag: 5959; senza stato (conteggio ignoto): 0
+  di cui con stato v1 (mai verificate dal backfill automatico, rotazione 150/notte): 5793
+stagioni 'current' ma finite da oltre 30 gg (da verificare con /leagues): 575; di cui a 0 partite secondo lo stato: [(880, 2021), (888, 2022)]

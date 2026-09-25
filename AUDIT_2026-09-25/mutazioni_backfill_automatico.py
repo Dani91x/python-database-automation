@@ -54,8 +54,10 @@ M = [
     ("M18 stato non scritto senza lavoro", "league_orchestrator.py",
      '            sb_mod.scrivi_stato_senza_lavoro(sb, piano, prec, "orchestratore", oggi)\n', "            pass\n",
      [T + "::test_orchestratore_stagione_finita_e_piena_diventa_completed"]),
-    ("M19 dry-run esegue", "league_orchestrator.py", "        if dry_run:\n            continue\n",
-     "        if False:\n            continue\n", [T + "::test_dry_run_non_chiama_l_api_e_non_scrive"]),
+    # M19 ("dry-run esegue": `if dry_run: continue` -> `if False:`) TOLTA PER SEMPRE (25/09, coordinatore):
+    # sotto quella mutazione il codice crea un APIFootballClient VERO e fa richieste ad api-sports.io
+    # (chiave finta, ma e' comunque rete esterna, vietata ai delegati). Il dry-run resta coperto da
+    # test_dry_run_non_chiama_l_api_e_non_scrive (verificato rosso il 25/09 dal primo delegato).
     ("M20 riserva da env ignorata", "api_quota.py", 'grezzo = (env.get("API_FOOTBALL_RISERVA_GIORNALIERA") or "").strip()',
      'grezzo = ""', [T + "::test_quota_riserva_da_env_default_3000"]),
     ("M21 niente fallback log", "api_quota.py", "if stato is None and n_log is not None:", "if False:",
@@ -159,8 +161,9 @@ M = [
      "        serve = viva and t < adesso - timedelta(hours=ORE_INJURIES)", "        serve = False",
      [T + "::test_agg_cadenza_classifica_dopo_giornata_injuries_giornaliero_top_settimanale"]),
     ("M56 delete fallita che inserisce", "season_aggregates.py",
-     "              f\"NESSUN insert (niente doppioni)\")\n        return \"errore\"",
-     "              f\"NESSUN insert (niente doppioni)\")",
+     # riallineata a 306fd11 (delete con ritentativi): stesso difetto sul testo nuovo
+     "              f\"ritentativi ({e}): NESSUN insert (niente doppioni)\")\n        return \"errore\"\n",
+     "              f\"ritentativi ({e}): NESSUN insert (niente doppioni)\")\n",
      [T + "::test_agg_idempotente_nessuna_riga_doppia_e_delete_fallita_non_inserisce"]),
     ("M57 errore API aggregato come vuoto", "season_aggregates.py", "        if lista is None:",
      "        if lista is None and False:", [T + "::test_agg_errore_api_non_e_vuoto_e_resta_buco"]),

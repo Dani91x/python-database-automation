@@ -67,6 +67,21 @@ def _mancanti_str(piano: sb_mod.Piano) -> str:
     return "".join(parti)
 
 
+def _etichetta_mai_caricata(piano: sb_mod.Piano, row: Dict[str, Any], oggi: date) -> str:
+    """Stagione a 0 partite in DB: 'MAI CARICATA ~N chiamate' e se la prende il recupero
+    automatico (coda P4 di seasons_catchup) oppure no (API senza eventi / stagione viva)."""
+    if not piano.serve_fixtures:
+        return ""
+    from seasons_catchup import passata_per_p4
+    if not row.get("fixtures_events"):
+        dove = "fuori dal recupero automatico: API senza eventi, CATCHUP_P4_ANCHE_SENZA_EVENTI=1 per includerla"
+    elif passata_per_p4(row, oggi):
+        dove = "recupero automatico: coda P4"
+    else:
+        dove = "stagione viva o finita da meno di 30 gg: non ancora in coda P4"
+    return f"MAI CARICATA ~{piano.costo} chiamate ({dove}): "
+
+
 def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: bool = False,
                          sb: Any = None, quota: Any = None, client: Any = None,
                          stampa=print, oggi: Optional[date] = None) -> Dict[str, Any]:
@@ -151,7 +166,8 @@ def backfill_full_league(league_id: int, season: Optional[int] = None, dry_run: 
         ft = "mai car." if piano.serve_fixtures else str(piano.lacune.ft_totali)
         stampa(f"{sy:<6}{stato_str:<33}{str(row.get('season_end') or '?')[:10]:<11}{_flag_str(piano.flags):<11}"
                f"{ft:>8} {_mancanti_str(piano)}{piano.lacune.in_attesa(piano.flags):>6}"
-               f"{vuoti:>6}{piano.lacune.non_disponibili(piano.flags):>7}{piano.costo:>9}  {decisione}")
+               f"{vuoti:>6}{piano.lacune.non_disponibili(piano.flags):>7}{piano.costo:>9}  "
+               f"{_etichetta_mai_caricata(piano, row, oggi)}{decisione}")
         stampa("      " + sa.riga_dry_run(piano.lacune.aggregati))
         spenti_con_buchi = [c for c, on in piano.flags.items()
                             if not on and piano.lacune.n(sg.ENDPOINTS[c][0], sg.STATI_DA_CHIAMARE)]

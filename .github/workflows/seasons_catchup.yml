@@ -61,7 +61,19 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           API_FOOTBALL_RISERVA_GIORNALIERA: '3000'
+          # riserva dinamica: scende a questo valore quando Daily/Today/Results di oggi (UTC) hanno
+          # finito con successo (letto da GitHub con GITHUB_TOKEN); dalle 23 UTC niente lavoro nuovo
+          API_FOOTBALL_RISERVA_RESIDUA: '300'
+          CATCHUP_ORA_STOP_UTC: '23'
           CATCHUP_MAX_MINUTI: '150'
-          CATCHUP_MAX_VERIFICHE_PASSATE: '150'
+          # 400 stagioni passate verificate per notte (erano 150): +13 RPC season_gaps_summary (blocchi
+          # da 20), +2 season_aggregates_summary, +250 righe di stato; 5.796 stagioni v1 in ~15 notti
+          CATCHUP_MAX_VERIFICHE_PASSATE: '400'
           BACKFILL_BUCHI_MAX_GIORNI: '3'
+          # P4 stagioni mai caricate (dopo P1-P3): margine minimo lasciato intatto; '1' per includere
+          # anche le stagioni senza fixtures_events (API senza eventi)
+          CATCHUP_P4_MARGINE_MINIMO: '500'
+          CATCHUP_P4_ANCHE_SENZA_EVENTI: '0'
+          # stagioni 'current' con fine passata da > 30 gg: /leagues mirata (1 chiamata, 1 volta/settimana)
+          CATCHUP_MAX_VERIFICHE_CURRENT: '100'
         run: python seasons_catchup.py

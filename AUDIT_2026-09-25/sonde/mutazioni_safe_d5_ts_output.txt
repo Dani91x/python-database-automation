@@ -1,0 +1,18 @@
+[ROSSA] P1 finale ignorata
+[ROSSA] P1 piazzamenti come finali
+[ROSSA] P1 nome anche col round
+[ROSSA] P1 competizione assente zittisce la finale
+[ROSSA] P1 la pagina non legge fixture_round
+[ROSSA] P4 nomi squadra ignorati
+[ROSSA] P4 'w' ovunque
+[ROSSA] P2 Bolivia di nuovo in lista
+[ROSSA] P5 minimo ignorato
+[ROSSA] P5 chiave vecchia
+[ROSSA] P5 soglia 0,58 cambiata
+[ROSSA] P5 lato della difesa invertito
+[ROSSA] P6 forze non dichiarate
+[ROSSA] P7 bordo incluso
+[ROSSA] P7 super favorito escluso anche lui
+[ROSSA] P7 legge leaderPreMax
+
+16/16 mutazioni rosse

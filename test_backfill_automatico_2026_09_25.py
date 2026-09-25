@@ -482,6 +482,7 @@ def mondo(monkeypatch):
     monkeypatch.setattr(lo, "get_supabase", lambda: db)
     monkeypatch.setattr(sg, "_oggi", lambda: OGGI)
     monkeypatch.setattr(sa, "adesso", lambda: db.adesso)   # ora unica per lo stato degli aggregati
+    monkeypatch.setattr(sc, "_adesso_utc", lambda: db.adesso)  # 10:00 UTC: mai 'fine giornata' per caso
     return db, server
 
 

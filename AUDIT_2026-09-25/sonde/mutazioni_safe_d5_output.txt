@@ -1,0 +1,35 @@
+[ROSSA] P1 'final' tolto dai round finali
+[ROSSA] P1 il round non si guarda (solo nome)
+[ROSSA] P1 il nome vale anche col round presente
+[??] P1 piazzamenti contati come finali: frammento trovato 0 volte
+[ROSSA] P1 semifinali dal nome contate come finali
+[ROSSA] P1/P3 competizione assente zittisce anche la finale
+[ROSSA] P4 femminile dai nomi squadra spento
+[ROSSA] P4 'w' in qualunque posizione
+[ROSSA] P5 soglia gol 5 invece di 4
+[ROSSA] P5 partite non finite contate
+[ROSSA] P5 gol dei supplementari al posto dei 90'
+[ROSSA] P5 orientamento ignorato
+[ROSSA] P5 scambio dei lati dimenticato
+[ROSSA] P5 niente cache: rilegge a ogni giro
+[ROSSA] P5 nessuna pausa dopo un errore DB
+[ROSSA] P5 lo scanner non pubblica il round
+[ROSSA] P5 lo scanner legge l'atlante come prima
+[ROSSA] P5 minimo di scontri ignorato
+[ROSSA] P5 chiave vecchia 2-2/3-3 letta
+[ROSSA] P5 soglia 0,58 cambiata
+[ROSSA] P5 E10 senza il minimo di scontri
+[??] P5 query con tutto raw_json: frammento trovato 0 volte
+[ROSSA] P6 forze non dichiarate
+[ROSSA] P7 bordo 1,20 incluso
+[ROSSA] P7 anche il super favorito escluso
+[ROSSA] P7 si legge ancora leaderPreMax
+[ROSSA] P7 si guarda il leader invece del favorito
+[ROSSA] P2 Bolivia di nuovo in lista
+[ROSSA] P1 coppe di nuovo in lista
+[ROSSA] TS lista femminile divergente
+
+28/30 mutazioni rosse
+
+[exited with code 0]
+(rilancio dopo correzione CRLF) [ROSSA] P1 piazzamenti contati come finali / [ROSSA] P5 query con tutto raw_json -> 30/30

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Callable, Dict, Optional
 
 import season_aggregates as sa
@@ -67,6 +67,36 @@ class Esito:
     lacune_dopo: Optional[sg.Lacune] = None
 
 
+def endpoint_attivi_mai_caricata(coverage_row: Dict[str, Any], oggi: Optional[date] = None) -> int:
+    """Endpoint per partita che si chiamerebbero su una stagione mai caricata: i
+    flag per-partita True, meno le quote se la stagione e' finita da oltre 30 gg
+    (fuori dalla finestra API di 7 gg: non si chiamano, stato 'non_disponibile').
+    Finita per DATA anche se l'API la lascia `current` (visto sul DB vero: 880/2021)."""
+    flags = sg.flag_per_fixture(coverage_row)
+    n = sum(1 for v in flags.values() if v)
+    fine = sg._data(coverage_row.get("season_end"))
+    vecchia = fine is not None and fine < (oggi or sg._oggi()) - timedelta(days=sg.FINESTRA_RECENTE_GIORNI)
+    if flags.get("odds") and (vecchia or not sg.e_corrente_o_recente(coverage_row, oggi)):
+        n -= 1
+    return n
+
+
+def stima_partite_mai_caricata(coverage_row: Dict[str, Any], oggi: Optional[date] = None,
+                               partite: int = STIMA_PARTITE_STAGIONE_VUOTA) -> int:
+    """Chiamate per-partita stimate di una stagione mai caricata (partite, default 380, x endpoint attivi)."""
+    return int(partite) * endpoint_attivi_mai_caricata(coverage_row, oggi)
+
+
+def stima_costo_mai_caricata(coverage_row: Dict[str, Any], oggi: Optional[date] = None,
+                             partite: int = STIMA_PARTITE_STAGIONE_VUOTA) -> int:
+    """Costo intero stimato SENZA letture DB (per coda e referto P4): 1 /fixtures +
+    380 partite x endpoint attivi + aggregati con flag True (top_cards = 2 chiamate).
+    E' la stessa stima di `pianifica` su una stagione a 0 partite (aggregati tutti
+    'mancante')."""
+    agg = sum(sa.COSTO[n] for n in sa.ORDINE if coverage_row.get(n))
+    return 1 + stima_partite_mai_caricata(coverage_row, oggi, partite) + agg
+
+
 def pianifica(sb: Any, coverage_row: Dict[str, Any], stato_prec: Optional[Dict[str, Any]] = None,
               includi_mai_caricate: bool = True, oggi: Optional[date] = None,
               fisse_su_stagione_viva: bool = True) -> Piano:
@@ -78,15 +108,11 @@ def pianifica(sb: Any, coverage_row: Dict[str, Any], stato_prec: Optional[Dict[s
     league_id, season_year = int(coverage_row["league_id"]), int(coverage_row["season_year"])
     lac = sg.lacune_stagione(sb, league_id, season_year)
     flags = sg.flag_per_fixture(coverage_row)
-    n_attivi = sum(1 for v in flags.values() if v)
     serve_fixtures = (includi_mai_caricate and lac.partite_totali == 0
                       and sg.stagione_iniziata(coverage_row, oggi))
     chiamate_partite = lac.chiamate_per_fixture(flags)
     if serve_fixtures:
-        # stagione passata: le quote delle sue partite sono fuori dalla finestra API (7 gg) e non si chiamano
-        if flags.get("odds") and not sg.e_corrente_o_recente(coverage_row, oggi):
-            n_attivi -= 1
-        chiamate_partite = STIMA_PARTITE_STAGIONE_VUOTA * n_attivi
+        chiamate_partite = stima_partite_mai_caricata(coverage_row, oggi)
     fisse = 1 if (chiamate_partite > 0 or serve_fixtures) else 0
     if not fisse_su_stagione_viva and sg.e_corrente_o_recente(coverage_row, oggi):
         fisse = 0
@@ -149,6 +175,10 @@ def esegui(sb: Any, client: Any, quota: Any, piano: Piano, stato_prec: Optional[
         if con_fisse:
             backfill_fixtures_for_league_season(lid, sy)
             fisse_fatte += 1
+            # contata SUBITO nel margine (25/09, P4): prima si sommava a fine stagione e i
+            # controlli per-partita vedevano 1 chiamata in meno (sforo di 1 sotto riserva/pavimento)
+            if hasattr(quota, "aggiungi_chiamate_esterne"):
+                quota.aggiungi_chiamate_esterne(1)
         lac = sg.lacune_stagione(sb, lid, sy)
         # 2) per-fixture SOLO sulle mancanti, SOLO endpoint con flag True
         st = backfill_per_fixture_for_league_season(
@@ -167,8 +197,6 @@ def esegui(sb: Any, client: Any, quota: Any, piano: Piano, stato_prec: Optional[
         logger.error("lega %s stagione %s: ERRORE %s", lid, sy, es.errore)
     # chiamate: quelle del client condiviso (per-partita e aggregati) + /fixtures (client suo)
     es.chiamate = int(getattr(client, "richieste_http", 0) or 0) - prima + fisse_fatte
-    if hasattr(quota, "aggiungi_chiamate_esterne"):
-        quota.aggiungi_chiamate_esterne(fisse_fatte)
     # 4) stato DERIVATO dai dati dopo il lavoro
     lac_dopo = sg.lacune_stagione(sb, lid, sy)
     tentativi = (es.stats.get("aggregati") or {})

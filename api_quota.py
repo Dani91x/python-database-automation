@@ -20,6 +20,12 @@ Formula:  margine = limit_day - current - riserva
   riserva = API_FOOTBALL_RISERVA_GIORNALIERA (default 3000): chiamate lasciate
   alle action giornaliere (Daily + Today Predictions + Results), p90 misurato
   ~2.700/giorno negli ultimi 9 giorni.
+  RISERVA DINAMICA (25/09, ordine utente: usare il ~40 % di quota che a fine
+  giornata avanzava): quando le 3 action del giorno UTC risultano COMPLETATE con
+  successo (lettura da GitHub, seasons_catchup.ControlloConcorrenza), la riserva
+  scende a API_FOOTBALL_RISERVA_RESIDUA (default 300) per il resto del giorno UTC.
+  Stato delle action non leggibile (GITHUB_TOKEN assente, GitHub giu') o non
+  ancora completate -> riserva piena, con avviso nel primo caso.
 Regola: una lega-stagione parte SOLO se margine >= costo stimato; dopo ogni
 lega-stagione si rilegge il contatore.
 """
@@ -28,13 +34,14 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
 API_STATUS_URL = "https://v3.football.api-sports.io/status"
 RISERVA_DEFAULT = 3000
+RISERVA_RESIDUA_DEFAULT = 300  # dopo che Daily + Today + Results del giorno UTC hanno finito
 LIMITE_DEFAULT = 7500          # piano Pro (usato SOLO se /status non risponde)
 FINESTRA_ID_LOG = 20000        # righe di api_call_log esaminate (per PK) per trovare l'inizio del giorno
 HEADER_VALIDI_SEC = 15 * 60    # header piu' vecchi di cosi' non valgono come fonte
@@ -75,6 +82,20 @@ def leggi_riserva(env: Optional[Dict[str, str]] = None) -> int:
     if valore < 0:
         raise ValueError(f"API_FOOTBALL_RISERVA_GIORNALIERA negativa: {valore}")
     return valore
+
+
+def leggi_riserva_residua(env: Optional[Dict[str, str]] = None, massimo: Optional[int] = None) -> int:
+    """API_FOOTBALL_RISERVA_RESIDUA (default 300): riserva dopo che le action del giorno
+    hanno finito. Mai sopra la riserva piena."""
+    env = os.environ if env is None else env
+    testo = (env.get("API_FOOTBALL_RISERVA_RESIDUA") or "").strip()
+    try:
+        valore = int(testo) if testo else RISERVA_RESIDUA_DEFAULT
+    except ValueError as e:
+        raise ValueError(f"API_FOOTBALL_RISERVA_RESIDUA non intera: {testo!r}") from e
+    if valore < 0:
+        raise ValueError(f"API_FOOTBALL_RISERVA_RESIDUA negativa: {valore}")
+    return valore if massimo is None else min(valore, massimo)
 
 
 def _limite_env(env: Optional[Dict[str, str]] = None) -> int:
@@ -134,6 +155,45 @@ def conta_log_oggi(sb: Any, adesso: Optional[datetime] = None) -> int:
     return n
 
 
+def consumo_giorni_log(sb: Any, giorni: int = 7, adesso: Optional[datetime] = None) -> List[Tuple[str, int]]:
+    """Chiamate registrate in api_call_log per ciascuno degli ultimi `giorni` giorni
+    UTC COMPLETI (oggi escluso) -> [(YYYY-MM-DD, n)] dal piu' vecchio.
+
+    Stessa tecnica a basso IO di conta_log_oggi (la tabella non ha un indice noto
+    su created_at): max(id) via PK, poi `giorni + 1` count esatti su una finestra
+    di PK (id > max - FINESTRA_ID_LOG x (giorni + 1)) con created_at >= inizio di
+    ciascun giorno; il consumo del giorno d e' la differenza tra due conteggi
+    cumulativi consecutivi. Serve SOLO alla stima dei giorni del referto P4."""
+    adesso = adesso or datetime.now(timezone.utc)
+    oggi0 = adesso.replace(hour=0, minute=0, second=0, microsecond=0)
+    ultimo = sb.table("api_call_log").select("id").order("id", desc=True).limit(1).execute()
+    righe = getattr(ultimo, "data", None) or []
+    if not righe:
+        return []
+    soglia_id = int(righe[0]["id"]) - FINESTRA_ID_LOG * (giorni + 1)
+    cumulati: List[int] = []
+    for k in range(giorni, -1, -1):                 # inizio del giorno oggi-k, ... , oggi
+        inizio = (oggi0 - timedelta(days=k)).isoformat()
+        resp = (sb.table("api_call_log").select("id", count="exact")
+                .gt("id", soglia_id).gte("created_at", inizio).limit(1).execute())
+        n = getattr(resp, "count", None)
+        if not isinstance(n, int):
+            raise RuntimeError("api_call_log: count non restituito")
+        cumulati.append(n)
+    return [((oggi0 - timedelta(days=giorni - i)).date().isoformat(), cumulati[i] - cumulati[i + 1])
+            for i in range(giorni)]
+
+
+def margine_medio_log(sb: Any, limit_day: int, riserva: int, giorni: int = 7,
+                      adesso: Optional[datetime] = None) -> Optional[float]:
+    """Margine medio avanzato a fine giornata negli ultimi `giorni` giorni completi:
+    media di max(0, limit_day - riserva - chiamate del giorno). None se il log e' vuoto."""
+    giorni_log = consumo_giorni_log(sb, giorni, adesso)
+    if not giorni_log:
+        return None
+    return sum(max(0, limit_day - riserva - n) for _, n in giorni_log) / len(giorni_log)
+
+
 class GestoreQuota:
     """Controllo PRIMA di ogni lega-stagione, ricalcolo DOPO (e ogni tanto durante)."""
 
@@ -141,12 +201,19 @@ class GestoreQuota:
                  client: Any = None, riserva: Optional[int] = None,
                  http_get: Callable[..., Any] = requests.get,
                  env: Optional[Dict[str, str]] = None,
-                 stampa: Callable[[str], None] = print) -> None:
+                 stampa: Callable[[str], None] = print,
+                 action_completate: Optional[Callable[[], Optional[bool]]] = None) -> None:
+        """action_completate: None = riserva fissa (orchestratore a mano). Altrimenti una
+        funzione che dice se le action del giorno UTC hanno finito: True -> riserva residua,
+        False -> piena, None (non leggibile) -> piena con avviso."""
         self.sb = sb
         self.api_key = api_key
         self.client = client
         self.env = env
         self.riserva = leggi_riserva(env) if riserva is None else riserva
+        self.riserva_residua = leggi_riserva_residua(env, self.riserva)
+        self.action_completate = action_completate
+        self._riserva_prec: Optional[int] = None
         self.http_get = http_get
         self.stampa = stampa
         self.stato: Optional[StatoQuota] = None
@@ -158,20 +225,48 @@ class GestoreQuota:
         self._esterne += int(n)
 
     # -- lettura ------------------------------------------------------------
+    @property
+    def riserva_minima(self) -> int:
+        """Riserva che il giorno raggiunge a regime (per le stime sui giorni)."""
+        return self.riserva_residua if self.action_completate is not None else self.riserva
+
+    def riserva_del_momento(self, avvisi: Optional[List[str]] = None) -> int:
+        if self.action_completate is None:
+            return self.riserva
+        try:
+            finite = self.action_completate()
+        except Exception as e:                                   # mai fidarsi: riserva piena
+            finite = None
+            if avvisi is not None:
+                avvisi.append(f"stato delle action non letto ({type(e).__name__}: {e})")
+        if finite is True:
+            if avvisi is not None:
+                avvisi.append(f"action del giorno UTC completate: riserva {self.riserva} -> {self.riserva_residua}")
+            return self.riserva_residua
+        if finite is None and avvisi is not None:
+            avvisi.append(f"AVVISO: stato delle action del giorno non leggibile (GITHUB_TOKEN assente o GitHub "
+                          f"non risponde): riserva piena {self.riserva}")
+        return self.riserva
+
     def aggiorna(self) -> StatoQuota:
         avvisi: List[str] = []
         stato: Optional[StatoQuota] = None
         adesso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        note_riserva: List[str] = []
+        riserva = self.riserva_del_momento(note_riserva)
+        if riserva != self._riserva_prec:                   # la nota solo quando la riserva cambia
+            avvisi.extend(note_riserva)
+            self._riserva_prec = riserva
         try:
             st = leggi_status_api(self.api_key, self.http_get)
-            stato = StatoQuota(st["current"], st["limit_day"], self.riserva, "/status", avvisi, None, adesso)
+            stato = StatoQuota(st["current"], st["limit_day"], riserva, "/status", avvisi, None, adesso)
         except Exception as e:
             avvisi.append(f"/status non leggibile ({e})")
         if stato is None and self.client is not None:
             rl = getattr(self.client, "ultimo_ratelimit", None)
             if rl and time.time() - float(rl.get("at", 0)) <= HEADER_VALIDI_SEC:
                 stato = StatoQuota(int(rl["limit_day"]) - int(rl["remaining"]), int(rl["limit_day"]),
-                                   self.riserva, "header x-ratelimit", avvisi, None, adesso)
+                                   riserva, "header x-ratelimit", avvisi, None, adesso)
         # controprova (o fallback) da api_call_log
         n_log: Optional[int] = None
         if self.sb is not None:
@@ -182,7 +277,7 @@ class GestoreQuota:
         if stato is None and n_log is not None:
             avvisi.append("AVVISO: contatore da api_call_log (solo chiamate di questo repo, "
                           "limite da API_FOOTBALL_LIMITE_GIORNALIERO)")
-            stato = StatoQuota(n_log, _limite_env(self.env), self.riserva, "api_call_log", avvisi, n_log, adesso)
+            stato = StatoQuota(n_log, _limite_env(self.env), riserva, "api_call_log", avvisi, n_log, adesso)
         if stato is None:
             raise QuotaNonLeggibile("contatore API non leggibile da nessuna fonte: " + "; ".join(avvisi))
         stato.controprova_log = n_log
@@ -212,7 +307,39 @@ class GestoreQuota:
         if self.stato is None:
             self.aggiorna()
         assert self.stato is not None
-        return self.stato.limit_day - self.riserva
+        return self.stato.limit_day - self.stato.riserva
+
+    def copre(self, costo: int) -> bool:
+        return self.margine() >= costo
+
+
+class QuotaConPavimento:
+    """Vista della quota per la P4 (stagioni mai caricate, 25/09/2026): stesso
+    contatore, ma il margine disponibile e' quello reale MENO il pavimento
+    (CATCHUP_P4_MARGINE_MINIMO). Passata a season_backfill.esegui, fa fermare il
+    lavoro a fine partita quando il margine scenderebbe sotto il pavimento: la P4
+    non tocca mai l'ultimo pezzo di margine (resta alle stagioni vive della
+    finestra successiva) e non tocca mai la riserva delle action."""
+
+    def __init__(self, quota: Any, pavimento: int) -> None:
+        self.quota = quota
+        self.pavimento = int(pavimento)
+
+    @property
+    def stato(self) -> Optional[StatoQuota]:
+        return self.quota.stato
+
+    def aggiorna(self) -> StatoQuota:
+        return self.quota.aggiorna()
+
+    def aggiungi_chiamate_esterne(self, n: int) -> None:
+        self.quota.aggiungi_chiamate_esterne(n)
+
+    def margine(self) -> int:
+        return self.quota.margine() - self.pavimento
+
+    def capacita_giornaliera(self) -> int:
+        return self.quota.capacita_giornaliera() - self.pavimento
 
     def copre(self, costo: int) -> bool:
         return self.margine() >= costo

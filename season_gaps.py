@@ -322,6 +322,11 @@ def costruisci_stats_json(coverage_row: Dict[str, Any], lacune: Lacune, stato_pr
         "aggregati": {n: a.get("stato") for n, a in lacune.aggregati.items()},
         # ultimo tentativo per aggregato {at, esito}: serve a non richiamare un aggregato vuoto
         "aggregati_tentativi": {**(prec.get("aggregati_tentativi") or {}), **(tentativi_aggregati or {})},
+        # P4 (stagioni mai caricate, seasons_catchup): tentativi di /fixtures {tentativi, ultimo_at}
+        # -> niente richiamate ogni giorno se l'API non ha partite per la stagione
+        **({"mai_caricata": prec["mai_caricata"]} if prec.get("mai_caricata") else {}),
+        # verifica mirata del flag `current` all'API (seasons_catchup.verifica_current_sospette) {at, current}
+        **({"verifica_current": prec["verifica_current"]} if prec.get("verifica_current") else {}),
     }
 
 
@@ -356,7 +361,9 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
     leggero = league_id is None
     colonne = ("league_id,season_year,status,last_run_at,versione:stats_json->meta->>version,"
                "buco_aperto_dal:stats_json->>buco_aperto_dal,ft_count:stats_json->fixtures->>ft_count,"
-               "aggregati_tentativi:stats_json->aggregati_tentativi"
+               "matches_count:stats_json->fixtures->>matches_count,"
+               "aggregati_tentativi:stats_json->aggregati_tentativi,mai_caricata:stats_json->mai_caricata,"
+               "verifica_current:stats_json->verifica_current"
                if leggero else "league_id,season_year,status,last_run_at,stats_json")
     while True:
         q = sb.table("season_backfill_state").select(colonne)
@@ -371,8 +378,13 @@ def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) ->
                          "status": r.get("status"), "last_run_at": r.get("last_run_at"),
                          "stats_json": {"meta": {"version": r.get("versione")},
                                         "buco_aperto_dal": r.get("buco_aperto_dal"),
-                                        "fixtures": {"ft_count": r.get("ft_count")},
-                                        "aggregati_tentativi": r.get("aggregati_tentativi") or {}}}
+                                        "fixtures": {"ft_count": r.get("ft_count"),
+                                                     "matches_count": r.get("matches_count")},
+                                        "aggregati_tentativi": r.get("aggregati_tentativi") or {},
+                                        **({"mai_caricata": r["mai_caricata"]} if r.get("mai_caricata")
+                                           else {}),
+                                        **({"verifica_current": r["verifica_current"]}
+                                           if r.get("verifica_current") else {})}}
                 out[(int(r["league_id"]), int(r["season_year"]))] = r
             except (KeyError, TypeError, ValueError):
                 continue
