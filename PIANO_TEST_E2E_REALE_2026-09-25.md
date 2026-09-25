@@ -838,15 +838,235 @@ senza toccare `mode`), lo scalper ferma l'interruttore (guardia `scalper-auto`),
 
 ---
 
-## 7. Spazio per la sessione admin-26 (da riempire)
+## 7. Spazio per la sessione admin-26 (riempita)
+
+Compilata dalla sessione admin-26 (Sonnet, delegato del coordinatore), SOLA DOCUMENTAZIONE: nessun
+codice, nessun test eseguito, nessun accesso al DB, nessun processo avviato. Fonti: i referti in
+`AUDIT_2026-09-25/` citati sotto, letti per intero dove serviva (§0-§7 di ognuno), più
+`AUDIT_2026-09-24/AUDIT_TEMPO_REALE_2026-09-24.md` §0-§1 e `CRONOSTORIA.md` 25/09 h14:30. Formato di
+ogni controllo: **# | controllo | azione/sonda (sola lettura) | riga/log attesa | criterio di
+superamento | ripristino | se non torna**. Non ripete i controlli già in Z0-Z14 (§4): dove un pezzo è
+già coperto lì, qui si aggiunge solo ciò che manca. `[DECISIONE UTENTE]` marca ciò che dipende da una
+scelta ancora aperta.
 
 ### 7.1 Feed unico
-### 7.2 Auto-follow degli eventi dei bot (decisione D-1)
+
+Fonte: `AUDIT_2026-09-24/AUDIT_TEMPO_REALE_2026-09-24.md` §0-§1; `CRONOSTORIA.md` 25/09 h14:30: «REGOLA
+per TUTTI i bot presenti e futuri: UN solo canale dati alimenta tutti i bot» (memoria
+`feedback_un_canale_dati_tutti_i_bot_auto_mode_2026-09-25.md`). Z1 (§4) verifica già età/fonte dello
+scanner per Omega/Mike/Safe e la Control Room; qui si verifica che i DUE bot costruiti oggi (scalper
+auto-mode, tennis auto-mode) e l'auto-follow del runner calcio leggano la STESSA riga, non una fonte
+loro.
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.1.1 | lo scalper legge il feed calcio dalla stessa tabella di Safe, non un poll proprio (`Db.feed_calcio`, `SCALPER_AUTO_MODE.md` §1: `safe_strategy_scan` con `sport='calcio'`, chiavi via `payload->k`) | confronto diretto: `select event_id, updated_at, payload->'odds' from safe_strategy_scan where sport='calcio' and event_id = <un evento armato dallo scalper> order by updated_at desc limit 1;` contro la nota `stats.auto` della riga `scalper_service_control` (`select stats->'auto' from scalper_service_control;`) nello stesso istante | l'`event_id` e l'età dichiarata nella nota scalper coincidono con `updated_at` della riga scan | fonte unica confermata | età/partite diverse fra le due letture = lo scalper ha una seconda fonte non dichiarata |
+| 7.1.2 | il ponte tennis legge il feed dalla stessa tabella (`tennis_db.list_tennis_feed_rows`, `TENNIS_AUTO_MODE.md` §1: `safe_strategy_scan` `sport='tennis'`, SOLO `p1,p2,competition,open_date,inplay,mo_market_id,mo_status`, niente `score_raw`) | `select event_id, updated_at from safe_strategy_scan where sport='tennis' and event_id = <evento armato auto> limit 1;` contro `stats.auto` della riga `tennis_bot_service_control` interessata | stesso `event_id`, età coerente con «feed tennis: N partite, scanner X s fa» a video | fonte unica confermata | — |
+| 7.1.3 | entrambi contano SOLO con lo scanner vivo (battito `safe_strategy_status` ≤ 30 s, `_SCANNER_VIVO_S`/`SCANNER_ALIVE_MAX_AGE_SEC`), non con un timeout proprio | fermare (in test, non in produzione) di osservare un battito > 30 s: nota scalper/tennis deve dire «feed … non disponibile (scanner fermo o lettura KO)», NON armare nuove partite | nessuna nuova riga `origine='auto'` mentre lo scanner è vecchio | coerente | armamento con scanner vecchio = soglia diversa da 30 s in uno dei due moduli |
+| 7.1.4 | l'auto-follow del runner calcio (proattivo, non l'aggancio al volo) legge lo stesso feed, non uno stream Betfair diretto per scegliere le candidate (`AUTO_FOLLOW_TUTTI_I_BOT.md` §7: «Fonte del feed: `safe_strategy_scan` letta dal DB ogni 30 s») | log `[auto-follow] seguiti da soli X eventi (Y mercati) … feed F partite (db)` — la` F` deve avvicinarsi al conteggio di `select count(*) from safe_strategy_scan where sport='calcio' and updated_at > now()-interval '30 seconds';` | numeri coerenti (±1-2 per il ritardo dei 30 s) | coerente | `F` molto diverso = l'auto-follow legge un'altra vista |
+
+**Ripristino:** nessuno, sola lettura. **Superamento della sottosezione:** tutti i consumatori nuovi
+(scalper, tennis, auto-follow) leggono `safe_strategy_scan`; nessuno introduce un secondo canale.
+
+### 7.2 Auto-follow degli eventi dei bot e strada unica degli ordini (decisione D-1)
+
+Fonte: `AUTO_FOLLOW_TUTTI_I_BOT.md` (intero) e `STRADA_UNICA_BANCO_E_PAPER.md` §5 (intero). Le due cose
+condividono la stessa decisione dell'utente (D-1, §1.2 e §6 del piano): SENZA `MOTORE_ORDINI_CANALE`,
+`SAFE_ORDINI_VIA_CANALE`, `OMEGA_ORDINI_VIA_CANALE` accesi, l'auto-follow funziona lo stesso (i bot
+seguono le partite da soli) ma l'INVIO ordini resta sulla coda DB di sempre: sono due interruttori
+distinti, testabili separatamente. **Prima di accendere, in quest'ordine** (`STRADA_UNICA_BANCO_E_PAPER.md`
+§5): (1) applicare `migrations/live_follow_origine_2026-09-25.sql` (altrimenti l'auto-follow lavora solo
+in RAM: nessuna riga, nessun badge, log «live_follow.origine NON disponibile»); (2) integrare il lavoro
+auto-follow su master; (3) seguire in «Segui live» solo le partite che si vogliono vedere nel Terminale
+completo (gli eventi automatici sono «silenziosi»: niente `live_now`/ladder/segnali per loro).
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.2.1 | auto-follow attivo di serie col motore (`RUNNER_AUTO_FOLLOW` non serve, acceso) | grep log avvio runner: `[runner] AUTO-FOLLOW ATTIVO: i bot operano da soli su tutte le partite (aggancio al volo + feed), tetto 180 mercati …` | riga presente all'avvio | comparso | assente = auto-follow non montato (verificare integrazione su master) |
+| 7.2.2 | motore ordini sul canale acceso (`MOTORE_ORDINI_CANALE=1`) | grep `[runner] motore ordini ATTIVO sul canale 47331 (diario …\_diario_ordini)` | riga presente | comparso | assente = interruttore non letto (riavvio mancato) |
+| 7.2.3 | Safe calcio passa sul canale di comando (`SAFE_ORDINI_VIA_CANALE=1`, DOPO aver visto il motore attivo) | grep `[safe.bot] ordini calcio via canale di comando ws://127.0.0.1:47331/comando/safe`; poi un'apertura Safe base in paper | attività `canale_inviato` `{trade_id, mode:"paper", ref:"safe-t<id>", seq, price, size, chiusura}`: `select ts, kind, payload from safe_strategy_activity where kind='canale_inviato' order by ts desc limit 5;` | riga presente entro pochi secondi dall'ordine | assente = Safe non è passato dal canale (ripiego coda DB silenzioso: verificare log d'errore) |
+| 7.2.4 | sulla riga del trade compaiono le marcature del canale | dopo 7.2.3, sulla stessa riga | `select id, meta->>'canale_ref', meta->>'canale_ack_seq', meta->>'canale_ack_ms', meta->>'canale_fase' from safe_strategy_trades where id = <trade_id>;` → tutte e 4 valorizzate | valorizzate | NULL = la scrittura delle marcature non è arrivata |
+| 7.2.5 | età del comando sotto soglia | diario `DATA_DIR/_diario_ordini/<AAAA-MM-GG>.jsonl`, riga `{"tipo":"inviato","canale":"comando",...}`: età = `ts_ms − parametri.creato_ms` | < 3000 ms (`max_eta_ms`) | < 3000 | ≥ 3000 = comando scaduto lato motore, l'ordine non parte da lì |
+| 7.2.6 | Omega passa sul canale (`OMEGA_ORDINI_VIA_CANALE=1`, DOPO Safe ok) | grep `[omega] ordini via canale di comando …/comando/omega`; poi un'apertura Omega in paper | stesse attività/marcature di Safe su `omega_activity`/`omega_trades` | comparse | — |
+| 7.2.7 | nessuna riga nuova sulla coda DB per gli ordini passati dal canale | dopo 7.2.3-7.2.6 | `select count(*) from betfair_live_order_requests where requested_at > now()-interval '5 minutes';` → 0 per i trade appena aperti via canale | 0 righe nuove | riga presente = l'ordine è passato ANCHE dalla coda (doppio invio, money-critical: **STOP**) |
+| 7.2.8 | aggancio al volo: comando su una partita non ancora seguita dal runner | ordine di un bot su una partita fuori da «Segui live» e fuori dal feed appena entrata | diario: `in_aggancio` (market_id, scadenza_ms) poi `agganciato` (`attesa_ms`); log `[motore] <ref> in attesa dell'aggancio di 1.xxx (scade fra 3000 ms)` poi `[motore] <ref> agganciato dopo NNN ms: eseguo` | agganciato entro 3000 ms, un solo ordine eseguito | mai `agganciato`, solo `rifiutato` = SUB_IMAGE non arrivato entro 3000 ms dal vivo (§8 del referto, non provato in rete) |
+| 7.2.9 | mai più «non sottoscritto» sui comandi dei bot | grep sul log del runner per l'intera fase 2 | 0 occorrenze di `market … non sottoscritto nel runner` | 0 | presente = l'auto-follow non ha agganciato in tempo, il vecchio rifiuto è tornato |
+| 7.2.10 | tetto mercati 180 rispettato, follow manuali mai espulsi | seguire 2-3 partite a mano PRIMA di accendere i bot (rischio noto, §2 del referto: `LIVE_MARKET_TYPES` **[DECISIONE UTENTE]**, non impostata: ogni partita a mano sottoscrive 50-100 mercati) | log `[auto-follow] seguiti da soli X eventi (Y mercati) + manuali Z mercati = T/180 …`; T ≤ 180 sempre | T ≤ 180, follow manuali mai fra gli espulsi | T supera 180 o un manuale sparisce = tetto/priorità rotti; con 2-3 manuali pieni, ogni comando bot riceve `tetto_mercati_pieno` (atteso finché `LIVE_MARKET_TYPES` non è deciso) |
+| 7.2.11 | righe `live_follow` automatiche coerenti | durante la fase 2 | `select event_id, status, origine from public.live_follow where origine='auto';` → `STREAMING` mentre seguite, mai riscritte se manuali; all'avvio nuovo le auto rimaste aperte vanno `CLOSED` | coerente col log | una riga manuale con `origine` cambiato = bug d'insert (mai atteso, l'update è filtrato `WHERE origine='auto'`) |
+| 7.2.12 | righe in volo al riavvio dell'app (paper) | riavviare l'app con un comando in `in_aggancio`/parcheggiato | dopo TTL+60 s la riga passa `error` con `canale_senza_esito` | nessun fill inventato | riga rimasta `pending` oltre TTL+60 s senza `error` = watchdog non scattato |
+| 7.2.13 | Mike e Safe tennis restano fuori dalla strada canale (F7/F8, per costruzione) | verificare che nessun interruttore `MIKE_USE_FLUMINE_QUEUE` / `SAFE_TENNIS_ORDINI_VIA_CANALE` sia stato acceso | `.env`: entrambi assenti; Mike continua REST, Safe tennis continua REST (`AUDIT_STRADE_ORDINE` par. 1.4) | assenti | presente = accensione non autorizzata di un percorso rotto (M1) o non montato (F8): **non accendere** |
+
+**Ripristino (in questo ordine, «10 secondi» per la strada canale, §5 STRADA_UNICA):** (1) spegnere
+`SAFE_ORDINI_VIA_CANALE`/`OMEGA_ORDINI_VIA_CANALE`; (2) riavvio dell'app; (3) `MOTORE_ORDINI_CANALE`
+spento per ultimo. L'auto-follow non si spegne a parte: segue `RUNNER_AUTO_FOLLOW=0` se serve tornare al
+comportamento di prima; altrimenti resta acceso anche a motore spento (un bot che apre con motore spento
+riceve `motore_non_attivo`, rifiuto certo, fail-closed — comportamento atteso, non un guasto).
+**Superamento della sottosezione:** tutti i controlli 7.2.1-7.2.13 passano, nessuna riga live in nessuna
+tabella (Z13.2 già lo verifica trasversalmente), nessuna riga duplicata sulla coda DB.
+
 ### 7.3 Atlante v4
+
+Fonte: `ATLANTE_V4_COLLEGATO.md` (intero). Il generatore e il motore a domanda accumulano lo stato v4
+per lega dalle stesse righe del v3 (una colonna in più: `raw_json->fixture->status->extra`); Safe e Mike
+consultano `consulta_atlante_v4` col tempo ricavato dal feed. Z4.S4/Z4.M2 (§4) già chiedono la nota/il
+frame «v4»; qui si aggiungono i controlli sulla generazione, sul ripiego dichiarato e sui costi.
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.3.1 | `HAZARD_ATLAS_SYNC=1` acceso (messo dal coordinatore il 25/09 h13:05, §1.2 riga 85) | grep nel `.env` | presente = 1 | presente | assente = i bot NON scaricano il file live, tutto resta sul v3 (comportamento noto, non un guasto) |
+| 7.3.2 | primo riempimento del motore a domanda con v4 | grep sul log dello scanner (thread Safe, dove vive `atlante_a_domanda`) | righe `[atlante-domanda] …` con leghe che passano da v3 a v4 | comparse entro il tetto (10 leghe/ciclo, 40/ora, pausa 5 s) | nessuna riga = il motore non sta ricalcolando (blocco v4 assente per costruzione, ripiego v3 sempre) |
+| 7.3.3 | stato v4 scritto per lega | `select league_id, league_name, n_fixtures, updated_at, stato ? 'v4' as ha_v4, jsonb_path_query_first(stato, '$.v4.affidabile') as affidabile_v4 from public.hazard_atlas_leghe order by updated_at desc limit 20;` (colonne vere: `league_id, league_name, n_fixtures, last_fixture_date, updated_at, stato jsonb, fixtures jsonb`, `migrations/hazard_atlas_2026-09-24.sql:28-36` — risolve il punto 8 di §8 del piano) | righe con `ha_v4=true` per le leghe osservate oggi | `ha_v4=true` compare | tutte `false` dopo ore di gioco = `aggiungi_v4` non chiamato (M3/M4 della falsificazione, referto §5) |
+| 7.3.4 | Safe: nota con versione | Z4.S4 chiede dove finisce la nota; qui il testo esatto | nota su una proposta/trade contiene `atlante v4, <fase>[, recupero atteso ancora N']` oppure `atlante v3: recupero non modellato (<motivo>)` (mai un terzo formato); esempio reale in `ATLANTE_V4_COLLEGATO.md` §3 | uno dei due formati sempre presente | nota senza «atlante v3»/«atlante v4» = versione non dichiarata (difetto di falsificazione M20) |
+| 7.3.5 | Mike: chiavi nuove nel frame live | `select event_id, live->>'hazard_versione', live->>'hazard_fase', live->>'hazard_recupero_atteso_min', live->>'hazard_atlas' from mike_events where updated_at > now()-interval '1 hour';` (chiavi vere: `hazard_versione`, `hazard_fase`, `hazard_recupero_atteso_min` — `dossier.py:309-321`; risolve parzialmente il punto 7 di §8 del piano, lato Mike) | `hazard_versione` = `v4` sulle leghe affidabili, altrove `v3` con la nota di ripiego | coerente | `hazard_versione` sempre NULL = i campi non arrivano nel frame (dossier non aggiornato) |
+| 7.3.6 | `hazard_recupero_atteso_min` è volatile (cambia a ogni minuto del recupero), `hazard_versione`/`hazard_fase` no | due letture della stessa partita a 60 s di distanza in recupero | `hazard_recupero_atteso_min` diverso, `hazard_versione`/`hazard_fase` uguali | coerente | `hazard_versione` cambia da un giro all'altro sulla stessa fase = instabilità del calcolo |
+| 7.3.7 | Omega non consuma hazard (invariato) | `select payload from omega_activity where kind ilike '%hazard%' order by ts desc limit 5;` | nessuna riga (Omega usa solo `h2h_hint`, invariato e provato dal test `test_omega_h2h_invariato_col_v4`) | 0 righe | righe presenti = Omega ha iniziato a leggere hazard: cambio di strategia non autorizzato, **portare all'utente** |
+| 7.3.8 | ripiego v3 dichiarato (lega non affidabile o blocco assente) | osservare una lega appena entrata nel v4 (< 300 partite affidabili) | nota/frame con «atlante v3: recupero non modellato (…)», stesso minuto/valore di ieri | dichiarato | ripiego silenzioso (nota generica senza motivo) = M11 della falsificazione tornata viva |
+
+**Ripristino:** nessuno, sola lettura; per tornare al solo v3 basta spegnere `HAZARD_ATLAS_SYNC` e
+riavviare (i bot non trovano il file live, ripiegano tutti su v3). **Non verificato dal referto (§7,
+punto 1-2), da guardare dal vivo:** se `hazard_atlas_leghe` ha già righe prima di stasera e se il motore
+gira almeno un ciclo reale sul DB.
+
 ### 7.4 Catchup e referto buchi
-### 7.5 Schede B17
+
+Fonte: `BACKFILL_AUTOMATICO_STAGIONI.md` (intero). Non è un test dei bot di trading: è la catena GitHub
+Actions (Daily → mapper → catchup) che tiene `matches`/dettagli aggiornati; Z9 (§4) già chiede il verde
+del workflow e il contatore quota sotto soglia. Qui si aggiungono i controlli sul CONTENUTO del referto
+e sullo stato delle tabelle nuove, utili anche fuori dalla finestra della fase 2 (girano di notte).
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.4.1 | migrazione applicata PRIMA di qualunque catchup | `select routine_name from information_schema.routines where routine_name in ('record_fixture_detail_checks','season_detail_gaps','season_gaps_summary') and routine_schema='public';` → 3 righe | 3 funzioni presenti | 3/3 | mancanti = catchup e orchestratore si fermano con «applica migrations/season_gaps_2026-09-25.sql» (exit 2): atteso finché non applicata |
+| 7.4.2 | indice utile sulle tabelle di dettaglio (senza, `match_odds` ~82M righe letta per intero) | `select * from public.season_detail_gaps(135, 2026, null) limit 5;` (RPC nuova, `season_gaps_2026-09-25.sql`) | risponde senza timeout (57014) | risponde | timeout o errore = manca l'indice (applicare anche `detail_fixture_idx_2026-09-25_SOLO_SE_MANCANO.sql`, che il blocco `DO` della prima migrazione avvisa) |
+| 7.4.3 | REFERTO BUCHI nel formato atteso a fine run | `gh run view <ultimo run seasons_catchup.yml> --log \| grep "REFERTO BUCHI" -A 20` | tabella con colonne Lega/Stag/P/FT/da chiamare ev-fo-sg-ss-qu/att./costo~/aperto da; riga finale «DB SENZA BUCHI» oppure «BUCHI APERTI: N lega-stagioni, ~K chiamate, il più vecchio da G giorni» (formato esatto in `BACKFILL_AUTOMATICO_STAGIONI.md` §1.4, esempio reale incluso) | formato presente | assente/troncato = log incompleto o job fallito prima del referto |
+| 7.4.4 | `BUCO VECCHIO` = fail-loud oltre 3 giorni con budget | cercare nel log `BUCO VECCHIO:` | se presente, exit ≠ 0 e causa dichiarata (errore API ripetuto / API vuota in attesa del 2° tentativo / 10 partite di fila in errore / non tentate nonostante il budget) | causa sempre dichiarata | `BUCO VECCHIO` senza causa = referto incompleto |
+| 7.4.5 | contatore quota e riserva | log `[CATCHUP] quota all'avvio: contatore API N/7500 (fonte /status), riserva action 3000, margine M` | `N ≤ 7500`, `M = 7500 - N - 3000` coerente con la riga | coerente | margine negativo con lavoro proseguito = regola di quota bypassata |
+| 7.4.6 | stato per lega-stagione (`stats_json` v2) | `select league_id, season_year, status, stats_json->>'buchi_aperti' as buchi_aperti, stats_json->>'buco_aperto_dal' as buco_aperto_dal, stats_json->>'ultimo_esito' as ultimo_esito from public.season_backfill_state order by updated_at desc limit 20;` (tabella/colonne: `season_backfill_state.stats_json`, `season_gaps.py:270-300`) | `status='completed'` SOLO se `season_end < oggi`, `current=False`, FT>0 e zero buchi aperti; altrimenti `in_progress` | coerente con la regola | `completed` con `buchi_aperti > 0` = regressione al comportamento vecchio (`league_orchestrator.py:387` pre-fix, sempre `completed`) |
+| 7.4.7 | Retrain fra le action esclusive (R5) | `.github/workflows/seasons_catchup.yml` o log: `WORKFLOW_ESCLUSIVI_DEFAULT` | include `retrain_models.yml` oltre a Daily/Today/Results | presente | assente = concorrenza col retrain trattata come colpa (57014 tornerebbe) |
+| 7.4.8 | dry-run dell'orchestratore su una lega nota (135) DOPO la migrazione | `python -m Betfair.stream.backfill.league_orchestrator --league 135 --season 2026 --dry-run` (processo: **permesso dell'utente**, nessuna chiamata API salvo `/status` gratuita) | tabella per stagione, zero chiamate, avviso se FT senza dati e flag False | exit 0, nessuna scrittura | exit 2 «applica migrations/season_gaps…» = la 7.4.1 non è passata |
+
+**Ripristino:** nessuno per 7.4.1-7.4.7 (sola lettura); 7.4.8 è un dry-run dichiarato senza scritture, non
+serve ripristino. **Non è un test dei bot**: non blocca né sblocca la fase 2, ma va riportato all'utente
+se `BUCHI APERTI` cresce durante il giorno del test.
+
+### 7.5 Schede B17 (prezzo visto vs segnale, abbinamento reale)
+
+Fonte: `SCHEDE_ABBINAMENTO_PREZZO.md` (intero). Z6 (§4) chiede già la striscia a video («ABBINATO
+TOTALMENTE/PARZIALMENTE…») e il confronto con `average_price_matched`/`size_matched`. Qui si aggiungono i
+controlli sul `prezzo_segnale` salvato in coda (la parte nuova del 25/09, non ancora in Z6) e sul
+`useSeguiOrdini` (dove la riga viene seguita dopo il clic).
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.5.1 | Safe opportunità: `prezzo_segnale` salvato sulla riga | clic su una proposta Safe (opportunità) | `select id, meta->>'prezzo_visto', meta->>'prezzo_segnale' from safe_strategy_trades where id = <trade_id>;` → `prezzo_segnale` = `price_at_decision` della proposta (o `price` se assente) | valorizzato | NULL = `bot_service.py:2778` non ha scritto la chiave |
+| 7.5.2 | Safe uscita: idem sulla chiusura | clic su «chiudi» di una proposta Safe con `price_at_decision` noto | `select payload->>'prezzo_segnale' from safe_strategy_requests where id = <request_id>;` | valorizzato | NULL = non salvato nel contesto della richiesta |
+| 7.5.3 | Omega uscita: `p_contesto` con `back_price` | clic su «chiudi» Omega (richiede `migrations/omega_request_approve_contesto_2026-09-25.sql`: `omega_request_approve(p_id, p_price DEFAULT NULL, p_contesto DEFAULT NULL)`) | `select id, payload->>'price_visto', payload->>'price_visto_at', payload->>'prezzo_visto_ctx' from omega_manual_requests where id = <request_id>;` → tutte e 3 valorizzate | valorizzate | tutte NULL con la migrazione applicata = RPC vecchia ancora viva (`pg_get_functiondef`); **senza** la migrazione, ripiego dichiarato su `p_id` (atteso, non un difetto) |
+| 7.5.4 | Mike proposta d'uscita: `prezzo_segnale`/`clic_ms` nel contesto | clic su «approva uscita» Mike (`migrations/uscite_automatiche_mike_2026-09-25.sql`, kind `approva_uscita`, richiede `chiave` non vuota altrimenti eccezione) | `select id, status, payload->>'chiave', payload->'contesto'->>'prezzo_segnale', payload->'contesto'->>'clic_ms' from mike_requests where kind='approva_uscita' order by id desc limit 5;` | `prezzo_segnale` = `ordini[0].prezzo` al clic, `clic_ms` valorizzato | valorizzati | NULL = contesto non passato dalla scheda (`PropostaUscitaMike.tsx`) |
+| 7.5.5 | testi esatti della striscia a video (`esitoAbbinamento.test.ts`, inchiodati) | osservare a video dopo un ordine paper | uno fra: `ABBINATO TOTALMENTE a prezzo medio X (Δ vs visto … vs segnale …), size Y`; `ABBINATO PARZIALMENTE: …`; `NON abbinato (FOK): il book non copriva l'intera size, ordine ucciso senza abbinamento`; `rifiutato: …`; cartellino «paper · abbinamento simulato» | testo combacia con uno degli esempi | combacia | testo diverso = `esitoAbbinamento.ts` cambiato senza aggiornare il test (regressione) |
+| 7.5.6 | fonte ed età della striscia | a video, accanto al messaggio | una fra: «canale del bot al ms (seq N) · T s fa»; «database (ripiego: lettura del blocco del bot) · T s fa · esito Betfair dal canale ordini del runner (seq N, matched)»; «coda del bot (riletta ogni 2 s) · T s fa» | dichiarata | assente = `useSeguiOrdini` non ha trovato la riga entro 90 s dal clic |
+| 7.5.7 | «Chiudi» di riga (tutti i bot): messaggio dopo la richiesta | clic su «Chiudi» di una riga qualunque | Omega/Safe: gamba `closes_trade_id` seguita fino al messaggio; Mike/tennis: righe NUOVE del bot sulla partita (per Mike, stesso ruolo); scalper: NIENTE messaggio (ferma una sessione, non è un ordine — atteso, non un difetto) | coerente col bot | messaggio d'abbinamento sul «Chiudi» dello scalper = comportamento diverso da quanto dichiarato, verificare |
+| 7.5.8 | punto NON eseguito, resta aperto (portarlo all'utente se emerge in fase 2) | — | B17 «esecuzione a mercato vs prezzo visto»: Omega/Safe eseguono ancora a mercato, il prezzo visto si SALVA soltanto, non vincola l'esecuzione | atteso (nessun cambio di esecuzione) | un ordine che rifiuta per «fuori banda» quando B17 non esegue ancora a banda = comportamento non previsto oggi, **fermarsi e chiedere** |
+
+**Ripristino:** nessuno, sola lettura (le richieste/trade restano quelle della fase 2, ripristinate con
+§5.2). **Non fatto/non verificato dal referto (§6), da sapere prima di dare torto al test:** Mike prima
+del clic non è al ms (proposta con `mercato`/`selezione` simbolici, non `market_id`/`selection_id`); le
+gambe di Mike e tennis sono per CORRELAZIONE (stesso ruolo, stesso istante), non per chiave; il prezzo
+visto del «Chiudi» non arriva al servizio (solo a video, per il Δ).
+
 ### 7.6 Scalper auto-mode
+
+Fonte: `AUDIT_2026-09-25/SCALPER_AUTO_MODE.md` (intero). Z4.C1-C3 e Z11 (§4) già coprono l'armamento dal
+feed, lo specchio `source='scalper'` e il canale 47338. Qui si aggiungono i controlli sull'interruttore
+globale, sui tetti e sulla decisione aperta del live automatico.
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.6.1 | ordine di applicazione delle migrazioni (§1.1 del piano già lo elenca, qui la CONSEGUENZA se invertito) | `select proname from pg_proc where proname in ('scalper_auto_activate','scalper_auto_stop','scalper_auto_update','scalper_uscite_automatiche');` | 4 funzioni presenti | 4/4 | mancanti = `uscite_automatiche_scalper_2026-09-25.sql` non applicata prima di `scalper_auto_mode_2026-09-25.sql` (l'ordine è nel referto §4) |
+| 7.6.2 | paper e live mai insieme sull'interruttore globale | tentare `scalper_auto_activate('live')` con lo scalper già `running/paper` (dalla UI, doppio consenso) | rifiuto della RPC, nessuna scrittura | rifiutato | scrittura avvenuta = guardia rotta, **STOP** |
+| 7.6.3 | tetto sessioni auto (default 2, env `SCALPER_AUTO_MAX_PARTITE`, max 4) | `select stats->'auto'->>'tetto' from scalper_service_control;` durante l'accensione | = 2 (o il valore dell'env, comunque ≤ 4) | coerente | tetto > 4 = clamp non applicato (`auto_mode.py` r.68-69,128) |
+| 7.6.4 | vita della sessione rispettata (600 s maker, 4200 s con intervallo, 7800 s sniper/theta): non si arma una partita oltre KO+vita | osservare una partita in gioco da più tempo della vita del maker | nessuna sessione maker nuova armata su quella partita; sniper/theta invece sì se entro la loro vita | coerente | sessione maker armata oltre KO+600 s = filtro `vita_sessione_s` non applicato |
+| 7.6.5 | stop pulito delle sole sessioni `origine='auto'` quando la partita esce dal feed da ≥ 60 s | osservare una sessione auto su una partita appena finita | `select event_id, status, origine from scalper_control where origine='auto' and status in ('stopping');` entro ~60-75 s dall'uscita dal feed; le sessioni `origine='manuale'` sulla stessa partita NON toccate | coerente | sessione manuale fermata insieme all'auto = filtro `origine` non applicato (money-critical se in live) |
+| 7.6.6 | riarmo dopo spegni/riaccendi (gesto dell'utente) | fermare l'interruttore globale e riaccenderlo | le righe `stopped` DA PRIMA dell'accensione corrente si riarmano; quelle `stopped` a mano DOPO l'accensione corrente NO | coerente | riarmo di una sessione chiusa a mano nello stesso giro = regola di non-riarmo rotta |
+| 7.6.7 | avvio nuovo dell'app: interruttore torna `stopped/paper` (già in Z0.3, qui il dettaglio della guardia) | riavvio dell'app | guardia «scalper-auto» in `avvio_app.ferma_al_nuovo_avvio`: nessun armamento finché il controllo d'avvio non riesce | coerente | armamento prima del controllo d'avvio = guardia bucata |
+| 7.6.8 | `[DECISIONE UTENTE]` live automatico: in soldi veri le partite del feed nascerebbero con `dry_run=false` (ordini reali), diverso dal tennis che nasce sempre in dry-run | non provare in live in questa fase 2 (§0 regola 3); solo verificare che l'interruttore resti su `paper` | `select mode from scalper_service_control;` = `paper` per tutta la fase 2 | `paper` | `live` = violazione della regola 3, **STOP** immediato |
+
+**Ripristino:** `scalper_auto_stop()` dalla UI (ferma l'interruttore E tutte le sessioni attive in un solo
+gesto); verificare `select status, mode from scalper_service_control;` → `stopped, paper` a fine fase 2
+(già incluso nella fotografia di §1.5 se la migrazione è applicata prima). **Non rieseguito dal referto
+(§7):** nessuna RPC provata contro il DB vero; l'upsert `ignore_duplicates` su `live_follow` non osservato
+dal vivo.
+
 ### 7.7 Tennis auto-mode
+
+Fonte: `AUDIT_2026-09-25/TENNIS_AUTO_MODE.md` (intero). Z4.T1-T4 e Z12 (§4) già coprono l'armamento dal
+feed e la riga `mode='paper'`/`dry_run=false`. Qui si aggiungono i controlli sul messaggio di blocco, sul
+tetto per bot e sulla classificazione delle uscite (quali sono gatabili e quali no).
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.7.1 | senza la migrazione `tennis_uscite_manuali_2026-09-25.sql` l'auto-mode resta SPENTO e lo dice | verificare `motivo_blocco` se la migrazione non è ancora applicata | «auto-mode spento: migrazione tennis_uscite_manuali_2026-09-25.sql non applicata» | dichiarato | bot armato su partite mai seguite a mano SENZA la migrazione = comportamento non atteso |
+| 7.7.2 | tetto per bot (default 5, env `TENNIS_AUTO_MAX_PARTITE`, clamp 40; 0 = auto-mode spento solo per quel bot) | `select bot_key, params->>'auto_max_partite' from tennis_bot_service_control;` e nota a video «… tetto N …» | coerente col default/env | coerente | tetto > 40 o bot con `auto_max_partite=0` armato dal feed = clamp o spegnimento non rispettati |
+| 7.7.3 | messaggio di blocco corretto per ogni causa (non solo «nessun evento seguito») | osservare la nota quando il bot non è armato | uno fra: «guardia d'avvio: …», «feed tennis vuoto: nessuna partita in-play ora», «feed tennis non disponibile (scanner fermo o lettura KO): …», «auto-mode spento: migrazione … non applicata», «auto-mode spento (tetto 0)», «nessuna partita armabile fra le N del feed (chiuse dall'utente, concluse o in errore)» | testo coerente con la causa reale | testo generico «acceso ma non apre» senza causa = il reperto originale (§0 del referto) non è chiuso |
+| 7.7.4 | classificazione delle uscite: SOLO le discrezionali sono gatabili, protezioni sempre attive | con un bot a uscite manuali, attendere sia una condizione discrezionale sia una di protezione | target/scaglione/green (discrezionali) NON eseguiti; stop/time-stop/uscita strutturale/escalation/entry-timeout (protezioni) eseguiti comunque | coerente con la tabella per bot (swing/pro/FLB/scalper, `TENNIS_AUTO_MODE.md` §3) | target eseguito a uscite manuali = gate rotto (già in Z13.5, qui con la tabella esatta per bot) |
+| 7.7.5 | lo scalper tennis NON è gatabile (decisione presa, non un buco): la UI deve dirlo | leggere il testo dell'interruttore uscite dello scalper tennis | «uscite: sempre automatiche» (non c'è scelta) | dichiarato | interruttore manuali disponibile per lo scalper tennis = la strategia è stata alterata (vietato) |
+| 7.7.6 | avviso «posizione aperta da X min» a uscite manuali | bot a uscite manuali con una posizione aperta | avviso arancione permanente nella scheda partita; dato `stats.posizione_aperta_dal` sulla riga per partita | presente e coerente col tempo reale | assente dopo qualche minuto = `_aggiorna_uscite`/aggregazione del ponte non funziona |
+| 7.7.7 | `[DECISIONE UTENTE]` live + auto-mode: le righe nascono SEMPRE `dry_run=true` anche in live (doppio gesto, come oggi) | non provare in live in questa fase 2; solo verificare la nota | in LIVE la nota aggiunge «LIVE: le partite nascono in dry-run, nessun ordine reale finché non lo togli per partita» | dichiarato | riga LIVE nata con `dry_run=false` senza gesto dell'utente per partita = violazione money-critical |
+| 7.7.8 | partita automatica uscita dal feed: righe a `stopping`, follow chiuso solo se nessun bot lo vuole più | osservare una partita finita seguita solo in automatico | `tennis_bot_control` di quel bot va a `stopping`; `tennis_live_follow.status` passa `CLOSED` solo quando tutte le righe di quella partita sono chiuse | coerente | follow chiuso con righe ancora attive = perdita di sorveglianza su una posizione viva |
+
+**Ripristino:** i bot li ferma l'utente dalla UI; `tennis_bot_service_set_uscite` riporta le uscite ad
+automatiche se cambiate durante il test (default). Verifica finale: nessuna riga `tennis_live_follow`
+`origine='auto'` rimasta `STREAMING` dopo il FERMA TUTTI. **Non verificato dal referto (§7):** la sintassi
+PostgREST `alias:payload->chiave` e il valore `CLOSED` di `tennis_live_now.status` non sono stati
+osservati dal vivo, solo dedotti dal codice.
+
+### 7.8 Safe: veti aggiuntivi dai video (Q1/Q4/Q5, decisioni D5)
+
+Fonte: `SAFE_Q1_Q4_Q5.md` e `SAFE_DECISIONI_D5.md` (interi). Z4.S2/Z4.S3 (§4) già chiedono la banda
+20-34 e `backMin=1,02`. Qui si aggiungono i veti e le note che Z4.S2 non copre: campionati vietati con
+finali/femminile dal nome squadra, scontri diretti veri, sfavorito estremo tennis. **Nessuna migrazione
+nuova per queste decisioni** (D5 è solo codice: `engine.py`, `veto_campionati.py`, `selezione.py`, `db.py`,
+`service.py`; l'unica migrazione dell'area resta quella opzionale di Q1, già in §1.1 riga 61).
+
+| # | controllo | azione/sonda | riga/log attesa | superamento | se non torna |
+|---|---|---|---|---|---|
+| 7.8.1 | veto campionati vietati (femminile, amichevoli, Bundesliga/2. Bundesliga, Ered/Eerste Divisie) — Bolivia TOLTA il 25/09 | osservare candidati su questi campionati durante la fase 2 (nessun ingresso atteso) | nessuna riga in `safe_strategy_trades` con `event_name`/competizione su uno di questi; se rilevabile, motivo di scarto «veto campionato: <nome> (corso)» | nessun ingresso | ingresso su uno di questi = veto non attivo (regressione Q4) |
+| 7.8.2 | veto SOLO sulle finali (non più tutte le coppe) | osservare una partita di coppa NON finale durante la fase 2 | ingresso AMMESSO (nessun veto); se la partita è una finale (round «Final» da API-Football o nome evento con «Final»), motivo «veto finale: round «Final» (API-Football)» o «… (Betfair)» | coerente con la fonte | veto su una partita di coppa non finale = regressione al comportamento pre-D5 |
+| 7.8.3 | femminile riconosciuto anche dai nomi squadra (non solo dalla competizione) | osservare una partita con nome squadra tipo «… Women» / «(w)» in coda | esclusa; motivo «veto campionato: calcio femminile (nome squadra) (corso)» | esclusa e motivata | inclusa = riconoscimento solo per competizione, regressione |
+| 7.8.4 | ESATTO: scontri diretti veri dal DB (non più solo il selection_hint dello scanner) | osservare la nota di una proposta ESATTO con h2h disponibile | nota con la forma «h2h: N partite, M con ≥4 gol · difesa avversaria X gol subiti · forze att A-B · def C-D»; senza h2h nel DB: «h2h: nessuno scontro diretto nel DB (non blocca)»; fixture non abbinata: «scontri diretti: dato assente» | una delle tre forme presente | nota assente o formato diverso = fonte non collegata (regressione Q7/D5) |
+| 7.8.5 | soglia h2h 0,58 (4+ gol a fine 90', minimo 3 scontri) | proposta ESATTO con ≥3 h2h e quota di 4+ gol > 0,58 | scartata (check `h2hManyGoalsRateMax`) | scartata | non scartata = soglia non applicata o letta male |
+| 7.8.6 | tennis: sfavorito estremo < 1,20 pre-partita (quota CONGELATA, non quella corrente) | proposta tennis dove il favorito pre-KO ha quota back congelata < 1,20 e si punterebbe il leader sfavorito | esclusa; nota «favorito pre-match X → sfavorito estremo: escluso» | esclusa e motivata | inclusa, o motivo diverso = `favSuperMax`/`pre_ko` non collegati |
+| 7.8.7 | banca 20-34 nei check (Z4.S2 lo verifica sugli ingressi; qui il check visibile nella checklist/nota) | osservare la nota o la checklist di una proposta BASE | «Quota banca sfavorita 20–34», ok = lay in [20,34] estremi inclusi; lay assente = n/d (non «disponibile» generico) | testo coerente | testo vecchio «Quota banca sfavorita disponibile» = check non aggiornato (regressione Q1) |
+| 7.8.8 | `params.tennis.backMin` letto dal DB, non dal default codice (Q5, già in §1.1 riga 60, qui la CONSEGUENZA se la migrazione manca) | `select params->'tennis'->>'backMin' from safe_strategy_control;` | `1.02`; se `1.01` la migrazione `safe_tennis_backmin_102_2026-09-25.sql` non è applicata | `1.02` | `1.01` con la migrazione dichiarata applicata = migrazione non eseguita davvero |
+
+**Ripristino:** nessuno, sola lettura (le decisioni sono codice, non stato). **Dubbi aperti dai referti,
+da portare all'utente se emergono in fase 2 (non correggere durante il test, regola 4 di §0):** soglia h2h
+0,58 (il video suggerirebbe forse 20-30%, `SAFE_Q1_Q4_Q5.md` §11.1); soglia 4,0/1,20 per lo sfavorito
+estremo è una proposta del delegato, non un numero detto nel video (`SAFE_DECISIONI_D5.md` §7.5); finali
+di play-off/playout contate come finali, finali per il 3° posto no (da confermare).
+
+---
+
+### Osservazioni di admin-26 su §1-§8
+
+1. **`LIVE_MARKET_TYPES` assente dalla tabella §1.2** (righe 72-87): l'auto-follow (`AUTO_FOLLOW_TUTTI_I_BOT.md`
+   §2) segnala che SENZA questa variabile 2-3 partite seguite a mano riempiono i 180 posti e ogni comando
+   dei bot su un'altra partita riceve `tetto_mercati_pieno`. È una `[DECISIONE UTENTE]` non ancora
+   registrata nel piano: andrebbe aggiunta a §1.2 come riga propria.
+2. **§8 punto 7 del piano** («valore esatto di `hazard_versione` … da verificare»): risolto lato Mike da
+   `ATLANTE_V4_COLLEGATO.md` §3 (`dossier.py:309-321`): le chiavi sono `hazard_versione`, `hazard_fase`,
+   `hazard_recupero_atteso_min` su `mike_events.live`. Resta aperto solo il lato Safe (dove finisce la nota
+   sulla riga/attività: non risolto neanche da questa sessione, vedi 7.3.4).
+3. **§8 punto 8 del piano** («colonne di `hazard_atlas_leghe` … da verificare»): risolto —
+   `league_id, league_name, n_fixtures, last_fixture_date, updated_at, stato jsonb, fixtures jsonb`
+   (`migrations/hazard_atlas_2026-09-24.sql:28-36`); lo stato v4 vive dentro `stato->'v4'`.
+4. **§1.1 riga 62** cita `get_direction_eta_2026-09-25.sql` e `market_delays_ht_2026-09-25.sql` come «da
+   verificare in cronostoria»: nessuno degli 8 referti letti da questa sessione li tocca; restano aperti,
+   non risolvibili con le fonti assegnate.
+5. Nessuna incoerenza trovata fra `STRADA_UNICA_BANCO_E_PAPER.md` §5 e la tabella `.env` di §1.2 sull'ordine
+   di accensione (motore → Safe → Omega): coincide.
+6. **D5 (Safe) non richiede nessuna migrazione**: `SAFE_DECISIONI_D5.md` §9 elenca solo file `.py`/`.ts`
+   modificati. Il piano non lo dice esplicitamente in §1.1 (la riga 52 parla solo di Q1); utile saperlo per
+   non cercare una migrazione che non esiste.
 
 ---
 
