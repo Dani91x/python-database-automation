@@ -39,8 +39,19 @@ GLI SCENARI (ognuno con i suoi controlli; «N/A» detto col motivo):
   R8 sotto il minimo  - place-and-trim dal canale (Safe; Omega N/A: stake 1 EUR
                         di lay sopra il minimo 0,50);
   R9 sequenza         - nessuna tempesta di ``da_seq`` (reperto del 25/09);
-  R10 non seguito     - mercato che il runner non segue: ordine NON partito,
-                        riga error, nessun ripiego (diverso da oggi: DICHIARATO).
+  R10 non seguito     - 25/09 AUTO-FOLLOW: il runner NON segue la partita; il
+                        comando e' accettato ``in_aggancio``, il mercato entra
+                        nella sottoscrizione (``AutoFollow`` di produzione) e
+                        l'ordine parte al primo book: UN ordine, nessun REST;
+  R10b tetto pieno    - tetto dei mercati pieno: l'evento automatico meno
+                        prioritario e SENZA ordini viene espulso, il comando e'
+                        accettato ed eseguito;
+  R10c mai espulsi    - tetto pieno di mercati con ORDINI (o seguiti a mano):
+                        niente espulso, rifiuto dichiarato ``tetto_mercati_pieno``,
+                        nessun ordine;
+  R10d mai in silenzio- mercato che non arriva mai (inesistente): dopo
+                        ``aggancio_max_ms`` evento terminale ``rifiutato``
+                        col motivo ``in_aggancio``, riga error, nessun ordine.
 """
 from __future__ import annotations
 
@@ -458,6 +469,8 @@ def esegui_scenari(bot: str, event_id: str, data_dir: str) -> List[_Esito]:
                          ("R5 duplicato", _r5), ("R6 comando vecchio", _r6),
                          ("R7 kill-switch", _r7), ("R8 sotto il minimo", _r8),
                          ("R9 sequenza", _r9), ("R10 mercato non seguito", _r10),
+                         ("R10b tetto pieno", _r10b), ("R10c mai espulsi", _r10c),
+                         ("R10d aggancio mai in silenzio", _r10d),
                          ("R2b mercato sospeso", _r2b)):
             e = _Esito(nome)
             t = time.monotonic()
@@ -734,30 +747,253 @@ def _r9(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> 
     stato["client"] = c.stato()
 
 
-def _r10(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
-    """Il mercato NON e' seguito dal runner (nessun «Segui live»): il motore non
-    lo trova nel framework (``live_order_worker._resolve_market``) e l'ordine
-    NON parte. Fail-closed, ma diverso da oggi: sulla coda il gate chiuso
-    manda Safe/Omega sul REST (live) o sul fill paper legacy (paper)."""
-    sel, prezzo, _d = b.quota("lay")
-    tid = A.riserva(side="lay", price=prezzo, size=2.0)
-    ref = "%s%d" % (pref, tid)
+def _monta_auto(b: BancoRapido, *, tetto: Optional[int] = None,
+                mercati_iniziali: Any = ()) -> Tuple[Any, Any]:
+    """L'``AutoFollow`` di PRODUZIONE sul motore del banco (sottoscrittore del
+    banco al posto della connessione Betfair)."""
+    from .. import auto_follow as AF
+    from .porta_banco import SottoscrittoreBanco
+
+    sott = SottoscrittoreBanco()
+    auto = AF.AutoFollow(piano=AF.PianoFollow(tetto if tetto is not None
+                                              else AF.tetto_mercati()),
+                         sottoscrittore=sott, min_intervallo_s=0.0)
+    b.pb.monta_auto_follow(auto, mercati_iniziali)
+    return auto, sott
+
+
+def _altri_mercati(b: BancoRapido, n: int) -> List[Tuple[str, int]]:
+    """``n`` mercati VERI della registrazione, APERTI, diversi dal MATCH_ODDS e
+    senza ordini, con una selezione vera: (market_id, selection_id)."""
+    out: List[Tuple[str, int]] = []
+    for mid, m in sorted(b.strat.mercati.items()):
+        if mid == b.market_id:
+            continue
+        mb = getattr(m, "market_book", None)
+        if mb is None or mb.status != "OPEN" or not getattr(mb, "runners", None):
+            continue
+        try:
+            if len(list(iter(m.blotter))) > 0:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        out.append((str(mid), int(mb.runners[0].selection_id)))
+        if len(out) >= n:
+            break
+    return out
+
+
+def _invia_su(b: BancoRapido, A: Any, tid: int, market_id: str, sel: int,
+              prezzo: float) -> Any:
     vero = b.market_id
-    rest0, ord0 = _conta_rest(b), len(b.ordini_del_motore())
-    b.market_id = "1.999999999"                 # un mercato che il runner non segue
+    b.market_id = market_id
     try:
-        A.invia(tid, selection_id=sel, side="lay", price=prezzo, size=2.0)
+        return A.invia(tid, selection_id=sel, side="lay", price=prezzo, size=2.0)
     finally:
         b.market_id = vero
-    b.pompa(0.5)
-    ev = b.client.esiti(ref) or {}
-    e.controlla("mercato non seguito dal runner: esito 'rifiutato', nessun ordine",
-                ev.get("fase") == "rifiutato" and len(b.ordini_del_motore()) == ord0,
-                ev.get("fase"))
-    e.controlla("nessun ripiego REST sull'apertura", _conta_rest(b) == rest0, b.rest[rest0:])
-    riga = A.risolvi(tid)
-    e.controlla("riga 'error' col motivo del canale", riga.get("status") == "error",
-                {k: riga.get(k) for k in ("status",)})
+
+
+def _r10(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """25/09 AUTO-FOLLOW. Il runner NON segue la partita (nessun "Segui live",
+    sottoscrizione vuota): il comando del bot sul MATCH_ODDS vero e' accettato
+    ``in_aggancio``, il mercato entra nel piano a priorita' comando, la
+    sottoscrizione a caldo parte e l'ordine va a flumine al primo book nuovo.
+    Prima (24/09): rifiutato "market ... non sottoscritto nel runner"."""
+    from .. import auto_follow as AF
+
+    auto, sott = _monta_auto(b)
+    try:
+        sel, prezzo, _d = b.quota("lay")
+        tid = A.riserva(side="lay", price=prezzo, size=2.0)
+        ref = "%s%d" % (pref, tid)
+        rest0, ord0 = _conta_rest(b), len(b.ordini_del_motore())
+        e.controlla("prima del comando il runner NON segue il mercato",
+                    not auto.servibile(b.market_id), sorted(auto.piano.mercati()))
+        out = A.invia(tid, selection_id=sel, side="lay", price=prezzo, size=2.0)
+        ack = _ack_di(b, ref)
+        e.controlla("esito dell'invio 'pending' (il bot attende l'esito)",
+                    getattr(out, "status", None) == "pending", out)
+        e.controlla("ack ACCETTATO con motivo 'in_aggancio' (dichiarato)",
+                    ack.get("accettato") is True
+                    and str(ack.get("motivo") or "").startswith("in_aggancio"), ack)
+        voce = auto.piano.voce(auto.piano.chiave_di(b.market_id) or "")
+        e.controlla("mercato nel piano a priorita' COMANDO",
+                    voce is not None and voce.priorita == AF.PRI_COMANDO,
+                    voce and (voce.chiave, voce.priorita))
+        fase = _aspetta_terminale(b, ref)
+        e.controlla("sottoscrizione a caldo inviata col mercato del comando",
+                    bool(sott.chiamate) and b.market_id in sott.chiamate[-1],
+                    sott.chiamate[-1:] if sott.chiamate else None)
+        e.controlla("evento terminale arrivato al client", fase is not None, fase)
+        e.controlla("UN solo ordine su flumine per il comando",
+                    len(b.ordini_del_motore()) - ord0 == 1,
+                    len(b.ordini_del_motore()) - ord0)
+        e.controlla("nessuna chiamata REST", _conta_rest(b) == rest0, b.rest[rest0:])
+        tutte = " ".join(str(x.get("motivo") or x.get("error") or "")
+                         for x in (b.pb.esiti(ref) or []))
+        e.controlla("mai 'non sottoscritto' negli eventi", "non sottoscritto" not in tutte,
+                    tutte[:200])
+        riga = A.risolvi(tid)
+        ev = b.client.esiti(ref) or {}
+        if fase == "abbinato":
+            e.controlla("riga 'open' con l'abbinato del runner",
+                        riga.get("status") == "open", riga.get("status"))
+        else:
+            e.controlla("FOK non abbinato: riga 'error' (esito vero di Betfair, non "
+                        "un rifiuto del runner)",
+                        riga.get("status") == "error" and fase != "rifiutato",
+                        (riga.get("status"), fase))
+        e.controlla("la voce prende l'event_id vero dal primo book",
+                    auto.piano.chiave_di(b.market_id) == str(b.event_id),
+                    auto.piano.chiave_di(b.market_id))
+        stato["r10_fase"] = fase
+        stato["r10_size_matched"] = ev.get("size_matched")
+        stato["r10_auto"] = auto.stato()
+    finally:
+        b.pb.smonta_auto_follow()
+
+
+def _r10b(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """Tetto pieno: una partita seguita da sola per il feed (priorita'
+    candidata, SENZA ordini) occupa il tetto; il comando di un bot su un
+    mercato nuovo la espelle ed e' eseguito."""
+    from .. import auto_follow as AF
+
+    altri = _altri_mercati(b, 2)
+    if len(altri) < 2:
+        e.na = "servono 2 mercati aperti senza ordini oltre al MATCH_ODDS"
+        return
+    (m_cand, _s1), (m_cmd, sel_cmd) = altri
+    auto, sott = _monta_auto(b, tetto=1)
+    try:
+        ok = auto.piano.richiedi("feed-candidata", {m_cand}, priorita=AF.PRI_CANDIDATA,
+                                 protetti=set(), puo_espellere=False, ora=time.monotonic())
+        auto.giro()
+        e.controlla("tetto pieno: 1 mercato candidato seguito su tetto 1",
+                    ok.ok and auto.piano.mercati() == {m_cand}, sorted(auto.piano.mercati()))
+        tid = A.riserva(side="lay", price=1.01, size=2.0)
+        ref = "%s%d" % (pref, tid)
+        ord0 = len(b.ordini_del_motore())
+        _invia_su(b, A, tid, m_cmd, sel_cmd, 1.01)
+        ack = _ack_di(b, ref)
+        e.controlla("ack accettato in_aggancio", ack.get("accettato") is True, ack)
+        e.controlla("la candidata SENZA ordini e' espulsa, entra il mercato del comando",
+                    auto.piano.voce("feed-candidata") is None
+                    and auto.piano.mercati() == {m_cmd}
+                    and auto.conti["espulsi"] == 1, sorted(auto.piano.mercati()))
+        fase = _aspetta_terminale(b, ref)
+        # (lo specchio del banco puo' adottare ADESSO un ordine di uno scenario
+        # precedente, es. l'ultimo passo del place-and-trim di R8: si contano
+        # solo quelli sul mercato del comando)
+        sul_cmd = [o for o in b.ordini_del_motore()[ord0:]
+                   if str(getattr(o, "market_id", "")) == m_cmd]
+        e.controlla("comando eseguito dopo l'espulsione: ordine sul mercato del "
+                    "comando ed evento terminale",
+                    len(sul_cmd) >= 1 and fase is not None, (len(sul_cmd), fase))
+        e.controlla("mai piu' mercati del tetto nella sottoscrizione",
+                    all(len(c) <= 1 for c in sott.chiamate), sott.chiamate)
+        A.risolvi(tid)
+    finally:
+        b.pb.smonta_auto_follow()
+
+
+def _r10c(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """Tetto pieno di mercati NON espellibili: il MATCH_ODDS con gli ordini
+    degli scenari precedenti (posizioni/ordini nel blotter), poi un follow
+    MANUALE. Niente viene espulso: rifiuto dichiarato, nessun ordine."""
+    from .. import auto_follow as AF
+
+    altri = _altri_mercati(b, 2)
+    if len(altri) < 2:
+        e.na = "servono 2 mercati aperti senza ordini oltre al MATCH_ODDS"
+        return
+    (m_man, _s0), (m_cmd, sel_cmd) = altri
+    try:
+        n_ord = len(list(iter(b.market.blotter)))
+    except Exception:  # noqa: BLE001
+        n_ord = 0
+    if n_ord == 0:
+        e.na = "il MATCH_ODDS non ha ordini dagli scenari precedenti"
+        return
+    for caso in ("posizioni", "manuale"):
+        auto, _sott = _monta_auto(b, tetto=1)
+        try:
+            if caso == "posizioni":
+                auto.piano.richiedi("evento-con-ordini", {b.market_id},
+                                    priorita=AF.PRI_CANDIDATA, protetti=set(),
+                                    puo_espellere=False, ora=time.monotonic())
+            else:
+                auto.imposta_manuali({"evento-manuale": {m_man}})
+            prima = set(auto.piano.mercati())
+            tid = A.riserva(side="lay", price=1.01, size=2.0)
+            ref = "%s%d" % (pref, tid)
+            ord0, rest0 = len(b.ordini_del_motore()), _conta_rest(b)
+            out = _invia_su(b, A, tid, m_cmd, sel_cmd, 1.01)
+            b.pompa(0.5)
+            ack = _ack_di(b, ref)
+            e.controlla("[%s] rifiuto dichiarato 'tetto_mercati_pieno'" % caso,
+                        ack.get("accettato") is False
+                        and str(ack.get("motivo") or "").startswith("tetto_mercati_pieno"),
+                        ack)
+            e.controlla("[%s] niente espulso: il piano e' quello di prima" % caso,
+                        auto.piano.mercati() == prima and auto.conti["espulsi"] == 0,
+                        sorted(auto.piano.mercati()))
+            e.controlla("[%s] nessun ordine, nessun REST" % caso,
+                        len(b.ordini_del_motore()) == ord0 and _conta_rest(b) == rest0,
+                        (len(b.ordini_del_motore()) - ord0, b.rest[rest0:]))
+            e.controlla("[%s] esito certo negativo per il bot (come R6)" % caso,
+                        getattr(out, "status", None) == "error"
+                        and "tetto_mercati_pieno" in str(getattr(out, "fill_note", "")),
+                        out)
+        finally:
+            b.pb.smonta_auto_follow()
+
+
+def _r10d(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
+    """Il mercato chiesto non arriva mai (inesistente): il comando accettato
+    ``in_aggancio`` NON scade in silenzio. Dopo ``aggancio_max_ms`` evento
+    terminale 'rifiutato' col motivo ``in_aggancio``, riga error, nessun
+    ordine, nessun REST."""
+    auto, _sott = _monta_auto(b)
+    prima_max = b.pb.motore.aggancio_max_ms
+    b.pb.motore.aggancio_max_ms = 300
+    try:
+        sel, prezzo, _d = b.quota("lay")
+        tid = A.riserva(side="lay", price=prezzo, size=2.0)
+        ref = "%s%d" % (pref, tid)
+        ord0, rest0 = len(b.ordini_del_motore()), _conta_rest(b)
+        _invia_su(b, A, tid, "1.999999999", sel, prezzo)
+        ack = _ack_di(b, ref)
+        e.controlla("ack accettato in_aggancio", ack.get("accettato") is True
+                    and str(ack.get("motivo") or "").startswith("in_aggancio"), ack)
+        fine = time.monotonic() + 5.0
+        ev: Dict[str, Any] = {}
+        while time.monotonic() < fine:
+            if b.un_book() is None:
+                b.pb.aggiorna()
+            ev = b.client.esiti(ref) or {}
+            if ev.get("fase") == "rifiutato":
+                break
+            time.sleep(0.005)
+        mot = b.pb.motore
+        esiti_diario = [r for r in mot.diario.leggi(mot._giorni_diario())
+                        if r.get("tipo") == "esito" and r.get("ref") == ref]
+        motivo = str((esiti_diario[-1].get("errore") if esiti_diario else "") or "")
+        e.controlla("evento terminale 'rifiutato' (mai in silenzio)",
+                    ev.get("fase") == "rifiutato", ev.get("fase"))
+        e.controlla("esito nel diario del runner col motivo 'in_aggancio'",
+                    motivo.startswith("in_aggancio"), motivo[:160])
+        e.controlla("nessun ordine, nessun REST",
+                    len(b.ordini_del_motore()) == ord0 and _conta_rest(b) == rest0,
+                    (len(b.ordini_del_motore()) - ord0, b.rest[rest0:]))
+        e.controlla("nessun comando rimasto parcheggiato", not b.pb.motore._in_aggancio,
+                    list(b.pb.motore._in_aggancio))
+        riga = A.risolvi(tid)
+        e.controlla("riga 'error'", riga.get("status") == "error", riga.get("status"))
+        stato["r10d_motivo"] = motivo[:200]
+    finally:
+        b.pb.motore.aggancio_max_ms = prima_max
+        b.pb.smonta_auto_follow()
 
 
 def _r2b(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:

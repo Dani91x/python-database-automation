@@ -103,6 +103,20 @@ M_SETTINGS = "settings_stantie"
 M_DIARIO = "diario_non_scrivibile"
 M_RIDUZIONE = "reduces_liability_non_verificabile"
 M_SUBMIN = "submin_non_percorribile"
+# 25/09 AUTO-FOLLOW (``auto_follow.py``): il mercato non e' ancora sottoscritto.
+# Sull'ACK (accettato) = "parcheggiato, aggancio al volo in corso"; sull'evento
+# terminale (rifiutato) = "non arrivato entro MOTORE_AGGANCIO_MAX_MS: il bot
+# ripete la decisione". M_TETTO = tetto dei mercati pieno e niente di espellibile.
+M_IN_AGGANCIO = "in_aggancio"
+M_TETTO = "tetto_mercati_pieno"
+#: azioni che lavorano SU un mercato e quindi lo agganciano se manca.
+#: cancel/replace/cashout lavorano su ordini gia' nel blotter (mercato seguito).
+AZIONI_CON_AGGANCIO = frozenset({"place", "greenup"})
+#: attesa massima del primo book dopo l'aggancio (ms), oltre: rifiuto dichiarato.
+#: Uguale al budget di trasporto di serie (MAX_ETA_DEFAULT_MS): la decisione del
+#: bot arriva a Betfair al piu' 2x3 s dopo, meno del bet delay in-play (5 s)
+#: che ogni ordine in gioco sconta comunque.
+AGGANCIO_MAX_MS_DEFAULT = 3000
 # Estensione del coordinatore (24/09): ack a un ref gia' visto = ``accettato`` e
 # ``seq`` della PRIMA risposta, motivo questa costante.
 MOTIVO_REF_GIA_VISTO = "ref_gia_visto"
@@ -528,8 +542,23 @@ class MotoreOrdini:
                  attori: frozenset = ATTORI_COMANDO,
                  modo_processo: Optional[str] = None,
                  blocco_modo: Optional[Callable[..., Optional[str]]] = None,
-                 eta_settings: Optional[Callable[[], float]] = None) -> None:
+                 eta_settings: Optional[Callable[[], float]] = None,
+                 aggancio: Optional[Any] = None) -> None:
         self.sport = sport
+        # 25/09 AUTO-FOLLOW: chi segue da solo i mercati (``AutoFollow`` del
+        # runner: ``servibile``/``richiedi``). None = comportamento di prima
+        # (mercato non seguito -> ``_resolve_market`` rifiuta).
+        self._aggancio = aggancio
+        # comandi accettati in attesa del primo book del loro mercato (FIFO)
+        self._in_aggancio: "collections.OrderedDict[str, Dict[str, Any]]" = \
+            collections.OrderedDict()
+        try:
+            self.aggancio_max_ms = int(float(os.getenv("MOTORE_AGGANCIO_MAX_MS", "")
+                                             or AGGANCIO_MAX_MS_DEFAULT))
+        except ValueError:
+            self.aggancio_max_ms = AGGANCIO_MAX_MS_DEFAULT
+        if self.aggancio_max_ms <= 0:
+            self.aggancio_max_ms = AGGANCIO_MAX_MS_DEFAULT
         # 24/09 (banco F4): nel replay il processo e' PAPER per costruzione e non
         # c'e' ne' DB ne' Control Room: ``modo_processo`` vale sul thread durante
         # controlli e dispatch (``LOW._CONTESTO.modo_processo``), ``blocco_modo``
@@ -636,6 +665,8 @@ class MotoreOrdini:
             # place-and-trim in corso il giro e' al passo della macchina
             # (``_SUBMIN_POLL_SEC``): si avanza in RAM, mai un sonno sincrono.
             attesa = LOW._SUBMIN_POLL_SEC if self._submin else 0.5
+            if self._in_aggancio:
+                attesa = min(attesa, 0.05)   # 25/09: il primo book si vede entro 50 ms
             self._evento.wait(timeout=attesa)
             self._evento.clear()
             if self._stop.is_set():
@@ -648,6 +679,10 @@ class MotoreOrdini:
                 self.avanza_submin()
             except Exception:  # noqa: BLE001
                 logger.exception("[motore] avanzamento place-and-trim KO")
+            try:
+                self.avanza_aggancio()
+            except Exception:  # noqa: BLE001
+                logger.exception("[motore] avanzamento degli agganci KO")
 
     def drena(self, max_giri: int = 20) -> int:
         """Serve tutto cio' che e' in coda sul canale. Ritorna i messaggi gestiti."""
@@ -748,13 +783,14 @@ class MotoreOrdini:
         try:
             piano = valida_comando(c.attore, d)
             self._controlla(piano, c.ricevuto_ms)
+            in_aggancio = self._serve_aggancio(c.attore, piano)
         except Rifiuto as r:
             self._rifiuta_registrato(c, ref, str(r))
             return
         finally:
             self._pulisci_contesto()
         seq = self._prossimo_seq(c.attore)
-        ack = self._ack(ref, seq, True, None, c.ricevuto_ms)
+        ack = self._ack(ref, seq, True, in_aggancio, c.ricevuto_ms)
         riga = piano["riga"]
         riga["id"] = next(LOW._LOCAL_RID)
         riga["action"] = piano["azione"]
@@ -780,6 +816,9 @@ class MotoreOrdini:
         if _t_tempi is not None: LOW._TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
             LOW._cust_ref(riga["id"]), "comando", t=_t_tempi, azione=piano["azione"],
             mode=piano["mode"], rif=ref, decisione_ms=piano["creato_ms"], invio=c.ricevuto_ms)
+        if in_aggancio is not None:
+            self._parcheggia(c.attore, ref, piano, c.ricevuto_ms)
+            return
         self._esegui(c.attore, ref, piano)
 
     def _rifiuta_registrato(self, c: Any, ref: str, motivo: str) -> None:
@@ -805,8 +844,20 @@ class MotoreOrdini:
             raise Rifiuto(M_ETA, f"creato_ms {-eta} ms nel futuro: orologio incoerente")
         flumine = self._flumine
         if flumine is None:
-            raise Rifiuto(M_AGGANCIO, "nessun framework flumine attivo (runner fermo, "
-                                      "senza partite o in ripartenza)")
+            dettaglio = ("nessun framework flumine attivo (runner fermo, senza partite o "
+                         "in ripartenza)")
+            if (self._aggancio is not None and piano.get("azione") in AZIONI_CON_AGGANCIO
+                    and piano["riga"].get("market_id")):
+                # 25/09: runner senza partite -> il mercato entra nel piano e il
+                # runner parte con lui (``setup_and_run``); il bot riprova.
+                try:
+                    no = self._aggancio.richiedi(str(piano["riga"]["market_id"]),
+                                                 motivo="comando a runner fermo")
+                except Exception as ex:  # noqa: BLE001
+                    no = str(ex)[:120]
+                dettaglio += (": aggancio richiesto, il runner parte coi mercati dei bot"
+                              if no is None else f": aggancio non possibile ({no})")
+            raise Rifiuto(M_AGGANCIO, dettaglio)
         mode = piano["mode"]
         # capacita' del processo (tetto .env): quali client esistono. Il modo
         # EFFETTIVO scelto dalla UI governa le aperture (_blocco_apertura_modo).
@@ -923,7 +974,8 @@ class MotoreOrdini:
             self.diario.scrivi(rec)
         return _hook
 
-    def _esegui(self, attore: str, ref: str, piano: Dict[str, Any]) -> None:
+    def _esegui(self, attore: str, ref: str, piano: Dict[str, Any],
+                errore_forzato: Optional[str] = None) -> None:
         riga = piano["riga"]
         mode = piano["mode"]
         rid = riga["id"]
@@ -937,13 +989,17 @@ class MotoreOrdini:
         differito = LOW._SbDifferito()
         lsb = LOW._LocalSb(differito)
         ok, errore = True, None
-        submin = bool(piano.get("submin"))
+        submin = bool(piano.get("submin")) and errore_forzato is None
         if submin:
             # la STESSA macchina del worker: azione place_submin (step INIT->PLACED
             # qui, gli step successivi da ``avanza_submin`` a ogni giro)
             riga["action"] = "place_submin"
         self._imposta_contesto(piano["strategy_ref"], self._pre_invio(ref))
         try:
+            if errore_forzato is not None:
+                # 25/09: comando mai partito (aggancio scaduto o guardia
+                # cambiata durante l'attesa): esito 'rifiutato', nessun ordine
+                raise ValueError(errore_forzato)
             with LOW.LUCCHETTO_ORDINI:
                 LOW._dispatch(lsb, self._flumine, riga, mode, self._strategie)
         except Exception as ex:  # noqa: BLE001 - esito del comando, motore vivo
@@ -987,6 +1043,92 @@ class MotoreOrdini:
                 logger.warning("[motore] contesto journal di %s non catturato", ref)
         self.scrittore.accoda(f"comando {ref}", LOW._job_locale(
             differito, riga, dict(lsb.captured), mode, contesto))
+
+    # ------------------------------------------------ 25/09 aggancio al volo
+    def _serve_aggancio(self, attore: str, piano: Dict[str, Any]) -> Optional[str]:
+        """None = il mercato e' servibile, si esegue subito. Stringa = motivo
+        dell'ack: comando accettato e PARCHEGGIATO finche' il mercato non arriva
+        (aggancio al volo chiesto all'auto-follow). ``Rifiuto(M_TETTO)`` se il
+        mercato non puo' entrare (tetto pieno, niente di espellibile)."""
+        ag = self._aggancio
+        if ag is None or piano.get("azione") not in AZIONI_CON_AGGANCIO:
+            return None
+        mid = str(piano["riga"].get("market_id") or "")
+        # FIFO per mercato: dietro a un comando gia' in attesa si mette in fila
+        in_fila = any(p["market_id"] == mid for p in self._in_aggancio.values())
+        if not in_fila and ag.servibile(mid):
+            return None
+        try:
+            no = ag.richiedi(mid, motivo=f"comando {attore}")
+        except Exception as ex:  # noqa: BLE001 - auto-follow rotto: rifiuto, mai alla cieca
+            raise Rifiuto(M_TETTO, f"auto-follow non disponibile: {str(ex)[:160]}")
+        if no is not None:
+            raise Rifiuto(M_TETTO, str(no)[:200])
+        return (f"{M_IN_AGGANCIO}: mercato {mid} non ancora sottoscritto, aggancio al "
+                f"volo in corso (al piu' {self.aggancio_max_ms} ms)")
+
+    def _parcheggia(self, attore: str, ref: str, piano: Dict[str, Any],
+                    ricevuto_ms: int) -> None:
+        mid = str(piano["riga"].get("market_id") or "")
+        scadenza = int(ricevuto_ms) + int(self.aggancio_max_ms)
+        self._in_aggancio[ref] = {"attore": attore, "ref": ref, "piano": piano,
+                                  "market_id": mid, "ricevuto_ms": int(ricevuto_ms),
+                                  "scadenza_ms": scadenza}
+        try:
+            self.diario.scrivi({"tipo": "in_aggancio", "ref": ref, "market_id": mid,
+                                "scadenza_ms": scadenza, "ts_ms": self._ora_ms()},
+                               durevole=False)
+        except Exception as ex:  # noqa: BLE001 - il parcheggio e' in RAM
+            logger.warning("[motore] diario dell'aggancio di %s non scritto: %s", ref, ex)
+        logger.info("[motore] %s in attesa dell'aggancio di %s (scade fra %d ms)",
+                    ref, mid, self.aggancio_max_ms)
+        self.sveglia()
+
+    def avanza_aggancio(self) -> int:
+        """I comandi parcheggiati: partono (in ordine) quando il loro mercato e'
+        servibile, con le guardie RIFATTE adesso (kill-switch, modo, settings);
+        oltre la scadenza: evento terminale 'rifiutato' ``in_aggancio``. Mai un
+        comando che scade in silenzio."""
+        if not self._in_aggancio:
+            return 0
+        ora = self._ora_ms()
+        n = 0
+        for ref in list(self._in_aggancio.keys()):
+            p = self._in_aggancio.get(ref)
+            if p is None:
+                continue
+            ag = self._aggancio
+            pronto = (ag is not None and self._flumine is not None
+                      and ag.servibile(p["market_id"]))
+            if pronto:
+                del self._in_aggancio[ref]
+                errore: Optional[str] = None
+                self._imposta_contesto(None, None)
+                try:
+                    self._controlla(p["piano"], p["ricevuto_ms"])
+                except Rifiuto as r:
+                    errore = str(r)
+                finally:
+                    self._pulisci_contesto()
+                try:
+                    self.diario.scrivi({"tipo": "agganciato", "ref": ref,
+                                        "attesa_ms": ora - p["ricevuto_ms"],
+                                        "ts_ms": ora}, durevole=False)
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.info("[motore] %s agganciato dopo %d ms: %s", ref,
+                            ora - p["ricevuto_ms"], "eseguo" if errore is None else errore)
+                self._esegui(p["attore"], ref, p["piano"], errore_forzato=errore)
+                n += 1
+            elif ora > p["scadenza_ms"]:
+                del self._in_aggancio[ref]
+                motivo = (f"{M_IN_AGGANCIO}: mercato {p['market_id']} non sottoscritto "
+                          f"entro {self.aggancio_max_ms} ms (aggancio richiesto: il bot "
+                          f"ripete la decisione)")
+                logger.warning("[motore] %s NON eseguito: %s", ref, motivo)
+                self._esegui(p["attore"], ref, p["piano"], errore_forzato=motivo)
+                n += 1
+        return n
 
     # --------------------------------------------------- contesto sul thread
     def _imposta_contesto(self, strategy_ref: Optional[str], pre_invio: Any) -> None:

@@ -96,6 +96,7 @@ from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from . import live_order_worker as _LOW
 from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
+from . import auto_follow as _AF  # 25/09: i bot seguono da soli le partite
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -852,11 +853,7 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         _sync_record_events(session, follows)
     except Exception as e:  # noqa: BLE001 - il gating non deve rompere il worker
         logger.warning("[sub-worker] sync record opt-in KO (ignorato): %s", e)
-    new_events = [
-        f for f in follows
-        if f["event_id"] not in session.cataloged_events
-        and f["event_id"] not in session.finished_events
-    ]
+    new_events = _nuovi_follow_manuali(follows, session, _auto_attivo())
     if not new_events:
         session.sub_restart_deferred_since = None
         return
@@ -950,6 +947,25 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         session.attach_attempted.update(f["event_id"] for f in new_events)
     if gap < MIN_RESUBSCRIBE_INTERVAL_SEC:
         session.last_first_attach_bypass_ts = now
+
+
+def _nuovi_follow_manuali(follows: List[Dict[str, Any]], session: Any,
+                          auto: Optional[Any]) -> List[Dict[str, Any]]:
+    """I follow da agganciare con la ricostruzione di sempre. 25/09: una riga
+    STREAMING di un evento che l'AUTO-FOLLOW segue gia' (scritta da lui,
+    ``origine='auto'``) e' gia' nello stream a caldo: niente ricostruzione, che
+    col blotter vuoto azzererebbe le posizioni. Un clic dell'utente la porta a
+    PENDING e torna un follow manuale come sempre."""
+    out = []
+    for f in follows:
+        ev = f["event_id"]
+        if ev in session.cataloged_events or ev in session.finished_events:
+            continue
+        if (auto is not None and str(f.get("status") or "") == "STREAMING"
+                and auto.segue_auto(ev)):
+            continue
+        out.append(f)
+    return out
 
 
 # throttle dell'alert CRITICAL quando il restart F3 resta rinviato (fix 17/07)
@@ -1602,7 +1618,7 @@ _RIPRESA_STATO: dict = {"ultimo": 0.0}
 # diario write-ahead e IO DB differito. SPENTO di serie: si accende con
 # ``MOTORE_ORDINI_CANALE=1`` (lavoro nuovo, da certificare prima dell'uso).
 # Spento = comportamento di prima, identico (il worker della coda drena il canale).
-_MOTORE: Dict[str, Any] = {"motore": None, "api": None}
+_MOTORE: Dict[str, Any] = {"motore": None, "api": None, "auto": None}
 
 
 def _motore_abilitato() -> bool:
@@ -1611,6 +1627,27 @@ def _motore_abilitato() -> bool:
 
 def _motore_attivo() -> Optional[Any]:
     return _MOTORE.get("motore")
+
+
+def _auto_attivo() -> Optional[Any]:
+    """25/09 - l'AUTO-FOLLOW del runner (``auto_follow.AutoFollow``), o None."""
+    return _MOTORE.get("auto")
+
+
+def _costruisci_auto_follow(ch: Any) -> Any:
+    """L'auto-follow: thread nel runner, piano col tetto della connessione di
+    mercato, righe live_follow ``origine='auto'``, feed unico per il proattivo,
+    attori collegati dal canale di comando (zero IO), stato alla UI sul canale."""
+    def _feed() -> Optional[List[Dict[str, Any]]]:
+        from db_client import get_supabase_client
+        return _AF.leggi_feed_calcio(get_supabase_client())
+
+    def _pubblica(stato: Dict[str, Any]) -> None:
+        ch.set_hello(auto_follow=stato)
+        _lc.publish("auto_follow", stato)
+
+    return _AF.AutoFollow(follow_db=_AF.FollowDb(), feed=_feed,
+                          attori_collegati=ch.attori_comando, pubblica=_pubblica)
 
 
 def _lista_ordini_ripresa(customer_order_refs: List[str]) -> Any:
@@ -1630,7 +1667,8 @@ def _costruisci_motore(ch: Any) -> Any:
         "calcio", canale=ch, diario=_MOT.Diario(cartella),
         scrittore=_MOT.ScrittoreAsincrono(nome="scrittore-db-calcio"),
         guardia_armata=lambda: bool(_GUARDIA_AVVIO.blocca_aperture),
-        motivo_guardia_order=_MOTIVO_GUARDIA_LOCALE)
+        motivo_guardia_order=_MOTIVO_GUARDIA_LOCALE,
+        aggancio=_auto_attivo())
 # 24/09 - MODO ORDINI DALLA UI: all'avvio dell'app la scelta torna a PAPER
 # (``modo_ordini.dichiara_avvio``, stesso schema di ``avvio_app`` per Omega/Mike/
 # Safe) e il runner dichiara il TETTO del suo .env. Finche' non riesce la scelta
@@ -1800,6 +1838,27 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     # rilegge il suo diario; il thread parte subito ma senza framework rifiuta.
     _MOTORE["api"] = api_client
     if ch is not None and modo_avvio in ("PAPER", "LIVE") and _motore_abilitato():
+        # 25/09 AUTO-FOLLOW (di serie col motore; RUNNER_AUTO_FOLLOW=0 lo
+        # spegne): costruito PRIMA del motore, che lo riceve; le righe
+        # automatiche di un processo precedente si chiudono PRIMA del primo
+        # ``list_pending_follows`` (se no diventerebbero follow manuali).
+        if _AF.acceso():
+            try:
+                _MOTORE["auto"] = _costruisci_auto_follow(ch)
+                chiusi = _MOTORE["auto"].follow_db.chiudi_orfani()
+                _MOTORE["auto"].avvia()
+                logger.info("[runner] AUTO-FOLLOW ATTIVO: i bot operano da soli su tutte "
+                            "le partite (aggancio al volo + feed), tetto %d mercati sulla "
+                            "connessione di mercato (limite Betfair %d), %d follow auto "
+                            "di prima chiusi", _MOTORE["auto"].piano.tetto,
+                            _AF.LIMITE_BETFAIR_MERCATI, chiusi)
+            except Exception as ex:  # noqa: BLE001 - senza auto-follow: come prima
+                logger.error("[runner] AUTO-FOLLOW NON avviato (%s): i mercati non "
+                             "seguiti restano rifiutati", str(ex)[:200])
+                _MOTORE["auto"] = None
+        else:
+            logger.warning("[runner] AUTO-FOLLOW SPENTO (RUNNER_AUTO_FOLLOW=0): il motore "
+                           "rifiuta gli ordini sulle partite non seguite")
         try:
             _MOTORE["motore"] = _costruisci_motore(ch)
             _MOTORE["motore"].avvia()
@@ -1851,13 +1910,23 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             if only_event:
                 follows = [f for f in follows if f["event_id"] == only_event]
             follows = [f for f in follows if f["event_id"] not in session.finished_events]
+            # 25/09: le righe scritte dall'AUTO-FOLLOW non sono follow manuali
+            # (niente catalogo intero, niente live_now): i loro mercati entrano
+            # dal piano dell'auto-follow qui sotto.
+            auto = _auto_attivo()
+            if auto is not None:
+                follows = [f for f in follows
+                           if not (str(f.get("status") or "") == "STREAMING"
+                                   and auto.segue_auto(f["event_id"]))]
             # opt-in 17/07: set degli eventi con "Segui live" attivo (record=true)
             # PRIMA di configure_raw — il tee parte gia' col gating giusto.
             try:
                 _sync_record_events(session, follows)
             except Exception as e:  # noqa: BLE001 - mai bloccare l'avvio per il gating
                 logger.warning("[runner] sync record opt-in KO (ignorato): %s", e)
-            if not follows:
+            # 25/09: senza partite seguite a mano il runner parte lo stesso se
+            # l'auto-follow ha mercati (feed o comando di un bot)
+            if not follows and not (auto is not None and auto.mercati_auto()):
                 # DESKTOP (keep-alive): senza eventi il runner NON esce — resta in
                 # attesa (canale locale + board vivi) e ricontrolla ogni 15s: il
                 # click "Segui live" nell'app crea il follow e si parte subito.
@@ -1923,6 +1992,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
 
             _catalog_events(rest, session, follows)
             market_ids = session.all_market_ids()
+            if auto is not None:
+                # 25/09: sottoscrizione = manuali + automatici, dentro il tetto
+                # della connessione (le automatiche meno prioritarie escono se i
+                # manuali sono cresciuti; a ricostruzione il blotter e' vuoto)
+                auto.imposta_manuali({
+                    ev: ms for ev, ms in session.event_markets.items()
+                    if ev not in session.finished_events})
+                auto.rientra_nel_tetto()
+                market_ids = sorted(set(market_ids) | set(auto.mercati_da_sottoscrivere()))
             if not market_ids:
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[runner] nessun mercato sottoscrivibile: attendo (keep-alive desktop).")
@@ -2128,6 +2206,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             motore = _motore_attivo()
             if motore is not None and orders_enabled:
                 motore.aggancia(framework, strategies_by_mode)
+            if auto is not None:
+                auto.aggancia(framework, market_ids)
             try:
                 framework.run()
             except KeyboardInterrupt:
@@ -2147,6 +2227,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             finally:
                 if motore is not None:
                     motore.sgancia()
+                if auto is not None:
+                    auto.sgancia()
 
             if session.shutdown_requested.is_set():
                 logger.info("[runner] auto-spegnimento: finalizzo e esco.")
@@ -2162,6 +2244,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 _finalize_event(event_id, session)
         session.close_score_files()
         close_raw()
+        auto = _auto_attivo()
+        if auto is not None:
+            try:
+                auto.ferma()
+            except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
+                logger.exception("[runner] arresto dell'auto-follow KO")
+            _MOTORE["auto"] = None
         motore = _motore_attivo()
         if motore is not None:
             # 24/09: le scritture DB differite si svuotano prima di uscire

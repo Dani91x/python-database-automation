@@ -575,6 +575,12 @@ class LocalChannel:
         except RuntimeError:
             pass
 
+    def attori_comando(self) -> "set[str]":
+        """25/09 (auto-follow): gli attori con un socket di comando APERTO e col
+        token giusto (un bot acceso che manda gli ordini sul canale). Copia:
+        lettura senza IO, da qualunque thread."""
+        return {att for (att, tok) in list(self._comando_ws.values()) if tok}
+
     def invia_attore(self, attore: str, payload: Dict[str, Any]) -> None:
         """Invio a TUTTI i socket di comando di un attore (thread-safe)."""
         loop = self._loop

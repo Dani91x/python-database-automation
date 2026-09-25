@@ -37,6 +37,13 @@ e ``tests/test_strada_unica_banco_2026_09_25.py``):
     client non simulato" resta attiva e verificata. DICHIARATO: nel banco
     nessun ordine e' reale, ne' sulla coda ne' sul canale.
 
+25/09 - AUTO-FOLLOW (``monta_auto_follow``): l'``AutoFollow`` di PRODUZIONE
+(piano, tetto, priorita', protezione di chi ha ordini, servibile/richiedi) si
+monta sul motore del banco con un ``SottoscrittoreBanco`` al posto della
+risottoscrizione sulla connessione Betfair: la "risposta di Betfair" e' il
+primo book VERO del mercato dopo l'invio della sottoscrizione (latenza di un
+book). Senza montarlo il banco e' identico a prima (tutti i mercati serviti).
+
 Differenze DICHIARATE dal vivo (nel banco non esistono):
   * niente DB: lo scrittore asincrono e' nullo (conta i lavori, non li esegue);
   * il modo effettivo della Control Room e l'eta' dei settings non si applicano
@@ -237,6 +244,28 @@ class _CanaleBanco:
             self.su_messaggio(payload)
 
 
+class SottoscrittoreBanco:
+    """Il sottoscrittore dell'auto-follow nel banco: registra le sottoscrizioni
+    (stessa firma di ``auto_follow.SottoscrittoreStream.applica``), nessuna rete.
+    I book dei mercati li porta la registrazione; ``AutoFollow.servibile``
+    aspetta il primo book NUOVO dopo l'invio, come col vivo."""
+
+    def __init__(self) -> None:
+        self.chiamate: List[List[str]] = []
+        # mercati la cui "immagine" (SUB_IMAGE) arriva al giro dopo: nel banco
+        # lo stato corrente del mercato e' gia' in flumine, come l'immagine
+        # piena che Betfair manda subito dopo il marketSubscription
+        self.da_consegnare: List[str] = []
+
+    def applica(self, framework: Any, market_ids: List[str]) -> int:
+        if not market_ids:
+            raise ValueError("sottoscrizione vuota rifiutata")
+        prima = set(self.chiamate[-1]) if self.chiamate else set()
+        self.chiamate.append(list(market_ids))
+        self.da_consegnare.extend(m for m in market_ids if m not in prima)
+        return len(self.chiamate)
+
+
 class PortaBanco:
     """Porta ordini del banco = motore ordini di produzione su FlumineSimulation."""
 
@@ -301,6 +330,8 @@ class PortaBanco:
         # comando arriva al motore ``ritardo_ms`` dopo la sua creazione
         self.ritardo_ms = 0
         self.canale.su_messaggio = self._incassa
+        # 25/09: l'auto-follow di produzione montato sul motore (None = come prima)
+        self.auto_follow: Any = None
 
     # ------------------------------------------------------------ interfaccia
     def disponibile(self) -> bool:
@@ -321,7 +352,8 @@ class PortaBanco:
 
     def aggiorna(self) -> None:
         """A ogni book: specchio dal blotter (come lo stream ordini) e un passo
-        del place-and-trim."""
+        del place-and-trim; con l'auto-follow montato, un giro dell'auto-follow
+        (sottoscrizione) e i comandi in attesa dell'aggancio."""
         if self.motore._submin:
             self._sporco = True            # la macchina puo' piazzare/sostituire
         self._specchio()
@@ -329,6 +361,32 @@ class PortaBanco:
             self.motore.avanza_submin()
             self._sporco = True
             self._specchio()
+        if self.auto_follow is not None:
+            # l'immagine della sottoscrizione del giro PRIMA (latenza: un giro)
+            sott = self.auto_follow.sottoscrittore
+            pronti = list(getattr(sott, "da_consegnare", []) or [])
+            if pronti:
+                sott.da_consegnare = []
+                self.auto_follow.immagine_arrivata(pronti)
+            self.auto_follow.giro()
+        if self.motore._in_aggancio:
+            if self.motore.avanza_aggancio():
+                self._sporco = True
+                self._specchio()
+
+    def monta_auto_follow(self, auto: Any, mercati_iniziali: Any = ()) -> None:
+        """Monta l'``AutoFollow`` di produzione: il runner del banco segue
+        SOLO ``mercati_iniziali`` (vuoto = nessuna partita seguita)."""
+        self.auto_follow = auto
+        self.motore._aggancio = auto
+        auto.aggancia(self.framework, list(mercati_iniziali))
+
+    def smonta_auto_follow(self) -> None:
+        if self.auto_follow is not None:
+            self.auto_follow.sgancia()
+        self.auto_follow = None
+        self.motore._aggancio = None
+        self.motore._in_aggancio.clear()
 
     # ------------------------------------------- il socket del client vero
     def connetti(self, url: str, headers: Dict[str, str]) -> WsBanco:

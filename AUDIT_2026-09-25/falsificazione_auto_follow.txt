@@ -1,0 +1,18 @@
+BASE (senza mutazioni): rc=0 31 passed in 8.86s
+M1 motore: niente aggancio (mercato non seguito eseguito subito): ROSSO  [1 failed, 5 passed in 8.29s | banco: ROSSO 1 failed in 12.73s]  ripristino sha1 OK
+M2 servibile anche col book STANTIO: ROSSO  [1 failed, 6 passed in 7.06s]  ripristino sha1 OK
+M3 niente fila FIFO per mercato: ROSSO  [1 failed, 7 passed in 8.91s]  ripristino sha1 OK
+M4 l'aggancio non scade mai (comando parcheggiato per sempre): ROSSO  [1 failed, 8 passed in 9.83s | banco: ROSSO 1 failed in 16.69s]  ripristino sha1 OK
+M5 guardie NON rifatte all'esecuzione: ROSSO  [1 failed, 9 passed in 7.38s]  ripristino sha1 OK
+M6 protezione di chi ha ordini tolta: ROSSO  [1 failed, 12 passed in 12.50s | banco: ROSSO 1 failed in 18.11s]  ripristino sha1 OK
+M7 espulsione senza guardare la priorita': ROSSO  [1 failed, 2 passed in 13.82s]  ripristino sha1 OK
+M8 stream_id NON aggiornato dopo la risottoscrizione: ROSSO  [1 failed, 17 passed in 10.10s]  ripristino sha1 OK
+M9 riga live_follow scritta sovrascrivendo il follow dell'utente: ROSSO  [1 failed, 24 passed in 25.80s]  ripristino sha1 OK
+M10 righe auto STREAMING trattate come follow manuali (ricostruzione): ROSSO  [1 failed, 27 passed in 15.92s]  ripristino sha1 OK
+M11 feed muto: tolte le candidate: ROSSO  [1 failed, 22 passed in 12.79s]  ripristino sha1 OK
+M12 runner fermo: nessuna richiesta di aggancio: ROSSO  [1 failed, 15 passed in 12.28s]  ripristino sha1 OK
+M13 cancel aggancia anche lui: ROSSO  [1 failed, 14 passed in 20.44s]  ripristino sha1 OK
+M14 un comando espelle anche i follow manuali: ROSSO  [1 failed, 2 passed in 7.69s | banco: ROSSO 1 failed in 13.57s]  ripristino sha1 OK
+M15 comando appena chiesto NON protetto (il suo parcheggio scadrebbe): ROSSO  [1 failed, 29 passed in 15.90s]  ripristino sha1 OK
+M16 mercato mai arrivato resta nel tetto per sempre: ROSSO  [1 failed, 16 passed in 11.83s]  ripristino sha1 OK
+DOPO (codice ripristinato): rc=0 31 passed in 5.68s

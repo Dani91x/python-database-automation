@@ -392,7 +392,16 @@ def test_profilo_rapido_verde_sulla_registrazione_vera(bot):
           for e in esiti if not e.ok and not e.na]
     assert not ko, ko
     nomi = [e.nome for e in esiti]
-    assert len(nomi) == 11 and nomi[0] == "R1 accettato"
+    # 25/09 AUTO-FOLLOW: R10 (non seguito -> agganciato e ACCETTATO), R10b
+    # (tetto pieno -> espulsione -> accettato), R10c (mai espulsi chi ha ordini
+    # o e' manuale), R10d (aggancio che non arriva: rifiuto dichiarato)
+    assert len(nomi) == 14 and nomi[0] == "R1 accettato"
+    for n in ("R10 mercato non seguito", "R10b tetto pieno", "R10c mai espulsi",
+              "R10d aggancio mai in silenzio"):
+        assert n in nomi
+    r10 = next(e for e in esiti if e.nome == "R10 mercato non seguito")
+    assert r10.ok and not r10.na
+    assert any("in_aggancio" in c[0] and c[1] for c in r10.controlli)
 
 
 def test_ordini_del_canale_adottati_nella_vista_di_conto(banco):

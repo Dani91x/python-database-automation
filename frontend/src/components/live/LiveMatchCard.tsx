@@ -37,9 +37,25 @@ export function LiveMatchCard({ follow, selected, onClick }: {
                 <span className="text-[11px] uppercase tracking-wider text-muted-foreground truncate">
                     {follow.league_name ?? 'Lega sconosciuta'}
                 </span>
-                <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${statusBadgeCls(follow.status)}`}>
-                    {follow.status === 'STREAMING' && <Radio className="w-3 h-3" />}
-                    {LIVE_STATUS_LABEL[follow.status]}
+                <span className="shrink-0 inline-flex items-center gap-1">
+                    {/* 25/09 AUTO-FOLLOW: origine del follow (manuale = "Segui live"
+                        dell'utente; auto = il runner la segue da solo per i bot) */}
+                    <span
+                        data-testid="origine-follow"
+                        title={follow.origine === 'auto'
+                            ? 'Seguita DA SOLA dal runner per i bot (solo stream e ordini): "Segui live" per il terminale completo'
+                            : 'Seguita a mano ("Segui live")'}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${
+                            follow.origine === 'auto'
+                                ? 'bg-sky-500/15 text-sky-300 border-sky-500/40'
+                                : 'bg-white/5 text-muted-foreground border-white/10'}`}
+                    >
+                        {follow.origine === 'auto' ? 'auto' : 'manuale'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${statusBadgeCls(follow.status)}`}>
+                        {follow.status === 'STREAMING' && <Radio className="w-3 h-3" />}
+                        {LIVE_STATUS_LABEL[follow.status]}
+                    </span>
                 </span>
             </div>
 

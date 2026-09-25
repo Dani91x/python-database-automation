@@ -26,6 +26,10 @@ export interface LiveFollow {
     live_status: string | null;
     score_source: string | null;
     updated_at: string | null;
+    // 25/09 AUTO-FOLLOW: chi ha chiesto di seguire la partita. 'auto' = il
+    // runner la segue da solo per i bot (migrazione live_follow_origine_2026-09-25.sql;
+    // assente prima della migrazione = manuale).
+    origine?: 'manuale' | 'auto' | null;
 }
 
 // get_live_follows -> { rows: LiveFollow[] }
