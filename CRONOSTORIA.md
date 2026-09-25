@@ -2961,3 +2961,30 @@ carico e verde da solo, tsc 0; 3 mutazioni mie rosse 13+6+1; conflitto import in
 migrazioni `uscite_automatiche_mike` e `uscite_automatiche_scalper` DA APPLICARE); `306fd11` TRE CHIUSURE backfill
 (81 test, 2 mutazioni mie rosse 13+2). Sessione B: T1/T2/C1 già costruiti il 24/09 e certificati da lei su 442d21c;
 E34 stop giornaliero: utente ha deciso di lasciare. Delegati attivi: hazard, Safe Q1-Q12. Strada unica: in verifica.
+**h19:20 — PRIMO CATCHUP AUTOMATICO (run 36122837946) SUCCESS:** coda 972 lega-stagioni con partite da chiamare
+(P1 19, P2 835, P3 118), ~126.105 chiamate; fatte 12 leghe P1 stagione 2026 (2, 40, 45, 140, 62, 88, 144, 94, 39, 61,
+46, 179) = 3.230 chiamate, fermato per quota a margine 81 (contatore 4.419/7.500). REFERTO BUCHI: 961 lega-stagioni
+aperte, ~122.875 chiamate → a ~4.500/giorno ≈ 27 giorni per chiudere tutto, poi regime ~500/giorno.
+**h19:20 — STRADA UNICA, commit `5139d2b` PUSHATO** (delegato Opus agent-aaea84f2835da9f8d): PortaBanco agganciata al
+banco (`--trasporto coda|canale|entrambi`), profilo `--scenari rapidi` (11 scenari, 4-7 s), parità coda/canale; corretti
+R-A tempesta `da_seq` (grave, alla prima accensione) e R-B FOK sotto il minimo. Verificato da me: 84 test verdi,
+falsifica 10/10, 2 mutazioni mie rosse (3+7), replay rapidi MIEI su 35760084: safe_base 11/11 + parità RAGGIUNTA
+(164,7 s), omega 10 OK + 1 N/A + parità RAGGIUNTA (140,2 s). ERRORE MIO: falsifica.py rilanciato con `timeout 60`
+interrotto a metà → M7 (prezzo fuori dalla chiave di parità) rimasto in `trasporto.py` non tracciato e copiato su
+master → test rosso → ripristinato e riverificato (memoria `feedback_script_falsificazione_mai_interrompere`).
+PAPER via canale NON ancora acceso: aspetta la decisione D-1 dell'utente (col canale i bot operano SOLO sulle
+partite in «Segui live»: a) accettare, b) ripiego sul trasporto di oggi, c) auto-follow degli eventi dei bot).
+**[sessione B, audit] h19:10 — INTEGRATI E PUSHATI `42a7b92` (audit 5) e `ae1a184` (O2 + referto audit 3).** AUDIT 5 (delegato Opus): R1 TacticAI legge da `fixture_predictions` (prima 34/263 oggi, 374/7.977 in 14 gg); R2 keyset su fixture_id + ordine (fixture_date, fixture_id); R5 `EtaDato` in Poisson/TacticAI/ML/Direzione (36 h, 8 gg); R7 regola unica «HT mancante escluso» nella RPC `get_market_delays` (migrazione additiva) e `signalContext` sulla stessa RPC. Verificato da me: pytest 11, vitest 36, tsc 0 (worktree e master); 2 mutazioni mie rosse (finestra giorno 2 test, soglia età 5 test). DB vero: lega 667 over 0.5 1T tab 39.750 eventi vs serie 25.408 (HT mancante=0-0), 547 coincide. INCIDENTE: la patch applicata con `git apply --3way` è finita in STAGE nell'indice condiviso e il commit `5139d2b` di admin-26 ha inglobato gli 11 file modificati; i nuovi sono in `42a7b92` (origin incoerente per ~15 min). Da ora: `git apply` senza `--3way` e commit immediato. O2 (delegato Opus): migrazione additiva `omega_transitions_catchup_2026-09-25.sql` (registro per partita, grezzo mai potato, nightly 3 fasi, publish/unpublish manuale, cron 04:00 UTC idempotente, vecchi `omega_build_*` dismessi), tool `verifica_transizioni_2026_09_25.py`, doc. Verificato da me: 23 test, banco PGlite 86/86 riletto, 2 mutazioni mie rosse (cron settimanale, publish senza guardia), sha256 ok. Reperto mio: manca l'indice singolo `matches(fixture_date)` → fase calda saltata finché non si crea. AUDIT 3 Safe model/manual in UI: GIÀ FATTO dal commit `1610d7b` del 24/09 (Sonnet: 115 test, falsificazione 15 rossi, nessun codice): audit stantio, voce chiusa. DA APPLICARE (utente): 3 migrazioni + indice; DECISIONI: P(0-0) negativa in 17 payload TacticAI (fix del modello?), «media» del cruscotto Direzione ora = media storica, dismissione vecchi costruttori, orario cron 04:00 vs 10:30 UTC, pubblicazione manuale.
+**h19:45 — INCIDENTE checkout condiviso (nessuna perdita):** il mio commit `5139d2b` ha preso anche 11 file che la
+sessione B aveva in stage (`git apply --3way` stagea): tactical_engine/serving.py, 5 pannelli dashboard, 5 lib
+frontend; completati da lei con `42a7b92` (audit 5: file nuovi, migrazioni, test) e `ae1a184` (O2 transizioni Omega
+pg_cron 04:00 UTC + referto audit 3: Safe model/manual in UI era GIÀ fatto il 24/09 in `1610d7b`). tsc su master
+`ae1a184` = 0 errori (verificato da me). Regola da ora per entrambe: `git commit -- <percorsi espliciti>`, apply
+senza `--3way` (memoria `feedback_checkout_condiviso_commit_solo_percorsi_espliciti_2026-09-25`).
+Delegati attivi: hazard, Safe Q1-Q12, scalper auto-mode (agent-a0adba3f895716ae6), schede abbinamento/prezzo
+(agent-a7b971258796d041a). Sessione B: F0 (righe di live_order_worker.py da concordare) e F10a.
+**h20:40 — SAFE Q1-Q12, commit PUSHATO** (delegato Opus agent-a7e908d15031bcc8b, referto `AUDIT_2026-09-25/SAFE_Q1_Q4_Q5.md`):
+BASE banca la perdente 20-34, veto campionati del corso, tennis 1,02, Esatto con selezione dove disponibile, Q8/Q9/Q10/Q12;
+verificato da me: Safe intera 1702 verdi, vitest 18 file, tsc 0, 3 mutazioni mie rosse (7+12+3). DB vero: `tennis.backMin`
+= 1,01 sul DB → migrazione `safe_tennis_backmin_102_2026-09-25.sql` NECESSARIA; `safe_base_banca_20_34` facoltativa.
+Safe sul DB: mode paper, status STOPPED (da segnalare all'utente). Dubbi §11 da confermare.
