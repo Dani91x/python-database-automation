@@ -11,9 +11,10 @@ Per ogni lega con partite quel giorno:
   - UPDATE di fixture_predictions.tactical_engine_json sulla riga della partita.
 
 Fonte delle partite del giorno (25/09/2026, reperto R1 dell'audit tab Dashboard):
-`fixture_predictions`, NON `matches`. `matches` e' popolata solo con partite FINITE
-(daily_yesterday_backfill, finished_only): leggere li' le partite di oggi dava quasi
-sempre 0 partite e il motore usciva in silenzio (copertura misurata 4,7 % su 14 gg).
+`fixture_predictions`, NON `matches`. In `matches` le partite del giorno entrano solo
+in parte e in anticipo variabile (25/09: 33 su 263 fixture di oggi): leggere li' le
+partite di oggi ne trovava poche e il motore ne saltava la gran parte in silenzio
+(copertura misurata dal coordinatore: 34/263 oggi, 374/7.977 = 4,7 % su 14 gg).
 `fixture_predictions` contiene TUTTE le partite del giorno (le scrive il loop Poisson
 di today_predictions_backfill.py, che gira prima di questo motore), quindi la riga
 esiste sempre: si fa solo UPDATE, nessun INSERT.
