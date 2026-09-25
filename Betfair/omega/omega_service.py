@@ -2544,6 +2544,17 @@ def _place_one(
         if str((params or {}).get("execution_mode", "auto")) == "auto":
             db.log("paper_fill_fallback", {"event_id": ev.event_id,
                                            "trade_id": trade_id, "reason": gate_reason})
+        # R3 (25/09): il freno unico ferma anche il fill PAPER, nello STESSO
+        # punto del live (dopo il gate, prima dell'esecuzione) e con lo STESSO
+        # esito certo: paper = specchio del live anche a freno tirato.
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.warning("[omega] apertura PAPER FERMATA dal freno (%s): trade %s, "
+                           "evento %s", blocco, trade_id, ev.event_id)
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
+                                 {"motivo": blocco, "percorso": "paper"},
+                                 base_meta={**keep_meta, "requested_size": req_size})
+            return 0
         # cert. 12/09: ``paper_fill`` non regala piu' fill senza controparte
         # DICHIARATA. Quando il book non espone la ladder completa (solo i best,
         # p.es. una lettura ridotta) si passa esplicitamente la size al best:
@@ -5262,6 +5273,22 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         if str(params.get("execution_mode", "auto")) == "auto":
             db.log("paper_fill_fallback", {"event_id": event_id, "trade_id": trade_id,
                                            "reason": gate_reason})
+        # R3 (25/09): il freno unico ferma anche il manuale PAPER, nello
+        # STESSO punto e con la STESSA riga terminale del live REST qui sopra.
+        blocco = _freno_rest_aperture()
+        if blocco:
+            logger.warning("[omega] ordine manuale PAPER FERMATO dal freno (%s): trade %s",
+                           blocco, trade_id)
+            db.update_trade(trade_id, status="error", pnl=0.0,
+                            meta={**manual_meta, "reason": "kill_switch",
+                                  "motivo": blocco, "percorso": "paper",
+                                  "leg_failed": True, "error_final": True,
+                                  "error_at": now.isoformat()})
+            db.log("manual_place_exception", {
+                "trade_id": trade_id, "event_id": event_id, "side": side,
+                "price": price, "size": size, "mode": mode,
+                "reason": "kill_switch", "motivo": blocco})
+            return {"error": blocco, "trade_id": trade_id}
         # CERTIFICAZIONE 12/09 — PAPER = LIVE senza soldi, anche nel MANUALE.
         # Prima questo ramo confermava il fill al prezzo scelto dall'utente
         # senza guardare il book: (a) la liquidita' del BEST veniva spesa come

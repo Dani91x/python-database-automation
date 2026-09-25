@@ -33,11 +33,11 @@ def kill(monkeypatch):
     return _imposta
 
 
-def _manuale(db):
+def _manuale(db, mode="live"):
     db.manual_reqs = [{
         "id": 1, "kind": "place", "status": "pending",
         "payload": {"event_id": "1.100", "market_id": "m-1.100", "selection_id": 3,
-                    "runner_name": "2 - 1", "side": "lay", "mode": "live", "size": 2},
+                    "runner_name": "2 - 1", "side": "lay", "mode": mode, "size": 2},
     }]
 
 
@@ -71,12 +71,58 @@ def test_automatico_live_kill_spento_parita(kill):
     assert not [p for k, p in db.activity if p.get("reason") == "kill_switch"]
 
 
-def test_automatico_paper_non_guarda_il_kill_switch(kill):
-    """Il paper non muove soldi: il freno non cambia niente (come il worker)."""
-    kill("db")
+@pytest.mark.parametrize("sorgente", ["env", "db"])
+def test_automatico_paper_col_freno_non_apre(kill, sorgente):
+    """R3 (25/09, ordine dell'utente: «un freno unico che ferma ogni cosa sia
+    live che paper»). Fino al 25/09 qui si collaudava il CONTRARIO («il paper
+    non guarda il kill-switch»), ma il worker della coda fermava gia' anche le
+    righe paper: il fill paper in casa era l'unica strada rimasta fuori. Ora
+    stesso punto e stesso esito del live REST (``percorso='paper'``)."""
+    kill(sorgente)
+    db = FakeDB(_control(mode="paper"))
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 0
+    assert not [t for t in db.trades if t.get("status") in ("open", "pending")]
+    motivo = ("live_kill_switch_attivo" if sorgente == "env" else "db_kill_switch_attivo")
+    skip = [p for k, p in db.activity if k == "skip" and p.get("reason") == "kill_switch"]
+    assert skip and skip[0]["motivo"] == motivo and skip[0]["percorso"] == "paper"
+
+
+def test_automatico_paper_freno_rilasciato_parita(kill):
+    kill(None)
     db = FakeDB(_control(mode="paper"))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     assert S.run_once(market=market, db=db, now=NOW)["placed"] == 1
+
+
+@pytest.mark.parametrize("sorgente", ["env", "db"])
+def test_manuale_paper_col_freno_non_apre(kill, sorgente):
+    """R3 (25/09): anche l'ordine MANUALE paper si ferma, con la stessa riga
+    terminale del manuale live (``percorso='paper'``)."""
+    kill(sorgente)
+    db = FakeDB(_control(status="idle"))
+    _manuale(db, mode="paper")
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    assert market.placed == []
+    t = db.trades[0]
+    assert t["status"] == "error"
+    assert t["meta"]["reason"] == "kill_switch" and t["meta"]["percorso"] == "paper"
+    assert t["meta"]["error_final"] is True and t["meta"]["manual"] is True
+    motivo = ("live_kill_switch_attivo" if sorgente == "env" else "db_kill_switch_attivo")
+    assert t["meta"]["motivo"] == motivo
+    assert db.manual_reqs[0]["result"] == {"error": motivo, "trade_id": t["id"]}
+
+
+def test_manuale_paper_freno_rilasciato_parita(kill):
+    kill(None)
+    db = FakeDB(_control(status="idle"))
+    _manuale(db, mode="paper")
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.trades[0]["status"] == "open"
+    assert db.manual_reqs[0]["result"]["ok"] is True
 
 
 # ---------------------------------------------------------------------------

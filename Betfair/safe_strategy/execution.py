@@ -149,6 +149,28 @@ def _live_brake() -> Optional[str]:
     return None
 
 
+def _freno_aperture() -> Optional[str]:
+    """R3 (25/09) - IL FRENO UNICO sulle APERTURE, live E paper.
+
+    Ordine dell'utente (25/09 sera): «un freno unico che ferma ogni cosa sia
+    live che paper». E' il kill-switch CONDIVISO (``controls.motivo_kill_switch``:
+    ``LIVE_KILL_SWITCH`` dell'ambiente oppure ``betfair_live_settings.kill_switch``
+    dalla UI, cache ~2 s), lo stesso che ferma gia' il worker della coda e il
+    motore del canale su ENTRAMBE le modalita'. Qui serve al fill PAPER
+    simulato in casa (gate flumine chiuso), l'unica strada di apertura che il
+    freno non vedeva. Il modo ordini (``LIVE_ORDER_MODE``) NON c'entra: quello
+    resta in ``_live_brake`` e riguarda solo i soldi veri.
+    Freno non valutabile (import fallito, errore inatteso) = apertura FERMATA."""
+    try:
+        from Betfair.stream.trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001 - fail-closed
+        logger.error("[safe.exec] kill-switch non valutabile, apertura FERMATA: %s",
+                     str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
 def _omega_service() -> Any:
     """omega_service (gate flumine) con import PIGRO e guardato: se manca, il
     gate resta CHIUSO e si usa il percorso legacy — mai un crash del bot."""
@@ -713,6 +735,15 @@ def place(
             return PlaceOutcome("error", None, 0.0, None,
                                 f"submin_non_disponibile:{gate_reason}")
     if mode == "paper":
+        # R3 (25/09): il freno unico vale anche sul fill simulato, NELLO STESSO
+        # PUNTO in cui il live applica ``_live_brake`` (dopo il gate, prima
+        # dell'esecuzione): paper = specchio del live anche col freno tirato.
+        # SOLO sulle aperture: le chiusure passano sempre. Esito identico al
+        # live (``PlaceOutcome`` 'error' col motivo): chi chiama lo scrive
+        # come oggi scrive il freno live (Safe ``_place_fail``, Mike ``skip``).
+        blocco_paper = None if is_closing else _freno_aperture()
+        if blocco_paper:
+            return PlaceOutcome("error", None, 0.0, None, blocco_paper)
         try:
             # ``best_size`` = liquidita' abbinabile al best price dichiarata dal
             # chiamante (la size e' gia' cappata li' sopra): senza ladder e' la

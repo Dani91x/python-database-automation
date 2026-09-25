@@ -319,8 +319,15 @@ def set_tennis_bot_status(
     heartbeat: bool = False,
     started: bool = False,
     stopped: bool = False,
+    mode: Optional[str] = None,
+    dry_run: Optional[bool] = None,
 ) -> None:
-    """Aggiorna lo stato/heartbeat/stat di un bot in ``tennis_bot_control``."""
+    """Aggiorna lo stato/heartbeat/stat di un bot in ``tennis_bot_control``.
+
+    R2 (25/09): ``mode``/``dry_run`` opzionali (None = non si toccano), usati dal
+    fermo d'avvio per riportare la riga a PAPER. Colonna ``mode`` assente
+    (migrazione ``tennis_bot_control_mode_2026-09-24.sql`` non applicata): si
+    riscrive tutto il resto senza ``mode`` (il runner legge la riga PAPER)."""
     sb = get_tennis_client()
     now = _now_iso()
     upd: Dict[str, Any] = {"status": status}
@@ -334,9 +341,21 @@ def set_tennis_bot_status(
         upd["started_at"] = now
     if stopped:
         upd["stopped_at"] = now
-    res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
-        "bot_key", bot_key
-    ).execute()
+    if mode is not None:
+        upd["mode"] = str(mode)
+    if dry_run is not None:
+        upd["dry_run"] = bool(dry_run)
+    try:
+        res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
+            "bot_key", bot_key
+        ).execute()
+    except Exception as e:  # noqa: BLE001
+        if "mode" not in upd or not colonna_assente(e, "mode"):
+            raise
+        upd.pop("mode", None)
+        res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
+            "bot_key", bot_key
+        ).execute()
     if _CANALE_ACCESO:          # F3: l'armatura per evento, come il DB l'ha scritta
         # 24/09: topic `tennis_bot_armamento` (prima usciva come
         # `tennis_bot_posizioni`, nome che ora porta le righe d'ordine dei bot)
@@ -555,12 +574,16 @@ def set_tennis_bot_service_state(
     error: Optional[str] = None,
     heartbeat: bool = False,
     stopped: bool = False,
+    mode: Optional[str] = None,
 ) -> bool:
-    """Aggiorna la riga di interruttore di UN bot. `False` = non scritto."""
+    """Aggiorna la riga di interruttore di UN bot. `False` = non scritto.
+    R2 (25/09): ``mode`` opzionale (None = non si tocca)."""
     sb = get_tennis_client()
     upd: Dict[str, Any] = {"updated_at": _now_iso()}
     if status is not None:
         upd["status"] = str(status)
+    if mode is not None:
+        upd["mode"] = str(mode)
     if stats is not None:
         upd["stats"] = stats
     if error is not None:

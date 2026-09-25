@@ -96,15 +96,20 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
             "boot_id_precedente": AA.boot_id_salvato(r.get("stats")),
             "status_precedente": str(r.get("status") or ""),
             "dry_run_precedente": r.get("dry_run"),
+            "mode_precedente": r.get("mode"),
             "azzerato": True,
             "motivo": ("APP_BOOT_ID assente nell'ambiente: trattato come avvio nuovo"
                        if not boot else "avvio nuovo dell'app"),
-            "effetto": "i bot li arma l'utente: la riga torna a 'stopped'.",
+            "effetto": ("i bot li arma l'utente: la riga torna a 'stopped', "
+                        "mode='paper', dry_run=true."),
             "ts": ora,
         }
         try:
+            # R2 (25/09, decisione dell'utente: «non devono mai partire in live
+            # senza mio ordine»): oltre allo stop la riga torna PAPER e dry-run,
+            # come Omega/Mike/Safe (``avvio_app.ferma_al_nuovo_avvio``).
             db.set_tennis_bot_status(
-                ev, bot_key, "stopped", stopped=True,
+                ev, bot_key, "stopped", stopped=True, mode="paper", dry_run=True,
                 stats=AA.stats_timbrate(r.get("stats"), boot, ora),
                 error=("fermato all'avvio dell'app: l'armamento e' un gesto "
                        "dell'utente — riarma se serve"),
@@ -825,7 +830,11 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
         bot = str((r or {}).get("bot_key") or "")
         if bot not in _BOT_KEYS:
             continue
-        if str(r.get("status") or "").strip().lower() not in ("running", "stopping"):
+        acceso = str(r.get("status") or "").strip().lower() in ("running", "stopping")
+        # R2 (25/09): anche un interruttore gia' fermo ma rimasto in LIVE torna
+        # PAPER, altrimenti il prossimo «avvia» ripartirebbe in soldi veri.
+        in_live = str(r.get("mode") or "").strip().lower() == "live"
+        if not (acceso or in_live):
             continue
         if AA.stesso_avvio(r.get("stats"), boot):
             continue          # stesso avvio (watchdog): non si tocca
@@ -833,11 +842,13 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
         # il frontend legge `stats.fermato_all_avvio_at` e lo mostra: e' il
         # modo in cui l'utente capisce perche' il bot che aveva acceso e' fermo
         stats["fermato_all_avvio_at"] = ora
+        # R2 (25/09): stopped E mode='paper', come gli altri bot: in live ci si
+        # torna solo con un gesto dell'utente dalla Control Room.
         if db.set_tennis_bot_service_state(bot, status="stopped", stopped=True,
-                                           stats=stats):
+                                           stats=stats, mode="paper"):
             fermati.append(bot)
             logger.info("[tennis-bot-svc] avvio NUOVO dell'app: interruttore "
-                        "%s riportato a 'stopped' (lo accende l'utente).", bot)
+                        "%s riportato a 'stopped' e 'paper' (lo accende l'utente).", bot)
         else:
             fallite += 1
     ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] = fallite == 0

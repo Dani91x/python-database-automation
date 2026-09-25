@@ -1209,6 +1209,22 @@ def _freno_aperture_rest() -> Optional[str]:
         return "kill_switch_illeggibile"
 
 
+def _freno_resting_paper(db: Any, leg: E.Leg, event_id: Any) -> bool:
+    """R3 (25/09): True = freno tirato, la lay appoggiata PAPER di APERTURA
+    non nasce (nessuna riga di riserva). Stesso freno e stesso log del live."""
+    blocco = _freno_aperture_rest()
+    if not blocco:
+        return False
+    leg.status = "cancelled"
+    db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": False,
+                             "reason": "kill_switch", "motivo": blocco,
+                             "nota": "freno tirato: nessuna apertura, nemmeno in paper"},
+           str(event_id))
+    logger.warning("[mike] %s: apertura appoggiata PAPER %s FERMATA dal freno (%s)",
+                   event_id, leg.ref, blocco)
+    return True
+
+
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
@@ -3683,6 +3699,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                      params=params, minuto=snap.minute, score=score_str,
                                      chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev,
                                      ctx=ctx, approvazione_id=_chiave_gamba(approvazione_id, leg))
+            elif (not _resting_e_chiusura(leg, closes_id(leg))
+                  and _freno_resting_paper(db, leg, ev["event_id"])):
+                # R3 (25/09): il freno unico anche sulla lay appoggiata PAPER,
+                # con la STESSA regola del live (``_piazza_resting_live``): solo
+                # un'apertura si ferma, le coperture/chiusure passano sempre.
+                pass
             else:
                 try:
                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,

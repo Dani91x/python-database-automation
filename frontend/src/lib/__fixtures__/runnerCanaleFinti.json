@@ -1,5 +1,5 @@
 {
-  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z.",
+  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z. R3 (25/09 sera): stato_corrente porta anche il freno unico (kill_switch, kill_switch_env, kill_switch_letto); modo_ordini_freno = freno tirato dalla Control Room, verificato da Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py.",
   "battito": {
     "ts": 1790341198000,
     "mode": "LIVE+PAPER",
@@ -13,6 +13,9 @@
     "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
     "scelto_ui_da": "avvio_app",
     "eta_lettura_s": 0.0,
+    "kill_switch": false,
+    "kill_switch_env": false,
+    "kill_switch_letto": true,
     "ts": 1790341195000
   },
   "modo_ordini_live": {
@@ -23,7 +26,23 @@
     "scelto_ui_at": "2026-09-25T12:05:00.000000+00:00",
     "scelto_ui_da": "utente",
     "eta_lettura_s": 0.0,
+    "kill_switch": false,
+    "kill_switch_env": false,
+    "kill_switch_letto": true,
     "ts": 1790341199000
+  },
+  "modo_ordini_freno": {
+    "effettivo": "PAPER",
+    "tetto_ambiente": "LIVE",
+    "scelto_ui": "PAPER",
+    "motivo": "ok",
+    "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
+    "scelto_ui_da": "avvio_app",
+    "eta_lettura_s": 0.0,
+    "kill_switch": true,
+    "kill_switch_env": false,
+    "kill_switch_letto": true,
+    "ts": 1790341201000
   },
   "hello": {
     "sport": "calcio",
@@ -36,6 +55,9 @@
       "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
       "scelto_ui_da": "avvio_app",
       "eta_lettura_s": 0.0,
+      "kill_switch": false,
+      "kill_switch_env": false,
+      "kill_switch_letto": true,
       "ts": 1790341195000
     }
   }

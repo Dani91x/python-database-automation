@@ -244,13 +244,18 @@ class TennisFinto:
                 if (statuses is None or r.get("status") in statuses)]
 
     def set_tennis_bot_status(self, event_id, bot_key, status, *, error=None,
-                              stats=None, heartbeat=False, started=False, stopped=False):
+                              stats=None, heartbeat=False, started=False, stopped=False,
+                              mode=None, dry_run=None):
         self.stati.append((event_id, bot_key, status, error, stats, stopped))
         for r in self.righe:
             if r["event_id"] == event_id and r["bot_key"] == bot_key:
                 r["status"] = status
                 if stats is not None:
                     r["stats"] = stats
+                if mode is not None:
+                    r["mode"] = mode
+                if dry_run is not None:
+                    r["dry_run"] = dry_run
 
     def write_tennis_bot_activity(self, event_id, bot_key, kind, payload):
         self.attivita.append((event_id, bot_key, kind, dict(payload)))
@@ -300,13 +305,17 @@ def test_tennis_senza_boot_id_in_ambiente_si_ferma(monkeypatch):
 
 
 def test_tennis_i_params_della_riga_non_si_toccano(monkeypatch):
+    """R2 (25/09, decisione dell'utente): params e stake restano identici, ma la
+    riga torna in PROVA (``mode='paper'``, ``dry_run=True``): prima del 25/09
+    qui si collaudava che ``dry_run=False`` sopravvivesse al nuovo avvio."""
     from Betfair.stream.tennis_live import tennis_bot_service as TB
 
     finto = TennisFinto([_riga_tennis(params={"soglia": 2}, stake=25, dry_run=False)])
     monkeypatch.setattr(TB, "tennis_db", finto)
     TB.ferma_bot_al_nuovo_avvio(boot_id="OGGI", db=finto)
     assert finto.righe[0]["params"] == {"soglia": 2}
-    assert finto.righe[0]["stake"] == 25 and finto.righe[0]["dry_run"] is False
+    assert finto.righe[0]["stake"] == 25
+    assert finto.righe[0]["dry_run"] is True and finto.righe[0]["mode"] == "paper"
 
 
 # ---------------------------------------------------------------------------

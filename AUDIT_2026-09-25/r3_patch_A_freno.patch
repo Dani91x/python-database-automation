@@ -1,0 +1,1484 @@
+diff --git a/Betfair/mike/service.py b/Betfair/mike/service.py
+index d2ddf8c..c391ae4 100644
+--- a/Betfair/mike/service.py
++++ b/Betfair/mike/service.py
+@@ -1209,6 +1209,22 @@ def _freno_aperture_rest() -> Optional[str]:
+         return "kill_switch_illeggibile"
+ 
+ 
++def _freno_resting_paper(db: Any, leg: E.Leg, event_id: Any) -> bool:
++    """R3 (25/09): True = freno tirato, la lay appoggiata PAPER di APERTURA
++    non nasce (nessuna riga di riserva). Stesso freno e stesso log del live."""
++    blocco = _freno_aperture_rest()
++    if not blocco:
++        return False
++    leg.status = "cancelled"
++    db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": False,
++                             "reason": "kill_switch", "motivo": blocco,
++                             "nota": "freno tirato: nessuna apertura, nemmeno in paper"},
++           str(event_id))
++    logger.warning("[mike] %s: apertura appoggiata PAPER %s FERMATA dal freno (%s)",
++                   event_id, leg.ref, blocco)
++    return True
++
++
+ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
+                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
+                          chiude: Optional[int], motivo: Optional[str],
+@@ -3683,6 +3699,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
+                                      params=params, minuto=snap.minute, score=score_str,
+                                      chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev,
+                                      ctx=ctx, approvazione_id=_chiave_gamba(approvazione_id, leg))
++            elif (not _resting_e_chiusura(leg, closes_id(leg))
++                  and _freno_resting_paper(db, leg, ev["event_id"])):
++                # R3 (25/09): il freno unico anche sulla lay appoggiata PAPER,
++                # con la STESSA regola del live (``_piazza_resting_live``): solo
++                # un'apertura si ferma, le coperture/chiusure passano sempre.
++                pass
+             else:
+                 try:
+                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,
+diff --git a/Betfair/omega/omega_service.py b/Betfair/omega/omega_service.py
+index 0e1487c..3910506 100644
+--- a/Betfair/omega/omega_service.py
++++ b/Betfair/omega/omega_service.py
+@@ -2544,6 +2544,17 @@ def _place_one(
+         if str((params or {}).get("execution_mode", "auto")) == "auto":
+             db.log("paper_fill_fallback", {"event_id": ev.event_id,
+                                            "trade_id": trade_id, "reason": gate_reason})
++        # R3 (25/09): il freno unico ferma anche il fill PAPER, nello STESSO
++        # punto del live (dopo il gate, prima dell'esecuzione) e con lo STESSO
++        # esito certo: paper = specchio del live anche a freno tirato.
++        blocco = _freno_rest_aperture()
++        if blocco:
++            logger.warning("[omega] apertura PAPER FERMATA dal freno (%s): trade %s, "
++                           "evento %s", blocco, trade_id, ev.event_id)
++            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
++                                 {"motivo": blocco, "percorso": "paper"},
++                                 base_meta={**keep_meta, "requested_size": req_size})
++            return 0
+         # cert. 12/09: ``paper_fill`` non regala piu' fill senza controparte
+         # DICHIARATA. Quando il book non espone la ladder completa (solo i best,
+         # p.es. una lettura ridotta) si passa esplicitamente la size al best:
+@@ -5262,6 +5273,22 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
+         if str(params.get("execution_mode", "auto")) == "auto":
+             db.log("paper_fill_fallback", {"event_id": event_id, "trade_id": trade_id,
+                                            "reason": gate_reason})
++        # R3 (25/09): il freno unico ferma anche il manuale PAPER, nello
++        # STESSO punto e con la STESSA riga terminale del live REST qui sopra.
++        blocco = _freno_rest_aperture()
++        if blocco:
++            logger.warning("[omega] ordine manuale PAPER FERMATO dal freno (%s): trade %s",
++                           blocco, trade_id)
++            db.update_trade(trade_id, status="error", pnl=0.0,
++                            meta={**manual_meta, "reason": "kill_switch",
++                                  "motivo": blocco, "percorso": "paper",
++                                  "leg_failed": True, "error_final": True,
++                                  "error_at": now.isoformat()})
++            db.log("manual_place_exception", {
++                "trade_id": trade_id, "event_id": event_id, "side": side,
++                "price": price, "size": size, "mode": mode,
++                "reason": "kill_switch", "motivo": blocco})
++            return {"error": blocco, "trade_id": trade_id}
+         # CERTIFICAZIONE 12/09 — PAPER = LIVE senza soldi, anche nel MANUALE.
+         # Prima questo ramo confermava il fill al prezzo scelto dall'utente
+         # senza guardare il book: (a) la liquidita' del BEST veniva spesa come
+diff --git a/Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py b/Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py
+index cd0f532..bad8be6 100644
+--- a/Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py
++++ b/Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py
+@@ -33,11 +33,11 @@ def kill(monkeypatch):
+     return _imposta
+ 
+ 
+-def _manuale(db):
++def _manuale(db, mode="live"):
+     db.manual_reqs = [{
+         "id": 1, "kind": "place", "status": "pending",
+         "payload": {"event_id": "1.100", "market_id": "m-1.100", "selection_id": 3,
+-                    "runner_name": "2 - 1", "side": "lay", "mode": "live", "size": 2},
++                    "runner_name": "2 - 1", "side": "lay", "mode": mode, "size": 2},
+     }]
+ 
+ 
+@@ -71,14 +71,60 @@ def test_automatico_live_kill_spento_parita(kill):
+     assert not [p for k, p in db.activity if p.get("reason") == "kill_switch"]
+ 
+ 
+-def test_automatico_paper_non_guarda_il_kill_switch(kill):
+-    """Il paper non muove soldi: il freno non cambia niente (come il worker)."""
+-    kill("db")
++@pytest.mark.parametrize("sorgente", ["env", "db"])
++def test_automatico_paper_col_freno_non_apre(kill, sorgente):
++    """R3 (25/09, ordine dell'utente: «un freno unico che ferma ogni cosa sia
++    live che paper»). Fino al 25/09 qui si collaudava il CONTRARIO («il paper
++    non guarda il kill-switch»), ma il worker della coda fermava gia' anche le
++    righe paper: il fill paper in casa era l'unica strada rimasta fuori. Ora
++    stesso punto e stesso esito del live REST (``percorso='paper'``)."""
++    kill(sorgente)
++    db = FakeDB(_control(mode="paper"))
++    market = FakeMarket([_event()], _cs(), _open_snapshot())
++    res = S.run_once(market=market, db=db, now=NOW)
++    assert res["placed"] == 0
++    assert not [t for t in db.trades if t.get("status") in ("open", "pending")]
++    motivo = ("live_kill_switch_attivo" if sorgente == "env" else "db_kill_switch_attivo")
++    skip = [p for k, p in db.activity if k == "skip" and p.get("reason") == "kill_switch"]
++    assert skip and skip[0]["motivo"] == motivo and skip[0]["percorso"] == "paper"
++
++
++def test_automatico_paper_freno_rilasciato_parita(kill):
++    kill(None)
+     db = FakeDB(_control(mode="paper"))
+     market = FakeMarket([_event()], _cs(), _open_snapshot())
+     assert S.run_once(market=market, db=db, now=NOW)["placed"] == 1
+ 
+ 
++@pytest.mark.parametrize("sorgente", ["env", "db"])
++def test_manuale_paper_col_freno_non_apre(kill, sorgente):
++    """R3 (25/09): anche l'ordine MANUALE paper si ferma, con la stessa riga
++    terminale del manuale live (``percorso='paper'``)."""
++    kill(sorgente)
++    db = FakeDB(_control(status="idle"))
++    _manuale(db, mode="paper")
++    market = FakeMarket([_event()], _cs(), _open_snapshot())
++    S.run_once(market=market, db=db, now=NOW)
++    assert market.placed == []
++    t = db.trades[0]
++    assert t["status"] == "error"
++    assert t["meta"]["reason"] == "kill_switch" and t["meta"]["percorso"] == "paper"
++    assert t["meta"]["error_final"] is True and t["meta"]["manual"] is True
++    motivo = ("live_kill_switch_attivo" if sorgente == "env" else "db_kill_switch_attivo")
++    assert t["meta"]["motivo"] == motivo
++    assert db.manual_reqs[0]["result"] == {"error": motivo, "trade_id": t["id"]}
++
++
++def test_manuale_paper_freno_rilasciato_parita(kill):
++    kill(None)
++    db = FakeDB(_control(status="idle"))
++    _manuale(db, mode="paper")
++    market = FakeMarket([_event()], _cs(), _open_snapshot())
++    S.run_once(market=market, db=db, now=NOW)
++    assert db.trades[0]["status"] == "open"
++    assert db.manual_reqs[0]["result"]["ok"] is True
++
++
+ # ---------------------------------------------------------------------------
+ # Manuale: _manual_place -> place_order_live
+ # ---------------------------------------------------------------------------
+diff --git a/Betfair/safe_strategy/execution.py b/Betfair/safe_strategy/execution.py
+index b636503..c1e0061 100644
+--- a/Betfair/safe_strategy/execution.py
++++ b/Betfair/safe_strategy/execution.py
+@@ -149,6 +149,28 @@ def _live_brake() -> Optional[str]:
+     return None
+ 
+ 
++def _freno_aperture() -> Optional[str]:
++    """R3 (25/09) - IL FRENO UNICO sulle APERTURE, live E paper.
++
++    Ordine dell'utente (25/09 sera): «un freno unico che ferma ogni cosa sia
++    live che paper». E' il kill-switch CONDIVISO (``controls.motivo_kill_switch``:
++    ``LIVE_KILL_SWITCH`` dell'ambiente oppure ``betfair_live_settings.kill_switch``
++    dalla UI, cache ~2 s), lo stesso che ferma gia' il worker della coda e il
++    motore del canale su ENTRAMBE le modalita'. Qui serve al fill PAPER
++    simulato in casa (gate flumine chiuso), l'unica strada di apertura che il
++    freno non vedeva. Il modo ordini (``LIVE_ORDER_MODE``) NON c'entra: quello
++    resta in ``_live_brake`` e riguarda solo i soldi veri.
++    Freno non valutabile (import fallito, errore inatteso) = apertura FERMATA."""
++    try:
++        from Betfair.stream.trading import controls as _ctl
++
++        return _ctl.motivo_kill_switch()
++    except Exception as ex:  # noqa: BLE001 - fail-closed
++        logger.error("[safe.exec] kill-switch non valutabile, apertura FERMATA: %s",
++                     str(ex)[:120])
++        return "kill_switch_illeggibile"
++
++
+ def _omega_service() -> Any:
+     """omega_service (gate flumine) con import PIGRO e guardato: se manca, il
+     gate resta CHIUSO e si usa il percorso legacy — mai un crash del bot."""
+@@ -713,6 +735,15 @@ def place(
+             return PlaceOutcome("error", None, 0.0, None,
+                                 f"submin_non_disponibile:{gate_reason}")
+     if mode == "paper":
++        # R3 (25/09): il freno unico vale anche sul fill simulato, NELLO STESSO
++        # PUNTO in cui il live applica ``_live_brake`` (dopo il gate, prima
++        # dell'esecuzione): paper = specchio del live anche col freno tirato.
++        # SOLO sulle aperture: le chiusure passano sempre. Esito identico al
++        # live (``PlaceOutcome`` 'error' col motivo): chi chiama lo scrive
++        # come oggi scrive il freno live (Safe ``_place_fail``, Mike ``skip``).
++        blocco_paper = None if is_closing else _freno_aperture()
++        if blocco_paper:
++            return PlaceOutcome("error", None, 0.0, None, blocco_paper)
+         try:
+             # ``best_size`` = liquidita' abbinabile al best price dichiarata dal
+             # chiamante (la size e' gia' cappata li' sopra): senza ladder e' la
+diff --git a/Betfair/stream/live_order_worker.py b/Betfair/stream/live_order_worker.py
+index 3147891..db8e58b 100644
+--- a/Betfair/stream/live_order_worker.py
++++ b/Betfair/stream/live_order_worker.py
+@@ -520,7 +520,9 @@ _MODO_CANALE_FIRMA: Optional[tuple] = None
+ #: le chiavi di ``modo_ordini.stato_corrente()`` che fanno un CAMBIO (l'eta'
+ #: della lettura cambia a ogni giro e non lo e')
+ _MODO_CANALE_CHIAVI = ("effettivo", "tetto_ambiente", "scelto_ui", "motivo",
+-                       "scelto_ui_at", "scelto_ui_da")
++                       "scelto_ui_at", "scelto_ui_da",
++                       # R3 (25/09): tirare o rilasciare il freno e' un CAMBIO
++                       "kill_switch", "kill_switch_env", "kill_switch_letto")
+ 
+ 
+ def _pubblica_modo_ordini_se_cambiato() -> bool:
+diff --git a/Betfair/stream/modo_ordini.py b/Betfair/stream/modo_ordini.py
+index af23ae0..d3bf041 100644
+--- a/Betfair/stream/modo_ordini.py
++++ b/Betfair/stream/modo_ordini.py
+@@ -50,6 +50,8 @@ _RANGO = {m: i for i, m in enumerate(LIVELLI)}
+ 
+ #: nome della variabile d'ambiente (il tetto)
+ ENV_MODO = "LIVE_ORDER_MODE"
++#: R3 (25/09): il freno dell'ambiente (stessa lettura di ``config_stream.live_kill_switch``)
++ENV_KILL = "LIVE_KILL_SWITCH"
+ 
+ #: chiavi della riga ``betfair_live_settings`` (contratto con la migrazione
+ #: ``migrations/live_order_mode_control_2026-09-24.sql``)
+@@ -188,12 +190,23 @@ def modo_corrente() -> str:
+ def stato_corrente() -> Dict[str, Any]:
+     """Il modo effettivo con motivo, chi/quando l'ha cambiato ed eta' della lettura."""
+     out = descrivi(modo_ambiente(), valore_db())
++    # R3 (25/09): il FRENO UNICO nello stesso messaggio (topic ``modo_ordini`` e
++    # ``hello``), cosi' la riga FRENO della Control Room lo vede al cambio senza
++    # aspettare il poll. ``kill_switch`` = cio' che il runner applica adesso
++    # (env OPPURE riga letta e valida); ``kill_switch_letto`` False = la riga non
++    # e' stata letta di recente: la UI usa la sua lettura del database.
++    env_kill = os.getenv(ENV_KILL, "false").strip().lower() == "true"
+     with _LOCK:
+         letto = _STATO["letto_mono"]
+         out["scelto_ui_at"] = _STATO["agg_at"]
+         out["scelto_ui_da"] = _STATO["agg_da"]
+         out["eta_lettura_s"] = (None if letto is None
+                                 else round(max(0.0, _ora() - float(letto)), 1))
++        kill_letto = _fresca()
++        kill_db = bool(_STATO["kill"]) if kill_letto else False
++    out["kill_switch"] = bool(env_kill or kill_db)
++    out["kill_switch_env"] = bool(env_kill)
++    out["kill_switch_letto"] = bool(kill_letto)
+     return out
+ 
+ 
+diff --git a/Betfair/stream/scalper/scalper_service.py b/Betfair/stream/scalper/scalper_service.py
+index abeca02..00c9da0 100644
+--- a/Betfair/stream/scalper/scalper_service.py
++++ b/Betfair/stream/scalper/scalper_service.py
+@@ -610,6 +610,23 @@ class PubblicaSessioni:
+         self.firme = viste
+ 
+ 
++def freno_supervisore() -> Optional[str]:
++    """R3 (25/09): il freno unico visto dal supervisore (env + DB; il file
++    ``STOP_SCALPER`` il supervisore lo gestisce gia' da se', uscendo).
++    Stessa funzione della sessione: fail-closed."""
++    from .scalper_session import motivo_freno
++
++    return motivo_freno()
++
++
++def sessione_da_avviare(row: Dict[str, Any], alive: bool,
++                        freno: Optional[str]) -> bool:
++    """Una riga 'requested' senza processo diventa una sessione SOLO a freno
++    rilasciato. A freno tirato la riga resta com'e' ('requested'): nessun
++    processo, nessun login, nessun ordine."""
++    return str(row.get("status") or "") == "requested" and not alive and not freno
++
++
+ def _spawn(event_id: str) -> subprocess.Popen:
+     repo_root = os.path.abspath(os.path.join(
+         os.path.dirname(__file__), "..", "..", ".."))
+@@ -671,6 +688,8 @@ def main() -> None:
+     stato_auto = StatoAuto()
+     stato_auto.guardia.attiva = True
+     pubblica_sessioni = PubblicaSessioni()
++    #: R3 (25/09): ultimo motivo del freno gia' detto nel log (una riga al cambio)
++    freno_detto: Dict[str, Optional[str]] = {"motivo": None}
+ 
+     # ---- habitat scan periodico (thread, best-effort) ----
+     def _habitat_loop() -> None:
+@@ -727,11 +746,17 @@ def main() -> None:
+             except Exception:  # noqa: BLE001 - l'auto-mode non ferma il supervisore
+                 logger.exception("[scalper-svc] giro auto-mode KO")
+ 
++            # R3 (25/09): il freno unico, UNA lettura per giro (cache ~2 s)
++            freno = freno_supervisore()
++            if freno and freno_detto.get("motivo") != freno:
++                logger.warning("[scalper-svc] FRENO TIRATO (%s): nessuna sessione nuova "
++                               "si avvia; quelle vive chiudono flat da sole", freno)
++            freno_detto["motivo"] = freno
+             for row in righe_attive:
+                 ev = str(row["event_id"])
+                 status = row["status"]
+                 alive = ev in children and children[ev].poll() is None
+-                if status == "requested" and not alive:
++                if sessione_da_avviare(row, alive, freno):
+                     children[ev] = _spawn(ev)
+                     logger.info("[scalper-svc] avviata sessione %s (pid=%s, "
+                                 "mode=%s dry=%s stake=%s)", ev,
+diff --git a/Betfair/stream/scalper/scalper_session.py b/Betfair/stream/scalper/scalper_session.py
+index 7cd1024..1a55b0c 100644
+--- a/Betfair/stream/scalper/scalper_session.py
++++ b/Betfair/stream/scalper/scalper_session.py
+@@ -102,6 +102,74 @@ HT_STALE_S = 300.0
+ HT_MINUTE_MIN = 45
+ HT_MINUTE_MAX = 48
+ 
++# ---- R3 (25/09): IL FRENO UNICO anche per lo scalper ------------------------
++# Ordine dell'utente: «un freno unico che ferma ogni cosa sia live che paper».
++# Fino a oggi lo scalper si fermava SOLO col file ``STOP_SCALPER``: il freno
++# della Control Room (``betfair_live_settings.kill_switch``) e
++# ``LIVE_KILL_SWITCH`` non lo vedevano. Adesso la sessione legge lo STESSO
++# freno di tutti gli altri bot (``controls.motivo_kill_switch``, cache ~2 s) e
++# lo tratta come il file: force-flat (cancella le entrate resting, chiude le
++# posizioni: solo CHIUSURE) e fine sessione. E' il comportamento di "stop" che
++# le strategie dello scalper hanno gia' e che la certificazione S2 collauda.
++#: ogni quanto il sorvegliante della sessione rilegge il freno (s): uguale
++#: alla cache dei settings in ``controls``, nessuna lettura DB in piu'
++FRENO_POLL_S = 2.0
++MOTIVO_FILE = "file_STOP_SCALPER"
++
++
++def motivo_freno() -> Optional[str]:
++    """Il motivo per cui lo scalper NON deve aprire, o None.
++
++    File ``STOP_SCALPER`` nella cwd (il freno di sempre) OPPURE il freno
++    condiviso (env ``LIVE_KILL_SWITCH`` / ``betfair_live_settings.kill_switch``).
++    Paper e live uguali. Freno non valutabile = tirato (fail-closed)."""
++    try:
++        if os.path.isfile(KILL_FILE):
++            return MOTIVO_FILE
++    except Exception:  # noqa: BLE001 - filesystem strano: il DB decide
++        pass
++    try:
++        from ..trading import controls as _ctl
++
++        return _ctl.motivo_kill_switch()
++    except Exception as ex:  # noqa: BLE001 - fail-closed
++        logger.error("[scalper-sess] freno non valutabile: sessione FERMA (%s)", str(ex)[:120])
++        return "kill_switch_illeggibile"
++
++
++def sorveglia_freno(stop_flag: Any, visto: Any, al_freno: Any,
++                    poll_s: float = FRENO_POLL_S) -> Optional[str]:
++    """Il sorvegliante della sessione: ogni ``poll_s`` rilegge il freno; al
++    primo freno tirato segna ``visto`` (``threading.Event``), chiama
++    ``al_freno(motivo)`` (il force-flat della sessione) e ritorna il motivo.
++    Esce senza fare niente quando ``stop_flag`` si alza (fine sessione)."""
++    while not stop_flag.is_set():
++        motivo = motivo_freno()
++        if motivo:
++            visto.set()
++            try:
++                al_freno(motivo)
++            except Exception:  # noqa: BLE001 - il ciclo di battito ci riprova
++                logger.exception("[scalper-sess] force-flat dal freno KO")
++            return motivo
++        stop_flag.wait(poll_s)
++    return None
++
++
++def non_partire_col_freno(db: Any, event_id: str) -> Optional[str]:
++    """All'avvio della sessione: freno tirato -> riga 'stopped' col motivo,
++    nessun login, nessun ordine. Ritorna il motivo (o None: si parte)."""
++    motivo = motivo_freno()
++    if not motivo:
++        return None
++    db.set_control(event_id, status="stopped", stopped_at=_now_iso(),
++                   error=f"freno tirato ({motivo}): sessione non avviata")
++    db.log(event_id, "info", {"msg": "freno tirato: sessione non avviata",
++                              "motivo": motivo})
++    logger.warning("[scalper-sess] %s: freno tirato (%s), sessione non avviata",
++                   event_id, motivo)
++    return motivo
++
+ 
+ def ht_should_start(minute: Optional[int], stale_s: float) -> bool:
+     """True se il feed indica l'INIZIO dell'intervallo (minuto congelato).
+@@ -634,6 +702,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
+         control = db.get_control(ev)
+         if not control or control.get("status") not in ("requested", "arming", "running"):
+             raise RuntimeError(f"controllo non attivabile (status={control and control.get('status')})")
++        # R3 (25/09): a freno tirato la sessione non si arma nemmeno.
++        if non_partire_col_freno(db, ev):
++            return
+         db.set_control(ev, status="arming", started_at=_now_iso(), error=None)
+ 
+         # REGOLA SPECCHIO (16/07): scalper_control.dry_run è il toggle DEMO/LIVE
+@@ -1162,6 +1233,23 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
+         # False) la sessione NON deve chiudersi 'done' in silenzio.
+         clean_break = False
+ 
++        # R3 (25/09): il sorvegliante del freno unico (env + DB + file). Al
++        # primo freno tirato arma SUBITO il force-flat (senza aspettare il
++        # battito dei 5 s); il battito poi chiude la sessione come per il file.
++        # Visto una volta, il freno chiude la sessione anche se viene
++        # rilasciato prima del battito: il force-flat e' gia' armato.
++        freno_visto = threading.Event()
++        freno_motivo: List[str] = []
++
++        def _al_freno(motivo: str) -> None:
++            freno_motivo.append(motivo)
++            _force_flat_all()
++
++        threading.Thread(
++            target=sorveglia_freno, args=(stop_flag, freno_visto, _al_freno),
++            daemon=True, name="scalper-freno",
++        ).start()
++
+         while runner.is_alive():
+             time.sleep(HEARTBEAT_S)
+             flush()
+@@ -1211,11 +1299,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
+             # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
+             # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
+             # a tradare su una riga che il resto del sistema considera chiusa.
++            # R3 (25/09): il freno unico (file STOP_SCALPER, LIVE_KILL_SWITCH,
++            # freno della Control Room) al posto del solo file.
++            freno = (freno_motivo[0] if freno_motivo
++                     else ("freno" if freno_visto.is_set() else motivo_freno()))
+             if (status in ("stopping", "stopped", "error")
+-                    or os.path.isfile(KILL_FILE)):
+-                stopped_by_ui = status in ("stopping", "stopped", "error")
++                    or freno):
++                stopped_by_ui = (status in ("stopping", "stopped", "error")
++                                 or bool(freno and freno != MOTIVO_FILE))
+                 _force_flat_all()
+-                db.log(ev, "info", {"msg": "stop richiesto: force-flat"})
++                db.log(ev, "info", {"msg": "stop richiesto: force-flat",
++                                    **({"freno": freno} if freno else {})})
+                 # fix 10/07: niente sleep cieco da 12s — si attende (max 30s)
+                 # che la strategia sia DAVVERO flat (slot IDLE/DONE, nessun
+                 # ordine vivo); se non lo e', si esce comunque e lo stato
+diff --git a/Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py b/Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py
+new file mode 100644
+index 0000000..0c2a601
+--- /dev/null
++++ b/Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py
+@@ -0,0 +1,445 @@
++"""R3 (25/09 sera) - IL FRENO UNICO: ferma OGNI apertura, live E paper.
++
++Ordine dell'utente: «si', un freno unico che ferma ogni cosa sia live che
++paper». Il freno e' uno solo (``controls.motivo_kill_switch``: env
++``LIVE_KILL_SWITCH`` oppure ``betfair_live_settings.kill_switch``, la riga che
++la RPC ``set_live_kill_switch`` scrive). Prima di oggi:
++
++  * il worker della coda e il motore del canale fermavano gia' live E paper;
++  * Omega, Mike e Safe lo applicavano SOLO sulla strada REST LIVE: il fill
++    PAPER simulato in casa (gate flumine chiuso) apriva lo stesso;
++  * lo scalper si fermava SOLO col file ``STOP_SCALPER``;
++  * lo stato del freno non arrivava alla Control Room dal canale.
++
++Qui:
++  (a) Mike in PAPER non apre col freno, la chiusura passa;
++  (b) lo scalper non apre (e non parte) col freno del DB senza file STOP;
++  (c) Omega (automatico e manuale) e Safe in PAPER non aprono;
++  (d) freno non valutabile (import fallito) = freno tirato;
++  (e) il messaggio ``modo_ordini`` porta il freno e i finti del frontend hanno
++      le chiavi dei messaggi veri.
++
++Finti: la riga ``betfair_live_settings`` e' quella della RPC vera
++(``get_live_settings`` -> dict con ``kill_switch``); il DB di Mike e' il
++``DbMemoria`` del banco comune; quello di Omega e' il ``FakeDB`` di
++``test_omega_service``; quello dello scalper e' la classe ``Db`` VERA con un
++client supabase finto (stesse chiamate ``table().update().eq().execute()``).
++
++ASCII-only nel codice; i commenti sono in italiano.
++"""
++from __future__ import annotations
++
++import builtins
++import json
++import os
++import threading
++from datetime import datetime, timezone
++from types import SimpleNamespace
++from typing import Any, Dict, List, Tuple
++
++import pytest
++
++from Betfair.mike import config as MC
++from Betfair.mike import engine as ME
++from Betfair.mike import feed as MF
++from Betfair.mike import service as MS
++from Betfair.omega import omega_service as OS
++from Betfair.safe_strategy import execution as X
++from Betfair.stream import canale_bot as CB
++from Betfair.stream import live_order_worker as W
++from Betfair.stream import local_channel as LC
++from Betfair.stream import modo_ordini as MO
++from Betfair.stream.backtest.banco_comune import DbMemoria
++from Betfair.stream.scalper import scalper_service as SVC
++from Betfair.stream.scalper import scalper_session as SS
++from Betfair.stream.trading import controls as CTL
++
++_RADICE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
++_FINTI_UI = os.path.join(_RADICE, "frontend", "src", "lib", "__fixtures__",
++                         "runnerCanaleFinti.json")
++
++
++# ---------------------------------------------------------------------------
++# il freno: 'env', 'db' oppure None (rilasciato)
++# ---------------------------------------------------------------------------
++def _riga_settings(kill: bool) -> Dict[str, Any]:
++    """La riga di ``betfair_live_settings`` come la restituisce la RPC vera."""
++    return {"id": 1, "kill_switch": bool(kill), "max_exposure_per_selection": None,
++            "max_orders_per_min": None, "order_poll_sec": None, "risk_poll_sec": None,
++            "daily_loss_limit": None, "max_exposure_per_event": None,
++            "max_exposure_per_league": None, "updated_at": "2026-09-25T20:00:00+00:00",
++            "order_mode": "paper", "order_mode_updated_at": "2026-09-25T12:00:00+00:00",
++            "order_mode_updated_by": "avvio_app"}
++
++
++@pytest.fixture
++def freno(monkeypatch):
++    def _imposta(sorgente):
++        monkeypatch.setenv("LIVE_KILL_SWITCH", "true" if sorgente == "env" else "false")
++        monkeypatch.setattr(CTL, "get_live_settings",
++                            lambda *a, **k: _riga_settings(sorgente == "db"))
++    return _imposta
++
++
++def _motivo(sorgente: str) -> str:
++    return "live_kill_switch_attivo" if sorgente == "env" else "db_kill_switch_attivo"
++
++
++@pytest.fixture
++def controls_non_importabile(monkeypatch):
++    """Il modulo del freno non si importa: il freno non e' valutabile."""
++    vero_import = builtins.__import__
++
++    def _import(nome, globs=None, locs=None, fromlist=(), livello=0):
++        if nome.endswith("trading.controls") or (
++                nome.endswith("trading") and "controls" in (fromlist or ())):
++            raise ImportError("controls assente")
++        return vero_import(nome, globs, locs, fromlist, livello)
++
++    monkeypatch.setattr(builtins, "__import__", _import)
++
++
++# ===========================================================================
++# (c) SAFE - execution.place in PAPER (lo stesso place di Mike e delle
++#     chiusure di Omega)
++# ===========================================================================
++def _safe_paper(meta=None):
++    return X.place(db=SimpleNamespace(log=lambda *a, **k: None), market=None, mode="paper",
++                   event_id="E1", market_id="1.1", selection_id=7, side="back",
++                   price=3.0, size=5.0, best_size=100.0, client_ref="safe-t41",
++                   trade_id=41, meta=meta, now=None, params={"execution_mode": "rest"})
++
++
++@pytest.mark.parametrize("sorgente", ["env", "db"])
++def test_safe_paper_apertura_ferma_col_freno(freno, sorgente):
++    freno(sorgente)
++    out = _safe_paper()
++    assert out.status == "error"
++    assert out.fill_note == _motivo(sorgente)
++    assert out.size == 0.0
++
++
++@pytest.mark.parametrize("meta", [{"closes_trade_id": 40}, {"cashout": True}])
++def test_safe_paper_chiusura_passa_col_freno(freno, meta):
++    freno("db")
++    out = _safe_paper(meta)
++    assert out.status == "open", "a freno tirato le chiusure passano sempre"
++
++
++def test_safe_paper_freno_rilasciato_parita(freno):
++    freno(None)
++    assert _safe_paper().status == "open"
++
++
++# ===========================================================================
++# (a) MIKE - execute_place in PAPER (DbMemoria del banco, EventInfo vera)
++# ===========================================================================
++_ORA = datetime(2026, 9, 6, 12, 0, 0, tzinfo=timezone.utc)
++
++
++def _info() -> MF.EventInfo:
++    return MF.EventInfo(
++        event_id="35674515", event_name="Shanghai Port v Qingdao West Coast",
++        home="Shanghai Port", away="Qingdao West Coast", competition="Chinese Super League",
++        ko_at=_ORA.timestamp() + 3600.0, open_date=None,
++        markets={ME.MARKET_OU35: "1.245111111", ME.MARKET_OU45: "1.245222222"},
++        selections={(ME.MARKET_OU35, ME.SEL_UNDER): 47973,
++                    (ME.MARKET_OU35, ME.SEL_OVER): 47972,
++                    (ME.MARKET_OU45, ME.SEL_UNDER): 48901,
++                    (ME.MARKET_OU45, ME.SEL_OVER): 48900})
++
++
++def _mike(ruolo: str, side: str, price: float, closes=None) -> Tuple[str, DbMemoria]:
++    db = DbMemoria({"status": "running", "mode": "paper", "params": {}})
++    leg = ME.Leg(role=ruolo, market=ME.MARKET_OU35, selection=ME.SEL_UNDER,
++                 side=side, price=price, size=10.0, ref=f"{ruolo}-0-1")
++    book = ME.Book(status="OPEN", best_back=1.76, back_size=500.0,
++                   best_lay=1.78, lay_size=500.0, inplay=False)
++    esito = MS.execute_place(db=db, market=SimpleNamespace(), info=_info(), leg=leg,
++                             book=book, mode="paper", params=dict(MC.merge_params(None)),
++                             now=_ORA, dry=False, closes_trade_id=closes,
++                             ctx=ME.MatchCtx(state="PRE", cycle_no=0))
++    return esito, db
++
++
++def _righe_aperte(db: DbMemoria) -> List[Dict[str, Any]]:
++    return [r for r in db.trades if r.get("status") == "open"]
++
++
++@pytest.mark.parametrize("sorgente", ["env", "db"])
++def test_mike_paper_apertura_ferma_col_freno(freno, sorgente):
++    freno(sorgente)
++    esito, db = _mike("under_entry", "back", 1.76)
++    assert esito == "cancelled"
++    assert _righe_aperte(db) == [], "nessuna posizione paper nasce a freno tirato"
++    skip = [p for k, p, _e in db.attivita if k == "skip"]
++    assert skip and skip[-1]["reason"] == _motivo(sorgente)
++
++
++def test_mike_paper_chiusura_passa_col_freno(freno):
++    freno("db")
++    esito, db = _mike("under_green", "lay", 1.78, closes=41)
++    assert esito == "open"
++    assert len(_righe_aperte(db)) == 1
++
++
++def test_mike_paper_freno_rilasciato_parita(freno):
++    freno(None)
++    esito, db = _mike("under_entry", "back", 1.76)
++    assert esito == "open" and len(_righe_aperte(db)) == 1
++
++
++def test_mike_resting_paper_di_apertura_ferma(freno):
++    freno("db")
++    db = DbMemoria({"status": "running", "mode": "paper", "params": {}})
++    leg = ME.Leg(role="under_entry", market=ME.MARKET_OU35, selection=ME.SEL_UNDER,
++                 side="lay", price=1.78, size=5.0, ref="under_entry-0-1")
++    assert MS._freno_resting_paper(db, leg, "35674515") is True
++    assert leg.status == "cancelled"
++    salt = [p for k, p, _e in db.attivita if k == "place_saltato"]
++    assert salt and salt[0]["reason"] == "kill_switch"
++    assert salt[0]["motivo"] == "db_kill_switch_attivo"
++    freno(None)
++    leg2 = ME.Leg(role="under_entry", market=ME.MARKET_OU35, selection=ME.SEL_UNDER,
++                  side="lay", price=1.78, size=5.0, ref="under_entry-0-2")
++    assert MS._freno_resting_paper(db, leg2, "35674515") is False
++
++
++# ===========================================================================
++# (c) OMEGA - automatico e manuale in PAPER: in
++#     ``Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py`` (serve
++#     il conftest di Omega che azzera lo stato di processo fra un test e l'altro)
++# ===========================================================================
++
++
++# ===========================================================================
++# (d) FAIL-CLOSED: freno non valutabile = freno tirato
++# ===========================================================================
++def test_safe_freno_aperture_import_fallito_e_tirato(controls_non_importabile):
++    assert X._freno_aperture() == "kill_switch_illeggibile"
++
++
++def test_safe_live_brake_import_fallito_e_tirato(controls_non_importabile, monkeypatch):
++    monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
++    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
++    assert X._live_brake() == "kill_switch_illeggibile"
++
++
++def test_safe_live_brake_freni_non_importabili_e_tirato(monkeypatch):
++    vero_import = builtins.__import__
++
++    def _import(nome, globs=None, locs=None, fromlist=(), livello=0):
++        if nome == "Betfair.stream" and "modo_ordini" in (fromlist or ()):
++            raise ImportError("modo_ordini assente")
++        return vero_import(nome, globs, locs, fromlist, livello)
++
++    monkeypatch.setattr(builtins, "__import__", _import)
++    assert X._live_brake() == "freni_live_non_letti"
++
++
++def test_safe_paper_col_freno_illeggibile_non_apre(controls_non_importabile):
++    out = _safe_paper()
++    assert out.status == "error" and out.fill_note == "kill_switch_illeggibile"
++
++
++def test_omega_e_mike_freno_illeggibile_e_tirato(controls_non_importabile):
++    assert OS._freno_rest_aperture() == "kill_switch_illeggibile"
++    assert MS._freno_aperture_rest() == "kill_switch_illeggibile"
++
++
++def test_scalper_freno_illeggibile_e_tirato(controls_non_importabile, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    assert SS.motivo_freno() == "kill_switch_illeggibile"
++
++
++# ===========================================================================
++# (b) SCALPER: il freno del DB senza file STOP
++# ===========================================================================
++class _SbFinto:
++    """``sb.table(t).update(f).eq(c, v).execute()`` e ``.insert(r).execute()``
++    come il client supabase vero: registra cosa scriverebbe."""
++
++    def __init__(self) -> None:
++        self.scritte: List[Tuple[str, str, Any]] = []
++
++    def table(self, nome: str) -> Any:
++        sb = self
++
++        class _Q:
++            def __init__(self) -> None:
++                self._op: Tuple[str, Any] = ("", None)
++
++            def update(self, campi):
++                self._op = ("update", dict(campi))
++                return self
++
++            def insert(self, riga):
++                self._op = ("insert", riga)
++                return self
++
++            def eq(self, _col, _val):
++                return self
++
++            def execute(self):
++                sb.scritte.append((nome, self._op[0], self._op[1]))
++                return SimpleNamespace(data=[])
++        return _Q()
++
++
++def _db_scalper() -> Tuple[SS.Db, _SbFinto]:
++    db = SS.Db.__new__(SS.Db)
++    sb = _SbFinto()
++    db.sb = sb
++    return db, sb
++
++
++def test_scalper_motivo_freno_dal_db_senza_file(freno, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)                 # nessun STOP_SCALPER qui
++    assert not os.path.isfile(SS.KILL_FILE)
++    freno("db")
++    assert SS.motivo_freno() == "db_kill_switch_attivo"
++    freno("env")
++    assert SS.motivo_freno() == "live_kill_switch_attivo"
++    freno(None)
++    assert SS.motivo_freno() is None
++    (tmp_path / SS.KILL_FILE).write_text("stop")
++    assert SS.motivo_freno() == SS.MOTIVO_FILE
++
++
++def test_scalper_sessione_non_parte_col_freno(freno, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    freno("db")
++    db, sb = _db_scalper()
++    assert SS.non_partire_col_freno(db, "34567890") == "db_kill_switch_attivo"
++    upd = [c for t, op, c in sb.scritte if t == "scalper_control" and op == "update"]
++    assert upd and upd[0]["status"] == "stopped"
++    assert "freno tirato" in upd[0]["error"] and upd[0]["stopped_at"]
++    freno(None)
++    db2, sb2 = _db_scalper()
++    assert SS.non_partire_col_freno(db2, "34567890") is None
++    assert sb2.scritte == [], "a freno rilasciato la sessione parte senza scritture in piu'"
++
++
++def test_scalper_supervisore_non_avvia_sessioni_col_freno():
++    riga = {"event_id": "34567890", "status": "requested"}
++    assert SVC.sessione_da_avviare(riga, False, "db_kill_switch_attivo") is False
++    assert SVC.sessione_da_avviare(riga, False, None) is True
++    assert SVC.sessione_da_avviare(riga, True, None) is False
++    assert SVC.sessione_da_avviare({**riga, "status": "running"}, False, None) is False
++
++
++def test_scalper_supervisore_legge_il_freno_del_db(freno, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    freno("db")
++    assert SVC.freno_supervisore() == "db_kill_switch_attivo"
++    freno(None)
++    assert SVC.freno_supervisore() is None
++
++
++def test_scalper_sorvegliante_arma_il_force_flat_al_freno(freno, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    freno("db")
++    stop, visto, chiamate = threading.Event(), threading.Event(), []
++    assert SS.sorveglia_freno(stop, visto, chiamate.append, poll_s=0.01) == "db_kill_switch_attivo"
++    assert visto.is_set() and chiamate == ["db_kill_switch_attivo"]
++
++
++def test_scalper_sorvegliante_esce_a_fine_sessione_senza_freno(freno, tmp_path, monkeypatch):
++    monkeypatch.chdir(tmp_path)
++    freno(None)
++    stop, visto, chiamate = threading.Event(), threading.Event(), []
++    stop.set()
++    assert SS.sorveglia_freno(stop, visto, chiamate.append, poll_s=0.01) is None
++    assert not visto.is_set() and chiamate == []
++
++
++# ===========================================================================
++# (e) il freno nel messaggio ``modo_ordini`` del runner calcio
++# ===========================================================================
++class _CanaleRegistrato(LC.LocalChannel):
++    """Il canale VERO, non avviato, con ``publish`` che registra."""
++
++    def __init__(self) -> None:
++        super().__init__(47331, "calcio")
++        self.usciti: List[Tuple[str, Any]] = []
++
++    def publish(self, topic: str, payload: Any) -> None:  # type: ignore[override]
++        json.dumps({"t": topic, "d": payload}, default=str)
++        self.usciti.append((topic, payload))
++
++
++class _SbSettings:
++    def __init__(self) -> None:
++        self.riga = _riga_settings(False)
++
++    def rpc(self, nome, _args):
++        assert nome == "get_live_settings"
++        sb = self
++
++        class _Q:
++            def execute(self_inner):
++                return SimpleNamespace(data=dict(sb.riga))
++        return _Q()
++
++
++@pytest.fixture
++def canale(monkeypatch):
++    ch = _CanaleRegistrato()
++    monkeypatch.setattr(LC, "_CHANNEL", ch)
++    monkeypatch.setattr(W, "_MODO_CANALE_FIRMA", None)
++    # ``_refresh_settings`` riscrive la copia di PROCESSO dei settings del worker
++    # (kill_switch compreso): va ripristinata, o i test dopo vedrebbero il freno
++    monkeypatch.setattr(W, "_SETTINGS", dict(W._SETTINGS))
++    monkeypatch.setattr(W, "_SETTINGS_TS", W._SETTINGS_TS)
++    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
++    monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
++    MO.azzera()
++    CB.azzera_statistiche()
++    yield ch
++    MO.azzera()
++    CB.azzera_statistiche()
++
++
++def _modi(ch: _CanaleRegistrato) -> List[Dict[str, Any]]:
++    return [d for t, d in ch.usciti if t == CB.TOPIC["modo_ordini"]]
++
++
++def test_modo_ordini_porta_il_freno_e_lo_pubblica_al_cambio(canale):
++    sb = _SbSettings()
++    W._refresh_settings(sb)
++    m = _modi(canale)
++    assert len(m) == 1 and m[0]["kill_switch"] is False
++    assert m[0]["kill_switch_letto"] is True and m[0]["kill_switch_env"] is False
++    sb.riga["kill_switch"] = True                 # l'utente tira il freno dalla UI
++    W._refresh_settings(sb)
++    m = _modi(canale)
++    assert len(m) == 2, "tirare il freno e' un cambio: esce subito sul canale"
++    assert m[1]["kill_switch"] is True
++    assert canale._hello_extra["modo_ordini"]["kill_switch"] is True
++    W._refresh_settings(sb)
++    assert len(_modi(canale)) == 2
++    sb.riga["kill_switch"] = False                # rilasciato
++    W._refresh_settings(sb)
++    assert _modi(canale)[-1]["kill_switch"] is False
++
++
++def test_modo_ordini_freno_dal_env(canale, monkeypatch):
++    monkeypatch.setenv("LIVE_KILL_SWITCH", "true")
++    W._refresh_settings(_SbSettings())
++    m = _modi(canale)[-1]
++    assert m["kill_switch"] is True and m["kill_switch_env"] is True
++
++
++def test_i_finti_del_frontend_col_freno_hanno_chiavi_e_tipi_veri(canale):
++    with open(_FINTI_UI, encoding="utf-8") as fh:
++        finti = json.load(fh)
++    sb = _SbSettings()
++    sb.riga["kill_switch"] = True
++    W._refresh_settings(sb)
++    vero = _modi(canale)[-1]
++    for nome in ("modo_ordini", "modo_ordini_live", "modo_ordini_freno"):
++        assert set(finti[nome].keys()) == set(vero.keys()), nome
++        for k in ("kill_switch", "kill_switch_env", "kill_switch_letto", "ts"):
++            assert type(finti[nome][k]) is type(vero[k]), (nome, k)
++    assert set(finti["hello"]["modo_ordini"].keys()) == set(vero.keys())
++    assert finti["modo_ordini_freno"]["kill_switch"] is True is vero["kill_switch"]
+diff --git a/frontend/src/components/controlroom/RigaFreno.test.tsx b/frontend/src/components/controlroom/RigaFreno.test.tsx
+new file mode 100644
+index 0000000..77dbac9
+--- /dev/null
++++ b/frontend/src/components/controlroom/RigaFreno.test.tsx
+@@ -0,0 +1,205 @@
++// ============================================================================
++// RigaFreno.test.tsx - R3 (25/09): la riga FRENO della Control Room.
++//
++// Che cosa si prova:
++//   * lo stato viene dal push del runner (`modo_ordini`/`hello.modo_ordini`,
++//     chiavi VERE in lib/__fixtures__/runnerCanaleFinti.json, verificate da
++//     Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py) se piu' recente
++//     della lettura del database, altrimenti dal database;
++//   * TIRA IL FRENO = un clic, RPC `set_live_kill_switch` con `p_on: true`;
++//   * RILASCIA = due conferme (con la finestra anti-doppio-clic), poi
++//     `p_on: false`; annulla torna indietro senza scrivere;
++//   * freno dal .env: lo dice.
++// Riga del database: `get_live_settings` = to_jsonb(betfair_live_settings).
++// ============================================================================
++import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
++import { render, fireEvent, act, waitFor } from '@testing-library/react';
++import type { LiveSettings } from '@/lib/liveOrders';
++
++type Cb = (d: unknown) => void;
++const iscritti = new Map<string, Set<Cb>>();
++let stato: 'connected' | 'off' = 'off';
++let helloCorrente: Record<string, unknown> | null = null;
++function spingi(topic: string, d: unknown): void {
++    for (const cb of iscritti.get(topic) ?? []) cb(d);
++}
++
++vi.mock('@/lib/localChannel', async (orig) => ({
++    ...(await orig() as object),
++    getLocalChannel: vi.fn(() => ({
++        getStatus: () => stato,
++        getHello: () => helloCorrente,
++        onStatus: () => () => { /* nessun cambio di stato nei test */ },
++        subscribe: (topic: string, cb: Cb) => {
++            let s = iscritti.get(topic);
++            if (!s) { s = new Set(); iscritti.set(topic, s); }
++            s.add(cb);
++            return () => { s.delete(cb); };
++        },
++        request: async () => ({ ok: true }),
++    })),
++}));
++const rpc = vi.fn();
++vi.mock('@/integrations/supabase/client', () => ({
++    supabase: { rpc: (...a: unknown[]) => rpc(...a) },
++}));
++
++import { RigaFreno, leggiFrenoCanale, statoFreno } from './RigaFreno';
++import { setKillSwitch } from '@/lib/liveOrders';
++import finti from '@/lib/__fixtures__/runnerCanaleFinti.json';
++
++function riga(over: Partial<LiveSettings> = {}): LiveSettings {
++    return {
++        id: 1, kill_switch: false, max_exposure_per_selection: null, max_orders_per_min: null,
++        order_poll_sec: null, risk_poll_sec: null, daily_loss_limit: null, max_exposure_per_event: null,
++        max_exposure_per_league: null, updated_at: '2026-09-25T20:00:00+00:00',
++        order_mode: 'paper', order_mode_updated_at: '2026-09-25T12:00:00+00:00',
++        order_mode_updated_by: 'avvio_app', order_mode_boot_id: 'boot-1',
++        order_mode_tetto: 'live', order_mode_tetto_at: '2026-09-25T08:00:00+00:00',
++        ...over,
++    };
++}
++
++function monta(iniziale: LiveSettings) {
++    let corrente = iniziale;
++    const leggi = vi.fn(async () => corrente);
++    const scrivi = vi.fn(async (on: boolean) => { corrente = { ...corrente, kill_switch: on }; return corrente; });
++    const s = render(<RigaFreno leggi={leggi} scrivi={scrivi} riletturaMs={3_600_000} />);
++    return { s, leggi, scrivi };
++}
++
++beforeEach(() => {
++    iscritti.clear();
++    stato = 'off';
++    helloCorrente = null;
++    rpc.mockReset();
++});
++afterEach(() => { vi.useRealTimers(); });
++
++describe('lettura del freno dal messaggio del runner', () => {
++    it('messaggi veri: rilasciato e tirato', () => {
++        expect(leggiFrenoCanale(finti.modo_ordini)).toEqual({ tirato: false, env: false, ms: finti.modo_ordini.ts });
++        expect(leggiFrenoCanale(finti.modo_ordini_freno)).toEqual({ tirato: true, env: false, ms: finti.modo_ordini_freno.ts });
++    });
++
++    it('riga non letta dal runner (e nessun freno dal .env): vale il database', () => {
++        expect(leggiFrenoCanale({ ...finti.modo_ordini_freno, kill_switch_letto: false })).toBeNull();
++        expect(leggiFrenoCanale({ ...finti.modo_ordini_freno, kill_switch_letto: false, kill_switch_env: true }))
++            .toEqual({ tirato: true, env: true, ms: finti.modo_ordini_freno.ts });
++    });
++
++    it('runner di prima del 25/09 (senza le chiavi del freno) o messaggio storto: null', () => {
++        const { kill_switch: _k, ...vecchio } = finti.modo_ordini;
++        void _k;
++        expect(leggiFrenoCanale(vecchio)).toBeNull();
++        expect(leggiFrenoCanale(null)).toBeNull();
++        expect(leggiFrenoCanale({ ...finti.modo_ordini, ts: 'ieri' })).toBeNull();
++    });
++
++    it('vince il piu\' recente fra database e push', () => {
++        const push = leggiFrenoCanale(finti.modo_ordini_freno);
++        expect(statoFreno(riga(), push!.ms - 1, push, push!.ms).fonte).toBe('canale');
++        expect(statoFreno(riga(), push!.ms - 1, push, push!.ms).tirato).toBe(true);
++        expect(statoFreno(riga(), push!.ms + 1, push, push!.ms + 1).fonte).toBe('db');
++        expect(statoFreno(riga(), push!.ms + 1, push, push!.ms + 1).tirato).toBe(false);
++        expect(statoFreno(null, null, null, 0).tirato).toBeNull();
++    });
++});
++
++describe('la riga FRENO', () => {
++    it('dal database: rilasciato, fonte "db"', async () => {
++        const { s } = monta(riga());
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/rilasciato/));
++        expect(s.getByTestId('cr-freno-fonte').textContent).toMatch(/^db /);
++        expect(s.queryByTestId('cr-freno-rilascia')).toBeNull();
++    });
++
++    it('il push del runner mostra il freno tirato senza aspettare il poll', async () => {
++        stato = 'connected';
++        const { s, leggi } = monta(riga());
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/rilasciato/));
++        await act(async () => { await new Promise((r) => setTimeout(r, 15)); });
++        act(() => spingi('modo_ordini', { ...finti.modo_ordini_freno, ts: Date.now() }));
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/TIRATO/));
++        expect(s.getByTestId('cr-freno-fonte').textContent).toMatch(/^canale /);
++        expect(leggi).toHaveBeenCalledTimes(1);
++    });
++
++    it('dall\'hello: chi si collega dopo vede subito il freno', async () => {
++        stato = 'connected';
++        helloCorrente = { ...finti.hello, modo_ordini: { ...finti.modo_ordini_freno, ts: Date.now() + 60_000 } };
++        const { s } = monta(riga());
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/TIRATO/));
++    });
++
++    it('TIRA IL FRENO: un clic, nessuna conferma, scrive true', async () => {
++        const { s, scrivi } = monta(riga());
++        await waitFor(() => expect(s.getByTestId('cr-freno-tira')).toBeTruthy());
++        fireEvent.click(s.getByTestId('cr-freno-tira'));
++        await waitFor(() => expect(scrivi).toHaveBeenCalledTimes(1));
++        expect(scrivi).toHaveBeenCalledWith(true);
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/TIRATO/));
++    });
++
++    it('RILASCIA: nulla parte prima della SECONDA conferma, poi scrive false', async () => {
++        const { s, scrivi } = monta(riga({ kill_switch: true }));
++        await waitFor(() => expect(s.getByTestId('cr-freno-stato').textContent).toMatch(/TIRATO/));
++        expect(s.queryByTestId('cr-freno-tira')).toBeNull();
++        vi.useFakeTimers();
++        fireEvent.click(s.getByTestId('cr-freno-rilascia'));
++        expect(scrivi).not.toHaveBeenCalled();
++        // prima conferma: inerte nel doppio clic
++        const c1 = s.getByTestId('cr-freno-conferma-1');
++        expect(c1).toHaveProperty('disabled', true);
++        fireEvent.click(c1);
++        expect(s.queryByTestId('cr-freno-conferma-2')).toBeNull();
++        act(() => { vi.advanceTimersByTime(500); });
++        fireEvent.click(s.getByTestId('cr-freno-conferma-1'));
++        expect(scrivi).not.toHaveBeenCalled();
++        // seconda conferma: inerte nel doppio clic
++        const c2 = s.getByTestId('cr-freno-conferma-2');
++        expect(c2).toHaveProperty('disabled', true);
++        fireEvent.click(c2);
++        expect(scrivi).not.toHaveBeenCalled();
++        act(() => { vi.advanceTimersByTime(500); });
++        fireEvent.click(s.getByTestId('cr-freno-conferma-2'));
++        expect(scrivi).toHaveBeenCalledTimes(1);
++        expect(scrivi).toHaveBeenCalledWith(false);
++    });
++
++    it('RILASCIA poi annulla: niente scritto, si torna al pulsante', async () => {
++        const { s, scrivi } = monta(riga({ kill_switch: true }));
++        await waitFor(() => expect(s.getByTestId('cr-freno-rilascia')).toBeTruthy());
++        fireEvent.click(s.getByTestId('cr-freno-rilascia'));
++        fireEvent.click(s.getByTestId('cr-freno-annulla'));
++        expect(s.getByTestId('cr-freno-rilascia')).toBeTruthy();
++        expect(s.queryByTestId('cr-freno-conferma-1')).toBeNull();
++        expect(scrivi).not.toHaveBeenCalled();
++    });
++
++    it('freno dal .env del runner: lo dice', async () => {
++        stato = 'connected';
++        helloCorrente = { ...finti.hello, modo_ordini: { ...finti.modo_ordini_freno, kill_switch_env: true, ts: Date.now() + 60_000 } };
++        const { s } = monta(riga());
++        await waitFor(() => expect(s.getByTestId('cr-freno-env').textContent).toMatch(/LIVE_KILL_SWITCH/));
++    });
++
++    it('stato non letto: il freno si puo\' tirare lo stesso', async () => {
++        const leggi = vi.fn(async () => { throw new Error('rete giu'); });
++        const scrivi = vi.fn(async () => riga({ kill_switch: true }));
++        const s = render(<RigaFreno leggi={leggi} scrivi={scrivi} riletturaMs={3_600_000} />);
++        await waitFor(() => expect(s.getByTestId('cr-freno-non-letto').textContent).toMatch(/rete giu/));
++        fireEvent.click(s.getByTestId('cr-freno-tira'));
++        await waitFor(() => expect(scrivi).toHaveBeenCalledWith(true));
++    });
++});
++
++describe('la RPC vera', () => {
++    it('setKillSwitch chiama set_live_kill_switch con p_on', async () => {
++        rpc.mockResolvedValue({ data: riga({ kill_switch: true }), error: null });
++        await setKillSwitch(true);
++        expect(rpc).toHaveBeenCalledWith('set_live_kill_switch', { p_on: true });
++        await setKillSwitch(false);
++        expect(rpc).toHaveBeenLastCalledWith('set_live_kill_switch', { p_on: false });
++    });
++});
+diff --git a/frontend/src/components/controlroom/RigaFreno.tsx b/frontend/src/components/controlroom/RigaFreno.tsx
+new file mode 100644
+index 0000000..82b0bbb
+--- /dev/null
++++ b/frontend/src/components/controlroom/RigaFreno.tsx
+@@ -0,0 +1,281 @@
++// ============================================================================
++// RigaFreno.tsx - R3 (25/09): IL FRENO UNICO in Control Room.
++//
++// Ordine dell'utente (25/09 sera): «un freno unico che ferma ogni cosa sia
++// live che paper». Il freno e' uno solo: `betfair_live_settings.kill_switch`
++// (RPC owner-only `set_live_kill_switch`, la stessa del pulsante di Segui
++// Live) piu' `LIVE_KILL_SWITCH` del .env. Tirato, NESSUN bot apre (Omega,
++// Mike, Safe calcio e tennis, i 4 bot tennis, lo scalper), ne' in live ne' in
++// paper; le chiusure passano sempre.
++//
++// E' una riga della plancia dei bot, subito sotto «Ordini reali», con lo
++// stesso stile. Mostra:
++//   * lo stato del freno: dal canale del runner calcio (47331, topic
++//     `modo_ordini` e `hello.modo_ordini`, chiavi `kill_switch`,
++//     `kill_switch_env`, `kill_switch_letto`) se piu' recente della lettura
++//     del database, altrimenti dal database (`get_live_settings`, all'apertura,
++//     dopo ogni comando e ogni 30 s come ripiego). Fonte ed eta' a video.
++//   * TIRA IL FRENO: UN clic, nessuna domanda (come «FERMA TUTTI»: un freno
++//     d'emergenza con una conferma davanti non e' un freno d'emergenza).
++//   * RILASCIA: DUE conferme. E' l'unica via per rialzarlo: mai automatico.
++// Se il freno viene dal .env lo dice: da qui non si toglie.
++// ============================================================================
++import { useCallback, useEffect, useState } from 'react';
++import { getLocalChannel } from '@/lib/localChannel';
++import { getLiveSettings, setKillSwitch, type LiveSettings } from '@/lib/liveOrders';
++import { fmtDateTime } from '@/lib/format';
++import { Button } from '@/components/ui/button';
++import { AlertTriangle, Loader2, OctagonX } from 'lucide-react';
++
++/** stessa finestra anti-doppio-clic delle altre righe della plancia */
++const ATTESA_CONFERMA_MS = 400;
++const RILETTURA_MS = 30_000;
++
++/** Il freno come lo dichiara il runner calcio sul canale. */
++export interface FrenoCanale {
++    tirato: boolean;
++    /** true = tirato dal .env del runner (LIVE_KILL_SWITCH): da qui non si toglie */
++    env: boolean;
++    /** ms del produttore (`ts` del messaggio) */
++    ms: number;
++}
++
++/**
++ * Legge il freno da un messaggio `modo_ordini` (o `hello.modo_ordini`):
++ * `modo_ordini.stato_corrente()` + `ts`. `null` = messaggio storto, runner di
++ * prima del 25/09 (senza le chiavi del freno) o riga non letta di recente dal
++ * runner (`kill_switch_letto` false e nessun freno dal .env): in quel caso vale
++ * la lettura del database.
++ */
++export function leggiFrenoCanale(d: unknown): FrenoCanale | null {
++    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
++    const o = d as Record<string, unknown>;
++    if (typeof o.ts !== 'number' || !Number.isFinite(o.ts)) return null;
++    if (typeof o.kill_switch !== 'boolean') return null;
++    const env = o.kill_switch_env === true;
++    if (o.kill_switch_letto !== true && !env) return null;
++    return { tirato: o.kill_switch, env, ms: o.ts };
++}
++
++function piuRecente(p: FrenoCanale | null, m: FrenoCanale | null): FrenoCanale | null {
++    if (m == null) return p;
++    return p != null && p.ms >= m.ms ? p : m;
++}
++
++export interface StatoFreno {
++    /** null = non si sa (nessuna lettura riuscita, nessun push valido) */
++    tirato: boolean | null;
++    env: boolean;
++    fonte: 'canale' | 'db' | null;
++    etaS: number | null;
++}
++
++/** Il piu' recente fra la lettura del database e il push del runner. */
++export function statoFreno(riga: LiveSettings | null, lettoMs: number | null,
++    canale: FrenoCanale | null, nowMs: number): StatoFreno {
++    const eta = (ms: number | null) => (ms == null ? null : Math.max(0, Math.round((nowMs - ms) / 1000)));
++    if (canale != null && (riga == null || lettoMs == null || canale.ms > lettoMs)) {
++        return { tirato: canale.tirato, env: canale.env, fonte: 'canale', etaS: eta(canale.ms) };
++    }
++    if (riga != null && typeof riga.kill_switch === 'boolean') {
++        return { tirato: riga.kill_switch, env: false, fonte: 'db', etaS: eta(lettoMs) };
++    }
++    return { tirato: null, env: false, fonte: null, etaS: null };
++}
++
++export interface RigaFrenoProps {
++    /** iniettabili per i test: di serie le RPC vere */
++    leggi?: () => Promise<LiveSettings | null>;
++    scrivi?: (on: boolean) => Promise<LiveSettings | null>;
++    riletturaMs?: number;
++}
++
++export function RigaFreno({
++    leggi = getLiveSettings, scrivi = setKillSwitch, riletturaMs = RILETTURA_MS,
++}: RigaFrenoProps) {
++    const [riga, setRiga] = useState<LiveSettings | null>(null);
++    const [lettoMs, setLettoMs] = useState<number | null>(null);
++    const [erroreLettura, setErroreLettura] = useState<string | null>(null);
++    const [errore, setErrore] = useState<string | null>(null);
++    const [inCorso, setInCorso] = useState(false);
++    /** 0 = niente; 1 = prima conferma del rilascio; 2 = seconda conferma */
++    const [passo, setPasso] = useState<0 | 1 | 2>(0);
++    const [armatoDa, setArmatoDa] = useState<number | null>(null);
++    const [, setTic] = useState(0);
++    const [freno, setFreno] = useState<FrenoCanale | null>(null);
++    const [nowMs, setNowMs] = useState(() => Date.now());
++
++    const ricarica = useCallback(async () => {
++        const inizio = Date.now();
++        try {
++            const r = await leggi();
++            setRiga(r);
++            setErroreLettura(null);
++            setLettoMs(inizio);
++        } catch (e) {
++            setErroreLettura(e instanceof Error ? e.message : String(e));
++        }
++    }, [leggi]);
++
++    // il canale del runner calcio (47331): hello e topic `modo_ordini`
++    useEffect(() => {
++        const ch = getLocalChannel('calcio');
++        const daHello = (h: unknown) => leggiFrenoCanale(
++            h && typeof h === 'object' ? (h as Record<string, unknown>).modo_ordini : null);
++        const helloDi = () => (typeof ch.getHello === 'function' ? ch.getHello() : null);
++        if (ch.getStatus() === 'connected') setFreno(daHello(helloDi()));
++        const offStato = ch.onStatus((st) => {
++            // canale giu': il push non vale piu', resta il database
++            if (st !== 'connected') setFreno(null);
++            else setFreno((p) => piuRecente(p, daHello(helloDi())));
++        });
++        const offHello = ch.subscribe('hello', (d) => setFreno((p) => piuRecente(p, daHello(d))));
++        const offModo = ch.subscribe('modo_ordini', (d) => {
++            const m = leggiFrenoCanale(d);
++            if (m) setFreno((p) => piuRecente(p, m));
++        });
++        const t = window.setInterval(() => setNowMs(Date.now()), 1_000);
++        return () => { offStato(); offHello(); offModo(); window.clearInterval(t); };
++    }, []);
++
++    useEffect(() => {
++        void ricarica();
++        const t = window.setInterval(() => void ricarica(), riletturaMs);
++        return () => window.clearInterval(t);
++    }, [ricarica, riletturaMs]);
++
++    // la finestra anti-doppio-clic si chiude da sola (ridisegno)
++    useEffect(() => {
++        if (armatoDa == null) return;
++        const t = window.setTimeout(() => setTic((n) => n + 1), ATTESA_CONFERMA_MS + 20);
++        return () => window.clearTimeout(t);
++    }, [armatoDa]);
++
++    const st = statoFreno(erroreLettura ? null : riga, lettoMs, freno, nowMs);
++    const troppoPresto = armatoDa != null && Date.now() - armatoDa < ATTESA_CONFERMA_MS;
++
++    const esegui = async (on: boolean) => {
++        setInCorso(true); setErrore(null);
++        try {
++            const nuova = await scrivi(on);
++            if (nuova) { setRiga(nuova); setLettoMs(Date.now()); setErroreLettura(null); }
++            await ricarica();
++        } catch (e) {
++            setErrore(e instanceof Error ? e.message : String(e));
++        } finally {
++            setInCorso(false); setPasso(0); setArmatoDa(null);
++        }
++    };
++
++    const avanza = (p: 1 | 2) => { setPasso(p); setArmatoDa(Date.now()); };
++    const annulla = () => { setPasso(0); setArmatoDa(null); };
++
++    const tirato = st.tirato === true;
++
++    return (
++        <div className={`px-3 py-2 border-b border-white/10 ${tirato ? 'bg-red-500/10' : ''}`}
++            data-testid="cr-freno">
++            <div className="flex items-center gap-2 flex-wrap">
++                <span className="text-[12px] font-bold uppercase tracking-wider w-24 shrink-0">Freno</span>
++
++                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
++                    tirato ? 'bg-red-500/30 text-red-200'
++                        : st.tirato === false ? 'bg-white/10 text-white/45'
++                            : 'bg-orange-500/15 text-orange-300'
++                }`} data-testid="cr-freno-stato"
++                    title="tirato: nessun bot apre, ne' in live ne' in paper; le chiusure passano sempre">
++                    {tirato ? 'TIRATO - nessuna apertura'
++                        : st.tirato === false ? 'rilasciato' : 'non letto'}
++                </span>
++
++                {st.fonte != null && (
++                    <span className="text-[10px] text-white/30" data-testid="cr-freno-fonte"
++                        title="da dove viene lo stato: canale del runner calcio (47331, al cambio) o database (get_live_settings, ogni 30 s)">
++                        {st.fonte}{' '}{st.etaS == null ? '-' : `${st.etaS} s`}
++                    </span>
++                )}
++
++                {st.fonte === 'db' && riga?.updated_at && (
++                    <span className="text-[10px] text-white/30" data-testid="cr-freno-quando">
++                        riga aggiornata il {fmtDateTime(riga.updated_at)}
++                    </span>
++                )}
++            </div>
++
++            {st.env && (
++                <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5" data-testid="cr-freno-env">
++                    <AlertTriangle className="w-3 h-3 shrink-0" />
++                    <span>il freno e' tirato anche dal .env del runner (LIVE_KILL_SWITCH): da qui non si toglie.</span>
++                </div>
++            )}
++
++            {st.tirato == null && (
++                <div className="mt-1.5 text-[10px] text-orange-300" data-testid="cr-freno-non-letto">
++                    stato del freno non letto{erroreLettura ? ` (${erroreLettura})` : ''}: tirarlo resta sempre possibile.
++                </div>
++            )}
++
++            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
++                {!tirato && (
++                    <Button
++                        type="button" size="sm"
++                        disabled={inCorso}
++                        onClick={() => void esegui(true)}
++                        data-testid="cr-freno-tira"
++                        title="ferma OGNI apertura di tutti i bot, live e paper. Le chiusure restano servite."
++                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-red-600/80 hover:bg-red-600 text-white font-bold"
++                    >{inCorso ? <Loader2 className="w-3 h-3 animate-spin" /> : <><OctagonX className="w-3 h-3 mr-1" />tira il freno</>}</Button>
++                )}
++
++                {tirato && passo === 0 && (
++                    <Button
++                        type="button" size="sm" variant="outline"
++                        disabled={inCorso}
++                        onClick={() => avanza(1)}
++                        data-testid="cr-freno-rilascia"
++                        title="rialza il freno: si conferma due volte"
++                        className="h-6 px-2 text-[10px] uppercase tracking-wider"
++                    >rilascia</Button>
++                )}
++
++                {tirato && passo === 1 && (
++                    <Button
++                        type="button" size="sm" variant="outline"
++                        disabled={inCorso || troppoPresto}
++                        onClick={() => avanza(2)}
++                        data-testid="cr-freno-conferma-1"
++                        className="h-6 px-2 text-[10px] uppercase tracking-wider border-amber-400/40 text-amber-300"
++                    >confermi? i bot accesi tornano ad aprire</Button>
++                )}
++
++                {tirato && passo === 2 && (
++                    <Button
++                        type="button" size="sm"
++                        disabled={inCorso || troppoPresto}
++                        onClick={() => void esegui(false)}
++                        data-testid="cr-freno-conferma-2"
++                        className="h-6 px-2 text-[10px] uppercase tracking-wider bg-amber-600/80 hover:bg-amber-600 text-white font-bold"
++                    >{inCorso ? <Loader2 className="w-3 h-3 animate-spin" /> : 'si, rilascia il freno'}</Button>
++                )}
++
++                {tirato && passo > 0 && (
++                    <Button
++                        type="button" size="sm" variant="outline"
++                        disabled={inCorso}
++                        onClick={annulla}
++                        data-testid="cr-freno-annulla"
++                        className="h-6 px-2 text-[10px] uppercase tracking-wider"
++                    >annulla</Button>
++                )}
++            </div>
++
++            {errore && (
++                <div className="mt-1.5 text-[10px] text-red-300" data-testid="cr-freno-errore">
++                    il comando non e' andato a buon fine: {errore}. Il freno resta quello mostrato.
++                </div>
++            )}
++        </div>
++    );
++}
++
++export default RigaFreno;
+diff --git a/frontend/src/lib/__fixtures__/runnerCanaleFinti.json b/frontend/src/lib/__fixtures__/runnerCanaleFinti.json
+index bb40f42..de0d1c6 100644
+--- a/frontend/src/lib/__fixtures__/runnerCanaleFinti.json
++++ b/frontend/src/lib/__fixtures__/runnerCanaleFinti.json
+@@ -1,5 +1,5 @@
+ {
+-  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z.",
++  "_origine": "Generato il 25/09 dal codice Python VERO: battito = canale_bot.battito_runner (Betfair/stream/canale_bot.py, pubblicato da runner._pubblica_battito); modo_ordini = modo_ordini.stato_corrente() + ts (Betfair/stream/live_order_worker.py, _pubblica_modo_ordini_se_cambiato); hello = local_channel.py _handler {sport, **_hello_extra}. Chiavi e tipi verificati da Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py (ultimo test). Solo i ts sono fissati attorno a 2026-09-25T13:00:00Z. R3 (25/09 sera): stato_corrente porta anche il freno unico (kill_switch, kill_switch_env, kill_switch_letto); modo_ordini_freno = freno tirato dalla Control Room, verificato da Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py.",
+   "battito": {
+     "ts": 1790341198000,
+     "mode": "LIVE+PAPER",
+@@ -13,6 +13,9 @@
+     "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
+     "scelto_ui_da": "avvio_app",
+     "eta_lettura_s": 0.0,
++    "kill_switch": false,
++    "kill_switch_env": false,
++    "kill_switch_letto": true,
+     "ts": 1790341195000
+   },
+   "modo_ordini_live": {
+@@ -23,8 +26,24 @@
+     "scelto_ui_at": "2026-09-25T12:05:00.000000+00:00",
+     "scelto_ui_da": "utente",
+     "eta_lettura_s": 0.0,
++    "kill_switch": false,
++    "kill_switch_env": false,
++    "kill_switch_letto": true,
+     "ts": 1790341199000
+   },
++  "modo_ordini_freno": {
++    "effettivo": "PAPER",
++    "tetto_ambiente": "LIVE",
++    "scelto_ui": "PAPER",
++    "motivo": "ok",
++    "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
++    "scelto_ui_da": "avvio_app",
++    "eta_lettura_s": 0.0,
++    "kill_switch": true,
++    "kill_switch_env": false,
++    "kill_switch_letto": true,
++    "ts": 1790341201000
++  },
+   "hello": {
+     "sport": "calcio",
+     "mode": "LIVE",
+@@ -36,6 +55,9 @@
+       "scelto_ui_at": "2026-09-25T12:00:00.123456+00:00",
+       "scelto_ui_da": "avvio_app",
+       "eta_lettura_s": 0.0,
++      "kill_switch": false,
++      "kill_switch_env": false,
++      "kill_switch_letto": true,
+       "ts": 1790341195000
+     }
+   }
+diff --git a/frontend/src/pages/ControlRoom.tsx b/frontend/src/pages/ControlRoom.tsx
+index 2e98ff9..776f07e 100644
+--- a/frontend/src/pages/ControlRoom.tsx
++++ b/frontend/src/pages/ControlRoom.tsx
+@@ -54,6 +54,7 @@ import {
+ import { righeInterruttori } from '@/components/controlroom/righeBot';
+ import { PannelloBot } from '@/components/controlroom/PannelloBot';
+ import { RigaOrdiniReali } from '@/components/controlroom/RigaOrdiniReali';
++import { RigaFreno } from '@/components/controlroom/RigaFreno';
+ import { UsciteTennis } from '@/components/controlroom/UsciteTennis';
+ import {
+     STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+@@ -608,7 +609,7 @@ export default function ControlRoom() {
+                 titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
+                 ambito={sport ?? 'tutti'}
+                 serviziAccesi={serviziAccesi}
+-                ordiniReali={<RigaOrdiniReali />}
++                ordiniReali={<><RigaOrdiniReali /><RigaFreno /></>}
+                 nota={soloTennis ? (
+                     <>
+                         {/* al FUTURO, perché è quello che il pulsante farà: al

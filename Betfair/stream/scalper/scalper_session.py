@@ -103,6 +103,74 @@ HT_STALE_S = 300.0
 HT_MINUTE_MIN = 45
 HT_MINUTE_MAX = 48
 
+# ---- R3 (25/09): IL FRENO UNICO anche per lo scalper ------------------------
+# Ordine dell'utente: «un freno unico che ferma ogni cosa sia live che paper».
+# Fino a oggi lo scalper si fermava SOLO col file ``STOP_SCALPER``: il freno
+# della Control Room (``betfair_live_settings.kill_switch``) e
+# ``LIVE_KILL_SWITCH`` non lo vedevano. Adesso la sessione legge lo STESSO
+# freno di tutti gli altri bot (``controls.motivo_kill_switch``, cache ~2 s) e
+# lo tratta come il file: force-flat (cancella le entrate resting, chiude le
+# posizioni: solo CHIUSURE) e fine sessione. E' il comportamento di "stop" che
+# le strategie dello scalper hanno gia' e che la certificazione S2 collauda.
+#: ogni quanto il sorvegliante della sessione rilegge il freno (s): uguale
+#: alla cache dei settings in ``controls``, nessuna lettura DB in piu'
+FRENO_POLL_S = 2.0
+MOTIVO_FILE = "file_STOP_SCALPER"
+
+
+def motivo_freno() -> Optional[str]:
+    """Il motivo per cui lo scalper NON deve aprire, o None.
+
+    File ``STOP_SCALPER`` nella cwd (il freno di sempre) OPPURE il freno
+    condiviso (env ``LIVE_KILL_SWITCH`` / ``betfair_live_settings.kill_switch``).
+    Paper e live uguali. Freno non valutabile = tirato (fail-closed)."""
+    try:
+        if os.path.isfile(KILL_FILE):
+            return MOTIVO_FILE
+    except Exception:  # noqa: BLE001 - filesystem strano: il DB decide
+        pass
+    try:
+        from ..trading import controls as _ctl
+
+        return _ctl.motivo_kill_switch()
+    except Exception as ex:  # noqa: BLE001 - fail-closed
+        logger.error("[scalper-sess] freno non valutabile: sessione FERMA (%s)", str(ex)[:120])
+        return "kill_switch_illeggibile"
+
+
+def sorveglia_freno(stop_flag: Any, visto: Any, al_freno: Any,
+                    poll_s: float = FRENO_POLL_S) -> Optional[str]:
+    """Il sorvegliante della sessione: ogni ``poll_s`` rilegge il freno; al
+    primo freno tirato segna ``visto`` (``threading.Event``), chiama
+    ``al_freno(motivo)`` (il force-flat della sessione) e ritorna il motivo.
+    Esce senza fare niente quando ``stop_flag`` si alza (fine sessione)."""
+    while not stop_flag.is_set():
+        motivo = motivo_freno()
+        if motivo:
+            visto.set()
+            try:
+                al_freno(motivo)
+            except Exception:  # noqa: BLE001 - il ciclo di battito ci riprova
+                logger.exception("[scalper-sess] force-flat dal freno KO")
+            return motivo
+        stop_flag.wait(poll_s)
+    return None
+
+
+def non_partire_col_freno(db: Any, event_id: str) -> Optional[str]:
+    """All'avvio della sessione: freno tirato -> riga 'stopped' col motivo,
+    nessun login, nessun ordine. Ritorna il motivo (o None: si parte)."""
+    motivo = motivo_freno()
+    if not motivo:
+        return None
+    db.set_control(event_id, status="stopped", stopped_at=_now_iso(),
+                   error=f"freno tirato ({motivo}): sessione non avviata")
+    db.log(event_id, "info", {"msg": "freno tirato: sessione non avviata",
+                              "motivo": motivo})
+    logger.warning("[scalper-sess] %s: freno tirato (%s), sessione non avviata",
+                   event_id, motivo)
+    return motivo
+
 
 def ht_should_start(minute: Optional[int], stale_s: float) -> bool:
     """True se il feed indica l'INIZIO dell'intervallo (minuto congelato).
@@ -636,6 +704,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         control = db.get_control(ev)
         if not control or control.get("status") not in ("requested", "arming", "running"):
             raise RuntimeError(f"controllo non attivabile (status={control and control.get('status')})")
+        # R3 (25/09): a freno tirato la sessione non si arma nemmeno.
+        if non_partire_col_freno(db, ev):
+            return
         db.set_control(ev, status="arming", started_at=_now_iso(), error=None)
 
         # REGOLA SPECCHIO (16/07): scalper_control.dry_run è il toggle DEMO/LIVE
@@ -1164,6 +1235,23 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # False) la sessione NON deve chiudersi 'done' in silenzio.
         clean_break = False
 
+        # R3 (25/09): il sorvegliante del freno unico (env + DB + file). Al
+        # primo freno tirato arma SUBITO il force-flat (senza aspettare il
+        # battito dei 5 s); il battito poi chiude la sessione come per il file.
+        # Visto una volta, il freno chiude la sessione anche se viene
+        # rilasciato prima del battito: il force-flat e' gia' armato.
+        freno_visto = threading.Event()
+        freno_motivo: List[str] = []
+
+        def _al_freno(motivo: str) -> None:
+            freno_motivo.append(motivo)
+            _force_flat_all()
+
+        threading.Thread(
+            target=sorveglia_freno, args=(stop_flag, freno_visto, _al_freno),
+            daemon=True, name="scalper-freno",
+        ).start()
+
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
             flush()
@@ -1213,11 +1301,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
             # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
             # a tradare su una riga che il resto del sistema considera chiusa.
+            # R3 (25/09): il freno unico (file STOP_SCALPER, LIVE_KILL_SWITCH,
+            # freno della Control Room) al posto del solo file.
+            freno = (freno_motivo[0] if freno_motivo
+                     else ("freno" if freno_visto.is_set() else motivo_freno()))
             if (status in ("stopping", "stopped", "error")
-                    or os.path.isfile(KILL_FILE)):
-                stopped_by_ui = status in ("stopping", "stopped", "error")
+                    or freno):
+                stopped_by_ui = (status in ("stopping", "stopped", "error")
+                                 or bool(freno and freno != MOTIVO_FILE))
                 _force_flat_all()
-                db.log(ev, "info", {"msg": "stop richiesto: force-flat"})
+                db.log(ev, "info", {"msg": "stop richiesto: force-flat",
+                                    **({"freno": freno} if freno else {})})
                 # fix 10/07: niente sleep cieco da 12s — si attende (max 30s)
                 # che la strategia sia DAVVERO flat (slot IDLE/DONE, nessun
                 # ordine vivo); se non lo e', si esce comunque e lo stato

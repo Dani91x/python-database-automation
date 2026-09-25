@@ -1,0 +1,447 @@
+diff --git a/Betfair/stream/tennis_live/tennis_bot_service.py b/Betfair/stream/tennis_live/tennis_bot_service.py
+index 31da158..d7704e8 100644
+--- a/Betfair/stream/tennis_live/tennis_bot_service.py
++++ b/Betfair/stream/tennis_live/tennis_bot_service.py
+@@ -96,15 +96,20 @@ def ferma_bot_al_nuovo_avvio(boot_id: str | None = None,
+             "boot_id_precedente": AA.boot_id_salvato(r.get("stats")),
+             "status_precedente": str(r.get("status") or ""),
+             "dry_run_precedente": r.get("dry_run"),
++            "mode_precedente": r.get("mode"),
+             "azzerato": True,
+             "motivo": ("APP_BOOT_ID assente nell'ambiente: trattato come avvio nuovo"
+                        if not boot else "avvio nuovo dell'app"),
+-            "effetto": "i bot li arma l'utente: la riga torna a 'stopped'.",
++            "effetto": ("i bot li arma l'utente: la riga torna a 'stopped', "
++                        "mode='paper', dry_run=true."),
+             "ts": ora,
+         }
+         try:
++            # R2 (25/09, decisione dell'utente: «non devono mai partire in live
++            # senza mio ordine»): oltre allo stop la riga torna PAPER e dry-run,
++            # come Omega/Mike/Safe (``avvio_app.ferma_al_nuovo_avvio``).
+             db.set_tennis_bot_status(
+-                ev, bot_key, "stopped", stopped=True,
++                ev, bot_key, "stopped", stopped=True, mode="paper", dry_run=True,
+                 stats=AA.stats_timbrate(r.get("stats"), boot, ora),
+                 error=("fermato all'avvio dell'app: l'armamento e' un gesto "
+                        "dell'utente — riarma se serve"),
+@@ -823,7 +828,11 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
+         bot = str((r or {}).get("bot_key") or "")
+         if bot not in _BOT_KEYS:
+             continue
+-        if str(r.get("status") or "").strip().lower() not in ("running", "stopping"):
++        acceso = str(r.get("status") or "").strip().lower() in ("running", "stopping")
++        # R2 (25/09): anche un interruttore gia' fermo ma rimasto in LIVE torna
++        # PAPER, altrimenti il prossimo «avvia» ripartirebbe in soldi veri.
++        in_live = str(r.get("mode") or "").strip().lower() == "live"
++        if not (acceso or in_live):
+             continue
+         if AA.stesso_avvio(r.get("stats"), boot):
+             continue          # stesso avvio (watchdog): non si tocca
+@@ -831,11 +840,13 @@ def ferma_interruttori_al_nuovo_avvio(boot_id: str | None = None,
+         # il frontend legge `stats.fermato_all_avvio_at` e lo mostra: e' il
+         # modo in cui l'utente capisce perche' il bot che aveva acceso e' fermo
+         stats["fermato_all_avvio_at"] = ora
++        # R2 (25/09): stopped E mode='paper', come gli altri bot: in live ci si
++        # torna solo con un gesto dell'utente dalla Control Room.
+         if db.set_tennis_bot_service_state(bot, status="stopped", stopped=True,
+-                                           stats=stats):
++                                           stats=stats, mode="paper"):
+             fermati.append(bot)
+             logger.info("[tennis-bot-svc] avvio NUOVO dell'app: interruttore "
+-                        "%s riportato a 'stopped' (lo accende l'utente).", bot)
++                        "%s riportato a 'stopped' e 'paper' (lo accende l'utente).", bot)
+         else:
+             fallite += 1
+     ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] = fallite == 0
+diff --git a/Betfair/stream/tennis_live/tennis_db.py b/Betfair/stream/tennis_live/tennis_db.py
+index c8f5d0c..39585e8 100644
+--- a/Betfair/stream/tennis_live/tennis_db.py
++++ b/Betfair/stream/tennis_live/tennis_db.py
+@@ -319,8 +319,15 @@ def set_tennis_bot_status(
+     heartbeat: bool = False,
+     started: bool = False,
+     stopped: bool = False,
++    mode: Optional[str] = None,
++    dry_run: Optional[bool] = None,
+ ) -> None:
+-    """Aggiorna lo stato/heartbeat/stat di un bot in ``tennis_bot_control``."""
++    """Aggiorna lo stato/heartbeat/stat di un bot in ``tennis_bot_control``.
++
++    R2 (25/09): ``mode``/``dry_run`` opzionali (None = non si toccano), usati dal
++    fermo d'avvio per riportare la riga a PAPER. Colonna ``mode`` assente
++    (migrazione ``tennis_bot_control_mode_2026-09-24.sql`` non applicata): si
++    riscrive tutto il resto senza ``mode`` (il runner legge la riga PAPER)."""
+     sb = get_tennis_client()
+     now = _now_iso()
+     upd: Dict[str, Any] = {"status": status}
+@@ -334,9 +341,21 @@ def set_tennis_bot_status(
+         upd["started_at"] = now
+     if stopped:
+         upd["stopped_at"] = now
+-    res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
+-        "bot_key", bot_key
+-    ).execute()
++    if mode is not None:
++        upd["mode"] = str(mode)
++    if dry_run is not None:
++        upd["dry_run"] = bool(dry_run)
++    try:
++        res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
++            "bot_key", bot_key
++        ).execute()
++    except Exception as e:  # noqa: BLE001
++        if "mode" not in upd or not colonna_assente(e, "mode"):
++            raise
++        upd.pop("mode", None)
++        res = sb.table("tennis_bot_control").update(upd).eq("event_id", event_id).eq(
++            "bot_key", bot_key
++        ).execute()
+     if _CANALE_ACCESO:          # F3: l'armatura per evento, come il DB l'ha scritta
+         # 24/09: topic `tennis_bot_armamento` (prima usciva come
+         # `tennis_bot_posizioni`, nome che ora porta le righe d'ordine dei bot)
+@@ -555,12 +574,16 @@ def set_tennis_bot_service_state(
+     error: Optional[str] = None,
+     heartbeat: bool = False,
+     stopped: bool = False,
++    mode: Optional[str] = None,
+ ) -> bool:
+-    """Aggiorna la riga di interruttore di UN bot. `False` = non scritto."""
++    """Aggiorna la riga di interruttore di UN bot. `False` = non scritto.
++    R2 (25/09): ``mode`` opzionale (None = non si tocca)."""
+     sb = get_tennis_client()
+     upd: Dict[str, Any] = {"updated_at": _now_iso()}
+     if status is not None:
+         upd["status"] = str(status)
++    if mode is not None:
++        upd["mode"] = str(mode)
+     if stats is not None:
+         upd["stats"] = stats
+     if error is not None:
+diff --git a/Betfair/stream/tennis_live/tests/test_r2_tennis_paper_al_nuovo_avvio_2026_09_25.py b/Betfair/stream/tennis_live/tests/test_r2_tennis_paper_al_nuovo_avvio_2026_09_25.py
+new file mode 100644
+index 0000000..3eedaba
+--- /dev/null
++++ b/Betfair/stream/tennis_live/tests/test_r2_tennis_paper_al_nuovo_avvio_2026_09_25.py
+@@ -0,0 +1,278 @@
++"""R2 (25/09 sera) - a un avvio NUOVO dell'app i 4 bot tennis tornano in PAPER.
++
++Decisione dell'utente: «I bot a ogni riavvio (TUTTI) devono restare spenti, li
++devo avviare io in live o paper» e «NO, non devono mai partire in live senza mio
++ordine». Omega, Mike e Safe lo fanno gia' (``avvio_app.ferma_al_nuovo_avvio``:
++``status='stopped'`` E ``mode='paper'``). I bot tennis no: al nuovo avvio
++tornavano ``stopped`` ma la MODALITA' restava quella di ieri:
++
++  * interruttore di servizio (``tennis_bot_service_control``): ``mode='live'``
++    restava ``'live'``: il prossimo «avvia» dalla Control Room ripartiva live;
++  * righe per partita (``tennis_bot_control``): ``mode='live'`` e
++    ``dry_run=false`` restavano sulla riga fermata.
++
++Adesso: avvio NUOVO (``APP_BOOT_ID`` diverso da quello timbrato sulla riga) ->
++servizio ``stopped`` + ``mode='paper'``; righe per partita attive ``stopped`` +
++``mode='paper'`` + ``dry_run=true``. Stesso ``APP_BOOT_ID`` (riavvio dal
++watchdog): nulla cambia.
++
++Finti: firme e chiavi di ``tennis_db`` (``set_tennis_bot_status``,
++``set_tennis_bot_service_state``, ``list_tennis_bot_controls``,
++``list_tennis_bot_services``) e le righe VERE delle due tabelle. Le due funzioni
++di ``tennis_db`` sono provate anche con un client supabase finto
++(``table().update().eq().execute()``) per vedere cosa scrivono davvero.
++
++ASCII-only nel codice; i commenti sono in italiano.
++"""
++from __future__ import annotations
++
++from types import SimpleNamespace
++from typing import Any, Dict, List, Optional
++
++import pytest
++
++from Betfair.stream.tennis_live import tennis_bot_service as S
++from Betfair.stream.tennis_live import tennis_db as TDB
++
++EV = "34999001"
++OGGI, IERI = "avvio-di-oggi", "avvio-di-ieri"
++
++
++class _DbTennis:
++    """Le funzioni di ``tennis_db`` che il fermo d'avvio usa, con le firme vere."""
++
++    def __init__(self, servizi: Optional[List[Dict[str, Any]]] = None,
++                 controls: Optional[List[Dict[str, Any]]] = None) -> None:
++        self.servizi = servizi
++        self.controls = list(controls or [])
++        self.stati: List[Dict[str, Any]] = []
++        self.servizio_scritto: List[Dict[str, Any]] = []
++        self.attivita: List[tuple] = []
++        self._servizio_assente_detto = False
++
++    # --- interruttori di servizio -----------------------------------------
++    def list_tennis_bot_services(self) -> Optional[List[Dict[str, Any]]]:
++        return None if self.servizi is None else [dict(r) for r in self.servizi]
++
++    def set_tennis_bot_service_state(self, bot_key: str, *, status: Optional[str] = None,
++                                     stats: Optional[Dict[str, Any]] = None,
++                                     error: Optional[str] = None, heartbeat: bool = False,
++                                     stopped: bool = False,
++                                     mode: Optional[str] = None) -> bool:
++        self.servizio_scritto.append({"bot_key": bot_key, "status": status, "stats": stats,
++                                      "error": error, "stopped": stopped, "mode": mode})
++        for r in self.servizi or []:
++            if r["bot_key"] == bot_key:
++                if status is not None:
++                    r["status"] = status
++                if mode is not None:
++                    r["mode"] = mode
++        return True
++
++    # --- righe per partita -------------------------------------------------
++    def list_tennis_bot_controls(self, event_id: Optional[str] = None,
++                                 statuses: Optional[List[str]] = None) -> List[Dict[str, Any]]:
++        return [dict(r) for r in self.controls
++                if statuses is None or r.get("status") in statuses]
++
++    def set_tennis_bot_status(self, event_id: str, bot_key: str, status: str, *,
++                              error: Optional[str] = None,
++                              stats: Optional[Dict[str, Any]] = None,
++                              heartbeat: bool = False, started: bool = False,
++                              stopped: bool = False, mode: Optional[str] = None,
++                              dry_run: Optional[bool] = None) -> None:
++        self.stati.append({"event_id": event_id, "bot_key": bot_key, "status": status,
++                           "mode": mode, "dry_run": dry_run, "stopped": stopped})
++        for r in self.controls:
++            if r["event_id"] == event_id and r["bot_key"] == bot_key:
++                r["status"] = status
++                if mode is not None:
++                    r["mode"] = mode
++                if dry_run is not None:
++                    r["dry_run"] = dry_run
++
++    def write_tennis_bot_activity(self, event_id: str, bot_key: str, kind: str,
++                                  payload: Dict[str, Any]) -> None:
++        self.attivita.append((event_id, bot_key, kind, dict(payload)))
++
++
++def _servizio(status: str = "running", mode: str = "live", boot: str = IERI,
++              bot: str = "tennis_flb") -> Dict[str, Any]:
++    """La riga VERA di ``tennis_bot_service_control``."""
++    return {"bot_key": bot, "status": status, "mode": mode, "stake": 3, "params": {},
++            "stats": {"boot_id": boot}, "error": None, "started_at": None,
++            "stopped_at": None, "heartbeat_at": None, "updated_at": None}
++
++
++def _control(status: str = "running", mode: str = "live", dry_run: bool = False,
++             boot: str = IERI, bot: str = "tennis_flb") -> Dict[str, Any]:
++    """La riga VERA di ``tennis_bot_control`` (migrazione tennis_bot_control_mode)."""
++    return {"event_id": EV, "bot_key": bot, "status": status, "mode": mode,
++            "dry_run": dry_run, "stake": 2, "params": {"soglia": 2},
++            "stats": {"boot_id": boot, "entries": 3}, "error": None,
++            "heartbeat_at": None, "started_at": None, "stopped_at": None}
++
++
++# ===========================================================================
++# interruttori di servizio
++# ===========================================================================
++@pytest.mark.parametrize("status", ["running", "stopping"])
++def test_avvio_nuovo_interruttore_live_torna_stopped_e_paper(status):
++    db = _DbTennis(servizi=[_servizio(status=status, mode="live")])
++    assert S.ferma_interruttori_al_nuovo_avvio(boot_id=OGGI, db=db) == ["tennis_flb"]
++    w = db.servizio_scritto[0]
++    assert w["status"] == "stopped" and w["stopped"] is True
++    assert w["mode"] == "paper", "mai un bot tennis che riparte live senza ordine dell'utente"
++    assert w["stats"]["boot_id"] == OGGI and w["stats"]["fermato_all_avvio_at"]
++    assert db.servizi[0]["mode"] == "paper"
++    assert S.ESITO_ULTIMO_FERMO_INTERRUTTORI["riuscito"] is True
++
++
++def test_avvio_nuovo_interruttore_fermo_ma_live_torna_paper():
++    """Fermo gia' da ieri ma con ``mode='live'``: il prossimo «avvia» sarebbe
++    partito live. Si riporta a paper (lo stato resta 'stopped')."""
++    db = _DbTennis(servizi=[_servizio(status="stopped", mode="live")])
++    assert S.ferma_interruttori_al_nuovo_avvio(boot_id=OGGI, db=db) == ["tennis_flb"]
++    w = db.servizio_scritto[0]
++    assert w["mode"] == "paper" and w["status"] == "stopped"
++
++
++def test_avvio_nuovo_interruttore_fermo_in_paper_non_si_tocca():
++    db = _DbTennis(servizi=[_servizio(status="stopped", mode="paper")])
++    assert S.ferma_interruttori_al_nuovo_avvio(boot_id=OGGI, db=db) == []
++    assert db.servizio_scritto == []
++
++
++def test_stesso_avvio_interruttore_live_intatto():
++    """Riavvio dal watchdog (stesso APP_BOOT_ID): il bot lo ha acceso l'utente in
++    QUESTO avvio, live compreso. Non si tocca niente."""
++    db = _DbTennis(servizi=[_servizio(status="running", mode="live", boot=OGGI)])
++    assert S.ferma_interruttori_al_nuovo_avvio(boot_id=OGGI, db=db) == []
++    assert db.servizio_scritto == []
++    assert db.servizi[0]["mode"] == "live" and db.servizi[0]["status"] == "running"
++
++
++def test_avvio_nuovo_tutti_e_quattro_i_bot():
++    bots = list(S._BOT_KEYS)
++    assert len(bots) == 4
++    db = _DbTennis(servizi=[_servizio(bot=b, mode="live") for b in bots])
++    assert sorted(S.ferma_interruttori_al_nuovo_avvio(boot_id=OGGI, db=db)) == sorted(bots)
++    assert {w["mode"] for w in db.servizio_scritto} == {"paper"}
++
++
++# ===========================================================================
++# righe per partita
++# ===========================================================================
++@pytest.mark.parametrize("status", ["requested", "arming", "armed", "running"])
++def test_avvio_nuovo_riga_partita_torna_stopped_paper_dry_run(status):
++    assert status in S._ACTIVE_STATUSES
++    db = _DbTennis(controls=[_control(status=status, mode="live", dry_run=False)])
++    fermate = S.ferma_bot_al_nuovo_avvio(boot_id=OGGI, db=db)
++    assert len(fermate) == 1
++    w = db.stati[0]
++    assert w["status"] == "stopped"
++    assert w["mode"] == "paper" and w["dry_run"] is True
++    r = db.controls[0]
++    assert (r["status"], r["mode"], r["dry_run"]) == ("stopped", "paper", True)
++    # i parametri e lo stake della riga non si toccano (strategia intoccabile)
++    assert r["params"] == {"soglia": 2} and r["stake"] == 2
++    att = db.attivita[0][3]
++    assert att["mode_precedente"] == "live" and att["dry_run_precedente"] is False
++
++
++def test_stesso_avvio_riga_partita_live_intatta():
++    db = _DbTennis(controls=[_control(status="running", mode="live", dry_run=False, boot=OGGI)])
++    assert S.ferma_bot_al_nuovo_avvio(boot_id=OGGI, db=db) == []
++    assert db.stati == []
++    r = db.controls[0]
++    assert (r["status"], r["mode"], r["dry_run"]) == ("running", "live", False)
++
++
++# ===========================================================================
++# tennis_db: cosa scrive DAVVERO (client supabase finto)
++# ===========================================================================
++class _SbFinto:
++    """``sb.table(t).update(campi).eq(c, v)...execute()`` come il client vero.
++    ``rifiuta_colonna``: la colonna che la tabella NON ha (migrazione non
++    applicata): PostgREST risponde PGRST204."""
++
++    def __init__(self, rifiuta_colonna: Optional[str] = None) -> None:
++        self.rifiuta_colonna = rifiuta_colonna
++        self.update: List[tuple] = []
++
++    def table(self, nome: str) -> Any:
++        sb = self
++
++        class _Q:
++            def __init__(self) -> None:
++                self.campi: Dict[str, Any] = {}
++
++            def update(self, campi):
++                self.campi = dict(campi)
++                return self
++
++            def eq(self, *_a):
++                return self
++
++            def execute(self):
++                col = sb.rifiuta_colonna
++                if col and col in self.campi:
++                    raise RuntimeError(
++                        "{'code': 'PGRST204', 'message': \"Could not find the '%s' column "
++                        "of '%s' in the schema cache\"}" % (col, nome))
++                sb.update.append((nome, self.campi))
++                return SimpleNamespace(data=[{**self.campi}])
++        return _Q()
++
++
++@pytest.fixture
++def sb(monkeypatch):
++    def _crea(rifiuta_colonna=None):
++        finto = _SbFinto(rifiuta_colonna)
++        monkeypatch.setattr(TDB, "get_tennis_client", lambda: finto)
++        monkeypatch.setattr(TDB, "_CANALE_ACCESO", False)
++        return finto
++    return _crea
++
++
++def test_tennis_db_riga_partita_scrive_mode_e_dry_run(sb):
++    finto = sb()
++    TDB.set_tennis_bot_status(EV, "tennis_flb", "stopped", stopped=True,
++                              mode="paper", dry_run=True)
++    nome, campi = finto.update[0]
++    assert nome == "tennis_bot_control"
++    assert campi["status"] == "stopped" and campi["mode"] == "paper"
++    assert campi["dry_run"] is True and campi["stopped_at"]
++
++
++def test_tennis_db_riga_partita_senza_colonna_mode_scrive_il_resto(sb):
++    """Migrazione ``tennis_bot_control_mode_2026-09-24.sql`` non applicata: la
++    riga non ha ``mode`` (il runner la legge PAPER). Lo stop e ``dry_run`` si
++    scrivono lo stesso, senza la colonna mancante."""
++    finto = sb(rifiuta_colonna="mode")
++    TDB.set_tennis_bot_status(EV, "tennis_flb", "stopped", stopped=True,
++                              mode="paper", dry_run=True)
++    nome, campi = finto.update[0]
++    assert "mode" not in campi
++    assert campi["status"] == "stopped" and campi["dry_run"] is True
++
++
++def test_tennis_db_riga_partita_senza_mode_e_dry_run_invariata(sb):
++    """Chi non passa ``mode``/``dry_run`` (tutti i chiamanti di prima) scrive
++    esattamente quello che scriveva."""
++    finto = sb()
++    TDB.set_tennis_bot_status(EV, "tennis_flb", "running", heartbeat=True)
++    _nome, campi = finto.update[0]
++    assert "mode" not in campi and "dry_run" not in campi
++
++
++def test_tennis_db_interruttore_scrive_mode(sb):
++    finto = sb()
++    assert TDB.set_tennis_bot_service_state("tennis_flb", status="stopped", stopped=True,
++                                            mode="paper") is True
++    nome, campi = finto.update[0]
++    assert nome == TDB._SERVICE_TABLE
++    assert campi["status"] == "stopped" and campi["mode"] == "paper"
++    finto2 = sb()
++    TDB.set_tennis_bot_service_state("tennis_flb", heartbeat=True)
++    assert "mode" not in finto2.update[0][1]
+diff --git a/Betfair/stream/tests/test_avvio_app_2026_09_16.py b/Betfair/stream/tests/test_avvio_app_2026_09_16.py
+index a4c140d..ee98cf3 100644
+--- a/Betfair/stream/tests/test_avvio_app_2026_09_16.py
++++ b/Betfair/stream/tests/test_avvio_app_2026_09_16.py
+@@ -244,13 +244,18 @@ class TennisFinto:
+                 if (statuses is None or r.get("status") in statuses)]
+ 
+     def set_tennis_bot_status(self, event_id, bot_key, status, *, error=None,
+-                              stats=None, heartbeat=False, started=False, stopped=False):
++                              stats=None, heartbeat=False, started=False, stopped=False,
++                              mode=None, dry_run=None):
+         self.stati.append((event_id, bot_key, status, error, stats, stopped))
+         for r in self.righe:
+             if r["event_id"] == event_id and r["bot_key"] == bot_key:
+                 r["status"] = status
+                 if stats is not None:
+                     r["stats"] = stats
++                if mode is not None:
++                    r["mode"] = mode
++                if dry_run is not None:
++                    r["dry_run"] = dry_run
+ 
+     def write_tennis_bot_activity(self, event_id, bot_key, kind, payload):
+         self.attivita.append((event_id, bot_key, kind, dict(payload)))
+@@ -300,13 +305,17 @@ def test_tennis_senza_boot_id_in_ambiente_si_ferma(monkeypatch):
+ 
+ 
+ def test_tennis_i_params_della_riga_non_si_toccano(monkeypatch):
++    """R2 (25/09, decisione dell'utente): params e stake restano identici, ma la
++    riga torna in PROVA (``mode='paper'``, ``dry_run=True``): prima del 25/09
++    qui si collaudava che ``dry_run=False`` sopravvivesse al nuovo avvio."""
+     from Betfair.stream.tennis_live import tennis_bot_service as TB
+ 
+     finto = TennisFinto([_riga_tennis(params={"soglia": 2}, stake=25, dry_run=False)])
+     monkeypatch.setattr(TB, "tennis_db", finto)
+     TB.ferma_bot_al_nuovo_avvio(boot_id="OGGI", db=finto)
+     assert finto.righe[0]["params"] == {"soglia": 2}
+-    assert finto.righe[0]["stake"] == 25 and finto.righe[0]["dry_run"] is False
++    assert finto.righe[0]["stake"] == 25
++    assert finto.righe[0]["dry_run"] is True and finto.righe[0]["mode"] == "paper"
+ 
+ 
+ # ---------------------------------------------------------------------------

@@ -610,6 +610,23 @@ class PubblicaSessioni:
         self.firme = viste
 
 
+def freno_supervisore() -> Optional[str]:
+    """R3 (25/09): il freno unico visto dal supervisore (env + DB; il file
+    ``STOP_SCALPER`` il supervisore lo gestisce gia' da se', uscendo).
+    Stessa funzione della sessione: fail-closed."""
+    from .scalper_session import motivo_freno
+
+    return motivo_freno()
+
+
+def sessione_da_avviare(row: Dict[str, Any], alive: bool,
+                        freno: Optional[str]) -> bool:
+    """Una riga 'requested' senza processo diventa una sessione SOLO a freno
+    rilasciato. A freno tirato la riga resta com'e' ('requested'): nessun
+    processo, nessun login, nessun ordine."""
+    return str(row.get("status") or "") == "requested" and not alive and not freno
+
+
 def _spawn(event_id: str) -> subprocess.Popen:
     repo_root = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "..", "..", ".."))
@@ -671,6 +688,8 @@ def main() -> None:
     stato_auto = StatoAuto()
     stato_auto.guardia.attiva = True
     pubblica_sessioni = PubblicaSessioni()
+    #: R3 (25/09): ultimo motivo del freno gia' detto nel log (una riga al cambio)
+    freno_detto: Dict[str, Optional[str]] = {"motivo": None}
 
     # ---- habitat scan periodico (thread, best-effort) ----
     def _habitat_loop() -> None:
@@ -727,11 +746,17 @@ def main() -> None:
             except Exception:  # noqa: BLE001 - l'auto-mode non ferma il supervisore
                 logger.exception("[scalper-svc] giro auto-mode KO")
 
+            # R3 (25/09): il freno unico, UNA lettura per giro (cache ~2 s)
+            freno = freno_supervisore()
+            if freno and freno_detto.get("motivo") != freno:
+                logger.warning("[scalper-svc] FRENO TIRATO (%s): nessuna sessione nuova "
+                               "si avvia; quelle vive chiudono flat da sole", freno)
+            freno_detto["motivo"] = freno
             for row in righe_attive:
                 ev = str(row["event_id"])
                 status = row["status"]
                 alive = ev in children and children[ev].poll() is None
-                if status == "requested" and not alive:
+                if sessione_da_avviare(row, alive, freno):
                     children[ev] = _spawn(ev)
                     logger.info("[scalper-svc] avviata sessione %s (pid=%s, "
                                 "mode=%s dry=%s stake=%s)", ev,

@@ -520,7 +520,9 @@ _MODO_CANALE_FIRMA: Optional[tuple] = None
 #: le chiavi di ``modo_ordini.stato_corrente()`` che fanno un CAMBIO (l'eta'
 #: della lettura cambia a ogni giro e non lo e')
 _MODO_CANALE_CHIAVI = ("effettivo", "tetto_ambiente", "scelto_ui", "motivo",
-                       "scelto_ui_at", "scelto_ui_da")
+                       "scelto_ui_at", "scelto_ui_da",
+                       # R3 (25/09): tirare o rilasciare il freno e' un CAMBIO
+                       "kill_switch", "kill_switch_env", "kill_switch_letto")
 
 
 def _pubblica_modo_ordini_se_cambiato() -> bool:

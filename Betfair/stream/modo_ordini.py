@@ -50,6 +50,8 @@ _RANGO = {m: i for i, m in enumerate(LIVELLI)}
 
 #: nome della variabile d'ambiente (il tetto)
 ENV_MODO = "LIVE_ORDER_MODE"
+#: R3 (25/09): il freno dell'ambiente (stessa lettura di ``config_stream.live_kill_switch``)
+ENV_KILL = "LIVE_KILL_SWITCH"
 
 #: chiavi della riga ``betfair_live_settings`` (contratto con la migrazione
 #: ``migrations/live_order_mode_control_2026-09-24.sql``)
@@ -188,12 +190,23 @@ def modo_corrente() -> str:
 def stato_corrente() -> Dict[str, Any]:
     """Il modo effettivo con motivo, chi/quando l'ha cambiato ed eta' della lettura."""
     out = descrivi(modo_ambiente(), valore_db())
+    # R3 (25/09): il FRENO UNICO nello stesso messaggio (topic ``modo_ordini`` e
+    # ``hello``), cosi' la riga FRENO della Control Room lo vede al cambio senza
+    # aspettare il poll. ``kill_switch`` = cio' che il runner applica adesso
+    # (env OPPURE riga letta e valida); ``kill_switch_letto`` False = la riga non
+    # e' stata letta di recente: la UI usa la sua lettura del database.
+    env_kill = os.getenv(ENV_KILL, "false").strip().lower() == "true"
     with _LOCK:
         letto = _STATO["letto_mono"]
         out["scelto_ui_at"] = _STATO["agg_at"]
         out["scelto_ui_da"] = _STATO["agg_da"]
         out["eta_lettura_s"] = (None if letto is None
                                 else round(max(0.0, _ora() - float(letto)), 1))
+        kill_letto = _fresca()
+        kill_db = bool(_STATO["kill"]) if kill_letto else False
+    out["kill_switch"] = bool(env_kill or kill_db)
+    out["kill_switch_env"] = bool(env_kill)
+    out["kill_switch_letto"] = bool(kill_letto)
     return out
 
 
