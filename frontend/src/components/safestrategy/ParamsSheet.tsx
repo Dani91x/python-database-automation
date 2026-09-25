@@ -120,7 +120,8 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             // 16/09 — selezione aggiuntiva (SPEC §2): pannello LEGACY, non la espone.
             // Default del motore (nasce SPENTA), come per requireControl.
             requireSelection: DEFAULT_PARAMS.esatto.requireSelection,
-            h2hBigDrawRateMax: DEFAULT_PARAMS.esatto.h2hBigDrawRateMax,
+            h2hManyGoalsRateMax: DEFAULT_PARAMS.esatto.h2hManyGoalsRateMax,
+            h2hMinMeetings: DEFAULT_PARAMS.esatto.h2hMinMeetings,
             oppConcededMax: DEFAULT_PARAMS.esatto.oppConcededMax,
             vetoCampionati: DEFAULT_PARAMS.esatto.vetoCampionati,
         },
@@ -151,8 +152,8 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             // attive invece di sparire passando di qui.
             excludeBestOf5: DEFAULT_PARAMS.tennis.excludeBestOf5,
             setsPlayedMax: DEFAULT_PARAMS.tennis.setsPlayedMax,
-            // Q12 (25/09) — sfavorito estremo: pannello LEGACY, default del motore
-            leaderPreMax: DEFAULT_PARAMS.tennis.leaderPreMax,
+            // Q12 + D5 (25/09) — sfavorito estremo: pannello LEGACY, default del motore
+            favSuperMax: DEFAULT_PARAMS.tennis.favSuperMax,
         },
     };
     checkRange('Base · favorita pre-match', params.base.favPreMin, params.base.favPreMax, errors);

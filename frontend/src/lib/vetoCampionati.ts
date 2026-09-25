@@ -43,17 +43,8 @@ export const VOCI_VETO: VoceVeto[] = [
             'freundschaftsspiele'],
         escluse: [],
     },
-    {
-        codice: 'coppe',
-        nome: 'coppe',
-        citazione: '2. SELEZIONE PARTITE/2. Competizioni da evitare @40.0-69.1',
-        frasi: ['cup', 'cups', 'coppa', 'copa', 'coupe', 'pokal', 'beker', 'taca',
-            'cupa', 'kupa', 'kupasi', 'puchar', 'supercup', 'supercoppa',
-            'supercopa', 'supercoupe', 'trophy', 'shield',
-            'champions league', 'europa league', 'conference league',
-            'libertadores', 'sudamericana'],
-        escluse: [],
-    },
+    // COPPE: non sono una voce (utente 25/09, D5 punto 1: «da evitare SOLO
+    // LE FINALI»): le finali si riconoscono con `isRoundFinale`/`nomeIndicaFinale`.
     {
         codice: 'bundesliga_2',
         nome: 'Bundesliga 2',
@@ -83,13 +74,7 @@ export const VOCI_VETO: VoceVeto[] = [
         frasi: ['eredivisie'],
         escluse: [],
     },
-    {
-        codice: 'bolivia',
-        nome: 'campionato boliviano',
-        citazione: '2. SELEZIONE PARTITE/2. Competizioni da evitare @102.0-116.5',
-        frasi: ['bolivia', 'bolivian', 'boliviana', 'boliviano'],
-        escluse: [],
-    },
+    // BOLIVIA: tolta (utente 25/09, D5 punto 2: «Bolivia: OK»).
 ];
 
 /** Minuscole, accenti tolti, separatori → spazio. '' se non è testo. */
@@ -123,3 +108,62 @@ export function voceVietata(competition: string | null | undefined): VoceVeto | 
 export function motivoVeto(voce: VoceVeto): string {
     return `veto campionato: ${voce.nome} (corso)`;
 }
+
+// ---------------------------------------------------------------------------
+// D5 (decisioni dell'utente 25/09) — FEMMINILE DAI NOMI SQUADRA e FINALI.
+// Gemelli ESATTI di `veto_campionati.py` (stesse parole, stesse regole): un
+// test Python confronta le liste byte per byte.
+// ---------------------------------------------------------------------------
+/** Punto 4: parole INTERE nel nome di una squadra femminile; "w" vale solo
+ *  come ULTIMA parola ("Arsenal W", "Arsenal (W)"; non "W Connection"). */
+export const FRASI_SQUADRA_FEMMINILE: string[] = [
+    'women', 'womens', 'ladies', 'femminile', 'femenino', 'femenina', 'frauen',
+];
+export const SUFFISSO_SQUADRA_FEMMINILE = 'w';
+
+export function squadraFemminile(nome: string | null | undefined): boolean {
+    const testo = normalizzaCompetizione(nome);
+    if (!testo) return false;
+    const parole = testo.split(' ');
+    if (parole[parole.length - 1] === SUFFISSO_SQUADRA_FEMMINILE) return true;
+    return FRASI_SQUADRA_FEMMINILE.some((f) => contiene(testo, f));
+}
+
+/** Punto 1: «da evitare SOLO LE FINALI». Round di API-Football della fixture:
+ *  FINALE se l'ULTIMO pezzo (spezzato sui " - ") è esattamente Final/Finals/
+ *  Grand Final/Gran Final/Finale, o se il PRIMO è esattamente "Final" e
+ *  l'ultimo non è un numero di giornata. MAI: Semi-finals, Quarter-finals,
+ *  8th Finals, 1/2 Final, Final Round - 3, Finals - 11, 3rd Place Final. */
+export const ROUND_FINALE: string[] = ['final', 'finals', 'grand final', 'gran final', 'finale'];
+const PAROLE_PIAZZAMENTO: string[] = ['place', 'placement'];
+const SEP_ROUND = /\s+-\s+|\t|\s*[–—�]\s*/;
+
+export function isRoundFinale(round: string | null | undefined): boolean {
+    if (typeof round !== 'string') return false;
+    const tutto = normalizzaCompetizione(round);
+    if (!tutto) return false;
+    if (PAROLE_PIAZZAMENTO.some((p) => contiene(tutto, p))) return false;
+    const pezzi = round.split(SEP_ROUND).map((x) => normalizzaCompetizione(x)).filter((x) => x);
+    if (pezzi.length === 0) return false;
+    const ultimo = pezzi[pezzi.length - 1];
+    if (ROUND_FINALE.includes(ultimo)) return true;
+    return pezzi.length > 1 && pezzi[0] === 'final' && !/^[0-9]+$/.test(ultimo);
+}
+
+/** In subordine (solo se il round manca): «Final» parola intera nel nome
+ *  evento Betfair, e non Semi/Quarter/piazzamento. */
+const PAROLE_NON_FINALE: string[] = [
+    'semi', 'semis', 'semifinal', 'semifinals', 'quarter', 'quarterfinal',
+    'quarterfinals', 'place', 'placement',
+];
+
+export function nomeIndicaFinale(nome: string | null | undefined): boolean {
+    const testo = normalizzaCompetizione(nome);
+    const parole = testo ? testo.split(' ') : [];
+    if (!parole.includes('final')) return false;
+    return !PAROLE_NON_FINALE.some((p) => parole.includes(p));
+}
+
+export const MOTIVO_FINALE_ROUND = 'veto finale: round «Final» (API-Football)';
+export const MOTIVO_FINALE_NOME = 'veto finale: «Final» nel nome evento (Betfair)';
+export const MOTIVO_SQUADRA_FEMMINILE = 'veto campionato: calcio femminile (nome squadra) (corso)';

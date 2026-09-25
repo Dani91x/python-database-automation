@@ -21,7 +21,10 @@ import type { BetfairOdds } from '@/lib/betfair';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
 import type { CalcioScanPayload, ScanOddsPair, TennisScanPayload } from '@/lib/safeStrategyScan';
 import { fmtMoney, fmtOdds as fmtOddsFmt } from '@/lib/format';
-import { motivoVeto, voceVietata } from '@/lib/vetoCampionati';
+import {
+    MOTIVO_FINALE_NOME, MOTIVO_FINALE_ROUND, MOTIVO_SQUADRA_FEMMINILE, isRoundFinale, motivoVeto,
+    nomeIndicaFinale, squadraFemminile, voceVietata,
+} from '@/lib/vetoCampionati';
 
 // ---------------------------------------------------------------- tipi base
 export type Sport = 'calcio' | 'tennis';
@@ -129,14 +132,17 @@ export interface EsattoParams {
      *  Default OFF come `requireControl`: il dato storico non ha copertura
      *  misurata e, acceso senza dato, BLOCCA gli ingressi (n/d). */
     requireSelection: boolean;
-    /** «senza TROPPI 2-2/3-3»: quota massima di scontri diretti finiti 2-2 o
-     *  3-3. Il numero NON è nella SPEC: è la lettura dichiarata il 16/09,
-     *  misurata sull'atlante (2-2/3-3 = 6,04% di 47.460 incontri) e presa al
-     *  DOPPIO della norma. */
-    h2hBigDrawRateMax: number;
-    /** «difesa AVVERSARIA solida»: gol subiti per partita dalla squadra che
-     *  deve fermare la bancata. 1,37 = metà dei 2,7403 gol per partita
-     *  dell'atlante, cioè «non peggio della media». */
+    /** D5 (utente 25/09): scontri diretti VERI dal DB (la lista «STORICO H2H»
+     *  della Dashboard). Quota massima di scontri diretti con 4 o più gol
+     *  (corso: «troppi 2-2, 3-3, 4-2, 4-1»). 0,58 = il DOPPIO della norma
+     *  (29,22% delle 47.460 partite dell'atlante). Sostituisce
+     *  `h2hBigDrawRateMax` (solo 2-2/3-3), deprecata e ignorata. */
+    h2hManyGoalsRateMax: number;
+    /** D5: sotto questo numero di scontri diretti il conto non blocca. */
+    h2hMinMeetings: number;
+    /** «difesa AVVERSARIA solida»: gol subiti per partita (ultime 5) dalla
+     *  squadra che deve fermare la bancata. 1,37 = metà dei 2,7403 gol per
+     *  partita dell'atlante, cioè «non peggio della media». */
     oppConcededMax: number;
     /** Q4 (25/09): veto dei campionati del corso, come la BASE */
     vetoCampionati: boolean;
@@ -195,9 +201,11 @@ export interface TennisParams {
     /** anti-blip: punteggio set/game osservato stabile da ≥N secondi
      *  (il tennis si muove più veloce del calcio: default più corto) */
     scoreConfirmSec: number;
-    /** Q12 (utente 25/09): quota PRE-PARTITA massima del giocatore che si punta
-     *  («sfavoriti estremi» esclusi). Dato assente → non blocca. 0 = spento. */
-    leaderPreMax: number;
+    /** Q12 + D5 (utente 25/09): «si calcola dalla QUOTA BACK DEL FAVORITO: se
+     *  pre-match il favorito è < 1,20 è un super favorito e l'altro uno
+     *  sfavorito estremo» → escluso se il leader è lo sfavorito estremo.
+     *  Sostituisce `leaderPreMax` (deprecata). Dato assente → non blocca. 0 = spento. */
+    favSuperMax: number;
 }
 export interface SafeStrategyParams {
     base: BaseParams;
@@ -233,7 +241,9 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         controlMin: 0.1,
         // Q7 (utente 25/09): «dove disponibile» → acceso (un dato assente non blocca)
         requireSelection: true,
-        h2hBigDrawRateMax: 0.12,
+        // D5 (25/09): scontri diretti dal DB, partite da 4+ gol
+        h2hManyGoalsRateMax: 0.58,
+        h2hMinMeetings: 3,
         oppConcededMax: 1.37,
         vetoCampionati: true,
     },
@@ -261,9 +271,9 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         // — la lista la compila l'utente secondo il suo criterio.
         excludeCompetitions: [],
         scoreConfirmSec: 15,
-        // Q12 (25/09): sfavorito estremo escluso sulla quota PRE-PARTITA del
-        // leader. 4,0 = PROPOSTA (il video non dà un numero). 0 = spento.
-        leaderPreMax: 4.0,
+        // Q12 + D5 (25/09): favorito pre-partita < 1,20 → l'altro è uno
+        // sfavorito estremo (escluso se è il leader). 0 = spento.
+        favSuperMax: 1.2,
     },
 };
 
@@ -331,7 +341,9 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             requireControl: bool(e.requireControl, d.esatto.requireControl),
             controlMin: num(e.controlMin, d.esatto.controlMin),
             requireSelection: bool(e.requireSelection, d.esatto.requireSelection),
-            h2hBigDrawRateMax: num(e.h2hBigDrawRateMax, d.esatto.h2hBigDrawRateMax),
+            // D5 (25/09): `h2hBigDrawRateMax` deprecata, non si legge più
+            h2hManyGoalsRateMax: num(e.h2hManyGoalsRateMax, d.esatto.h2hManyGoalsRateMax),
+            h2hMinMeetings: num(e.h2hMinMeetings, d.esatto.h2hMinMeetings),
             oppConcededMax: num(e.oppConcededMax, d.esatto.oppConcededMax),
             vetoCampionati: bool(e.vetoCampionati, d.esatto.vetoCampionati),
         },
@@ -355,7 +367,8 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             setsPlayedMax: num(t.setsPlayedMax, d.tennis.setsPlayedMax),
             excludeCompetitions: keywordList(t.excludeCompetitions, d.tennis.excludeCompetitions),
             scoreConfirmSec: num(t.scoreConfirmSec, d.tennis.scoreConfirmSec),
-            leaderPreMax: num(t.leaderPreMax, d.tennis.leaderPreMax),
+            // D5 (25/09): `leaderPreMax` deprecata, non si legge più
+            favSuperMax: num(t.favSuperMax, d.tennis.favSuperMax),
         },
     };
 }
@@ -474,15 +487,29 @@ export interface FootballMatchCtx {
      *  veto dei campionati del corso. Assente/null = veto non applicabile
      *  (come i cartellini: l'assenza del dato non è la lista nera). */
     competition?: string | null;
+    /** D5 (25/09): nome dell'evento Betfair (riserva per riconoscere una
+     *  FINALE quando il round della fixture manca). */
+    eventName?: string | null;
+    /** D5 (25/09): round API-Football della fixture abbinata («Final»,
+     *  «Semi-finals», «Regular Season - 5»), pubblicato dallo scanner. */
+    fixtureRound?: string | null;
 }
 
-/** I due numeri storici della «Selezione aggiuntiva», come li scrive lo
- *  scanner (`safe_strategy/selezione.py`). Un campo null = dato assente. */
+/** I numeri della «Selezione aggiuntiva» come li scrive lo scanner
+ *  (`safe_strategy/selezione.py`, `hint_da_scheda`): D5 (25/09) fonte DB,
+ *  `fixture_predictions.raw_json` (la riga della Dashboard). null = dato assente. */
 export interface SelectionHint {
     fonte?: string;
+    fixtureId?: number | null;
     h2hMeetings: number | null;
-    h2hBigDraws: number | null;
+    /** scontri diretti con 4 o più gol a fine partita */
+    h2hManyGoals: number | null;
     conceded: { home: number | null; away: number | null } | null;
+    /** % «Attacco»/«Difesa» del CONFRONTO DIRETTO della Dashboard (solo nota) */
+    forze?: {
+        att: { home: number | null; away: number | null } | null;
+        def: { home: number | null; away: number | null } | null;
+    } | null;
 }
 
 /** Estrae il 1X2 pre-match dal payload di get_betfair_odds ({"1x2": {H,D,A|X}}). */
@@ -629,18 +656,22 @@ export function buildFootballCtxFromScan(
         oddsNameMismatch: false, // nomi e selezioni vengono dallo STESSO catalogo
         red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
         competition: p.competition?.trim() || null,
+        eventName: p.event_name ?? null,
+        fixtureRound: typeof p.fixture_round === 'string' ? p.fixture_round.trim() || null : null,
         pressureIndex: numOrNull(p.pressure_index),
         selectionHint: p.selection_hint
             ? {
                   fonte: p.selection_hint.fonte,
+                  fixtureId: numOrNull(p.selection_hint.fixture_id),
                   h2hMeetings: numOrNull(p.selection_hint.h2h_meetings),
-                  h2hBigDraws: numOrNull(p.selection_hint.h2h_big_draws),
+                  h2hManyGoals: numOrNull(p.selection_hint.h2h_many_goals),
                   conceded: p.selection_hint.conceded
                       ? {
                             home: numOrNull(p.selection_hint.conceded.home),
                             away: numOrNull(p.selection_hint.conceded.away),
                         }
                       : null,
+                  forze: p.selection_hint.forze ?? null,
               }
             : null,
         scoreStableSinceMinute,
@@ -776,20 +807,43 @@ export function controlCheck(
 
 /** 1 · Calcio Base — banca (lay) la squadra che perde sul mercato 1X2. */
 /**
- * Q4 (ordine dell'utente 25/09) — VETO dei campionati del corso. Gemello di
- * `engine.campionato_check` (Python). null = nessun check: veto spento dai
- * parametri, oppure nome della competizione assente (come i cartellini rossi:
- * l'assenza del DATO non è l'appartenenza alla lista nera).
+ * Q4 (ordine dell'utente 25/09) — VETO dei campionati del corso, con le
+ * decisioni D5 dello stesso giorno. Gemello di `engine.campionato_check`
+ * (Python), stesso ordine: 1) competizione in lista (coppe e Bolivia NON più
+ * in lista); 2) nome di una SQUADRA femminile; 3) FINALE (dal round della
+ * fixture; solo se il round manca, dal nome evento). null = nessun check:
+ * veto spento, oppure competizione assente e nessuna regola 2-3 scatta.
  */
-export function campionatoCheck(competition: string | null | undefined, attivo: boolean): ConditionCheck | null {
-    if (!attivo || competition == null) return null;
-    const voce = voceVietata(competition);
-    return {
-        id: 'campionato',
-        label: 'Campionato non vietato dal corso',
-        value: voce === null ? competition : motivoVeto(voce),
-        ok: voce === null,
-    };
+export function campionatoCheck(
+    competition: string | null | undefined,
+    attivo: boolean,
+    extra: { home?: string | null; away?: string | null; fixtureRound?: string | null; eventName?: string | null } = {},
+): ConditionCheck | null {
+    if (!attivo) return null;
+    const label = 'Campionato non vietato dal corso';
+    if (competition != null) {
+        const voce = voceVietata(competition);
+        if (voce !== null) return { id: 'campionato', label, value: motivoVeto(voce), ok: false };
+    }
+    if (squadraFemminile(extra.home) || squadraFemminile(extra.away)) {
+        return { id: 'campionato', label, value: MOTIVO_SQUADRA_FEMMINILE, ok: false };
+    }
+    if (extra.fixtureRound != null) {
+        if (isRoundFinale(extra.fixtureRound)) {
+            return { id: 'campionato', label, value: MOTIVO_FINALE_ROUND, ok: false };
+        }
+    } else if (nomeIndicaFinale(extra.eventName)) {
+        return { id: 'campionato', label, value: MOTIVO_FINALE_NOME, ok: false };
+    }
+    if (competition == null) return null;
+    return { id: 'campionato', label, value: competition, ok: true };
+}
+
+/** `campionatoCheck` con tutti i dati della riga (un solo punto). */
+function campionatoCtx(ctx: FootballMatchCtx, attivo: boolean): ConditionCheck | null {
+    return campionatoCheck(ctx.competition, attivo, {
+        home: ctx.home, away: ctx.away, fixtureRound: ctx.fixtureRound ?? null, eventName: ctx.eventName ?? null,
+    });
 }
 
 /** Bande pre-partita favorita/sfavorita dalla sezione `base` dei parametri.
@@ -824,7 +878,7 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
     const lead = sh !== null && sa !== null ? leaderSide(sh, sa) : null;
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    const veto = campionatoCheck(ctx.competition, params.vetoCampionati);
+    const veto = campionatoCtx(ctx, params.vetoCampionati);
     if (veto !== null) checks.push(veto);
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
     // BASE: "la favorita deve avere il controllo del gioco" (specifica).
@@ -913,55 +967,104 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
 
 /** 2 · Calcio Risultato Esatto — banca "Altro risultato Casa/Ospite" (un lato). */
 /**
- * SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppi 2-2/3-3
- * e difesa AVVERSARIA solida. Gemello esatto di `engine.selection_check`
- * (Python): i due motori devono dire la stessa cosa sulla stessa riga.
- *
- * «Avversaria» è la difesa della squadra OPPOSTA a quella bancata: la bancata
- * è quella che non deve segnare ancora, quindi la difesa che deve reggere è
- * quella dell'altra. Dato assente -> ok null: nessun segnale su un dato che
- * non c'è (la regola di tutto il modulo).
+ * SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppe partite
+ * da 4+ gol e difesa AVVERSARIA solida. Gemello esatto di
+ * `engine.selection_check` (Python): i due motori devono dire la stessa cosa
+ * sulla stessa riga. D5 (utente 25/09): dati VERI dal DB (la riga della
+ * Dashboard); «troppi 2-2, 3-3, 4-2, 4-1» → partite con 4 o più gol; sotto
+ * `minMeetings` scontri il conto non blocca; forze attacco/difesa solo nota.
+ * «Avversaria» è la difesa della squadra OPPOSTA a quella bancata.
  */
 export function selectionCheck(
     hint: SelectionHint | null,
     laidSide: SideId,
     rateMax: number,
     concededMax: number,
+    minMeetings = 3,
 ): ConditionCheck {
-    const label = `Scontri diretti con max ${Math.round(rateMax * 100)}% di 2-2/3-3 e difesa avversaria entro ${fmtOdds(concededMax)} gol subiti`;
+    const label = `Scontri diretti con max ${Math.round(rateMax * 100)}% di partite da ≥4 gol e difesa avversaria entro ${fmtOdds(concededMax)} gol subiti`;
     // Q7 (utente 25/09): «dove disponibile». Ogni parte si giudica per conto
     // suo; una parte SENZA dato non blocca e lo dichiara (prima: n/d → blocco).
     const opponent: SideId = laidSide === 'home' ? 'away' : 'home';
-    const meetings = hint ? hint.h2hMeetings : null;
-    const bigDraws = hint ? hint.h2hBigDraws : null;
+    let meetings = hint ? hint.h2hMeetings : null;
+    const many = hint ? hint.h2hManyGoals : null;
     const conceded = hint && hint.conceded ? hint.conceded[opponent] : null;
+    const forze = forzeTesto(hint ? hint.forze : null);
     let h2hOk: boolean | null = null;
     let difOk: boolean | null = null;
     const parti: string[] = [];
-    if (meetings !== null && meetings > 0 && bigDraws !== null) {
-        h2hOk = bigDraws / meetings <= rateMax;
-        parti.push(`${bigDraws}/${meetings} 2-2·3-3`);
+    if (meetings !== null && many !== null && meetings >= 0 && many >= 0) {
+        if (meetings === 0) {
+            parti.push(SELEZIONE_H2H_NESSUNO);
+        } else {
+            let testo = `h2h: ${Math.trunc(meetings)} partite, ${Math.trunc(many)} con ≥4 gol`;
+            if (meetings < minMeetings) {
+                testo += SELEZIONE_H2H_POCHI;
+            } else {
+                h2hOk = many / meetings <= rateMax;
+            }
+            parti.push(testo);
+        }
     } else {
+        meetings = null;
         parti.push(SELEZIONE_H2H_ASSENTE);
     }
     if (conceded !== null) {
         difOk = conceded <= concededMax;
-        parti.push(`difesa ${fmtOdds(conceded)}`);
+        parti.push(`difesa avversaria ${fmtOdds(conceded)} gol subiti`);
     } else {
         parti.push(SELEZIONE_DIFESA_ASSENTE);
     }
-    if (h2hOk === null && difOk === null) {
+    if (forze !== null) parti.push(forze);
+    if (meetings === null && conceded === null && forze === null) {
         return { id: 'h2hDifesa', label, value: SELEZIONE_DATO_ASSENTE, ok: true };
     }
     return { id: 'h2hDifesa', label, value: parti.join(' · '), ok: h2hOk !== false && difOk !== false };
+}
+
+/** «forze att 45-55 · def 60-40» (gemello di `engine._forze_testo`). */
+function forzeTesto(forze: SelectionHint['forze'] | null | undefined): string | null {
+    if (!forze) return null;
+    const parti: string[] = [];
+    for (const chiave of ['att', 'def'] as const) {
+        const blk = forze[chiave];
+        if (!blk) return null;
+        const casa = numOrNull(blk.home);
+        const ospite = numOrNull(blk.away);
+        if (casa === null || ospite === null) return null;
+        parti.push(`${chiave} ${casa.toFixed(0)}-${ospite.toFixed(0)}`);
+    }
+    return `forze ${parti[0]} · ${parti[1]}`;
 }
 
 // Q7 (25/09): le parole con cui il check DICHIARA un dato assente (non blocca).
 // Identiche a quelle del motore del bot (`engine.SELEZIONE_*`).
 export const SELEZIONE_DATO_ASSENTE = 'dato assente (non blocca)';
 export const SELEZIONE_H2H_ASSENTE = 'scontri diretti: dato assente';
+export const SELEZIONE_H2H_NESSUNO = 'h2h: nessuno scontro diretto nel DB (non blocca)';
+export const SELEZIONE_H2H_POCHI = ' (troppo pochi: non blocca)';
 export const SELEZIONE_DIFESA_ASSENTE = 'difesa: dato assente';
 export const TENNIS_PRE_ASSENTE = 'pre-partita: dato assente (non blocca)';
+
+/** D5 punto 7 (utente 25/09): favorito pre-partita < soglia e leader = l'altro
+ *  → sfavorito estremo, escluso. Gemello di `engine.tennis_sfavorito_estremo_check`. */
+export function tennisSfavoritoEstremoCheck(
+    pre: { p1: number; p2: number },
+    leader: 1 | 2,
+    favSuperMax: number,
+    label: string,
+): ConditionCheck {
+    if (pre.p1 === pre.p2) {
+        return { id: 'leaderPre', label, value: `nessun favorito pre-partita (${fmtOdds(pre.p1)})`, ok: true };
+    }
+    const fav: 1 | 2 = pre.p1 < pre.p2 ? 1 : 2;
+    const qFav = fav === 1 ? pre.p1 : pre.p2;
+    if (qFav < favSuperMax && leader !== fav) {
+        return { id: 'leaderPre', label, value: `favorito pre-match ${fmtOdds(qFav)} → sfavorito estremo: escluso`, ok: false };
+    }
+    const chi = leader === fav ? 'si punta il favorito' : 'favorito non super';
+    return { id: 'leaderPre', label, value: `favorito pre-match ${fmtOdds(qFav)} (${chi})`, ok: true };
+}
 
 export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side: SideId): VariantEvaluation {
     const checks: ConditionCheck[] = [];
@@ -971,7 +1074,7 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     const sideLabel = side === 'home' ? 'Casa' : 'Ospite';
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    const veto = campionatoCheck(ctx.competition, params.vetoCampionati);
+    const veto = campionatoCtx(ctx, params.vetoCampionati);
     if (veto !== null) checks.push(veto);
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
     // RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
@@ -983,7 +1086,7 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     // SPEC §2 «Selezione aggiuntiva» (ordine dell'utente 16/09): filtro di
     // SELEZIONE DELLA PARTITA, si accende dai parametri come requireControl.
     if (params.requireSelection) {
-        checks.push(selectionCheck(ctx.selectionHint, side, params.h2hBigDrawRateMax, params.oppConcededMax));
+        checks.push(selectionCheck(ctx.selectionHint, side, params.h2hManyGoalsRateMax, params.oppConcededMax, params.h2hMinMeetings));
     }
 
     if (sh === null || sa === null) {
@@ -1053,7 +1156,7 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams, bandeP
     const fav = favoriteSide(ctx.preMatch);
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    const veto = campionatoCheck(ctx.competition, params.vetoCampionati);
+    const veto = campionatoCtx(ctx, params.vetoCampionati);
     if (veto !== null) checks.push(veto);
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
     // PUNTA: "la favorita deve continuare a spingere" (specifica). Stessa
@@ -1286,17 +1389,17 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
         });
     }
 
-    // Q12 (25/09): «sfavoriti estremi» esclusi sulla quota PRE-PARTITA del
-    // giocatore che si punta. Dato assente → NON blocca (lo dichiara).
-    const leadPreMax = typeof params.leaderPreMax === 'number' && Number.isFinite(params.leaderPreMax) ? params.leaderPreMax : 0;
-    if (leadPreMax > 0 && leader !== null) {
-        const preLabel = `Leader non sfavorito estremo (pre-partita ≤${fmtOdds(leadPreMax)})`;
+    // Q12 + D5 (25/09): «sfavoriti estremi» esclusi. Quota back PRE-PARTITA
+    // del FAVORITO sotto `favSuperMax` (stretto) → l'altro è uno sfavorito
+    // estremo: escluso se è il leader. Dato assente → NON blocca (lo dichiara).
+    const favSuperMax = typeof params.favSuperMax === 'number' && Number.isFinite(params.favSuperMax) ? params.favSuperMax : 0;
+    if (favSuperMax > 0 && leader !== null) {
+        const preLabel = `Leader non sfavorito estremo (favorito pre-partita ≥${fmtOdds(favSuperMax)})`;
         const pre = ctx.preMatch ?? null;
         if (pre === null) {
             checks.push({ id: 'leaderPre', label: preLabel, value: TENNIS_PRE_ASSENTE, ok: true });
         } else {
-            const qPre = leader === 1 ? pre.p1 : pre.p2;
-            checks.push({ id: 'leaderPre', label: preLabel, value: `pre-partita ${fmtOdds(qPre)}`, ok: qPre <= leadPreMax });
+            checks.push(tennisSfavoritoEstremoCheck(pre, leader, favSuperMax, preLabel));
         }
     }
 

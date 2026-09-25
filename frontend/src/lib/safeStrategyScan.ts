@@ -108,12 +108,24 @@ export interface CalcioScanPayload {
      *  UNA volta sola dallo SCANNER (`safe_strategy/selezione.py`, atlante
      *  `hazard_atlas_v2`) e pubblicati qui, come `pressure_index`: i due motori
      *  devono leggere lo STESSO numero. Assente = dato non disponibile, mai zero. */
+    /*  D5 (25/09): FONTE cambiata — scontri diretti VERI e forze attacco/difesa
+     *  della fixture abbinata dal DB (`fixture_predictions.raw_json`, la riga
+     *  della Dashboard), non più l'atlante per nome. */
     selection_hint?: {
         fonte?: string;
+        fixture_id?: number | null;
         h2h_meetings: number | null;
-        h2h_big_draws: number | null;
+        /** scontri diretti con 4 o più gol a fine partita */
+        h2h_many_goals: number | null;
         conceded: { home: number | null; away: number | null } | null;
+        forze?: {
+            att: { home: number | null; away: number | null } | null;
+            def: { home: number | null; away: number | null } | null;
+        } | null;
     } | null;
+    /** D5 (25/09), chiave ADDITIVA: round API-Football della fixture abbinata
+     *  (`matches.raw_json->league->>round`), per il veto delle FINALI. */
+    fixture_round?: string | null;
     pre_ko: { home: number; draw: number; away: number; captured_at?: string } | null;
     cs: {
         market_id: string | null;

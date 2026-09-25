@@ -71,21 +71,12 @@ VOCI: Tuple[VoceVeto, ...] = (
                "amistosos", "testspiel", "testspiele", "freundschaftsspiel",
                "freundschaftsspiele"),
     ),
-    # @40.0-69.1 «Le coppe, qui il concetto e' diverso, in particolare per le
-    # fasi finali e in generale comunque le partite con aspetto emotivo troppo
-    # elevato non vanno bene [...] soprattutto in fase iniziale assolutamente
-    # da evitare». LETTURA DICHIARATA: il veto e' su TUTTE le coppe, perche' dal
-    # nome Betfair della competizione la fase (girone / finale) non si ricava,
-    # e il video le mette fra le competizioni da evitare «in generale».
-    VoceVeto(
-        codice="coppe", nome="coppe",
-        citazione=f"{_FONTE} @40.0-69.1",
-        frasi=("cup", "cups", "coppa", "copa", "coupe", "pokal", "beker", "taca",
-               "cupa", "kupa", "kupasi", "puchar", "supercup", "supercoppa",
-               "supercopa", "supercoupe", "trophy", "shield",
-               "champions league", "europa league", "conference league",
-               "libertadores", "sudamericana"),
-    ),
+    # COPPE: NON sono una voce. Decisione dell'utente 25/09 (D5 punto 1): «NO,
+    # e' troppo restrittivo cosi'! Sono da evitare SOLO LE FINALI». Il video
+    # @40.0-69.1 «Le coppe [...] in particolare per le fasi finali [...]».
+    # Le finali (di QUALUNQUE competizione) si riconoscono dal ROUND della
+    # fixture (`is_round_finale`) o, in subordine, dal nome dell'evento
+    # (`nome_indica_finale`), non dal nome della competizione.
     # @72.5-98.5 «Poi Bundesliga e Redivisie [...] hanno una propensione al gol
     # talmente elevata [...] anche queste evitiamo le, soprattutto le loro serie
     # B». Utente 25/09: «Bundesliga NO, 2. Bundesliga NO».
@@ -114,14 +105,8 @@ VOCI: Tuple[VoceVeto, ...] = (
         citazione=f"{_FONTE} @72.5 (trascritto 'Redivisie')",
         frasi=("eredivisie",),
     ),
-    # @102.0-116.5 «le partite con imprevedibilita' troppo elevata in generale,
-    # ad esempio campionati un po' assurdi, quindi serie di boliviana, esempio
-    # [...] evitiamo totalmente». Il video nomina SOLO la Bolivia (come esempio).
-    VoceVeto(
-        codice="bolivia", nome="campionato boliviano",
-        citazione=f"{_FONTE} @102.0-116.5",
-        frasi=("bolivia", "bolivian", "boliviana", "boliviano"),
-    ),
+    # BOLIVIA: tolta. Decisione dell'utente 25/09 (D5 punto 2): «Bolivia: OK».
+    # Restano SOLO le voci che il video nomina esplicitamente.
 )
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -157,3 +142,92 @@ def voce_vietata(competition: Optional[str]) -> Optional[VoceVeto]:
 def motivo(voce: VoceVeto) -> str:
     """Il motivo di scarto, dichiarato: «veto campionato: Bundesliga 2 (corso)»."""
     return f"veto campionato: {voce.nome} (corso)"
+
+
+# ---------------------------------------------------------------------------
+# D5 (decisioni dell'utente 25/09) - FEMMINILE DAI NOMI SQUADRA e FINALI
+# ---------------------------------------------------------------------------
+# Punto 4: «Femminile: OK anche dai nomi squadra». Le parole dell'utente:
+# «(W)», «Women», «Femminile», «Ladies», «Frauen», «Femenino»; in piu' solo due
+# varianti grammaticali dichiarate ("womens", "femenina"). Parola INTERA.
+# "w" vale SOLO come ULTIMA parola (suffisso: "Arsenal W", "Arsenal (W)" ->
+# "arsenal w"): cosi' "W Connection" (club maschile di Trinidad) non e' donne.
+FRASI_SQUADRA_FEMMINILE: Tuple[str, ...] = (
+    "women", "womens", "ladies", "femminile", "femenino", "femenina", "frauen",
+)
+SUFFISSO_SQUADRA_FEMMINILE = "w"
+
+
+def squadra_femminile(nome: Optional[str]) -> bool:
+    """True se il NOME DELLA SQUADRA dice che e' calcio femminile."""
+    testo = normalizza(nome)
+    if not testo:
+        return False
+    if testo.split()[-1] == SUFFISSO_SQUADRA_FEMMINILE:
+        return True
+    return any(_contiene(testo, f) for f in FRASI_SQUADRA_FEMMINILE)
+
+
+# Punto 1: «Sono da evitare SOLO LE FINALI» (di qualunque competizione).
+# FONTE (a): il round della fixture di API-Football (`matches.raw_json ->
+# league -> round`), letto dallo scanner e pubblicato nella riga come
+# `fixture_round`. Nomi VERI misurati sul DB il 25/09 (sonda
+# `AUDIT_2026-09-25/sonde/d5_round_finali_sola_lettura.py`): "Final" (488),
+# "Semi-finals" (620), "Quarter-finals" (372), "Clausura - Final",
+# "Promotion Play-offs - Finals", "Grand Final", "Clausura - Gran Final",
+# "Final - Relegation", "3rd Place Final", "Finals - 11", "Final Round - 3",
+# "8th Finals", "1/2 Final", "Elimination Finals" ...
+# REGOLA (il round si spezza sui " - "):
+#   * FINALE se l'ULTIMO pezzo e' esattamente "Final"/"Finals"/"Grand Final"/
+#     "Gran Final"/"Finale" ("Final", "Clausura - Final", "Promotion
+#     Play-offs - Finals"), oppure se il PRIMO pezzo e' esattamente "Final" e
+#     l'ultimo non e' un numero di giornata ("Final - Relegation");
+#   * MAI finale: i turni prima ("Semi-finals", "Quarter-finals", "8th
+#     Finals", "1/2 Final", "Elimination Finals"), le fasi a giornate
+#     ("Final Round - 3", "Final Group - 1", "Finals - 11") e le finali per un
+#     piazzamento ("3rd Place Final", "Placement matches - Final").
+ROUND_FINALE: Tuple[str, ...] = ("final", "finals", "grand final", "gran final", "finale")
+_PAROLE_PIAZZAMENTO: Tuple[str, ...] = ("place", "placement")
+# separatori del round: " - ", tabulazione, trattini tipografici e il
+# carattere di sostituzione che compare in qualche nome del DB
+_SEP_ROUND = re.compile("\\s+-\\s+|\\t|\\s*[–—�]\\s*")
+
+
+def is_round_finale(round_: Optional[str]) -> bool:
+    """True se il round di API-Football e' una FINALE (vedi la regola sopra)."""
+    if not isinstance(round_, str):
+        return False
+    tutto = normalizza(round_)
+    if not tutto:
+        return False
+    if any(_contiene(tutto, p) for p in _PAROLE_PIAZZAMENTO):
+        return False
+    pezzi = [normalizza(x) for x in _SEP_ROUND.split(round_)]
+    pezzi = [x for x in pezzi if x]
+    if not pezzi:
+        return False
+    if pezzi[-1] in ROUND_FINALE:
+        return True
+    return len(pezzi) > 1 and pezzi[0] == "final" and not pezzi[-1].isdigit()
+
+
+# FONTE (b), in subordine (SOLO se il round manca): il NOME dell'evento
+# Betfair contiene «Final» come parola intera e non «Semi»/«Quarter».
+_PAROLE_NON_FINALE: Tuple[str, ...] = (
+    "semi", "semis", "semifinal", "semifinals", "quarter", "quarterfinal",
+    "quarterfinals", "place", "placement",
+)
+
+
+def nome_indica_finale(nome: Optional[str]) -> bool:
+    """True se il nome (evento Betfair) dice «Final», parola intera, e non
+    e' una semifinale / un quarto / una finale per un piazzamento."""
+    parole = normalizza(nome).split()
+    if "final" not in parole:
+        return False
+    return not any(p in parole for p in _PAROLE_NON_FINALE)
+
+
+MOTIVO_FINALE_ROUND = "veto finale: round «Final» (API-Football)"
+MOTIVO_FINALE_NOME = "veto finale: «Final» nel nome evento (Betfair)"
+MOTIVO_SQUADRA_FEMMINILE = "veto campionato: calcio femminile (nome squadra) (corso)"

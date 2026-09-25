@@ -78,9 +78,12 @@ def test_hint_nomi_sconosciuti_nessun_abbinamento_forzato() -> None:
 
 def test_lo_scanner_pubblica_il_blocco_nella_riga() -> None:
     """Come per `pressure_index`: il campo deve esistere davvero nel feed,
-    altrimenti la parita' fra i due motori e' solo una buona intenzione."""
+    altrimenti la parita' fra i due motori e' solo una buona intenzione.
+    D5 (25/09): la fonte e' la SCHEDA DB della fixture (`SchedeFixture`),
+    non piu' l'atlante per nome (`hint(home, away)` non e' piu' pubblicato)."""
     src = inspect.getsource(SV)
-    assert 'payload["selection_hint"] = _selezione.hint(home, away)' in src
+    assert 'payload["selection_hint"] = self.schede.hint(eid)' in src
+    assert "_selezione.hint(home, away)" not in src
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +105,11 @@ def _valuta(hint: Optional[Dict[str, Any]], *, acceso: bool = True,
 
 def _hint(incontri: Optional[int], alti: Optional[int],
           casa: Optional[float], fuori: Optional[float]) -> Dict[str, Any]:
-    return {"fonte": SEL.FONTE, "h2h_meetings": incontri, "h2h_big_draws": alti,
-            "conceded": {"home": casa, "away": fuori}}
+    # D5 (25/09): la forma della scheda DB (`selezione.hint_da_scheda`):
+    # `alti` = scontri diretti con 4+ gol
+    return {"fonte": SEL.FONTE_DB, "fixture_id": 1, "h2h_meetings": incontri,
+            "h2h_many_goals": alti, "conceded": {"home": casa, "away": fuori},
+            "forze": None}
 
 
 def _ck(ev, cid: str):
@@ -134,8 +140,9 @@ def test_acceso_e_selezione_buona_il_filtro_TACE() -> None:
 
 
 def test_acceso_e_troppi_pareggi_alti_il_filtro_SCATTA() -> None:
-    """3 su 10 = 30 %, oltre il 12 % dichiarato: niente segnale."""
-    ev = _valuta(_hint(10, 3, 3.0, 0.90))
+    """D5: 7 su 10 partite da 4+ gol = 70 %, oltre il 58 % dichiarato:
+    niente segnale."""
+    ev = _valuta(_hint(10, 7, 3.0, 0.90))
     ck = _ck(ev, "h2hDifesa")
     assert ck is not None and ck.ok is False
     assert ev.state == "no"
@@ -175,7 +182,8 @@ def test_q7_manca_solo_lo_scontro_diretto_si_giudica_la_difesa() -> None:
     """Scontri diretti assenti: si applica la sola difesa avversaria."""
     buona = _ck(_valuta(_hint(None, None, 3.0, 0.90), sub="home"), "h2hDifesa")
     assert buona.ok is True
-    assert buona.value == E.SELEZIONE_H2H_ASSENTE + " " + E.MIDDOT + " difesa 0,90"
+    assert buona.value == (E.SELEZIONE_H2H_ASSENTE + " " + E.MIDDOT
+                           + " difesa avversaria 0,90 gol subiti")
     cattiva = _valuta(_hint(None, None, 3.0, 1.80), sub="home")
     assert _ck(cattiva, "h2hDifesa").ok is False and cattiva.state == "no"
 
@@ -184,40 +192,50 @@ def test_q7_manca_solo_la_difesa_si_giudicano_gli_scontri() -> None:
     """Difesa avversaria assente: si applica il solo scontro diretto."""
     buona = _ck(_valuta(_hint(10, 0, None, None)), "h2hDifesa")
     assert buona.ok is True
-    assert buona.value == "0/10 2-2" + E.MIDDOT + "3-3 " + E.MIDDOT + " " + E.SELEZIONE_DIFESA_ASSENTE
-    cattiva = _valuta(_hint(10, 3, None, None))
+    assert buona.value == ("h2h: 10 partite, 0 con " + E.GEQ + "4 gol " + E.MIDDOT
+                           + " " + E.SELEZIONE_DIFESA_ASSENTE)
+    cattiva = _valuta(_hint(10, 7, None, None))
     assert _ck(cattiva, "h2hDifesa").ok is False and cattiva.state == "no"
 
 
 def test_q7_zero_incontri_vale_come_dato_assente() -> None:
-    """0 incontri non e' un campione: la parte non si giudica (non blocca)."""
+    """0 incontri non e' un campione: la parte non si giudica (non blocca).
+    D5: il valore dice che il DB non ha scontri diretti."""
     ck = _ck(_valuta(_hint(0, 0, 3.0, 0.90)), "h2hDifesa")
-    assert ck.ok is True and ck.value.startswith(E.SELEZIONE_H2H_ASSENTE)
+    assert ck.ok is True and ck.value.startswith(E.SELEZIONE_H2H_NESSUNO)
 
 
 def test_i_numeri_della_lettura_dichiarata_sono_quelli_del_referto() -> None:
     """Le due soglie NON sono nella SPEC: sono la lettura dichiarata il 16/09
     e vanno difese da un test, come le bande del manuale (CERT 14/09)."""
     par = E.DEFAULT_PARAMS["esatto"]
-    assert par["h2hBigDrawRateMax"] == 0.12
+    # D5 (25/09): 4+ gol, doppio della norma (29,22% dell'atlante) -> 0,58
+    assert par["h2hManyGoalsRateMax"] == 0.58
+    assert par["h2hMinMeetings"] == 3
+    assert "h2hBigDrawRateMax" not in par
     assert par["oppConcededMax"] == 1.37
     # il bordo: esattamente sulla soglia si passa (banda inclusiva come tutte
     # le altre del motore)
-    assert _ck(_valuta(_hint(25, 3, 3.0, 1.37)), "h2hDifesa").ok is True   # 12 % esatto
-    assert _ck(_valuta(_hint(25, 4, 3.0, 1.37)), "h2hDifesa").ok is False  # 16 %
+    assert _ck(_valuta(_hint(50, 29, 3.0, 1.37)), "h2hDifesa").ok is True   # 58 % esatto
+    assert _ck(_valuta(_hint(50, 30, 3.0, 1.37)), "h2hDifesa").ok is False  # 60 %
 
 
 def test_merge_params_difende_le_chiavi_nuove() -> None:
     """Un valore malformato dal DB torna al default, come per ogni altra
     chiave (merge difensivo)."""
-    m = E.merge_params({"esatto": {"requireSelection": "si", "h2hBigDrawRateMax": None,
+    m = E.merge_params({"esatto": {"requireSelection": "si", "h2hManyGoalsRateMax": None,
+                                   "h2hMinMeetings": "tanti",
                                    "oppConcededMax": "molto"}})["esatto"]
     # Q7 (25/09): il default e' ACCESO, un valore malformato torna li'
     assert m["requireSelection"] is True
-    assert m["h2hBigDrawRateMax"] == 0.12 and m["oppConcededMax"] == 1.37
+    assert m["h2hManyGoalsRateMax"] == 0.58 and m["oppConcededMax"] == 1.37
+    assert m["h2hMinMeetings"] == 3
     m2 = E.merge_params({"esatto": {"requireSelection": True,
-                                    "h2hBigDrawRateMax": 0.5}})["esatto"]
-    assert m2["requireSelection"] is True and m2["h2hBigDrawRateMax"] == 0.5
+                                    "h2hManyGoalsRateMax": 0.5,
+                                    # D5: la chiave vecchia sul DB e' IGNORATA
+                                    "h2hBigDrawRateMax": 0.01}})["esatto"]
+    assert m2["requireSelection"] is True and m2["h2hManyGoalsRateMax"] == 0.5
+    assert "h2hBigDrawRateMax" not in m2
 
 
 # ---------------------------------------------------------------------------
@@ -300,10 +318,10 @@ def test_e10_scatta_se_un_dato_assente_blocca() -> None:
 
 def test_e10_scatta_se_un_dato_assente_torna_n_d() -> None:
     """Q7: il vecchio comportamento (n/d -> nessun segnale) e' ora un difetto.
-    Numeri scelti perche' il verdetto atteso sia False (3/10 2-2/3-3): cosi' a
-    parlare e' SOLO la regola «n/d non e' ammesso», non il confronto col conto."""
+    Numeri scelti perche' il verdetto atteso sia False (7/10 da 4+ gol): cosi'
+    a parlare e' SOLO la regola «n/d non e' ammesso», non il confronto col conto."""
     par = dict(E.merge_params(None)["esatto"], requireSelection=True)
-    p = _riga(_hint(10, 3, None, None))
+    p = _riga(_hint(10, 7, None, None))
     ev = E.evaluate_esatto(contesto(p), par, "home")
     storti = tuple(
         E.ConditionCheck(c.id, c.label, "n/d", None) if c.id == "h2hDifesa" else c

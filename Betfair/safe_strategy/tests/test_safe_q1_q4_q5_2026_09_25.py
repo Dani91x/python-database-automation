@@ -53,19 +53,22 @@ VIETATI = {
                   "English Womens Super League"],
     "amichevoli": ["Club Friendlies", "International Friendlies", "Friendlies",
                    "Amichevoli Internazionali"],
-    "coppe": ["English FA Cup", "DFB Pokal", "KNVB Beker", "Coppa Italia",
-              "Copa del Rey", "Coupe de France", "UEFA Champions League",
-              "UEFA Europa League", "UEFA Europa Conference League",
-              "Copa Libertadores", "English League Cup", "Taca de Portugal",
-              "Taça de Portugal", "Italian Supercoppa", "EFL Trophy"],
     "bundesliga_2": ["German Bundesliga 2", "2. Bundesliga", "Bundesliga 2",
                      "German 2. Bundesliga", "Bundesliga II"],
     "bundesliga": ["German Bundesliga", "Bundesliga", "1. Bundesliga"],
     "eerste_divisie": ["Dutch Eerste Divisie", "Eerste Divisie",
                        "Keuken Kampioen Divisie"],
     "eredivisie": ["Dutch Eredivisie", "Eredivisie"],
-    "bolivia": ["Bolivian Primera Division", "Bolivia - Division Profesional"],
 }
+# D5 (utente 25/09): coppe e Bolivia NON sono piu' voci del veto.
+# «Coppe: NO, e' troppo restrittivo cosi'! Sono da evitare SOLO LE FINALI»;
+# «Bolivia: OK». Questi nomi prima venivano scartati, ora PASSANO.
+TOLTI_D5 = ["English FA Cup", "DFB Pokal", "KNVB Beker", "Coppa Italia",
+            "Copa del Rey", "Coupe de France", "UEFA Champions League",
+            "UEFA Europa League", "UEFA Europa Conference League",
+            "Copa Libertadores", "English League Cup", "Taca de Portugal",
+            "Taça de Portugal", "Italian Supercoppa", "EFL Trophy",
+            "Bolivian Primera Division", "Bolivia - Division Profesional"]
 
 # «Migliori campionati» del corso (2. SELEZIONE PARTITE/3. Migliori campionati
 # @11.8-39.9): Serie A, Liga, Premier, Ligue 1 e le loro serie B, Cina,
@@ -80,7 +83,7 @@ LECITI = ["Italian Serie A", "Italian Serie B", "Spanish La Liga",
           "Austrian Bundesliga",
           # la 3. Liga tedesca non e' nominata: solo la serie A e la serie B
           "German 3. Liga",
-          "Serie A", "Serie Z"]
+          "Serie A", "Serie Z"] + TOLTI_D5
 
 
 def test_ogni_voce_del_corso_ha_citazione_e_almeno_un_nome_betfair_coperto():
@@ -133,7 +136,8 @@ def test_maiuscole_accenti_e_punteggiatura_non_contano():
     for nome in ("GERMAN BUNDESLIGA 2", "german-bundesliga-2", "  2.Bundesliga  ",
                  "Bundesliga\t2"):
         assert V.voce_vietata(nome).codice == "bundesliga_2", nome
-    assert V.voce_vietata("Taça da Liga").codice == "coppe"
+    # D5: le coppe non sono piu' una voce, l'accento non cambia niente
+    assert V.voce_vietata("Taça da Liga") is None
 
 
 def test_veto_spento_dai_parametri_nessun_check():

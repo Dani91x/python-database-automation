@@ -776,8 +776,8 @@ def _e9(u: Uscita) -> Optional[str]:
     return None
 
 
-@_controllo("E10", "SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppi "
-                   "2-2/3-3, difesa avversaria solida",
+@_controllo("E10", "SPEC §2 «Selezione aggiuntiva»: scontri diretti senza troppe "
+                   "partite da 4+ gol, difesa avversaria solida",
             "con requireSelection acceso il check esiste, guarda la difesa "
             "dell'AVVERSARIA (non della bancata) e boccia chi sfora",
             Valutazione,
@@ -802,26 +802,30 @@ def _e10(v: Valutazione) -> Optional[str]:
     if lato not in ("home", "away"):
         return None
     incontri = _num((hint or {}).get("h2h_meetings")) if isinstance(hint, dict) else None
-    alti = _num((hint or {}).get("h2h_big_draws")) if isinstance(hint, dict) else None
+    # D5 (25/09): fonte DB, «partite da tanti gol» = 4+ gol (non piu' 2-2/3-3)
+    alti = _num((hint or {}).get("h2h_many_goals")) if isinstance(hint, dict) else None
     subiti_da = (hint or {}).get("conceded") if isinstance(hint, dict) else None
     avversaria = "away" if lato == "home" else "home"
     subiti = _num(subiti_da.get(avversaria)) if isinstance(subiti_da, dict) else None
-    rate_max = _num(v.par.get("h2hBigDrawRateMax"))
+    rate_max = _num(v.par.get("h2hManyGoalsRateMax"))
+    minimo = _num(v.par.get("h2hMinMeetings"))
     conceded_max = _num(v.par.get("oppConcededMax"))
-    if rate_max is None or conceded_max is None:
+    if rate_max is None or conceded_max is None or minimo is None:
         return "soglie della selezione aggiuntiva assenti dai parametri"
     # Q7 (ordine dell'utente 25/09): «dove disponibile». Ogni parte si
     # giudica per conto suo: col dato si applica la soglia, senza dato NON
-    # blocca. Il conto si rifa' qui a mano, parte per parte.
+    # blocca; D5: sotto il minimo di scontri diretti il conto NON blocca.
+    # Il conto si rifa' qui a mano, parte per parte.
     h2h_ok = (float(alti) / float(incontri) <= rate_max
-              if incontri is not None and incontri > 0 and alti is not None else None)
+              if incontri is not None and incontri >= minimo and incontri > 0
+              and alti is not None else None)
     dif_ok = float(subiti) <= conceded_max if subiti is not None else None
     atteso = h2h_ok is not False and dif_ok is not False
     if ck.ok is None:
         return ("il check della selezione aggiuntiva e' n/d: dal 25/09 un dato "
                 "assente NON blocca, deve dirlo e lasciar passare")
     if bool(ck.ok) is not atteso:
-        return (f"verdetto {ck.ok} ma dai numeri (scontri {alti}/{incontri} 2-2/3-3 -> "
+        return (f"verdetto {ck.ok} ma dai numeri (scontri {alti}/{incontri} da 4+ gol -> "
                 f"{h2h_ok}, difesa {avversaria} {subiti} -> {dif_ok}; None = dato "
                 f"assente, non blocca) ci si aspetta {atteso}: soglie "
                 f"{rate_max} / {conceded_max}")

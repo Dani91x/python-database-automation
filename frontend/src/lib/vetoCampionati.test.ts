@@ -46,21 +46,18 @@ function treVarianti(competition: string | null, params = DEFAULT_PARAMS) {
 const VIETATI: Record<string, string> = {
     'Friendlies Women': 'veto campionato: calcio femminile (corso)',
     'Club Friendlies': 'veto campionato: amichevoli (corso)',
-    'English FA Cup': 'veto campionato: coppe (corso)',
-    'DFB Pokal': 'veto campionato: coppe (corso)',
-    'Taça de Portugal': 'veto campionato: coppe (corso)',
-    'UEFA Champions League': 'veto campionato: coppe (corso)',
     'German Bundesliga 2': 'veto campionato: Bundesliga 2 (corso)',
     '2. Bundesliga': 'veto campionato: Bundesliga 2 (corso)',
     'German Bundesliga': 'veto campionato: Bundesliga (corso)',
     'Dutch Eerste Divisie': 'veto campionato: Eerste Divisie (serie B olandese) (corso)',
     'Keuken Kampioen Divisie': 'veto campionato: Eerste Divisie (serie B olandese) (corso)',
     'Dutch Eredivisie': 'veto campionato: Eredivisie (corso)',
-    'Bolivian Primera Division': 'veto campionato: campionato boliviano (corso)',
 };
 
 const LECITI = ['Italian Serie A', 'Italian Serie B', 'English Premier League', 'Spanish La Liga',
-    'French Ligue 1', 'Austrian Bundesliga', 'German 3. Liga', 'Japanese J League', 'Cupertino League'];
+    'French Ligue 1', 'Austrian Bundesliga', 'German 3. Liga', 'Japanese J League', 'Cupertino League',
+    // D5 (utente 25/09): coppe e Bolivia NON sono più voci del veto (solo le FINALI)
+    'English FA Cup', 'DFB Pokal', 'Taça de Portugal', 'UEFA Champions League', 'Bolivian Primera Division'];
 
 describe('Q4 — veto dei campionati del corso (gemello del bot)', () => {
     for (const [nome, motivo] of Object.entries(VIETATI)) {

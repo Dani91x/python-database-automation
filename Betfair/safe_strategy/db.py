@@ -143,6 +143,52 @@ def is_usable_pre_ko(pre: Any) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# D5 (25/09) - SCHEDA DELLA FIXTURE (sola lettura, vedi `selezione.SchedeFixture`)
+# ---------------------------------------------------------------------------
+# proiezioni JSON: si legge SOLO cio' che serve, mai l'intero raw_json
+_SCHEDA_SELECT = (
+    "fixture_id,"
+    "h2h:raw_json->response->0->h2h,"
+    "cmp:raw_json->response->0->comparison,"
+    "last5_home:raw_json->response->0->teams->home->last_5,"
+    "last5_away:raw_json->response->0->teams->away->last_5"
+)
+
+
+def fixtures_window(start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
+    """Fixture 'light' della finestra: la STESSA query del matcher di Omega e
+    della catena lambda del bot (`omega_db.fixtures_for_window`)."""
+    from Betfair.omega import omega_db
+
+    return omega_db.fixtures_for_window(start_iso, end_iso) or []
+
+
+def load_schede_fixture(fixture_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
+    """{fixture_id: scheda} da `fixture_predictions.raw_json` (h2h, confronto
+    attacco/difesa, ultime 5): le fonti della Dashboard. UNA SELECT."""
+    ids = [int(x) for x in fixture_ids or []]
+    if not ids:
+        return {}
+    res = (get_supabase_client().table("fixture_predictions")
+           .select(_SCHEDA_SELECT).in_("fixture_id", ids).execute())
+    return {int(r["fixture_id"]): r for r in (getattr(res, "data", None) or [])
+            if r.get("fixture_id") is not None}
+
+
+def load_round_fixture(fixture_ids: List[int]) -> Dict[int, Optional[str]]:
+    """{fixture_id: round di API-Football} da `matches.raw_json->league->>round`.
+    UNA SELECT, solo la proiezione del round."""
+    ids = [int(x) for x in fixture_ids or []]
+    if not ids:
+        return {}
+    res = (get_supabase_client().table("matches")
+           .select("fixture_id,round:raw_json->league->>round")
+           .in_("fixture_id", ids).execute())
+    return {int(r["fixture_id"]): r.get("round") for r in (getattr(res, "data", None) or [])
+            if r.get("fixture_id") is not None}
+
+
 def upsert_scan_rows(rows: List[Dict[str, Any]]) -> bool:
     """Upsert delle righe evento (on_conflict event_id). True se scritte."""
     if not rows:

@@ -46,20 +46,20 @@ describe('Q7 — selezione aggiuntiva ESATTO «dove disponibile»', () => {
         expect(DEFAULT_PARAMS.esatto.requireSelection).toBe(true);
     });
     it('dato del tutto assente → non blocca e lo dichiara', () => {
-        const ck = selectionCheck(null, 'home', 0.12, 1.37);
+        const ck = selectionCheck(null, 'home', 0.58, 1.37);
         expect(ck.ok).toBe(true);
         expect(ck.value).toBe(SELEZIONE_DATO_ASSENTE);
     });
     it('manca lo scontro diretto → si giudica la sola difesa avversaria', () => {
-        const h = { h2hMeetings: null, h2hBigDraws: null, conceded: { home: 3.0, away: 0.9 } };
-        const buona = selectionCheck(h, 'home', 0.12, 1.37);
+        const h = { h2hMeetings: null, h2hManyGoals: null, conceded: { home: 3.0, away: 0.9 } };
+        const buona = selectionCheck(h, 'home', 0.58, 1.37);
         expect(buona.ok).toBe(true);
-        expect(buona.value).toBe(`${SELEZIONE_H2H_ASSENTE} · difesa 0,90`);
-        expect(selectionCheck({ ...h, conceded: { home: 3.0, away: 1.8 } }, 'home', 0.12, 1.37).ok).toBe(false);
+        expect(buona.value).toBe(`${SELEZIONE_H2H_ASSENTE} · difesa avversaria 0,90 gol subiti`);
+        expect(selectionCheck({ ...h, conceded: { home: 3.0, away: 1.8 } }, 'home', 0.58, 1.37).ok).toBe(false);
     });
-    it('troppi 2-2/3-3 → scarta', () => {
-        const h = { h2hMeetings: 10, h2hBigDraws: 4, conceded: { home: 1.0, away: 1.0 } };
-        expect(selectionCheck(h, 'home', 0.12, 1.37).ok).toBe(false);
+    it('D5: troppe partite da 4+ gol → scarta', () => {
+        const h = { h2hMeetings: 10, h2hManyGoals: 7, conceded: { home: 1.0, away: 1.0 } };
+        expect(selectionCheck(h, 'home', 0.58, 1.37).ok).toBe(false);
     });
 });
 
@@ -91,9 +91,10 @@ describe('Q12 — tennis: quota pre-partita e sfavoriti estremi', () => {
         expect(ev.checks.find((c) => c.id === 'leaderPre')?.ok).toBe(true);
     });
     it('leader sfavorito estremo → no', () => {
+        // D5 (25/09): conta la quota del FAVORITO (p2 a 1,15 < 1,20)
         const ev = evaluateTennis(tennis({ p1: 5.5, p2: 1.15 }), DEFAULT_PARAMS.tennis);
         expect(ev.state).toBe('no');
-        expect(ev.checks.find((c) => c.id === 'leaderPre')?.value).toBe('pre-partita 5,50');
+        expect(ev.checks.find((c) => c.id === 'leaderPre')?.value).toBe('favorito pre-match 1,15 → sfavorito estremo: escluso');
     });
     it('dato assente → non blocca e lo dichiara', () => {
         for (const pre of [null, { p1: 1.5 }]) {
@@ -103,7 +104,7 @@ describe('Q12 — tennis: quota pre-partita e sfavoriti estremi', () => {
         }
     });
     it('0 = spento', () => {
-        const p = mergeParams({ tennis: { leaderPreMax: 0 } });
+        const p = mergeParams({ tennis: { favSuperMax: 0 } });
         const ev = evaluateTennis(tennis({ p1: 9, p2: 1.05 }), p.tennis);
         expect(ev.state).toBe('signal');
         expect(ev.checks.find((c) => c.id === 'leaderPre')).toBeUndefined();

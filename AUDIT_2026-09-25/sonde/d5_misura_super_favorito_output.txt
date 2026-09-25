@@ -1,0 +1,24 @@
+
+== A. TENNIS registrazioni Betfair (esito osservato): 21 partite
+   quantili quota favorito: p10 1.12  p25 1.17  p50 1.38  p75 1.57  p90 1.66
+   fav < 1.10: 2 (9.5%)  quota media 1.035 (sconfitta implicita 3.4%)  favorito NON vince 0/2 = 0.0%
+   fav < 1.15: 3 (14.3%)  quota media 1.063 (sconfitta implicita 6.0%)  favorito NON vince 0/3 = 0.0%
+   fav < 1.20: 7 (33.3%)  quota media 1.123 (sconfitta implicita 10.9%)  favorito NON vince 1/7 = 14.3%
+   fav < 1.25: 7 (33.3%)  quota media 1.123 (sconfitta implicita 10.9%)  favorito NON vince 1/7 = 14.3%
+   fav < 1.30: 8 (38.1%)  quota media 1.140 (sconfitta implicita 12.3%)  favorito NON vince 1/8 = 12.5%
+
+== B. TENNIS tennis_markets pre-partita dal 15/07 (solo distribuzione; 1 letture): 62 partite
+   quantili quota favorito: p10 1.14  p25 1.29  p50 1.47  p75 1.63  p90 1.76
+   fav < 1.10: 5 (8.1%)  quota media 1.064 (sconfitta implicita 6.0%)  esito non disponibile
+   fav < 1.15: 7 (11.3%)  quota media 1.081 (sconfitta implicita 7.5%)  esito non disponibile
+   fav < 1.20: 9 (14.5%)  quota media 1.100 (sconfitta implicita 9.1%)  esito non disponibile
+   fav < 1.25: 12 (19.4%)  quota media 1.133 (sconfitta implicita 11.8%)  esito non disponibile
+   fav < 1.30: 18 (29.0%)  quota media 1.183 (sconfitta implicita 15.5%)  esito non disponibile
+
+== C. CALCIO fixture_predictions 10/08-23/09 (1X2 bookmaker + esito; 24 letture): 1664 partite
+   quantili quota favorito: p10 1.30  p25 1.55  p50 1.90  p75 2.20  p90 2.40
+   fav < 1.10: 33 (2.0%)  quota media 1.053 (sconfitta implicita 5.1%)  favorito NON vince 0/33 = 0.0%
+   fav < 1.15: 61 (3.7%)  quota media 1.084 (sconfitta implicita 7.7%)  favorito NON vince 8/61 = 13.1%
+   fav < 1.20: 91 (5.5%)  quota media 1.111 (sconfitta implicita 10.0%)  favorito NON vince 15/91 = 16.5%
+   fav < 1.25: 123 (7.4%)  quota media 1.137 (sconfitta implicita 12.1%)  favorito NON vince 20/123 = 16.3%
+   fav < 1.30: 163 (9.8%)  quota media 1.167 (sconfitta implicita 14.3%)  favorito NON vince 32/163 = 19.6%

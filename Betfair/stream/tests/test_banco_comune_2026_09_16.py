@@ -67,6 +67,10 @@ PAYLOAD_VERO_CALCIO = {
     # ``marketDefinition``. Nessuna chiave storica tolta: chi legge questa
     # tabella (bot Safe, Mike, Omega, pagina) non cambia di una riga.
     "odds_pt_ms", "bet_delay",
+    # D5 (decisione dell'utente 25/09), chiave ADDITIVA: il round API-Football
+    # della fixture abbinata (veto delle FINALI). Nel banco non c'e' DB:
+    # la chiave c'e' e vale None (dato assente, nessun veto).
+    "fixture_round",
 }
 PAYLOAD_VERO_TENNIS = {
     "competition", "event_name", "games", "inplay", "media", "mo_market_id",

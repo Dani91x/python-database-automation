@@ -60,6 +60,7 @@ EURO = "€"
 MIDDOT = "·"     # separatore
 NDASH = "–"      # range quote (1.4-1.8) e separatore squadre
 EMDASH = "—"     # placeholder nome mancante
+RARR = "→"  # freccia nelle note dei check (D5)
 SI = "s" + IGRAVE     # "si" affermativo dei check
 
 
@@ -234,13 +235,34 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         # ACCESO. Semantica nuova di `selection_check`: una parte senza dato
         # NON blocca (lo dichiara nel valore), una parte col dato si applica.
         "requireSelection": True,
-        # "senza TROPPI 2-2/3-3": quota di scontri diretti finiti 2-2 o 3-3.
-        # Misura sull'atlante (4.838 coppie, 47.460 incontri): 2-2/3-3 sono il
-        # 6,04% degli incontri. "Troppi" = il DOPPIO della norma -> 0,12.
-        "h2hBigDrawRateMax": 0.12,
-        # "difesa avversaria SOLIDA": gol subiti per partita dalla squadra che
-        # deve fermare la bancata. Misura sull'atlante: 2,7403 gol per partita
-        # -> 1,37 per lato. "Solida" = non peggio della media.
+        # DECISIONE DELL'UTENTE 25/09 (D5 punto 5): «hai il DATABASE con gli
+        # H2H di quelle specifiche squadre, quindi deve essere affidabile».
+        # FONTE: gli scontri diretti VERI della fixture abbinata,
+        # `fixture_predictions.raw_json.response[0].h2h` (la STESSA lista che
+        # la Dashboard mostra in «STORICO H2H», `pages/Dashboard.tsx:50-58`),
+        # letti dallo scanner (`selezione.SchedeFixture`) e pubblicati nella
+        # riga (`selection_hint`). L'atlante non e' piu' la fonte.
+        # REGOLA DEL CORSO («RISULTATO ESATTO/1. SELEZIONE PARTITE» @63.2-76.5:
+        # «se ci sono troppi due a due, tre a tre, quattro a due, quattro a uno
+        # insomma magari andiamo ad evitare»; @79.5 «zero a zero, uno uno, uno
+        # zero, due a zero, due a uno [...] si puo'»; @99.3 «c'e' solo un tre a
+        # due che mi fa storcere un po' il naso»). Utente 25/09: OK a contare
+        # anche 4-2 e 4-1 -> «partita da tanti gol» = 4 o piu' gol a fine
+        # partita (2-2, 3-1, 3-3, 4-1, 4-2, 3-2 ...). Sostituisce la lettura
+        # "solo 2-2/3-3" (`h2hBigDrawRateMax`, DEPRECATA e ignorata).
+        # "Troppi" = il DOPPIO della norma, lo stesso metodo del 16/09: sulle
+        # 47.460 partite dell'atlante (4.838 coppie) il 29,22% ha 4+ gol ->
+        # 0,58. Da confermare con l'utente (referto D5 §dubbi).
+        "h2hManyGoalsRateMax": 0.58,
+        # sotto 3 scontri diretti il conto non e' un "troppi": NON blocca e lo
+        # dichiara (stesso minimo che aveva l'atlante, dichiarato).
+        "h2hMinMeetings": 3,
+        # "difesa avversaria SOLIDA" (@119.8-174.5 «vado a vedere [...] la sua
+        # difesa [...] quanti gol ha subito»): media dei gol SUBITI nelle
+        # ultime 5 partite dell'avversaria della bancata
+        # (`raw_json...teams.<lato>.last_5.goals.against.average`, la stessa
+        # riga della Dashboard). Soglia invariata: 2,7403 gol per partita
+        # (atlante) -> 1,37 per lato. "Solida" = non peggio della media.
         "oppConcededMax": 1.37,
         # Q4 (25/09): veto dei campionati del corso, come la BASE
         "vetoCampionati": True,
@@ -276,15 +298,21 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         # maschile/femminile - la lista la compila l'utente.
         "excludeCompetitions": [],
         "scoreConfirmSec": 15,
-        # ORDINE DELL'UTENTE 25/09 (Q12): «sfavoriti estremi» ESCLUSI, sulla
-        # quota PRE-PARTITA congelata del giocatore che si punta (il leader).
+        # ORDINE DELL'UTENTE 25/09 (Q12): «sfavoriti estremi» ESCLUSI.
         # Corso, TENNIS «2. Parametri» @56.3-93.6: «meglio non andare su uno
         # sfavorito, davvero troppo sfavorito [...] la loss diventerebbe troppo
         # alta [...] prediligere sempre [...] almeno un leggero favorito».
-        # IL VIDEO NON DA' UN NUMERO: 4,0 (probabilita' implicita 25 %) e' una
-        # PROPOSTA dichiarata, da confermare con l'utente. 0 = controllo spento.
-        # Dato pre-partita assente -> NON blocca (lo dichiara), come Q7.
-        "leaderPreMax": 4.0,
+        # DECISIONE DELL'UTENTE 25/09 (D5 punto 7): «si calcola dalla QUOTA
+        # BACK DEL FAVORITO: se pre-match il favorito e' < 1,20 e' un super
+        # favorito e l'altro uno sfavorito estremo». Sulla quota PRE-PARTITA
+        # CONGELATA (`scanner.freeze_pre_ko_tennis`): se il favorito sta sotto
+        # `favSuperMax` (STRETTO: 1,20 esatto non e' super favorito) e il
+        # leader che si punta e' l'ALTRO, l'ingresso e' escluso. Sostituisce la
+        # soglia 4,0 sulla quota del leader (`leaderPreMax`, DEPRECATA).
+        # Misura sui dati: referto `AUDIT_2026-09-25/SAFE_DECISIONI_D5.md` §7.
+        # 0 = controllo spento. Dato pre-partita assente -> NON blocca (lo
+        # dichiara), come Q7.
+        "favSuperMax": 1.20,
     },
     # EXTRA rispetto al TS: stake operativo dei segnali (il motore web non
     # piazza ordini, il server si). Minimo Betfair = 2 EUR.
@@ -379,9 +407,11 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "entryMax": _num(e.get("entryMax"), d["esatto"]["entryMax"]),
             "scoreConfirmSec": _num(e.get("scoreConfirmSec"), d["esatto"]["scoreConfirmSec"]),
             "requireSelection": _bool(e.get("requireSelection"), d["esatto"]["requireSelection"]),
-            "h2hBigDrawRateMax": _num(
-                e.get("h2hBigDrawRateMax"), d["esatto"]["h2hBigDrawRateMax"]
+            # D5 (25/09): `h2hBigDrawRateMax` DEPRECATA, qui non si legge piu'.
+            "h2hManyGoalsRateMax": _num(
+                e.get("h2hManyGoalsRateMax"), d["esatto"]["h2hManyGoalsRateMax"]
             ),
+            "h2hMinMeetings": _num(e.get("h2hMinMeetings"), d["esatto"]["h2hMinMeetings"]),
             "oppConcededMax": _num(e.get("oppConcededMax"), d["esatto"]["oppConcededMax"]),
             "vetoCampionati": _bool(e.get("vetoCampionati"), d["esatto"]["vetoCampionati"]),
         },
@@ -409,7 +439,8 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 t.get("excludeCompetitions"), d["tennis"]["excludeCompetitions"]
             ),
             "scoreConfirmSec": _num(t.get("scoreConfirmSec"), d["tennis"]["scoreConfirmSec"]),
-            "leaderPreMax": _num(t.get("leaderPreMax"), d["tennis"]["leaderPreMax"]),
+            # D5 (25/09): `leaderPreMax` DEPRECATA, qui non si legge piu'.
+            "favSuperMax": _num(t.get("favSuperMax"), d["tennis"]["favSuperMax"]),
         },
         "stake": {
             # accettato sia annidato in "stake" sia al livello superiore
@@ -558,6 +589,11 @@ class FootballMatchCtx:
     # (`selezione.hint`) e pubblicati nella riga, come `pressure_index`.
     # None = dato assente, e non diventa mai uno zero.
     selection_hint: Optional[Dict[str, Any]] = None
+    # D5 (25/09) punto 1: il ROUND della fixture di API-Football abbinata
+    # (`matches.raw_json->league->>round`, es. "Final", "Semi-finals",
+    # "Regular Season - 5"), pubblicato dallo scanner come `fixture_round`.
+    # None = fixture non abbinata o round assente.
+    fixture_round: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -726,6 +762,8 @@ def build_football_ctx_from_scan(
         selection_hint=(
             p.get("selection_hint") if isinstance(p.get("selection_hint"), dict) else None
         ),
+        # D5 (25/09): chiave ADDITIVA dello scanner; riga vecchia = None
+        fixture_round=_text_or_none(p.get("fixture_round")),
     )
 
 
@@ -869,9 +907,29 @@ def control_check(idx: Optional[float], lato: Optional[str], *, deve_avere: bool
 
 
 def selection_check(hint: Optional[Dict[str, Any]], lato_bancato: Optional[str], *,
-                    rate_max: float, conceded_max: float) -> ConditionCheck:
-    """SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppi
-    2-2/3-3 e difesa AVVERSARIA solida.
+                    rate_max: float, conceded_max: float,
+                    min_meetings: float = 3) -> ConditionCheck:
+    """SPEC §2 riga «Selezione aggiuntiva» — scontri diretti senza troppe
+    partite da tanti gol e difesa AVVERSARIA solida.
+
+    D5 (decisioni dell'utente 25/09, punti 5 e 6): i dati sono quelli VERI
+    della fixture abbinata (`fixture_predictions.raw_json`, la stessa riga
+    della Dashboard), pubblicati dallo scanner in ``selection_hint``
+    (`selezione.hint_da_scheda`):
+
+        {"fonte": "fixture_predictions.raw_json", "fixture_id": 123,
+         "h2h_meetings": 8, "h2h_many_goals": 2,        # None = dato assente
+         "conceded": {"home": 0.8, "away": 1.6},       # ult. 5, gol subiti/partita
+         "forze": {"att": {"home": 45, "away": 55},    # % «Attacco/Difesa»
+                   "def": {"home": 60, "away": 40}}}   # della Dashboard (nota)
+
+    * scontri diretti: «partita da tanti gol» = 4 o piu' gol a fine partita
+      (corso @63.2-76.5: 2-2, 3-3, 4-2, 4-1; utente: OK 4-2 e 4-1). Blocca se
+      la QUOTA di quelle partite supera ``rate_max``; con meno di
+      ``min_meetings`` scontri il conto non e' un "troppi": NON blocca e lo
+      dice. Il valore dichiara sempre «h2h: N partite, X con >=4 gol».
+    * forze attacco/difesa: SOLO dichiarate nel valore (il video non da'
+      una soglia, e una soglia inventata cambierebbe la strategia).
 
     «Avversaria» e' la difesa della squadra OPPOSTA a quella bancata: la
     bancata e' quella che non deve segnare ancora (si banca «Altro risultato
@@ -889,69 +947,149 @@ def selection_check(hint: Optional[Dict[str, Any]], lato_bancato: Optional[str],
     ``ok=None`` e bloccava l'ingresso (n/d).
     Unico ``ok=None`` rimasto: lato bancato non valido (errore di chiamata).
     """
-    etichetta = (f"Scontri diretti con max {js_num(round(rate_max * 100))}% di 2-2/3-3 "
-                 f"e difesa avversaria entro {fmt_odds(conceded_max)} gol subiti")
+    etichetta = (f"Scontri diretti con max {js_num(round(rate_max * 100))}% di partite da "
+                 f"{GEQ}4 gol e difesa avversaria entro {fmt_odds(conceded_max)} gol subiti")
     if lato_bancato not in ("home", "away"):
         return ConditionCheck("h2hDifesa", etichetta, "n/d", None)
     h = hint if isinstance(hint, dict) else {}
     incontri = num_or_none(h.get("h2h_meetings"))
-    alti = num_or_none(h.get("h2h_big_draws"))
+    tanti = num_or_none(h.get("h2h_many_goals"))
     subiti_da = h.get("conceded") if isinstance(h.get("conceded"), dict) else {}
     avversaria = "away" if lato_bancato == "home" else "home"
     subiti = num_or_none(subiti_da.get(avversaria))
+    forze = _forze_testo(h.get("forze"))
     h2h_ok: Optional[bool] = None
     dif_ok: Optional[bool] = None
     parti: List[str] = []
-    if incontri is not None and incontri > 0 and alti is not None:
-        h2h_ok = float(alti) / float(incontri) <= rate_max
-        parti.append(f"{js_num(int(alti))}/{js_num(int(incontri))} 2-2{MIDDOT}3-3")
+    if incontri is not None and tanti is not None and incontri >= 0 and tanti >= 0:
+        if incontri == 0:
+            parti.append(SELEZIONE_H2H_NESSUNO)
+        else:
+            testo = (f"h2h: {js_num(int(incontri))} partite, "
+                     f"{js_num(int(tanti))} con {GEQ}4 gol")
+            if incontri < min_meetings:
+                testo += SELEZIONE_H2H_POCHI
+            else:
+                h2h_ok = float(tanti) / float(incontri) <= rate_max
+            parti.append(testo)
     else:
+        incontri = None
         parti.append(SELEZIONE_H2H_ASSENTE)
     if subiti is not None:
         dif_ok = float(subiti) <= conceded_max
-        parti.append(f"difesa {fmt_odds(subiti)}")
+        parti.append(f"difesa avversaria {fmt_odds(subiti)} gol subiti")
     else:
         parti.append(SELEZIONE_DIFESA_ASSENTE)
-    if h2h_ok is None and dif_ok is None:
+    if forze is not None:
+        parti.append(forze)
+    if incontri is None and subiti is None and forze is None:
         return ConditionCheck("h2hDifesa", etichetta, SELEZIONE_DATO_ASSENTE, True)
     ok = h2h_ok is not False and dif_ok is not False
     return ConditionCheck("h2hDifesa", etichetta, f" {MIDDOT} ".join(parti), ok)
 
 
+def _forze_testo(forze: Any) -> Optional[str]:
+    """«forze att 45-55 · def 60-40»: le percentuali casa-ospite del
+    «CONFRONTO DIRETTO» della Dashboard (`comparison.att/def`). None se il
+    blocco non c'e' o e' incompleto. Solo NOTA: nessuna soglia."""
+    if not isinstance(forze, dict):
+        return None
+    parti: List[str] = []
+    for chiave in ("att", "def"):
+        blk = forze.get(chiave)
+        if not isinstance(blk, dict):
+            return None
+        casa, ospite = num_or_none(blk.get("home")), num_or_none(blk.get("away"))
+        if casa is None or ospite is None:
+            return None
+        parti.append(f"{chiave} {_to_fixed(casa, 0)}-{_to_fixed(ospite, 0)}")
+    return f"forze {parti[0]} {MIDDOT} {parti[1]}"
+
+
 # Q12 (25/09): stesso principio per la quota pre-partita del tennis.
 TENNIS_PRE_ASSENTE = "pre-partita: dato assente (non blocca)"
+
+
+def tennis_sfavorito_estremo_check(pre_match: Dict[str, float], leader: int,
+                                   fav_super_max: float, etichetta: str) -> ConditionCheck:
+    """D5 punto 7 (utente 25/09): «si calcola dalla QUOTA BACK DEL FAVORITO:
+    se pre-match il favorito e' < 1,20 e' un super favorito e l'altro uno
+    sfavorito estremo». ``ok=False`` SOLO se il favorito pre-partita e' sotto
+    soglia E il leader che si punta e' l'altro. Quote pari = nessun favorito."""
+    q1, q2 = float(pre_match["p1"]), float(pre_match["p2"])
+    if q1 == q2:
+        return ConditionCheck("leaderPre", etichetta,
+                              f"nessun favorito pre-partita ({fmt_odds(q1)})", True)
+    fav = 1 if q1 < q2 else 2
+    q_fav = q1 if fav == 1 else q2
+    if q_fav < fav_super_max and leader != fav:
+        return ConditionCheck("leaderPre", etichetta,
+                              f"favorito pre-match {fmt_odds(q_fav)} {RARR} sfavorito "
+                              f"estremo: escluso", False)
+    chi = "si punta il favorito" if leader == fav else "favorito non super"
+    return ConditionCheck("leaderPre", etichetta,
+                          f"favorito pre-match {fmt_odds(q_fav)} ({chi})", True)
 
 # Q7 (25/09): le parole con cui il check DICHIARA un dato assente (non blocca).
 SELEZIONE_DATO_ASSENTE = "dato assente (non blocca)"
 SELEZIONE_H2H_ASSENTE = "scontri diretti: dato assente"
+# D5 (25/09): la fixture c'e' ma il DB non ha scontri diretti, o ne ha pochi
+SELEZIONE_H2H_NESSUNO = "h2h: nessuno scontro diretto nel DB (non blocca)"
+SELEZIONE_H2H_POCHI = " (troppo pochi: non blocca)"
 SELEZIONE_DIFESA_ASSENTE = "difesa: dato assente"
 
 
 def campionato_check(competition: Optional[str],
-                     params: Dict[str, Any]) -> Optional[ConditionCheck]:
-    """Q4 (ordine dell'utente 25/09) — VETO dei campionati del corso.
+                     params: Dict[str, Any], *,
+                     home: Optional[str] = None, away: Optional[str] = None,
+                     fixture_round: Optional[str] = None,
+                     event_name: Optional[str] = None) -> Optional[ConditionCheck]:
+    """Q4 (ordine dell'utente 25/09) — VETO dei campionati del corso, con le
+    decisioni D5 dello stesso giorno.
 
     Lista negativa (`veto_campionati.VOCI`, ogni voce con la citazione del
     video): se la competizione ci ricade, ``ok=False`` e il valore e' il motivo
-    di scarto dichiarato («veto campionato: Bundesliga 2 (corso)»).
+    di scarto dichiarato («veto campionato: Bundesliga 2 (corso)»). In ordine:
+      1. la competizione e' in lista (femminile, amichevoli, Bundesliga e
+         2. Bundesliga, Eredivisie ed Eerste Divisie). Coppe e Bolivia NON
+         sono piu' in lista (D5 punti 1 e 2);
+      2. D5 punto 4: il NOME DI UNA SQUADRA dice calcio femminile («(W)»,
+         «Women», «Femminile», «Ladies», «Frauen», «Femenino»);
+      3. D5 punto 1: la partita e' una FINALE (di qualunque competizione):
+         dal round della fixture di API-Football (`fixture_round`); SOLO se il
+         round manca, dal nome dell'evento Betfair («Final», parola intera,
+         non «Semi»/«Quarter»).
 
     Ritorna None (nessun check) in due casi, entrambi DICHIARATI:
       * ``vetoCampionati`` spento dai parametri;
-      * nome della competizione ASSENTE nella riga. Stessa regola dei
-        cartellini rossi qui sotto: l'assenza del DATO non e' l'appartenenza
-        alla lista nera. Il banco di replay (`banco_comune`, LIMITE 1) non ha
-        il catalogo e lascia `competition` a None: li' il veto non e'
-        esercitabile, e il resto della strategia resta certificabile.
+      * nome della competizione ASSENTE nella riga e nessuna delle regole 2-3
+        scatta (D5 punto 3: «lascia cosi'»). Stessa regola dei cartellini
+        rossi: l'assenza del DATO non e' l'appartenenza alla lista nera. Il
+        banco di replay (`banco_comune`, LIMITE 1) lascia `competition` a None.
     """
-    if not params.get("vetoCampionati", True) or competition is None:
+    if not params.get("vetoCampionati", True):
         return None
-    voce = _veto.voce_vietata(competition)
-    return ConditionCheck(
-        "campionato",
-        "Campionato non vietato dal corso",
-        competition if voce is None else _veto.motivo(voce),
-        voce is None,
-    )
+    etichetta = "Campionato non vietato dal corso"
+    if competition is not None:
+        voce = _veto.voce_vietata(competition)
+        if voce is not None:
+            return ConditionCheck("campionato", etichetta, _veto.motivo(voce), False)
+    if _veto.squadra_femminile(home) or _veto.squadra_femminile(away):
+        return ConditionCheck("campionato", etichetta, _veto.MOTIVO_SQUADRA_FEMMINILE, False)
+    if fixture_round is not None:
+        if _veto.is_round_finale(fixture_round):
+            return ConditionCheck("campionato", etichetta, _veto.MOTIVO_FINALE_ROUND, False)
+    elif _veto.nome_indica_finale(event_name):
+        return ConditionCheck("campionato", etichetta, _veto.MOTIVO_FINALE_NOME, False)
+    if competition is None:
+        return None
+    return ConditionCheck("campionato", etichetta, competition, True)
+
+
+def _campionato_ctx(ctx: "FootballMatchCtx", params: Dict[str, Any]) -> Optional[ConditionCheck]:
+    """`campionato_check` con tutti i dati della riga (un solo punto)."""
+    return campionato_check(ctx.competition, params, home=ctx.home, away=ctx.away,
+                            fixture_round=ctx.fixture_round, event_name=ctx.event_name)
 
 
 def minute_check(check_id: str, minute: Optional[int], from_minute: Any) -> ConditionCheck:
@@ -1029,7 +1167,7 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
-    veto = campionato_check(ctx.competition, params)
+    veto = _campionato_ctx(ctx, params)
     if veto is not None:
         checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
@@ -1126,7 +1264,7 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
-    veto = campionato_check(ctx.competition, params)
+    veto = _campionato_ctx(ctx, params)
     if veto is not None:
         checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
@@ -1142,8 +1280,9 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
     if params.get("requireSelection"):
         checks.append(selection_check(
             ctx.selection_hint, side,
-            rate_max=params["h2hBigDrawRateMax"],
-            conceded_max=params["oppConcededMax"]))
+            rate_max=params["h2hManyGoalsRateMax"],
+            conceded_max=params["oppConcededMax"],
+            min_meetings=params["h2hMinMeetings"]))
 
     goals_label = f"{side_label} con max {js_num(params['maxGoalsLaySide'])} gol"
     if sh is None or sa is None:
@@ -1227,7 +1366,7 @@ def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any],
     scores_label = f" {MIDDOT} ".join(params["scores"])
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
-    veto = campionato_check(ctx.competition, params)
+    veto = _campionato_ctx(ctx, params)
     if veto is not None:
         checks.append(veto)
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
@@ -1401,18 +1540,20 @@ def evaluate_tennis(ctx: TennisMatchCtx, params: Dict[str, Any]) -> VariantEvalu
             )
         )
 
-    # Q12 (25/09): «sfavoriti estremi» esclusi, sulla quota PRE-PARTITA del
-    # giocatore che si punta. Dato assente -> NON blocca (lo dichiara).
-    lead_pre_max = num_or_none(params.get("leaderPreMax")) or 0.0
-    if lead_pre_max > 0 and leader is not None:
-        pre_label = f"Leader non sfavorito estremo (pre-partita {LEQ}{fmt_odds(lead_pre_max)})"
+    # Q12 + D5 punto 7 (25/09): «sfavoriti estremi» esclusi. Si guarda la
+    # quota back PRE-PARTITA del FAVORITO: sotto `favSuperMax` (1,20, stretto)
+    # il favorito e' un «super favorito» e l'altro uno «sfavorito estremo»:
+    # se il leader che si punta e' proprio lui, l'ingresso e' escluso.
+    # Dato assente -> NON blocca (lo dichiara).
+    fav_super_max = num_or_none(params.get("favSuperMax")) or 0.0
+    if fav_super_max > 0 and leader is not None:
+        pre_label = (f"Leader non sfavorito estremo (favorito pre-partita "
+                     f"{GEQ}{fmt_odds(fav_super_max)})")
         if ctx.pre_match is None:
             checks.append(ConditionCheck("leaderPre", pre_label, TENNIS_PRE_ASSENTE, True))
         else:
-            q_pre = ctx.pre_match["p1"] if leader == 1 else ctx.pre_match["p2"]
-            checks.append(ConditionCheck("leaderPre", pre_label,
-                                         f"pre-partita {fmt_odds(q_pre)}",
-                                         q_pre <= lead_pre_max))
+            checks.append(tennis_sfavorito_estremo_check(
+                ctx.pre_match, leader, fav_super_max, pre_label))
 
     # vantaggio game nel set corrente, dello STESSO giocatore avanti nei set
     games_label = f"{js_num(params['gamesLeadMin'])}+ game di vantaggio nel set corrente"

@@ -357,6 +357,16 @@ class Scanner:
         # rilegge PRIMA del primo publish, che altrimenti lo sovrascrive con None.
         # Un solo tentativo per evento, best-effort, mai nel percorso caldo.
         self.pre_ko_tried: set = set()
+        # D5 (25/09): SCHEDA DB della fixture abbinata (scontri diretti, forze
+        # attacco/difesa, gol subiti, round): letture leggere e dichiarate in
+        # `selezione.SchedeFixture`. Si aggiorna SOLO nel `tick` del run vero
+        # (`hydrate_schede`): `build_rows` legge la cache e basta, quindi il
+        # banco di replay (che chiama `build_rows`) non tocca mai il DB.
+        self.schede = _selezione.SchedeFixture(
+            leggi_finestra=scan_db.fixtures_window,
+            leggi_schede=scan_db.load_schede_fixture,
+            leggi_round=scan_db.load_round_fixture,
+        )
         # thread punteggi (run persistente): None = poll dentro al tick
         self.score_worker: Optional["ScoreFeedWorker"] = None
         self.cs_catalogue_ts = 0.0
@@ -1596,16 +1606,19 @@ class Scanner:
                     # timeline): non aggiunge una sola riscrittura.
                     payload["pressure_index"] = _pressure.pressure_index(payload)
                     # SPEC §2 «Selezione aggiuntiva» (ordine dell'utente
-                    # 16/09): i due numeri storici della voce — scontri
-                    # diretti finiti 2-2/3-3 e gol subiti per partita —
-                    # calcolati QUI una volta sola dall'atlante gia' in casa
-                    # (`hazard_atlas_v2`, lo stesso di `omega_advisor`), per
-                    # la stessa ragione di `pressure_index`: il motore del
-                    # bot e quello della pagina devono leggere LO STESSO
-                    # numero. Nessuna lettura DB, nessuna chiamata di rete:
-                    # solo un file locale, letto una volta per processo e
-                    # messo in cache per coppia di nomi. None = dato assente.
-                    payload["selection_hint"] = _selezione.hint(home, away)
+                    # 16/09), FONTE cambiata il 25/09 (D5 punti 5-6): gli
+                    # scontri diretti VERI e le forze attacco/difesa della
+                    # fixture abbinata, dal DB (`fixture_predictions.raw_json`,
+                    # la riga della Dashboard), non piu' l'atlante per nome.
+                    # Pubblicati QUI una volta sola per la stessa ragione di
+                    # `pressure_index`: il motore del bot e quello della
+                    # pagina devono leggere LO STESSO numero. Qui si LEGGE la
+                    # cache (`hydrate_schede` nel tick): nessuna query in
+                    # `build_rows`. None = dato assente.
+                    payload["selection_hint"] = self.schede.hint(eid)
+                    # D5 punto 1, chiave ADDITIVA: il round di API-Football
+                    # della fixture abbinata (veto delle FINALI)
+                    payload["fixture_round"] = self.schede.round(eid)
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
                     payload = {
@@ -1689,6 +1702,24 @@ class Scanner:
                 self.written_crit[eid] = crit
                 rows.append(riga)
         return rows, wanted
+
+    def hydrate_schede(self, now: Optional[datetime] = None) -> int:
+        """D5 (25/09): abbina alle fixture del DB le partite di calcio
+        CANDIDATE (in-play o nella finestra pre-KO) e legge la loro scheda
+        (una query a blocchi per giro, solo per le fixture NUOVE; la finestra
+        di fixture una volta ogni 10 minuti). Mai eccezioni."""
+        now = now or datetime.now(timezone.utc)
+        st = self.sports.get("calcio")
+        if st is None:
+            return 0
+        eventi: List[Dict[str, Any]] = []
+        for eid, meta in st.metas.items():
+            ev = self.events.get(eid) or {}
+            if not (ev.get("inplay") or scanner.in_pre_ko_window(meta.get("open_date"), now)):
+                continue
+            eventi.append({"event_id": eid, "event_name": meta.get("event_name"),
+                           "open_date": meta.get("open_date")})
+        return self.schede.aggiorna(eventi, now)
 
     def hydrate_pre_ko(self) -> int:
         """Rilegge dal DB il riferimento 1X2 pre-KO delle partite di calcio gia'
@@ -2004,6 +2035,8 @@ class Scanner:
             # PRIMA del publish: il publish riscriverebbe pre_ko=None sul DB
             with self.crono.fase("pre_ko"):
                 self.hydrate_pre_ko()
+                # D5 (25/09): schede DB delle fixture nuove (h2h, forze, round)
+                self.hydrate_schede(now)
             with self.crono.fase("scrittura"):
                 written, deleted = self.publish(now)
             if written or deleted:

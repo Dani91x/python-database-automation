@@ -201,11 +201,13 @@ def test_q7_default_acceso_riga_senza_dato_entra_e_lo_dice():
 
 
 def test_q7_dato_presente_e_cattivo_scarta_con_valore_e_soglia():
-    ev = _esatto({"fonte": "hazard_atlas_v2", "h2h_meetings": 10, "h2h_big_draws": 4,
-                  "conceded": {"home": 1.0, "away": 1.0}})
+    # D5 (25/09): fonte DB, partite da 4+ gol, soglia 0,58 (7/10 = 0,70)
+    ev = _esatto({"fonte": "fixture_predictions.raw_json", "h2h_meetings": 10,
+                  "h2h_many_goals": 7, "conceded": {"home": 1.0, "away": 1.0}})
     ck = check(ev, "h2hDifesa")
     assert ev.state == "no" and ck.ok is False
-    assert "4/10" in ck.value and "12%" in ck.label and "1,37" in ck.label
+    assert f"h2h: 10 partite, 7 con {E.GEQ}4 gol" in ck.value
+    assert "58%" in ck.label and "1,37" in ck.label
 
 
 # ===========================================================================
@@ -336,9 +338,12 @@ def test_q12_leader_favorito_o_poco_sfavorito_si_entra():
 
 
 def test_q12_leader_sfavorito_estremo_niente_ingresso():
+    # D5 (25/09): si guarda il FAVORITO (p2 a 1,15 < 1,20): il leader p1 e'
+    # lo sfavorito estremo
     ev = _tennis({"p1": 5.5, "p2": 1.15})
     ck = check(ev, "leaderPre")
-    assert ev.state == "no" and ck.ok is False and ck.value == "pre-partita 5,50"
+    assert ev.state == "no" and ck.ok is False
+    assert ck.value == f"favorito pre-match 1,15 {E.RARR} sfavorito estremo: escluso"
     assert [c.id for c in ev.checks if c.ok is False] == ["leaderPre"]
 
 
@@ -347,11 +352,13 @@ def test_q12_si_guarda_il_giocatore_che_si_punta_non_l_altro():
     p = tennis_payload(sets={"p1": 0, "p2": 1}, games={"p1": 0, "p2": 3})
     p["odds"]["p2"] = {"back": 1.05, "lay": 1.06, "selection_id": 2}
     p["odds"]["p1"] = {"back": 15.0, "lay": 16.0, "selection_id": 1}
-    p["pre_ko"] = {"p1": 1.20, "p2": 5.00}
+    # D5 (25/09): super favorito p1 (1,15 < 1,20) -> il leader p2 e' lo
+    # sfavorito estremo; a lati scambiati il leader E' il super favorito
+    p["pre_ko"] = {"p1": 1.15, "p2": 5.00}
     ev = E.evaluate_tennis(E.build_tennis_ctx_from_scan("tv1", p, 60),
                            E.merge_params(None)["tennis"])
     assert check(ev, "leaderPre").ok is False
-    p["pre_ko"] = {"p1": 5.00, "p2": 1.20}
+    p["pre_ko"] = {"p1": 5.00, "p2": 1.15}
     ev2 = E.evaluate_tennis(E.build_tennis_ctx_from_scan("tv1", p, 60),
                             E.merge_params(None)["tennis"])
     assert check(ev2, "leaderPre").ok is True
@@ -365,7 +372,7 @@ def test_q12_dato_pre_partita_assente_non_blocca_e_lo_dichiara():
 
 
 def test_q12_spento_con_zero():
-    par = E.merge_params({"tennis": {"leaderPreMax": 0}})["tennis"]
+    par = E.merge_params({"tennis": {"favSuperMax": 0}})["tennis"]
     p = tennis_payload(p1_back=1.05)
     p["pre_ko"] = {"p1": 9.0, "p2": 1.05}
     ev = E.evaluate_tennis(E.build_tennis_ctx_from_scan("tv1", p, 60), par)
