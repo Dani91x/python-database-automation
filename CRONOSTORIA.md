@@ -3172,3 +3172,11 @@ con bot in paper (utente avvia l'app al segnale; miei 29 controlli FASE 2 + §7.
 canale, con ok dell'utente: `SAFE_ORDINI_VIA_CANALE=1`, poi `OMEGA_ORDINI_VIA_CANALE=1`, `MOTORE_ORDINI_CANALE_TENNIS=1`,
 `SAFE_TENNIS_ORDINI_VIA_CANALE=1`. Punto di ripresa: questa riga; decisioni pendenti nel messaggio all'utente (migrazione uscite,
 conferma PannelloBot, R-1/R-2/R-3 tennis, KO candidati di B: P&L per bot NULL, TennisTerminal follow all'apertura).
+**[sessione B, audit] h00:30 (26/09) — TENNIS_PRO SUPERFICIE + VARIANTI INTEGRATI** (mappa 84 tornei con fonte, default hard dichiarato, varianti accese; 365 test su master, tsc 0, mutazione mia rossa). Da sapere: setup di dominio attivi anche su erba con le varianti accese; nessuna certificazione sul banco fuori dall'erba; replay Wimbledon senza competition_name = cemento(default). DB: params dei 4 bot tennis = {} (nessun false salvato); righe con uscite_automatiche=true dal 24/09 → la migrazione «uscite manuali» di admin-26 deve portarle a false (segnalato). TUTTI I LAVORI DI CODICE DELLA SESSIONE B SONO PUSHATI. Resta: correzioni al piano (delegato Sonnet) → FASE 1.
+**[sessione B, audit] h00:40 (26/09) — FASE 1 DEL TEST E2E LANCIATA** (delegato Opus: app spenta, fotografia iniziale, 32 percorsi P01-P32 + SCOPERTI dell'inventario esercitabili ad app spenta, ripristino byte per byte, esiti in `AUDIT_2026-09-25/E2E_FASE1_ESITI_2026-09-25.md`; vite preview autorizzato dall'utente e spento a fine test; build frontend rilanciata da me). In parallelo: correzioni al piano (Sonnet). Admin-26 fermo su codice e piano fino al referto.
+**h01:00 (26/09, reale) — MIGRAZIONE `uscite_manuali_default_2026-09-25.sql` APPLICATA dall'utente e VERIFICATA da me sul DB
+(sola lettura):** mike_control false; safe_strategy_control mappa base/esatto/punta/tennis/model tutta false + tennis_exit_approval
+true; scalper_control 25/25 false; scalper_service_control false; tennis_bot_service_control 4/4 false (status ancora `stopping`
+residuo: lo azzera R2 all'avvio, controllo Z0.2bis del piano); tennis_bot_control 9 righe, 0 true. Prerequisito §1.1 della FASE 2
+soddisfatto. FASE 1 in corso (sessione B, referto `AUDIT_2026-09-25/E2E_FASE1_ESITI_2026-09-25.md`); piano corretto `a46a95d`,
+tennis_pro `5798754`.
