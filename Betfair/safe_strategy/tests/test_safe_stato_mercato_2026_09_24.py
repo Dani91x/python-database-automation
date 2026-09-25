@@ -7,7 +7,11 @@ guardavano (mappa del 24/09).
     ``attesa_riapertura``;
   * piazzamento MANUALE: stessa guardia (``_mercato_non_operabile``);
   * svolgimento di una combo incompleta (``_unwind_combo``, ogni ciclo): a
-    mercato sospeso la gamba non si manda e si riprende al ciclo dopo.
+    mercato sospeso la gamba non si manda e si riprende al ciclo dopo;
+  * F2 (25/09) - chiusura SOLIDALE delle sorelle (``_close_combo_siblings``,
+    quando il parent chiude e trascina le altre gambe): era l'unica strada
+    rimasta senza guardia (dichiarato "resta" nel commit ``baf4286`` del
+    24/09 e in CRONOSTORIA 24/09 sera).
 
 Lo stato si legge dalla riga di scan con le chiavi dello scanner vero
 (``btts.status``, ``ou[i].status``, ``mo_status``) tramite ``exits.market_open``.
@@ -148,3 +152,74 @@ def test_svolgimento_combo_aspetta_la_riapertura(monkeypatch):
                         rows_by_event={EV: _riga_con_btts("OPEN")}, event_id=EV,
                         params={}, now=NOW)
     assert n == 1 and len(chiuse) == 1
+
+
+# ===========================================================================
+# F2 (25/09) - la CHIUSURA SOLIDALE delle sorelle di una combo (quando il
+# parent chiude e trascina le altre gambe) era l'UNICA strada rimasta senza
+# la guardia D2 del 24/09 (``baf4286``, dichiarato "resta" in CRONOSTORIA
+# 24/09 sera e nel commit stesso: "Resta senza guardia la chiusura solidale
+# delle sorelle nelle combo Safe"). Stessa funzione condivisa
+# (``_mercato_non_operabile``), stessa semantica delle altre strade sopra.
+# ===========================================================================
+def _gamba_combo(db: DbFinto, *, market_type: str = "BOTH_TEAMS_TO_SCORE",
+                 market_id: str = "btts1") -> Dict[str, Any]:
+    tid = db.insert_trade({"event_id": EV, "status": "open", "mode": "paper",
+                           "market_type": market_type, "market_id": market_id,
+                           "selection_id": 30246, "side": "back", "price": 1.9,
+                           "size": 5.0, "origin": "auto",
+                           "meta": {"combo_id": "c1"}})
+    return db.get_trade(tid)
+
+
+def test_chiusura_solidale_sorella_mercato_sospeso_nessuna_gamba_parte(monkeypatch):
+    db = DbFinto()
+    leg = _gamba_combo(db)
+    chiamate: List[Any] = []
+    monkeypatch.setattr(S.X, "close_trade", lambda **kw: chiamate.append(kw) or {})
+    n = S._close_combo_siblings(
+        db=db, market=None, legs=[leg], prices_by_id={int(leg["id"]): {"back": 1.9, "lay": 2.0}},
+        params={}, now=NOW, reason="combo: chiusura solidale della combinazione",
+        row=_riga_con_btts("SUSPENDED"))
+    assert n == 0 and chiamate == [], "F2: nessun ordine a mercato sospeso"
+    att = [p for k, p in db.attivita if k == SM.KIND_ATTESA]
+    assert len(att) == 1 and att[0]["motivo"] == "SUSPENDED"
+    # la gamba resta 'open' (nessuna chiusura inventata)
+    assert db.get_trade(leg["id"])["status"] == "open"
+
+
+def test_chiusura_solidale_sorella_mercato_aperto_piazza_come_prima(monkeypatch):
+    """Falsificazione della falsificazione: mercato OPEN -> comportamento
+    INVARIATO rispetto a prima del fix (una gamba, una X.close_trade)."""
+    db = DbFinto()
+    leg = _gamba_combo(db)
+    chiamate: List[Any] = []
+    monkeypatch.setattr(
+        S.X, "close_trade",
+        lambda **kw: chiamate.append(kw) or {"ok": True, "closing_trade_id": 999,
+                                             "side": "lay", "price": 2.0, "size": 5.0,
+                                             "locked_pnl": 0.1})
+    n = S._close_combo_siblings(
+        db=db, market=None, legs=[leg], prices_by_id={int(leg["id"]): {"back": 1.9, "lay": 2.0}},
+        params={}, now=NOW, reason="combo: chiusura solidale della combinazione",
+        row=_riga_con_btts("OPEN"))
+    assert n == 1 and len(chiamate) == 1
+    assert SM.KIND_ATTESA not in db.kinds()
+
+
+def test_chiusura_solidale_sorella_stato_ignoto_passa_come_oggi(monkeypatch):
+    """Stato assente dalla riga (feed senza il blocco del mercato): si passa,
+    come per le altre strade D2 — non e' questo fix a irrigidirlo."""
+    db = DbFinto()
+    leg = _gamba_combo(db)
+    chiamate: List[Any] = []
+    monkeypatch.setattr(
+        S.X, "close_trade",
+        lambda **kw: chiamate.append(kw) or {"ok": True, "closing_trade_id": 999,
+                                             "side": "lay", "price": 2.0, "size": 5.0,
+                                             "locked_pnl": 0.1})
+    n = S._close_combo_siblings(
+        db=db, market=None, legs=[leg], prices_by_id={int(leg["id"]): {"back": 1.9, "lay": 2.0}},
+        params={}, now=NOW, reason="combo: chiusura solidale della combinazione",
+        row=_riga_feed())
+    assert n == 1 and len(chiamate) == 1

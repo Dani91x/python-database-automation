@@ -403,10 +403,16 @@ def _riserva(db: FakeDB, *, mode: str = "paper", side: str = "lay", price: float
 
 
 def _place(db, market, porta, tr, **extra) -> X.PlaceOutcome:
+    # F1 (25/09): ref sport-aware come lo costruisce DAVVERO
+    # ``bot_service._execute`` (``porta_ordini.ref_ordine``), non piu' un
+    # "safe-t<id>" fisso — una riga tennis (``tr["sport"] == "tennis"``)
+    # riceve il ref col prefisso dell'attore ``safe_tennis``.
+    ref = extra.pop("client_ref", None) or PO.ref_ordine(
+        tr["id"], sport=str(tr.get("sport") or "calcio"))
     return X.place(db=db, market=market, mode=tr["mode"], event_id=tr["event_id"],
                    market_id=tr["market_id"], selection_id=tr["selection_id"],
                    side=tr["side"], price=tr["price"], size=tr["size"], best_size=100.0,
-                   ladder=((tr["price"], 100.0),), client_ref="safe-t%d" % tr["id"],
+                   ladder=((tr["price"], 100.0),), client_ref=ref,
                    trade_id=tr["id"], meta=dict(tr.get("meta") or {}), now=NOW,
                    params={}, porta=porta, **extra)
 
@@ -437,6 +443,21 @@ def test_ref_deterministico_dalla_riga():
     assert PO.ref_ordine(123) == "safe-t123" == PO.ref_ordine("123")
     assert PO.ref_annullo("300123456789") == PO.ref_annullo("300123456789")
     assert len(PO.ref_annullo("300123456789", 0.5)) <= 32
+
+
+def test_ref_ordine_tennis_unificato_sul_prefisso_attore():
+    """F1 (25/09) - il ref del tennis porta il prefisso dell'attore
+    ``safe_tennis`` (``PO.ATTORE_TENNIS``): prima di questo fix era identico
+    al calcio ("safe-t<id>"), e il motore del runner rifiuta OGNI comando il
+    cui ref non inizia con ``f"{attore}-"`` (``_dispatch``, non modificabile).
+    Il calcio resta INVARIATO."""
+    assert PO.ref_ordine(7, sport="tennis") == "safe_tennis-t7"
+    assert PO.ref_ordine("7", sport="tennis") == PO.ref_ordine(7, sport="tennis")
+    assert PO.ref_ordine(7, sport="calcio") == "safe-t7" == PO.ref_ordine(7)
+    # falsificazione: il vecchio prefisso del tennis non e' piu' quello
+    # dell'attore ``safe_tennis`` (motivo del difetto)
+    assert not PO.ref_ordine(7, sport="tennis").startswith(PO.ATTORE_CALCIO + "-")
+    assert PO.ref_ordine(7, sport="tennis").startswith(PO.ATTORE_TENNIS + "-")
 
 
 def test_place_paper_e_live_mandano_il_comando_giusto(porta_e_motore):
@@ -979,6 +1000,12 @@ def test_strategy_ref_segue_l_attore_calcio_e_tennis(porta_e_motore, porta_e_mot
     cmd_t = motore_t.comandi[-1]
     assert cmd_t["attore"] == "safe_tennis" and cmd_t["strategy_ref"] == "safe_tennis"
     MO.valida_comando("safe_tennis", cmd_t)             # non solleva
+    # F1 (25/09): il ref e' unificato sul prefisso dell'attore, non piu' lo
+    # stesso "safe-t<id>" del calcio (quello che questo test mandava prima del
+    # fix, mai rifiutato QUI perche' ``valida_comando`` non controlla il
+    # prefisso del ref: lo controlla ``_dispatch``, provato per intero — ack
+    # vero, falsificazione vera — in ``test_motore_ordini_2026_09_24.py``).
+    assert cmd_t["ref"] == "safe_tennis-t%d" % tr_t["id"]
 
     # il difetto ERA: strategy_ref fisso a "safe" -> il motore rifiuta
     # l'attore tennis (riprodotto qui a mano, senza toccare il codice)

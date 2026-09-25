@@ -928,9 +928,10 @@ class _Stato:
                 continue
             voce = {"trade": dict(t), "ordine": self._ordine_di(market, tid)}
             (chiusure if t.get("closes_trade_id") is not None else aperture).append(voce)
-        # quale RUOLO ha ogni ordine: il ref e' `safe-t<trade_id>` e la riga del
-        # trade dice se e' un'apertura o una gamba di chiusura. Serve a P1, che
-        # conta le riproposizioni PER RUOLO.
+        # quale RUOLO ha ogni ordine: il ref e' `safe_tennis-t<trade_id>` da F1
+        # (25/09), `safe-t<trade_id>` sulle registrazioni pre-fix, e la riga
+        # del trade dice se e' un'apertura o una gamba di chiusura. Serve a
+        # P1, che conta le riproposizioni PER RUOLO.
         per_id = {int(t["id"]): t for t in db.trades if t.get("id") is not None}
         nuovi: List[Dict[str, Any]] = []
         cancellati: List[Dict[str, Any]] = []
@@ -951,7 +952,14 @@ class _Stato:
             self._cancellato_prima[ref] = tagliato
             if not gia_noto:
                 self._refs_visti.add(ref)
-                tid = ref[len("safe-t"):] if ref.startswith("safe-t") else ""
+                # F1 (25/09): "safe_tennis-t<id>" da oggi, "safe-t<id>" legacy
+                # sulle registrazioni piazzate prima del fix.
+                if ref.startswith("safe_tennis-t"):
+                    tid = ref[len("safe_tennis-t"):]
+                elif ref.startswith("safe-t"):
+                    tid = ref[len("safe-t"):]
+                else:
+                    tid = ""
                 padre = per_id.get(int(tid)) if tid.isdigit() else None
                 riga = dict(riga,
                             _chiusura=bool((padre or {}).get("closes_trade_id")))
@@ -994,9 +1002,11 @@ class _Stato:
         return list(market.list_current_orders()) + list(market.list_cleared_orders())
 
     def _ordine_di(self, market, trade_id: int) -> Optional[Dict[str, Any]]:
-        atteso = f"safe-t{int(trade_id)}"
+        # F1 (25/09): "safe_tennis-t<id>" da oggi, "safe-t<id>" legacy sulle
+        # registrazioni piazzate prima del fix — si cercano entrambi.
+        attesi = {f"safe_tennis-t{int(trade_id)}", f"safe-t{int(trade_id)}"}
         for riga in self._righe_ordine(market):
-            if str(riga.get("customer_order_ref") or "") == atteso:
+            if str(riga.get("customer_order_ref") or "") in attesi:
                 return riga
         return None
 

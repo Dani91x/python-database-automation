@@ -409,6 +409,41 @@ def test_attore_non_ammesso_e_ref_malformato(amb):
     _mai_eseguito(amb)
 
 
+# ===========================================================================
+# F1 (25/09) - ref Safe tennis UNIFICATO sul prefisso dell'attore
+# ``safe_tennis`` (prima usava lo stesso "safe-t<id>" del calcio: il motore
+# rifiutava OGNI comando tennis via canale, prefisso "safe_tennis-" atteso e
+# mai scritto). Il ref che arriva qui e' quello VERO che ``porta_ordini`` /
+# ``bot_service._execute`` costruiscono (``porta_ordini.ref_ordine``), non uno
+# inventato dal test: emesso e riconosciuto con lo stesso ref, dai due lati.
+# ===========================================================================
+def test_safe_tennis_ref_unificato_emesso_e_riconosciuto(amb):
+    from Betfair.safe_strategy import porta_ordini as PO
+
+    ref = PO.ref_ordine(1, sport="tennis")
+    assert ref == "safe_tennis-t1", "F1: il ref del tennis porta il prefisso dell'attore"
+    ws = amb.ch.collega("safe_tennis")
+    _manda(amb, ws, _cmd(attore="safe_tennis", ref=ref))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is True and ack["motivo"] is None
+    assert ack["ref"] == ref
+    # il ref calcio resta INVARIATO (F1 non tocca l'attore "safe"): stessa
+    # forma di sempre, prefisso "safe-".
+    assert PO.ref_ordine(1, sport="calcio") == "safe-t1"
+
+
+def test_falsificazione_ref_tennis_vecchia_forma_rifiutato(amb):
+    """Falsificazione di F1: se il ref del tennis torna alla vecchia forma
+    calcio ("safe-t<id>", identica a quella di Safe calcio), il motore lo
+    rifiuta — prefisso "safe_tennis-" atteso dall'attore "safe_tennis" e mai
+    scritto. Prova che il test sopra e' sensibile alla regressione."""
+    ws = amb.ch.collega("safe_tennis")
+    _manda(amb, ws, _cmd(attore="safe_tennis", ref="safe-t1"))
+    ack = _ack(amb, ws)
+    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_PARAM)
+    _mai_eseguito(amb)
+
+
 def test_comando_troppo_vecchio_o_dal_futuro(amb):
     ws = amb.ch.collega("mike")
     ora = int(time.time() * 1000)

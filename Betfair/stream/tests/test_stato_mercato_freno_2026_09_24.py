@@ -259,6 +259,29 @@ def test_scalper_a_mercato_sospeso_non_piazza_e_lo_dice_una_volta():
     assert s._freno.quanti("1.1", 7) == 0                  # e non frena
 
 
+def test_scalper_senza_prezzi_nessun_ordine_distinto_da_sospeso(monkeypatch):
+    """F3 (25/09) - il 4o stato "senza prezzi" (book vuoto/quote assenti, anche
+    a mercato OPEN): ``_try_enter`` e' il gate PRIMA di ``_place``/
+    ``guardia_flumine`` — un book senza prezzi non arriva MAI a costruire un
+    ordine (``_place`` non accetta ``price=None``: solleverebbe). Distinto da
+    "sospeso": qui il mercato e' OPEN, e' la LIQUIDITA' che manca."""
+    from Betfair.stream.scalper.scalper_bot import _Slot
+
+    s, sink = _scalper()
+    m = _Market("OPEN")
+    slot = _Slot()
+    runner = types.SimpleNamespace(selection_id=7, total_matched=1000.0)
+    # nessun prezzo sul book (best_back/best_lay None): il gate ferma qui,
+    # PRIMA di ogni _place/guardia_flumine — nessuna eccezione, nessun ordine.
+    s._try_enter(m, m.market_book, runner, slot, 1_000_000,
+                best_back=None, best_lay=None, size_back=None, size_lay=None, mp=None)
+    assert m.piazzati == []
+    # e' un caso DIVERSO da "sospeso": nessuna riga attesa_riapertura (il
+    # mercato e' OPEN, non sospeso) ne' place_rifiutato (nessun tentativo)
+    assert sink.di(SM.KIND_ATTESA) == []
+    assert sink.di("place_rifiutato") == []
+
+
 def test_scalper_alla_riapertura_rivaluta_e_piazza():
     s, sink = _scalper()
     m = _Market("SUSPENDED")

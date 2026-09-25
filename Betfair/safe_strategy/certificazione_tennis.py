@@ -668,10 +668,14 @@ def _j2(oss: Osservazione) -> Optional[str]:
     rifiutati = {str(r.get("ref") or "") for r in oss.rifiutati}
     for a in oss.aperture:
         tr = a["trade"]
-        ref = f"safe-t{tr.get('id')}"
-        if ref in rifiutati and str(tr.get("status") or "") == "open":
-            return (f"trade {tr.get('id')}: l'ordine {ref} e' stato RIFIUTATO dai "
-                    f"controlli e la riga risulta 'open'")
+        # F1 (25/09): il ref del tennis e' "safe_tennis-t<id>" da oggi, ma le
+        # registrazioni piazzate prima del fix portano ancora "safe-t<id>"
+        # (identico al calcio): si controllano entrambi, cosi' il replay di
+        # una registrazione vecchia non perde questo controllo.
+        for ref in (f"safe_tennis-t{tr.get('id')}", f"safe-t{tr.get('id')}"):
+            if ref in rifiutati and str(tr.get("status") or "") == "open":
+                return (f"trade {tr.get('id')}: l'ordine {ref} e' stato RIFIUTATO dai "
+                        f"controlli e la riga risulta 'open'")
     for p in oss.attivita_di("place_rifiutato"):
         tid = p.get("trade_id")
         riga = next((t for t in oss.trades if str(t.get("id")) == str(tid)), None)
@@ -704,16 +708,21 @@ def _j3(oss: Osservazione) -> Optional[str]:
 
 
 @_controllo("J4", "catalogo §7.4/7.6: il ref con cui si RILEGGE e' lo stesso del "
-                  "piazzamento (`safe-t<id>`), e porta mercato e selezione",
+                  "piazzamento (`safe_tennis-t<id>` da F1 25/09, `safe-t<id>` legacy "
+                  "sulle registrazioni pre-fix), e porta mercato e selezione",
             quando=lambda o: bool(o.ordini))
 def _j4(oss: Osservazione) -> Optional[str]:
     for o in oss.ordini:
         ref = str(o.get("customer_order_ref") or "")
         if not ref:
             return f"ordine {o.get('bet_id')} senza customer_order_ref: non e' ritrovabile"
-        if not ref.startswith("safe-t"):
+        # F1 (25/09): il tennis scrive "safe_tennis-t<id>" da oggi (il motore
+        # del runner rifiuta un comando il cui ref non porta il prefisso
+        # dell'attore "safe_tennis-"); "safe-t<id>" resta valido SOLO come
+        # forma legacy delle registrazioni piazzate prima del fix.
+        if not (ref.startswith("safe_tennis-t") or ref.startswith("safe-t")):
             return (f"ordine {o.get('bet_id')}: ref '{ref}' non e' quello che il bot "
-                    f"scrive al piazzamento (`safe-t<trade_id>`)")
+                    f"scrive al piazzamento (`safe_tennis-t<trade_id>`)")
         if not o.get("market_id") or not o.get("selection_id"):
             return (f"ordine {ref}: senza mercato o selezione il confronto per ref "
                     f"collide fra partite (difetto 6 del catalogo)")

@@ -446,6 +446,11 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     // ---- ciclo
     error: { label: 'ERRORE', cls: A_BAD, critical: true },
     stop: { label: 'STOP', cls: A_PLAIN },
+    // F3 (25/09, decisione utente (i)) — stato del mercato MANCANTE dal feed:
+    // prima si passava come OPEN (fail-open). Ora si rilegge UNA volta da
+    // Betfair prima dell'ordine; se resta ignoto anche dopo, NON si piazza.
+    stato_mercato_ignoto: { label: 'STATO MERCATO IGNOTO · nessun ordine', cls: A_BAD, critical: true },
+    rilettura_stato_mercato_errore: { label: 'RILETTURA STATO MERCATO FALLITA', cls: A_WARN },
 };
 
 /** kind → etichetta italiana (Omega + base condivisa + traduzione a parole). */

@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
@@ -1620,19 +1620,57 @@ SKIP_LOG_EVERY_S = 600.0
 _ATTESE_MERCATO = _SM.AttesaRiapertura()
 
 
+#: F3 (25/09, decisione utente (i)) - motivo dichiarato quando lo stato resta
+#: IGNOTO anche dopo la rilettura da Betfair: distinto da SUSPENDED/CLOSED/
+#: INACTIVE/IGNOTO-di-``stato_mercato`` (quelli hanno gia' un motivo loro).
+KIND_STATO_IGNOTO = "stato_mercato_ignoto"
+
+
 def _mercato_in_attesa(db, event_id: Any, market_id: Any, snapshot: Any,
-                       percorso: str) -> bool:
+                       percorso: str, *, rileggi: Optional[Callable[[], Any]] = None
+                       ) -> bool:
     """D2 (24/09) - GUARDIA DELLO STATO DEL MERCATO (modulo condiviso).
 
     Lo stato e' quello che Omega ha GIA' (``MarketSnapshot.status``/``inplay``
-    dal feed dello scanner o dal REST): nessuna lettura in piu'. True = NON
-    piazzare adesso; l'attivita' ``attesa_riapertura`` si scrive UNA volta per
-    sospensione. Stato mancante = IGNOTO = si passa, come oggi (fail-open
-    storico di Omega: irrigidirlo e' una decisione dell'utente).
+    dal feed dello scanner o dal REST): nessuna lettura in piu' SE lo stato
+    c'e' gia'. True = NON piazzare adesso; l'attivita' ``attesa_riapertura``
+    si scrive UNA volta per sospensione.
+
+    F3 (25/09, decisione utente (i)) - stato MANCANTE (feed senza lo status,
+    caso comune: lo scanner e' piu' leggero del REST): prima Omega passava
+    (fail-open storico, "irrigidirlo e' una decisione dell'utente" — presa
+    oggi). Ora si fa UNA rilettura da Betfair (``rileggi``, iniettata dal
+    chiamante: ``market.read_market(cs)`` in produzione, come fanno gia' gli
+    altri bot in D2), esattamente come chiesto: "rileggere lo stato da
+    Betfair prima dell'ordine (una lettura)". Se anche dopo la rilettura lo
+    stato resta ignoto (rete giu', mercato senza book), NON si piazza e lo si
+    DICHIARA (``KIND_STATO_IGNOTO``: log + attivita' a video, mai un pass
+    silenzioso). ``rileggi`` e' opzionale (compatibilita' coi chiamanti che
+    non hanno ancora un modo di rileggere): senza, il comportamento resta
+    quello di sempre per non spegnere Omega su un dettaglio di cablaggio.
     """
     stato = _SM.StatoMercato(status=getattr(snapshot, "status", None),
                              inplay=getattr(snapshot, "inplay", None),
                              fonte="omega_snapshot")
+    if not stato.noto and rileggi is not None:
+        try:
+            fresco = rileggi()
+        except Exception as ex:  # noqa: BLE001 - la rilettura non solleva mai
+            fresco = None
+            db.log("rilettura_stato_mercato_errore",
+                  {"event_id": str(event_id), "market_id": str(market_id or ""),
+                   "percorso": percorso, "err": str(ex)[:160]})
+        stato = _SM.StatoMercato(status=getattr(fresco, "status", None),
+                                 inplay=getattr(fresco, "inplay", None),
+                                 fonte="omega_rest_rilettura")
+        if not stato.noto:
+            db.log("stato_mercato_ignoto",  # == KIND_STATO_IGNOTO (letterale per il
+                                             # contratto UI, vedi test_omega_ui_contratto)
+                  {"event_id": str(event_id), "market_id": str(market_id or ""),
+                   "percorso": percorso, "motivo": "IGNOTO",
+                   "note": "stato del mercato ignoto anche dopo UNA rilettura "
+                           "da Betfair: nessun ordine (decisione utente 25/09)"})
+            return True
     chiave = (str(event_id), str(market_id or ""), percorso)
     piazza, motivo, annuncia = _SM.guardia(stato, _ATTESE_MERCATO, chiave)
     if piazza:
@@ -2209,8 +2247,13 @@ def scan_and_place(
         # partiva (rifiuto certo in live, fill a quote congelate nel paper
         # legacy). Guardia condivisa, nessuna lettura in piu'; la partita si
         # rivaluta al ciclo dopo con le condizioni di quel momento.
+        # F3 (25/09): stato MANCANTE (tipico del feed) -> ``rileggi`` fa UNA
+        # lettura REST vera (``market.read_market(cs)``, lo stesso metodo del
+        # ramo REST qui sopra) prima di decidere; se resta ignoto anche dopo,
+        # la guardia rifiuta e lo dichiara (``KIND_STATO_IGNOTO``).
         if _mercato_in_attesa(db, ev.event_id, getattr(cs, "market_id", None),
-                              snapshot, "v1"):
+                              snapshot, "v1",
+                              rileggi=lambda: market.read_market(cs)):
             continue
 
         minute, score_str = estimate_minute(

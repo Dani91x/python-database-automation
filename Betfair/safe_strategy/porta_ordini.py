@@ -165,11 +165,40 @@ def _porta_env(nome: str, default: int) -> int:
 
 
 # ------------------------------------------------------------------ i ref
-def ref_ordine(trade_id: Any) -> str:
-    """Il ref DETERMINISTICO di una riga di ``safe_strategy_trades``: e' lo
-    stesso ``client_ref`` di sempre (``safe-t<id>``), cosi' riconciliazione per
-    ref, dedup del runner e customerOrderRef restano una cosa sola."""
-    return ("safe-t%d" % int(trade_id))[:REF_MAX]
+#: F1 (25/09) - il ref di una riga TENNIS ha il prefisso dell'ATTORE tennis
+#: (``ATTORE_TENNIS``), non piu' quello calcio: il motore del runner
+#: (``motore_ordini.valida_comando``/``_dispatch``) rifiuta un customerOrderRef
+#: che non inizia con ``f"{attore}-"`` (contratto scritto in ``motore_ordini``,
+#: non modificabile qui), e Safe tennis manda i comandi con attore
+#: ``safe_tennis`` (vedi ``ATTORE_TENNIS`` sopra). Prima di questo fix
+#: ``ref_ordine`` tornava sempre ``safe-t<id>`` anche per il tennis: col canale
+#: acceso (``SAFE_TENNIS_ORDINI_VIA_CANALE``) OGNI comando sarebbe stato
+#: rifiutato dal motore (prefisso ``safe-`` != ``safe_tennis-`` richiesto).
+PREFISSO_REF_CALCIO = "safe-t"
+PREFISSO_REF_TENNIS = "safe_tennis-t"
+#: prefisso LEGACY del tennis (prima del 25/09): le registrazioni gia' fatte
+#: (replay/certificazione) hanno ordini piazzati con questo ref, mai riscritto.
+PREFISSO_REF_TENNIS_LEGACY = "safe-t"
+
+
+def prefisso_ref(sport: Any) -> str:
+    """Il prefisso del ref per lo sport (``"tennis"`` o ``"calcio"``, di
+    default calcio): l'UNICA forma che si scrive da oggi in poi (F1, 25/09)."""
+    return PREFISSO_REF_TENNIS if str(sport) == "tennis" else PREFISSO_REF_CALCIO
+
+
+def ref_ordine(trade_id: Any, sport: Any = "calcio") -> str:
+    """Il ref DETERMINISTICO di una riga di ``safe_strategy_trades``.
+
+    F1 (25/09) - UNIFICATO sul prefisso dell'ATTORE che manda il comando:
+    calcio resta ``safe-t<id>`` (invariato, l'attore ``safe`` ha sempre
+    scritto cosi'), tennis diventa ``safe_tennis-t<id>`` (prima era
+    ``safe-t<id>``, identico al calcio: il motore del runner rifiutava ogni
+    comando tennis via canale perche' il ref non iniziava per ``safe_tennis-``,
+    il prefisso che l'attore ``safe_tennis`` impone). Il chiamante passa lo
+    sport della riga (``"tennis"``/``"calcio"``, calcio di default per
+    compatibilita' con chi non lo passa ancora)."""
+    return (prefisso_ref(sport) + "%d" % int(trade_id))[:REF_MAX]
 
 
 def ref_annullo(bet_id: Any, size_reduction: Optional[float] = None) -> str:

@@ -854,7 +854,10 @@ def _risolvi_una_via_canale(db, tr: dict[str, Any], *, now: datetime, os_mod: An
     from Betfair.safe_strategy import porta_ordini as _PO
 
     meta = dict(tr.get("meta") or {})
-    ref = str(meta.get("canale_ref") or _PO.ref_ordine(tr["id"]))
+    # F1 (25/09): fallback sport-aware (tennis -> "safe_tennis-t<id>"), il ref
+    # scritto DAVVERO viaggia in ``meta.canale_ref`` (sempre presente su una
+    # riga andata sul canale): questo fallback serve solo se manca.
+    ref = str(meta.get("canale_ref") or _PO.ref_ordine(tr["id"], sport=_sport_di(tr)))
     mode = str(tr.get("mode") or "")
     porta = _PO.porta_esistente(_sport_di(tr))
     ev = porta.esiti(ref) if porta is not None else None
@@ -1015,8 +1018,13 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
         try:
             d = _reconcile_by_bet_id(market, tr)
             if d is None:
-                d = X.reconcile_decision(tr, current, cleared, now.isoformat(),
-                                         ref=f"safe-t{tr['id']}"[:32])
+                # F1 (25/09): ref sport-aware ("safe_tennis-t<id>" per il
+                # tennis, invariato "safe-t<id>" per il calcio).
+                from Betfair.safe_strategy import porta_ordini as _PO_rec
+
+                d = X.reconcile_decision(
+                    tr, current, cleared, now.isoformat(),
+                    ref=_PO_rec.ref_ordine(tr["id"], sport=_sport_di(tr)))
             # C.12a — LA RIGA RACCONTA IL VERO A OGNI GIRO, non solo alla fine.
             # Finora un parziale con residuo vivo tornava 'keep' e la riga
             # restava 'pending' muta: abbinato, residuo e prezzo medio vivevano
@@ -1402,16 +1410,26 @@ _CONTO_LETTO_A: dict[str, float] = {}
 def _refs_di_safe(trade: dict[str, Any], closings: Optional[list[dict]] = None) -> set:
     """I ``customer_order_ref`` con cui Safe ha piazzato questa posizione.
 
-    Il ref lo costruisce ``execution``: ``safe-t{trade_id}`` (vedi
-    ``X.close_trade`` -> ``client_ref=f"{table_prefix}-t{closing_id}"``). Le
-    gambe di CHIUSURA hanno il loro, e vanno contate: fanno parte della
-    posizione del bot tanto quanto l'apertura."""
-    refs = {f"safe-t{int(trade['id'])}"}
+    Il ref lo costruisce ``execution``: ``safe-t{trade_id}`` per il calcio,
+    ``safe_tennis-t{trade_id}`` per il tennis da F1 (25/09) — vedi
+    ``porta_ordini.ref_ordine`` e ``X.close_trade`` ->
+    ``client_ref=f"{table_prefix}-t{closing_id}"``. Le gambe di CHIUSURA hanno
+    il loro, e vanno contate: fanno parte della posizione del bot tanto quanto
+    l'apertura. Aggiunge anche il prefisso LEGACY del tennis (``safe-t<id>``,
+    quello di prima di F1) perche' una posizione gia' aperta prima del fix
+    resta riconoscibile sul conto reale finche' non si chiude."""
+    prefisso = "safe_tennis-t" if XE.is_tennis(trade) else "safe-t"
+    refs = {f"{prefisso}{int(trade['id'])}"}
+    if prefisso != "safe-t":
+        refs.add(f"safe-t{int(trade['id'])}")  # legacy tennis, pre-F1
     for c in closings or []:
         try:
-            refs.add(f"safe-t{int(c['id'])}")
+            cid = int(c["id"])
         except (TypeError, ValueError, KeyError):
             continue
+        refs.add(f"{prefisso}{cid}")
+        if prefisso != "safe-t":
+            refs.add(f"safe-t{cid}")
     return refs
 
 
@@ -1773,9 +1791,13 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
             # gia' chiuso (mai a ogni ciclo su una posizione ancora viva).
             if mid not in cleared_cache:
                 cleared_cache[mid] = _cleared_orders_for_market(market, mid)
+            # F1 (25/09): table_prefix sport-aware ("safe_tennis" per il
+            # tennis), coerente col ref che ``_execute``/``close_trade``
+            # scrivono davvero (``porta_ordini.ref_ordine``).
             if X.settle_position(db=db, trade=tr, closings=closings.get(int(tr["id"]), []),
                                  snap=snap, commission=comm, now=now,
-                                 cleared_orders=cleared_cache[mid], table_prefix="safe"):
+                                 cleared_orders=cleared_cache[mid],
+                                 table_prefix=("safe_tennis" if XE.is_tennis(tr) else "safe")):
                 settled += 1
         except Exception as ex:  # noqa: BLE001 — una riga rotta non blocca le altre
             _log(db, "settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
@@ -3093,10 +3115,12 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
              "score_at_entry": trade.get("score_at_entry")}
     # H-01: la gamba di chiusura MANUALE nasce con exit_kind='manual'
     # (la UI mostra "Cash out", non un'uscita automatica inventata).
+    # F1 (25/09): table_prefix sport-aware.
     res = X.close_trade(db=db, market=market, trade=trade, prices=prices,
                         amount=amount_f, fraction=fraction_f,
                         mode=str(trade.get("mode") or "paper"), now=now,
-                        params=params, origin="manual", table_prefix="safe",
+                        params=params, origin="manual",
+                        table_prefix=("safe_tennis" if XE.is_tennis(trade) else "safe"),
                         extra_row=extra, exit_kind="manual",
                         exit_reason="Cash out manuale dalla dashboard",
                         **_porta_kw(trade))
@@ -3705,7 +3729,7 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
     if sent and siblings:
         _close_combo_siblings(db=db, market=market, legs=siblings,
                               prices_by_id=sib_prices or {}, params=params, now=now,
-                              reason="combo: chiusura solidale della combinazione")
+                              reason="combo: chiusura solidale della combinazione", row=row)
     return sent
 
 
@@ -3729,8 +3753,21 @@ def _combo_leg_prices(legs: list[dict[str, Any]], *, rows_by_event: Optional[dic
 
 def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                           prices_by_id: dict[int, dict[str, Any]],
-                          params: dict[str, Any], now: datetime, reason: str) -> int:
-    """Chiude le altre gambe della combo con uscita 'forced' (H-20)."""
+                          params: dict[str, Any], now: datetime, reason: str,
+                          row: Optional[dict[str, Any]] = None) -> int:
+    """Chiude le altre gambe della combo con uscita 'forced' (H-20).
+
+    ``row`` e' la riga di scan dell'evento (la STESSA per tutte le gambe:
+    ``_combo_leg_prices`` gia' assume che le sorelle di una combo stiano sullo
+    stesso evento). F2 (25/09) - GUARDIA DELLO STATO DEL MERCATO: prima di
+    questo fix la chiusura solidale piazzava SENZA controllare se il mercato
+    fosse operabile, l'UNICA strada rimasta scoperta dal D2 del 24/09
+    (``baf4286``, che l'ha messa su tutte le altre: manuale, combo
+    all'apertura, svolgimento incompleto). Stessa funzione condivisa
+    (``_mercato_non_operabile``), stessa semantica delle altre strade Safe:
+    mercato sospeso/chiuso/senza prezzi -> nessun ordine, si aspetta la
+    riapertura (nessun fallimento critico: la prossima chiamata di questa
+    funzione, quando il parent tenta di nuovo l'uscita, la riprende)."""
     n = 0
     for leg in legs:
         prices = prices_by_id.get(int(leg.get("id") or 0))
@@ -3747,6 +3784,20 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                               "reason": "partita_chiusa_dall_utente",
                               "nota": "gamba di combo NON chiusa dal bot: la "
                                       "posizione l'ha gia' chiusa l'utente"})
+            continue
+        # F2 (25/09) - D2 estesa alla chiusura solidale (era la sola strada
+        # rimasta senza): mercato sospeso/chiuso/senza prezzi -> nessuna gamba
+        # piazzata, si dichiara e si aspetta la riapertura (stessa funzione e
+        # stesso motivo delle altre strade Safe: manuale, combo, svolgimento).
+        rifiuto_mercato = _mercato_non_operabile(db, leg.get("event_id"), leg, row,
+                                                 "combo_solidale")
+        if rifiuto_mercato is not None:
+            _log(db, "exit_wait", {"trade_id": leg.get("id"), "mode": leg.get("mode"),
+                                   "combo_id": (leg.get("meta") or {}).get("combo_id"),
+                                   "wait": rifiuto_mercato.get("motivo"),
+                                   "kind": "mandatory", "reason": "combo_solidale",
+                                   "nota": "gamba di combo NON chiusa: mercato non "
+                                           "operabile, si riprova alla riapertura"})
             continue
         # B25 (24/09) - "il bot non deve MAI chiudere le mie gambe". Questo e'
         # il collo di bottiglia di OGNI chiusura di gamba di combo (svolgimento
@@ -3770,10 +3821,12 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                  "minute_at_entry": leg.get("minute_at_entry"),
                  "score_at_entry": leg.get("score_at_entry")}
         try:
+            # F1 (25/09): table_prefix sport-aware.
             res = X.close_trade(db=db, market=market, trade=leg, prices=prices,
                                 amount=None, fraction=1.0,
                                 mode=str(leg.get("mode") or "paper"), now=now,
-                                params=params, origin="auto", table_prefix="safe",
+                                params=params, origin="auto",
+                                table_prefix=("safe_tennis" if XE.is_tennis(leg) else "safe"),
                                 extra_row=extra, exit_kind="forced", exit_reason=motivo_leg,
                                 **_porta_kw(leg))
         except Exception as ex:  # noqa: BLE001
@@ -4900,10 +4953,12 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
              "minute_at_entry": trade.get("minute_at_entry"),
              "score_at_entry": trade.get("score_at_entry")}
     try:
+        # F1 (25/09): table_prefix sport-aware.
         res = X.close_trade(db=db, market=market, trade=trade, prices=prices,
                             amount=None, fraction=1.0,
                             mode=str(trade.get("mode") or "paper"), now=now,
-                            params=params, origin="auto", table_prefix="safe",
+                            params=params, origin="auto",
+                            table_prefix=("safe_tennis" if XE.is_tennis(trade) else "safe"),
                             extra_row=extra, **_porta_kw(trade))
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
@@ -5202,6 +5257,8 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
     dire che nessun percorso, nemmeno uno scritto domani, puo' far nascere una
     gamba su una partita che l'utente ha gia' chiuso. Le richieste MANUALI
     (``origin != 'auto'``) passano: sono le SUE, e resta libero di operare."""
+    from Betfair.safe_strategy import porta_ordini as _PO
+
     side = str(row["side"])
     mode = str(row["mode"])
     if e_del_bot(row):
@@ -5242,11 +5299,18 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
             _place_fail(db, trade_id, row, "paper_prezzi_non_disponibili", now, params)
             return X.PlaceOutcome("error", None, 0.0, None, "paper_prezzi_non_disponibili")
         ladder = lvl
+    # F1 (25/09): ref UNIFICATO sul prefisso dell'attore ("safe_tennis-t<id>"
+    # per il tennis, "safe-t<id>" invariato per il calcio) — vedi
+    # ``porta_ordini.ref_ordine``. Prima di questo fix il tennis usava lo
+    # stesso ref del calcio e il motore del runner rifiutava OGNI comando
+    # tennis mandato via canale (prefisso attore "safe_tennis-" atteso, mai
+    # scritto).
     out = X.place(
         db=db, market=market, mode=mode, event_id=str(row["event_id"]),
         market_id=str(row["market_id"]), selection_id=int(row["selection_id"]),
         side=side, price=row["price"], size=row["size"],
-        best_size=best_size, ladder=ladder, client_ref=f"safe-t{trade_id}",
+        best_size=best_size, ladder=ladder,
+        client_ref=_PO.ref_ordine(trade_id, sport=_sport_di(row)),
         trade_id=int(trade_id), meta=dict(row.get("meta") or {}), now=now,
         params=params, **_porta_kw(row),
     )
@@ -7911,7 +7975,8 @@ def _unwind_combo(*, db, market, ids: list[int], rows_by_event: dict, event_id: 
             continue
         if _close_combo_siblings(db=db, market=market, legs=[leg],
                                  prices_by_id={int(tid): prices}, params=params,
-                                 now=now, reason="combo incompleta: gamba chiusa subito"):
+                                 now=now, reason="combo incompleta: gamba chiusa subito",
+                                 row=rows_by_event.get(str(leg.get("event_id") or event_id))):
             closed += 1
     return closed
 

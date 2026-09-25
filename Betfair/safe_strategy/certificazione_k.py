@@ -106,15 +106,25 @@ def campo_ordine(ordine: Dict[str, Any], nome: str) -> Any:
 def ref_di_riga(riga: Dict[str, Any]) -> set:
     """I `customer_order_ref` con cui QUESTA riga puo' essere stata piazzata.
 
-    Non se ne inventa nessuno: `safe-t{id}` e' quello che costruiscono
-    `bot_service._execute` (`client_ref=f"safe-t{trade_id}"`) e
-    `execution.close_trade` (`f"{table_prefix}-t{closing_id}"`); il ref della
-    CODA flumine vive invece in `meta.flumine_client_ref`. Cercarne una sola e'
-    il difetto 4 del 15/09.
+    Non se ne inventa nessuno: `safe-t{id}` (calcio) o, da F1 (25/09),
+    `safe_tennis-t{id}` (tennis) e' quello che costruiscono
+    `bot_service._execute` (`client_ref=porta_ordini.ref_ordine(trade_id,
+    sport=...)`) e `execution.close_trade` (`f"{table_prefix}-t{closing_id}"`);
+    il ref della CODA flumine vive invece in `meta.flumine_client_ref`.
+    Cercarne una sola e' il difetto 4 del 15/09.
+
+    Il tennis porta ANCHE il prefisso LEGACY `safe-t{id}` (quello di prima di
+    F1, uguale al calcio): le registrazioni del banco piazzate prima del fix
+    restano riconoscibili sul replay senza essere riscritte.
     """
     refs: set = set()
+    is_tennis = (str(riga.get("strategy") or "") == "tennis"
+                or str(riga.get("sport") or "") == "tennis")
     try:
-        refs.add("safe-t%d" % int(riga.get("id")))
+        tid = int(riga.get("id"))
+        refs.add(("safe_tennis-t%d" if is_tennis else "safe-t%d") % tid)
+        if is_tennis:
+            refs.add("safe-t%d" % tid)  # legacy tennis, pre-F1
     except (TypeError, ValueError):
         pass
     meta = riga.get("meta") or {}
