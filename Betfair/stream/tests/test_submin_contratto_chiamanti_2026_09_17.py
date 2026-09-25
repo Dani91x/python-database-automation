@@ -51,6 +51,12 @@ _CHIAMANTI_ATTESI = {
     # piu' ne' fra i "trovati" ne' deve comparire qui. Vedi
     # AUDIT_2026-09-25/LABORATORIO_SPOSTAMENTO_2026-09-25.md.
     "Betfair/stream/tennis_scalper/tennis_scalper_bot.py",
+    # 25/09 (9ed1bbe, motore ordini tennis): l'esecutore tennis NON implementa il
+    # place-and-trim: ``_find_submin_order``/``_advance_submin_row`` sono i punti
+    # d'aggancio richiesti dal motore e sollevano ``submin_non_percorribile``
+    # (nessuna copia della macchina; il runner tennis rifiuta sotto il minimo,
+    # reperto R-1 per l'utente). Il test sotto lo verifica.
+    "Betfair/stream/tennis_live/esecutore_tennis.py",
     "Betfair/stream/trading/submin.py",
 }
 
@@ -109,3 +115,16 @@ def test_la_marca_submin_e_completa():
 @pytest.mark.parametrize("side,minimo", [("back", 2.00), ("lay", 0.50)])
 def test_minimi_it_dalla_tabella_non_da_costanti_sparse(side, minimo):
     assert S.place_min_size("it", side) == minimo
+
+
+def test_esecutore_tennis_dichiara_e_non_implementa_il_place_and_trim():
+    """L'esecutore tennis e' nel censimento SOLO perche' espone i nomi che il
+    motore ordini aggancia: devono rifiutare, non piazzare (niente seconda
+    macchina sotto il minimo)."""
+    from Betfair.stream.tennis_live import esecutore_tennis as ET
+
+    with pytest.raises(RuntimeError, match="submin_non_percorribile"):
+        ET._find_submin_order(None, "1.2", "b1")
+    with pytest.raises(RuntimeError, match="submin_non_percorribile"):
+        ET._advance_submin_row(None, None, {}, "paper", None)
+

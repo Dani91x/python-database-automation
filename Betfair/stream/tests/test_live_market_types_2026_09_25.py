@@ -42,11 +42,24 @@ def test_whitelist_proposta_copre_lo_scanner_opportunita():
     assert not mancanti, f"mercati dello scanner opportunita' esclusi dalla whitelist proposta: {mancanti}"
 
 
-def test_whitelist_proposta_non_e_vuota_e_non_tocca_il_default():
-    # LIVE_MARKET_TYPES (quella USATA dal runner) resta vuota di default: la
-    # whitelist proposta e' solo documentazione, non cambia comportamento.
+def test_whitelist_proposta_non_e_vuota_e_non_tocca_il_default(monkeypatch):
+    # LIVE_MARKET_TYPES (quella USATA dal runner) resta vuota di DEFAULT, cioe'
+    # senza la variabile d'ambiente: la whitelist proposta e' solo documentazione.
+    # 25/09: il .env del checkout principale ORA imposta LIVE_MARKET_TYPES (scelta
+    # dell'utente), quindi il default si verifica ricaricando il modulo a env vuota
+    # e poi si ricarica con l'env vero per non alterare gli altri test.
+    import importlib
+
     assert CS.LIVE_MARKET_TYPES_PROPOSTA
-    assert CS.LIVE_MARKET_TYPES == frozenset()
+    # con l'env impostata la whitelist usata deve stare dentro la proposta
+    assert CS.LIVE_MARKET_TYPES <= CS.LIVE_MARKET_TYPES_PROPOSTA
+    with monkeypatch.context() as m:
+        # stringa vuota (non delenv): config_stream chiama load_dotenv() all'import,
+        # che NON sovrascrive una variabile gia' presente, quindi il .env non rientra
+        m.setenv("LIVE_MARKET_TYPES", "")
+        importlib.reload(CS)
+        assert CS.LIVE_MARKET_TYPES == frozenset()
+    importlib.reload(CS)  # env ripristinata dal monkeypatch: valori originali
 
 
 def test_falsificazione_senza_correct_score_il_test_diventa_rosso():
