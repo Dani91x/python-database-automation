@@ -3284,3 +3284,43 @@ log su file (`runner.py:2325` solo basicConfig su console, la console dell'exe n
 in `live_alerts`: 18/09 (×4, uptime 30-85 s), 24/09 (uptime 77 s). Al riavvio l'alert F-9 «LIVE… SOLDI VERI» si ripete (id 498).
 Prerequisito per il prossimo riavvio: console rediretta su file (comando PowerShell nel messaggio all'utente) o, con permesso, main.js
 che scrive i log dei figli su file.
+**h13:05 — verifica del coordinatore sulla fase 3 B**: commit 55eb98d + 936922e (4 import inutilizzati tolti: rompevano `tsc` e quindi `npm run build`; tsc 0). KO Safe rifatto da me: `fetchSafeState` (safeBot.ts:1100) chiama `get_safe_state` senza p_mode → `safe_aggregates_sql(NULL)` somma tutte le modalità; SELECT su `safe_strategy_trades`: paper 302 righe −44,03 (in movimento oggi), live 29 righe +2,58 → CONFERMATO. Reperto di admin-26 girato al delegato di fase 2: RUNNER CALCIO crashato alle 10:00:46Z (live_alerts 497, uptime 3858 s, ripresa 10:01:22Z, pid 20552→12812), senza log su file (K2): chieste evidenze canali/DB 09:58-10:02Z e stato delle posizioni paper aperte al riavvio.
+**h13:15 — altre 2 verifiche mie sulla fase 3 B**: (a) Live P&L posizione fantasma CONFERMATA: `betfair_live_positions` id 14265, mode live, mercato 1.259819675, updated_at 10/07/2026 19:29Z, 1 riga in `betfair_live_settled` per lo stesso mercato (unica posizione live su mercato regolato); (b) `pg_roles`: authenticated `statement_timeout=8s`, anon 3s → i timeout di Analytics/Ritardi sono strutturali (RPC da 16-38 s contro 8 s), non sporadici. Suite `frontend/src/certification/sessB` con `vitest.cert.config.ts` in corso (DB vero, sola lettura).
+**h13:25 — CRASH RUNNER CALCIO 10:00:46Z documentato** (referto fase 2 agg. 2, sezione in cima; evidenze `e2e_fase2/crash_runner_canali_0958_1003.txt`): canale 47331 muto 38 s, nessun bot senza feed (scanner 47336 continuo), Omega 118 e Mike 5070/5071 regolate una volta sola, nessun doppio ordine; causa non verificabile senza log su file (K2); correlazione con `segui` dello scalper (NEW_MATCHES 09:59:48Z) e auto_follow mercati_sottoscritti=0 su 32 → ipotesi risottoscrizione a caldo dello stream, da confermare col traceback. Nuovi: R-F2-C2 alert 498 «LIVE ORDINI REALI» con effettivo PAPER (già K «falso CRITICAL»); R-F2-C3 nessun log su file. Verifiche mie: alert 497/498 riletti, `betfair_live_orders` dal 25/09 = 0 righe (specchio solo in memoria).
+**h13:35 — ERRORE MIO e rimedio**: il commit b6c0eb6 (referto fase 2 agg. 2) ha incluso le registrazioni grezze dei canali (`e2e_fase2/**/*.jsonl`, ~170 MB, due file da 73 e 59 MB) e sono state PUSHATE. Rimedio senza riscrittura: rimosse dal tracciamento + `.gitignore` (commit successivo). La storia remota le contiene ancora: riscrittura con force push su master condiviso = DECISIONE DELL'UTENTE (rischio per l'altra sessione sullo stesso checkout). Regola per me: mai `git add <cartella>` di un delegato, sempre l'elenco dei file.
+**h13:45 — rimedio completato**: 694fea6 aveva RI-AGGIUNTO i jsonl (`git commit -- <percorsi>` committa il disco, non l'indice: seconda lezione); il commit successivo li toglie davvero (24 file, 0 tracciati, `.gitignore` con `AUDIT_2026-09-25/e2e_fase2/**/*.jsonl`). Storia remota: b6c0eb6 e 694fea6 contengono ~170+ MB di registrazioni → riscrittura = decisione dell'utente.
+**h16:50 — RETE CADUTA DUE VOLTE (≈12:41 e ≈14:20 locali, DNS): i 3 delegati FASE 2 si sono fermati e li ho riattivati alle 16:37;
+tutti e 3 hanno consegnato referti PARZIALI (finestra viva 11:06-12:57 locali + fotografia 16:39).**
+**REPERTO GRAVISSIMO R-STREAM-1 (verificato da me sul DB)**: il RUNNER CALCIO è CIECO dal riavvio post-crash (10:01Z) fino ad ORA:
+`live_now` in-play fermo alle 09:55-10:02Z (età 17.000 s alle 14:45Z), nessun dato di mercato raw dopo le 10:41Z, alert 502
+(14:39:12Z «stream MUTO da 14251s… ricostruisco la subscription») e 503 (14:42:46Z «tee fermo con stream attivo») = la ricostruzione
+NON ha ridato dati; battito del runner fresco (socket vivo, subscription morta: classe dell'incidente 16/07). Il rilevamento è arrivato
+dopo 4 h perché `runner.py:1192` salta l'intero controllo di stallo quando `session.market_to_event` è VUOTO (dopo il riavvio:
+«mercati_sottoscritti=0 su 32 seguiti»). Ladder, fill flumine e registrazioni calcio morti dalle 10:01Z; lo scanner REST (Safe
+service) è vivo e i bot calcio hanno «visto» il mercato solo da lì. Serve un RIAVVIO dell'app (console su file + 4 porte).
+**Delegato feed/atlante** (`ADMIN26_FEED_ATLANTE.md`): 7.1.1/7.1.2 PASS; 7.3.2/7.3.3 PASS (hazard_atlas_leghe 0→78 leghe v4, tetti
+rispettati); 7.9.1.A trasporto 5.263/5.263 righe identiche canale↔DB; 7.9.3.B ricalcolo indipendente atlante v4: 0 differenze su
+204.525 consultazioni e 2.993 stati. **K1 CONFERMATO: size del feed in GBP usate come EUR** (doc Betfair «Market subscriptions are
+always in underlying exchange currency - GBP»; nessuna conversione nel repo; mediana 0,8599 su 94 coppie, cambio 0,8586). Punti NON
+prudenti: `execution.py:660-667` (chiusure fino al 14 % più piccole → esposizione residua), `mike/engine.py:3335-3338` (copertura
+trattenuta), `omega_v3.py:834-835,1030` (proposta d'uscita non parte anche a tetto di rischio scattato), `controlRoomProposte.ts:224-231,
+324-325` («approva uscita» disabilitato), `omega_service.py:6103` (pavimento green-up saltato). R-FA-2 Mike: chiavi v4 dell'atlante
+calcolate in `dossier.py:340-348` ma NON copiate nel frame (`mike/service.py:3795-3820`): 0/166 frame. O-1 la coda dell'atlante non
+mette in testa le leghe in gioco (42/157 col v4 alle 14:39Z). O-4 `stagione_rif`=2028 per 3 leghe con stagione 2027 (`genera_atlante.py:562`).
+**Delegato ordini/schede** (`ADMIN26_ORDINI_SCHEDE.md`, 14 ordini paper ricostruiti: Omega 117-120, Safe 342-345, Mike 5070-5075, tutti
+09:10-10:08Z; nessun ordine dopo = runner cieco): R1 NESSUN ordine è passato dalla coda DB né dal canale (tutti fill di ripiego
+istantanei: gate `omega_service.py:2788`/`execution.py:701` vuole l'evento STREAMING, auto-follow senza attori `auto_follow.py:867`);
+R2 lo scalper auto-mode scrive `live_follow` SENZA `origine` → «manuale» (`scalper_service.py:165-178`); R7 Mike paper riempie al
+PREZZO LIMITE e non al best (`mike/service.py:764-767`, `execution.py:752`: 5073 −3 tick, 5074 −3, 5075 −2 → paper pessimista);
+7.5.8 PASS (esecuzione al best su Omega 120/Safe 342-343/Mike 5072); R3 ripiego Omega accetta parziali, Safe no.
+**Delegato auto-mode/Safe** (`ADMIN26_AUTOMODE_SAFE.md`): 7.6.8 PASS (7/7 auto dry_run paper); 7.9.6.B scalper PASS (armate = idonee);
+7.9.7.C Safe PASS (4 ingressi su 4 e 127 scarti ricostruiti sul feed dello stesso istante, h2h da fixture_predictions uguale, Liga F
+vietata da «(W)»). **FAIL R-FA-1 TENNIS: partita automatica finita MAI chiusa**: flumine non passa un book CLOSED a
+`process_market_book` (`baseflumine.py:157-159`), `tennis_runner.py:390-392,1273-1295` scrive SUSPENDED di default, il ponte ferma solo
+su CLOSED (`tennis_bot_service.py:492-500,565-572`), il tetto conta solo le armate nel feed (`auto_mode.py:190-191`) → 7 partite finite
+SUSPENDED riscritte ogni 2 s, 28 righe bot running, 12 armate per bot col tetto a 5. **Scalper a freno tirato CONFERMATO**: `giro_auto`
+gira prima della lettura del freno (`scalper_service.py:745` vs `:750`), la condizione di armamento `:430` non guarda il freno, che blocca
+solo l'avvio del processo (`:622-627`); le partite fermate dal freno finiscono fra le «chiuse a mano» (`scalper/auto_mode.py:271-276`) e
+non si riarmano. Residuo sniper 0,085 € = micro-residuo accettato per costruzione (`sniper_bot.py:649-662`), «NON flat dopo 30 s»
+confermato (`scalper_session.py:1318-1321`) con `error=null`. `betfair_live_orders` `source='scalper'` di oggi SPARITE alle 14:39Z
+(specchio azzerato dal riavvio del runner, `db.py:852` via `runner.py:1760`).
