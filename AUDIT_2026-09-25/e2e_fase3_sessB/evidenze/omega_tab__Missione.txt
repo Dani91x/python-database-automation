@@ -1,0 +1,913 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] Ω OMEGA
+           [bot-status] IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (10 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Omega: se manca, il bot non sta operando (soglia 45 s)} servizio Omega vivo (11 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [omega-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [omega-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mode-banner] MODALITÀ PAPER — simulazione fedele: coda, liquidità, betDelay e protezioni identiche al live, nessun denaro reale.
+       [omega-daily-mission]
+
+             Giornata operativa
+             giornata operativa [omega-operating-day] sabato 26 settembre 2026 (Europe/Rome) — numeri dalla RPC (giornata Europe/Rome): il realizzato riparte da zero ogni giorno e conta SOLO le posizioni piazzate oggi
+           +0,00 € · 0,0 %
+         [omega-mission-line] {title:obiettivo di P&L realizzato per la giornata di oggi} Obiettivo di oggi 100,00 € · [omega-today-legs] {title:partite con almeno una posizione piazzata oggi} partite 4 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 4 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:posizioni ancora vive: non regolate} 4 vive · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · resta [omega-remaining] 100,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 274,00 € · {title:risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito} P&L bloccato [day-bar-locked] +0,00 € · totale storico −44,64 €
+
+           0,0 %
+       [kpi-row]
+         [omega-kpi-liability]
+           Liability aperta
+           274,00 €
+           rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0) [omega-liability-bot] {title:il bot decide su QUESTO numero: le operazioni che apri a mano non muovono piu’ i suoi cap (R6, 16/09)} su cui decide il bot 274,00 €
+         [omega-kpi-locked]
+           P&L bloccato
+           +0,00 €
+           di oggi +0,00 € · già bloccato sulle posizioni vive: non cambia più
+         [omega-kpi-reconciling]
+           In verifica su Betfair
+           0,00 €
+           nessun ordine in sospeso
+         [omega-kpi-target]
+           Target / operazione
+           0,38 €
+           266 operazioni e 133 partite ancora in finestra (su 150 viste dallo scanner) · 0,76 €/partita
+
+           ⚙️ Automatico
+           🎯 Missione
+           ✋ Manuale
+           📅 Storico
+
+             Obiettivo giornata (€) <input number=100>
+             [mission-save-goal] {title:scrive l'obiettivo sul servizio (omega_control.daily_goal)} Salva
+
+             {title:partite non ancora finite presenti in cache: sono esattamente quelle elencate qui sotto} Partite attivabili
+             [mission-events-count] 150
+             elenco aggiornato 17 min fa
+
+             {title:lo stesso numero del KPI «Target / operazione» in cima alla pagina: obiettivo diviso le partite ancora in finestra} Target / partita
+             [mission-target-match] 0,76 €
+             [mission-target-source] dal servizio · 133 partite rimaste
+
+             Missioni
+             0 / 0
+             attive / totali
+
+             <input checkbox=false> solo attive
+             Aggiorna eventi
+             [mission-day-note] Avanzamento della giornata e obiettivo: nella barra in cima alla pagina (numeri della RPC). Di quel totale, [mission-day-realized] +0,00 € viene dalle missioni attivate oggi.
+
+             nessuna missione attiva — attiva una partita qui sotto
+
+             Japanese J League 3 ( 7 )
+             {title:Kochi United v FC Osaka} Kochi United v {title:FC Osaka} FC Osaka
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:FC Ryukyu v Ehime} FC Ryukyu v {title:Ehime} Ehime
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Kamatamare Sanuki v FC Gifu} Kamatamare Sanuki v {title:FC Gifu} FC Gifu
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Kitakyushu v Kagoshima Utd} Kitakyushu v {title:Kagoshima Utd} Kagoshima Utd
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Fukushima Utd v Nagano Parceiro} Fukushima Utd v {title:Nagano Parceiro} Nagano Parceiro
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Tochigi SC v Matsumoto} Tochigi SC v {title:Matsumoto} Matsumoto
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Thespakusatsu Gunma v Kumamoto} Thespakusatsu Gunma v {title:Kumamoto} Kumamoto
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Japanese J League 2 ( 10 )
+             {title:FC Imabari v Shonan} FC Imabari v {title:Shonan} Shonan
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Tokushima v Tochigi Uva FC} Tokushima v {title:Tochigi Uva FC} Tochigi Uva FC
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Blaublitz Akita v Albirex Niigata} Blaublitz Akita v {title:Albirex Niigata} Albirex Niigata
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Omiya v Kofu} Omiya v {title:Kofu} Kofu
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Yamagata v Tosu} Yamagata v {title:Tosu} Tosu
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Iwaki SC v Sendai} Iwaki SC v {title:Sendai} Sendai
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Tegevajaro Miyazaki v Sapporo} Tegevajaro Miyazaki v {title:Sapporo} Sapporo
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Iwata v Vanraure Hachinohe} Iwata v {title:Vanraure Hachinohe} Vanraure Hachinohe
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Oita v Fujieda Myfc} Oita v {title:Fujieda Myfc} Fujieda Myfc
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Toyama v Yokohama FC} Toyama v {title:Yokohama FC} Yokohama FC
+             LIVE 10:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Spanish Liga F ( 3 )
+             {title:FC Badalona (W) v Granada (W)} FC Badalona (W) v {title:Granada (W)} Granada (W) 12:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Real Sociedad (W) v Real Madrid FC (W)} Real Sociedad (W) v {title:Real Madrid FC (W)} Real Madrid FC (W) 12:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Madrid (W) v Deportivo Alaves (W)} Madrid (W) v {title:Deportivo Alaves (W)} Deportivo Alaves (W) 18:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Swedish Division 2 ( 5 )
+             {title:Viggbyholms IK FF v Korsnas IF} Viggbyholms IK FF v {title:Korsnas IF} Korsnas IF 13:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Jonsereds IF v Hestrafors} Jonsereds IF v {title:Hestrafors} Hestrafors 13:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:IFK Karlshamn v Karlskrona} IFK Karlshamn v {title:Karlskrona} Karlskrona 14:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Skelleftea v Gottne IF} Skelleftea v {title:Gottne IF} Gottne IF 14:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Fittja IF v FC Nacka Iliria} Fittja IF v {title:FC Nacka Iliria} FC Nacka Iliria 14:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Swedish Division 1 ( 5 )
+             {title:Rosengard v Hassleholms IF} Rosengard v {title:Hassleholms IF} Hassleholms IF 13:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:FC Trollhattan v Tvaakers} FC Trollhattan v {title:Tvaakers} Tvaakers 13:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Skovde Aik v BK Olympic} Skovde Aik v {title:BK Olympic} BK Olympic 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Sollentuna FF v FC Stockholm Internazionale} Sollentuna FF v {title:FC Stockholm Internazionale} FC Stockholm Internazionale 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:FC Jarfalla v AFC Eskilstuna} FC Jarfalla v {title:AFC Eskilstuna} AFC Eskilstuna 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Finnish Ykkonen ( 4 )
+             {title:OLS v PKK-U} OLS v {title:PKK-U} PKK-U 13:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:TPV v FC Jazz} TPV v {title:FC Jazz} FC Jazz 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:VJS v KPV} VJS v {title:KPV} KPV 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:RoPS v Salpa} RoPS v {title:Salpa} Salpa 17:15 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Danish 2nd Division ( 3 )
+             {title:VSK Aarhus FC v Skive} VSK Aarhus FC v {title:Skive} Skive 13:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Brabrand v Nykobing FC} Brabrand v {title:Nykobing FC} Nykobing FC 14:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:B93 Copenhagen v Thisted} B93 Copenhagen v {title:Thisted} Thisted 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Spanish Segunda Division ( 4 )
+             {title:AD Ceuta FC v Sociedad B} AD Ceuta FC v {title:Sociedad B} Sociedad B 14:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Granada v FC Andorra} Granada v {title:FC Andorra} FC Andorra 16:15 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Tenerife v Cadiz} Tenerife v {title:Cadiz} Cadiz 18:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Celta Vigo B v Sabadell} Celta Vigo B v {title:Sabadell} Sabadell 18:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Italian Serie C ( 14 )
+             {title:ASD Pineto Calcio v Grosseto} ASD Pineto Calcio v {title:Grosseto} Grosseto 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Giana Erminio v Pro Vercelli} Giana Erminio v {title:Pro Vercelli} Pro Vercelli 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Pergolettese v A.C. Trento S.C.S.D.} Pergolettese v {title:A.C. Trento S.C.S.D.} A.C. Trento S.C.S.D. 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Sassari Torres v FC Vado} Sassari Torres v {title:FC Vado} FC Vado 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Crotone v Salernitana} Crotone v {title:Salernitana} Salernitana 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Lumezzane v Caratese} Lumezzane v {title:Caratese} Caratese 14:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:AZ Picerno ASD v Audace Cerignola} AZ Picerno ASD v {title:Audace Cerignola} Audace Cerignola 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Livorno v US Pianese} Livorno v {title:US Pianese} US Pianese 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Novara v AC Ospitaletto} Novara v {title:AC Ospitaletto} AC Ospitaletto 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Desenzano Calvina v Juventus B} Desenzano Calvina v {title:Juventus B} Juventus B 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:SSD Bari v Cosenza} SSD Bari v {title:Cosenza} Cosenza 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Sambenedettese v Nuovo Campobasso} Sambenedettese v {title:Nuovo Campobasso} Nuovo Campobasso 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Cavese 1919 v US Savoia 1908} Cavese 1919 v {title:US Savoia 1908} US Savoia 1908 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Cittadella v Lecco} Cittadella v {title:Lecco} Lecco 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             CAF African Cup of Nations Qualifiers ( 2 )
+             {title:Kenya v Eritrea} Kenya v {title:Eritrea} Eritrea 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:South Africa v Guinea} South Africa v {title:Guinea} Guinea 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Italian Ladies Serie A ( 2 )
+             {title:Lazio (W) v Parma (W)} Lazio (W) v {title:Parma (W)} Parma (W) 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Como (W) v AC Milan (W)} Como (W) v {title:AC Milan (W)} AC Milan (W) 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             UEFA Nations League ( 10 )
+             {title:Slovenia v Scotland} Slovenia v {title:Scotland} Scotland 15:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Faroe Islands v Kazakhstan} Faroe Islands v {title:Kazakhstan} Kazakhstan 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Bulgaria v Luxembourg} Bulgaria v {title:Luxembourg} Luxembourg 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:San Marino v Finland} San Marino v {title:Finland} Finland 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Iceland v Estonia} Iceland v {title:Estonia} Estonia 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Albania v Belarus} Albania v {title:Belarus} Belarus 20:45 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:North Macedonia v Switzerland} North Macedonia v {title:Switzerland} Switzerland 20:45 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Czechia v Croatia} Czechia v {title:Croatia} Croatia 20:45 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:England v Spain} England v {title:Spain} Spain 20:45 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Slovakia v Moldova} Slovakia v {title:Moldova} Moldova 20:45 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Jordan 1st Division ( 2 )
+             {title:Yarmouk v Al Sareeh} Yarmouk v {title:Al Sareeh} Al Sareeh 15:00 {title:Nessun match API-Football associato a questa partita}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Alhashemyya v Jerash SC} Alhashemyya v {title:Jerash SC} Jerash SC 18:00 {title:Nessun match API-Football associato a questa partita}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Serbian First League ( 1 )
+             {title:FK Borac Cacak v FK Backa Topola} FK Borac Cacak v {title:FK Backa Topola} FK Backa Topola 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             English Sky Bet League 2 ( 10 )
+             {title:York City v Gillingham} York City v {title:Gillingham} Gillingham 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Bristol Rovers v Exeter} Bristol Rovers v {title:Exeter} Exeter 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Shrewsbury v Colchester} Shrewsbury v {title:Colchester} Colchester 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Swindon v Accrington} Swindon v {title:Accrington} Accrington 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Cheltenham v Chesterfield} Cheltenham v {title:Chesterfield} Chesterfield 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Fleetwood Town v Rochdale} Fleetwood Town v {title:Rochdale} Rochdale 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Tranmere v Walsall} Tranmere v {title:Walsall} Walsall 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Rotherham v Crewe} Rotherham v {title:Crewe} Crewe 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Newport County v Grimsby} Newport County v {title:Grimsby} Grimsby 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Oldham v Salford City} Oldham v {title:Salford City} Salford City 18:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             English National League ( 12 )
+             {title:Scunthorpe v Hartlepool} Scunthorpe v {title:Hartlepool} Hartlepool 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Wealdstone v Gateshead} Wealdstone v {title:Gateshead} Gateshead 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Worthing v FC Halifax Town} Worthing v {title:FC Halifax Town} FC Halifax Town 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Boston Utd v AFC Fylde} Boston Utd v {title:AFC Fylde} AFC Fylde 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Carlisle v Woking} Carlisle v {title:Woking} Woking 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Altrincham v Hornchurch} Altrincham v {title:Hornchurch} Hornchurch 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Kidderminster v Yeovil} Kidderminster v {title:Yeovil} Yeovil 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Sutton Utd v Forest Green} Sutton Utd v {title:Forest Green} Forest Green 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Harrogate Town v Eastleigh} Harrogate Town v {title:Eastleigh} Eastleigh 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Aldershot v Tamworth FC} Aldershot v {title:Tamworth FC} Tamworth FC 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Solihull Moors v Boreham Wood} Solihull Moors v {title:Boreham Wood} Boreham Wood 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Southend v Barrow} Southend v {title:Barrow} Barrow 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             English Sky Bet League 1 ( 4 )
+             {title:Stockport v Peterborough} Stockport v {title:Peterborough} Peterborough 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Wycombe v Reading} Wycombe v {title:Reading} Reading 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Cambridge Utd v AFC Wimbledon} Cambridge Utd v {title:AFC Wimbledon} AFC Wimbledon 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Plymouth v Burton Albion} Plymouth v {title:Burton Albion} Burton Albion 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Uruguayan Primera Division ( 3 )
+             {title:Progreso v Racing Club (Uru)} Progreso v {title:Racing Club (Uru)} Racing Club (Uru) 16:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Cerro Largo FC v Nacional (Uru)} Cerro Largo FC v {title:Nacional (Uru)} Nacional (Uru) 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Penarol v Boston River} Penarol v {title:Boston River} Boston River 23:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Dutch Eerste Divisie ( 6 )
+             {title:Heracles v Vitesse Arnhem} Heracles v {title:Vitesse Arnhem} Vitesse Arnhem 16:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Roda JC v RKC Waalwijk} Roda JC v {title:RKC Waalwijk} RKC Waalwijk 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:MVV Maastricht v Helmond Sport} MVV Maastricht v {title:Helmond Sport} Helmond Sport 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:FC Volendam v VVV Venlo} FC Volendam v {title:VVV Venlo} VVV Venlo 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Emmen v FC Oss} Emmen v {title:FC Oss} FC Oss 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:NAC Breda v FC Eindhoven} NAC Breda v {title:FC Eindhoven} FC Eindhoven 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             UEFA U21 Euro Qualifiers ( 5 )
+             {title:Croatia U21 v Hungary U21} Croatia U21 v {title:Hungary U21} Hungary U21 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Georgia U21 v Greece U21} Georgia U21 v {title:Greece U21} Greece U21 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Latvia U21 v Germany U21} Latvia U21 v {title:Germany U21} Germany U21 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Ukraine U21 v Turkey U21} Ukraine U21 v {title:Turkey U21} Turkey U21 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Malta U21 v Northern Ireland U21} Malta U21 v {title:Northern Ireland U21} Northern Ireland U21 19:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Algerian Ligue 2 ( 9 )
+             {title:ES Mostaganem v NA Hussein Dey} ES Mostaganem v {title:NA Hussein Dey} NA Hussein Dey 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:USM Blida v Sidi Benali} USM Blida v {title:Sidi Benali} Sidi Benali 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:NC Magra v US Chaouia} NC Magra v {title:US Chaouia} US Chaouia 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:JSM Tiaret v USM El Harrach} JSM Tiaret v {title:USM El Harrach} USM El Harrach 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Msp Batna v MO Constantine} Msp Batna v {title:MO Constantine} MO Constantine 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Paradou v NRB Teleghma} Paradou v {title:NRB Teleghma} NRB Teleghma 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:AS Khroub v USM Annaba} AS Khroub v {title:USM Annaba} USM Annaba 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:RC Kouba v WA Tlemcen} RC Kouba v {title:WA Tlemcen} WA Tlemcen 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:ASM Oran v WA Mostaganem} ASM Oran v {title:WA Mostaganem} WA Mostaganem 17:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Chilean Primera B ( 1 )
+             {title:Union San Felipe v Deportes Copiapo} Union San Felipe v {title:Deportes Copiapo} Deportes Copiapo 17:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Gulf Cup Matches ( 2 )
+             {title:Kuwait v Iraq} Kuwait v {title:Iraq} Iraq 17:55 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Oman v Saudi Arabia} Oman v {title:Saudi Arabia} Saudi Arabia 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Moroccan Botola Pro 1 ( 3 )
+             {title:Union de Touarga v FUS Rabat} Union de Touarga v {title:FUS Rabat} FUS Rabat 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:DHJ El Jadida v CODM Meknes} DHJ El Jadida v {title:CODM Meknes} CODM Meknes 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Wydad Casablanca v Widad Temara} Wydad Casablanca v {title:Widad Temara} Widad Temara 22:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Moroccan Botola 2 ( 2 )
+             {title:KAC Kenitra v Waf Widad Fes} KAC Kenitra v {title:Waf Widad Fes} Waf Widad Fes 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Olympique Dcheira v Olympique Khouribga} Olympique Dcheira v {title:Olympique Khouribga} Olympique Khouribga 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             FIFA Ladies U20 World Cup ( 1 )
+             {title:Italy U20 (W) v Colombia U20 (W)} Italy U20 (W) v {title:Colombia U20 (W)} Colombia U20 (W) 18:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Argentinian Primera B Metropolitana ( 3 )
+             {title:Talleres (RE) v San Martin de Burzaco} Talleres (RE) v {title:San Martin de Burzaco} San Martin de Burzaco 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Argentino de Merlo v Villa San Carlos} Argentino de Merlo v {title:Villa San Carlos} Villa San Carlos 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Deportivo Armenio v Deportivo Merlo} Deportivo Armenio v {title:Deportivo Merlo} Deportivo Merlo 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Ecuadorian Serie B ( 1 )
+             {title:9 de Octubre v San Antonio FC} 9 de Octubre v {title:San Antonio FC} San Antonio FC 20:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Irish Division 1 ( 1 )
+             {title:Longford v Cork City} Longford v {title:Cork City} Cork City 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Argentinian Primera Nacional ( 5 )
+             {title:Estudiantes de Caseros v CA San Miguel} Estudiantes de Caseros v {title:CA San Miguel} CA San Miguel 20:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Quilmes v CA Guemes} Quilmes v {title:CA Guemes} CA Guemes 21:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Ciudad de Bolivar v Chaco For Ever} Ciudad de Bolivar v {title:Chaco For Ever} Chaco For Ever 21:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:All Boys v Colon} All Boys v {title:Colon} Colon 21:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Deportivo Madryn v CA Central Norte} Deportivo Madryn v {title:CA Central Norte} CA Central Norte
+             27/09 00:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Colombian Primera B ( 1 )
+             {title:Tigres FC Zipaquira v Real Santander} Tigres FC Zipaquira v {title:Real Santander} Real Santander 21:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Argentinian Super Cup ( 1 )
+             {title:Estudiantes v Rosario Central} Estudiantes v {title:Rosario Central} Rosario Central 21:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Paraguayan Primera Division ( 1 )
+             {title:Rubio Nu v Club 2 de Mayo} Rubio Nu v {title:Club 2 de Mayo} Club 2 de Mayo 21:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Brazilian Serie B ( 3 )
+             {title:Nautico PE v Sport Recife} Nautico PE v {title:Sport Recife} Sport Recife 21:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Operario PR v Ceara SC Fortaleza} Operario PR v {title:Ceara SC Fortaleza} Ceara SC Fortaleza 21:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+             {title:Goias v Atletico GO} Goias v {title:Atletico GO} Atletico GO 23:30 {title:Nessun match API-Football associato a questa partita}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Chilean Cup ( 1 )
+             {title:Nublense v Puerto Montt} Nublense v {title:Puerto Montt} Puerto Montt 22:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Friendlies International ( 1 )
+             {title:USA v Peru} USA v {title:Peru} Peru 22:30 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             CONCACAF Nations League B ( 1 )
+             {title:St Vincent & Grenadines v French Guyana} St Vincent & Grenadines v {title:French Guyana} French Guyana 23:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA
+
+             Colombian Primera A ( 1 )
+             {title:Deportivo Pereira v Internacional de Bogotá} Deportivo Pereira v {title:Internacional de Bogotá} Internacional de Bogotá 23:00 {title:Vai alle statistiche della partita (Dashboard)}
+             Statistiche
+             {title:Apri il LIVE TRADING su questa partita} Trading
+             {title:Registra la partita per intero (raw + Match Replay a fine gara)} Segui live
+             ATTIVA

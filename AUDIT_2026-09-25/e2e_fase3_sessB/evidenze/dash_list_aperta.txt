@@ -1,0 +1,590 @@
+
+
+           AI TERMINAL
+
+           [nav-control-room] CONTROL ROOM
+           Cambia sport
+           Watchlist
+           Report
+           Analytics
+           Segui Live
+           Match Replay
+           Esci
+
+             Partite del Giorno .
+             Tutte le partite in programma oggi
+
+             Match Betfair
+
+             Filtra per Campionato
+             1186 Match
+
+             NWSL Women 4 partite
+
+             CONCACAF Nations League 9 partite
+
+             Primera Premier 3 partite
+
+             Liga Pro Serie B 2 partite
+
+             Liga de Expansión MX 4 partite
+
+             Liga MX Femenil 3 partite
+
+             USL Championship 4 partite
+
+             Canadian Premier League 3 partite
+
+             Liga MX 4 partite
+
+             Segunda División 2 partite
+
+             Primera A 3 partite
+
+             Liga Panameña de Fútbol 2 partite
+
+             Liga de Ascenso 2 partite
+
+             National League - National 3 partite
+
+             J3 League 10 partite
+
+             Friendlies Women 3 partite
+
+             Second League - Group 3 7 partite
+
+             Premier League 2 partite
+
+             Asian Games 2 partite
+
+             J2 League 10 partite
+
+             League Cup 1 partita
+
+             Diski Challenge 5 partite
+
+             1. Liga U19 3 partite
+
+             Central Youth League 5 partite
+
+             4. liga - Divizie C 5 partite
+
+             3. liga - CFL B 6 partite
+
+             4. liga - Divizie B 5 partite
+
+             3. liga - CFL A 5 partite
+
+             4. liga - Divizie A 5 partite
+
+             4. liga - Divizie E 4 partite
+
+             Liga 2 5 partite
+
+             U19 Bundesliga 4 partite
+
+             I Liga - Women 5 partite
+
+             Coppa Italia Primavera 4 partite
+
+             IFA Shield 1 partita
+
+             III Liga - Group 4 5 partite
+
+             FIFA Asean Cup 2 partite
+
+             Persha Liga 4 partite
+
+             NB III - Northeast 6 partite
+
+             NB III - Southeast 6 partite
+
+             1. Liga Women 3 partite
+
+             First League 3 partite
+
+             Kansallinen Liiga 6 partite
+
+             Druha Liga 3 partite
+
+             Tercera División RFEF - Group 6 4 partite
+
+             Tercera División RFEF - Group 12 5 partite
+
+             Primera División RFEF - Group 1 5 partite
+
+             III Liga - Group 2 8 partite
+
+             Ekstraliga Women 3 partite
+
+             1a Divisão - Women 1 partita
+
+             Liga 1 Feminin 1 partita
+
+             Second League A - Division A Silver 2 partite
+
+             III Liga - Group 3 8 partite
+
+             Primera División Femenina 4 partite
+
+             Tercera División RFEF - Group 4 6 partite
+
+             Tercera División RFEF - Group 17 2 partite
+
+             Division 2 - Norra Svealand 4 partite
+
+             Serie A Women 3 partite
+
+             3. Division - Girone 5 2 partite
+
+             Women's Championship 1 partita
+
+             B-Liga Women 3 partite
+
+             Damallsvenskan 5 partite
+
+             Toppserien 5 partite
+
+             3. Division - Girone 1 7 partite
+
+             3. Division - Girone 2 6 partite
+
+             Elitettan 6 partite
+
+             Ettan - Södra 5 partite
+
+             Division 2 - Norra Götaland 3 partite
+
+             Division 2 - Södra Svealand 3 partite
+
+             Division 2 - Västra Götaland 2 partite
+
+             Esiliiga B 2 partite
+
+             Second League - Group 2 2 partite
+
+             Oberliga - Hamburg 4 partite
+
+             III Liga - Group 1 5 partite
+
+             Oberliga - Nordost-Nord 1 partita
+
+             3. Division 5 partite
+
+             Kvindeliga 3 partite
+
+             Júniores U19 3 partite
+
+             Division 2 - Norrland 6 partite
+
+             Oberliga - Bremen 3 partite
+
+             1. Division 5 partite
+
+             Kakkonen - Lohko A 2 partite
+
+             2. Division - Group 1 4 partite
+
+             Super League Women 3 partite
+
+             2. Division 4 partite
+
+             Ykkönen 4 partite
+
+             League Two 12 partite
+
+             3. Division - Girone 3 7 partite
+
+             3. Division - Girone 6 6 partite
+
+             UEFA U17 Championship - Qualification 2 partite
+
+             Oberliga - Bayern Süd 6 partite
+
+             Oberliga - Hessen 6 partite
+
+             Regionalliga - Nord 5 partite
+
+             Oberliga - Rheinland-Pfalz / Saar 8 partite
+
+             3. Lig - Group 3 2 partite
+
+             DFB Pokal - Women 7 partite
+
+             2. Division - Group 2 3 partite
+
+             3. Division - Girone 4 4 partite
+
+             Ykkösliiga 3 partite
+
+             Division 2 - Södra Götaland 3 partite
+
+             1. Division Women 3 partite
+
+             Second League - Group 1 7 partite
+
+             Oberliga - Bayern Nord 5 partite
+
+             Oberliga - Nordost-Süd 5 partite
+
+             Oberliga - Schleswig-Holstein 4 partite
+
+             Regionalliga - Bayern 5 partite
+
+             Eredivisie Women 3 partite
+
+             Regionalliga - Nordost 3 partite
+
+             Regionalliga - SudWest 6 partite
+
+             Regionalliga - West 5 partite
+
+             Oberliga - Niedersachsen 2 partite
+
+             Segunda División 4 partite
+
+             Prva Liga 2 partite
+
+             Derde Divisie 13 partite
+
+             Tweede Divisie 9 partite
+
+             3. Lig - Group 2 3 partite
+
+             2. Lig 4 partite
+
+             Serie C - Girone A 6 partite
+
+             FA WSL 2 partite
+
+             Oberliga - Baden-Württemberg 4 partite
+
+             Serie C - Girone B 4 partite
+
+             Serie C - Girone C 4 partite
+
+             U21 Divisie 1 2 partite
+
+             Africa Cup of Nations - Qualification 2 partite
+
+             Gamma Ethniki - Group 2 1 partita
+
+             Gamma Ethniki - Group 6 1 partita
+
+             Super League Women 1 partita
+
+             David Kipiani Cup 1 partita
+
+             Second League 2 partite
+
+             Third League - Southeast 8 partite
+
+             Second League 5 partite
+
+             Serie D - Girone F 1 partita
+
+             Pernambucano - U20 5 partite
+
+             Gamma Ethniki - Group 5 1 partita
+
+             Frauenliga 3 partite
+
+             Carioca U20 4 partite
+
+             4. liga - Divizie F 3 partite
+
+             Oberliga - Niederrhein 1 partita
+
+             First League 1 partita
+
+             1. Liga Classic - Group 2 5 partite
+
+             3. Lig - Group 1 2 partite
+
+             Division Intermedia 2 partite
+
+             Gamma Ethniki - Group 4 5 partite
+
+             UEFA Nations League 10 partite
+
+             Regionalliga - West 6 partite
+
+             Premier League 8 partite
+
+             Third League - Northeast 8 partite
+
+             FAW Championship 10 partite
+
+             2. liga 4 partite
+
+             3. liga - Center 3 partite
+
+             3. liga - East 5 partite
+
+             3. liga - West 4 partite
+
+             3. liga - MSFL 4 partite
+
+             4. liga - Divizie D 1 partita
+
+             Regionalliga - North 4 partite
+
+             1st League - FBiH 5 partite
+
+             Football League - Lowland League 13 partite
+
+             Football League - Highland League 8 partite
+
+             Liga III - Serie 1 6 partite
+
+             Liga III - Serie 7 5 partite
+
+             Liga III - Serie 3 3 partite
+
+             Liga III - Serie 4 6 partite
+
+             FA Trophy 61 partite
+
+             Friendlies 3 partite
+
+             National League - North 12 partite
+
+             Third League - Northwest 6 partite
+
+             Challenge Cup 19 partite
+
+             Regionalliga - Ost 4 partite
+
+             Tercera División RFEF - Group 7 2 partite
+
+             Tercera División RFEF - Group 15 6 partite
+
+             Tercera División RFEF - Group 18 1 partita
+
+             UEFA Europa Cup - Women 1 partita
+
+             Ettan - Norra 2 partite
+
+             Premiership 4 partite
+
+             League One 9 partite
+
+             Championship 5 partite
+
+             1. Liga Promotion 8 partite
+
+             National League 12 partite
+
+             National League - South 12 partite
+
+             3. SNL - East 4 partite
+
+             3. SNL - West 4 partite
+
+             First NL 3 partite
+
+             NB III - Northwest 5 partite
+
+             NB III - Southwest 5 partite
+
+             Second NL 5 partite
+
+             Third League - Southwest 9 partite
+
+             1. Liga Classic - Group 1 6 partite
+
+             1. Liga Classic - Group 3 5 partite
+
+             1st League - RS 6 partite
+
+             Campeonato de Portugal Prio - Group D 1 partita
+
+             Liga E Pare 4 partite
+
+             Liga III - Serie 2 4 partite
+
+             Tercera División RFEF - Group 8 4 partite
+
+             Liga III - Serie 5 3 partite
+
+             Liga III - Serie 6 4 partite
+
+             Liga III - Serie 8 5 partite
+
+             Friendlies Clubs 3 partite
+
+             Ligue 2 7 partite
+
+             Kakkonen - Lohko C 1 partita
+
+             Primera División 3 partite
+
+             1. Liga 1 partita
+
+             Tercera División RFEF - Group 10 3 partite
+
+             Regionalliga - South 3 partite
+
+             Tercera División RFEF - Group 11 6 partite
+
+             Primera División RFEF - Group 2 3 partite
+
+             Eerste Divisie 6 partite
+
+             Second Amateur Division - ACFF 5 partite
+
+             Segunda División RFEF - Group 1 2 partite
+
+             Liga MX U21 4 partite
+
+             Division One League 6 partite
+
+             Ligue 2 15 partite
+
+             Gulf Cup of Nations 2 partite
+
+             Kakkonen - Lohko B 2 partite
+
+             Tercera División RFEF - Group 13 1 partita
+
+             Tercera División RFEF - Group 16 2 partite
+
+             NPFL 1 partita
+
+             Championnat National 5 partite
+
+             UEFA U21 Championship - Qualification 5 partite
+
+             Premier League 1 partita
+
+             Tercera División RFEF - Group 2 4 partite
+
+             Tercera División RFEF - Group 3 3 partite
+
+             Tercera División RFEF - Group 1 3 partite
+
+             Segunda División RFEF - Group 2 3 partite
+
+             Premier League Women 1 partita
+
+             Ligue 1 4 partite
+
+             Ligue 1 2 partite
+
+             Primera B 2 partite
+
+             Segunda División RFEF - Group 4 2 partite
+
+             Segunda División RFEF - Group 5 1 partita
+
+             U20 Elite League 2 partite
+
+             World Cup - U20 - Women 1 partita
+
+             Segunda División 3 partite
+
+             Cup 11 partite
+
+             Botola Pro 3 partite
+
+             Copa del Rey 5 partite
+
+             Botola 2 4 partite
+
+             Segunda División RFEF - Group 3 1 partita
+
+             2. SNL 2 partite
+
+             Serie D - Girone I 1 partita
+
+             Tercera División RFEF - Group 9 1 partita
+
+             Second Amateur Division - VFV A 3 partite
+
+             Carioca - 2 5 partite
+
+             Paraibano 2 1 partita
+
+             Gaúcho - 3 1 partita
+
+             Liga Premier Serie A 2 partite
+
+             Tercera División RFEF - Group 5 1 partita
+
+             Primera C 6 partite
+
+             USL League One 6 partite
+
+             Primera B Metropolitana 6 partite
+
+             Northern Super League 1 partita
+
+             Copa Santa Catarina 3 partite
+
+             First Amateur Division 2 partite
+
+             Second Amateur Division - VFV B 3 partite
+
+             Mineiro - 3 3 partite
+
+             Paulista - U20 3 partite
+
+             Liga Women 3 partite
+
+             Mineiro U20 1 partita
+
+             Brasiliense B 2 partite
+
+             First Division 1 partita
+
+             Goiano - 2 1 partita
+
+             Primera Nacional 6 partite
+
+             Ligue 3 8 partite
+
+             Super Copa International 1 partita
+
+             Primera B 2 partite
+
+             Segunda División 1 partita
+
+             Nacional B 1 partita
+
+             Serie B 3 partite
+
+             Division Profesional - Clausura 2 partite
+
+             Brasileiro Women 1 partita
+
+             Segunda División 4 partite
+
+             Piauiense - 2 3 partite
+
+             Liga Mayor 2 partite
+
+             Serie C 3 partite
+
+             Copa Paulista 1 partita
+
+             Copa Chile 2 partite
+
+             Liga Nacional 1 partita
+
+             Copa de la División Profesional 1 partita
+
+             Paranaense - 3 1 partita
+
+             Liga Premier Serie B 1 partita
+
+             Copa Rio 1 partita
+
+             USL Super League 1 partita
+
+             Primera Division 1 partita
+
+             Liga Femenina 1 partita
+
+             Major League Soccer 5 partite
+
+       © 2026 Alpha Score AI. All rights reserved.

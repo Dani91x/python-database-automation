@@ -1,0 +1,33 @@
+
+
+         AI TERMINAL ANALYTICS
+         Dashboard
+
+         Centro di Controllo Motori
+         Pagella per-motore per-mercato sullo storico settlato.
+
+         Performance Motori
+         Decisioni
+         Crea Strategia
+         Reportistiche
+         Backtest Automatico
+
+             Logica decisionale monitorata <select=Google Sheets (reale) (3 opz.)>
+
+         Filtri decisioni
+           Reset
+
+             Logica decisionale <select=Tutte (1 opz.)>
+
+             Stato <select=Tutti (1 opz.)>
+
+             Motore <select=Tutti (1 opz.)>
+
+             Mercato <select=Tutti (1 opz.)>
+
+             Motivo scarto <select=Tutti (1 opz.)>
+
+             Raggruppa per <select=Per logica decisionale (8 opz.)>
+       canceling statement due to statement timeout
+       Nessuna decisione per questi filtri.
+       Decisioni. Ogni riga = scelta di una logica decisionale (oggi google_sheets ) di piazzare/scartare un segnale. Hit piazz. = % vinte sulle piazzate settlate (a 90'). ROI = P&L / stake. Motivo scarto = perché un segnale non è stato giocato. Si potranno aggiungere altre logiche decisionali e confrontarle. Dati storici, non garanzia di risultati futuri.

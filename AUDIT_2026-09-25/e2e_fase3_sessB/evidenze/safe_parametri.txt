@@ -1,0 +1,138 @@
+
+ [params-sheet]
+   Close
+
+     🛡️ Parametri bot Safe Strategy
+     Salvati sul database (safe_update_params): valgono per il servizio e per questa schermata. I limiti mostrati sono quelli applicati dal servizio.
+
+     [params-group]
+       Bot
+       Limiti applicati dal servizio: i valori fuori range vengono clampati e dichiarati qui sotto.
+       Cadenza loop (s) <input number=2> ogni quanto il servizio valuta i segnali
+       Commissione % <input number=5> aliquota Betfair sul P&L positivo
+       Max trade aperti <input number=20> 0 = illimitato
+       Liability max per trade € <input number=300>
+       Fattore size abbinabile <input number=1> richiede abbinabile ≥ fattore × stake
+       Size minima Betfair € <input number=2> sotto questa cifra il servizio usa il metodo 1000→cancella→sposta
+       Spread massimo (lay/back) <input number=1.6> oltre questo rapporto il mercato è troppo largo: non si entra
+       Tentativi max di piazzamento <input number=3>
+       Paper · TTL abbinamento (s) <input number=45>
+       Live · attesa abbinamento (s) <input number=20>
+       Stake LAY di default € <input number=2> importo con cui entrano BASE e RISULTATO ESATTO, che bancano. È lo stake REALE, non un suggerimento
+       Stake BACK di default € <input number=3> importo con cui entrano TENNIS e PUNTA, che puntano. È lo stake REALE con cui il tennis opera, anche in live — da non confondere con «stake dei trade di modello», che è di un altro motore
+     [params-group]
+       Strategie abilitate
+       Le strategie che il bot trada in automatico. Almeno una deve essere attiva: una lista vuota sul DB fa ripiegare il servizio sui default e viene registrata come params_invalid .
+       <input checkbox=true> Base
+       <input checkbox=true> Risultato Esatto
+       <input checkbox=true> Punta
+       <input checkbox=true> Tennis
+     [params-group]
+       Rischio
+       Limiti del servizio su TUTTI i trade automatici. Lo stato corrente (capitale impegnato, stop perdita) è nel pannello Rischio giornaliero in alto. [params-loss-stop] stop in uso: −50,00 €
+       Cap liability giornaliera € <input number=0> raggiunto il cap nessun nuovo ingresso automatico fino a domani (0 = nessun cap)
+       Cap liability per evento € <input number=150> somma delle liability aperte sulla stessa partita
+       Trade max per evento <input number=3> mai più di tanti trade sulla stessa partita
+       Correlazione max (0-1) <input number=0.7> posizioni sullo stesso esito (es. Under 2.5 + Under 3.5): oltre questa correlazione la seconda non entra
+       Stop perdita giornaliera € <input number=-50> soglia di PERDITA: sotto questo P&L di giornata il bot smette di entrare. Il segno non conta (50 e −50 sono lo stesso stop); 0 = stop SPENTO
+       Cap liability giornaliera trade di modello € <input number=150> quota del cap riservata a modello/anomalie/combinazioni/tennis
+       Max posizioni aperte (rischio) <input number=0> tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". 0 = illimitato
+     [params-group]
+       Proponimi...
+       Ogni tipo di opportunità genera una scheda in Control Room (PIAZZA / RIFIUTA): nessuna piazza mai da sola. Spegni qui solo se non vuoi VEDERE quel tipo di scheda — le proposte già in vista decadono, gli ordini già approvati restano intatti. Nessun tetto sul numero di proposte.
+       <input checkbox=true> Proponimi le opportunità di MODELLO calcio a spento, il motore non genera più schede di modello (calcio); quelle già in vista decadono. Non tocca gli ordini già approvati.
+       <input checkbox=true> Proponimi le opportunità di MODELLO tennis secondo motore tennis (non la Strategia S tennis, quella resta in "Varianti attive"). A spento decadono solo le schede di questo tipo.
+       <input checkbox=true> Proponimi le COMBINAZIONI a spento, nessuna nuova scheda con tutte le gambe della combinazione; quelle già in vista decadono (nessuna gamba viene toccata se già approvata).
+       <input checkbox=true> Proponimi le ANOMALIE di prezzo a spento, il cecchino smette di generare schede (continua comunque a rilevarle per la tabella delle opportunità); quelle già in vista decadono.
+     [params-group]
+       Combinazioni incomplete
+       Quando una gamba della combinazione che hai approvato non si abbina, l’altra resta aperta a mercato ed è tua. Scegli chi la gestisce.
+       Gamba manuale della combo incompleta
+
+           [params-choice] Avvisa e proponi la copertura
+           [params-choice] Automatico (se ne occupa il bot) Avvisa e proponi: il bot non la tocca, ti avvisa e ti mette in scheda la copertura da approvare con un clic. Automatico: la chiude il bot subito, a mercato, come una sua gamba.
+     [params-group]
+       Modalità per strategia (paper / live)
+       Con quale modalità piazza ogni strategia. Valgono solo quando il servizio è in LIVE : se il servizio è in PAPER resta tutto in paper, perché la conferma LIVE deve restare l'unico ingresso ai soldi veri e nessun parametro può aggirarla. I soldi veri si raggiungono solo scrivendoli, mai per eredità: una strategia non dichiarata resta in PAPER anche a servizio armato in LIVE — va a soldi veri solo ciò che è scritto LIVE qui sopra. Le posizioni già aperte non cambiano mai modalità: si chiudono con quella con cui sono nate.
+       Calcio · Base (banca 1X2) <select=PAPER — prova, mai soldi veri (3 opz.)>
+       Calcio · Risultato Esatto <select=PAPER — prova, mai soldi veri (3 opz.)>
+       Calcio · Punta <select=PAPER — prova, mai soldi veri (3 opz.)>
+       Tennis <select=PAPER — prova, mai soldi veri (3 opz.)>
+       Opportunità del modello che approvo (modello / anomalie / combo / tennis) <select=PAPER — prova, mai soldi veri (3 opz.)>
+       Ordini a mano dalla scheda <select=PAPER — prova, mai soldi veri (3 opz.)>
+     [params-group]
+       Opportunità di modello
+       Cadenza opportunità (s) <input number=10>
+       Confidenza minima (0-1) <input number=0.7>
+       Edge minimo (0-1) <input number=0.03>
+     [params-group]
+       Tennis / Anomalie
+       Stake dei trade di modello, anomalia, combinazione e tennis. Tennis e anomalie entrano con lo stesso stake del modello; la liability giornaliera dedicata è nel blocco Rischio.
+       Stake auto-trade modello / anomalie / tennis € <input number=3> stake di ogni trade automatico di questi tipi (le combinazioni lo usano come stake TOTALE)
+       Stake proposto sulle card € <input number=5> precompilato nel campo Stake delle opportunità (manuale)
+     [params-group]
+       Uscite modello
+       Per i trade di modello/anomalia/combinazione/tennis il servizio ricalcola a ogni ciclo la P(perdita) : se è bassa e l'EV del tenere supera il margine, la posizione resta aperta («In attesa» in tabella); altrimenti chiude. Un residuo non abbinato viene ritentato a intervalli.
+       Tieni se P(perdita) ≤ (0-1) <input number=0.02> sotto questa probabilità di perdita il servizio TIENE la posizione ("In attesa" in tabella) invece di chiudere
+       Rischio alto se P(perdita) ≥ (0-1) <input number=0.1> oltre questa soglia si vuole uscire, ma solo a un prezzo che vale (vedi premio di rischio)
+       Premio di rischio (frazione della liability) <input number=0.05> quanto si accetta di pagare, sopra il tetto, per comprare la certezza. 0 = mai sotto l’EV del tenere; 1 = si esce a qualunque prezzo
+       Margine EV per tenere (€) <input number=0.1> tenere deve valere almeno questo margine rispetto al cash out immediato
+       Modello · esci in perdita da P(perdita) (0-1) <input number=0.1> il modello ricalcola P(perdita) a ogni ciclo: sopra questa soglia esce in perdita controllata
+       Modello · incassa a frazione del max (0-1) <input number=0.8> 0,8 = chiude quando ha in mano l’80 % del profitto massimo possibile
+       Modello · cash out gratis sotto P(perdita) (0-1) <input number=0.005> rischio ormai trascurabile: incassa e libera la liability
+       Residuo · attesa fra tentativi (s) <input number=20> chiusura parziale (liquidità): riprova a chiudere il resto ogni tot secondi
+       Residuo · tentativi max <input number=15> dopo questi tentativi il residuo si chiude al prezzo disponibile
+     [params-group]
+       Condizioni delle strategie
+       Il minuto delle strategie calcio è una SOGLIA: "dal minuto X in poi".
+       BASE · dal minuto <input number=55>
+       BASE · quota di banca sfavorita MIN <input number=20>
+       BASE · quota di banca sfavorita MAX <input number=34>
+       BASE · punteggio stabile (s) <input number=30>
+       R. ESATTO · dal minuto <input number=48>
+       R. ESATTO · quota MIN <input number=30>
+       R. ESATTO · quota MAX <input number=70>
+       R. ESATTO · gol max lato bancato <input number=1>
+       R. ESATTO · punteggio stabile (s) <input number=30>
+       PUNTA · dal minuto <input number=66>
+       PUNTA · quota MIN <input number=1.03>
+       PUNTA · quota MAX <input number=1.1>
+       PUNTA · minuti dopo il gol <input number=3>
+       TENNIS · set di vantaggio <input number=1>
+       TENNIS · game di vantaggio <input number=2>
+       TENNIS · quota leader MIN <input number=1.02>
+       TENNIS · quota leader MAX <input number=1.1>
+       TENNIS · punteggio stabile (s) <input number=15>
+       TENNIS · set già giocati MAX <input number=1> il vantaggio di un set deve venire dal solo set disputato (regola del manuale). 0 = controllo spento
+       TENNIS · super favorito: quota pre-partita del favorito sotto <input number=1.2> utente 25/09: «se pre-match il favorito è < 1,20 è un super favorito e l'altro uno sfavorito estremo» → non si punta lo sfavorito estremo. Se la quota pre-partita manca il controllo non blocca. 0 = spento
+       BASE · soglia controllo del gioco <input number=0.1> quanto la favorita deve premere: 0 = basta non subire, 1 = dominio assoluto
+       R. ESATTO · soglia controllo (INVERTITA) <input number=0.1> qui la condizione è ROVESCIATA: la squadra BANCATA deve stare SOTTO questa soglia, cioè non deve comandare il gioco
+       PUNTA · soglia controllo del gioco <input number=0.1> quanto la favorita deve continuare a spingere
+       <input checkbox=false> TENNIS: escludi gli Slam maschili (5 set) più rischio fisico, e il ritiro è il solo modo di perdere tutto lo stake; il tabellone femminile dello stesso Slam resta ammesso
+       <input checkbox=false> TENNIS: escludi i doppi il manuale li esclude
+       <input checkbox=false> BASE: richiedi il controllo del gioco la favorita protetta deve premere (corner e cartellini). Se il dato non arriva la strategia NON entra: accendilo solo dopo aver visto la copertura nelle attività
+       <input checkbox=false> R. ESATTO: la bancata NON deve avere il controllo condizione INVERTITA rispetto alle altre due: se la squadra bancata comanda il gioco è più probabile che segni ancora, ed è il gol che fa perdere
+       <input checkbox=false> PUNTA: richiedi il controllo del gioco la favorita deve continuare a spingere
+       <input checkbox=false> TENNIS: le chiusure le approvo io le aperture restano automatiche; ogni chiusura ti viene PROPOSTA e parte solo quando la approvi. Vale anche per l’uscita obbligatoria del manuale: finché non approvi, la posizione resta aperta
+     [params-group]
+       Uscite automatiche
+       Il servizio chiude da solo le posizioni aperte: a profitto quando la quota ha fatto il suo lavoro, a tempo al minuto di soglia, in perdita dopo un gol contro / set perso (attesa di conferma), su rosso alla favorita; nel tennis incassa al game successivo o esce dopo due game persi / set tornato in parità. Quando la chiusura non si abbina, l'uscita diventa obbligatoria a mercato. Il motivo compare nella tabella trade e nello storico («Uscita: …»).
+       <input checkbox=true> Uscite automatiche attive
+       BASE · uscita a tempo dal minuto <input number=80> chiude a mercato (green/red) se il match arriva a questo minuto con la posizione ancora aperta
+       R. ESATTO · uscita a tempo dal minuto <input number=72> lay sul risultato esatto: incassa il calo della quota prima del finale
+       PUNTA · uscita a tempo dal minuto <input number=83> back a quota bassissima: esce prima che una rimonta annulli il profitto
+       Perdita · attesa prima di chiudere (s) <input number=30> gol contro / set perso: aspetta che il punteggio sia confermato (VAR, correzioni) e poi chiude in perdita
+       Tentativi max di chiusura <input number=3> chiusure non abbinate: dopo questi tentativi l'uscita diventa OBBLIGATORIA al prezzo disponibile
+       TENNIS · incassa solo da quota <input number=1.03> sotto questa quota il profitto massimo è più piccolo dello spread: chiudere sarebbe una perdita garantita, quindi si porta a termine (lo stop loss resta)
+       TENNIS · profitto minimo per incassare (€) <input number=0.01> si incassa solo se il P&L bloccato, al netto della commissione, è almeno questo: un «take profit» che blocca una perdita non è un take profit
+       BASE · esci se la favorita subisce oltre <input number=> indice di controllo del gioco visto dalla favorita: −0,20 vuol dire «la subisce nettamente». Vale solo se la regola qui sotto è accesa
+       <input checkbox=true> Rosso alla favorita: esci subito la quota si muove contro prima del gol
+       <input checkbox=true> Tennis: incassa al game successivo il leader tiene il servizio → profitto bloccato
+       <input checkbox=false> Tennis: esci dopo due game persi o set in parità perdita contenuta prima del ribaltone
+       <input checkbox=false> BASE: esci se il controllo passa alla sfavorita regola del manuale. Dipende dal dato di pressione (corner e cartellini): finché la sua copertura non è misurata, accenderla rischia di chiudere in pari operazioni sane per colpa di un feed silenzioso
+
+       [params-save] Salva parametri
+       [params-reset] Default
+
+       Strategie in uso dal servizio: [params-variants-effective] base, esatto, punta, tennis
+       Il database NON viene riallineato sugli altri parametri: dove il valore salvato e quello in uso differiscono, vale sempre quello in uso.

@@ -1,0 +1,42 @@
+
+
+   Close
+
+     Studio Ritardi · Friendlies Clubs
+     Riproduzione 1:1 del file STUDIO RITARDI. DATI MATCH = tutto lo storico della lega. Ogni mercato è un foglio: ritardo attuale vs media storica del mercato scelto.
+
+       Mercato (foglio)
+
+         Risultato Esatto
+         Somma Gol Esatta
+         Over
+         Under
+         Over Primo Tempo
+         Gol Gol Primo Tempo
+         Gol Gol Secondo Tempo
+         Parziale/Finale 1-X
+         Parziale/Finale 2-X
+         Parziale/Finale X-1
+         Parziale/Finale X-2
+         Pareggio (X)
+         GG & Over 2.5
+
+       Somma gol
+
+         0
+         1
+         2
+         3
+         4
+         5
+         6
+         7
+         8
+
+       Storico (DATI MATCH)
+
+         Tutto lo storico
+         Stagione
+         Ultime N
+
+       Errore: canceling statement due to statement timeout

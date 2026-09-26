@@ -1,0 +1,61 @@
+
+
+         AI TERMINAL ANALYTICS
+         Dashboard
+
+         Centro di Controllo Motori
+         Pagella per-motore per-mercato sullo storico settlato.
+
+         Performance Motori
+         Decisioni
+         Crea Strategia
+         Reportistiche
+         Backtest Automatico
+
+         Crea strategia — filtri
+
+             Data da <input date=>
+
+             Data a <input date=>
+
+             Mercato <select=Tutti (8 opz.)>
+
+             Selezione <select=Tutte (1 opz.)>
+
+             Lega (una) <select=Tutte (1 opz.)>
+
+             Direzione <select=Back (punta) (2 opz.)>
+
+             Poisson ≥ % <input number=>
+
+             ML ≥ % <input number=>
+
+             TacticAI ≥ % <input number=>
+
+             Motori concordi ≥ <input number=>
+
+             Ritardo = <input number=>
+
+             Ritardo ≥ <input number=>
+
+             Frequenza <select=Indifferente (3 opz.)>
+
+             Quota min <input number=>
+
+             Quota max <input number=>
+
+             Edge ≥ % <input number=>
+
+             Commissione % (def. 5) <input number=5>
+
+             Fonte quota <select=Betfair → bookmaker (3 opz.)>
+
+             Stato <select=Tutte (4 opz.)>
+
+             Raggruppa per <select=Per mercato × lega (5 opz.)>
+
+           {title:Solo se l'API prevede OVER e la sua linea ≥ linea del mercato. Segnale strutturato ma raro (~2-3% delle partite): può ridurre molto il campione.}
+             API dice over (≥ linea) ⓘ
+           {title:Richiede segnale ML certificato no-leak (oos_valid) e affidabile (gate BSS/ECE). Copertura bassa: filtra fortemente.}
+             Solo ML pulito (no-leak + affidabile) ⓘ
+           Esegui backtest

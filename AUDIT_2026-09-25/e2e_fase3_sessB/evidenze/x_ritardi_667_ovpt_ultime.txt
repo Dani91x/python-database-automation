@@ -1,0 +1,169 @@
+
+
+   Close
+
+     Studio Ritardi · Friendlies Clubs
+     Riproduzione 1:1 del file STUDIO RITARDI. DATI MATCH = tutto lo storico della lega. Ogni mercato è un foglio: ritardo attuale vs media storica del mercato scelto.
+
+       Mercato (foglio)
+
+         Risultato Esatto
+         Somma Gol Esatta
+         Over
+         Under
+         Over Primo Tempo
+         Gol Gol Primo Tempo
+         Gol Gol Secondo Tempo
+         Parziale/Finale 1-X
+         Parziale/Finale 2-X
+         Parziale/Finale X-1
+         Parziale/Finale X-2
+         Pareggio (X)
+         GG & Over 2.5
+
+       Linea
+
+         0.5
+         1.5
+         2.5
+
+       Storico (DATI MATCH)
+
+         Tutto lo storico
+         Stagione
+         Ultime N
+         100
+         200
+         300
+         500
+         1000
+     Over Primo Tempo 0.5 eventi (DATI MATCH) 449 occorrenze 341 2026-08-01T14:00:00+00:00 → 2026-09-25T14:30:00+00:00 copertura PT 89.8 %
+
+       [ritardi-avviso-ht] Copertura primo tempo 89.8 %: le 51 gare senza dato di primo tempo sono ESCLUSE da questo mercato (non contate come 0-0). Statistiche calcolate su 449 eventi.
+
+         Quota Oggettiva
+         1.32
+         = media storica
+
+         Media Storica
+         ogni 1.3
+         partite si verifica
+
+         Ritardo Attuale
+         0
+         0.00× la media
+
+         Record
+         6
+         serie storica max
+
+         % Mercato
+         75.9%
+
+         Media Rit.
+         1.42
+         AVERAGEIF(RIT;≠0)
+
+       Ritardo nel tempo (RIT)
+
+             2 5 8 11 14 17 20 23 26 29 32 35 38 41 44 47 50 53 56 59 62 65 68 71 74 77 80 83 86 89 92 95 98 101 104 107 110 113 116 119 122 125 128 131 134 137 140 143 146 149 152 155 158 161 164 167 170 173 176 179 182 185 188 191 194 197 200 203 206 209 212 215 218 221 224 227 230 233 236 239 242 245 248 251 254 257 260 263 266 269 272 275 278 281 284 287 290 293 296 299 302 305 308 311 314 317 320 323 326 329 332 335 338 341 344 347 350 353 356 359 362 365 368 371 374 377 380 383 386 389 392 395 398 401 404 407 410 413 416 419 422 425 428 431 434 437 440 443 446 449 0 2 4 6 8 media record
+
+       Distribuzione serie · COUNTIF su SUC/RIT · tutte le serie
+
+             Valore  |
+             Occ. (SUC)  |
+             Cnt (RIT)  |
+
+             0  |
+             259  |
+             341  |
+
+             1  |
+             66  |
+             82  |
+
+             2  |
+             11  |
+             16  |
+
+             3  |
+             3  |
+             5  |
+
+             4  |
+             0  |
+             2  |
+
+             5  |
+             1  |
+             2  |
+
+             6  |
+             1  |
+             1  |
+
+         Sotto la media · esce in orario o prima · BI · AZ · BE/BF/BG
+
+           Sotto media · BI
+
+           325
+           95.3% delle uscite
+
+           Ultime 10 serie · AZ
+
+           0 1 0 0 0 0 0 0 0 0
+
+           Storico serie · BE/BF/BG · condizionato
+
+           dopo un ritardo di 0 partite, storicamente è uscito dopo:
+
+             Lung.  |
+             Tot  |
+             %  |
+
+             0  |
+             197  |
+             76.4%  |
+
+             1  |
+             48  |
+             18.6%  |
+
+             2  |
+             8  |
+             3.1%  |
+
+             3  |
+             3  |
+             1.2%  |
+
+             5  |
+             1  |
+             0.4%  |
+
+             6  |
+             1  |
+             0.4%  |
+
+         Sopra la media · tarda più del solito · BJ · BL · BT/BU/BV
+
+           Sopra media · BJ
+
+           16
+           4.7% delle uscite
+
+           Ultime 10 strisce · BL
+
+           0 0 0 0 0 0 0 0 0 0
+
+           Run sopra media · BT/BU/BV
+
+             Run  |
+             N  |
+             %  |
+
+             1  |
+             16  |
+             100.0%  |
+
+       DATI MATCH — 449 eventi (colonne del foglio + W/L · RIT · SUC)

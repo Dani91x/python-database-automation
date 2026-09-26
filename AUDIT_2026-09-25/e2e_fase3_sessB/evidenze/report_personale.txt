@@ -1,0 +1,43 @@
+
+
+         AI TERMINAL REPORT PERSONALE
+
+           Watchlist
+           Dashboard
+
+           Report Personale
+           La tua operatività reale (pre-match + live). Metriche calcolate lato DB.
+
+           Inserisci operazione
+           Svuota Report
+
+         Filtri
+           Reset
+
+             Periodo
+
+             Seleziona periodo
+
+             Strategia <input text=>
+
+             Stato <select=Tutti (chiusi) (6 opz.)>
+
+         Cassa (depositi / prelievi) non incluso nell'equity curve
+
+             Depositi
+             €2720.00
+
+             Prelievi
+             -€1405.00
+
+             Netto cassa
+             €1315.00
+         {title:Card Payment - XXXX7453} 20/07/26 · Prelievo -€600.00 {title:Card Payment - XXXX7453} 15/07/26 · Prelievo -€275.00 {title:Card Payment - XXXX7453} 10/07/26 · Prelievo -€30.00 {title:Card Payment - XXXX7453} 10/07/26 · Prelievo -€150.00 {title:Card Payment - XXXX7453} 05/07/26 · Prelievo -€350.00 {title:Card Payment - XXXX7453} 29/06/26 · Deposito €2500.00 {title:Card Payment - XXXX7453} 28/06/26 · Deposito €20.00 {title:Card Payment - XXXX7453} 17/06/26 · Deposito €50.00 {title:Card Payment - XXXX7453} 17/06/26 · Deposito €70.00 {title:Card Payment - XXXX7453} 08/06/26 · Deposito €80.00
+
+         Nessun trade chiuso nel periodo
+         Le metriche P&L si calcolano sui trade chiusi . Registra il trade dalla Watchlist ("Giocata"), poi chiudilo con l'esito dalla tabella qui sotto (pulsante "Chiudi trade"): allora il report si popola.
+
+         Trade ( 0 ) clic = dettaglio + “Chiudi trade”
+         Nessun trade per questi filtri.
+
+       © 2026 Alpha Score AI. All rights reserved.

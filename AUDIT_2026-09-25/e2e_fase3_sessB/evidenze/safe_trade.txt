@@ -1,0 +1,464 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] 🛡️ SAFE STRATEGY
+           [bot-status] BOT IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (16 s) ⚽ 17 · 🎾 14 · [service-beat] {title:BATTITO del servizio Safe: se manca, il bot non sta operando (soglia 45 s)} servizio Safe vivo (14 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [safe-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mode-banner] MODALITÀ PAPER — simulazione fedele: coda, liquidità e protezioni identiche al live, nessun denaro reale.
+       [safe-interruttori]
+         [safe-interruttori-titolo] Strategie di Safe
+
+             [cr-ferma-tutti] {title:ferma le aperture di tutti i bot. Non chiude nessuna posizione.} Ferma tutti
+         [safe-interruttori-nota] Ogni strategia si accende, si spegne e sceglie la sua modalita' da sola. Spegnere l'ultima accesa ferma il servizio : una lista di varianti vuota, per il servizio, vuol dire «tutte e quattro».
+
+           [safe-interruttori-gruppo-calcio]
+
+             [safe-interruttori-gruppo-calcio-trigger] BOT CALCIO ( 5 ) {title:Safe base: in esecuzione} {title:Safe esatto: in esecuzione} {title:Safe punta: in esecuzione} {title:Safe modello: in esecuzione} {title:Safe a mano: in esecuzione} prova
+             [safe-interruttori-gruppo-calcio-contenuto]
+
+             [cr-bot-riga-safe-base]
+             Safe base [cr-bot-stato-safe-base] in esecuzione [cr-bot-modalita-safe-base] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-base] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi — [cr-parametri-safe] {title:questo bot non espone una scheda parametri: si modifica dalla sua pagina} dalla sua pagina
+
+             stake base <input number=>
+
+             [cr-ferma-safe-base] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-base] ferma le aperture, non le uscite
+             [cr-a-live-safe-base] passa a soldi veri
+             [cr-bot-riga-safe-esatto]
+             Safe esatto [cr-bot-stato-safe-esatto] in esecuzione [cr-bot-modalita-safe-esatto] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-esatto] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi —
+
+             stake esatto <input number=>
+
+             [cr-ferma-safe-esatto] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-esatto] ferma le aperture, non le uscite
+             [cr-a-live-safe-esatto] passa a soldi veri
+             [cr-bot-riga-safe-punta]
+             Safe punta [cr-bot-stato-safe-punta] in esecuzione [cr-bot-modalita-safe-punta] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-punta] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi —
+
+             stake punta <input number=>
+
+             [cr-ferma-safe-punta] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-punta] ferma le aperture, non le uscite
+             [cr-a-live-safe-punta] passa a soldi veri
+             [cr-bot-riga-safe-model]
+             {title:opportunità del modello che approvo} Safe modello [cr-bot-stato-safe-model] in esecuzione [cr-bot-modalita-safe-model] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-model] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi —
+
+             [cr-ferma-safe-model] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-model] ferma le aperture, non le uscite
+             [cr-a-live-safe-model] passa a soldi veri
+             [cr-bot-riga-safe-manual]
+             {title:ordini a mano dalla scheda} Safe a mano [cr-bot-stato-safe-manual] in esecuzione [cr-bot-modalita-safe-manual] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-manual] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi —
+
+             [cr-ferma-safe-manual] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-manual] ferma le aperture, non le uscite
+             [cr-a-live-safe-manual] passa a soldi veri
+           [safe-interruttori-gruppo-tennis]
+
+             [safe-interruttori-gruppo-tennis-trigger] BOT TENNIS ( 1 ) {title:Safe tennis: in esecuzione} prova
+             [safe-interruttori-gruppo-tennis-contenuto]
+
+             [cr-bot-riga-safe-tennis]
+             Safe tennis [cr-bot-stato-safe-tennis] in esecuzione [cr-bot-modalita-safe-tennis] prova {title:da quanto è arrivato l'ultimo messaggio dal canale di questo bot} — [cr-bot-pnl-safe-tennis] {title:oggi non c'e' ancora niente di regolato per questo bot} oggi —
+
+             stake tennis <input number=>
+
+             [cr-ferma-safe-tennis] {title:ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano} ferma [cr-cosa-ferma-safe-tennis] ferma le aperture, non le uscite
+             [cr-a-live-safe-tennis] passa a soldi veri
+         Fermare spegne le aperture : le posizioni già a mercato restano sorvegliate e le puoi chiudere da qui.
+       [safe-execution-route] esecuzione: REST (fill or kill) — runner in modalita' LIVE+PAPER, il bot chiede PAPER · ordini appoggiati non disponibili: le 4 strategie del manuale sono taker e non ne hanno bisogno, ma gli importi sotto il minimo usano la sequenza REST invece della coda · runner in streaming (LIVE+PAPER) · battito 0 s fa · 4 partite agganciate
+       [day-bar]
+
+             Giornata operativa
+             giornata operativa [day-bar-day] sabato 26 settembre 2026 (Europe/Rome) — modalità PAPER · al netto della commissione registrata su ogni trade · giorno di PIAZZAMENTO della posizione: gli stessi numeri dei KPI, del tab Trade e dello Storico
+           +0,00 €
+         [day-bar-line] [day-bar-counts] {title:partite con almeno una posizione piazzata oggi} partite 2 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 2 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:posizioni ancora vive: non regolate} 2 vive · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · totale storico −45,25 €
+       [kpi-row]
+         [stat-tile]
+           Segnali attivi
+           0
+           0 calcio · 0 tennis
+         [safe-kpi-open]
+           Trade aperti
+           2
+           [safe-open-sub] {title:posizioni ancora a mercato in questo momento (le operazioni della giornata sono nella barra Giornata operativa)} vive adesso · 1 coperte in parte
+         [safe-kpi-pnl-today] {title:P&L realizzato della giornata operativa di oggi (Europe/Rome), al NETTO della commissione registrata su ogni trade. Vale SOLO per la modalità scritta nell’etichetta: paper e live sono contabilità separate e non si sommano.}
+           P&L oggi · PAPER
+           +0,00 €
+           [safe-operating-day] giornata operativa 26 settembre · Europe/Rome · 0 V 0 P
+         [safe-kpi-pnl-total] {title:P&L realizzato da sempre, tutte le giornate, al NETTO della commissione registrata su ogni trade. Vale SOLO per la modalità scritta nell’etichetta: paper e live sono contabilità separate e non si sommano.}
+           P&L totale · PAPER
+           −45,25 €
+         [safe-kpi-liability]
+           Liability aperta
+           206,00 €
+           [safe-liability-sub] {title:quanto puoi ancora perdere sulle posizioni APERTE in questo momento. Il capitale impegnato nella giornata (base dei cap) è nel pannello Rischio.} rischio vivo ora su 2 posizioni
+         [safe-kpi-monitored]
+           Partite monitorate
+           31
+           [safe-monitored-sub] {title:partite in gioco seguite dallo scanner (feed unico): lo stesso numero del chip di salute, di Omega e di Mike} ⚽ 17 · 🎾 14 · 0 caricate qui
+         [risk-panel]
+           Rischio giornaliero
+             [loss-stop] {title:stop per perdita giornaliera non attivo (scatta sotto −50,00 €)} stop ok
+           {title:capitale IMPEGNATO nella giornata operativa (26 settembre) rispetto al cap giornaliero: e' la base dei cap di rischio, non il rischio ancora vivo} [risk-liability] 206,00 € impegnato oggi / cap —
+           [risk-liability-bot-row] su cui decide il bot [risk-liability-bot] 206,00 €
+           [risk-cap-scope] {title:cap_solo_automatico: lo dichiara il servizio, la pagina non lo deduce} i cap ripiegano sui numeri COMPLETI (bot + manuali): più alti, cioè più prudenti
+           [risk-explain] somma delle liability PIAZZATE oggi (anche su posizioni già chiuse): è la base dei cap. Il rischio ancora vivo adesso è la tile « Liability aperta ».
+           [risk-day] giornata operativa 26 settembre · Europe/Rome
+
+           [risk-opp-counts]
+             {title:probabilità del modello (λ Poisson) contro la quota — 0 in questo momento (pubblicate dal servizio)} MODELLO 0
+             {title:regola di prezzo violata: la quota è incoerente con una quota sorella — 0 in questo momento (pubblicate dal servizio)} ANOMALIA 0
+             {title:più gambe insieme: profitto bloccato qualunque sia l’esito — 0 in questo momento (pubblicate dal servizio)} COMBINAZIONE 0
+             {title:modello a punti del tennis (servizio, set, momentum) — 0 in questo momento (pubblicate dal servizio)} TENNIS 0
+
+           ⚽ Calcio ( 0 )
+           🎾 Tennis ( 0 )
+           📅 Storico
+
+             Segnali ( 0 )
+             {title:0 opportunità sopra le soglie del servizio, su 17 partite analizzate dal modello in questo momento} Opportunità modello ( 0 )
+             Monitor ( 0 )
+             Trade ( 2 )
+
+             [equity-card]
+             {title:asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento} Equity · P&L cumulato realizzato · giornata 26 settembre
+             [equity-axis-note] asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento
+             nessun trade ancora regolato — la curva compare al primo incasso
+             [safe-trades-card]
+             Operazioni di oggi (2) [safe-trades-summary] 2 posizioni oggi · 0 V 0 P · 2 vive giornata operativa 26 settembre · le giornate passate sono nello Storico
+             [safe-trades-toggle] mostra tutte
+             [safe-trades-card-totali]
+             [safe-trades-card-totali-operazioni] {title:quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte}
+             Operazioni
+             2
+             2 partite
+             [safe-trades-card-totali-realizzato] {title:somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».}
+             P&L realizzato · PAPER
+             —
+             0 in utile · 0 in perdita
+             [safe-trades-card-totali-aperto] {title:quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.}
+             Se chiudo ora · PAPER
+             —
+             2 ancora aperte
+             [safe-trades-card-totali-investito] {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)}
+             Investito · PAPER
+             4,00 €
+             [safe-trades-card-totali-liability] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista}
+             Responsabilità · PAPER
+             206,00 €
+             [safe-aperto-parziale] 2 posizioni vive non sono valutabili (nessun prezzo nel feed): « Se chiudo ora » le esclude invece di contarle zero.
+
+              |
+             Partita  |
+             posizioni  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} Investito  |
+             {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} Responsabilità  |
+             Stato  |
+             P&L netto  |
+             [partita-36115980]
+
+             [apri-36115980]  |
+             {title:FC Ryukyu – Ehime} FC Ryukyu – Ehime  |
+             1 posizione  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} 2,00 €  |
+             [liability-36115980] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} 108,00 €  |
+
+             {title:1 ordine ancora aperto: il netto qui a destra è PARZIALE} ancora aperta  |
+             [netto-36115980] {title:netto delle operazioni GIÀ regolate: la partita non è finita} —  |
+             [partita-36090940]
+
+             [apri-36090940]  |
+             {title:Iwata – Vanraure Hachinohe} Iwata – Vanraure Hachinohe  |
+             1 posizione  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} 2,00 €  |
+             [liability-36090940] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} 98,00 €  |
+
+             {title:1 ordine ancora aperto: il netto qui a destra è PARZIALE} ancora aperta  |
+             [netto-36090940] {title:netto delle operazioni GIÀ regolate: la partita non è finita} —  |
+             Una riga per PARTITA col netto delle sue operazioni, commissione già tolta. Clicca per aprire le posizioni, le quote, gli stati e i bottoni di Cash out .
+       [safe-activity-card]
+         Attività del servizio (80) [safe-activity-note] perché il bot è entrato o NON è entrato: salti, blocchi di rischio, uscite, riconciliazioni, feed
+         [safe-activity]
+           [activity-filter] Evento
+             tutti 80
+             Blaublitz Akita v Albirex Niigata
+             FC Imabari v Shonan
+             FC Ryukyu v Ehime
+             FC Ryukyu – Ehime
+             Fukushima Utd v Nagano Parceiro
+             Iwaki SC v Sendai
+             Iwata v Vanraure Hachinohe
+             Iwata – Vanraure Hachinohe
+             Kamatamare Sanuki v FC Gifu
+             Kitakyushu v Kagoshima Utd
+             Kochi United v FC Osaka
+             Oita v Fujieda Myfc
+             Omiya v Kofu
+             Tegevajaro Miyazaki v Sapporo
+             Thespakusatsu Gunma v Kumamoto
+             Tochigi SC v Matsumoto
+             Tokushima v Tochigi Uva FC
+             Toyama v Yokohama FC
+             Yamagata v Tosu
+           [activity-kind-filter] Tipo
+             tutti 80
+             [activity-kind-quick] {title:solo le righe in cui il servizio ha deciso di NON entrare, col motivo} solo NON ENTRATO 48
+             [activity-kind-option] NON ENTRATO 48
+             [activity-kind-option] USCITA · tengo la posizione 16
+             [activity-kind-option] USCITA · attendo il prezzo 10
+             [activity-kind-option] MISURA 3
+             [activity-kind-option] OPPORTUNITÀ NON PIÙ VALIDA · decidi tu 2
+             [activity-kind-option] OPPORTUNITAÀ PROPOSTA 1
+
+             [activity-row] 11:53:28
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu – Ehime · uscita a tempo al 93′ · #343} FC Ryukyu – Ehime · uscita a tempo al 93′ · #343
+             [activity-row] 11:53:18
+             MISURA
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:copertura controllo gioco} copertura controllo gioco
+             [activity-row] 11:53:18
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:18
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:17
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:16
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Blaublitz Akita v Albirex Niigata · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Blaublitz Akita v Albirex Niigata · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:16
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Oita v Fujieda Myfc · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Oita v Fujieda Myfc · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:16
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tegevajaro Miyazaki v Sapporo · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tegevajaro Miyazaki v Sapporo · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:53:05
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita a tempo al 92′ · #342} Iwata – Vanraure Hachinohe · uscita a tempo al 92′ · #342
+             [activity-row] 11:52:29
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu – Ehime · uscita a tempo al 91′ · #343} FC Ryukyu – Ehime · uscita a tempo al 91′ · #343
+             [activity-row] 11:52:29
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 92′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 92′ · #342
+             [activity-row] 11:52:15
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 90′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 90′ · #342
+             [activity-row] 11:52:07
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 91′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 91′ · #342
+             [activity-row] 11:51:21
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu – Ehime · uscita a tempo al 90′ · #343} FC Ryukyu – Ehime · uscita a tempo al 90′ · #343
+             [activity-row] 11:50:52
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 90′ · #343} FC Ryukyu v Ehime · uscita a tempo al 90′ · #343
+             [activity-row] 11:50:26
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 90′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 90′ · #342
+             [activity-row] 11:50:08
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita a tempo al 89′ · #342} Iwata – Vanraure Hachinohe · uscita a tempo al 89′ · #342
+             [activity-row] 11:49:53
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu – Ehime · uscita a tempo al 89′ · #343} FC Ryukyu – Ehime · uscita a tempo al 89′ · #343
+             [activity-row] 11:49:25
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 89′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 89′ · #342
+             [activity-row] 11:49:16
+             OPPORTUNITÀ NON PIÙ VALIDA · decidi tu
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kitakyushu v Kagoshima Utd} Kitakyushu v Kagoshima Utd
+             [activity-row] 11:49:12
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 89′ · #343} FC Ryukyu v Ehime · uscita a tempo al 89′ · #343
+             [activity-row] 11:48:42
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita a tempo al 88′ · #342} Iwata – Vanraure Hachinohe · uscita a tempo al 88′ · #342
+             [activity-row] 11:48:38
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita a tempo al 88′ · #342} Iwata – Vanraure Hachinohe · uscita a tempo al 88′ · #342
+             [activity-row] 11:48:14
+             MISURA
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:copertura controllo gioco} copertura controllo gioco
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:14
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:13
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:13
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:13
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Blaublitz Akita v Albirex Niigata · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Blaublitz Akita v Albirex Niigata · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:13
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Oita v Fujieda Myfc · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Oita v Fujieda Myfc · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:13
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tegevajaro Miyazaki v Sapporo · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tegevajaro Miyazaki v Sapporo · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:48:09
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 88′ · #343} FC Ryukyu v Ehime · uscita a tempo al 88′ · #343
+             [activity-row] 11:48:07
+             OPPORTUNITÀ NON PIÙ VALIDA · decidi tu
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kamatamare Sanuki v FC Gifu} Kamatamare Sanuki v FC Gifu
+             [activity-row] 11:47:58
+             OPPORTUNITAÀ PROPOSTA
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kamatamare Sanuki v FC Gifu · BACK · 5,00 € @ 1,06 · liability 5,00 €} Kamatamare Sanuki v FC Gifu · BACK · 5,00 € @ 1,06 · liability 5,00 €
+             [activity-row] 11:47:57
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu – Ehime · uscita a tempo al 87′ · #343} FC Ryukyu – Ehime · uscita a tempo al 87′ · #343
+             [activity-row] 11:47:27
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 87′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 87′ · #342
+             [activity-row] 11:47:03
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 87′ · #343} FC Ryukyu v Ehime · uscita a tempo al 87′ · #343
+             [activity-row] 11:46:38
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 86′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 86′ · #342
+             [activity-row] 11:46:19
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 86′ · #343} FC Ryukyu v Ehime · uscita a tempo al 86′ · #343
+             [activity-row] 11:46:14
+             USCITA · attendo il prezzo
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita a tempo al 85′ · #342} Iwata – Vanraure Hachinohe · uscita a tempo al 85′ · #342
+             [activity-row] 11:45:45
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 85′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 85′ · #342
+             [activity-row] 11:45:29
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · uscita a tempo al 85′ · #343} FC Ryukyu v Ehime · uscita a tempo al 85′ · #343
+             [activity-row] 11:44:20
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 84′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 84′ · #342
+             [activity-row] 11:43:57
+             USCITA · tengo la posizione
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 83′ · #342} Iwata – Vanraure Hachinohe · uscita: uscita a tempo · uscita a tempo al 83′ · #342
+             [activity-row] 11:43:12
+             MISURA
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:copertura controllo gioco} copertura controllo gioco
+             [activity-row] 11:43:12
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Thespakusatsu Gunma v Kumamoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:12
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tochigi SC v Matsumoto · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Fukushima Utd v Nagano Parceiro · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Ryukyu v Ehime · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kitakyushu v Kagoshima Utd · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kochi United v FC Osaka · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Kamatamare Sanuki v FC Gifu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwaki SC v Sendai · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Tokushima v Tochigi Uva FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Yamagata v Tosu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Toyama v Yokohama FC · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} FC Imabari v Shonan · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:11
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Iwata v Vanraure Hachinohe · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+             [activity-row] 11:43:10
+             NON ENTRATO
+             [activity-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER {title:Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita} Omiya v Kofu · riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita
+
+         BASE
+         R.E. CASA
+         PUNTA
+         TENNIS
+       [page-footer] Fonte dati: scanner autonomo Betfair (feed unico). Video e statistiche si aprono sul popup ufficiale Betfair col tuo account.

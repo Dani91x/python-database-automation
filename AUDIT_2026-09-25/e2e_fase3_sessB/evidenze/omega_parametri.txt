@@ -1,0 +1,131 @@
+
+ [params-sheet]
+   Close
+
+     Ω Parametri Omega
+     Limiti e unità sono quelli della whitelist del servizio: un valore fuori range viene clampato e dichiarato. «Salva parametri» invia i valori del servizio più le TUE modifiche, non i default della UI.
+
+     [params-group]
+       Obiettivo
+       quanto deve produrre la giornata: il servizio ne ricava il target per partita e per gamba.
+       Obiettivo giornaliero (€) <input number=100> storicizzato a fine giornata: lo Storico giudica "centrato" solo sull’obiettivo di QUEL giorno
+     [params-group]
+       Selezione e finestre
+       quali risultati bancare e in quale minuto: la parte che decide QUANTE gambe entrano.
+       Motore <select=due gambe (1T Half Time Score + 2T Correct Score) (2 opz.)> v2 = due gambe per partita con selezione per probabilità
+       Quota lay MIN <input number=20> sotto: risultato troppo probabile
+       Quota lay MAX <input number=120> sopra: profitto irrisorio e liability enorme
+       Gamba 1T: minuto MIN <input number=20> Half Time Score: ingresso dal minuto reale del feed
+       Gamba 1T: minuto MAX <input number=40> niente 1T dopo questo minuto
+       Gamba 2T: minuto MIN <input number=50> Correct Score finale: ingresso nel 2T
+       Gamba 2T: minuto MAX <input number=80> niente 2T dopo questo minuto
+       P(modello) MAX (punti %) <input number=2> si banca solo sotto questa probabilità; il valore è in PUNTI percentuali (2 = 2 %)
+       Distanza minima dal punteggio (gol) <input number=2> gol AGGIUNTIVI che servirebbero perché il risultato bancato esca
+       Max eventi al giorno <input number=0> 0 = illimitato
+       Liquidità lay MIN (€) <input number=5> importo minimo disponibile al best lay
+       Stake MIN (€) <input number=0.5> lay minimo Betfair .it = 0,50 €
+       <input checkbox=false> Includi i risultati aggregati ("Any Other …")
+       Sorgente del minuto <select=score (minuto e punteggio dal feed live) (2 opz.)>
+     [params-group]
+       Motore v1 (una gamba)
+       usati SOLO con motore "v1": il motore a due gambe ignora questi due minuti.
+       v1: minuto MIN <input number=30>
+       v1: minuto MAX <input number=60>
+     [params-group]
+       Modello e probabilità
+       come si stima la P del risultato bancato: λ, coda, veto empirico, ranking.
+       Calibrazione P(modello) <select=off (probabilità grezza del modello) — default del servizio (2 opz.)> il calibratore condiviso è addestrato sulla Safe Strategy: su Omega resta OFF finché non esiste una famiglia sua
+       Percorso del calibratore <input text=> vuoto = percorso di default
+       Veto empirico HT→FT (gamba 2T) <select=veto (P = la più alta fra modello e dati storici) (2 opz.)>
+       Veto empirico: minuto massimo <input number=60>
+       Fattore di coda su P ≤ 5 % <input number=1.3> 1 = nessuna correzione; banco 11/09: 1,3
+       Incertezza sui λ (cv) <input number=0.3> 0 = Poisson puro; 0,30 = coda osservata sui dati
+       <input checkbox=true> Usa i cartellini gialli del feed
+       <input checkbox=true> λ impliciti nell’intero mercato (CS + Over/Under)
+       <input checkbox=true> λ dall’Over/Under LIVE se mancano fixture e quote pre-KO
+       <input checkbox=true> Lambda dalle quote 1X2 pre-KO PRIMA della fixture (O1) ACCESO di default (misura 25/09: migliora); spento = catena di sempre (fixture prima)
+       <input checkbox=true> A pari probabilità scegli il risultato più economico da coprire
+       Banda di probabilità equivalente (× la più bassa) <input number=2>
+       Selezione conservativa: k × SE <input number=0> 0 = solo il centro (raccomandato finché il banco non misura la SE)
+       P di dover coprire (ranking EV) <input number=0.5>
+       Peso del costo di copertura (ranking EV) <input number=1>
+     [params-group]
+       Green-up automatico
+       la scommessa diventa un TRADE: il servizio chiude a mercato appena il risultato bancato diventa raggiungibile, oppure TIENE se il modello dice che uscire butta valore. Ogni passo compare in "Attività del servizio" e come badge sulla riga della partita.
+       <input checkbox=true> Green-up automatico attivo
+       Modalità green-up <select=auto (tiene o chiude per P(perdita) ed EV) (2 opz.)>
+       Scatta a distanza (gol) <input number=1> 1 = appena manca UN gol al risultato bancato si valuta la chiusura
+       Scatta se la quota scende sotto (frazione dell’ingresso) <input number=0.5> 0,5 = quota lay dimezzata: il mercato sta convergendo sul risultato
+       Attesa assestamento dopo il gol (s) <input number=30> VAR e correzioni: si aspetta che il mercato si riallinei
+       TIENI se P(perdita) ≤ (frazione 0-1) <input number=0.02> sotto questa probabilità di perdita il servizio TIENE (attività "GREEN-UP · TENGO")
+       Rischio alto se P(perdita) ≥ (frazione 0-1) <input number=0.1> oltre questa soglia si vuole uscire, ma solo a un prezzo che vale (default del servizio 0,15)
+       Premio di rischio (frazione della liability) <input number=0.05> quanto si accetta di pagare, sopra il tetto, per comprare la certezza. 0 = mai sotto l’EV del tenere; 1 = si esce a qualunque prezzo
+       Margine EV per tenere (€) <input number=0.1> in EURO, non una frazione: tenere deve valere almeno questo margine rispetto al green-up immediato
+       Incassa a frazione del massimo (0,1-1) <input number=0.9> 0,9 = si chiude con il 90 % del profitto massimo in mano
+       Incassa comunque dal minuto <input number=80>
+       Residuo: attesa fra i tentativi (s) <input number=20>
+       Residuo: tentativi massimi <input number=15> 0 = nessun ritentativo
+       Quota di fine gara: quante volte il modello <input number=3> dall’88′ la quota può alzare il rischio del modello al massimo di tante volte; oltre è considerata rotta e vale il modello. 0 = nessun limite
+     [params-group]
+       Protezioni e cap
+       i tre cap sono OFF di default (Omega è set-and-forget): mettili > 0 per attivarli.
+       Commissione % <input number=5> aliquota Betfair (5 % di default). Sui trade già piazzati vale quella FISSATA sulla riga, non questa.
+       Cap liability per partita (€) <input number=0> 0 = OFF
+       Stop-loss giornaliero (€) <input number=0> 0 = OFF
+       Cap liability aperta (€) <input number=0> 0 = OFF
+       <input checkbox=true> Stop ai nuovi ingressi a obiettivo raggiunto
+     [params-group]
+       Esecuzione
+       come vengono mandati gli ordini. In PAPER la coda replica il live (betDelay, liquidità, FOK).
+       Cadenza del ciclo (s) <input number=20>
+       Percorso di esecuzione <select=auto (coda flumine quando il gate passa) (2 opz.)>
+       PAPER: TTL quasi-FOK (s) <input number=45>
+       <input checkbox=true> LIVE via coda flumine (FILL_OR_KILL)
+       LIVE: scadenza dell’esito FOK (s) <input number=20>
+     [params-group]
+       Respiro del database
+       ogni quanto si rilegge una cosa che nel frattempo non è cambiata. NON cambiano la logica di trading: la freschezza delle quote resta giudicata sull’updated_at della riga. 0 = nessuna cache, cioè il comportamento di prima. Il 13/09 il database è andato giù per esaurimento del budget di IO su disco.
+       Feed: rilettura delle quote (s) <input number=2> è la lettura che decide un ordine: tienila corta. 2 s contro i 15/25 s oltre i quali la riga viene comunque scartata
+       Stato dello scanner (s) <input number=10> l’età letta viene invecchiata del tempo passato: allungarla rende più severi, mai più permissivi
+       Aggregati P&L (s) <input number=20> dopo un piazzamento, un regolamento o un green-up si ricalcolano comunque subito
+       Gambe già fatte e tentativi (s) <input number=30> le scrive il servizio stesso: fra una rilettura e l’altra la copia in memoria è la verità
+       Timbro dei risultati 1T/2T (s) <input number=60>
+       Aggiornamento delle missioni (s) <input number=5>
+       Rinfresco della lista eventi (s) <input number=1800>
+       Statistiche a bot fermo (s) <input number=60>
+       Ritmo del ciclo a vuoto (s) <input number=60> usato solo quando non c’è NIENTE aperto, nessuna missione e nessuna partita in finestra
+       Posizione sul conto Betfair (s) <input number=120> ogni quanto, PER MERCATO, si rilegge su Betfair se la posizione del bot esiste ancora: è così che il bot si accorge che l’hai chiusa tu fuori dall’app. Sono due chiamate REST per mercato. 0 = a ogni giro
+     [params-group]
+       Motore v3 — il motore di default dal 17/09
+       Dal 17/09 è v3 a decidere gli ingressi: UN SOLO mercato, il CORRECT SCORE, e due ingressi vuol dire due CELLE DIVERSE in due momenti (gamba A 1′-44′, gamba B 46′-85′). Lay fisso da 1 €, si banca solo dentro la fascia di probabilità implicita 1-2 % (quote lay ≈ 47,5-95, la fascia in cui il bias è stato misurato in gioco) con margine k = 1,11, mai a meno di 2 gol dal punteggio corrente, e coi tetti di liability 95 € per gamba / 190 € per partita / 1.000 € aperti / 300 € di perdita al giorno. NESSUNA chiusura automatica: le uscite diventano proposte che firmi tu dalla Control Room. Il bot, comunque, lo accendi sempre tu: questi campi dicono COME opera quando è acceso, non SE è acceso. « Versione della strategia » a 2 riporta al motore di prima.
+       Versione della strategia (2 = v2 legacy, 3 = v3) <input number=3> default del servizio: 3 (SOLO Correct Score, due celle in due momenti, stake fisso, uscita a proposta). 2 riporta al motore di prima
+       v3: ingresso in LAY (€) <input number=1> ordine dell’utente: 1 €. In v3 la size NON viene più dall’obiettivo di giornata
+       v3: modello di probabilità <select=gamma_poisson (bayesiano coniugato) — vincitore del banco (5 opz.)> ha vinto il banco dei modelli del 16/09 (log-loss 1,93221 su 1,07 M transizioni)
+       v3: fusione col mercato <select=auto (fonde modello e mercato) (2 opz.)> pool logaritmico in logit, pesi misurati per fascia
+       <input checkbox=true> v3: cartellini rossi nel modello (O5) intensita residua per lato moltiplicata per i coefficienti GLOBALI dei rossi (mai per lega), in ingresso e in uscita; ACCESO di default (misura 25/09: migliora); spento = modello di sempre (rossi ignorati)
+       v3: margine minimo k <input number=1.11> P nostra ≤ P implicita / k. Default 1,11 = il bias PRUDENTE misurato in gioco (M4M5M6 §2.3): alzarlo chiude gli ingressi, abbassarlo li apre sotto il bias dimostrato
+       v3: tetto della fascia (p implicita, punti %) <input number=2> fa due cose: è il TETTO DELLA FASCIA sulla probabilità implicita al tocco (sopra il 2 % il bias misurato in gioco vale 0,71, cioè EV negativo) ed è anche il tetto duro sulla P del nostro modello
+       v3: pavimento della fascia (p implicita, punti %) <input number=1> sotto l’ 1 % di probabilità implicita (quote lay sopra ~95) il bias in gioco non è misurato e la liability per unità di EV esplode: quelle celle si scartano
+       v3: distanza minima dal punteggio (gol) <input number=2> default 2: nemmeno a un gol dal punteggio corrente
+       v3: casi minimi per il veto empirico <input number=200>
+       v3 gamba A (Correct Score, 1° tempo): minuto MIN <input number=1> in v3 il mercato è UNO SOLO, il Correct Score: due ingressi = due celle diverse in due momenti
+       v3 gamba A (Correct Score, 1° tempo): minuto MAX <input number=44>
+       v3 gamba B (Correct Score, 2° tempo): minuto MIN <input number=46> default 46′: dopo l’intervallo, su una cella DIVERSA da quella della gamba A
+       v3 gamba B (Correct Score, 2° tempo): minuto MAX <input number=85>
+       v3: liquidità lay MIN (€) <input number=1> con 1 € di lay la controparte che serve è 1 €, non 5
+       v3: cap liability per gamba (€) <input number=95> default 95 €: con 1 € di stake vuol dire quota lay massima 96 — oltre, la cella si SCARTA (non si taglia la size). 0 = OFF
+       v3: cap liability per partita (€) <input number=190> 0 = OFF
+       v3: cap liability aperta (€) <input number=1000> 0 = OFF
+       v3: stop-loss giornaliero (€) <input number=300> 0 = OFF
+     [params-group]
+       Uscite — proposte che firmi tu
+       Quando il green-up automatico è SPENTO (« Modalità green-up » = off, e sempre con la strategia v3) Omega calcola i numeri e, quando chiudere batte tenere (in profitto e in perdita), SCRIVE UNA PROPOSTA nella scheda della Control Room: la firma è tua. Qui ci sono due manopole: la soglia di rischio (nasce SPENTA) e chi esegue l’uscita calcolata (nasce su « Avvisa e proponi »; su « Automatico » la esegue il bot, stessi criteri).
+       Proposte: P massima tollerata del risultato bancato (punti %) <input number=0> 0 = SPENTA (default del servizio). Sopra zero, quando la P che il risultato bancato esca supera questa soglia il bot propone l’uscita col motivo « rischio » — non perché sia un affare, ma per ridurre il rischio
+       Uscite calcolate dal bot
+
+           [params-choice] Avvisa e proponi l’uscita
+           [params-choice] Automatico (se ne occupa il bot) Avvisa e proponi: la proposta arriva nella scheda « Uscite — decidi tu » e parte solo se la firmi. Automatico: la stessa uscita (stessi criteri, in profitto e in perdita) la esegue il bot, e la riga lo dice.
+
+       [params-save] Salva parametri
+       [params-reset] Default
+     I tre cap (liability/partita, stop-loss, liability aperta) sono OFF di default : Omega è set-and-forget. Mettili > 0 per attivarli.

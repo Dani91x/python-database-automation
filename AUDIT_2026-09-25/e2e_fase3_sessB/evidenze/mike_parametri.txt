@@ -1,0 +1,140 @@
+
+ [params-sheet]
+   Close
+
+     🎯 Parametri Mike
+     Tutto modificabile. Salva per applicare a caldo: il servizio rilegge i parametri a ogni ciclo. I valori fuori dai limiti vengono riportati nei limiti e te lo diciamo.
+
+     [params-group]
+       Generale
+       finestra di lavoro, importo e commissione: valgono per tutte le partite.
+       Stake Under 3.5 (€) <input number=5> importo LIBERO (anche 1,23): sotto il minimo .it si usa il place-and-trim
+       Commissione % <input number=5> aliquota Betfair (default 5%)
+       Finestra pre-match (ore prima del KO) <input number=1> da quante ore prima del calcio d’inizio il bot lavora la partita
+       Filtro competizioni <input text=> elenco separato da virgole (vuoto = tutte), es. "serie a, premier"
+       Cadenza decisioni (ms) <input number=500> intervallo minimo fra due decisioni sulla stessa partita
+       Feed: età max riga (s) <input number=45> per GUARDARE. Lo scanner scrive solo ciò che cambia: una riga ferma vuol dire che il prezzo non si è mosso, non che il feed è rotto
+       Feed: scanner vivo entro (s) <input number=75> deroga: riga vecchia ma scanner che batte = prezzo corrente
+       <input checkbox=true> LIVE: uscita appoggiata attiva ACCESA = in live il bot piazza lo STESSO ordine del paper (lay appoggiata a −2 tick, lasciata sul book). SPENTA = torna a uscire a mercato, come faceva prima del 14/09: la strategia in live diventa diversa da quella provata in paper, e il margine del ciclo pre-match sparisce
+       Book: visto entro (s) <input number=90> un mercato uscito dal feed resta in cache con l’ultimo prezzo: oltre questa età il book è trattato come ASSENTE, mai come valido
+       Ordine: età max riga (s) <input number=20> soglia STRETTA, usata solo per emettere un ordine o chiudere a mano
+       Ordine: scanner vivo entro (s) <input number=30> oltre l’età sopra si ordina solo se lo scanner ha battuto da poco
+     [params-group]
+       Pre-match
+       ingresso Under 3.5 e green-up ciclico prima del calcio d’inizio.
+       <input checkbox=true> Pre-match attivo off = nessun ingresso pre-match
+       Quota Under 3.5 MIN <input number=1.3> sotto: rendimento troppo basso
+       Quota Under 3.5 MAX <input number=3> sopra: partita troppo aperta
+       Liquidità min. (× stake) <input number=1> 1 = la size al best deve coprire lo stake intero
+       Spread max (tick) <input number=6> ore prima del KO i book sono larghi: l’uscita non paga lo spread (lay appoggiata)
+       Green-up a (+tick) <input number=2> 2 = lay 2 tick sotto l’ingresso, profitto spalmato su entrambi gli esiti
+       Chiusura pre-match <select=resting (2 opz.)> resting = lay appoggiata SUBITO sul book (paper: abbinata solo se il mercato scambia sotto); taker = chiude al best quando i tick ci sono
+       TTL ingresso non abbinato (s) <input number=60> oltre: ordine ritirato
+       Cicli max per partita <input number=10> ingresso → green → ingresso…
+       Pausa dopo un green (s) <input number=60> attesa prima del ciclo successivo
+       Ultimo ingresso (min prima del KO) <input number=10> in profitto chiude e rientra in PERSIST; in perdita tiene
+       <input checkbox=true> Ultimo ingresso in PERSIST la posizione entra in live
+       Ultimo ingresso: tick sopra il best <input number=0> 0 = taker al best
+       <input checkbox=true> Veto P calibrata Under 3.5 (M1) ACCESO di default (misura 25/09: migliora); spento = condotta di sempre. Acceso: all'ultimo ingresso la posizione in perdita si tiene, e il PERSIST si piazza, solo se la P calibrata dell'Under 3.5 del dossier regge la quota (soglie qui sotto, interpolate). Senza P calibrata: nessun veto
+       Veto M1: P minima a quota 1,30 <input number=0.807> misura 25/09: 0,807
+       Veto M1: P minima a quota 1,50 <input number=0.684> misura 25/09: 0,684
+       Veto M1: P minima a quota 2,00 <input number=0.514> misura 25/09: 0,514
+       Veto M1: P minima a quota 2,50 <input number=0.385> misura 25/09: 0,385
+       Veto M1: P minima a quota 3,00 <input number=0.275> misura 25/09: 0,275 (incerta: pochi casi)
+       Cancella residuo PERSIST dopo KO (s) <input number=120> evita fill su spike dopo un gol
+     [params-group]
+       Dal fischio d’inizio
+       <input checkbox=true> Uscita al fischio attiva la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta
+       Uscita a (+tick dall’ingresso) <input number=2> lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio
+       Finestra dell’uscita (s dal fischio) <input number=180> scaduta senza abbinamento: ordine annullato e copertura piena sull’Over 4.5
+       Uscita: ritenta ogni (s) <input number=5> SENZA EFFETTO dal 16/09: l’uscita al fischio è una lay appoggiata sul book in paper e in live, non viene più ri-presentata a ritmo
+       <input checkbox=true> Seconda puntata dopo un gol precoce solo se il gol arriva dentro la finestra, ancora scoperti e non usciti
+       Seconda puntata: % dello stake <input number=50> 50 = metà dello stake iniziale, al miglior prezzo disponibile: alza la quota media
+       Prima tranche dopo (s dal gol) <input number=120> tempo lasciato al mercato per riprezzare prima di comprare la prima parte di copertura
+       Prima tranche: % della copertura <input number=50> sotto il minimo piazzabile non si divide: si copre in una volta (dividere costerebbe di più)
+       Seconda tranche dopo (s dalla prima abbinata) <input number=180> il residuo si ricalcola sulla quota Over di quel momento e su quanto la prima ha già garantito
+     [params-group]
+       Copertura Over 4.5
+       copertura Over 4.5 in gioco: "intelligente ma non lenta".
+       <input checkbox=true> Copertura attiva off = Under nudo in live
+       Fattore copertura <input number=1.2> 1.2 = se vince l’Over 4.5 il netto è +20% dello stake Under
+       Quando coprire <select=auto (3 opz.)> auto = subito o attesa secondo hazard/P(4); immediate = subito; wait = fino al minuto max
+       Attendi se hazard 3′ ≤ <input number=0.06> hazard = MAX fra Atlante empirico e modello λ (× pressione corner/cartellini): la fonte più prudente comanda
+       Attendi al massimo fino al minuto <input number=10> poi si copre comunque (mai a mercato a tempo indefinito)
+       Attendi se P(4) mercato ≤ <input number=0.16> P(esattamente 4 gol) implicita dalle due linee
+       Copri subito se Over 4.5 ≥ <input number=7> quota già buona: aspettare non paga il rischio
+       Attendi solo se risparmio atteso ≥ % <input number=8> quanto costerebbe di meno la copertura fra N minuti senza gol (modello)
+       Orizzonte del risparmio (min) <input number=5> N minuti su cui si stima il risparmio
+       Dopo un gol attendi (s) <input number=45> riprezzo post-sospensione
+       Nessuna copertura oltre (gol) <input number=2> con più gol la gestione passa al cash-out / HT
+       Arrotondamento (se non esatto) <select=ceil (3 opz.)> usato solo con importi esatti OFF
+       Sovracopertura max % <input number=30> oltre: si logga cover_overshoot
+       <input checkbox=true> Importi esatti al centesimo on = 3,61 € reali (place-and-trim); off = legalizza a 0,50
+       Copertura: rifiuti max prima di fermarsi <input number=3> rifiuti CONSECUTIVI di Betfair con lo stesso codice d’errore prima di fermare la copertura (stato bloccato): serve «Riprendi», oppure un codice diverso, che è una notizia nuova e riapre il tentativo
+       Copertura: attesa minima fra tentativi (s) <input number=15> ritmo minimo fra due tentativi di copertura: il bet delay in gioco è 5 s, ritentare più spesso vuol dire chiedere a Betfair prima di sapere l’esito della volta prima
+       Copertura N tick sotto il best <input number=2> cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti
+     [params-group]
+       Cash-out globale
+       chiusura globale a profitto (Under 3.5 + Over 4.5), soglia e cash out intelligente.
+       Chiudi tutto a profitto ≥ % <input number=5> somma dei P&L bloccabili di Under 3.5 + Over 4.5
+       Base della % <select=total (2 opz.)> total = stake Under + copertura; under = solo stake Under
+       Chiusura N tick oltre il best <input number=0> fill più sicuro, P&L leggermente peggiore
+       <input checkbox=true> Cash-out intelligente chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)
+       Profitto minimo per chiudere prima (%) <input number=2> mai sotto questo profitto, qualunque sia il rischio
+       "A un passo" dalla soglia = entro (punti %) <input number=2> es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda
+       Fase calda: hazard gol 3′ ≥ <input number=0.1> Atlante + modello + pressione
+       Fase calda: pressione ≥ <input number=1.15> corner e cartellini dal feed (1,00 = neutra, max 1,25)
+       Punteggio caldo: gol ≥ <input number=3> con 3 gol il prossimo è il 4°: chiude appena sopra il profitto minimo
+       Chiudi se aspettare vale meno di (punti %) <input number=1> valore atteso dell'attesa (modello) sotto il valore attuale di questo margine
+       Riprezzo chiusura ogni (s) <input number=10> residuo non abbinato
+       Tentativi max chiusura <input number=20> poi resta in attesa (chiusura manuale)
+     [params-group]
+       Uscite HT / 2T
+       uscite in perdita all’intervallo e nel secondo tempo (a modello o regola fissa).
+       <input checkbox=false> Uscite automatiche acceso: green-up, cash out e uscite in perdita li esegue il bot. Spento (di serie): ogni uscita nuova diventa una PROPOSTA nella scheda e parte solo se la approvi (o chiudi tu). Copertura Over 4.5, cap perdita partita e regolamento restano sempre automatici
+       <input checkbox=true> Uscita HT attiva a fine 1T con 2-4 gol
+       HT: perdita tollerata % <input number=25> chiude comunque se la perdita è entro questa % del capitale
+       Decisione di uscita <select=model (2 opz.)> model = chiudi se il valore certo batte il valore atteso a fine gara meno il premio al rischio sui 4 gol; fixed = solo la regola "perdita ≤ %"
+       Premio al rischio (% capitale × P(4)) <input number=10> più alto = esce prima quando i 4 gol sono probabili. Attenzione: il caso 4 gol è già dentro il valore atteso, quindi alzarlo lo conta due volte e chiude in anticipo
+       <input checkbox=true> P(4) prudente (max modello/mercato) usa la stima più pessimista fra modello, tabella HT→FT e mercato
+       Non cristallizzare oltre (%) <input number=0> 0 = spento: decide solo il modello
+       Casi minimi tabella HT→FT <input number=200> sotto, l'empirico non parla
+       HT: gol min <input number=3> 3 = con due gol non si chiude in perdita: ne servono altri due per perdere l’Under 3.5
+       HT: gol max <input number=4>
+       <input checkbox=true> Uscita 2T attiva stessa regola nel secondo tempo
+       2T: perdita tollerata % <input number=25>
+       2T: dal minuto <input number=46>
+       2T: fino al minuto <input number=85>
+     [params-group]
+       Re-ingresso (gol + 3.5)
+       re-ingresso sull’Under 4.5 dopo un gol e una chiusura in profitto.
+       <input checkbox=true> Re-ingresso attivo dopo una chiusura in profitto, con 1 gol, sull’Under 4.5
+       Green re-ingresso (+tick) <input number=2>
+       Gol max per il re-ingresso <input number=1> 1 = linea 4.5 (unica nel feed)
+       Re-ingresso entro il minuto <input number=45>
+       Chiusura forzata del re-ingresso al minuto <input number=0> 0 = mai: la lay a +N tick resta sul book fino a fine gara
+       <input checkbox=true> Solo se U4.5 > quota iniziale U3.5 regola della specifica
+       <input checkbox=false> Tieni il re-ingresso se in perdita vale solo con una chiusura forzata impostata
+     [params-group]
+       Rischio
+       tetti e stop: sono l’ultima barriera prima dei soldi veri.
+       Conferma punteggio finale (s) <input number=60>
+       Partite aperte max <input number=2> partite con posizione contemporaneamente
+       Stop perdita giornaliera (€) <input number=50> 0 = off
+       Cap capitale per partita (€) <input number=0> 0 = off; clamp anche dentro il motore
+       Cap perdita per partita % <input number=100> oltre: chiusura forzata
+       Log skip ogni (s) <input number=300>
+       Rileggi il feed ogni (s) <input number=4> lo scanner non lo aggiorna più in fretta: rileggerlo a ogni giro consuma il budget di IO del database senza dare nulla in più
+       Rileggi tutte le partite ogni (s) <input number=60> fra una rilettura e l’altra vale la copia in memoria: il servizio è l’unico che scrive le schede
+       Ricalcola gli aggregati ogni (s) <input number=20> governano lo stop giornaliero, non è una decisione al secondo
+       Ripara lo specchio ordini ogni (s) <input number=30> rete di sicurezza fra gambe e righe di database: per partita basta ogni mezzo minuto
+       Ciclo a riposo ogni (s) <input number=5> senza partite in gioco né ordini vivi il ciclo rallenta da solo
+       Rinfresca l’ora di pubblicazione ogni (s) <input number=5> solo cortesia per la pagina: un fatto nuovo (ordine, gamba abbinata, cambio di stato) si scrive sempre SUBITO
+       Rinfresco a riposo ogni (s) <input number=60> partite senza niente in corso: si rinfresca molto più di rado
+       <input checkbox=true> Scrivi le schede in blocco una sola scrittura per giro invece di una per partita
+       Riscrivi le statistiche ogni (s) <input number=10> i numeri di testata non sono una decisione al secondo
+       Battito del servizio ogni (s) <input number=20> dice solo che il servizio è vivo
+
+       [params-save] Salva parametri
+       [params-reset] Default
+     La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto, con conferma.

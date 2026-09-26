@@ -1,0 +1,24 @@
+
+
+   Close
+
+     Poisson · South East Utd. U21 vs South Hobart II
+     Probabilità del motore Dixon-Coles (poisson_xg_hybrid_dc) per questa partita, mercato per mercato. Tasmania Southern Championship .
+
+     poisson_xg_hybrid_dc ✓ calibrato λ casa 1.39 λ trasf. 3.61 ρ DC -0.13 partite 6 / 12 xG no
+     [eta-poisson] Previsione Poisson : aggiornato al 04/07/2026, 07:59 ( 84 g 3 h fa) · oltre 36 h [eta-poisson-calibrazione] Calibrazione settimanale (lega) : aggiornato al 21/09/2026, 11:20 ( 5 g fa) calibrazione applicata a questa partita il 04/07/2026, 07:59:36
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         1°T Over 0.5
+         HT 1X2
+
+       Più probabile 2 (Trasf.) 86%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Le linee disponibili sono solo quelle elaborate dal motore.

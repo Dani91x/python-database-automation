@@ -1,0 +1,336 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] 🎯 MIKE
+           [mike-status] BOT IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (16 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Mike: se manca, il bot non sta operando (soglia 45 s)} servizio Mike vivo (23 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [mike-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [mike-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mike-mode-banner] MODALITÀ PAPER — simulazione fedele: fill solo al prezzo ancora disponibile, betDelay in-play, protezioni identiche al live.
+       [day-bar]
+
+             Giornata operativa
+             giornata operativa [day-bar-day] sabato 26 settembre 2026 (Europe/Rome) — partite con almeno una posizione piazzata oggi · operazioni = cicli aperti oggi · V/P = cicli già chiusi, la loro somma è il realizzato
+           +0,00 €
+         [day-bar-line] [day-bar-counts] {title:partite con almeno una posizione piazzata oggi} partite 2 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 2 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 10,00 € · totale storico +8,14 €
+       [kpi-row]
+         [mike-kpi-matches]
+           Partite seguite ora
+           2
+           2 prima del fischio · 0 in gioco · 2 con posizione aperta
+         [stat-tile]
+           Posizioni aperte
+           2
+           cicli con capitale ancora esposto
+         [stat-tile]
+           P&L oggi
+           +0,00 €
+           [mike-pnl-today-sub] 26 settembre · Europe/Rome · stop a −50,00 €
+         [stat-tile]
+           P&L totale
+           +8,14 €
+         [stat-tile]
+           Liability aperta
+           10,00 €
+           [mike-liability-sub] perdita peggiore sulle posizioni aperte, netta dal servizio
+         [mike-kpi-locked]
+           P&L bloccato
+           —
+           nessuna partita ha ancora un risultato bloccato
+         [mike-kpi-cycle]
+           Ultimo ciclo
+           11:46:57
+           feed aggiornato 5 s fa
+
+           ⚽ Partite ( 2 )
+           📋 Operazioni ( 2 )
+           ⏱ Risultati Pre-Match ( 2 )
+           🔴 Risultati Live ( 0 )
+           🧾 Attività
+           📅 Storico
+
+           [trading-history]
+             Giornata operativa = fuso Europe/Rome · oggi 26 settembre 2026 · P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo
+             Aggiorna
+
+             [daily-calendar]
+
+             [calendar-month] settembre 2026
+
+             Oggi
+             [calendar-month-total] 7 giornate +8,14 €
+
+             Lun
+             Mar
+             Mer
+             Gio
+             Ven
+             Sab
+             Dom
+             [calendar-day-outside]
+             31
+             —
+             [calendar-day]
+             1
+             —
+             [calendar-day]
+             2
+             —
+             [calendar-day]
+             3
+             —
+             [calendar-day]
+             4
+             —
+             [calendar-day]
+             5
+             —
+             [calendar-day]
+             6
+             —
+             [calendar-day]
+             7
+             —
+             [calendar-day]
+             8
+             —
+             [calendar-day]
+             9
+             —
+             [calendar-day]
+             10
+             —
+             [calendar-day]
+             11
+             +2,16 €
+             32 trade
+             [calendar-day]
+             12
+             −20,06 €
+             100 trade
+             [calendar-day]
+             13
+             +11,29 €
+             75 trade
+             [calendar-day]
+             14
+             +10,40 €
+             23 trade
+             [calendar-day]
+             15
+             +3,56 €
+             9 trade
+             [calendar-day]
+             16
+             —
+             [calendar-day]
+             17
+             —
+             [calendar-day]
+             18
+             —
+             [calendar-day]
+             19
+             —
+             [calendar-day]
+             20
+             —
+             [calendar-day]
+             21
+             —
+             [calendar-day]
+             22
+             —
+             [calendar-day]
+             23
+             —
+             [calendar-day]
+             24
+             +0,79 €
+             3 trade
+             [calendar-day]
+             25
+             —
+             [calendar-day]
+             26
+             +0,00 €
+             2 trade
+             [calendar-day]
+             27
+             —
+             [calendar-day]
+             28
+             —
+             [calendar-day]
+             29
+             —
+             [calendar-day]
+             30
+             —
+             [calendar-day-outside]
+             1
+             —
+             [calendar-day-outside]
+             2
+             —
+             [calendar-day-outside]
+             3
+             —
+             [calendar-day-outside]
+             4
+             —
+             verde/rosso = P&L realizzato del giorno (intensità relativa al mese) frecce per muoversi, Invio per selezionare
+
+             [performance-panel]
+             Periodo
+             Mese corrente
+             30 giorni
+             90 giorni
+             Anno [period-range] 1 settembre → 26 settembre 2026
+             [kpi-row]
+             [kpi-pnl] {title:somma dei P&L realizzati delle giornate del periodo}
+             P&L periodo
+             +8,14 €
+             commissioni 19,96 € già dedotte dal P&L
+             [kpi-days] {title:giornate chiuse in utile / in perdita nel periodo}
+             Giornate +/−
+             5 / 1
+             7 giornate con attività
+             [kpi-winrate] {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa}
+             Win rate
+             62,2 %
+             150V · 91P · 1 void · 108 chiusi o in chiusura a mercato
+             [kpi-pf] {title:quanto si incassa per ogni euro perso: sotto 1 il bot perde}
+             Profit factor
+             1,02
+             gross profit / gross loss
+             [kpi-expectancy] {title:P&L medio per apertura regolata nel periodo}
+             Expectancy / trade
+             +0,03 €
+             242 aperture regolate · 244 piazzate
+             [kpi-dd] {title:massima discesa dell’equity dal suo picco, dentro il periodo}
+             Max drawdown
+             20,06 €
+             sul picco
+             [kpi-best]
+             Miglior giornata
+             +11,29 €
+             13 settembre
+             [kpi-worst]
+             Peggior giornata
+             −20,06 €
+             12 settembre
+             [kpi-streak] {title:giornate positive e negative consecutive: record del periodo}
+             Serie
+             4+ / 1−
+             nessuna serie in corso
+             [kpi-liab] {title:massima liability registrata su una singola posizione nel periodo}
+             Liability max
+             10,35 €
+             massima esposizione su un trade
+
+             {title:asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento} Equity · P&L cumulato realizzato · per giornata
+             asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento Equity per giornata: da +0,00 € a +8,14 € in 7 passi (11 set → 26 set) −17,90 € −4,88 € +8,14 € 11 set 26 set
+
+             [breakdown-strategy]
+
+             Gamba  |
+             {title:aperture piazzate nel periodo} Trade  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Vinti  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Persi  |
+             Win rate  |
+             P&L  |
+
+             Green-up Under 3.5  |
+             10  |
+             7  |
+             3  |
+             70,0 %  |
+             +49,03 €  |
+
+             Ingresso Under 3.5  |
+             187  |
+             134  |
+             50  |
+             72,8 %  |
+             +7,42 €  |
+
+             Copertura Over 4.5  |
+             47  |
+             9  |
+             38  |
+             19,1 %  |
+             −48,31 €  |
+             [breakdown-origin]
+
+             Origine  |
+             {title:aperture piazzate nel periodo} Trade  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Vinti  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Persi  |
+             Win rate  |
+             P&L  |
+
+             ⚙️ Automatico  |
+             244  |
+             150  |
+             91  |
+             62,2 %  |
+             +8,14 €  |
+             [day-detail]
+             sabato 26 settembre 2026 · [day-count] 2 trade
+             2 ancora vivi {title:capitale IMPEGNATO dalle posizioni piazzate in questa giornata (non è quello ancora a rischio adesso)} liability piazzata 10,00 € · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato [day-total-pnl] +0,00 €
+
+             Ora  |
+             Match  |
+             Strategia  |
+             Selezione  |
+             Lato  |
+             Quota  |
+             Stake  |
+             Liability  |
+             Stato  |
+             {title:uscita automatica registrata dal servizio} Uscita  |
+             {title:P&L totale della posizione: apertura + chiusure} P&L  |
+             [day-trade-row]
+             11:12  |
+             {title:Real Sociedad (W) v Real Madrid FC (W)}
+             [day-trade-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER Real Sociedad (W) v Real Madrid FC (W)  |
+             INGRESSO U3.5  |
+             {title:Under 3.5 Goals} Under 3.5 Goals  |
+             BACK  |
+             1,51  |
+             5,00 €  |
+             5,00 €  |
+
+             APERTO
+             [day-trade-live] live  |
+              |
+             [day-trade-pnl] —  |
+             [day-trade-row]
+             11:12  |
+             {title:FC Badalona (W) v Granada (W)}
+             [day-trade-mode] {title:simulazione fedele: nessun denaro reale su questa riga} PAPER FC Badalona (W) v Granada (W)  |
+             INGRESSO U3.5  |
+             {title:Under 3.5 Goals} Under 3.5 Goals  |
+             BACK  |
+             1,60  |
+             5,00 €  |
+             5,00 €  |
+
+             APERTO
+             [day-trade-live] live  |
+              |
+             [day-trade-pnl] —  |
+
+             0 regolati · 2 vivi · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P  |
+             totale realizzato +0,00 €  |
+       [page-footer] Fonte dati: feed unico dello scanner (linee Over/Under 3.5 e 4.5 pre-match e live). Nessuna chiamata Betfair da questa schermata. Paper-first: il live si attiva solo dal toggle con conferma.

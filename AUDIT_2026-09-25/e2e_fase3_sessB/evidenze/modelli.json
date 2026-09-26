@@ -1,0 +1,806 @@
+{
+ "1492980": {
+  "db_json_analisi": {
+   "model": "poisson_xg_hybrid_dc",
+   "generated_at": "2026-09-25T08:02:06.230525+00:00",
+   "calibrated_at": "2026-09-25T08:02:06.230659+00:00",
+   "calibration_source": "db",
+   "lambda_home": 1.3148,
+   "lambda_away": 1.0714,
+   "dc_rho": -0.13,
+   "rho_file_ora": -0.13,
+   "scarti": {
+    "1x2.H": 1e-05,
+    "1x2.D": 3e-05,
+    "1x2.A": 4e-05,
+    "over_1_5.True": 1e-05,
+    "over_1_5.somma": 0.0,
+    "over_2_5.True": 2e-05,
+    "over_2_5.somma": 0.0,
+    "over_3_5.True": 0.0,
+    "over_3_5.somma": 0.0,
+    "btts.True": 3e-05,
+    "btts.somma": 0.0,
+    "1x2.somma": 0.0,
+    "1T.ibrido": 2e-05,
+    "1T.somma": 0.0,
+    "ht_1x2.somma": 0.0,
+    "ht_1x2.H": 0.00021,
+    "ht_1x2.D": 0.0001,
+    "ht_1x2.A": 0.00011,
+    "1T.poisson_vs_griglia": 0.00015
+   },
+   "scarto_max": 0.00021,
+   "calibrazione_fonte_ora": "db",
+   "calibrazione_scarti": {
+    "1x2.A": 0.0,
+    "1x2.D": 0.0,
+    "1x2.H": 0.0,
+    "btts.True": 0.0,
+    "btts.False": 0.0,
+    "ht_1x2.A": 0.0,
+    "ht_1x2.D": 0.0,
+    "ht_1x2.H": 0.0,
+    "over_1_5.True": 0.0,
+    "over_1_5.False": 0.0,
+    "over_2_5.True": 0.0,
+    "over_2_5.False": 0.0,
+    "over_3_5.True": 0.0,
+    "over_3_5.False": 0.0,
+    "first_half_over_0_5.True": 0.0,
+    "first_half_over_0_5.False": 0.0
+   },
+   "calibrazione_scarto_max": 0.0,
+   "calibrati_somme": {
+    "1x2": 1.0,
+    "btts": 1.0,
+    "ht_1x2": 1.0,
+    "over_1_5": 1.0,
+    "over_2_5": 1.0,
+    "over_3_5": 1.0,
+    "first_half_over_0_5": 1.0
+   }
+  },
+  "tactical_engine_json": {
+   "engine_version": "gsg-dc-z2-1.0",
+   "generated_at": "2026-09-25T09:33:55.810182+00:00",
+   "lambda_home": 1.686,
+   "lambda_away": 0.981,
+   "rho": 0.0635,
+   "fuori_0_1_ft": {},
+   "fuori_0_1_ht": {},
+   "rho_eff": 0.0635,
+   "scarti_ft": {
+    "home": 0.0,
+    "draw": 0.0001,
+    "away": 0.0001,
+    "double_1x": 0.0001,
+    "double_12": 0.0001,
+    "double_x2": 0.0,
+    "over_0_5": 0.0001,
+    "over_1_5": 0.0001,
+    "over_2_5": 0.0,
+    "over_3_5": 0.0001,
+    "btts_yes": 0.0001,
+    "under_0_5": 0.0001,
+    "under_1_5": 0.0001,
+    "under_2_5": 0.0,
+    "under_3_5": 0.0001,
+    "btts_no": 0.0001
+   },
+   "scarto_max_ft": 0.0001,
+   "exp_goals_scarto": [
+    0.0,
+    0.0
+   ],
+   "top_scores_ricalcolo": [
+    [
+     1,
+     0,
+     0.1244
+    ],
+    [
+     1,
+     1,
+     0.1076
+    ],
+    [
+     2,
+     0,
+     0.0987
+    ],
+    [
+     2,
+     1,
+     0.0968
+    ],
+    [
+     0,
+     1,
+     0.0754
+    ]
+   ],
+   "top_scores_payload": [
+    [
+     1,
+     0,
+     0.1244
+    ],
+    [
+     1,
+     1,
+     0.1076
+    ],
+    [
+     2,
+     0,
+     0.0987
+    ],
+    [
+     2,
+     1,
+     0.0969
+    ],
+    [
+     0,
+     1,
+     0.0754
+    ]
+   ],
+   "somma_1x2_ft": 1.0,
+   "u+o_0_5_ft": 1.0,
+   "somma_1x2_ht": 1.0,
+   "u+o_0_5_ht": 1.0
+  },
+  "model_predictions_json": {
+   "model_name": "ensemble_v2",
+   "generated_at": "2026-09-25T16:38:52.098028+00:00",
+   "n_targets": 21,
+   "target_somma_non_1": {},
+   "classe_prevista_non_argmax": {
+    "target_btts": [
+     "True",
+     "False"
+    ],
+    "target_ht_ft": [
+     "A_D",
+     "H_H"
+    ],
+    "target_ht_1x2": [
+     "D",
+     "A"
+    ],
+    "target_over_1_5": [
+     "False",
+     "True"
+    ],
+    "target_over_2_5": [
+     "True",
+     "False"
+    ],
+    "target_goal_in_2h": [
+     "False",
+     "True"
+    ],
+    "target_home_over_1_5": [
+     "False",
+     "True"
+    ]
+   },
+   "chiavi": [
+    "bet_signals",
+    "calibration_metrics",
+    "coverage",
+    "ensemble_agreement",
+    "generated_at",
+    "market_intelligence",
+    "model_name",
+    "no_bet_reasons",
+    "profit_balance",
+    "reliability",
+    "run_id",
+    "schema_version",
+    "targets",
+    "targets_model_calibrated",
+    "targets_not_reliable",
+    "targets_raw",
+    "targets_skipped"
+   ]
+  }
+ },
+ "1498845": {
+  "db_json_analisi": {
+   "model": "poisson_xg_hybrid_dc",
+   "generated_at": "2026-09-26T07:58:40.740295+00:00",
+   "calibrated_at": "2026-09-26T07:58:40.740366+00:00",
+   "calibration_source": "db",
+   "lambda_home": 1.601,
+   "lambda_away": 0.4226,
+   "dc_rho": -0.1757,
+   "rho_file_ora": -0.1757,
+   "scarti": {
+    "1x2.H": 3e-05,
+    "1x2.D": 5e-05,
+    "1x2.A": 2e-05,
+    "over_1_5.True": 4e-05,
+    "over_1_5.somma": 0.0,
+    "over_2_5.True": 1e-05,
+    "over_2_5.somma": 0.0,
+    "over_3_5.True": 4e-05,
+    "over_3_5.somma": 0.0,
+    "btts.True": 4e-05,
+    "btts.somma": 0.0,
+    "1x2.somma": 0.0,
+    "1T.ibrido": 2e-05,
+    "1T.somma": 0.0,
+    "ht_1x2.somma": 0.0001,
+    "ht_1x2.H": 0.00029,
+    "ht_1x2.D": 0.00021,
+    "ht_1x2.A": 1e-05,
+    "1T.poisson_vs_griglia": 0.00031
+   },
+   "scarto_max": 0.00031,
+   "calibrazione_fonte_ora": "db",
+   "calibrazione_scarti": {
+    "1x2.A": 0.0,
+    "1x2.D": 0.0,
+    "1x2.H": 0.0,
+    "btts.True": 0.0,
+    "btts.False": 0.0,
+    "ht_1x2.A": 0.0,
+    "ht_1x2.D": 0.0,
+    "ht_1x2.H": 0.0,
+    "over_1_5.True": 0.0,
+    "over_1_5.False": 0.0,
+    "over_2_5.True": 0.0,
+    "over_2_5.False": 0.0,
+    "over_3_5.True": 0.0,
+    "over_3_5.False": 0.0,
+    "first_half_over_0_5.True": 0.0,
+    "first_half_over_0_5.False": 0.0
+   },
+   "calibrazione_scarto_max": 0.0,
+   "calibrati_somme": {
+    "1x2": 1.0,
+    "btts": 1.0,
+    "ht_1x2": 1.0,
+    "over_1_5": 1.0,
+    "over_2_5": 1.0,
+    "over_3_5": 1.0,
+    "first_half_over_0_5": 1.0
+   }
+  },
+  "tactical_engine_json": {
+   "engine_version": "gsg-dc-z2-1.0",
+   "generated_at": "2026-09-23T12:31:21.393708+00:00",
+   "lambda_home": 1.558,
+   "lambda_away": 0.584,
+   "rho": -0.1032,
+   "fuori_0_1_ft": {},
+   "fuori_0_1_ht": {},
+   "rho_eff": -0.1032,
+   "scarti_ft": {
+    "home": 0.0001,
+    "draw": 0.0,
+    "away": 0.0001,
+    "double_1x": 0.0001,
+    "double_12": 0.0,
+    "double_x2": 0.0001,
+    "over_0_5": 0.0,
+    "over_1_5": 0.0002,
+    "over_2_5": 0.0002,
+    "over_3_5": 0.0001,
+    "btts_yes": 0.0002,
+    "under_0_5": 0.0,
+    "under_1_5": 0.0002,
+    "under_2_5": 0.0002,
+    "under_3_5": 0.0001,
+    "btts_no": 0.0002
+   },
+   "scarto_max_ft": 0.0002,
+   "exp_goals_scarto": [
+    0.0,
+    0.0
+   ],
+   "top_scores_ricalcolo": [
+    [
+     1,
+     0,
+     0.1719
+    ],
+    [
+     2,
+     0,
+     0.1425
+    ],
+    [
+     0,
+     0,
+     0.1284
+    ],
+    [
+     1,
+     1,
+     0.1179
+    ],
+    [
+     2,
+     1,
+     0.0832
+    ]
+   ],
+   "top_scores_payload": [
+    [
+     1,
+     0,
+     0.1718
+    ],
+    [
+     2,
+     0,
+     0.1425
+    ],
+    [
+     0,
+     0,
+     0.1284
+    ],
+    [
+     1,
+     1,
+     0.1179
+    ],
+    [
+     2,
+     1,
+     0.0833
+    ]
+   ],
+   "somma_1x2_ft": 1.0,
+   "u+o_0_5_ft": 1.0,
+   "somma_1x2_ht": 1.0,
+   "u+o_0_5_ht": 1.0
+  },
+  "model_predictions_json": {
+   "model_name": "ensemble_v2",
+   "generated_at": "2026-09-26T08:21:09.587123+00:00",
+   "n_targets": 21,
+   "target_somma_non_1": {},
+   "classe_prevista_non_argmax": {
+    "target_over_3_5": [
+     "True",
+     "False"
+    ],
+    "target_over_4_5": [
+     "True",
+     "False"
+    ],
+    "target_away_over_0_5": [
+     "True",
+     "False"
+    ],
+    "target_home_over_2_5": [
+     "True",
+     "False"
+    ],
+    "target_clean_sheet_home": [
+     "False",
+     "True"
+    ]
+   },
+   "chiavi": [
+    "bet_signals",
+    "calibration_metrics",
+    "coverage",
+    "ensemble_agreement",
+    "generated_at",
+    "market_intelligence",
+    "model_name",
+    "no_bet_reasons",
+    "profit_balance",
+    "reliability",
+    "run_id",
+    "schema_version",
+    "targets",
+    "targets_model_calibrated",
+    "targets_not_reliable",
+    "targets_raw",
+    "targets_skipped"
+   ]
+  }
+ },
+ "1528882": {
+  "db_json_analisi": null,
+  "tactical_engine_json": {
+   "engine_version": "gsg-dc-z2-1.0",
+   "generated_at": "2026-09-25T09:33:55.810182+00:00",
+   "lambda_home": 1.421,
+   "lambda_away": 1.91,
+   "rho": 0.0026,
+   "fuori_0_1_ft": {},
+   "fuori_0_1_ht": {},
+   "rho_eff": 0.0026,
+   "scarti_ft": {
+    "home": 0.0001,
+    "draw": 0.0,
+    "away": 0.0001,
+    "double_1x": 0.0001,
+    "double_12": 0.0,
+    "double_x2": 0.0001,
+    "over_0_5": 0.0,
+    "over_1_5": 0.0,
+    "over_2_5": 0.0001,
+    "over_3_5": 0.0,
+    "btts_yes": 0.0001,
+    "under_0_5": 0.0,
+    "under_1_5": 0.0,
+    "under_2_5": 0.0001,
+    "under_3_5": 0.0,
+    "btts_no": 0.0001
+   },
+   "scarto_max_ft": 0.0001,
+   "exp_goals_scarto": [
+    0.0,
+    0.0
+   ],
+   "top_scores_ricalcolo": [
+    [
+     1,
+     1,
+     0.0968
+    ],
+    [
+     1,
+     2,
+     0.0927
+    ],
+    [
+     2,
+     1,
+     0.069
+    ],
+    [
+     0,
+     1,
+     0.0685
+    ],
+    [
+     2,
+     2,
+     0.0659
+    ]
+   ],
+   "top_scores_payload": [
+    [
+     1,
+     1,
+     0.0968
+    ],
+    [
+     1,
+     2,
+     0.0927
+    ],
+    [
+     2,
+     1,
+     0.0689
+    ],
+    [
+     0,
+     1,
+     0.0686
+    ],
+    [
+     2,
+     2,
+     0.0658
+    ]
+   ],
+   "somma_1x2_ft": 1.0,
+   "u+o_0_5_ft": 1.0,
+   "somma_1x2_ht": 1.0,
+   "u+o_0_5_ht": 1.0
+  },
+  "model_predictions_json": {
+   "model_name": "ensemble_v2",
+   "generated_at": "2026-09-25T16:39:07.824534+00:00",
+   "n_targets": 21,
+   "target_somma_non_1": {},
+   "classe_prevista_non_argmax": {
+    "target_btts": [
+     "False",
+     "True"
+    ],
+    "target_ht_ft": [
+     "H_D",
+     "H_H"
+    ],
+    "target_ht_1x2": [
+     "D",
+     "H"
+    ],
+    "target_over_2_5": [
+     "False",
+     "True"
+    ]
+   },
+   "chiavi": [
+    "bet_signals",
+    "calibration_metrics",
+    "coverage",
+    "ensemble_agreement",
+    "generated_at",
+    "market_intelligence",
+    "model_name",
+    "no_bet_reasons",
+    "profit_balance",
+    "reliability",
+    "run_id",
+    "schema_version",
+    "targets",
+    "targets_model_calibrated",
+    "targets_not_reliable",
+    "targets_raw",
+    "targets_skipped"
+   ]
+  }
+ },
+ "1533042": {
+  "db_json_analisi": {
+   "model": "poisson_xg_hybrid_dc",
+   "generated_at": "2026-07-04T05:59:36.530922+00:00",
+   "calibrated_at": "2026-07-04T05:59:36.531041+00:00",
+   "calibration_source": "db",
+   "lambda_home": 1.3893,
+   "lambda_away": 3.6108,
+   "dc_rho": -0.13,
+   "rho_file_ora": -0.13,
+   "scarti": {
+    "1x2.H": 4e-05,
+    "1x2.D": 2e-05,
+    "1x2.A": 2e-05,
+    "over_1_5.True": 2e-05,
+    "over_1_5.somma": 0.0,
+    "over_2_5.True": 1e-05,
+    "over_2_5.somma": 0.0,
+    "over_3_5.True": 4e-05,
+    "over_3_5.somma": 0.0,
+    "btts.True": 3e-05,
+    "btts.somma": 0.0,
+    "1x2.somma": 0.0,
+    "1T.ibrido": 3e-05,
+    "1T.somma": 0.0,
+    "ht_1x2.somma": 0.0,
+    "ht_1x2.H": 0.0001,
+    "ht_1x2.D": 0.0,
+    "ht_1x2.A": 0.0001,
+    "1T.poisson_vs_griglia": 9e-05
+   },
+   "scarto_max": 0.0001,
+   "calibrazione_fonte_ora": "db",
+   "calibrazione_scarti": {
+    "1x2.A": 0.083,
+    "1x2.D": 0.00253,
+    "1x2.H": 0.08552,
+    "btts.True": 0.01458,
+    "btts.False": 0.01458,
+    "ht_1x2.A": 0.05079,
+    "ht_1x2.D": 0.04278,
+    "ht_1x2.H": 0.00801,
+    "over_1_5.True": 0.00726,
+    "over_1_5.False": 0.00726,
+    "over_2_5.True": 0.02281,
+    "over_2_5.False": 0.02281,
+    "over_3_5.True": 0.09233,
+    "over_3_5.False": 0.09233,
+    "first_half_over_0_5.True": 0.0074,
+    "first_half_over_0_5.False": 0.0074
+   },
+   "calibrazione_scarto_max": 0.09233,
+   "calibrati_somme": {
+    "1x2": 1.0,
+    "btts": 1.0,
+    "ht_1x2": 1.0,
+    "over_1_5": 1.0,
+    "over_2_5": 1.0,
+    "over_3_5": 1.0,
+    "first_half_over_0_5": 1.0
+   }
+  },
+  "tactical_engine_json": {
+   "engine_version": "gsg-dc-z2-1.0",
+   "generated_at": "2026-07-04T07:25:59.439923+00:00",
+   "lambda_home": 3.566,
+   "lambda_away": 2.682,
+   "rho": 0.2,
+   "fuori_0_1_ft": {
+    "over_0_5": 1.0018,
+    "under_0_5": -0.0018
+   },
+   "fuori_0_1_ht": {},
+   "rho_eff": 0.10445407220317164,
+   "scarti_ft": {
+    "home": 0.0018,
+    "draw": 0.0036,
+    "away": 0.0018,
+    "double_1x": 0.0018,
+    "double_12": 0.0036,
+    "double_x2": 0.0018,
+    "over_0_5": 0.0018,
+    "over_1_5": 0.0017,
+    "over_2_5": 0.0,
+    "over_3_5": 0.0001,
+    "btts_yes": 0.0018,
+    "under_0_5": 0.0018,
+    "under_1_5": 0.0017,
+    "under_2_5": 0.0,
+    "under_3_5": 0.0001,
+    "btts_no": 0.0018
+   },
+   "scarto_max_ft": 0.0036,
+   "exp_goals_scarto": [
+    0.0,
+    0.0
+   ],
+   "top_scores_ricalcolo": [
+    [
+     3,
+     2,
+     0.0526
+    ],
+    [
+     3,
+     3,
+     0.0471
+    ],
+    [
+     4,
+     2,
+     0.0469
+    ],
+    [
+     2,
+     2,
+     0.0443
+    ],
+    [
+     4,
+     3,
+     0.042
+    ]
+   ],
+   "top_scores_payload": [
+    [
+     3,
+     2,
+     0.0526
+    ],
+    [
+     3,
+     3,
+     0.0471
+    ],
+    [
+     4,
+     2,
+     0.0469
+    ],
+    [
+     2,
+     2,
+     0.0443
+    ],
+    [
+     4,
+     3,
+     0.042
+    ]
+   ],
+   "somma_1x2_ft": 1.0,
+   "u+o_0_5_ft": 1.0,
+   "somma_1x2_ht": 1.0001,
+   "u+o_0_5_ht": 1.0
+  },
+  "model_predictions_json": {
+   "model_name": "ensemble_v2",
+   "generated_at": "2026-07-04T07:20:31.341463+00:00",
+   "n_targets": 18,
+   "target_somma_non_1": {},
+   "classe_prevista_non_argmax": {
+    "target_over_3_5": [
+     "False",
+     "True"
+    ],
+    "target_over_4_5": [
+     "True",
+     "False"
+    ]
+   },
+   "chiavi": [
+    "bet_signals",
+    "calibration_metrics",
+    "coverage",
+    "ensemble_agreement",
+    "generated_at",
+    "market_intelligence",
+    "model_name",
+    "no_bet_reasons",
+    "profit_balance",
+    "reliability",
+    "run_id",
+    "schema_version",
+    "targets",
+    "targets_model_calibrated",
+    "targets_not_reliable",
+    "targets_raw",
+    "targets_skipped"
+   ]
+  }
+ },
+ "1637820": {
+  "db_json_analisi": {
+   "model": "poisson_xg_hybrid_dc",
+   "generated_at": "2026-09-26T07:56:44.618844+00:00",
+   "calibrated_at": "2026-09-26T07:56:44.618933+00:00",
+   "calibration_source": "db",
+   "lambda_home": 1.9588,
+   "lambda_away": 1.6463,
+   "dc_rho": -0.0772,
+   "rho_file_ora": -0.0772,
+   "scarti": {
+    "1x2.H": 1e-05,
+    "1x2.D": 1e-05,
+    "1x2.A": 2e-05,
+    "over_1_5.True": 2e-05,
+    "over_1_5.somma": 0.0,
+    "over_2_5.True": 5e-05,
+    "over_2_5.somma": 0.0,
+    "over_3_5.True": 4e-05,
+    "over_3_5.somma": 0.0,
+    "btts.True": 4e-05,
+    "btts.somma": 0.0,
+    "1x2.somma": 0.0,
+    "1T.ibrido": 2e-05,
+    "1T.somma": 0.0,
+    "ht_1x2.somma": 0.0,
+    "ht_1x2.H": 1e-05,
+    "ht_1x2.D": 0.0,
+    "ht_1x2.A": 1e-05,
+    "1T.poisson_vs_griglia": 5e-05
+   },
+   "scarto_max": 5e-05,
+   "calibrazione_fonte_ora": "db",
+   "calibrazione_scarti": {
+    "1x2.A": 0.0,
+    "1x2.D": 0.0,
+    "1x2.H": 0.0,
+    "btts.True": 0.0,
+    "btts.False": 0.0,
+    "ht_1x2.A": 0.0,
+    "ht_1x2.D": 0.0,
+    "ht_1x2.H": 0.0,
+    "over_1_5.True": 0.0,
+    "over_1_5.False": 0.0,
+    "over_2_5.True": 0.0,
+    "over_2_5.False": 0.0,
+    "over_3_5.True": 0.0,
+    "over_3_5.False": 0.0,
+    "first_half_over_0_5.True": 0.0,
+    "first_half_over_0_5.False": 0.0
+   },
+   "calibrazione_scarto_max": 0.0,
+   "calibrati_somme": {
+    "1x2": 1.0,
+    "btts": 1.0,
+    "ht_1x2": 1.0,
+    "over_1_5": 1.0,
+    "over_2_5": 1.0,
+    "over_3_5": 1.0,
+    "first_half_over_0_5": 1.0
+   }
+  },
+  "tactical_engine_json": null,
+  "model_predictions_json": null
+ }
+}

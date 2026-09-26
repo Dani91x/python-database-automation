@@ -1,0 +1,115 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] 🎯 MIKE
+           [mike-status] BOT IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (6 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Mike: se manca, il bot non sta operando (soglia 45 s)} servizio Mike vivo (13 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [mike-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [mike-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mike-mode-banner] MODALITÀ PAPER — simulazione fedele: fill solo al prezzo ancora disponibile, betDelay in-play, protezioni identiche al live.
+       [day-bar]
+
+             Giornata operativa
+             giornata operativa [day-bar-day] sabato 26 settembre 2026 (Europe/Rome) — partite con almeno una posizione piazzata oggi · operazioni = cicli aperti oggi · V/P = cicli già chiusi, la loro somma è il realizzato
+           +0,00 €
+         [day-bar-line] [day-bar-counts] {title:partite con almeno una posizione piazzata oggi} partite 2 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 2 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 10,00 € · totale storico +8,14 €
+       [kpi-row]
+         [mike-kpi-matches]
+           Partite seguite ora
+           2
+           2 prima del fischio · 0 in gioco · 2 con posizione aperta
+         [stat-tile]
+           Posizioni aperte
+           2
+           cicli con capitale ancora esposto
+         [stat-tile]
+           P&L oggi
+           +0,00 €
+           [mike-pnl-today-sub] 26 settembre · Europe/Rome · stop a −50,00 €
+         [stat-tile]
+           P&L totale
+           +8,14 €
+         [stat-tile]
+           Liability aperta
+           10,00 €
+           [mike-liability-sub] perdita peggiore sulle posizioni aperte, netta dal servizio
+         [mike-kpi-locked]
+           P&L bloccato
+           —
+           nessuna partita ha ancora un risultato bloccato
+         [mike-kpi-cycle]
+           Ultimo ciclo
+           11:46:57
+           feed aggiornato 5 s fa
+
+           ⚽ Partite ( 2 )
+           📋 Operazioni ( 2 )
+           ⏱ Risultati Pre-Match ( 2 )
+           🔴 Risultati Live ( 0 )
+           🧾 Attività
+           📅 Storico
+
+           [mike-activity]
+             Attività del servizio (22) giornata operativa · ora di Roma
+             [activity-feed]
+             [activity-filter] Evento
+             tutti 22
+             Al Ahli Amman v Ma'an
+             FC Badalona (W) v Granada (W)
+             Real Sociedad (W) v Real Madrid FC (W)
+             UAE v Yemen
+
+             [mike-activity-row] 11:32:03
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:31:40
+             LINEA ASSENTE NEL FEED {title:FC Badalona (W) v Granada (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} FC Badalona (W) v Granada (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:29:46
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:26:10
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:23:26
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:22:36
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:21:47
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:19:02
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:16:48
+             LINEA ASSENTE NEL FEED {title:Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO} Real Sociedad (W) v Real Madrid FC (W) · linee assenti nel feed: Under 3.5 · fase UNDER 3.5 APERTO
+             [mike-activity-row] 11:12:25
+             FASE {title:FC Badalona (W) v Granada (W) · INGRESSO IN CORSO → UNDER 3.5 APERTO · uscita proposta all'utente (uscite manuali) · ingresso abbinato} FC Badalona (W) v Granada (W) · INGRESSO IN CORSO → UNDER 3.5 APERTO · uscita proposta all'utente (uscite manuali) · ingresso abbinato
+             [mike-activity-row] 11:12:25
+             USCITA PROPOSTA: DECIDI TU {title:FC Badalona (W) v Granada (W) · il bot vorrebbe uscire (ingresso abbinato): Green-up Under 3.5 lay @ 1,58 · chiudendo ora +0,00 € — aspetta la tua approvazione} FC Badalona (W) v Granada (W) · il bot vorrebbe uscire (ingresso abbinato): Green-up Under 3.5 lay @ 1,58 · chiudendo ora +0,00 € — aspetta la tua approvazione
+             [mike-activity-row] 11:12:24
+             FASE {title:FC Badalona (W) v Granada (W) · IN ATTESA → INGRESSO IN CORSO · ingresso ciclo 1} FC Badalona (W) v Granada (W) · IN ATTESA → INGRESSO IN CORSO · ingresso ciclo 1
+             [mike-activity-row] 11:12:24
+             ORDINE {title:FC Badalona (W) v Granada (W) · Ingresso Under 3.5 BACK 5,00 € @ 1,60 · fill simulato (paper) · esecuzione diretta REST (coda flumine non usata)} FC Badalona (W) v Granada (W) · Ingresso Under 3.5 BACK 5,00 € @ 1,60 · fill simulato (paper) · esecuzione diretta REST (coda flumine non usata)
+             [mike-activity-row] 11:12:06
+             FASE {title:Real Sociedad (W) v Real Madrid FC (W) · INGRESSO IN CORSO → UNDER 3.5 APERTO · uscita proposta all'utente (uscite manuali) · ingresso abbinato} Real Sociedad (W) v Real Madrid FC (W) · INGRESSO IN CORSO → UNDER 3.5 APERTO · uscita proposta all'utente (uscite manuali) · ingresso abbinato
+             [mike-activity-row] 11:12:06
+             USCITA PROPOSTA: DECIDI TU {title:Real Sociedad (W) v Real Madrid FC (W) · il bot vorrebbe uscire (ingresso abbinato): Green-up Under 3.5 lay @ 1,49 · chiudendo ora +0,00 € — aspetta la tua approvazione} Real Sociedad (W) v Real Madrid FC (W) · il bot vorrebbe uscire (ingresso abbinato): Green-up Under 3.5 lay @ 1,49 · chiudendo ora +0,00 € — aspetta la tua approvazione
+             [mike-activity-row] 11:12:04
+             FASE {title:Real Sociedad (W) v Real Madrid FC (W) · IN ATTESA → INGRESSO IN CORSO · ingresso ciclo 1} Real Sociedad (W) v Real Madrid FC (W) · IN ATTESA → INGRESSO IN CORSO · ingresso ciclo 1
+             [mike-activity-row] 11:12:04
+             ORDINE {title:Real Sociedad (W) v Real Madrid FC (W) · Ingresso Under 3.5 BACK 5,00 € @ 1,51 · fill simulato (paper) · esecuzione diretta REST (coda flumine non usata)} Real Sociedad (W) v Real Madrid FC (W) · Ingresso Under 3.5 BACK 5,00 € @ 1,51 · fill simulato (paper) · esecuzione diretta REST (coda flumine non usata)
+             [mike-activity-row] 11:12:02
+             ARMATA {title:Real Sociedad (W) v Real Madrid FC (W) · partita armata · KO 12:00} Real Sociedad (W) v Real Madrid FC (W) · partita armata · KO 12:00
+             [mike-activity-row] 11:12:02
+             ARMATA {title:FC Badalona (W) v Granada (W) · partita armata · KO 12:00} FC Badalona (W) v Granada (W) · partita armata · KO 12:00
+             [mike-activity-row] 10:57:16
+             REGOLATA {title:Al Ahli Amman v Ma'an · totale gol 3 · P&L +0,72 €} Al Ahli Amman v Ma'an · totale gol 3 · P&L +0,72 €
+             [mike-activity-row] 10:57:16
+             REGOLATA {title:UAE v Yemen · totale gol 4 · P&L +0,07 €} UAE v Yemen · totale gol 4 · P&L +0,07 €
+             [mike-activity-row] 10:57:12
+             LINEA ASSENTE NEL FEED {title:Al Ahli Amman v Ma'an · linee assenti nel feed: Under 3.5, Over 4.5 · fase IN GIOCO · COPERTO} Al Ahli Amman v Ma'an · linee assenti nel feed: Under 3.5, Over 4.5 · fase IN GIOCO · COPERTO
+       [page-footer] Fonte dati: feed unico dello scanner (linee Over/Under 3.5 e 4.5 pre-match e live). Nessuna chiamata Betfair da questa schermata. Paper-first: il live si attiva solo dal toggle con conferma.

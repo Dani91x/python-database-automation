@@ -1,0 +1,292 @@
+
+
+   Close
+
+     Studio Ritardi · First Division
+     Riproduzione 1:1 del file STUDIO RITARDI. DATI MATCH = tutto lo storico della lega. Ogni mercato è un foglio: ritardo attuale vs media storica del mercato scelto.
+
+       Mercato (foglio)
+
+         Risultato Esatto
+         Somma Gol Esatta
+         Over
+         Under
+         Over Primo Tempo
+         Gol Gol Primo Tempo
+         Gol Gol Secondo Tempo
+         Parziale/Finale 1-X
+         Parziale/Finale 2-X
+         Parziale/Finale X-1
+         Parziale/Finale X-2
+         Pareggio (X)
+         GG & Over 2.5
+
+       Somma gol
+
+         0
+         1
+         2
+         3
+         4
+         5
+         6
+         7
+         8
+
+       Storico (DATI MATCH)
+
+         Tutto lo storico
+         Stagione
+         Ultime N
+     Somma Gol Esatta = 3 eventi (DATI MATCH) 1240 occorrenze 268 2019-02-22T19:45:00+00:00 → 2026-09-25T18:45:00+00:00
+
+         Quota Oggettiva
+         4.63
+         = media storica
+
+         Media Storica
+         ogni 4.6
+         partite si verifica
+
+         Ritardo Attuale
+         1
+         0.22× la media
+
+         Record
+         35
+         serie storica max
+
+         % Mercato
+         21.6%
+
+         Media Rit.
+         4.94
+         AVERAGEIF(RIT;≠0)
+
+       Ritardo nel tempo (RIT)
+
+             8 16 24 32 40 48 56 64 72 80 88 96 104 112 120 128 136 144 152 160 168 176 184 192 200 208 216 224 232 240 248 256 264 272 280 288 296 304 312 320 328 336 344 352 360 368 376 384 392 400 408 416 424 432 440 448 456 464 472 480 488 496 504 512 520 528 536 544 552 560 568 576 584 592 600 608 616 624 632 640 648 656 664 672 680 688 696 704 712 720 728 736 744 752 760 768 776 784 792 800 808 816 824 832 840 848 856 864 872 880 888 896 904 912 920 928 936 944 952 960 968 976 984 992 1000 1008 1016 1024 1032 1040 1048 1056 1064 1072 1080 1088 1096 1104 1112 1120 1128 1136 1144 1152 1160 1168 1176 1184 1192 1200 1208 1216 1224 1232 1240 0 9 18 27 36 media record
+
+       Distribuzione serie · COUNTIF su SUC/RIT · tutte le serie
+
+             Valore  |
+             Occ. (SUC)  |
+             Cnt (RIT)  |
+
+             0  |
+             58  |
+             268  |
+
+             1  |
+             46  |
+             211  |
+
+             2  |
+             40  |
+             164  |
+
+             3  |
+             26  |
+             124  |
+
+             4  |
+             18  |
+             98  |
+
+             5  |
+             19  |
+             80  |
+
+             6  |
+             13  |
+             61  |
+
+             7  |
+             12  |
+             48  |
+
+             8  |
+             5  |
+             36  |
+
+             9  |
+             10  |
+             31  |
+
+             10  |
+             6  |
+             21  |
+
+             11  |
+             1  |
+             15  |
+
+             12  |
+             4  |
+             14  |
+
+             13  |
+             0  |
+             10  |
+
+             14  |
+             2  |
+             10  |
+
+             15  |
+             0  |
+             8  |
+
+             16  |
+             3  |
+             8  |
+
+             17  |
+             2  |
+             5  |
+
+             18  |
+             0  |
+             3  |
+
+             19  |
+             0  |
+             3  |
+
+             20  |
+             1  |
+             3  |
+
+             21  |
+             0  |
+             2  |
+
+             22  |
+             0  |
+             2  |
+
+             23  |
+             0  |
+             2  |
+
+             24  |
+             1  |
+             2  |
+
+             25  |
+             0  |
+             1  |
+
+             26  |
+             0  |
+             1  |
+
+             27  |
+             0  |
+             1  |
+
+             28  |
+             0  |
+             1  |
+
+             29  |
+             0  |
+             1  |
+
+             30  |
+             0  |
+             1  |
+
+             31  |
+             0  |
+             1  |
+
+             32  |
+             0  |
+             1  |
+
+             33  |
+             0  |
+             1  |
+
+             34  |
+             0  |
+             1  |
+
+             35  |
+             1  |
+             1  |
+
+         Sotto la media · esce in orario o prima · BI · AZ · BE/BF/BG
+
+           Sotto media · BI
+
+           188
+           70.2% delle uscite
+
+           Ultime 10 serie · AZ
+
+           0 1 3 2 1 0 0 9 14 6
+
+           Storico serie · BE/BF/BG · condizionato
+
+           dopo un ritardo di 6 partite, storicamente è uscito dopo:
+
+             Lung.  |
+             Tot  |
+             %  |
+
+             0  |
+             4  |
+             33.3%  |
+
+             1  |
+             3  |
+             25.0%  |
+
+             3  |
+             3  |
+             25.0%  |
+
+             2  |
+             1  |
+             8.3%  |
+
+             6  |
+             1  |
+             8.3%  |
+
+         Sopra la media · tarda più del solito · BJ · BL · BT/BU/BV
+
+           Sopra media · BJ
+
+           80
+           29.8% delle uscite
+
+           Ultime 10 strisce · BL
+
+           1 0 0 0 0 0 0 0 0 3
+
+           Run sopra media · BT/BU/BV
+
+             Run  |
+             N  |
+             %  |
+
+             1  |
+             46  |
+             76.7%  |
+
+             2  |
+             9  |
+             15.0%  |
+
+             3  |
+             4  |
+             6.7%  |
+
+             4  |
+             1  |
+             1.7%  |
+
+       DATI MATCH — 1240 eventi (colonne del foglio + W/L · RIT · SUC)

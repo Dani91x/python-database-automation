@@ -1,0 +1,657 @@
+{
+ "1492980": {
+  "mercati_ricalcolati": 7,
+  "mercati_rpc": 7,
+  "poisson_present": true,
+  "ordine_rpc": [
+   "over_3_5",
+   "over_2_5",
+   "first_half_over_0_5",
+   "1x2",
+   "btts",
+   "ht_1x2",
+   "over_1_5"
+  ],
+  "scarti": [],
+  "ricalcolo": {
+   "1x2": {
+    "direction": "H",
+    "affidabilita": 0.4781,
+    "wilson_low": 0.3703,
+    "wilson_high": 0.588,
+    "n": 77,
+    "lift": 0.0281,
+    "base": 0.45,
+    "odds": 2.5,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 4
+   },
+   "ht_1x2": {
+    "direction": "D",
+    "affidabilita": 0.3521,
+    "wilson_low": 0.2585,
+    "wilson_high": 0.4587,
+    "n": 84,
+    "lift": -0.0435,
+    "base": 0.3956,
+    "odds": 2.2,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 3
+   },
+   "over_1_5": {
+    "direction": "Over",
+    "affidabilita": 0.709,
+    "wilson_low": 0.612,
+    "wilson_high": 0.7901,
+    "n": 97,
+    "lift": -0.0605,
+    "base": 0.7695,
+    "odds": 1.25,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_2_5": {
+    "direction": "Under",
+    "affidabilita": 0.5293,
+    "wilson_low": 0.4237,
+    "wilson_high": 0.6324,
+    "n": 84,
+    "lift": 0.0808,
+    "base": 0.4485,
+    "odds": 1.95,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_3_5": {
+    "direction": "Under",
+    "affidabilita": 0.761,
+    "wilson_low": 0.6729,
+    "wilson_high": 0.8313,
+    "n": 109,
+    "lift": 0.1041,
+    "base": 0.6569,
+    "odds": 1.36,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "btts": {
+    "direction": "Yes",
+    "affidabilita": 0.5383,
+    "wilson_low": 0.4311,
+    "wilson_high": 0.6421,
+    "n": 82,
+    "lift": -0.0047,
+    "base": 0.543,
+    "odds": 1.62,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "first_half_over_0_5": {
+    "direction": "Over",
+    "affidabilita": 0.7731,
+    "wilson_low": 0.677,
+    "wilson_high": 0.847,
+    "n": 91,
+    "lift": 0.0553,
+    "base": 0.7178,
+    "odds": 1.33,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   }
+  }
+ },
+ "1498845": {
+  "mercati_ricalcolati": 7,
+  "mercati_rpc": 7,
+  "poisson_present": true,
+  "ordine_rpc": [
+   "over_2_5",
+   "over_3_5",
+   "btts",
+   "1x2",
+   "ht_1x2",
+   "over_1_5",
+   "first_half_over_0_5"
+  ],
+  "scarti": [],
+  "ricalcolo": {
+   "1x2": {
+    "direction": "H",
+    "affidabilita": 0.595,
+    "wilson_low": 0.4754,
+    "wilson_high": 0.7043,
+    "n": 67,
+    "lift": 0.145,
+    "base": 0.45,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 4
+   },
+   "ht_1x2": {
+    "direction": "D",
+    "affidabilita": 0.4949,
+    "wilson_low": 0.4055,
+    "wilson_high": 0.5845,
+    "n": 116,
+    "lift": 0.0993,
+    "base": 0.3956,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_1_5": {
+    "direction": "Over",
+    "affidabilita": 0.6822,
+    "wilson_low": 0.5998,
+    "wilson_high": 0.7545,
+    "n": 136,
+    "lift": -0.0873,
+    "base": 0.7695,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_2_5": {
+    "direction": "Under",
+    "affidabilita": 0.632,
+    "wilson_low": 0.5533,
+    "wilson_high": 0.7044,
+    "n": 153,
+    "lift": 0.1835,
+    "base": 0.4485,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_3_5": {
+    "direction": "Under",
+    "affidabilita": 0.8364,
+    "wilson_low": 0.7856,
+    "wilson_high": 0.877,
+    "n": 251,
+    "lift": 0.1795,
+    "base": 0.6569,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai",
+     "api"
+    ],
+    "motori_totali": 4
+   },
+   "btts": {
+    "direction": "No",
+    "affidabilita": 0.6204,
+    "wilson_low": 0.543,
+    "wilson_high": 0.6921,
+    "n": 159,
+    "lift": 0.1634,
+    "base": 0.457,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "first_half_over_0_5": {
+    "direction": "Over",
+    "affidabilita": 0.6049,
+    "wilson_low": 0.5283,
+    "wilson_high": 0.6767,
+    "n": 163,
+    "lift": -0.1129,
+    "base": 0.7178,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   }
+  }
+ },
+ "1637820": {
+  "mercati_ricalcolati": 7,
+  "mercati_rpc": 7,
+  "poisson_present": true,
+  "ordine_rpc": [
+   "over_2_5",
+   "first_half_over_0_5",
+   "over_1_5",
+   "btts",
+   "ht_1x2",
+   "1x2",
+   "over_3_5"
+  ],
+  "scarti": [],
+  "ricalcolo": {
+   "1x2": {
+    "direction": "H",
+    "affidabilita": 0.4261,
+    "wilson_low": 0.3659,
+    "wilson_high": 0.4886,
+    "n": 246,
+    "lift": -0.0239,
+    "base": 0.45,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 2
+   },
+   "ht_1x2": {
+    "direction": "D",
+    "affidabilita": 0.4248,
+    "wilson_low": 0.3511,
+    "wilson_high": 0.5021,
+    "n": 161,
+    "lift": 0.0292,
+    "base": 0.3956,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   },
+   "over_1_5": {
+    "direction": "Over",
+    "affidabilita": 0.8256,
+    "wilson_low": 0.7912,
+    "wilson_high": 0.8553,
+    "n": 538,
+    "lift": 0.0561,
+    "base": 0.7695,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   },
+   "over_2_5": {
+    "direction": "Over",
+    "affidabilita": 0.6411,
+    "wilson_low": 0.5837,
+    "wilson_high": 0.6946,
+    "n": 284,
+    "lift": 0.0896,
+    "base": 0.5515,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   },
+   "over_3_5": {
+    "direction": "Under",
+    "affidabilita": 0.5817,
+    "wilson_low": 0.5238,
+    "wilson_high": 0.6376,
+    "n": 285,
+    "lift": -0.0752,
+    "base": 0.6569,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   },
+   "btts": {
+    "direction": "Yes",
+    "affidabilita": 0.5874,
+    "wilson_low": 0.5387,
+    "wilson_high": 0.6345,
+    "n": 402,
+    "lift": 0.0444,
+    "base": 0.543,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   },
+   "first_half_over_0_5": {
+    "direction": "Over",
+    "affidabilita": 0.7752,
+    "wilson_low": 0.7334,
+    "wilson_high": 0.8121,
+    "n": 430,
+    "lift": 0.0574,
+    "base": 0.7178,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson"
+    ],
+    "motori_totali": 1
+   }
+  }
+ },
+ "1528882": {
+  "mercati_ricalcolati": 7,
+  "mercati_rpc": 7,
+  "poisson_present": false,
+  "ordine_rpc": [
+   "1x2",
+   "btts",
+   "first_half_over_0_5",
+   "ht_1x2",
+   "over_1_5",
+   "over_2_5",
+   "over_3_5"
+  ],
+  "scarti": [],
+  "ricalcolo": {
+   "1x2": {
+    "direction": "H",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml"
+    ],
+    "motori_totali": 3
+   },
+   "ht_1x2": {
+    "direction": "H",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml"
+    ],
+    "motori_totali": 2
+   },
+   "over_1_5": {
+    "direction": "Over",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 2
+   },
+   "over_2_5": {
+    "direction": "Over",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 2
+   },
+   "over_3_5": {
+    "direction": "Under",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 2
+   },
+   "btts": {
+    "direction": "Yes",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 2
+   },
+   "first_half_over_0_5": {
+    "direction": "Over",
+    "affidabilita": null,
+    "wilson_low": null,
+    "wilson_high": null,
+    "n": null,
+    "lift": null,
+    "base": null,
+    "odds": null,
+    "scope": null,
+    "concordi": [
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 2
+   }
+  }
+ },
+ "1533042": {
+  "mercati_ricalcolati": 7,
+  "mercati_rpc": 7,
+  "poisson_present": true,
+  "ordine_rpc": [
+   "1x2",
+   "ht_1x2",
+   "over_3_5",
+   "over_2_5",
+   "over_1_5",
+   "first_half_over_0_5",
+   "btts"
+  ],
+  "scarti": [],
+  "ricalcolo": {
+   "1x2": {
+    "direction": "A",
+    "affidabilita": 0.7561,
+    "wilson_low": 0.6732,
+    "wilson_high": 0.8235,
+    "n": 123,
+    "lift": 0.4462,
+    "base": 0.3099,
+    "odds": null,
+    "scope": "globale",
+    "concordi": [
+     "poisson",
+     "ml",
+     "api"
+    ],
+    "motori_totali": 4
+   },
+   "ht_1x2": {
+    "direction": "A",
+    "affidabilita": 0.5758,
+    "wilson_low": 0.4081,
+    "wilson_high": 0.7277,
+    "n": 33,
+    "lift": 0.3186,
+    "base": 0.2572,
+    "odds": null,
+    "scope": "globale",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_1_5": {
+    "direction": "Over",
+    "affidabilita": 0.866,
+    "wilson_low": 0.775,
+    "wilson_high": 0.9238,
+    "n": 81,
+    "lift": 0.0965,
+    "base": 0.7695,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_2_5": {
+    "direction": "Over",
+    "affidabilita": 0.7727,
+    "wilson_low": 0.6573,
+    "wilson_high": 0.8576,
+    "n": 65,
+    "lift": 0.2212,
+    "base": 0.5515,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "over_3_5": {
+    "direction": "Over",
+    "affidabilita": 0.6393,
+    "wilson_low": 0.5139,
+    "wilson_high": 0.7482,
+    "n": 61,
+    "lift": 0.2962,
+    "base": 0.3431,
+    "odds": null,
+    "scope": "globale",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "btts": {
+    "direction": "Yes",
+    "affidabilita": 0.5895,
+    "wilson_low": 0.4663,
+    "wilson_high": 0.7024,
+    "n": 63,
+    "lift": 0.0465,
+    "base": 0.543,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   },
+   "first_half_over_0_5": {
+    "direction": "Over",
+    "affidabilita": 0.7919,
+    "wilson_low": 0.6906,
+    "wilson_high": 0.8664,
+    "n": 80,
+    "lift": 0.0741,
+    "base": 0.7178,
+    "odds": null,
+    "scope": "lega",
+    "concordi": [
+     "poisson",
+     "ml",
+     "tacticai"
+    ],
+    "motori_totali": 3
+   }
+  }
+ }
+}

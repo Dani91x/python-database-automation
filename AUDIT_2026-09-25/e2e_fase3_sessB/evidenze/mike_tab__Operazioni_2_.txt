@@ -1,0 +1,117 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] 🎯 MIKE
+           [mike-status] BOT IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (14 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Mike: se manca, il bot non sta operando (soglia 45 s)} servizio Mike vivo (19 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [mike-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [mike-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mike-mode-banner] MODALITÀ PAPER — simulazione fedele: fill solo al prezzo ancora disponibile, betDelay in-play, protezioni identiche al live.
+       [day-bar]
+
+             Giornata operativa
+             giornata operativa [day-bar-day] sabato 26 settembre 2026 (Europe/Rome) — partite con almeno una posizione piazzata oggi · operazioni = cicli aperti oggi · V/P = cicli già chiusi, la loro somma è il realizzato
+           +0,00 €
+         [day-bar-line] [day-bar-counts] {title:partite con almeno una posizione piazzata oggi} partite 2 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 2 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 10,00 € · totale storico +8,14 €
+       [kpi-row]
+         [mike-kpi-matches]
+           Partite seguite ora
+           2
+           2 prima del fischio · 0 in gioco · 2 con posizione aperta
+         [stat-tile]
+           Posizioni aperte
+           2
+           cicli con capitale ancora esposto
+         [stat-tile]
+           P&L oggi
+           +0,00 €
+           [mike-pnl-today-sub] 26 settembre · Europe/Rome · stop a −50,00 €
+         [stat-tile]
+           P&L totale
+           +8,14 €
+         [stat-tile]
+           Liability aperta
+           10,00 €
+           [mike-liability-sub] perdita peggiore sulle posizioni aperte, netta dal servizio
+         [mike-kpi-locked]
+           P&L bloccato
+           —
+           nessuna partita ha ancora un risultato bloccato
+         [mike-kpi-cycle]
+           Ultimo ciclo
+           11:46:11
+           feed aggiornato 6 s fa
+
+           ⚽ Partite ( 2 )
+           📋 Operazioni ( 2 )
+           ⏱ Risultati Pre-Match ( 2 )
+           🔴 Risultati Live ( 0 )
+           🧾 Attività
+           📅 Storico
+
+           [mike-operazioni]
+             Operazioni della giornata (2)
+             [mike-operazioni-totali]
+             [mike-operazioni-totali-operazioni] {title:quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte}
+             Operazioni
+             2
+             2 partite
+             [mike-operazioni-totali-realizzato] {title:somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».}
+             P&L realizzato · PAPER
+             —
+             0 in utile · 0 in perdita
+             [mike-operazioni-totali-aperto] {title:quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.}
+             Se chiudo ora · PAPER
+             —
+             2 ancora aperte
+             [mike-operazioni-totali-investito] {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)}
+             Investito · PAPER
+             10,00 €
+             [mike-operazioni-totali-liability] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista}
+             Responsabilità · PAPER
+             10,00 €
+
+              |
+             Partita  |
+             cicli  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} Investito  |
+             {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} Responsabilità  |
+             Stato  |
+             P&L netto  |
+             [partita-36111764]
+
+             [apri-36111764]  |
+
+             [vai-alla-scheda-36111764] {title:FC Badalona (W) v Granada (W) — apri la scheda della partita} FC Badalona (W) v Granada (W)  |
+             1 ciclo  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} 5,00 €  |
+             [liability-36111764] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} 5,00 €  |
+
+             {title:1 ordine ancora aperto: il netto qui a destra è PARZIALE} ancora aperta  |
+             [netto-36111764] {title:netto delle operazioni GIÀ regolate: la partita non è finita} —  |
+             [partita-36111770]
+
+             [apri-36111770]  |
+
+             [vai-alla-scheda-36111770] {title:Real Sociedad (W) v Real Madrid FC (W) — apri la scheda della partita} Real Sociedad (W) v Real Madrid FC (W)  |
+             1 ciclo  |
+             {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)} 5,00 €  |
+             [liability-36111770] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista} 5,00 €  |
+
+             {title:1 ordine ancora aperto: il netto qui a destra è PARZIALE} ancora aperta  |
+             [netto-36111770] {title:netto delle operazioni GIÀ regolate: la partita non è finita} —  |
+             Una riga per PARTITA col netto delle sue operazioni, commissione già tolta. Clicca per aprire i cicli e gli ordini. giornata operativa sabato 26 settembre 2026 · 2 cicli in totale.
+           [equity-card]
+             {title:asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento} Equity · P&L cumulato realizzato · giornata operativa 26 settembre
+             [equity-axis-note] asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento
+             nessun trade ancora regolato oggi — la curva compare al primo incasso
+       [page-footer] Fonte dati: feed unico dello scanner (linee Over/Under 3.5 e 4.5 pre-match e live). Nessuna chiamata Betfair da questa schermata. Paper-first: il live si attiva solo dal toggle con conferma.

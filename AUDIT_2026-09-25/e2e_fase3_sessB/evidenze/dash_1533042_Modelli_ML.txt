@@ -1,0 +1,54 @@
+
+
+   Close
+
+     Modelli ML · South East Utd. U21 vs South Hobart II
+     Previsioni calibrate dell'ensemble (rf/lgb/xgb/logreg) per questa partita, mercato per mercato. Tasmania Southern Championship .
+
+     ensemble_v2 affidabilità dati high ( 0.78 ) feature 80.0% partite 58 / 58 [eta-ml] Previsione ML : aggiornato al 04/07/2026, 09:20 ( 84 g 2 h fa) · oltre 36 h
+
+       Mercato ( 18 )
+
+         Esito
+
+           1X2 (FT)
+           HT / FT
+           1X2 (FT)·alt
+           HT 1X2
+
+         Gol totali
+
+           BTTS
+           Over 1.5
+           Over 2.5
+           Over 3.5
+           Over 4.5
+
+         Squadre
+
+           Trasf. Over 0.5
+           Trasf. Over 1.5
+           Trasf. Over 2.5
+           Casa Over 0.5
+           Casa Over 1.5
+           Casa Over 2.5
+           Clean Sheet Trasf.
+           Clean Sheet Casa
+
+         1°T / Timing
+
+           HT Over 0.5
+
+       Previsione 2 (Trasf.) 71%
+
+             0% 25% 50% 75% 100% 2 (Trasf.) X (Pari) 1 (Casa)
+       Probabilità calibrate del modello (non quote).
+
+         Accordo ensemble
+
+           classe prevista 2 (Trasf.) 75% accordo
+           gb 2 (Trasf.) rf 2 (Trasf.) xgb 2 (Trasf.) logreg X (Pari)
+
+         Calibrazione
+         Brier 0.962 ECE 0.359
+         MODEL_NOT_RELIABLE: BSS=-0.442 < min 0.12 (brier=0.962, random_baseline=0.667), ece=0.359 > max 0.1

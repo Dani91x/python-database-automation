@@ -1,0 +1,9 @@
+
+
+   Close
+
+     Quote Betfair · Quilmes vs Club Atlético Güemes
+     Tutti i mercati Betfair pre-partita, back e lay . Primera Nacional .
+
+       Nessuna quota Betfair per questa partita
+       Le quote compaiono dopo aver eseguito la fetch Betfair ( betfair_full_odds.py ).

@@ -1,0 +1,5517 @@
+
+
+         AI TERMINAL ANALYTICS
+         Dashboard
+
+         Centro di Controllo Motori
+         Pagella per-motore per-mercato sullo storico settlato.
+
+         Performance Motori
+         Decisioni
+         Crea Strategia
+         Reportistiche
+         Backtest Automatico
+
+           {title:Performance dei segnali direzione nel tempo} Direzioni
+         Performance dei segnali direzione nel tempo
+
+             Filtri
+             Reset
+
+             7 giorni
+             14 giorni
+             30 giorni
+             90 giorni
+             Tutto lo storico
+             Personalizza
+
+             Dal <input date=2026-09-20>
+
+             Al <input date=2026-09-26>
+
+             Lega <select=Tutte (252 opz.)>
+
+             Segnale <select=Tutti (8 opz.)>
+
+             Solo segnali "buoni" (≥ 2 motori concordi)
+
+             Solo partite Betfair
+
+             Direzioni
+             6783
+             con esito noto
+
+             Hit reale
+             60.4%
+             IC 95% 59% – 62%
+
+             Atteso (calibr.)
+             60.5%
+             scarto -0.1%
+
+             Buone (≥2 conc.)
+             64.3%
+             5311 direzioni
+
+             Rendimento (ROI)
+             -4.6%
+             buone -7% · q.media 1.77
+
+             Quote Betfair
+             2 %
+             145 / 6783 prezzate
+           ℹ Il ROI è calcolato sulle sole 145 / 6783 direzioni con quota Betfair ( 2 %) — le altre non hanno un prezzo su cui calcolarlo. Copertura bassa, leggi con cautela.
+
+             Andamento ━ reale · ┄ atteso 51 % 60 % 69 % 2026-09-20: reale 60.4% · atteso 60.3% · N=3819 2026-09-21: reale 56.6% · atteso 61.0% · N=763 2026-09-22: reale 60.3% · atteso 60.6% · N=453 2026-09-23: reale 60.5% · atteso 61.5% · N=294 2026-09-24: reale 61.3% · atteso 60.2% · N=313 2026-09-25: reale 62.6% · atteso 60.4% · N=1068 2026-09-26: reale 60.3% · atteso 58.3% · N=73 20/09 21/09 22/09 23/09 24/09 25/09 26/09
+
+             Per segnale 🟩 ≥75 · 🟨 60 · 🟧 50 · 🟥 <50
+
+             20/09
+             21/09
+             22/09
+             23/09
+             24/09
+             25/09
+             26/09
+
+             1X2
+             {title:1X2 2026-09-20: 48.6% (N=547)} 49
+             {title:1X2 2026-09-21: 43.1% (N=109)} 43
+             {title:1X2 2026-09-22: 53.8% (N=65)} 54
+             {title:1X2 2026-09-23: 50.0% (N=42)} 50
+             {title:1X2 2026-09-24: 53.3% (N=45)} 53
+             {title:1X2 2026-09-25: 48.0% (N=152)} 48
+             {title:1X2 2026-09-26: 20.0% (N=10)} 20
+
+             HT 1X2
+             {title:HT 1X2 2026-09-20: 38.0% (N=542)} 38
+             {title:HT 1X2 2026-09-21: 44.0% (N=109)} 44
+             {title:HT 1X2 2026-09-22: 45.3% (N=64)} 45
+             {title:HT 1X2 2026-09-23: 50.0% (N=42)} 50
+             {title:HT 1X2 2026-09-24: 40.9% (N=44)} 41
+             {title:HT 1X2 2026-09-25: 43.6% (N=149)} 44
+             {title:HT 1X2 2026-09-26: 60.0% (N=10)} 60
+
+             Over 1.5
+             {title:Over 1.5 2026-09-20: 81.2% (N=547)} 81
+             {title:Over 1.5 2026-09-21: 78.0% (N=109)} 78
+             {title:Over 1.5 2026-09-22: 80.0% (N=65)} 80
+             {title:Over 1.5 2026-09-23: 66.7% (N=42)} 67
+             {title:Over 1.5 2026-09-24: 82.2% (N=45)} 82
+             {title:Over 1.5 2026-09-25: 78.3% (N=152)} 78
+             {title:Over 1.5 2026-09-26: 70.0% (N=10)} 70
+
+             Over 2.5
+             {title:Over 2.5 2026-09-20: 60.1% (N=547)} 60
+             {title:Over 2.5 2026-09-21: 49.5% (N=109)} 50
+             {title:Over 2.5 2026-09-22: 52.3% (N=65)} 52
+             {title:Over 2.5 2026-09-23: 61.9% (N=42)} 62
+             {title:Over 2.5 2026-09-24: 60.0% (N=45)} 60
+             {title:Over 2.5 2026-09-25: 63.8% (N=152)} 64
+             {title:Over 2.5 2026-09-26: 60.0% (N=10)} 60
+
+             Over 3.5
+             {title:Over 3.5 2026-09-20: 62.9% (N=547)} 63
+             {title:Over 3.5 2026-09-21: 57.8% (N=109)} 58
+             {title:Over 3.5 2026-09-22: 56.9% (N=65)} 57
+             {title:Over 3.5 2026-09-23: 83.3% (N=42)} 83
+             {title:Over 3.5 2026-09-24: 68.9% (N=45)} 69
+             {title:Over 3.5 2026-09-25: 65.8% (N=152)} 66
+             {title:Over 3.5 2026-09-26: 70.0% (N=10)} 70
+
+             BTTS
+             {title:BTTS 2026-09-20: 56.7% (N=547)} 57
+             {title:BTTS 2026-09-21: 49.5% (N=109)} 50
+             {title:BTTS 2026-09-22: 56.9% (N=65)} 57
+             {title:BTTS 2026-09-23: 47.6% (N=42)} 48
+             {title:BTTS 2026-09-24: 48.9% (N=45)} 49
+             {title:BTTS 2026-09-25: 65.1% (N=152)} 65
+             {title:BTTS 2026-09-26: 80.0% (N=10)} 80
+
+             1°T Over 0.5
+             {title:1°T Over 0.5 2026-09-20: 75.1% (N=542)} 75
+             {title:1°T Over 0.5 2026-09-21: 74.3% (N=109)} 74
+             {title:1°T Over 0.5 2026-09-22: 76.6% (N=64)} 77
+             {title:1°T Over 0.5 2026-09-23: 64.3% (N=42)} 64
+             {title:1°T Over 0.5 2026-09-24: 75.0% (N=44)} 75
+             {title:1°T Over 0.5 2026-09-25: 73.0% (N=159)} 73
+             {title:1°T Over 0.5 2026-09-26: 61.5% (N=13)} 62
+
+             Riepilogo per segnale
+             CSV
+
+             Segnale  |
+             N  |
+             Hit  |
+             Atteso  |
+             Buone  |
+             ROI  |
+             Q.media  |
+
+             Over/Under 1.5  |
+             970  |
+             79.6%  |
+             76.2%  |
+             80.4% ( 914 )  |
+             -5.6% ( 21 )  |
+             1.26  |
+
+             Gol 1° Tempo (0.5)  |
+             973  |
+             74.1%  |
+             71.3%  |
+             74.8% ( 908 )  |
+             -6.4% ( 21 )  |
+             1.35  |
+
+             Over/Under 3.5  |
+             970  |
+             63.6%  |
+             66.4%  |
+             64.4% ( 822 )  |
+             +23.4% ( 20 )  |
+             1.55  |
+
+             Over/Under 2.5  |
+             970  |
+             59.1%  |
+             60.4%  |
+             62.2% ( 698 )  |
+             -17.4% ( 21 )  |
+             1.69  |
+
+             Gol/No Gol (BTTS)  |
+             970  |
+             56.7%  |
+             56.7%  |
+             60.5% ( 664 )  |
+             +15.1% ( 21 )  |
+             1.90  |
+
+             Esito Finale (1X2)  |
+             970  |
+             48.2%  |
+             48.9%  |
+             52.1% ( 683 )  |
+             -27.3% ( 21 )  |
+             2.16  |
+
+             Esito 1° Tempo  |
+             960  |
+             40.9%  |
+             43.1%  |
+             45.0% ( 622 )  |
+             -13.1% ( 20 )  |
+             2.50  |
+
+             Per convinzione (motori concordi)
+
+             Concordi  |
+             N  |
+             Hit  |
+             ROI  |
+             Q.media  |
+
+             0 /4 motori  |
+             13  |
+             30.8%  |
+             — ( 0 )  |
+             —  |
+
+             1 /4 motori  |
+             1459  |
+             46.3%  |
+             +10.2% ( 20 )  |
+             2.35  |
+
+             2 /4 motori  |
+             4971  |
+             63.8%  |
+             -11.0% ( 64 )  |
+             1.87  |
+
+             3 /4 motori  |
+             340  |
+             71.2%  |
+             -2.8% ( 61 )  |
+             1.47  |
+
+             Per fascia di quota (solo prezzabili)
+
+             Quota  |
+             Prezzate  |
+             Hit  |
+             ROI  |
+             Q.media  |
+
+             1.01-1.50  |
+             58  |
+             77.6%  |
+             -2.0%  |
+             1.29  |
+
+             1.50-2.00  |
+             47  |
+             66.0%  |
+             +7.9%  |
+             1.67  |
+
+             2.00-3.00  |
+             32  |
+             43.8%  |
+             -3.9%  |
+             2.35  |
+
+             3.00-5.00  |
+             8  |
+             0.0%  |
+             -100.0%  |
+             3.54  |
+
+             Classifica leghe
+             min. direzioni <select=14 (4 opz.)>
+
+             Oberliga - Schleswig-Holstein
+
+             93%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. Division - Girone 3
+
+             93%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             4. liga - Divizie F
+
+             86%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Toppserien
+
+             86%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Oberliga - Rheinland-Pfalz / Saar
+
+             86%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             1. Division
+
+             84%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Derde Divisie
+
+             80%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             3. Division - Girone 5
+
+             80%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             HNL
+
+             79%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             4. liga - Divizie E
+
+             79%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Supreme Division Women
+
+             79%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. Division - Girone 6
+
+             79%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Premier League
+
+             76%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Second League - Group 4
+
+             76%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Oberliga - Bremen
+
+             74%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Oberliga - Niederrhein
+
+             74%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Division 2 - Norra Götaland
+
+             74%
+             {title:ROI alle quote Betfair (sulle prezzate)} +1%
+             19
+
+             Liga III - Serie 5
+
+             74%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             19
+
+             Division 2 - Västra Götaland
+
+             73%
+             {title:ROI alle quote Betfair (sulle prezzate)} +6%
+             33
+
+             Non League Premier - Isthmian
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Non League Premier - Northern
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Ykkönen
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Segunda División
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             NB I
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga II
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Super Liga
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             K League 2
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Primera División
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             4. liga - Divizie B
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             4. liga - Divizie C
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             A Lyga
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Division 2 - Norra Svealand
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Division 2 - Södra Svealand
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. liga - Center
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Second League - Group 1
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. liga - CFL B
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             III Liga - Group 4
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             1. Division Women
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             World Cup - U20 - Women
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} -5%
+             14
+
+             U19 league
+
+             71%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             NWSL Women
+
+             69%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Premiership Women
+
+             69%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             26
+
+             Premier League
+
+             69%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Pro League A
+
+             69%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             La Liga
+
+             69%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Reserve League
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             126
+
+             Ekstraklasa
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             1. Division
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Primera Nacional
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             84
+
+             FNL
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             First Division
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} +11%
+             28
+
+             Liga Leumit
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             USL League One
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             56
+
+             Central Youth League
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             III Liga - Group 1
+
+             68%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Brasileiro U17
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             70
+
+             Serie C
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga Nacional
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Premier League
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             2. Division - Group 1
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Oberliga - Baden-Württemberg
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Regionalliga - North
+
+             67%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Regionalliga - Nord
+
+             66%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Eliteserien
+
+             66%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             3. Division - Girone 2
+
+             66%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             UEFA U21 Championship - Qualification
+
+             65%
+             {title:ROI alle quote Betfair (sulle prezzate)} -18%
+             84
+
+             Regionalliga - West
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Eredivisie
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             J3 League
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Úrvalsdeild
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Super Liga
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Premier Soccer League
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             NB III - Northwest
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Kvindeliga
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Friendlies Clubs
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Liga III - Serie 2
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             NB III - Southeast
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Ykkösliiga
+
+             64%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Erovnuli Liga 2
+
+             63%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Liga MX Femenil
+
+             63%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             56
+
+             Oberliga - Niedersachsen
+
+             63%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             56
+
+             2. Bundesliga
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Primera B Metropolitana
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} +3%
+             42
+
+             Super League
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             NB II
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             First League
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Championship
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Copa Paulista
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga III - Serie 3
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Oberliga - Bayern Süd
+
+             62%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Serie B
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} +13%
+             49
+
+             Liga MX
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Goiano - 2
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             54
+
+             MLS Next Pro
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             105
+
+             1. Lig
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Prva Liga
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             56
+
+             Canadian Premier League
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             2. liga
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Oberliga - Hamburg
+
+             61%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Non League Premier - Southern South
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Regionalliga - Bayern
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Allsvenskan
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Liga Nacional
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             2. SNL
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Second League A - Division A Gold
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Serie A
+
+             60%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Regionalliga - Nordost
+
+             59%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Primera A
+
+             58%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             71
+
+             I Liga
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             FAW Championship
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Liga Profesional Argentina
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             70
+
+             First League
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Süper Lig
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Bundesliga
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Regionalliga - Ost
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Regionalliga - West
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Liga Pro Serie B
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga de Expansión MX
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Primera División
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Primera División
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Premier Soccer League
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Segunda División
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Division 1
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Premijer Liga
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Erovnuli Liga
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Czech Liga
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             3. liga - CFL A
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             4. liga - Divizie D
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Ettan - Norra
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} +24%
+             49
+
+             1. Liga Classic - Group 1
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. liga - East
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Second League - Group 2
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Liga Revelação U23
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga Mayor
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             3. Division - Girone 1
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. Division - Girone 4
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             U19 League
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Liga Women
+
+             57%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Paulista - U20
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             126
+
+             Division Profesional - Clausura
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             16
+
+             Major League Soccer
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             91
+
+             Copa Chile
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} -19%
+             50
+
+             Primera C
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             77
+
+             Second League
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             70
+
+             Segunda División
+
+             56%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             36
+
+             Non League Premier - Southern Central
+
+             55%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             56
+
+             1st League - RS
+
+             55%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Druha Liga
+
+             55%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Serie C - Girone A
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             70
+
+             Liga de Ascenso
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Liga Pro
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             USL Championship
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             105
+
+             Super League
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             2. Division - Group 2
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Regionalliga - South
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             K League 1
+
+             54%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Division 2 - Södra Götaland
+
+             53%
+             {title:ROI alle quote Betfair (sulle prezzate)} -20%
+             19
+
+             1. Division
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Second League
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             63
+
+             Segunda División
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Meistriliiga
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Persha Liga
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             First League
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Virsliga
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             1. SNL
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Liga Femenina
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Football League - Lowland League
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Oberliga - Hessen
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Second NL
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             3. liga - West
+
+             52%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             29
+
+             Liga Panameña de Fútbol
+
+             51%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Oberliga - Bayern Nord
+
+             51%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Liga MX U21
+
+             51%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             Serie C - Girone B
+
+             51%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             63
+
+             Championship
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             3. Liga
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             22
+
+             Superettan
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Superliga
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Jupiler Pro League
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Primera División
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Liga I
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Premier League
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             First League
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Elitettan
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             28
+
+             Oberliga - Nordost-Nord
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             USL Super League
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Liga E Pare
+
+             50%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             II Liga - East
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             First NL
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Primera B
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Division Intermedia
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Second League
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             Primera Division
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             42
+
+             Serie C - Girone C
+
+             48%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             21
+
+             3. liga - MSFL
+
+             47%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             49
+
+             Primeira Liga
+
+             46%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             35
+
+             J1 League
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Premier League
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             1. Liga Promotion
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Damallsvenskan
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Superliga
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Oberliga - Westfalen
+
+             43%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Ettan - Södra
+
+             41%
+             {title:ROI alle quote Betfair (sulle prezzate)} -78%
+             49
+
+             Super Liga
+
+             36%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             1. Liga
+
+             29%
+             {title:ROI alle quote Betfair (sulle prezzate)} —
+             14
+
+             Partite ( 500 di 983 ) · clic per le direzioni
+             tutte=prese/tot · ROI alle quote Betfair
+             {title:Esporta le 500 partite caricate (983 totali — carica le altre prima per un CSV completo)} CSV (500)
+
+             Giorno  |
+             Lega  |
+             Partita  |
+             FT  |
+             Tutte  |
+             Buone  |
+             ROI  |
+
+             26/09  |
+             Copa Chile  |
+             Colo Colo - A. Italiano  |
+             1-0  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Division Profesional - Clausura  |
+             Nacional Asuncion - Sportivo Ameliano  |
+             1-1  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Liga MX U21  |
+             Club Tijuana U21 - Atlas U21  |
+             2-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             NWSL Women  |
+             Racing Louisville W - San Diego Wave W  |
+             0-2  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Primera A  |
+             Chico - Deportivo Pasto  |
+             3-0  |
+             1 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Primera B Metropolitana  |
+             Excursionistas - Real Pilar  |
+             3-0  |
+             5 / 7  |
+             3 / 5  |
+             {title:7 prezzate} +13%  |
+
+             26/09  |
+             Primera B Metropolitana  |
+             Ituzaingó - Defensores Unidos  |
+             0-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:7 prezzate} -8%  |
+
+             26/09  |
+             Primera C  |
+             Mercedes - Puerto Nuevo  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Reserve League  |
+             River Plate Res. - Boca Juniors Res.  |
+             2-2  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             Serie B  |
+             Novorizontino - São Bernardo  |
+             0-0  |
+             3 / 7  |
+             2 / 5  |
+             {title:7 prezzate} -16%  |
+
+             26/09  |
+             Serie B  |
+             Vila Nova - Londrina  |
+             2-0  |
+             6 / 7  |
+             4 / 5  |
+             {title:7 prezzate} +43%  |
+
+             26/09  |
+             USL Championship  |
+             Hartford Athletic - Louisville City  |
+             2-2  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             26/09  |
+             USL Championship  |
+             Sporting JAX - Loudoun United  |
+             1-4  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             1. Division  |
+             Lida - Smorgon  |
+             2-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             1. Division  |
+             Slonim - BATE II  |
+             2-1  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             1. Liga Classic - Group 1  |
+             Lausanne Sport II - Echallens  |
+             3-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             1. Liga U19  |
+             Sparta Praha U19 - Mladá Boleslav U19  |
+             2-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             2. Division  |
+             HIK - Roskilde  |
+             1-1  |
+             1 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             2. liga  |
+             Pohronie - Inter Bratislava  |
+             0-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             2. SNL  |
+             Dekani - Ilirija  |
+             1-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. Division  |
+             FC Helsingor - Holbæk B&I  |
+             5-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. Division - Girone 2  |
+             Aalesund II - Rosenborg II  |
+             1-7  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. Division - Girone 4  |
+             Varhaug - Staal Jørpeland  |
+             4-2  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. Liga  |
+             Havelse - Fortuna Köln  |
+             1-3  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - CFL A  |
+             Písek - Příbram II  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - East  |
+             Slávia TU Košice - Spartak Medzev  |
+             6-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - MSFL  |
+             Karviná II - Líšeň II  |
+             2-2  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - MSFL  |
+             Slovácko II - Zbrojovka Brno II  |
+             0-1  |
+             1 / 7  |
+             1 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - MSFL  |
+             Zlín II - Vítkovice  |
+             0-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - West  |
+             Komárno II - Baník Prievidza  |
+             1-4  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             3. liga - West  |
+             Spartak Myjava - Gabčíkovo  |
+             2-0  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             4. liga - Divizie B  |
+             Chomutov - Karlovy Vary  |
+             1-0  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             4. liga - Divizie B  |
+             Slavoj Vyšehrad - Sokol Hostouň  |
+             1-2  |
+             7 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             4. liga - Divizie D  |
+             Tatran Bohunice - Sparta Brno  |
+             1-2  |
+             4 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             4. liga - Divizie E  |
+             Baťov - Nové Sady  |
+             3-5  |
+             6 / 7  |
+             2 / 2  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Arbroath - Queen's Park  |
+             2-1  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Ayr Utd - Stenhousemuir  |
+             0-1  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Glenavon FC - Loughgall  |
+             4-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Inverness CT - Morton  |
+             2-0  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Newry City AFC - H&W Welders  |
+             3-2  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Raith Rovers - Livingston  |
+             0-2  |
+             1 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Championship  |
+             Rathfriland - Warrenpoint Town  |
+             0-2  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Division 2 - Norra Götaland  |
+             Vänersborgs IF - Ahlafors  |
+             1-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:7 prezzate} +1%  |
+
+             25/09  |
+             Division 2 - Östra Götaland  |
+             Räppe - Växjö Norra  |
+             1-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:7 prezzate} -20%  |
+
+             25/09  |
+             Division 2 - Västra Götaland  |
+             Dalstorps - Böljan  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:7 prezzate} -21%  |
+
+             25/09  |
+             Division 2 - Västra Götaland  |
+             Landvetter IS - Torslanda  |
+             3-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:7 prezzate} +34%  |
+
+             25/09  |
+             Division Intermedia  |
+             General Caballero - 3 de Noviembre  |
+             1-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Division Intermedia  |
+             Independiente F.b.c. - Sportivo Carapeguá  |
+             0-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Division Profesional - Clausura  |
+             Sportivo Luqueno - Club Guarani  |
+             0-1  |
+             1 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Druha Liga  |
+             Karbon Cherkasy - SC Poltava 2  |
+             1-0  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Druha Liga  |
+             Nyva Ternopil II - Podillya Khmelnytskyi  |
+             1-2  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Eerste Divisie  |
+             Dordrecht - Almere City FC  |
+             3-2  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Elitettan  |
+             Örebro SK W - Linköping W  |
+             2-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Ettan - Norra  |
+             Hammarby Talang - Stocksund  |
+             2-1  |
+             6 / 7  |
+             6 / 6  |
+             {title:7 prezzate} +24%  |
+
+             25/09  |
+             Ettan - Södra  |
+             Lund - Kristianstad  |
+             0-1  |
+             1 / 7  |
+             1 / 7  |
+             {title:7 prezzate} -78%  |
+
+             25/09  |
+             FAW Championship  |
+             Aberystwyth Town - Swansea University  |
+             0-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             FAW Championship  |
+             Afan Lido - Newport City  |
+             0-0  |
+             1 / 7  |
+             1 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             FAW Championship  |
+             Baglan Dragons - Carmarthen Town  |
+             1-2  |
+             7 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             FAW Championship  |
+             Bangor City 1876 FC - Buckley Town  |
+             2-6  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             FAW Championship  |
+             Caerphilly Athletic - Pontypridd Town  |
+             1-2  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             FAW Championship  |
+             Ruthin Town - Penrhyncoch  |
+             2-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             First Division  |
+             Cobh Ramblers - Athlone Town  |
+             3-3  |
+             4 / 7  |
+             3 / 6  |
+             {title:7 prezzate} -6%  |
+
+             25/09  |
+             First Division  |
+             Kerry - Wexford  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:7 prezzate} +13%  |
+
+             25/09  |
+             First Division  |
+             Treaty United - Finn Harps  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:7 prezzate} +30%  |
+
+             25/09  |
+             First Division  |
+             UCD - Bray Wanderers  |
+             1-3  |
+             5 / 7  |
+             4 / 6  |
+             {title:7 prezzate} +7%  |
+
+             25/09  |
+             First NL  |
+             Dinamo Zagreb U21 - Mladost Ždralovi  |
+             1-0  |
+             2 / 7  |
+             1 / 3  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Football League - Highland League  |
+             Strathspey Thistle - Forres Mechanics  |
+             0-1  |
+             1 / 7  |
+             1 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Friendlies Clubs  |
+             VfB Stuttgart - 1. FC Heidenheim  |
+             3-0  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             III Liga - Group 1  |
+             Swit - Łomża  |
+             4-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             III Liga - Group 1  |
+             Wisła Płock II - Jagiellonia II  |
+             2-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             III Liga - Group 1  |
+             Ząbkovia Ząbki - Mławianka Mława  |
+             3-4  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             III Liga - Group 4  |
+             Wisła Kraków II - Czarni Połaniec  |
+             1-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             III Liga - Group 4  |
+             Wiślanie Jaśkowice - Wisłoka Dębica  |
+             1-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga de Expansión MX  |
+             Alebrijes de Oaxaca - CA La Paz  |
+             1-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga de Expansión MX  |
+             Mineros de Zacatecas - Piratas  |
+             3-0  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 2  |
+             ACS Mediaş 2022 - Tricolorul Breaza  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 2  |
+             ARO Muscelul Câmpulung - Carpati Covasna  |
+             1-1  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 3  |
+             Blejoi - Berca  |
+             6-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 3  |
+             Flacăra Moreni - Tunari  |
+             6-0  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 3  |
+             Viitorul Corbeanca - Păuleşti  |
+             1-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 5  |
+             Alexandria - Axi Adunații-Copăceni  |
+             2-0  |
+             4 / 5  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 5  |
+             LPS HD Clinceni - Dinamo Bucureşti II  |
+             5-1  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 5  |
+             Oxigen Bucuresti - Voluntari II  |
+             1-2  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 6  |
+             CSM Targu Jiu - Academica Balș  |
+             1-0  |
+             2 / 5  |
+             1 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 6  |
+             Filiaşi - Păușești  |
+             1-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 7  |
+             Timişul Şag - Universitatea Alba Iulia  |
+             1-0  |
+             3 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga III - Serie 8  |
+             Sănătatea Cluj - Sânmartin  |
+             1-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga MX U21  |
+             Atlante U21 - Monterrey U21  |
+             5-4  |
+             3 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga Nacional  |
+             Municipal - Suchitepéquez  |
+             3-0  |
+             7 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga Revelação U23  |
+             Marítimo U23 - Benfica U23  |
+             1-3  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Liga Women  |
+             Killas W - Flamengo FBC W  |
+             1-0  |
+             4 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Baden-Württemberg  |
+             CFR Pforzheim - Karlsruhe II  |
+             2-3  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Nord  |
+             Gebenbach - Fortuna Regensburg  |
+             1-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Nord  |
+             Ingolstadt II - Ammerthal  |
+             0-2  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Nord  |
+             Neudrossenfeld - DJK Bamberg  |
+             2-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Nord  |
+             Viktoria Aschaffenburg - Bayern Hof  |
+             2-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Süd  |
+             1860 Rosenheim - Kottern  |
+             1-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Süd  |
+             Erlbach - Pipinsried  |
+             1-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bayern Süd  |
+             Hankofen-Hailing - Sportfreunde Schwaig  |
+             1-3  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bremen  |
+             OSC Bremerhaven - Woltmershausen  |
+             4-1  |
+             7 / 7  |
+             7 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Bremen  |
+             Werder Bremen III - Leher TS  |
+             1-1  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Hessen  |
+             Unter-Flockenbach - Eintracht Stadtallendorf  |
+             2-7  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Niederrhein  |
+             Holzheimer SG - Schonnebeck  |
+             0-3  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Nordost-Nord  |
+             Hertha Zehlendorf - Reinickendorfer Fuchse  |
+             2-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Nordost-Nord  |
+             Tennis Borussia - Lichtenberg  |
+             0-1  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Nordost-Süd  |
+             Union Sandersdorf - VfL Halle  |
+             1-4  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Rheinland-Pfalz / Saar  |
+             FV Engers 07 - Auersmacher  |
+             3-2  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Oberliga - Schleswig-Holstein  |
+             Hohenwestedt - Rapid Lubeck  |
+             1-3  |
+             7 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Água Santa U20 - Capivariano U20  |
+             0-1  |
+             5 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Corinthians U20 - XV de Jaú U20  |
+             2-0  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Desportivo Brasil U20 - Oeste U20  |
+             1-1  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Guarani U20 - União Suzano U20  |
+             4-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Palmeiras U20 - Ituano U20  |
+             2-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Santo André U20 - Sertãozinho U20  |
+             3-0  |
+             7 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Santos U20 - Jabaquara U20  |
+             2-0  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             São Paulo U20 - EC São Bernardo U20  |
+             2-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Paulista - U20  |
+             Sfera U20 - XV de Piracicaba U20  |
+             1-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Premier League  |
+             Thimphu - Tensung  |
+             4-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Premiership  |
+             Coleraine FC - Linfield  |
+             1-3  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Premiership Women  |
+             Derry City W - Larne W  |
+             5-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Premiership Women  |
+             Linfield W - Cliftonville W  |
+             1-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Premiership Women  |
+             Lisburn Ladies W - Crusaders Strikers W  |
+             2-3  |
+             5 / 5  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Primera A  |
+             Atletico Nacional - Millonarios  |
+             1-1  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Bayern  |
+             Bayern München II - Schwaben Augsburg  |
+             4-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Bayern  |
+             Eltersdorf - Bayreuth  |
+             2-4  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Bayern  |
+             Greuther Fürth II - Nürnberg II  |
+             2-1  |
+             5 / 7  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Bayern  |
+             Memmingen - Buchbach  |
+             0-1  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Nord  |
+             Schöningen - SV Drochtersen/Assel  |
+             3-3  |
+             5 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Nord  |
+             VfB Lübeck - Todesfelde  |
+             3-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Nordost  |
+             BFC Dynamo - Greifswalder FC  |
+             1-0  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Nordost  |
+             Magdeburg II - Altglienicke  |
+             0-1  |
+             1 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Nordost  |
+             Tasmania Berlin - FC Carl Zeiss Jena  |
+             1-5  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - North  |
+             Bad Schallerbach - Kuchl  |
+             5-1  |
+             6 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - North  |
+             UFC Hallein - Pinzgau Saalfelden  |
+             0-0  |
+             2 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - North  |
+             Wals-Grünau - Wohnbau Dietach  |
+             3-0  |
+             6 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Ost  |
+             Krems / Rehberg - Mattersburg SV 2020  |
+             3-0  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Ost  |
+             Mannsdorf-Großenzersdorf - Oberwart  |
+             0-1  |
+             3 / 7  |
+             1 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Ost  |
+             Parndorf - Favoritner AC  |
+             1-0  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - Ost  |
+             SV Horn - Traiskirchen  |
+             3-4  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - South  |
+             Allerheiligen - Deutschlandsberger SC  |
+             2-3  |
+             4 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - South  |
+             Velden - Völkermarkt  |
+             0-0  |
+             2 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - South  |
+             Weiz - SV Lafnitz  |
+             3-3  |
+             4 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - South  |
+             Wolfsberg - Bleiburg  |
+             1-0  |
+             2 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - SudWest  |
+             FC Astoria Walldorf - SV Sandhausen  |
+             1-2  |
+             5 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Regionalliga - West  |
+             FC Gutersloh - Paderborn II  |
+             1-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Reserve League  |
+             Colón Res. - Unión Santa Fe Res.  |
+             2-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Reserve League  |
+             Racing Club Res. - Independiente Res.  |
+             1-2  |
+             6 / 7  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Reserve League  |
+             San Martín San Juan Res. - Godoy Cruz Res.  |
+             0-1  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League  |
+             El Entag EL Harby - Tanta SC  |
+             0-0  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League  |
+             Haras El Hodood - Dayrout  |
+             0-0  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League  |
+             Itesalat - La Viena FC  |
+             1-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League  |
+             Mega Sport - Ismaily SC  |
+             2-3  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League  |
+             Tersana - Baladiyyat Al Mehalla  |
+             1-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second League - Group 4  |
+             Dinamo Barnaul - Pobeda Nizhniy Novgorod  |
+             2-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second NL  |
+             Hrvatski Dragovoljac - Križevci  |
+             0-1  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Second NL  |
+             Uljanik - Slavonija Požega  |
+             3-3  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Segunda División  |
+             Comerciantes - Sport Huancayo 2  |
+             0-1  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Segunda División  |
+             Deportiva Agropecuaria - Deportivo Llacuabamba  |
+             0-0  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Segunda División  |
+             Deportivo Binacional - Academia Cantolao  |
+             2-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Segunda División  |
+             Girona - Albacete  |
+             2-0  |
+             0 / 1  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Segunda División  |
+             Puerto Cabello II - Atletico el Vigia FC  |
+             1-1  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Toppserien  |
+             Bodø / Glimt W - Røa W  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Azerbaijan U21 - Czech Republic U21  |
+             1-1  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Bulgaria U21 - Portugal U21  |
+             2-1  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Cyprus U21 - Romania U21  |
+             0-3  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             England U21 - Kazakhstan U21  |
+             4-2  |
+             5 / 7  |
+             4 / 5  |
+             {title:5 prezzate} -10%  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Estonia U21 - Faroe Islands U21  |
+             1-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Finland U21 - Spain U21  |
+             2-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Iceland U21 - France U21  |
+             1-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Netherlands U21 - Norway U21  |
+             0-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:7 prezzate} -40%  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Slovakia U21 - Republic of Ireland U21  |
+             0-2  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             UEFA U21 Championship - Qualification  |
+             Switzerland U21 - Luxembourg U21  |
+             5-0  |
+             5 / 7  |
+             5 / 6  |
+             {title:7 prezzate} -3%  |
+
+             25/09  |
+             Ykkönen  |
+             Tampere United - JJK  |
+             4-0  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Ykkösliiga  |
+             KäPa - Haka  |
+             3-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             25/09  |
+             Ykkösliiga  |
+             Kooteepee - MP  |
+             1-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             3. liga - Center  |
+             Podkonice - Ružomberok II  |
+             4-4  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Canadian Premier League  |
+             Vancouver FC - York United  |
+             3-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Copa Chile  |
+             O'Higgins - Deportes Santa Cruz  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Division 2 - Västra Götaland  |
+             Kongahälla - Lindome  |
+             3-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Goiano - 2  |
+             Crixás EC - Trindade  |
+             1-1  |
+             3 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Goiano - 2  |
+             Goianésia - Rio Verde  |
+             1-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Goiano - 2  |
+             Goiânia - Morrinhos  |
+             2-1  |
+             7 / 7  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Goiano - 2  |
+             Grêmio Anápolis - Bom Jesus EC  |
+             2-2  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Goiano - 2  |
+             Mineiros - Tupy FC  |
+             1-0  |
+             4 / 5  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga de Ascenso  |
+             Cariari Pococi - Pitbulls Santa Barbara FC  |
+             2-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Femenina  |
+             Santa Fe W - Deportivo Cali W  |
+             2-3  |
+             5 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Leumit  |
+             Hapoel Acre - Hapoel Afula  |
+             0-3  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Leumit  |
+             Hapoel Rishon LeZion - Maccabi Ahi Nazareth  |
+             1-0  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Leumit  |
+             Ironi Modi'in - Ashdod  |
+             1-3  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Leumit  |
+             Maccabi Herzliya - Kiryat Yam SC  |
+             1-3  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Mayor  |
+             Moca - Delfines Del Este  |
+             1-1  |
+             5 / 7  |
+             4 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Mayor  |
+             Vega Real - Jarabacoa  |
+             3-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Nacional  |
+             Xelajú - Antigua GFC  |
+             4-0  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Pro Serie B  |
+             Atletico FC - Deportivo Cuenca Juniors  |
+             2-0  |
+             7 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Pro Serie B  |
+             Ind. Juniors - Cuniburo  |
+             2-3  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Liga Pro Serie B  |
+             LDU Portoviejo - 22 de Julio  |
+             2-2  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Ligue 3  |
+             Caen - Rouen  |
+             3-2  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Major League Soccer  |
+             Seattle Sounders - Real Salt Lake  |
+             2-0  |
+             3 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Paulista - U20  |
+             Portuguesa U20 - Ponte Preta U20  |
+             0-0  |
+             2 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Premier League  |
+             Ugyen Academy - Drukpa  |
+             2-4  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Primera A  |
+             America de Cali - Águilas Doradas  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Primera Division  |
+             Alianza - Fuerte San Francisco  |
+             2-2  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Primera Division  |
+             Firpo - Cacahuatique  |
+             0-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Argentinos Juniors Res. - Platense Res.  |
+             2-0  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Belgrano Córdoba Res. - Talleres Córdoba Res.  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Deportivo Riestra Res. - Barracas Central Res.  |
+             3-0  |
+             7 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Independiente Riva. Res. - Gimnasia Mendoza 2  |
+             0-1  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Instituto Res. - Estudiantes Rio Cuarto 2  |
+             0-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Reserve League  |
+             Newell's Old Boys Res. - Rosario Central Res.  |
+             3-0  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             AL Nasr SC - El Seka El Hadid  |
+             3-1  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             Detonit Plachkovica - Ohrid  |
+             0-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             Kahraba Ismailia - Pharco  |
+             3-1  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             Maleyet Kafr El Zayiat - El Mansura  |
+             2-0  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             Masar - Proxy  |
+             1-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second League  |
+             Team - El Dakhleya  |
+             1-2  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             Second NL  |
+             Koprivnica - Uskok Klis  |
+             0-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             UEFA U21 Championship - Qualification  |
+             Belgium U21 - Belarus U21  |
+             1-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             UEFA U21 Championship - Qualification  |
+             San Marino U21 - Kosovo U21  |
+             0-3  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             24/09  |
+             —  |
+             Deportes Iquique - Antofagasta  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:7 prezzate} -18%  |
+
+             24/09  |
+             —  |
+             Union La Calera - U. Catolica  |
+             1-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:7 prezzate} -6%  |
+
+             23/09  |
+             1st League - RS  |
+             Drina Zvornik - Rudar Prijedor  |
+             1-0  |
+             4 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             1st League - RS  |
+             FK Majevica Lopare - Laktaši  |
+             1-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             1st League - RS  |
+             FK Romanija Pale - Potkozarje  |
+             0-1  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             1st League - RS  |
+             Slavija - Kozara Gradiška  |
+             0-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             1st League - RS  |
+             Sutjeska Foča - Omarska  |
+             1-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             1st League - RS  |
+             Velež Nevesinje - Zvijezda 09  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             3. SNL - East  |
+             Videm - Hajdina  |
+             2-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             4. liga - Divizie B  |
+             Meteor Praha - Baník Sokolov  |
+             0-1  |
+             3 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             4. liga - Divizie B  |
+             Ostrov - Brandýs nad Labem  |
+             2-3  |
+             5 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             4. liga - Divizie C  |
+             Vykan - Slavia Hradec Králové  |
+             1-3  |
+             5 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Brasileiro U17  |
+             Sao Paulo U17 - Palmeiras U17  |
+             2-1  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Copa Chile  |
+             A. Italiano - Colo Colo  |
+             0-0  |
+             2 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Copa Chile  |
+             Cobreloa - Coquimbo Unido  |
+             1-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Copa Rio  |
+             Madureira - Sampaio Corrêa RJ  |
+             0-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             First League  |
+             Bregalnica Štip - Skopje  |
+             1-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Football League - Lowland League  |
+             Cumnock Juniors - Troon FC  |
+             4-0  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Football League - Lowland League  |
+             Largs Thistle - Johnstone Burgh  |
+             1-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Football League - Lowland League  |
+             Renfrew - Beith  |
+             3-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Friendlies Clubs  |
+             Wiedenbrück - VfL Osnabrück  |
+             0-3  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Oberliga - Bremen  |
+             Oberneuland - Hemelingen  |
+             0-6  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Oberliga - Rheinland-Pfalz / Saar  |
+             Elversberg II - Schott Mainz  |
+             2-1  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Paulista - U20  |
+             Gremio Prudente U20 - Juventus U20  |
+             0-0  |
+             0 / 7  |
+             0 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Pernambucano - U20  |
+             Atletico PE U20 - Santa Cruz U20  |
+             0-8  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Premier League  |
+             Thimphu City - Transport United  |
+             3-0  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Primera A  |
+             Independiente Medellin - Jaguares  |
+             2-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Primera A  |
+             Santa Fe - Deportivo Cali  |
+             0-1  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Aldosivi Res. - Quilmes 2  |
+             0-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Central Córdoba SdE Res. - Atlético Tucumán Res.  |
+             0-1  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Defensa y Justicia Res. - Tigre Res.  |
+             2-1  |
+             6 / 7  |
+             3 / 3  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Gimnasia La Plata Res. - Estudiantes La Plata Res  |
+             2-0  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Lanús Res. - Banfield Res.  |
+             2-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Reserve League  |
+             Sarmiento Res. - Atl. Rafaela 2  |
+             3-1  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             Third League - Southeast  |
+             Neftochimic Burgas - Lokomotiv Plovdiv II  |
+             3-0  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             U19 League  |
+             Dynamo Kyiv U19 - Metalist 1925 U19  |
+             0-1  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             U19 League  |
+             LNZ Cherkasy U19 - Karpaty Lviv U19  |
+             1-0  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             U19 League  |
+             Lviv U19 - Oleksandria U19  |
+             2-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             U19 League  |
+             SK Metalurh U19 - Obolon' Kyiv U19  |
+             1-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             U19 League  |
+             Zhytomyr U19 - Kolos Kovalivka U19  |
+             1-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             USL Championship  |
+             Birmingham Legion - Brooklyn  |
+             4-0  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             World Cup - U20 - Women  |
+             Italy U20 W - Spain U20 W  |
+             0-2  |
+             5 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             23/09  |
+             World Cup - U20 - Women  |
+             Korea DPR U20 W - Colombia U20 W  |
+             3-0  |
+             5 / 7  |
+             4 / 5  |
+             {title:7 prezzate} -5%  |
+
+             23/09  |
+             —  |
+             Curico Unido - Concepción  |
+             0-4  |
+             3 / 7  |
+             2 / 5  |
+             {title:7 prezzate} -32%  |
+
+             22/09  |
+             3. Division - Girone 5  |
+             Skjetten - Skjervøy  |
+             6-1  |
+             7 / 7  |
+             7 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             America MG U17 - Gremio U17  |
+             4-0  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Atletico GO U17 - Botafogo U17  |
+             2-6  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Cruzeiro U17 - Bahia U17  |
+             4-0  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Fluminense U17 - Athletico PR U17  |
+             0-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Internacional U17 - Atlético Mineiro U17  |
+             0-1  |
+             4 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Juventude U17 - Corinthians U17  |
+             1-6  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             RB Bragantino U17 - Flamengo RJ U17  |
+             2-0  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Vasco U17 - Santos U17  |
+             5-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro U17  |
+             Vitoria U17 - Fortaleza U17  |
+             1-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Brasileiro Women  |
+             Corinthians W - Bahia W  |
+             1-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Copa Chile  |
+             D. Puerto Montt - Nublense  |
+             2-0  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Copa Paulista  |
+             Juventus - União São João  |
+             1-1  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Division Intermedia  |
+             Encarnación - Deportivo Capiata  |
+             3-1  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             First League  |
+             Ararat II - Pyunik II  |
+             2-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             First League  |
+             Bentonit Ijevan - Mika  |
+             2-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             First League  |
+             Sardarapat 2 - Ararat-Armenia II  |
+             0-1  |
+             3 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Kvindeliga  |
+             AGF W - Nordsjælland W  |
+             0-2  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga de Ascenso  |
+             Pitbulls Santa Barbara FC - Cariari Pococi  |
+             1-0  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga II  |
+             ASA Targu Mures - CS Dinamo București  |
+             4-3  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga II  |
+             Dumbrăviţa - CSM Reşiţa  |
+             0-2  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Mayor  |
+             Salcedo - Cibao  |
+             0-0  |
+             2 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Mayor  |
+             Universidad O&M - Atlántico  |
+             3-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga MX Femenil  |
+             León W - Juárez W  |
+             0-2  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga MX Femenil  |
+             Santos Laguna W - Cruz Azul W  |
+             2-0  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga MX Femenil  |
+             Toluca W - Tigres UANL W  |
+             2-7  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Panameña de Fútbol  |
+             UMECIT - Union Cocle  |
+             1-0  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Profesional Argentina  |
+             Barracas Central - Independ. Rivadavia  |
+             0-1  |
+             5 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Profesional Argentina  |
+             Lanus - Estudiantes L.P.  |
+             2-1  |
+             4 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Liga Revelação U23  |
+             Academico Viseu U23 - Estoril U23  |
+             1-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Isthmian  |
+             Brentwood Town - Maldon & Tiptree  |
+             5-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Isthmian  |
+             Three Bridges - Leatherhead  |
+             3-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Northern  |
+             Cleethorpes Town - Redcar Athletic  |
+             1-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Northern  |
+             Leek Town - Hyde United  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Anstey Nomads - Alvechurch  |
+             2-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Bury Town - Hitchin Town  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Leiston - Peterborough Sports  |
+             0-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Rushall Olympic - Kettering Town  |
+             3-2  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Stourbridge - Real Bedford  |
+             1-4  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Stratford Town - Bromsgrove Sporting  |
+             2-3  |
+             4 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern Central  |
+             Worcester City - Banbury United  |
+             0-0  |
+             3 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern South  |
+             Berkhamsted - Hanworth Villa  |
+             1-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern South  |
+             Chichester City - Chertsey Town  |
+             2-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern South  |
+             Malvern Town - Gloucester City  |
+             5-2  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern South  |
+             Plymouth Parkway - Frome Town  |
+             2-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Non League Premier - Southern South  |
+             Taunton Town - Bath City  |
+             1-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Premier League  |
+             RTC - Tsirang  |
+             6-1  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera B  |
+             Depor FC - Tigres FC  |
+             0-3  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera B  |
+             Ind. Yumbo - Internacional Palmira  |
+             0-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera B  |
+             Real Cartagena - Envigado  |
+             0-0  |
+             1 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera B  |
+             Real Cundinamarca - Quindio  |
+             3-1  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera B  |
+             Real Santander - Orsomarso  |
+             0-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera División  |
+             Central Espanol - Atletico Torque  |
+             1-4  |
+             3 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Primera Nacional  |
+             Nueva Chicago - Patronato  |
+             1-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Pro League A  |
+             FarDu - BuxDu  |
+             3-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Pro League A  |
+             Qiziriq - Gazalkent  |
+             1-4  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Regionalliga - Ost  |
+             Traiskirchen - Krems / Rehberg  |
+             2-0  |
+             3 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Regionalliga - South  |
+             Austria Klagenfurt - Donau Klagenfurt  |
+             2-1  |
+             7 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Reserve League  |
+             San Lorenzo Res. - Huracán Res.  |
+             0-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Reserve League  |
+             Vélez Sársfield Res. - Ferro 2  |
+             4-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Second League - Group 1  |
+             Sevastopol - Rubin Yalta  |
+             3-1  |
+             6 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Serie B  |
+             Criciuma - Operario-PR  |
+             0-2  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Serie B  |
+             Cuiaba - Nautico Recife  |
+             3-0  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             Torneo Promocional Amateur  |
+             Uribelarrea - Nautico Hacoaj  |
+             5-0  |
+             2 / 5  |
+             1 / 3  |
+             {title:nessuna quota} —  |
+
+             22/09  |
+             USL Super League  |
+             DC Power W - Fort Lauderdale United W  |
+             2-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             1. Division  |
+             HB Koge - Hobro  |
+             5-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             2. liga  |
+             Petržalka - Pohronie  |
+             1-0  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 1  |
+             KFUM II - IF Ready  |
+             2-5  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 2  |
+             Nardo - Ranheim II  |
+             4-1  |
+             7 / 7  |
+             7 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 2  |
+             Spjelkavik - Rosenborg II  |
+             0-4  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 3  |
+             Brann II - Fyllingsdalen  |
+             7-0  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 3  |
+             Os - Åsane II  |
+             3-2  |
+             7 / 7  |
+             7 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 4  |
+             Madla - Haugesund II  |
+             1-1  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 4  |
+             Odd II - Stabæk II  |
+             1-1  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 4  |
+             Staal Jørpeland - Viking II  |
+             2-2  |
+             5 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 5  |
+             Alta - Strømsgodset II  |
+             2-0  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 5  |
+             Tromsø II - Kongsvinger II  |
+             6-0  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 6  |
+             Brumunddal - Sandefjord II  |
+             1-2  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             3. Division - Girone 6  |
+             Lyn II - Sarpsborg 08 II  |
+             2-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Division Intermedia  |
+             Benjamín Aceval - Atlético Tembetary  |
+             2-1  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Druha Liga  |
+             Penuel - Trostianets  |
+             1-3  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Druha Liga  |
+             SC Poltava 2 - Atlet  |
+             0-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Druha Liga  |
+             Skala 1911 Stryi - Vilkhivtsi  |
+             0-1  |
+             2 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Erovnuli Liga  |
+             Rustavi - FC Iberia 1999  |
+             0-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Erovnuli Liga  |
+             Spaeri - Dila  |
+             1-4  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Esiliiga A  |
+             Nõmme Kalju II - Nõmme United II  |
+             2-3  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Esiliiga B  |
+             Levadia U19 - Luunja  |
+             1-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Ettan - Norra  |
+             Arlanda - Hammarby Talang  |
+             4-2  |
+             2 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Ettan - Norra  |
+             Vasalund - Assyriska FF  |
+             1-5  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Ettan - Södra  |
+             Angelholms FF - Eskilsminne  |
+             2-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Ettan - Södra  |
+             Jonkopings Sodra - Skövde AIK  |
+             3-2  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             First League  |
+             Andranik - Lernayin Artsakh  |
+             1-2  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             First League  |
+             Araks Ararat - BKMA II  |
+             0-0  |
+             1 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             First League  |
+             Shirak II - Noah II  |
+             2-1  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             First League  |
+             Struga - Aresimi  |
+             6-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga de Expansión MX  |
+             Tapatío - Tlaxcala  |
+             4-0  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga E Pare  |
+             Trepça Mitrovicë - Tefik Canga  |
+             1-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Femenina  |
+             Millonarios W - Santa Fe W  |
+             1-2  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga I  |
+             Oţelul - Corvinul Hunedoara  |
+             2-3  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga I  |
+             Petrolul Ploiesti - Csikszereda  |
+             2-0  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Mayor  |
+             Cibao - Universidad O&M  |
+             1-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga MX  |
+             CF Pachuca - Club Tijuana  |
+             2-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga MX  |
+             Club Queretaro - Leon  |
+             1-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga MX  |
+             Toluca - Santos Laguna  |
+             2-3  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga MX Femenil  |
+             Atlante W - Querétaro W  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga MX Femenil  |
+             Atlético San Luis W - Pachuca W  |
+             2-1  |
+             7 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Nacional  |
+             CD Olimpia - Atletico Independiente  |
+             4-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Nacional  |
+             Juticalpa - CD Marathon  |
+             3-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Nacional  |
+             Malacateco - Mixco  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Nacional  |
+             Suchitepéquez - Xelajú  |
+             2-2  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Panameña de Fútbol  |
+             Independiente de La Chorrera - Sporting San Miguelito  |
+             4-3  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Pro  |
+             LDU de Quito - Universidad Catolica  |
+             2-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Pro  |
+             Manta FC - Orense SC  |
+             2-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Profesional Argentina  |
+             Aldosivi - Atletico Tucuman  |
+             1-0  |
+             4 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Profesional Argentina  |
+             Belgrano Cordoba - Estudiantes de Rio Cuarto  |
+             2-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Profesional Argentina  |
+             Velez Sarsfield - Tigre  |
+             3-2  |
+             2 / 7  |
+             0 / 0  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Liga Revelação U23  |
+             União Leiria U23 - Gil Vicente U23  |
+             0-1  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Major League Soccer  |
+             Inter Miami - San Diego  |
+             2-2  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Non League Premier - Southern Central  |
+             Redditch United - Racing Club Warwick  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             NWSL Women  |
+             Bay FC W - Racing Louisville W  |
+             2-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             NWSL Women  |
+             Utah Royals W - Angel City W  |
+             0-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             Bandeirante U20 - RB Bragantino U20  |
+             0-6  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             EC São Bernardo U20 - São Paulo U20  |
+             0-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             Ituano U20 - Palmeiras U20  |
+             1-1  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             Jabaquara U20 - Santos U20  |
+             1-4  |
+             3 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             SC Paulinense SP U20 - Ibrachina U20  |
+             2-2  |
+             2 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Paulista - U20  |
+             XV de Jaú U20 - Corinthians U20  |
+             2-3  |
+             3 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Persha Liga  |
+             Viktoriya Mykolaivka - Nyva Ternopil  |
+             1-3  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Premier League  |
+             Thimphu - Ugyen Academy  |
+             1-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera A  |
+             Deportes Tolima - America de Cali  |
+             1-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera A  |
+             Llaneros - Atletico Nacional  |
+             2-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera B  |
+             Bogota FC - Barranquilla  |
+             2-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             Central Ballester - Central Cordoba  |
+             0-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             Claypole - Yupanqui  |
+             2-1  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             El Porvenir - Deportivo Español  |
+             0-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             Fénix - Deportivo Muñiz  |
+             1-0  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             Sacachispas - Victoriano Arenas  |
+             0-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera C  |
+             Sportivo Barracas - Canuelas  |
+             0-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera Division  |
+             Firpo - Atletico Balboa  |
+             3-1  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera División  |
+             LD Alajuelense - Inter San Carlos  |
+             5-0  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera División  |
+             Liverpool Montevideo - Racing Montevideo  |
+             0-0  |
+             4 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera División  |
+             San Carlos - CS Cartagines  |
+             1-0  |
+             2 / 7  |
+             2 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Primera Nacional  |
+             Tristan Suarez - Atlanta  |
+             0-0  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Pro League A  |
+             Lochin - Respublika FA  |
+             0-3  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Pro League A  |
+             Pakhtakor II - Shortan  |
+             0-4  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Pro League A  |
+             Yaypan - Aral  |
+             2-5  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             FK Spartak Zdrepceva KRV - FK Vozdovac  |
+             0-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             Javor - Naftagas  |
+             4-2  |
+             5 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             Jedinstvo Ub - Loznica  |
+             2-3  |
+             6 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             Metalac GM - Grafičar  |
+             1-0  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             Napredak - Semendrija 1924  |
+             1-4  |
+             4 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             OFK Vršac - OFK Bor 1919  |
+             1-0  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Prva Liga  |
+             TSC Backa Topola - Dubočica  |
+             0-0  |
+             2 / 7  |
+             1 / 3  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Regionalliga - West  |
+             Paderborn II - Borussia Dortmund II  |
+             1-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League  |
+             Dobrudzha - CSKA Sofia II  |
+             1-3  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League  |
+             Montana - Hebar 1918  |
+             0-5  |
+             3 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League  |
+             Spartak Pleven - Ludogorets II  |
+             1-0  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League  |
+             Sportist Svoge - Vihren  |
+             3-2  |
+             3 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League  |
+             Zeta - Jedinstvo  |
+             2-3  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League - Group 2  |
+             Chertanovo Moscow - Kosmos Dolgoprudny  |
+             4-2  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League - Group 3  |
+             Kvant - Avangard Kursk  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League A - Division A Gold  |
+             Dinamo Kirov - FK Sokol Saratov  |
+             3-1  |
+             3 / 7  |
+             2 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League A - Division A Gold  |
+             Mashuk-KMV - Volgar Astrakhan  |
+             0-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Second League A - Division A Silver  |
+             Amkar - Dinamo Moskva II  |
+             4-0  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie A  |
+             Atletico Paranaense - Bahia  |
+             2-1  |
+             7 / 7  |
+             7 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone A  |
+             Dolomiti Bellunesi - Lumezzane  |
+             1-2  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone A  |
+             Trento - PRO Vercelli  |
+             4-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone A  |
+             Treviso - Desenzano Calvina  |
+             0-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone B  |
+             Guidonia Montecelio 1937 - Livorno  |
+             1-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone B  |
+             Pianese - Sambenedettese  |
+             1-1  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Serie C - Girone B  |
+             Spezia - Vis Pesaro  |
+             3-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             Super League  |
+             Xorazm - Qizilqum  |
+             1-3  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             USL Championship  |
+             Sacramento Republic - San Antonio  |
+             0-0  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             21/09  |
+             USL League One  |
+             Spokane Velocity - Boise  |
+             2-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1 Lyga  |
+             Žalgiris II - Babrungas  |
+             0-1  |
+             3 / 7  |
+             1 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Aalborg - Vendsyssel FF  |
+             2-2  |
+             3 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             BATE II - Shakhter Soligorsk  |
+             0-3  |
+             3 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             FC Fredericia - Vejle  |
+             2-2  |
+             3 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Haugesund - Strommen  |
+             4-2  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Kongsvinger - hodd  |
+             5-1  |
+             7 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Lyn - Ranheim  |
+             1-4  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Molodechno-DYuSSh 4 - Ostrovets FC  |
+             3-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             ODD Ballklubb - Egersund  |
+             5-1  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Raufoss - Stromsgodset  |
+             0-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Sandnes ULF - Moss  |
+             1-2  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division  |
+             Stabaek - Sogndal  |
+             2-1  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division Women  |
+             Grei W - TIL 2020 W  |
+             3-2  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Division Women  |
+             Start W - Klepp W  |
+             4-0  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Lig  |
+             Antalyaspor - Vanspor FK  |
+             3-0  |
+             5 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Lig  |
+             Manisa F.K. - İstanbulspor  |
+             0-1  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Lig  |
+             Mardin 1969 - Kayserispor  |
+             0-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Lig  |
+             Pendikspor - Bodrum FK  |
+             1-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga  |
+             JFK Ventspils - Skanste  |
+             1-0  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga  |
+             Mārupe - Riga FC II  |
+             0-0  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Classic - Group 1  |
+             Coffrane - Prishtina Bern  |
+             0-1  |
+             2 / 7  |
+             2 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Classic - Group 2  |
+             Bassecourt - Münsingen  |
+             3-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Classic - Group 3  |
+             Mendrisio - St. Gallen II  |
+             1-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Promotion  |
+             Bavois - Luzern II  |
+             0-1  |
+             2 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Promotion  |
+             Kreuzlingen - Zürich II  |
+             2-2  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. Liga Women  |
+             Slovácko W - Slavia Praha W  |
+             0-9  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. SNL  |
+             Bravo - Olimpija Ljubljana  |
+             2-1  |
+             4 / 7  |
+             3 / 3  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. SNL  |
+             Brinje-Grosuplje - Radomlje  |
+             2-1  |
+             6 / 7  |
+             6 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1. SNL  |
+             Mura - Celje  |
+             0-0  |
+             1 / 7  |
+             1 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             1st League - RS  |
+             Omarska - Slavija  |
+             1-0  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Bundesliga  |
+             Arminia Bielefeld - 1. FC Heidenheim  |
+             2-2  |
+             4 / 7  |
+             3 / 4  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Bundesliga  |
+             Energie Cottbus - FC St. Pauli  |
+             1-1  |
+             4 / 7  |
+             4 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Bundesliga  |
+             Hannover 96 - VfL Bochum  |
+             2-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division  |
+             Thisted FC - Brabrand  |
+             3-1  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 1  |
+             Bjarg - Træff  |
+             6-1  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 1  |
+             Notodden - Arendal  |
+             4-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 1  |
+             Pors Grenland - Lysekloster  |
+             2-0  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 2  |
+             Grorud - Kjelsås  |
+             3-2  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 2  |
+             Skeid - Tromsdalen Uil  |
+             0-6  |
+             4 / 7  |
+             3 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 2  |
+             Stjørdals-Blink - Lørenskog  |
+             2-0  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 2  |
+             Trygg/Lade - Levanger  |
+             0-1  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Division - Group 2  |
+             Ull/Kisa - Junkeren  |
+             2-3  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Frauen Bundesliga  |
+             Meppen W - SC Sand W  |
+             0-0  |
+             1 / 7  |
+             1 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. liga  |
+             Galanta - Slovan Bratislava II  |
+             2-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. liga  |
+             Žilina II - Považská Bystrica  |
+             4-2  |
+             5 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. Liga  |
+             Austria Vienna (Am) - Rapid Wien II  |
+             4-1  |
+             6 / 7  |
+             5 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. SNL  |
+             Bilje - Jesenice  |
+             0-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. SNL  |
+             Dravinja - Bistrica  |
+             3-1  |
+             5 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. SNL  |
+             Krka - Dekani  |
+             1-2  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             2. SNL  |
+             Triglav - Slovan Ljubljana  |
+             3-0  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Division - Girone 1  |
+             Gamle Oslo - Asker  |
+             1-2  |
+             3 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Division - Girone 2  |
+             Molde II - Melhus  |
+             1-0  |
+             2 / 7  |
+             2 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Division - Girone 2  |
+             Orkla - Aalesund II  |
+             2-2  |
+             6 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Division - Girone 5  |
+             Fløya - Finnsnes  |
+             3-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Division - Girone 5  |
+             Lillestrøm II - Fauske Sprint  |
+             2-4  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Liga  |
+             Rot-Weiß Essen - Hansa Rostock  |
+             1-1  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Liga  |
+             SV Wehen - MSV Duisburg  |
+             1-4  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. Liga  |
+             Waldhof Mannheim - Preußen Münster  |
+             2-0  |
+             3 / 7  |
+             3 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - Center  |
+             Baník Kalinovo - Banská Byst II  |
+             0-3  |
+             4 / 7  |
+             3 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - Center  |
+             Ružomberok II - Oravské Veselé  |
+             4-1  |
+             6 / 7  |
+             6 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - CFL A  |
+             Admira Praha - Písek  |
+             4-1  |
+             4 / 7  |
+             4 / 5  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - CFL A  |
+             Bohemians 1905 II - Viktoria Plzeň II  |
+             3-0  |
+             4 / 7  |
+             4 / 6  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - CFL B  |
+             Čáslav - Horní Ředice  |
+             2-1  |
+             5 / 7  |
+             5 / 7  |
+             {title:nessuna quota} —  |
+
+             20/09  |
+             3. liga - CFL B  |
+             Hradec Králové II - Sokol Zápy  |
+             1-2  |
+             7 / 7  |
+             5 / 5  |
+             {title:nessuna quota} —  |
+
+             Carica altre 483 · mostrate 500 di 983
+           Nota. "Direzione" = la selezione più probabile (argmax) del motore Poisson per ogni mercato, come la tab Direzione. Hit = % direzioni azzeccate sulle partite settlate ai 90' . Denominatore = solo direzioni con esito noto (HT mancante escluso, mai contato come errore). "Buone" = almeno 2 motori concordi. Atteso = probabilità media dichiarata dai motori: se Hit ≈ Atteso il sistema è ben calibrato. Intervallo di Wilson 95%: con N basso la stima è incerta. Rendimento (ROI) = P&L di un back a puntata fissa alla quota Betfair (commissione 5% sulla vincita), calcolato solo sulle direzioni con quota disponibile (la stessa quota mostrata nel resto dell'app, miglior prezzo registrato). Si aggiorna da solo man mano che i risultati entrano. Dati storici, non garanzia di risultati futuri.

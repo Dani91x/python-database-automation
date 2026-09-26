@@ -1,0 +1,440 @@
+28.5%
+
+           AI TERMINAL
+           Torna alle partite
+
+           [nav-control-room] CONTROL ROOM
+           Cambia sport
+           Watchlist
+           Report
+           Analytics
+           Segui Live
+           Match Replay
+           Esci
+
+           Torna alla lista
+
+             Tasmania Southern Championship • 2026 • Australia
+
+             South East Utd. U21
+
+             HOME
+
+             VS
+
+             AWAY
+             South Hobart II
+
+             Fixture ID: 1533042
+             League ID: 1093
+
+             Frequenze Mercati — Tasmania Southern Championship
+
+             Studio Ritardi — per-lega
+
+             Poisson — Dixon-Coles
+
+             Tactical Engine — GSG (forze inferite)
+
+             Modelli ML — ensemble
+
+             Direzione — migliore per mercato
+
+             Quote Betfair — back / lay
+
+             % Match Odds
+
+             Home 10%
+
+             Draw 45%
+
+             Away 45%
+
+             Prediction Advice
+
+             “ Combo Winner : South Hobart II and +4.5 goals ”
+             Winner: South Hobart II ( )
+
+             Goals & Outcome
+
+             Under/Over +4.5
+             Win or Draw NO
+             Predicted: Home -2.5 / Away -7.5
+
+             Home vs Away
+
+             HOME
+             South East Utd. U21
+             ID: 23526
+
+             League Form
+             Last 5
+
+             L
+             L
+             L
+             L
+             L
+             0 W 0 D 5 L
+
+             Last 5 Matches Summary
+
+             0 % Form
+
+             24 % Attack
+
+             0 % Defense
+
+             Goals (Last 5)
+
+             Goals For 6 Avg: 1.2 per match
+             Goals Against 47 Avg: 9.4 per match
+
+             Played: 5 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 4
+             Away 2
+             Total 6
+
+             Average Per Match
+
+             Home 1.3
+             Away 1
+             Total 1.2
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 1 2 3 4
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 2 ·O: 3
+
+             1.5
+
+             U: 3 ·O: 2
+
+             2.5
+
+             U: 4 ·O: 1
+
+             3.5
+
+             U: 5 ·O: 0
+
+             4.5
+
+             U: 5 ·O: 0
+
+             Cards by Minute
+
+             Yellow Cards ( 0 total)
+
+             Red Cards ( 0 total)
+
+             Records & Streaks
+
+             0 Win Streak
+             0 Draw Streak
+             5 Loss Streak
+
+             Biggest Wins
+
+             Home
+             Away
+
+             Biggest Losses
+
+             Home 0-6
+             Away 19-2
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             3
+
+             Away
+             2
+             Conceded
+
+             Home
+             6
+
+             Away
+             19
+
+             Season Fixtures
+
+             5 Played
+
+             Wins
+             H: 0
+             A: 0
+             0
+
+             Draws
+             H: 0
+             A: 0
+             0
+
+             Losses
+             H: 3
+             A: 2
+             5
+
+             Home 3
+             Away 2
+             Total 5
+
+             Penalty Stats
+             0 Total Penalties
+
+             Scored 0 0%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 0
+             Away 0
+             Total 0
+
+             Failed to Score
+
+             Home 1
+             Away 1
+             Total 2
+
+             AWAY
+             South Hobart II
+             ID: 23527
+
+             League Form
+             Last 12
+
+             L
+             W
+             W
+             W
+             D
+             W
+             W
+             L
+             W
+             W
+             L
+             W
+             8 W 1 D 3 L
+
+             Last 5 Matches Summary
+
+             60 % Form
+
+             100 % Attack
+
+             76 % Defense
+
+             Goals (Last 5)
+
+             Goals For 25 Avg: 5.0 per match
+             Goals Against 6 Avg: 1.2 per match
+
+             Played: 5 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 34
+             Away 25
+             Total 59
+
+             Average Per Match
+
+             Home 6.8
+             Away 3.6
+             Total 4.9
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 1 2 3 4
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 0 ·O: 12
+
+             1.5
+
+             U: 2 ·O: 10
+
+             2.5
+
+             U: 3 ·O: 9
+
+             3.5
+
+             U: 5 ·O: 7
+
+             4.5
+
+             U: 7 ·O: 5
+
+             Cards by Minute
+
+             Yellow Cards ( 0 total)
+
+             Red Cards ( 0 total)
+
+             Records & Streaks
+
+             3 Win Streak
+             1 Draw Streak
+             1 Loss Streak
+
+             Biggest Wins
+
+             Home 13-0
+             Away 0-6
+
+             Biggest Losses
+
+             Home 4-5
+             Away 3-2
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             13
+
+             Away
+             6
+             Conceded
+
+             Home
+             5
+
+             Away
+             3
+
+             Season Fixtures
+
+             12 Played
+
+             Wins
+             H: 3
+             A: 5
+             8
+
+             Draws
+             H: 1
+             A: 0
+             1
+
+             Losses
+             H: 1
+             A: 2
+             3
+
+             Home 5
+             Away 7
+             Total 12
+
+             Penalty Stats
+             0 Total Penalties
+
+             Scored 0 0%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 2
+             Away 1
+             Total 3
+
+             Failed to Score
+
+             Home 0
+             Away 0
+             Total 0
+
+           CONFRONTO DIRETTO
+
+             0 % Forma Recente 100 %
+
+             19 % Attacco 81 %
+
+             11 % Difesa 89 %
+
+             10 % Dist. Poisson 90 %
+
+             71 % Testa a Testa 29 %
+
+             42 % Goals 58 %
+
+             30.6 % TOTALE 69.4 %
+
+             Insight AI
+
+             South Hobart II ha un forma recente superiore al 100%
+             South Hobart II ha un attacco superiore al 81%
+             South Hobart II ha un difesa superiore al 89%
+             South Hobart II ha un Dist. Poisson superiore al 90%
+             South East Utd. U21 ha un testa a testa superiore al 71%
+             South Hobart II ha un gol superiore al 58%
+
+           STORICO H2H
+
+             11 apr 2026
+
+             South Hobart II
+             11 - 0
+             South East Utd. U21
+             Tasmania Southern Championship
+
+             17 ago 2025
+
+             South Hobart II
+             5 - 5
+             South East Utd. U21
+             Tasmania Southern Championship
+
+             29 giu 2025
+
+             South Hobart II
+             2 - 3
+             South East Utd. U21
+             Tasmania Southern Championship
+
+             05 apr 2025
+
+             South East Utd. U21
+             3 - 1
+             South Hobart II
+             Tasmania Southern Championship
+
+             03 ago 2024
+
+             South Hobart II
+             0 - 3
+             South East Utd. U21
+             Tasmania Southern Championship
+
+             25 mag 2024
+
+             South East Utd. U21
+             8 - 0
+             South Hobart II
+             Tasmania Southern Championship
+
+       © 2026 Alpha Score AI. All rights reserved.

@@ -1,0 +1,483 @@
+2
+
+           AI TERMINAL
+           Torna alle partite
+
+           [nav-control-room] CONTROL ROOM
+           Cambia sport
+           Watchlist
+           Report
+           Analytics
+           Segui Live
+           Match Replay
+           Esci
+
+           Torna alla lista
+
+             Primera Nacional • 2026 • Argentina
+
+             Quilmes
+
+             HOME
+
+             VS
+
+             AWAY
+             Club Atlético Güemes
+
+             Fixture ID: 1498845
+             League ID: 129
+
+             Frequenze Mercati — Primera Nacional
+
+             Studio Ritardi — per-lega
+
+             Poisson — Dixon-Coles
+
+             Tactical Engine — GSG (forze inferite)
+
+             Modelli ML — ensemble
+
+             Direzione — migliore per mercato
+
+             Quote Betfair — back / lay
+
+             % Match Odds
+
+             Home 10%
+
+             Draw 45%
+
+             Away 45%
+
+             Prediction Advice
+
+             “ Combo Double chance : draw or Club Atlético Güemes and -3.5 goals ”
+             Winner: Club Atlético Güemes ( Win or draw )
+
+             Goals & Outcome
+
+             Under/Over -3.5
+             Win or Draw YES
+             Predicted: Home -1.5 / Away -1.5
+
+             Home vs Away
+
+             HOME
+             Quilmes
+             ID: 480
+
+             League Form
+             Last 30
+
+             L
+             D
+             L
+             W
+             L
+             W
+             W
+             D
+             D
+             L
+             D
+             L
+             L
+             D
+             W
+             D
+             W
+             L
+             W
+             L
+             L
+             D
+             W
+             D
+             W
+             L
+             L
+             L
+             W
+             L
+             9 W 8 D 13 L
+
+             Last 5 Matches Summary
+
+             20 % Form
+
+             14 % Attack
+
+             14 % Defense
+
+             Goals (Last 5)
+
+             Goals For 1 Avg: 0.2 per match
+             Goals Against 6 Avg: 1.2 per match
+
+             Played: 5 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 17
+             Away 11
+             Total 28
+
+             Average Per Match
+
+             Home 1.1
+             Away 0.7
+             Total 0.9
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 2 4 6 8
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 16 ·O: 14
+
+             1.5
+
+             U: 21 ·O: 9
+
+             2.5
+
+             U: 25 ·O: 5
+
+             3.5
+
+             U: 30 ·O: 0
+
+             4.5
+
+             U: 30 ·O: 0
+
+             Cards by Minute
+
+             Yellow Cards ( 61 total)
+
+             Red Cards ( 1 total)
+
+             Records & Streaks
+
+             2 Win Streak
+             2 Draw Streak
+             3 Loss Streak
+
+             Biggest Wins
+
+             Home 3-0
+             Away 0-3
+
+             Biggest Losses
+
+             Home 0-1
+             Away 3-0
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             3
+
+             Away
+             3
+             Conceded
+
+             Home
+             1
+
+             Away
+             3
+
+             Season Fixtures
+
+             30 Played
+
+             Wins
+             H: 8
+             A: 1
+             9
+
+             Draws
+             H: 4
+             A: 4
+             8
+
+             Losses
+             H: 3
+             A: 10
+             13
+
+             Home 15
+             Away 15
+             Total 30
+
+             Penalty Stats
+             2 Total Penalties
+
+             Scored 2 100.00%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 9
+             Away 3
+             Total 12
+
+             Failed to Score
+
+             Home 6
+             Away 10
+             Total 16
+
+             AWAY
+             Club Atlético Güemes
+             ID: 3969
+
+             League Form
+             Last 30
+
+             L
+             L
+             W
+             D
+             D
+             D
+             W
+             L
+             D
+             L
+             L
+             W
+             L
+             W
+             L
+             W
+             L
+             L
+             L
+             L
+             L
+             L
+             L
+             D
+             D
+             D
+             D
+             L
+             L
+             L
+             5 W 8 D 17 L
+
+             Last 5 Matches Summary
+
+             13 % Form
+
+             29 % Attack
+
+             0 % Defense
+
+             Goals (Last 5)
+
+             Goals For 2 Avg: 0.4 per match
+             Goals Against 8 Avg: 1.6 per match
+
+             Played: 5 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 12
+             Away 11
+             Total 23
+
+             Average Per Match
+
+             Home 0.8
+             Away 0.7
+             Total 0.8
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 2 4 6 8
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 11 ·O: 19
+
+             1.5
+
+             U: 26 ·O: 4
+
+             2.5
+
+             U: 30 ·O: 0
+
+             3.5
+
+             U: 30 ·O: 0
+
+             4.5
+
+             U: 30 ·O: 0
+
+             Cards by Minute
+
+             Yellow Cards ( 68 total)
+
+             Red Cards ( 6 total)
+
+             Records & Streaks
+
+             1 Win Streak
+             4 Draw Streak
+             7 Loss Streak
+
+             Biggest Wins
+
+             Home 2-1
+             Away 1-2
+
+             Biggest Losses
+
+             Home 1-3
+             Away 4-1
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             2
+
+             Away
+             2
+             Conceded
+
+             Home
+             3
+
+             Away
+             4
+
+             Season Fixtures
+
+             30 Played
+
+             Wins
+             H: 4
+             A: 1
+             5
+
+             Draws
+             H: 3
+             A: 5
+             8
+
+             Losses
+             H: 8
+             A: 9
+             17
+
+             Home 15
+             Away 15
+             Total 30
+
+             Penalty Stats
+             2 Total Penalties
+
+             Scored 2 100.00%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 3
+             Away 1
+             Total 4
+
+             Failed to Score
+
+             Home 6
+             Away 5
+             Total 11
+
+           CONFRONTO DIRETTO
+
+             60 % Forma Recente 40 %
+
+             33 % Attacco 67 %
+
+             57 % Difesa 43 %
+
+             82 % Dist. Poisson 18 %
+
+             38 % Testa a Testa 62 %
+
+             40 % Goals 60 %
+
+             51.7 % TOTALE 48.3 %
+
+             Insight AI
+
+             Quilmes ha un forma recente superiore al 60%
+             Club Atlético Güemes ha un attacco superiore al 67%
+             Quilmes ha un difesa superiore al 57%
+             Quilmes ha un Dist. Poisson superiore al 82%
+             Club Atlético Güemes ha un testa a testa superiore al 62%
+             Club Atlético Güemes ha un gol superiore al 60%
+
+           STORICO H2H
+
+             10 mag 2026
+
+             Club Atlético Güemes
+             2 - 1
+             Quilmes
+             Primera Nacional
+
+             23 set 2025
+
+             Quilmes
+             0 - 0
+             Club Atlético Güemes
+             Primera Nacional
+
+             18 mag 2025
+
+             Club Atlético Güemes
+             0 - 0
+             Quilmes
+             Primera Nacional
+
+             28 set 2024
+
+             Quilmes
+             1 - 0
+             Club Atlético Güemes
+             Primera Nacional
+
+             12 mag 2024
+
+             Club Atlético Güemes
+             1 - 0
+             Quilmes
+             Primera Nacional
+
+             11 lug 2022
+
+             Quilmes
+             0 - 2
+             Club Atlético Güemes
+             Primera Nacional
+
+       © 2026 Alpha Score AI. All rights reserved.

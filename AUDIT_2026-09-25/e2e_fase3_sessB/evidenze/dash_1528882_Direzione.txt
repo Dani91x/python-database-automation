@@ -1,0 +1,104 @@
+
+
+   Close
+
+     Direzione · Türkiye vs France
+     La direzione migliore per ogni mercato e quanto è affidabile, dallo storico reale dei motori. UEFA Nations League .
+
+     [direzione-eta] [eta-pagella] Pagella affidabilita : aggiornato al 25/09/2026, 11:52 ( 23 h fa) [eta-quota] Quote (analytics_bets): quota assente per questa partita
+
+       Manca la previsione Poisson per questa partita: le direzioni vengono dagli altri motori (ML / TacticAI / API), ma senza affidabilità storica calibrata . Considera i consigli poco affidabili .
+
+       segnale forte discreto debole / contro
+       AFFIDABILITÀ = quante volte è andata così nello storico · LIFT = quanto batte la media (il vero segnale) · VALORE = l'affidabilità (banda bassa) batte la quota. Direzione di partenza, non un segnale di profitto: guarda sempre la quota.
+
+             Esito finale
+             direzione 1 (Casa)
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             1/3
+             motori
+
+             Gol/Gol (BTTS)
+             direzione Sì
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             2/2
+             motori
+
+             1° tempo · Over 0.5
+             direzione Over
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             2/2
+             motori
+
+             1° tempo · esito
+             direzione 1 (Casa)
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             1/2
+             motori
+
+             Over 1.5
+             direzione Over
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             2/2
+             motori
+
+             Over 2.5
+             direzione Over
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             2/2
+             motori
+
+             Over 3.5
+             direzione Under
+
+             n.d.
+             non calibrato
+           —
+             lift
+
+             [quota-assente] quota assente
+
+             2/2
+             motori

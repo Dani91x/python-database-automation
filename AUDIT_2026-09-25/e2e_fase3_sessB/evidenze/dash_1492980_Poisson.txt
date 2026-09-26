@@ -1,0 +1,24 @@
+
+
+   Close
+
+     Poisson · Cobh Ramblers vs Athlone Town
+     Probabilità del motore Dixon-Coles (poisson_xg_hybrid_dc) per questa partita, mercato per mercato. First Division .
+
+     poisson_xg_hybrid_dc ✓ calibrato λ casa 1.31 λ trasf. 1.07 ρ DC -0.13 partite 15 / 15 xG no
+     [eta-poisson] Previsione Poisson : aggiornato al 25/09/2026, 10:02 ( 25 h fa) [eta-poisson-calibrazione] Calibrazione settimanale (lega) : aggiornato al 21/09/2026, 11:20 ( 5 g fa) calibrazione applicata a questa partita il 25/09/2026, 10:02:06
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         1°T Over 0.5
+         HT 1X2
+
+       Più probabile 1 (Casa) 45%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Le linee disponibili sono solo quelle elaborate dal motore.

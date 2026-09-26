@@ -1,0 +1,57 @@
+
+
+   Close
+
+     Modelli ML · Cobh Ramblers vs Athlone Town
+     Previsioni calibrate dell'ensemble (rf/lgb/xgb/logreg) per questa partita, mercato per mercato. First Division .
+
+     ensemble_v2 affidabilità dati high ( 1.00 ) feature 100.0% partite 110 / 111 [eta-ml] Previsione ML : aggiornato al 25/09/2026, 18:38 ( 16 h fa)
+
+       Mercato ( 21 )
+
+         Esito
+
+           1X2 (FT)
+           HT / FT
+           1X2 (FT)·alt
+           HT 1X2
+
+         Gol totali
+
+           BTTS
+           Over 0.5
+           Over 1.5
+           Over 2.5
+           Over 3.5
+           Over 4.5
+
+         Squadre
+
+           Trasf. Over 0.5
+           Trasf. Over 1.5
+           Trasf. Over 2.5
+           Casa Over 0.5
+           Casa Over 1.5
+           Casa Over 2.5
+           Clean Sheet Trasf.
+           Clean Sheet Casa
+
+         1°T / Timing
+
+           Gol nel 2°T
+           HT Over 0.5
+           1° Gol < 30'
+
+       Previsione 1 (Casa) 46%
+
+             0% 25% 50% 75% 100% 1 (Casa) 2 (Trasf.) X (Pari)
+       Probabilità calibrate del modello (non quote).
+
+         Accordo ensemble
+
+           classe prevista 1 (Casa) 75% accordo
+           rf 1 (Casa) lgb 1 (Casa) xgb 1 (Casa) logreg X (Pari)
+
+         Calibrazione
+         Brier 0.590 ECE 0.053
+         MODEL_NOT_RELIABLE: BSS=0.116 < min 0.12 (brier=0.590, random_baseline=0.667)

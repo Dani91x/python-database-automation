@@ -1,0 +1,9 @@
+
+
+   Close
+
+     Modelli ML · Bohemians vs Bohemians 1905
+     Previsioni calibrate dell'ensemble (rf/lgb/xgb/logreg) per questa partita, mercato per mercato. Friendlies Clubs .
+
+       ML non disponibile per questa partita
+       Le previsioni dell'ensemble vengono elaborate per le partite del giorno processate dal sistema. Per questa partita non sono ancora presenti.

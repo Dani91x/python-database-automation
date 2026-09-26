@@ -1,0 +1,9 @@
+
+
+   Close
+
+     Quote Betfair · Bohemians vs Bohemians 1905
+     Tutti i mercati Betfair pre-partita, back e lay . Friendlies Clubs .
+
+       Nessuna quota Betfair per questa partita
+       Le quote compaiono dopo aver eseguito la fetch Betfair ( betfair_full_odds.py ).

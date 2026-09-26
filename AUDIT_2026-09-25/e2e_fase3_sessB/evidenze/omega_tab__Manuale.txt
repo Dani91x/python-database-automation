@@ -1,0 +1,90 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] Ω OMEGA
+           [bot-status] IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (13 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Omega: se manca, il bot non sta operando (soglia 45 s)} servizio Omega vivo (26 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [omega-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [omega-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mode-banner] MODALITÀ PAPER — simulazione fedele: coda, liquidità, betDelay e protezioni identiche al live, nessun denaro reale.
+       [omega-daily-mission]
+
+             Giornata operativa
+             giornata operativa [omega-operating-day] sabato 26 settembre 2026 (Europe/Rome) — numeri dalla RPC (giornata Europe/Rome): il realizzato riparte da zero ogni giorno e conta SOLO le posizioni piazzate oggi
+           +0,00 € · 0,0 %
+         [omega-mission-line] {title:obiettivo di P&L realizzato per la giornata di oggi} Obiettivo di oggi 100,00 € · [omega-today-legs] {title:partite con almeno una posizione piazzata oggi} partite 4 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 4 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:posizioni ancora vive: non regolate} 4 vive · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · resta [omega-remaining] 100,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 274,00 € · {title:risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito} P&L bloccato [day-bar-locked] +0,00 € · totale storico −44,64 €
+
+           0,0 %
+       [kpi-row]
+         [omega-kpi-liability]
+           Liability aperta
+           274,00 €
+           rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0) [omega-liability-bot] {title:il bot decide su QUESTO numero: le operazioni che apri a mano non muovono piu’ i suoi cap (R6, 16/09)} su cui decide il bot 274,00 €
+         [omega-kpi-locked]
+           P&L bloccato
+           +0,00 €
+           di oggi +0,00 € · già bloccato sulle posizioni vive: non cambia più
+         [omega-kpi-reconciling]
+           In verifica su Betfair
+           0,00 €
+           nessun ordine in sospeso
+         [omega-kpi-target]
+           Target / operazione
+           0,38 €
+           266 operazioni e 133 partite ancora in finestra (su 150 viste dallo scanner) · 0,76 €/partita
+
+           ⚙️ Automatico
+           🎯 Missione
+           ✋ Manuale
+           📅 Storico
+
+             Le azioni qui accodano richieste eseguite dal servizio locale (avvia_omega_service.bat). In PAPER è simulato; in LIVE sono soldi veri. Se non vedi eventi/quote, avvia prima il servizio.
+
+             1 · Evento
+             Aggiorna eventi <select=— scegli evento (150) — (151 opz.)>
+             [manual-events-note] solo le partite ancora operabili (non finite) · elenco di 18 min fa · {title:minuto e punteggio arrivano dal feed Betfair con 2-3 s di ritardo sul campo: controllali prima di piazzare} minuto e punteggio LIVE con 2-3 s di ritardo
+             2 · Mercato
+             Carica mercati <select=— scegli mercato (0) — (1 opz.)>
+             3 · Carica quote del mercato
+             4 · Ordine
+
+             BACK
+             LAY
+
+             PAPER
+             LIVE
+             Selezione: nessuna (scegli dal book)
+
+             Quota <input number=>
+             Dimensiona per
+
+             Target €
+             Stake €
+             Target profitto € (incasso se NON esce) <input number=5>
+             Stake ≈ [manual-preview-stake] — Liability aperta ≈ [manual-preview-liability] —
+             [manual-place-block] scegli una selezione dal book
+             {title:scegli una selezione dal book} Piazza LAY (paper)
+
+             Ultime richieste al servizio
+
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} gio 10 set · 15:30 cash out
+             ESEGUITA
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} gio 10 set · 15:29 cash out
+             ESEGUITA
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} gio 10 set · 15:29 piazza ordine
+             ESEGUITA
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} mer 9 set · 17:13 piazza ordine
+             ESEGUITA
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} mer 9 set · 17:13 carica quote
+             ESEGUITA
+             [manual-request] {title:ora di Roma (la data compare se non è di oggi)} mer 9 set · 17:13 carica mercati
+             ESEGUITA

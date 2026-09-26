@@ -1,0 +1,62 @@
+
+
+     Terminal P&L di giornata
+
+       Giorno <input date=2026-09-26>
+       Mode <select=tutte (3 opz.)>
+
+         {title:Σ profit dei mercati regolati (0 mercati, fonte get_live_settled)}
+           P&L realizzato
+           +€0.00
+         {title:MTM delle posizioni aperte (risk_state.open_mtm) — runner in LIVE}
+           MTM aperto (live)
+           +€0.00
+           1 posizioni aperte · rischio € 4.40 [livepnl-fonte-posizioni] {title:posizioni: canale dei runner (push position, piu' fresco del database) o database (poll di 15 s)} · fonte db (poll 15 s)
+         {title:Realizzato + MTM (risk_state.total) — runner in LIVE}
+           Totale giornata (live)
+           +€0.00
+         {title:Limite di perdita giornaliera (daily_loss_limit)}
+           Stop giornaliero
+           — non scattato
+
+         Equity intraday (P&L realizzato cumulato · punto ambra = totale con MTM )
+         nessun mercato regolato nella giornata
+
+           Per mercato
+           Nessun mercato regolato.
+
+           Per evento
+           Nessun mercato regolato.
+
+         🎾 Tennis (posizioni aperte)
+         il settled tennis non è ancora storicizzato — qui SOLO le esposizioni aperte (get_tennis_live_positions_all)
+
+             Evento  |
+             Posizioni  |
+             Σ esposizione  |
+             Σ net  |
+
+             36111518  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             36118619  |
+             1  |
+             € 0.04  |
+             -2.00  |
+
+             35823269  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             35832300  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             35803062  |
+             1  |
+             € 0.00  |
+             0.00  | 

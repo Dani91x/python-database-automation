@@ -1,0 +1,79 @@
+
+
+     Terminal P&L di giornata
+
+       Giorno <input date=2026-09-14>
+       Mode <select=tutte (3 opz.)>
+
+         {title:Σ profit dei mercati regolati (1 mercati, fonte get_live_settled)}
+           P&L realizzato
+           +€0.30
+         {title:solo per la giornata corrente — runner in LIVE}
+           MTM aperto (live)
+           —
+           1 posizioni aperte · rischio € 4.40 [livepnl-fonte-posizioni] {title:posizioni: canale dei runner (push position, piu' fresco del database) o database (poll di 15 s)} · fonte db (poll 15 s)
+         {title:solo per la giornata corrente — runner in LIVE}
+           Totale giornata (live)
+           —
+         {title:Limite di perdita giornaliera (daily_loss_limit)}
+           Stop giornaliero
+           — non scattato
+
+         Equity intraday (P&L realizzato cumulato ) +€0.00 +€0.15 +€0.30 16:09 16:24 16:39
+
+           Per mercato
+
+             Mercato  |
+             Evento  |
+             P&L  |
+             Fonte  |
+             Ora  |
+
+             {title:1.262395833} 1.262395833  |
+             —  |
+             +€0.30  |
+             reale  |
+             16:24  |
+
+           Per evento
+
+             Evento  |
+             Mercati  |
+             P&L  |
+
+             (senza evento)  |
+             1  |
+             +€0.30  |
+
+         🎾 Tennis (posizioni aperte)
+         il settled tennis non è ancora storicizzato — qui SOLO le esposizioni aperte (get_tennis_live_positions_all)
+
+             Evento  |
+             Posizioni  |
+             Σ esposizione  |
+             Σ net  |
+
+             36118619  |
+             1  |
+             € 0.04  |
+             -2.00  |
+
+             36111518  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             35823269  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             35832300  |
+             1  |
+             € 0.00  |
+             0.00  |
+
+             35803062  |
+             1  |
+             € 0.00  |
+             0.00  | 

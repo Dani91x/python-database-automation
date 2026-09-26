@@ -1,0 +1,37 @@
+
+
+   Close
+
+     Tactical Engine · Türkiye vs France
+     Terzo motore (GSG): forze attacco/difesa inferite per massima verosimiglianza (Dixon-Coles) con simmetria casa/trasferta. UEFA Nations League . Probabilità del modello, non quote.
+
+     gsg-dc-z2-1.0 leakage-free λ casa 1.42 λ trasf. 1.91 ρ DC 0.00 storico 528 partite ✓ converged [eta-tacticai] Previsione TacticAI : aggiornato al 25/09/2026, 11:33 ( 24 h fa)
+
+         Gol attesi
+         Türkiye 1.42
+         France 1.91
+
+         Forze inferite (att >1 forte · dif <1 solida)
+         Türkiye att 1.76 · dif 0.84
+         France att 2.33 · dif 0.64
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         HT 1X2
+         1°T Over 0.5
+
+       Più probabile 2 (Trasf.) 49%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Forze stimate tenendo conto della forza degli avversari.
+
+       Risultati esatti più probabili
+       1 - 1 10% 1 - 2 9% 2 - 1 7% 0 - 1 7% 2 - 2 7%
+
+       Consiglio
+       Esito più probabile: vittoria France (49%) — France leggermente favorita. Rete di sicurezza: X2 71%. Tendenza gol: Over 2.5 (65%), match aperto. Entrambe a segno: Sì (65%).

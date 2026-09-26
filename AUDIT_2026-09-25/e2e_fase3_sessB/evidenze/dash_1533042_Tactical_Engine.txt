@@ -1,0 +1,37 @@
+
+
+   Close
+
+     Tactical Engine · South East Utd. U21 vs South Hobart II
+     Terzo motore (GSG): forze attacco/difesa inferite per massima verosimiglianza (Dixon-Coles) con simmetria casa/trasferta. Tasmania Southern Championship . Probabilità del modello, non quote.
+
+     gsg-dc-z2-1.0 leakage-free λ casa 3.57 λ trasf. 2.68 ρ DC 0.20 storico 241 partite ✓ converged [eta-tacticai] Previsione TacticAI : aggiornato al 04/07/2026, 09:25 ( 84 g 2 h fa) · oltre 36 h
+
+         Gol attesi
+         South East Utd. U21 3.56
+         South Hobart II 2.68
+
+         Forze inferite (att >1 forte · dif <1 solida)
+         South East Utd. U21 att 1.43 · dif 0.91
+         South Hobart II att 1.16 · dif 0.84
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         HT 1X2
+         1°T Over 0.5
+
+       Più probabile 1 (Casa) 56%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Forze stimate tenendo conto della forza degli avversari.
+
+       Risultati esatti più probabili
+       3 - 2 5% 3 - 3 5% 4 - 2 5% 2 - 2 4% 4 - 3 4%
+
+       Consiglio
+       Esito più probabile: vittoria South East Utd. U21 (56%) — South East Utd. U21 favorita. Tendenza gol: Over 2.5 (95%), match aperto. Entrambe a segno: Sì (90%).

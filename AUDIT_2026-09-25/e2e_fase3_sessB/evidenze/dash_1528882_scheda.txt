@@ -1,0 +1,377 @@
+33.3%
+
+           AI TERMINAL
+           Torna alle partite
+
+           [nav-control-room] CONTROL ROOM
+           Cambia sport
+           Watchlist
+           Report
+           Analytics
+           Segui Live
+           Match Replay
+           Esci
+
+           Torna alla lista
+
+             UEFA Nations League • 2026 • World
+
+             Türkiye
+
+             HOME
+
+             VS
+
+             AWAY
+             France
+
+             Fixture ID: 1528882
+             League ID: 5
+
+             Frequenze Mercati — UEFA Nations League
+
+             Studio Ritardi — per-lega
+
+             Poisson — Dixon-Coles
+
+             Tactical Engine — GSG (forze inferite)
+
+             Modelli ML — ensemble
+
+             Direzione — migliore per mercato
+
+             Quote Betfair — back / lay
+
+             % Match Odds
+
+             Home 50%
+
+             Draw 50%
+
+             Away 0%
+
+             Prediction Advice
+
+             “ Double chance : Türkiye or draw ”
+             Winner: Türkiye ( Win or draw )
+
+             Goals & Outcome
+
+             Under/Over
+             Win or Draw YES
+             Predicted: Home 0 / Away 0
+
+             Home vs Away
+
+             HOME
+             Türkiye
+             ID: 777
+
+             Last 5 Matches Summary
+
+             0 % Form
+
+             0 % Attack
+
+             0 % Defense
+
+             Goals (Last 5)
+
+             Goals For 0 Avg: NaN per match
+             Goals Against 0 Avg: NaN per match
+
+             Played: 0 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 0
+             Away 0
+             Total 0
+
+             Average Per Match
+
+             Home 0
+             Away 0
+             Total 0
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 1 2 3 4
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 0 ·O: 0
+
+             1.5
+
+             U: 0 ·O: 0
+
+             2.5
+
+             U: 0 ·O: 0
+
+             3.5
+
+             U: 0 ·O: 0
+
+             4.5
+
+             U: 0 ·O: 0
+
+             Cards by Minute
+
+             Yellow Cards ( 0 total)
+
+             Red Cards ( 0 total)
+
+             Records & Streaks
+
+             0 Win Streak
+             0 Draw Streak
+             0 Loss Streak
+
+             Biggest Wins
+
+             Home
+             Away
+
+             Biggest Losses
+
+             Home
+             Away
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             0
+
+             Away
+             0
+             Conceded
+
+             Home
+             0
+
+             Away
+             0
+
+             Season Fixtures
+
+             Wins
+             H: 0
+             A: 0
+             0
+
+             Draws
+             H: 0
+             A: 0
+             0
+
+             Losses
+             H: 0
+             A: 0
+             0
+
+             Home 0
+             Away 0
+             Total 0
+
+             Penalty Stats
+             0 Total Penalties
+
+             Scored 0 0%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 0
+             Away 0
+             Total 0
+
+             Failed to Score
+
+             Home 0
+             Away 0
+             Total 0
+
+             AWAY
+             France
+             ID: 2
+
+             Last 5 Matches Summary
+
+             0 % Form
+
+             0 % Attack
+
+             0 % Defense
+
+             Goals (Last 5)
+
+             Goals For 0 Avg: NaN per match
+             Goals Against 0 Avg: NaN per match
+
+             Played: 0 matches
+
+             Goals For
+             Goals Against
+
+             Total Goals Scored
+
+             Home 0
+             Away 0
+             Total 0
+
+             Average Per Match
+
+             Home 0
+             Away 0
+             Total 0
+
+             Goals by Minute
+
+             0-15 16-30 31-45 46-60 61-75 76-90 91-105 106-120 0 1 2 3 4
+
+             Under/Over Distribution
+
+             0.5
+
+             U: 0 ·O: 0
+
+             1.5
+
+             U: 0 ·O: 0
+
+             2.5
+
+             U: 0 ·O: 0
+
+             3.5
+
+             U: 0 ·O: 0
+
+             4.5
+
+             U: 0 ·O: 0
+
+             Cards by Minute
+
+             Yellow Cards ( 0 total)
+
+             Red Cards ( 0 total)
+
+             Records & Streaks
+
+             0 Win Streak
+             0 Draw Streak
+             0 Loss Streak
+
+             Biggest Wins
+
+             Home
+             Away
+
+             Biggest Losses
+
+             Home
+             Away
+             Most Goals in a Match
+
+             Scored
+
+             Home
+             0
+
+             Away
+             0
+             Conceded
+
+             Home
+             0
+
+             Away
+             0
+
+             Season Fixtures
+
+             Wins
+             H: 0
+             A: 0
+             0
+
+             Draws
+             H: 0
+             A: 0
+             0
+
+             Losses
+             H: 0
+             A: 0
+             0
+
+             Home 0
+             Away 0
+             Total 0
+
+             Penalty Stats
+             0 Total Penalties
+
+             Scored 0 0%
+             Missed 0 0%
+
+             Clean Sheets
+
+             Home 0
+             Away 0
+             Total 0
+
+             Failed to Score
+
+             Home 0
+             Away 0
+             Total 0
+
+           CONFRONTO DIRETTO
+
+             0 % Forma Recente 0 %
+
+             0 % Attacco 0 %
+
+             0 % Difesa 0 %
+
+             0 % Dist. Poisson 0 %
+
+             80 % Testa a Testa 20 %
+
+             75 % Goals 25 %
+
+             77.5 % TOTALE 22.5 %
+
+             Insight AI
+
+             Türkiye ha un testa a testa superiore al 80%
+             Türkiye ha un gol superiore al 75%
+
+           STORICO H2H
+
+             14 ott 2019
+
+             France
+             1 - 1
+             Türkiye
+             Euro Championship
+
+             08 giu 2019
+
+             Türkiye
+             2 - 0
+             France
+             Euro Championship
+
+       © 2026 Alpha Score AI. All rights reserved.

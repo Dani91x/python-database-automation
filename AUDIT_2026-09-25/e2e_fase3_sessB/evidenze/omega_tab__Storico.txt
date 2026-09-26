@@ -1,0 +1,407 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] Ω OMEGA
+           [bot-status] IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (11 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Omega: se manca, il bot non sta operando (soglia 45 s)} servizio Omega vivo (16 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [omega-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [omega-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mode-banner] MODALITÀ PAPER — simulazione fedele: coda, liquidità, betDelay e protezioni identiche al live, nessun denaro reale.
+       [omega-daily-mission]
+
+             Giornata operativa
+             giornata operativa [omega-operating-day] sabato 26 settembre 2026 (Europe/Rome) — numeri dalla RPC (giornata Europe/Rome): il realizzato riparte da zero ogni giorno e conta SOLO le posizioni piazzate oggi
+           +0,00 € · 0,0 %
+         [omega-mission-line] {title:obiettivo di P&L realizzato per la giornata di oggi} Obiettivo di oggi 100,00 € · [omega-today-legs] {title:partite con almeno una posizione piazzata oggi} partite 4 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 4 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:posizioni ancora vive: non regolate} 4 vive · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · resta [omega-remaining] 100,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 274,00 € · {title:risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito} P&L bloccato [day-bar-locked] +0,00 € · totale storico −44,64 €
+
+           0,0 %
+       [kpi-row]
+         [omega-kpi-liability]
+           Liability aperta
+           274,00 €
+           rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0) [omega-liability-bot] {title:il bot decide su QUESTO numero: le operazioni che apri a mano non muovono piu’ i suoi cap (R6, 16/09)} su cui decide il bot 274,00 €
+         [omega-kpi-locked]
+           P&L bloccato
+           +0,00 €
+           di oggi +0,00 € · già bloccato sulle posizioni vive: non cambia più
+         [omega-kpi-reconciling]
+           In verifica su Betfair
+           0,00 €
+           nessun ordine in sospeso
+         [omega-kpi-target]
+           Target / operazione
+           0,38 €
+           266 operazioni e 133 partite ancora in finestra (su 150 viste dallo scanner) · 0,76 €/partita
+
+           ⚙️ Automatico
+           🎯 Missione
+           ✋ Manuale
+           📅 Storico
+
+           [trading-history]
+             Giornata operativa = fuso Europe/Rome · oggi 26 settembre 2026 · P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo
+             Aggiorna
+
+             [daily-calendar]
+
+             [calendar-month] settembre 2026
+
+             Oggi
+             [calendar-month-total] 10 giornate +35,46 €
+
+             Lun
+             Mar
+             Mer
+             Gio
+             Ven
+             Sab
+             Dom
+             [calendar-day-outside]
+             31
+             —
+             [calendar-day]
+             1 [goal-not-historized] {title:obiettivo non storicizzato: quello mostrato è quello corrente, non quello di quel giorno} ·
+             +0,95 €
+             1 trade
+             [calendar-day]
+             2
+             —
+             [calendar-day]
+             3
+             —
+             [calendar-day]
+             4
+             —
+             [calendar-day]
+             5
+             —
+             [calendar-day]
+             6
+             —
+             [calendar-day]
+             7
+             —
+             [calendar-day]
+             8
+             —
+             [calendar-day]
+             9 [goal-not-historized] {title:obiettivo non storicizzato: quello mostrato è quello corrente, non quello di quel giorno} ·
+             +54,44 €
+             37 trade
+             [calendar-day]
+             10 [goal-not-historized] {title:obiettivo non storicizzato: quello mostrato è quello corrente, non quello di quel giorno} ·
+             +4,73 €
+             13 trade
+             [calendar-day]
+             11 [goal-miss] ○
+             +0,52 €
+             1 trade
+             [calendar-day]
+             12 [goal-miss] ○
+             −14,22 €
+             16 trade
+             [calendar-day]
+             13 [goal-miss] ○
+             −17,19 €
+             5 trade
+             [calendar-day]
+             14
+             —
+             [calendar-day]
+             15 [goal-miss] ○
+             +0,53 €
+             1 trade
+             [calendar-day]
+             16
+             —
+             [calendar-day]
+             17 [goal-miss] ○
+             +3,80 €
+             4 trade
+             [calendar-day]
+             18
+             —
+             [calendar-day]
+             19
+             —
+             [calendar-day]
+             20
+             —
+             [calendar-day]
+             21
+             —
+             [calendar-day]
+             22
+             —
+             [calendar-day]
+             23
+             —
+             [calendar-day]
+             24 [goal-miss] ○
+             +1,90 €
+             2 trade
+             [calendar-day]
+             25
+             —
+             [calendar-day]
+             26 [goal-miss] ○
+             +0,00 €
+             4 trade
+             [calendar-day]
+             27
+             —
+             [calendar-day]
+             28
+             —
+             [calendar-day]
+             29
+             —
+             [calendar-day]
+             30
+             —
+             [calendar-day-outside]
+             1
+             —
+             [calendar-day-outside]
+             2
+             —
+             [calendar-day-outside]
+             3
+             —
+             [calendar-day-outside]
+             4
+             —
+             verde/rosso = P&L realizzato del giorno (intensità relativa al mese) ● obiettivo centrato · ○ mancato · · obiettivo non storicizzato frecce per muoversi, Invio per selezionare
+
+             [performance-panel]
+             Periodo
+             Mese corrente
+             30 giorni
+             90 giorni
+             Anno [period-range] 1 settembre → 26 settembre 2026
+             [kpi-row]
+             [kpi-pnl] {title:somma dei P&L realizzati delle giornate del periodo}
+             P&L periodo
+             +35,46 €
+             commissioni 10,69 € già dedotte dal P&L
+             [kpi-days] {title:giornate chiuse in utile / in perdita nel periodo}
+             Giornate +/−
+             7 / 2
+             10 giornate con attività
+             [kpi-winrate] {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa}
+             Win rate
+             90,0 %
+             72V · 8P · 0 void · 6 chiusi o in chiusura a mercato
+             [kpi-pf] {title:quanto si incassa per ogni euro perso: sotto 1 il bot perde}
+             Profit factor
+             1,21
+             gross profit / gross loss
+             [kpi-expectancy] {title:P&L medio per apertura regolata nel periodo}
+             Expectancy / trade
+             +0,44 €
+             80 aperture regolate · 84 piazzate
+             [kpi-dd] {title:massima discesa dell’equity dal suo picco, dentro il periodo}
+             Max drawdown
+             31,41 €
+             in corso 25,18 € dal picco
+             [kpi-best]
+             Miglior giornata
+             +54,44 €
+             9 settembre
+             [kpi-worst]
+             Peggior giornata
+             −17,19 €
+             13 settembre
+             [kpi-streak] {title:giornate positive e negative consecutive: record del periodo}
+             Serie
+             4+ / 2−
+             nessuna serie in corso
+             [kpi-goal]
+             Obiettivo centrato
+             0/7
+             0,0 % delle giornate · 3 senza obiettivo storicizzato
+             [kpi-liab] {title:massima liability registrata su una singola posizione nel periodo}
+             Liability max
+             625,94 €
+             massima esposizione su un trade
+
+             {title:asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento} Equity · P&L cumulato realizzato · per giornata
+             asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento Equity per giornata: da +0,00 € a +35,46 € in 10 passi (1 set → 26 set) +0,00 € +30,32 € +60,64 € 1 set 26 set
+
+             [breakdown-strategy]
+
+             Gamba  |
+             {title:aperture piazzate nel periodo} Trade  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Vinti  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Persi  |
+             Win rate  |
+             P&L  |
+
+             Senza fase (v1/manuale)  |
+             36  |
+             35  |
+             1  |
+             97,2 %  |
+             +50,64 €  |
+
+             Gamba 1T (Half Time Score)  |
+             19  |
+             18  |
+             1  |
+             94,7 %  |
+             +13,84 €  |
+
+             Gamba 2T (Correct Score)  |
+             29  |
+             19  |
+             6  |
+             76,0 %  |
+             −29,02 €  |
+             [breakdown-origin]
+
+             Origine  |
+             {title:aperture piazzate nel periodo} Trade  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Vinti  |
+             {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} Persi  |
+             Win rate  |
+             P&L  |
+
+             ⚙️ Automatico  |
+             81  |
+             70  |
+             7  |
+             90,9 %  |
+             +34,39 €  |
+
+             ✋ Manuale  |
+             3  |
+             2  |
+             1  |
+             66,7 %  |
+             +1,07 €  |
+             [day-detail]
+             sabato 26 settembre 2026 · [day-count] 4 trade
+             4 ancora vivi {title:capitale IMPEGNATO dalle posizioni piazzate in questa giornata (non è quello ancora a rischio adesso)} liability piazzata 274,00 € · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato [day-total-pnl] +0,00 €
+
+             [omega-matches-table]
+
+             {title:ora di Roma} Ora  |
+             Partita  |
+             {title:lay sul Half Time Score: banca il risultato esatto al 45′} 1° tempo  |
+             {title:risultato REALE al 45′} Risultato 1T  |
+             {title:lay sul Correct Score: banca il risultato esatto finale} 2° tempo  |
+             {title:risultato REALE finale} Risultato 2T  |
+             {title:P&L complessivo della partita: entrambe le gambe con le loro chiusure} P&L partita  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:38
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:Kamatamare Sanuki v FC Gifu} Kamatamare Sanuki v FC Gifu
+             in corso  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 2-3  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Draw [omega-entry-price] {title:quota d'ingresso} @ 48,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 47,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 77′ 2-4
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 48,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 48,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 48,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [day-trade-live] live  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 47,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:11
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:FC Ryukyu v Ehime} FC Ryukyu v Ehime
+             in corso  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 0-0  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} 1 - 3 [omega-entry-price] {title:quota d'ingresso} @ 80,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 79,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 51′ 0-0
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 80,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 80,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 80,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [day-trade-live] live  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 79,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:10
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:FC Imabari v Shonan} FC Imabari v Shonan
+             in corso  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 1-1  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Home Win [omega-entry-price] {title:quota d'ingresso} @ 55,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 54,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 48′ 1-1
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 55,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 55,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 55,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [day-trade-live] live  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 54,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:10
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:Iwata v Vanraure Hachinohe} Iwata v Vanraure Hachinohe
+             in corso  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 0-1  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Home Win [omega-entry-price] {title:quota d'ingresso} @ 95,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 94,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 50′ 0-1
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 95,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 95,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 95,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [day-trade-live] live  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 94,00 €  | 

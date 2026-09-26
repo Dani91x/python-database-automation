@@ -1,0 +1,9 @@
+
+
+   Close
+
+     Quote Betfair · South East Utd. U21 vs South Hobart II
+     Tutti i mercati Betfair pre-partita, back e lay . Tasmania Southern Championship .
+
+       Nessuna quota Betfair per questa partita
+       Le quote compaiono dopo aver eseguito la fetch Betfair ( betfair_full_odds.py ).

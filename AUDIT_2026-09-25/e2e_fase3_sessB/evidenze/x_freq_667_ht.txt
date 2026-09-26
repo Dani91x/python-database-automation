@@ -1,0 +1,62 @@
+
+
+   Close
+
+     Frequenze Mercati · Friendlies Clubs
+     Frequenza storica del mercato nella lega (baseline) + medie mobili MM5/MM10/MM15 in ordine cronologico di kickoff. Le bande ±σ sono calibrate sull'errore standard della MM10.
+
+       Mercato
+
+         Esito Finale 1X2
+         Doppia Chance
+         Draw No Bet
+         Under/Over
+         Entrambe Segnano (GG/NG)
+         Squadra Casa segna
+         Squadra Trasferta segna
+         Risultato Esatto
+         Primo Tempo 1X2 HT
+         Under/Over Primo Tempo HT
+         Risultato Esatto 1°T HT
+         Parziale/Finale HT
+
+         Selezione
+
+           1
+           X
+           2
+
+         Intervallo
+
+           Ultime N
+           Stagioni
+           Tutto lo storico
+
+         N partite
+
+           50
+           100
+           200
+           300
+           500
+           1000 <input text=>
+
+         Medie mobili
+
+           MM5
+           MM10
+           MM15
+
+         Bande
+
+           ±1σ
+           ±2σ
+
+       Esito Finale 1X2 — 1
+       Baseline 42.0%
+       Serie su 300 esiti validi
+       σ 0.494 · se(MM10) 0.156
+       08/08/2026 → 25/09/2026
+
+             08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 08/26 09/26 6% 31% 56% 81% 94% baseline 42.0%
+       Asse X: partite della lega in ordine cronologico di kickoff (tiebreaker deterministico fixture_id). MM tracciate solo a finestra piena. z-score = (MM10 − baseline) / se(MM10).

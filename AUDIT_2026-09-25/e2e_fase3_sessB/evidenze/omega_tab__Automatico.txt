@@ -1,0 +1,332 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] Ω OMEGA
+           [bot-status] IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (10 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Omega: se manca, il bot non sta operando (soglia 45 s)} servizio Omega vivo (14 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [omega-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [omega-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mode-banner] MODALITÀ PAPER — simulazione fedele: coda, liquidità, betDelay e protezioni identiche al live, nessun denaro reale.
+       [omega-daily-mission]
+
+             Giornata operativa
+             giornata operativa [omega-operating-day] sabato 26 settembre 2026 (Europe/Rome) — numeri dalla RPC (giornata Europe/Rome): il realizzato riparte da zero ogni giorno e conta SOLO le posizioni piazzate oggi
+           +0,00 € · 0,0 %
+         [omega-mission-line] {title:obiettivo di P&L realizzato per la giornata di oggi} Obiettivo di oggi 100,00 € · [omega-today-legs] {title:partite con almeno una posizione piazzata oggi} partite 4 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 4 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:posizioni ancora vive: non regolate} 4 vive · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · resta [omega-remaining] 100,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 274,00 € · {title:risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito} P&L bloccato [day-bar-locked] +0,00 € · totale storico −44,64 €
+
+           0,0 %
+       [kpi-row]
+         [omega-kpi-liability]
+           Liability aperta
+           274,00 €
+           rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0) [omega-liability-bot] {title:il bot decide su QUESTO numero: le operazioni che apri a mano non muovono piu’ i suoi cap (R6, 16/09)} su cui decide il bot 274,00 €
+         [omega-kpi-locked]
+           P&L bloccato
+           +0,00 €
+           di oggi +0,00 € · già bloccato sulle posizioni vive: non cambia più
+         [omega-kpi-reconciling]
+           In verifica su Betfair
+           0,00 €
+           nessun ordine in sospeso
+         [omega-kpi-target]
+           Target / operazione
+           0,38 €
+           266 operazioni e 133 partite ancora in finestra (su 150 viste dallo scanner) · 0,76 €/partita
+
+           ⚙️ Automatico
+           🎯 Missione
+           ✋ Manuale
+           📅 Storico
+
+           [equity-card]
+             {title:asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento} Equity · P&L cumulato realizzato · giornata 26 settembre
+             [equity-axis-note] asse verticale = € realizzati sommati, si parte da 0,00 € all’inizio dell’ambito; asse orizzontale = tempo (primo e ultimo passo etichettati); ogni gradino è un regolamento
+             nessun match ancora regolato — la curva compare al primo incasso
+           [omega-matches-card]
+             Partite di oggi (4) [omega-matches-summary] · 4 operazioni oggi · 0 V 0 P · 4 partite vive · Liability aperta 274,00 € · storico 109 partite ogni riga: gamba 1° tempo + gamba 2° tempo, quote live, risultati reali, P&L della partita
+             [omega-matches-toggle] mostra tutte
+             [omega-totali-operazioni]
+             [omega-totali-operazioni-operazioni] {title:quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte}
+             Operazioni
+             4
+             4 partite
+             [omega-totali-operazioni-realizzato] {title:somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».}
+             P&L realizzato · PAPER
+             —
+             0 in utile · 0 in perdita
+             [omega-totali-operazioni-aperto] {title:quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.}
+             Se chiudo ora · PAPER
+             +0,00 €
+             4 ancora aperte
+             [omega-totali-operazioni-investito] {title:capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)}
+             Investito · PAPER
+             4,00 €
+             [omega-totali-operazioni-liability] {title:quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista}
+             Responsabilità · PAPER
+             274,00 €
+
+             [omega-matches-table]
+
+             {title:ora di Roma} Ora  |
+             Partita  |
+             {title:lay sul Half Time Score: banca il risultato esatto al 45′} 1° tempo  |
+             {title:risultato REALE al 45′} Risultato 1T  |
+             {title:lay sul Correct Score: banca il risultato esatto finale} 2° tempo  |
+             {title:risultato REALE finale} Risultato 2T  |
+             {title:P&L complessivo della partita: entrambe le gambe con le loro chiusure} P&L partita  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:38
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:Kamatamare Sanuki v FC Gifu} Kamatamare Sanuki v FC Gifu
+             [omega-live-score] 82′ · 2-4
+             [omega-feed-age] {title:il feed di questa partita non si aggiorna da 41 s: non decidere su questi numeri} FEED FERMO da 41 s  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 2-3  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Draw [omega-entry-price] {title:quota d'ingresso} @ 48,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 47,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 77′ 2-4 [omega-model-p] {title:P(modello) che il risultato bancato esca · mercato: 1,8 % (1/55,00) · λ da fixture} P(perdita) — · mercato 1,8 %
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 48,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 48,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 48,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+             [omega-leg-live] ora {title:miglior quota LAY disponibile adesso sulla selezione bancata} LAY 55,00 / {title:miglior quota BACK: è quella che serve per chiudere un lay} BACK 32,00 [omega-feed-age] {title:il feed di questa partita non si aggiorna da 41 s: non decidere su questi numeri} FEED FERMO da 41 s [omega-close-now] {title:chiudendo adesso a 32,00: −0,50 € lordi, commissione 5,0 % fissata sul trade} se chiudo ora −0,50 € netti
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [cashout-disabled-wrap]
+             [cashout-trigger] −0,50 €  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 47,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:11
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:FC Ryukyu v Ehime} FC Ryukyu v Ehime
+             [omega-live-score] 82′ · 0-1
+             [omega-feed-age] {title:il feed di questa partita non si aggiorna da 39 s: non decidere su questi numeri} FEED FERMO da 39 s  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 0-0  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} 1 - 3 [omega-entry-price] {title:quota d'ingresso} @ 80,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 79,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 51′ 0-0 [omega-model-p] {title:P(modello) che il risultato bancato esca · mercato: 0,1 % (1/770,00) · λ da fixture} P(perdita) — · mercato 0,1 %
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 80,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 80,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 80,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+             [omega-leg-live] ora {title:miglior quota LAY disponibile adesso sulla selezione bancata} LAY 770,00 / {title:miglior quota BACK: è quella che serve per chiudere un lay} BACK 25,00 [omega-feed-age] {title:il feed di questa partita non si aggiorna da 39 s: non decidere su questi numeri} FEED FERMO da 39 s [omega-close-now] {title:chiudendo adesso a 25,00: −2,20 € lordi, commissione 5,0 % fissata sul trade} se chiudo ora −2,20 € netti
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [cashout-disabled-wrap]
+             [cashout-trigger] −2,20 €  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 79,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:10
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:FC Imabari v Shonan} FC Imabari v Shonan
+             [omega-live-score] 81′ · 1-1
+             [omega-feed-age] {title:il feed di questa partita non si aggiorna da 42 s: non decidere su questi numeri} FEED FERMO da 42 s  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 1-1  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Home Win [omega-entry-price] {title:quota d'ingresso} @ 55,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 54,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 48′ 1-1
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 55,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 55,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 55,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+             [omega-leg-live] ora {title:miglior quota LAY disponibile adesso sulla selezione bancata} LAY — / {title:miglior quota BACK: è quella che serve per chiudere un lay} BACK 260,00 [omega-feed-age] {title:il feed di questa partita non si aggiorna da 42 s: non decidere su questi numeri} FEED FERMO da 42 s [omega-close-now] {title:chiudendo adesso a 260,00: +0,39 € lordi, commissione 5,0 % fissata sul trade} se chiudo ora +0,37 € netti
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [cashout-disabled-wrap]
+             [cashout-trigger] +0,37 €  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 54,00 €  |
+             [omega-match-row]
+
+             {title:ora di Roma del primo piazzamento} 11:10
+             {title:calcio d'inizio (ora di Roma)} KO 10:00  |
+
+             {title:Iwata v Vanraure Hachinohe} Iwata v Vanraure Hachinohe
+             [omega-live-score] 84′ · 1-2
+             [omega-feed-age] {title:il feed di questa partita non si aggiorna da 40 s: non decidere su questi numeri} FEED FERMO da 40 s  |
+             [omega-leg-ht]
+             {title:nessuna operazione nel 1° tempo (Half Time Score)} in attesa della finestra  |
+             [omega-result-ht]
+
+             {title:risultato reale al 45′} 0-1  |
+
+             [omega-leg-ft]
+
+             [omega-side] LAY {title:risultato bancato sul Correct Score} Any Other Home Win [omega-entry-price] {title:quota d'ingresso} @ 95,00
+             stake 1,00 € {title:liability: quanto perdi se il risultato bancato esce} rischio 94,00 € {title:minuto e punteggio al momento dell'ingresso} ingresso 50′ 0-1
+             [omega-stato-ordine] {title:chiesto: 1,00 € (da Betfair) · abbinato: 1,00 € (da Betfair) · residuo vivo sul book: 0,00 € (da Betfair) · prezzo medio abbinato: 95,00 (da Betfair)}
+             [omega-stato-ordine-badge] ABBINATO [omega-stato-ordine-chiesto] chiesto 1,00 € @ 95,00 [omega-stato-ordine-abbinato] abbinato 1,00 € @ 95,00 [omega-stato-ordine-residuo] residuo 0,00 € [omega-stato-ordine-eta] {title:da quanto tempo non abbiamo notizie di questo ordine DA BETFAIR (non l'ora del nostro processo)} da Betfair — fa
+             [omega-leg-live] ora {title:miglior quota LAY disponibile adesso sulla selezione bancata} LAY — / {title:miglior quota BACK: è quella che serve per chiudere un lay} BACK 200,00 [omega-feed-age] {title:il feed di questa partita non si aggiorna da 40 s: non decidere su questi numeri} FEED FERMO da 40 s [omega-close-now] {title:chiudendo adesso a 200,00: +0,52 € lordi, commissione 5,0 % fissata sul trade} se chiudo ora +0,49 € netti
+
+             [omega-status] APERTO [omega-leg-open] {title:posizione viva: esito al fischio finale o alla chiusura a mercato} in corso
+             [cashout-disabled-wrap]
+             [cashout-trigger] +0,49 €  |   |
+             [omega-result-ft] {title:in attesa del fischio finale} —  |
+
+             [omega-match-pnl] —
+             in corso · rischio 94,00 €  |
+           [omega-activity]
+             Attività del servizio di oggi (60) ogni passo del servizio: ingressi, coda ordini, verifiche, green-up, regolamenti · giornata 26 settembre
+             [omega-activity-more] carica altre ( 37 )
+             [activity-feed]
+             [activity-filter] Evento
+             tutti 60
+             FC Imabari v Shonan
+             FC Ryukyu v Ehime
+             Iwata v Vanraure Hachinohe
+             Kamatamare Sanuki v FC Gifu
+
+             [omega-activity-row] 11:43:33
+             SALTATA {title:36090936 · 2T · mercato sospeso} 36090936 · 2T · mercato sospeso
+             [omega-activity-row] 11:42:43
+             SALTATA {title:FC Ryukyu v Ehime · controparte_insufficiente} FC Ryukyu v Ehime · controparte_insufficiente
+             [omega-activity-row] 11:41:39
+             SALTATA {title:FC Ryukyu v Ehime · prezzo_di_back_assente} FC Ryukyu v Ehime · prezzo_di_back_assente
+             [omega-activity-row] 11:41:34
+             SALTATA {title:FC Imabari v Shonan · selezione_aggregata} FC Imabari v Shonan · selezione_aggregata
+             [omega-activity-row] 11:41:34
+             SALTATA {title:Iwata v Vanraure Hachinohe · selezione_aggregata} Iwata v Vanraure Hachinohe · selezione_aggregata
+             [omega-activity-row] 11:41:11
+             SALTATA {title:36090854 · 2T · 77′ · 1-1 · nessun_candidato} 36090854 · 2T · 77′ · 1-1 · nessun_candidato
+             [omega-activity-row] 11:41:11
+             SALTATA {title:36090788 · 2T · 80′ · 3-0 · nessun_candidato} 36090788 · 2T · 80′ · 3-0 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36094813 · 2T · 78′ · 3-0 · nessun_candidato} 36094813 · 2T · 78′ · 3-0 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36094814 · 2T · 81′ · 0-2 · nessun_candidato} 36094814 · 2T · 81′ · 0-2 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36090944 · 2T · 78′ · 2-0 · nessun_candidato} 36090944 · 2T · 78′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36115984 · 2T · 78′ · 2-3 · nessun_candidato} 36115984 · 2T · 78′ · 2-3 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36115985 · 2T · 80′ · 1-1 · nessun_candidato} 36115985 · 2T · 80′ · 1-1 · nessun_candidato
+             [omega-activity-row] 11:41:10
+             SALTATA {title:36115986 · 2T · 80′ · 0-1 · nessun_candidato} 36115986 · 2T · 80′ · 0-1 · nessun_candidato
+             [omega-activity-row] 11:41:06
+             SALTATA {title:36115973 · 2T · 79′ · 0-4 · nessun_candidato} 36115973 · 2T · 79′ · 0-4 · nessun_candidato
+             [omega-activity-row] 11:41:06
+             SALTATA {title:36115975 · 2T · 79′ · 1-0 · nessun_candidato} 36115975 · 2T · 79′ · 1-0 · nessun_candidato
+             [omega-activity-row] 11:41:06
+             SALTATA {title:36090937 · 2T · 80′ · 3-0 · nessun_candidato} 36090937 · 2T · 80′ · 3-0 · nessun_candidato
+             [omega-activity-row] 11:41:05
+             SALTATA {title:36090936 · 2T · 79′ · 2-1 · nessun_candidato} 36090936 · 2T · 79′ · 2-1 · nessun_candidato
+             [omega-activity-row] 11:41:05
+             SALTATA {title:36090943 · 2T · 78′ · 2-3 · nessun_candidato} 36090943 · 2T · 78′ · 2-3 · nessun_candidato
+             [omega-activity-row] 11:40:26
+             SALTATA {title:36115973 · 2T · mercato sospeso} 36115973 · 2T · mercato sospeso
+             [omega-activity-row] 11:39:24
+             SALTATA {title:36090944 · minuto/punteggio live non disponibili} 36090944 · minuto/punteggio live non disponibili
+             [omega-activity-row] 11:39:14
+             SALTATA {title:36094814 · minuto/punteggio live non disponibili} 36094814 · minuto/punteggio live non disponibili
+             [omega-activity-row] 11:38:48
+             SALTATA {title:Kamatamare Sanuki v FC Gifu · selezione_aggregata} Kamatamare Sanuki v FC Gifu · selezione_aggregata
+             [omega-activity-row] 11:38:44
+             PIAZZATO {title:Kamatamare Sanuki v FC Gifu · 1,00 € @ 48,00 · 77′} Kamatamare Sanuki v FC Gifu · 1,00 € @ 48,00 · 77′
+             [omega-activity-row] 11:38:44
+             PAPER: FILL DI RIPIEGO {title:Kamatamare Sanuki v FC Gifu · follow_assente} Kamatamare Sanuki v FC Gifu · follow_assente
+             [omega-activity-row] 11:38:14
+             SALTATA {title:36094814 · 2T · mercato sospeso} 36094814 · 2T · mercato sospeso
+             [omega-activity-row] 11:37:32
+             SALTATA {title:36090944 · 2T · mercato sospeso} 36090944 · 2T · mercato sospeso
+             [omega-activity-row] 11:37:18
+             SALTATA {title:36090788 · 2T · mercato sospeso} 36090788 · 2T · mercato sospeso
+             [omega-activity-row] 11:36:36
+             SALTATA {title:36115985 · minuto/punteggio live non disponibili} 36115985 · minuto/punteggio live non disponibili
+             [omega-activity-row] 11:36:29
+             SALTATA {title:36111770 · minuto/punteggio live non disponibili} 36111770 · minuto/punteggio live non disponibili
+             [omega-activity-row] 11:36:28
+             SALTATA {title:36111764 · minuto/punteggio live non disponibili} 36111764 · minuto/punteggio live non disponibili
+             [omega-activity-row] 11:35:37
+             SALTATA {title:36115985 · 2T · mercato sospeso} 36115985 · 2T · mercato sospeso
+             [omega-activity-row] 11:32:43
+             SALTATA {title:FC Ryukyu v Ehime · controparte_insufficiente} FC Ryukyu v Ehime · controparte_insufficiente
+             [omega-activity-row] 11:31:37
+             SALTATA {title:FC Ryukyu v Ehime · prezzo_di_back_assente} FC Ryukyu v Ehime · prezzo_di_back_assente
+             [omega-activity-row] 11:31:32
+             SALTATA {title:FC Imabari v Shonan · selezione_aggregata} FC Imabari v Shonan · selezione_aggregata
+             [omega-activity-row] 11:31:32
+             SALTATA {title:Iwata v Vanraure Hachinohe · selezione_aggregata} Iwata v Vanraure Hachinohe · selezione_aggregata
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36090854 · 2T · 68′ · 1-1 · nessun_candidato} 36090854 · 2T · 68′ · 1-1 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36090788 · 2T · 70′ · 2-0 · nessun_candidato} 36090788 · 2T · 70′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36094813 · 2T · 69′ · 3-0 · nessun_candidato} 36094813 · 2T · 69′ · 3-0 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36094814 · 2T · 71′ · 0-1 · nessun_candidato} 36094814 · 2T · 71′ · 0-1 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36090944 · 2T · 68′ · 2-0 · nessun_candidato} 36090944 · 2T · 68′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36115984 · 2T · 68′ · 1-3 · nessun_candidato} 36115984 · 2T · 68′ · 1-3 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36115985 · 2T · 70′ · 0-1 · nessun_candidato} 36115985 · 2T · 70′ · 0-1 · nessun_candidato
+             [omega-activity-row] 11:31:08
+             SALTATA {title:36115986 · 2T · 71′ · 0-1 · nessun_candidato} 36115986 · 2T · 71′ · 0-1 · nessun_candidato
+             [omega-activity-row] 11:31:04
+             SALTATA {title:Kamatamare Sanuki v FC Gifu · 2T · 69′ · 2-4 · nessun_candidato} Kamatamare Sanuki v FC Gifu · 2T · 69′ · 2-4 · nessun_candidato
+             [omega-activity-row] 11:31:04
+             SALTATA {title:36115973 · 2T · 70′ · 0-2 · nessun_candidato} 36115973 · 2T · 70′ · 0-2 · nessun_candidato
+             [omega-activity-row] 11:31:04
+             SALTATA {title:36115975 · 2T · 68′ · 1-0 · nessun_candidato} 36115975 · 2T · 68′ · 1-0 · nessun_candidato
+             [omega-activity-row] 11:31:03
+             SALTATA {title:36090937 · 2T · 69′ · 3-0 · nessun_candidato} 36090937 · 2T · 69′ · 3-0 · nessun_candidato
+             [omega-activity-row] 11:31:03
+             SALTATA {title:36090936 · 2T · 68′ · 2-1 · nessun_candidato} 36090936 · 2T · 68′ · 2-1 · nessun_candidato
+             [omega-activity-row] 11:30:58
+             SALTATA {title:36090943 · 2T · 68′ · 2-3 · nessun_candidato} 36090943 · 2T · 68′ · 2-3 · nessun_candidato
+             [omega-activity-row] 11:30:18
+             SALTATA {title:36090936 · 2T · mercato sospeso} 36090936 · 2T · mercato sospeso
+             [omega-activity-row] 11:26:35
+             SALTATA {title:36090943 · 2T · mercato sospeso} 36090943 · 2T · mercato sospeso
+             [omega-activity-row] 11:22:36
+             SALTATA {title:FC Ryukyu v Ehime · controparte_insufficiente} FC Ryukyu v Ehime · controparte_insufficiente
+             [omega-activity-row] 11:21:31
+             SALTATA {title:FC Imabari v Shonan · selezione_aggregata} FC Imabari v Shonan · selezione_aggregata
+             [omega-activity-row] 11:21:31
+             SALTATA {title:Iwata v Vanraure Hachinohe · selezione_aggregata} Iwata v Vanraure Hachinohe · selezione_aggregata
+             [omega-activity-row] 11:21:07
+             SALTATA {title:36090854 · 2T · 57′ · 1-1 · nessun_candidato} 36090854 · 2T · 57′ · 1-1 · nessun_candidato
+             [omega-activity-row] 11:21:07
+             SALTATA {title:36090788 · 2T · 60′ · 2-0 · nessun_candidato} 36090788 · 2T · 60′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:21:07
+             SALTATA {title:36094813 · 2T · 59′ · 2-0 · nessun_candidato} 36094813 · 2T · 59′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:21:07
+             SALTATA {title:36094814 · 2T · 61′ · 0-1 · nessun_candidato} 36094814 · 2T · 61′ · 0-1 · nessun_candidato
+             [omega-activity-row] 11:21:07
+             SALTATA {title:36090944 · 2T · 58′ · 2-0 · nessun_candidato} 36090944 · 2T · 58′ · 2-0 · nessun_candidato
+             [omega-activity-row] 11:21:06
+             SALTATA {title:36115984 · 2T · 58′ · 1-3 · nessun_candidato} 36115984 · 2T · 58′ · 1-3 · nessun_candidato

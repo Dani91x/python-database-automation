@@ -1,0 +1,97 @@
+
+
+         AI TERMINAL ANALYTICS
+         Dashboard
+
+         Centro di Controllo Motori
+         Pagella per-motore per-mercato sullo storico settlato.
+
+         Performance Motori
+         Decisioni
+         Crea Strategia
+         Reportistiche
+         Backtest Automatico
+
+         Partite registrate 0 selezionate
+
+           Parma v Cremonese Coppa Italia · 01/09/2026 · 21 mercati · 31.539 snapshot
+           Beijing Guoan v Liaoning Tieren FC — · 17/07/2026 · 15 mercati · 15.508 snapshot
+           Leganes v Albacete — · 17/07/2026 · 16 mercati · 10.266 snapshot
+           Elimai FC v Alashkert — · 16/07/2026 · 22 mercati · 14.493 snapshot
+           LNZ-Lebedyn v Goztepe — · 16/07/2026 · 21 mercati · 1415 snapshot
+           FC Astana v Dinamo Tirana — · 16/07/2026 · 22 mercati · 14.612 snapshot
+           FC Inter v Sarajevo — · 16/07/2026 · 22 mercati · 18.306 snapshot
+           HNK Gorica v FC Epicentr Dunaivtsi — · 16/07/2026 · 21 mercati · 6727 snapshot
+           Aarhus Fremad v Brabrand — · 16/07/2026 · 21 mercati · 29.413 snapshot
+           Nurnberg II v SC Austria Lustenau — · 16/07/2026 · 21 mercati · 31.938 snapshot
+           Puskas Akademia v Basaksehir — · 16/07/2026 · 19 mercati · 19.694 snapshot
+           FC Copenhagen v Viborg — · 16/07/2026 · 19 mercati · 19.763 snapshot
+           Spain v Belgium World Cup · 10/07/2026 · 22 mercati · 91.616 snapshot
+           VPS v SJK Finnish Veikkausliiga · 10/07/2026 · 21 mercati · 2410 snapshot
+           FC Inter 2 v RoPS Finnish Ykkonen · 10/07/2026 · 21 mercati · 24.562 snapshot
+           Legia Warsaw v Trencin Friendly Matches · 10/07/2026 · 21 mercati · 9311 snapshot
+           SV Sandhausen v Kaiserslautern Friendly Matches · 10/07/2026 · 19 mercati · 4521 snapshot
+           Shandong Taishan v Yunnan Yukun Chinese Super League · 10/07/2026 · 11 mercati · 11.869 snapshot
+           Cheonan City v Gimhae City South Korean K2 League · 10/07/2026 · 15 mercati · 860 snapshot
+           Switzerland v Colombia World Cup · 07/07/2026 · 23 mercati · 70.645 snapshot
+           Vardar Skopje v KuPS UEFA Champions League · 07/07/2026 · 21 mercati · 6794 snapshot
+           Shelbourne v Celtic Friendlies Clubs · 07/07/2026 · 21 mercati · 4917 snapshot
+           PAOK v AEK Larnaca Friendlies Clubs · 07/07/2026 · 16 mercati · 16.292 snapshot
+           Argentina v Egypt World Cup · 07/07/2026 · 21 mercati · 40.735 snapshot
+           Železničar Pančevo v CSKA 1948 Friendlies Clubs · 07/07/2026 · 21 mercati · 46.248 snapshot
+           Portugal v Spain World Cup · 06/07/2026 · 19 mercati · 2168 snapshot
+           Super Nova v Ogre United Virsliga · 06/07/2026 · 21 mercati · 41.155 snapshot
+           Suduva Marijampole v TransINVEST Vilnius A Lyga · 06/07/2026 · 21 mercati · 40.640 snapshot
+           Brazil v Norway World Cup · 05/07/2026 · 23 mercati · 83.748 snapshot
+           Australia v Egypt World Cup · 03/07/2026 · 22 mercati · 67.549 snapshot
+           Portugal v Croatia World Cup · 03/07/2026 · 23 mercati · 105.749 snapshot
+           Spain v Austria World Cup · 02/07/2026 · 23 mercati · 78.180 snapshot
+           Ivory Coast v Norway World Cup · 30/06/2026 · 23 mercati · 89.165 snapshot
+           FK Liepaja v Ogre United Virsliga · 30/06/2026 · 21 mercati · 34.437 snapshot
+           Rīgas FS v BFC Daugavpils Virsliga · 30/06/2026 · 21 mercati · 38.385 snapshot
+           Táborsko v SKU Amstetten Friendlies Clubs · 30/06/2026 · 21 mercati · 42.432 snapshot
+           Nyiregyhaza v Zbrojovka Brno Friendlies Clubs · 30/06/2026 · 21 mercati · 35.894 snapshot
+           Qingdao Hainiu v Yunnan Yukun China League One · 26/06/2026 · 21 mercati · 45.686 snapshot
+
+         Configurazione backtest
+
+           Motore Live
+           Sandbox (regole)
+
+             Bankroll (£) <input number=1000>
+
+             Edge min % <input number=>
+
+             Frazione Kelly <input number=0.25>
+
+           Esecuzione (realismo)
+
+             Commissione % <input number=5>
+
+             Inmatchato a fine mercato <select=LAPSE (annulla) (3 opz.)>
+
+             Latenza piazz. (s) <input number=0.12>
+
+             Latenza cancel. (s) <input number=0.17>
+
+             <input checkbox=false>
+             Matcha anche contro i prezzi disponibili — fill OTTIMISTICI: assume di prendere liquidità visibile che il matcher reale potrebbe non dare (edge gonfiato). OFF = solo volume inmatchato (conservativo, percorso ufficiale).
+         Applica il Motore Live #2 alle partite selezionate.
+           Esegui backtest
+
+         Esecuzioni recenti clic = rivedi risultati
+
+             Quando  |
+             Modalità  |
+             Partite  |
+             Stato  |
+
+             28/06/2026, 13:24:36  |
+             Motore Live  |
+             1  |
+             Completato  |
+
+             28/06/2026, 12:12:54  |
+             Motore Live  |
+             1  |
+             Completato  | 

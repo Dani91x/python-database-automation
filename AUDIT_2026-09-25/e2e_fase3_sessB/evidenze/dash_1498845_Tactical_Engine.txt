@@ -1,0 +1,37 @@
+
+
+   Close
+
+     Tactical Engine · Quilmes vs Club Atlético Güemes
+     Terzo motore (GSG): forze attacco/difesa inferite per massima verosimiglianza (Dixon-Coles) con simmetria casa/trasferta. Primera Nacional . Probabilità del modello, non quote.
+
+     gsg-dc-z2-1.0 leakage-free λ casa 1.56 λ trasf. 0.58 ρ DC -0.10 storico 4061 partite ✓ converged [eta-tacticai] Previsione TacticAI : aggiornato al 23/09/2026, 14:31 ( 2 g 20 h fa) · oltre 36 h
+
+         Gol attesi
+         Quilmes 1.56
+         Club Atlético Güemes 0.58
+
+         Forze inferite (att >1 forte · dif <1 solida)
+         Quilmes att 1.04 · dif 0.89
+         Club Atlético Güemes att 0.91 · dif 1.30
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         HT 1X2
+         1°T Over 0.5
+
+       Più probabile 1 (Casa) 60%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Forze stimate tenendo conto della forza degli avversari.
+
+       Risultati esatti più probabili
+       1 - 0 17% 2 - 0 14% 0 - 0 13% 1 - 1 12% 2 - 1 8%
+
+       Consiglio
+       Esito più probabile: vittoria Quilmes (60%) — Quilmes favorita. Tendenza gol: Under 2.5 (64%), match chiuso. Entrambe a segno: No (64%).

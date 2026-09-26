@@ -1,0 +1,37 @@
+
+
+   Close
+
+     Tactical Engine · Cobh Ramblers vs Athlone Town
+     Terzo motore (GSG): forze attacco/difesa inferite per massima verosimiglianza (Dixon-Coles) con simmetria casa/trasferta. First Division . Probabilità del modello, non quote.
+
+     gsg-dc-z2-1.0 leakage-free λ casa 1.69 λ trasf. 0.98 ρ DC 0.06 storico 1097 partite ✓ converged [eta-tacticai] Previsione TacticAI : aggiornato al 25/09/2026, 11:33 ( 23 h fa)
+
+         Gol attesi
+         Cobh Ramblers 1.69
+         Athlone Town 0.98
+
+         Forze inferite (att >1 forte · dif <1 solida)
+         Cobh Ramblers att 0.95 · dif 1.13
+         Athlone Town att 0.75 · dif 1.18
+
+       Mercato
+
+         1X2
+         Over 1.5
+         Over 2.5
+         Over 3.5
+         BTTS
+         HT 1X2
+         1°T Over 0.5
+
+       Più probabile 1 (Casa) 55%
+
+             0% 25% 50% 75% 100% 1 (Casa) X (Pari) 2 (Trasf.)
+       Probabilità del modello (non quote). Forze stimate tenendo conto della forza degli avversari.
+
+       Risultati esatti più probabili
+       1 - 0 12% 1 - 1 11% 2 - 0 10% 2 - 1 10% 0 - 1 8%
+
+       Consiglio
+       Esito più probabile: vittoria Cobh Ramblers (55%) — Cobh Ramblers favorita. Rete di sicurezza: 1X 77%. Linea gol equilibrata (Over 2.5 50%).

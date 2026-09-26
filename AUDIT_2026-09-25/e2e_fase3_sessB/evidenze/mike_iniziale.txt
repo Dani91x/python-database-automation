@@ -1,0 +1,191 @@
+
+
+   [page-shell]
+
+     [bot-header]
+
+         AI TERMINAL [bot-name] 🎯 MIKE
+           [mike-status] BOT IN CORSA
+           [service-health] [service-feed] {title:FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna} feed vivo (11 s) ⚽ 17 · 🎾 16 · [service-beat] {title:BATTITO del servizio Mike: se manca, il bot non sta operando (soglia 45 s)} servizio Mike vivo (14 s)
+             {title:quote in push dalla Exchange Stream API} ⚡ STREAM 158
+         [mike-storico-link] {title:Storico calcio: i giorni precedenti, con P&L per bot, curva globale e calendario. Qui sopra c’è solo la giornata di oggi.} ⚽ Storico calcio
+           [mode-toggle]
+             PAPER
+             LIVE
+           [mike-params-trigger] Parametri
+           [bot-stop] Ferma
+
+       [mike-mode-banner] MODALITÀ PAPER — simulazione fedele: fill solo al prezzo ancora disponibile, betDelay in-play, protezioni identiche al live.
+       [day-bar]
+
+             Giornata operativa
+             giornata operativa [day-bar-day] sabato 26 settembre 2026 (Europe/Rome) — partite con almeno una posizione piazzata oggi · operazioni = cicli aperti oggi · V/P = cicli già chiusi, la loro somma è il realizzato
+           +0,00 €
+         [day-bar-line] [day-bar-counts] {title:partite con almeno una posizione piazzata oggi} partite 2 · {title:posizioni (gambe) piazzate oggi, chiusure escluse} operazioni 2 · {title:V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa} 0 V 0 P · {title:somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)} realizzato oggi +0,00 € · {title:quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)} Liability aperta [day-bar-liability] 10,00 € · totale storico +8,14 €
+       [kpi-row]
+         [mike-kpi-matches]
+           Partite seguite ora
+           2
+           2 prima del fischio · 0 in gioco · 2 con posizione aperta
+         [stat-tile]
+           Posizioni aperte
+           2
+           cicli con capitale ancora esposto
+         [stat-tile]
+           P&L oggi
+           +0,00 €
+           [mike-pnl-today-sub] 26 settembre · Europe/Rome · stop a −50,00 €
+         [stat-tile]
+           P&L totale
+           +8,14 €
+         [stat-tile]
+           Liability aperta
+           10,00 €
+           [mike-liability-sub] perdita peggiore sulle posizioni aperte, netta dal servizio
+         [mike-kpi-locked]
+           P&L bloccato
+           —
+           nessuna partita ha ancora un risultato bloccato
+         [mike-kpi-cycle]
+           Ultimo ciclo
+           11:45:50
+           feed aggiornato 14 s fa
+
+           ⚽ Partite ( 2 )
+           📋 Operazioni ( 2 )
+           ⏱ Risultati Pre-Match ( 2 )
+           🔴 Risultati Live ( 0 )
+           🧾 Attività
+           📅 Storico
+
+           [mike-cards]
+             [mike-filtro-sezioni] mostra
+             [mike-filtro-sezioni-pre] {title:Nascondi ⏱ Pre-match} ⏱ Pre-match ( 2 )
+             [mike-filtro-sezioni-live] {title:Nascondi 🔴 Live} 🔴 Live ( 0 )
+             [mike-section-pre]
+             ⏱ PRE-MATCH ( 2 ) · per calcio d’inizio
+             [mike-cards-pre]
+             [mike-match-card]
+
+             [mike-score] –
+
+             FC Badalona (W) v Granada (W)
+             Spanish Liga F · KO 12:00 · fra [mike-countdown] 13:50
+
+             [mike-phase] {title:posizione abbinata prima del fischio: aspetta il green-up a +N tick} UNDER 3.5 APERTO
+             [mike-feed-age] feed 19 s
+             {title:Video live Betfair (stream ufficiale, dove disponibile)} 📺
+             {title:Statistiche partita Betfair (+ Visualizzazione partita: tutte le tab del popup ufficiale)} 📊
+             [mike-phase-what] posizione abbinata prima del fischio: aspetta il green-up a +N tick
+             [mike-alerts]
+
+             [mike-model]
+             {title:P(4) implicita dalle due linee O/U: è l'unico esito che perde}
+             P(4 gol) mercato
+             18,3 %
+             [mike-model-missing] Nessun modello per questa lega: il bot decide con le quote e le soglie fisse.
+             [mike-goals-histogram] Nessun modello per questa lega: copertura a regola fissa (quote e soglie del mercato).
+             [mike-quotes]
+             [mike-quote-ou35] {title:Under 3.5 · market 1.262887883 · selection 1222344}
+             Under 3.5 back / lay
+             · 1,69 8 € / 1,73 · 9 €
+             [mike-quote-ou45] {title:Over 4.5 · market 1.262887880 · selection 1222346}
+             Over 4.5 back / lay
+             · 4,20 21 € / 4,50 · 11 €
+             [mike-quote-ou45-under] {title:Under 4.5 · market 1.262887880 · selection 1222347 · linea del re-ingresso dopo un gol}
+             Under 4.5 (re-ingresso)
+             · 1,30 11 € / 1,33 · 6 €
+             [mike-meta-line] {title:il feed non pubblica il volume scambiato di questo mercato} Volume mercato [mike-volume] non pubblicato {title:quota del PRIMO ingresso Under 3.5 su questa partita} ingresso @ 1,60 {title:ciclo in corso · cicli già chiusi: 0 · massimo 10} ciclo [mike-cycle] 1 di 10
+             [mike-positions]
+
+             Posizione  |
+             Ingresso  |
+             Quota ora  |
+             Δ ingresso  |
+             {title:P&L che resta in tasca chiudendo questa selezione adesso, già NETTO della commissione: lo calcola il servizio} Se chiudo ora (netto)  |
+             [mike-pos-row] {title:Under 3.5 · market 1.262887883 · selection 1222344 · Ingresso Under 3.5}
+
+             BACK Under 3.5 [mike-pos-rest] · 5,00 € Ingresso Under 3.5  |
+             1,60  |
+             1,69 / 1,73 chiudo @1,73  |
+             ▲ 13 tick  |
+             [mike-pos-locked] {title:netto della commissione, calcolato dal servizio} −0,38 €  |
+             [mike-orders] Ordini sul book —
+             [mike-pnl-by-total] A fine gara, per gol totali
+             [pnl-total-0] 0 : +2,85 € [pnl-total-1] 1 : +2,85 € [pnl-total-2] 2 : +2,85 € [pnl-total-3] 3 : +2,85 € [pnl-total-4] {title:i 4 gol: l’unico esito che perde} 4 : −5,00 € [pnl-total-5] 5 : −5,00 € [pnl-total-6] 6 : −5,00 € [pnl-total-7] 7 : −5,00 € [pnl-total-8] 8+ : −5,00 €
+             Liability aperta [mike-liability] 5,00 € P&L bloccato [mike-locked] —
+
+             {title:quanto resta in tasca chiudendo TUTTA la partita adesso, netto commissione} Se chiudo tutto ora (netto) [mike-cashout-value] −0,38 € (in perdita · il bot chiude da solo solo sopra 5,0 % )
+             {title:chiusura in perdita: nessun avanzamento verso la soglia}
+
+             [mike-cashout-eseguibile] eseguibile ai prezzi correnti · commissione 5,0 % già tolta
+             [mike-cashout-smart]
+             [mike-loss-exit]
+             [mike-cover-wait]
+
+             [mike-cashout-btn] Cash out −0,38 €
+             [mike-flatten-btn] {title:Chiudi a mercato: chiude tutto subito ai prezzi disponibili, senza guardare la soglia di profitto} Chiudi a mercato
+             [mike-match-card]
+
+             [mike-score] –
+
+             Real Sociedad (W) v Real Madrid FC (W)
+             Spanish Liga F · KO 12:00 · fra [mike-countdown] 13:50
+
+             [mike-phase] {title:posizione abbinata prima del fischio: aspetta il green-up a +N tick} UNDER 3.5 APERTO
+             [mike-feed-age] feed 19 s
+             {title:Video live Betfair (stream ufficiale, dove disponibile)} 📺
+             {title:Statistiche partita Betfair (+ Visualizzazione partita: tutte le tab del popup ufficiale)} 📊
+             [mike-phase-what] posizione abbinata prima del fischio: aspetta il green-up a +N tick
+             [mike-alerts]
+
+             [mike-model]
+             {title:P(4) implicita dalle due linee O/U: è l'unico esito che perde}
+             P(4 gol) mercato
+             16,5 %
+             [mike-model-missing] Nessun modello per questa lega: il bot decide con le quote e le soglie fisse.
+             [mike-goals-histogram] Nessun modello per questa lega: copertura a regola fissa (quote e soglie del mercato).
+             [mike-quotes]
+             [mike-quote-ou35] {title:Under 3.5 · market 1.262887729 · selection 1222344}
+             Under 3.5 back / lay
+             · 1,51 126 € / 1,55 · 28 €
+             [mike-quote-ou45] {title:Over 4.5 · market 1.262887726 · selection 1222346}
+             Over 4.5 back / lay
+             · 5,40 9 € / 5,90 · 61 €
+             [mike-quote-ou45-under] {title:Under 4.5 · market 1.262887726 · selection 1222347 · linea del re-ingresso dopo un gol}
+             Under 4.5 (re-ingresso)
+             · 1,20 261 € / 1,24 · 9 €
+             [mike-meta-line] {title:il feed non pubblica il volume scambiato di questo mercato} Volume mercato [mike-volume] non pubblicato {title:quota del PRIMO ingresso Under 3.5 su questa partita} ingresso @ 1,51 {title:ciclo in corso · cicli già chiusi: 0 · massimo 10} ciclo [mike-cycle] 1 di 10
+             [mike-positions]
+
+             Posizione  |
+             Ingresso  |
+             Quota ora  |
+             Δ ingresso  |
+             {title:P&L che resta in tasca chiudendo questa selezione adesso, già NETTO della commissione: lo calcola il servizio} Se chiudo ora (netto)  |
+             [mike-pos-row] {title:Under 3.5 · market 1.262887729 · selection 1222344 · Ingresso Under 3.5}
+
+             BACK Under 3.5 [mike-pos-rest] · 5,00 € Ingresso Under 3.5  |
+             1,51  |
+             1,51 / 1,55 chiudo @1,55  |
+             ▲ 4 tick  |
+             [mike-pos-locked] {title:netto della commissione, calcolato dal servizio} −0,13 €  |
+             [mike-orders] Ordini sul book —
+             [mike-pnl-by-total] A fine gara, per gol totali
+             [pnl-total-0] 0 : +2,42 € [pnl-total-1] 1 : +2,42 € [pnl-total-2] 2 : +2,42 € [pnl-total-3] 3 : +2,42 € [pnl-total-4] {title:i 4 gol: l’unico esito che perde} 4 : −5,00 € [pnl-total-5] 5 : −5,00 € [pnl-total-6] 6 : −5,00 € [pnl-total-7] 7 : −5,00 € [pnl-total-8] 8+ : −5,00 €
+             Liability aperta [mike-liability] 5,00 € P&L bloccato [mike-locked] —
+
+             {title:quanto resta in tasca chiudendo TUTTA la partita adesso, netto commissione} Se chiudo tutto ora (netto) [mike-cashout-value] −0,13 € (in perdita · il bot chiude da solo solo sopra 5,0 % )
+             {title:chiusura in perdita: nessun avanzamento verso la soglia}
+
+             [mike-cashout-eseguibile] eseguibile ai prezzi correnti · commissione 5,0 % già tolta
+             [mike-cashout-smart]
+             [mike-loss-exit]
+             [mike-cover-wait]
+
+             [mike-cashout-btn] Cash out −0,13 €
+             [mike-flatten-btn] {title:Chiudi a mercato: chiude tutto subito ai prezzi disponibili, senza guardare la soglia di profitto} Chiudi a mercato
+             [mike-section-live]
+             🔴 LIVE ( 0 ) · in gioco
+             [mike-live-empty] Nessuna partita in gioco in questo momento.
+       [page-footer] Fonte dati: feed unico dello scanner (linee Over/Under 3.5 e 4.5 pre-match e live). Nessuna chiamata Betfair da questa schermata. Paper-first: il live si attiva solo dal toggle con conferma.
