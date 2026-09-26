@@ -1363,11 +1363,23 @@ def _maybe_keepalive(session: TennisLiveSession) -> None:
     if _STREAM_KEEPALIVE_SEC <= 0 or now_mono - last < _STREAM_KEEPALIVE_SEC:
         return
     session._stream_ka_ts = now_mono
+    # 26/09 (FIX-C): custode della sessione (backoff + re-login su NO_SESSION o al
+    # 90 % della vita). Su «relogin» lo stream ha una sessione vecchia: se resta
+    # muto lo stall_worker (26/09) ricostruisce/esce con 75 entro 180 s.
     try:
-        from ..auth import keep_alive as _bf_keep_alive
-        _bf_keep_alive(session.trading)
+        c = getattr(session, "_custode_sessione", None)
+        if c is None:
+            from ..auth import CustodeSessione
+            c = CustodeSessione(session.trading, periodo_s=_STREAM_KEEPALIVE_SEC)
+            session._custode_sessione = c
+        esito = c.tick(now_mono)
     except Exception as ex:  # noqa: BLE001 - best-effort
-        logger.warning("[tennis-runner] keepAlive (stream) KO: %s", str(ex)[:120])
+        esito = None
+        logger.warning("[tennis-runner] custode sessione KO: %s", str(ex)[:120])
+    if esito == "relogin":
+        logger.critical("[tennis-runner] sessione Betfair RIFATTA dal custode: se lo stream "
+                        "resta muto lo stall_worker ricostruisce la subscription")
+        session._relogin_custode_ts = now_mono
 
 
 def _scan_feed(session: TennisLiveSession) -> ScanFeedScoreProvider:

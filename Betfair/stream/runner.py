@@ -1225,6 +1225,36 @@ def _escalation_stallo(flumine: Any, session: Any, stall_s: Optional[float],
     return True
 
 
+
+
+def _custode_sessione(session: Any) -> Any:
+    """Il custode della sessione Betfair del runner (uno per processo, FIX-C 26/09)."""
+    c = getattr(session, "_custode_sessione", None)
+    if c is None:
+        from .auth import CustodeSessione
+        c = CustodeSessione(session.context_api_client, periodo_s=_STREAM_KEEPALIVE_SEC)
+        session._custode_sessione = c
+    return c
+
+
+def _dopo_relogin(session: Any, flumine: Any) -> None:
+    """Sessione Betfair RIFATTA dal custode: lo stream flumine ha una sessione
+    propria -> alert + ricostruzione della subscription (stesso path del recovery
+    da stallo, con le stesse guardie money-critical)."""
+    logger.critical("[runner] sessione Betfair RIFATTA dal custode: ricostruisco la subscription")
+    try:
+        db.insert_alert("CRITICAL", "SESSIONE_BETFAIR",
+                        "sessione Betfair rifatta dal custode (keepAlive KO/NO_SESSION): "
+                        "ricostruisco la subscription dello stream")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        late = _request_soft_restart(flumine, session, "relogin sessione Betfair (custode)")
+        if late is not None:
+            logger.critical("[runner] ricostruzione dopo relogin RINVIATA: %s", late)
+    except Exception as ex:  # noqa: BLE001
+        logger.error("[runner] ricostruzione dopo relogin KO: %s", str(ex)[:160])
+
 def _partite_in_streaming(session: Any) -> Optional[int]:
     """Quante partite il runner sta seguendo ADESSO, dalla SUA memoria.
 
@@ -1292,16 +1322,19 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     _pubblica_battito(session)
     # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
     # vedi _STREAM_KEEPALIVE_SEC): best-effort, mai far cadere il runner.
-    global _STREAM_KA_LAST
+    # 26/09 (FIX-C, causa della cecita' delle 10:41Z): il keepAlive che ingoiava
+    # l'errore lasciava scadere la sessione .it per sempre (NO_SESSION su REST e
+    # stream). Ora il CUSTODE ritenta con backoff e rifa' il login su NO_SESSION o
+    # al 90 % della vita della sessione; su «relogin» lo stream va ricostruito.
     now_mono = time.monotonic()
-    if _STREAM_KEEPALIVE_SEC > 0 and now_mono - _STREAM_KA_LAST >= _STREAM_KEEPALIVE_SEC:
-        _STREAM_KA_LAST = now_mono
+    if _STREAM_KEEPALIVE_SEC > 0:
         try:
-            from .auth import keep_alive as _bf_keep_alive
-
-            _bf_keep_alive(session.context_api_client)
-        except Exception as ex:  # noqa: BLE001 - keepAlive best-effort
-            logger.warning("[runner] keepAlive sessione (stream) KO: %s", str(ex)[:120])
+            esito = _custode_sessione(session).tick(now_mono)
+        except Exception as ex:  # noqa: BLE001 - mai far cadere il runner
+            esito = None
+            logger.warning("[runner] custode sessione KO: %s", str(ex)[:120])
+        if esito == "relogin":
+            _dopo_relogin(session, flumine)
     # RECORDER VIVO (fix 11/07, lezione 10/07: tee nativo morto in silenzio =
     # in-play irrecuperabile): se il tee e' abilitato, ci sono mercati
     # sottoscritti ma NESSUN write raw da >120s → alert WARN (una volta,
