@@ -3260,6 +3260,16 @@ def _config_warn(db: Any, params: Dict[str, Any]) -> None:
                            "scanner_pre_ko_hours": scanner_h, "critical": True})
 
 
+def _firma_loss_exit_deciso(v: Any) -> str:
+    """La decisione di uscita in perdita «uguale a se stessa» fra due giri:
+    stessa finestra, stesso modo, stesso motivo (numeri esclusi: cambiano a ogni
+    tick senza essere una decisione nuova)."""
+    if not isinstance(v, dict):
+        return str(v)
+    return "|".join(str(v.get(c)) for c in ("window", "mode", "motivo", "pct"))
+
+
+
 def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[str, Any]],
                params: Dict[str, Any], mode: str, now: datetime, scanner_age: Optional[float],
                atlas: Optional[Dict[str, Any]], dry: bool,
@@ -3788,6 +3798,16 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                     extra["last_cover_wait"] = v
                 elif k == "loss_exit":
                     extra["last_loss_exit"] = v
+                elif k == "loss_exit_deciso":
+                    # 26/09 (R-F2-21, IO del DB): con le uscite MANUALI il motore
+                    # ri-decide la stessa chiusura a OGNI giro (~1 riga/s in
+                    # mike_activity: 666 righe in 12 min su un evento). La riga
+                    # e' permanente e serve UNA volta per decisione: si scrive
+                    # solo se cambia (finestra, modo, motivo), come 'state' (H5).
+                    firma = _firma_loss_exit_deciso(v)
+                    if firma != extra.get("last_loss_exit_deciso_firma"):
+                        extra["last_loss_exit_deciso_firma"] = firma
+                        db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
                 else:
                     db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
     # H5 — il log 'state' si scrive SOLO quando lo stato cambia davvero: prima
