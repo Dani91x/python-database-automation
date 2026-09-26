@@ -1,0 +1,58 @@
+ultimo minuto registrato: 2026-09-26T10:57:41Z
+fascia(UTC) | messaggi per canale:topic
+09:00 {'runner_calcio:battito': 17, 'runner_tennis:battito': 86}
+09:10 {'runner_calcio:battito': 56, 'runner_calcio:ladder': 596, 'runner_calcio:now': 30, 'runner_tennis:battito': 211, 'runner_tennis:ladder': 90, 'runner_tennis:now': 236, 'runner_tennis:order': 89, 'runner_tennis:position': 523}
+09:20 {'runner_calcio:battito': 58, 'runner_calcio:ladder': 4198, 'runner_calcio:now': 210, 'runner_tennis:ladder': 496, 'runner_tennis:now': 1108, 'runner_tennis:order': 260, 'runner_tennis:position': 2383}
+09:30 {'runner_calcio:battito': 58, 'runner_calcio:ladder': 3752, 'runner_calcio:now': 198, 'runner_tennis:ladder': 1006, 'runner_tennis:now': 1135, 'runner_tennis:order': 280, 'runner_tennis:position': 2906}
+09:40 {'runner_calcio:battito': 52, 'runner_calcio:ladder': 3295, 'runner_calcio:now': 288, 'runner_tennis:ladder': 814, 'runner_tennis:now': 1085, 'runner_tennis:order': 448, 'runner_tennis:position': 3066}
+09:50 {'runner_calcio:battito': 58, 'runner_calcio:ladder': 2842, 'runner_calcio:now': 322, 'runner_tennis:ladder': 858, 'runner_tennis:now': 1349, 'runner_tennis:order': 488, 'runner_tennis:position': 3454}
+10:00 {'runner_calcio:battito': 48, 'runner_calcio:ladder': 4390, 'runner_calcio:now': 142, 'runner_tennis:ladder': 1072, 'runner_tennis:now': 1624, 'runner_tennis:order': 531, 'runner_tennis:position': 3915}
+10:10 {'runner_calcio:battito': 59, 'runner_calcio:ladder': 6090, 'runner_calcio:now': 220, 'runner_tennis:ladder': 1036, 'runner_tennis:now': 1676, 'runner_tennis:order': 712, 'runner_tennis:position': 3880}
+10:20 {'runner_calcio:battito': 59, 'runner_calcio:ladder': 6055, 'runner_calcio:now': 218, 'runner_tennis:ladder': 1075, 'runner_tennis:now': 1682, 'runner_tennis:order': 1191, 'runner_tennis:position': 3707}
+10:30 {'runner_calcio:battito': 59, 'runner_calcio:ladder': 6176, 'runner_calcio:now': 220, 'runner_tennis:ladder': 1634, 'runner_tennis:now': 1847, 'runner_tennis:order': 3381, 'runner_tennis:position': 4192}
+10:40 {'runner_calcio:battito': 53, 'runner_calcio:ladder': 1198, 'runner_calcio:now': 186, 'runner_tennis:ladder': 261, 'runner_tennis:now': 1091, 'runner_tennis:order': 1672, 'runner_tennis:position': 1751}
+10:50 {'runner_calcio:battito': 46, 'runner_calcio:now': 160, 'runner_tennis:now': 768, 'runner_tennis:order': 1012, 'runner_tennis:position': 950}
+ultimo messaggio salvato: 2026-09-26T10:58:16Z
+campioni interi (1/min per topic): fascia canale topic -> campioni, payload distinti, eventi
+('09:10', 'runner_calcio', 'ladder') 2 2 ['36090788']
+('09:10', 'runner_calcio', 'now') 2 2 ['36090788']
+('09:10', 'runner_tennis', 'ladder') 3 3 ['36116721', '36118619']
+('09:10', 'runner_tennis', 'now') 3 3 ['36116633', '36118619']
+('09:20', 'runner_calcio', 'ladder') 10 10 ['36090788', '36090854']
+('09:20', 'runner_calcio', 'now') 10 10 ['36090788']
+('09:20', 'runner_tennis', 'ladder') 10 10 ['36111518', '36116084', '36116721', '36116722', '36118619']
+('09:20', 'runner_tennis', 'now') 10 10 ['36116722', '36118619']
+('09:30', 'runner_calcio', 'ladder') 10 10 ['36090788', '36090854']
+('09:30', 'runner_calcio', 'now') 9 9 ['36090788']
+('09:30', 'runner_tennis', 'ladder') 10 10 ['36111518', '36116721']
+('09:30', 'runner_tennis', 'now') 10 10 ['36116084', '36118619']
+('09:40', 'runner_calcio', 'ladder') 10 10 ['36090788', '36090854', '36090936', '36090937']
+('09:40', 'runner_calcio', 'now') 10 10 ['36090788', '36090936']
+('09:40', 'runner_tennis', 'ladder') 9 9 ['36111518', '36116084', '36116721']
+('09:40', 'runner_tennis', 'now') 10 10 ['36116084', '36118619']
+('09:50', 'runner_calcio', 'ladder') 9 9 ['36090788', '36090854', '36090936']
+('09:50', 'runner_calcio', 'now') 9 9 ['36090788', '36090854', '36090936']
+('09:50', 'runner_tennis', 'ladder') 10 10 ['36111518', '36116525', '36116721', '36116722']
+('09:50', 'runner_tennis', 'now') 9 9 ['36111518', '36116084', '36116633', '36116722', '36117278', '36118619']
+('10:00', 'runner_calcio', 'ladder') 9 9 ['36090941', '36111764', '36111770']
+('10:00', 'runner_calcio', 'now') 9 9 ['36090941', '36111764']
+('10:00', 'runner_tennis', 'ladder') 10 10 ['36111518', '36117278']
+('10:00', 'runner_tennis', 'now') 10 10 ['36116084', '36116525', '36118619']
+('10:10', 'runner_calcio', 'ladder') 10 10 ['36111764', '36111770']
+('10:10', 'runner_calcio', 'now') 9 9 ['36111764', '36111770']
+('10:10', 'runner_tennis', 'ladder') 10 10 ['36111518', '36117278']
+('10:10', 'runner_tennis', 'now') 10 10 ['36116525', '36117278', '36117297', '36118619']
+('10:20', 'runner_calcio', 'ladder') 10 10 ['36111764', '36111770']
+('10:20', 'runner_calcio', 'now') 10 10 ['36111764', '36111770']
+('10:20', 'runner_tennis', 'ladder') 10 10 ['36111518', '36116722', '36117278']
+('10:20', 'runner_tennis', 'now') 10 10 ['36116721', '36117297', '36118619']
+('10:30', 'runner_calcio', 'ladder') 10 10 ['36111764', '36111770']
+('10:30', 'runner_calcio', 'now') 9 9 ['36111764']
+('10:30', 'runner_tennis', 'ladder') 10 10 ['36111518', '36112100', '36116722', '36119297']
+('10:30', 'runner_tennis', 'now') 10 10 ['36117297', '36118619']
+('10:40', 'runner_calcio', 'ladder') 3 3 ['36111764', '36111770']
+('10:40', 'runner_calcio', 'now') 10 10 ['36111764', '36111770']
+('10:40', 'runner_tennis', 'ladder') 1 1 ['36111518']
+('10:40', 'runner_tennis', 'now') 10 10 ['36116084', '36116633', '36116722', '36117278', '36118619']
+('10:50', 'runner_calcio', 'now') 8 8 ['36111770']
+('10:50', 'runner_tennis', 'now') 8 8 ['36111518', '36112100', '36116525', '36116721', '36117273', '36117278', '36117297', '36119297']

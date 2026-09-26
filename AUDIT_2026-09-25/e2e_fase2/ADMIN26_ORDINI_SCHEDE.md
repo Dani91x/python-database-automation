@@ -5,7 +5,7 @@ Safe 09:13:20Z e 09:16:16Z, scalper 09:17:58Z). SOLA LETTURA: DB solo GET PostgR
 senza token, nessun file del repo toccato fuori da `AUDIT_2026-09-25/e2e_fase2/` (referto + `sonda_ordini_*`).
 Base del codice: master `075d91d`.
 
-STATO: **CONSEGNA PARZIALE** — vedi §6 (cosa manca). Finestra osservata: 09:10Z–__FINE__Z.
+STATO: **CONSEGNA PARZIALE** — vedi §6 (cosa manca). Finestra osservata: 09:10Z–10:57Z con ascolto dei canali (il mio ascoltatore è stato fermato dal sistema per memoria bassa alle ~10:57Z, poi il guasto DNS 12:20-14:37Z); letture DB fino alle 14:43Z. Ordini paper Omega/Safe/Mike dopo le accensioni: **14** (Omega 4, Safe 4, Mike 6), tutti tra 09:10Z e 10:08Z: nessun ordine nuovo dopo le 10:08Z fino alle 14:43Z.
 
 ## 0. Strumenti (riproducibili)
 
@@ -82,9 +82,9 @@ una volta al minuto per l'intero topic) → **NON CERTIFICATO** il confronto 1 t
 | 7.5.7 «Chiudi» per bot | **NON CERTIFICATO** | richiede clic in UI (fuori dal mio perimetro: nessun comando) |
 | 7.5.8 esecuzione a mercato, nessun «fuori banda» | **PASS (osservato)** | 0 occorrenze di `banda` nelle attività Omega/Safe della finestra; tutti gli ordini eseguiti al best del feed (0 tick) |
 | 7.9.2.B ref/prezzo/size lungo comando→aggancio→ordine | **NON CERTIFICATO (porta spenta)** | nessun comando; catena ricostruita sul ripiego (§3) |
-| 7.9.2.C nessun ordine su mercato non operabile | **PASS sugli ordini registrati** (__N_C__) / NON CERTIFICATO 117-119 | `mercato_operabile` di produzione sullo stato CS del feed alla decisione e a +bet delay: sempre `(True,'OPEN')`; Omega salta da solo (`skip market_suspended` ×4, `mercato_sospeso` ×1 in uscita) |
+| 7.9.2.C nessun ordine su mercato non operabile | **PASS sugli ordini registrati** (8: Omega 120, Safe 342/343, Mike 5072-5075; più 1 ordine Mike, 5074, piazzato 5,5 s PRIMA di una sospensione per gol: regolare) / NON CERTIFICATO 117-119 | `mercato_operabile` di produzione sullo stato CS del feed alla decisione e a +bet delay: sempre `(True,'OPEN')`; Omega salta da solo (`skip market_suspended` ×4, `mercato_sospeso` ×1 in uscita) |
 | 7.9.2.E1-E5 | **NON CERTIFICATO** | richiedono azioni (fermare canale, saturare tetto, kill-switch, riavvio) vietate a questo delegato |
-| 7.9.5.D numeri a video = riga/diario/libro | **PASS sui dati** per __N_D__ ordini | push canale (`omega_posizioni`/`safe_posizioni_calcio`) = riga DB (status, size_matched, avg); `esitoGamba` di produzione → `totale`, delta 0 tick; libro feed alla decisione = prezzo abbinato (0 tick). Striscia B17 a video: non esiste per gli ordini AUTOMATICI (è legata a un clic, `esitoAbbinamento.ts:342-373`) → testo a video NON CERTIFICATO |
+| 7.9.5.D numeri a video = riga/diario/libro | **PASS sui dati** per Omega/Safe (5 ordini con libro registrato); **FAIL (R7)** su Mike 5073/5074/5075 | push canale (`omega_posizioni`/`safe_posizioni_calcio`) = riga DB (status, size_matched, avg); `esitoGamba` di produzione → `totale`, delta 0 tick; libro feed alla decisione = prezzo abbinato (0 tick). Striscia B17 a video: non esiste per gli ordini AUTOMATICI (è legata a un clic, `esitoAbbinamento.ts:342-373`) → testo a video NON CERTIFICATO |
 | 7.9.5.C banda al clic | **NON CERTIFICATO** | nessun clic su proposte (auto_trade_opportunities=false, nessuna approvazione) |
 | 7.9.5.E1 clic su SUSPENDED | **NON CERTIFICATO** | nessun clic |
 | 7.9.5.E2 replay PM3 | **NON ESEGUITO** | richiede permesso del coordinatore (un replay per bot) |
@@ -92,7 +92,33 @@ una volta al minuto per l'intero topic) → **NON CERTIFICATO** il confronto 1 t
 
 ## 3. Catena degli ordini paper (ricostruita, UTC)
 
-__TABELLA__
+Colonne: decisione (riga/`tempi.t3`) · libro del feed ≤ decisione (età) · prezzo abbinato · Δ tick (produzione) ·
+FOK a +bet delay (libro a fill+5 s: il live avrebbe abbinato?) · push canale = DB · percorso.
+
+| bot/id | evento, selezione | decisione (UTC) | libro feed (età) | abbinato | Δ | FOK +bd | push=DB | percorso |
+|---|---|---|---|---|---|---|---|---|
+| Omega 117 | 36090940 Iwata–Vanraure, lay AOHW, 50', 0-1 | 09:10:57.749 | non registrato | 1,00 @ 95 | — | — | sì (ascoltatore comune) | legacy `follow_assente` |
+| Omega 118 | 36090941 Imabari–Shonan, lay AOHW, 48', 1-1 | 09:10:58.575 | non registrato | 1,00 @ 55 | — | — | sì | legacy |
+| Omega 119 | 36115980 Ryukyu–Ehime, lay «1 - 3», 51', 0-0 | 09:11:30.189 | non registrato | 1,00 @ 80 | — | — | sì | legacy |
+| Omega 120 | 36115971 Kamatamare–Gifu, lay «Any Other Draw», 77', 2-4 | 09:38:44.187 | lay 48 / 4,73 € (925 ms) | 1,00 @ 48 | 0 | sì (48/4,73 a 09:38:49) | sì (seq 87, +414 ms) | legacy |
+| Safe 342 esatto | 36090940, lay «Altro Casa», 62', 1-1 | 09:23:38.338 (quota Betfair 09:23:28.363, feed 29.326, letto 35.128) | lay 50 / 18,06 € (2,3 s) | 2,00 @ 50 | 0 | sì | sì (seq 162) | legacy `paper_fill:follow_assente` |
+| Safe 343 esatto | 36115980, lay «Altro Ospite», 63', 0-1 | 09:25:04.906 | lay 55 / 25,37 € (537 ms) | 2,00 @ 55 | 0 | sì | sì (seq 209) | legacy |
+| Safe 344 tennis | 36119297 Grant–Kalinina, back 1,02 | 10:04:01.553 | non registrato (tennis non nel mio ascolto fino alle 10:14Z) | 3,00 @ 1,02 | — | — | — | legacy |
+| Safe 345 tennis | 36117297 Mert–Tikhonova, back 1,02 | 10:07:19.411 | non registrato | 3,00 @ 1,02 | — | — | — | legacy |
+| Mike 5070/5071 | 36111770 / 36111764, back Under 3.5 (pre-partita) | 09:12:03 / 09:12:23 | non registrato | 5 @ 1,51 / 5 @ 1,60 | — | — | — | REST paper `execution_mode_rest` |
+| Mike 5072 under_second | 36111770 Real Sociedad W–Real Madrid W, back U3.5, 2', 0-1 | differita 10:02:40 → eseguita 10:02:45 | back 1,38 / 3,44 € (2,4 s) | 2,50 @ 1,38 | 0 | sì | n/d | REST paper, bet delay 5 s simulato |
+| Mike 5073 over_cover | 36111764 Badalona W–Granada W, back O4.5, 2', 0-0 | differita 10:03:11 (visto 5,7) → 10:03:17 | back **5,8** / 7,74 € | 1,34 @ **5,5** | **−3** | sì a 5,9 | n/d | idem |
+| Mike 5074 over_cover | 36111770, back O4.5, 4', 0-1 | differita 10:04:39 (visto 2,88) → 10:04:44 | back **2,9** / 69,04 € | 2,52 @ **2,84** | **−3** | eseguita PRIMA della sospensione (SUSPENDED alle 10:04:49.9, gol 1-1) | n/d | idem |
+| Mike 5075 over_cover | 36111770, back O4.5, 6', 1-1 | differita 10:07:45 (visto 1,9) → 10:07:50 | back **1,9** / 43,92 € | 5,37 @ **1,88** | **−2** | sì a 1,91 | n/d | idem |
+
+Latenze misurate: riserva→fill Omega 250-470 ms; Safe decisione→risposta 324-384 ms; Safe quota→decisione
+2,2 s (343), 1,7 s (344), 5,2 s (345), **10,0 s (342)**; Omega push canale del bot 0,4 s dopo la riserva.
+Settlement: Omega 117-120 tutti `won` +0,95 € (09:56-10:03Z), Safe 342/343 `won` +1,90, 344/345 `won`.
+Coda DB: 0 righe per tutti i 14 ordini; specchio `betfair_live_orders`: 0 righe Omega/Safe/Mike (Mike è fuori
+dallo specchio per costruzione). Nota: le righe paper dello scalper nello specchio (id 37843-37847+) sono
+state CANCELLATE dopo il crash del runner delle 10:00:46Z (`cleanup_paper_mirror`, `Betfair/stream/db.py:852-866`,
+chiamata da `runner.py:1760` alla ripresa): coerente col progetto A6 ma cancella la traccia degli ordini paper
+della mattina (per il confronto col DB di Z14 servono i log).
 
 ## 4. Reperti
 
@@ -118,6 +144,14 @@ __TABELLA__
   «Over 2.5 back 1.62 con Over 7.5 a 1.04: quota incoerente». Il feed conferma Over 7.5 back 1.04 (28 €,
   lay assente) — un'offerta isolata su un mercato illiquido: una quota BACK bassa non implica P(O7.5)≈96%
   (è solo un limite superiore). Proposta generata su un dato spazzatura; non eseguita (auto_trade_anomalies=false).
+- **R7 (FAIL, semantico money-relevant, Mike paper)** — il fill paper di Mike registra il PREZZO LIMITE
+  della gamba, non il prezzo a cui Betfair abbinerebbe: `Betfair/mike/service.py:764-767` chiama
+  `X.place(price=leg.price, ladder=(), best_size=avail_size)` e `Betfair/safe_strategy/execution.py:752`
+  fa `E.paper_fill(size, best_price=price, ...)` → media = limite. Dal vivo: 5073 limite 5,5 col best back
+  5,8 (−3 tick), 5074 2,84 vs 2,9 (−3), 5075 1,88 vs 1,9 (−2); un back limite sotto il best si abbina al best
+  (miglioramento di prezzo). Il paper di Mike è quindi PESSIMISTA di 2-3 tick sulle coperture Over, i numeri
+  (P&L, esposizione, `avg_price_matched` in scheda) non sono quelli che il live avrebbe. Oltre la tolleranza
+  di 1 tick del brief. Per Omega/Safe non emerge perché il loro prezzo è già il best del feed. Nessuna correzione.
 - **R6 (latenze Safe)** — trade 342: quota Betfair 09:23:28.363Z → riga feed 29.326Z → letta dal bot
   35.128Z (`feed_to_bot_ms` 5.802) → decisione 38.338Z (`prezzo_to_decisione_ms` 9.975) → fill 38.741Z.
   Il prezzo è rimasto 50 per tutto l'intervallo (fill coerente), ma 10 s fra quota e decisione sono fuori
@@ -132,4 +166,11 @@ __TABELLA__
 
 ## 6. Consegna parziale — cosa manca
 
-__MANCA__
+- libro del feed per Omega 117-119, Safe tennis 344/345, Mike 5070/5071 (prima/fuori dal mio ascolto);
+- dalle 10:08Z alle 14:43Z nessun ordine nuovo Omega/Safe/Mike (Omega `nessun_candidato`/`senza_lay` sulle
+  partite in corso; non ho misurato la lista delle partite idonee del pomeriggio perché la rete e poi la
+  memoria hanno interrotto l'ascolto): la finestra 30-45 min con partite europee NON è stata coperta;
+- tennis: ordini dei 4 bot tennis e dello scalper (fuori perimetro, altri delegati);
+- tutti i NON CERTIFICATO della §2 che richiedono porte accese / clic / riavvii;
+- processo stoppato dal sistema per memoria bassa (non rilanciato oltre i 50 min chiesti): `sonda_ordini_ascolto.py`
+  (run3 10:14-10:57Z); rilanciato 14:38Z per 50 min su richiesta del coordinatore (run4).

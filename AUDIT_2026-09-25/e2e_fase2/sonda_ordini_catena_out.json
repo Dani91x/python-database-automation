@@ -1100,7 +1100,7 @@
   "selezione": "8907168 Anhelina Kalinina",
   "side": "back",
   "mode": "paper",
-  "status": "open",
+  "status": "won",
   "origin": "auto",
   "prezzo_riga": 1.02,
   "size": 3.0,
@@ -1114,6 +1114,16 @@
    [
     "2026-09-26T10:04:02.100598+00:00",
     "place",
+    null
+   ],
+   [
+    "2026-09-26T14:36:44.518397+00:00",
+    "settle",
+    null
+   ],
+   [
+    "2026-09-26T14:36:44.606055+00:00",
+    "settle_position",
     null
    ]
   ],
@@ -1166,7 +1176,7 @@
   },
   "mercato_operabile_alla_decisione": null,
   "mercato_operabile_dopo_bet_delay": null,
-  "push_n": 7,
+  "push_n": 12,
   "push_canale": [
    {
     "rx": "10:04:01.709Z",
@@ -1201,7 +1211,7 @@
   "selezione": "12337425 Tikhonova",
   "side": "back",
   "mode": "paper",
-  "status": "open",
+  "status": "won",
   "origin": "auto",
   "prezzo_riga": 1.02,
   "size": 3.0,
@@ -1215,6 +1225,21 @@
    [
     "2026-09-26T10:07:19.803148+00:00",
     "place",
+    null
+   ],
+   [
+    "2026-09-26T10:28:48.604979+00:00",
+    "feed_blind",
+    null
+   ],
+   [
+    "2026-09-26T10:28:52.354169+00:00",
+    "settle",
+    null
+   ],
+   [
+    "2026-09-26T10:28:52.461988+00:00",
+    "settle_position",
     null
    ]
   ],
@@ -1267,7 +1292,7 @@
   },
   "mercato_operabile_alla_decisione": null,
   "mercato_operabile_dopo_bet_delay": null,
-  "push_n": 8,
+  "push_n": 11,
   "push_canale": [
    {
     "rx": "10:07:19.494Z",

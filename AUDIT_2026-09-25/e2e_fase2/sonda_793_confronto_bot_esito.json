@@ -1,6 +1,6 @@
 {
- "frame": 70,
- "confrontati": 70,
+ "frame": 166,
+ "confrontati": 166,
  "uguali": 0,
  "diversi": [
   {
@@ -236,12 +236,12 @@
  ],
  "per_fase": {},
  "versioni": {
-  "None|None": 70
+  "None|None": 166
  },
  "volatile": [],
  "senza_atlante_copia": 0,
  "valore": {
-  "uguali": 68,
+  "uguali": 162,
   "diversi": [
    [
     "36111764",
@@ -260,11 +260,29 @@
     1,
     0.1032,
     0.1038
+   ],
+   [
+    "36111764",
+    "2026-09-26T10:39:34.813801+00:00",
+    38,
+    0,
+    1,
+    0.0842,
+    0.0848
+   ],
+   [
+    "36111770",
+    "2026-09-26T10:39:34.813801+00:00",
+    38,
+    2,
+    1,
+    0.0951,
+    0.0944
    ]
   ]
  },
  "chiavi_v4_nel_frame": {
   "presenti": 0,
-  "assenti": 70
+  "assenti": 166
  }
 }
