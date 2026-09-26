@@ -1,0 +1,445 @@
+{
+ "inizio_locale": "2026-09-26T11:05:30.045442+02:00",
+ "fine_locale": "2026-09-26T11:06:30.253042+02:00",
+ "secondi": 60.0,
+ "canali": [
+  {
+   "porta": 47331,
+   "topics_richiesti": "battito,modo_ordini,now,account,auto_follow,betfair_live_xhedge,board,order",
+   "hello": {
+    "sport": "calcio",
+    "mode": "LIVE",
+    "auto_follow": {
+     "acceso": true,
+     "tetto_mercati": 180,
+     "limite_betfair_per_connessione": 200,
+     "connessioni_di_mercato": 1,
+     "mercati_seguiti": 0,
+     "mercati_manuali": 0,
+     "mercati_auto": 0,
+     "mercati_sottoscritti": 0,
+     "eventi_auto": 0,
+     "eventi_auto_con_posizioni": 0,
+     "per_priorita": {},
+     "righe_db": true,
+     "feed": {
+      "letto": null,
+      "partite": 0,
+      "fonte": "db",
+      "attori": []
+     },
+     "conti": {
+      "risottoscrizioni": 0,
+      "agganci_comando": 0,
+      "espulsi": 0,
+      "rifiuti_tetto": 0,
+      "errori_sottoscrizione": 0
+     },
+     "ultimo_errore": null
+    }
+   },
+   "per_topic": {
+    "account": {
+     "n": 3,
+     "eta_s": [],
+     "primo": "{\"available\": 40.56, \"exposure\": 0.0, \"checked_at\": \"2026-09-26T09:05:32.247087+00:00\"}",
+     "ultimo": "{\"available\": 40.56, \"exposure\": 0.0, \"checked_at\": \"2026-09-26T09:06:14.602433+00:00\"}",
+     "chiave_eta": null,
+     "intervallo_medio_s": 21.178,
+     "intervallo_max_s": 21.224
+    },
+    "battito": {
+     "n": 6,
+     "eta_s": [
+      0.002,
+      0.002,
+      0.002,
+      0.002,
+      0.01,
+      0.002
+     ],
+     "primo": "{\"ts\": 1790413534414, \"mode\": \"LIVE+PAPER\", \"streaming\": 0}",
+     "ultimo": "{\"ts\": 1790413587346, \"mode\": \"LIVE+PAPER\", \"streaming\": 0}",
+     "chiave_eta": "ts",
+     "eta_p50": 0.002,
+     "eta_p95": 0.01,
+     "eta_max": 0.01,
+     "intervallo_medio_s": 10.586,
+     "intervallo_max_s": 10.628
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.1617994
+  },
+  {
+   "porta": 47332,
+   "topics_richiesti": "battito,modo_ordini,now,account,order",
+   "hello": {
+    "sport": "tennis",
+    "mode": "PAPER"
+   },
+   "per_topic": {
+    "battito": {
+     "n": 29,
+     "eta_s": [
+      0.002,
+      0.001,
+      0.001,
+      0.002,
+      0.002,
+      0.002,
+      0.001,
+      0.002,
+      0.002,
+      0.001,
+      0.002,
+      0.001,
+      0.002,
+      0.002,
+      0.002,
+      0.001,
+      0.001,
+      0.002,
+      0.002,
+      0.009,
+      0.002,
+      0.001,
+      0.003,
+      0.002,
+      0.002,
+      0.002,
+      0.002,
+      0.002,
+      0.002
+     ],
+     "primo": "{\"ts\": 1790413530680, \"mode\": \"PAPER\", \"streaming\": 0}",
+     "ultimo": "{\"ts\": 1790413588921, \"mode\": \"PAPER\", \"streaming\": 0}",
+     "chiave_eta": "ts",
+     "eta_p50": 0.002,
+     "eta_p95": 0.003,
+     "eta_max": 0.009,
+     "intervallo_medio_s": 2.08,
+     "intervallo_max_s": 2.104
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.1619136
+  },
+  {
+   "porta": 47333,
+   "topics_richiesti": "mike_stato,mike_posizioni,mike_attivita,mike_event",
+   "hello": {
+    "sport": "mike"
+   },
+   "per_topic": {
+    "mike_stato": {
+     "n": 10,
+     "eta_s": [
+      22.782,
+      5.769,
+      11.324,
+      16.903,
+      22.623,
+      5.627,
+      11.233,
+      16.881,
+      22.888,
+      5.851
+     ],
+     "primo": "{\"control\": {\"id\": 1, \"status\": \"stopped\", \"mode\": \"paper\", \"params\": {\"stake\": 5.0, \"max_open_matches\": 2, \"uscite_automatiche\": false, \"entry_hours_before_ko\": 1.0}, \"stats\": {\"dry\": false, \"mode\": \"paper\", \"boot_id\": \"mui5odst-7bd20590-8491-4132-bdb9-d8a8a6bafd27\", \"day_pnl\": 0.0, \"sveglia\": {\"da_ui\": 0, \"usate\": 0, \"canale\": {\"cache\": {\"eta_s\": 0.87, \"righe\": 37, \"buttate\": 0, \"ricevute\": 7568, \"scartate\": 0}, \"porta\": 47336, \"errori\": 0, \"collegato\": true, \"riagganci\": 0, \"svegliate\": 0, \"ultimo_errore\": null}, \"da_scan\": 0, \"sveglie\": 0, \"per_cadenza\": 85, \"ultimo_motivo\": null, \"scartate_dal_minimo\": 0}, \"by_state\": {\"SETTLED\": 2}, \"live_now\": 2, \"won_today\": 0, \"daily_stop\": false, \"fonte_scan\": \"canale\", \"last_cycle\": \"2026-09-26T09:05:09.926469+00:00\", \"lost_today\": 0, \"canale_scan\": {\"cache\": {\"eta_s\": 0.87, \"righe\": 37, \"buttate\": 0, \"ricevute\": 7568, \"scartate\": 0}, \"porta\": 47336, \"errori\": 0, \"collegato\": true, \"riagganci\": 0, \"svegliate\": 0, \"ultimo_errore\": null}, \"events_feed\": 19, \"locked_open\": 0.0, \"reconciling\": 0, \"trades_open\": 0, \"cycles_today\": 0, \"events_today\": 0, \"motivo_blocco\": null, \"scanner_age_s\": 0.3, \"tetto_partite\": 2, \"events_tracked\": 2, \"live_abilitato\": true, \"open_liability\": 0.0, \"realized_today\": 0.0, \"realized_total\": 8.14, \"partite_esposte\": 0, \"righe_dal_canale\": 9, \"aperture_bloccate\": 0, \"cadenza_battito_s\": 20.0, \"open_liability_rows\": 0.0, \"partite_esposte_live\": 0, \"eventi_altra_modalita\": 0, \"partite_esposte_paper\": 0, \"sto...<troncato>",
+     "ultimo": "{\"control\": {\"id\": 1, \"status\": \"stopped\", \"mode\": \"paper\", \"params\": {\"stake\": 5.0, \"max_open_matches\": 2, \"uscite_automatiche\": false, \"entry_hours_before_ko\": 1.0}, \"stats\": {\"dry\": false, \"mode\": \"paper\", \"boot_id\": \"mui5odst-7bd20590-8491-4132-bdb9-d8a8a6bafd27\", \"day_pnl\": 0.0, \"sveglia\": {\"da_ui\": 0, \"usate\": 0, \"canale\": {\"cache\": {\"eta_s\": 0.23, \"righe\": 38, \"buttate\": 0, \"ricevute\": 8963, \"scartate\": 0}, \"porta\": 47336, \"errori\": 0, \"collegato\": true, \"riagganci\": 0, \"svegliate\": 0, \"ultimo_errore\": null}, \"da_scan\": 0, \"sveglie\": 0, \"per_cadenza\": 97, \"ultimo_motivo\": null, \"scartate_dal_minimo\": 0}, \"by_state\": {\"SETTLED\": 2}, \"live_now\": 2, \"won_today\": 0, \"daily_stop\": false, \"fonte_scan\": \"canale\", \"last_cycle\": \"2026-09-26T09:06:17.935102+00:00\", \"lost_today\": 0, \"canale_scan\": {\"cache\": {\"eta_s\": 0.23, \"righe\": 38, \"buttate\": 0, \"ricevute\": 8963, \"scartate\": 0}, \"porta\": 47336, \"errori\": 0, \"collegato\": true, \"riagganci\": 0, \"svegliate\": 0, \"ultimo_errore\": null}, \"events_feed\": 19, \"locked_open\": 0.0, \"reconciling\": 0, \"trades_open\": 0, \"cycles_today\": 0, \"events_today\": 0, \"motivo_blocco\": null, \"scanner_age_s\": 8.0, \"tetto_partite\": 2, \"events_tracked\": 2, \"live_abilitato\": true, \"open_liability\": 0.0, \"realized_today\": 0.0, \"realized_total\": 8.14, \"partite_esposte\": 0, \"righe_dal_canale\": 12, \"aperture_bloccate\": 0, \"cadenza_battito_s\": 20.0, \"open_liability_rows\": 0.0, \"partite_esposte_live\": 0, \"eventi_altra_modalita\": 0, \"partite_esposte_paper\": 0, \"st...<troncato>",
+     "chiave_eta": "updated_at",
+     "eta_p50": 16.881,
+     "eta_p95": 22.888,
+     "eta_max": 22.888,
+     "intervallo_medio_s": 5.707,
+     "intervallo_max_s": 6.008
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.1619725
+  },
+  {
+   "porta": 47334,
+   "topics_richiesti": "omega_stato,omega_posizioni,omega_attivita,omega_proposta",
+   "hello": {
+    "sport": "omega"
+   },
+   "per_topic": {},
+   "errore": null,
+   "hello_at": 1790413530.1620207
+  },
+  {
+   "porta": 47335,
+   "topics_richiesti": "safe_stato,safe_posizioni_calcio,safe_posizioni_tennis,safe_attivita,safe_proposta,safe_scan",
+   "hello": {
+    "sport": "safe"
+   },
+   "per_topic": {
+    "safe_stato": {
+     "n": 19,
+     "eta_s": [
+      2.853,
+      2.903,
+      3.225,
+      3.478,
+      2.858,
+      2.882,
+      3.031,
+      3.389,
+      2.818,
+      2.89,
+      3.109,
+      3.445,
+      2.882,
+      2.932,
+      3.126,
+      3.558,
+      2.916,
+      2.908,
+      3.403
+     ],
+     "primo": "{\"stats\": {\"events_total\": 33, \"signals_active\": 0, \"trades_open\": 0, \"open_liability\": 0.0, \"reconciling_liability\": 0.0, \"realized_today\": 0.0, \"realized_total\": -47.83, \"won_today\": 0, \"lost_today\": 0, \"legs_today\": 0, \"events_today\": 0, \"feed_blind\": 0, \"motivo_blocco\": null, \"tetto_partite\": null, \"partite_esposte\": null, \"cadenza_battito_s\": 2.0, \"fonte_scan\": \"canale\", \"stop_ferma_solo_aperture\": true, \"last_cycle\": \"2026-09-26T09:05:31.917736+00:00\", \"risk\": {\"daily_liability\": 0.0, \"daily_liability_bot\": 0.0, \"daily_cap\": 0.0, \"reconciling_liability\": 0.0, \"realized_today_bot\": 0.0, \"loss_stop_active\": false, \"cap_solo_automatico\": false, \"daily_loss_stop\": -50.0}, \"opps\": {\"model\": 1, \"anomaly\": 1, \"combo\": 0, \"tennis\": 0}, \"params_effective\": {\"poll_interval_s\": 2.0, \"commission_pct\": 5.0, \"max_open_trades\": 20, \"max_liability_per_trade\": 300.0, \"min_size_available_factor\": 1.0, \"opps_interval_s\": 10.0, \"opps_stake\": 5.0, \"skip_log_interval_s\": 300.0, \"max_spread_ratio\": 1.6, \"place_max_attempts\": 3, \"opps_min_confidence\": 0.7, \"opps_min_edge\": 0.03, \"paper_fill_ttl_s\": 45, \"live_fill_deadline_s\": 20, \"min_stake\": 2.0, \"variants\": [\"base\", \"esatto\", \"punta\", \"tennis\"], \"execution_mode\": \"auto\", \"auto_trade_opportunities\": false, \"auto_trade_anomalies\": false, \"auto_trade_combos\": false, \"auto_trade_tennis\": true, \"omega_live_via_flumine\": true, \"proponi_model\": true, \"proponi_tennis\": true, \"proponi_combo\": true, \"proponi_anomaly\": true, \"combo_gamba_manuale\": \"avv...<troncato>",
+     "ultimo": "{\"stats\": {\"events_total\": 34, \"signals_active\": 0, \"trades_open\": 0, \"open_liability\": 0.0, \"reconciling_liability\": 0.0, \"realized_today\": 0.0, \"realized_total\": -47.83, \"won_today\": 0, \"lost_today\": 0, \"legs_today\": 0, \"events_today\": 0, \"feed_blind\": 0, \"motivo_blocco\": null, \"tetto_partite\": null, \"partite_esposte\": null, \"cadenza_battito_s\": 2.0, \"fonte_scan\": \"canale\", \"stop_ferma_solo_aperture\": true, \"last_cycle\": \"2026-09-26T09:06:27.091155+00:00\", \"risk\": {\"daily_liability\": 0.0, \"daily_liability_bot\": 0.0, \"daily_cap\": 0.0, \"reconciling_liability\": 0.0, \"realized_today_bot\": 0.0, \"loss_stop_active\": false, \"cap_solo_automatico\": false, \"daily_loss_stop\": -50.0}, \"opps\": {\"model\": 1, \"anomaly\": 1, \"combo\": 0, \"tennis\": 0}, \"params_effective\": {\"poll_interval_s\": 2.0, \"commission_pct\": 5.0, \"max_open_trades\": 20, \"max_liability_per_trade\": 300.0, \"min_size_available_factor\": 1.0, \"opps_interval_s\": 10.0, \"opps_stake\": 5.0, \"skip_log_interval_s\": 300.0, \"max_spread_ratio\": 1.6, \"place_max_attempts\": 3, \"opps_min_confidence\": 0.7, \"opps_min_edge\": 0.03, \"paper_fill_ttl_s\": 45, \"live_fill_deadline_s\": 20, \"min_stake\": 2.0, \"variants\": [\"base\", \"esatto\", \"punta\", \"tennis\"], \"execution_mode\": \"auto\", \"auto_trade_opportunities\": false, \"auto_trade_anomalies\": false, \"auto_trade_combos\": false, \"auto_trade_tennis\": true, \"omega_live_via_flumine\": true, \"proponi_model\": true, \"proponi_tennis\": true, \"proponi_combo\": true, \"proponi_anomaly\": true, \"combo_gamba_manuale\": \"avv...<troncato>",
+     "chiave_eta": "updated_at",
+     "eta_p50": 2.932,
+     "eta_p95": 3.558,
+     "eta_max": 3.558,
+     "intervallo_medio_s": 3.094,
+     "intervallo_max_s": 3.559
+    },
+    "safe_proposta": {
+     "n": 2,
+     "eta_s": [
+      0.09,
+      0.106
+     ],
+     "primo": "{\"id\": 258, \"kind\": \"place\", \"payload\": {\"ev\": 0.087783, \"edge\": 0.075941, \"kind\": \"anomaly\", \"line\": 1.5, \"mode\": \"paper\", \"rule\": \"ou_ladder\", \"side\": \"back\", \"size\": 3.0, \"price\": 1.34, \"score\": \"0-1\", \"sport\": \"calcio\", \"minute\": 45, \"criteri\": {\"stake\": 3.0, \"min_edge\": 0.005, \"min_size\": 10.0, \"commission\": 0.05, \"max_lay_price\": 5.0, \"opps_min_edge\": 0.03, \"max_liability_per_trade\": 300.0}, \"opp_key\": \"36090854|anomaly:OVER_UNDER:1221386:back\", \"p_model\": 0.822209, \"event_id\": \"36090854\", \"strategy\": \"model\", \"liability\": 3.0, \"market_id\": \"1.262838387\", \"p_implied\": 0.746269, \"rationale\": \"Over 1.5 Goals back 1.34 con Over 7.5 a 1.04: quota incoerente, +28.8% sul 0-1 al 45': edge +7.6%, 64 EUR abbinabili\", \"confidence\": 0.75, \"decided_at\": \"2026-09-26T08:57:16.470222+00:00\", \"event_name\": \"Oita v Fujieda Myfc\", \"odds_ts_ms\": 1790413539889, \"signal_key\": \"anomaly:OVER_UNDER:1221386:back\", \"market_type\": \"OVER_UNDER\", \"proposed_at\": \"2026-09-26T09:05:40.921013+00:00\", \"valutazione\": {\"dal\": \"2026-09-26T08:57:16.470222+00:00\", \"causa\": null, \"motivi\": [], \"valida\": true, \"al_prezzo\": {\"ev\": 0.087783, \"edge\": 0.07594, \"ev_eur\": 0.2633, \"motivi\": [], \"prezzo\": 1.34, \"valida\": true, \"liability\": 3.0, \"p_implicita\": 0.746269}, \"valutata_at\": \"2026-09-26T09:05:40.921013+00:00\"}, \"selection_id\": 1221386, \"selection_name\": \"Over 1.5 Goals\", \"size_available\": 64.0, \"feed_updated_at\": \"2026-09-26T09:05:39.913016+00:00\", \"price_at_decision\": 1.35, \"size_available_at_decision\": 100...<troncato>",
+     "ultimo": "{\"id\": 258, \"kind\": \"place\", \"payload\": {\"ev\": 0.087783, \"edge\": 0.075941, \"kind\": \"anomaly\", \"line\": 1.5, \"mode\": \"paper\", \"rule\": \"ou_ladder\", \"side\": \"back\", \"size\": 3.0, \"price\": 1.34, \"score\": \"0-1\", \"sport\": \"calcio\", \"minute\": 45, \"criteri\": {\"stake\": 3.0, \"min_edge\": 0.005, \"min_size\": 10.0, \"commission\": 0.05, \"max_lay_price\": 5.0, \"opps_min_edge\": 0.03, \"max_liability_per_trade\": 300.0}, \"opp_key\": \"36090854|anomaly:OVER_UNDER:1221386:back\", \"p_model\": 0.822209, \"event_id\": \"36090854\", \"strategy\": \"model\", \"liability\": 3.0, \"market_id\": \"1.262838387\", \"p_implied\": 0.746269, \"rationale\": \"Over 1.5 Goals back 1.34 con Over 7.5 a 1.04: quota incoerente, +28.8% sul 0-1 al 45': edge +7.6%, 55 EUR abbinabili\", \"confidence\": 0.75, \"decided_at\": \"2026-09-26T08:57:16.470222+00:00\", \"event_name\": \"Oita v Fujieda Myfc\", \"odds_ts_ms\": 1790413568115, \"signal_key\": \"anomaly:OVER_UNDER:1221386:back\", \"market_type\": \"OVER_UNDER\", \"proposed_at\": \"2026-09-26T09:06:17.719196+00:00\", \"valutazione\": {\"dal\": \"2026-09-26T08:57:16.470222+00:00\", \"causa\": null, \"motivi\": [], \"valida\": true, \"al_prezzo\": {\"ev\": 0.087783, \"edge\": 0.07594, \"ev_eur\": 0.2633, \"motivi\": [], \"prezzo\": 1.34, \"valida\": true, \"liability\": 3.0, \"p_implicita\": 0.746269}, \"valutata_at\": \"2026-09-26T09:06:17.719196+00:00\"}, \"selection_id\": 1221386, \"selection_name\": \"Over 1.5 Goals\", \"size_available\": 55.03, \"feed_updated_at\": \"2026-09-26T09:06:15.940731+00:00\", \"price_at_decision\": 1.35, \"size_available_at_decision\": 10...<troncato>",
+     "chiave_eta": "updated_at",
+     "eta_p50": 0.106,
+     "eta_p95": 0.106,
+     "eta_max": 0.106,
+     "intervallo_medio_s": 36.875,
+     "intervallo_max_s": 36.875
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.1620667
+  },
+  {
+   "porta": 47336,
+   "topics_richiesti": "scan_calcio,scan_tennis,scanner_stato",
+   "hello": {
+    "sport": "safe-scan",
+    "topic": [
+     "scan_calcio",
+     "scan_tennis",
+     "scanner_stato"
+    ],
+    "cadenza_scan_s": 2.5,
+    "cadenza_stato_s": 10.0
+   },
+   "per_topic": {
+    "scan_calcio": {
+     "n": 1025,
+     "eta_s": [
+      0.002,
+      0.009,
+      0.036,
+      0.035,
+      0.034,
+      0.033,
+      0.032,
+      0.032,
+      0.046,
+      0.045,
+      0.044,
+      0.043,
+      0.042,
+      0.041,
+      0.04,
+      0.039,
+      0.039,
+      0.004,
+      0.014,
+      0.04,
+      0.04,
+      0.039,
+      0.038,
+      0.037,
+      0.036,
+      0.035,
+      0.036,
+      0.035,
+      0.042,
+      0.04,
+      0.039,
+      0.037,
+      0.003,
+      0.016,
+      0.037,
+      0.036,
+      0.036,
+      0.034,
+      0.032,
+      0.03,
+      0.034,
+      0.032,
+      0.039,
+      0.037,
+      0.005,
+      0.019,
+      0.053,
+      0.052,
+      0.05,
+      0.046
+     ],
+     "primo": "{\"event_id\": \"36090788\", \"sport\": \"calcio\", \"payload\": {\"event_name\": \"Tegevajaro Miyazaki v Sapporo\", \"home\": \"Tegevajaro Miyazaki\", \"away\": \"Sapporo\", \"competition\": \"Japanese J League 2\", \"open_date\": \"2026-09-26T08:00:00+00:00\", \"inplay\": true, \"mo_market_id\": \"1.262882306\", \"mo_status\": \"OPEN\", \"odds\": {\"home\": {\"back\": 1.08, \"lay\": 1.09, \"back_size\": 409.72, \"lay_size\": 97.16, \"selection_id\": 16139510, \"ltp\": null}, \"away\": {\"back\": 55.0, \"lay\": 85.0, \"back_size\": 20.64, \"lay_size\": 41.7, \"selection_id\": 2245760, \"ltp\": null}, \"draw\": {\"back\": 15.0, \"lay\": 17.0, \"back_size\": 4.76, \"lay_size\": 41.7, \"selection_id\": 58805, \"ltp\": null}}, \"minute\": 45, \"score_home\": 2, \"score_away\": 0, \"red_home\": 0, \"red_away\": 0, \"pre_ko\": null, \"cs\": {\"market_id\": \"1.262882313\", \"status\": \"OPEN\", \"inplay\": true, \"total_matched\": 0.0, \"selections\": [{\"selection_id\": 1, \"name\": \"0 - 0\", \"runner_status\": \"ACTIVE\", \"back\": 100.0, \"lay\": null, \"back_size\": 4.3, \"lay_size\": null}, {\"selection_id\": 4, \"name\": \"0 - 1\", \"runner_status\": \"ACTIVE\", \"back\": 100.0, \"lay\": null, \"back_size\": 4.3, \"lay_size\": null}, {\"selection_id\": 9, \"name\": \"0 - 2\", \"runner_status\": \"ACTIVE\", \"back\": 100.0, \"lay\": null, \"back_size\": 4.3, \"lay_size\": null}, {\"selection_id\": 16, \"name\": \"0 - 3\", \"runner_status\": \"ACTIVE\", \"back\": 100.0, \"lay\": null, \"back_size\": 4.3, \"lay_size\": null}, {\"selection_id\": 2, \"name\": \"1 - 0\", \"runner_status\": \"ACTIVE\", \"back\": null, \"lay\": null, \"back_size\": null, \"lay_size\": null}, {\"se...<troncato>",
+     "ultimo": "{\"event_id\": \"36115980\", \"sport\": \"calcio\", \"payload\": {\"event_name\": \"FC Ryukyu v Ehime\", \"home\": \"FC Ryukyu\", \"away\": \"Ehime\", \"competition\": \"Japanese J League 3\", \"open_date\": \"2026-09-26T08:00:00+00:00\", \"inplay\": true, \"mo_market_id\": \"1.262913761\", \"mo_status\": \"OPEN\", \"odds\": {\"home\": {\"back\": 3.2, \"lay\": 3.45, \"back_size\": 7.74, \"lay_size\": 192.61, \"selection_id\": 7379405, \"ltp\": null}, \"away\": {\"back\": 2.68, \"lay\": 2.8, \"back_size\": 14.18, \"lay_size\": 60.19, \"selection_id\": 3455675, \"ltp\": null}, \"draw\": {\"back\": 3.0, \"lay\": 3.1, \"back_size\": 7.74, \"lay_size\": 225.71, \"selection_id\": 58805, \"ltp\": null}}, \"minute\": 46, \"score_home\": 0, \"score_away\": 0, \"red_home\": 0, \"red_away\": 0, \"pre_ko\": null, \"cs\": {\"market_id\": \"1.262913769\", \"status\": \"OPEN\", \"inplay\": true, \"total_matched\": 0.0, \"selections\": [{\"selection_id\": 1, \"name\": \"0 - 0\", \"runner_status\": \"ACTIVE\", \"back\": 5.8, \"lay\": 6.6, \"back_size\": 82.01, \"lay_size\": 151.33}, {\"selection_id\": 4, \"name\": \"0 - 1\", \"runner_status\": \"ACTIVE\", \"back\": 6.2, \"lay\": 7.0, \"back_size\": 154.81, \"lay_size\": 75.24}, {\"selection_id\": 9, \"name\": \"0 - 2\", \"runner_status\": \"ACTIVE\", \"back\": 9.6, \"lay\": 14.0, \"back_size\": 9.89, \"lay_size\": 30.09}, {\"selection_id\": 16, \"name\": \"0 - 3\", \"runner_status\": \"ACTIVE\", \"back\": 34.0, \"lay\": 42.0, \"back_size\": 2.58, \"lay_size\": 16.77}, {\"selection_id\": 2, \"name\": \"1 - 0\", \"runner_status\": \"ACTIVE\", \"back\": 7.0, \"lay\": 7.8, \"back_size\": 124.23, \"lay_size\": 8.6}, {\"selection_id\": 3, \"name\": \"...<troncato>",
+     "chiave_eta": "updated_at",
+     "eta_p50": 0.042,
+     "eta_p95": 0.082,
+     "eta_max": 0.136,
+     "intervallo_medio_s": 0.058,
+     "intervallo_max_s": 1.716
+    },
+    "scan_tennis": {
+     "n": 204,
+     "eta_s": [
+      0.038,
+      0.037,
+      0.036,
+      0.036,
+      0.036,
+      0.035,
+      0.036,
+      0.036,
+      0.035,
+      0.035,
+      0.034,
+      0.056,
+      0.055,
+      0.054,
+      0.053,
+      0.053,
+      0.032,
+      0.031,
+      0.029,
+      0.023,
+      0.027,
+      0.023,
+      0.021,
+      0.039,
+      0.038,
+      0.056,
+      0.054,
+      0.053,
+      0.059,
+      0.058,
+      0.036,
+      0.034,
+      0.046,
+      0.045,
+      0.029,
+      0.03,
+      0.028,
+      0.034,
+      0.031,
+      0.046,
+      0.037,
+      0.037,
+      0.036,
+      0.032,
+      0.032,
+      0.032,
+      0.032,
+      0.032,
+      0.026,
+      0.026
+     ],
+     "primo": "{\"event_id\": \"36118619\", \"sport\": \"tennis\", \"payload\": {\"event_name\": \"A Bondar v Birrell\", \"p1\": \"A Bondar\", \"p2\": \"Birrell\", \"competition\": \"WTA Seoul 2026\", \"open_date\": \"2026-09-26T06:50:00+00:00\", \"inplay\": true, \"mo_market_id\": \"1.262933523\", \"mo_status\": \"OPEN\", \"odds\": {\"p1\": {\"back\": 3.9, \"lay\": 5.0, \"back_size\": 271.71, \"lay_size\": 13.76, \"selection_id\": 2402810, \"ltp\": null}, \"p2\": {\"back\": 1.01, \"lay\": 1.36, \"back_size\": 6.88, \"lay_size\": 48.58, \"selection_id\": 8183080, \"ltp\": null}}, \"sets\": {\"p1\": 1, \"p2\": 1}, \"games\": {\"p1\": 1, \"p2\": 3}, \"media\": {\"video\": true, \"viz\": false}, \"score_raw\": {\"eventTypeId\": 2, \"eventId\": 36118619, \"score\": {\"home\": {\"score\": \"0\", \"halfTimeScore\": \"\", \"fullTimeScore\": \"\", \"penaltiesScore\": \"\", \"penaltiesSequence\": [], \"games\": \"1\", \"sets\": \"1\", \"gameSequence\": [\"5\", \"6\"], \"isServing\": true, \"highlight\": true, \"serviceBreaks\": 0}, \"away\": {\"score\": \"0\", \"halfTimeScore\": \"\", \"fullTimeScore\": \"\", \"penaltiesScore\": \"\", \"penaltiesSequence\": [], \"games\": \"3\", \"sets\": \"1\", \"gameSequence\": [\"7\", \"2\"], \"isServing\": false, \"highlight\": false, \"serviceBreaks\": 0}}, \"currentSet\": 3, \"currentGame\": 5, \"fullTimeElapsed\": {\"hour\": 0, \"min\": 0, \"sec\": 0}}, \"mo_total_matched\": 0.0, \"odds_ts_ms\": 1790413530761, \"odds_pt_ms\": 1790413530658, \"bet_delay\": 3, \"pre_ko\": null}, \"updated_at\": \"2026-09-26T09:05:30.787382+00:00\"}",
+     "ultimo": "{\"event_id\": \"36112100\", \"sport\": \"tennis\", \"payload\": {\"event_name\": \"Vacherot v L Harris\", \"p1\": \"Vacherot\", \"p2\": \"L Harris\", \"competition\": \"ATP Chengdu 2026\", \"open_date\": \"2026-09-26T08:50:00+00:00\", \"inplay\": true, \"mo_market_id\": \"1.262887867\", \"mo_status\": \"OPEN\", \"odds\": {\"p1\": {\"back\": 1.88, \"lay\": 1.91, \"back_size\": 27.52, \"lay_size\": 369.73, \"selection_id\": 9631220, \"ltp\": null}, \"p2\": {\"back\": 2.1, \"lay\": 2.14, \"back_size\": 281.17, \"lay_size\": 21.5, \"selection_id\": 9635350, \"ltp\": null}}, \"sets\": {\"p1\": 0, \"p2\": 0}, \"games\": {\"p1\": 0, \"p2\": 0}, \"media\": {\"video\": false, \"viz\": false}, \"score_raw\": {\"eventTypeId\": 2, \"eventId\": 36112100, \"score\": {\"home\": {\"score\": \"30\", \"halfTimeScore\": \"\", \"fullTimeScore\": \"\", \"penaltiesScore\": \"\", \"penaltiesSequence\": [], \"games\": \"0\", \"sets\": \"0\", \"gameSequence\": [], \"isServing\": true, \"highlight\": true, \"serviceBreaks\": 0}, \"away\": {\"score\": \"0\", \"halfTimeScore\": \"\", \"fullTimeScore\": \"\", \"penaltiesScore\": \"\", \"penaltiesSequence\": [], \"games\": \"0\", \"sets\": \"0\", \"gameSequence\": [], \"isServing\": false, \"highlight\": false, \"serviceBreaks\": 0}}, \"currentSet\": 1, \"currentGame\": 1, \"fullTimeElapsed\": {\"hour\": 0, \"min\": 0, \"sec\": 0}}, \"mo_total_matched\": 0.0, \"odds_ts_ms\": 1790413587986, \"odds_pt_ms\": 1790413587680, \"bet_delay\": 3, \"pre_ko\": {\"p1\": 1.01, \"p2\": 1.02, \"captured_at\": \"2026-09-26T09:05:45.854569+00:00\"}}, \"updated_at\": \"2026-09-26T09:06:29.610049+00:00\"}",
+     "chiave_eta": "updated_at",
+     "eta_p50": 0.044,
+     "eta_p95": 0.075,
+     "eta_max": 0.104,
+     "intervallo_medio_s": 0.29,
+     "intervallo_max_s": 2.971
+    },
+    "scanner_stato": {
+     "n": 5,
+     "eta_s": [],
+     "primo": "{\"calcio_inplay\": 17, \"tennis_inplay\": 12, \"monitored\": 33, \"dry\": false, \"source\": \"stream\", \"stream_markets\": 180, \"stream_connections\": 1, \"stream_capacity\": 720, \"stream_books_vuoti\": 2, \"rest_books_vuoti\": 0, \"stream_mercati_senza_quote\": [], \"stream_mercati_senza_quote_n\": 0, \"stream_senza_quote_eta_s\": 0.0, \"stream_mercati_allarme\": [], \"stream_mercati_allarme_n\": 0, \"flumine_caricato\": false, \"canale_acceso\": true, \"canale\": {\"saltati\": 0, \"saltati_client\": 444, \"client\": 5, \"rifiutati_origine\": 0, \"rifiutati_token\": 0, \"lettori\": 1, \"client_pronti\": 5, \"in_volo\": 0, \"porta\": 47336, \"solo_lettura\": true}, \"stream_shards\": [{\"i\": 0, \"desired\": 179, \"subscribed\": 180, \"books\": 9502, \"eta_book_s\": 0.9, \"eta_msg_s\": 0.1, \"eta_resub_s\": 332.3}], \"opp_events\": 19, \"opp_markets\": 125, \"last_error\": null, \"started_at\": \"2026-09-26T08:56:57.917106+00:00\", \"tick\": {\"giri\": 120, \"p50\": 252.4, \"p95\": 1327.5, \"max\": 1931.2, \"fasi_p95\": {\"catalogo\": 0.0, \"stream\": 12.7, \"book\": 848.0, \"pre_ko\": 1.5, \"scrittura\": 488.4, \"altro\": 84.2}}}",
+     "ultimo": "{\"calcio_inplay\": 17, \"tennis_inplay\": 13, \"monitored\": 34, \"dry\": false, \"source\": \"stream\", \"stream_markets\": 180, \"stream_connections\": 1, \"stream_capacity\": 720, \"stream_books_vuoti\": 2, \"rest_books_vuoti\": 0, \"stream_mercati_senza_quote\": [], \"stream_mercati_senza_quote_n\": 0, \"stream_senza_quote_eta_s\": 0.0, \"stream_mercati_allarme\": [], \"stream_mercati_allarme_n\": 0, \"flumine_caricato\": false, \"canale_acceso\": true, \"canale\": {\"saltati\": 0, \"saltati_client\": 444, \"client\": 5, \"rifiutati_origine\": 0, \"rifiutati_token\": 0, \"lettori\": 1, \"client_pronti\": 5, \"in_volo\": 1, \"porta\": 47336, \"solo_lettura\": true}, \"stream_shards\": [{\"i\": 0, \"desired\": 179, \"subscribed\": 180, \"books\": 11490, \"eta_book_s\": 0.1, \"eta_msg_s\": 0.3, \"eta_resub_s\": 380.6}], \"opp_events\": 19, \"opp_markets\": 125, \"last_error\": null, \"started_at\": \"2026-09-26T08:56:57.917106+00:00\", \"tick\": {\"giri\": 120, \"p50\": 224.0, \"p95\": 1070.8, \"max\": 1763.0, \"fasi_p95\": {\"catalogo\": 0.0, \"stream\": 11.8, \"book\": 837.8, \"pre_ko\": 0.9, \"scrittura\": 470.9, \"altro\": 83.0}}}",
+     "chiave_eta": null,
+     "intervallo_medio_s": 12.078,
+     "intervallo_max_s": 12.137
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.191827
+  },
+  {
+   "porta": 47337,
+   "topics_richiesti": "tennis_bot_stato,tennis_bot_posizioni,tennis_bot_armamento",
+   "hello": {
+    "sport": "tennis-bot",
+    "topic": [
+     "tennis_bot_stato",
+     "tennis_bot_posizioni",
+     "tennis_bot_armamento"
+    ],
+    "cadenza_battito_s": 15.0
+   },
+   "per_topic": {
+    "tennis_bot_stato": {
+     "n": 16,
+     "eta_s": [
+      0.087,
+      0.083,
+      0.083,
+      0.089,
+      0.071,
+      0.072,
+      0.076,
+      0.072,
+      0.078,
+      0.081,
+      0.075,
+      0.078,
+      0.072,
+      0.08,
+      0.078,
+      0.076
+     ],
+     "primo": "{\"bot_key\": \"tennis_swing\", \"status\": \"stopped\", \"mode\": \"paper\", \"stake\": 2, \"params\": {}, \"stats\": {\"boot_id\": \"mui5odst-7bd20590-8491-4132-bdb9-d8a8a6bafd27\", \"sveglia\": {\"da_ui\": 0, \"usate\": 0, \"da_scan\": 0, \"sveglie\": 0, \"per_cadenza\": 32, \"ultimo_motivo\": null, \"scartate_dal_minimo\": 0}, \"motivo_blocco\": null, \"canale_inoltro\": {\"url\": \"ws://127.0.0.1:47332/lettore/tennis_bot_posizioni\", \"errori\": 0, \"ricevuti\": 0, \"scartati\": 0, \"collegato\": true, \"inoltrati\": 0, \"riagganci\": 0, \"connessioni\": 1, \"ultimo_errore\": null}, \"partite_esposte\": 0, \"cadenza_battito_s\": 15.0, \"fermato_all_avvio_at\": \"2026-09-26T08:57:01.433250+00:00\", \"stop_ferma_solo_aperture\": true}, \"error\": null, \"started_at\": \"2026-09-24T15:00:44.430072+00:00\", \"stopped_at\": \"2026-09-26T08:57:01.433316+00:00\", \"heartbeat_at\": \"2026-09-26T09:05:32.205884+00:00\", \"updated_at\": \"2026-09-26T09:05:32.205872+00:00\", \"uscite_automatiche\": false, \"fonte\": \"canale\", \"_seq\": 133, \"_pubblicato_ms\": 1790413532288}",
+     "ultimo": "{\"bot_key\": \"tennis_pro\", \"status\": \"stopped\", \"mode\": \"paper\", \"stake\": 2, \"params\": {}, \"stats\": {\"boot_id\": \"mui5odst-7bd20590-8491-4132-bdb9-d8a8a6bafd27\", \"sveglia\": {\"da_ui\": 0, \"usate\": 0, \"da_scan\": 0, \"sveglie\": 0, \"per_cadenza\": 35, \"ultimo_motivo\": null, \"scartate_dal_minimo\": 0}, \"motivo_blocco\": null, \"canale_inoltro\": {\"url\": \"ws://127.0.0.1:47332/lettore/tennis_bot_posizioni\", \"errori\": 0, \"ricevuti\": 0, \"scartati\": 0, \"collegato\": true, \"inoltrati\": 0, \"riagganci\": 0, \"connessioni\": 1, \"ultimo_errore\": null}, \"partite_esposte\": 0, \"cadenza_battito_s\": 15.0, \"fermato_all_avvio_at\": \"2026-09-26T08:57:01.433250+00:00\", \"stop_ferma_solo_aperture\": true}, \"error\": null, \"started_at\": \"2026-09-24T15:00:30.775475+00:00\", \"stopped_at\": \"2026-09-26T08:57:01.667919+00:00\", \"heartbeat_at\": \"2026-09-26T09:06:20.266199+00:00\", \"updated_at\": \"2026-09-26T09:06:20.266175+00:00\", \"uscite_automatiche\": false, \"fonte\": \"canale\", \"_seq\": 148, \"_pubblicato_ms\": 1790413580340}",
+     "chiave_eta": "updated_at",
+     "eta_p50": 0.078,
+     "eta_p95": 0.089,
+     "eta_max": 0.089,
+     "intervallo_medio_s": 3.203,
+     "intervallo_max_s": 15.43
+    }
+   },
+   "errore": null,
+   "hello_at": 1790413530.162393
+  },
+  {
+   "porta": 47338,
+   "topics_richiesti": "scalper_stato,scalper_sessioni",
+   "hello": {
+    "sport": "scalper",
+    "topic": [
+     "scalper_stato",
+     "scalper_sessioni"
+    ],
+    "cadenza_battito_s": 3.0
+   },
+   "per_topic": {},
+   "errore": null,
+   "hello_at": 1790413530.162448
+  }
+ ]
+}

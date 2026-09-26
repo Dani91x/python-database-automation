@@ -1,0 +1,651 @@
+{
+ "scelte": [
+  "36115985",
+  "36094814",
+  "36115980"
+ ],
+ "istanti": [
+  {
+   "k": 0,
+   "t_db": [
+    1790414144.5316665,
+    1790414144.6503925
+   ],
+   "t_bf": [
+    1790414144.6504,
+    1790414145.5507815
+   ],
+   "t_ips": [
+    1790414145.5507843,
+    1790414146.4912627
+   ],
+   "partite": [
+    {
+     "event_id": "36115985",
+     "nome": "Tochigi SC v Matsumoto",
+     "market_id": "1.262913140",
+     "scan_updated_at": "2026-09-26T09:15:43.708346+00:00",
+     "eta_scan_s_a_lettura_book": 1.842,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.52,
+        "lay": 1.55,
+        "back_size": 231.32,
+        "lay_size": 86.41
+       },
+       "book": {
+        "back": 1.52,
+        "back_size": 269.03,
+        "lay": 1.55,
+        "lay_size": 100.5
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 3.95,
+        "lay": 4.1,
+        "back_size": 25.5,
+        "lay_size": 237.32
+       },
+       "book": {
+        "back": 3.95,
+        "back_size": 29.66,
+        "lay": 4.1,
+        "lay_size": 276.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 9.8,
+        "lay": 11.0,
+        "back_size": 2.58,
+        "lay_size": 32.24
+       },
+       "book": {
+        "back": 9.8,
+        "back_size": 3.0,
+        "lay": 11.0,
+        "lay_size": 37.5
+       }
+      }
+     },
+     "scan_minuto": 55,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 55,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:15:43.721016+00:00",
+     "eta_scan_s_a_lettura_book": 1.83,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.36,
+        "lay": 1.38,
+        "back_size": 75.24,
+        "lay_size": 75.67
+       },
+       "book": {
+        "back": 1.36,
+        "back_size": 87.5,
+        "lay": 1.38,
+        "lay_size": 88.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.7,
+        "lay": 4.9,
+        "back_size": 14.56,
+        "lay_size": 15.48
+       },
+       "book": {
+        "back": 4.7,
+        "back_size": 16.93,
+        "lay": 4.9,
+        "lay_size": 18.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 15.5,
+        "lay": 17.5,
+        "back_size": 8.6,
+        "lay_size": 12.04
+       },
+       "book": {
+        "back": 15.5,
+        "back_size": 10.0,
+        "lay": 17.5,
+        "lay_size": 55.0
+       }
+      }
+     },
+     "scan_minuto": 56,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 56,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115980",
+     "nome": "FC Ryukyu v Ehime",
+     "market_id": "1.262913761",
+     "scan_updated_at": "2026-09-26T09:15:41.881158+00:00",
+     "eta_scan_s_a_lettura_book": 3.67,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 2.58,
+        "lay": 2.92,
+        "back_size": 10.32,
+        "lay_size": 6.88
+       },
+       "book": {
+        "back": 2.58,
+        "back_size": 12.0,
+        "lay": 2.92,
+        "lay_size": 3.75
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.62,
+        "lay": 2.76,
+        "back_size": 453.47,
+        "lay_size": 24.08
+       },
+       "book": {
+        "back": 2.62,
+        "back_size": 527.39,
+        "lay": 2.76,
+        "lay_size": 28.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 3.65,
+        "lay": 4.0,
+        "back_size": 2.58,
+        "lay_size": 160.36
+       },
+       "book": {
+        "back": 3.65,
+        "back_size": 3.0,
+        "lay": 4.0,
+        "lay_size": 186.5
+       }
+      }
+     },
+     "scan_minuto": 55,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 55,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  },
+  {
+   "k": 1,
+   "t_db": [
+    1790414166.4932187,
+    1790414166.6701183
+   ],
+   "t_bf": [
+    1790414166.6701772,
+    1790414166.736798
+   ],
+   "t_ips": [
+    1790414166.7368026,
+    1790414166.7966506
+   ],
+   "partite": [
+    {
+     "event_id": "36115985",
+     "nome": "Tochigi SC v Matsumoto",
+     "market_id": "1.262913140",
+     "scan_updated_at": "2026-09-26T09:16:05.910213+00:00",
+     "eta_scan_s_a_lettura_book": 0.827,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.51,
+        "lay": 1.55,
+        "back_size": 387.36,
+        "lay_size": 281.17
+       },
+       "book": {
+        "back": 1.51,
+        "back_size": 450.5,
+        "lay": 1.55,
+        "lay_size": 327.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 3.9,
+        "lay": 4.1,
+        "back_size": 103.27,
+        "lay_size": 237.32
+       },
+       "book": {
+        "back": 3.9,
+        "back_size": 120.1,
+        "lay": 4.1,
+        "lay_size": 190.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 10.0,
+        "lay": 11.0,
+        "back_size": 6.81,
+        "lay_size": 27.09
+       },
+       "book": {
+        "back": 10.0,
+        "back_size": 7.92,
+        "lay": 11.5,
+        "lay_size": 114.5
+       }
+      }
+     },
+     "scan_minuto": 55,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 55,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:16:05.110203+00:00",
+     "eta_scan_s_a_lettura_book": 1.627,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.36,
+        "lay": 1.37,
+        "back_size": 77.39,
+        "lay_size": 1.72
+       },
+       "book": {
+        "back": 1.36,
+        "back_size": 90.0,
+        "lay": 1.37,
+        "lay_size": 2.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.6,
+        "lay": 4.9,
+        "back_size": 23.97,
+        "lay_size": 14.62
+       },
+       "book": {
+        "back": 4.6,
+        "back_size": 17.48,
+        "lay": 4.9,
+        "lay_size": 17.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 15.0,
+        "lay": 17.5,
+        "back_size": 13.76,
+        "lay_size": 37.83
+       },
+       "book": {
+        "back": 15.5,
+        "back_size": 8.0,
+        "lay": 17.5,
+        "lay_size": 44.0
+       }
+      }
+     },
+     "scan_minuto": 56,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 56,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115980",
+     "nome": "FC Ryukyu v Ehime",
+     "market_id": "1.262913761",
+     "scan_updated_at": "2026-09-26T09:16:06.003165+00:00",
+     "eta_scan_s_a_lettura_book": 0.734,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 2.62,
+        "lay": 3.1,
+        "back_size": 35.61,
+        "lay_size": 6.88
+       },
+       "book": {
+        "back": 2.62,
+        "back_size": 52.42,
+        "lay": 2.94,
+        "lay_size": 5.31
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.6,
+        "lay": 2.74,
+        "back_size": 5.16,
+        "lay_size": 24.08
+       },
+       "book": {
+        "back": 2.6,
+        "back_size": 6.0,
+        "lay": 2.74,
+        "lay_size": 28.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 3.65,
+        "lay": 4.0,
+        "back_size": 21.21,
+        "lay_size": 167.24
+       },
+       "book": {
+        "back": 3.65,
+        "back_size": 24.67,
+        "lay": 4.0,
+        "lay_size": 194.5
+       }
+      }
+     },
+     "scan_minuto": 55,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 55,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  },
+  {
+   "k": 2,
+   "t_db": [
+    1790414186.7977116,
+    1790414186.966962
+   ],
+   "t_bf": [
+    1790414186.9670396,
+    1790414187.0325875
+   ],
+   "t_ips": [
+    1790414187.0325887,
+    1790414187.0891867
+   ],
+   "partite": [
+    {
+     "event_id": "36115985",
+     "nome": "Tochigi SC v Matsumoto",
+     "market_id": "1.262913140",
+     "scan_updated_at": "2026-09-26T09:16:24.391575+00:00",
+     "eta_scan_s_a_lettura_book": 2.641,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.45,
+        "lay": 1.54,
+        "back_size": 3.44,
+        "lay_size": 29.23
+       },
+       "book": {
+        "back": 1.46,
+        "back_size": 31.33,
+        "lay": 1.54,
+        "lay_size": 261.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 3.9,
+        "lay": 4.3,
+        "back_size": 49.05,
+        "lay_size": 82.55
+       },
+       "book": {
+        "back": 3.95,
+        "back_size": 118.3,
+        "lay": 4.2,
+        "lay_size": 9.5
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 10.0,
+        "lay": 12.5,
+        "back_size": 46.36,
+        "lay_size": 24.08
+       },
+       "book": {
+        "back": 10.0,
+        "back_size": 88.93,
+        "lay": 12.5,
+        "lay_size": 28.0
+       }
+      }
+     },
+     "scan_minuto": 56,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 56,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:16:25.191517+00:00",
+     "eta_scan_s_a_lettura_book": 1.841,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.37,
+        "lay": 1.4,
+        "back_size": 16.55,
+        "lay_size": 1.72
+       },
+       "book": {
+        "back": 1.37,
+        "back_size": 19.25,
+        "lay": 1.4,
+        "lay_size": 58.84
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.6,
+        "lay": 4.9,
+        "back_size": 14.88,
+        "lay_size": 165.09
+       },
+       "book": {
+        "back": 4.6,
+        "back_size": 17.3,
+        "lay": 4.9,
+        "lay_size": 192.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 15.0,
+        "lay": 17.5,
+        "back_size": 13.76,
+        "lay_size": 44.28
+       },
+       "book": {
+        "back": 15.0,
+        "back_size": 16.0,
+        "lay": 17.5,
+        "lay_size": 63.5
+       }
+      }
+     },
+     "scan_minuto": 56,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 56,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115980",
+     "nome": "FC Ryukyu v Ehime",
+     "market_id": "1.262913761",
+     "scan_updated_at": "2026-09-26T09:16:25.260418+00:00",
+     "eta_scan_s_a_lettura_book": 1.772,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 2.64,
+        "lay": 3.1,
+        "back_size": 7.74,
+        "lay_size": 6.88
+       },
+       "book": {
+        "back": 2.64,
+        "back_size": 9.0,
+        "lay": 3.05,
+        "lay_size": 25.93
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.5,
+        "lay": 2.74,
+        "back_size": 27.2,
+        "lay_size": 28.37
+       },
+       "book": {
+        "back": 2.5,
+        "back_size": 31.63,
+        "lay": 2.74,
+        "lay_size": 33.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 3.7,
+        "lay": 4.5,
+        "back_size": 20.95,
+        "lay_size": 6.88
+       },
+       "book": {
+        "back": 3.7,
+        "back_size": 24.37,
+        "lay": 4.5,
+        "lay_size": 8.0
+       }
+      }
+     },
+     "scan_minuto": 55,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 55,
+     "ips_score": [
+      null,
+      null
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  }
+ ],
+ "chiamate_betfair": {
+  "login": 1,
+  "listMarketBook": 3,
+  "get_scores": 3,
+  "logout": 1
+ }
+}

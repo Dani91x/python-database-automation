@@ -1,0 +1,651 @@
+{
+ "scelte": [
+  "36094814",
+  "36115986",
+  "36090788"
+ ],
+ "istanti": [
+  {
+   "k": 0,
+   "t_db": [
+    1790414266.755471,
+    1790414266.971067
+   ],
+   "t_bf": [
+    1790414266.971077,
+    1790414267.8946044
+   ],
+   "t_ips": [
+    1790414267.894608,
+    1790414268.8159919
+   ],
+   "partite": [
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:17:43.757504+00:00",
+     "eta_scan_s_a_lettura_book": 4.137,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.37,
+        "lay": 1.39,
+        "back_size": 79.11,
+        "lay_size": 80.83
+       },
+       "book": {
+        "back": 1.37,
+        "back_size": 92.0,
+        "lay": 1.4,
+        "lay_size": 768.5
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.5,
+        "lay": 4.8,
+        "back_size": 171.53,
+        "lay_size": 28.37
+       },
+       "book": {
+        "back": 4.5,
+        "back_size": 210.49,
+        "lay": 4.8,
+        "lay_size": 33.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 15.5,
+        "lay": 17.5,
+        "back_size": 8.6,
+        "lay_size": 2.58
+       },
+       "book": {
+        "back": 15.5,
+        "back_size": 2.0,
+        "lay": 17.5,
+        "lay_size": 3.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      1
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115986",
+     "nome": "Thespakusatsu Gunma v Kumamoto",
+     "market_id": "1.262913163",
+     "scan_updated_at": "2026-09-26T09:17:45.921628+00:00",
+     "eta_scan_s_a_lettura_book": 1.973,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 3.0,
+        "lay": 3.15,
+        "back_size": 7.74,
+        "lay_size": 14.62
+       },
+       "book": {
+        "back": 3.0,
+        "back_size": 9.0,
+        "lay": 3.15,
+        "lay_size": 17.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.16,
+        "lay": 2.22,
+        "back_size": 18.06,
+        "lay_size": 48.58
+       },
+       "book": {
+        "back": 2.16,
+        "back_size": 21.0,
+        "lay": 2.22,
+        "lay_size": 56.5
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 4.4,
+        "lay": 4.7,
+        "back_size": 233.29,
+        "lay_size": 22.36
+       },
+       "book": {
+        "back": 4.4,
+        "back_size": 271.32,
+        "lay": 4.7,
+        "lay_size": 26.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36090788",
+     "nome": "Tegevajaro Miyazaki v Sapporo",
+     "market_id": "1.262882306",
+     "scan_updated_at": "2026-09-26T09:17:43.74547+00:00",
+     "eta_scan_s_a_lettura_book": 4.149,
+     "book_status": "SUSPENDED",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 75.0,
+        "lay": 130.0,
+        "back_size": 1.07,
+        "lay_size": 17.63
+       },
+       "book": {
+        "back": 70.0,
+        "back_size": 16.0,
+        "lay": null,
+        "lay_size": null
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 17.0,
+        "lay": 19.5,
+        "back_size": 17.83,
+        "lay_size": 31.81
+       },
+       "book": {
+        "back": 17.0,
+        "back_size": 15.0,
+        "lay": 19.5,
+        "lay_size": 5.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 1.06,
+        "lay": 1.08,
+        "back_size": 1695.8,
+        "lay_size": 510.75
+       },
+       "book": {
+        "back": 1.06,
+        "back_size": 118.0,
+        "lay": 1.08,
+        "lay_size": 236.11
+       }
+      }
+     },
+     "scan_minuto": 57,
+     "scan_score": [
+      2,
+      0
+     ],
+     "ips_minuto": 57,
+     "ips_score": [
+      2,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  },
+  {
+   "k": 1,
+   "t_db": [
+    1790414288.8168862,
+    1790414289.2175636
+   ],
+   "t_bf": [
+    1790414289.2176132,
+    1790414289.3240788
+   ],
+   "t_ips": [
+    1790414289.3240821,
+    1790414289.382284
+   ],
+   "partite": [
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:18:06.740602+00:00",
+     "eta_scan_s_a_lettura_book": 2.583,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.36,
+        "lay": 1.39,
+        "back_size": 77.39,
+        "lay_size": 736.89
+       },
+       "book": {
+        "back": 1.36,
+        "back_size": 90.0,
+        "lay": 1.38,
+        "lay_size": 57.66
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.7,
+        "lay": 4.9,
+        "back_size": 14.56,
+        "lay_size": 150.9
+       },
+       "book": {
+        "back": 4.7,
+        "back_size": 16.93,
+        "lay": 4.9,
+        "lay_size": 200.48
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 16.5,
+        "lay": 18.0,
+        "back_size": 6.82,
+        "lay_size": 32.67
+       },
+       "book": {
+        "back": 16.5,
+        "back_size": 7.93,
+        "lay": 18.0,
+        "lay_size": 56.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      1
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115986",
+     "nome": "Thespakusatsu Gunma v Kumamoto",
+     "market_id": "1.262913163",
+     "scan_updated_at": "2026-09-26T09:18:06.819088+00:00",
+     "eta_scan_s_a_lettura_book": 2.505,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 3.05,
+        "lay": 3.15,
+        "back_size": 15.48,
+        "lay_size": 14.62
+       },
+       "book": {
+        "back": 3.05,
+        "back_size": 205.33,
+        "lay": 3.15,
+        "lay_size": 17.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.14,
+        "lay": 2.2,
+        "back_size": 19.78,
+        "lay_size": 7.74
+       },
+       "book": {
+        "back": 2.14,
+        "back_size": 23.0,
+        "lay": 2.2,
+        "lay_size": 43.5
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 4.4,
+        "lay": 4.8,
+        "back_size": 31.81,
+        "lay_size": 244.2
+       },
+       "book": {
+        "back": 4.5,
+        "back_size": 14.0,
+        "lay": 4.8,
+        "lay_size": 275.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36090788",
+     "nome": "Tegevajaro Miyazaki v Sapporo",
+     "market_id": "1.262882306",
+     "scan_updated_at": "2026-09-26T09:17:58.55398+00:00",
+     "eta_scan_s_a_lettura_book": 10.77,
+     "book_status": "SUSPENDED",
+     "book_inplay": true,
+     "scan_mo_status": "SUSPENDED",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 70.0,
+        "lay": null,
+        "back_size": 9.46,
+        "lay_size": null
+       },
+       "book": {
+        "back": 70.0,
+        "back_size": 11.0,
+        "lay": null,
+        "lay_size": null
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 16.5,
+        "lay": 20.0,
+        "back_size": 8.6,
+        "lay_size": 1.72
+       },
+       "book": {
+        "back": 16.5,
+        "back_size": 10.0,
+        "lay": 20.0,
+        "lay_size": 2.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 1.06,
+        "lay": 1.09,
+        "back_size": 92.0,
+        "lay_size": 178.85
+       },
+       "book": {
+        "back": 1.06,
+        "back_size": 107.0,
+        "lay": 1.09,
+        "lay_size": 359.38
+       }
+      }
+     },
+     "scan_minuto": 57,
+     "scan_score": [
+      2,
+      0
+     ],
+     "ips_minuto": 57,
+     "ips_score": [
+      2,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  },
+  {
+   "k": 2,
+   "t_db": [
+    1790414309.3831806,
+    1790414309.6009948
+   ],
+   "t_bf": [
+    1790414309.6010423,
+    1790414309.6656017
+   ],
+   "t_ips": [
+    1790414309.6656039,
+    1790414309.7240021
+   ],
+   "partite": [
+    {
+     "event_id": "36094814",
+     "nome": "Iwaki SC v Sendai",
+     "market_id": "1.262838313",
+     "scan_updated_at": "2026-09-26T09:18:27.569958+00:00",
+     "eta_scan_s_a_lettura_book": 2.096,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 1.36,
+        "lay": 1.38,
+        "back_size": 77.39,
+        "lay_size": 173.26
+       },
+       "book": {
+        "back": 1.36,
+        "back_size": 90.0,
+        "lay": 1.38,
+        "lay_size": 107.5
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 4.6,
+        "lay": 4.9,
+        "back_size": 190.43,
+        "lay_size": 164.23
+       },
+       "book": {
+        "back": 4.6,
+        "back_size": 12.0,
+        "lay": 4.9,
+        "lay_size": 383.34
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 16.5,
+        "lay": 18.5,
+        "back_size": 4.3,
+        "lay_size": 43.85
+       },
+       "book": {
+        "back": 16.5,
+        "back_size": 5.0,
+        "lay": 18.5,
+        "lay_size": 51.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      1
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      1
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36115986",
+     "nome": "Thespakusatsu Gunma v Kumamoto",
+     "market_id": "1.262913163",
+     "scan_updated_at": "2026-09-26T09:18:27.585673+00:00",
+     "eta_scan_s_a_lettura_book": 2.08,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 3.0,
+        "lay": 3.15,
+        "back_size": 13.76,
+        "lay_size": 13.76
+       },
+       "book": {
+        "back": 3.0,
+        "back_size": 16.0,
+        "lay": 3.15,
+        "lay_size": 16.0
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 2.14,
+        "lay": 2.2,
+        "back_size": 19.78,
+        "lay_size": 29.66
+       },
+       "book": {
+        "back": 2.14,
+        "back_size": 23.0,
+        "lay": 2.2,
+        "lay_size": 34.5
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 4.5,
+        "lay": 4.8,
+        "back_size": 121.54,
+        "lay_size": 125.11
+       },
+       "book": {
+        "back": 4.5,
+        "back_size": 141.35,
+        "lay": 4.8,
+        "lay_size": 145.5
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      0,
+      0
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      0,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    },
+    {
+     "event_id": "36090788",
+     "nome": "Tegevajaro Miyazaki v Sapporo",
+     "market_id": "1.262882306",
+     "scan_updated_at": "2026-09-26T09:18:27.555304+00:00",
+     "eta_scan_s_a_lettura_book": 2.11,
+     "book_status": "OPEN",
+     "book_inplay": true,
+     "scan_mo_status": "OPEN",
+     "confronto_quote": {
+      "away": {
+       "scan": {
+        "back": 75.0,
+        "lay": null,
+        "back_size": 4.3,
+        "lay_size": null
+       },
+       "book": {
+        "back": 75.0,
+        "back_size": 6.24,
+        "lay": null,
+        "lay_size": null
+       }
+      },
+      "draw": {
+       "scan": {
+        "back": 17.0,
+        "lay": 22.0,
+        "back_size": 1.72,
+        "lay_size": 4.3
+       },
+       "book": {
+        "back": 17.0,
+        "back_size": 2.0,
+        "lay": 22.0,
+        "lay_size": 5.0
+       }
+      },
+      "home": {
+       "scan": {
+        "back": 1.05,
+        "lay": 1.07,
+        "back_size": 9.46,
+        "lay_size": 100.6
+       },
+       "book": {
+        "back": 1.05,
+        "back_size": 11.0,
+        "lay": 1.07,
+        "lay_size": 117.0
+       }
+      }
+     },
+     "scan_minuto": 58,
+     "scan_score": [
+      2,
+      0
+     ],
+     "ips_minuto": 58,
+     "ips_score": [
+      2,
+      0
+     ],
+     "ips_status": "SecondHalfKickOff"
+    }
+   ]
+  }
+ ],
+ "chiamate_betfair": {
+  "login": 1,
+  "listMarketBook": 3,
+  "get_scores": 3,
+  "logout": 1
+ }
+}

@@ -1,0 +1,29 @@
+EVIDENZA Z0(a) - processi e porte, letti alle 11:00-11:01 locali del 26/09 (PRIMA dell'accensione dei bot)
+Comandi (sola lettura): Get-CimInstance Win32_Process (filtro python/electron/AlphaScore) ; Get-NetTCPConnection -State Listen (47300-47400)
+
+App: "AlphaScore Trading 1.1.0.exe" pid 15624 (avvio 10:56:41, desktop\release, portable) -> "AlphaScore Trading.exe" pid 14708
+     (%TEMP%\3J5N8nAfMsm9w1EMm3K0KUDixZG, avvio 10:56:46) + gpu 9424, network 16500, renderer 9124.
+Figli python di 14708 (tutti avviati 10:56:47; ogni riga .venv = lanciatore venv + interprete vero):
+  runner-calcio      watchdog 27492 -> 19596 -> Betfair.stream.runner 15672 -> 20552
+  runner-tennis      watchdog 25360 -> 21044 -> tennis_runner 28844 -> 1696
+  scalper-service    20136 -> 17848   (NON sotto watchdog)
+  tennis-bot-service --bridge-only 26564 -> 180   (NON sotto watchdog)
+  safe-strategy-service watchdog 9408 -> 20100 -> service 18984 -> 5032
+  omega-service      watchdog 23344 -> 33164 -> omega_service 22776 -> 6004
+  safe-strategy-bot  watchdog 24240 -> 30820 -> bot_service 27040 -> 21972
+  mike-service       watchdog 25468 -> 29520 -> mike.service 23888 -> 31636
+  tennis-odds (betfair_tennis_odds.py): processo breve, NON vivo alle 11:00 (atteso: gira all'avvio e ogni 30'); prova di
+    esecuzione: tennis_markets 60 righe con captured_at > 08:56 UTC, max 08:57:56 UTC.
+=> 8 servizi di desktop/main.js:288-322 tutti vivi (6 watchdog + 6 figli + scalper-service + ponte tennis = 14 processi logici,
+   28 python.exe per il doppio lanciatore del venv). Nessun mancante.
+
+Porte in ascolto (127.0.0.1):
+ 47311 runner(20552) lock | 47312 tennis_runner(1696) lock | 47313 omega(6004) lock | 47314 scalper(17848) lock
+ 47315 scanner(5032) lock | 47318 safe bot(21972) lock | 47319 mike(31636) lock
+ 47330 app(14708) UI | 47331 runner | 47332 tennis_runner | 47333 mike | 47334 omega | 47335 safe bot | 47336 scanner
+ 47337 ponte tennis(180) | 47338 scalper(17848)
+ NON in ascolto (11:24): 8787 (odds_http, atteso: nessun chiamante), 47316 (tennis-odds, processo breve), 47317 (non assegnata).
+
+Reperto sicurezza (nessuna correzione): la riga di comando del renderer 9124 contiene in chiaro
+"--alphascore-canale-token=<64 hex>" (additionalArguments, desktop/main.js:63-70): qualunque processo locale dell'utente
+che legge le righe di comando (tasklist/WMI) ottiene il token dei comandi dei canali 47331/47332. Token NON riportato qui.
