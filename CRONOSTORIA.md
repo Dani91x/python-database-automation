@@ -3364,3 +3364,11 @@ crashato alle 15:04:20Z (alert 510 «exit code 1, uptime 611s», il testo non di
 (3858 s), calcio 14:46:15Z, tennis 15:04:20Z (611 s), tutti exit 1 senza traceback. «STREAMING OK» dato a B → riaccensione bot in
 paper (sezione «riavvio 2»). Il `.bat` del report giornaliero (pid 1380, 880 MB) è stato lanciato dall'utente col doppio clic sulla
 copia dentro un worktree della sessione B: innocuo, da lanciare dalla radice del repo.
+**h18:25 — RIAVVIO 2, bot accesi in PAPER** (verificato a DB): Omega 15:16:04Z, Mike 15:16:56Z, Safe tennis 15:23Z + base/esatto/punta 15:26:45Z (4 varianti 6/6 paper), tennis ×4 15:30:54-15:31:06Z stake 2, scalper 15:33:12Z maker 25 (`ACCENSIONE_ORA.txt` «RIAVVIO 2», foto `accensione_r2/`). Reperto d'uso: pulsante «avvia» Safe base assente finché gli effettivi del servizio non si aggiornano (= R-E2E-1). In corso: registratore leggero `canali_r2/`, `verifica_mike_aperti.py 240`, Z0/Z4/B, sorveglianza alert; 2° freno in serata con avviso ad admin-26.
+**h17:40 — RIAVVIO 2: BOT RIACCESI IN PAPER da B** (Omega 15:16:04Z, Mike 15:16:56Z, Safe tennis 15:23Z poi base/esatto/punta 15:26:45Z
+6/6 paper, 4 tennis 15:30:54-15:31:06Z stake 2, scalper 15:33:12Z maker 25; `ACCENSIONE_ORA.txt` «RIAVVIO 2»). Verifica mia dai canali
+(40 s): 47332 tennis ladder 115 / position 214 / order 35 → OK; 47331 calcio ladder 293 e, CON LE PORTE ACCESE, l'auto-follow LAVORA:
+mercati_seguiti 179 (manuali 26, auto 153), sottoscritti 179, eventi_auto 41, con posizioni 6, per_priorita {candidata 39, comando 2};
+tutti gli 8 canali pubblicano. Delegato ordini/schede riattivato (seconda passata «porte accese»: 7.2.3-7.2.8, 7.2.11, 7.9.2.B, 7.5.7).
+Reperto d'uso di B: dopo l'avvio «solo tennis» il pulsante «avvia» di base non compare finché gli effettivi del servizio non si aggiornano
+(= R-E2E-1). Prossimo: 2° ciclo del freno (B), consegne dei 6 cantieri fix.
