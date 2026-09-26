@@ -1079,6 +1079,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         framework = Flumine(client=clients.BetfairClient(
             trading, **_order_client_kwargs(session_paper),
         ))
+        # K1 (26/09): size/volumi dello stream in GBP -> EUR, PRIMO middleware
+        # (prima del SimulatedMiddleware del paper e delle strategie)
+        from .. import valuta as _valuta
+        _valuta.CAMBIO.avvia(trading)
+        _valuta.monta_su_flumine(framework)
         if session_paper:
             # Fix GAP-5 (17/07): il betDelay va ri-letto dal book CORRENTE al
             # momento dell'esecuzione, non dallo snapshot alla creazione del

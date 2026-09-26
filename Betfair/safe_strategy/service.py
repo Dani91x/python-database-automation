@@ -57,6 +57,7 @@ from typing import Any, Deque, Dict, List, Optional, Sequence
 from Betfair.stream.auth import build_client, keep_alive, safe_logout
 from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
 from Betfair.stream.single_instance import acquire_single_instance_lock
+from Betfair.stream import valuta as _valuta
 from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 
 from . import db as scan_db
@@ -1583,6 +1584,9 @@ class Scanner:
                         "score_raw": ev.get("score_raw"),
                         "timeline": ev.get("timeline"),
                         "mo_total_matched": ev.get("mo_total_matched"),
+                        # K1 (26/09), chiave ADDITIVA: size e volumi in EUR (stream
+                        # convertito alla fonte, REST gia' nella valuta del conto)
+                        "valuta": _valuta.VALUTA_CONTO,
                         # ts dell'ultimo CAMBIO delle quote 1X2 (freschezza prezzo)
                         "odds_ts_ms": ev.get("odds_ts_ms"),
                         # F0 (18/09), chiavi ADDITIVE: l'istante di BETFAIR dello
@@ -1636,6 +1640,7 @@ class Scanner:
                         "media": ev.get("media"),
                         "score_raw": ev.get("score_raw"),
                         "mo_total_matched": ev.get("mo_total_matched"),
+                        "valuta": _valuta.VALUTA_CONTO,   # K1 (26/09), additiva
                         # ts dell'ultimo CAMBIO delle quote (freschezza prezzo),
                         # come per il calcio: chiave additiva
                         "odds_ts_ms": ev.get("odds_ts_ms"),
@@ -2209,6 +2214,9 @@ def main() -> None:
         lock = acquire_single_instance_lock(_LOCK_PORT, "safe-strategy")
 
     client = build_client(login=True)
+    # K1 (26/09): cambio GBP->EUR per le size dello stream (listCurrencyRates,
+    # rinfresco orario, cache su disco). Mai un'eccezione.
+    _valuta.CAMBIO.avvia(client)
     # stream ufficiale SOLO nel run persistente (--once = collaudo REST puro)
     scan = Scanner(client, dry=args.dry, use_stream=not args.once)
     try:

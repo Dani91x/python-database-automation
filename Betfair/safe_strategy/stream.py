@@ -46,6 +46,8 @@ import threading
 import time
 from typing import Any, Callable, List, Optional, Set
 
+from Betfair.stream import valuta as _valuta
+
 logger = logging.getLogger("safe_strategy")
 
 _RECONNECT_BACKOFF = (2.0, 5.0, 10.0, 30.0)
@@ -318,6 +320,11 @@ class StreamShard:
             if books:
                 out.extend(books)
         if out:
+            # K1 (26/09): lo stream consegna le size in GBP (valuta dell'exchange),
+            # il conto e' in EUR. Conversione ALLA FONTE, prima di ogni consumatore;
+            # il poll REST (gia' in EUR) non passa di qui.
+            for b in out:
+                _valuta.converti_libro(b, _valuta.CAMBIO)
             # un BOOK e' arrivato davvero: e' questa, non l'eta' del socket, la
             # misura della copertura
             self._last_book_mono = time.monotonic()

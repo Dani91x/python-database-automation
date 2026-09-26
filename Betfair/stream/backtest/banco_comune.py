@@ -1035,6 +1035,12 @@ def assicura_middleware_simulato(quadro: Any) -> int:
 
     from flumine.markets.middleware import SimulatedMiddleware
 
+    from .. import valuta as _valuta
+
+    # K1 (26/09): le registrazioni raw sono in GBP (valuta dello stream), il
+    # runner converte in EUR col PRIMO middleware: il banco fa lo stesso, nello
+    # stesso punto, a cambio FISSO (referti riproducibili). Idempotente.
+    _valuta.monta_su_flumine(quadro, _valuta.cambio_banco())
     presenti = [m for m in quadro._market_middleware
                 if isinstance(m, SimulatedMiddleware)]
     if not presenti:

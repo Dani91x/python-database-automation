@@ -71,6 +71,8 @@ PAYLOAD_VERO_CALCIO = {
     # della fixture abbinata (veto delle FINALI). Nel banco non c'e' DB:
     # la chiave c'e' e vale None (dato assente, nessun veto).
     "fixture_round",
+    # K1 (26/09), chiave ADDITIVA: size e volumi in EUR (Betfair.stream.valuta)
+    "valuta",
 }
 PAYLOAD_VERO_TENNIS = {
     "competition", "event_name", "games", "inplay", "media", "mo_market_id",
@@ -85,6 +87,8 @@ PAYLOAD_VERO_TENNIS = {
     # congelata al primo tick in-play (`scanner.freeze_pre_ko_tennis`), stesso
     # nome e schema del `pre_ko` calcio (coppia p1/p2 invece della tripla).
     "pre_ko",
+    # K1 (26/09), chiave ADDITIVA: size e volumi in EUR
+    "valuta",
 }
 OU_BLOCCO_VERO = {"bet_delay", "inplay", "line", "market_id", "market_type",
                   "seen_ms", "selections", "status", "total_matched", "ts_ms"}

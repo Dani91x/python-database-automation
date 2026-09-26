@@ -103,6 +103,7 @@ from .trading.controls import LiveEventExposureControl, LiveExposureControl, Liv
 from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
+from . import valuta as _valuta
 from .runner_lifecycle import (
     any_follow_alive,
     effective_stall_seconds,
@@ -2031,6 +2032,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     rest = BetfairClient()
     rest.login_cert()
     api_client: betfairlightweight.APIClient = build_client(login=True)
+    # K1 (26/09): cambio GBP->EUR delle size dello stream (listCurrencyRates,
+    # rinfresco orario, cache su disco). Mai un'eccezione.
+    _valuta.CAMBIO.avvia(api_client)
 
     session = LiveSession()
     session.context_api_client = api_client  # type: ignore[attr-defined]
@@ -2264,6 +2268,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             modo_client = _modo_ordini_client(modo_avvio)  # 23/09: mai client a caldo
             client, orders_enabled = build_order_client(api_client, modo_client)
             framework = Flumine(client=client)
+            # K1 (26/09): lo stream consegna size/volumi in GBP, il conto e' in EUR.
+            # PRIMO middleware: prima del SimulatedMiddleware (paper) e di ogni
+            # strategia (recorder -> ladder/live_now/canale, specchio ordini).
+            _valuta.monta_su_flumine(framework)
             # F0 (16/09) - UN SOLO processo serve paper E live. In LIVE si affianca al
             # client reale un client SIMULATO: flumine instrada per ORDINE
             # (market.place_order(..., client=...) -> client.execution), quindi le due

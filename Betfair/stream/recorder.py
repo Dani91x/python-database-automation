@@ -71,7 +71,7 @@ def serialize_book(market_book: Any, depth: int = 3) -> Dict[str, Any]:
         if trd:
             runner["trd"] = trd
         runners[str(r.selection_id)] = runner
-    return {
+    out = {
         "market_id": market_book.market_id,
         "pt": getattr(market_book, "publish_time_epoch", None),
         "status": getattr(market_book, "status", None),
@@ -79,6 +79,11 @@ def serialize_book(market_book: Any, depth: int = 3) -> Dict[str, Any]:
         "tv": getattr(market_book, "total_matched", None),
         "runners": runners,
     }
+    # K1 (26/09): marcatore esplicito della valuta delle size (book dello stream
+    # convertito da Betfair.stream.valuta). Assente = file storico, size in GBP.
+    if getattr(market_book, "size_gbp_convertite", None) is True:
+        out["valuta"] = getattr(market_book, "valuta", None)
+    return out
 
 
 class MarketRecorderStrategy(BaseStrategy):

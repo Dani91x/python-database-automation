@@ -54,6 +54,7 @@ from .. import avvio_app as _aa
 from .. import ladder_canale as _lcad
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
+from .. import valuta as _valuta
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
 from ..runner_lifecycle import (
     VERDETTO_ATTENDI,
@@ -2625,6 +2626,7 @@ def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
 
 def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) -> List[str]:
     trading = build_client(login=True)
+    _valuta.CAMBIO.avvia(trading)   # K1 (26/09): cambio GBP->EUR, mai un'eccezione
     session = TennisLiveSession(trading)
     session.context_api_client = trading  # per board_worker (REST leggero)
     # FASE A (16/09) — all'avvio NUOVO dell'app nessun bot tennis resta armato:
@@ -2736,6 +2738,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 fields=list(STREAM_FIELDS), ladder_levels=LADDER_DEPTH
             )
             framework = Flumine(client=client)
+            # K1 (26/09): size/volumi dello stream in GBP -> EUR, PRIMO middleware
+            _valuta.monta_su_flumine(framework)
             _wire_paper_execution(framework, mode)
             # T1 (24/09) - in LIVE si AFFIANCA al client reale un client SIMULATO,
             # come nel runner calcio (F0): i bot dichiarati PAPER piazzano su di lui
