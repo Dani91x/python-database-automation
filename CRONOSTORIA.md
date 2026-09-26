@@ -3372,3 +3372,20 @@ mercati_seguiti 179 (manuali 26, auto 153), sottoscritti 179, eventi_auto 41, co
 tutti gli 8 canali pubblicano. Delegato ordini/schede riattivato (seconda passata «porte accese»: 7.2.3-7.2.8, 7.2.11, 7.9.2.B, 7.5.7).
 Reperto d'uso di B: dopo l'avvio «solo tennis» il pulsante «avvia» di base non compare finché gli effettivi del servizio non si aggiornano
 (= R-E2E-1). Prossimo: 2° ciclo del freno (B), consegne dei 6 cantieri fix.
+**h18:35 — riavvio 2, primi esiti (delegato, verificati da me a DB)**: strada VIA CANALE OK (Omega 125-128, Safe 348/349 con canale_inviato/ack; specchio `betfair_live_orders` 6 righe paper EXECUTION_COMPLETE awlq9000000001-6, tutte `source='runner'` → identità del bot persa nello specchio; coda DB 0 righe dalle 15:10Z). Reperti nuovi: alert 511 15:26:53Z «trade journal KO (ordini NON impattati)»: insert su `betfair_live_journal` rifiutato dal check `side` (riga 703) → giornale incompleto; `canale_ack_seq` duplicato su omega-t124 e safe-t348; «runner_non_agganciato» subito dopo l'accensione (Omega brucia 1 tentativo su 3 = R-F2-12); Omega 127 deciso a 65 riempito a 60 (`omega_trades.price` = medio abbinato, audit tiene 65). Mike 5070-5075 regolati 14:54Z, netti 1,51/1,39 corretti, nessun doppio ordine (primo KO del delegato = falso rosso del suo script). **2° FRENO previsto 16:10Z (18:10 locali), rilascio ~16:22Z**, comunicato ad admin-26.
+**h18:45 — divisione confermata con admin-26 (7° cantiere «motore ordini», suo)**: side normalizzato all'ingresso dal canale + difesa in `_journal_scrivi`; source='runner' → nome del bot nello specchio; primo comando a mercato non agganciato = «in_aggancio» servito all'arrivo del mercato (nessun tentativo bruciato); ack_seq per attore. Lato bot (mio) invariato per questi; il mio FIX-A resta su R-F2-12 (rifiuti del FRENO ≠ tentativi). Freno 16:10Z: ok da admin-26.
+**h18:05 — STRADA UNICA VIA CANALE CERTIFICATA IN PAPER (riavvio 2, porte accese)** (delegato ordini/schede seconda passata, referto
+`ADMIN26_ORDINI_SCHEDE.md` §«Riavvio 2»; RIFATTO DA ME con `sonda_ordini_riavvio2.py`): 13 ordini Omega t124-t129 / Safe t348-t349 /
+Safe tennis t346-t352: ref coerente 13/13, prezzo+size comando = ordine 11/11, comandi con età 98-137 ms (uno 2457), ordine flumine
+paper dopo bet delay 3,3-5,6 s, 8/8 con libro registrato a 0 tick, FOK t351 ucciso correttamente; 0 `paper_fill_fallback`, 0
+`follow_assente`, coda DB 0 righe, 50 `live_follow` origine='auto', auto-follow con attori omega+safe, 43 eventi auto, 0 espulsi.
+§7.2.1-3, 7.2.5-7, 7.2.9-11, 7.9.2.B/C, 7.9.5.D/E3, 7.5.8 PASS; 7.2.4 parziale (canale_fase vuota/errata); 7.2.8 2/3 (t124 scaduto a
+3000 ms in aggancio, rifiuto dichiarato, ripetizione t126 ok); 7.2.12/7.5.7/7.9.2.E NC (clic/riavvio). REPERTI NUOVI (→ cantiere
+motore ordini, 7° delegato): R11 MONEY-CRITICAL latente: i ref interni ripartono da `awlq9000000000` a ogni avvio
+(`live_order_worker.py:3087`, tennis `:1302`) e lo specchio aggiorna per (mode, client_order_ref) (`db.py:572-577`) → in LIVE dopo un
+riavvio i primi ordini sovrascriverebbero righe vere (oggi awlq9000000000 = riga LIVE del 10/07 id 37551): DA DIRE ALL'UTENTE PRIMA
+DI OGNI LIVE; R9 source='runner' (calcio) / 'manual' (tennis, `tennis_live_order_worker.py:960`) invece del nome del bot; R10
+canale_fase 'abbinato_parziale' su 3/3 abbinati; JOURNAL KO alert 511 = lato maiuscolo dal canale contro CHECK minuscolo
+(`live_order_worker.py` `_journal_scrivi`); aggancio: timeout 3000 ms troppo corto (riusciti in 1113/2176 ms). Per B: R8 Omega in paper
+senza FOK (`omega_service.py:2892`) ≠ live. DESIGN per l'utente: tetto 180 mercati SATURO (24 partite del feed fuori) → servono più
+connessioni di mercato per «tutte le partite idonee». Freno 2° ciclo alle 16:10Z (B).
