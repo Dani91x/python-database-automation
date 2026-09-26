@@ -463,6 +463,25 @@ def _order_client_kwargs(session_paper: bool) -> Dict[str, Any]:
     }
 
 
+def mantieni_sessione(trading: Any, stop_flag: Any, *, nome: str = "scalper",
+                      periodo_s: float = 600.0, passo_s: float = 5.0,
+                      ora: Any = None) -> Any:
+    """KEEP-ALIVE della sessione .it della sessione scalper (FIX-C, 26/09).
+
+    Una keepAlive ogni ``periodo_s`` a regime (come prima: 600 s); dopo un
+    fallimento il custode (``auth.CustodeSessione``) ritenta con backoff
+    15/30/60 s e rifa' il login se la sessione e' morta, cosi' place, cancel,
+    force-flat e la riconnessione degli stream flumine (che rilegge il token
+    dal client) ripartono da soli dopo una caduta di rete. Gira finche'
+    ``stop_flag`` non e' alzato; ritorna il custode (per i test)."""
+    from ..auth import CustodeSessione
+
+    custode = CustodeSessione(trading, periodo_s=periodo_s, nome=nome, ora=ora)
+    while not stop_flag.wait(passo_s):
+        custode.tick()
+    return custode
+
+
 def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
                           market_ids: List[str], session_paper: bool,
                           framework: Any = None) -> None:
@@ -1122,12 +1141,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # KEEP-ALIVE sessione .it (best practice 16/07): il token REST scade
         # in ~20 min e le chiamate API NON lo estendono; senza rinnovo lo
         # sweep di emergenza sul crash (LIVE) fallirebbe proprio quando serve.
-        def _keepalive_loop() -> None:
-            from ..auth import keep_alive as _ka
-            while not stop_flag.wait(600.0):
-                _ka(trading)
-
-        threading.Thread(target=_keepalive_loop, daemon=True,
+        # FIX-C (26/09): prima ``wait(600)`` + ``auth.keep_alive`` che ingoia
+        # l'errore: un keepAlive caduto a rete giu' si ritentava dopo 600 s,
+        # cioe' sulla scadenza dei 20', e nessuno rifaceva il login (nemmeno il
+        # worker di flumine: con keepAlive KO non arriva mai a ``login()``).
+        # Ora il custode: stessa cadenza a regime, ritenti con backoff e login.
+        threading.Thread(target=mantieni_sessione, args=(trading, stop_flag),
+                         kwargs={"nome": f"scalper-{ev}"}, daemon=True,
                          name=f"keepalive-{ev}").start()
 
         # SPECCHIO ORDINI → betfair_live_orders (regola specchio 16/07): le

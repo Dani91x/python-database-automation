@@ -242,12 +242,22 @@ def ferma_sessioni_al_nuovo_avvio(db: Any, boot_id: Optional[str] = None) -> Lis
 
     Le righe di QUESTO avvio e quelle con un heartbeat fresco restano come sono.
     """
+    esito = controllo_avvio(db, boot_id)
+    return [] if esito is None else esito
+
+
+def controllo_avvio(db: Any, boot_id: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
+    """Il controllo d'avvio vero e proprio. ``None`` = NON concluso (lettura
+    KO: DB muto o rete giu' all'avvio) e va ritentato; una lista (anche vuota)
+    = concluso. FIX-C (26/09): prima un KO della lettura valeva "fatto" e,
+    tornata la rete, le righe 'requested' di un avvio precedente diventavano
+    sessioni vere - l'opposto di "all'avvio nessun bot opera"."""
     boot = AA.boot_id_ambiente() if boot_id is None else str(boot_id or "").strip()
     try:
         righe = db.controls()
     except Exception:  # noqa: BLE001 — mai bloccare l'avvio per una select
-        logger.exception("[scalper-svc] controllo d'avvio: lettura KO")
-        return []
+        logger.exception("[scalper-svc] controllo d'avvio: lettura KO (ritento al prossimo giro)")
+        return None
     fermate: List[Dict[str, Any]] = []
     ora = _now_iso()
     for r in AA.righe_da_fermare(righe, boot):
@@ -678,6 +688,18 @@ def _stopping_zombie(row: Dict[str, Any]) -> bool:
     return age is None or age > ORPHAN_HEARTBEAT_S
 
 
+def orfane_giudicabili(db_sano_dal: Optional[float], adesso: float) -> bool:
+    """FIX-C (26/09): si puo' dichiarare una sessione orfana/zombie SOLO se il
+    supervisore legge il DB senza errori da almeno ORPHAN_HEARTBEAT_S.
+
+    Durante una caduta di rete le sessioni non riescono a scrivere il battito:
+    appena la rete torna i battiti sono tutti "vecchi" e, dopo un riavvio del
+    supervisore (``children`` vuoto), una sessione VIVA veniva messa in 'error'
+    - cioe' force-flat e stop di una sessione sana. Aspettando un minuto di DB
+    sano i battiti hanno il tempo di tornare (uno ogni 5 s)."""
+    return db_sano_dal is not None and adesso - db_sano_dal >= ORPHAN_HEARTBEAT_S
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -696,7 +718,13 @@ def main() -> None:
                 "Kill-switch: file %s", KILL_FILE)
     # FASE A (16/09) — PRIMA del primo giro di poll: se l'app e' stata riaperta,
     # le righe 'requested' di ieri NON devono diventare sessioni nuove.
-    ferma_sessioni_al_nuovo_avvio(db)
+    # FIX-C (26/09): se la lettura fallisce (rete giu' all'avvio) il controllo
+    # si ritenta a ogni giro e fino ad allora NESSUNA sessione si avvia.
+    avvio_concluso = controllo_avvio(db) is not None
+    # FIX-C: da quando il supervisore legge il DB senza errori (None = mai o
+    # errore all'ultimo giro): solo dopo ORPHAN_HEARTBEAT_S di DB sano si
+    # giudicano orfane/zombie le righe senza figlio registrato.
+    db_sano_dal: Optional[float] = None
     # 25/09 - AUTO-MODE + CANALE 47338. La guardia d'avvio dell'interruttore
     # globale e' attiva SOLO qui (processo di servizio): finche' il controllo
     # d'avvio non riesce l'auto-mode non arma niente.
@@ -753,7 +781,12 @@ def main() -> None:
                 logger.info("[scalper-svc] sessione %s terminata (exit=%s)",
                             ev, code)
 
+            if not avvio_concluso:
+                avvio_concluso = controllo_avvio(db) is not None
             righe_attive = db.controls()
+            if db_sano_dal is None:
+                db_sano_dal = time.time()
+            giudicabili = orfane_giudicabili(db_sano_dal, time.time())
             # 25/09 - le righe appena lette escono sul canale (se acceso) e
             # l'auto-mode decide su QUESTE (nessuna lettura in piu')
             pubblica_sessioni(db, righe_attive)
@@ -774,7 +807,7 @@ def main() -> None:
                 ev = str(row["event_id"])
                 status = row["status"]
                 alive = ev in children and children[ev].poll() is None
-                if sessione_da_avviare(row, alive, freno):
+                if avvio_concluso and sessione_da_avviare(row, alive, freno):
                     children[ev] = _spawn(ev)
                     logger.info("[scalper-svc] avviata sessione %s (pid=%s, "
                                 "mode=%s dry=%s stake=%s)", ev,
@@ -785,10 +818,10 @@ def main() -> None:
                     # (heartbeat fermo). Un figlio di un supervisore precedente
                     # (post-restart) e' vivo ma non registrato: deve vedere
                     # 'stopping' da solo e chiudere flat.
-                    if _stopping_zombie(row):
+                    if giudicabili and _stopping_zombie(row):
                         db.set_control(ev, status="stopped",
                                        stopped_at=_now_iso())
-                elif status in ("running", "arming") and not alive:
+                elif status in ("running", "arming") and not alive and giudicabili:
                     age = _hb_age_s(row)
                     if age is not None and age > ORPHAN_HEARTBEAT_S:
                         logger.warning("[scalper-svc] %s orfana (hb %.0fs, "
@@ -798,6 +831,7 @@ def main() -> None:
                                        stopped_at=_now_iso())
         except Exception:  # noqa: BLE001
             logger.exception("[scalper-svc] errore nel loop di polling")
+            db_sano_dal = None   # FIX-C: il DB non e' "sano" finche' un giro non riesce
         time.sleep(POLL_S)
 
 

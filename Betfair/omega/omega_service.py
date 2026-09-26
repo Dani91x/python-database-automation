@@ -7671,6 +7671,9 @@ _SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
 # non è idempotente oltre i 60s di de-dup Betfair, quindi il loop non deve MAI
 # arrivare a un place con la sessione scaduta contando sul retry.
 KEEPALIVE_EVERY_S = 600.0
+# FIX-C (26/09): dopo un keepAlive FALLITO (rete giu') si ritenta fra 60 s,
+# non fra un periodo intero.
+KEEPALIVE_RITENTO_S = 60.0
 
 
 def _call_windowed(fn, since_iso: str):
@@ -7693,8 +7696,14 @@ def _maybe_keepalive(market, last_ts: float, *, now_ts: float) -> float:
         try:
             ka()
         except Exception as ex:  # noqa: BLE001 — mai fermare il loop per un keepAlive
-            logger.warning("[omega] keepAlive proattivo KO (retry reattivo resta): %s",
-                           str(ex)[:160])
+            # FIX-C (26/09): un keepAlive FALLITO non vale come fatto. Prima si
+            # tornava ``now_ts`` e il tentativo dopo arrivava fra 600 s: con la
+            # rete giu' proprio all'ora del keepAlive la sessione .it (20') poteva
+            # scadere prima del successivo. Si ritenta fra KEEPALIVE_RITENTO_S
+            # (nessuna chiamata in piu' a regime: solo dopo un KO).
+            logger.warning("[omega] keepAlive proattivo KO, ritento fra %.0fs: %s",
+                           KEEPALIVE_RITENTO_S, str(ex)[:160])
+            return now_ts - KEEPALIVE_EVERY_S + KEEPALIVE_RITENTO_S
     return now_ts
 
 

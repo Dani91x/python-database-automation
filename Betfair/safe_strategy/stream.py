@@ -115,6 +115,24 @@ def plan_shards(ranked_ids: List[str], max_conns: int, per_conn: int) -> List[Li
     return out
 
 
+def _descrivi_errore_stream(e: BaseException) -> str:
+    """Tipo dell'errore + il codice Betfair se c'e' (NO_SESSION, ...), mai il
+    messaggio intero: e' cio' che va nello stato, letto da tutti."""
+    nome = type(e).__name__
+    testo = str(e).upper()
+    for codice in ("INVALID_SESSION_INFORMATION", "NO_SESSION", "MAX_CONNECTION_LIMIT_EXCEEDED",
+                   "SUBSCRIPTION_LIMIT_EXCEEDED", "NOT_AUTHORIZED", "TIMEOUT"):
+        if codice in testo:
+            return f"{nome}: {codice}"
+    if "GETADDRINFO" in testo:
+        return f"{nome}: getaddrinfo failed"
+    if "CLOSED BY SERVER" in testo:
+        return f"{nome}: connection closed by server"
+    if "TIMED OUT" in testo:
+        return f"{nome}: timed out"
+    return nome
+
+
 class _HealthListener:
     """Wrapper che marca la salute del socket su OGNI messaggio (heartbeat incluso).
     Istanzia il vero StreamListener di betfairlightweight in modo pigro (import
@@ -150,6 +168,12 @@ class StreamShard:
         # shard sta davvero servendo quote
         self._last_book_mono = 0.0
         self.books = 0
+        # FIX-C (26/09): quante volte la connessione e' caduta e perche'
+        # (solo il tipo e un estratto senza dati di sessione): il 26/09 lo
+        # shard e' rimasto a ``subscribed=0`` per 4 ore e lo stato non diceva
+        # che ogni riconnessione falliva per la sessione scaduta.
+        self.riconnessioni = 0
+        self.ultimo_errore: Optional[str] = None
         self._last_resub = 0.0
         self._lock = threading.Lock()
         # serializza la risottoscrizione "a caldo" con la ricostruzione del
@@ -308,6 +332,8 @@ class StreamShard:
             "eta_book_s": eta(self._last_book_mono),
             "eta_msg_s": eta(self._last_msg_mono),
             "eta_resub_s": eta(self._last_resub),
+            "riconnessioni": self.riconnessioni,
+            "ultimo_errore": self.ultimo_errore,
         }
 
     def drain(self) -> List[Any]:
@@ -355,6 +381,7 @@ class StreamShard:
                 self._stream = stream
                 self._subscribed = set(ids)
                 self._last_resub = time.monotonic()
+                self.ultimo_errore = None
                 logger.info(
                     "[safe-scan] stream#%d ATTIVO: %d mercati sottoscritti", self.index, len(ids)
                 )
@@ -368,6 +395,9 @@ class StreamShard:
                 stream.start()  # blocca fino a stop()/errore di rete
             except Exception as e:  # noqa: BLE001 - riconnessione con backoff
                 logger.warning("[safe-scan] stream#%d KO: %s", self.index, str(e)[:140])
+                self.ultimo_errore = _descrivi_errore_stream(e)
+            if not self._stop:
+                self.riconnessioni += 1
             with self._io_lock:
                 self._stream = None
                 self._subscribed = set()

@@ -536,7 +536,13 @@ def test_keepalive_ko_non_ferma_il_loop():
             raise RuntimeError("sessione giù")
 
     last = S._maybe_keepalive(_Boom(), float("-inf"), now_ts=5.0)
-    assert last == 5.0                                   # KO assorbito, timestamp avanzato
+    # KO assorbito (il loop non muore). FIX-C (26/09): il timestamp NON avanza di
+    # un periodo intero - prima ``last == 5.0`` e il ritentativo arrivava dopo
+    # 600 s, oltre la vita della sessione .it se la rete cadeva al keepAlive.
+    assert last == 5.0 - S.KEEPALIVE_EVERY_S + S.KEEPALIVE_RITENTO_S
+    boom = _Boom()
+    assert S._maybe_keepalive(boom, last, now_ts=5.0 + S.KEEPALIVE_RITENTO_S - 1) == last
+    assert S._maybe_keepalive(boom, last, now_ts=5.0 + S.KEEPALIVE_RITENTO_S) != last
 
 
 def test_keepalive_market_senza_metodo_no_crash():

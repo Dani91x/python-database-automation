@@ -78,11 +78,16 @@ logger = logging.getLogger("safe.bot")
 SAFE_STRATEGY_REF = "safe"
 _SAFE_REFS_STORICI = ("omega",)
 _SAFE_PREFISSO_ORDINE = "safe-"
+# FIX-C (26/09): dal 25/09 gli ordini TENNIS di Safe portano ``safe_tennis-t<id>``
+# (``porta_ordini.ref_ordine``). Con il solo ``safe-`` la riconciliazione di un
+# place REST a esito ignoto (timeout, rete giu') non vedeva l'ordine tennis vero
+# e chiudeva la riga come ``reconcile_ordine_assente``.
+_SAFE_PREFISSI_ORDINE = (_SAFE_PREFISSO_ORDINE, "safe_tennis-")
 
 
 def _solo_ordini_di_safe(righe: Any) -> list:
     return [r for r in (righe or [])
-            if str((r or {}).get("customer_order_ref") or "").startswith(_SAFE_PREFISSO_ORDINE)]
+            if str((r or {}).get("customer_order_ref") or "").startswith(_SAFE_PREFISSI_ORDINE)]
 
 
 class _MercatoSafe:
@@ -9716,6 +9721,31 @@ def _attesa_con_giro_veloce(interval: float, aperte: int,
                 return True
 
 
+def _control_per_il_giro(db: Any) -> dict:
+    """FIX-C (26/09): il control che il LOOP usa per i parametri del giro.
+
+    Prima il loop leggeva ``safe_strategy_control`` da solo, FUORI dal ramo
+    degradato di ``run_once``. Con Supabase giu' (DNS, 503,
+    timeout) la lettura esplodeva qui, il giro saltava intero e la PROTEZIONE
+    pensata apposta in ``run_once`` (ultimo control noto: riconciliazione,
+    uscite, settlement; niente nuovi ingressi) non partiva mai: per tutta la
+    caduta le posizioni aperte restavano senza gestione.
+    Adesso: lettura riuscita = come prima; lettura fallita con un control gia'
+    noto = si prosegue con quello (e ``run_once``, che rilegge, degrada da
+    sola); lettura fallita senza nulla in memoria = l'errore sale come prima
+    (non c'e' niente da proteggere che si conosca).
+    """
+    try:
+        return db.read_control() or {}
+    except Exception as ex:  # noqa: BLE001 - si decide qui sotto
+        noto = _LAST_CONTROL.get("value")
+        if noto is None:
+            raise
+        logger.warning("[safe.bot] read_control KO nel loop (%s): giro in PROTEZIONE "
+                       "con l'ultimo control noto", type(ex).__name__)
+        return dict(noto)
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -9762,7 +9792,7 @@ def main() -> None:
                 # giro, e fino ad allora nessuna apertura.
                 if _GUARDIA_AVVIO.blocca_aperture:
                     ferma_al_nuovo_avvio()
-                ctrl = _real_db.read_control() or {}
+                ctrl = _control_per_il_giro(_real_db)
                 params = resolve_params(ctrl.get("params"), engine_mod=engine_mod)
                 interval = float(params.get("poll_interval_s") or 2.0)
                 # M-30: "Salva" dei parametri → i MODELLI si ricostruiscono a

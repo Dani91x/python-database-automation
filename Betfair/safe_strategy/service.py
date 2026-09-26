@@ -55,6 +55,7 @@ from contextlib import contextmanager
 from typing import Any, Deque, Dict, List, Optional, Sequence
 
 from Betfair.stream.auth import build_client, keep_alive, safe_logout
+from Betfair.stream.auth import CustodeSessione
 from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
 from Betfair.stream.single_instance import acquire_single_instance_lock
 from Betfair.stream import valuta as _valuta
@@ -268,6 +269,119 @@ def _catalogue_window_iso() -> "tuple[str, str]":
     return start.isoformat(), end.isoformat()
 
 
+# ---------------------------------------------------------------------------
+# FIX-C (26/09): il CAMBIO DI FONTE del feed si DICE (scanner_stato + live_alerts)
+# ---------------------------------------------------------------------------
+# Il 26/09 dalle 10:42:45Z lo scanner e' rimasto in ``source=rest`` fino a fine
+# giornata e l'unico a saperlo era un campo della riga di stato. Il ripiego e il
+# rientro diventano due avvisi in ``live_alerts``, UNO per episodio:
+#   * ripiego: la fonte e' ``rest`` da almeno _RIPIEGO_MIN_S di fila (uno scatto
+#     di pochi secondi - un mercato core illiquido per 30 s, visto alle 09:21Z -
+#     non e' una caduta del feed e non deve accendere un allarme);
+#   * rientro: dopo un ripiego avvisato, ``stream`` da almeno _RIENTRO_MIN_S;
+#   * un nuovo ripiego entro _RIPIEGO_PAUSA_S dall'ultimo rientro va solo nello
+#     stato (un feed che sfarfalla non riempie la coda degli avvisi).
+_RIPIEGO_MIN_S = 30.0
+_RIENTRO_MIN_S = 10.0
+_RIPIEGO_PAUSA_S = 300.0
+# all'avvio (anche dopo un riavvio del watchdog) lo stream nasce dopo il warm-up
+# dei cataloghi: finche' non ha mai servito, il REST non e' un "ripiego" per
+# questo tempo. Oltre, se lo stream non e' mai partito, lo si dice.
+_AVVIO_GRAZIA_S = 180.0
+_AVVISI_IN_ATTESA_MAX = 20
+
+
+class SorvegliaFonte:
+    """Macchina pura (nessun I/O, orologio passato dal chiamante) che osserva
+    la fonte a ogni giro e restituisce un avviso da scrivere, o None."""
+
+    def __init__(self) -> None:
+        self.attuale: Optional[str] = None
+        self.dal: Optional[float] = None
+        self.ultimo_cambio: Optional[Dict[str, Any]] = None
+        self._in_ripiego = False          # ripiego in corso (>= _RIPIEGO_MIN_S)
+        self._avvisato = False            # quel ripiego e' andato in live_alerts
+        self._rest_dal: Optional[float] = None
+        self._ultimo_rientro: Optional[float] = None
+        self.ripieghi = 0
+        self.motivo: Optional[str] = None
+        self._inizio: Optional[float] = None
+        self._visto_stream = False
+
+    def osserva(self, fonte: str, adesso: float, motivo: Optional[str] = None
+                ) -> Optional[Dict[str, str]]:
+        if self._inizio is None:
+            self._inizio = adesso
+        if fonte != self.attuale:
+            if self.attuale is not None:
+                self.ultimo_cambio = {"da": self.attuale, "a": fonte, "t": adesso}
+            self.attuale = fonte
+            self.dal = adesso
+        if fonte == "rest":
+            if motivo:
+                self.motivo = motivo
+            if self._rest_dal is None:
+                self._rest_dal = adesso
+            # all'avvio lo stream parte dopo il catalogo: finche' non ha mai
+            # servito si concede _AVVIO_GRAZIA_S prima di chiamarlo ripiego
+            in_grazia = (not self._visto_stream and self._inizio is not None
+                         and adesso - self._inizio < _AVVIO_GRAZIA_S)
+            if (not self._in_ripiego and not in_grazia
+                    and adesso - self._rest_dal >= _RIPIEGO_MIN_S):
+                self._in_ripiego = True
+                self.ripieghi += 1
+                self._avvisato = not (self._ultimo_rientro is not None
+                                      and adesso - self._ultimo_rientro < _RIPIEGO_PAUSA_S)
+                if not self._avvisato:
+                    return None
+                return {
+                    "level": "WARN", "code": "FEED_RIPIEGO_REST",
+                    "message": (f"Feed unico (scanner) in RIPIEGO REST da "
+                                f"{adesso - self._rest_dal:.0f}s: "
+                                f"{self.motivo or 'lo stream non consegna quote'}. "
+                                "I bot vedono source=rest nello stato; il rientro "
+                                "sullo stream e' automatico."),
+                }
+            return None
+        # fonte == "stream"
+        self._visto_stream = True
+        self._rest_dal = None
+        if self._in_ripiego and self.dal is not None and adesso - self.dal >= _RIENTRO_MIN_S:
+            self._in_ripiego = False
+            self._ultimo_rientro = adesso
+            self.motivo = None
+            if not self._avvisato:
+                return None           # ripiego mai avvisato: il rientro resta nello stato
+            return {
+                "level": "INFO", "code": "FEED_RIENTRO_STREAM",
+                "message": "Feed unico (scanner) RIENTRATO sullo stream: quote di "
+                           "nuovo in tempo reale.",
+            }
+        return None
+
+    def stato(self, adesso: float) -> Dict[str, Any]:
+        cambio = None
+        if self.ultimo_cambio is not None:
+            cambio = {"da": self.ultimo_cambio["da"], "a": self.ultimo_cambio["a"],
+                      "eta_s": round(adesso - float(self.ultimo_cambio["t"]), 1)}
+        return {
+            "attuale": self.attuale,
+            "da_s": None if self.dal is None else round(adesso - self.dal, 1),
+            "in_ripiego": self._in_ripiego,
+            "motivo": self.motivo,
+            "ripieghi": self.ripieghi,
+            "ultimo_cambio": cambio,
+        }
+
+
+def _scrivi_avviso(level: str, code: str, message: str) -> None:
+    """Un avviso in ``live_alerts`` (import pigro: il modulo si importa anche
+    senza DB). Solleva: chi chiama tiene l'avviso in coda e ritenta."""
+    from Betfair.stream import db as _stream_db
+
+    _stream_db.insert_alert(level, code, message)
+
+
 class SportState:
     def __init__(self) -> None:
         self.catalogue_ts = 0.0
@@ -373,7 +487,17 @@ class Scanner:
         self.cs_catalogue_ts = 0.0
         self.ht_catalogue_ts = 0.0
         self.status_ts = 0.0
-        self.keepalive_ts = time.monotonic()
+        # FIX-C (26/09): la sessione Betfair del feed la tiene viva il CUSTODE
+        # (una keepAlive per periodo a regime; dopo un fallimento ritenta con
+        # backoff e rifa' il login se la sessione e' morta). Prima: keepAlive
+        # fallita = prossimo tentativo fra 900 s = sessione .it scaduta (20') =
+        # REST e stream senza sessione per ore (26/09, 10:42Z -> riavvio).
+        self.sessione = CustodeSessione(api_client, periodo_s=_KEEPALIVE_PERIOD_SEC,
+                                        nome="safe-scan")
+        # FIX-C: ripiego REST / rientro stream -> stato + live_alerts (una volta)
+        self.fonte = SorvegliaFonte()
+        self._avvisi_in_attesa: Deque[Dict[str, str]] = deque(maxlen=_AVVISI_IN_ATTESA_MAX)
+        self._avvisi_lock = threading.Lock()
         # CERT. 14/09 - quanto dura il giro e dove se ne va il tempo.
         # Finche' la pubblicazione dei prezzi sta dentro un giro lento, una
         # pagina che scrive "tempo reale" al trader gli mente.
@@ -1878,7 +2002,15 @@ class Scanner:
             # intervento. Nessuna scrittura in piu': viaggia sulla riga di stato
             # che si scrive comunque.
             "tick": self.crono.riassunto(),
+            # FIX-C (26/09): da quando c'e' la fonte attuale, l'ultimo cambio
+            # (ripiego REST / rientro stream) e lo stato della sessione Betfair
+            # (mai il token). Il 26/09 il feed e' rimasto in REST 4 ore e lo
+            # stato non diceva ne' da quando ne' perche'.
+            "fonte": self.fonte.stato(time.monotonic()),
+            "sessione": self.sessione.stato(time.monotonic()),
+            "avvisi_in_attesa": len(self._avvisi_in_attesa),
         }
+        self._scarica_avvisi()
         # lo STESSO payload che va (o andrebbe) sul database: nessuna proiezione,
         # nessun campo inventato per il canale. Anche in ``dry``, perche' in dry
         # l'unica differenza deve restare "non si scrive sul database".
@@ -1888,6 +2020,30 @@ class Scanner:
         else:
             scan_db.upsert_status(payload)
         self.status_ts = time.monotonic()
+
+    def _scarica_avvisi(self) -> int:
+        """Scrive in ``live_alerts`` gli avvisi in coda, nell'ordine. Il primo
+        che non passa (rete giu') ferma la scarica e resta in coda: si ritenta
+        al prossimo stato (ogni ~10 s), cosi' il ripiego nato a rete giu' arriva
+        comunque, una volta sola. In ``dry`` si scrive solo nel log. Non
+        solleva mai. Ritorna quanti avvisi sono usciti."""
+        usciti = 0
+        while True:
+            with self._avvisi_lock:
+                if not self._avvisi_in_attesa:
+                    return usciti
+                avviso = self._avvisi_in_attesa[0]
+            if not self.dry:
+                try:
+                    _scrivi_avviso(avviso["level"], avviso["code"], avviso["message"])
+                except Exception as e:  # noqa: BLE001 - resta in coda, si ritenta
+                    logger.warning("[safe-scan] avviso %s non scritto (ritento): %s",
+                                   avviso["code"], type(e).__name__)
+                    return usciti
+            with self._avvisi_lock:
+                if self._avvisi_in_attesa and self._avvisi_in_attesa[0] is avviso:
+                    self._avvisi_in_attesa.popleft()
+            usciti += 1
 
     # ------------------------------------------------------------- ciclo
     def any_hot_calcio(self) -> bool:
@@ -1907,6 +2063,7 @@ class Scanner:
             fn(*args, **kwargs)
         except Exception as e:  # noqa: BLE001 - mai fermare la pubblicazione dei fatti
             self.last_error = f"catalogo {label}: {type(e).__name__}: {str(e)[:120]}"
+            self.sessione.segnala_errore(e)   # FIX-C: sessione morta -> login al giro dopo
             logger.warning("[safe-scan] catalogo %s KO (riprovo al prossimo giro): %s",
                            label, str(e)[:140])
 
@@ -1915,9 +2072,9 @@ class Scanner:
         now = datetime.now(timezone.utc)
         self.crono.apri_giro(now_mono)
         try:
-            if now_mono - self.keepalive_ts > _KEEPALIVE_PERIOD_SEC:
-                keep_alive(self.client)
-                self.keepalive_ts = now_mono
+            # FIX-C: una keepAlive per periodo; dopo un KO ritenta con backoff
+            # e rifa' il login se serve (mai "fatto" su un tentativo fallito)
+            self.sessione.tick(now_mono)
 
             for sport, st in self.sports.items():
                 if now_mono - st.catalogue_ts > _CATALOGUE_TTL_SEC \
@@ -1931,6 +2088,7 @@ class Scanner:
                         # rispondeva (martellamento + feed fermo per tutti gli sport)
                         st.catalogue_fail_ts = now_mono
                         self.last_error = f"catalogo {sport}: {type(e).__name__}: {str(e)[:120]}"
+                        self.sessione.segnala_errore(e)   # FIX-C
                         logger.warning("[safe-scan] catalogo %s KO (riprovo fra %.0fs): %s",
                                        sport, _CATALOGUE_RETRY_SEC, str(e)[:140])
                     time.sleep(_REQ_DELAY)
@@ -1971,6 +2129,17 @@ class Scanner:
                 "stream" if (self.stream is not None and not in_allarme
                              and self.stream.serving()) else "rest"
             )
+            # FIX-C: ripiego/rientro si DICONO (stato + live_alerts, una volta).
+            # Solo col pool stream acceso: senza stream (collaudo, banco) la
+            # fonte e' REST per costruzione e non e' un ripiego.
+            if self.stream is not None:
+                motivo = (f"{len(in_allarme)} mercati core senza quote" if in_allarme
+                          else "lo stream non consegna book")
+                avviso = self.fonte.osserva(self.last_source, now_mono, motivo=motivo)
+                if avviso is not None:
+                    with self._avvisi_lock:
+                        self._avvisi_in_attesa.append(avviso)
+                    logger.warning("[safe-scan] %s: %s", avviso["code"], avviso["message"])
             any_inplay_c = any(
                 e.get("sport") == "calcio" and e.get("inplay") for e in self.events.values()
             )
@@ -1995,6 +2164,7 @@ class Scanner:
                         # a ogni tick (0,5 s) con Betfair già in difficoltà
                         st.books_ts = now_mono
                         self.last_error = f"book {sport}: {type(e).__name__}: {str(e)[:120]}"
+                        self.sessione.segnala_errore(e)   # FIX-C
                         logger.warning("[safe-scan] poll book %s KO (riprovo fra %.0fs): %s",
                                        sport, period, str(e)[:140])
                 else:
