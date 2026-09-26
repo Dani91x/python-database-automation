@@ -3244,3 +3244,23 @@ in_progress: retrain_models.yml» → 0 chiamate, 1299 lega-stagioni in coda; so
 Ogni giorno in cui il retrain gira, la finestra del mattino è persa. Correzione candidata: aggangiare il catchup anche alla FINE del
 Retrain (`workflow_run` su retrain_models) o attendere invece di fermarsi. Nota: `api_call_log` 749 > /status 649 alle 06:23Z
 (avviso previsto dal codice, api_quota.py:284, nessuna decisione alterata).
+**h12:50 — FASE 3 PAGINE (admin-26) PRIMA PASSATA, referto parziale** (delegato Opus, `AUDIT_2026-09-25/e2e_fase2/ADMIN26_FASE3_PAGINE.md`,
+banco `frontend/e2e_fase3_admin26/` con client «specchio» che blocca ogni scrittura; pagine VERE montate in jsdom, DOM vs
+ricalcolo indipendente `confronta_cr.py`). Esito: Control Room 38 PASS / 7 FAIL / 63 NC; Segui Live 14/1/48; Market Watch 6/1/2;
+Tennis Terminal 5/1/6. Rifatto da me: banco rilanciato (verde; scritture passate 0, bloccata 1 = Tennis Terminal), codice letto
+riga per riga per F-1/F-4/F-5/F-9/F-10/F-11, DB per F-6. **FAIL confermati** (nessuna correzione, per l'utente):
+F-1 P&L per bot «oggi —» per Omega/Mike mentre le Chiuse mostrano +0,95/+0,79 € (`useControlRoom.ts:2236`, KO §9-bis n.1).
+F-2 due verità sullo stesso denaro: barra = giorno di piazzamento (`useControlRoom.ts:1987-2010`), Chiuse = giorno di regolamento.
+F-3 tessera «giornata non ancora letta» con RPC riuscita a 0 righe (`useControlRoom.ts:1290`, `SplitSport.tsx:69`).
+F-4 tick di movimento col SEGNO INVERTITO su tutte le posizioni (`dettaglioRiga.ts:129-141`, ×−1 sul lay; il commento :113-116
+dice il contrario del vero: un LAY guadagna quando la quota SALE); «chiudi ora» in € invece giusto 6/6.
+F-5 «ingresso None-None» a video: `mike/service.py:3616` f-string senza guardia sui punteggi mancanti.
+F-6 proposta Safe #257 (24/09 16:03Z, partita finita) ancora `proposed` e mostrata oggi con «Piazza» (verificato da me sul DB).
+F-7 senza prezzo vivo «P mercato» = p_implied de-vig ma «Vantaggio» = p_model − 1/prezzo: 97,6 − 90,6 ≠ 5,8 a video.
+F-8 «vol. 0,00 €» su 16/17 partite: `mo_total_matched` 0/null nello scan (`safe_strategy/service.py:835` legge total_matched
+da un book che non lo porta) mentre il ladder dice Matched €559.
+F-9 banner Segui Live «CRITICAL modalità LIVE… ORDINI REALI» (alert 493) col modo effettivo paper: `runner.py:1608-1629` annuncia il
+TETTO del .env, non l'effettivo del DB (= M7 di B); più 100 alert non riconosciuti dal 13/09 senza data.
+F-10 Market Watch «LIVE · 5-7 6-2» su partita finita (`MarketWatch.tsx:419` usa solo `inplay`); `set_summary` omette il 3° set.
+F-11 Tennis Terminal scrive `tennis_follow_event` all'apertura (`TennisTerminal.tsx:112-117`, KO §9-bis confermato).
+Seconda passata in corso (canali accesi nel banco, ricalcoli mancanti, falsificazione del banco).
