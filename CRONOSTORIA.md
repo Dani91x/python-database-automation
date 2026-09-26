@@ -3324,3 +3324,12 @@ solo l'avvio del processo (`:622-627`); le partite fermate dal freno finiscono f
 non si riarmano. Residuo sniper 0,085 € = micro-residuo accettato per costruzione (`sniper_bot.py:649-662`), «NON flat dopo 30 s»
 confermato (`scalper_session.py:1318-1321`) con `error=null`. `betfair_live_orders` `source='scalper'` di oggi SPARITE alle 14:39Z
 (specchio azzerato dal riavvio del runner, `db.py:852` via `runner.py:1760`).
+**h16:55 — RUNNER CALCIO CIECO (reperto admin-26 14:45Z), misurato da me sulle registrazioni 47331**: dopo il riavvio 10:01Z il runner pubblica ladder vivi (~600/min, prezzi che cambiano, età 0,2-0,8 s) fino alle 10:42:36Z; poi ZERO ladder con battito vivo → subscription morta alle 10:41:41Z (alert 502 «muto da 14251 s» a 14:39:12Z), non rilevata per 4 h; ricostruzione 14:39Z senza dati (89 ladder in 8 min, alert 503). `live_now` in-play ferma a 10:02:49Z (48 righe mai ripulite dal 26/06: non discrimina). Tennis vivo (`tennis_live_now` 14:47Z, ladder 47332 distinti). Delegato di fase 2 caduto per ENOTFOUND e ripreso con ordini: freno 2° ciclo calcio SOSPESO fino al riavvio dell'app (utente), finestra NON CERTIFICATA «runner cieco» 10:41:41Z→riavvio, riscontro R1/R2/R7 di admin-26. Suite `certification/sessB` rilanciata da me con `vitest.cert.config.ts`: 20/20 verdi sul DB vero (23 min). Action 36227977240 (Today Predictions Backfill) ancora in corso dalle 07:50Z.
+**h16:58 — CORREZIONE R-STREAM-1 (registrazioni del 47331 di B)**: il runner calcio ha visto il mercato dalle 10:01Z alle 10:41:41Z
+(ladder ~3.000/5 min, prezzi che cambiano), poi ZERO dalle 10:42:36Z: la cecità parte alle 10:41:41Z = prima caduta di rete
+(12:41 locali, riferita dall'utente), non dal riavvio; ricostruzione 14:39Z: 89 ladder in 8 min, poi niente. Runner TENNIS vivo
+(tennis_live_now 14:47Z). Meccanismo da riscontrare col log su file al prossimo giro. **APP CHIUSA dall'utente alle 16:58**; su suo
+ordine testuale («fallo tu, io intanto chiudo l'app, poi la riavvio quando me lo dici») ho scritto nel `.env` le 4 porte via canale
+(righe 67-70): riavvio da PowerShell con console su `%TEMP%\alphascore_console.log`; poi B riaccende i bot in PAPER, 2° ciclo del
+freno e pezzi calcio via canale. 2° ciclo del freno SOSPESO fino al riavvio; tutto ciò che dipendeva dal runner calcio dalle 10:41:41Z
+è NON CERTIFICATO «runner cieco».
