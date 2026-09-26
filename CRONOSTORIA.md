@@ -3439,3 +3439,22 @@ follow scalper di oggi; mike_trades None-None; proposte Safe > 12 h); pulizia ki
 - **Migrazioni da applicare (utente, in ordine)**: `storico_esito_a_zero_2026-09-26.sql`, `omega_state_per_modalita_2026-09-26.sql`, `live_positions_senza_mercati_regolati_2026-09-26.sql`, `analytics_rpc_veloci_2026-09-26.sql` (PRIMA del job 03:23 UTC), `betfair_live_orders_source_bot_2026-09-26.sql` (admin-26); poi `VACUUM (ANALYZE)` matches e analytics_signals, `analytics_signals_kickoff_pulizia_2026-09-26.sql` (proposta), `select public.refresh_analytics_riepilogo();`; `npm run build` solo se riavvia a mano (main.js ricostruisce dist se stantio).
 - **Decisioni dell'utente**: R8 FOK Omega in paper; «quote ferme» non viste dai veti (FIX-C §7); R11 ref ordini che ripartono a ogni avvio (MAI live prima del fix); tetto 180 mercati saturo; riscrittura storia git (170 MB); posizione fantasma 14265; lista partite 00:00-02:00 Roma; riserva Omega/Mike con risposta persa; timeout PostgREST 120 s; doppio fill Safe paper.
 - **Prossimi passi**: (1) R-F2-21 firma senza numeri (admin-26); (2) F0 dai `_logs/` (`leggi_tempi_ordine`); (3) freno certificato su Omega/Safe/Mike/tennis con tentativi veri; (4) rimisurare Analytics/Ritardi dopo le migrazioni (< 4 s); (5) pulizia worktree dei delegati (junction: `cmd /c rmdir`, mai `--force`); (6) NC di fase 3 (86) e fase 2 (9) da chiudere prima di qualunque live.
+**h19:40 — CONSOLIDATO DI CHIUSURA (orologio PC)**. App viva dal riavvio 3 (19:07) con TUTTI i fix su master (`cf22d37`), 9 bot in PAPER
+dal 19:20-19:23 (B, «RIAVVIO 3»). **Certificato dai dati vivi in paper (mio controllo 19:34 + B)**: K2 log dei figli su file
+(`_logs/`, 9 file, 0 Traceback); F-9 alert 518 col modo effettivo; K1 cambio letto da listCurrencyRates 1,163 su runner
+calcio/tennis/scanner; FIX-C dal vivo: scanner in ripiego REST 31 s e RIENTRO sullo stream ×2 (alert 521-524); strada unica via canale:
+coda DB 0, 36 follow origine='auto' (28 STREAMING/8 CLOSED), ordini Safe via canale nello specchio EXECUTION_COMPLETE; watchdog col
+nome del modulo (alert 525-526: i due ricarichi di Mike fatti da me); Mike 5082 paper al best; scanner source=stream 180 mercati; tennis
+47332 ladder/now vivi; nessun alert di stallo/crash dei runner dal riavvio. Mike `loss_exit_deciso`: `8b0d04a` (una volta per
+decisione) → dal vivo ancora 75 righe/5 min perché il motivo porta i numeri → `cf22d37` (firma senza numeri + 5 min minimo), Mike
+ricaricato alle 19:35 col nuovo codice (da riverificare il ritmo). FIX PRESENTI MA ATTIVI SOLO DOPO LE MIGRAZIONI: source = nome bot
+nello specchio (oggi ancora 'runner': `betfair_live_orders_source_bot_2026-09-26.sql`); Safe per modalità, Live P&L, Analytics (B).
+Sessione B: FASE 3 sue pagine 311 campi: 27 KO corretti (8 attivi dopo migrazioni), 2 decisioni utente (R8 FOK Omega paper; lista
+partite 00:00-02:00 Roma); FASE 2: 50 controlli, 7 KO tutti chiusi su master (R-F2-2, C1, C2, R-F2-10, 12, 16/20, 21).
+**APERTI PER L'UTENTE (decisioni, non fix)**: quote ferme non viste dai veti (cancello decisionale); R8 Omega senza FOK in paper;
+tetto 180 mercati saturo (più connessioni di mercato); riscrittura storia git (170 MB di jsonl in b6c0eb6); posizione fantasma 14265;
+Omega riserva con risposta persa = fill inventato (`omega_service.py:3841-3879`) e Mike riserva pending per sempre; timeout PostgREST
+120 s; possibile doppio fill Safe paper (`execution.py:1143-1151`); canale_fase NULL sui terminali lato bot; EX_TRADED_VOL scanner;
+Match Replay in GBP; il `finally` del riavvio ordinato chiude i follow manuali. R11 (ref ordini a ogni avvio) È CORRETTO (`b0fe3b1`).
+**PUNTO DI RIPRESA**: app accesa, bot in paper, tutto pushato (master `cf22d37`); domani: applicare le migrazioni, verificare il catchup
+del mattino (log «ATTESA… ATTESA FINITA»), ricontrollare il ritmo di mike_activity, rifare 7.9.3.B per lega (O-4), decidere gli aperti.
