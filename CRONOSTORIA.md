@@ -3389,3 +3389,23 @@ canale_fase 'abbinato_parziale' su 3/3 abbinati; JOURNAL KO alert 511 = lato mai
 (`live_order_worker.py` `_journal_scrivi`); aggancio: timeout 3000 ms troppo corto (riusciti in 1113/2176 ms). Per B: R8 Omega in paper
 senza FOK (`omega_service.py:2892`) ≠ live. DESIGN per l'utente: tetto 180 mercati SATURO (24 partite del feed fuori) → servono più
 connessioni di mercato per «tutte le partite idonee». Freno 2° ciclo alle 16:10Z (B).
+**h18:55 — strada unica via canale riverificata da admin-26** (13 ordini Omega/Safe ref coerenti 13/13, 0 ripieghi istantanei, coda vuota, 50 follow auto, fill dopo bet delay 3,3-5,6 s, FOK Safe tennis t351 ucciso correttamente). Per me: R8 Omega paper SENZA FOK (`omega_service.py:2892`, FOK solo in live) → aggiunto al FIX-A con l'estensione di R-F2-12 (rifiuti freno/aggancio ≠ tentativi). Suoi (motore): journal side, source=nome bot, aggancio con timeout realistico, R11 client_order_ref che riparte da awlq9000000000 a ogni avvio (in LIVE sovrascriverebbe righe vere: DA DIRE ALL'UTENTE prima di ogni live), R10 canale_fase. Design per l'utente: tetto mercati 180 SATURO (24 partite del feed fuori) → più connessioni di mercato (limits.py pool).
+**h19:00 — 2° FRENO eseguito** (delegato, RigaFreno vera): TIRATO 16:10:59Z 1 clic, RILASCIATO 16:22:12Z al 3° clic (dopo 2 ancora tirato), order_mode sempre paper; evidenze `e2e_fase2/freno_r2/`. Nella finestra 0 righe nuove su omega/safe/mike_trades, tennis_live_orders, specchio, coda. OK certificati: tennis_swing 3 aperture RIFIUTATE col messaggio del kill-switch (riprova 5→10→20 s); scalper force-flat entro 2 s. R-F2-10 CONFERMATO: a freno tirato l'auto-mode dello scalper ha armato 2 sessioni nuove (36111427, 36109062 `requested`). NON certificati (nessun tentativo nella finestra): Omega (40 skip motivati), Safe (skip pre_ko_assente/book/spread; 7 proposte non piazzate), Mike (tetto 2/2 pieno: San Marino–Finlandia e Lettonia–Germania U21 LIVE_COVERED, 6 trade, 28,15 € esposizione → mancati ingressi 16:30-17:00Z motivati dal tetto), tennis flb/pro/scalper.
+**h18:45 — ORDINE DELL'UTENTE (18:20)**: «finite tutti i lavori, non c'è bisogno dei replay se stiamo usando i dati live in paper:
+certificate dai dati che riceviamo le operazioni in paper; alla fine ditemi cosa fare e lo stato attuale; voglio finire entro 2 ore
+massimo» → scadenza 20:15; niente replay: certificazione dai dati vivi in paper dopo il riavvio con i fix.
+**FIX INTEGRATI E PUSHATI su master, ognuno verificato da me** (test rilanciati su master, falsificazioni dei delegati rieseguite,
+mutazione mia per cantiere): `67c3ad4` stream stallo (rilevamento con qualunque mercato sottoscritto, battito a tee spento,
+escalation exit 75 dopo 180 s senza dati post-ricostruzione, follow non chiusi, guardie money-critical; tennis stall_worker; errori
+di rete nel ciclo idle non uccidono più il processo) + K2 log dei figli in `_logs/` da main.js + F-9 annuncio col modo effettivo +
+watchdog col nome del modulo + scalper (freno: non arma, motivo_blocco, riarmo al rilascio; origine='auto'; force-flat dichiarato)
++ Mike paper fill al best (R7) + catchup che ASPETTA il retrain (max 90 min) + atlante (O-1 fascia in gioco, O-3 una scrittura, O-4
+stagione_rif per lega) + Mike frame v4 (R-FA-2) e dossier con lega/id (R-FA-3): 99 test nuovi verdi, mutazione mia sul cancello
+storico dello stream 6 rossi; `0dbc127` tennis R-FA-1 (CLOSED scritto, chiusura a 600 s fuori feed con mercato non OPEN, tetto =
+armate vive) + F-11 Terminal senza follow al mount: 19+5 test, falsificazione 11/11; `78d9f65` K1 valuta GBP→EUR alla fonte
+(`Betfair/stream/valuta.py`, middleware per primo su runner calcio/tennis/scalper/scanner/banco, cambio da listCurrencyRates con cache
+e fallback): 22 test, mutazione mia «cambio=1,0» 9 rossi. In consegna: UI pagine (F-1..F-13, paper/live separati) e motore ordini
+(journal side, source=nome bot, aggancio, R11 ref univoco). Sanatoria DB dal referto scalper (origine='auto' sui follow di oggi):
+da applicare dall'utente. DA DIRE ALL'UTENTE: O-4 e R-FA-3 cambiano gli INPUT dei bot (pesi atlante, lega/forza per Mike), non le
+regole; i referti dei replay cambieranno (+16 % liquidità in EUR); Match Replay frontend tratta ancora i file curati come GBP.
+Prossimo: riavvio dell'app con i fix (~19:15), riaccensione in paper (B), 30 min di osservazione dai dati vivi, consolidato alle 20:00.
