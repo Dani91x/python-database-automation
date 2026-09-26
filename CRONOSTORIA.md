@@ -3214,3 +3214,18 @@ il reperto di B «SCALPER_CANALE non passato da main.js» NON è un KO.
 (7.1, 7.3, 7.9.1, 7.9.3, Opus); catchup/quota (7.9.4, Sonnet). I controlli con bot accesi (7.2, 7.5, 7.6, 7.7, 7.9.2,
 7.9.5-7) partono dopo l'ora di accensione comunicata da B (accende lei dalla Control Room con i comandi veri).
 Sessione B: delegato Z0 (bot fermi) + delegato FASE 3 pagine sue (Dashboard, Analytics, Omega/Safe/Mike, Live P&L).
+**h11:40 — ACCENSIONE BOT IN PAPER lanciata (delegato Opus con il banco della fase 1: Omega, Mike, Safe mappa tutta paper, 4 tennis, scalper; orari in `AUDIT_2026-09-25/e2e_fase2/ACCENSIONE_ORA.txt`); poi FASE 2 con bot accesi in sola lettura (Z4-Z7, Z13 freno, Z14, semantica A-F), referto incrementale `E2E_FASE2_BOT_PAPER_2026-09-26.md`. Z0 (bot fermi) in chiusura con letture datate prima dell'accensione; FASE 3 pagine sessione B in corso.
+**h11:17 — BOT ACCESI IN PAPER (orari locali):** Omega 11:10:26; Mike 11:11:56; Safe 11:13:20 (prima activate con la sola variante tennis: da chiarire) poi 11:16:16 con base/esatto/punta/tennis; tennis_scalper 11:16:50, tennis_pro 11:16:53, tennis_flb 11:16:56, tennis_swing 11:16:58 (stake 2); scalper in corso. Primo evento: Omega 11:11:30 `paper_fill_fallback follow_assente` su 36115980, lay 1 € a 80 su 1-3 al 51' (trade 119): KO candidato «strada non uniforme / auto-follow assente», in verifica (schede + ricalcolo V3).
+**h11:25 — TUTTI I BOT ACCESI IN PAPER**: scalper 11:17:58 (maker, stake 25 = default UI). Reperto d'uso (non KO di codice): «avvia in prova» dalla scheda TENNIS di Safe con Safe calcio già acceso riscrive variants=[tennis] e SPEGNE base/esatto/punta (`comandiBot.ts:89-99`, gesto «solo tennis» per costruzione): Safe calcio spento dalle 11:13:19 alle 11:16:16, poi riacceso dalla scheda calcio → trappola d'uso da portare all'utente (proposta: avviso in UI o gesto che non spegne il calcio).
+**h11:10-11:18 — BOT ACCESI IN PAPER dalla sessione B** (autorizzazione diretta dell'utente a B: «sì certo fate tutto il
+necessario SOLO PAPER ovviamente»; comandi veri della Control Room dal banco `frontend/e2e_fase2/accensione.e2e.test.tsx`;
+orari in `AUDIT_2026-09-25/e2e_fase2/ACCENSIONE_ORA.txt`): Omega 11:10:26, Mike 11:11:56, Safe 11:13:20 (SOLO variante
+tennis) → riaccesa 11:16:16 con base/esatto/punta/tennis (6/6 paper), tennis_scalper/pro/flb/swing 11:16:50-58 (stake 2),
+scalper 11:17:58 (maker, stake 25 = default UI). order_mode paper, kill_switch false, tetto live solo nel .env.
+Reperto d'uso (B, per l'utente, non KO di codice): «avvia in prova» dalla scheda TENNIS di Safe con il calcio acceso riscrive
+`variants=["tennis"]` e spegne base/esatto/punta (`comandiBot.ts:89-99`, gesto «solo tennis» per costruzione).
+Reperto mio (da chiudere, delegato ordini/schede + delegato di B): Omega trade 119 (event 36115980) 1 minuto dopo
+l'accensione: `paper_fill_fallback` reason `follow_assente` → lay paper 1 € a 80.0 sul runner 1-3 al minuto 51 →
+`skip proposta_uscita controparte_insufficiente`; nessuna riga `live_follow` origine='auto' oggi. Ramo letto da me:
+`omega_service.py:2531-2560`: con la porta di Omega SPENTA e il gate flumine paper KO (evento non seguito) il fill è quello di
+ripiego sul libro interno: limite delle porte non accese (NON CERTIFICATO), da rifare a porte accese.
