@@ -3354,3 +3354,13 @@ frame Mike, O-3 doppia scrittura. SESSIONE B (accettato): i suoi 29 KO di FASE 3
 max_attempts), M1-M8 dello Z0, resilienza di scanner/servizi/ponte tennis/scalper-service (watchdog in main.js: specifica sua,
 implemento io). Poi: certificazione mia (diff, test, falsificazione, replay rapidi in sequenza), integrazione su master, riavvio
 dell'app, riaccensione bot in paper (B), e2e di riscontro sui punti corretti, consolidato per l'utente.
+**h17:55 — pid 1380 chiarito**: `aggiorna_report.bat` avviato alle 16:42:59 da explorer.exe (doppio clic dell'utente) sulla COPIA nel worktree del delegato di fase 2 (cwd = worktree, log in `<worktree>\Betfair\betfair_matcher.log`): report_manager --skip-training (scrive `fixture_predictions`, 61 righe alle 16:59, e fogli Google; nessun ordine, nessun modello toccato), poi aggiorna_mm_sheets e betfair_full_odds, `pause` finale. Non toccato. Da dire all'utente: lanciarlo dalla radice del repo, non dai worktree. Delegato di fase 2 pronto per «riavvio 2» (registratore leggero, accensione_r2 con Safe nell'ordine giusto, verifica dei 6 trade Mike aperti 5070-5075); registratore del feed pesante spento per memoria.
+**h18:10 — RIAVVIO 2**: app riavviata dall'utente dall'icona alle 16:52:25 (nessuna console su file, K2: arriverà col logging da main.js di admin-26). Streaming OK (admin-26 17:03-17:04): 47331 ladder vivi, 47336 source=stream 263 mercati; RUNNER TENNIS crashato alle 15:04:20Z (alert 510, uptime 611 s) e rilanciato dal watchdog, ora vivo. VIA dato al delegato per la riaccensione in paper (sequenza di stamattina, Safe tennis prima poi calcio), poi Z0/Z4/B, verifica dei 6 trade Mike aperti, 2° freno in serata, Z14.
+**h17:08 — APP RIAVVIATA dall'utente alle 16:52:25 (dall'icona, non da PowerShell: nessuna console su file, K2 resta aperto fino al
+riavvio con i fix). Verifica mia dai canali (lettore puro 45 s): 47331 calcio 35 ladder/45 s, streaming=38 mercati, auto_follow acceso;
+47336 scanner source=stream (2 connessioni, 263 mercati); 9 bot `stopped`/`paper`, order_mode paper. R-CRASH-2: RUNNER TENNIS
+crashato alle 15:04:20Z (alert 510 «exit code 1, uptime 611s», il testo non dice quale runner), rilanciato dal watchdog (pid 7520,
+17:04:30); 47332 poi vivo (hello tennis PAPER, battiti; 0 ladder = nessun mercato armato a bot spenti). Crash di oggi: calcio 10:00:46Z
+(3858 s), calcio 14:46:15Z, tennis 15:04:20Z (611 s), tutti exit 1 senza traceback. «STREAMING OK» dato a B → riaccensione bot in
+paper (sezione «riavvio 2»). Il `.bat` del report giornaliero (pid 1380, 880 MB) è stato lanciato dall'utente col doppio clic sulla
+copia dentro un worktree della sessione B: innocuo, da lanciare dalla radice del repo.
