@@ -1,0 +1,18 @@
+{
+ "id": 1,
+ "kill_switch": false,
+ "max_exposure_per_selection": null,
+ "max_orders_per_min": null,
+ "order_poll_sec": null,
+ "risk_poll_sec": null,
+ "updated_at": "2026-09-26T16:22:12.132389+00:00",
+ "daily_loss_limit": null,
+ "max_exposure_per_event": null,
+ "max_exposure_per_league": null,
+ "order_mode": "paper",
+ "order_mode_updated_at": null,
+ "order_mode_updated_by": null,
+ "order_mode_boot_id": "muiidw2y-52965d87-972c-4f2f-877c-d11106f584a9",
+ "order_mode_tetto": "live",
+ "order_mode_tetto_at": "2026-09-26T14:54:26.636688+00:00"
+}

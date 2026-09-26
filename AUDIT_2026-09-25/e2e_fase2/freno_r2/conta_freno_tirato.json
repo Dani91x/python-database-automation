@@ -1,0 +1,127 @@
+{
+ "finestra": [
+  "2026-09-26T16:10:59Z",
+  "2026-09-26T16:21:30Z"
+ ],
+ "per_bot": {
+  "omega": {
+   "attivita_per_kind": {
+    "skip": 40,
+    "settle": 1
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "safe": {
+   "attivita_per_kind": {
+    "opportunita_non_piu_valida": 15,
+    "proposta_opportunita": 7,
+    "exit_hold": 1,
+    "skip": 5,
+    "diagnosi": 2
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "mike": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "tennis": {
+   "attivita_per_kind": {
+    "tennis_swing:place_rejected": 3,
+    "tennis_pro:modalita": 1,
+    "tennis_pro:superficie": 1,
+    "tennis_scalper:missione_blocca": 1,
+    "tennis_scalper:modalita": 1,
+    "tennis_swing:modalita": 1,
+    "tennis_flb:modalita": 1
+   },
+   "righe_col_freno": 3,
+   "esempi_freno": [
+    {
+     "ts": "2026-09-26T16:11:33.811721+00:00",
+     "kind": "place_rejected",
+     "bot": "tennis_swing",
+     "p": "{\"sel\": 19924823, \"side\": \"BACK\", \"size\": 2.0, \"price\": 1.56, \"motivo\": \"Order has violated: TENNIS_KILL_SWITCH Error: kill-switch ATTIVO: apertura RIFIUTATA (passano solo le chiusure)\", \"rifiuti\": 1, \"riprovo_fra_s\": 5.0}"
+    },
+    {
+     "ts": "2026-09-26T16:12:04.315765+00:00",
+     "kind": "place_rejected",
+     "bot": "tennis_swing",
+     "p": "{\"sel\": 19924823, \"side\": \"BACK\", \"size\": 2.0, \"price\": 1.87, \"motivo\": \"Order has violated: TENNIS_KILL_SWITCH Error: kill-switch ATTIVO: apertura RIFIUTATA (passano solo le chiusure)\", \"rifiuti\": 2, \"riprovo_fra_s\": 10.0}"
+    },
+    {
+     "ts": "2026-09-26T16:19:20.371396+00:00",
+     "kind": "place_rejected",
+     "bot": "tennis_swing",
+     "p": "{\"sel\": 19924823, \"side\": \"BACK\", \"size\": 2.0, \"price\": 1.61, \"motivo\": \"Order has violated: TENNIS_KILL_SWITCH Error: kill-switch ATTIVO: apertura RIFIUTATA (passano solo le chiusure)\", \"rifiuti\": 3, \"riprovo_fra_s\": 20.0}"
+    }
+   ]
+  },
+  "scalper": {
+   "attivita_per_kind": {
+    "info": 4,
+    "auto_armata": 2
+   },
+   "righe_col_freno": 2,
+   "esempi_freno": [
+    {
+     "ts": "2026-09-26T16:11:01.036402+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    },
+    {
+     "ts": "2026-09-26T16:11:04.329701+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    }
+   ]
+  }
+ },
+ "righe": {
+  "omega_trades": [],
+  "safe_strategy_trades": [],
+  "mike_trades": [],
+  "tennis_live_orders": [],
+  "betfair_live_orders": [],
+  "betfair_live_order_requests": [],
+  "scalper_control": [
+   {
+    "event_id": "36097764",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:02.981001+00:00",
+    "stopped_at": "2026-09-26T16:11:02.980967+00:00"
+   },
+   {
+    "event_id": "36091844",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:06.277245+00:00",
+    "stopped_at": "2026-09-26T16:11:06.277221+00:00"
+   },
+   {
+    "event_id": "36111427",
+    "status": "requested",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:13.546086+00:00",
+    "stopped_at": null
+   },
+   {
+    "event_id": "36109062",
+    "status": "requested",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:13.546086+00:00",
+    "stopped_at": null
+   }
+  ]
+ }
+}

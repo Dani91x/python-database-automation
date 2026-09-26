@@ -1,0 +1,127 @@
+{
+ "righe": [
+  [
+   "tennis_flb",
+   "running",
+   "paper",
+   2
+  ],
+  [
+   "tennis_pro",
+   "running",
+   "paper",
+   2
+  ],
+  [
+   "tennis_scalper",
+   "running",
+   "paper",
+   2
+  ],
+  [
+   "tennis_swing",
+   "running",
+   "paper",
+   2
+  ]
+ ],
+ "passi": [
+  "2026-09-26T15:30:53.415Z clic cr-avvia-paper-tennis_scalper («avvia in prova»)",
+  "2026-09-26T15:30:58.134Z clic cr-avvia-paper-tennis_pro («avvia in prova»)",
+  "2026-09-26T15:31:02.034Z clic cr-avvia-paper-tennis_flb («avvia in prova»)",
+  "2026-09-26T15:31:05.840Z clic cr-avvia-paper-tennis_swing («avvia in prova»)"
+ ],
+ "rpc_registro": [
+  {
+   "ts": "2026-09-26T15:30:53.436Z",
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_scalper",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "inviata"
+  },
+  {
+   "ts": "2026-09-26T15:30:58.137Z",
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_pro",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "inviata"
+  },
+  {
+   "ts": "2026-09-26T15:31:02.035Z",
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "inviata"
+  },
+  {
+   "ts": "2026-09-26T15:31:05.842Z",
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_swing",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "inviata"
+  }
+ ],
+ "rpc_clientVero": [
+  {
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_scalper",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 674
+  },
+  {
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_pro",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 189
+  },
+  {
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_flb",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 414
+  },
+  {
+   "rpc": "tennis_bot_service_activate",
+   "args": {
+    "p_bot_key": "tennis_swing",
+    "p_mode": "paper",
+    "p_stake": null,
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 236
+  }
+ ],
+ "bloccate": []
+}

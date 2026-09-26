@@ -174,3 +174,113 @@ della mattina (per il confronto col DB di Z14 servono i log).
 - tutti i NON CERTIFICATO della §2 che richiedono porte accese / clic / riavvii;
 - processo stoppato dal sistema per memoria bassa (non rilanciato oltre i 50 min chiesti): `sonda_ordini_ascolto.py`
   (run3 10:14-10:57Z); rilanciato 14:38Z per 50 min su richiesta del coordinatore (run4).
+
+
+---
+
+# Riavvio 2, porte accese (seconda passata, 26/09 15:37Z-15:48Z, sola lettura)
+
+App riavviata alle 16:52 locali con `SAFE_ORDINI_VIA_CANALE`, `OMEGA_ORDINI_VIA_CANALE`,
+`MOTORE_ORDINI_CANALE_TENNIS`, `SAFE_TENNIS_ORDINI_VIA_CANALE` = 1; accensioni in `ACCENSIONE_ORA.txt`
+«RIAVVIO 2» (Omega 15:16:04Z … scalper 15:33:12Z). Fonti: diario del motore (`_live_raw/_diario_ordini/2026-09-26.jsonl`
+e `/tennis/2026-09-26.jsonl`, sola lettura), DB (GET), registratore leggero `sonda_ordini_ascolto.py`
+(compatto, solo al cambio; file `canali_ordini/*_163904.jsonl` fino alle 15:29Z e `*_173735.jsonl` dalle 15:37Z,
+**buco 15:29-15:37Z**). Script nuovo: `sonda_ordini_riavvio2.py --json sonda_ordini_riavvio2_out.json`.
+
+## A. Trasversali
+
+| controllo | osservato | esito |
+|---|---|---|
+| nessun ripiego istantaneo | `omega_activity kind='paper_fill_fallback'` dopo 15:16Z: **0**; Safe `meta.fill` con `follow_assente`: **0**; tutti i trade aperti hanno `meta.fill='flumine_paper'` | **PASS** |
+| coda DB vuota | `betfair_live_order_requests` con `requested_at >= 15:16Z`: **0 righe** | **PASS** |
+| attività nuove | Omega: `canale_inviato`, `flumine_fill`, `flumine_no_fill`; Safe: `canale_inviato`, `canale_rifiutato`, `flumine_fill`, `flumine_no_fill`, `place_pending`, `place_retry` | coerente |
+| `live_follow origine='auto'` | **50 righe** (44 STREAMING, 6 CLOSED), la prima 36114438 creata 14:54:34Z | **PASS** (7.2.11) |
+| auto-follow (47331) | 15:42:33Z: `attori=["omega","safe"]`, feed 67 partite, `eventi_auto 43`, `mercati_seguiti 179/180` (auto 153 + manuali 26), `per_priorita {candidata 41, comando 2}`, `agganci_comando 2`, `espulsi 0`, `rifiuti_tetto 0`; massimo osservato **180** (mai oltre); `ultimo_errore="stream di mercato non ancora connesso"` (residuo dell'avvio) | **PASS** 7.2.10 (tetto rispettato e SATURO: 24 partite del feed restano fuori) |
+
+## B. Catena per ordine (13 ordini Omega/Safe/Safe-tennis dopo il riavvio)
+
+Colonne: comando sul canale (attore, TIF, età = `ts_ms - creato_ms`) · aggancio · ordine flumine (`cor`) ·
+specchio (`client_order_ref` = `ref_interno` awlq/awtq; placed/matched = dopo il bet delay simulato) ·
+riga del bot · libro del feed all'istante del match (Δ tick con `ticks_between` di produzione).
+
+| ref | comando | aggancio | ordine -> specchio | esito riga | libro al match | Δ |
+|---|---|---|---|---|---|---|
+| omega-t124 (VJS-KPV, lay AOHW 55) | omega, TIF null, 2457 ms | `in_aggancio` 15:21:21.100, **nessun book in 3000 ms**, rifiuto dichiarato 15:21:24.126 | nessun ordine | `error` | lay 55 (feed) | — |
+| omega-t125 (Cheltenham-Chesterfield, lay AOAW 48) | omega, null, 115 ms | già seguito | 15:26:50.576 -> specchio placed 15:26:55.405, matched 55.606 | open 1 @ 48 | lay 48 / 33,1 € (15:26:55.250) | 0 |
+| omega-t126 (VJS-KPV, «3 - 0» 50) | 99 ms | già seguito (dopo t124) | 15:30:48.635 -> 15:30:54.12 | open 1 @ 50 | non registrato (buco) | — |
+| omega-t127 (Newport-Grimsby, «3 - 2») | comando **65**, 121 ms | già seguito | 15:31:21.654 -> matched 15:31:25.16 a **60** | open 1 @ 60 (miglioramento di prezzo del lay limite) | non registrato (buco) | — |
+| omega-t128 (Sutton-Forest Green, AOHW 75) | 99 ms | `in_aggancio` 15:33:02.670, **agganciato dopo 1113 ms** | 15:33:03.791 -> 15:33:09.11 | open 1 @ 75 | non registrato (buco) | — |
+| omega-t129 (Granada-Andorra, AOHW 55) | 103 ms | già seguito | 15:44:55.370 -> placed 15:45:00.762, matched .846 | open 1 @ 55 (`flumine_fill` 15:45:04.985) | lay 55 / 180,14 € (15:44:54.801) | 0 |
+| safe_tennis-t346 | nessun invio | **rifiuto** `runner_non_agganciato: nessun framework flumine attivo ... aggancio richiesto` (15:24:28, attività `canale_rifiutato`) | nessun ordine | `error` | back 1,02 | — |
+| safe_tennis-t347 (Maristany-Pieri, back 1,02) | safe_tennis, **FOK**, 108 ms | già seguito | 15:24:36.981 -> specchio tennis awtq9000000000 matched | 3 @ 1,02, poi `won` | back 1,02 / 130,99 € (15:24:33.301) | 0 |
+| safe-t348 (Fleetwood-Rochdale, esatto lay «Altro Casa» 40) | safe, **FOK**, 118 ms | già seguito | 15:27:18.141 -> placed 15:27:21.475, matched .647 | open 2 @ 40 | lay 40 / 61,48 € (15:27:20.286) | 0 |
+| safe-t349 (York-Gillingham, esatto lay 46) | safe, FOK, 137 ms | già seguito | 15:28:00.124 -> 15:28:03.442/.538 | open 2 @ 46 | lay 46 / 108,34 € (15:28:02.873) | 0 |
+| safe_tennis-t350 (back, limite 1,08) | FOK, 102 ms | `in_aggancio`, **agganciato dopo 2176 ms** | 15:40:07.806 -> awtq9000000001 matched a **1,11** | open 3 @ 1,11 | back 1,11 / 47,64 € (15:40:03.315, ultimo prima del match) | 0 |
+| safe_tennis-t351 (Zverev, back 1,02) | FOK, 98 ms | già seguito | 15:40:06.108 -> awtq9000000002 **size_matched 0** | `error` (FOK ucciso) | back **1,01** dalle 15:40:03 alle 15:40:17 (1,02 non disponibile dopo il bet delay) | FOK corretto |
+| safe_tennis-t352 (Zverev, back 1,02, ritento) | FOK, 102 ms | già seguito | 15:40:30.204 -> awtq9000000003 matched | open 3 @ 1,02 | back 1,02 / 32,77 € (15:40:29.903) | 0 |
+
+Sintesi: **8 ordini con libro registrato, tutti a 0 tick** (125, 129, 347, 348, 349, 350, 352 abbinati al best
+dopo il bet delay; 351 FOK ucciso esattamente mentre il best era sotto il limite). Nessun fill inventato.
+`ref` identica su comando/aggancio/`meta.canale_ref` (13/13); prezzo e size del comando uguali all'ordine flumine
+(11/11 ordini inviati). Età dei comandi 98-137 ms (una a 2457 ms, sempre < 3000). Bet delay simulato: 3,3-5,6 s
+fra ordine e specchio, col `bet_delay=3` pubblicato dal feed.
+
+## C. Tabella id -> esito aggiornata (riavvio 2)
+
+| id | esito | evidenza |
+|---|---|---|
+| 7.2.1 | PASS | auto-follow attivo e operativo (§A) |
+| 7.2.2 | **PASS** | diario del motore scritto (`_live_raw/_diario_ordini/2026-09-26.jsonl`, righe `inviato/in_aggancio/agganciato/ordine/esito`) |
+| 7.2.3 | **PASS** | `safe_strategy_activity kind='canale_inviato'` per safe-t348/349 e safe_tennis-t347/350-352 |
+| 7.2.4 | **PASS parziale** | `canale_ref`, `canale_ack_seq`, `canale_ack_ms` su tutte le righe inviate; `canale_fase` **NULL** su omega-t124/125 e safe-t349; `abbinato_parziale` su safe_tennis-t352 che è abbinato 3/3 (R10) |
+| 7.2.5 | **PASS** | età 98-137 ms, massimo 2457 ms (omega-t124), tutte < `max_eta_ms` 3000 |
+| 7.2.6 | **PASS** | `omega_activity` `canale_inviato` + `flumine_fill` (t125-t129) |
+| 7.2.7 | **PASS** | 0 righe in coda DB dopo 15:16Z |
+| 7.2.8 | **PASS 2/3, 1 rifiuto dichiarato** | agganciati omega-t128 (1113 ms) e safe_tennis-t350 (2176 ms); omega-t124 `in_aggancio` scaduto a 3000 ms con motivo scritto, nessun ordine; la ripetizione (t126, 15:30:48) sullo stesso mercato è partita |
+| 7.2.9 | **PASS** | 0 occorrenze di «non sottoscritto nel runner» nei due diari |
+| 7.2.10 | **PASS** | T massimo 180/180, mai oltre; `espulsi 0`, `rifiuti_tetto 0`; manuali 26 intatti |
+| 7.2.11 | **PASS** | 50 righe `origine='auto'` (44 STREAMING, 6 CLOSED) |
+| 7.2.12 | NON CERTIFICATO | nessun riavvio osservato con un comando in volo |
+| 7.2.13 | PASS (fase 1) | — |
+| 7.5.7 | NON CERTIFICATO | nessun clic «Chiudi» osservato |
+| 7.5.8 | PASS | nessun «fuori banda»; esecuzione a mercato (t127 abbinato a 60 col limite a 65) |
+| 7.9.2.B | **PASS** | ref uguale sulle 4 letture (comando, aggancio, `meta.canale_ref`, riga); `customerOrderRef` di flumine (`cor`) nel diario, specchio per `ref_interno`; prezzo e size uguali |
+| 7.9.2.C | PASS | `mercato_operabile` (produzione) = `(True,'OPEN')` sugli 8 ordini con libro |
+| 7.9.5.D | PASS sui dati | abbinato sulla riga = specchio (`size_matched`/`average_price_matched`) per t125-t129, t348, t349; Δ 0 tick col libro. Striscia B17: solo per clic, non osservata |
+| 7.9.5.E3 | **PASS** | safe_tennis-t351: FOK ucciso con best 1,01 < limite 1,02, `size_matched=0`, nessun fill parziale |
+
+## D. Reperti nuovi (nessuna correzione)
+
+- **R8 (osservazione, già dichiarata nel codice)** — gli ordini Omega paper via canale partono SENZA FOK
+  (`time_in_force=null`, `omega_service.py:2892`: FOK solo in live; in paper il limite lavora il book fino al TTL).
+  Safe usa il FOK anche in paper. Oggi tutti gli ordini Omega hanno abbinato subito, ma il paper di Omega non è
+  lo specchio del FOK live.
+- **R9 (FAIL candidato, attribuzione)** — gli ordini dei bot NON sono marcati col nome del bot nello specchio
+  (regola del 25/09 «ordini flaggati col nome del bot»): calcio `betfair_live_orders.source='runner'` per
+  Omega/Safe (id 42963-43460); tennis `tennis_live_orders.source='manual'` per Safe tennis (id 24, 28, 17016,
+  17020), perché il motore tennis passa da `_track_manual`, che scrive `"source": "manual"` fisso
+  (`Betfair/stream/tennis_live/tennis_live_order_worker.py:960`, chiamato a `:644,676,904`). Nelle voci per bot
+  gli ordini di Safe tennis finiscono sotto «manuale app».
+- **R10 (dato)** — `safe_tennis-t352`: `meta.canale_fase='abbinato_parziale'` con `size_matched=3.0 = size`
+  (specchio awtq9000000003 abbinato 3/3): la fase non è aggiornata all'abbinamento completo; `canale_fase` NULL
+  su 3 righe.
+- **R11 (FAIL candidato LATENTE, money-critical solo in LIVE)** — i `ref_interno` dei comandi del motore ripartono
+  da `awlq9000000000` a ogni avvio del processo (`_LOCAL_RID = itertools.count(9_000_000_000)`,
+  `Betfair/stream/live_order_worker.py:3087`; tennis `_LOCAL_SID`, `tennis_live_order_worker.py:1302`). Oggi il
+  motore ha assegnato `awlq9000000000` a omega-t124; lo stesso `client_order_ref` esiste già nello specchio come
+  riga **LIVE** del 10/07 (`betfair_live_orders.id=37551`, mode live, market 1.259819675). Lo specchio fa upsert
+  su `(mode, client_order_ref)` (`Betfair/stream/db.py:572-577`): in paper la collisione è evitata dalla pulizia
+  delle righe paper al riavvio (`db.py:852`), ma in LIVE il primo ordine via canale dopo ogni riavvio
+  sovrascriverebbe la riga live di un ordine vero di una sessione precedente (già oggi: id 37551). Il commento
+  «mai in collisione col bigserial» vale solo dentro un processo. Da portare all'utente PRIMA di accendere le
+  porte in live.
+- **R12 (osservazione)** — `safe_tennis-t346` rifiutato `runner_non_agganciato` alle 15:24:28 (runner tennis ancora
+  senza framework dopo l'avvio): rifiuto dichiarato, nessun ordine; il bot ha ripetuto (t347 alle 15:24:36, abbinato).
+
+## E. Cosa non ho potuto verificare (riavvio 2)
+
+- libro per omega-t126/t127/t128 (buco del registratore 15:29-15:37Z): in particolare t127, abbinato a 60 col
+  limite a 65, non è confrontato col book;
+- 7.2.12, 7.5.7 e i controlli E1-E5 di 7.9.2 (richiedono riavvii, clic o azioni vietate);
+- il registratore resta acceso fino a ~16:32Z (55 min, file `canali_ordini/*_173735.jsonl`); gli ordini dopo le
+  15:48Z non sono nel referto.

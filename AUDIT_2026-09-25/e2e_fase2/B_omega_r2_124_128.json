@@ -1,0 +1,836 @@
+[
+ {
+  "trade_id": "124",
+  "event_id": "36115351",
+  "runner": "Any Other Home Win",
+  "price": 55.0,
+  "size": 1.0,
+  "minuto": 62,
+  "punteggio": "0-0",
+  "placed_at": "2026-09-26T15:21:18.499991+00:00",
+  "mode": "paper",
+  "audit_scritto": {
+   "ev": 0.2031,
+   "gamba": "B",
+   "price": 55.0,
+   "minuto": 62,
+   "motivo": "P_nostra 1.36% (modello) contro p_implicita 1.73% a quota 55: margine 1.27x (serve 1.11x, secchio 1-2%)",
+   "motore": "v3",
+   "p_fusa": 0.01359203,
+   "runner": "Any Other Home Win",
+   "k_usato": 1.11,
+   "margine": 1.272,
+   "mercato": "CORRECT_SCORE",
+   "modello": "gamma_poisson",
+   "periodo": "ft",
+   "finestra": [
+    46,
+    85
+   ],
+   "k_minimo": 1.11,
+   "scartati": [
+    "0 - 0: troppo_vicino_al_punteggio",
+    "0 - 1: troppo_vicino_al_punteggio",
+    "0 - 2: p_impl_sotto_fascia",
+    "0 - 3: senza_lay",
+    "1 - 0: troppo_vicino_al_punteggio",
+    "1 - 1: p_impl_oltre_fascia",
+    "1 - 2: margine 0.58x, ne serve 1.11x",
+    "1 - 3: senza_lay",
+    "2 - 0: p_impl_oltre_fascia",
+    "2 - 1: p_impl_oltre_fascia",
+    "2 - 2: p_impl_sotto_fascia",
+    "2 - 3: senza_lay"
+   ],
+   "league_id": 245,
+   "liability": 54.0,
+   "p_implied": 0.01728844,
+   "p_modello": 0.01359203,
+   "punteggio": "0-0",
+   "lambda_pre": [
+    2.291,
+    0.972
+   ],
+   "n_empirico": null,
+   "p_empirica": null,
+   "p_selected": 0.01359203,
+   "lambda_source": "fixture"
+  },
+  "cfg_v3": {
+   "modello": "gamma_poisson",
+   "k_minimo": 1.11,
+   "p_min": 0.01,
+   "p_max": 0.02,
+   "ft_entry_min": 46,
+   "ft_entry_max": 85,
+   "max_liability_per_leg": 95.0,
+   "distanza_minima_gol": 2,
+   "stake": 1.0,
+   "fusione": true,
+   "rossi": true,
+   "empirical_min_n": 200
+  },
+  "p_modello_grezza": 0.012089642973958937,
+  "p_mercato_implicita_dalla_fusa": 0.016886259512824495,
+  "peso_fusione_modello": 0.65,
+  "cancello": {
+   "finestra": [
+    true,
+    [
+     46,
+     85
+    ]
+   ],
+   "p_imp_in_fascia": [
+    true,
+    [
+     0.01,
+     0.02
+    ],
+    0.017288444040036394
+   ],
+   "p_nostra_sotto_tetto": [
+    true,
+    0.02,
+    0.01359203
+   ],
+   "margine_ge_k": [
+    true,
+    1.11,
+    1.2719545233520229
+   ],
+   "distanza_gol": [
+    true,
+    2,
+    null
+   ],
+   "liability_le_cap_gamba": [
+    true,
+    95.0,
+    54.0
+   ],
+   "stake": [
+    true,
+    1.0,
+    1.0
+   ]
+  },
+  "tutto_il_cancello_vero": true,
+  "confronto_ricalcolo_vs_scritto": {
+   "p_implicita": [
+    0.017288444040036394,
+    0.01728844,
+    true
+   ],
+   "p_empirica": [
+    null,
+    null,
+    true
+   ],
+   "n_empirico": [
+    null,
+    null,
+    true
+   ],
+   "p_nostra": [
+    0.01359203,
+    0.01359203,
+    true
+   ],
+   "margine": [
+    1.2719545233520229,
+    1.272,
+    true
+   ],
+   "ev": [
+    0.2031,
+    0.2031,
+    true
+   ],
+   "liability": [
+    54.0,
+    54.0,
+    true
+   ],
+   "p_modello_grezza_vs_scritta": [
+    0.012089642973958937,
+    0.01359203,
+    false
+   ],
+   "p_fusa_dal_book_registrato": [
+    null,
+    0.01359203,
+    null
+   ]
+  },
+  "esito_B": "OK"
+ },
+ {
+  "trade_id": "125",
+  "event_id": "36091663",
+  "runner": "Any Other Away Win",
+  "price": 48.0,
+  "size": 1.0,
+  "minuto": 68,
+  "punteggio": "2-1",
+  "placed_at": "2026-09-26T15:26:50.45499+00:00",
+  "mode": "paper",
+  "audit_scritto": {
+   "ev": 0.1041,
+   "gamba": "B",
+   "price": 48.0,
+   "minuto": 68,
+   "motivo": "P_nostra 1.76% (modello) contro p_implicita 1.98% a quota 48: margine 1.12x (serve 1.11x, secchio 1-2%)",
+   "motore": "v3",
+   "p_fusa": 0.01764191,
+   "runner": "Any Other Away Win",
+   "k_usato": 1.11,
+   "margine": 1.123,
+   "mercato": "CORRECT_SCORE",
+   "modello": "gamma_poisson",
+   "periodo": "ft",
+   "finestra": [
+    46,
+    85
+   ],
+   "k_minimo": 1.11,
+   "scartati": [
+    "0 - 0: senza_lay",
+    "0 - 1: senza_lay",
+    "0 - 2: senza_lay",
+    "0 - 3: senza_lay",
+    "1 - 0: senza_lay",
+    "1 - 1: senza_lay",
+    "1 - 2: senza_lay",
+    "1 - 3: senza_lay",
+    "2 - 0: senza_lay",
+    "2 - 1: troppo_vicino_al_punteggio",
+    "2 - 2: troppo_vicino_al_punteggio",
+    "2 - 3: p_impl_oltre_fascia"
+   ],
+   "league_id": 42,
+   "liability": 47.0,
+   "p_implied": 0.0198123,
+   "p_modello": 0.01764191,
+   "punteggio": "2-1",
+   "lambda_pre": [
+    1.315,
+    1.645
+   ],
+   "n_empirico": null,
+   "p_empirica": null,
+   "p_selected": 0.01764191,
+   "lambda_source": "fixture"
+  },
+  "cfg_v3": {
+   "modello": "gamma_poisson",
+   "k_minimo": 1.11,
+   "p_min": 0.01,
+   "p_max": 0.02,
+   "ft_entry_min": 46,
+   "ft_entry_max": 85,
+   "max_liability_per_leg": 95.0,
+   "distanza_minima_gol": 2,
+   "stake": 1.0,
+   "fusione": true,
+   "rossi": true,
+   "empirical_min_n": 200
+  },
+  "p_modello_grezza": 0.016616749820338207,
+  "p_mercato_implicita_dalla_fusa": 0.024734111818222472,
+  "peso_fusione_modello": 0.85,
+  "cancello": {
+   "finestra": [
+    true,
+    [
+     46,
+     85
+    ]
+   ],
+   "p_imp_in_fascia": [
+    true,
+    [
+     0.01,
+     0.02
+    ],
+    0.019812304483837327
+   ],
+   "p_nostra_sotto_tetto": [
+    true,
+    0.02,
+    0.01764191
+   ],
+   "margine_ge_k": [
+    true,
+    1.11,
+    1.1230249153202418
+   ],
+   "distanza_gol": [
+    true,
+    2,
+    null
+   ],
+   "liability_le_cap_gamba": [
+    true,
+    95.0,
+    47.0
+   ],
+   "stake": [
+    true,
+    1.0,
+    1.0
+   ]
+  },
+  "tutto_il_cancello_vero": true,
+  "confronto_ricalcolo_vs_scritto": {
+   "p_implicita": [
+    0.019812304483837327,
+    0.0198123,
+    true
+   ],
+   "p_empirica": [
+    null,
+    null,
+    true
+   ],
+   "n_empirico": [
+    null,
+    null,
+    true
+   ],
+   "p_nostra": [
+    0.01764191,
+    0.01764191,
+    true
+   ],
+   "margine": [
+    1.1230249153202418,
+    1.123,
+    true
+   ],
+   "ev": [
+    0.1041,
+    0.1041,
+    true
+   ],
+   "liability": [
+    47.0,
+    47.0,
+    true
+   ],
+   "p_modello_grezza_vs_scritta": [
+    0.016616749820338207,
+    0.01764191,
+    false
+   ],
+   "p_fusa_dal_book_registrato": [
+    null,
+    0.01764191,
+    null
+   ]
+  },
+  "esito_B": "OK"
+ },
+ {
+  "trade_id": "126",
+  "event_id": "36115351",
+  "runner": "3 - 0",
+  "price": 50.0,
+  "size": 1.0,
+  "minuto": 72,
+  "punteggio": "0-0",
+  "placed_at": "2026-09-26T15:30:48.573019+00:00",
+  "mode": "paper",
+  "audit_scritto": {
+   "ev": 0.1537,
+   "gamba": "B",
+   "price": 50.0,
+   "minuto": 72,
+   "motivo": "P_nostra 1.59% (modello) contro p_implicita 1.90% a quota 50: margine 1.19x (serve 1.11x, secchio 1-2%)",
+   "motore": "v3",
+   "p_fusa": 0.01594275,
+   "runner": "3 - 0",
+   "k_usato": 1.11,
+   "margine": 1.193,
+   "mercato": "CORRECT_SCORE",
+   "modello": "gamma_poisson",
+   "periodo": "ft",
+   "finestra": [
+    46,
+    85
+   ],
+   "k_minimo": 1.11,
+   "scartati": [
+    "0 - 0: troppo_vicino_al_punteggio",
+    "0 - 1: troppo_vicino_al_punteggio",
+    "0 - 2: p_impl_sotto_fascia",
+    "0 - 3: senza_lay",
+    "1 - 0: troppo_vicino_al_punteggio",
+    "1 - 1: p_impl_oltre_fascia",
+    "1 - 2: p_impl_sotto_fascia",
+    "1 - 3: senza_lay",
+    "2 - 0: p_impl_oltre_fascia",
+    "2 - 1: margine 0.87x, ne serve 1.11x",
+    "2 - 2: p_impl_sotto_fascia",
+    "2 - 3: senza_lay"
+   ],
+   "league_id": 245,
+   "liability": 49.0,
+   "p_implied": 0.01901902,
+   "p_modello": 0.01594275,
+   "punteggio": "0-0",
+   "lambda_pre": [
+    2.291,
+    0.972
+   ],
+   "n_empirico": 152141,
+   "p_empirica": 0.0088239,
+   "p_selected": 0.01594275,
+   "lambda_source": "fixture"
+  },
+  "cfg_v3": {
+   "modello": "gamma_poisson",
+   "k_minimo": 1.11,
+   "p_min": 0.01,
+   "p_max": 0.02,
+   "ft_entry_min": 46,
+   "ft_entry_max": 85,
+   "max_liability_per_leg": 95.0,
+   "distanza_minima_gol": 2,
+   "stake": 1.0,
+   "fusione": true,
+   "rossi": true,
+   "empirical_min_n": 200
+  },
+  "p_modello_grezza": 0.014342834184080415,
+  "p_mercato_implicita_dalla_fusa": 0.02891079694686843,
+  "peso_fusione_modello": 0.85,
+  "cancello": {
+   "finestra": [
+    true,
+    [
+     46,
+     85
+    ]
+   ],
+   "p_imp_in_fascia": [
+    true,
+    [
+     0.01,
+     0.02
+    ],
+    0.019019019019019017
+   ],
+   "p_nostra_sotto_tetto": [
+    true,
+    0.02,
+    0.01594275
+   ],
+   "margine_ge_k": [
+    true,
+    1.11,
+    1.1929572388088014
+   ],
+   "distanza_gol": [
+    true,
+    2,
+    3
+   ],
+   "liability_le_cap_gamba": [
+    true,
+    95.0,
+    49.0
+   ],
+   "stake": [
+    true,
+    1.0,
+    1.0
+   ]
+  },
+  "tutto_il_cancello_vero": true,
+  "confronto_ricalcolo_vs_scritto": {
+   "p_implicita": [
+    0.019019019019019017,
+    0.01901902,
+    true
+   ],
+   "p_empirica": [
+    0.008823895205444316,
+    0.0088239,
+    true
+   ],
+   "n_empirico": [
+    152141,
+    152141,
+    true
+   ],
+   "p_nostra": [
+    0.01594275,
+    0.01594275,
+    true
+   ],
+   "margine": [
+    1.1929572388088014,
+    1.193,
+    true
+   ],
+   "ev": [
+    0.1537,
+    0.1537,
+    true
+   ],
+   "liability": [
+    49.0,
+    49.0,
+    true
+   ],
+   "p_modello_grezza_vs_scritta": [
+    0.014342834184080415,
+    0.01594275,
+    false
+   ],
+   "p_fusa_dal_book_registrato": [
+    null,
+    0.01594275,
+    null
+   ]
+  },
+  "esito_B": "OK"
+ },
+ {
+  "trade_id": "127",
+  "event_id": "36091643",
+  "runner": "3 - 2",
+  "price": 60.0,
+  "size": 1.0,
+  "minuto": 69,
+  "punteggio": "1-0",
+  "placed_at": "2026-09-26T15:31:21.356225+00:00",
+  "mode": "paper",
+  "audit_scritto": {
+   "ev": 0.6081,
+   "gamba": "B",
+   "price": 65.0,
+   "minuto": 69,
+   "motivo": "P_nostra 0.53% (dato storico (n=153256)) contro p_implicita 1.46% a quota 65: margine 2.78x (serve 1.11x, secchio 1-2%)",
+   "motore": "v3",
+   "p_fusa": 0.00516592,
+   "runner": "3 - 2",
+   "k_usato": 1.11,
+   "margine": 2.7784,
+   "mercato": "CORRECT_SCORE",
+   "modello": "gamma_poisson",
+   "periodo": "ft",
+   "finestra": [
+    46,
+    85
+   ],
+   "k_minimo": 1.11,
+   "scartati": [
+    "0 - 0: senza_lay",
+    "0 - 1: senza_lay",
+    "0 - 2: senza_lay",
+    "0 - 3: senza_lay",
+    "1 - 0: senza_lay",
+    "1 - 1: senza_lay",
+    "1 - 2: senza_lay",
+    "1 - 3: senza_lay",
+    "2 - 0: troppo_vicino_al_punteggio",
+    "2 - 1: p_impl_oltre_fascia",
+    "2 - 2: p_impl_oltre_fascia",
+    "2 - 3: p_impl_sotto_fascia"
+   ],
+   "league_id": 42,
+   "liability": 64.0,
+   "p_implied": 0.01462664,
+   "p_modello": 0.00516592,
+   "punteggio": "1-0",
+   "lambda_pre": [
+    1.225,
+    1.602
+   ],
+   "n_empirico": 153256,
+   "p_empirica": 0.00526442,
+   "p_selected": 0.00526442,
+   "lambda_source": "fixture"
+  },
+  "cfg_v3": {
+   "modello": "gamma_poisson",
+   "k_minimo": 1.11,
+   "p_min": 0.01,
+   "p_max": 0.02,
+   "ft_entry_min": 46,
+   "ft_entry_max": 85,
+   "max_liability_per_leg": 95.0,
+   "distanza_minima_gol": 2,
+   "stake": 1.0,
+   "fusione": true,
+   "rossi": true,
+   "empirical_min_n": 200
+  },
+  "p_modello_grezza": 0.0034468993575109525,
+  "p_mercato_implicita_dalla_fusa": 0.010923325402949593,
+  "peso_fusione_modello": 0.65,
+  "cancello": {
+   "finestra": [
+    true,
+    [
+     46,
+     85
+    ]
+   ],
+   "p_imp_in_fascia": [
+    true,
+    [
+     0.01,
+     0.02
+    ],
+    0.015846538782318596
+   ],
+   "p_nostra_sotto_tetto": [
+    true,
+    0.02,
+    0.005264423227064932
+   ],
+   "margine_ge_k": [
+    true,
+    1.11,
+    3.0101186965458893
+   ],
+   "distanza_gol": [
+    true,
+    2,
+    4
+   ],
+   "liability_le_cap_gamba": [
+    true,
+    95.0,
+    59.0
+   ],
+   "stake": [
+    true,
+    1.0,
+    1.0
+   ]
+  },
+  "tutto_il_cancello_vero": true,
+  "confronto_ricalcolo_vs_scritto": {
+   "p_implicita": [
+    0.015846538782318596,
+    0.01462664,
+    false
+   ],
+   "p_empirica": [
+    0.005264423227064932,
+    0.00526442,
+    true
+   ],
+   "n_empirico": [
+    153256,
+    153256,
+    true
+   ],
+   "p_nostra": [
+    0.005264423227064932,
+    0.00526442,
+    true
+   ],
+   "margine": [
+    3.0101186965458893,
+    2.7784,
+    false
+   ],
+   "ev": [
+    0.6344,
+    0.6081,
+    false
+   ],
+   "liability": [
+    59.0,
+    64.0,
+    false
+   ],
+   "p_modello_grezza_vs_scritta": [
+    0.0034468993575109525,
+    0.00516592,
+    false
+   ],
+   "p_fusa_dal_book_registrato": [
+    null,
+    0.00516592,
+    null
+   ]
+  },
+  "esito_B": "KO"
+ },
+ {
+  "trade_id": "128",
+  "event_id": "36091507",
+  "runner": "Any Other Home Win",
+  "price": 75.0,
+  "size": 1.0,
+  "minuto": 71,
+  "punteggio": "1-2",
+  "placed_at": "2026-09-26T15:33:02.592246+00:00",
+  "mode": "paper",
+  "audit_scritto": {
+   "ev": 0.1743,
+   "gamba": "B",
+   "price": 75.0,
+   "minuto": 71,
+   "motivo": "P_nostra 1.03% (modello) contro p_implicita 1.27% a quota 75: margine 1.22x (serve 1.11x, secchio 1-2%)",
+   "motore": "v3",
+   "p_fusa": 0.01034988,
+   "runner": "Any Other Home Win",
+   "k_usato": 1.11,
+   "margine": 1.2247,
+   "mercato": "CORRECT_SCORE",
+   "modello": "gamma_poisson",
+   "periodo": "ft",
+   "finestra": [
+    46,
+    85
+   ],
+   "k_minimo": 1.11,
+   "scartati": [
+    "0 - 0: senza_lay",
+    "0 - 1: senza_lay",
+    "0 - 2: senza_lay",
+    "0 - 3: senza_lay",
+    "1 - 0: senza_lay",
+    "1 - 1: senza_lay",
+    "1 - 2: troppo_vicino_al_punteggio",
+    "1 - 3: troppo_vicino_al_punteggio",
+    "2 - 0: senza_lay",
+    "2 - 1: senza_lay",
+    "2 - 2: troppo_vicino_al_punteggio",
+    "2 - 3: p_impl_oltre_fascia"
+   ],
+   "league_id": 43,
+   "liability": 74.0,
+   "p_implied": 0.01267512,
+   "p_modello": 0.01034988,
+   "punteggio": "1-2",
+   "lambda_pre": [
+    1.078,
+    1.552
+   ],
+   "mult_rossi": [
+    1.3832,
+    0.7461
+   ],
+   "n_empirico": null,
+   "p_empirica": null,
+   "p_selected": 0.01034988,
+   "lambda_source": "fixture"
+  },
+  "cfg_v3": {
+   "modello": "gamma_poisson",
+   "k_minimo": 1.11,
+   "p_min": 0.01,
+   "p_max": 0.02,
+   "ft_entry_min": 46,
+   "ft_entry_max": 85,
+   "max_liability_per_leg": 95.0,
+   "distanza_minima_gol": 2,
+   "stake": 1.0,
+   "fusione": true,
+   "rossi": true,
+   "empirical_min_n": 200
+  },
+  "p_modello_grezza": 0.010424660208365707,
+  "p_mercato_implicita_dalla_fusa": 1.0000000000000002e-06,
+  "peso_fusione_modello": 1.0,
+  "cancello": {
+   "finestra": [
+    true,
+    [
+     46,
+     85
+    ]
+   ],
+   "p_imp_in_fascia": [
+    true,
+    [
+     0.01,
+     0.02
+    ],
+    0.01267511674449633
+   ],
+   "p_nostra_sotto_tetto": [
+    true,
+    0.02,
+    0.01034988
+   ],
+   "margine_ge_k": [
+    true,
+    1.11,
+    1.2246631598140585
+   ],
+   "distanza_gol": [
+    true,
+    2,
+    null
+   ],
+   "liability_le_cap_gamba": [
+    true,
+    95.0,
+    74.0
+   ],
+   "stake": [
+    true,
+    1.0,
+    1.0
+   ]
+  },
+  "tutto_il_cancello_vero": true,
+  "confronto_ricalcolo_vs_scritto": {
+   "p_implicita": [
+    0.01267511674449633,
+    0.01267512,
+    true
+   ],
+   "p_empirica": [
+    null,
+    null,
+    true
+   ],
+   "n_empirico": [
+    null,
+    null,
+    true
+   ],
+   "p_nostra": [
+    0.01034988,
+    0.01034988,
+    true
+   ],
+   "margine": [
+    1.2246631598140585,
+    1.2247,
+    true
+   ],
+   "ev": [
+    0.1743,
+    0.1743,
+    true
+   ],
+   "liability": [
+    74.0,
+    74.0,
+    true
+   ],
+   "p_modello_grezza_vs_scritta": [
+    0.010424660208365707,
+    0.01034988,
+    false
+   ],
+   "p_fusa_dal_book_registrato": [
+    null,
+    0.01034988,
+    null
+   ]
+  },
+  "esito_B": "OK"
+ }
+]

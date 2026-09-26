@@ -1,0 +1,114 @@
+{
+ "finestra": [
+  "2026-09-26T16:22:12Z",
+  "2026-09-26T16:37:30Z"
+ ],
+ "per_bot": {
+  "omega": {
+   "attivita_per_kind": {
+    "skip": 59
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "safe": {
+   "attivita_per_kind": {
+    "opportunita_non_piu_valida": 17,
+    "canale_inviato": 1,
+    "place_pending": 1,
+    "flumine_fill": 1,
+    "diagnosi": 3,
+    "skip": 2,
+    "proposta_opportunita": 7,
+    "settle": 2,
+    "settle_position": 2
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "mike": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "tennis": {
+   "attivita_per_kind": {
+    "tennis_swing:entry": 3,
+    "tennis_swing:entry_timeout": 1,
+    "tennis_swing:posizione_pari": 3,
+    "tennis_swing:exit": 2,
+    "tennis_pro:modalita": 1,
+    "tennis_pro:superficie": 1,
+    "tennis_scalper:modalita": 1,
+    "tennis_swing:modalita": 1,
+    "tennis_scalper:missione_blocca": 1
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "scalper": {
+   "attivita_per_kind": {
+    "info": 6,
+    "sniper_lines": 3,
+    "risk_halt": 1,
+    "habitat_scan": 1,
+    "sniper_fire": 1
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  }
+ },
+ "righe": {
+  "omega_trades": [],
+  "safe_strategy_trades": [
+   {
+    "id": 354,
+    "event_id": "36107016",
+    "strategy": "esatto",
+    "status": "open",
+    "mode": "paper",
+    "placed_at": "2026-09-26T16:25:05.731439+00:00",
+    "closes_trade_id": null
+   }
+  ],
+  "mike_trades": [],
+  "tennis_live_orders": [],
+  "betfair_live_orders": [
+   {
+    "id": 43706,
+    "client_order_ref": "awlq9000000010",
+    "source": "runner",
+    "status": "EXECUTION_COMPLETE",
+    "mode": "paper",
+    "placed_at": "2026-09-26T16:25:12.177485+00:00"
+   },
+   {
+    "id": 43709,
+    "client_order_ref": "ff448e9e7ea69-140097330866298716",
+    "source": "scalper",
+    "status": "EXECUTABLE",
+    "mode": "paper",
+    "placed_at": "2026-09-26T16:31:31.774349+00:00"
+   }
+  ],
+  "betfair_live_order_requests": [],
+  "scalper_control": [
+   {
+    "event_id": "36109062",
+    "status": "running",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:37:16.684291+00:00",
+    "stopped_at": null
+   },
+   {
+    "event_id": "36111427",
+    "status": "running",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:37:16.281886+00:00",
+    "stopped_at": null
+   }
+  ]
+ }
+}

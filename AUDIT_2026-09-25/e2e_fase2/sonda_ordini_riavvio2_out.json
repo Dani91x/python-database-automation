@@ -1,0 +1,1007 @@
+{
+ "trasversali": {
+  "omega_trades": 6,
+  "safe_trades": 7,
+  "coda_db_righe_dopo_riavvio": [],
+  "live_follow_auto": {
+   "totale": 50,
+   "per_status": {
+    "CLOSED": 6,
+    "STREAMING": 44
+   },
+   "prima": {
+    "event_id": "36114438",
+    "status": "STREAMING",
+    "origine": "auto",
+    "created_at": "2026-09-26T14:54:34.732483+00:00",
+    "updated_at": "2026-09-26T15:06:19.785514+00:00"
+   }
+  },
+  "omega_paper_fill_fallback": [],
+  "safe_fill_follow_assente": [],
+  "omega_kinds": [
+   "canale_inviato",
+   "flumine_fill",
+   "flumine_no_fill"
+  ],
+  "safe_kinds": [
+   "canale_inviato",
+   "canale_rifiutato",
+   "diagnosi",
+   "exit_hold",
+   "exit_wait",
+   "flumine_fill",
+   "flumine_no_fill",
+   "opportunita_non_piu_valida",
+   "place_pending",
+   "place_retry",
+   "proposta_opportunita",
+   "settle",
+   "settle_position"
+  ],
+  "diario_ref": 13
+ },
+ "ordini": [
+  {
+   "bot": "omega",
+   "id": 124,
+   "ref": "omega-t124",
+   "evento": "36115351 VJS v KPV",
+   "strategia": "ft_cs",
+   "selezione": "Any Other Home Win",
+   "side": "lay",
+   "prezzo_riga": 55.0,
+   "size": 1.0,
+   "status": "error",
+   "size_matched": null,
+   "avg_price_matched": null,
+   "placed_at": "2026-09-26T15:21:18.499991+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t124",
+    "canale_ack_seq": 1790434467069,
+    "canale_ack_ms": 1790436081084,
+    "canale_fase": null,
+    "fill": null
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:21:21.095Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 55.0,
+    "size": 1.0,
+    "eta_ms": 2457,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": "15:21:21.100Z",
+   "agganciato_ms": null,
+   "ordine": null,
+   "esiti_diario": [
+    {
+     "ts": "15:21:24.126Z",
+     "ok": false,
+     "err": "in_aggancio: mercato 1.262905095 non sottoscritto entro 3000 ms (aggancio richiesto: il bot ripete la decisione)",
+     "status": null,
+     "matched": null
+    }
+   ],
+   "specchio": null,
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": null,
+   "libro_feed": {
+    "rx": "15:21:04.925Z",
+    "eta_ms": 13575,
+    "libro": {
+     "back": 28.0,
+     "lay": 55.0,
+     "back_size": 1.72,
+     "lay_size": 46.43,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "esito": "prezzo_assente",
+    "rif": 55.0
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "omega",
+   "id": 125,
+   "ref": "omega-t125",
+   "evento": "36091663 Cheltenham v Chesterfield",
+   "strategia": "ft_cs",
+   "selezione": "Any Other Away Win",
+   "side": "lay",
+   "prezzo_riga": 48.0,
+   "size": 1.0,
+   "status": "open",
+   "size_matched": 1.0,
+   "avg_price_matched": 48.0,
+   "placed_at": "2026-09-26T15:26:50.45499+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t125",
+    "canale_ack_seq": 1790434467071,
+    "canale_ack_ms": 1790436410542,
+    "canale_fase": null,
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:26:50.543Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 48.0,
+    "size": 1.0,
+    "eta_ms": 115,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:26:50.576Z",
+    "cor": "e944eb7b72a11-140097292105578270",
+    "price": 48.0,
+    "size": 1.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:26:52.281Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:26:49.123Z",
+    "eta_ms": 1453,
+    "libro": {
+     "back": 30.0,
+     "lay": 48.0,
+     "back_size": 21.5,
+     "lay_size": 27.09,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 48.0,
+    "liq": 27.09,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "omega",
+   "id": 126,
+   "ref": "omega-t126",
+   "evento": "36115351 VJS v KPV",
+   "strategia": "ft_cs",
+   "selezione": "3 - 0",
+   "side": "lay",
+   "prezzo_riga": 50.0,
+   "size": 1.0,
+   "status": "open",
+   "size_matched": 1.0,
+   "avg_price_matched": 50.0,
+   "placed_at": "2026-09-26T15:30:48.573019+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t126",
+    "canale_ack_seq": 1790434467126,
+    "canale_ack_ms": 1790436648633,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:30:48.633Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 50.0,
+    "size": 1.0,
+    "eta_ms": 99,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:30:48.635Z",
+    "cor": "e944eb7b72a11-140097294486351079",
+    "price": 50.0,
+    "size": 1.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:30:48.996Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:29:03.548Z",
+    "eta_ms": 105087,
+    "libro": {
+     "back": 22.0,
+     "lay": 44.0,
+     "back_size": 5.16,
+     "lay_size": 18.49,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 44.0,
+    "liq": 18.49,
+    "delta_tick": 3,
+    "entro_1_tick": false,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "omega",
+   "id": 127,
+   "ref": "omega-t127",
+   "evento": "36091643 Newport County v Grimsby",
+   "strategia": "ft_cs",
+   "selezione": "3 - 2",
+   "side": "lay",
+   "prezzo_riga": 60.0,
+   "size": 1.0,
+   "status": "open",
+   "size_matched": 1.0,
+   "avg_price_matched": 60.0,
+   "placed_at": "2026-09-26T15:31:21.356225+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t127",
+    "canale_ack_seq": 1790434467170,
+    "canale_ack_ms": 1790436681652,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:31:21.652Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 65.0,
+    "size": 1.0,
+    "eta_ms": 121,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:31:21.654Z",
+    "cor": "e944eb7b72a11-140097294816540520",
+    "price": 65.0,
+    "size": 1.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:31:21.917Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:29:03.589Z",
+    "eta_ms": 138065,
+    "libro": {
+     "back": 95.0,
+     "lay": null,
+     "back_size": 1.72,
+     "lay_size": null,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "esito": "prezzo_assente",
+    "rif": null
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "omega",
+   "id": 128,
+   "ref": "omega-t128",
+   "evento": "36091507 Sutton Utd v Forest Green",
+   "strategia": "ft_cs",
+   "selezione": "Any Other Home Win",
+   "side": "lay",
+   "prezzo_riga": 75.0,
+   "size": 1.0,
+   "status": "open",
+   "size_matched": 1.0,
+   "avg_price_matched": 75.0,
+   "placed_at": "2026-09-26T15:33:02.592246+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t128",
+    "canale_ack_seq": 1790434467224,
+    "canale_ack_ms": 1790436782667,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:33:02.669Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 75.0,
+    "size": 1.0,
+    "eta_ms": 99,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": "15:33:02.670Z",
+   "agganciato_ms": 1113,
+   "ordine": {
+    "ts": "15:33:03.791Z",
+    "cor": "e944eb7b72a11-140097295837910137",
+    "price": 75.0,
+    "size": 1.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:33:03.982Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:29:03.594Z",
+    "eta_ms": 240197,
+    "libro": {
+     "back": 140.0,
+     "lay": null,
+     "back_size": 3.01,
+     "lay_size": null,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "esito": "prezzo_assente",
+    "rif": null
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "omega",
+   "id": 129,
+   "ref": "omega-t129",
+   "evento": "36097764 Granada v FC Andorra",
+   "strategia": "ft_cs",
+   "selezione": "Any Other Home Win",
+   "side": "lay",
+   "prezzo_riga": 55.0,
+   "size": 1.0,
+   "status": "open",
+   "size_matched": 1.0,
+   "avg_price_matched": 55.0,
+   "placed_at": "2026-09-26T15:44:55.286595+00:00",
+   "meta_canale": {
+    "canale_ref": "omega-t129",
+    "canale_ack_seq": 1790434467339,
+    "canale_ack_ms": 1790437495367,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:44:55.367Z",
+    "attore": "omega",
+    "tif": null,
+    "price": 55.0,
+    "size": 1.0,
+    "eta_ms": 103,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:44:55.370Z",
+    "cor": "e944eb7b72a11-140097302953700011",
+    "price": 55.0,
+    "size": 1.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:44:55.640Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:44:54.801Z",
+    "eta_ms": 569,
+    "libro": {
+     "back": 40.0,
+     "lay": 55.0,
+     "back_size": 22.79,
+     "lay_size": 180.14,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 55.0,
+    "liq": 180.14,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 346,
+   "ref": "safe_tennis-t346",
+   "evento": "36116426 G Maristany Zuleta De R – J Pieri",
+   "strategia": "tennis",
+   "selezione": "G Maristany Zuleta De R",
+   "side": "back",
+   "prezzo_riga": 1.02,
+   "size": 3.0,
+   "status": "error",
+   "size_matched": null,
+   "avg_price_matched": null,
+   "placed_at": "2026-09-26T15:24:28.062096+00:00",
+   "meta_canale": {
+    "canale_ref": null,
+    "canale_ack_seq": null,
+    "canale_ack_ms": null,
+    "canale_fase": null,
+    "fill": null
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": null,
+   "rifiuti": [
+    "runner_non_agganciato: nessun framework flumine attivo (runner fermo, senza partite o in ripartenza): aggancio richiesto"
+   ],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": null,
+   "esiti_diario": [],
+   "specchio": null,
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": null,
+   "libro_feed": {
+    "rx": "15:24:26.504Z",
+    "eta_ms": 1558,
+    "libro": {
+     "back": 1.02,
+     "lay": 1.04,
+     "back_size": 2239.31,
+     "lay_size": 2673.26,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "esito": "prezzo_assente",
+    "rif": 1.02
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 347,
+   "ref": "safe_tennis-t347",
+   "evento": "36116426 G Maristany Zuleta De R – J Pieri",
+   "strategia": "tennis",
+   "selezione": "G Maristany Zuleta De R",
+   "side": "back",
+   "prezzo_riga": 1.02,
+   "size": 3.0,
+   "status": "won",
+   "size_matched": 3.0,
+   "avg_price_matched": 1.02,
+   "placed_at": "2026-09-26T15:24:36.908484+00:00",
+   "meta_canale": {
+    "canale_ref": "safe_tennis-t347",
+    "canale_ack_seq": 1790435118353,
+    "canale_ack_ms": 1790436276979,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:24:36.979Z",
+    "attore": "safe_tennis",
+    "tif": "FILL_OR_KILL",
+    "price": 1.02,
+    "size": 3.0,
+    "eta_ms": 108,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:24:36.981Z",
+    "cor": "ad773bf238b6c-140097290769811397",
+    "price": 1.02,
+    "size": 3.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:24:37.099Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:24:33.301Z",
+    "eta_ms": 3680,
+    "libro": {
+     "back": 1.02,
+     "lay": 1.03,
+     "back_size": 130.99,
+     "lay_size": 941.53,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 1.02,
+    "liq": 130.99,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 348,
+   "ref": "safe-t348",
+   "evento": "36091656 Fleetwood Town – Rochdale",
+   "strategia": "esatto",
+   "selezione": "Altro risultato Casa",
+   "side": "lay",
+   "prezzo_riga": 40.0,
+   "size": 2.0,
+   "status": "open",
+   "size_matched": 2.0,
+   "avg_price_matched": 40.0,
+   "placed_at": "2026-09-26T15:27:18.046161+00:00",
+   "meta_canale": {
+    "canale_ref": "safe-t348",
+    "canale_ack_seq": 1790434467069,
+    "canale_ack_ms": 1790436438127,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:27:18.128Z",
+    "attore": "safe",
+    "tif": "FILL_OR_KILL",
+    "price": 40.0,
+    "size": 2.0,
+    "eta_ms": 118,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:27:18.141Z",
+    "cor": "e944eb7b72a11-140097292381414639",
+    "price": 40.0,
+    "size": 2.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:27:18.352Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:27:17.122Z",
+    "eta_ms": 1019,
+    "libro": {
+     "back": 32.0,
+     "lay": 40.0,
+     "back_size": 14.62,
+     "lay_size": 61.48,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 40.0,
+    "liq": 61.48,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 349,
+   "ref": "safe-t349",
+   "evento": "36091697 York City – Gillingham",
+   "strategia": "esatto",
+   "selezione": "Altro risultato Casa",
+   "side": "lay",
+   "prezzo_riga": 46.0,
+   "size": 2.0,
+   "status": "open",
+   "size_matched": 2.0,
+   "avg_price_matched": 46.0,
+   "placed_at": "2026-09-26T15:28:00.021021+00:00",
+   "meta_canale": {
+    "canale_ref": "safe-t349",
+    "canale_ack_seq": 1790434467073,
+    "canale_ack_ms": 1790436480122,
+    "canale_fase": null,
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:28:00.122Z",
+    "attore": "safe",
+    "tif": "FILL_OR_KILL",
+    "price": 46.0,
+    "size": 2.0,
+    "eta_ms": 137,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:28:00.124Z",
+    "cor": "e944eb7b72a11-140097292801239473",
+    "price": 46.0,
+    "size": 2.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:28:00.315Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:27:59.725Z",
+    "eta_ms": 399,
+    "libro": {
+     "back": 30.0,
+     "lay": 46.0,
+     "back_size": 20.21,
+     "lay_size": 108.34,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 46.0,
+    "liq": 108.34,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 350,
+   "ref": "safe_tennis-t350",
+   "evento": "36117452 Ti Droguet – Prizmic",
+   "strategia": "tennis",
+   "selezione": "Ti Droguet",
+   "side": "back",
+   "prezzo_riga": 1.11,
+   "size": 3.0,
+   "status": "open",
+   "size_matched": 3.0,
+   "avg_price_matched": 1.11,
+   "placed_at": "2026-09-26T15:40:05.571246+00:00",
+   "meta_canale": {
+    "canale_ref": "safe_tennis-t350",
+    "canale_ack_seq": 1790435118357,
+    "canale_ack_ms": 1790437205629,
+    "canale_fase": "inviato",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:40:05.630Z",
+    "attore": "safe_tennis",
+    "tif": "FILL_OR_KILL",
+    "price": 1.08,
+    "size": 3.0,
+    "eta_ms": 102,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": "15:40:05.631Z",
+   "agganciato_ms": 2176,
+   "ordine": {
+    "ts": "15:40:07.806Z",
+    "cor": "ad773bf238b6c-140097300078060406",
+    "price": 1.08,
+    "size": 3.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:40:07.865Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:40:03.315Z",
+    "eta_ms": 4491,
+    "libro": {
+     "back": 1.11,
+     "lay": 1.21,
+     "back_size": 47.64,
+     "lay_size": 67.93,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 1.11,
+    "liq": 47.64,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 351,
+   "ref": "safe_tennis-t351",
+   "evento": "36118082 Alexander Zverev – Alex De Minaur",
+   "strategia": "tennis",
+   "selezione": "Alexander Zverev",
+   "side": "back",
+   "prezzo_riga": 1.02,
+   "size": 3.0,
+   "status": "error",
+   "size_matched": 0.0,
+   "avg_price_matched": null,
+   "placed_at": "2026-09-26T15:40:06.042291+00:00",
+   "meta_canale": {
+    "canale_ref": "safe_tennis-t351",
+    "canale_ack_seq": 1790435118358,
+    "canale_ack_ms": 1790437206107,
+    "canale_fase": "inviato",
+    "fill": null
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:40:06.107Z",
+    "attore": "safe_tennis",
+    "tif": "FILL_OR_KILL",
+    "price": 1.02,
+    "size": 3.0,
+    "eta_ms": 98,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:40:06.108Z",
+    "cor": "ad773bf238b6c-140097300061087689",
+    "price": 1.02,
+    "size": 3.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:40:06.111Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:40:03.315Z",
+    "eta_ms": 2793,
+    "libro": {
+     "back": 1.01,
+     "lay": 1.03,
+     "back_size": 99.57,
+     "lay_size": 826.74,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "esito": "prezzo_assente",
+    "rif": 1.01
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  },
+  {
+   "bot": "safe",
+   "id": 352,
+   "ref": "safe_tennis-t352",
+   "evento": "36118082 Alexander Zverev – Alex De Minaur",
+   "strategia": "tennis",
+   "selezione": "Alexander Zverev",
+   "side": "back",
+   "prezzo_riga": 1.02,
+   "size": 3.0,
+   "status": "open",
+   "size_matched": 3.0,
+   "avg_price_matched": 1.02,
+   "placed_at": "2026-09-26T15:40:30.129008+00:00",
+   "meta_canale": {
+    "canale_ref": "safe_tennis-t352",
+    "canale_ack_seq": 1790435118365,
+    "canale_ack_ms": 1790437230202,
+    "canale_fase": "abbinato_parziale",
+    "fill": "flumine_paper"
+   },
+   "prezzo_visto": null,
+   "prezzo_segnale": null,
+   "comando": {
+    "ts": "15:40:30.203Z",
+    "attore": "safe_tennis",
+    "tif": "FILL_OR_KILL",
+    "price": 1.02,
+    "size": 3.0,
+    "eta_ms": 102,
+    "max_eta_ms": 3000,
+    "ack": true
+   },
+   "rifiuti": [],
+   "in_aggancio": null,
+   "agganciato_ms": null,
+   "ordine": {
+    "ts": "15:40:30.204Z",
+    "cor": "ad773bf238b6c-140097300302043846",
+    "price": 1.02,
+    "size": 3.0
+   },
+   "esiti_diario": [
+    {
+     "ts": "15:40:30.206Z",
+     "ok": true,
+     "err": "",
+     "status": "PENDING",
+     "matched": 0.0
+    }
+   ],
+   "specchio": [],
+   "ref_coerente": true,
+   "prezzo_size_cmd_uguale_ordine": true,
+   "libro_feed": {
+    "rx": "15:40:29.903Z",
+    "eta_ms": 301,
+    "libro": {
+     "back": 1.02,
+     "lay": 1.03,
+     "back_size": 32.77,
+     "lay_size": 793.64,
+     "status": "OPEN"
+    }
+   },
+   "verifica_prezzo": {
+    "rif": 1.02,
+    "liq": 32.77,
+    "delta_tick": 0,
+    "entro_1_tick": true,
+    "status_mercato": "OPEN"
+   },
+   "operabile": [
+    true,
+    "OPEN"
+   ]
+  }
+ ]
+}

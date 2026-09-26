@@ -1,0 +1,31 @@
+{
+ "status": "running",
+ "mode": "paper",
+ "strategia_prima": "maker",
+ "strategia": "maker",
+ "stake": 25,
+ "passi": [
+  "2026-09-26T15:33:10.776Z clic cr-avvia-paper-scalper («avvia in prova»)"
+ ],
+ "rpc_registro": [
+  {
+   "ts": "2026-09-26T15:33:10.802Z",
+   "rpc": "scalper_auto_activate",
+   "args": {
+    "p_mode": "paper"
+   },
+   "esito": "inviata"
+  }
+ ],
+ "rpc_clientVero": [
+  {
+   "rpc": "scalper_auto_activate",
+   "args": {
+    "p_mode": "paper"
+   },
+   "esito": "ok",
+   "ms": 379
+  }
+ ],
+ "bloccate": []
+}

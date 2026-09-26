@@ -1,10 +1,180 @@
+# ▶ SINTESI FINALE (fase 2, delegato sessione B) — aggiornata alle 18:55 locali (16:55Z)
+
+**Esito dei controlli: 50 controlli · OK 34 (68%) · KO 7 (14%) · NON CERTIFICATI 9 (18%)**
+
+| id | controllo | esito | evidenza / nota |
+|---|---|---|---|
+| Z0/Z3 | accensione in paper dalla UI vera (mattino, riavvio 2), guardia anti-live falsificata | **OK** | ACCENSIONE_ORA.txt, accensione/, accensione_r2/ |
+| Z13.2 | paper e live mai insieme (ogni riga di trade/ordini di oggi `mode=paper`, effettivo PAPER) | **OK** | sentinella + query di fine giornata |
+| Z4.O1 | Omega: stato sul canale con `control`, battito | **OK** | canali/, omega_control.stats |
+| Z4.O2 | Omega decide dal feed (audit V3 completo, skip motivati) | **OK** | omega_activity |
+| Z4.O3 | Omega ordini paper via canale+flumine, nessun doppio sulla coda (riavvio 2) | **OK** | canale_inviato, specchio awlq900…, coda 0 |
+| Z4.O4 | Omega uscite manuali: nessuna uscita discrezionale eseguita | **OK** | omega_activity |
+| Z4.O5 | Omega nessun ingresso su mercato sospeso | **OK** | skip market_suspended |
+| B-Omega | ricalcolo di 10 decisioni (117-120, 124-128) con le funzioni di produzione | **OK** | B_omega_*.json (P fusa ricalcolata solo sul 120) |
+| Z4.M1 | Mike: stato sul canale | **OK** | mike_stato |
+| Z4.M2 | Mike: hazard atlante v4 dichiarato nel frame | **NON CERTIFICATO** | chiave `hazard_versione` assente; ci sono solo hazard/hazard_atlas numerici |
+| Z4.M3 | Mike: paper REST, fuori dallo specchio | **OK** | mike_trades paper_fill:execution_mode_rest |
+| Z4.M4 | Mike: uscite proposte e non eseguite, protezioni (copertura Over 4.5) automatiche | **OK** | uscita_proposta ×17, cover |
+| C-Mike | ingressi pre-match (banda, stake, finestra) e mancati ingressi (tetto 2/2) | **OK** | C_mike.json, mike_control.stats |
+| B-Mike | stake delle coperture Over 4.5 (`cover_residual`) | **OK** | B_mike_cover.json |
+| Mike-PT | place-and-trim del sotto-minimo in paper | **NON CERTIFICATO** | R-F2-13: in paper fill simulato diretto |
+| Mike-Reg | regolazione dei 6 trade 5070-5075, nessun doppio ordine, P&L | **OK** | mike_aperti/ |
+| Z4.S1 | Safe: stato sul canale, effettivi | **OK** | safe_stato |
+| Z4.S2 | Safe base banda 20-34 e veto campionati su ingressi reali | **NON CERTIFICATO** | nessun ingresso base oggi (pre_ko_assente al mattino) |
+| Z4.S3 | Safe tennis backMin 1.02 | **OK** | ingressi a 1.02-1.11 |
+| Z4.S4 | Safe: nota atlante v4 nelle attività | **NON CERTIFICATO** | 0 attività con «atlante v» |
+| Z4.S5 | Safe ordini paper via canale+flumine (riavvio 2) | **OK** | canale_inviato + flumine_fill |
+| Z4.S6 | Safe uscite manuali = proposte (cashout proposed, exit_hold in attesa) | **OK** | safe_strategy_requests 265 |
+| Z4.S7 | Safe proposte modello/anomalie NON piazzate | **OK** | 46 proposte, 0 trade model/manual |
+| C-Safe | rigioco del feed registrato nel `SafeEngine` di produzione | **OK** | C_safe_*.json |
+| Z4.T1 | tennis auto-mode dal feed (origine auto) | **OK** | tennis_bot_control, tennis_live_follow |
+| Z4.T2 | righe per partita paper, dry_run false | **OK** |  |
+| Z4.T3 | ordini tennis nello specchio `tennis_live_orders` paper | **OK** | con R-F2-7 |
+| Z4.T4 | uscite tennis: solo stop/protezioni, nessun target a uscite manuali | **OK** | swing `exit kind=stop` |
+| Z4.T-fine | partita finita → righe in chiusura, tetto rispettato | **KO** | R-F2-6 |
+| Z4.C1 | scalper auto-mode, sessioni dry-run | **OK** |  |
+| Z4.C2 | specchio scalper con `source='scalper'` (riavvio 2) | **OK** | betfair_live_orders 43709 |
+| Z4.C3 | scalper sul canale 47338 | **OK** | scalper_stato |
+| Z4.C-exit | scalper: nessuna chiusura da solo a uscite manuali | **KO** | R-F2-9 (sniper) |
+| Z5 | tempi degli ordini F0 dal log | **NON CERTIFICATO** | mattino senza log; riavvio 2 non analizzato da me |
+| Z6 | striscia d'esito a video | **NON CERTIFICATO** | nessun browser |
+| Z7 | transizioni Omega pubblicate e giro notturno | **OK** | omega_transitions_status: published 25/09 13:57Z, cron 04:00Z succeeded |
+| Z13.4-O | freno: Omega rifiuta le aperture | **OK** | 3 rifiuti (1° ciclo) |
+| Z13.4-T | freno: tennis rifiuta le aperture | **OK** | tennis_swing 3 rifiuti (2° ciclo) |
+| Z13.4-C | freno: scalper force-flat e NESSUN armamento | **KO** | R-F2-10 (arma a freno tirato, 2 cicli su 2); R-F2-11 |
+| Z13.4-S | freno: Safe rifiuta le aperture | **NON CERTIFICATO** | nessun tentativo nei 2 cicli |
+| Z13.4-M | freno: Mike rifiuta le aperture | **NON CERTIFICATO** | nessun tentativo (tetto 2/2) |
+| Z13.4-R | rilascio con doppia conferma e aperture che riprendono | **OK** | 2 cicli; Safe 354, swing, scalper dopo il rilascio |
+| 3-bis A | feed vs libro Betfair vero vs IPS | **OK** | con riserva: 3/6 prezzi uguali, 3/6 a 1-2 tick su righe di 0.8-2.9 s |
+| D | view-model vero della Control Room vs DB | **OK** | con reperti R-F2-14/15 |
+| Z14.2 | P&L paper ricalcolato per posizione | **OK** | verifica_pnl.py, 0 KO |
+| Run-1 | runner calcio stabile | **KO** | R-F2-C1: 2 crash (10:00:46Z, 14:46:15Z) |
+| Run-2 | runner calcio si riaggancia dopo un'interruzione | **KO** | cieco 10:41:41Z → riavvio |
+| Alert | alert ORDER_MODE col modo effettivo | **KO** | R-F2-C2 |
+| Journal | journal degli ordini senza errori | **KO** | R-F2-18 (alert 511) |
+| UI | campi a video (U…) | **NON CERTIFICATO** | nessun browser collegato |
+
+**NON CERTIFICATI (motivo)**: Z4.M2 (versione dell'atlante non dichiarata nel frame di Mike) · Mike place-and-trim
+(in paper non si esercita, R-F2-13) · Z4.S2 (nessun ingresso Safe base oggi) · Z4.S4 (nessuna nota atlante nelle
+attività di Safe) · Z5 F0 (mattino senza log su file; il log del riavvio 2 non l'ho analizzato) · Z6 e tutti i campi
+«a video» (nessun browser collegato) · freno su Safe e Mike (nessun tentativo di apertura in 2 cicli) · tutto ciò che
+dipende dal runner fra le 10:41:41Z e il riavvio 2 («runner cieco»).
+
+**KO (con file:riga; stato: APERTO salvo diversa indicazione del coordinatore — non ho verificato fix di altri)**
+| KO | dove | stato |
+|---|---|---|
+| R-F2-6 tennis: partita finita con righe `running`, tetto 5 superato (armate 6-10) | `tennis_bot_service.py:492-500` (`_mercato_chiuso` legge `tennis_live_now.status`, che resta SUSPENDED) + `auto_mode.py:177-200` (`scegli_partite` conta solo le armate nel feed) | aperto |
+| R-F2-9 sniper chiude da solo a uscite manuali | gate solo su `ScalperStrategy` (`scalper_bot.py:446`), non su `sniper_bot`; `USCITE_AUTOMATICHE_PER_BOT.md:263-264` | aperto |
+| R-F2-10 scalper: l'auto-mode arma a freno tirato, `motivo_blocco` null | `scalper_service.py:745` (`giro_auto` prima del freno a `:750`), armamento `:455-490`, `motivo_blocco` `:494` | aperto (confermato nei 2 cicli) |
+| R-F2-11 force-flat non appiattisce il residuo sotto il minimo | `scalper_session.py:1312-1321` | aperto |
+| R-F2-C1 crash del runner calcio (exit 1) ×2, poi cieco dalle 10:41:41Z senza rilevamento per ~4 h | causa senza traceback; ipotesi di admin-26 `runner.py:1192` | aperto (fix delle sessioni in arrivo col riavvio 3: da verificare) |
+| R-F2-C2 alert ORDER_MODE «*** LIVE *** SOLDI VERI» con effettivo PAPER | alert all'avvio del runner (live_alerts 498, 506) | aperto |
+| R-F2-C3 console dell'app non su file | `runner.py:2325` basicConfig su console | mitigato: dal riavvio 2 la console va su `%TEMP%\alphascore_console.log` |
+| R-F2-18 journal: `betfair_live_journal_side_check` violato | alert 511 (15:26:53Z) | aperto |
+| Uniformità a porte spente (R-F2-2): paper di Omega/Safe senza flumine | `omega_service.py:2527-2547`, `auto_follow.py:857-865` | risolto dalla configurazione: con le porte accese passano da canale+flumine |
+
+Reperti non-KO da decidere: R-F2-1/17 (scheda tennis «solo tennis» e pulsanti Safe dagli effettivi vecchi), R-F2-3/4
+(audit Omega: `p_modello` = P fusa, book non salvato), R-F2-5 (Mike entra senza dossier), R-F2-7 (ordine tennis
+riscritto ogni secondo, `placed_at` NULL), R-F2-8 (Pula = cemento per default), R-F2-12 (freno consuma i tentativi
+di Omega), R-F2-14/15 (due liability, definizione di «oggi»), R-F2-16/20 (specchio `source='runner'` per
+Omega/Safe calcio, `source='manual'` per Safe tennis), R-F2-19 (`canale_ack_seq` ripetuto).
+
+**Cosa ho visto fare ai bot (tutto PAPER, piazzati dalle 09:00Z, dati al 16:50Z)**
+| bot | decisioni | ordini paper | regolati (V/P) | aperti | P&L netto regolato |
+|---|---|---|---|---|---|
+| Omega | 705 valutazioni (686 skip motivati) | 12 lay CS 1 € (2 in errore: rifiuto canale e freno) | 9 (9/0) | 1 | **+8.55** |
+| Mike | 17 proposte d'uscita (nessuna eseguita), 4 partite | 12 (entrate Under, seconde entrate, coperture Over 4.5) | 6 (3/3) | 6 | **+2.90** |
+| Safe esatto | 469 skip, 46 proposte opportunità non piazzate | 6 lay CS 2 € | 4 (4/0) | 1 | **+7.60** |
+| Safe tennis | — | 8 back 3 € (1.02-1.11) | 5 (4/1) | 1 | **−2.76** (una back a 1.02 persa −3.00) |
+| tennis_swing | 24 ingressi fra i 4 bot | 40 ordini | 7 (1/1) | 33 | **+0.15** |
+| tennis_pro | | 12 | 6 (2/2) | 6 | **−0.12** |
+| tennis_flb | | 11 | 4 (0/1) | 7 | **−0.04** |
+| tennis_scalper | blocca in gioco (configurazione) | 0 | — | — | 0 |
+| scalper calcio | 19 armamenti automatici, 4 sniper_fire | simulati (dry-run) + 1 nello specchio | — | — | solo lordo dichiarato (non nel realizzato) |
+
+---
+
 # E2E REALE — FASE 2 — BOT ACCESI IN PAPER — REFERTO INCREMENTALE — 26/09/2026
 
 Delegato Opus del coordinatore (sessione B). Worktree `agent-a1bc87b400bbc7d7c`, base `origin/master` `34a8d92`.
 Nessun commit. App accesa dalle 10:56 locali (exe pid 15624): mai chiusa né riavviata. LIVE escluso.
-**Stato del referto: AGGIORNAMENTO 3 — 16:50 locali (14:50Z).** Il file viene riscritto a ogni aggiornamento.
+**Stato del referto: AGGIORNAMENTO 5 — RIAVVIO 2, 18:40 locali (16:40Z).** Il file viene riscritto a ogni aggiornamento.
 
 ---
+
+## ★★ RIAVVIO 2 (l'utente ha riavviato l'app con la console su file e le porte via canale accese)
+
+**Accensione** (`frontend/e2e_fase2/accensione_r2.e2e.test.tsx`, stessa guardia anti-live; orari in
+`ACCENSIONE_ORA.txt` sezione «RIAVVIO 2»; foto `e2e_fase2/accensione_r2/`)
+| passo | esito | UTC |
+|---|---|---|
+| G0 guardia (falsificazione) | verde | 15:13Z |
+| A0: 9 bot stopped, order_mode paper (R2 verificato) | verde | 15:13Z |
+| A1 Omega paper | running/paper | 15:16:04Z |
+| A2 Mike paper | running/paper | 15:16:56Z |
+| A3 Safe: tennis dalla scheda tennis | running, variants [tennis]; poi **rosso** sul clic base dalla scheda calcio: «pulsante assente a video: cr-avvia-paper-safe-base» | 15:23Z |
+| A3b base/esatto/punta dalla scheda calcio | variants [tennis, base, esatto, punta], 6/6 paper | 15:26:45Z |
+| A4 4 tennis stake 2 | running/paper | 15:30:54-15:31:06Z |
+| A5 scalper maker 25 | running/paper | 15:33:12Z |
+
+- **R-F2-17 (uso UI, stesso meccanismo di R-E2E-1)**: subito dopo l'avvio «solo tennis», la scheda calcio NON
+  offre «avvia» su Safe base perché la plancia legge gli effettivi del servizio, ancora quelli della sessione
+  precedente. Pochi minuti dopo, con gli effettivi aggiornati a [tennis], il pulsante c'è e funziona.
+- Processi miei: `ascolto_leggero.py` (canali, file `canali_r2/`, memoria costante) e verifiche a comandi brevi.
+  Il registratore pesante del feed resta SPENTO per decisione del coordinatore: il ricalcolo B di Omega nel
+  riavvio 2 è senza la P fusa.
+
+**Z0 dopo il riavvio**: scanner `source=stream`, 2 connessioni, 251 mercati (15:34Z); `order_mode` paper,
+tetto live, freno false, boot nuovo; alert 510 crash del runner TENNIS 15:04:20Z (uptime 611 s), prima delle
+accensioni; alert 511 alle 15:26:53Z **JOURNAL KO** «violates check constraint betfair_live_journal_side_check
+(ordini NON impattati)» (R-F2-18). Canali (admin-26, 15:36Z): auto-follow vivo, 179 mercati seguiti (153 auto),
+attori collegati.
+
+**Z4 via canale (porte accese)**
+| controllo | evidenza | esito |
+|---|---|---|
+| 7.2.3/7.2.6 Safe e Omega passano dal canale | `canale_inviato` Omega 5, Safe 3 (15:15-15:34Z); `flumine_fill` Omega 4, Safe 3 | **OK** |
+| 7.2.4 marcature sul trade | Omega 124-128 e Safe 347-349: `canale_ref`, `canale_ack_seq`, `canale_ack_ms` valorizzati; `canale_fase` a volte NULL (124, 125, 349) | OK con riserva |
+| 7.2.7 nessuna riga sulla coda DB | `betfair_live_order_requests` 0 righe dopo le 15:10Z | **OK** |
+| specchio | `betfair_live_orders` 6 righe paper EXECUTION_COMPLETE `awlq9000000001-6` con **source='runner'** (R-F2-16: gli ordini di Omega/Safe finiscono nello specchio sotto la voce del runner, non del bot) | reperto |
+| rifiuti all'avvio | Omega 124 (15:21Z) e Safe tennis 346 (15:24Z) `canale_rifiutato runner_non_agganciato: nessun framework flumine attivo`; Safe riprova (347 OK); Omega 124 `flumine_no_fill attempt 1/3` dopo 112 s | coerente (dichiarato) |
+| unicità della sequenza | `canale_ack_seq` 1790434467069 su DUE comandi diversi: omega-t124 (rifiutato) e safe-t348 (R-F2-19) | reperto |
+
+**Z13.4 FRENO, 2° ciclo (riavvio 2)** (`frontend/e2e_fase2/freno_r2.e2e.test.tsx`, guardia: solo
+`set_live_kill_switch`, F0 verde; evidenze `e2e_fase2/freno_r2/`: F1/F2 prima-dopo-esito, `conta_freno_tirato.json`,
+`conta_dopo_rilascio.json`, strumento `conta_freno.py`). Annunciato al coordinatore e ad admin-26 10 minuti prima.
+TIRATO alle 16:10:59Z (1 clic); RILASCIATO alle 16:22:12Z (3 clic, dopo 2 ancora tirato); `order_mode` paper per
+tutto il tempo.
+| bot | freno tirato (16:10:59-16:22:12Z) | dopo il rilascio (16:22-16:37Z) | esito |
+|---|---|---|---|
+| tennis_swing | **3 aperture RIFIUTATE**: `place_rejected` «TENNIS_KILL_SWITCH … apertura RIFIUTATA (passano solo le chiusure)» 16:11:33 / 16:12:04 / 16:19:20Z, riprova con attesa crescente 5→10→20 s | 3 `entry`, 2 `exit`, posizioni pari | **OK** |
+| scalper | force-flat entro 2 s (16:11:01/04Z, `freno db_kill_switch_attivo`), sessioni stopped; **l'auto-mode ARMA 2 sessioni nuove** (36111427, 36109062, `requested`) | le 2 sessioni partono, `sniper_fire`, ordine nello specchio con `source='scalper'` | OK + **R-F2-10 confermato** |
+| Safe | nessun tentativo (skip: `pre_ko_assente` 3, book senza back 1, spread anomalo 1; 7 proposte opportunità = proposte, non piazzamenti) | trade 354 esatto: `canale_inviato` → `flumine_fill` | freno **NON CERTIFICATO** (nessun tentativo); ripresa OK |
+| Omega | nessun tentativo (40 skip: nessun_candidato 20, no_market 8, no_live_state 7, sospeso 3, …) | nessun ingresso nei 15 min | **NON CERTIFICATO** |
+| Mike | nessun tentativo: `motivo_blocco` «tetto partite raggiunto: 2 su 2 in paper» | idem | **NON CERTIFICATO** |
+| tennis flb/pro/scalper | nessun tentativo | — | **NON CERTIFICATO** |
+Nessuna riga nuova in `omega/safe/mike_trades`, `tennis_live_orders`, `betfair_live_orders` e nella coda DB
+durante il freno: nessuna apertura passata su nessun bot.
+
+**Mike, mancati ingressi dopo il riavvio (C)**: dopo il riavvio ha aperto 2 partite (San Marino–Finlandia,
+Lettonia U21–Germania U21, KO 16:00Z, `LIVE_COVERED`, 6 trade aperti, 28.15 € di esposizione paper). Da lì
+`stats.motivo_blocco` = «tetto partite raggiunto: 2 su 2 in paper» e `aperture_bloccate` = 6: il mancato
+ingresso sulle partite delle 16:30-17:00Z è motivato dal tetto (condizione del servizio falsa) → OK
+documentato, non KO.
+
+**B Omega 124-128** (`B_omega_r2_124_128.json`, funzioni di produzione, senza P fusa): p_imp, P storica, P
+nostra, margine, EV e liability = scritti, cancello vero. Il 127 risulta «KO» nello script solo perché
+`omega_trades.price` dopo il fill è il MEDIO ABBINATO (60), mentre la decisione e l'ordine sono a 65 (audit
+`price 65`, specchio `price 65 avg 60`): ricalcolato a 65, tutto coincide → **OK**. Da sapere: in paper flumine ha
+dato un prezzo migliore del limite (60 contro 65 su un lay).
+
+**Mike 5070-5075** (`verifica_mike_aperti.py`, `mike_aperti/`): regolati TUTTI alle 14:54:40-41Z, prima della
+chiusura dell'app, coi totali gol del risultato (36111764: 3 gol → Under vinto +2.85, Over 4.5 perso −1.34, netto
+1.51; 36111770: 5 gol → Under −5.00 e −2.50, Over +4.40 e +4.49, netto 1.39). Commissione per mercato (0.15 e
+0.47) = 5% del vinto netto del mercato. `settled_pnl` = somma delle gambe. Nessuna riga nuova, nessuna chiusura,
+nessun doppio ordine dopo il riavvio → **OK**. Il `mike_events.live` era fermo al minuto ~40 (feed cieco dalle
+10:41Z): il primo «KO» dello script sul P&L era un falso rosso (usava quel punteggio fermo).
 
 ## ★ CRASH DEL RUNNER CALCIO 10:00:46Z (reperto grave di admin-26, analisi in SOLA LETTURA)
 

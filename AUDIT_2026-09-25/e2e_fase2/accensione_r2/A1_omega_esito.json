@@ -1,0 +1,102 @@
+{
+ "ok": true,
+ "status": "running",
+ "mode": "paper",
+ "prima_status": "stopped",
+ "passi": [
+  "2026-09-26T15:15:55.446Z clic cr-avvia-paper-omega («avvia in prova»)"
+ ],
+ "rpc_registro": [
+  {
+   "ts": "2026-09-26T15:15:55.457Z",
+   "rpc": "omega_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_daily_goal": 100,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    }
+   },
+   "esito": "inviata"
+  }
+ ],
+ "rpc_clientVero": [
+  {
+   "rpc": "omega_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_daily_goal": 100,
+    "p_params": {
+     "min_stake": 0.5,
+     "price_max": 120,
+     "price_min": 20,
+     "max_events": 0,
+     "ft_entry_max": 80,
+     "ft_entry_min": 50,
+     "greenup_mode": "auto",
+     "ht_entry_max": 40,
+     "ht_entry_min": 20,
+     "stop_on_goal": true,
+     "commission_pct": 5,
+     "daily_loss_cap": 0,
+     "greenup_enabled": true,
+     "greenup_retry_s": 20,
+     "model_p_max_pct": 2,
+     "poll_interval_s": 20,
+     "entry_minute_max": 60,
+     "entry_minute_min": 30,
+     "greenup_risk_cap": 0.1,
+     "greenup_ev_margin": 0.1,
+     "include_aggregate": false,
+     "min_lay_liquidity": 5,
+     "model_calibration": "off",
+     "max_open_liability": 0,
+     "entry_window_source": "score",
+     "greenup_max_attempts": 15,
+     "greenup_hold_max_risk": 0.02,
+     "greenup_settle_delay_s": 30,
+     "max_liability_per_match": 0,
+     "greenup_take_profit_frac": 0.9,
+     "greenup_trigger_distance": 1,
+     "greenup_take_profit_minute": 80,
+     "greenup_price_trigger_ratio": 0.5
+    }
+   },
+   "esito": "ok",
+   "ms": 969
+  }
+ ],
+ "bloccate": []
+}

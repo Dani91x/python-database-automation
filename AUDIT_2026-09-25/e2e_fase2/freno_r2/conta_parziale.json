@@ -1,0 +1,91 @@
+{
+ "finestra": [
+  "2026-09-26T16:10:59Z",
+  "2026-09-26T16:30:00Z"
+ ],
+ "per_bot": {
+  "omega": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "safe": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "mike": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "tennis": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "scalper": {
+   "attivita_per_kind": {
+    "info": 4,
+    "auto_armata": 2
+   },
+   "righe_col_freno": 2,
+   "esempi_freno": [
+    {
+     "ts": "2026-09-26T16:11:01.036402+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    },
+    {
+     "ts": "2026-09-26T16:11:04.329701+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    }
+   ]
+  }
+ },
+ "righe": {
+  "omega_trades": [],
+  "safe_strategy_trades": [],
+  "mike_trades": [],
+  "tennis_live_orders": [],
+  "betfair_live_orders": [],
+  "betfair_live_order_requests": [],
+  "scalper_control": [
+   {
+    "event_id": "36097764",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:02.981001+00:00",
+    "stopped_at": "2026-09-26T16:11:02.980967+00:00"
+   },
+   {
+    "event_id": "36091844",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:06.277245+00:00",
+    "stopped_at": "2026-09-26T16:11:06.277221+00:00"
+   },
+   {
+    "event_id": "36111427",
+    "status": "requested",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:13.546086+00:00",
+    "stopped_at": null
+   },
+   {
+    "event_id": "36109062",
+    "status": "requested",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T16:11:13.546086+00:00",
+    "stopped_at": null
+   }
+  ]
+ }
+}

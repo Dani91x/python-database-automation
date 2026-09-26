@@ -1,0 +1,31 @@
+{
+ "ok": true,
+ "status": "running",
+ "mode": "paper",
+ "passi": [
+  "2026-09-26T15:16:44.772Z clic cr-avvia-paper-mike («avvia in prova»)"
+ ],
+ "rpc_registro": [
+  {
+   "ts": "2026-09-26T15:16:44.778Z",
+   "rpc": "mike_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_params": null
+   },
+   "esito": "inviata"
+  }
+ ],
+ "rpc_clientVero": [
+  {
+   "rpc": "mike_activate",
+   "args": {
+    "p_mode": "paper",
+    "p_params": null
+   },
+   "esito": "ok",
+   "ms": 6154
+  }
+ ],
+ "bloccate": []
+}
