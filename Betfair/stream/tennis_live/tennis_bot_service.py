@@ -489,15 +489,32 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     bersagli: set = set()
     stato_mercato: Dict[str, Any] = {}
 
+    # 26/09 (R-FA-1): da quando ogni partita automatica e' fuori dal feed
+    # (memoria del ponte, solo a feed VIVO: a scanner fermo l'assenza non
+    # dice niente e l'orologio riparte da zero).
+    _aggiorna_fuori_feed(auto_seguite, nel_feed, feed["vivo"], ora)
+
     def _mercato_chiuso(ev: str) -> bool:
-        """Il mercato della partita e' CHIUSO secondo il runner? Una lettura
-        per giro per tutte le partite automatiche uscite dal feed."""
+        """La partita automatica uscita dal feed e' FINITA? Una lettura per
+        giro per tutte le partite automatiche uscite dal feed.
+
+        26/09 (R-FA-1): ``CLOSED`` scritto dal runner, OPPURE (rete di
+        sicurezza) fuori dal feed da almeno ``_fine_fuori_feed_s()`` con il
+        mercato NON ``OPEN`` (SUSPENDED, riga assente): prima solo CLOSED, che
+        il runner non scriveva mai, e 7 partite finite restavano armate per
+        ore. Un mercato OPEN non si chiude mai da qui."""
         if "letto" not in stato_mercato:
             fuori = sorted(ev2 for ev2 in auto_seguite if ev2 not in nel_feed)
             fn = getattr(db, "list_tennis_now_status", None)
             stato_mercato["letto"] = fn(fuori) if callable(fn) else None
         m = stato_mercato["letto"]
-        return m is not None and str(m.get(ev) or "").upper() == "CLOSED"
+        if m is None:
+            return False        # non letto: non si chiude niente
+        st = str(m.get(ev) or "").upper()
+        if st == "CLOSED":
+            return True
+        dal = _FUORI_FEED_DAL.get(str(ev))
+        return st != "OPEN" and dal is not None and (ora - dal) >= _fine_fuori_feed_s()
 
     for bot, d in desiderato.items():
         try:
@@ -527,6 +544,17 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                 db.upsert_tennis_bot_control(_riga_armatura(ev, bot, d, params_bot))
                 nuove_armate.append(ev)
                 armati += 1
+            # ---- partite AUTOMATICHE uscite dal feed e FINITE: in chiusura
+            # (il runner le porta a stopped a flat verificato). 26/09 (R-FA-1):
+            # PRIMA dell'auto-mode, cosi' il tetto qui sotto conta solo le vive.
+            if feed["vivo"]:
+                for ev in list(attive):
+                    ev_s = str(ev)
+                    if ev_s in auto_seguite and ev_s not in nel_feed \
+                            and ev_s not in seguite_a_mano and _mercato_chiuso(ev_s):
+                        db.set_tennis_bot_status(ev_s, bot, "stopping")
+                        attive.pop(ev, None)
+                        fermati += 1
             # ---- AUTO-MODE: le partite del FEED UNICO, fino al tetto
             if origine_ok and tetto > 0 and feed["vivo"] and occupate is not None:
                 def _escludi(ev: str, _bot: str = bot) -> bool:
@@ -541,7 +569,11 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                                and str(r.get("status")) in _STATI_NON_RIARMABILI_AUTO
                                for r in righe)
                 gia = [ev for ev in attive if str(ev) not in seguite_a_mano]
-                scelta = _AM.scegli_partite(candidate, gia, _escludi, tetto)
+                # 26/09 (R-FA-1): le armate VIVE fuori dal feed (non ancora
+                # finite) occupano un posto del tetto come quelle nel feed
+                vive_fuori = len([ev for ev in gia if str(ev) not in nel_feed])
+                scelta = _AM.scegli_partite(candidate, gia, _escludi, tetto,
+                                            altre_vive=vive_fuori)
                 bersagli.update(scelta["tengo"])
                 for ev in scelta["nuove"]:
                     if ev not in auto_seguite:
@@ -560,16 +592,6 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
             # ---- USCITE: l'interruttore del bot sulle righe per partita (solo
             # se la colonna c'e' su entrambe le tabelle: altrimenti automatiche)
             _propaga_uscite(db, bot, d, attive)
-            # ---- partite AUTOMATICHE uscite dal feed a mercato CHIUSO: in
-            # chiusura (il runner le porta a stopped a flat verificato)
-            if feed["vivo"]:
-                for ev in list(attive):
-                    ev_s = str(ev)
-                    if ev_s in auto_seguite and ev_s not in nel_feed \
-                            and ev_s not in seguite_a_mano and _mercato_chiuso(ev_s):
-                        db.set_tennis_bot_status(ev_s, bot, "stopping")
-                        attive.pop(ev, None)
-                        fermati += 1
         else:
             for ev in attive:
                 db.set_tennis_bot_status(ev, bot, "stopping")
@@ -635,6 +657,36 @@ FONTE_FEED = "safe_strategy_scan"
 #: ad app accesa), non a ogni giro (una scrittura fallita ogni 15 s).
 _RIPROVA_ORIGINE_S = 600.0
 _ORIGINE_ASSENTE: Dict[str, Optional[float]] = {"dal": None}
+#: 26/09 (R-FA-1) - rete di sicurezza della fine partita: una partita
+#: automatica fuori dal feed da almeno tanto, a mercato non OPEN, e' finita.
+#: Env ``TENNIS_AUTO_FINE_FUORI_FEED_S`` (vuota o illeggibile = default).
+_FINE_FUORI_FEED_DEFAULT_S = 600.0
+#: event_id -> epoch da cui e' fuori dal feed (solo partite automatiche)
+_FUORI_FEED_DAL: Dict[str, float] = {}
+
+
+def _fine_fuori_feed_s() -> float:
+    raw = os.getenv("TENNIS_AUTO_FINE_FUORI_FEED_S", "").strip()
+    try:
+        v = float(raw) if raw else _FINE_FUORI_FEED_DEFAULT_S
+    except ValueError:
+        v = _FINE_FUORI_FEED_DEFAULT_S
+    return v if v > 0 else _FINE_FUORI_FEED_DEFAULT_S
+
+
+def _aggiorna_fuori_feed(auto_seguite: set, nel_feed: set, vivo: bool, ora: float) -> None:
+    """Tiene ``_FUORI_FEED_DAL``: a feed VIVO una partita automatica assente
+    prende l'orario della prima assenza, una rientrata lo perde; a feed non
+    vivo si azzera tutto (l'assenza non e' misurabile)."""
+    if not vivo:
+        _FUORI_FEED_DAL.clear()
+        return
+    for ev in list(_FUORI_FEED_DAL):
+        if ev in nel_feed or ev not in auto_seguite:
+            _FUORI_FEED_DAL.pop(ev, None)
+    for ev in auto_seguite:
+        if ev not in nel_feed:
+            _FUORI_FEED_DAL.setdefault(str(ev), ora)
 
 
 def _origine_assente_ora(ora: float) -> bool:

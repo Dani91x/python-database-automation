@@ -175,7 +175,8 @@ def partite_dal_feed(righe: Optional[Iterable[Dict[str, Any]]]) -> List[Dict[str
 
 
 def scegli_partite(candidate: List[str], gia_armate: Iterable[str],
-                   escludi: Callable[[str], bool], tetto: int) -> Dict[str, List[str]]:
+                   escludi: Callable[[str], bool], tetto: int,
+                   altre_vive: int = 0) -> Dict[str, List[str]]:
     """Quali partite del feed deve avere UN bot.
 
     * ``tengo``: quelle gia' armate e ancora nel feed (mai buttate fuori per
@@ -185,10 +186,14 @@ def scegli_partite(candidate: List[str], gia_armate: Iterable[str],
       tetto. ``escludi`` si chiama SOLO sulle candidate che servono (dietro
       c'e' una lettura al database per partita: niente letture inutili).
     Un tetto abbassato sotto le armate non ne disarma nessuna: semplicemente
-    non se ne armano di nuove."""
+    non se ne armano di nuove.
+
+    26/09 (R-FA-1): ``altre_vive`` = armate ancora VIVE ma fuori dal feed
+    (uscite da poco, non ancora finite): occupano un posto come le altre.
+    Prima contavano solo le armate nel feed e il tetto 5 arrivava a 12."""
     armate = {str(e) for e in gia_armate}
     tengo = [e for e in candidate if e in armate]
-    posti = max(0, int(tetto) - len(tengo))
+    posti = max(0, int(tetto) - len(tengo) - max(0, int(altre_vive)))
     nuove: List[str] = []
     for e in candidate:
         if posti <= 0:

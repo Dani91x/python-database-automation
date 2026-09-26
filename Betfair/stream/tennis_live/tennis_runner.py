@@ -400,6 +400,23 @@ def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]]
             with self._lock:
                 self._latest[market_book.market_id] = serialize_book(market_book, LADDER_DEPTH)
 
+        def process_closed_market(self, market: Any, market_book: Any) -> None:  # noqa: ARG002
+            """26/09 (R-FA-1): flumine NON passa mai un book CLOSED a
+            ``process_market_book`` (``baseflumine._process_market_books``:
+            ``CloseMarketEvent`` + ``continue``) ma chiama QUESTO. Prima la
+            capture teneva l'ultimo book (SUSPENDED) e ``tennis_live_now`` non
+            arrivava mai a CLOSED: il ponte non chiudeva le partite finite."""
+            mid = str(getattr(market_book, "market_id", "") or "")
+            if not mid:
+                return
+            with self._lock:
+                try:
+                    rec = serialize_book(market_book, LADDER_DEPTH)
+                except Exception:  # noqa: BLE001 - book strano: si marca l'ultimo noto
+                    rec = dict(self._latest.get(mid) or {"market_id": mid, "runners": {}})
+                rec["status"] = "CLOSED"
+                self._latest[mid] = rec
+
         def latest(self) -> Dict[str, Dict[str, Any]]:
             with self._lock:
                 return dict(self._latest)
@@ -521,6 +538,10 @@ class TennisLiveSession:
         self.comandi: Dict[str, Dict[str, Any]] = {}
         self.attesa_libro: Dict[str, Optional[int]] = {}
         self.ultimi_follows: Optional[List[Dict[str, Any]]] = None
+        # 26/09 (R-FA-1): eventi con ``tennis_live_now.status='CLOSED'`` gia'
+        # scritto (stato terminale: non si riscrive, NON si svuota a
+        # ``reset_streams`` - dopo un rebuild il book vuoto direbbe SUSPENDED)
+        self.now_chiusi: set = set()
 
     def reset_streams(self) -> None:
         self.capture.clear()
@@ -1305,6 +1326,10 @@ def _build_now_state(session: TennisLiveSession, event_id: str) -> "tuple[Dict[s
             "status": book.get("status"),
             "selections": _now_selections(book, meta.get("selection_names", {})),
         })
+    if str(status).upper() == "CLOSED":
+        # 26/09 (R-FA-1): un mercato chiuso non e' in gioco (l'ultimo book
+        # della partita porta ancora inplay=true: la UI scriverebbe «LIVE»)
+        inplay = False
     state = {
         "markets": markets_out,
         "order_mode": live_order_mode(),
@@ -1344,7 +1369,18 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
     trading = session.trading
     _maybe_keepalive(session)
     feed = _scan_feed(session)
+    # 26/09 (R-FA-1): le partite il cui CLOSED e' gia' scritto non si
+    # riscrivono piu' ogni 2 s (IO sul DB) e non chiedono piu' il punteggio.
+    chiusi = getattr(session, "now_chiusi", None)
+    if chiusi is None:
+        chiusi = set()
+        try:
+            session.now_chiusi = chiusi
+        except Exception:  # noqa: BLE001 - sessione finta senza attributi
+            pass
     for event_id in list(session.market_meta.keys()):
+        if event_id in chiusi:
+            continue
         # PUNTEGGIO dal FEED UNICO dello scanner Safe Strategy (stato IPS grezzo,
         # stesso parser): prima UNA get_scores per evento ogni 2s. Riga assente o
         # stantia → chiamata diretta come sempre (mai un buco, mai dati vecchi).
@@ -1398,6 +1434,9 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
             tennis_db.upsert_tennis_now(event_id, inplay, status, state, score_state, points)
         except Exception as e:  # noqa: BLE001
             logger.warning("[tennis-now] upsert KO %s: %s", event_id, e)
+            continue        # non scritto: si riprova al giro dopo
+        if str(status).upper() == "CLOSED":
+            chiusi.add(event_id)    # stato terminale scritto una volta
 
 
 # ---------------------------------------------------------------------------

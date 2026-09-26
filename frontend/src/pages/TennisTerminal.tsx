@@ -55,6 +55,11 @@ export default function TennisTerminal() {
     const [rec, setRec] = useState<boolean | null>(null);
     const [recBusy, setRecBusy] = useState(false);
     const [recError, setRecError] = useState<string | null>(null);
+    // F-11 (26/09): la partita e' SEGUITA dal runner (follow PENDING/STREAMING)?
+    // null = non ancora letto. Seguirla e' un gesto dell'utente (bottone «Segui»).
+    const [seguita, setSeguita] = useState<boolean | null>(null);
+    const [seguiBusy, setSeguiBusy] = useState(false);
+    const [seguiError, setSeguiError] = useState<string | null>(null);
     useEffect(() => {
         if (!eventId) return undefined;
         let alive = true;
@@ -66,6 +71,7 @@ export default function TennisTerminal() {
                 const f = rows.find(r => r.event_id === eventId);
                 setOpenDate(f?.open_date ?? null);
                 setRec(typeof f?.record === 'boolean' ? f.record : null);
+                setSeguita(f?.status === 'PENDING' || f?.status === 'STREAMING');
             })
             .catch(() => {});
         return () => { alive = false; unsub(); };
@@ -105,16 +111,24 @@ export default function TennisTerminal() {
         return m === 'PAPER' || m === 'LIVE' ? m : 'OFF';
     }, [now]) as 'OFF' | 'PAPER' | 'LIVE';
 
-    // Registra l'evento nello stream tennis (tennis_live_follow → PENDING) così il runner
-    // inizia a pubblicare ladder + tabellone + punteggio su tennis_live_ladder/tennis_live_now.
-    // Senza questo la ladder resterebbe vuota in una sessione manuale (nessun bot armato):
-    // il bot-service auto-registra solo gli eventi con bot armati.
-    useEffect(() => {
-        if (!eventId || !marketId) return;
-        followTennisEvent(eventId, marketId).catch(() => {
-            /* best-effort: non blocca la UI se la registrazione fallisce (retry al prossimo mount) */
-        });
-    }, [eventId, marketId]);
+    // «Segui»: registra l'evento nello stream tennis (tennis_live_follow → PENDING) così il
+    // runner pubblica ladder + tabellone + punteggio (tennis_live_ladder/tennis_live_now).
+    // F-11 (26/09, e2e U0361): prima lo faceva l'APERTURA della pagina (una lettura che
+    // scriveva, e riapriva a PENDING anche una partita finita e chiusa). Ora e' un gesto
+    // esplicito dell'utente; senza follow la pagina lo dice accanto al bottone.
+    const segui = async () => {
+        if (!eventId || !marketId || seguiBusy) return;
+        setSeguiBusy(true);
+        setSeguiError(null);
+        try {
+            await followTennisEvent(eventId, marketId);
+            setSeguita(true);
+        } catch (e) {
+            setSeguiError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSeguiBusy(false);
+        }
+    };
 
     if (!eventId || !marketId) {
         return (
@@ -182,6 +196,36 @@ export default function TennisTerminal() {
                     >
                         {orderMode === 'LIVE' ? 'LIVE · REALE' : orderMode === 'PAPER' ? 'PAPER · SIMULATO' : 'ORDINI OFF'}
                     </span>
+                    {/* F-11 (26/09): seguire la partita e' un gesto dell'utente, mai
+                        automatico all'apertura della pagina. */}
+                    {seguita === true ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-700 text-white"
+                            title="Partita seguita dal runner tennis: ladder e punteggio in arrivo.">
+                            SEGUITA
+                        </span>
+                    ) : (
+                        <>
+                            <button
+                                type="button"
+                                onClick={segui}
+                                disabled={seguiBusy}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-black bg-sky-700 text-white hover:bg-sky-600 ${seguiBusy ? 'opacity-60 cursor-wait' : ''}`}
+                                title="Segui questa partita: il runner tennis apre lo stream e pubblica ladder e punteggio."
+                            >
+                                {seguiBusy ? 'SEGUI…' : 'SEGUI'}
+                            </button>
+                            {seguita === false && !seguiError && (
+                                <span className="text-[10px] text-amber-300 font-mono">
+                                    partita non seguita: premi «Segui» per ladder e punteggio
+                                </span>
+                            )}
+                            {seguiError && (
+                                <span className="text-[10px] text-red-400 font-mono" title={seguiError}>
+                                    SEGUI KO
+                                </span>
+                            )}
+                        </>
+                    )}
                     {/* Registrazione OPT-IN per-partita: toggle REC (raw nativo su file,
                         consumabile dai lab/backtest tennis). Stato dal DB, per-evento. */}
                     <button
