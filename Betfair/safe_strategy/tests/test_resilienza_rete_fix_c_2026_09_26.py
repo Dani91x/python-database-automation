@@ -291,6 +291,34 @@ def test_custode_no_session_dal_server_rifa_il_login_nello_stesso_giro():
     assert client.chiamate == ["keep_alive", "login"] and client.sessione_valida()
 
 
+def test_custode_login_preventivo_al_90_per_cento_della_vita():
+    """Senza nessun errore: se dall'ultimo rinnovo riuscito e' passato almeno
+    il 90% della vita della sessione (1200 s .it -> 1080 s), il custode rifa'
+    il LOGIN invece del keepAlive (che potrebbe gia' dire NO_SESSION). Sotto
+    la soglia fa il keepAlive normale. La sessione sul server qui e' ancora
+    valida: il login e' davvero PREVENTIVO, non una reazione a un errore."""
+    from Betfair.stream.auth import CustodeSessione
+
+    rete = Rete()
+    t0 = rete.t
+    assert ClientBetfairFinto.session_timeout == 1200
+
+    # sotto il 90% (1000 s): keepAlive, nessun login
+    client_a = ClientBetfairFinto(rete)
+    a = CustodeSessione(client_a, periodo_s=900.0, ora=rete.ora)
+    assert a.tick(t0 + 1000.0) == "ok"
+    assert client_a.chiamate == ["keep_alive"]
+
+    # oltre il 90% (1081 s), senza errori: login preventivo
+    client_b = ClientBetfairFinto(rete)
+    b = CustodeSessione(client_b, periodo_s=900.0, ora=rete.ora)
+    rete.t = t0 + 1081.0
+    assert client_b.sessione_valida()               # il server l'accetterebbe ancora
+    assert b.tick() == "relogin"
+    assert client_b.chiamate == ["login"]
+    assert b.stato()["relogin"] == 1 and b.stato()["fallimenti"] == 0
+
+
 def test_custode_errore_di_sessione_anticipa_il_rinnovo():
     """Un ``INVALID_SESSION_INFORMATION`` dal REST o dallo stream non aspetta
     il periodo: il giro dopo si rifa' la sessione."""
