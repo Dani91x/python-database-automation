@@ -3180,3 +3180,37 @@ true; scalper_control 25/25 false; scalper_service_control false; tennis_bot_ser
 residuo: lo azzera R2 all'avvio, controllo Z0.2bis del piano); tennis_bot_control 9 righe, 0 true. Prerequisito §1.1 della FASE 2
 soddisfatto. FASE 1 in corso (sessione B, referto `AUDIT_2026-09-25/E2E_FASE1_ESITI_2026-09-25.md`); piano corretto `a46a95d`,
 tennis_pro `5798754`.
+**[sessione B, audit] h01:35 (26/09) — FASE 1 E2E COMPLETATA:** P01-P31 OK, 0 KO di codice, P32 OK al netto della migrazione uscite manuali applicata dall'utente durante il test (18:45 UTC); UI esercitata con componenti veri in jsdom (browser bloccato su localhost: login dal browser NON CERTIFICATO → fase 2); 12 reperti R-E2E-1..12 (nessuna correzione); SCOPERTI esercitati (C295, C275, C274, ...); DB tornato alla fotografia, verificato da me. Referto `AUDIT_2026-09-25/E2E_FASE1_ESITI_2026-09-25.md`, evidenze `e2e_fase1/`, banco `frontend/e2e_fase1/`. PRONTI PER LA FASE 2 (app accesa dall'utente): prerequisiti soddisfatti (migrazione uscite manuali applicata, default false; .env con MOTORE_ORDINI_CANALE=1 e SCALPER_CANALE=1; hazard_atlas vuoto: si riempie con la sync al primo avvio); residui: tennis 'stopping' (si azzera all'avvio: Z0.2bis), proposte vecchie 49/257 'proposed' (decisione utente).
+
+## 2026-09-26 (sessione B, audit → test e2e)
+**h11:05 — VIA ALLA FASE 2 (ordine utente via admin-26: «oggi è sabato, giornata piena di eventi, voglio il test massivo; sarò fuori tutto il giorno; coordinatevi e iniziate»).** App avviata da admin-26 alle 10:56:41 (pid 15624); utente assente; NESSUNO chiude/riavvia l'app; bot solo PAPER; porte ordini via canale NON accese (scrittura .env negata dal classificatore ad admin-26) → controlli via canale NON CERTIFICATI, ordini paper sulla coda DB. Migrazioni: nessuna pendente; i 9 indici facoltativi «SOLO_SE_MANCANO» NON esistono (facoltativi, da applicare quando l'utente torna). Regola rispettata: bot accesi solo dall'utente → chiesto a lui DIRETTAMENTE il sì per accenderli in paper al posto suo (assente); in attesa. Lanciati (sola lettura): delegato Z0 avvio (processi, stopped/paper, Z0.2bis, canali, scanner, atlante, TacticAI, catchup, auto-follow, F0, semantica A, Z13) → `AUDIT_2026-09-25/E2E_FASE2_Z0_AVVIO_2026-09-26.md`; delegato FASE 3 pagine sessione B → `AUDIT_2026-09-25/E2E_FASE3_PAGINE_SESSIONE_B_2026-09-26.md`.
+**h11:20 — AUTORIZZAZIONE DIRETTA DELL'UTENTE (testuale):** «sì certo fate tutto il necessario SOLO PAPER ovviamente, voglio il test massivo di ogni funzionalità dell'app e di ogni pagina, tutto quello che vediamo a monitor deve essere certificato e i dati confrontati col db per capire se abbiamo qualche bug nascosto, con tutto intendo tutto, anche le statistiche, gli avvisi, i consigli poisson ml ecc». → i bot li accendo IO in PAPER (via comandi veri della Control Room, come in fase 1) DOPO il referto Z0 a bot fermi; ora esatta dell'accensione in cronostoria e ad admin-26.
+
+## 2026-09-26 — TEST E2E FASE 2 (app accesa, bot in PAPER) e FASE 3 (pagine)
+
+**Stato di partenza verificato (h10:50 reale)**: master `46e619b` (FASE 1 di B pushata), origin allineato, indice vuoto.
+Migrazioni: tutte le 16 del 25/09 applicate (l'ultima, `uscite_manuali_default`, verificata da me sul DB alle 01:00);
+MANCANO SOLO i 9 indici facoltativi delle due migrazioni `*_SOLO_SE_MANCANO_2026-09-25.sql` (letto da B in
+information_schema): non bloccano, da applicare quando l'utente torna. Ordine dell'utente (testuale, h10:45): «oggi è
+sabato quindi è una giornata piena di eventi, voglio il test massivo di quello che ti dicevo, sarò fuori tutto il giorno
+quindi non potrò fare le migrazioni, se ce ne sono dimmele ora poi coordinatevi e iniziate»; poi alla sessione B:
+«sì certo fate tutto il necessario SOLO PAPER ovviamente, voglio il test massivo di ogni funzionalità dell'app e di ogni
+pagina… tutto quello che vediamo a monitor deve essere certificato e i dati confrontati col db… anche le statistiche,
+gli avvisi, i consigli poisson ml ecc».
+**h10:56:41 — APP AVVIATA DA ME** (exe portable `desktop/release/AlphaScore Trading 1.1.0.exe`, pid 15624), l'utente è
+assente: nessuno chiude/riavvia app o bot senza motivo scritto qui; freno = emergenza; LIVE escluso in assoluto.
+Porte 47330-47338 tutte in ascolto entro 60 s; 22 processi python.
+**PORTE VIA CANALE NON ACCESE**: la scrittura delle 4 righe nel `.env` (`SAFE_ORDINI_VIA_CANALE`,
+`OMEGA_ORDINI_VIA_CANALE`, `MOTORE_ORDINI_CANALE_TENNIS`, `SAFE_TENNIS_ORDINI_VIA_CANALE`) mi è stata NEGATA dal
+classificatore dei permessi (feature flag) e non l'ho aggirata → la FASE 2 gira con gli ordini paper sulla CODA DB; i
+controlli «via canale» si segnano NON CERTIFICATI. Da fare dall'utente al rientro (4 righe nel `.env` + riavvio app), poi
+si rifà il sottoinsieme ordini via canale.
+Verificato da me: il launcher NON inoltra il `.env` ai figli, ma ogni servizio lo carica da solo (sonda a env pulita sugli
+8 moduli; scalper_service lo carica in `main()` via `Db()`→`db_client`→`config.load_dotenv()` PRIMA di `_avvia_canale()`):
+il reperto di B «SCALPER_CANALE non passato da main.js» NON è un KO.
+**Z0 verificato da me (09:00 UTC, DB sola lettura)**: omega/mike/safe/4 tennis `stopped`+`paper`, battiti freschi,
+`stopping` residuo dei tennis sparito (R2 ok), `betfair_live_settings.order_mode=paper`, kill_switch false.
+**Delegati miei in corso (sola lettura, referti in `AUDIT_2026-09-25/e2e_fase2/ADMIN26_*.md`)**: feed unico + atlante v4
+(7.1, 7.3, 7.9.1, 7.9.3, Opus); catchup/quota (7.9.4, Sonnet). I controlli con bot accesi (7.2, 7.5, 7.6, 7.7, 7.9.2,
+7.9.5-7) partono dopo l'ora di accensione comunicata da B (accende lei dalla Control Room con i comandi veri).
+Sessione B: delegato Z0 (bot fermi) + delegato FASE 3 pagine sue (Dashboard, Analytics, Omega/Safe/Mike, Live P&L).
