@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { addToWatchlist } from '@/lib/watchlist';
+import { orarioPartita, giornoRoma } from '@/lib/rese';
 import {
     Accordion,
     AccordionContent,
@@ -169,13 +170,16 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                 }
             }
 
+            // FIX-B 26/09 (U0011): la lista "di oggi" contiene anche partite che a Roma sono gia'
+            // del giorno dopo (22:00-23:59 UTC): l'orario le etichetta con la data ("27/09 00:00").
+            const oggiRoma = giornoRoma(new Date()) ?? today;
             const mapped: MatchPreview[] = all.map((row) => {
                 try {
                     const dateObj = new Date(row.fixture_date);
                     return {
                         fixture_id: String(row.fixture_id),
                         date: dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
-                        time: dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+                        time: orarioPartita(row.fixture_date, oggiRoma),
                         status: row.status,
                         league: {
                             id: row.league_id,

@@ -175,3 +175,33 @@ export function mlClassLabel(k: string): string {
     }
     return k;
 }
+
+// ---------- ML: UN solo verdetto (FIX-B 26/09, KO7 del referto di fase 3) ----------
+// La VERITA' e' `targets`: probabilita' FINALI calibrate dell'ensemble (le stesse su cui
+// si calcolano i segnali di valore: Ai Engine/ai_engine/predict_fixture.py, "targets":
+// results). `ensemble_agreement` sono le classi votate dai 4 modelli base NON calibrati
+// (ensemble_trainer.get_ensemble_agreement): servono a misurare quanto i modelli
+// concordano CON la previsione, non sono un secondo verdetto.
+export interface AccordoPrevisione {
+    classe: string;                 // classe della Previsione (argmax di targets)
+    concordi: number;               // modelli base che votano la stessa classe
+    totali: number;                 // modelli base che hanno votato
+    maggioranzaGrezza: string | null;
+    divergente: boolean;            // la maggioranza dei voti grezzi e' un'altra classe
+}
+export function accordoConPrevisione(
+    classe: string | null | undefined,
+    agree: { votes?: Record<string, string>; predicted_class?: string } | null | undefined,
+): AccordoPrevisione | null {
+    if (!classe || !agree?.votes) return null;
+    const voti = Object.values(agree.votes);
+    if (voti.length === 0) return null;
+    const mg = agree.predicted_class ? agree.predicted_class : null;
+    return {
+        classe,
+        concordi: voti.filter(v => v === classe).length,
+        totali: voti.length,
+        maggioranzaGrezza: mg,
+        divergente: mg !== null && mg !== classe,
+    };
+}

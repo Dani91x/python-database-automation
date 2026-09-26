@@ -119,7 +119,7 @@ def _fetch_matches(sb, fids):
         chunk = fids[i:i + 300]
         r = _read_retry(
             lambda chunk=chunk: (sb.table("matches")
-                                 .select("fixture_id,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
+                                 .select("fixture_id,fixture_date,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
                                  .in_("fixture_id", chunk).execute()),
             f"matches ({len(chunk)} fixture)")
         for m in r.data or []:
@@ -149,10 +149,16 @@ def _build(es: dict, match: Optional[dict]) -> tuple[dict, Optional[dict]]:
             h = hit(market, selection, ft, ht)
 
     run_date = es.get("run_date")
+    # 26/09 (FIX-B): il kickoff viene dalla PARTITA (matches.fixture_date, la stessa riga
+    # del settlement), non dall'istantanea di engine_signals presa all'emissione: se la
+    # partita e' stata spostata quell'istantanea e' vecchia e sovrascriveva il kickoff
+    # giusto del populator (reperto: 25 partite / 546 righe, "settled" nel futuro).
+    # Senza partita (o senza data) resta l'istantanea come ripiego.
+    kickoff = (match or {}).get("fixture_date") or es.get("kickoff")
     ctx = {
         "engine": es.get("engine"), "fixture_id": fid, "league_id": es.get("league_id"),
         "league_name": es.get("league_name"), "season_year": es.get("season_year"),
-        "home_team": es.get("home_team"), "away_team": es.get("away_team"), "kickoff": es.get("kickoff"),
+        "home_team": es.get("home_team"), "away_team": es.get("away_team"), "kickoff": kickoff,
         "market": market, "selection": selection, "market_label": es.get("market_label"),
     }
     decision = {
@@ -190,7 +196,7 @@ def _build(es: dict, match: Optional[dict]) -> tuple[dict, Optional[dict]]:
             "engine": es.get("engine"), "generated_at": es.get("emitted_at"),
             "fixture_id": fid, "league_id": es.get("league_id"), "league_name": es.get("league_name"),
             "season_year": es.get("season_year"), "home_team": es.get("home_team"),
-            "away_team": es.get("away_team"), "kickoff": es.get("kickoff"),
+            "away_team": es.get("away_team"), "kickoff": kickoff,
             "market": market, "selection": selection, "direction": es.get("direction") or "back",
             "placed": es.get("status") == "PLACED", "status": es.get("status"),
             "settled": settled, "result": result, "hit": h, **g,

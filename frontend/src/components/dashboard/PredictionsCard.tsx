@@ -2,6 +2,7 @@ import { NormalizedPredictions, NormalizedTeam } from "@/lib/normalize";
 import { Trophy, Target, CircleDot, Info } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { golPrevisto } from "@/lib/rese";
 
 interface PredictionsCardProps {
     predictions: NormalizedPredictions;
@@ -99,7 +100,8 @@ export function PredictionsCard({ predictions }: PredictionsCardProps) {
                         <div className="flex items-center gap-2 text-white/40">
                             <Info className="w-4 h-4" />
                             <span className="text-[10px] font-bold uppercase tracking-wider">
-                                Predicted: Home {predictions.goals.home || '0'} / Away {predictions.goals.away || '0'}
+                                {/* FIX-B 26/09: gol NULL = dato assente ("—"), non 0 */}
+                                Predicted: Home {golPrevisto(predictions.goals.home)} / Away {golPrevisto(predictions.goals.away)}
                             </span>
                         </div>
                     </div>

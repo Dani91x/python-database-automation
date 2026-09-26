@@ -1,0 +1,35 @@
+﻿=== RED con HEAD di frontend/src/pages/Analytics.tsx
+ ❯ src/pages/Analytics.errori.test.tsx (4 tests | 3 failed) 10161ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  3 failed | 1 passed (4)
+   Duration  35.99s (transform 11.01s, setup 3.01s, collect 12.74s, tests 10.16s, environment 6.30s, prepare 1.90s)
+ripristino byte-identico: True
+=== RED con HEAD di frontend/src/components/dashboard/DecisionsView.tsx
+ ❯ src/components/dashboard/DecisionsView.errori.test.tsx (3 tests | 2 failed) 6724ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Duration  22.28s (transform 1.14s, setup 1.84s, collect 1.70s, tests 6.72s, environment 7.13s, prepare 2.84s)
+ripristino byte-identico: True
+=== RED con HEAD di frontend/src/components/dashboard/MLPanel.tsx
+ ❯ src/components/dashboard/MLPanel.verdetto.test.tsx (2 tests | 2 failed) 4502ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Duration  40.20s (transform 15.20s, setup 2.54s, collect 19.49s, tests 4.50s, environment 8.39s, prepare 2.81s)
+ripristino byte-identico: True
+=== RED con HEAD di frontend/src/components/dashboard/DirezioneDashboard.tsx
+ ❯ src/components/dashboard/DirezioneDashboard.quota.test.tsx (5 tests | 2 failed) 3218ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Duration  19.96s (transform 1.57s, setup 2.21s, collect 2.51s, tests 3.22s, environment 7.68s, prepare 2.29s)
+ripristino byte-identico: True
+=== RED con HEAD di frontend/src/components/dashboard/MarketFrequencyPanel.tsx
+ ❯ src/components/dashboard/MarketFrequencyPanel.fixb.test.tsx (2 tests | 2 failed) 3917ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Duration  19.97s (transform 1.15s, setup 2.10s, collect 4.30s, tests 3.92s, environment 6.40s, prepare 1.68s)
+ripristino byte-identico: True

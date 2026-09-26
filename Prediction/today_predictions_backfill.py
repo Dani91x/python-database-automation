@@ -2745,6 +2745,16 @@ def run_for_date(target_date: str) -> None:
     except Exception as e:  # noqa: BLE001
         logger.warning("tactical_engine non eseguito per %s: %s", target_date, e)
 
+    # 26/09 (FIX-B, KO9): ESITO REALE sui payload TacticAI delle partite FINITE degli
+    # ultimi giorni (prima "actual" restava sempre NULL: il blocco "Esito reale (90')"
+    # della UI non compariva mai). Stesso job, subito dopo il motore; NON-FATALE.
+    try:
+        from tactical_engine.serving import run_esiti_reali as _tactical_esiti
+        _te_esiti = _tactical_esiti(target_date)
+        logger.info("tactical_engine esiti reali %s -> %s", target_date, _te_esiti)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("tactical_engine esiti reali non scritti per %s: %s", target_date, e)
+
     # Flush esplicito del buffer di log API (oltre alla garanzia atexit):
     # non solleva mai eccezioni verso il chiamante.
     flush_api_log()

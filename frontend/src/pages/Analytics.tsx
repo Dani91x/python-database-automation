@@ -21,6 +21,7 @@ import {
     ENGINE_LABEL, MARKET_LABEL, GROUP_BY_OPTIONS, pct,
     type AnalyticsFilters, type AnalyticsResult, type AnalyticsGroup, type AnalyticsQuery, type AnalyticsRow,
 } from '@/lib/analytics';
+import { classificaErroreRpc, fmtOrarioRiepilogo } from '@/lib/erroreRpc';
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
@@ -85,6 +86,9 @@ export default function Analytics() {
     const [result, setResult] = useState<AnalyticsResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // FIX-B (26/09): l'errore dei MENU e' distinto da quello dei risultati (prima
+    // finivano nello stesso stato e il timeout dei filtri lasciava i menu vuoti in silenzio)
+    const [filtersError, setFiltersError] = useState<string | null>(null);
 
     const [tab, setTab] = useState<'engines' | 'decisions' | 'create' | 'reports' | 'backtest_auto'>('engines');
     const [q, setQ] = useState<AnalyticsQuery>({ groupBy: 'confidence' });
@@ -101,7 +105,7 @@ export default function Analytics() {
     const [drillLoading, setDrillLoading] = useState(false);
 
     useEffect(() => {
-        fetchAnalyticsFilters().then(setFilters).catch(e => setError(String(e.message || e)));
+        fetchAnalyticsFilters().then(setFilters).catch(e => setFiltersError(String(e?.message || e)));
     }, []);
 
     useEffect(() => {
@@ -110,7 +114,8 @@ export default function Analytics() {
         const t = setTimeout(() => {
             fetchAnalytics(q)
                 .then(r => { if (alive) setResult(r); })
-                .catch(e => { if (alive) setError(String(e.message || e)); })
+                // errore/timeout: niente risultato vecchio a video, niente stato "vuoto"
+                .catch(e => { if (alive) { setResult(null); setError(String(e?.message || e)); } })
                 .finally(() => { if (alive) setLoading(false); });
         }, 250);
         return () => { alive = false; clearTimeout(t); };
@@ -345,10 +350,26 @@ export default function Analytics() {
                 </Card>
 
                 {/* ---- RISULTATI ---- */}
-                {error && (
-                    <Card className="glass-card border-red-500/30 p-4 mb-4 flex items-center gap-2 text-red-400 text-sm">
-                        <AlertTriangle className="w-4 h-4" /> {error}
-                    </Card>
+                {filtersError && (() => {
+                    const e = classificaErroreRpc(filtersError);
+                    return (
+                        <Card data-testid="analytics-filtri-errore" data-tipo={e.tipo} className="glass-card border-amber-500/30 p-4 mb-4 flex items-center gap-2 text-amber-300 text-sm">
+                            <AlertTriangle className="w-4 h-4 shrink-0" /> Menu dei filtri non caricati (mostrano solo "Tutti"): {e.testo}
+                        </Card>
+                    );
+                })()}
+                {error && (() => {
+                    const e = classificaErroreRpc(error);
+                    return (
+                        <Card data-testid="analytics-errore" data-tipo={e.tipo} title={e.originale} className="glass-card border-red-500/30 p-4 mb-4 flex items-center gap-2 text-red-400 text-sm">
+                            <AlertTriangle className="w-4 h-4 shrink-0" /> {e.testo}
+                        </Card>
+                    );
+                })()}
+                {!loading && !error && result?.fonte_dati === 'riepilogo' && fmtOrarioRiepilogo(result.riepilogo_at) && (
+                    <p data-testid="analytics-eta-riepilogo" className="text-[11px] text-muted-foreground mb-3">
+                        Dati del riepilogo aggiornato il {fmtOrarioRiepilogo(result.riepilogo_at)} (ricalcolato ogni notte dal job dei risultati).
+                    </p>
                 )}
 
                 {!loading && result && result.groups.length > 1 && (
@@ -461,9 +482,10 @@ export default function Analytics() {
                             </table>
                         </div>
                     </Card>
-                ) : (
+                ) : !error && result ? (
+                    // "vuoto" SOLO se la RPC ha risposto con zero gruppi (mai dopo un errore)
                     <Card className="glass-card border-white/10 p-8 text-center text-muted-foreground text-sm">Nessun segnale settlato per questi filtri.</Card>
-                )}
+                ) : null}
 
                 {/* ---- DISCLAIMER (soldi in gioco) ---- */}
                 <p className="text-[11px] text-muted-foreground/70 mt-6 leading-relaxed">

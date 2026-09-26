@@ -7,6 +7,7 @@
 // NESSUNA dipendenza dagli altri pannelli.
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
+import type { DirectionOdds } from '@/lib/betfair';
 
 // ---------- Tipi (specchiano l'output jsonb della RPC) ----------
 export type EngineProbs = Record<string, number>;           // { selezione: prob } per Poisson/ML/TacticAI
@@ -105,6 +106,27 @@ export const ENGINE_LABELS: Record<string, string> = {
     tacticai: 'TacticAI',
     api: 'API / book',
 };
+
+// ---------- Quota della carta: FONTE dichiarata (FIX-B 26/09, KO6 referto fase 3) ----------
+// get_direction.odds = coalesce(analytics_bets.odds_betfair, odds_book) e odds_betfair e'
+// quasi sempre NULL: quella quota e' di fatto del BOOKMAKER. Regola (nessun cambio della
+// logica di Direzione, solo fonte/etichetta):
+//   1. quota Betfair back migliore della direzione (get_betfair_direction_odds) se c'e'
+//      -> fonte 'betfair', il giudizio di valore (banda bassa > 1/quota) si fa su di lei;
+//   2. altrimenti la quota di get_direction -> fonte 'book', mostrata come "quota book"
+//      e MAI giudicata "valore" (una quota bookmaker non e' eseguibile su Betfair).
+export type FonteQuota = 'betfair' | 'book';
+export interface QuotaCarta { odds: number | null; fonte: FonteQuota | null; giudicabile: boolean }
+
+export function quotaDirezione(
+    m: Pick<DirMarket, 'direction' | 'odds'>,
+    bfMercato?: DirectionOdds[string],
+): QuotaCarta {
+    const back = bfMercato?.[m.direction]?.back?.[0]?.price;
+    if (typeof back === 'number' && Number.isFinite(back) && back > 1) return { odds: back, fonte: 'betfair', giudicabile: true };
+    if (typeof m.odds === 'number' && Number.isFinite(m.odds) && m.odds > 1) return { odds: m.odds, fonte: 'book', giudicabile: false };
+    return { odds: null, fonte: null, giudicabile: false };
+}
 
 // ---------- Semaforo: forza del segnale (basata sul lift) ----------
 // 'nd' = non calibrato (manca Poisson): nessun lift -> indicatore neutro.

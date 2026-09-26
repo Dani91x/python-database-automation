@@ -273,3 +273,97 @@ def run_for_date(target_date: Optional[str] = None, max_leagues: int = 0) -> dic
     log.info("[tactical_engine] scritte: %d aggiornate, %d errori", n_upd, n_err)
     # "inserted" resta nel riepilogo (sempre 0) per non rompere chi lo legge o lo logga.
     return {"fixtures": len(upserts), "updated": n_upd, "inserted": 0, "errors": n_err}
+
+
+# ---------------------------------------------------------------------------
+# ESITO REALE (26/09/2026, KO9 del referto di fase 3 sessione B)
+# ---------------------------------------------------------------------------
+# _build_payload scrive "actual": None perche' predice solo partite NON giocate; nessun
+# processo lo aggiornava a partita finita (233/5.976 payload con l'esito, tutti da
+# generate_predictions.py offline) e il blocco "Esito reale (90')" della UI non compariva
+# mai. run_esiti_reali, chiamata dallo STESSO job giornaliero subito dopo il motore
+# (Prediction/today_predictions_backfill.py), completa i payload delle partite finite
+# negli ultimi ACTUAL_LOOKBACK_DAYS giorni: stessa forma di generate_predictions.py
+# ({"home_goals", "away_goals", "outcome": "1"|"X"|"2"} + predicted_correct_1x2 sull'argmax
+# 1X2 del payload). Esito a 90': fulltime_* di matches; goals_* solo se lo stato e' FT
+# (su AET/PEN i gol includono i supplementari: senza fulltime l'esito a 90' e' ignoto e
+# NON si scrive). Si tocca SOLO tactical_engine_json, SOLO se actual e' ancora NULL.
+ACTUAL_LOOKBACK_DAYS = 3
+ACTUAL_COLS = "fixture_id,fixture_date,result_status_short,result_home_goals,result_away_goals"
+MATCH_RESULT_COLS = "fixture_id,status_short,goals_home,goals_away,fulltime_home,fulltime_away"
+
+
+def _esito_1x2(h: int, a: int) -> str:
+    return "1" if h > a else ("X" if h == a else "2")
+
+
+def _gol_90(stato: Optional[str], match: Optional[dict], fp_row: dict):
+    """(casa, ospite) a 90' o None se non noto con certezza."""
+    if match is not None:
+        fh, fa = match.get("fulltime_home"), match.get("fulltime_away")
+        if fh is not None and fa is not None:
+            return int(fh), int(fa)
+        gh, ga = match.get("goals_home"), match.get("goals_away")
+        if match.get("status_short") == "FT" and gh is not None and ga is not None:
+            return int(gh), int(ga)
+    rh, ra = fp_row.get("result_home_goals"), fp_row.get("result_away_goals")
+    if stato == "FT" and rh is not None and ra is not None:
+        return int(rh), int(ra)
+    return None
+
+
+def run_esiti_reali(target_date: Optional[str] = None) -> dict:
+    """Scrive l'esito reale sui payload TacticAI delle partite finite di
+    [giorno - ACTUAL_LOOKBACK_DAYS, giorno + 1). Non solleva: errori per partita contati."""
+    day = (datetime.fromisoformat(target_date).date() if target_date
+           else datetime.now(timezone.utc).date())
+    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    since = start - timedelta(days=ACTUAL_LOOKBACK_DAYS)
+    end = start + timedelta(days=1)
+    sb = get_supabase_client()
+    rows = _leggi_keyset(lambda: sb.table("fixture_predictions").select(ACTUAL_COLS)
+                         .gte("fixture_date", since.isoformat())
+                         .lt("fixture_date", end.isoformat()))
+    finite = [r for r in rows if r.get("result_status_short") in PLAYED]
+    res = {"finite": len(finite), "scritti": 0, "gia_presenti": 0, "senza_payload": 0,
+           "senza_esito_90": 0, "errori": 0}
+    for r in finite:
+        fid = r["fixture_id"]
+        try:
+            righe = (sb.table("fixture_predictions").select("fixture_id,tactical_engine_json")
+                     .eq("fixture_id", fid).limit(1).execute().data or [])
+            payload = righe[0].get("tactical_engine_json") if righe else None
+            if not isinstance(payload, dict):
+                res["senza_payload"] += 1
+                continue
+            if payload.get("actual") is not None:
+                res["gia_presenti"] += 1
+                continue
+            m = (sb.table("matches").select(MATCH_RESULT_COLS)
+                 .eq("fixture_id", fid).limit(1).execute().data or [])
+            gol = _gol_90(r.get("result_status_short"), m[0] if m else None, r)
+            if gol is None:
+                res["senza_esito_90"] += 1
+                continue
+            esito = _esito_1x2(*gol)
+            mk = payload.get("markets") or {}
+            corretto = None
+            if all(isinstance(mk.get(k), (int, float)) for k in ("home", "draw", "away")):
+                previsto = max([("1", mk["home"]), ("X", mk["draw"]), ("2", mk["away"])],
+                               key=lambda t: t[1])[0]
+                corretto = previsto == esito
+            nuovo = dict(payload)
+            nuovo["actual"] = {"home_goals": gol[0], "away_goals": gol[1], "outcome": esito}
+            nuovo["predicted_correct_1x2"] = corretto
+            resp = sb.table("fixture_predictions").update(
+                {"tactical_engine_json": nuovo}).eq("fixture_id", fid).execute()
+            if getattr(resp, "data", None):
+                res["scritti"] += 1
+            else:
+                res["errori"] += 1
+                log.warning("[tactical_engine] esito reale: UPDATE senza effetto fixture_id=%s", fid)
+        except Exception as e:  # noqa: BLE001
+            res["errori"] += 1
+            log.warning("[tactical_engine] esito reale fallito fixture_id=%s: %s", fid, e)
+    log.info("[tactical_engine] esiti reali: %s", res)
+    return res

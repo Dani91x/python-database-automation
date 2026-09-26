@@ -20,6 +20,8 @@ import {
     DELAY_MARKETS, DelayMarketDef, DelayResult, LeagueSeason,
     fetchMarketDelays, fetchLeagueSeasons, formatSeason, targetLabel,
 } from '@/lib/marketDelays';
+import { classificaErroreRpc } from '@/lib/erroreRpc';
+import { fmtDataRoma } from '@/lib/rese';
 
 // ---------------------------------------------------------------- helpers UI
 const N_PRESETS = [100, 200, 300, 500, 1000];
@@ -140,6 +142,8 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
     const [seasonYear, setSeasonYear] = useState<number | null>(null);
 
     const [seasons, setSeasons] = useState<LeagueSeason[]>([]);
+    // FIX-B (26/09): stagioni non caricate (es. timeout su leghe grandi) = avviso, non menu vuoto muto
+    const [seasonsError, setSeasonsError] = useState<string | null>(null);
     const [data, setData] = useState<DelayResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -162,8 +166,8 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
         if (!open) return;
         let stale = false;
         fetchLeagueSeasons(leagueId)
-            .then(s => { if (!stale) { setSeasons(s); if (s.length && seasonYear === null) setSeasonYear(s[0].season_year); } })
-            .catch(() => { if (!stale) setSeasons([]); });
+            .then(s => { if (!stale) { setSeasons(s); setSeasonsError(null); if (s.length && seasonYear === null) setSeasonYear(s[0].season_year); } })
+            .catch(e => { if (!stale) { setSeasons([]); setSeasonsError(String(e?.message || e)); } });
         return () => { stale = true; };
     }, [open, leagueId]);
 
@@ -259,6 +263,14 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                         ))}
                                     </select>
                                 )}
+                                {mode === 'season' && seasonsError && (
+                                    <span data-testid="ritardi-stagioni-errore" data-tipo={classificaErroreRpc(seasonsError).tipo} className="text-[11px] text-amber-300 font-bold">
+                                        Stagioni non caricate: {classificaErroreRpc(seasonsError).testo}
+                                    </span>
+                                )}
+                                {mode === 'season' && !seasonsError && seasons.length === 0 && (
+                                    <span className="text-[11px] text-muted-foreground">Nessuna stagione con partite concluse per questa lega.</span>
+                                )}
                                 {mode === 'last_n' && N_PRESETS.map(n => (
                                     <button key={n} onClick={() => setLastN(n)} className={chipCls(lastN === n)}>{n}</button>
                                 ))}
@@ -268,8 +280,8 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                         {/* stati */}
                         {loading && <div className="flex items-center justify-center py-20"><Loader2 className="w-10 h-10 text-primary animate-spin" /></div>}
                         {error && !loading && (
-                            <div className="glass-card rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-6 text-center">
-                                <p className="text-red-400 font-bold text-sm">Errore: {error}</p>
+                            <div data-testid="ritardi-errore" data-tipo={classificaErroreRpc(error).tipo} title={error} className="glass-card rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-6 text-center">
+                                <p className="text-red-400 font-bold text-sm">{classificaErroreRpc(error).testo}</p>
                             </div>
                         )}
                         {!loading && !error && data && meta && st && (
@@ -279,7 +291,7 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                     <span className="text-sm font-bold text-white">{targetLabel(market, target)}</span>
                                     <span>eventi (DATI MATCH) <span className="text-white font-mono font-bold">{int(meta.n_effective)}</span></span>
                                     <span>occorrenze <span className="text-white font-mono font-bold">{int(st.n_occ)}</span></span>
-                                    {meta.date_from && <span className="text-[11px]">{meta.date_from} → {meta.date_to}</span>}
+                                    {meta.date_from && <span data-testid="ritardi-periodo" className="text-[11px]">{fmtDataRoma(meta.date_from)} → {fmtDataRoma(meta.date_to)}</span>}
                                     {meta.uses_ht && (
                                         <span className={meta.ht_coverage_pct != null && meta.ht_coverage_pct < 90 ? 'text-amber-400 font-bold' : ''}>
                                             copertura PT <span className="font-mono">{num(meta.ht_coverage_pct, 1)}%</span>

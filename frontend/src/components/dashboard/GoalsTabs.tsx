@@ -3,6 +3,7 @@ import { TeamLeagueStats } from "@/lib/normalize";
 import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip } from 'recharts';
 import { Target, ShieldAlert } from "lucide-react";
+import { serieMinuti, minutiTuttiAssenti } from "@/lib/rese";
 
 interface GoalsTabsProps {
     stats: TeamLeagueStats;
@@ -15,13 +16,10 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
     const data = isFor ? stats.goals.for : stats.goals.against;
     const chartColor = isFor ? "#10b981" : "#ef4444"; // emerald-500 : red-500
 
-    // Transform minute data for chart
-    const minuteData = [
-        "0-15", "16-30", "31-45", "46-60", "61-75", "76-90", "91-105", "106-120"
-    ].map(range => ({
-        range,
-        count: data.minute[range]?.total || 0
-    }));
+    // Transform minute data for chart. FIX-B 26/09: un minuto NULL e' un dato assente
+    // (barra non disegnata), non uno 0; se mancano tutti lo si dice invece del grafico.
+    const minuteData = serieMinuti(data.minute);
+    const minutiAssenti = minutiTuttiAssenti(minuteData);
 
     const underOverThresholds = ['0.5', '1.5', '2.5', '3.5', '4.5'];
 
@@ -105,6 +103,11 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
                 {/* 3. Goals by Minute Chart */}
                 <div className="space-y-4">
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40">Goals by Minute</h4>
+                    {minutiAssenti ? (
+                        <div data-testid="minuti-assenti" className="h-[200px] w-full flex items-center justify-center text-[11px] text-white/40 border border-dashed border-white/10 rounded-xl">
+                            Dato per minuto assente per questa squadra (non sono zero gol).
+                        </div>
+                    ) : (
                     <div className="h-[200px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={minuteData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -143,6 +146,7 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
+                    )}
                 </div>
 
                 {/* 4. Under/Over Distribution */}

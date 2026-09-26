@@ -10,7 +10,7 @@ import { Loader2, BrainCircuit, AlertTriangle, CheckCircle2, XCircle } from 'luc
 import { ProbBarChart, ProbBar } from './ProbBarChart';
 import {
     MLData, fetchML, colorForSelection, pctFmt, numFmt,
-    mlTargetLabel, mlClassLabel,
+    mlTargetLabel, mlClassLabel, accordoConPrevisione,
 } from '@/lib/fixtureModels';
 import { EtaDato } from './EtaDato';
 import { SOGLIA_PREVISIONE_ORE } from '@/lib/etaDato';
@@ -88,19 +88,22 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
     // barre della distribuzione del target selezionato (ordinate desc).
     // Per HT/FT scarta eventuali chiavi malformate (es. '_' nelle vecchie predizioni storiche):
     // non devono mai comparire come "previsione".
-    const bars: ProbBar[] = useMemo(() => {
+    const bars: (ProbBar & { key: string })[] = useMemo(() => {
         const obj = data?.targets?.[target];
         if (!obj) return [];
         const validHtFt = /^[HDA]_[HDA]$/;
         return Object.entries(obj)
             .filter(([key]) => target !== 'target_ht_ft' || validHtFt.test(key))
-            .map(([key, val]) => ({ label: mlClassLabel(key), value: Number(val) || 0, color: colorForSelection(key) }))
+            .map(([key, val]) => ({ key, label: mlClassLabel(key), value: Number(val) || 0, color: colorForSelection(key) }))
             .sort((a, b) => b.value - a.value);
     }, [data, target]);
 
     const topBar = bars[0] ?? null; // bars gia ordinate desc
 
     const agree = data?.ensemble_agreement?.[target] ?? null;
+    // un solo verdetto: la Previsione (argmax delle probabilita' calibrate); i voti
+    // grezzi si misurano CONTRO di essa (FIX-B 26/09)
+    const accordo = accordoConPrevisione(topBar?.key, agree);
     const cal = data?.calibration_metrics?.[target] ?? null;
     const notReliable = data?.targets_not_reliable?.find(x => x.target === target) ?? null;
     const signal = data?.bet_signals?.find(s => s.market === target) ?? null;
@@ -197,24 +200,31 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
 
                                 {/* dettaglio target selezionato */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {/* accordo ensemble */}
+                                    {/* accordo dei modelli CON la Previsione (non un secondo verdetto) */}
                                     <div className="glass-card rounded-xl border border-white/10 px-4 py-3">
-                                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2 font-bold">Accordo ensemble</div>
-                                        {agree ? (
+                                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2 font-bold">Accordo con la Previsione</div>
+                                        {accordo ? (
                                             <div className="space-y-1.5 text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-muted-foreground">classe prevista</span>
-                                                    <span className="text-white font-bold">{agree.predicted_class ? mlClassLabel(agree.predicted_class) : '—'}</span>
-                                                    {agree.agreement_ratio !== undefined && <span className="ml-auto font-mono text-primary font-bold">{pctFmt(agree.agreement_ratio, 0)} accordo</span>}
+                                                <div data-testid="ml-accordo" className="flex items-center gap-2">
+                                                    <span className="text-muted-foreground">modelli che votano</span>
+                                                    <span className="text-white font-bold">{mlClassLabel(accordo.classe)}</span>
+                                                    <span className="ml-auto font-mono text-primary font-bold">{accordo.concordi}/{accordo.totali}</span>
                                                 </div>
-                                                {agree.votes && (
-                                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                                {agree?.votes && (
+                                                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                                        <span className="text-[10px] text-muted-foreground/70">voti dei singoli modelli (grezzi, non calibrati):</span>
                                                         {Object.entries(agree.votes).map(([model, vote]) => (
                                                             <span key={model} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px]">
                                                                 <span className="text-muted-foreground uppercase">{model}</span> <span className="text-white font-bold">{mlClassLabel(vote)}</span>
                                                             </span>
                                                         ))}
                                                     </div>
+                                                )}
+                                                {accordo.divergente && accordo.maggioranzaGrezza && (
+                                                    <p data-testid="ml-voti-divergenti" className="text-[11px] text-amber-300/80 leading-relaxed">
+                                                        La maggioranza dei modelli grezzi (non calibrati) vota {mlClassLabel(accordo.maggioranzaGrezza)}:
+                                                        il verdetto resta la Previsione calibrata {mlClassLabel(accordo.classe)}, la stessa usata dai segnali.
+                                                    </p>
                                                 )}
                                             </div>
                                         ) : <p className="text-xs text-muted-foreground">Nessun dato di accordo.</p>}

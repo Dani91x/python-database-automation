@@ -13,6 +13,7 @@ import {
     DECISIONS_GROUP_OPTIONS, pct,
     type DecisionsFilters, type DecisionsResult, type DecisionsQuery,
 } from '@/lib/analytics';
+import { classificaErroreRpc, fmtOrarioRiepilogo } from '@/lib/erroreRpc';
 
 const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors';
 const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
@@ -23,16 +24,19 @@ export default function DecisionsView() {
     const [result, setResult] = useState<DecisionsResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // FIX-B (26/09): errore dei menu distinto da quello dei risultati
+    const [filtersError, setFiltersError] = useState<string | null>(null);
     const [q, setQ] = useState<DecisionsQuery>({ groupBy: 'logic' });
     const set = (p: Partial<DecisionsQuery>) => setQ(prev => ({ ...prev, ...p }));
     const reset = () => setQ({ groupBy: 'logic' });
 
-    useEffect(() => { fetchDecisionsFilters().then(setFilters).catch(e => setError(String(e.message || e))); }, []);
+    useEffect(() => { fetchDecisionsFilters().then(setFilters).catch(e => setFiltersError(String(e?.message || e))); }, []);
     useEffect(() => {
         let alive = true; setLoading(true); setError(null);
         const t = setTimeout(() => {
             fetchDecisions(q).then(r => { if (alive) setResult(r); })
-                .catch(e => { if (alive) setError(String(e.message || e)); })
+                // errore/timeout: niente risultato vecchio a video, niente stato "vuoto"
+                .catch(e => { if (alive) { setResult(null); setError(String(e?.message || e)); } })
                 .finally(() => { if (alive) setLoading(false); });
         }, 250);
         return () => { alive = false; clearTimeout(t); };
@@ -131,7 +135,19 @@ export default function DecisionsView() {
                 </div>
             )}
 
-            {error && <Card className="glass-card border-red-500/30 p-4 mb-4 flex items-center gap-2 text-red-400 text-sm"><AlertTriangle className="w-4 h-4" /> {error}</Card>}
+            {filtersError && (() => {
+                const e = classificaErroreRpc(filtersError);
+                return <Card data-testid="decisioni-filtri-errore" data-tipo={e.tipo} className="glass-card border-amber-500/30 p-4 mb-4 flex items-center gap-2 text-amber-300 text-sm"><AlertTriangle className="w-4 h-4 shrink-0" /> Menu dei filtri non caricati (mostrano solo "Tutti"): {e.testo}</Card>;
+            })()}
+            {error && (() => {
+                const e = classificaErroreRpc(error);
+                return <Card data-testid="decisioni-errore" data-tipo={e.tipo} title={e.originale} className="glass-card border-red-500/30 p-4 mb-4 flex items-center gap-2 text-red-400 text-sm"><AlertTriangle className="w-4 h-4 shrink-0" /> {e.testo}</Card>;
+            })()}
+            {!loading && !error && result?.fonte_dati === 'riepilogo' && fmtOrarioRiepilogo(result.riepilogo_at) && (
+                <p data-testid="decisioni-eta-riepilogo" className="text-[11px] text-muted-foreground mb-3">
+                    Dati del riepilogo aggiornato il {fmtOrarioRiepilogo(result.riepilogo_at)} (ricalcolato ogni notte dal job dei risultati).
+                </p>
+            )}
 
             {loading ? (
                 <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full bg-white/5" />)}</div>
@@ -180,9 +196,10 @@ export default function DecisionsView() {
                         </table>
                     </div>
                 </Card>
-            ) : (
+            ) : !error && result ? (
+                // "vuoto" SOLO se la RPC ha risposto con zero gruppi (mai dopo un errore)
                 <Card className="glass-card border-white/10 p-8 text-center text-muted-foreground text-sm">Nessuna decisione per questi filtri.</Card>
-            )}
+            ) : null}
 
             <p className="text-[11px] text-muted-foreground/70 mt-6 leading-relaxed">
                 <strong className="text-muted-foreground">Decisioni.</strong> Ogni riga = scelta di una <em>logica decisionale</em>

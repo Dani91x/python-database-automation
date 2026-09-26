@@ -16,10 +16,17 @@ export interface AnalyticsGroup {
     calib_gap: number;    // hit_rate - avg_prob (>0 = motore SOTTOstima)
 }
 
+// fonte_dati / riepilogo_at: aggiunte dalla migrazione analytics_rpc_veloci_2026-09-26.sql
+// ('riepilogo' = tabella di riepilogo ricalcolata dal job notturno, con il suo orario;
+// 'diretta' = calcolo sulle righe). Assenti se la migrazione non e' ancora applicata.
+export type FonteDatiAnalytics = 'riepilogo' | 'diretta';
+
 export interface AnalyticsResult {
     group_by: string;
     z: number;
     groups: AnalyticsGroup[];
+    fonte_dati?: FonteDatiAnalytics;
+    riepilogo_at?: string | null;
 }
 
 export interface AnalyticsFilters {
@@ -28,6 +35,8 @@ export interface AnalyticsFilters {
     leagues: { id: number; name: string | null; n: number }[];
     seasons: number[];
     total_settled: number;
+    fonte_dati?: FonteDatiAnalytics;
+    riepilogo_at?: string | null;
 }
 
 export interface AnalyticsQuery {
@@ -141,7 +150,10 @@ export interface DecisionGroup {
     avg_odds: number | null;
     avg_prob: number | null;
 }
-export interface DecisionsResult { group_by: string; groups: DecisionGroup[]; }
+export interface DecisionsResult {
+    group_by: string; groups: DecisionGroup[];
+    fonte_dati?: FonteDatiAnalytics; riepilogo_at?: string | null;
+}
 export interface DecisionsFilters {
     logics: { value: string; n: number }[];
     statuses: { value: string; n: number }[];
@@ -149,6 +161,8 @@ export interface DecisionsFilters {
     markets: { value: string; n: number }[];
     rejects: { value: string; n: number }[];
     total: number;
+    fonte_dati?: FonteDatiAnalytics;
+    riepilogo_at?: string | null;
 }
 export interface DecisionsQuery {
     logic?: string | null; status?: string | null; engine?: string | null;

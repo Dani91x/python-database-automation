@@ -1,0 +1,10 @@
+﻿bin exit=1 ko=11 :: 690/701 controlli verdi (mutazione bin)
+hit exit=1 ko=67 :: 634/701 controlli verdi (mutazione hit)
+livello exit=1 ko=41 :: 660/701 controlli verdi (mutazione livello)
+stagione exit=1 ko=12 :: 689/701 controlli verdi (mutazione stagione)
+quota exit=1 ko=27 :: 674/701 controlli verdi (mutazione quota)
+stake exit=1 ko=40 :: 661/701 controlli verdi (mutazione stake)
+drill exit=1 ko=2 :: 699/701 controlli verdi (mutazione drill)
+distrib exit=1 ko=176 :: 525/701 controlli verdi (mutazione distrib)
+filtri exit=1 ko=1 :: 700/701 controlli verdi (mutazione filtri)
+hash invariato: True

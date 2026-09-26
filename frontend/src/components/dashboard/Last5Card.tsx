@@ -1,10 +1,12 @@
 import { TeamLast5 } from "@/lib/normalize";
 import { Progress } from "@/components/ui/progress";
 import { Activity, Shield, Swords } from "lucide-react";
+import { mediaPerPartita } from "@/lib/rese";
 
 export function Last5Card({ last5 }: { last5: TeamLast5 }) {
-    const avgFor = (last5.goalsFor / last5.played).toFixed(1);
-    const avgAgainst = (last5.goalsAgainst / last5.played).toFixed(1);
+    // FIX-B 26/09: played=0 dava "NaN per match" -> "—"
+    const avgFor = mediaPerPartita(last5.goalsFor, last5.played);
+    const avgAgainst = mediaPerPartita(last5.goalsAgainst, last5.played);
 
     return (
         <div className="glass-card p-6 space-y-8">

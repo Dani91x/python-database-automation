@@ -162,6 +162,27 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python build_direzione.py
 
+      # 26/09 (FIX-B prestazioni pagine): ricalcola i RIEPILOGHI della pagina Analytics
+      # (migrations/analytics_rpc_veloci_2026-09-26.sql) DOPO build/merge/enrich/bets, cosi'
+      # la pagina li legge subito invece di rileggere ~1,2 M righe a ogni apertura (oltre
+      # gli 8 s del ruolo authenticated). Nessun processo nuovo: e' un passo di questo job.
+      # La RPC ha statement_timeout 600 s lato server e ricostruisce tutto in UNA
+      # transazione. Non-fatale come gli altri passi; il gate qui sotto lo rende visibile.
+      - name: Riepilogo analytics (pagina Analytics veloce)
+        id: riepilogo
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl --silent --show-error --fail-with-body --max-time 900 -X POST \
+            "$SUPABASE_URL/rest/v1/rpc/refresh_analytics_riepilogo" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}'
+
       # GATE ERRORI NASCOSTI (21/09/2026). Gli step qui sopra sono continue-on-error
       # (additivi: uno che fallisce non deve impedire agli altri di girare), ma in
       # passato fallivano ogni giorno senza che il run diventasse rosso (dati di analisi
@@ -171,7 +192,7 @@ jobs:
       - name: Gate errori nascosti (rosso se uno step non-fatale e' fallito)
         if: always()
         env:
-          ESITI: "risultati=${{ steps.risultati.outcome }} signals=${{ steps.signals.outcome }} merge=${{ steps.merge.outcome }} enrich=${{ steps.enrich.outcome }} bets=${{ steps.bets.outcome }} pagella=${{ steps.pagella.outcome }}"
+          ESITI: "risultati=${{ steps.risultati.outcome }} signals=${{ steps.signals.outcome }} merge=${{ steps.merge.outcome }} enrich=${{ steps.enrich.outcome }} bets=${{ steps.bets.outcome }} pagella=${{ steps.pagella.outcome }} riepilogo=${{ steps.riepilogo.outcome }}"
         run: |
           echo "Esiti step: $ESITI"
           ko=0

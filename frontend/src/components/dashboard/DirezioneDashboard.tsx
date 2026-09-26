@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Compass, AlertTriangle, ChevronDown, CheckCircle2, Info } from 'lucide-react';
 import {
     DirezioneData, DirezioneEta, DirMarket, fetchDirezione, fetchDirezioneEta, marketLabel, selectionLabel,
-    ENGINE_LABELS, strength, enginePick,
+    ENGINE_LABELS, strength, enginePick, quotaDirezione, type QuotaCarta,
 } from '@/lib/direzione';
 import { EtaDato } from './EtaDato';
 import { SOGLIA_PAGELLA_ORE } from '@/lib/etaDato';
@@ -36,11 +36,14 @@ const fmtLift = (lift: number | null) => { if (lift == null) return '—'; const
 
 // implied prob della quota; valore = anche l'estremo BASSO della banda batte la quota
 const implied = (odds: number | null) => (odds && odds > 1 ? 1 / odds : null);
-const hasValue = (m: DirMarket) => {
-    const imp = implied(m.odds);
+// FIX-B 26/09: il valore si giudica SOLO su una quota Betfair (q.giudicabile); stessa
+// regola di prima (banda bassa > prob. implicita), solo la fonte della quota e' cambiata.
+const hasValue = (m: DirMarket, q: QuotaCarta) => {
+    const imp = q.giudicabile ? implied(q.odds) : null;
     // valore solo se calibrato: serve la banda bassa di affidabilita'
     return imp != null && m.wilson_low != null && m.wilson_low > imp;
 };
+const etichettaFonte = (q: QuotaCarta) => (q.fonte === 'betfair' ? 'Betfair' : 'quota book');
 
 function EngineRow({ market, name, probs, direction }: { market: string; name: string; probs?: EngineProbs | null; direction: string }) {
     const pick = enginePick(probs);
@@ -155,8 +158,9 @@ function SignalContextBlock({ leagueId, market, direction }: { leagueId: number 
 
 function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirMarket; leagueId: number | null; bfMarketOdds?: DirectionOdds[string]; expanded: boolean; onToggle: () => void }) {
     const s = strength(m.lift);
-    const imp = implied(m.odds);
-    const value = hasValue(m);
+    const q = quotaDirezione(m, bfMarketOdds);
+    const imp = implied(q.odds);
+    const value = hasValue(m, q);
     return (
         <div className="glass-card rounded-xl border border-white/10 overflow-hidden">
             <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left">
@@ -187,13 +191,12 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
                     <div className="text-[9px] text-muted-foreground/60 font-sans font-normal uppercase">lift</div>
                 </div>
                 {/* quota / valore */}
-                <div className="text-right shrink-0 w-16">
-                    {m.odds ? (
+                <div className="text-right shrink-0 w-16" data-testid="quota-carta" data-fonte={q.fonte ?? 'assente'}>
+                    {q.odds ? (
                         <>
-                            <div className="text-sm font-mono font-bold text-white">{numFmt(m.odds, 2)}</div>
-                            {value
-                                ? <div className="text-[9px] uppercase font-bold text-emerald-400">valore</div>
-                                : <div className="text-[9px] uppercase text-muted-foreground/60">quota</div>}
+                            <div className="text-sm font-mono font-bold text-white">{numFmt(q.odds, 2)}</div>
+                            <div className={`text-[9px] uppercase ${q.fonte === 'betfair' ? 'text-sky-300/80' : 'text-muted-foreground/60'}`}>{etichettaFonte(q)}</div>
+                            {value && <div className="text-[9px] uppercase font-bold text-emerald-400">valore</div>}
                         </>
                     ) : (
                         // R5 (25/09): la quota viene da analytics_bets (materializzata): se manca
@@ -219,12 +222,15 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
                             (banda 95%: {pctFmt(m.wilson_low, 0)}–{pctFmt(m.wilson_high, 0)}, su ~{m.n} partite{' '}
                             {m.scope === 'lega' ? 'della lega' : 'globali'}). Media del mercato: {pctFmt(m.base, 0)} →{' '}
                             <span className={`font-bold ${liftColor(m.lift)}`}>{fmtLift(m.lift)} punti</span>.
-                            {m.odds && m.odds > 1 && (
-                                <> Quota {numFmt(m.odds, 2)} (prob. implicita {pctFmt(imp, 0)}):{' '}
-                                    {hasValue(m)
+                            {q.odds && q.fonte === 'betfair' && (
+                                <> Quota Betfair {numFmt(q.odds, 2)} (prob. implicita {pctFmt(imp, 0)}):{' '}
+                                    {value
                                         ? <span className="text-emerald-400 font-bold">l'affidabilità batte la quota → possibile valore.</span>
                                         : <span className="text-muted-foreground">la quota già copre l'affidabilità → niente valore.</span>}
                                 </>
+                            )}
+                            {q.odds && q.fonte === 'book' && (
+                                <> Quota book {numFmt(q.odds, 2)} (bookmaker, non Betfair): nessun giudizio di valore, confrontala con le quote Betfair qui sotto.</>
                             )}
                         </p>
                     ) : (
@@ -232,7 +238,7 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
                             <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />
                             Manca la previsione <b>Poisson</b> per questo mercato: la direzione viene dai motori disponibili
                             (ML/TacticAI/API) ma <b>senza affidabilità storica calibrata</b> — consiglio poco affidabile.
-                            {m.odds && m.odds > 1 && <> Quota {numFmt(m.odds, 2)}.</>}
+                            {q.odds && <> {q.fonte === 'betfair' ? 'Quota Betfair' : 'Quota book'} {numFmt(q.odds, 2)}.</>}
                         </p>
                     )}
                     {m.lift != null && m.lift < 0 && (
@@ -420,7 +426,7 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
                                         <span>
                                             <b className="text-white/80">AFFIDABILITÀ</b> = quante volte è andata così nello storico ·
                                             <b className="text-white/80"> LIFT</b> = quanto batte la media (il vero segnale) ·
-                                            <b className="text-white/80"> VALORE</b> = l'affidabilità (banda bassa) batte la quota.
+                                            <b className="text-white/80"> VALORE</b> = l'affidabilità (banda bassa) batte la quota Betfair (back); sulla "quota book" (bookmaker) il valore non si giudica.
                                             Direzione di partenza, non un segnale di profitto: guarda sempre la quota.
                                         </span>
                                     </div>

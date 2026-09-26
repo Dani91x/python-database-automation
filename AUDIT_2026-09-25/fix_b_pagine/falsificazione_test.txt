@@ -1,0 +1,20 @@
+﻿ROSSO tactical_engine/serving.py :: 'if fh is not None and fa is not None:\r\n           ' -> ['3 failed, 2 passed in 18.08s']
+   ripristino byte-identico: True
+ROSSO tactical_engine/serving.py :: 'if payload.get("actual") is not None:' -> ['3 failed, 2 passed in 21.45s']
+   ripristino byte-identico: True
+ROSSO merge_engine_signals.py :: 'kickoff = (match or {}).get("fixture_date") or es.' -> ['1 failed, 3 passed in 12.66s']
+   ripristino byte-identico: True
+ROSSO frontend/src/lib/rese.ts :: "return s === '' ? DASH : s;" -> ['      Tests  1 failed | 8 passed (9)']
+   ripristino byte-identico: True
+ROSSO frontend/src/lib/rese.ts :: 'return giorno === oggi ? `${p.hh}:${p.mm}` : `${p.' -> ['      Tests  1 failed | 8 passed (9)']
+   ripristino byte-identico: True
+ROSSO frontend/src/lib/direzione.ts :: "return { odds: m.odds, fonte: 'book', giudicabile:" -> ['      Tests  2 failed | 3 passed (5)']
+   ripristino byte-identico: True
+ROSSO frontend/src/lib/fixtureModels.ts :: 'divergente: mg !== null && mg !== classe,' -> ['      Tests  1 failed | 1 passed (2)']
+   ripristino byte-identico: True
+ROSSO frontend/src/lib/erroreRpc.ts :: "tipo: 'timeout'," -> ['      Tests  2 failed | 4 passed (6)']
+   ripristino byte-identico: True
+ROSSO frontend/src/pages/Analytics.tsx :: ') : !error && result ? (' -> ['      Tests  1 failed | 3 passed (4)']
+   ripristino byte-identico: True
+ROSSO build_analytics_signals.py :: '"kickoff": (match or {}).get("fixture_date") or fp' -> ['1 failed, 2 passed in 5.07s']
+   ripristino byte-identico: True

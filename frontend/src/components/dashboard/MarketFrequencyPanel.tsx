@@ -18,6 +18,7 @@ import {
     fetchMarketFrequency, fetchLeagueSeasons, formatSeason,
     HT_WARN_THRESHOLD, HT_HARD_THRESHOLD,
 } from '@/lib/marketFrequency';
+import { classificaErroreRpc } from '@/lib/erroreRpc';
 
 // ---------------------------------------------------------------- costanti UI
 const MM_COLORS: Record<'mm5' | 'mm10' | 'mm15', string> = {
@@ -98,6 +99,9 @@ export function MarketFrequencyPanel({ leagueId, leagueName }: Props) {
 
     // dati
     const [seasons, setSeasons] = useState<LeagueSeason[]>([]);
+    // FIX-B (26/09, U0043): get_league_seasons in timeout su leghe grandi lasciava il
+    // menu Stagioni vuoto in silenzio: ora l'errore si dichiara
+    const [seasonsError, setSeasonsError] = useState<string | null>(null);
     const [seriesA, setSeriesA] = useState<FrequencySeries | null>(null);
     const [seriesB, setSeriesB] = useState<FrequencySeries | null>(null);
     const [loading, setLoading] = useState(false);
@@ -121,11 +125,12 @@ export function MarketFrequencyPanel({ leagueId, leagueName }: Props) {
             .then(s => {
                 if (stale) return;
                 setSeasons(s);
+                setSeasonsError(null);
                 if (s.length > 0) setSeasonA(prev => (prev !== null && s.some(x => x.season_year === prev)) ? prev : s[0].season_year);
                 // seasonB di un'altra lega non è valido qui: resetta se assente
                 setSeasonB(prev => (prev !== null && s.some(x => x.season_year === prev)) ? prev : null);
             })
-            .catch(() => { if (!stale) setSeasons([]); });
+            .catch(e => { if (!stale) { setSeasons([]); setSeasonsError(String(e?.message || e)); } });
         return () => { stale = true; };
     }, [open, leagueId]);
 
@@ -329,6 +334,14 @@ export function MarketFrequencyPanel({ leagueId, leagueName }: Props) {
                                     </div>
                                 </div>
                             )}
+                            {mode === 'season' && seasonsError && (
+                                <p data-testid="freq-stagioni-errore" data-tipo={classificaErroreRpc(seasonsError).tipo} className="text-[11px] text-amber-300 font-bold">
+                                    Stagioni non caricate: {classificaErroreRpc(seasonsError).testo}
+                                </p>
+                            )}
+                            {mode === 'season' && !seasonsError && seasons.length === 0 && (
+                                <p className="text-[11px] text-muted-foreground">Nessuna stagione con partite concluse per questa lega.</p>
+                            )}
                             {mode === 'season' && (
                                 <div className="flex-1 flex flex-col md:flex-row gap-4">
                                     <div>
@@ -433,8 +446,8 @@ export function MarketFrequencyPanel({ leagueId, leagueName }: Props) {
                             </div>
                         )}
                         {error && !loading && (
-                            <div className="glass-card rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-6 text-center">
-                                <p className="text-red-400 font-bold text-sm">Errore: {error}</p>
+                            <div data-testid="freq-errore" data-tipo={classificaErroreRpc(error).tipo} title={error} className="glass-card rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-6 text-center">
+                                <p className="text-red-400 font-bold text-sm">{classificaErroreRpc(error).testo}</p>
                             </div>
                         )}
                         {htHardBlocked && !loading && !error && (

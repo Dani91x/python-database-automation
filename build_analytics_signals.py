@@ -234,7 +234,11 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
     ctx = {
         "fixture_id": fid, "league_id": fp.get("league_id"), "league_name": fp.get("league_name"),
         "season_year": fp.get("season_year"), "home_team": fp.get("home_team_name"),
-        "away_team": fp.get("away_team_name"), "kickoff": fp.get("fixture_date"),
+        # 26/09 (FIX-B): data della partita GIOCATA (matches, stessa riga del settlement):
+        # fixture_predictions.fixture_date e' quella programmata e non segue i rinvii.
+        # Stessa regola di merge_engine_signals, cosi' i due scrittori non si contraddicono.
+        "away_team": fp.get("away_team_name"),
+        "kickoff": (match or {}).get("fixture_date") or fp.get("fixture_date"),
     }
     ft = ht = None
     settled = False
@@ -347,7 +351,7 @@ def _fetch_matches(sb, fids: list[int]) -> dict[int, dict]:
         chunk = fids[i:i + 300]
         r = _read_retry(
             lambda chunk=chunk: (sb.table("matches")
-                                 .select("fixture_id,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
+                                 .select("fixture_id,fixture_date,status_short,goals_home,goals_away,fulltime_home,fulltime_away,halftime_home,halftime_away")
                                  .in_("fixture_id", chunk).execute()),
             f"matches ({len(chunk)} fixture)")
         for m in r.data or []:
