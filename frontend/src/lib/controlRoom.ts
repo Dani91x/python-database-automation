@@ -968,6 +968,52 @@ export function realizzatoGiornata(righe: readonly RigaRealizzato[]): Realizzato
     return out;
 }
 
+/** Le due tessere sport della Control Room (forma di `DailyBreakdown`). */
+export interface TesseraSport { n: number; pnl: number; won: number; lost: number }
+
+/**
+ * 26/09 (F-2/F-3, e2e fase 3) - LE TESSERE SPORT dalle STESSE righe della
+ * barra (giorno di REGOLAMENTO, tutti i bot), non piu' da `get_safe_daily`
+ * (giorno di PIAZZAMENTO e sola tabella di Safe). Chiamare UNA modalita' per
+ * volta: paper e live non si sommano mai (lo decide il chiamante).
+ *  - `conteggiate`: righe vere (una per operazione): pnl + contatori;
+ *  - `soloPnl`: righe SINTETICHE (una per bot tennis, voci manuali): solo pnl;
+ *  - `conteggiExtra`: i contatori veri di quelle sintetiche, se noti.
+ * Sempre i due sport, a zero se non c'e' niente: «letta e vuota» e' 0,00 €.
+ */
+export function perSportGiornata(
+    conteggiate: readonly RigaRealizzato[],
+    soloPnl: readonly RigaRealizzato[],
+    conteggiExtra: Partial<Record<'calcio' | 'tennis', { n: number; won: number; lost: number }>>,
+): Record<'calcio' | 'tennis', TesseraSport> {
+    const out: Record<'calcio' | 'tennis', TesseraSport> = {
+        calcio: { n: 0, pnl: 0, won: 0, lost: 0 },
+        tennis: { n: 0, pnl: 0, won: 0, lost: 0 },
+    };
+    const chiave = (r: RigaRealizzato) => (String(r.sport ?? '').toLowerCase() === 'tennis' ? 'tennis'
+        : String(r.sport ?? '').toLowerCase() === 'calcio' ? 'calcio' : null);
+    const giro = (righe: readonly RigaRealizzato[], conta: boolean) => {
+        for (const r of righe) {
+            if (!isSettled(r.status) || isErrorRow(r.status)) continue;
+            const v = r.pnl;
+            const k = chiave(r);
+            if (k == null || typeof v !== 'number' || !Number.isFinite(v)) continue;
+            out[k].pnl = Math.round((out[k].pnl + v) * 100) / 100;
+            if (!conta) continue;
+            out[k].n += 1;
+            if (v > 0) out[k].won += 1; else if (v < 0) out[k].lost += 1;
+        }
+    };
+    giro(conteggiate, true);
+    giro(soloPnl, false);
+    for (const k of ['calcio', 'tennis'] as const) {
+        const e = conteggiExtra[k];
+        if (!e) continue;
+        out[k].n += e.n; out[k].won += e.won; out[k].lost += e.lost;
+    }
+    return out;
+}
+
 // ------------------------------------------------------------ totali di giornata
 
 export interface TotaliGiornata {

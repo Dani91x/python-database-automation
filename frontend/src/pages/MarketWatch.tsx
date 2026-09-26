@@ -20,10 +20,10 @@ import {
     type LivePositionRow, type LiveOrderMode,
 } from '@/lib/liveOrders';
 import {
-    fetchTennisFollows, fetchTennisNow, subscribeTennisNow, fetchTennisPositionsAll,
+    fetchTennisFollows, fetchTennisNow, subscribeTennisNow, fetchTennisPositionsAll, partitaTennisFinita,
     type TennisFollow, type TennisLiveNowRow, type TennisLiveNowState,
 } from '@/lib/tennis';
-import { eventMtm, eventExposure } from '@/lib/eventPnl';
+import { eventMtm, eventExposure, perModalita } from '@/lib/eventPnl';
 import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { getLocalChannel } from '@/lib/localChannel';
 import { leggiPushNow, nowPiuRecente, vistaPosizioni } from '@/lib/canaleRunner';
@@ -92,6 +92,44 @@ function MtmCell({ positions, state }: {
                     <AlertTriangle className="w-3.5 h-3.5 inline" />
                 </span>
             )}
+        </span>
+    );
+}
+
+// 26/09 (KO §9-bis n.2, e2e fase 3): MTM e rischio PER MODALITA'. Le RPC delle
+// posizioni portano paper e live insieme: prima si sommavano in un numero solo.
+// Due numeri, etichettati, mai sommati.
+export function MtmDueModi({ positions, state }: {
+    positions: LivePositionRow[] | undefined;
+    state: LiveNowState | TennisLiveNowState | null | undefined;
+}) {
+    if (positions == null) return <MtmCell positions={undefined} state={state} />;
+    const { live, paper } = perModalita(positions);
+    if (live.length === 0 && paper.length === 0) return <MtmCell positions={[]} state={state} />;
+    return (
+        <span className="inline-flex flex-col items-end" data-testid="mw-mtm-modi">
+            {live.length > 0 && (
+                <span data-testid="mw-mtm-live"><span className="text-red-300/80 mr-1">live</span>
+                    <MtmCell positions={live} state={state} /></span>
+            )}
+            {paper.length > 0 && (
+                <span data-testid="mw-mtm-paper"><span className="text-white/40 mr-1">prova</span>
+                    <MtmCell positions={paper} state={state} /></span>
+            )}
+        </span>
+    );
+}
+
+export function RischioDueModi({ positions }: { positions: LivePositionRow[] }) {
+    const { live, paper } = perModalita(positions);
+    return (
+        <span className="inline-flex flex-col items-end" data-testid="mw-rischio-modi">
+            <span className="text-white/85" data-testid="mw-rischio-live">
+                <span className="text-red-300/80 mr-1">live</span>€{eventExposure(live).toFixed(2)}
+            </span>
+            <span className="text-white/50" data-testid="mw-rischio-paper">
+                <span className="text-white/40 mr-1">prova</span>€{eventExposure(paper).toFixed(2)}
+            </span>
         </span>
     );
 }
@@ -349,11 +387,11 @@ export default function MarketWatch() {
                                 <CalcioBadge f={f} now={now} />
                                 <div className="text-[11px] w-28 text-right" title="P&L MTM se si greenasse ORA ai prezzi correnti">
                                     <span className="text-slate-400 mr-1">MTM</span>
-                                    <MtmCell positions={positions} state={now?.state} />
+                                    <MtmDueModi positions={positions} state={now?.state} />
                                 </div>
-                                <div className="text-[11px] w-32 text-right tabular-nums" title="Esposizione worst-case aggregata (Σ selection_exposure)">
+                                <div className="text-[11px] w-32 text-right tabular-nums" title="Esposizione worst-case aggregata (Σ selection_exposure), soldi veri e prova separati">
                                     <span className="text-slate-400 mr-1">Rischio</span>
-                                    <span className="text-white/85">€{eventExposure(positions ?? []).toFixed(2)}</span>
+                                    <RischioDueModi positions={positions ?? []} />
                                 </div>
                                 <button
                                     type="button"
@@ -414,8 +452,16 @@ export default function MarketWatch() {
                                     <div className="text-[12px] font-bold text-white truncate">{f.player1_name} vs {f.player2_name}</div>
                                     <div className="text-[10px] text-muted-foreground truncate">{f.competition_name ?? '—'}</div>
                                 </div>
-                                {inplay ? (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black">
+                                {/* 26/09 (F-10): «LIVE» solo se la partita non e' finita (stato IPS
+                                    'Finished' o Match Odds CLOSED); prima bastava `inplay` */}
+                                {partitaTennisFinita(score?.status, mo?.status) ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 text-[10px] font-black"
+                                        data-testid="mw-tennis-finita">
+                                        FINITA{score?.set_summary ? ` · ${score.set_summary}` : ''}
+                                    </span>
+                                ) : inplay ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-black"
+                                        data-testid="mw-tennis-live">
                                         LIVE{score?.set_summary ? ` · ${score.set_summary}` : ''}
                                     </span>
                                 ) : (
@@ -423,11 +469,11 @@ export default function MarketWatch() {
                                 )}
                                 <div className="text-[11px] w-28 text-right" title="P&L MTM se si greenasse ORA ai prezzi correnti">
                                     <span className="text-slate-400 mr-1">MTM</span>
-                                    <MtmCell positions={tPositions == null ? undefined : (tPosBy[f.event_id] ?? [])} state={now?.state} />
+                                    <MtmDueModi positions={tPositions == null ? undefined : (tPosBy[f.event_id] ?? [])} state={now?.state} />
                                 </div>
-                                <div className="text-[11px] w-32 text-right tabular-nums" title="Esposizione worst-case aggregata (Σ selection_exposure)">
+                                <div className="text-[11px] w-32 text-right tabular-nums" title="Esposizione worst-case aggregata (Σ selection_exposure), soldi veri e prova separati">
                                     <span className="text-slate-400 mr-1">Rischio</span>
-                                    <span className="text-white/85">€{eventExposure(tPosBy[f.event_id] ?? []).toFixed(2)}</span>
+                                    <RischioDueModi positions={tPosBy[f.event_id] ?? []} />
                                 </div>
                                 {/* CAPABILITY GATING: il worker tennis NON supporta il cash-out →
                                     nessun bottone, mai promesse bugiarde. */}

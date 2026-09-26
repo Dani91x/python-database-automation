@@ -62,6 +62,26 @@ export function eventMtm(
 }
 
 /**
+ * 26/09 (KO §9-bis n.2, e2e fase 3) - le posizioni di un evento DIVISE per
+ * modalita'. `get_live_positions_event` e `get_tennis_live_positions_all`
+ * (p_mode null) restituiscono paper e live insieme: Market Watch sommava MTM e
+ * rischio delle due. Soldi veri e prova non stanno mai nello stesso numero.
+ * Una riga senza modalita' riconoscibile non finisce in nessuna delle due.
+ */
+export function perModalita<T extends { mode?: string | null }>(
+    rows: ReadonlyArray<T>,
+): { live: T[]; paper: T[] } {
+    const live: T[] = [];
+    const paper: T[] = [];
+    for (const r of rows) {
+        const m = String(r.mode ?? '').toLowerCase();
+        if (m === 'live') live.push(r);
+        else if (m === 'paper') paper.push(r);
+    }
+    return { live, paper };
+}
+
+/**
  * Esposizione worst-case aggregata dell'evento (upper bound ONESTO):
  * Σ selection_exposure delle righe. Valori non finiti → 0 (mai NaN in UI).
  */

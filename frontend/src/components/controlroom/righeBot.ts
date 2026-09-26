@@ -38,6 +38,10 @@ export interface StatoBotPlancia {
      *  singoli bot che non li leggono non devono inventarli. */
     pnlOggi?: number | null;
     pnlOggiPaper?: number | null;
+    /** 26/09 (F-1) - Safe: il P&L di oggi PER STRATEGIA (chiave = strategia
+     *  dell'interruttore). Un numero del bot intero ripetuto su ogni riga di
+     *  strategia sarebbe sommato N volte nel riassunto del gruppo. */
+    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
     /** 24/09 - una frase del servizio da mostrare accanto allo stato (lo
      *  scalper: quante sessioni, in che modalita', da dove e quanto vecchio) */
     nota?: string | null;
@@ -91,8 +95,14 @@ export function righeInterruttori(
             // due: soldi veri ed esercitazione non stanno nello stesso numero.
             // Modalita' non dichiarata = nessun numero: non si sceglie a caso
             // quale dei due mostrare.
-            pnlOggi: st.modalita === 'live' ? (b.pnlOggi ?? null)
-                : st.modalita === 'paper' ? (b.pnlOggiPaper ?? null) : null,
+            ...(() => {
+                // 26/09 (F-1): una riga di STRATEGIA legge il suo P&L, mai quello del bot
+                const perStr = i.strategia != null && b.pnlOggiPerStrategia
+                    ? (b.pnlOggiPerStrategia[i.strategia] ?? { live: null, paper: null }) : null;
+                const live = perStr ? perStr.live : (b.pnlOggi ?? null);
+                const paper = perStr ? perStr.paper : (b.pnlOggiPaper ?? null);
+                return { pnlOggi: st.modalita === 'live' ? live : st.modalita === 'paper' ? paper : null };
+            })(),
             primaDelBot,
         });
     }

@@ -17,7 +17,9 @@ vi.mock('@/lib/liveOrders', () => ({
     fetchLivePositionsEvent: vi.fn(),
     sendCashoutEvent: vi.fn(),
 }));
-vi.mock('@/lib/tennis', () => ({
+vi.mock('@/lib/tennis', async (orig) => ({
+    // 26/09: le funzioni PURE restano le vere (partitaTennisFinita)
+    partitaTennisFinita: (await orig() as { partitaTennisFinita: unknown }).partitaTennisFinita,
     fetchTennisFollows: vi.fn(),
     fetchTennisNow: vi.fn(),
     subscribeTennisNow: vi.fn(() => () => {}),
@@ -123,10 +125,17 @@ function renderPage() {
 }
 
 // i due "Rischio" della pagina: [0] calcio ev1, [1] tennis tev1 (simbolo euro
-// reso "EUR" per tenere il sorgente ASCII)
+// reso "EUR" per tenere il sorgente ASCII). 26/09 (KO §9-bis n.2): il rischio
+// e' diviso per modalita'; le righe di questo file sono tutte PAPER, quindi si
+// legge il numero «prova» (e quello «live» resta a zero, mai sommato).
 const EURO = String.fromCharCode(0x20ac);
 const rischi = () => screen.getAllByTitle(/Esposizione worst-case/)
-    .map(el => (el.textContent ?? '').replace('Rischio', '').replace(EURO, 'EUR'));
+    .map((el) => {
+        const live = el.querySelector('[data-testid="mw-rischio-live"]')?.textContent ?? '';
+        if (!live.endsWith(`${EURO}0.00`)) return `live ${live}`;
+        return (el.querySelector('[data-testid="mw-rischio-paper"]')?.textContent ?? '')
+            .replace('prova', '').replace(EURO, 'EUR');
+    });
 
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });

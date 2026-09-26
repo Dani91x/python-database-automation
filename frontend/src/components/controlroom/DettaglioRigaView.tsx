@@ -44,7 +44,8 @@ export function Ingresso({ d, testId = 'cr-ingresso' }: { d: DettaglioRiga; test
             title="minuto e punteggio al momento dell'ingresso">
             ingresso <span className="text-white/65">
                 {d.ingresso.minuto != null ? `${d.ingresso.minuto}′` : ''}
-                {d.ingresso.punteggio ? ` ${d.ingresso.punteggio}` : ''}
+                {/* 26/09 (F-5): punteggio non noto = «—», mai «None-None» */}
+                {d.ingresso.punteggio ? ` ${d.ingresso.punteggio}` : ` ${DASH}`}
             </span>
         </span>
     );

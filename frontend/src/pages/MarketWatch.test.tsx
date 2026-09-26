@@ -16,7 +16,9 @@ vi.mock('@/lib/liveOrders', () => ({
     fetchLivePositionsEvent: vi.fn(),
     sendCashoutEvent: vi.fn(),
 }));
-vi.mock('@/lib/tennis', () => ({
+vi.mock('@/lib/tennis', async (orig) => ({
+    // 26/09: le funzioni PURE restano le vere (partitaTennisFinita)
+    partitaTennisFinita: (await orig() as { partitaTennisFinita: unknown }).partitaTennisFinita,
     fetchTennisFollows: vi.fn(),
     fetchTennisNow: vi.fn(),
     subscribeTennisNow: vi.fn(() => () => {}),
@@ -140,5 +142,42 @@ describe('MarketWatch', () => {
         expect(link.getAttribute('href')).toContain('/tennis/terminal?');
         expect(link.getAttribute('href')).toContain('event=tev1');
         expect(link.getAttribute('href')).toContain('market=1.999');
+    });
+});
+
+// ============================================================================
+// 26/09 - correzioni del test e2e FASE 3 (admin-26).
+//  KO §9-bis n.2: MTM e rischio di paper e live erano SOMMATI (RPC senza
+//  filtro di modalita'): ora due numeri etichettati.
+//  F-10: «LIVE · 5-7 6-2» su una partita FINITA (stato IPS 'Finished').
+// FALSIFICAZIONE: rimettendo `eventExposure(positions)` sul totale il primo
+// test vede €8.00 invece di live €3.00 / prova €5.00; togliendo il ramo
+// `partitaTennisFinita` il secondo vede di nuovo «LIVE».
+// ============================================================================
+describe('MarketWatch - 26/09 correzioni fase 3', () => {
+    it('paper e live dello stesso evento: due rischi separati, mai sommati', async () => {
+        const riga = (id: number, mode: 'paper' | 'live', esp: number) => ({
+            id, mode, event_id: 'ev1', market_id: '1.234', selection_id: 7, handicap: 0,
+            matched_if_win: 10, matched_if_lose: -esp, worst_if_win: 10, worst_if_lose: -esp,
+            selection_exposure: esp, unmatched_back_exposure: 0, unmatched_lay_exposure: 0,
+            net_position: 5, updated_at: null,
+        });
+        mPositions.mockResolvedValue([riga(1, 'paper', 5), riga(2, 'live', 3)] as never);
+        renderPage();
+        const live = await screen.findAllByTestId('mw-rischio-live');
+        const paper = await screen.findAllByTestId('mw-rischio-paper');
+        expect(live[0].textContent).toContain('€3.00');
+        expect(paper[0].textContent).toContain('€5.00');
+        expect(screen.queryByText('€8.00')).toBeNull();
+    });
+
+    it('tennis finito: «FINITA» con tutti i set, non «LIVE»', async () => {
+        mTNow.mockResolvedValue({
+            ...TENNIS_NOW,
+            score: { status: 'Finished', set_summary: '5-7 6-2 1-6' } as never,
+        } as never);
+        renderPage();
+        expect(await screen.findByTestId('mw-tennis-finita')).toHaveTextContent('FINITA · 5-7 6-2 1-6');
+        expect(screen.queryByTestId('mw-tennis-live')).toBeNull();
     });
 });

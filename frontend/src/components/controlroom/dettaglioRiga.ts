@@ -25,7 +25,7 @@
 import { legPnl, type LegPnl, type MatchTradeLike } from '@/lib/omegaMatches';
 import { greenupBadge, hedgeInfo, tradeModelOf, type GreenupBadge } from '@/lib/omega';
 import { statusMetaOf, type Meta } from '@/lib/tradeStatus';
-import { ticksBetween } from '@/lib/riskMath';
+import { tickAFavore } from '@/lib/riskMath';
 import { isSettled } from '@/lib/eventGroups';
 
 /** La riga minima da cui si ricava il dettaglio: è il sottoinsieme che
@@ -38,7 +38,7 @@ export interface QuotaViva {
     back: number | null;
     /** miglior LAY disponibile ora sulla selezione; null = non lo sappiamo */
     lay: number | null;
-    /** quota di adesso sullo STESSO lato dell'ingresso (il confronto onesto) */
+    /** quota di CHIUSURA di adesso: best back per un lay, best lay per un back (26/09, F-4) */
     ora: number | null;
     /** tick di movimento dall'ingresso, con segno: + = a FAVORE della posizione */
     tick: number | null;
@@ -110,9 +110,12 @@ function str(v: unknown): string | null {
  * `prezzoVivo()` (la stessa funzione che alimenta le proposte): qui si fa solo
  * il confronto con l'ingresso, con la scala dei tick di Betfair.
  *
- * Segno: su un LAY entrato a P si guadagna quando la quota SCENDE (si ricompra
- * il back più basso), su un BACK quando sale. È la stessa convenzione di
- * `SafeTradesTable` (`× −1` sul lay) e di `offsetTargetPrice` in riskMath.
+ * Segno (corretto il 26/09, F-4): il confronto e' col prezzo di CHIUSURA (un
+ * LAY si chiude con un BACK al best back di adesso, un BACK con un LAY al best
+ * lay). Un LAY entrato a P guadagna quando la quota SALE (si ricompra il back
+ * piu' alto), un BACK quando SCENDE: `tickAFavore` in riskMath, la stessa
+ * convenzione di `offsetTargetPrice` e di `SafeTradesTable`. Il commento di
+ * prima diceva il contrario ed era finanziariamente falso.
  */
 /**
  * UNA GAMBA DI CHIUSURA NON E' UNA POSIZIONE APERTA (approvato dall'utente,
@@ -122,6 +125,20 @@ function str(v: unknown): string | null {
  * «chiudi ora» e un P&L stimato vorrebbe dire proporre di chiudere una
  * chiusura. Vive gia' nella scheda della partita, sotto la sua apertura.
  */
+/**
+ * 26/09 (F-5, e2e fase 3) - il punteggio d'ingresso, SOLO se e' un punteggio.
+ * Mike scriveva la stringa 'None-None' in pre-partita (f-string senza guardia,
+ * `Betfair/mike/service.py`, corretto lo stesso giorno): le righe gia' scritte
+ * restano nel DB, e qui diventano «non noto» invece di «ingresso None-None».
+ */
+export function punteggioIngresso(v: unknown): string | null {
+    const s = str(v);
+    if (s == null) return null;
+    // si scartano solo i segnaposto di un valore mancante (anche il tennis ha
+    // punteggi con set e game: nessun formato imposto)
+    return /\b(None|null|undefined|NaN)\b/.test(s) ? null : s;
+}
+
 export function eGambaDiChiusura(t: { closes_trade_id?: number | null }): boolean {
     return t.closes_trade_id != null;
 }
@@ -134,10 +151,11 @@ export function quotaViva(
     const back = num(book.back);
     const lay = num(book.lay);
     if (back == null && lay == null) return null;
-    const ora = lato === 'lay' ? lay : lato === 'back' ? back : null;
+    // il prezzo con cui la posizione si CHIUDE adesso
+    const ora = lato === 'lay' ? back : lato === 'back' ? lay : null;
     const entry = num(entryPrice);
-    const tick = entry != null && entry > 1 && ora != null && ora > 1
-        ? ticksBetween(entry, ora) * (lato === 'lay' ? -1 : 1)
+    const tick = entry != null && entry > 1 && ora != null && ora > 1 && lato != null
+        ? tickAFavore(lato, entry, ora)
         : null;
     return { back, lay, ora, tick };
 }
@@ -175,7 +193,7 @@ export function dettaglioDi<T extends RigaDettagliabile>(
         stato: statusMetaOf({ status: t.status, meta }),
         ingresso: {
             minuto: num(t.minute_at_entry),
-            punteggio: str(t.score_at_entry),
+            punteggio: punteggioIngresso(t.score_at_entry),
         },
         pnlVivo: { stato: pnl.state, valore: pnl.value },
         copertura: h == null ? null : {

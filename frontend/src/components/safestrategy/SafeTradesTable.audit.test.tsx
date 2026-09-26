@@ -75,7 +75,9 @@ describe('R1 — cash out sui mercati a gol, non solo Match Odds/Correct Score',
         const row = screen.getByTestId('safe-trade-row');
         // best LAY della stessa selezione (si chiude bancando): 1,44
         expect(within(row).getByTestId('safe-price-now')).toHaveTextContent('1,44');
-        expect(within(row).getByTestId('safe-tick-delta')).toHaveTextContent('+6');
+        // 26/09 (F-4): back 1,38 chiuso a lay 1,44 = −0,42 € = 6 tick CONTRO
+        // (prima l'attesa era «+6»: codificava il segno rovesciato)
+        expect(within(row).getByTestId('safe-tick-delta')).toHaveTextContent('−6');
         // back 10 @1,38 → vince +3,80 / perde −10,00 ; chiusura lay @1,44
         expect(within(row).getByTestId('safe-close-now')).toHaveTextContent('−0,42 €');
         const trigger = within(row).getByTestId('cashout-trigger');

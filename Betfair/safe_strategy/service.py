@@ -957,7 +957,18 @@ class Scanner:
         # marketDefinition porta di sicuro, ed e' informazione buona
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
-        ev["mo_total_matched"] = scanner.num_or_none(getattr(book, "total_matched", None))
+        # 26/09 (F-8, e2e fase 3): lo STREAM dello scanner si iscrive a
+        # EX_BEST_OFFERS + EX_MARKET_DEF (stream.py), senza EX_TRADED_VOL: il
+        # campo ``tv`` non arriva mai e betfairlightweight lascia
+        # ``total_matched = 0`` (streaming/cache.py). Quello zero NON e' una
+        # misura: scriverlo dava «vol. 0,00 €» su partite al 50' (il ladder del
+        # runner diceva €559). Dallo stream uno zero non tocca il valore noto
+        # (REST, se c'e'); resta ``None`` = non noto. Il REST porta il vero.
+        tm = scanner.num_or_none(getattr(book, "total_matched", None))
+        if not (dallo_stream and not tm):
+            ev["mo_total_matched"] = tm
+        else:
+            ev.setdefault("mo_total_matched", None)
         # F0 (18/09) - BET DELAY DI QUESTO MERCATO, dal ``marketDefinition`` che
         # il book ha gia' in mano: zero chiamate, zero migrazioni, chiave
         # ADDITIVA nel payload. Prima lo leggeva solo ``_apply_opp_book`` (i

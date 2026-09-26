@@ -327,6 +327,31 @@ export function motivoNonApprovabile(args: {
     return null;
 }
 
+/**
+ * 26/09 (F-6, e2e fase 3) - ETA' MASSIMA di una proposta di opportunita'. Lo
+ * STESSO numero del servizio (`ORE_SCADENZA_PROPOSTA`,
+ * Betfair/safe_strategy/bot_service.py), che dopo 12 ore la fa decadere.
+ */
+export const SCADENZA_PROPOSTA_ORE = 12;
+
+/**
+ * Una proposta di opportunita' che NON si mostra piu' come «da piazzare»:
+ * piu' vecchia di `SCADENZA_PROPOSTA_ORE`, oppure col mercato della partita
+ * CHIUSO nel feed. Reperto: la #257 del 24/09 (partita finita) compariva il
+ * 26/09 con «Piazza», perche' il servizio era spento quando la partita e'
+ * finita e non l'aveva fatta decadere. Data illeggibile = non scaduta per eta'
+ * (non si nasconde una scheda per un dato che non si sa leggere).
+ */
+export function propostaScaduta(
+    createdAt: string | null | undefined,
+    feed: { mo_status?: string | null } | null | undefined,
+    nowMs: number,
+): boolean {
+    if (String(feed?.mo_status ?? '').toUpperCase() === 'CLOSED') return true;
+    const t = createdAt ? Date.parse(createdAt) : NaN;
+    return Number.isFinite(t) && nowMs - t > SCADENZA_PROPOSTA_ORE * 3600 * 1000;
+}
+
 /** Le urgenti in cima: non approvarle costa. A parità, la più vecchia prima. */
 export function ordinaProposte(p: readonly PropostaChiusura[]): PropostaChiusura[] {
     return [...p].sort((a, b) => {

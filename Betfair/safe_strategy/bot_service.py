@@ -6886,6 +6886,9 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     # PROPOSTE (17/09): le opportunita' di modello non si piazzano da sole. Una
     # lettura sola per ciclo di cio' che il DB sa gia' (vive, rifiutate,
     # decadute); ``None`` = non leggibile, e allora non si propone niente.
+    # 26/09 (F-6): prima di leggere, fa decadere le proposte troppo vecchie
+    # (fuori dalla finestra di 24 h non decadevano mai)
+    _scadi_proposte_vecchie(db, now, st)
     note_proposte = _leggi_proposte_opp(db)
     # 18/09 — ORDINE DELL'UTENTE: coerenza col mercato. UNA lettura per ciclo
     # (non per evento) degli opp_key con un ordine ANCORA vivo (qualunque
@@ -7257,6 +7260,44 @@ def _proponi_opps(*, db, payload: dict, event_id: str, opps: list,
                 p_model=o.get("p_model"), criteri=criteri))
         fuori.append(corpo)
     return fuori
+
+
+# 26/09 (F-6, e2e fase 3) - ETA' MASSIMA di una proposta di opportunita' ancora
+# 'proposed'. Le opportunita' nascono in gioco (``eventi_in_gioco``): dopo 12 ore
+# la partita e' finita di sicuro. Stesso numero nella Control Room
+# (``SCADENZA_PROPOSTA_ORE``, frontend/src/lib/controlRoomProposte.ts).
+ORE_SCADENZA_PROPOSTA = 12.0
+# un UPDATE filtrato ogni 10 minuti (e al primo ciclo dopo l'avvio): il DB ha
+# un budget di IO (13/09)
+_OGNI_S_SCADENZA_PROPOSTE = 600.0
+
+
+def _scadi_proposte_vecchie(db, now: datetime, st: dict) -> int:
+    """Fa DECADERE le proposte 'proposed' piu' vecchie di
+    ``ORE_SCADENZA_PROPOSTA`` (``db.scadi_proposte_opportunita``) e lo annota
+    in attivita'. Nessuna regola di strategia: cosa si propone non cambia,
+    cambia solo che una scheda di due giorni fa smette di essere «viva».
+    Ritorna quante ne sono decadute; un errore non ferma il ciclo."""
+    fn = getattr(db, "scadi_proposte_opportunita", None)
+    if not callable(fn):
+        return 0
+    now_ts = now.timestamp()
+    if now_ts - float(st.get("scadenza_proposte_ts") or 0.0) < _OGNI_S_SCADENZA_PROPOSTE:
+        return 0
+    st["scadenza_proposte_ts"] = now_ts
+    try:
+        righe = list(fn(ORE_SCADENZA_PROPOSTA) or [])
+    except Exception:  # noqa: BLE001 — la pulizia non ferma il trading
+        return 0
+    for r in righe:
+        corpo = r.get("payload") or {}
+        _log(db, "opportunita_decaduta", {
+            "event_id": str(corpo.get("event_id") or ""), "event_name": corpo.get("event_name"),
+            "request_id": r.get("id"), "kind": corpo.get("kind"),
+            "signal_key": corpo.get("signal_key"),
+            "motivo": f"proposta scaduta: piu' vecchia di {ORE_SCADENZA_PROPOSTA:g} ore",
+            "mode": corpo.get("mode")})
+    return len(righe)
 
 
 def _leggi_proposte_opp(db) -> Optional[dict[str, Any]]:

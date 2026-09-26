@@ -37,7 +37,7 @@ import {
     fetchProposteOmega, subscribeProposteOmega, approvaPropostaOmega,
     ignoraPropostaOmega, ordinaProposteOmega, type PropostaUscitaOmega,
 } from '@/lib/omegaProposte';
-import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
+import { hedgeSide, greenPrice, partialLockedPnl, netAfterCommission } from '@/components/trading/CashOutButton';
 import { fetchMikeState, type MikeEvent, type MikeStateView, type MikeTrade } from '@/lib/mike';
 import {
     mappaVuota, applicaBloccoDb, applicaMessaggioCanale, leggiMessaggioRiga,
@@ -65,7 +65,7 @@ import {
 } from '@/lib/tennis';
 import { fetchLiveFollows } from '@/lib/live';
 import {
-    posizioniChiuse, rigaDaOrdineTennis, SOGLIA_PARI,
+    posizioniChiuse, rigaDaOrdineTennis, SOGLIA_PARI, pnlChiuseDelGiorno,
     type PosizioneChiusa, type TradeChiudibile,
 } from '@/lib/posizioniChiuse';
 import type { RigaOrdine } from '@/lib/statoOrdine';
@@ -76,7 +76,7 @@ import {
 } from '@/components/controlroom/dettaglioRiga';
 import {
     costruisciGiornata, soldiPerPartita, marca, marcaTennis, totaliGiornata, coperturaControllo,
-    etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa,
+    etaSecondi, freschezza, freschezzaBattito, realizzatoGiornata, arricchimentoDa, perSportGiornata,
     type ArricchimentoPartita, type RigaTennisPerSoldi,
     BOT_TENNIS, isBotTennis, BOT_LABEL,
     type Bot, type BotTennis, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
@@ -91,7 +91,7 @@ import {
 } from '@/lib/controlRoomCatena';
 import {
     fetchProposte, subscribeProposte, approvaProposta, ignoraProposta,
-    prezzoVivo, ordinaProposte, SLIPPAGE_PCT_DEFAULT,
+    prezzoVivo, ordinaProposte, SLIPPAGE_PCT_DEFAULT, propostaScaduta,
     type PropostaChiusura, type PrezzoVivo,
 } from '@/lib/controlRoomProposte';
 import {
@@ -287,13 +287,14 @@ export interface StatoBot {
      * mostra quello della modalita' in cui il bot sta operando. `null` = niente
      * di regolato oggi, che non e' «0,00 €».
      *
-     * Oggi lo dichiarano i quattro bot tennis (`get_tennis_bot_daily`, netto di
-     * commissione); per Omega, Safe e Mike resta `null` qui e il loro conto sta
-     * dove stava (`soldiGiornata`): due numeri per la stessa cosa sarebbero due
-     * verita'.
+     * Lo dichiarano i quattro bot tennis (`get_tennis_bot_daily`, netto di
+     * commissione). 26/09 (F-1): Omega e Mike dalle POSIZIONI CHIUSE di oggi
+     * (`pnlChiuseDelGiorno`, giorno di regolamento), Safe per strategia
+     * (`pnlOggiPerStrategia`): la stessa fonte della scheda Chiuse.
      */
     pnlOggi: number | null;
     pnlOggiPaper: number | null;
+    pnlOggiPerStrategia?: Record<string, { live: number | null; paper: number | null }> | null;
     /** 24/09 - scalper calcio: quante sessioni, in che modalita', fonte ed eta' */
     nota?: string | null;
     /** 25/09 - i 4 bot tennis: l'auto-mode dichiarato dal ponte (`stats.auto`),
@@ -462,6 +463,16 @@ export interface PosizioneAperta {
 
 /** Una riga è «a mercato» se non è regolata e non è un piazzamento mai
  *  avvenuto. `error` NON è un'operazione: non conta in nessun numero. */
+/** 26/09 (F-12) - l'aliquota di commissione di una riga: la colonna, poi
+ *  `meta.commission`, altrimenti 5 % (default Betfair usato dai servizi).
+ *  `netAfterCommission` legge sia la frazione (0,05) sia la percentuale (5). */
+function aliquotaDi(colonna: unknown, daMeta: unknown): number {
+    for (const v of [colonna, daMeta]) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+    }
+    return 0.05;
+}
+
 function aMercato(t: { status: string }): boolean {
     return !isSettled(t.status) && !isErrorRow(t.status);
 }
@@ -1044,8 +1055,9 @@ export function useControlRoom(): ControlRoomVM {
      *  «quanto ha reso il tennis» — non si riconta niente lato client. */
     /** la giornata di Safe con i SOLDI VERI (`p_mode='live'`) */
     const [safeOggi, setSafeOggi] = useState<DailyRow | null>(null);
-    /** la stessa giornata in PROVA. Tenuta a parte: non si somma mai all'altra. */
-    const [safeOggiPaper, setSafeOggiPaper] = useState<DailyRow | null>(null);
+    /** la stessa giornata in PROVA. 26/09 (F-2): non piu' letta dalle tessere
+     *  sport (giorno di piazzamento); la lettura resta, il valore non serve. */
+    const [, setSafeOggiPaper] = useState<DailyRow | null>(null);
     /** eventi di Omega: campionato, loghi e `fixture_id` che il feed non ha */
     const [eventiOmega, setEventiOmega] = useState<OmegaEvent[]>([]);
     /**
@@ -1287,6 +1299,8 @@ export function useControlRoom(): ControlRoomVM {
                 const v = rProp.value;
                 setRigheProp((p) => applicaBloccoDb(p, 'safe', v ?? [], lettoMs));
             }
+            // 26/09 (F-3): le tessere sport non leggono piu' da qui (vedi
+            // `perSportGiornata`): `null` = 0 righe resta solo per la controprova
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
@@ -2474,6 +2488,29 @@ export function useControlRoom(): ControlRoomVM {
 
     const chiuse = useMemo<PosizioneChiusa[]>(() => posizioniChiuse(righeChiuse), [righeChiuse]);
 
+    // 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI OMEGA/MIKE/SAFE nella plancia,
+    // dalle STESSE posizioni chiuse della scheda (giorno di REGOLAMENTO, una
+    // modalita' per volta, netto). Prima era `null` («oggi —») mentre le
+    // Chiuse della stessa pagina dicevano +0,95 / +0,79 €.
+    const botsConPnl = useMemo<StatoBot[]>(() => {
+        const giorno = romeDay(new Date(nowMs));
+        const di = (bot: Bot, modo: 'live' | 'paper', strategia?: string) =>
+            pnlChiuseDelGiorno(chiuse, { giorno, bot, modo, strategia });
+        return bots.map((b) => {
+            if (b.bot === 'omega' || b.bot === 'mike') {
+                return { ...b, pnlOggi: di(b.bot, 'live'), pnlOggiPaper: di(b.bot, 'paper') };
+            }
+            if (b.bot === 'safe') {
+                const perStr: Record<string, { live: number | null; paper: number | null }> = {};
+                for (const k of ['base', 'esatto', 'punta', 'model', 'manual', 'tennis']) {
+                    perStr[k] = { live: di('safe', 'live', k), paper: di('safe', 'paper', k) };
+                }
+                return { ...b, pnlOggiPerStrategia: perStr };
+            }
+            return b;
+        });
+    }, [bots, chiuse, nowMs]);
+
     /**
      * Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
      * `null` quando il prezzo corrente non c'e': non si inventa.
@@ -2489,6 +2526,8 @@ export function useControlRoom(): ControlRoomVM {
         meta: Record<string, unknown> | null;
         event_id: string; market_id?: string | null; selection_id?: number | null;
         sport?: string | null;
+        /** aliquota della riga (Safe/Mike: colonna `commission`); Omega: `meta.commission` */
+        commission?: number | null;
     }): PosizioneAperta['chiusura'] => {
         const { win, lose } = tradeExposureNow({
             side: t.side, price: t.price, size: t.size, meta: t.meta ?? null,
@@ -2513,7 +2552,13 @@ export function useControlRoom(): ControlRoomVM {
             lato,
             prezzo,
             abbinabile: vivo.abbinabile,
-                bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
+            // 26/09 (F-12, e2e fase 3): NETTO di commissione, come «Tenere»
+            // (`hold_profit`) e `locked_at_decision` del servizio. Prima il
+            // lordo affiancato a due netti, a favore del «chiudere». Aliquota
+            // della riga, se no 5 % (default Betfair del repo).
+            bloccabile: prezzo == null ? null : netAfterCommission(
+                partialLockedPnl(prezzo, win, lose, 1),
+                aliquotaDi(t.commission, (t.meta ?? {})['commission'])),
             alMs: {
                 win, lose,
                 marketId: t.market_id ? String(t.market_id) : null,
@@ -2742,6 +2787,11 @@ export function useControlRoom(): ControlRoomVM {
         created_at?: string | null; updated_at?: string | null;
     }[])
         .filter((r) => isPropostaOpportunita(r))
+        // 26/09 (F-6): una proposta scaduta (vecchia o a mercato chiuso) non
+        // si offre piu' con «Piazza»; il servizio la fa decadere per conto suo
+        .filter((r) => !propostaScaduta(r.created_at,
+            (feedPerEvento.get(String((r.payload ?? {}).event_id))?.payload ?? null) as { mo_status?: string | null } | null,
+            nowMs))
         .map((r) => {
             const pr = r as unknown as PropostaOpportunita;
             const p = pr.payload;
@@ -3434,6 +3484,18 @@ export function useControlRoom(): ControlRoomVM {
         // per colpa di perdite finte.
         const realizzato = realizzatoOggi.live.totale;
         const realizzatoPaper = realizzatoOggi.paper.totale;
+        const tesseraSport = (modo: 'live' | 'paper') => {
+            const delModo = (r: RigaComponente) => String(r.mode ?? '').toLowerCase() === modo;
+            const vere = [...oggiRighe.omegaRighe, ...oggiRighe.safeRighe, ...oggiRighe.mikeRighe,
+                ...oggiRighe.scalperRighe].filter(delModo);
+            const sintetiche = [...oggiRighe.tennisBotRighe, ...oggiRighe.manualeSitoRighe,
+                ...oggiRighe.manualeAppRighe, ...oggiRighe.altroRighe].filter(delModo);
+            const t = modo === 'live' ? tennisOggi : tennisOggiPaper;
+            const somma = (k: 'vinti' | 'persi' | 'ordini') =>
+                t.reduce((s, r) => s + (typeof r[k] === 'number' ? r[k] : 0), 0);
+            return perSportGiornata(vere, sintetiche,
+                { tennis: { n: somma('ordini'), won: somma('vinti'), lost: somma('persi') } });
+        };
 
         // CONTROPROVA sul tennis: il server (`get_safe_daily` con p_mode=live)
         // e il conto fatto qui sulle righe devono dire la stessa cosa. Se non
@@ -3476,10 +3538,13 @@ export function useControlRoom(): ControlRoomVM {
             discordanza,
             perBot,
             liability: liab.length ? r2(liab.reduce((a, b) => a + b, 0)) : null,
-            /** per sport, SOLDI VERI (server, `p_mode='live'`) */
-            perSport: safeOggi?.by_sport ?? null,
+            // 26/09 (F-2, e2e fase 3): le tessere sport dalle STESSE righe della
+            // barra (giorno di REGOLAMENTO, tutti i bot), non da `get_safe_daily`
+            // (piazzamento, solo Safe). `null` = trade non ancora letti.
+            /** per sport, SOLDI VERI */
+            perSport: soldiLetti ? tesseraSport('live') : null,
             /** per sport, in PROVA. Mai sommato al precedente. */
-            perSportPaper: safeOggiPaper?.by_sport ?? null,
+            perSportPaper: soldiLetti ? tesseraSport('paper') : null,
             // ⚠️ REVIEW 15/09 — QUI C'ERANO I CONTATORI DI `get_safe_daily`,
             // che legge la SOLA tabella di Safe, accanto a un realizzato
             // calcolato sulle righe dei TRE bot. Le operazioni di Omega e Mike
@@ -3520,9 +3585,9 @@ export function useControlRoom(): ControlRoomVM {
                 };
             })(),
         };
-    }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
+    }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi,
         tennisOggi, tennisOggiPaper, realizzatoOggi, oggiRighe, composizioneOggi, posizioni,
-        pnlRealeOggi, scalperVista]);
+        pnlRealeOggi, scalperVista, soldiLetti]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
     // 25/09 (voce 6): i due runner, canale prima e database come ripiego
@@ -3570,7 +3635,7 @@ export function useControlRoom(): ControlRoomVM {
         soldiGiornata: giornataSoldi,
         targetServizio,
         composizioneOggi, manualeSitoBetfair, salvaObiettivo,
-        bots, posizioni, chiuse, righeChiuse, registrazioni, copertura,
+        bots: botsConPnl, posizioni, chiuse, righeChiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         runner: runnerVista.runner,
         fonteRunner: { fonte: runnerVista.fonte, etaS: runnerVista.etaS },

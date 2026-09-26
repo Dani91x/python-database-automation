@@ -618,6 +618,29 @@ export function filtraChiuse(
 }
 
 /**
+ * 26/09 (F-1, e2e fase 3) - IL P&L «OGGI» DI UN BOT nella plancia, con la
+ * STESSA fonte e la STESSA regola della scheda Posizioni chiuse: posizioni
+ * chiuse, giorno di REGOLAMENTO, UNA modalita', netto (`pnlGlobale`). Prima
+ * Omega/Mike/Safe avevano `null` («oggi —») mentre le Chiuse della stessa
+ * pagina dicevano +0,95 / +0,79 €. `strategia` (Safe) = quella dell'APERTURA
+ * del ciclo. `null` = nessuna posizione chiusa: «—», mai uno zero inventato.
+ */
+export function pnlChiuseDelGiorno(
+    posizioni: readonly PosizioneChiusa[],
+    f: { giorno: string; bot: Bot; modo: Modo; strategia?: string | null },
+): number | null {
+    let tot: number | null = null;
+    for (const p of filtraChiuse(posizioni, { giorno: f.giorno, bot: f.bot, modo: f.modo })) {
+        if (f.strategia != null) {
+            const apertura = p.righe.find((r) => !r.chiusura && String(r.id) === String(p.id));
+            if ((apertura?.quale ?? null) !== f.strategia) continue;
+        }
+        tot = cent((tot ?? 0) + p.pnlGlobale);
+    }
+    return tot;
+}
+
+/**
  * Quante posizioni chiuse restano FUORI dalla giornata mostrata (e quante non
  * hanno proprio una data): la scheda lo dice invece di farle sparire.
  */

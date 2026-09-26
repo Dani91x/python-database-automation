@@ -28,7 +28,7 @@ import { tradeExit } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime, fmtQuotaAbbinata, DASH } from '@/lib/format';
 import { statusMeta, pnlClass, pnlClassSoft, T } from '@/lib/tradeStatus';
 import { positionInfo } from '@/lib/omega';
-import { ticksBetween } from '@/lib/riskMath';
+import { tickAFavore } from '@/lib/riskMath';
 import type { CalcioScanPayload, TennisScanPayload } from '@/lib/safeStrategyScan';
 import {
     blindSince, cappedFrom, comboIncomplete, comboLasciataAlTrader, errorFinal, exitRunState, hedgeState, isReconciling,
@@ -425,8 +425,10 @@ export function SafeTradesTable({
                         // quota ORA = best del lato con cui si CHIUDE (mirror di CashOutButton)
                         const closeSide = hedgeSide(exp.win, exp.lose);
                         const nowPrice = greenPrice(exp.win, exp.lose, book?.back ?? null, book?.lay ?? null);
+                        // 26/09 (F-4): + = a favore (un lay guadagna se la quota sale);
+                        // prima ×−1 sul lay rovesciava il segno di entrambi i lati
                         const dTicks = nowPrice != null && t.price != null && t.price > 1
-                            ? ticksBetween(t.price, nowPrice) * (t.side === 'lay' ? -1 : 1)
+                            ? tickAFavore(t.side === 'lay' ? 'lay' : 'back', t.price, nowPrice)
                             : null;
                         // CHIUSURA-01: stessa formula del servizio (stake di
                         // copertura arrotondato al centesimo, peggiore dei due

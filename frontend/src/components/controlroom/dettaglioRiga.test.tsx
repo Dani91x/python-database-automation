@@ -143,23 +143,42 @@ describe('dettaglioDi — il dettaglio esce dalle stesse funzioni delle pagine d
 });
 
 describe('quotaViva — quota d ingresso contro quota di ADESSO', () => {
-    it('back e lay di adesso e i tick di movimento sul lato d ingresso', () => {
+    // 26/09 (F-4): queste due attese erano SBAGLIATE (dicevano che un lay
+    // guadagna se la quota scende). Un LAY si chiude con un back al best back
+    // e guadagna se la quota SALE; un BACK si chiude al best lay e guadagna se SCENDE.
+    it('back e lay di adesso e i tick di movimento sul prezzo di CHIUSURA', () => {
         const v = quotaViva(26, 'lay', { back: 24, lay: 22 });
         expect(v?.back).toBe(24);
         expect(v?.lay).toBe(22);
-        expect(v?.ora).toBe(22);
-        // su un LAY entrato a 26 la quota che SCENDE e' a nostro favore: tick > 0
-        expect(v?.tick).toBeGreaterThan(0);
+        expect(v?.ora).toBe(24);
+        // su un LAY entrato a 26 la quota che SCENDE e' CONTRO di noi: tick < 0
+        expect(v?.tick).toBe(-2);
     });
 
-    it('su un BACK il segno e rovesciato: la quota che scende ci danneggia', () => {
-        expect(quotaViva(3, 'back', { back: 2.5, lay: 2.52 })?.tick).toBeLessThan(0);
+    it('su un BACK la quota che scende e a favore', () => {
+        expect(quotaViva(3, 'back', { back: 2.5, lay: 2.52 })?.tick).toBeGreaterThan(0);
     });
 
     // FALSIFICAZIONE
     it('senza nessun prezzo nel feed la quota viva NON esiste (mai un ripiego)', () => {
         expect(quotaViva(26, 'lay', { back: null, lay: null })).toBeNull();
         expect(quotaViva(null, 'lay', { back: 24, lay: 22 })?.tick).toBeNull();
+    });
+});
+
+// 26/09 (F-5): Mike scriveva la STRINGA 'None-None' in pre-partita; le righe
+// gia' nel DB restano: la UI mostra «—», mai «None-None». Falsificazione:
+// rimettendo `punteggio: str(t.score_at_entry)` il test e' rosso.
+describe('ingresso: punteggio mancante = «—»', () => {
+    it('«None-None» non arriva a video; un punteggio vero si', () => {
+        const d = dettaglioDi(rigaOmega({ minute_at_entry: 12, score_at_entry: 'None-None' }));
+        expect(d.ingresso.punteggio).toBeNull();
+        render(<Ingresso d={d} />);
+        expect(screen.getByTestId('cr-ingresso').textContent).not.toMatch(/None/);
+        expect(screen.getByTestId('cr-ingresso').textContent).toContain('—');
+        expect(dettaglioDi(rigaOmega({ score_at_entry: '1-0' })).ingresso.punteggio).toBe('1-0');
+        expect(dettaglioDi(rigaOmega({ score_at_entry: 'set 1-0 · game 4-2' })).ingresso.punteggio)
+            .toBe('set 1-0 · game 4-2');
     });
 });
 
@@ -243,6 +262,19 @@ describe('SchedaMike — i dati di MODELLO di Mike, dalla lettura gia fatta', ()
         expect(screen.getByTestId('cr-mike-cashout')).toHaveTextContent('soglia');
         // il segno «meno» del design system e' il MENO tipografico (U+2212)
         expect(screen.getByTestId('cr-mike-gol-4')).toHaveTextContent('4,65 €');
+    });
+
+    // 26/09 (F-13): il numero e' P(ESATTAMENTE 4) (feed.py `implied_p4`), che
+    // e' anche quello su cui decide `engine.hold_expectation`: etichetta e title
+    // devono dirlo. Falsificazione: rimettendo «4+ gol» nei title il test e' rosso.
+    it('P(4 gol) si dichiara «esatti», mai «4+»', () => {
+        render(<SchedaMike ev={eventoMike()} />);
+        for (const id of ['cr-mike-p4-mercato', 'cr-mike-p4-modello']) {
+            const el = screen.getByTestId(id);
+            expect(el.getAttribute('title') ?? '').not.toMatch(/4\+/);
+            expect(el.getAttribute('title') ?? '').toMatch(/ESATTAMENTE 4 gol/);
+        }
+        expect(screen.getByTestId('cr-mike-p4-mercato')).toHaveTextContent('4 gol esatti');
     });
 
     it('la fonte dei gol attesi si DICHIARA: «nessuna» vuol dire bot cieco', () => {

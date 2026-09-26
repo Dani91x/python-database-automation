@@ -72,6 +72,19 @@ export function ticksBetween(from: number, to: number): number {
     return nearestTickIndex(to) - nearestTickIndex(from);
 }
 
+/**
+ * 26/09 (F-4, e2e fase 3) - I TICK DI MOVIMENTO A FAVORE di una posizione,
+ * misurati sul prezzo con cui la si CHIUDE (lay → best BACK di adesso, back →
+ * best LAY). Un LAY guadagna quando la quota SALE (ricompra a back piu' alto),
+ * un BACK quando SCENDE: + = a favore, lo stesso segno del «chiudi ora» in €.
+ * Prima il segno era rovesciato (×−1 sul lay) e il confronto sul prezzo
+ * dello STESSO lato: Omega LAY 1@55, back 60 → «−10 tick» con +0,08 €.
+ */
+export function tickAFavore(entrySide: 'back' | 'lay', entryPrice: number, closePrice: number): number {
+    const t = ticksBetween(entryPrice, closePrice);
+    return entrySide === 'lay' ? t : -t;
+}
+
 export function ticksAway(price: number, n: number): number {
     const idx = nearestTickIndex(price);
     const target = Math.min(PRICES.length - 1, Math.max(0, idx + Math.trunc(n)));

@@ -110,6 +110,15 @@ const KIND_IT: Record<string, string> = {
     anomaly: 'anomalia', combo: 'combinazione',
 };
 
+/** 26/09 (F-7) - la P del mercato COERENTE col vantaggio della proposta:
+ *  1/quota della proposta (la definizione dei motori). Senza quota valida,
+ *  la `p_implied` scritta dal motore. */
+export function pMercatoProposta(prezzo: number | null | undefined,
+    pImplied: number | null | undefined): number | null {
+    if (typeof prezzo === 'number' && Number.isFinite(prezzo) && prezzo > 1) return 1 / prezzo;
+    return typeof pImplied === 'number' && Number.isFinite(pImplied) ? pImplied : null;
+}
+
 /** Che cosa AVVISARE prima della firma (24/09: NON spegne più PIAZZA — ordine
  *  dell'utente «me lo segnala e decido io»; il nome resta per compatibilità).
  *
@@ -537,7 +546,13 @@ export function SchedaPropostaOpportunita({
             {/* ---- i numeri del modello (24/09: P del mercato e vantaggio AL PREZZO DI ADESSO) ---- */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/5 border-t border-white/5">
                 <Cella etichetta="P modello" valore={PCT(p.p_model)} testId="cr-opp-pmodel" />
-                <Cella etichetta="P del mercato" valore={PCT(ap?.p_implicita ?? p.p_implied)} testId="cr-opp-pimplied" />
+                {/* 26/09 (F-7): senza prezzo vivo la P del mercato e' 1/quota della
+                    PROPOSTA, la stessa con cui i motori calcolano il vantaggio
+                    (`opportunity.py`, `tennis_opportunity.py`: edge = p_model − 1/prezzo).
+                    Prima era `p_implied` de-vig: 97,6 − 90,6 ≠ 5,8 a video. */}
+                <Cella etichetta={ap ? 'P del mercato' : 'P del mercato (alla proposta)'}
+                    valore={PCT(ap?.p_implicita ?? pMercatoProposta(p.price, p.p_implied))}
+                    testId="cr-opp-pimplied" />
                 <Cella etichetta="Vantaggio" valore={NUM(ap?.edge ?? p.edge)} testId="cr-opp-edge" />
                 <Cella etichetta="Confidenza" valore={PCT(p.confidence)} testId="cr-opp-confidence" />
             </div>

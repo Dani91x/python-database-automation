@@ -301,6 +301,19 @@ export interface TennisPressure {
     game_point: boolean;
 }
 
+/**
+ * 26/09 (F-10, e2e fase 3) - la partita e' FINITA: stato IPS di fine partita
+ * o Match Odds CLOSED. Market Watch scriveva «LIVE · 5-7 6-2» su una partita
+ * finita perche' guardava solo `inplay` (che resta true sul mercato chiuso).
+ */
+export function partitaTennisFinita(
+    scoreStatus: string | null | undefined, marketStatus: string | null | undefined,
+): boolean {
+    const s = String(scoreStatus ?? '').trim().toLowerCase();
+    if (['finished', 'complete', 'completed', 'ended', 'closed'].includes(s)) return true;
+    return String(marketStatus ?? '').trim().toUpperCase() === 'CLOSED';
+}
+
 export interface TennisScoreState {
     /** matchStatus IPS (es. "InPlay", "Finished"). */
     status: string | null;

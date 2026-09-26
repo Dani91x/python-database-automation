@@ -756,6 +756,32 @@ def chiudi_proposta_opportunita(req_id: int, motivo: str) -> None:
         _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
 
 
+def scadi_proposte_opportunita(ore: float) -> list[dict[str, Any]]:
+    """26/09 (F-6, e2e fase 3) - le proposte di opportunita' ancora 'proposed'
+    piu' vecchie di ``ore`` DECADONO, con la stessa marca di
+    ``chiudi_proposta_opportunita`` ('rejected' + ``decaduta``; lo stato
+    'expired' non esiste nel CHECK di ``safe_strategy_requests``).
+
+    Perche': ``proposte_opportunita`` legge solo le ultime 24 ore. Una proposta
+    rimasta viva mentre il servizio era spento (la #257 del 24/09, partita
+    finita) usciva dalla finestra e non decadeva MAI: la Control Room la
+    mostrava due giorni dopo con «Piazza». Un solo UPDATE filtrato dal DB."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=float(ore))).isoformat()
+    res = (
+        _sb().table("safe_strategy_requests")
+        .update({"status": "rejected",
+                 "result": {"decaduta": True, "scaduta": True,
+                            "motivo": f"proposta scaduta: piu' vecchia di {ore:g} ore"},
+                 "updated_at": _now_iso()})
+        .eq("kind", "place").eq("status", "proposed").lt("created_at", cutoff).execute()
+    )
+    if _CANALE_ACCESO:          # F3: la proposta scaduta sparisce anche a video
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
+    return list(res.data or [])
+
+
 def marca_proposta_opportunita_annotata(req_id: int,
                                         result: dict[str, Any]) -> None:
     """Segna che il RIFIUTO dell'utente e' gia' finito in attivita'.

@@ -320,8 +320,9 @@ export interface RigaTradeReale extends RigaTradeCiclo {
  *     `pnl_betfair`, il cui bet_id NON e' fra quelli gia' contati dal conto
  *     (`regolatiBetfair`), chiuse oggi (`settled_at` del bot, o in mancanza il
  *     piazzamento dell'apertura).
- * PAPER: invariato rispetto a `righeRealizzatoPerCiclo` (netto del ciclo,
- * giornata del piazzamento dell'apertura), tutto stimato per definizione.
+ * PAPER: netto del ciclo CHIUSO, giornata del REGOLAMENTO della sua ultima
+ * gamba (26/09, F-2: la stessa regola delle Posizioni chiuse), tutto stimato
+ * per definizione.
  */
 export function righeGiornataPerCiclo<T extends RigaTradeReale>(
     trades: readonly T[],
@@ -340,7 +341,23 @@ export function righeGiornataPerCiclo<T extends RigaTradeReale>(
         const a = c.open;
         const sport = opts.sport ?? a.sport ?? null;
         if (String(a.mode ?? '').toLowerCase() === 'paper') {
-            if (!delGiorno(a.placed_at)) continue;
+            // 26/09 (F-2, e2e fase 3) - anche il PAPER per giorno di REGOLAMENTO,
+            // con la regola delle Posizioni chiuse (`posizioniChiuse.ts`): il
+            // ciclo entra quando e' CHIUSO (nessuna gamba viva) e la sua ultima
+            // gamba regolata (`settled_at`) e' di oggi. Prima contava il giorno
+            // di PIAZZAMENTO: il #341 (piazzato il 24, regolato il 26) era nelle
+            // Chiuse di oggi e assente dalla barra, «due verita' sullo stesso denaro».
+            let viva = false;
+            let ultima: string | null = null;
+            let ultimaMs = NaN;
+            for (const g of [a, ...c.closes]) {
+                const s = String(g.status ?? '').toLowerCase();
+                if (!isSettled(s)) { if (s !== 'cancelled') viva = true; continue; }
+                const ms = g.settled_at ? Date.parse(g.settled_at) : NaN;
+                if (Number.isFinite(ms) && !(ms <= ultimaMs)) { ultimaMs = ms; ultima = g.settled_at ?? null; }
+            }
+            // senza nessun istante di regolamento: il piazzamento, come fanno le Chiuse
+            if (viva || !isSettled(a.status) || !delGiorno(ultima ?? a.placed_at)) continue;
             const netto = c.netPnl;
             out.push({
                 status: netto == null ? a.status : netto > 0 ? 'won' : netto < 0 ? 'lost' : 'void',

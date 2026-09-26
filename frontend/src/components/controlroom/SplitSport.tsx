@@ -11,9 +11,10 @@
 // tessera e sta in alto: un numero in euro veri e uno simulato non possono
 // somigliarsi.
 //
-// I numeri arrivano dal **server** (`get_safe_daily.by_sport`): qui non si
-// riconta niente — il client che ricontava produceva numeri diversi da quelli
-// del servizio, ed è già costato una card con due verità dentro.
+// 26/09 (F-2, e2e fase 3): i numeri arrivano dalle STESSE righe della barra e
+// delle Posizioni chiuse (`perSportGiornata`, giorno di REGOLAMENTO, tutti i
+// bot). Prima venivano da `get_safe_daily.by_sport` (giorno di PIAZZAMENTO,
+// sola tabella di Safe): stesso denaro, due giornate diverse sulla pagina.
 // ============================================================================
 import { Card } from '@/components/ui/card';
 import { fmtMoney, fmtPct, DASH } from '@/lib/format';
@@ -96,7 +97,9 @@ function Tessera({ sport, dato, datoPaper, modalita, aperte, letto, scelto, spen
     const altro = live ? datoPaper : dato;
     // «non ancora letto» e «nessuna operazione» sono due cose diverse: la prima
     // e' un trattino, la seconda uno zero legittimo.
-    const pnl = mio ? mio.pnl : null;
+    // 26/09 (F-3): giornata LETTA e senza righe per questa modalita' = 0,00 €
+    // (prima «—» + «non ancora letta» anche con la lettura riuscita e vuota)
+    const pnl = mio ? mio.pnl : (letto ? 0 : null);
     const esiti = mio ? mio.won + mio.lost : 0;
     const winRate = mio && esiti > 0 ? mio.won / esiti : null;
 

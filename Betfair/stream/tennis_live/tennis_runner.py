@@ -283,13 +283,25 @@ def _looks_tiebreak(ph: Any, pa: Any) -> bool:
     return _num(ph) or _num(pa)
 
 
-def _set_summary(seq_p1: List[str], seq_p2: List[str], gh: int, ga: int) -> Optional[str]:
-    pairs = list(zip(seq_p1, seq_p2))
-    if pairs:
-        return " ".join(f"{a}-{b}" for a, b in pairs)
-    if gh or ga:
-        return f"{gh}-{ga}"
-    return None
+_STATI_FINITI = ("finished", "complete", "completed", "ended", "closed")
+
+
+def _set_summary(seq_p1: List[str], seq_p2: List[str], gh: int, ga: int,
+                 sh: int = 0, sa: int = 0, status: Any = None) -> Optional[str]:
+    """Riepilogo dei set, es. "6-4 3-6 2-1" (set in corso compreso).
+
+    26/09 (F-10, e2e fase 3): ``gameSequence`` IPS porta i set gia' chiusi PRIMA
+    di quello corrente; i game del set in corso (o dell'ultimo, a partita
+    finita) stanno in ``games``. Prima si mostrava solo la sequenza: Bondar v
+    Birrell finita 1-2 in set (ultimo set 1-6) diceva «5-7 6-2». Si aggiunge il
+    set di ``games`` solo se la sequenza non lo contiene gia' (nessun doppione).
+    """
+    parti = [f"{a}-{b}" for a, b in zip(seq_p1, seq_p2)]
+    finita = str(status or "").strip().lower() in _STATI_FINITI
+    attesi = int(sh or 0) + int(sa or 0) + (0 if finita else 1)
+    if (gh or ga) and len(parti) < attesi:
+        parti.append(f"{gh}-{ga}")
+    return " ".join(parti) if parti else None
 
 
 def _win_prob_p1(ts: TennisScore, sh: int, sa: int, gh: int, ga: int,
@@ -333,7 +345,7 @@ def tennis_score_state(ts: Optional[TennisScore], *, source: str = "ips") -> Opt
         "service_breaks": {"p1": breaks_p1, "p2": breaks_p2},
         "current_set": raw.get("currentSet"),
         "current_game": raw.get("currentGame"),
-        "set_summary": _set_summary(seq_p1, seq_p2, gh, ga),
+        "set_summary": _set_summary(seq_p1, seq_p2, gh, ga, sh, sa, ts.status),
         "pressure": {"break_point": bool(bp), "set_point": bool(spt), "game_point": bool(gp)},
         "win_prob_p1": _win_prob_p1(ts, sh, sa, gh, ga, breaks_p1, breaks_p2),
         "source": source,

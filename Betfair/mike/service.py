@@ -517,6 +517,20 @@ def _signature(row: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Esecuzione di UNA azione (place) via execution.place + riga mike_trades
 # ---------------------------------------------------------------------------
+def _punteggio_ingresso(payload: Dict[str, Any]) -> Optional[str]:
+    """Il punteggio d'ingresso 'casa-ospiti', ``None`` se manca uno dei due.
+
+    26/09 (F-5, e2e fase 3): la f-string senza guardia scriveva la STRINGA
+    'None-None' in ``mike_trades.score_at_entry`` in pre-partita, e la Control
+    Room la stampava («ingresso None-None»). Solo notizia sulla riga: nessuna
+    decisione di Mike legge questo campo.
+    """
+    casa, ospiti = payload.get("score_home"), payload.get("score_away")
+    if casa is None or ospiti is None:
+        return None
+    return f"{casa}-{ospiti}"
+
+
 def _trade_row(info: F.EventInfo, leg: E.Leg, mode: str, params: Dict[str, Any],
                minute: Optional[int], score: Optional[str],
                closes_trade_id: Optional[int] = None,
@@ -3622,7 +3636,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             _ids_box["v"] = _trade_ids_by_ref(db, ev["event_id"], cache)
         return _ids_box["v"].get(leg.closes_ref)
 
-    score_str = f"{payload.get('score_home')}-{payload.get('score_away')}"
+    score_str = _punteggio_ingresso(payload)
     deferred: List[Dict[str, Any]] = list(extra.get("deferred") or [])
     still: List[Dict[str, Any]] = []
     for item in deferred:

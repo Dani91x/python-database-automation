@@ -1196,3 +1196,60 @@ describe('residui B17: cash out globale seguito per ordine', () => {
         expect(result.current.esitoOrdine(k)?.esito.testo).toMatch(/^in corso: cash out globale: 1 posizioni chiuse/);
     });
 });
+
+// ============================================================================
+// 26/09 - CORREZIONI DEL TEST E2E FASE 3 (admin-26), sul modello di vista VERO.
+//  F-12 «chiudi ora» NETTO di commissione (prima lordo accanto a due netti);
+//  F-6  una proposta di opportunita' di 41 ore fa non si offre piu';
+//  F-1  la riga Omega in prova ha il P&L di oggi delle Posizioni chiuse.
+// FALSIFICAZIONE: togliendo `netAfterCommission` in `chiusuraViva` il primo
+// test torna a 0,79; togliendo il filtro `propostaScaduta` il secondo vede la
+// #257; rimettendo `bots` al posto di `botsConPnl` il terzo vede null.
+// ============================================================================
+describe('26/09 correzioni fase 3 sul modello di vista', () => {
+    it('F-12: «chiudi ora» netto del 5 % (Mike back 9@1,85, lay vivo 1,70: lordo 0,79 -> 0,75)', async () => {
+        vi.mocked(fetchScanRows).mockResolvedValue([
+            scanRowMike('E2', payloadConMercatoOU('1.2', 2, 1.68, 1.70)),
+        ]);
+        vi.mocked(fetchMikeState).mockResolvedValue({
+            ...MIKE_VUOTO,
+            trades: [tradeMike({ id: 803, status: 'open', price: 1.85, settled_at: null })],
+        });
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const p = result.current.posizioni.find((x) => x.bot === 'mike' && x.id === 803);
+        expect(p!.chiusura?.prezzo).toBe(1.7);
+        expect(p!.chiusura?.bloccabile).toBe(0.75);
+    });
+
+    it('F-6: la proposta #257 creata 41 ore fa non entra fra le opportunita', async () => {
+        const vecchia = new Date(Date.now() - 41 * 3600 * 1000).toISOString();
+        const giovane = new Date(Date.now() - 60 * 1000).toISOString();
+        const riga = (id: number, created_at: string) => ({
+            id, kind: 'place', status: 'proposed', created_at, updated_at: created_at, result: null,
+            payload: {
+                opp_key: `E9:model:MATCH_ODDS:1:lay:${id}`, kind: 'model', strategy: 'model',
+                event_id: 'E9', event_name: 'Andorra v Malta', sport: 'calcio', market_id: '1.9',
+                market_type: 'MATCH_ODDS', selection_id: 1, side: 'lay', price: 1.09, size: 2,
+                mode: 'paper', p_model: 0.976, p_implied: 0.906, edge: 0.058,
+            },
+        });
+        vi.mocked(fetchProposte).mockResolvedValue([riga(257, vecchia), riga(300, giovane)] as never);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const ids = result.current.proposteOpportunita.map((x) => x.proposta.id);
+        expect(ids).toContain(300);
+        expect(ids).not.toContain(257);
+    });
+
+    it('F-1: Omega in prova, trade regolato oggi: la riga ha pnlOggiPaper = Posizioni chiuse', async () => {
+        vi.mocked(fetchOmegaTrades).mockResolvedValue([
+            tradeOmega({ id: 116, mode: 'paper', side: 'lay', price: 55, size: 1, pnl: 0.95 }),
+        ]);
+        const { result } = renderHook(() => useControlRoom());
+        await waitFor(() => expect(result.current.caricamento).toBe(false));
+        const omega = result.current.bots.find((b) => b.bot === 'omega')!;
+        expect(omega.pnlOggiPaper).toBe(0.95);
+        expect(omega.pnlOggi).toBeNull();
+    });
+});

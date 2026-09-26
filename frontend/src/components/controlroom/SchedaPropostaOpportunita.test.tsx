@@ -62,7 +62,9 @@ describe('SchedaPropostaOpportunita', () => {
         expect(screen.getByTestId('cr-opp-liability').textContent).toMatch(/5/);
         expect(screen.getByTestId('cr-opp-abbinabile').textContent).toMatch(/500/);
         expect(screen.getByTestId('cr-opp-pmodel').textContent).toBe('77,0 %');
-        expect(screen.getByTestId('cr-opp-pimplied').textContent).toBe('55,0 %');
+        // 26/09 (F-7): senza criteri (nessun «al prezzo di adesso") la P del
+        // mercato e' 1/quota della proposta (1/1,30), come il vantaggio; prima 55,0 % (p_implied)
+        expect(screen.getByTestId('cr-opp-pimplied').textContent).toBe('76,9 %');
         expect(screen.getByTestId('cr-opp-edge').textContent).toBe('0,200');
         expect(screen.getByTestId('cr-opp-ev').textContent).toBe('0,150');
         expect(screen.getByTestId('cr-opp-confidence').textContent).toBe('90,0 %');

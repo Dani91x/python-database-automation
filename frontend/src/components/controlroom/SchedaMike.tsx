@@ -114,19 +114,23 @@ export function SchedaMike({ ev, testId = 'cr-mike' }: { ev: MikeEvent; testId?:
                 approvare (compare solo se c'e' una proposta viva) */}
             <PropostaUscitaMike ev={ev} testId={`${testId}-proposta`} />
 
-            {/* ── P(4 gol): il numero su cui Mike decide ── */}
+            {/* ── P(4 gol ESATTI): il numero su cui Mike decide (engine.py
+                `hold_expectation`: 4 gol esatti = l'unico esito in cui perdono
+                entrambe le linee). 26/09 (F-13): il title diceva «4+ gol» ma il
+                numero e' P(esattamente 4) = P(O3.5) − P(O4.5) (feed.py `implied_p4`):
+                letto come «4 o più» sottostimava il rischio dell'Under 3.5. ── */}
             <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
-                <Voce label="P(4 gol) mercato" testId={`${testId}-p4-mercato`}
-                    title="probabilità di 4+ gol implicita nelle quote di adesso">
+                <Voce label="P(4 gol esatti) mercato" testId={`${testId}-p4-mercato`}
+                    title="probabilità di ESATTAMENTE 4 gol (perdono sia Under 3.5 sia Over 4.5) implicita nelle quote di adesso: P(Over 3.5) − P(Over 4.5)">
                     {fmtPct(num(live.p4_market))}
                 </Voce>
                 <Voce label="modello" testId={`${testId}-p4-modello`}
-                    title="probabilità di 4+ gol secondo il modello del bot">
+                    title="probabilità di ESATTAMENTE 4 gol secondo il modello del bot">
                     {fmtPct(num(live.p4_model))}
                 </Voce>
                 {num(dos.p4_pre) != null && (
                     <Voce label="pre-partita" testId={`${testId}-p4-pre`}
-                        title="P(4 gol) calcolata prima del calcio d'inizio">
+                        title="P(esattamente 4 gol) calcolata prima del calcio d'inizio">
                         {fmtPct(num(dos.p4_pre))}
                     </Voce>
                 )}
