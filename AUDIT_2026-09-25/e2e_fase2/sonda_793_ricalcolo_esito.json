@@ -1,0 +1,6417 @@
+{
+ "atlas_generated_at": "2026-09-26T10:13:17+00:00",
+ "A": [
+  {
+   "lega": "917",
+   "partite_lette": 143,
+   "righe_gol": 574,
+   "fixture_nello_stato": 85,
+   "ft_nel_db_non_nello_stato": 13,
+   "scarti_v4": {},
+   "confronto": {
+    "file_locale": {
+     "identico": true,
+     "per_stagione": {
+      "2023": {
+       "n_fixtures": [
+        28,
+        28
+       ],
+       "gol": [
+        71,
+        71
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2567.0,
+        2567.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        27,
+        27
+       ],
+       "gol": [
+        83,
+        83
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2268.0,
+        2268.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2025": {
+       "n_fixtures": [
+        30,
+        30
+       ],
+       "gol": [
+        74,
+        74
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2852.0,
+        2852.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      }
+     }
+    },
+    "db": {
+     "identico": true,
+     "per_stagione": {
+      "2023": {
+       "n_fixtures": [
+        28,
+        28
+       ],
+       "gol": [
+        71,
+        71
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2567.0,
+        2567.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        27,
+        27
+       ],
+       "gol": [
+        83,
+        83
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2268.0,
+        2268.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2025": {
+       "n_fixtures": [
+        30,
+        30
+       ],
+       "gol": [
+        74,
+        74
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2852.0,
+        2852.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "lega": "501",
+   "partite_lette": 72,
+   "righe_gol": 111,
+   "fixture_nello_stato": 30,
+   "ft_nel_db_non_nello_stato": 33,
+   "scarti_v4": {},
+   "confronto": {
+    "file_locale": {
+     "identico": true,
+     "per_stagione": {
+      "2023": {
+       "n_fixtures": [
+        29,
+        29
+       ],
+       "gol": [
+        85,
+        85
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2436.0,
+        2436.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2026": {
+       "n_fixtures": [
+        1,
+        1
+       ],
+       "gol": [
+        4,
+        4
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        96.0,
+        96.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      }
+     }
+    },
+    "db": {
+     "identico": false,
+     "per_stagione": {
+      "2023": {
+       "n_fixtures": [
+        29,
+        29
+       ],
+       "gol": [
+        85,
+        85
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        2436.0,
+        2436.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2026": {
+       "solo_mio": true,
+       "solo_produzione": false
+      }
+     }
+    }
+   }
+  },
+  {
+   "lega": "267",
+   "partite_lette": 669,
+   "righe_gol": 2076,
+   "fixture_nello_stato": 584,
+   "ft_nel_db_non_nello_stato": 36,
+   "scarti_v4": {},
+   "confronto": {
+    "file_locale": {
+     "identico": true,
+     "per_stagione": {
+      "2019": {
+       "n_fixtures": [
+        65,
+        65
+       ],
+       "gol": [
+        165,
+        165
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        5850.0,
+        5850.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2020": {
+       "n_fixtures": [
+        67,
+        67
+       ],
+       "gol": [
+        159,
+        159
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        6030.0,
+        6030.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2022": {
+       "n_fixtures": [
+        78,
+        78
+       ],
+       "gol": [
+        229,
+        229
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        6552.0,
+        6552.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2023": {
+       "n_fixtures": [
+        62,
+        62
+       ],
+       "gol": [
+        216,
+        216
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        5580.0,
+        5580.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        86,
+        86
+       ],
+       "gol": [
+        275,
+        275
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        7822.0,
+        7822.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2025": {
+       "n_fixtures": [
+        122,
+        122
+       ],
+       "gol": [
+        340,
+        340
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        11767.0,
+        11767.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2026": {
+       "n_fixtures": [
+        104,
+        104
+       ],
+       "gol": [
+        290,
+        290
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        10078.0,
+        10078.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      }
+     }
+    },
+    "db": {
+     "identico": true,
+     "per_stagione": {
+      "2019": {
+       "n_fixtures": [
+        65,
+        65
+       ],
+       "gol": [
+        165,
+        165
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        5850.0,
+        5850.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2020": {
+       "n_fixtures": [
+        67,
+        67
+       ],
+       "gol": [
+        159,
+        159
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        6030.0,
+        6030.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2022": {
+       "n_fixtures": [
+        78,
+        78
+       ],
+       "gol": [
+        229,
+        229
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        6552.0,
+        6552.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      },
+      "2023": {
+       "n_fixtures": [
+        62,
+        62
+       ],
+       "gol": [
+        216,
+        216
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        5580.0,
+        5580.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        86,
+        86
+       ],
+       "gol": [
+        275,
+        275
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        7822.0,
+        7822.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2025": {
+       "n_fixtures": [
+        122,
+        122
+       ],
+       "gol": [
+        340,
+        340
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        11767.0,
+        11767.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2026": {
+       "n_fixtures": [
+        104,
+        104
+       ],
+       "gol": [
+        290,
+        290
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        10078.0,
+        10078.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "lega": "536",
+   "partite_lette": 436,
+   "righe_gol": 1408,
+   "fixture_nello_stato": 424,
+   "ft_nel_db_non_nello_stato": 5,
+   "scarti_v4": {},
+   "confronto": {
+    "file_locale": {
+     "identico": false,
+     "per_stagione": {
+      "2020": {
+       "n_fixtures": [
+        102,
+        102
+       ],
+       "gol": [
+        325,
+        325
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9180.0,
+        9180.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2022": {
+       "n_fixtures": [
+        105,
+        105
+       ],
+       "gol": [
+        304,
+        304
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9450.0,
+        9450.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2023": {
+       "n_fixtures": [
+        101,
+        101
+       ],
+       "gol": [
+        347,
+        347
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9090.0,
+        9090.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        110,
+        110
+       ],
+       "gol": [
+        357,
+        357
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        10268.0,
+        10268.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2025": {
+       "n_fixtures": [
+        6,
+        6
+       ],
+       "gol": [
+        23,
+        23
+       ],
+       "celle_max_diff": 10.0,
+       "celle_n_tot": [
+        504.0,
+        534.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        false,
+        false
+       ]
+      }
+     }
+    },
+    "db": {
+     "identico": false,
+     "per_stagione": {
+      "2020": {
+       "n_fixtures": [
+        102,
+        102
+       ],
+       "gol": [
+        325,
+        325
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9180.0,
+        9180.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2022": {
+       "n_fixtures": [
+        105,
+        105
+       ],
+       "gol": [
+        304,
+        304
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9450.0,
+        9450.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2023": {
+       "n_fixtures": [
+        101,
+        101
+       ],
+       "gol": [
+        347,
+        347
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        9090.0,
+        9090.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2024": {
+       "n_fixtures": [
+        110,
+        110
+       ],
+       "gol": [
+        357,
+        357
+       ],
+       "celle_max_diff": 0.0,
+       "celle_n_tot": [
+        10268.0,
+        10268.0
+       ],
+       "rec2_max_diff": 0.0,
+       "durate_uguali": true,
+       "affidabile": [
+        true,
+        true
+       ]
+      },
+      "2025": {
+       "solo_mio": true,
+       "solo_produzione": false
+      }
+     }
+    }
+   }
+  }
+ ],
+ "B": {
+  "stagione_rif": [
+   2028,
+   2028
+  ],
+  "k_durata": [
+   3.3086248598646417,
+   3.3086248598646417
+  ],
+  "max_diff": {
+   "p2": 4.9994464290659124e-08,
+   "p3": 4.9997682813329725e-08,
+   "n": 0.05000000000000071,
+   "r_rec2": 4.953936902363232e-08,
+   "pi_durata": 4.979663750792618e-08,
+   "gol_medi": 4.934876922213505e-06,
+   "glob_p2": 4.983082935172689e-08,
+   "glob_p3": 4.94038725831758e-08,
+   "glob_r": 4.953936902363232e-08
+  },
+  "forza_max_diff": 0.0,
+  "tolleranza": {
+   "p2": 5e-08,
+   "p3": 5e-08,
+   "n": 0.050000001,
+   "r_rec2": 5e-08,
+   "pi_durata": 5e-08,
+   "gol_medi": 5e-06,
+   "glob_p2": 5e-08,
+   "glob_p3": 5e-08,
+   "glob_r": 5e-08
+  },
+  "esito": true
+ },
+ "C": {
+  "griglia_casi": 204525,
+  "griglia_diversi": 0,
+  "esempi": [],
+  "ips_reali": {
+   "righe": 2993,
+   "tempo_diversi": 0,
+   "per_fase": {
+    "SecondHalfKickOff|tempo=2|fase=regolare": 2397,
+    "SecondHalfKickOff|tempo=2|fase=recupero_2T": 351,
+    "Finished|tempo=2|fase=recupero_2T": 47,
+    "KickOff|tempo=1|fase=regolare": 198
+   },
+   "esempi_diversi": [],
+   "campioni": [
+    [
+     "36115984",
+     "2026-09-26T09:15:11.37984+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:15:10.225355+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 51,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:15:10.163237+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:15:09.262233+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:15:10.167338+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:15:10.205493+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:15:10.207466+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:15:09.338816+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:15:10.23562+00:00",
+     51,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 51,
+      "elapsedRegularTime": 49,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:15:10.251834+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:15:09.415383+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:15:10.315202+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:15:10.333712+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:15:10.348641+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:15:10.237461+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:15:11.335531+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:15:11.359556+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:15:25.093902+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:15:26.536256+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:15:26.488862+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:15:23.385261+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:15:26.491309+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:15:26.514499+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:15:26.517293+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:15:25.039073+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:15:25.057744+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:15:26.540876+00:00",
+     51,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 51,
+      "elapsedRegularTime": 49,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:15:26.591198+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:15:26.613744+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:15:26.628942+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:15:26.639497+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:15:25.055647+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:15:25.064605+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:15:26.549337+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:15:40.121814+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:15:41.754416+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:15:41.690933+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:15:40.876722+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:15:40.883499+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:15:41.693947+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:15:41.731787+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:15:40.094253+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:15:40.894139+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:15:40.906229+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:15:41.806443+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:15:41.830553+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:15:41.860119+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:15:41.881158+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:15:40.084028+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:15:40.102167+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:15:41.758916+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:15:55.388081+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:15:56.843378+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:15:56.833399+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:15:54.66433+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:15:55.330456+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:15:56.836922+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:15:56.838908+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:15:55.364484+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:15:56.845903+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:15:56.851038+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:15:56.185521+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:15:56.865716+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:15:56.867844+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:15:56.869681+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:15:55.349179+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:15:55.37513+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:15:56.180953+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:16:10.017633+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:16:11.279818+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:16:09.973243+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:16:09.979676+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:16:11.259348+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:16:11.266044+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:16:11.273909+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:16:10.004719+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:16:11.287289+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:16:11.29491+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:16:11.318526+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:16:11.320672+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:16:11.326582+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:16:10.015517+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:16:09.995994+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:16:10.000535+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:16:10.007762+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:16:25.252887+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:16:26.187321+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:16:25.155249+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:16:25.173739+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:16:25.17551+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:16:25.191517+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:16:27.078501+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:16:25.209774+00:00",
+     52,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 52,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:16:27.139533+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:16:27.158142+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:16:25.249886+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:16:25.257094+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:16:25.260418+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:16:27.2405+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:16:25.215161+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:16:25.227961+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:16:26.235595+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:16:40.638776+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:16:42.521451+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:16:42.474346+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:16:40.518284+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:16:40.544726+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:16:42.477479+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:16:42.502962+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:16:40.558332+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:16:42.553171+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:16:42.581529+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:16:40.629304+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:16:40.660081+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:16:42.617171+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:16:42.619337+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:16:40.567217+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:16:40.598884+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:16:42.590176+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:16:57.340761+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:16:56.033507+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:16:55.937717+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:16:55.958094+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:16:55.998676+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:16:57.162672+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:16:57.201848+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:16:56.064116+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:16:56.101331+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:16:57.226897+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:16:56.198966+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:16:56.203552+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:16:57.329557+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:16:57.348489+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:16:56.122757+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:16:57.238387+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:16:57.264362+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:17:12.931702+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:17:11.649589+00:00",
+     53,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 53,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:17:12.698751+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:17:11.612891+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:17:11.632048+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:17:12.765566+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:17:12.80886+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:17:11.668555+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:17:11.691236+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:17:12.829686+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:17:12.948176+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:17:12.966713+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:17:10.451945+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:17:10.487432+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:17:10.390396+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:17:10.424983+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:17:12.842503+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:17:21.733489+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:17:21.593584+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:17:21.515357+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:17:20.129422+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:17:21.516928+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:17:21.518585+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:17:21.5424+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:17:21.611821+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:17:21.640087+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:17:21.700105+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:17:20.224087+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:17:20.262481+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:17:21.788014+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:17:21.802656+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:17:20.156679+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:17:20.1952+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:17:20.213833+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:17:42.547208+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:17:43.763294+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:17:43.74547+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:17:42.497624+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 53,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:17:42.50365+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:17:43.747726+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:17:43.757504+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:17:43.76575+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:17:43.775775+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:17:43.785815+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:17:43.798173+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:17:43.80416+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:17:43.806653+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:17:43.791828+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:17:43.769808+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:17:43.788591+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:17:42.534839+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:17:57.664145+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:17:58.55398+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:17:56.832972+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:17:57.651667+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:17:57.655777+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:17:57.66197+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:17:56.839705+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:17:57.672044+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:17:57.676634+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:17:56.852239+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 52,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:17:57.685481+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:17:57.687547+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:17:57.689389+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:17:57.668955+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:17:57.678608+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:17:58.566608+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:18:10.929594+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:18:10.649797+00:00",
+     54,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 54,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:18:10.529808+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:18:10.531423+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:18:10.561716+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:18:10.590356+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:18:10.686438+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:18:10.783669+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:18:10.828056+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:18:10.954674+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:18:12.928922+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:18:12.959214+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:18:12.996904+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:18:10.729037+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:18:10.785809+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:18:10.862544+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:18:26.843471+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:18:26.755331+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:18:27.555304+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:18:25.855781+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:18:27.559686+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:18:27.5649+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:18:27.569958+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:18:27.576584+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:18:27.583567+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:18:27.587635+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:18:22.95992+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:18:25.956965+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:18:26.827279+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:18:27.595878+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:18:27.579311+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:18:27.585673+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:18:27.590157+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:18:42.814287+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:18:42.705672+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:18:43.930197+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:18:42.64327+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:18:42.660845+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:18:42.662577+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:18:42.687084+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:18:42.711081+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:18:42.735887+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:18:42.777105+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:18:42.836825+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:18:42.859933+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:18:44.069049+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:18:44.104957+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:18:43.992961+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:18:44.027345+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:18:42.78798+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:18:59.162699+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:18:57.875471+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:18:58.930537+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:18:57.802627+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:18:57.80438+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:18:57.833871+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:18:57.852179+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:18:59.028594+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:18:59.066863+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:18:59.117072+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:18:58.005426+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:18:59.184844+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:18:59.195914+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:18:59.211167+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:18:59.048599+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:18:59.094852+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:18:59.133644+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:19:12.941307+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:19:10.570027+00:00",
+     55,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 55,
+      "elapsedRegularTime": 54,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:19:12.623563+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:19:10.470435+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:19:10.496182+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:19:10.52572+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:19:10.551567+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:19:10.670162+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:19:12.744133+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:19:12.785617+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:19:11.722685+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:19:12.947245+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:19:12.94987+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:19:12.979889+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:19:12.771463+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:19:12.807738+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:19:12.857849+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:19:27.738743+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:19:27.674672+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:19:27.630241+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:19:27.631652+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:19:27.633229+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:19:27.658885+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:19:27.660728+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:19:27.689537+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:19:27.706566+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:19:27.720369+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:19:27.728223+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:19:27.744539+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:19:27.752904+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:19:27.754779+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:19:27.702158+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:19:27.714954+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:19:27.722631+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:19:44.395991+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:19:42.865634+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:19:44.260412+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:19:44.290971+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:19:45.358027+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:19:45.377248+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:19:45.379082+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:19:44.355897+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:19:45.417383+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:19:45.504322+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:19:45.548201+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:19:45.565567+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 55,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:19:45.584541+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:19:45.595316+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:19:44.35401+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:19:45.470404+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:19:45.521925+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:19:59.659456+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:19:59.575225+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:19:59.551111+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:19:58.780648+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:19:59.564779+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:20:00.507076+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:20:00.508925+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:19:59.583969+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:19:59.592605+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:20:00.558894+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:20:00.566266+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:20:00.582031+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:20:00.584143+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:20:00.599208+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:19:59.585788+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:20:00.560682+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:19:58.838175+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:20:12.392962+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:20:13.92184+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:20:12.279242+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:20:13.869723+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:20:13.89826+00:00",
+     61,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 61,
+      "elapsedRegularTime": 61,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:20:12.286838+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:20:12.310343+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:20:13.949404+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:20:12.349058+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:20:12.365535+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:20:13.983408+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:20:14.004016+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:20:14.027605+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:20:12.443472+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:20:13.960458+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:20:12.358933+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:20:12.367043+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:20:28.125621+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:20:28.072703+00:00",
+     56,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 56,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:20:29.378757+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:20:29.382977+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:20:29.394605+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:20:29.396231+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:20:28.066537+00:00",
+     61,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 61,
+      "elapsedRegularTime": 61,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:20:28.075154+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:20:28.080481+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:20:28.098126+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:20:28.131843+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:20:28.13885+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:20:28.144735+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:20:29.466659+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:20:28.07775+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:20:28.085925+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:20:29.461194+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:20:47.123392+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:20:44.540886+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:20:44.514191+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:20:44.516416+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:20:44.518544+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:20:44.528145+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:20:44.538005+00:00",
+     61,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 61,
+      "elapsedRegularTime": 61,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:20:44.542358+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:20:47.04796+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:20:47.07732+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115980",
+     "2026-09-26T09:20:42.83239+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094813",
+     "2026-09-26T09:20:45.619335+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:20:47.133944+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090936",
+     "2026-09-26T09:20:47.135898+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115975",
+     "2026-09-26T09:20:47.08785+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090940",
+     "2026-09-26T09:20:44.54442+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115986",
+     "2026-09-26T09:20:45.602319+00:00",
+     61,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 61,
+      "elapsedRegularTime": 61,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115984",
+     "2026-09-26T09:21:02.098945+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090854",
+     "2026-09-26T09:21:00.232267+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090788",
+     "2026-09-26T09:21:00.216461+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115971",
+     "2026-09-26T09:21:00.222046+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090943",
+     "2026-09-26T09:21:00.225435+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 56,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115985",
+     "2026-09-26T09:21:00.227631+00:00",
+     60,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 60,
+      "elapsedRegularTime": 60,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36094814",
+     "2026-09-26T09:21:00.229978+00:00",
+     61,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 61,
+      "elapsedRegularTime": 61,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090944",
+     "2026-09-26T09:21:00.234775+00:00",
+     57,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 57,
+      "elapsedRegularTime": 57,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090937",
+     "2026-09-26T09:21:00.239463+00:00",
+     59,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 59,
+      "elapsedRegularTime": 59,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36115973",
+     "2026-09-26T09:21:00.244631+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ],
+    [
+     "36090941",
+     "2026-09-26T09:21:00.253446+00:00",
+     58,
+     {
+      "matchStatus": "SecondHalfKickOff",
+      "timeElapsed": 58,
+      "elapsedRegularTime": 58,
+      "elapsedAddedTime": null,
+      "status": "SecondHalfKickOff"
+     },
+     2,
+     "regolare"
+    ]
+   ]
+  }
+ }
+}

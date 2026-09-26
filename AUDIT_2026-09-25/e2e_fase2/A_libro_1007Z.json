@@ -1,0 +1,419 @@
+{
+ "quando": "2026-09-26T10:07:32.264596+00:00",
+ "chiamate_betfair": [
+  {
+   "ts": "2026-09-26T10:05:28.348805+00:00",
+   "chiamata": "login cert (sessione della sonda)"
+  },
+  {
+   "ts": "2026-09-26T10:05:29.524593+00:00",
+   "chiamata": "listMarketBook 1.262887871"
+  },
+  {
+   "ts": "2026-09-26T10:05:30.251440+00:00",
+   "chiamata": "IPS get_scores 36111764"
+  },
+  {
+   "ts": "2026-09-26T10:05:30.435562+00:00",
+   "chiamata": "listMarketBook 1.262887717"
+  },
+  {
+   "ts": "2026-09-26T10:05:30.493797+00:00",
+   "chiamata": "IPS get_scores 36111770"
+  },
+  {
+   "ts": "2026-09-26T10:06:30.671909+00:00",
+   "chiamata": "listMarketBook 1.262887871"
+  },
+  {
+   "ts": "2026-09-26T10:06:30.730070+00:00",
+   "chiamata": "IPS get_scores 36111764"
+  },
+  {
+   "ts": "2026-09-26T10:06:30.923533+00:00",
+   "chiamata": "listMarketBook 1.262887717"
+  },
+  {
+   "ts": "2026-09-26T10:06:30.981717+00:00",
+   "chiamata": "IPS get_scores 36111770"
+  },
+  {
+   "ts": "2026-09-26T10:07:31.157419+00:00",
+   "chiamata": "listMarketBook 1.262887871"
+  },
+  {
+   "ts": "2026-09-26T10:07:31.222422+00:00",
+   "chiamata": "IPS get_scores 36111764"
+  },
+  {
+   "ts": "2026-09-26T10:07:31.393296+00:00",
+   "chiamata": "listMarketBook 1.262887717"
+  },
+  {
+   "ts": "2026-09-26T10:07:31.453881+00:00",
+   "chiamata": "IPS get_scores 36111770"
+  },
+  {
+   "ts": "2026-09-26T10:07:32.264581+00:00",
+   "chiamata": "logout della sessione della sonda"
+  }
+ ],
+ "esiti": [
+  {
+   "istante": 0,
+   "event_id": "36111764",
+   "evento": "FC Badalona (W) v Granada (W)",
+   "market_id": "1.262887871",
+   "eta_riga_s": 0.67,
+   "eta_prezzo_s": 5.6,
+   "ritardo_lettura_betfair_ms": 778,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      1.51,
+      1.54
+     ],
+     "betfair": [
+      1.51,
+      1.54
+     ],
+     "uguale": true
+    },
+    "draw": {
+     "feed": [
+      4.5,
+      4.7
+     ],
+     "betfair": [
+      4.5,
+      4.7
+     ],
+     "uguale": true
+    },
+    "away": {
+     "feed": [
+      7.8,
+      8.4
+     ],
+     "betfair": [
+      7.8,
+      8.4
+     ],
+     "uguale": true
+    }
+   },
+   "prezzi_uguali": true,
+   "punteggio": {
+    "feed": "0-0",
+    "ips": "0-0",
+    "minuto_feed": 4,
+    "ips_timeElapsed": 5,
+    "ips_status": "KickOff"
+   }
+  },
+  {
+   "istante": 0,
+   "event_id": "36111770",
+   "evento": "Real Sociedad (W) v Real Madrid FC (W)",
+   "market_id": "1.262887717",
+   "eta_riga_s": 0.68,
+   "eta_prezzo_s": 1.1,
+   "ritardo_lettura_betfair_ms": 61,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      3.0,
+      8.0
+     ],
+     "betfair": [
+      3.0,
+      8.0
+     ],
+     "uguale": true
+    },
+    "draw": {
+     "feed": [
+      2.92,
+      7.2
+     ],
+     "betfair": [
+      2.92,
+      7.2
+     ],
+     "uguale": true
+    },
+    "away": {
+     "feed": [
+      1.53,
+      2.1
+     ],
+     "betfair": [
+      1.53,
+      2.1
+     ],
+     "uguale": true
+    }
+   },
+   "prezzi_uguali": true,
+   "punteggio": {
+    "feed": "1-1",
+    "ips": "1-1",
+    "minuto_feed": 4,
+    "ips_timeElapsed": 4,
+    "ips_status": "KickOff"
+   }
+  },
+  {
+   "istante": 1,
+   "event_id": "36111764",
+   "evento": "FC Badalona (W) v Granada (W)",
+   "market_id": "1.262887871",
+   "eta_riga_s": 0.94,
+   "eta_prezzo_s": 1.45,
+   "ritardo_lettura_betfair_ms": 63,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      1.51,
+      1.54
+     ],
+     "betfair": [
+      1.51,
+      1.54
+     ],
+     "uguale": true
+    },
+    "draw": {
+     "feed": [
+      4.3,
+      4.6
+     ],
+     "betfair": [
+      4.3,
+      4.6
+     ],
+     "uguale": true
+    },
+    "away": {
+     "feed": [
+      8.0,
+      8.4
+     ],
+     "betfair": [
+      8.0,
+      8.4
+     ],
+     "uguale": true
+    }
+   },
+   "prezzi_uguali": true,
+   "punteggio": {
+    "feed": "0-0",
+    "ips": "0-0",
+    "minuto_feed": 5,
+    "ips_timeElapsed": 5,
+    "ips_status": "KickOff"
+   }
+  },
+  {
+   "istante": 1,
+   "event_id": "36111770",
+   "evento": "Real Sociedad (W) v Real Madrid FC (W)",
+   "market_id": "1.262887717",
+   "eta_riga_s": 1.18,
+   "eta_prezzo_s": 2.88,
+   "ritardo_lettura_betfair_ms": 69,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      5.5,
+      6.2
+     ],
+     "betfair": [
+      5.6,
+      6.2
+     ],
+     "uguale": false
+    },
+    "draw": {
+     "feed": [
+      4.1,
+      4.5
+     ],
+     "betfair": [
+      4.1,
+      4.6
+     ],
+     "uguale": false
+    },
+    "away": {
+     "feed": [
+      1.65,
+      1.73
+     ],
+     "betfair": [
+      1.64,
+      1.73
+     ],
+     "uguale": false
+    }
+   },
+   "prezzi_uguali": false,
+   "punteggio": {
+    "feed": "1-1",
+    "ips": "1-1",
+    "minuto_feed": 5,
+    "ips_timeElapsed": 5,
+    "ips_status": "KickOff"
+   }
+  },
+  {
+   "istante": 2,
+   "event_id": "36111764",
+   "evento": "FC Badalona (W) v Granada (W)",
+   "market_id": "1.262887871",
+   "eta_riga_s": 2.86,
+   "eta_prezzo_s": 5.67,
+   "ritardo_lettura_betfair_ms": 56,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      1.52,
+      1.54
+     ],
+     "betfair": [
+      1.52,
+      1.54
+     ],
+     "uguale": true
+    },
+    "draw": {
+     "feed": [
+      4.3,
+      4.5
+     ],
+     "betfair": [
+      4.3,
+      4.5
+     ],
+     "uguale": true
+    },
+    "away": {
+     "feed": [
+      8.2,
+      8.6
+     ],
+     "betfair": [
+      8.4,
+      8.6
+     ],
+     "uguale": false
+    }
+   },
+   "prezzi_uguali": false,
+   "punteggio": {
+    "feed": "0-0",
+    "ips": "0-0",
+    "minuto_feed": 7,
+    "ips_timeElapsed": 7,
+    "ips_status": "KickOff"
+   }
+  },
+  {
+   "istante": 2,
+   "event_id": "36111770",
+   "evento": "Real Sociedad (W) v Real Madrid FC (W)",
+   "market_id": "1.262887717",
+   "eta_riga_s": 0.79,
+   "eta_prezzo_s": 0.79,
+   "ritardo_lettura_betfair_ms": 59,
+   "mercato_betfair": {
+    "status": "OPEN",
+    "inplay": true,
+    "betDelay": 5
+   },
+   "feed_mo_status": "OPEN",
+   "feed_bet_delay": 5,
+   "prezzi": {
+    "home": {
+     "feed": [
+      5.8,
+      7.2
+     ],
+     "betfair": [
+      6.2,
+      7.2
+     ],
+     "uguale": false
+    },
+    "draw": {
+     "feed": [
+      4.2,
+      4.5
+     ],
+     "betfair": [
+      4.2,
+      4.5
+     ],
+     "uguale": true
+    },
+    "away": {
+     "feed": [
+      1.59,
+      1.62
+     ],
+     "betfair": [
+      1.61,
+      1.62
+     ],
+     "uguale": false
+    }
+   },
+   "prezzi_uguali": false,
+   "punteggio": {
+    "feed": "1-1",
+    "ips": "1-1",
+    "minuto_feed": 6,
+    "ips_timeElapsed": 6,
+    "ips_status": "KickOff"
+   }
+  }
+ ],
+ "prezzi_uguali": 3,
+ "su": 6
+}

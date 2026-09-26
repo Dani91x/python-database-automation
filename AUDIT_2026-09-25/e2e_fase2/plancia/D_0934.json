@@ -1,0 +1,550 @@
+{
+ "vm_ts": "2026-09-26T09:34:19.809Z",
+ "confronti": [
+  {
+   "controllo": "liabilityPaper (totali) vs somma liability aperte DB (omega+mike+safe)",
+   "a_video": 445,
+   "db": 443.0,
+   "esito": "KO",
+   "nota": ""
+  },
+  {
+   "controllo": "numero posizioni a video vs righe aperte DB",
+   "a_video": 10,
+   "db": 7,
+   "esito": "KO",
+   "nota": "a video possono esserci anche tennis/scalper"
+  },
+  {
+   "controllo": "realizzato paper tennis (vm) vs somma pnl tennis_live_orders paper regolati oggi",
+   "a_video": -0.04,
+   "db": -0.04,
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga omega: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga safe: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga mike: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga tennis_scalper: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "cr-bot-pnl-tennis_scalper (pnlOggiPaper) vs somma pnl paper regolati",
+   "a_video": null,
+   "db": null,
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga tennis_pro: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "cr-bot-pnl-tennis_pro (pnlOggiPaper) vs somma pnl paper regolati",
+   "a_video": null,
+   "db": null,
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga tennis_flb: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "cr-bot-pnl-tennis_flb (pnlOggiPaper) vs somma pnl paper regolati",
+   "a_video": -0.04,
+   "db": -0.04,
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga tennis_swing: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "cr-bot-pnl-tennis_swing (pnlOggiPaper) vs somma pnl paper regolati",
+   "a_video": null,
+   "db": null,
+   "esito": "OK",
+   "nota": ""
+  },
+  {
+   "controllo": "riga scalper: inCorsa/modalita",
+   "a_video": [
+    true,
+    "paper",
+    "running"
+   ],
+   "db": [
+    "running",
+    "paper"
+   ],
+   "esito": "OK",
+   "nota": ""
+  }
+ ],
+ "posizioni_a_video": [
+  {
+   "bot": "tennis_swing",
+   "id": 4350,
+   "eventId": "36111518",
+   "selezione": null,
+   "lato": "back",
+   "prezzo": 1.78,
+   "liability": 2,
+   "modalita": "paper"
+  },
+  {
+   "bot": "safe",
+   "id": 343,
+   "eventId": "36115980",
+   "selezione": "Altro risultato Ospite",
+   "lato": "lay",
+   "prezzo": 55,
+   "liability": 108,
+   "modalita": "paper"
+  },
+  {
+   "bot": "safe",
+   "id": 342,
+   "eventId": "36090940",
+   "selezione": "Altro risultato Casa",
+   "lato": "lay",
+   "prezzo": 50,
+   "liability": 98,
+   "modalita": "paper"
+  },
+  {
+   "bot": "scalper",
+   "id": 36090788,
+   "eventId": "36090788",
+   "selezione": "sessione scalper - 3 ordini (1 sul book)",
+   "lato": null,
+   "prezzo": null,
+   "liability": 10,
+   "modalita": "paper"
+  },
+  {
+   "bot": "scalper",
+   "id": 36090854,
+   "eventId": "36090854",
+   "selezione": "sessione scalper - 6 ordini (1 sul book)",
+   "lato": null,
+   "prezzo": null,
+   "liability": 0,
+   "modalita": "paper"
+  },
+  {
+   "bot": "mike",
+   "id": 5071,
+   "eventId": "36111764",
+   "selezione": "Under 3.5 Goals",
+   "lato": "back",
+   "prezzo": 1.6,
+   "liability": 5,
+   "modalita": "paper"
+  },
+  {
+   "bot": "mike",
+   "id": 5070,
+   "eventId": "36111770",
+   "selezione": "Under 3.5 Goals",
+   "lato": "back",
+   "prezzo": 1.51,
+   "liability": 5,
+   "modalita": "paper"
+  },
+  {
+   "bot": "omega",
+   "id": 119,
+   "eventId": "36115980",
+   "selezione": "1 - 3",
+   "lato": "lay",
+   "prezzo": 80,
+   "liability": 79,
+   "modalita": "paper"
+  },
+  {
+   "bot": "omega",
+   "id": 118,
+   "eventId": "36090941",
+   "selezione": "Any Other Home Win",
+   "lato": "lay",
+   "prezzo": 55,
+   "liability": 54,
+   "modalita": "paper"
+  },
+  {
+   "bot": "omega",
+   "id": 117,
+   "eventId": "36090940",
+   "selezione": "Any Other Home Win",
+   "lato": "lay",
+   "prezzo": 95,
+   "liability": 94,
+   "modalita": "paper"
+  }
+ ],
+ "db_aperte": {
+  "omega": [
+   {
+    "id": 117,
+    "event_id": "36090940",
+    "side": "lay",
+    "price": 95.0,
+    "size": 1.0,
+    "liability": 94.0,
+    "mode": "paper",
+    "status": "open"
+   },
+   {
+    "id": 119,
+    "event_id": "36115980",
+    "side": "lay",
+    "price": 80.0,
+    "size": 1.0,
+    "liability": 79.0,
+    "mode": "paper",
+    "status": "open"
+   },
+   {
+    "id": 118,
+    "event_id": "36090941",
+    "side": "lay",
+    "price": 55.0,
+    "size": 1.0,
+    "liability": 54.0,
+    "mode": "paper",
+    "status": "open"
+   }
+  ],
+  "mike": [
+   {
+    "id": 5070,
+    "event_id": "36111770",
+    "side": "back",
+    "price": 1.51,
+    "size": 5.0,
+    "liability": 5.0,
+    "mode": "paper",
+    "status": "open",
+    "role": "under_entry"
+   },
+   {
+    "id": 5071,
+    "event_id": "36111764",
+    "side": "back",
+    "price": 1.6,
+    "size": 5.0,
+    "liability": 5.0,
+    "mode": "paper",
+    "status": "open",
+    "role": "under_entry"
+   }
+  ],
+  "safe": [
+   {
+    "id": 342,
+    "event_id": "36090940",
+    "side": "lay",
+    "price": 50.0,
+    "size": 2.0,
+    "mode": "paper",
+    "status": "open",
+    "strategy": "esatto"
+   },
+   {
+    "id": 343,
+    "event_id": "36115980",
+    "side": "lay",
+    "price": 55.0,
+    "size": 2.0,
+    "mode": "paper",
+    "status": "open",
+    "strategy": "esatto"
+   }
+  ]
+ },
+ "db_regolati_calcio": [
+  {
+   "omega_trades": [
+    {
+     "id": 116,
+     "pnl": 0.95,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:03.269257+00:00"
+    }
+   ]
+  },
+  {
+   "mike_trades": [
+    {
+     "id": 5069,
+     "pnl": -0.9,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:16.548069+00:00"
+    },
+    {
+     "id": 5065,
+     "pnl": 1.62,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:16.548069+00:00"
+    },
+    {
+     "id": 5063,
+     "pnl": -5.0,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:15.640586+00:00"
+    },
+    {
+     "id": 5067,
+     "pnl": 5.07,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:15.640586+00:00"
+    }
+   ]
+  },
+  {
+   "safe_strategy_trades": [
+    {
+     "id": 341,
+     "pnl": 0.03,
+     "mode": "paper",
+     "settled_at": "2026-09-26T08:57:01.596077+00:00",
+     "sport": "tennis"
+    }
+   ]
+  }
+ ],
+ "bots_a_video": [
+  {
+   "bot": "omega",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": "database",
+   "etaStatoS": 7,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": null,
+   "partiteEsposte": null,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "safe",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": "database",
+   "etaStatoS": 7,
+   "etaPushS": null,
+   "freschezzaPush": "vecchia",
+   "varianti": [
+    "base",
+    "esatto",
+    "punta",
+    "tennis"
+   ],
+   "modiStrategia": {
+    "base": "paper",
+    "model": "paper",
+    "punta": "paper",
+    "esatto": "paper",
+    "manual": "paper",
+    "tennis": "paper"
+   },
+   "motivoBlocco": null,
+   "tettoPartite": null,
+   "partiteEsposte": null,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "mike",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": "database",
+   "etaStatoS": 7,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": "tetto partite raggiunto: 2 su 2 in paper",
+   "tettoPartite": 2,
+   "partiteEsposte": 2,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "tennis_scalper",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": null,
+   "etaStatoS": null,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": 5,
+   "partiteEsposte": 6,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "tennis_pro",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": null,
+   "etaStatoS": null,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": 5,
+   "partiteEsposte": 6,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "tennis_flb",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": null,
+   "etaStatoS": null,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": 5,
+   "partiteEsposte": 6,
+   "pnlOggi": null,
+   "pnlOggiPaper": -0.04
+  },
+  {
+   "bot": "tennis_swing",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": null,
+   "etaStatoS": null,
+   "etaPushS": null,
+   "freschezzaPush": "fresca",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": 5,
+   "partiteEsposte": 6,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  },
+  {
+   "bot": "scalper",
+   "inCorsa": true,
+   "modalita": "paper",
+   "stato": "running",
+   "fonteStato": null,
+   "etaStatoS": null,
+   "etaPushS": null,
+   "freschezzaPush": "lenta",
+   "varianti": null,
+   "modiStrategia": null,
+   "motivoBlocco": null,
+   "tettoPartite": 2,
+   "partiteEsposte": null,
+   "pnlOggi": null,
+   "pnlOggiPaper": null
+  }
+ ],
+ "n_KO": 2
+}

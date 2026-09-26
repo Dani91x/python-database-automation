@@ -1,0 +1,135 @@
+# E2E FASE 2 — ORDINI PAPER, STRADA UNICA, SCHEDE B17 (§7.2, §7.5, §7.9.2, §7.9.5) — delegato admin-26
+
+26/09/2026, app accesa (pid 15624), bot in PAPER (accensioni in `ACCENSIONE_ORA.txt`: Omega 09:10:26Z,
+Safe 09:13:20Z e 09:16:16Z, scalper 09:17:58Z). SOLA LETTURA: DB solo GET PostgREST (select+limit), canali
+senza token, nessun file del repo toccato fuori da `AUDIT_2026-09-25/e2e_fase2/` (referto + `sonda_ordini_*`).
+Base del codice: master `075d91d`.
+
+STATO: **CONSEGNA PARZIALE** — vedi §6 (cosa manca). Finestra osservata: 09:10Z–__FINE__Z.
+
+## 0. Strumenti (riproducibili)
+
+| script | cosa fa |
+|---|---|
+| `sonda_ordini_db.py "<tabella>?select=...&limit=N"` | GET PostgREST, asserisce select+limit |
+| `sonda_ordini_ascolto.py <min>` | ascolto senza token di 47331/47334/47335/47336; lo scanner (scan_calcio) salvato COMPATTO (MO, CS, HT, OU/BTTS/ht_result, `odds_ts_ms`, `odds_pt_ms`, `bet_delay`) solo al cambio per evento → `canali_ordini/*.jsonl` (partito 09:16:54Z, riavviato 09:22:29Z con OU/BTTS; ~100 MB/h di scanner: file NON da committare) |
+| `sonda_ordini_catena.py --json sonda_ordini_catena_out.json --righe <tmp>` | ricostruzione della catena per ogni trade Omega/Safe dopo l'accensione: libro del feed prima/dopo la decisione, delta tick con `Betfair.stream.trading.risk_engine.ticks_between` (PRODUZIONE), libro a fill+`bet_delay` (specchio del FOK vero), `mercato_operabile(stato_da_riga_scan(...))` (PRODUZIONE, guardia unica), push del canale del bot vs riga DB, righe coda DB/specchio |
+| `sonda_ordini_esito_b17.mjs <bundle> <righe.json>` | applica `esitoGamba`/`comeRigaOrdine`/`deltaTick` di PRODUZIONE (`frontend/src/lib/esitoAbbinamento.ts`, bundle esbuild nello scratchpad: `node_modules/.bin/esbuild src/lib/esitoAbbinamento.ts --bundle --format=esm --platform=node --outfile=<scratch>/esito.mjs`) alle righe DB |
+
+## 1. REPERTO PRINCIPALE — gli ordini paper NON passano né dal canale né dalla CODA DB
+
+Il brief dice «porte via canale spente → gli ordini paper vanno sulla coda DB». **Dal vivo non è così.**
+Evidenza: `betfair_live_order_requests` — ultima riga id 99 del **10/07/2026**, 0 righe dopo le 09:10Z;
+`betfair_live_orders` — 0 righe Omega/Safe (le sole righe nuove sono `source='scalper'`). TUTTI gli ordini
+paper Omega/Safe di oggi sono stati riempiti dal **percorso legacy «fill istantaneo sullo snapshot del feed»**,
+dichiarato con `omega_activity.kind='paper_fill_fallback' reason='follow_assente'` (Omega) e
+`safe_strategy_trades.meta.fill='paper_fill:follow_assente'` (Safe).
+
+Catena causale (codice + dati):
+1. il gate della coda (paper E live) chiede l'evento in `live_follow` STREAMING:
+   `Betfair/omega/omega_service.py:2788` (`return False, f"follow_{...}"`), usato da Safe via
+   `Betfair/safe_strategy/execution.py:701` (`_gate`, riuso di `_flumine_gate`);
+2. l'AUTO-FOLLOW (D-1) è montato (hello del 47331: `auto_follow.acceso=true, tetto_mercati=180, righe_db=true`)
+   ma il suo giro proattivo parte SOLO con un bot calcio collegato al canale di comando:
+   `Betfair/stream/auto_follow.py:867` (`if not attivi:` → libera le candidate e ritorna); stato pubblicato
+   sul 47331 per tutta la finestra: `feed.attori=[]`, `eventi_auto=0`, `mercati_auto=0`,
+   `conti.agganci_comando=0`; `live_follow` con `origine='auto'`: **0 righe in tutta la tabella**;
+3. con `SAFE_/OMEGA_ORDINI_VIA_CANALE` spente nessun bot si collega al `/comando` → l'auto-follow non segue
+   niente → il gate trova `follow_assente` → ripiego legacy (`omega_service.py:2528-2548`,
+   `execution.py:752-790`): `E.paper_fill` sul SOLO best level del feed dello scanner
+   (`omega_service.py:835`, ladder di un livello), **istantaneo, senza bet delay simulato**, senza coda,
+   senza flumine `SimulatedExecution`.
+
+Conseguenza per il trader (paper = specchio della realtà): il fill paper è al prezzo e al tempo dello
+snapshot; in LIVE lo stesso ordine sarebbe un FOK dopo il bet delay (5 s in gioco). Ho misurato il
+libro del feed a fill + 5 s per ogni ordine (§3, colonna «FOK a +bet delay»): su tutti gli ordini
+osservati il FOK vero avrebbe abbinato allo stesso prezzo, quindi OGGI il ripiego non ha regalato fill; ma
+la strada certificata (coda → flumine simulato con bet delay, o canale) **non è stata esercitata da nessun
+ordine Omega/Safe**. Classificazione: **FAIL candidato di configurazione/progetto, non di codice**: il
+comportamento è quello scritto (ripiego dichiarato), ma con le porte spente la D-1 («i bot operano da soli su
+tutte le partite») non esiste di fatto per Omega/Safe e il paper resta sul percorso legacy. Da portare
+all'utente: il test della strada unica e della coda richiede o le porte accese o un follow STREAMING
+sull'evento. Nessuna correzione fatta.
+
+Caso chiesto dal coordinatore (Omega trade 119, 36115980 FC Ryukyu v Ehime, lay «1 - 3» 80, min 51, 0-0):
+(1) `follow_assente` perché `live_follow` non ha alcuna riga per 36115980 (né auto né manuale) e
+l'auto-follow era dormiente (`attori=[]`, punto 2); (2) `paper_fill_fallback` =
+`omega_service.py:2545` log, poi `E.paper_fill(size=1, best_price=80, lay_ladder=((80, lay_size),), limit=80)`
+(`:2563`) → fill 1,00 @ 80,0 istantaneo (riserva 09:11:30.189Z → attività `place` 09:11:30.609Z, 420 ms),
+liquidità = `lay_size` del feed al best; (3) libro del feed nello stesso istante: **non registrato da me**
+(il mio ascolto parte alle 09:16:54Z; l'ascoltatore comune `canali/messaggi_*.jsonl` campiona scan_calcio
+una volta al minuto per l'intero topic) → **NON CERTIFICATO** il confronto 1 tick per 117/118/119; alle
+09:16:56Z il libro di «1 - 3» era back 29 / lay 110 (5 min dopo, non probante); (4) scheda: push
+`omega_posizioni` (ascoltatore comune) `status=open, size_matched=1.0, avg_price_matched=80.0` = riga DB;
+`esitoGamba` di produzione → fase `totale`, 0 tick vs prezzo della riga.
+
+## 2. Tabella id → esito
+
+| id | esito | evidenza sintetica |
+|---|---|---|
+| 7.2.1 auto-follow montato con MOTORE_ORDINI_CANALE=1 | **PASS** (dal canale, non dal log) | hello 47331 09:06:40Z/09:16:54Z/09:22:29Z: `auto_follow.acceso=true, tetto 180, limite 200, righe_db=true`; il blocco nasce solo dentro l'`if` del motore (`runner.py:1896-1903`). Log console non accessibile |
+| 7.2.2 motore ordini attivo | **NON CERTIFICATO** | la riga di log `runner.py:1921` non è leggibile (stdout dell'app); il motore non pubblica stato proprio sul 47331; la cartella `_live_raw/_diario_ordini` non esiste (il `Diario` crea la cartella al primo record, `motore_ordini.py:190`): nessun comando ricevuto. Indiretto: `auto_follow` presente ⇒ l'`if` è stato eseguito |
+| 7.2.3 Safe via canale | **NON CERTIFICATO (porta spenta)** | 0 attività `canale_inviato`; `meta.fill='paper_fill:follow_assente'` sui trade Safe |
+| 7.2.4 marcature canale sul trade | **NON CERTIFICATO (porta spenta)** | trade 342/343 senza `canale_*` |
+| 7.2.5 età comando < 3000 ms | **NON CERTIFICATO (porta spenta)** | diario assente |
+| 7.2.6 Omega via canale | **NON CERTIFICATO (porta spenta)** | 0 `canale_inviato` in `omega_activity` |
+| 7.2.7 nessuna riga coda per ordini via canale | **NON CERTIFICATO (porta spenta)** — vedi §1: 0 righe coda anche per gli ordini NON via canale | `betfair_live_order_requests` max id 99 (10/07) |
+| 7.2.8 aggancio al volo | **NON CERTIFICATO (porta spenta)** | `conti.agganci_comando=0` per tutta la finestra |
+| 7.2.9 0 «non sottoscritto» | **NON CERTIFICATO** | log non accessibile; nessun comando inviato (0 occorrenze in `omega_activity`/`safe_strategy_activity`, vacuo) |
+| 7.2.10 tetto 180, manuali mai espulsi | **PASS parziale** | stato 47331: `mercati_seguiti=17 = mercati_manuali 17 /180`, `espulsi=0`, `rifiuti_tetto=0`; saturazione non provata (vietato seguire a mano). Vedi reperto R2 |
+| 7.2.11 righe live_follow auto coerenti | **NON CERTIFICATO (0 righe auto)** + **REPERTO R2** | `live_follow origine='auto'`: 0 righe; le 2 righe di oggi (36090854, 36090788, STREAMING 09:18Z) sono `origine='manuale'` ma create dallo SCALPER auto-mode, non da un clic |
+| 7.2.12 righe in volo al riavvio | **NON CERTIFICATO** | vietato riavviare l'app |
+| 7.5.7 «Chiudi» per bot | **NON CERTIFICATO** | richiede clic in UI (fuori dal mio perimetro: nessun comando) |
+| 7.5.8 esecuzione a mercato, nessun «fuori banda» | **PASS (osservato)** | 0 occorrenze di `banda` nelle attività Omega/Safe della finestra; tutti gli ordini eseguiti al best del feed (0 tick) |
+| 7.9.2.B ref/prezzo/size lungo comando→aggancio→ordine | **NON CERTIFICATO (porta spenta)** | nessun comando; catena ricostruita sul ripiego (§3) |
+| 7.9.2.C nessun ordine su mercato non operabile | **PASS sugli ordini registrati** (__N_C__) / NON CERTIFICATO 117-119 | `mercato_operabile` di produzione sullo stato CS del feed alla decisione e a +bet delay: sempre `(True,'OPEN')`; Omega salta da solo (`skip market_suspended` ×4, `mercato_sospeso` ×1 in uscita) |
+| 7.9.2.E1-E5 | **NON CERTIFICATO** | richiedono azioni (fermare canale, saturare tetto, kill-switch, riavvio) vietate a questo delegato |
+| 7.9.5.D numeri a video = riga/diario/libro | **PASS sui dati** per __N_D__ ordini | push canale (`omega_posizioni`/`safe_posizioni_calcio`) = riga DB (status, size_matched, avg); `esitoGamba` di produzione → `totale`, delta 0 tick; libro feed alla decisione = prezzo abbinato (0 tick). Striscia B17 a video: non esiste per gli ordini AUTOMATICI (è legata a un clic, `esitoAbbinamento.ts:342-373`) → testo a video NON CERTIFICATO |
+| 7.9.5.C banda al clic | **NON CERTIFICATO** | nessun clic su proposte (auto_trade_opportunities=false, nessuna approvazione) |
+| 7.9.5.E1 clic su SUSPENDED | **NON CERTIFICATO** | nessun clic |
+| 7.9.5.E2 replay PM3 | **NON ESEGUITO** | richiede permesso del coordinatore (un replay per bot) |
+| 7.9.5.E3 FOK senza fill inventato | **PASS parziale (Safe) / OSSERVAZIONE (Omega)** | Safe ripiego uccide il parziale (`execution.py:766-769`); Omega ripiego ACCETTA il parziale (`omega_service.py:2577-2590`, `place_parziale`) mentre il live REST è FOK: divergenza paper/live nel codice, non scattata oggi (stake 1 €, `v3_min_lay_liquidity`=1,0) |
+
+## 3. Catena degli ordini paper (ricostruita, UTC)
+
+__TABELLA__
+
+## 4. Reperti
+
+- **R1 (FAIL candidato, configurazione)** — §1: strada unica/coda mai esercitate da Omega/Safe; tutti i fill
+  paper sul ripiego legacy senza bet delay. `auto_follow.py:867`, `omega_service.py:2788,2528-2548`,
+  `execution.py:701,752-790`.
+- **R2 (FAIL candidato, dati)** — lo scalper auto-mode scrive `live_follow` SENZA `origine`
+  (`Betfair/stream/scalper/scalper_service.py:165-178`, upsert `ignore_duplicates`), quindi prende il default
+  `'manuale'` (`migrations/live_follow_origine_2026-09-25.sql:30`). Righe 36090854 e 36090788 (09:18:00Z,
+  STREAMING, `origine='manuale'`) nate dall'armamento automatico (scalper_control `origine='auto'`,
+  09:17:58Z accensione). Effetti: l'auto-follow le conta come follow MANUALI (17/17 mercati «manuali»),
+  quindi mai espellibili e fuori dalla chiusura degli orfani (`chiudi_orfani` chiude solo `origine='auto'`);
+  il Terminale le mostra come «seguite a mano». Nessun clic dell'utente le ha create.
+- **R3 (osservazione, Omega)** — ripiego paper Omega accetta un fill parziale (`omega_service.py:2577`)
+  mentre Safe lo uccide come il FOK live: due regole diverse per lo stesso caso (catalogo: parità paper/live).
+- **R4 (osservazione, schede Safe proposte)** — nella stessa riga di proposta convivono due istantanee del
+  libro: proposta 259 (Yamagata v Tosu, MO back): `payload.price=1.12, size_available=196.9`
+  (`feed_updated_at` 09:22:18Z, coerente col feed: 1.12/196.9 a odds_ts 09:22:17.969Z) e
+  `valutazione.al_prezzo.prezzo=1.13, valore 5.16` (feed 09:22:29.139Z: 1.13/5.16). Entrambi corretti alla
+  loro ora; la scheda deve dire quale mostra (età/fonte), altrimenti il trader vede 1,12 «valida» e
+  «non più valida» a 1,13 insieme.
+- **R5 (fuori perimetro, per 7.9.7/opportunità)** — proposta 260 (Oita v Fujieda, `anomaly/ou_ladder`):
+  «Over 2.5 back 1.62 con Over 7.5 a 1.04: quota incoerente». Il feed conferma Over 7.5 back 1.04 (28 €,
+  lay assente) — un'offerta isolata su un mercato illiquido: una quota BACK bassa non implica P(O7.5)≈96%
+  (è solo un limite superiore). Proposta generata su un dato spazzatura; non eseguita (auto_trade_anomalies=false).
+- **R6 (latenze Safe)** — trade 342: quota Betfair 09:23:28.363Z → riga feed 29.326Z → letta dal bot
+  35.128Z (`feed_to_bot_ms` 5.802) → decisione 38.338Z (`prezzo_to_decisione_ms` 9.975) → fill 38.741Z.
+  Il prezzo è rimasto 50 per tutto l'intervallo (fill coerente), ma 10 s fra quota e decisione sono fuori
+  da ogni soglia di «al ms». Trade 343: 2.161 ms.
+
+## 5. Cosa NON ho potuto verificare e perché
+
+- log della console (righe `[runner] …`, `[auto-follow] …`, `[motore] …`): non accessibili (stdout dell'app);
+- libro del feed per Omega 117/118/119 (prima dell'avvio del mio ascolto);
+- tutto ciò che richiede porte accese, clic, riavvii, kill-switch o saturazione del tetto (vietati);
+- testo della striscia B17 a video (nessun clic; gli ordini automatici non hanno striscia).
+
+## 6. Consegna parziale — cosa manca
+
+__MANCA__

@@ -1,0 +1,1129 @@
+[
+ {
+  "tipo": "ingresso",
+  "trade_id": 342,
+  "event_id": "36090940",
+  "event_name": "Iwata – Vanraure Hachinohe",
+  "variant": "esatto",
+  "signal_key": "36090940:esatto:home:1-1",
+  "price": 50.0,
+  "placed_at": "2026-09-26T09:23:38.407371+00:00",
+  "riga": "esatta (updated_at = t1_feed_ms)",
+  "riga_updated_at": "2026-09-26T09:23:29.326830+00:00",
+  "stato_ricalcolato": "signal",
+  "entry_ricalcolata": 50.0,
+  "indipendenti": {
+   "veto_competizione": null,
+   "femminile_nome_squadra": false,
+   "round": null,
+   "finale_round": false,
+   "finale_nome": false,
+   "h2h_hint": [
+    1,
+    1,
+    {
+     "home": 1.0,
+     "away": 1.2
+    }
+   ],
+   "h2h_db": {
+    "conta": {
+     "incontri": 1,
+     "tanti_gol": 1
+    },
+    "conceded": {
+     "home": "1.0",
+     "away": "1.2"
+    },
+    "squadre_api": [
+     "Jubilo Iwata",
+     "Vanraure Hachinohe"
+    ]
+   },
+   "h2h_hint_uguale_db": true,
+   "checks_non_ok": []
+  },
+  "spread": 1.5625,
+  "prezzi_feed": {
+   "back": 32.0,
+   "back_size": 2.12,
+   "lay": 50.0,
+   "lay_size": 18.06
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "ingresso",
+  "trade_id": 343,
+  "event_id": "36115980",
+  "event_name": "FC Ryukyu – Ehime",
+  "variant": "esatto",
+  "signal_key": "36115980:esatto:away:0-1",
+  "price": 55.0,
+  "placed_at": "2026-09-26T09:25:04.981941+00:00",
+  "riga": "esatta (updated_at = t1_feed_ms)",
+  "riga_updated_at": "2026-09-26T09:25:02.942552+00:00",
+  "stato_ricalcolato": "signal",
+  "entry_ricalcolata": 55.0,
+  "indipendenti": {
+   "veto_competizione": null,
+   "femminile_nome_squadra": false,
+   "round": null,
+   "finale_round": false,
+   "finale_nome": false,
+   "h2h_hint": [
+    8,
+    2,
+    {
+     "home": 1.2,
+     "away": 1.4
+    }
+   ],
+   "h2h_db": {
+    "conta": {
+     "incontri": 8,
+     "tanti_gol": 2
+    },
+    "conceded": {
+     "home": "1.2",
+     "away": "1.4"
+    },
+    "squadre_api": [
+     "FC Ryukyu",
+     "Ehime FC"
+    ]
+   },
+   "h2h_hint_uguale_db": true,
+   "checks_non_ok": []
+  },
+  "spread": 1.3095,
+  "prezzi_feed": {
+   "back": 42.0,
+   "back_size": 2.15,
+   "lay": 55.0,
+   "lay_size": 25.37
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "ingresso",
+  "trade_id": 344,
+  "event_id": "36119297",
+  "event_name": "Tyra Caterina Grant – Anhelina Kalinina",
+  "variant": "tennis",
+  "signal_key": "36119297:tennis:set 0-1",
+  "price": 1.02,
+  "placed_at": "2026-09-26T10:04:01.665946+00:00",
+  "riga": "esatta (updated_at = t1_feed_ms)",
+  "riga_updated_at": "2026-09-26T10:04:00.467062+00:00",
+  "stato_ricalcolato": "signal",
+  "entry_ricalcolata": 1.02,
+  "indipendenti": {
+   "pre_ko": {
+    "p1": 2.6,
+    "p2": 1.39,
+    "captured_at": "2026-09-26T09:12:49.306461+00:00"
+   },
+   "checks_non_ok": [],
+   "sfavorito_estremo": true
+  },
+  "spread": 1.0294,
+  "prezzi_feed": {
+   "back": 1.02,
+   "back_size": 1031.81,
+   "lay": 1.05,
+   "lay_size": 240.76
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:22:34.692524+00:00",
+  "event_id": "36115980",
+  "signal_key": "36115980:esatto:away:0-1",
+  "motivo": "spread_anomalo",
+  "riga": "ultima <= istante (925 ms prima)",
+  "dato": {
+   "prezzi": {
+    "back": 12.0,
+    "back_size": 4.73,
+    "lay": 50.0,
+    "lay_size": 9.03
+   },
+   "ratio": 4.1667,
+   "max": 1.6,
+   "bot": {
+    "back": 12.0,
+    "lay": 50.0,
+    "spread_ratio": 4.1667
+   }
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:22:41.625626+00:00",
+  "event_id": "36090940",
+  "signal_key": "36090940:esatto:home:1-1",
+  "motivo": "spread_anomalo",
+  "riga": "ultima <= istante (1603 ms prima)",
+  "dato": {
+   "prezzi": {
+    "back": 30.0,
+    "back_size": 9.03,
+    "lay": 50.0,
+    "lay_size": 18.06
+   },
+   "ratio": 1.6667,
+   "max": 1.6,
+   "bot": {
+    "back": 30.0,
+    "lay": 50.0,
+    "spread_ratio": 1.6667
+   }
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:05.769365+00:00",
+  "event_id": "36090788",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (664 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:05.895279+00:00",
+  "event_id": "36090854",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (683 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:05.990007+00:00",
+  "event_id": "36090936",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (635 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.098692+00:00",
+  "event_id": "36090937",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (838 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.197918+00:00",
+  "event_id": "36090940",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (952 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.296215+00:00",
+  "event_id": "36090941",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (957 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.418862+00:00",
+  "event_id": "36090943",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1276 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.521097+00:00",
+  "event_id": "36090944",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1296 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.635899+00:00",
+  "event_id": "36094813",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1320 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.718668+00:00",
+  "event_id": "36094814",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1528 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.790739+00:00",
+  "event_id": "36115971",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1650 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.88687+00:00",
+  "event_id": "36115973",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1589 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:06.960608+00:00",
+  "event_id": "36115975",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1646 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:07.042809+00:00",
+  "event_id": "36115980",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1658 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:07.145408+00:00",
+  "event_id": "36115984",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (1820 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:07.266693+00:00",
+  "event_id": "36115985",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (234 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "scarto",
+  "ts": "2026-09-26T09:23:07.351199+00:00",
+  "event_id": "36115986",
+  "signal_key": null,
+  "motivo": "pre_ko_assente",
+  "riga": "ultima <= istante (207 ms prima)",
+  "dato": {
+   "pre_ko": null,
+   "inplay": true
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090788",
+  "event_name": "Tegevajaro Miyazaki v Sapporo",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:55:56.852800+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   0,
+   0,
+   {
+    "home": 1.6,
+    "away": 2.4
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 0,
+    "tanti_gol": 0
+   },
+   "conceded": {
+    "home": "1.6",
+    "away": "2.4"
+   },
+   "squadre_api": [
+    "Tegevajaro Miyazaki",
+    "Consadole Sapporo"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090854",
+  "event_name": "Oita v Fujieda Myfc",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:57:08.480606+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   8,
+   1,
+   {
+    "home": 0.8,
+    "away": 1.4
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 8,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "0.8",
+    "away": "1.4"
+   },
+   "squadre_api": [
+    "Oita Trinita",
+    "Fujieda MYFC"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090936",
+  "event_name": "Blaublitz Akita v Albirex Niigata",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:59:15.415505+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   6,
+   1,
+   {
+    "home": 0.6,
+    "away": 1.6
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 6,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "0.6",
+    "away": "1.6"
+   },
+   "squadre_api": [
+    "Blaublitz Akita",
+    "Albirex Niigata"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090937",
+  "event_name": "Omiya v Kofu",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:58:05.880219+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   2,
+   {
+    "home": 0.8,
+    "away": 1.4
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 2
+   },
+   "conceded": {
+    "home": "0.8",
+    "away": "1.4"
+   },
+   "squadre_api": [
+    "Omiya Ardija",
+    "Ventforet Kofu"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090940",
+  "event_name": "Iwata v Vanraure Hachinohe",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:56:28.548109+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   1,
+   1,
+   {
+    "home": 1.0,
+    "away": 1.2
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 1,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "1.0",
+    "away": "1.2"
+   },
+   "squadre_api": [
+    "Jubilo Iwata",
+    "Vanraure Hachinohe"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090941",
+  "event_name": "FC Imabari v Shonan",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T10:02:53.368504+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   0,
+   0,
+   {
+    "home": 2.0,
+    "away": 1.2
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 0,
+    "tanti_gol": 0
+   },
+   "conceded": {
+    "home": "2.0",
+    "away": "1.2"
+   },
+   "squadre_api": [
+    "Imabari",
+    "Shonan Bellmare"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090943",
+  "event_name": "Toyama v Yokohama FC",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:57:01.574834+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   7,
+   0,
+   {
+    "home": 0.6,
+    "away": 1.4
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 7,
+    "tanti_gol": 0
+   },
+   "conceded": {
+    "home": "0.6",
+    "away": "1.4"
+   },
+   "squadre_api": [
+    "Kataller Toyama",
+    "Yokohama FC"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36090944",
+  "event_name": "Yamagata v Tosu",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:58:08.453679+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   6,
+   3,
+   {
+    "home": 1.0,
+    "away": 1.8
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 6,
+    "tanti_gol": 3
+   },
+   "conceded": {
+    "home": "1.0",
+    "away": "1.8"
+   },
+   "squadre_api": [
+    "Montedio Yamagata",
+    "Sagan Tosu"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36094813",
+  "event_name": "Tokushima v Tochigi Uva FC",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:56:34.622584+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   0,
+   0,
+   {
+    "home": 1.2,
+    "away": 1.6
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 0,
+    "tanti_gol": 0
+   },
+   "conceded": {
+    "home": "1.2",
+    "away": "1.6"
+   },
+   "squadre_api": [
+    "Tokushima Vortis",
+    "Tochigi City"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36094814",
+  "event_name": "Iwaki SC v Sendai",
+  "competition": "Japanese J League 2",
+  "riga_updated_at": "2026-09-26T09:54:24.495713+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   6,
+   1,
+   {
+    "home": 1.8,
+    "away": 1.0
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 6,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "1.8",
+    "away": "1.0"
+   },
+   "squadre_api": [
+    "Iwaki",
+    "Vegalta Sendai"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36106473",
+  "event_name": "Rosengard v Hassleholms IF",
+  "competition": "Swedish Division 1",
+  "riga_updated_at": "2026-09-26T10:02:49.719727+00:00",
+  "veto_motore": [
+   true,
+   "Swedish Division 1"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": "assente",
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36106487",
+  "event_name": "FC Trollhattan v Tvaakers",
+  "competition": "Swedish Division 1",
+  "riga_updated_at": "2026-09-26T10:05:11.182059+00:00",
+  "veto_motore": [
+   true,
+   "Swedish Division 1"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": "assente",
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36109523",
+  "event_name": "Viggbyholms IK FF v Korsnas IF",
+  "competition": "Swedish Division 2",
+  "riga_updated_at": "2026-09-26T10:03:43.447466+00:00",
+  "veto_motore": [
+   true,
+   "Swedish Division 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": "assente",
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36109546",
+  "event_name": "Jonsereds IF v Hestrafors",
+  "competition": "Swedish Division 2",
+  "riga_updated_at": "2026-09-26T10:05:08.463920+00:00",
+  "veto_motore": [
+   true,
+   "Swedish Division 2"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": "assente",
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36111764",
+  "event_name": "FC Badalona (W) v Granada (W)",
+  "competition": "Spanish Liga F",
+  "riga_updated_at": "2026-09-26T10:05:15.147259+00:00",
+  "veto_motore": [
+   false,
+   "veto campionato: calcio femminile (nome squadra) (corso)"
+  ],
+  "veto_atteso": true,
+  "h2h_hint": [
+   6,
+   1,
+   {
+    "home": 1.0,
+    "away": 2.3
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 6,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "1.0",
+    "away": "2.3"
+   },
+   "squadre_api": [
+    "FC Levante Badalona W",
+    "Granada"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36111770",
+  "event_name": "Real Sociedad (W) v Real Madrid FC (W)",
+  "competition": "Spanish Liga F",
+  "riga_updated_at": "2026-09-26T10:05:11.180654+00:00",
+  "veto_motore": [
+   false,
+   "veto campionato: calcio femminile (nome squadra) (corso)"
+  ],
+  "veto_atteso": true,
+  "h2h_hint": [
+   10,
+   5,
+   {
+    "home": 1.5,
+    "away": 0.8
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 5
+   },
+   "conceded": {
+    "home": "1.5",
+    "away": "0.8"
+   },
+   "squadre_api": [
+    "Real Sociedad W",
+    "Real Madrid W"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115971",
+  "event_name": "Kamatamare Sanuki v FC Gifu",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:57:08.476909+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   3,
+   {
+    "home": 2.4,
+    "away": 1.0
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 3
+   },
+   "conceded": {
+    "home": "2.4",
+    "away": "1.0"
+   },
+   "squadre_api": [
+    "Kamatamare Sanuki",
+    "FC Gifu"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115973",
+  "event_name": "Kochi United v FC Osaka",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:58:19.302926+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   9,
+   2,
+   {
+    "home": 1.4,
+    "away": 0.8
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 9,
+    "tanti_gol": 2
+   },
+   "conceded": {
+    "home": "1.4",
+    "away": "0.8"
+   },
+   "squadre_api": [
+    "Kochi United",
+    "Osaka"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115975",
+  "event_name": "Kitakyushu v Kagoshima Utd",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:58:29.170592+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   3,
+   {
+    "home": 2.6,
+    "away": 1.2
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 3
+   },
+   "conceded": {
+    "home": "2.6",
+    "away": "1.2"
+   },
+   "squadre_api": [
+    "Kitakyushu",
+    "Kagoshima United"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115980",
+  "event_name": "FC Ryukyu v Ehime",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:54:53.424906+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   8,
+   2,
+   {
+    "home": 1.2,
+    "away": 1.4
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 8,
+    "tanti_gol": 2
+   },
+   "conceded": {
+    "home": "1.2",
+    "away": "1.4"
+   },
+   "squadre_api": [
+    "FC Ryukyu",
+    "Ehime FC"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115984",
+  "event_name": "Fukushima Utd v Nagano Parceiro",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:56:34.624368+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   4,
+   {
+    "home": 2.2,
+    "away": 0.8
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 4
+   },
+   "conceded": {
+    "home": "2.2",
+    "away": "0.8"
+   },
+   "squadre_api": [
+    "Fukushima United",
+    "Parceiro Nagano"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115985",
+  "event_name": "Tochigi SC v Matsumoto",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T10:00:22.790022+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   1,
+   {
+    "home": 2.0,
+    "away": 1.2
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 1
+   },
+   "conceded": {
+    "home": "2.0",
+    "away": "1.2"
+   },
+   "squadre_api": [
+    "Tochigi SC",
+    "Matsumoto Yamaga"
+   ]
+  },
+  "esito": "CONCORDA"
+ },
+ {
+  "tipo": "selezione_partita",
+  "event_id": "36115986",
+  "event_name": "Thespakusatsu Gunma v Kumamoto",
+  "competition": "Japanese J League 3",
+  "riga_updated_at": "2026-09-26T09:55:22.374753+00:00",
+  "veto_motore": [
+   true,
+   "Japanese J League 3"
+  ],
+  "veto_atteso": false,
+  "h2h_hint": [
+   10,
+   4,
+   {
+    "home": 1.8,
+    "away": 0.8
+   }
+  ],
+  "h2h_db": {
+   "conta": {
+    "incontri": 10,
+    "tanti_gol": 4
+   },
+   "conceded": {
+    "home": "1.8",
+    "away": "0.8"
+   },
+   "squadre_api": [
+    "Thespakusatsu Gunma",
+    "Roasso Kumamoto"
+   ]
+  },
+  "esito": "CONCORDA"
+ }
+]

@@ -1,0 +1,270 @@
+{
+ "frame": 70,
+ "confrontati": 70,
+ "uguali": 0,
+ "diversi": [
+  {
+   "ev": "36111770",
+   "pub": "2026-09-26T10:13:51.403513+00:00",
+   "minute": 13,
+   "gol": 2,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.1032,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0681712,
+    "p_3min": 0.1031811,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111764",
+   "pub": "2026-09-26T10:13:52.404173+00:00",
+   "minute": 12,
+   "gol": 0,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.0794,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0538383,
+    "p_3min": 0.0794187,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111764",
+   "pub": "2026-09-26T10:14:11.448267+00:00",
+   "minute": 13,
+   "gol": 0,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.0794,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0538383,
+    "p_3min": 0.0794187,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111770",
+   "pub": "2026-09-26T10:14:11.448267+00:00",
+   "minute": 13,
+   "gol": 2,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.1032,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0681712,
+    "p_3min": 0.1031811,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111764",
+   "pub": "2026-09-26T10:14:31.460417+00:00",
+   "minute": 13,
+   "gol": 0,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.0794,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0538383,
+    "p_3min": 0.0794187,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111770",
+   "pub": "2026-09-26T10:14:31.460417+00:00",
+   "minute": 14,
+   "gol": 2,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.1032,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0681712,
+    "p_3min": 0.1031811,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111764",
+   "pub": "2026-09-26T10:14:51.475078+00:00",
+   "minute": 13,
+   "gol": 0,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.0794,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0538383,
+    "p_3min": 0.0794187,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111770",
+   "pub": "2026-09-26T10:14:51.475078+00:00",
+   "minute": 14,
+   "gol": 2,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.1032,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0681712,
+    "p_3min": 0.1031811,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111764",
+   "pub": "2026-09-26T10:15:15.482691+00:00",
+   "minute": 14,
+   "gol": 0,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.0794,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0539545,
+    "p_3min": 0.0796234,
+    "forza_usata": false
+   }
+  },
+  {
+   "ev": "36111770",
+   "pub": "2026-09-26T10:15:16.483103+00:00",
+   "minute": 14,
+   "gol": 2,
+   "tempo_mio": 1,
+   "lid": null,
+   "mike": {
+    "ha": 0.1032,
+    "hv": null,
+    "hf": null,
+    "hr": null,
+    "hn": null
+   },
+   "mio": {
+    "versione": "v4",
+    "fase": "regolare",
+    "recupero_atteso_min": null,
+    "p_2min": 0.0686151,
+    "p_3min": 0.1038153,
+    "forza_usata": false
+   }
+  }
+ ],
+ "per_fase": {},
+ "versioni": {
+  "None|None": 70
+ },
+ "volatile": [],
+ "senza_atlante_copia": 0,
+ "valore": {
+  "uguali": 68,
+  "diversi": [
+   [
+    "36111764",
+    "2026-09-26T10:15:15.482691+00:00",
+    14,
+    0,
+    1,
+    0.0794,
+    0.0796
+   ],
+   [
+    "36111770",
+    "2026-09-26T10:15:16.483103+00:00",
+    14,
+    2,
+    1,
+    0.1032,
+    0.1038
+   ]
+  ]
+ },
+ "chiavi_v4_nel_frame": {
+  "presenti": 0,
+  "assenti": 70
+ }
+}

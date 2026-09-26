@@ -1,0 +1,17 @@
+{
+ "passi": [
+  "a video prima: stato=non letto fonte=undefined",
+  "2026-09-26T09:41:59.863Z clic cr-freno-tira («tira il freno»)",
+  "a video dopo: stato=TIRATO - nessuna apertura"
+ ],
+ "registro": [
+  {
+   "ts": "2026-09-26T09:41:59.873Z",
+   "rpc": "set_live_kill_switch",
+   "args": {
+    "p_on": true
+   },
+   "esito": "inviata"
+  }
+ ]
+}

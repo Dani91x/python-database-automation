@@ -1,0 +1,1296 @@
+[
+ {
+  "bot": "omega",
+  "trade_id": 117,
+  "event": "36090940 Iwata v Vanraure Hachinohe",
+  "strategia": "ft_cs",
+  "mercato": "1.262838362",
+  "selezione": "9063254 Any Other Home Win",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 95.0,
+  "size": 1.0,
+  "size_matched": 1.0,
+  "avg_price_matched": 95.0,
+  "minuto": 50,
+  "punteggio": "0-1",
+  "fill_note": null,
+  "percorso": null,
+  "attivita": [
+   [
+    "2026-09-26T09:10:57.952895+00:00",
+    "paper_fill_fallback",
+    "follow_assente"
+   ],
+   [
+    "2026-09-26T09:10:58.216986+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T09:56:42.95826+00:00",
+    "settle",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": null,
+   "t1_feed": null,
+   "t2_letto": null,
+   "t3_deciso": "09:10:57.749Z",
+   "riga_placed_at": "2026-09-26T09:10:57.749495+00:00",
+   "t_fill": "09:10:58.216Z",
+   "push_canale_open": "09:56:19.626Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": null,
+   "prezzo_to_decisione_ms": null,
+   "decisione_to_risposta_ms": null
+  },
+  "scan_prima": null,
+  "scan_dopo": {
+   "rx": "09:16:56.061Z",
+   "min": 56,
+   "sc": [
+    0,
+    1
+   ],
+   "libro": {
+    "back": 120.0,
+    "lay": null,
+    "back_size": 5.59,
+    "lay_size": null,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 358312
+  },
+  "verifica_prima": {
+   "esito": "libro_assente"
+  },
+  "verifica_dopo": {
+   "esito": "prezzo_assente",
+   "rif": null
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 0,
+   "esito": "libro_assente"
+  },
+  "mercato_operabile_alla_decisione": null,
+  "mercato_operabile_dopo_bet_delay": null,
+  "push_n": 2,
+  "push_canale": [
+   {
+    "rx": "09:56:19.626Z",
+    "status": "open",
+    "size_matched": 1.0,
+    "avg": 95.0,
+    "seq": 138
+   },
+   {
+    "rx": "09:56:42.887Z",
+    "status": "won",
+    "size_matched": 1.0,
+    "avg": 95.0,
+    "seq": 142
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "omega",
+  "trade_id": 118,
+  "event": "36090941 FC Imabari v Shonan",
+  "strategia": "ft_cs",
+  "mercato": "1.262882334",
+  "selezione": "9063254 Any Other Home Win",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 55.0,
+  "size": 1.0,
+  "size_matched": 1.0,
+  "avg_price_matched": 55.0,
+  "minuto": 48,
+  "punteggio": "1-1",
+  "fill_note": null,
+  "percorso": null,
+  "attivita": [
+   [
+    "2026-09-26T09:10:58.767857+00:00",
+    "paper_fill_fallback",
+    "follow_assente"
+   ],
+   [
+    "2026-09-26T09:10:58.943232+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T10:02:55.408919+00:00",
+    "settle",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": null,
+   "t1_feed": null,
+   "t2_letto": null,
+   "t3_deciso": "09:10:58.575Z",
+   "riga_placed_at": "2026-09-26T09:10:58.575653+00:00",
+   "t_fill": "09:10:58.943Z",
+   "push_canale_open": "10:02:12.596Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": null,
+   "prezzo_to_decisione_ms": null,
+   "decisione_to_risposta_ms": null
+  },
+  "scan_prima": null,
+  "scan_dopo": {
+   "rx": "09:16:56.192Z",
+   "min": 54,
+   "sc": [
+    1,
+    1
+   ],
+   "libro": {
+    "back": 55.0,
+    "lay": 85.0,
+    "back_size": 13.33,
+    "lay_size": 55.89,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 357616
+  },
+  "verifica_prima": {
+   "esito": "libro_assente"
+  },
+  "verifica_dopo": {
+   "rif": 85.0,
+   "liq": 55.89,
+   "delta_tick": -6,
+   "entro_1_tick": false,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 0,
+   "esito": "libro_assente"
+  },
+  "mercato_operabile_alla_decisione": null,
+  "mercato_operabile_dopo_bet_delay": null,
+  "push_n": 2,
+  "push_canale": [
+   {
+    "rx": "10:02:12.596Z",
+    "status": "open",
+    "size_matched": 1.0,
+    "avg": 55.0,
+    "seq": 150
+   },
+   {
+    "rx": "10:02:55.341Z",
+    "status": "won",
+    "size_matched": 1.0,
+    "avg": 55.0,
+    "seq": 151
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "omega",
+  "trade_id": 119,
+  "event": "36115980 FC Ryukyu v Ehime",
+  "strategia": "ft_cs",
+  "mercato": "1.262913769",
+  "selezione": "15 1 - 3",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 80.0,
+  "size": 1.0,
+  "size_matched": 1.0,
+  "avg_price_matched": 80.0,
+  "minuto": 51,
+  "punteggio": "0-0",
+  "fill_note": null,
+  "percorso": null,
+  "attivita": [
+   [
+    "2026-09-26T09:11:30.362669+00:00",
+    "paper_fill_fallback",
+    "follow_assente"
+   ],
+   [
+    "2026-09-26T09:11:30.609206+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T09:56:18.933263+00:00",
+    "settle",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": null,
+   "t1_feed": null,
+   "t2_letto": null,
+   "t3_deciso": "09:11:30.189Z",
+   "riga_placed_at": "2026-09-26T09:11:30.189483+00:00",
+   "t_fill": "09:11:30.609Z",
+   "push_canale_open": "09:54:52.484Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": null,
+   "prezzo_to_decisione_ms": null,
+   "decisione_to_risposta_ms": null
+  },
+  "scan_prima": null,
+  "scan_dopo": {
+   "rx": "09:16:56.219Z",
+   "min": 56,
+   "sc": [
+    0,
+    0
+   ],
+   "libro": {
+    "back": 29.0,
+    "lay": 110.0,
+    "back_size": 2.15,
+    "lay_size": 28.8,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 326030
+  },
+  "verifica_prima": {
+   "esito": "libro_assente"
+  },
+  "verifica_dopo": {
+   "rif": 110.0,
+   "liq": 28.8,
+   "delta_tick": -5,
+   "entro_1_tick": false,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 0,
+   "esito": "libro_assente"
+  },
+  "mercato_operabile_alla_decisione": null,
+  "mercato_operabile_dopo_bet_delay": null,
+  "push_n": 2,
+  "push_canale": [
+   {
+    "rx": "09:54:52.484Z",
+    "status": "open",
+    "size_matched": 1.0,
+    "avg": 80.0,
+    "seq": 135
+   },
+   {
+    "rx": "09:56:18.876Z",
+    "status": "won",
+    "size_matched": 1.0,
+    "avg": 80.0,
+    "seq": 136
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "omega",
+  "trade_id": 120,
+  "event": "36115971 Kamatamare Sanuki v FC Gifu",
+  "strategia": "ft_cs",
+  "mercato": "1.262914430",
+  "selezione": "9063256 Any Other Draw",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 48.0,
+  "size": 1.0,
+  "size_matched": 1.0,
+  "avg_price_matched": 48.0,
+  "minuto": 77,
+  "punteggio": "2-4",
+  "fill_note": null,
+  "percorso": null,
+  "attivita": [
+   [
+    "2026-09-26T09:38:44.412012+00:00",
+    "paper_fill_fallback",
+    "follow_assente"
+   ],
+   [
+    "2026-09-26T09:38:44.660228+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T09:57:40.530163+00:00",
+    "settle",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": null,
+   "t1_feed": null,
+   "t2_letto": null,
+   "t3_deciso": "09:38:44.187Z",
+   "riga_placed_at": "2026-09-26T09:38:44.187606+00:00",
+   "t_fill": "09:38:44.660Z",
+   "push_canale_open": "09:38:44.601Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": null,
+   "prezzo_to_decisione_ms": null,
+   "decisione_to_risposta_ms": null
+  },
+  "scan_prima": {
+   "rx": "09:38:43.263Z",
+   "odds_pt": "09:38:34.821Z",
+   "odds_ts": "09:38:35.264Z",
+   "min": 77,
+   "sc": [
+    2,
+    4
+   ],
+   "libro": {
+    "back": 30.0,
+    "lay": 48.0,
+    "back_size": 7.31,
+    "lay_size": 4.73,
+    "status": "OPEN"
+   },
+   "eta_rispetto_decisione_ms": 925
+  },
+  "scan_dopo": {
+   "rx": "09:38:44.904Z",
+   "min": 77,
+   "sc": [
+    2,
+    4
+   ],
+   "libro": {
+    "back": 30.0,
+    "lay": 48.0,
+    "back_size": 7.31,
+    "lay_size": 4.73,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 716
+  },
+  "verifica_prima": {
+   "rif": 48.0,
+   "liq": 4.73,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "verifica_dopo": {
+   "rif": 48.0,
+   "liq": 4.73,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 5,
+   "rx": "09:38:49.015Z",
+   "libro": {
+    "back": 30.0,
+    "lay": 48.0,
+    "back_size": 7.31,
+    "lay_size": 4.73,
+    "status": "OPEN"
+   },
+   "fok_avrebbe_abbinato": true
+  },
+  "mercato_operabile_alla_decisione": [
+   true,
+   "OPEN"
+  ],
+  "mercato_operabile_dopo_bet_delay": [
+   true,
+   "OPEN"
+  ],
+  "push_n": 5,
+  "push_canale": [
+   {
+    "rx": "09:38:44.276Z",
+    "status": "pending",
+    "size_matched": null,
+    "avg": null,
+    "seq": 85
+   },
+   {
+    "rx": "09:38:44.601Z",
+    "status": "open",
+    "size_matched": 1.0,
+    "avg": 48.0,
+    "seq": 87
+   },
+   {
+    "rx": "09:39:34.070Z",
+    "status": "open",
+    "size_matched": 1.0,
+    "avg": 48.0,
+    "seq": 92
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "safe",
+  "trade_id": 342,
+  "event": "36090940 Iwata – Vanraure Hachinohe",
+  "strategia": "esatto",
+  "mercato": "1.262838362",
+  "selezione": "9063254 Altro risultato Casa",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 50.0,
+  "size": 2.0,
+  "size_matched": 2.0,
+  "avg_price_matched": 50.0,
+  "minuto": 62,
+  "punteggio": "1-1",
+  "fill_note": "paper_fill:follow_assente",
+  "percorso": "paper",
+  "attivita": [
+   [
+    "2026-09-26T09:23:38.986893+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T09:33:00.930669+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:33:21.841047+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:34:33.958192+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:35:08.505435+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:35:39.733327+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:36:37.496388+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:37:29.478348+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:39:05.994878+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:39:31.199952+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:40:34.531793+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:41:37.760532+00:00",
+    "exit_wait",
+    "minuto_80_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:42:03.15344+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:42:50.876613+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:43:57.829162+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:44:20.440621+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:45:45.88909+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:46:14.341701+00:00",
+    "exit_wait",
+    "minuto_85_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:46:38.717317+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:47:27.081654+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:48:38.602251+00:00",
+    "exit_wait",
+    "minuto_88_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:48:42.74877+00:00",
+    "exit_wait",
+    "minuto_88_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:49:25.344347+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:50:08.593474+00:00",
+    "exit_wait",
+    "minuto_89_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:50:26.415169+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:52:07.624706+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:52:15.270942+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:52:29.469748+00:00",
+    "exit_hold",
+    "in_attesa_di_approvazione"
+   ],
+   [
+    "2026-09-26T09:53:05.919969+00:00",
+    "exit_wait",
+    "minuto_92_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:54:02.321552+00:00",
+    "exit_hold",
+    "minuto_93_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:54:09.493804+00:00",
+    "exit_wait",
+    "minuto_93_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:55:11.435886+00:00",
+    "exit_wait",
+    "minuto_93_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:55:24.93454+00:00",
+    "exit_wait",
+    "minuto_93_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:56:28.128163+00:00",
+    "exit_wait",
+    "minuto_95_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:56:34.894489+00:00",
+    "feed_blind",
+    null
+   ],
+   [
+    "2026-09-26T09:56:48.286824+00:00",
+    "settle",
+    null
+   ],
+   [
+    "2026-09-26T09:56:48.384894+00:00",
+    "settle_position",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": "09:23:28.363Z",
+   "t1_feed": "09:23:29.326Z",
+   "t2_letto": "09:23:35.128Z",
+   "t3_deciso": "09:23:38.338Z",
+   "riga_placed_at": "2026-09-26T09:23:38.407371+00:00",
+   "t_fill": "09:23:38.740Z",
+   "push_canale_open": "09:23:38.909Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": 5802.1,
+   "prezzo_to_decisione_ms": 9975.5,
+   "decisione_to_risposta_ms": 383.6
+  },
+  "scan_prima": {
+   "rx": "09:23:36.045Z",
+   "odds_pt": "09:23:35.353Z",
+   "odds_ts": "09:23:35.455Z",
+   "min": 62,
+   "sc": [
+    1,
+    1
+   ],
+   "libro": {
+    "back": 40.0,
+    "lay": 50.0,
+    "back_size": 9.89,
+    "lay_size": 18.06,
+    "status": "OPEN"
+   },
+   "eta_rispetto_decisione_ms": 2294
+  },
+  "scan_dopo": {
+   "rx": "09:23:38.650Z",
+   "min": 63,
+   "sc": [
+    1,
+    1
+   ],
+   "libro": {
+    "back": 40.0,
+    "lay": 50.0,
+    "back_size": 9.89,
+    "lay_size": 18.06,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 312
+  },
+  "verifica_prima": {
+   "rif": 50.0,
+   "liq": 18.06,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "verifica_dopo": {
+   "rif": 50.0,
+   "liq": 18.06,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 5,
+   "rx": "09:23:43.469Z",
+   "libro": {
+    "back": 40.0,
+    "lay": 50.0,
+    "back_size": 9.89,
+    "lay_size": 18.06,
+    "status": "OPEN"
+   },
+   "fok_avrebbe_abbinato": true
+  },
+  "mercato_operabile_alla_decisione": [
+   true,
+   "OPEN"
+  ],
+  "mercato_operabile_dopo_bet_delay": [
+   true,
+   "OPEN"
+  ],
+  "push_n": 511,
+  "push_canale": [
+   {
+    "rx": "09:23:38.552Z",
+    "status": "pending",
+    "size_matched": null,
+    "avg": null,
+    "seq": 161
+   },
+   {
+    "rx": "09:23:38.909Z",
+    "status": "open",
+    "size_matched": 2.0,
+    "avg": 50.0,
+    "seq": 162
+   },
+   {
+    "rx": "09:23:48.390Z",
+    "status": "open",
+    "size_matched": 2.0,
+    "avg": 50.0,
+    "seq": 165
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "safe",
+  "trade_id": 343,
+  "event": "36115980 FC Ryukyu – Ehime",
+  "strategia": "esatto",
+  "mercato": "1.262913769",
+  "selezione": "9063255 Altro risultato Ospite",
+  "side": "lay",
+  "mode": "paper",
+  "status": "won",
+  "origin": "auto",
+  "prezzo_riga": 55.0,
+  "size": 2.0,
+  "size_matched": 2.0,
+  "avg_price_matched": 55.0,
+  "minuto": 63,
+  "punteggio": "0-1",
+  "fill_note": "paper_fill:follow_assente",
+  "percorso": "paper",
+  "attivita": [
+   [
+    "2026-09-26T09:25:05.372735+00:00",
+    "place",
+    null
+   ],
+   [
+    "2026-09-26T09:32:47.1613+00:00",
+    "exit_hold",
+    "minuto_72_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:33:27.92294+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:33:36.156447+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:33:48.38443+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:33:55.765361+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:33:59.990881+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:34:16.400332+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:34:20.321548+00:00",
+    "exit_hold",
+    "minuto_73_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:34:22.932712+00:00",
+    "exit_hold",
+    "minuto_74_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:35:04.991143+00:00",
+    "exit_hold",
+    "minuto_75_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:36:48.016163+00:00",
+    "exit_hold",
+    "minuto_76_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:37:04.851178+00:00",
+    "exit_hold",
+    "minuto_77_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:38:54.29243+00:00",
+    "exit_hold",
+    "minuto_78_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:39:34.211694+00:00",
+    "exit_hold",
+    "minuto_79_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:40:03.896331+00:00",
+    "exit_wait",
+    "minuto_80_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:40:34.947756+00:00",
+    "exit_hold",
+    "minuto_80_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:41:30.02807+00:00",
+    "exit_hold",
+    "minuto_81_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:41:38.145804+00:00",
+    "exit_hold",
+    "minuto_80_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:41:42.121043+00:00",
+    "exit_hold",
+    "minuto_81_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:41:48.349479+00:00",
+    "exit_hold",
+    "minuto_80_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:41:53.683863+00:00",
+    "exit_hold",
+    "minuto_81_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:42:08.570331+00:00",
+    "exit_hold",
+    "minuto_82_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:45:29.816305+00:00",
+    "exit_hold",
+    "minuto_85_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:46:19.940214+00:00",
+    "exit_hold",
+    "minuto_86_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:47:03.260137+00:00",
+    "exit_hold",
+    "minuto_87_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:47:57.055318+00:00",
+    "exit_wait",
+    "minuto_87_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:48:09.94187+00:00",
+    "exit_hold",
+    "minuto_88_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:49:12.554461+00:00",
+    "exit_hold",
+    "minuto_89_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:49:53.141449+00:00",
+    "exit_wait",
+    "minuto_89_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:50:52.654002+00:00",
+    "exit_hold",
+    "minuto_90_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:51:21.3262+00:00",
+    "exit_wait",
+    "minuto_90_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:52:29.77321+00:00",
+    "exit_wait",
+    "minuto_91_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:53:28.827367+00:00",
+    "exit_wait",
+    "minuto_93_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:54:09.74388+00:00",
+    "exit_wait",
+    "minuto_94_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:55:12.029376+00:00",
+    "exit_wait",
+    "minuto_94_lato_bancato_senza_gol"
+   ],
+   [
+    "2026-09-26T09:56:18.693393+00:00",
+    "settle",
+    null
+   ],
+   [
+    "2026-09-26T09:56:18.795342+00:00",
+    "settle_position",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": "09:25:02.746Z",
+   "t1_feed": "09:25:02.942Z",
+   "t2_letto": "09:25:03.763Z",
+   "t3_deciso": "09:25:04.906Z",
+   "riga_placed_at": "2026-09-26T09:25:04.981941+00:00",
+   "t_fill": "09:25:05.231Z",
+   "push_canale_open": "09:25:05.310Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": 820.9,
+   "prezzo_to_decisione_ms": 2160.9,
+   "decisione_to_risposta_ms": 324.2
+  },
+  "scan_prima": {
+   "rx": "09:25:04.370Z",
+   "odds_pt": "09:25:02.376Z",
+   "odds_ts": "09:25:02.746Z",
+   "min": 63,
+   "sc": [
+    0,
+    1
+   ],
+   "libro": {
+    "back": 42.0,
+    "lay": 55.0,
+    "back_size": 2.15,
+    "lay_size": 25.37,
+    "status": "OPEN"
+   },
+   "eta_rispetto_decisione_ms": 537
+  },
+  "scan_dopo": {
+   "rx": "09:25:05.626Z",
+   "min": 63,
+   "sc": [
+    0,
+    1
+   ],
+   "libro": {
+    "back": 42.0,
+    "lay": 55.0,
+    "back_size": 2.15,
+    "lay_size": 25.37,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 719
+  },
+  "verifica_prima": {
+   "rif": 55.0,
+   "liq": 25.37,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "verifica_dopo": {
+   "rif": 55.0,
+   "liq": 25.37,
+   "delta_tick": 0,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 5,
+   "rx": "09:25:10.055Z",
+   "libro": {
+    "back": 42.0,
+    "lay": 55.0,
+    "back_size": 2.15,
+    "lay_size": 25.37,
+    "status": "OPEN"
+   },
+   "fok_avrebbe_abbinato": true
+  },
+  "mercato_operabile_alla_decisione": [
+   true,
+   "OPEN"
+  ],
+  "mercato_operabile_dopo_bet_delay": [
+   true,
+   "OPEN"
+  ],
+  "push_n": 474,
+  "push_canale": [
+   {
+    "rx": "09:25:05.038Z",
+    "status": "pending",
+    "size_matched": null,
+    "avg": null,
+    "seq": 208
+   },
+   {
+    "rx": "09:25:05.310Z",
+    "status": "open",
+    "size_matched": 2.0,
+    "avg": 55.0,
+    "seq": 209
+   },
+   {
+    "rx": "09:25:10.135Z",
+    "status": "open",
+    "size_matched": 2.0,
+    "avg": 55.0,
+    "seq": 214
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "safe",
+  "trade_id": 344,
+  "event": "36119297 Tyra Caterina Grant – Anhelina Kalinina",
+  "strategia": "tennis",
+  "mercato": "1.262937755",
+  "selezione": "8907168 Anhelina Kalinina",
+  "side": "back",
+  "mode": "paper",
+  "status": "open",
+  "origin": "auto",
+  "prezzo_riga": 1.02,
+  "size": 3.0,
+  "size_matched": 3.0,
+  "avg_price_matched": 1.02,
+  "minuto": null,
+  "punteggio": "set 0-1 · game 0-2",
+  "fill_note": "paper_fill:follow_assente",
+  "percorso": "paper",
+  "attivita": [
+   [
+    "2026-09-26T10:04:02.100598+00:00",
+    "place",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": "10:03:59.854Z",
+   "t1_feed": "10:04:00.467Z",
+   "t2_letto": "10:04:00.708Z",
+   "t3_deciso": "10:04:01.552Z",
+   "riga_placed_at": "2026-09-26T10:04:01.665946+00:00",
+   "t_fill": "10:04:01.948Z",
+   "push_canale_open": "10:04:02.042Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": 241.4,
+   "prezzo_to_decisione_ms": 1698.8,
+   "decisione_to_risposta_ms": 395.8
+  },
+  "scan_prima": null,
+  "scan_dopo": {
+   "rx": "10:14:42.023Z",
+   "min": null,
+   "sc": [
+    null,
+    null
+   ],
+   "libro": {
+    "back": 1.03,
+    "lay": 1.09,
+    "back_size": 26.79,
+    "lay_size": 343.08,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 640470
+  },
+  "verifica_prima": {
+   "esito": "libro_assente"
+  },
+  "verifica_dopo": {
+   "rif": 1.03,
+   "liq": 26.79,
+   "delta_tick": -1,
+   "entro_1_tick": true,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 0,
+   "esito": "libro_assente"
+  },
+  "mercato_operabile_alla_decisione": null,
+  "mercato_operabile_dopo_bet_delay": null,
+  "push_n": 7,
+  "push_canale": [
+   {
+    "rx": "10:04:01.709Z",
+    "status": "pending",
+    "size_matched": null,
+    "avg": null,
+    "seq": 1795
+   },
+   {
+    "rx": "10:04:02.042Z",
+    "status": "open",
+    "size_matched": 3.0,
+    "avg": 1.02,
+    "seq": 1796
+   },
+   {
+    "rx": "10:04:06.391Z",
+    "status": "open",
+    "size_matched": 3.0,
+    "avg": 1.02,
+    "seq": 1798
+   }
+  ],
+  "push_uguale_db": true
+ },
+ {
+  "bot": "safe",
+  "trade_id": 345,
+  "event": "36117297 A Mert – Tikhonova",
+  "strategia": "tennis",
+  "mercato": "1.262929636",
+  "selezione": "12337425 Tikhonova",
+  "side": "back",
+  "mode": "paper",
+  "status": "open",
+  "origin": "auto",
+  "prezzo_riga": 1.02,
+  "size": 3.0,
+  "size_matched": 3.0,
+  "avg_price_matched": 1.02,
+  "minuto": null,
+  "punteggio": "set 0-1 · game 0-2",
+  "fill_note": "paper_fill:follow_assente",
+  "percorso": "paper",
+  "attivita": [
+   [
+    "2026-09-26T10:07:19.803148+00:00",
+    "place",
+    null
+   ]
+  ],
+  "coda_db_righe": 0,
+  "specchio_righe": 0,
+  "t": {
+   "t0_quote_betfair": "10:07:14.169Z",
+   "t1_feed": "10:07:14.175Z",
+   "t2_letto": "10:07:18.482Z",
+   "t3_deciso": "10:07:19.410Z",
+   "riga_placed_at": "2026-09-26T10:07:19.472878+00:00",
+   "t_fill": "10:07:19.652Z",
+   "push_canale_open": "10:07:19.738Z"
+  },
+  "latenze_ms": {
+   "feed_to_bot_ms": 4306.6,
+   "prezzo_to_decisione_ms": 5241.5,
+   "decisione_to_risposta_ms": 242.0
+  },
+  "scan_prima": null,
+  "scan_dopo": {
+   "rx": "10:14:40.391Z",
+   "min": null,
+   "sc": [
+    null,
+    null
+   ],
+   "libro": {
+    "back": 1.07,
+    "lay": 1.1,
+    "back_size": 914.02,
+    "lay_size": 1061.05,
+    "status": "OPEN"
+   },
+   "dopo_decisione_ms": 440980
+  },
+  "verifica_prima": {
+   "esito": "libro_assente"
+  },
+  "verifica_dopo": {
+   "rif": 1.07,
+   "liq": 914.02,
+   "delta_tick": -5,
+   "entro_1_tick": false,
+   "status_mercato": "OPEN"
+  },
+  "fok_dopo_bet_delay": {
+   "bet_delay_s": 0,
+   "esito": "libro_assente"
+  },
+  "mercato_operabile_alla_decisione": null,
+  "mercato_operabile_dopo_bet_delay": null,
+  "push_n": 8,
+  "push_canale": [
+   {
+    "rx": "10:07:19.494Z",
+    "status": "pending",
+    "size_matched": null,
+    "avg": null,
+    "seq": 1808
+   },
+   {
+    "rx": "10:07:19.738Z",
+    "status": "open",
+    "size_matched": 3.0,
+    "avg": 1.02,
+    "seq": 1809
+   },
+   {
+    "rx": "10:07:23.086Z",
+    "status": "open",
+    "size_matched": 3.0,
+    "avg": 1.02,
+    "seq": 1811
+   }
+  ],
+  "push_uguale_db": true
+ }
+]

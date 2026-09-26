@@ -1,0 +1,79 @@
+2026-09-26T09:58:00Z runner_calcio account riga {}
+2026-09-26T09:58:00Z runner_calcio account riga {}
+2026-09-26T09:58:09Z runner_calcio now campione60s {"status": "OPEN", "event_id": "36090936"}
+2026-09-26T09:58:11Z runner_calcio board campione60s {}
+2026-09-26T09:58:14Z scanner scan_calcio campione60s {"event_id": "36115985"}
+2026-09-26T09:58:17Z scanner scan_tennis campione60s {"event_id": "36111518"}
+2026-09-26T09:58:26Z runner_calcio battito campione30s {"ts": 1790416706421, "mode": "LIVE+PAPER"}
+2026-09-26T09:58:28Z scanner scanner_stato campione30s {}
+2026-09-26T09:58:29Z runner_calcio account riga {}
+2026-09-26T09:58:49Z runner_calcio account riga {}
+2026-09-26T09:58:57Z runner_calcio battito campione30s {"ts": 1790416737572, "mode": "LIVE+PAPER"}
+2026-09-26T09:59:02Z runner_calcio account riga {}
+2026-09-26T09:59:02Z runner_calcio account riga {}
+2026-09-26T09:59:04Z runner_calcio account riga {}
+2026-09-26T09:59:04Z scanner scanner_stato campione30s {}
+2026-09-26T09:59:11Z runner_calcio ladder campione60s {"status": "SUSPENDED", "event_id": "36090936"}
+2026-09-26T09:59:12Z runner_calcio board campione60s {}
+2026-09-26T09:59:13Z runner_calcio now campione60s {"status": "OPEN", "event_id": "36090936"}
+2026-09-26T09:59:14Z scanner scan_calcio campione60s {"event_id": "36115985"}
+2026-09-26T09:59:17Z scanner scan_tennis campione60s {"event_id": "36118754"}
+2026-09-26T09:59:27Z runner_calcio battito campione30s {"ts": 1790416767942, "mode": "LIVE+PAPER"}
+2026-09-26T09:59:30Z runner_calcio account riga {}
+2026-09-26T09:59:41Z scanner scanner_stato campione30s {}
+2026-09-26T09:59:50Z runner_calcio account riga {}
+2026-09-26T09:59:58Z runner_calcio battito campione30s {"ts": 1790416798309, "mode": "LIVE+PAPER"}
+2026-09-26T10:00:04Z runner_calcio account riga {}
+2026-09-26T10:00:04Z runner_calcio account riga {}
+2026-09-26T10:00:04Z runner_calcio account riga {}
+2026-09-26T10:00:14Z scanner scan_calcio campione60s {"event_id": "36090941"}
+2026-09-26T10:00:17Z scanner scanner_stato campione30s {}
+2026-09-26T10:00:18Z scanner scan_tennis campione60s {"event_id": "36117278"}
+2026-09-26T10:00:30Z runner_calcio auto_follow riga {}
+2026-09-26T10:00:46Z runner_calcio _errore connessione "ConnectionClosedError(None, None, None)"
+2026-09-26T10:00:51Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:00:53Z scanner scanner_stato campione30s {}
+2026-09-26T10:00:56Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:01Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:06Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:11Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:15Z scanner scan_calcio campione60s {"event_id": "36090941"}
+2026-09-26T10:01:16Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:19Z scanner scan_tennis campione60s {"event_id": "36116721"}
+2026-09-26T10:01:21Z runner_calcio _errore connessione "ConnectionRefusedError(22, 'Il computer remoto ha rifiutato la connessione di rete', None, 1225, None)"
+2026-09-26T10:01:24Z runner_calcio _connesso connessione null
+2026-09-26T10:01:24Z runner_calcio hello campione30s {"mode": "LIVE"}
+2026-09-26T10:01:25Z runner_calcio account riga {}
+2026-09-26T10:01:26Z runner_calcio modo_ordini campione30s {"ts": 1790416886751}
+2026-09-26T10:01:27Z runner_calcio ladder campione60s {"status": "OPEN", "event_id": "36090941"}
+2026-09-26T10:01:27Z runner_calcio account riga {}
+2026-09-26T10:01:28Z runner_calcio battito campione30s {"ts": 1790416888713, "mode": "LIVE+PAPER"}
+2026-09-26T10:01:29Z scanner scanner_stato campione30s {}
+2026-09-26T10:01:30Z runner_calcio now campione60s {"status": "OPEN", "event_id": "36090941"}
+2026-09-26T10:01:30Z runner_calcio board campione60s {}
+2026-09-26T10:01:47Z runner_calcio account riga {}
+2026-09-26T10:02:00Z runner_calcio battito campione30s {"ts": 1790416920366, "mode": "LIVE+PAPER"}
+2026-09-26T10:02:05Z scanner scanner_stato campione30s {}
+2026-09-26T10:02:08Z runner_calcio account riga {}
+2026-09-26T10:02:15Z scanner scan_calcio campione60s {"event_id": "36111764"}
+2026-09-26T10:02:19Z scanner scan_tennis campione60s {"event_id": "36116633"}
+2026-09-26T10:02:27Z runner_calcio ladder campione60s {"status": "OPEN", "event_id": "36111764"}
+2026-09-26T10:02:28Z runner_calcio account riga {}
+2026-09-26T10:02:30Z runner_calcio battito campione30s {"ts": 1790416950777, "mode": "LIVE+PAPER"}
+2026-09-26T10:02:31Z runner_calcio board campione60s {}
+2026-09-26T10:02:33Z runner_calcio now campione60s {"status": "OPEN", "event_id": "36090941"}
+2026-09-26T10:02:42Z scanner scanner_stato campione30s {}
+2026-09-26T10:02:48Z runner_calcio account riga {}
+2026-09-26T10:03:01Z runner_calcio battito campione30s {"ts": 1790416981254, "mode": "LIVE+PAPER"}
+2026-09-26T10:03:08Z runner_calcio account riga {}
+2026-09-26T10:03:15Z scanner scan_calcio campione60s {"event_id": "36111764"}
+2026-09-26T10:03:16Z scanner scanner_stato campione30s {}
+2026-09-26T10:03:20Z scanner scan_tennis campione60s {"event_id": "36111518"}
+2026-09-26T10:03:27Z runner_calcio ladder campione60s {"status": "OPEN", "event_id": "36111764"}
+2026-09-26T10:03:28Z runner_calcio account riga {}
+--- conteggi al minuto
+2026-09-26T09:58:40Z {"runner_calcio:account": 4, "runner_calcio:battito": 6, "runner_calcio:board": 6, "runner_calcio:ladder": 87, "runner_calcio:now": 18, "scanner:scan_calcio": 283, "scanner:scan_tennis": 286, "scanner:scanner_stato": 4}
+2026-09-26T09:59:40Z {"runner_calcio:account": 5, "runner_calcio:battito": 6, "runner_calcio:board": 6, "runner_calcio:ladder": 14, "runner_calcio:now": 9, "scanner:scan_calcio": 261, "scanner:scan_tennis": 231, "scanner:scanner_stato": 5}
+2026-09-26T10:00:40Z {"runner_calcio:account": 4, "runner_calcio:auto_follow": 1, "runner_calcio:battito": 2, "runner_calcio:board": 2, "scanner:scan_calcio": 229, "scanner:scan_tennis": 270, "scanner:scanner_stato": 5}
+2026-09-26T10:01:40Z {"runner_calcio:account": 2, "runner_calcio:battito": 2, "runner_calcio:board": 1, "runner_calcio:hello": 1, "runner_calcio:ladder": 110, "runner_calcio:modo_ordini": 1, "runner_calcio:now": 1, "scanner:scan_calcio": 267, "scanner:scan_tennis": 336, "scanner:scanner_stato": 5}
+2026-09-26T10:02:40Z {"runner_calcio:account": 3, "runner_calcio:battito": 5, "runner_calcio:board": 6, "runner_calcio:ladder": 558, "runner_calcio:now": 21, "scanner:scan_calcio": 210, "scanner:scan_tennis": 271, "scanner:scanner_stato": 5}

@@ -1,0 +1,87 @@
+{
+ "params_cover": {
+  "cover_enabled": true,
+  "cover_good_price": 7.0,
+  "cover_max_goals": 2,
+  "cover_max_overshoot_pct": 30.0,
+  "cover_place_at_ticks": 2,
+  "cover_policy": "auto",
+  "cover_postgoal_delay_s": 45,
+  "cover_profit_factor": 1.2,
+  "cover_retry_min_s": 15,
+  "cover_rifiuti_max": 3,
+  "cover_rounding": "ceil",
+  "cover_wait_hazard_max": 0.06,
+  "cover_wait_max_min": 10,
+  "cover_wait_min_gain_pct": 8.0,
+  "cover_wait_p4_max": 0.16,
+  "cover_wait_step_min": 5,
+  "early_goal_cover2_delay_s": 180,
+  "early_goal_cover_delay_s": 120,
+  "early_goal_cover_pct": 50.0
+ },
+ "fattore_usato": 1.2,
+ "commissione": 0.05,
+ "righe": [
+  {
+   "id": 13723,
+   "ts": "2026-09-26T10:03:11.70277+00:00",
+   "event_id": "36111764",
+   "scritto": {
+    "x": 1.34,
+    "size": 1.34,
+    "price": 5.7,
+    "stage": 0,
+    "minute": 2,
+    "already": 0.0,
+    "x_pieno": 1.34,
+    "frazione": 1.0,
+    "liability": 5.0,
+    "overshoot_pct": 0.0,
+    "split_declassato": false
+   },
+   "x_ricalcolato": 1.343784994400896,
+   "esito": "OK"
+  },
+  {
+   "id": 13729,
+   "ts": "2026-09-26T10:04:39.243223+00:00",
+   "event_id": "36111770",
+   "scritto": {
+    "x": 2.52,
+    "size": 2.52,
+    "price": 2.88,
+    "stage": 1,
+    "minute": 4,
+    "already": 0.0,
+    "x_pieno": 5.04,
+    "frazione": 0.5,
+    "liability": 7.5,
+    "overshoot_pct": 0.0,
+    "split_declassato": false
+   },
+   "x_ricalcolato": 5.03919372900336,
+   "esito": "OK"
+  },
+  {
+   "id": 13735,
+   "ts": "2026-09-26T10:07:45.378016+00:00",
+   "event_id": "36111770",
+   "scritto": {
+    "x": 5.37,
+    "size": 5.37,
+    "price": 1.9,
+    "stage": 3,
+    "minute": 6,
+    "already": 4.4,
+    "x_pieno": 5.37,
+    "frazione": 1.0,
+    "liability": 7.5,
+    "overshoot_pct": 0.0,
+    "split_declassato": false
+   },
+   "x_ricalcolato": 5.380116959064328,
+   "esito": "OK"
+  }
+ ]
+}

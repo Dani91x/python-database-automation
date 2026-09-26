@@ -1,0 +1,94 @@
+{
+ "righe": [
+  {
+   "tabella": "omega_trades",
+   "id": 117,
+   "event_id": "36090940",
+   "side": "lay",
+   "price": 95.0,
+   "size": 1.0,
+   "status": "won",
+   "pnl": 0.95,
+   "mode": "paper",
+   "pnl_atteso_gamba_singola": 0.95,
+   "esito": "OK"
+  },
+  {
+   "tabella": "omega_trades",
+   "id": 119,
+   "event_id": "36115980",
+   "side": "lay",
+   "price": 80.0,
+   "size": 1.0,
+   "status": "won",
+   "pnl": 0.95,
+   "mode": "paper",
+   "pnl_atteso_gamba_singola": 0.95,
+   "esito": "OK"
+  },
+  {
+   "tabella": "omega_trades",
+   "id": 120,
+   "event_id": "36115971",
+   "side": "lay",
+   "price": 48.0,
+   "size": 1.0,
+   "status": "won",
+   "pnl": 0.95,
+   "mode": "paper",
+   "pnl_atteso_gamba_singola": 0.95,
+   "esito": "OK"
+  },
+  {
+   "tabella": "safe_strategy_trades",
+   "id": 342,
+   "event_id": "36090940",
+   "side": "lay",
+   "price": 50.0,
+   "size": 2.0,
+   "status": "won",
+   "pnl": 1.9,
+   "mode": "paper",
+   "pnl_atteso_gamba_singola": 1.9,
+   "esito": "OK"
+  },
+  {
+   "tabella": "safe_strategy_trades",
+   "id": 343,
+   "event_id": "36115980",
+   "side": "lay",
+   "price": 55.0,
+   "size": 2.0,
+   "status": "won",
+   "pnl": 1.9,
+   "mode": "paper",
+   "pnl_atteso_gamba_singola": 1.9,
+   "esito": "OK"
+  }
+ ],
+ "totali": {
+  "omega_trades": 2.85,
+  "safe_strategy_trades": 3.8,
+  "mike_trades": 0.0,
+  "tennis_per_bot": {
+   "tennis_flb": -0.04
+  }
+ },
+ "tennis": [
+  {
+   "id": 4001,
+   "source": "tennis_flb",
+   "side": "lay",
+   "price": 1.02,
+   "size": 2.0,
+   "size_matched": 2.0,
+   "average_price_matched": 1.02,
+   "status": "EXECUTION_COMPLETE",
+   "pnl": -0.04,
+   "commission": 0.0,
+   "mode": "paper",
+   "settled_at": "2026-09-26T09:25:02.825636+00:00"
+  }
+ ],
+ "n_KO": 0
+}

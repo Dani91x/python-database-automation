@@ -1,0 +1,45 @@
+{
+ "finestra_min": 25.0,
+ "fine_utc": "2026-09-26T09:39:09+00:00",
+ "messaggi_canale": 24156,
+ "letture_db": 6720,
+ "righe_db_distinte": 5298,
+ "eventi_canale": 40,
+ "stessa_riga": {
+  "coppie": 5263,
+  "identiche": 5263,
+  "diverse": 0,
+  "esempi": []
+ },
+ "righe_db_non_viste_sul_canale": {
+  "n": 0,
+  "su": 5149,
+  "esempi": []
+ },
+ "eta_canale_s": {
+  "p50": 0.073,
+  "p95": 0.176,
+  "max": 1.13
+ },
+ "updated_meno_odds_pt_s": {
+  "min": 0.033,
+  "p50": 1.442,
+  "p95": 10.085,
+  "max": 42.327
+ },
+ "updated_meno_odds_ts_s": {
+  "min": 0.003,
+  "p50": 0.862,
+  "p95": 18.292,
+  "max": 748.829
+ },
+ "odds_ts_dopo_updated_at": 0,
+ "libro": {
+  "righe": 23820,
+  "prezzi_fuori_tick": 0,
+  "back_ge_lay": 0,
+  "size_nulle": 0,
+  "arbitraggio_impossibile": 0,
+  "esempi": []
+ }
+}

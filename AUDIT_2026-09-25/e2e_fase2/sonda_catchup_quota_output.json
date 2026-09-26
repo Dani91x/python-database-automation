@@ -1,0 +1,200 @@
+{
+  "generato_at": "2026-09-26T09:10:23.304047+00:00",
+  "campioni": [
+    {
+      "league_id": 78,
+      "season_year": 2026,
+      "ft_totali_rpc": 36,
+      "ft_totali_diretti": 36,
+      "esito_globale": "PASS",
+      "somma_da_chiamare_rpc": 152,
+      "somma_da_chiamare_ricalcolo": 152,
+      "dettaglio": [
+        {
+          "tabella_stato": [
+            "match_events",
+            "da_chiamare"
+          ],
+          "rpc": 36,
+          "ricalcolo": 36,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_lineups",
+            "da_chiamare"
+          ],
+          "rpc": 36,
+          "ricalcolo": 36,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_odds",
+            "da_chiamare"
+          ],
+          "rpc": 8,
+          "ricalcolo": 8,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_odds",
+            "non_disponibile"
+          ],
+          "rpc": 28,
+          "ricalcolo": 28,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_player_stats",
+            "da_chiamare"
+          ],
+          "rpc": 36,
+          "ricalcolo": 36,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_team_stats",
+            "da_chiamare"
+          ],
+          "rpc": 36,
+          "ricalcolo": 36,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "league_id": 39,
+      "season_year": 2026,
+      "ft_totali_rpc": 50,
+      "ft_totali_diretti": 50,
+      "esito_globale": "PASS",
+      "somma_da_chiamare_rpc": 0,
+      "somma_da_chiamare_ricalcolo": 0,
+      "dettaglio": [
+        {
+          "tabella_stato": [
+            "match_odds",
+            "non_disponibile"
+          ],
+          "rpc": 40,
+          "ricalcolo": 40,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "league_id": 10,
+      "season_year": 2026,
+      "ft_totali_rpc": 495,
+      "ft_totali_diretti": 495,
+      "esito_globale": "PASS",
+      "somma_da_chiamare_rpc": 1092,
+      "somma_da_chiamare_ricalcolo": 1092,
+      "dettaglio": [
+        {
+          "tabella_stato": [
+            "match_events",
+            "da_chiamare"
+          ],
+          "rpc": 80,
+          "ricalcolo": 80,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_events",
+            "in_attesa"
+          ],
+          "rpc": 5,
+          "ricalcolo": 5,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_lineups",
+            "da_chiamare"
+          ],
+          "rpc": 276,
+          "ricalcolo": 276,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_lineups",
+            "in_attesa"
+          ],
+          "rpc": 7,
+          "ricalcolo": 7,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_odds",
+            "da_chiamare"
+          ],
+          "rpc": 4,
+          "ricalcolo": 4,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_odds",
+            "in_attesa"
+          ],
+          "rpc": 5,
+          "ricalcolo": 5,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_odds",
+            "non_disponibile"
+          ],
+          "rpc": 197,
+          "ricalcolo": 197,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_player_stats",
+            "da_chiamare"
+          ],
+          "rpc": 377,
+          "ricalcolo": 377,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_player_stats",
+            "in_attesa"
+          ],
+          "rpc": 8,
+          "ricalcolo": 8,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_team_stats",
+            "da_chiamare"
+          ],
+          "rpc": 355,
+          "ricalcolo": 355,
+          "ok": true
+        },
+        {
+          "tabella_stato": [
+            "match_team_stats",
+            "in_attesa"
+          ],
+          "rpc": 7,
+          "ricalcolo": 7,
+          "ok": true
+        }
+      ]
+    }
+  ]
+}
