@@ -3459,3 +3459,9 @@ Match Replay in GBP; il `finally` del riavvio ordinato chiude i follow manuali. 
 **PUNTO DI RIPRESA**: app accesa, bot in paper, tutto pushato (master `cf22d37`); domani: applicare le migrazioni, verificare il catchup
 del mattino (log «ATTESA… ATTESA FINITA»), ricontrollare il ritmo di mike_activity, rifare 7.9.3.B per lega (O-4), decidere gli aperti.
 **(ora PC 19:37) correzioni al punto di ripresa**: R-F2-21 RISOLTO da cf22d37 (firma senza numeri + 5 min minimo per evento; Mike ricaricato 17:35:05Z, alert 526 = stop volontario): dal vivo 1 riga `loss_exit_deciso` in 2 min (prima 75 in 5 min) — verificato da me a DB. R11 (ref ordini che ripartivano a ogni avvio) NON è più aperto: corretto in b0fe3b1 (ms d'avvio × 1000). Master e223784 + questa riga. Nessun altro riavvio stasera; app in paper fino al rientro dell'utente; delegati di sessione B chiusi (worktree con junction da rimuovere con `cmd /c rmdir`, mai `--force`).
+**h19:50 — MIGRAZIONI DEL 26/09 APPLICATE dall'utente** (storico_esito_a_zero, omega_state_per_modalita,
+live_positions_senza_mercati_regolati, analytics_rpc_veloci, betfair_live_orders_source_bot, analytics_signals_kickoff_pulizia;
+la PROPOSTA posizione fantasma 14265 resta da decidere). Utente: «domani controlleremo il tutto». Sanatorie SQL nei referti
+ancora da eseguire (da chiedere domani). PUNTO DI RIPRESA DOMANI: (1) verificare a DB l'effetto delle migrazioni (source = nome bot
+sui nuovi ordini, Safe per modalità, Analytics < 8 s); (2) log dell'action catchup del mattino («ATTESA… ATTESA FINITA», chiamate > 0);
+(3) ritmo di mike_activity dopo cf22d37; (4) sanatorie SQL; (5) decisioni sugli aperti del consolidato h19:40; (6) 7.9.3.B per lega.
