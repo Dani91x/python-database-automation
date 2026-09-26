@@ -3264,3 +3264,23 @@ TETTO del .env, non l'effettivo del DB (= M7 di B); più 100 alert non riconosci
 F-10 Market Watch «LIVE · 5-7 6-2» su partita finita (`MarketWatch.tsx:419` usa solo `inplay`); `set_summary` omette il 3° set.
 F-11 Tennis Terminal scrive `tennis_follow_event` all'apertura (`TennisTerminal.tsx:112-117`, KO §9-bis confermato).
 Seconda passata in corso (canali accesi nel banco, ricalcoli mancanti, falsificazione del banco).
+**h12:20 — FRENO (Z13.4) tirato 11:42:00 e rilasciato 11:56:28 (3 clic: dopo il 2° ancora tirato).** Omega OK: 3 aperture rifiutate `skip kill_switch db_kill_switch_attivo percorso=paper` (reperto: i rifiuti consumano max_attempts 3 → gamba non riprovata dopo il rilascio). Scalper: force-flat in 2 s ma (a) «posizione NON flat dopo 30s»: residuo sniper sotto il minimo resta orfano in paper; (b) KO candidato R3: a freno tirato l'auto-mode ARMA 2 sessioni nuove (auto_armata 36090936/36090937, requested) e motivo_blocco null. Safe/Mike/tennis: nessun tentativo di apertura nei 14 min → NON CERTIFICATI; secondo ciclo del freno autorizzato dopo le 13:30Z (Safe con pre_ko, tennis con segnali). Z0 pushato `075d91d`.
+**h12:50 — FASE 3 PAGINE SESSIONE B consegnata**: 311 campi, 196 OK, 29 KO, 86 NC (referto `AUDIT_2026-09-25/E2E_FASE3_PAGINE_SESSIONE_B_2026-09-26.md`, evidenze `e2e_fase3_sessB/`, banco `frontend/src/certification/sessB/`). KO: Safe somma paper+live sotto PAPER (safeBot.ts:1100, SafeStrategy.tsx:410; Omega latente); Analytics Performance/Decisioni in timeout (get_analytics_filters 37,8 s vs 8 s); Studio Ritardi e Direzione in timeout sulle leghe grandi (667 21,8 s; get_league_seasons); Live P&L posizione live del 10/07 aperta su mercato regolato + tennis paper col filtro live; Mike senza approvazione uscite da /mike; Direzione quota bookmaker spacciata per valore; ML previsione vs classe opposte; Totali «se chiudo ora» = P&L bloccato; TacticAI actual mai scritto; conteggi Omega/Mike imprecisi; rese null→0, NaN, date UTC grezze, partite del 27 nella lista del 26. Dato sporco analytics_signals (25 partite con kickoff errato). OK confermati: lista partite, Frequenze, Ritardi 358 + regola HT 667 (25.409), Poisson, TacticAI, Direzione, KPI, storici, fogli parametri.
+**h13:20 — FASE 3 PAGINE (admin-26) SECONDA PASSATA chiusa e verificata da me** (stesso referto, §7): Control Room 47 PASS / 9 FAIL /
+52 NC; Segui Live 17 (2 provvisori) / 1 / 45; Market Watch 7/1/1; Tennis Terminal 7/1/4. Canali VERI accesi nel banco (ws con
+guardia che scarta ogni invio, `wsGuardia.ts`): Control Room vs lettore puro 19/19 PASS (runner, età spinta dei 7 bot, fonti, saldo,
+modo ordini); ricalcoli PASS: competizioni 31/10 e 4/2, quote pre-match 4/4, minuto+punteggio 17/17, Mike P(4 gol) 17,1 %/16,3 %
+= formula `feed.py:159-172`, cash out, Tennis ladder 165/168 celle e stats = `tennis_live_now.score`, Segui Live ladder 205/206 +
+WOM/EV (provvisorio: partita finita). Falsificazione del banco RIESEGUITA DA ME: 5 rossi su 5 (saldo, stop perdita, stake minimo,
+obiettivo, P&L trade 116). Scritture DB passate: 0 (bloccata solo `tennis_follow_event`). NUOVI FAIL confermati da me sul codice:
+F-12 scheda d'uscita Safe «Chiudere adesso» LORDO (`useControlRoom.ts:2516` `partialLockedPnl` senza commissione) accanto a «Tenere»
+netto e a `locked_at_decision` netto del servizio; F-13 `SchedaMike.tsx:120,124` title «4+ gol» ma il numero è P(esattamente 4)
+(P(O3.5)−P(O4.5)): il trader sottostima il rischio (P(≥4) ≈ 35-41 %). Formule per la decisione dell'utente scritte in §7.4 del referto
+(paper+live sommati: `betfair_live_pnl_journal.sql:258-280` e `tennis_live_positions_all_rpc.sql:19,27`; F-2: `composizioneObiettivo.ts:342-361`
+vs `posizioni_chiuse_giornata_2026-09-24.sql:9,26`).
+**REPERTO R-CRASH-1 (grave, per l'utente)**: alle 10:00:46Z il RUNNER CALCIO è CRASHATO (`live_alerts` 497: «RUNNER CRASHATO: exit
+code 1, uptime 3858s. Riavvio n. 1 tra 10s», ripresa 10:01:22Z, pid 20552→12812, watchdog ok); CAUSA NON RECUPERABILE oggi: nessun
+log su file (`runner.py:2325` solo basicConfig su console, la console dell'exe non finisce in nessun file = K2 di B). Precedenti crash
+in `live_alerts`: 18/09 (×4, uptime 30-85 s), 24/09 (uptime 77 s). Al riavvio l'alert F-9 «LIVE… SOLDI VERI» si ripete (id 498).
+Prerequisito per il prossimo riavvio: console rediretta su file (comando PowerShell nel messaggio all'utente) o, con permesso, main.js
+che scrive i log dei figli su file.
