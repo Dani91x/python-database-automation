@@ -67,7 +67,7 @@ import {
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
     liveStrategies, modalitaOrdineAMano, fetchRunnerState, executionRoute, runnerPhase, type RunnerState,
-    cashOutEvento, riprendiEventoSafe,
+    cashOutEvento, riprendiEventoSafe, aggregatiDellaModalita, modalitaConAttivita,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
@@ -166,15 +166,19 @@ export default function SafeStrategy() {
     const [tennisTab, setTennisTab] = useState<string>('segnali');
     // filtro sport dello storico (null = tutti)
     const [historySport, setHistorySport] = useState<SafeSportFilter>(null);
+    // FIX-A 26/09 (U0507): lo Storico si apre nella modalità del BOT (come Omega
+    // e Mike) e si può passare all'altra; mai «tutte» (= paper + live sommati).
+    const [historyModeScelto, setHistoryModeScelto] = useState<SafeMode | null>(null);
+    const historyMode: SafeMode = historyModeScelto ?? bot.mode;
     // attività: mostra solo le righe CRITICHE ("da guardare")
     const [onlyCriticalActivity, setOnlyCriticalActivity] = useState(false);
     const fetchHistoryDaily = useCallback(
-        (from: string, to: string) => fetchSafeDaily(from, to, historySport),
-        [historySport],
+        (from: string, to: string) => fetchSafeDaily(from, to, historySport, historyMode),
+        [historySport, historyMode],
     );
     const fetchHistoryDay = useCallback(
-        (day: string) => fetchSafeDayTrades(day, historySport),
-        [historySport],
+        (day: string) => fetchSafeDayTrades(day, historySport, historyMode),
+        [historySport, historyMode],
     );
     // C-01: UNA sola giornata operativa, quella dichiarata dal DB (giorno di
     // PIAZZAMENTO, Europe/Rome). Senza la migrazione v2 si ricade su romeDay().
@@ -367,7 +371,23 @@ export default function SafeStrategy() {
     const oppCountTennis = useMemo(() => countOpps(tennisOppRows), [tennisOppRows]);
 
     const stats = bot.control?.stats ?? {};
-    const agg = bot.aggregates;
+    // FIX-A 26/09 (E2E fase 3, U0481/U0485/U0507): gli aggregati della
+    // modalità del BOT, mai quelli di tutte le modalità. Prima «P&L totale ·
+    // PAPER» diceva −45,25 € = −47,83 paper + 2,58 live. L'altra modalità, se
+    // ha qualcosa, sta in una riga a parte con la SUA etichetta.
+    const agg = useMemo(
+        () => aggregatiDellaModalita(
+            { aggregates: bot.aggregates, aggregates_by_mode: bot.aggregatesByMode }, bot.mode),
+        [bot.aggregates, bot.aggregatesByMode, bot.mode],
+    );
+    const altraModalita: SafeMode = bot.mode === 'live' ? 'paper' : 'live';
+    const aggAltra = useMemo(
+        () => aggregatiDellaModalita(
+            { aggregates: bot.aggregates, aggregates_by_mode: bot.aggregatesByMode },
+            altraModalita, bot.mode),
+        [bot.aggregates, bot.aggregatesByMode, altraModalita, bot.mode],
+    );
+    const altraAttiva = modalitaConAttivita(aggAltra);
     // M-15 / L-04: "aperti" = POSIZIONI VIVE (le chiusure non contano, le
     // `hedged` complete nemmeno, quelle coperte in parte sì). Fonte unica:
     // `aggregates.open_count`; il calcolo locale è solo il fallback.
@@ -996,7 +1016,9 @@ export default function SafeStrategy() {
         const cicli = groupTradesIntoCicli<SafeTrade>(shown);
         // «Se chiudo ora»: stima sui prezzi del feed, calcolata con la STESSA
         // funzione della colonna di riga (mai due formule per lo stesso numero)
-        const aperto = safeCloseNowTotal(shown, payloadByEvent, commissionPct);
+        // FIX-A 26/09: SOLO le posizioni della modalità dichiarata in etichetta
+        // (le altre restano in tabella, fuori dai totali, come in EventPnlTable)
+        const aperto = safeCloseNowTotal(shown.filter((t) => t.mode === mode), payloadByEvent, commissionPct);
         const emptyText = showAllTrades
             ? "nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot"
             : "nessuna operazione oggi — piazza da un segnale o da un'opportunità, oppure avvia il bot (le giornate passate sono nello Storico)";
@@ -1410,6 +1432,34 @@ export default function SafeStrategy() {
                         />
                 </KpiRow>
 
+                {/* FIX-A 26/09 — l'ALTRA modalità, a parte e con la SUA etichetta:
+                    Safe ha la modalità per strategia (tennis live + calcio paper),
+                    quindi le due contabilità possono vivere insieme. Mai sommate. */}
+                {altraAttiva && aggAltra && (
+                    <div
+                        className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300 tabular-nums"
+                        data-testid="safe-altra-modalita"
+                        data-mode={altraModalita}
+                    >
+                        <b className={altraModalita === 'live' ? 'text-red-300' : 'text-sky-300'}>
+                            {altraModalita.toUpperCase()}
+                        </b>
+                        {' (contabilità separata, NON inclusa nei numeri '}{modeTag}{' qui sopra): '}
+                        <span data-testid="safe-altra-pnl-oggi">
+                            {T.pnlToday} {fmtMoney(numOrNull(aggAltra.realized_today), { signed: true })}
+                        </span>
+                        {' · '}
+                        <span data-testid="safe-altra-pnl-totale">
+                            {T.pnlTotal} {fmtMoney(numOrNull(aggAltra.realized_total), { signed: true })}
+                        </span>
+                        {' · '}
+                        <span data-testid="safe-altra-liability">
+                            {T.openLiability} {fmtMoney(numOrNull(aggAltra.open_liability))}
+                            {aggAltra.open_count != null && ` su ${aggAltra.open_count} ${aggAltra.open_count === 1 ? 'posizione' : 'posizioni'}`}
+                        </span>
+                    </div>
+                )}
+
                 {/* --------------------------------------------- sport + sezioni */}
                 <Tabs value={topTab} onValueChange={setTopTab} className="w-full">
                     <TabsList className="sticky z-30" style={{ top: navH }}>
@@ -1563,12 +1613,28 @@ export default function SafeStrategy() {
                                     </button>
                                 );
                             })}
+                            <span className="ml-3 text-muted-foreground uppercase tracking-wide">Modalità</span>
+                            {(['paper', 'live'] as const).map((m) => {
+                                const active = historyMode === m;
+                                return (
+                                    <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => setHistoryModeScelto(m)}
+                                        aria-pressed={active}
+                                        data-testid={`history-mode-${m}`}
+                                        className={`px-2 py-0.5 rounded-full border ${active ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
+                                    >
+                                        {m.toUpperCase()}
+                                    </button>
+                                );
+                            })}
                         </div>
                         <TradingHistory
                             variant="safe"
                             fetchDaily={fetchHistoryDaily}
                             fetchDayTrades={fetchHistoryDay}
-                            filterKey={historySport ?? 'all'}
+                            filterKey={`${historySport ?? 'all'}:${historyMode}`}
                             onGoLive={(t) => {
                                 const sp = t.sport === 'tennis' ? 'tennis' : 'calcio';
                                 setTopTab(sp);

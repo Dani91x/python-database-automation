@@ -1006,6 +1006,26 @@ export function lockedPnlTotal(events: readonly MikeEvent[]): MikeLockedTotal {
 }
 
 /**
+ * FIX-A (26/09) — «Se chiudo ora» della giornata = somma di `live.cashout.net`
+ * (il netto di chiusura a mercato che il SERVIZIO scrive e che la card mostra
+ * come «Se chiudo ora (netto)») delle partite con capitale ESPOSTO e non
+ * terminali. REPERTO E2E fase 3 U0537: la barra mostrava il P&L BLOCCATO
+ * («—») mentre la card diceva −0,38 €. Una partita esposta senza netto del
+ * servizio NON vale zero: resta fuori e si conta in `pending`.
+ */
+export function closeNowTotal(events: readonly MikeEvent[]): MikeLockedTotal {
+    let sum = 0; let known = 0; let pending = 0;
+    for (const e of events) {
+        if (MIKE_TERMINAL_STATES.includes(e.state)) continue;
+        if (!activeLegs(e).some((l) => l.matched > 0)) continue;
+        const v = e.live?.cashout?.net;
+        if (v == null || !Number.isFinite(Number(v))) { pending += 1; continue; }
+        sum += Number(v); known += 1;
+    }
+    return { value: known > 0 ? Math.round(sum * 100) / 100 : null, known, pending };
+}
+
+/**
  * Partite REGOLATE su cui Mike ha davvero OPERATO nella giornata operativa.
  *
  * `get_mike_state` restituisce gli eventi terminali delle ultime 24 h: senza

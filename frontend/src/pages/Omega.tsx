@@ -25,7 +25,7 @@ import MissionPanel from '@/components/omega/MissionPanel';
 import { useScanLiveFeedRows } from '@/lib/useScanLiveFeed';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { StoricoLink } from '@/components/trading/StoricoLink';
-import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
+import { MatchTradesTable, omegaCloseNowTotal } from '@/components/omega/MatchTradesTable';
 import { TotaliBar } from '@/components/trading/EventPnlTable';
 import { groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, tradesOfMode } from '@/lib/eventGroups';
 import { PageShell } from '@/components/trading/PageShell';
@@ -62,7 +62,8 @@ import {
     OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, OMEGA_DAILY_GOAL_MAX, omegaParamsPatch,
     activityMeta, activityLine, isHedging,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
-    type OmegaAggregates, type OmegaActivityRow,
+    type OmegaAggregates, type OmegaActivityRow, type OmegaState,
+    aggregatiOmegaDellaModalita, omegaModalitaConAttivita,
 } from '@/lib/omega';
 
 /** quante righe di attività della giornata chiedere all'RPC (M-22) */
@@ -90,6 +91,8 @@ export default function Omega() {
     const [statsSpinte, setStatsSpinte] = useState<Record<string, unknown> | null>(null);
     const [canaleLocale, setCanaleLocale] = useState<LocalStatus>('off');
     const [aggregates, setAggregates] = useState<OmegaAggregates | null>(null);
+    // FIX-A 26/09: paper e live SEPARATI (null = migrazione non applicata)
+    const [aggregatesByMode, setAggregatesByMode] = useState<OmegaState['aggregates_by_mode']>(null);
     const [trades, setTrades] = useState<OmegaTrade[]>([]);
     // attività del servizio (green-up, attese, ritenti…) dall'RPC di stato
     const [activity, setActivity] = useState<OmegaActivityRow[]>([]);
@@ -158,6 +161,7 @@ export default function Omega() {
         ]);
         setControl(st.control);
         setAggregates(st.aggregates);
+        setAggregatesByMode(st.aggregates_by_mode ?? null);
         setTrades(tr);
         setActivity(Array.isArray(st.activity) ? st.activity : []);
         setActivityMore(Number(st.activity_more) || 0);
@@ -391,7 +395,13 @@ export default function Omega() {
     // (una sola fonte). `stats` è la fotografia del servizio: la si usa solo
     // dove l'RPC non ha il dato (target per gamba/partita) e, a bot FERMO, i
     // contatori di scansione sono dichiarati stantii (L-03).
-    const agg = aggregates;
+    // FIX-A 26/09 (U0419): gli aggregati della modalità del BOT; l'altra, se ha
+    // qualcosa, in una riga a parte con la sua etichetta. Mai sommati.
+    const agg = aggregatiOmegaDellaModalita({ aggregates, aggregates_by_mode: aggregatesByMode }, mode);
+    const altraModalita: OmegaMode = mode === 'live' ? 'paper' : 'live';
+    const aggAltra = aggregatiOmegaDellaModalita(
+        { aggregates, aggregates_by_mode: aggregatesByMode }, altraModalita, mode);
+    const altraAttiva = omegaModalitaConAttivita(aggAltra);
     const realizedTotal = Number(agg?.realized_profit ?? stats.realized_profit ?? 0);
     const realized = Number(agg?.realized_today ?? stats.realized_today ?? 0);
     // obiettivo di OGGI: snapshot storicizzato se c'è, altrimenti quello corrente
@@ -408,7 +418,18 @@ export default function Omega() {
         ? null : Number(stats.open_liability_bot);
     const liabilityManuale = openLiabilityBot == null
         ? null : Math.round((openLiability - openLiabilityBot) * 100) / 100;
-    const matchesTraded = Number(agg?.matches_traded ?? stats.matches_traded ?? 0);
+    // FIX-A 26/09 (U0426): «storico N partite» conta le PARTITE (events_traded),
+    // non le aperture (matches_traded: 1T+2T = 2). Senza la migrazione si
+    // contano le partite distinte fra le righe caricate della modalità (stima,
+    // dichiarata nel title): mai più le aperture spacciate per partite.
+    const partiteDalleRighe = useMemo(
+        () => new Set(tradesOfMode(trades, mode)
+            .filter((t) => t.closes_trade_id == null && t.status !== 'error')
+            .map((t) => t.event_id)).size,
+        [trades, mode],
+    );
+    const matchesTradedStimato = agg?.events_traded == null;
+    const matchesTraded = matchesTradedStimato ? partiteDalleRighe : Number(agg?.events_traded);
     const legsToday = agg?.legs_today ?? stats.legs_today ?? null;
     const eventsToday = agg?.events_today ?? stats.events_today ?? null;
     const wonToday = agg?.won_today ?? stats.won_today ?? null;
@@ -461,6 +482,12 @@ export default function Omega() {
         // simulati non è un totale, è un numero che non esiste da nessuna parte
         () => totaliOperazioni(groupCicliByEvent(groupTradesIntoCicli(tradesOfMode(shownTrades, mode)))),
         [shownTrades, mode],
+    );
+    // FIX-A 26/09 (U0427): «Se chiudo ora» = la somma delle CHIUSURE A MERCATO
+    // delle righe (stessa funzione della cella), non il P&L bloccato.
+    const chiudoOraOmega = useMemo(
+        () => omegaCloseNowTotal(tradesOfMode(shownTrades, mode), liveFeed, params.commission_pct),
+        [shownTrades, mode, liveFeed, params.commission_pct],
     );
     // M-01/M-02: il nome della partita non è nel payload dell'attività (solo
     // event_id): lo risolviamo dai trade
@@ -658,6 +685,25 @@ export default function Omega() {
                         />
                     </KpiRow>
 
+                    {/* FIX-A 26/09 — l'ALTRA modalità, a parte e con la sua etichetta */}
+                    {altraAttiva && aggAltra && (
+                        <div
+                            className="mt-2 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-slate-300 tabular-nums"
+                            data-testid="omega-altra-modalita"
+                            data-mode={altraModalita}
+                        >
+                            <b className={altraModalita === 'live' ? 'text-red-300' : 'text-sky-300'}>
+                                {altraModalita.toUpperCase()}
+                            </b>
+                            {' (contabilità separata, NON inclusa nei numeri '}{mode.toUpperCase()}{' qui sopra): '}
+                            <span data-testid="omega-altra-pnl-oggi">oggi {fmtMoney(aggAltra.realized_today ?? null, { signed: true })}</span>
+                            {' · '}
+                            <span data-testid="omega-altra-pnl-totale">totale storico {fmtMoney(aggAltra.realized_profit ?? null, { signed: true })}</span>
+                            {' · '}
+                            <span data-testid="omega-altra-liability">{T.openLiability} {fmtMoney(aggAltra.open_liability ?? null)}</span>
+                        </div>
+                    )}
+
                     <Tabs value={tab} onValueChange={setTab} className="w-full">
                         {/* ORDINE (audit 12/09): prima quello che il trader deve
                             vedere al primo colpo — le POSIZIONI VIVE di oggi —
@@ -704,7 +750,12 @@ export default function Omega() {
                                         · {legsToday ?? shownSummary.legs} operazioni oggi · {wonToday ?? 0}V {lostToday ?? 0}P · {liveNow ?? 0} partite vive
                                         {lockedOpen != null && lockedOpen !== 0 && ` · ${T.lockedPnl} ${fmtMoney(lockedOpen, { signed: true })}`}
                                         {openLiability > 0 && ` · ${T.openLiability} ${fmtMoney(openLiability)}`}
-                                        <span className="text-slate-500"> · storico {fmtNum(matchesTraded)} partite</span>
+                                        <span className="text-slate-500" data-testid="omega-storico-partite"
+                                            title={matchesTradedStimato
+                                                ? 'partite distinte fra le righe caricate (stima: applica omega_state_per_modalita_2026-09-26.sql)'
+                                                : `partite distinte con almeno una posizione piazzata, modalità ${mode.toUpperCase()}`}>
+                                            {' '}· storico {fmtNum(matchesTraded)} partite
+                                        </span>
                                     </span>
                                 }
                                 actions={
@@ -725,9 +776,15 @@ export default function Omega() {
                                 <TotaliBar
                                     tot={totaliOmega}
                                     modalita={mode}
-                                    apertoOra={lockedOpen ?? null}
+                                    apertoOra={chiudoOraOmega.totale}
                                     testId="omega-totali-operazioni"
                                 />
+                                {chiudoOraOmega.nonValutabili > 0 && (
+                                    <p className="px-4 py-1.5 text-[11px] text-amber-300/90" data-testid="omega-aperto-parziale">
+                                        {chiudoOraOmega.nonValutabili} {chiudoOraOmega.nonValutabili === 1 ? 'gamba viva non è valutabile' : 'gambe vive non sono valutabili'}
+                                        {' '}(nessun prezzo nel feed): «{T.totAperto}» le esclude invece di contarle zero.
+                                    </p>
+                                )}
                                 <MatchTradesTable
                                     trades={shownTrades}
                                     liveFeed={liveFeed}

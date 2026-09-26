@@ -27,6 +27,7 @@ import { useMike } from '@/components/mike/useMike';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { MikeMatchCard } from '@/components/mike/MikeMatchCard';
 import { MikeEventPnlTable } from '@/components/mike/MikeEventPnlTable';
+import { PropostaUscitaMike } from '@/components/controlroom/PropostaUscitaMike';
 import { SectionFilter, useSectionFilter } from '@/components/trading/SectionFilter';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
@@ -52,7 +53,7 @@ import {
     splitMikeEvents, rememberLive, lastRequestFor, requestOutcome, mikeActivityLine,
     mikeEquitySeries, activeLegs, voidedMarketsOf, withMikeHistoryError, MIKE_ACTIVITY_EXTRA,
     dayResultCounts, groupMikeTrades, groupsOfDay, lockedPnlTotal, groupMikeTradesByEvent,
-    MIKE_TRADES_LIMIT,
+    MIKE_TRADES_LIMIT, closeNowTotal,
     type MikeEvent, type MikeMode, type MikeRequestKind, type MikeStatus,
 } from '@/lib/mike';
 
@@ -168,6 +169,9 @@ export default function Mike() {
         [active, mode],
     );
     const locked = useMemo(() => lockedPnlTotal(attiveDelMio), [attiveDelMio]);
+    // FIX-A 26/09 (U0537): «Se chiudo ora» delle Operazioni = somma dei netti di
+    // chiusura a mercato delle card (stessa fonte), non il P&L bloccato
+    const chiudoOra = useMemo(() => closeNowTotal(attiveDelMio), [attiveDelMio]);
     const lockedPnl = locked.value;
     const dailyStop = Number(bot.params.daily_loss_stop ?? 0);
     // OPERAZIONI della giornata = CICLI (1 apertura + le sue chiusure), mai le
@@ -335,7 +339,17 @@ export default function Mike() {
         [bot.activity, bot.trades],
     );
 
+    // FIX-A 26/09 (U0536): con le uscite MANUALI di default ogni uscita di Mike è
+    // una PROPOSTA da firmare. Qui lo STESSO componente e lo STESSO comando della
+    // Control Room (`PropostaUscitaMike` → requestMike('approva_uscita')): nessun
+    // secondo percorso. Senza proposta il componente non disegna niente.
     const renderCard = (e: MikeEvent) => (
+        <div key={e.event_id} className="space-y-1.5" data-testid={`mike-card-${e.event_id}`}>
+            {renderMatchCard(e)}
+            <PropostaUscitaMike ev={e} testId={`mike-proposta-${e.event_id}`} />
+        </div>
+    );
+    const renderMatchCard = (e: MikeEvent) => (
         <MikeMatchCard
             key={e.event_id}
             ev={e}
@@ -642,10 +656,11 @@ export default function Mike() {
                     <MikeEventPnlTable
                         gruppi={gruppiOggi}
                         // CERT. 13/09 — i totali valgono per la modalità ATTIVA e lo
-                        // dichiarano in etichetta; «se chiudo ora» è il P&L già
-                        // bloccato sulle posizioni vive (`null` se non calcolabile).
+                        // dichiarano in etichetta. FIX-A 26/09: «se chiudo ora» è la
+                        // somma dei netti di chiusura a mercato delle card vive
+                        // (`null` se nessuna è valutabile), non il P&L bloccato.
                         modalita={mode}
-                        apertoOra={locked.value}
+                        apertoOra={chiudoOra.value}
                         titolo="Operazioni della giornata"
                         icona={<Layers className="w-4 h-4 text-sky-300" aria-hidden />}
                         testId="mike-operazioni"

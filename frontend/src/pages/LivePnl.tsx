@@ -189,11 +189,14 @@ function EquityCurve({ settled, finalWithMtm }: {
     );
 }
 
-type ModeFilter = 'all' | 'paper' | 'live';
+// FIX-A 26/09 (E2E fase 3, U0275/U0281): niente piu' «tutte». Paper e live sono
+// contabilita' separate: la pagina mostra UNA modalita' alla volta, in ogni sezione
+// (realizzato, equity, mercati, posizioni calcio E tennis).
+type ModeFilter = 'paper' | 'live';
 
 export default function LivePnl() {
     const [day, setDay] = useState(() => toLocalDay(new Date()));
-    const [modeF, setModeF] = useState<ModeFilter>('all');
+    const [modeScelto, setModeF] = useState<ModeFilter | null>(null);
     const [settled, setSettled] = useState<LiveSettledRow[] | null>(null);
     const [risk, setRisk] = useState<LiveRiskState | null>(null);
     const [positionsDb, setPositions] = useState<LivePositionRow[]>([]);
@@ -212,6 +215,14 @@ export default function LivePnl() {
     const posDalCanale = positions !== positionsDb || (tPositions != null && tPositions !== tPositionsDb);
 
     const isToday = day === toLocalDay(new Date());
+    // di serie la modalita' del RUNNER (quella del rischio di giornata), poi LIVE
+    const modeF: ModeFilter = modeScelto
+        ?? (risk?.mode === 'paper' || risk?.mode === 'live' ? risk.mode : 'live');
+    const positionsMode = useMemo(() => positions.filter(p => p.mode === modeF), [positions, modeF]);
+    const tPositionsMode = useMemo(
+        () => (tPositions == null ? null : tPositions.filter(p => String(p.mode).toLowerCase() === modeF)),
+        [tPositions, modeF],
+    );
 
     // settled del giorno scelto (refetch al cambio giorno + backup 30s).
     useEffect(() => {
@@ -266,7 +277,7 @@ export default function LivePnl() {
 
     // filtro mode client-side (la RPC filtra solo per intervallo temporale).
     const filtered = useMemo(
-        () => (settled ?? []).filter(s => modeF === 'all' || s.mode === modeF),
+        () => (settled ?? []).filter(s => s.mode === modeF),
         [settled, modeF],
     );
     const realized = useMemo(() => filtered.reduce((acc, s) => acc + s.profit, 0), [filtered]);
@@ -287,12 +298,12 @@ export default function LivePnl() {
     // aggregato posizioni tennis per evento (Σ selection_exposure, Σ net_position).
     const tByEvent = useMemo(() => {
         const m = new Map<string, LivePositionRow[]>();
-        for (const p of tPositions ?? []) {
+        for (const p of tPositionsMode ?? []) {
             const k = p.event_id ?? '(senza evento)';
             (m.get(k) ?? m.set(k, []).get(k)!).push(p);
         }
         return [...m.entries()];
-    }, [tPositions]);
+    }, [tPositionsMode]);
 
     const openMtm = isToday ? risk?.open_mtm ?? null : null;
     const total = isToday ? risk?.total ?? null : null;
@@ -300,7 +311,7 @@ export default function LivePnl() {
     // filtro Mode selezionato è diverso, le tile di rischio vanno dichiarate come tali
     // (mai un numero che sembra filtrato ma non lo è).
     const riskMode = risk?.mode ?? null;
-    const riskModeMismatch = riskMode != null && modeF !== 'all' && modeF !== riskMode;
+    const riskModeMismatch = riskMode != null && modeF !== riskMode;
     const riskModeNote = riskMode != null
         ? ` — runner in ${riskMode.toUpperCase()}${riskModeMismatch ? ` (≠ filtro ${modeF.toUpperCase()}: le tile di rischio NON seguono il filtro)` : ''}`
         : '';
@@ -334,7 +345,6 @@ export default function LivePnl() {
                         onChange={e => setModeF(e.target.value as ModeFilter)}
                         className="bg-slate-900 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white"
                     >
-                        <option value="all">tutte</option>
                         <option value="paper">paper</option>
                         <option value="live">live</option>
                     </select>
@@ -357,7 +367,7 @@ export default function LivePnl() {
                         title={(isToday ? 'MTM delle posizioni aperte (risk_state.open_mtm)' : 'solo per la giornata corrente') + riskModeNote}
                         extra={
                             <div className="text-[10px] text-slate-500 tabular-nums">
-                                {positions.length} posizioni aperte · rischio €{eventExposure(positions).toFixed(2)}
+                                <span data-testid="livepnl-posizioni">{positionsMode.length} posizioni aperte · rischio €{eventExposure(positionsMode).toFixed(2)} ({modeF})</span>
                                 <span data-testid="livepnl-fonte-posizioni"
                                     title="posizioni: canale dei runner (push position, piu' fresco del database) o database (poll di 15 s)">
                                     {` \u00b7 fonte ${posDalCanale ? 'canale' : 'db (poll 15 s)'}`}
@@ -479,7 +489,7 @@ export default function LivePnl() {
                     <div className="text-[10px] text-amber-400/90 mb-2">
                         il settled tennis non è ancora storicizzato — qui SOLO le esposizioni aperte (get_tennis_live_positions_all)
                     </div>
-                    {tPositions == null ? (
+                    {tPositionsMode == null ? (
                         <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-2">
                             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carico le posizioni tennis…
                         </div>

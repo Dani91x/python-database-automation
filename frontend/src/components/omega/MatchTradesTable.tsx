@@ -185,6 +185,57 @@ export function closeNowPnl(
     return { gross, net: netAfterCommission(gross, commissionPct), price };
 }
 
+/**
+ * «Se chiudo ora» di UNA gamba: la formula della cella (esposizione del
+ * RESIDUO se la gamba è coperta in parte, altrimenti di tutta la posizione;
+ * book live della selezione; commissione fissata sul trade). La usano la
+ * cella e il totale della barra: mai due formule per lo stesso numero.
+ */
+export function legCloseNow<T extends MatchTradeLike>(
+    leg: MatchLeg<T>, kind: LegKind, live: CalcioScanPayload | undefined, commission: number,
+): { gross: number; net: number; price: number } | null {
+    if (!leg.live) return null;
+    const t = leg.trade;
+    const hedge = hedgeInfo(t.meta);
+    const commPct = commissionPctOf(t.meta, commission);
+    const exp = tradeExposure({ side: t.side, price: t.price ?? null, size: t.size ?? null });
+    const residual = hedge && !hedge.complete && hedge.residualSize != null && hedge.residualSize > 0.01
+        ? hedge.residualSize : null;
+    const residualExp = residual != null
+        ? tradeExposure({ side: t.side, price: t.price ?? null, size: residual })
+        : null;
+    return closeNowPnl(residualExp ?? exp, bookFor(t, kind, live), commPct);
+}
+
+/**
+ * FIX-A (26/09) — TOTALE «Se chiudo ora» delle partite (E2E fase 3, U0427: la
+ * barra scriveva il P&L BLOCCATO, +0,00 €, mentre le righe dicevano −0,50 e
+ * −2,20). Somma, gamba per gamba ancora viva, la STESSA chiusura a mercato
+ * della cella (`legCloseNow`); una gamba già coperta del tutto vale il suo
+ * P&L bloccato (chiudere ora non cambia nulla). Una gamba viva senza prezzo
+ * NON vale zero: resta fuori e si conta in `nonValutabili`.
+ */
+export function omegaCloseNowTotal<T extends MatchTradeLike>(
+    trades: T[], liveFeed: Record<string, CalcioScanPayload>, commission: number,
+): { totale: number | null; valutate: number; nonValutabili: number } {
+    let totale = 0, valutate = 0, nonValutabili = 0;
+    for (const g of groupTradesByMatch(trades)) {
+        for (const leg of g.legs) {
+            if (!leg.live || leg.trade.closes_trade_id != null) continue;
+            if (leg.pnl.state === 'locked' && leg.pnl.value != null) {
+                totale += leg.pnl.value; valutate += 1; continue;
+            }
+            const v = legCloseNow(leg, leg.kind, liveFeed[g.event_id], commission);
+            if (v == null) { nonValutabili += 1; continue; }
+            totale += v.net; valutate += 1;
+        }
+    }
+    return {
+        totale: valutate > 0 ? Math.round(totale * 100) / 100 : null,
+        valutate, nonValutabili,
+    };
+}
+
 // ------------------------------------------------------------- props
 export interface MatchTradesTableProps<T extends MatchTradeLike> {
     /** righe omega_trades (aperture + chiusure, appiattite) */
@@ -315,7 +366,8 @@ function LegCell<T extends MatchTradeLike>({
     // esposizione su cui si calcola il cash out: il RESIDUO se la posizione è
     // già coperta in parte, altrimenti tutta la posizione
     const cashExp = residualExp ?? exp;
-    const closeNow = leg.live ? closeNowPnl(cashExp, book, commPct) : null;
+    // stessa funzione del totale della barra (FIX-A 26/09)
+    const closeNow = legCloseNow(leg, kind, live, commission);
     const feedAge = ageSeconds(feedAt ?? null, nowMs);
     const feedStale = feedAge == null || feedAge > FEED_STALE_S;
     const hasClose = leg.closes.some((c) => c.status !== 'error');

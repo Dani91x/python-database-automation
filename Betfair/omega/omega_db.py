@@ -160,6 +160,8 @@ def failed_legs(since_iso: Optional[str] = None) -> dict[tuple[str, str], tuple[
         meta = r.get("meta") or {}
         if not meta.get("leg_failed"):
             continue                       # difesa se il filtro lato DB non è disponibile
+        if meta.get("tentativo_consumato") is False:
+            continue                       # R-F2-12: rifiuto del FRENO, non un tentativo
         ph = r.get("phase")
         key = (str(r.get("event_id") or ""), str(ph) if ph in ("ht_cs", "ft_cs") else "")
         ts = _ts_key(meta.get("error_at") or meta.get("no_fill_at") or r.get("placed_at"))

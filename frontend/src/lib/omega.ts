@@ -130,6 +130,39 @@ export interface OmegaAggregates {
     reconciling_liability?: number;
     /** v5 H-08: partite DISTINTE con una posizione viva ADESSO (senza giorno) */
     live_now?: number;
+    /** FIX-A 26/09 (U0426): PARTITE distinte con almeno una posizione piazzata
+     *  (`matches_traded` conta le APERTURE: una partita con 1T+2T vale 2) */
+    events_traded?: number;
+    /** FIX-A 26/09: modalità filtrata dalla RPC (null = tutte) */
+    mode?: OmegaMode | null;
+}
+
+/**
+ * FIX-A (26/09) — gli aggregati della modalità chiesta: quelli letti PER
+ * MODALITÀ (`aggregates_by_mode`, migrations/omega_state_per_modalita_2026-09-26.sql)
+ * se ci sono; altrimenti, SOLO per la modalità del bot, quelli generali (RPC
+ * senza la migrazione: nessuna separazione possibile, il comportamento di
+ * prima). Per l'ALTRA modalità, senza migrazione: null (mai la somma).
+ */
+export function aggregatiOmegaDellaModalita(
+    state: Pick<OmegaState, 'aggregates' | 'aggregates_by_mode'>,
+    mode: OmegaMode,
+    modoDelBot: OmegaMode = mode,
+): OmegaAggregates | null {
+    const perModo = state.aggregates_by_mode?.[mode] ?? null;
+    if (perModo) return perModo;
+    const agg = state.aggregates ?? null;
+    if (!agg) return null;
+    if (agg.mode === mode) return agg;
+    return mode === modoDelBot ? agg : null;
+}
+
+/** true = la modalità ha qualcosa (P&L regolato o posizioni vive). */
+export function omegaModalitaConAttivita(agg: OmegaAggregates | null | undefined): boolean {
+    if (!agg) return false;
+    const n = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? 0 : Number(v));
+    return n(agg.realized_profit) !== 0 || n(agg.realized_today) !== 0
+        || n(agg.matches_open) > 0 || n(agg.open_liability) > 0;
 }
 
 export interface OmegaActivityRow {
@@ -152,6 +185,8 @@ export interface OmegaState {
     goal_today?: number | null;
     /** true SOLO se `goal_today` è lo SNAPSHOT del giorno; false = ripiego dal control */
     goal_snapshot?: boolean;
+    /** FIX-A 26/09: aggregati di paper e live SEPARATI (null = migrazione non applicata) */
+    aggregates_by_mode?: { paper: OmegaAggregates | null; live: OmegaAggregates | null } | null;
 }
 
 // ------------------------------------------------------- parametri (whitelist)
@@ -1283,6 +1318,7 @@ export async function fetchOmegaState(activityLimit = 50): Promise<OmegaState> {
         goal_today: Number.isFinite(g) && d.goal_today != null ? g : null,
         // v5 assente (migrazione non applicata) → NON è uno snapshot storicizzato
         goal_snapshot: d.goal_snapshot === true,
+        aggregates_by_mode: d.aggregates_by_mode ?? null,
     };
 }
 

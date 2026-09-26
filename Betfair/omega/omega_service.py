@@ -1975,7 +1975,11 @@ def _leg_retry_allowed(event_id: str, leg: str, now: datetime) -> bool:
     n, ts = _leg_attempts(event_id, leg)
     if n >= LEG_RETRY_MAX:
         return False
-    return n == 0 or (now.timestamp() - ts) >= LEG_RETRY_MIN_S
+    # R-F2-12: un rifiuto PRIMA del mercato non consuma il budget ma tiene la
+    # stessa cadenza (``ts`` scritto con n invariato): a freno tirato la gamba si
+    # riprova ogni LEG_RETRY_MIN_S come prima, senza una riserva a ogni giro.
+    # Con n>=1 ts>0 sempre: identico a prima; con n==0 e ts==0: identico a prima.
+    return ts <= 0 or (now.timestamp() - ts) >= LEG_RETRY_MIN_S
 
 
 _LEG_RETRY_TTL_S = 6 * 3600.0     # una gamba di 6 ore fa non serve più: si spurga
@@ -2003,6 +2007,18 @@ def _leg_note_certain_failure(event_id: str, leg: Optional[str], now: datetime,
     return n + 1
 
 
+def _leg_note_rifiuto_senza_tentativo(event_id: str, leg: Optional[str], now: datetime,
+                                      reason: str) -> None:
+    """R-F2-12 (26/09) - rifiuto PRIMA del mercato: il contatore dei tentativi
+    resta quello che era, si aggiorna SOLO l'istante (la cadenza dei ritentativi
+    resta LEG_RETRY_MIN_S, come quando il rifiuto consumava un tentativo)."""
+    key = (str(event_id), str(leg or ""))
+    n, _ = _leg_attempts(event_id, leg)
+    _LEG_RETRY[key] = (n, now.timestamp())
+    logger.info("[omega] gamba %s/%s: rifiuto prima del mercato (%s), tentativo NON "
+                "consumato (%d/%d)", event_id, leg or "-", reason, n, LEG_RETRY_MAX)
+
+
 def _freno_rest_aperture() -> Optional[str]:
     """O1 (24/09) - kill-switch davanti a OGNI apertura REST di Omega.
 
@@ -2020,13 +2036,41 @@ def _freno_rest_aperture() -> Optional[str]:
         return "kill_switch_illeggibile"
 
 
+#: R-F2-12 (26/09) - prefissi dei rifiuti che arrivano PRIMA del mercato: nessun
+#: ordine e' stato sottoposto a Betfair (ne' al suo specchio paper), quindi non
+#: sono un tentativo della gamba. ``kill_switch`` = il freno (REST/paper di Omega
+#: e ack del runner, ``motore_ordini.M_KILL``, anche ``kill_switch_illeggibile``);
+#: ``runner_non_agganciato`` (``M_AGGANCIO``) e ``in_aggancio`` (``M_IN_AGGANCIO``,
+#: aggancio scaduto) = il runner non aveva il mercato.
+_RIFIUTI_PRIMA_DEL_MERCATO = ("kill_switch", "runner_non_agganciato", "in_aggancio")
+
+
+def _e_rifiuto_del_freno(motivo: Any) -> bool:
+    """R-F2-12 (26/09) - il motivo e' un rifiuto PRIMA del mercato (freno o
+    mercato non agganciato dal runner), non un esito di mercato."""
+    m = str(motivo or "").strip().lower()
+    return any(m.startswith(p) for p in _RIFIUTI_PRIMA_DEL_MERCATO)
+
+
 def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], now: datetime,
                          reason: str, extra: Optional[dict] = None,
-                         base_meta: Optional[dict] = None) -> None:
+                         base_meta: Optional[dict] = None,
+                         consuma_tentativo: bool = True) -> None:
     """Esito CERTO negativo: la riserva si CANCELLA (guardata su 'pending') e la gamba
     torna tentabile col budget di _leg_retry_allowed. Un esito IGNOTO non passa mai
-    di qui (resta pending → reconcile_pending)."""
-    attempt = _leg_note_certain_failure(event_id, leg, now, reason)
+    di qui (resta pending → reconcile_pending).
+
+    R-F2-12 (26/09): ``consuma_tentativo=False`` per i rifiuti del FRENO. Nessun
+    ordine e' partito: la riserva si chiude uguale (mai posizioni nude, mai una
+    riga pending a far credere che un ordine sia vivo), ma il budget
+    ``LEG_RETRY_MAX`` della gamba NON si tocca, ne' in memoria ne' sul DB
+    (``meta.tentativo_consumato=False``, saltato da ``omega_db.failed_legs``).
+    Prima tre giri a freno tirato bruciavano la gamba per tutta la partita."""
+    attempt = (_leg_note_certain_failure(event_id, leg, now, reason)
+               if consuma_tentativo else None)
+    if not consuma_tentativo:
+        _leg_note_rifiuto_senza_tentativo(event_id, leg, now, reason)
+        extra = {**(extra or {}), "tentativo_consumato": False}
     try:
         # marker PRIMA del delete (AUDIT 11/09 M-11): se il delete fallisce la riga
         # resta 'pending' e il reconcile PAPER la confermerebbe coi dati della
@@ -2061,10 +2105,12 @@ def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], n
         db.log("place_rifiutato", {"event_id": event_id, "trade_id": trade_id,
                                    "reason": reason, "leg": leg, "critical": True,
                                    **(extra or {})})
+    # 'max_attempts' è la chiave che legge activityLine della UI; a freno
+    # (nessun tentativo consumato) il log non dichiara un tentativo che non c'e'
+    tentativo = ({"attempt": attempt, "max": LEG_RETRY_MAX, "max_attempts": LEG_RETRY_MAX}
+                 if attempt is not None else {})
     db.log("skip", {"event_id": event_id, "trade_id": trade_id, "reason": reason,
-                    # 'max_attempts' è la chiave che legge activityLine della UI
-                    "attempt": attempt, "max": LEG_RETRY_MAX,
-                    "max_attempts": LEG_RETRY_MAX, **(extra or {})})
+                    **tentativo, **(extra or {})})
 
 
 def _size_and_place(*, ev, cs, sel, snapshot, target, minute, score_str, mode, commission,
@@ -2522,7 +2568,10 @@ def _place_one(
             (out.fill_note if out is not None else "canale_giu:apertura_non_inviata"),
             {"percorso": "canale",
              "motivo_canale": (getattr(out, "error_code", None) if out is not None else None)},
-            base_meta={**keep_meta, "requested_size": req_size})
+            base_meta={**keep_meta, "requested_size": req_size},
+            # R-F2-12: il runner che rifiuta per il FRENO non e' un esito di mercato
+            consuma_tentativo=not _e_rifiuto_del_freno(
+                getattr(out, "error_code", None) if out is not None else None))
         return 0
     if mode == "paper":
         # DEMO=LIVE: se il gate flumine passa, il fill NON è istantaneo — si
@@ -2553,7 +2602,8 @@ def _place_one(
                            "evento %s", blocco, trade_id, ev.event_id)
             _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
                                  {"motivo": blocco, "percorso": "paper"},
-                                 base_meta={**keep_meta, "requested_size": req_size})
+                                 base_meta={**keep_meta, "requested_size": req_size},
+                                 consuma_tentativo=False)
             return 0
         # cert. 12/09: ``paper_fill`` non regala piu' fill senza controparte
         # DICHIARATA. Quando il book non espone la ladder completa (solo i best,
@@ -2619,7 +2669,8 @@ def _place_one(
                             "evento %s - nessun ordine inviato", blocco, trade_id, ev.event_id)
             _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "kill_switch",
                                  {"motivo": blocco, "percorso": "rest"},
-                                 base_meta={**keep_meta, "requested_size": req_size})
+                                 base_meta={**keep_meta, "requested_size": req_size},
+                                 consuma_tentativo=False)
             return 0
         try:
             # §16 (review C1): customerOrderRef PER GAMBA (omega-t<id>), mai per evento —
@@ -2928,7 +2979,30 @@ def _chiudi_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db, mode: str,
                                 size_remaining=ev.get("size_remaining"),
                                 betfair_updated_at=ev.get("matched_at"))
     return _flumine_no_fill_error(pulita, db=db, now=now,
-                                  reason="canale_%s" % str(ev.get("fase") or "no_fill"))
+                                  reason="canale_%s" % str(ev.get("fase") or "no_fill"),
+                                  consuma_tentativo=not _evento_prima_del_mercato(tr, ev))
+
+
+def _evento_prima_del_mercato(tr: dict[str, Any], ev: dict[str, Any]) -> bool:
+    """R-F2-12 (26/09) - l'esito terminale dice che il comando NON e' mai
+    arrivato al mercato: fase ``rifiutato`` emessa dal motore senza ``bet_id`` e
+    senza abbinato, su un comando che il runner aveva PARCHEGGIATO in attesa
+    dell'aggancio (ack accettato col motivo ``in_aggancio``, ``M_IN_AGGANCIO``).
+    L'evento non porta il motivo: lo porta l'ack in memoria della porta. Ogni
+    dubbio (porta assente, ack assente, motivo diverso) = il tentativo conta,
+    come prima (fail-safe sul budget)."""
+    if str(ev.get("fase") or "") != "rifiutato":
+        return False
+    if ev.get("bet_id") or float(ev.get("size_matched") or 0.0) > 0:
+        return False
+    ref = str((tr.get("meta") or {}).get("canale_ref") or ev.get("ref") or "")
+    try:
+        porta = _PO.porta_esistente()
+        memoria = getattr(porta, "memoria", None) if porta is not None else None
+        ack = memoria.ack(ref) if (memoria is not None and ref) else None
+    except Exception:  # noqa: BLE001 - memoria illeggibile: il tentativo conta
+        return False
+    return ack is not None and _e_rifiuto_del_freno(getattr(ack, "motivo", None))
 
 
 def _aggiorna_da_evento(tr: dict[str, Any], ev: dict[str, Any], *, db) -> None:
@@ -3353,8 +3427,13 @@ def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
 
 
 def _flumine_no_fill_error(tr: dict[str, Any], *, db, reason: str,
-                           now: Optional[datetime] = None) -> int:
+                           now: Optional[datetime] = None,
+                           consuma_tentativo: bool = True) -> int:
     """Nessun € matchato → la riserva NON diventa una posizione.
+
+    R-F2-12 (26/09): ``consuma_tentativo=False`` quando il comando non e' mai
+    arrivato al mercato (``_evento_prima_del_mercato``): la riga si chiude uguale
+    ma porta ``meta.tentativo_consumato=False`` e il budget resta intatto.
 
     AUDIT 11/09 (H-13 + M-05): la riga resta come STORIA ma TERMINALE
     (``meta.error_final`` + ``meta.error_at``, MAI ``settled_at`` — review L5:
@@ -3366,10 +3445,17 @@ def _flumine_no_fill_error(tr: dict[str, Any], *, db, reason: str,
     tentativi (3 volte a ≥30 s, ``_leg_retry_allowed``) resta la rete."""
     now = now or _now()
     reason_full = f"flumine_{reason}"
-    attempt = _leg_note_certain_failure(str(tr.get("event_id") or ""), tr.get("phase"),
-                                        now, reason_full)
+    if consuma_tentativo:
+        attempt: Optional[int] = _leg_note_certain_failure(
+            str(tr.get("event_id") or ""), tr.get("phase"), now, reason_full)
+    else:
+        attempt = None
+        _leg_note_rifiuto_senza_tentativo(str(tr.get("event_id") or ""), tr.get("phase"),
+                                          now, reason_full)
     meta = dict(tr.get("meta") or {})
     meta.pop("phase", None)
+    if not consuma_tentativo:
+        meta["tentativo_consumato"] = False
     meta.update({"reason": reason_full,
                  "leg_failed": True,       # esito CERTO negativo: gamba ritentabile
                  "error_final": True,      # M-05: riga TERMINALE, non "in corso per sempre"
@@ -3382,10 +3468,11 @@ def _flumine_no_fill_error(tr: dict[str, Any], *, db, reason: str,
         db.update_trade(tr["id"], status="error", meta=meta, pnl=0.0)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega] flumine no-fill su trade %s KO: %s", tr.get("id"), str(ex)[:120])
+    tentativo = ({"attempt": attempt, "max": LEG_RETRY_MAX, "max_attempts": LEG_RETRY_MAX}
+                 if attempt is not None else {"tentativo_consumato": False})
     db.log("flumine_no_fill", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
                                "reason": reason, "leg": tr.get("phase"),
-                               "attempt": attempt, "max": LEG_RETRY_MAX,
-                               "max_attempts": LEG_RETRY_MAX,
+                               **tentativo,
                                "mode": tr.get("mode")})
     return 1
 

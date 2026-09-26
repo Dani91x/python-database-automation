@@ -247,14 +247,20 @@ describe('Safe Strategy — tab Storico', () => {
         expect(await screen.findByTestId('trading-history')).toBeInTheDocument();
         await waitFor(() => // 12/09: la finestra copre la GRIGLIA del mese (lun 31 ago → dom 4 ott),
         // altrimenti le celle fuori mese dichiarano «nessuna operazione» su dati mai letti
-        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', null));
-        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', null));
+        // FIX-A 26/09 (U0507): SEMPRE con la modalita' del bot, mai «tutte» (= somma)
+        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', null, 'paper'));
+        await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', null, 'paper'));
         await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+2,85 €'));
         expect(within(screen.getByTestId('breakdown-sport')).getByText('⚽ Calcio')).toBeInTheDocument();
         expect(screen.queryByTestId('kpi-goal')).toBeNull();
         await user.click(within(screen.getByTestId('history-sport-filter')).getByRole('button', { name: /tennis/ }));
-        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-08-31', '2026-10-04', 'tennis'));
-        await waitFor(() => expect(mDay).toHaveBeenLastCalledWith('2026-09-10', 'tennis'));
+        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-08-31', '2026-10-04', 'tennis', 'paper'));
+        await waitFor(() => expect(mDay).toHaveBeenLastCalledWith('2026-09-10', 'tennis', 'paper'));
+        // l'altra modalita' si legge APPOSTA, da sola
+        await user.click(screen.getByTestId('history-mode-live'));
+        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-08-31', '2026-10-04', 'tennis', 'live'));
+        await waitFor(() => expect(mDay).toHaveBeenLastCalledWith('2026-09-10', 'tennis', 'live'));
+        expect(mDaily.mock.calls.every((c) => c[3] === 'paper' || c[3] === 'live')).toBe(true);
     });
 
     it('dal dettaglio di una posizione viva si torna al tab Trade dello sport', async () => {

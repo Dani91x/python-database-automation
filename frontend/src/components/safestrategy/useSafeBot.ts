@@ -15,7 +15,8 @@ import {
     fetchSafeRequests, fetchSafeActivity, requestSafe, subscribeSafeBot, fetchOpportunities,
     subscribeOpportunities, detectSettlements, mergeBotParams, cashoutInFlight,
     requestOutcome, SAFE_BOT_DEFAULTS,
-    type RequestOutcome, type SafeActivityRow, type SafeAggregates, type SafeBotParams,
+    type RequestOutcome, type SafeActivityRow, type SafeAggregates, type SafeAggregatesByMode,
+    type SafeBotParams,
     type SafeControl, type SafeMode, type SafeOpportunityRow, type SafeParamsEffective,
     type SafeRequest, type SafeTrade,
 } from '@/lib/safeBot';
@@ -48,6 +49,8 @@ export interface SafeBotView {
     canaleLocale: LocalStatus;
     trades: SafeTrade[];
     aggregates: SafeAggregates | null;
+    /** FIX-A 26/09 — aggregati di paper e di live SEPARATI (null = non letti) */
+    aggregatesByMode: SafeAggregatesByMode | null;
     requests: SafeRequest[];
     opportunities: SafeOpportunityRow[];
     /** log del servizio (H-16): [] se la migrazione v2 non c'è e la tabella non è leggibile */
@@ -123,6 +126,7 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     const [canaleLocale, setCanaleLocale] = useState<LocalStatus>('off');
     const [trades, setTrades] = useState<SafeTrade[]>([]);
     const [aggregates, setAggregates] = useState<SafeAggregates | null>(null);
+    const [aggregatesByMode, setAggregatesByMode] = useState<SafeAggregatesByMode | null>(null);
     const [requests, setRequests] = useState<SafeRequest[]>([]);
     const [opportunities, setOpportunities] = useState<SafeOpportunityRow[]>([]);
     const [activity, setActivity] = useState<SafeActivityRow[]>([]);
@@ -163,7 +167,7 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
         const seq = ++reloadSeq.current;
         const firstLoad = !initialized.current;
         const [state, reqs] = await Promise.all([
-            fetchSafeState(),
+            fetchSafeState({ perModalita: true }),
             fetchSafeRequests(30).catch(() => [] as SafeRequest[]),
         ]);
         // get_safe_state porta gia i trade; se la RPC non li includesse si
@@ -195,6 +199,7 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
             setDesiredMode(state.control.mode);
         }
         setAggregates(state.aggregates);
+        setAggregatesByMode(state.aggregates_by_mode ?? null);
         setTrades(rows);
         setRequests(reqs);
         setError(null);
@@ -394,7 +399,7 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     return {
         available: control !== null,
         loading, busy, error,
-        control: controlVisibile, trades, aggregates, requests, opportunities, activity,
+        control: controlVisibile, trades, aggregates, aggregatesByMode, requests, opportunities, activity,
         canaleLocale,
         paramsEffective, operatingDay,
         params,

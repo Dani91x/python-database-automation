@@ -265,6 +265,17 @@ export interface SafeAggregates {
     lost_today?: number;
     /** 'YYYY-MM-DD' della giornata operativa secondo il DB */
     operating_day?: string;
+    // ---- paper/live (safe_strategy_paper_live_2026-09-13.sql)
+    /** filtro applicato dalla RPC: 'paper' | 'live' | null = TUTTE (somma!) */
+    mode?: SafeMode | null;
+    realized_paper_total?: number;
+    realized_live_total?: number;
+}
+
+/** FIX-A 26/09 — gli aggregati di UNA modalità ciascuno: mai una somma. */
+export interface SafeAggregatesByMode {
+    paper: SafeAggregates | null;
+    live: SafeAggregates | null;
 }
 
 /**
@@ -302,6 +313,62 @@ export interface SafeState {
     params_effective?: SafeParamsEffective | null;
     /** giornata operativa dichiarata dal DB ('YYYY-MM-DD'); assente = romeDay() */
     operating_day?: string | null;
+    /** FIX-A 26/09 — aggregati PER MODALITÀ (solo con `fetchSafeState({ perModalita: true })`) */
+    aggregates_by_mode?: SafeAggregatesByMode | null;
+}
+
+/**
+ * FIX-A (26/09) — REPERTO E2E fase 3, U0481/U0485: `get_safe_state` chiamata
+ * senza `p_mode` restituisce aggregati di TUTTE le modalità e la pagina li
+ * scriveva sotto «P&L totale · PAPER» (−45,25 € = −47,83 paper + 2,58 live).
+ *
+ * Gli aggregati di UNA modalità, per la modalità chiesta:
+ *   1. quelli letti apposta per quella modalità (`aggregates_by_mode`);
+ *   2. altrimenti quelli generali SE la RPC dichiara di averli filtrati per
+ *      quella modalità (`aggregates.mode === mode`);
+ *   3. altrimenti, dagli aggregati di tutte le modalità, SOLO quello che è
+ *      separato per modalità (`realized_<mode>_total`): tutto il resto resta
+ *      assente («—» a video, o il ripiego del servizio), MAI la somma;
+ *   4. RPC vecchia (nessuna chiave `mode`): gli aggregati come sono, attribuiti
+ *      alla modalità del BOT (`modoDelBot`) e a nessun'altra (prima del 13/09 non
+ *      esisteva nemmeno la separazione).
+ */
+export function aggregatiDellaModalita(
+    state: Pick<SafeState, 'aggregates' | 'aggregates_by_mode'>,
+    mode: SafeMode,
+    modoDelBot: SafeMode = mode,
+): SafeAggregates | null {
+    const perModo = state.aggregates_by_mode?.[mode] ?? null;
+    if (perModo) return perModo;
+    const agg = state.aggregates;
+    if (!agg) return null;
+    if (agg.mode === mode) return agg;
+    if (agg.mode === undefined && agg.realized_paper_total === undefined
+        && agg.realized_live_total === undefined) return mode === modoDelBot ? agg : null;
+    const totale = mode === 'paper' ? agg.realized_paper_total : agg.realized_live_total;
+    return {
+        mode,
+        operating_day: agg.operating_day,
+        realized_total: totale,
+    } as SafeAggregates;
+}
+
+/**
+ * true = quella modalità ha qualcosa da dire (P&L regolato o posizioni vive):
+ * serve a mostrare l'ALTRA modalità a parte solo quando esiste davvero.
+ */
+export function modalitaConAttivita(agg: SafeAggregates | null | undefined): boolean {
+    if (!agg) return false;
+    const n = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? 0 : Number(v));
+    return n(agg.realized_total) !== 0 || n(agg.realized_today) !== 0
+        || n(agg.open_count) > 0 || n(agg.open_liability) > 0;
+}
+
+/** Aggregati di Safe per UNA modalità (`get_safe_aggregates(p_mode)`, owner). */
+export async function fetchSafeAggregates(mode: SafeMode): Promise<SafeAggregates | null> {
+    const { data, error } = await supabase.rpc('get_safe_aggregates', { p_mode: mode });
+    if (error) throw new Error(error.message);
+    return (data ?? null) as SafeAggregates | null;
 }
 
 /**
@@ -1096,9 +1163,20 @@ export async function updateSafeParams(params: Partial<SafeBotParams>): Promise<
     return data as unknown as SafeControl;
 }
 
-export async function fetchSafeState(): Promise<SafeState> {
+/**
+ * Stato di Safe. `perModalita` (FIX-A 26/09, la PAGINA Safe): legge anche gli
+ * aggregati di paper e di live SEPARATI (`get_safe_aggregates(p_mode)`, già
+ * applicata dal 13/09) accanto allo stato. Una lettura per modalità che fallisce
+ * resta `null` (quella modalità a video «—»), mai ripiegata sulla somma.
+ * La Control Room non lo chiede: nessuna lettura in più per lei.
+ */
+export async function fetchSafeState(opts: { perModalita?: boolean } = {}): Promise<SafeState> {
+    const perModo = opts.perModalita
+        ? Promise.all((['paper', 'live'] as const).map((m) => fetchSafeAggregates(m).catch(() => null)))
+        : null;
     const { data, error } = await supabase.rpc('get_safe_state', {});
     if (error) throw new Error(error.message);
+    const [aggPaper, aggLive] = perModo ? await perModo : [null, null];
     const d = (data ?? {}) as Partial<SafeState>;
     const control = d.control ?? null;
     const agg = d.aggregates ?? null;
@@ -1112,6 +1190,7 @@ export async function fetchSafeState(): Promise<SafeState> {
         activity: Array.isArray(d.activity) ? d.activity : [],
         params_effective: d.params_effective ?? control?.stats?.params_effective ?? null,
         operating_day: d.operating_day ?? agg?.operating_day ?? null,
+        aggregates_by_mode: perModo ? { paper: aggPaper, live: aggLive } : null,
     };
 }
 
