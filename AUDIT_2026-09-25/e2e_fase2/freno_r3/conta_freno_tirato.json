@@ -1,0 +1,96 @@
+{
+ "finestra": [
+  "2026-09-26T17:27:09Z",
+  "2026-09-26T17:31:00Z"
+ ],
+ "per_bot": {
+  "omega": {
+   "attivita_per_kind": {
+    "skip": 2
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "safe": {
+   "attivita_per_kind": {
+    "opportunita_non_piu_valida": 5,
+    "opportunita_decaduta": 4,
+    "exit_wait": 5,
+    "exit_hold": 2,
+    "skip": 1
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "mike": {
+   "attivita_per_kind": {
+    "loss_exit_deciso": 44
+   },
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "tennis": {
+   "attivita_per_kind": {},
+   "righe_col_freno": 0,
+   "esempi_freno": []
+  },
+  "scalper": {
+   "attivita_per_kind": {
+    "info": 4
+   },
+   "righe_col_freno": 4,
+   "esempi_freno": [
+    {
+     "ts": "2026-09-26T17:27:10.140229+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    },
+    {
+     "ts": "2026-09-26T17:27:12.343024+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"sessione stopped\", \"stats\": {\"stops\": 0, \"cycles\": 0, \"scalps\": 0, \"flattens\": 0, \"pnl_peak\": 0.0, \"scratches\": 0, \"dry_quotes\": 0, \"pnl_inplay\": 0.0, \"pnl_locked\": 0.0, \"roundtrips\": 0, \"target_hit\": 0, \"ordini_vivi\": 0, \"pnl_settled\": 0.0, \"pnl_prem"
+    },
+    {
+     "ts": "2026-09-26T17:27:13.98542+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"stop richiesto: force-flat\", \"freno\": \"db_kill_switch_attivo\"}"
+    },
+    {
+     "ts": "2026-09-26T17:27:16.169821+00:00",
+     "kind": "info",
+     "bot": null,
+     "p": "{\"msg\": \"sessione stopped\", \"stats\": {\"stops\": 0, \"cycles\": 0, \"scalps\": 0, \"flattens\": 0, \"pnl_peak\": 0.0, \"scratches\": 0, \"dry_quotes\": 0, \"pnl_inplay\": 0.0, \"pnl_locked\": 0.0, \"roundtrips\": 0, \"target_hit\": 0, \"ordini_vivi\": 0, \"pnl_settled\": 0.0, \"pnl_prem"
+    }
+   ]
+  }
+ },
+ "righe": {
+  "omega_trades": [],
+  "safe_strategy_trades": [],
+  "mike_trades": [],
+  "tennis_live_orders": [],
+  "betfair_live_orders": [],
+  "betfair_live_order_requests": [],
+  "scalper_control": [
+   {
+    "event_id": "36103864",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T17:27:15.915001+00:00",
+    "stopped_at": "2026-09-26T17:27:15.914974+00:00"
+   },
+   {
+    "event_id": "36103918",
+    "status": "stopped",
+    "origine": "auto",
+    "error": null,
+    "updated_at": "2026-09-26T17:27:12.080204+00:00",
+    "stopped_at": "2026-09-26T17:27:12.080186+00:00"
+   }
+  ]
+ }
+}

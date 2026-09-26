@@ -1,0 +1,18 @@
+{
+ "passi": [
+  "2026-09-26T17:31:13.087Z clic cr-freno-rilascia («rilascia»)",
+  "2026-09-26T17:31:13.615Z clic cr-freno-conferma-1 («confermi? i bot accesi tornano ad aprire»)",
+  "dopo 2 clic su 3: kill_switch=true",
+  "2026-09-26T17:31:14.240Z clic cr-freno-conferma-2 («si, rilascia il freno»)"
+ ],
+ "registro": [
+  {
+   "ts": "2026-09-26T17:31:14.241Z",
+   "rpc": "set_live_kill_switch",
+   "args": {
+    "p_on": false
+   },
+   "esito": "inviata"
+  }
+ ]
+}

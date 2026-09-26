@@ -23,3 +23,14 @@ tennis_swing	locale 26/09/2026, 17:31:06	UTC 2026-09-26T15:31:06.327Z	status=run
 scalper	locale 26/09/2026, 17:33:12	UTC 2026-09-26T15:33:12.499Z	status=running	mode=paper	strategia=maker stake=25
 R2 FRENO TIRATO	kill_switch=true	order_mode=paper	locale 26/09/2026, 18:10:59	UTC 2026-09-26T16:10:59.766Z
 R2 FRENO RILASCIATO	kill_switch=false	order_mode=paper	locale 26/09/2026, 18:22:12	UTC 2026-09-26T16:22:12.285Z
+# --- RIAVVIO 3 (app con i fix delle due sessioni) --- intestazione scritta 2026-09-26T17:20:35.885Z
+omega	locale 26/09/2026, 19:20:51	UTC 2026-09-26T17:20:51.270Z	status=running	mode=paper
+mike	locale 26/09/2026, 19:21:04	UTC 2026-09-26T17:21:04.630Z	status=running	mode=paper
+safe (riaccese base/esatto/punta)	locale 26/09/2026, 19:22:39	UTC 2026-09-26T17:22:39.280Z	status=running	mode=paper	variants=["base","esatto","punta","tennis"] strategy_modes={"base":"paper","model":"paper","punta":"paper","esatto":"paper","manual":"paper","tennis":"paper"}
+tennis_scalper	locale 26/09/2026, 19:22:53	UTC 2026-09-26T17:22:53.385Z	status=running	mode=paper	stake=2
+tennis_pro	locale 26/09/2026, 19:22:55	UTC 2026-09-26T17:22:55.930Z	status=running	mode=paper	stake=2
+tennis_flb	locale 26/09/2026, 19:22:58	UTC 2026-09-26T17:22:58.435Z	status=running	mode=paper	stake=2
+tennis_swing	locale 26/09/2026, 19:23:03	UTC 2026-09-26T17:23:03.625Z	status=running	mode=paper	stake=2
+scalper	locale 26/09/2026, 19:23:20	UTC 2026-09-26T17:23:20.680Z	status=running	mode=paper	strategia=maker stake=25
+R3 FRENO TIRATO	kill_switch=true	order_mode=paper	locale 26/09/2026, 19:27:09	UTC 2026-09-26T17:27:09.087Z
+R3 FRENO RILASCIATO	kill_switch=false	order_mode=paper	locale 26/09/2026, 19:31:14	UTC 2026-09-26T17:31:14.517Z
