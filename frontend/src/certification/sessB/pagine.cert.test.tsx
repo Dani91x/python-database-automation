@@ -2,8 +2,6 @@
 // Solo letture: client clientB (RPC non volatili, scritture bloccate), realtime stub, canale locale spento.
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { HelmetProvider } from 'react-helmet-async';
 
 vi.mock('@/integrations/supabase/client', async () => {
     const m = await import('./clientB');

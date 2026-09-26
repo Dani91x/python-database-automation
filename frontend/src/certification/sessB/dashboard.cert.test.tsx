@@ -2,8 +2,6 @@
 // Salva il testo visibile e il registro delle risposte RPC/select per ogni vista.
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { HelmetProvider } from 'react-helmet-async';
 
 vi.mock('@/integrations/supabase/client', async () => {
     const m = await import('./clientB');
