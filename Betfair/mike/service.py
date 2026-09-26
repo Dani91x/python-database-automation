@@ -24,6 +24,8 @@ import time
 from datetime import datetime
 from datetime import timedelta as _timedelta
 from datetime import timezone
+import re as _re
+import time as _time
 from typing import Any, Dict, List, Optional
 
 from Betfair.safe_strategy import execution as X
@@ -3260,13 +3262,21 @@ def _config_warn(db: Any, params: Dict[str, Any]) -> None:
                            "scanner_pre_ko_hours": scanner_h, "critical": True})
 
 
+#: 26/09 R-F2-21: fra due righe `loss_exit_deciso` con la stessa firma passano
+#: almeno 5 minuti (aggiornamento dei numeri), mai una riga per tick.
+_LOSS_EXIT_DECISO_MIN_S = 300.0
+
+
 def _firma_loss_exit_deciso(v: Any) -> str:
     """La decisione di uscita in perdita «uguale a se stessa» fra due giri:
     stessa finestra, stesso modo, stesso motivo (numeri esclusi: cambiano a ogni
     tick senza essere una decisione nuova)."""
     if not isinstance(v, dict):
         return str(v)
-    return "|".join(str(v.get(c)) for c in ("window", "mode", "motivo", "pct"))
+    # il motivo porta dentro i numeri del tick («regola fissa: -9.05 entro 30% di
+    # 8.90»): si toglie ogni numero, resta la CLASSE della decisione
+    motivo = _re.sub(r"[-+]?\d[\d.,]*", "#", str(v.get("motivo") or ""))
+    return "|".join((str(v.get("window")), str(v.get("mode")), motivo, str(v.get("pct"))))
 
 
 
@@ -3805,8 +3815,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                     # e' permanente e serve UNA volta per decisione: si scrive
                     # solo se cambia (finestra, modo, motivo), come 'state' (H5).
                     firma = _firma_loss_exit_deciso(v)
-                    if firma != extra.get("last_loss_exit_deciso_firma"):
+                    ora_s = _time.time()
+                    ultimo_s = float(extra.get("last_loss_exit_deciso_ts") or 0.0)
+                    if (firma != extra.get("last_loss_exit_deciso_firma")
+                            or ora_s - ultimo_s >= _LOSS_EXIT_DECISO_MIN_S):
                         extra["last_loss_exit_deciso_firma"] = firma
+                        extra["last_loss_exit_deciso_ts"] = ora_s
                         db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
                 else:
                     db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
