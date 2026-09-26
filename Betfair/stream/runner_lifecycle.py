@@ -15,6 +15,7 @@ Qui SOLO matematica su datetimes (testabile a unità): niente I/O, niente flumin
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -148,3 +149,115 @@ def stall_restart_due(
     if threshold_s <= 0 or stall_s is None or stall_s < threshold_s:
         return False
     return (now_monotonic - last_restart_monotonic) >= min_interval_s
+
+
+# ----------------------------------------------------------------------------
+# R-STREAM-1 (26/09): alle 10:41:41Z una caduta di rete ha lasciato il runner
+# calcio con battito vivo e ZERO dati per 4 ore; la ricostruzione della
+# subscription (14:39Z) non ha ridato dati. Due pezzi puri condivisi da calcio
+# e tennis: il battito dello stream letto SENZA json.loads (vale anche a
+# registrazione spenta) e il verdetto dopo una ricostruzione per stallo.
+# ----------------------------------------------------------------------------
+MSG_HEARTBEAT = "heartbeat"
+MSG_DATI = "dati"
+_RE_OP_MCM = re.compile(r'"op"\s*:\s*"mcm"')
+_RE_CT_HEARTBEAT = re.compile(r'"ct"\s*:\s*"HEARTBEAT"')
+_RE_MC_PIENO = re.compile(r'"mc"\s*:\s*\[\s*\{')
+
+
+def classifica_messaggio_stream(raw_data: Any) -> Optional[str]:
+    """``'heartbeat'`` / ``'dati'`` / ``None`` per un messaggio grezzo Betfair.
+
+    Lettura per espressione regolare (niente ``json.loads``): costa poco,
+    quindi puo' girare su OGNI messaggio anche quando nessuna partita e' in
+    registrazione (prima il battito si aggiornava solo col tee acceso).
+    Tollera gli spazi dopo ``:``/``,``. ``dati`` = ``mcm`` con almeno un
+    market change."""
+    if not isinstance(raw_data, str) or not _RE_OP_MCM.search(raw_data):
+        return None
+    if _RE_CT_HEARTBEAT.search(raw_data):
+        return MSG_HEARTBEAT
+    if _RE_MC_PIENO.search(raw_data):
+        return MSG_DATI
+    return None
+
+
+VERDETTO_ATTENDI = "attendi"
+VERDETTO_GUARITO = "guarito"
+VERDETTO_ESCALA = "escala"
+
+
+def verdetto_post_ricostruzione(
+    stall_s: Optional[float],
+    dati_dopo_rebuild: bool,
+    secondi_dal_rebuild: float,
+    finestra_s: float,
+    osservazione_s: float,
+) -> str:
+    """Esito di una ricostruzione della subscription chiesta per STALLO.
+
+    Passata la ``finestra_s`` dalla ricostruzione:
+
+    * ``escala`` se NESSUN dato e' arrivato dopo la ricostruzione (nemmeno
+      l'immagine iniziale: subscription rotta anche con heartbeat freschi,
+      lezione 17/07) oppure se lo stallo EFFETTIVO (dati E heartbeat,
+      ``effective_stall_seconds``) e' di nuovo >= ``finestra_s`` (26/09: 89
+      ladder in pochi minuti, poi di nuovo tutto fermo) -> ricostruire nello
+      stesso processo non basta, serve un processo nuovo;
+    * ``guarito`` passata l'``osservazione_s`` senza escalation (o con
+      ``finestra_s <= 0`` = meccanismo spento) -> si torna al ciclo normale.
+      Un mercato QUIETO dopo l'immagine (heartbeat freschi) non escala;
+    * ``attendi`` altrimenti.
+    """
+    if finestra_s <= 0:
+        return VERDETTO_GUARITO
+    if secondi_dal_rebuild < finestra_s:
+        return VERDETTO_ATTENDI
+    if not dati_dopo_rebuild:
+        return VERDETTO_ESCALA
+    if stall_s is not None and stall_s >= finestra_s:
+        return VERDETTO_ESCALA
+    if secondi_dal_rebuild >= osservazione_s:
+        return VERDETTO_GUARITO
+    return VERDETTO_ATTENDI
+
+
+def e_errore_di_rete(exc: BaseException) -> bool:
+    """True se ``exc`` (o un'eccezione della sua catena cause/context) e' un
+    guasto di TRASPORTO: socket/DNS/timeout (``ConnectionError``,
+    ``TimeoutError``, ``socket.gaierror``; NON ogni ``OSError``: un file non
+    scrivibile e' un altro guasto), ``requests``,
+    ``httpx`` (client Supabase), o il ``RuntimeError`` finale di
+    ``BetfairClient._rpc`` dopo i ritentativi per errore di rete.
+
+    26/09 (tre crash exit 1 in un giorno, cadute di rete alle 10:41Z): nel
+    ciclo principale dei runner una SELECT dei follow fallita per rete
+    risaliva fino a ``main`` -> processo morto (e il calcio chiudeva ogni
+    follow nel ``finally``). Solo il trasporto: un errore di programmazione
+    NON e' di rete e va rilanciato."""
+    import socket
+
+    tipi: tuple = (ConnectionError, TimeoutError, socket.gaierror, socket.herror)
+    try:
+        import requests
+
+        tipi = tipi + (requests.RequestException,)
+    except Exception:  # noqa: BLE001 - libreria assente: non e' di rete
+        pass
+    try:
+        import httpx
+
+        tipi = tipi + (httpx.TransportError,)
+    except Exception:  # noqa: BLE001
+        pass
+    visti = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in visti:
+        visti.add(id(cur))
+        if isinstance(cur, tipi):
+            return True
+        if (isinstance(cur, RuntimeError)
+                and "RPC failed after" in str(cur) and "Network error" in str(cur)):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False

@@ -33,6 +33,8 @@ Thumbs.db
 # Project specific
 Appunti.txt/
 *.log
+# K2 (26/09): console dei servizi python scritta da desktop/main.js
+_logs/
 node_modules/
 bun.lockb
 match-insights-hub-temp/

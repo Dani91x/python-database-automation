@@ -386,13 +386,16 @@ def _peso(stagione: int, rif: int, emivita: Optional[float]) -> float:
     return 0.5 ** ((rif - stagione) / float(emivita))
 
 
-def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione_rif: int,
+def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione_rif: Any,
                 emivita: Optional[float] = EMIVITA, k_celle: float = K_CELLE,
                 beta: Optional[Dict[int, float]] = None) -> Dict[str, Any]:
     """Il blocco ``v4`` (da mettere in ``atlas['v4']`` accanto ai blocchi v3,
     che restano per i consumatori di oggi). ``stagione_rif``: la stagione a peso
-    1 (quella in corso: la prima NON contata)."""
+    1 (quella in corso: la prima NON contata); un intero per tutte le leghe o un
+    dict ``{lega: stagione}`` (O-4, 26/09: calendari diversi fra leghe)."""
     beta = dict(beta or BETA_DEFAULT)
+    rif_per_lega = ({str(k): int(v) for k, v in stagione_rif.items()} if isinstance(stagione_rif, dict)
+                    else {str(lid): int(stagione_rif) for lid in stati})
     leghe = sorted(stati, key=int)
     L = len(leghe)
     n = np.zeros((L, NT, NG))
@@ -405,7 +408,7 @@ def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione
     gol_w = np.zeros(L)
     for i, lid in enumerate(leghe):
         for st, blk in (stati[lid].get("stagioni") or {}).items():
-            w = _peso(int(st), stagione_rif, emivita)
+            w = _peso(int(st), rif_per_lega[str(lid)], emivita)
             c = np.asarray(blk["celle"], dtype=float).reshape(NT, NG, 3)
             n[i] += w * c[:, :, 0]
             s[2][i] += w * c[:, :, 1]
@@ -431,7 +434,11 @@ def assembla_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str, stagione
     if L and not affid.any():
         affid = np.ones(L, dtype=bool)
     out: Dict[str, Any] = {"meta": {
-        "name": VERSIONE, "generated_at": generated_at, "stagione_rif": stagione_rif,
+        # stagione_rif: la piu' recente fra le leghe (compatibilita'); quella usata per
+        # ogni lega e' in stagione_rif_per_lega (O-4, 26/09)
+        "name": VERSIONE, "generated_at": generated_at,
+        "stagione_rif": max(rif_per_lega.values()) if rif_per_lega else None,
+        "stagione_rif_per_lega": {k: rif_per_lega[k] for k in sorted(rif_per_lega, key=int)},
         "emivita": emivita, "k_celle": k_celle, "beta": {str(k): v for k, v in beta.items()},
         "n_leghe": L, "n_leghe_affidabili": int((part >= MIN_PARTITE_AFFIDABILE).sum()),
         "n_partite_affidabili": n_affid, "globale_solido": bool(globale_solido),

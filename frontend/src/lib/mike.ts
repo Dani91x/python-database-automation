@@ -216,6 +216,11 @@ export interface MikeLive {
     pressure?: number | null;
     hazard_atlas?: number | null;
     hazard_model?: number | null;
+    // R-FA-2 (26/09): chiavi v4 dell'atlante ora copiate nel frame (solo diagnostica)
+    hazard_versione?: string | null;
+    hazard_fase?: string | null;
+    hazard_recupero_atteso_min?: number | null;
+    hazard_nota?: string | null;
     cover_gain_pct?: number | null;
     model_probs?: Record<string, number> | null;
     inplay: boolean;

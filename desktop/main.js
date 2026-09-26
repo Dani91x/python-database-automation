@@ -215,6 +215,71 @@ function startStaticServer() {
     });
 }
 
+// >>> K2-LOG-FIGLI (26/09) ---------------------------------------------------
+// La console dei figli (stdout/stderr dei servizi python) non finiva in nessun
+// file: crash dei runner senza traceback (calcio 10:00Z e 14:46Z, tennis
+// 15:04Z del 26/09). Ora ogni riga va ANCHE in <repo>/_logs/<label>_<avvio>.log
+// (un file per figlio e per avvio dell'app, append con timestamp ISO). All'avvio
+// si cancellano i .log piu' vecchi di 7 giorni. Mai bloccare l'avvio: cartella
+// o file non scrivibili = solo console, con un avviso.
+const CHILD_LOG_RETENTION_MS = 7 * 24 * 3600 * 1000;
+const CHILD_LOG_STAMP = new Date().toISOString().replace(/[:.]/g, '-');
+let childLogDir = null;               // null = log su file spento (solo console)
+const childLogStreams = new Map();    // label -> WriteStream | null
+
+function childLogFileName(label, stamp) {
+    return `${String(label).replace(/[^A-Za-z0-9_.-]/g, '_')}_${stamp}.log`;
+}
+
+function childLogLine(tag, line, now) {
+    return `${(now || new Date()).toISOString()} [${tag}] ${line}\n`;
+}
+
+function prepareChildLogs(root, nowMs) {
+    const now = nowMs || Date.now();
+    try {
+        const dir = path.join(root, '_logs');
+        fs.mkdirSync(dir, { recursive: true });
+        for (const name of fs.readdirSync(dir)) {
+            if (!name.endsWith('.log')) continue;
+            const p = path.join(dir, name);
+            try {
+                if (now - fs.statSync(p).mtimeMs > CHILD_LOG_RETENTION_MS) fs.unlinkSync(p);
+            } catch (_) { /* file in uso o sparito: resta */ }
+        }
+        return dir;
+    } catch (err) {
+        console.error(`[desktop] cartella _logs non disponibile (${err && err.message}): log dei figli solo su console`);
+        return null;
+    }
+}
+
+function childLogStream(label) {
+    if (!childLogDir) return null;
+    if (childLogStreams.has(label)) return childLogStreams.get(label);
+    let ws = null;
+    try {
+        ws = fs.createWriteStream(path.join(childLogDir, childLogFileName(label, CHILD_LOG_STAMP)),
+            { flags: 'a', encoding: 'utf8' });
+        ws.on('error', (err) => {
+            console.error(`[desktop] log su file di ${label} spento (${err && err.message}): resta la console`);
+            childLogStreams.set(label, null);
+        });
+    } catch (err) {
+        console.error(`[desktop] log su file di ${label} non aperto (${err && err.message}): resta la console`);
+        ws = null;
+    }
+    childLogStreams.set(label, ws);
+    return ws;
+}
+
+function writeChildLog(label, tag, line) {
+    const ws = childLogStream(label);
+    if (!ws) return;
+    try { ws.write(childLogLine(tag, line)); } catch (_) { /* mai fermare il pipe */ }
+}
+// <<< K2-LOG-FIGLI -------------------------------------------------------------
+
 // ---------------------------------------------------------------- runner python
 function spawnRunner(label, args) {
     if (!fs.existsSync(PYTHON)) {
@@ -248,6 +313,12 @@ function spawnRunner(label, args) {
         // worker ordini restava spento e i bot armati non piazzavano NEMMENO
         // ordini paper. MAI 'LIVE' di default: il LIVE va scelto esplicitamente.
         TENNIS_LIVE_ORDER_MODE: process.env.TENNIS_LIVE_ORDER_MODE || 'PAPER',
+        // K2 (26/09): su una pipe python bufferizza stdout e scrive in cp1252
+        // (le righe con accenti/frecce diventavano errori di logging o
+        // caratteri rotti, e un kill perdeva le ultime righe): unbuffered e
+        // UTF-8, come legge il pipe qui sotto (setEncoding('utf8')).
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: process.env.PYTHONIOENCODING || 'utf-8',
     };
     const child = spawn(PYTHON, args, {
         cwd: repoRoot,
@@ -257,12 +328,17 @@ function spawnRunner(label, args) {
     });
     children.push(child);
     console.log(`[desktop] ${label} avviato (pid ${child.pid}): ${PYTHON} ${args.join(' ')}`);
-    // log dei figli su console (prefissati per capire chi parla).
+    writeChildLog(label, 'desktop', `avviato (pid ${child.pid}): ${args.join(' ')}`);
+    // log dei figli su console (prefissati per capire chi parla) E su file
+    // (K2, 26/09: i crash dei runner restavano senza traceback).
     const pipe = (stream, tag) => {
         stream.setEncoding('utf8');
         stream.on('data', (chunk) => {
             for (const line of String(chunk).split(/\r?\n/)) {
-                if (line.trim()) console.log(`[${label}${tag}] ${line}`);
+                if (line.trim()) {
+                    console.log(`[${label}${tag}] ${line}`);
+                    writeChildLog(label, `${label}${tag}`, line);
+                }
             }
         });
     };
@@ -271,6 +347,7 @@ function spawnRunner(label, args) {
     child.on('exit', (code) => {
         // uscita immediata = probabilmente watchdog già attivo altrove (lock porta): ok.
         console.log(`[desktop] ${label} terminato (exit ${code})`);
+        writeChildLog(label, 'desktop', `terminato (exit ${code})`);
         // niente riferimenti morti: il registro dei figli resta = processi VIVI
         // (prima cresceva di 1 a ogni job tennis-odds, 48/giorno)
         const i = children.indexOf(child);
@@ -688,6 +765,8 @@ app.whenReady().then(async () => {
     DIST_DIR = path.join(repoRoot, 'frontend', 'dist');
     PYTHON = path.join(repoRoot, '.venv', 'Scripts', 'python.exe');
     console.log(`[desktop] repo: ${repoRoot}`);
+    // K2 (26/09): console dei figli anche su file, prima di lanciare i runner
+    childLogDir = prepareChildLogs(repoRoot);
     ensureFreshUi();  // l'exe serve SEMPRE l'ultima versione della UI (17/07)
     try {
         await startStaticServer();

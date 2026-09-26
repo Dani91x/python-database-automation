@@ -21,6 +21,8 @@ from typing import Any, Dict, Optional, Set
 from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
 
+from .runner_lifecycle import MSG_HEARTBEAT, classifica_messaggio_stream
+
 logger = logging.getLogger(__name__)
 
 
@@ -148,6 +150,18 @@ class _RawState:
 
     def write_message(self, raw_data: str) -> None:
         if not self.enabled or not self.dir:
+            # R-STREAM-1 (26/09): a registrazione SPENTA il battito dello
+            # stream (dati/heartbeat) prima non si aggiornava mai -> il
+            # controllo di stallo del runner era cieco. Lettura veloce, senza
+            # json.loads e senza toccare il disco.
+            tipo = classifica_messaggio_stream(raw_data)
+            if tipo is not None:
+                ora_ms = int(time.time() * 1000)
+                with self._lock:
+                    if tipo == MSG_HEARTBEAT:
+                        self.last_heartbeat_ms = ora_ms
+                    else:
+                        self.last_data_ms = ora_ms
             return
         try:
             msg = json.loads(raw_data)

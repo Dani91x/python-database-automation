@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import betfairlightweight
 from betfairlightweight.filters import streaming_market_data_filter, streaming_market_filter
@@ -109,7 +109,11 @@ from .runner_lifecycle import (
     raw_stall_seconds,
     stall_restart_due,
     uptime_exceeded,
+    verdetto_post_ricostruzione,
+    e_errore_di_rete,
     EXIT_PLANNED_RESTART,
+    VERDETTO_ATTENDI,
+    VERDETTO_GUARITO,
 )
 from .single_instance import acquire_single_instance_lock
 from .scores.api_football import ApiFootballProvider
@@ -228,6 +232,15 @@ class LiveSession:
         # True se l'auto-spegnimento è un ricambio pianificato (desktop): il
         # processo esce con EXIT_PLANNED_RESTART e il watchdog lo rilancia
         self.planned_restart: bool = False
+        # R-STREAM-1 (26/09): mercati della subscription corrente (manuali +
+        # auto-follow; i secondi NON sono in market_to_event), monotonic della
+        # ricostruzione chiesta per stallo (None = nessuna in osservazione),
+        # uscita per stallo (i follow NON si chiudono: il processo nuovo li
+        # riaggancia) e ultimo alert d'escalation rinviata (anti-spam).
+        self.stream_market_count: int = 0
+        self.stallo_rebuild_mono: Optional[float] = None
+        self.riavvio_per_stallo: bool = False
+        self.stallo_escala_alert_mono: float = -1e9
 
     def score_file(self, event_id: str) -> Any:
         fh = self._score_files.get(event_id)
@@ -1101,6 +1114,114 @@ _RAW_STALL_HARD_CAP_SEC = float(
 # rete, restart F3) usava un token scaduto e lo stream restava muto per sempre.
 _STREAM_KEEPALIVE_SEC = float(os.getenv("LIVE_STREAM_KEEPALIVE_SEC", "480"))
 _STREAM_KA_LAST = 0.0
+# R-STREAM-1 (26/09): dopo una ricostruzione chiesta per STALLO, se i dati
+# restano fermi per questa finestra (il 26/09: 89 ladder in 8 min, poi niente)
+# si esce con EXIT_PLANNED_RESTART e il watchdog rilancia un processo nuovo.
+# Osservazione: oltre, la ricostruzione e' considerata riuscita. 0 = spento.
+_STALL_POST_REBUILD_SEC = float(os.getenv("LIVE_STALL_POST_REBUILD_SEC", "180"))
+_STALL_POST_REBUILD_OSSERVA_SEC = float(
+    os.getenv("LIVE_STALL_POST_REBUILD_OBSERVE_SEC", "900"))
+# alert CRITICAL dell'escalation RINVIATA (ordini vivi/regole armate): al piu'
+# uno ogni 5 minuti, il tentativo si ripete a ogni giro del battito.
+_STALL_ESCALA_ALERT_SEC = 300.0
+
+
+_ATTESA_RETE_SEC = 15.0
+
+
+def _attendi_se_rete(dove: str, exc: BaseException) -> None:
+    """26/09 (crash exit 1): un guasto di RETE nel ciclo principale (SELECT dei
+    follow, catalogo REST) non deve uccidere il processo -- e con lui ogni
+    follow chiuso nel ``finally`` e il budget di 5 riavvii/ora del watchdog.
+    Guasto di rete: avviso, attesa, nuovo giro. Altro: si RILANCIA (un errore
+    di programmazione non si maschera)."""
+    if not e_errore_di_rete(exc):
+        raise exc
+    logger.warning("[runner] %s KO per RETE (%s): riprovo tra %.0fs, il processo "
+                   "resta vivo.", dove, str(exc)[:160], _ATTESA_RETE_SEC)
+    time.sleep(_ATTESA_RETE_SEC)
+
+
+def _mercati_sottoscritti(session: Any) -> int:
+    """Mercati della subscription corrente (R-STREAM-1, 26/09).
+
+    Prima il controllo di stallo guardava solo ``market_to_event`` (i follow
+    MANUALI): con i soli mercati dell'auto-follow (26/09: 0 manuali, 32
+    partite seguite) la mappa era vuota e lo stallo non veniva MAI misurato
+    -> 4 ore di runner cieco. ``stream_market_count`` e' fissato all'avvio di
+    ogni ``framework.run()`` con tutti i mercati sottoscritti."""
+    manuali = len(getattr(session, "market_to_event", None) or {})
+    return max(manuali, int(getattr(session, "stream_market_count", 0) or 0))
+
+
+def _escalation_stallo(flumine: Any, session: Any, stall_s: Optional[float],
+                       dati_dopo_rebuild: bool, now_mono: float) -> bool:
+    """Dopo una ricostruzione per stallo: attende, chiude l'osservazione o
+    ESCALA a un processo nuovo (R-STREAM-1, 26/09: la ricostruzione nello
+    stesso processo non ha ridato dati).
+
+    Ritorna True finche' c'e' una ricostruzione in osservazione (il ciclo
+    normale di ricostruzione non riparte nel frattempo). L'uscita passa dalla
+    stessa guardia MONEY-CRITICAL dell'auto-spegnimento (``_lifecycle_blockers``:
+    mai con ordini vivi o regole armate): se bloccata, alert CRITICAL (al piu'
+    ogni 5 min) e nuovo tentativo al prossimo giro. Solo con il watchdog
+    (``LIVE_RUNNER_KEEP_ALIVE=1``, app desktop): senza, un'uscita lascerebbe il
+    runner morto e resta il ciclo di ricostruzione di prima.
+
+    ``dati_dopo_rebuild``: ``configure_raw`` azzera i battiti a ogni
+    ricostruzione, quindi un battito > 0 = almeno un dato DOPO di essa."""
+    t0 = getattr(session, "stallo_rebuild_mono", None)
+    if t0 is None:
+        return False
+    if getattr(session, "riavvio_per_stallo", False):
+        return True  # uscita gia' chiesta: niente altro
+    verdetto = verdetto_post_ricostruzione(
+        stall_s, dati_dopo_rebuild, now_mono - t0, _STALL_POST_REBUILD_SEC,
+        _STALL_POST_REBUILD_OSSERVA_SEC)
+    if verdetto == VERDETTO_ATTENDI:
+        return True
+    if verdetto == VERDETTO_GUARITO:
+        session.stallo_rebuild_mono = None
+        logger.info("[runner] ricostruzione per stallo riuscita: dati di nuovo vivi.")
+        return False
+    if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() != "1":
+        session.stallo_rebuild_mono = None
+        logger.critical(
+            "[runner] stream fermo da %.0fs anche dopo la ricostruzione: senza watchdog "
+            "(LIVE_RUNNER_KEEP_ALIVE) il processo NON esce, resta il ciclo di "
+            "ricostruzione.", stall_s or 0.0)
+        return False
+    blocker = _lifecycle_blockers(flumine)
+    if blocker is None:
+        try:
+            db.insert_alert(
+                "CRITICAL", "RAW_RECORDER",
+                f"stream mercati ancora MUTO {stall_s or 0:.0f}s dopo la "
+                "ricostruzione: riavvio del processo runner (il watchdog lo rilancia).")
+        except Exception:  # noqa: BLE001 - l'alert non blocca il riavvio
+            pass
+        # check FINALE fresco subito prima dello stop (stessa lezione TOCTOU 17/07)
+        blocker = _lifecycle_blockers(flumine, fresh=True)
+    if blocker is not None:
+        if (now_mono - float(getattr(session, "stallo_escala_alert_mono", -1e9))
+                >= _STALL_ESCALA_ALERT_SEC):
+            session.stallo_escala_alert_mono = now_mono
+            logger.critical("[runner] riavvio per stream muto RINVIATO: %s.", blocker)
+            try:
+                db.insert_alert(
+                    "CRITICAL", "RAW_RECORDER",
+                    f"stream mercati MUTO anche dopo la ricostruzione ma riavvio del "
+                    f"processo RINVIATO ({blocker}): gestisci l'esposizione a mano.")
+            except Exception:  # noqa: BLE001
+                pass
+        return True
+    logger.critical("[runner] stream MUTO dopo la ricostruzione: esco con %d, il "
+                    "watchdog rilancia un processo nuovo.", EXIT_PLANNED_RESTART)
+    session.riavvio_per_stallo = True
+    session.planned_restart = True
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+    return True
 
 
 def _partite_in_streaming(session: Any) -> Optional[int]:
@@ -1189,7 +1310,11 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
 
         global _RAW_STALL_ALERTED, _RAW_STALL_LAST_RESTART
         h = RAW_STATE.health()
-        if h.get("enabled") and session.market_to_event:
+        # R-STREAM-1 (26/09): lo stallo si misura SEMPRE quando ci sono mercati
+        # sottoscritti (manuali O dell'auto-follow), a tee raw acceso o spento:
+        # il vecchio cancello `enabled and market_to_event` ha tenuto il runner
+        # cieco 4 ore (solo mercati auto-follow, mappa manuali vuota).
+        if _mercati_sottoscritti(session) > 0:
             # OPT-IN 17/07: con la registrazione a scelta la maggior parte delle
             # partite NON scrive raw → lo stallo si misura sull'ULTIMO DATO
             # visto dallo stream (last_data_ms, aggiornato anche per gli eventi
@@ -1260,7 +1385,14 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
             # ESCALATION (fix 16/07): stallo PERSISTENTE → CRITICAL + ricostruzione
             # della subscription (throttled). L'alert WARN da solo non recupera
             # nulla: il 16/07 lo stream e' rimasto muto per ore con runner vivo.
+            # R-STREAM-1 (26/09): una ricostruzione per stallo gia' chiesta e' in
+            # osservazione -> niente seconda ricostruzione; se non ridarà dati si
+            # esce e il watchdog rilancia un processo nuovo.
+            in_osservazione = (not session.shutdown_requested.is_set()
+                               and _escalation_stallo(flumine, session,
+                                                      stall_s, last > 0, now_mono))
             if (not session.shutdown_requested.is_set()
+                    and not in_osservazione
                     and stall_restart_due(
                         stall_s, _RAW_STALL_RESTART_SEC,
                         _RAW_STALL_LAST_RESTART, now_mono,
@@ -1289,7 +1421,7 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
                     logger.critical(
                         "[runner] REGISTRAZIONE INTERROTTA: nessun dato di mercato da "
                         "%.0fs con %d mercati sottoscritti — ricostruisco la subscription.",
-                        stall_s, len(session.market_to_event))
+                        stall_s, _mercati_sottoscritti(session))
                     try:
                         db.insert_alert(
                             "CRITICAL", "RAW_RECORDER",
@@ -1304,6 +1436,10 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
                     late_blocker = _request_soft_restart(
                         flumine, session,
                         f"stall-recovery: stream muto {stall_s:.0f}s")
+                    if late_blocker is None:
+                        # R-STREAM-1 (26/09): la ricostruzione va in osservazione;
+                        # se non ridà dati, _escalation_stallo passa al processo nuovo
+                        session.stallo_rebuild_mono = now_mono
                     if late_blocker is not None:
                         logger.critical(
                             "[runner] recovery RINVIATO all'ultimo check: %s.",
@@ -1607,26 +1743,47 @@ def heartbeat_mode() -> str:
     return "LIVE+PAPER" if mode == "LIVE" else mode
 
 
-def _announce_order_mode(mode: str, orders_enabled: bool) -> None:
-    """Logga in modo EVIDENTE la modalità ordini e (se attiva) la annuncia in live_alerts.
+def _testo_modo_ordini(mode: str, effettivo: Optional[str] = None) -> Tuple[str, str, str]:
+    """(modo effettivo, banner, livello dell'alert) - F-9 (26/09).
 
-    In OFF nessun side-effect oltre al log (ZERO regressioni: nessuna scrittura DB nuova).
-    """
-    mode_u = (mode or "OFF").strip().upper()
-    banner = {
+    Prima il banner e l'alert CRITICAL «LIVE... SOLDI VERI» annunciavano il
+    TETTO del .env (``LIVE_ORDER_MODE``) mentre il modo EFFETTIVO e' il piu'
+    restrittivo fra tetto e scelta dalla UI (``modo_ordini.modo_effettivo``,
+    riga ``betfair_live_settings.order_mode``: il 26/09 paper). Ora si
+    annuncia l'EFFETTIVO; se differisce dal tetto lo si dice esplicitamente.
+    CRITICAL solo se l'effettivo e' LIVE. ``effettivo=None`` = uguale al tetto
+    (comportamento di prima). Solo testo: il gate degli ordini non cambia."""
+    tetto = (mode or "OFF").strip().upper()
+    eff = (effettivo or tetto).strip().upper()
+    base = {
         "LIVE": "*** LIVE *** ORDINI REALI (SOLDI VERI) attivi",
         "PAPER": "PAPER -- ordini SIMULATI (soldi finti, dati live)",
         "OFF": "OFF -- nessun ordine (solo registrazione/segnali)",
-    }.get(mode_u, f"{mode_u} -- modalita' sconosciuta: trattata come OFF")
+    }.get(eff, f"{eff} -- modalita' sconosciuta: trattata come OFF")
+    if eff != tetto:
+        banner = f"tetto {tetto}, effettivo {eff} -- {base}"
+    else:
+        banner = base
+    level = "CRITICAL" if eff == "LIVE" else "INFO"
+    return eff, banner, level
+
+
+def _announce_order_mode(mode: str, orders_enabled: bool,
+                         effettivo: Optional[str] = None) -> None:
+    """Logga in modo EVIDENTE la modalità ordini e (se attiva) la annuncia in live_alerts.
+
+    In OFF nessun side-effect oltre al log (ZERO regressioni: nessuna scrittura DB nuova).
+    F-9 (26/09): banner e livello seguono il modo EFFETTIVO (vedi _testo_modo_ordini).
+    """
+    eff, banner, level = _testo_modo_ordini(mode, effettivo)
     bar = "=" * 64
     logger.info("%s", bar)
     logger.info("[runner] MODALITA' ORDINI: %s", banner)
     logger.info("%s", bar)
     if not orders_enabled:
         return  # OFF → nessuna scrittura DB aggiuntiva
-    level = "CRITICAL" if mode_u == "LIVE" else "INFO"
     try:
-        db.insert_alert(level, "ORDER_MODE", f"Live trading: modalita' {mode_u} attiva. {banner}")
+        db.insert_alert(level, "ORDER_MODE", f"Live trading: modalita' {eff} attiva. {banner}")
     except Exception as e:  # noqa: BLE001 - un alert non deve mai bloccare l'avvio
         logger.warning("[runner] insert_alert modalita' ordini KO (ignorato): %s", e)
 
@@ -1928,7 +2085,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
 
     # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
     # I restart F3 ricostruiscono il framework ma non ri-annunciano (niente spam alert).
-    _announce_order_mode(modo_avvio, modo_avvio in ("PAPER", "LIVE"))
+    # F-9 (26/09): si annuncia il modo EFFETTIVO (tetto .env x scelta UI letta
+    # all'avvio), non il solo tetto; non ancora letto -> OFF, come il gate.
+    _announce_order_mode(modo_avvio, modo_avvio in ("PAPER", "LIVE"),
+                         _MO.modo_effettivo(modo_avvio, _MO.valore_db()))
 
     # A6 — RIPRESA dopo crash/riavvio (una volta per processo, PRIMA del framework):
     #   * specchio PAPER stantio → pulito (il blotter paper riparte vuoto: le righe
@@ -1962,7 +2122,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     except Exception as e:  # noqa: BLE001
                         logger.warning("[runner] resolve_and_register iniziale KO: %s", e)
 
-            follows = db.list_pending_follows()
+            try:
+                follows = db.list_pending_follows()
+            except Exception as e:  # noqa: BLE001 - solo la rete: il resto si rilancia
+                _attendi_se_rete("lettura dei follow", e)  # 26/09 crash exit 1
+                continue
             if only_event:
                 follows = [f for f in follows if f["event_id"] == only_event]
             follows = [f for f in follows if f["event_id"] not in session.finished_events]
@@ -2041,7 +2205,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 logger.warning("[runner] nessun evento da streammare.")
                 break
 
-            _catalog_events(rest, session, follows)
+            try:
+                _catalog_events(rest, session, follows)
+            except Exception as e:  # noqa: BLE001 - solo la rete: il resto si rilancia
+                _attendi_se_rete("catalogo mercati (REST)", e)  # 26/09 crash exit 1
+                continue
             market_ids = session.all_market_ids()
             if auto is not None:
                 # 25/09: sottoscrizione = manuali + automatici, dentro il tetto
@@ -2254,6 +2422,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # epoca dello stream corrente: serve al rilevamento "stream MAI
             # connesso" del heartbeat_worker (stallo con last_write_ms==0).
             session.stream_started_monotonic = time.monotonic()
+            # R-STREAM-1 (26/09): tutti i mercati sottoscritti (anche auto-follow)
+            session.stream_market_count = len(market_ids)
             motore = _motore_attivo()
             if motore is not None and orders_enabled:
                 motore.aggancia(framework, strategies_by_mode)
@@ -2289,8 +2459,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 continue
             break
     finally:
-        # finalize di sicurezza: ogni evento ancora attivo non finalizzato
-        for event_id in list(session.cataloged_events):
+        # finalize di sicurezza: ogni evento ancora attivo non finalizzato.
+        # R-STREAM-1 (26/09): NON all'uscita per stream muto -- e' un ricambio
+        # del processo, le partite seguite restano PENDING/STREAMING e il
+        # processo nuovo le riaggancia (chiuderle = perdere i follow scelti).
+        _eventi_da_chiudere = ([] if getattr(session, "riavvio_per_stallo", False)
+                               else list(session.cataloged_events))
+        for event_id in _eventi_da_chiudere:
             if event_id not in session.finished_events:
                 _finalize_event(event_id, session)
         session.close_score_files()

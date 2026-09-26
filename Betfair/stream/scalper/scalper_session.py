@@ -23,6 +23,9 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+# 26/09: la chiave del marcatore "fermata dal freno" vive in auto_mode (chi la legge)
+from .auto_mode import CHIAVE_FERMATA_FRENO
+
 logger = logging.getLogger(__name__)
 
 KILL_FILE = "STOP_SCALPER"
@@ -157,14 +160,32 @@ def sorveglia_freno(stop_flag: Any, visto: Any, al_freno: Any,
     return None
 
 
+def dichiara_stato_finale(stats: Optional[Dict[str, Any]], non_flat_30s: Optional[str],
+                          fermata_freno: Optional[str]) -> Optional[Dict[str, Any]]:
+    """26/09: le ``stats`` finali con cio' che la riga deve dichiarare: il NON
+    flat dopo 30 s in ``posizione_non_flat`` (campo esistente, D7: non si
+    sovrascrive se D7 l'ha gia' scritto) e il marcatore del freno."""
+    if not non_flat_30s and not fermata_freno:
+        return stats
+    out = dict(stats) if isinstance(stats, dict) else {}
+    if non_flat_30s and not out.get("posizione_non_flat"):
+        out["posizione_non_flat"] = non_flat_30s
+    if fermata_freno:
+        out[CHIAVE_FERMATA_FRENO] = fermata_freno
+    return out
+
+
 def non_partire_col_freno(db: Any, event_id: str) -> Optional[str]:
     """All'avvio della sessione: freno tirato -> riga 'stopped' col motivo,
     nessun login, nessun ordine. Ritorna il motivo (o None: si parte)."""
     motivo = motivo_freno()
     if not motivo:
         return None
+    # 26/09: il marcatore del freno (``auto_mode.fermata_dal_freno``): la
+    # riga fermata dal freno non e' "chiusa a mano", l'auto-mode la riarma
     db.set_control(event_id, status="stopped", stopped_at=_now_iso(),
-                   error=f"freno tirato ({motivo}): sessione non avviata")
+                   error=f"freno tirato ({motivo}): sessione non avviata",
+                   stats={CHIAVE_FERMATA_FRENO: motivo})
     db.log(event_id, "info", {"msg": "freno tirato: sessione non avviata",
                               "motivo": motivo})
     logger.warning("[scalper-sess] %s: freno tirato (%s), sessione non avviata",
@@ -267,6 +288,36 @@ def _dichiarazione_non_flat(framework: Any) -> Optional[str]:
     parti = ["%s/%s residuo accettato %.2f (se vince %.2f, se perde %.2f)"
              % (k[0], k[1], abs(w - l), w, l) for k, w, l in sbil]
     return "posizione NON flat a fine sessione: " + "; ".join(parti)
+
+
+def residuo_netto(framework: Any) -> Optional[float]:
+    """26/09: lo sbilancio |se vince - se perde| piu' grande fra le selezioni
+    della sessione (EUR, anche sotto ``SOGLIA_NON_FLAT``). None = blotter
+    illeggibile (mai "zero" a occhio)."""
+    try:
+        esp = _esposizioni_nette(framework)
+    except Exception:  # noqa: BLE001 - illeggibile: si dice
+        return None
+    return round(max((abs(w - l) for w, l in esp.values()), default=0.0), 2)
+
+
+def dichiarazione_stop_non_flat(framework: Any) -> str:
+    """26/09 (reperto e2e 09:42Z): lo stop/fine vita e' uscito SENZA flat dopo
+    30 s. Il testo va in ``error`` e in ``stats.posizione_non_flat`` della
+    riga: prima finiva solo nell'attivita' e la riga chiudeva con
+    ``error=null``. Il micro-residuo <= ``SOGLIA_NON_FLAT`` resta accettato
+    (regola dei bot, intoccata) ma si DICHIARA con la sua entita'."""
+    res = residuo_netto(framework)
+    vivi = _ordini_vivi(framework)
+    if res is None:
+        testo = "non_flat_dopo_30s: residuo non leggibile (blotter)"
+    elif res <= SOGLIA_NON_FLAT + 1e-9:
+        testo = ("non_flat_dopo_30s: residuo %.2f EUR (micro-residuo accettato "
+                 "<= %.2f)" % (res, SOGLIA_NON_FLAT))
+    else:
+        testo = "non_flat_dopo_30s: residuo %.2f EUR" % res
+    return testo + (", ordini vivi %d" % vivi if vivi is not None
+                    else ", ordini vivi non leggibili")
 
 
 #: stati flumine di un ordine ancora sul book (o in volo verso il book)
@@ -1242,6 +1293,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # rilasciato prima del battito: il force-flat e' gia' armato.
         freno_visto = threading.Event()
         freno_motivo: List[str] = []
+        # 26/09: cosa lo stato finale deve dichiarare (vedi sotto)
+        fermata_freno: Optional[str] = None
+        non_flat_30s: Optional[str] = None
 
         def _al_freno(motivo: str) -> None:
             freno_motivo.append(motivo)
@@ -1319,6 +1373,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 if not _all_flat(timeout_s=30.0):
                     db.log(ev, "error",
                            {"msg": "stop: posizione NON flat dopo 30s"})
+                    non_flat_30s = dichiarazione_stop_non_flat(framework)
+                # 26/09: fermata DAL FRENO (nessuno stop scritto da fuori): lo
+                # si marca nella riga, l'auto-mode la riarma al rilascio
+                if freno and status not in ("stopping", "stopped", "error"):
+                    fermata_freno = freno
                 clean_break = True
                 break
             # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper/theta
@@ -1337,6 +1396,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 if not _all_flat(timeout_s=30.0):
                     db.log(ev, "error",
                            {"msg": "fine sessione: posizione NON flat dopo 30s"})
+                    non_flat_30s = dichiarazione_stop_non_flat(framework)
                 clean_break = True
                 break
         stop_flag.set()
@@ -1373,10 +1433,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             db.log(ev, "warn", {"msg": _non_flat, "stato_finale": final})
             if isinstance(_final_stats, dict):
                 _final_stats = {**_final_stats, "posizione_non_flat": _non_flat}
+        # 26/09 (reperto e2e): il NON flat dopo 30 s e la fermata dal freno
+        # finiscono NELLA RIGA (error + stats), non solo nell'attivita'
+        _final_stats = dichiara_stato_finale(_final_stats, non_flat_30s, fermata_freno)
+        _errori = (["thread flumine morto: sweep cancel eseguito"] if crashed else []) + (
+            [non_flat_30s] if non_flat_30s else [])
         db.set_control(
             ev, status=final, stopped_at=_now_iso(), stats=_final_stats,
-            error=("thread flumine morto: sweep cancel eseguito"
-                   if crashed else None))
+            error=("; ".join(_errori) or None))
         db.log(ev, "info", {"msg": f"sessione {final}",
                             "stats": _final_stats})
     except Exception as exc:  # noqa: BLE001

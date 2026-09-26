@@ -34,6 +34,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
 
+from ..runner_lifecycle import MSG_HEARTBEAT, classifica_messaggio_stream
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +71,12 @@ class TennisRawTee:
         self._score_files: Dict[str, Any] = {}    # event_id -> score file handle
         self._score_lastkey: Dict[str, Any] = {}
         self._lock = threading.Lock()
+        # R-STREAM-1 (26/09): battito dello stream (ms locali dell'ultimo
+        # messaggio con dati / dell'ultimo heartbeat Betfair), aggiornato su
+        # OGNI messaggio anche senza partite in registrazione: lo legge lo
+        # stall_worker del runner tennis. 0 = mai visto.
+        self.last_data_ms: int = 0
+        self.last_heartbeat_ms: int = 0
         self._counts: Dict[str, int] = {}
         self._err_logged: Dict[str, float] = {}
 
@@ -119,6 +127,15 @@ class TennisRawTee:
     def write_message(self, raw_data: str) -> None:
         """Tee di UN messaggio raw dello stream. Percorso veloce: nessun evento
         registrato → return immediato (zero impatto sulle partite non registrate)."""
+        # R-STREAM-1 (26/09): il battito PRIMA del percorso veloce (lettura per
+        # sottostringa, niente json.loads): senza, lo stallo era invisibile.
+        tipo = classifica_messaggio_stream(raw_data)
+        if tipo is not None:
+            ora_ms = int(time.time() * 1000)
+            if tipo == MSG_HEARTBEAT:
+                self.last_heartbeat_ms = ora_ms
+            else:
+                self.last_data_ms = ora_ms
         if not self.enabled_events or not self.dir:
             return
         try:

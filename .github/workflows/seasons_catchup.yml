@@ -38,7 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     # CATCHUP_MAX_MINUTI=150 (nessuna lega-stagione nuova dopo 150 min) + l'ultima in corso
     # si ferma a fine partita entro ~2 min + referto: 180 min di tetto.
-    timeout-minutes: 180
+    # R-CATCHUP-1 (26/09): + fino a 90 min di ATTESA iniziale che finiscano le action concorrenti
+    # (il Retrain parte con lo stesso Daily e dura ~55 min): 270 min di tetto.
+    timeout-minutes: 270
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,6 +68,9 @@ jobs:
           API_FOOTBALL_RISERVA_RESIDUA: '300'
           CATCHUP_ORA_STOP_UTC: '23'
           CATCHUP_MAX_MINUTI: '150'
+          # R-CATCHUP-1 (26/09): prima di iniziare aspetta (ricontrollo ogni 2 min, al massimo 90 min)
+          # che Daily/Today/Results/Retrain non siano in corso/in coda, invece di fermarsi alla prima lega
+          CATCHUP_ATTESA_CONCORRENTI_MAX_MINUTI: '90'
           # 400 stagioni passate verificate per notte (erano 150): +13 RPC season_gaps_summary (blocchi
           # da 20), +2 season_aggregates_summary, +250 righe di stato; 5.796 stagioni v1 in ~15 notti
           CATCHUP_MAX_VERIFICHE_PASSATE: '400'

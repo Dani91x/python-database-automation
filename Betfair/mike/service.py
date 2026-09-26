@@ -598,9 +598,10 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                   approvazione_id: Optional[int] = None) -> str:
     """Piazza la gamba (reserve-first). Ritorna 'open' | 'cancelled' | 'pending'.
 
-    Regola prezzo TAKER: il fill avviene al prezzo richiesto solo se ANCORA
-    disponibile (back: best_back ≥ prezzo; lay: best_lay ≤ prezzo); altrimenti
-    nessun fill (mai piu' ottimista del live). La size e' cappata alla size al best.
+    Regola prezzo TAKER: il fill avviene solo se il prezzo richiesto e' ANCORA
+    disponibile (back: best_back ≥ prezzo; lay: best_lay ≤ prezzo), e in paper
+    AL BEST come in live (26/09, R7); altrimenti nessun fill (mai piu'
+    ottimista del live). La size e' cappata alla size al best.
 
     M7 — FEDELTA' PAPER: con il feed STANTIO (riga vecchia e scanner muto) in
     paper non si simula NESSUN fill: i prezzi fermi darebbero un fill fantasma a
@@ -761,9 +762,17 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         # suo esito. Se la risposta non arrivasse mai, il prossimo giro deve
         # comunque aspettare ``cover_retry_min_s``.
         E.segna_tentativo_copertura(ctx, now.timestamp())
+    # 26/09 (R7, reperto e2e 5073-5075): in PAPER il livello del feed si passa
+    # come ladder, cosi' il fill simulato avviene al BEST (back: best >= limite;
+    # lay: best <= limite) come l'abbinamento vero di Betfair, e non al prezzo
+    # limite della gamba (paper pessimista di 2-3 tick). Il LIVE non cambia:
+    # stesso limite, ladder vuota come prima.
+    ladder_paper = (((float(avail_price), float(avail_size)),)
+                    if mode == "paper" and avail_price is not None and avail_size
+                    else ())
     out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
                   selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
-                  best_size=avail_size, ladder=(), client_ref=f"mike-t{trade_id}",
+                  best_size=avail_size, ladder=ladder_paper, client_ref=f"mike-t{trade_id}",
                   trade_id=int(trade_id), meta=meta_exec, now=now, params=exec_params)
     if out.status == "open":
         leg.matched = float(out.size)
@@ -3813,6 +3822,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   "loss_exit": extra.get("last_loss_exit"),
                   "hazard": snap.hazard, "hazard_atlas": live.get("hazard_atlas"),
                   "hazard_model": live.get("hazard_model"), "pressure": live.get("pressure"),
+                  # R-FA-2 (26/09): chiavi v4 dell'atlante calcolate dal dossier ma mai
+                  # copiate qui (0/166 frame): la scheda non sapeva v4/v3 ne' la fase.
+                  # Solo diagnostica, nessun effetto sulla decisione.
+                  "hazard_versione": live.get("hazard_versione"), "hazard_fase": live.get("hazard_fase"),
+                  "hazard_recupero_atteso_min": live.get("hazard_recupero_atteso_min"),
+                  "hazard_nota": live.get("hazard_nota"),
                   "cover_gain_pct": live.get("cover_gain_pct"), "p_over45_model": live.get("p_over45_model"),
                   "p4_market": snap.p4_market, "p4_model": snap.p4_model,
                   # CERT. 12/09 -- DA DOVE arriva il modello: "fixture" (la migliore),

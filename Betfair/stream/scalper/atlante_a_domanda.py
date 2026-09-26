@@ -104,6 +104,20 @@ def _ts(iso: Optional[str]) -> Optional[float]:
         return None
 
 
+PROSSIME_H = 2.0   # O-1 (26/09): fascia 1 = partite che iniziano entro 2 h
+
+
+def fascia_priorita(ko: float, adesso: float, fine_s: float) -> int:
+    """O-1 (26/09): la coda metteva in testa il PRIMO calcio d'inizio della finestra
+    (fino a 36 h indietro), non chi gioca ORA. 0 = in gioco adesso (iniziata da meno
+    di ``fine_partita_min``), 1 = inizia entro PROSSIME_H ore, 2 = il resto."""
+    if ko <= adesso < ko + fine_s:
+        return 0
+    if adesso < ko <= adesso + PROSSIME_H * 3600.0:
+        return 1
+    return 2
+
+
 class MotoreAtlante:
     """Il motore dell'atlante a domanda. ``lettore`` e' un ``G.LettoreDB``
     (solo GET), ``scrittore`` un ``G._Scrittore`` o None (niente DB in
@@ -418,6 +432,8 @@ class MotoreAtlante:
         partite = self.partite_osservate(adesso)
         osservate_ora = []
         primo_ko: Dict[str, float] = {}
+        fascia: Dict[str, int] = {}
+        fine_s = float(self.p["fine_partita_min"]) * 60.0
         for r in partite:
             lid = str(G._int(r.get("league_id")))
             self.osservate[lid] = adesso
@@ -425,7 +441,9 @@ class MotoreAtlante:
             if lid not in primo_ko:
                 osservate_ora.append(lid)
             primo_ko[lid] = min(primo_ko.get(lid, ko), ko)
-        # leghe nuove, prima quelle che giocano prima (in-play in testa)
+            fascia[lid] = min(fascia.get(lid, 2), fascia_priorita(ko, adesso, fine_s))
+        # leghe nuove: in gioco ADESSO in testa, poi chi inizia entro 2 h, poi il
+        # resto; dentro la fascia chi gioca prima (O-1, 26/09)
         # 25/09 sera: una lega nello stato SENZA il v4 (calcolata prima del
         # collegamento) si ricalcola per intero come una nuova, con lo stesso
         # tetto: il v4 non si completa a pezzi (le partite gia' contate nel
@@ -433,15 +451,15 @@ class MotoreAtlante:
         # consultano sul v3 e la nota lo dichiara.
         nuove = [l for l in osservate_ora if (l not in self.leghe or not self._ha_v4(l))
                  and adesso - self.senza_dati.get(l, -1e18) > 86400.0]
-        nuove.sort(key=lambda l: primo_ko.get(l, adesso))
+        nuove.sort(key=lambda l: (fascia.get(l, 2), primo_ko.get(l, adesso)))
         budget = self._budget(adesso)
         scelte = nuove[:budget]
         esiti: Dict[str, str] = {}
-        if nuove != self.in_preparazione:
-            self.in_preparazione = list(nuove)
-            if scelte:
-                # si DICHIARA prima di lavorare: i bot vedono "in preparazione"
-                self._scrivi_live(adesso)
+        # O-3 (26/09): niente scrittura del live "in preparazione" PRIMA del lavoro: il
+        # file si scriveva 2 volte per ciclo con lo stesso generated_at (stato e live
+        # disallineati). Una sola scrittura a fine ciclo, che dichiara le leghe ancora
+        # da preparare (e si fa anche se l'elenco e' cambiato senza altre novita').
+        prep_prima = list(self.in_preparazione)
         for i, lid in enumerate(scelte):
             try:
                 esiti[lid] = self.prepara_lega(lid, adesso)
@@ -487,7 +505,8 @@ class MotoreAtlante:
                 self.ultimo_flush = adesso
             except Exception as ex:  # noqa: BLE001 - si riprova al prossimo ciclo
                 logger.warning("[atlante-domanda] scrittura DB KO: %s", str(ex)[:120])
-        riscrivi = cambiato or (adesso - self.ultima_scrittura > float(self.p["riscrivi_h"]) * 3600.0)
+        riscrivi = (cambiato or self.in_preparazione != prep_prima
+                    or adesso - self.ultima_scrittura > float(self.p["riscrivi_h"]) * 3600.0)
         if riscrivi or not os.path.exists(self.path_live):
             self._scrivi_live(adesso)
         # il file di stato (~10-15 MB a regime) si riscrive solo se serve

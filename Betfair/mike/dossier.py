@@ -80,9 +80,13 @@ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
         out["fixture_id"] = fid
         lam = db.fixture_lambdas(fid) if fid is not None else None
         if lam:
-            out["lambda_home"], out["lambda_away"] = float(lam[0]), float(lam[1])
+            # R-FA-3 (26/09): lega e id squadra si valorizzano anche SENZA lambda
+            # (la riga di fixture_predictions c'e', i lambda no): prima restavano
+            # None e l'atlante si consultava sul globale, senza lega ne' forza.
+            if lam[0] is not None and lam[1] is not None:
+                out["lambda_home"], out["lambda_away"] = float(lam[0]), float(lam[1])
+                out["source"] = "fixture"
             out["league_id"] = lam[2] if len(lam) > 2 else None
-            out["source"] = "fixture"
             # 25/09 notte (atlante v4 A*): id squadra API-Football dalla stessa
             # riga di fixture_predictions; ``live_frame`` li passa all'atlante
             # per la FORZA (Poisson-Elo per squadra). Assenti -> None, dichiarato.

@@ -101,6 +101,16 @@ def should_restart(restart_ts: List[float], now: float, max_per_hour: int) -> bo
     return len(recenti) < int(max_per_hour)
 
 
+def messaggio_crash(target: str, returncode: int, uptime_sec: float) -> str:
+    """Testo base dell'alert/Telegram di crash CON il modulo sorvegliato.
+
+    26/09 (reperto del coordinatore): «RUNNER CRASHATO: exit code 1, uptime
+    611s» non diceva QUALE processo (calcio, tennis o un servizio: sono tutti
+    sotto watchdog); il 26/09 tre crash in un giorno non erano attribuibili."""
+    return (f"RUNNER CRASHATO [{target}]: exit code {returncode}, "
+            f"uptime {uptime_sec:.0f}s.")
+
+
 # ---------------------------------------------------------------------------
 # Dipendenze di default (DB / Telegram) — tutte best-effort
 # ---------------------------------------------------------------------------
@@ -270,7 +280,7 @@ def run_watchdog(
 
         # CRASH → notifica forte + riavvio con backoff (entro il tetto orario)
         consecutive_crashes += 1
-        base_msg = f"RUNNER CRASHATO: exit code {rc}, uptime {uptime:.0f}s."
+        base_msg = messaggio_crash(target, rc, uptime)
         if not should_restart(restart_ts, now(), max_per_hour):
             msg = (f"{base_msg} Riavvii/ora esauriti ({max_per_hour}/h): "
                    "SERVE INTERVENTO MANUALE — il watchdog si ferma.")

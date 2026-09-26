@@ -55,6 +55,15 @@ from .. import ladder_canale as _lcad
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
+from ..runner_lifecycle import (
+    VERDETTO_ATTENDI,
+    VERDETTO_GUARITO,
+    e_errore_di_rete,
+    effective_stall_seconds,
+    raw_stall_seconds,
+    stall_restart_due,
+    verdetto_post_ricostruzione,
+)
 from ..single_instance import acquire_single_instance_lock
 from ..tennis_scalper.run_tennis_scalper import TENNIS_PARAMS as SCALPER_TENNIS_PARAMS
 from ..tennis_scalper.tennis_flb_bot import TennisFLBStrategy
@@ -473,6 +482,15 @@ class TennisLiveSession:
         # escalation LIVE (fix controcheck 16/07: il rinvio non è mai eterno —
         # vedi _RESTART_GRACE_S in _request_restart).
         self.restart_deferred_since: Optional[float] = None
+        # R-STREAM-1 (26/09): dalle 10:41Z anche il tennis ladder=0 per ore e
+        # nessun controllo di stallo. Epoca dell'ultimo framework.run(), ultima
+        # ricostruzione per stallo (throttle), ricostruzione in osservazione
+        # (monotonic + battito dati di quel momento) e ultimo alert d'escalation.
+        self.stream_started_monotonic: Optional[float] = None
+        self.stall_last_restart: float = -1e9
+        self.stallo_rebuild_mono: Optional[float] = None
+        self.stallo_rebuild_dati_ms: int = 0
+        self.stallo_escala_alert_mono: float = -1e9
         self._restart_blocked_logged_at: Optional[float] = None
         # control-row (event_id, bot_key) dei bot IN ATTESA annotati col motivo
         # del rinvio restart (fix cantiere D 17/07: un bot B armato su un altro
@@ -1783,6 +1801,120 @@ def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) ->
 
 
 # ---------------------------------------------------------------------------
+# R-STREAM-1 (26/09) - STALLO DELLO STREAM anche nel tennis. Stessa forma del
+# calcio (runner.heartbeat_worker + _escalation_stallo), stesse funzioni pure
+# di runner_lifecycle: stallo effettivo (dati E heartbeat, hard-cap sui soli
+# dati) -> ricostruzione (via _request_restart, mai forzata); se dopo la
+# ricostruzione lo stream resta fermo -> uscita EXIT_PLANNED_RESTART e il
+# watchdog rilancia (solo app desktop, mai con bot non flat/ordini vivi).
+# ---------------------------------------------------------------------------
+_T_STALL_RESTART_SEC = float(os.getenv("TENNIS_RAW_STALL_RESTART_SEC", "600"))
+_T_STALL_MIN_INTERVAL_SEC = float(os.getenv("TENNIS_RAW_STALL_RESTART_MIN_INTERVAL_SEC", "900"))
+_T_STALL_HARD_CAP_SEC = float(os.getenv("TENNIS_RAW_STALL_HARD_CAP_SEC", "1800")) or None
+_T_STALL_POST_REBUILD_SEC = float(os.getenv("TENNIS_STALL_POST_REBUILD_SEC", "180"))
+_T_STALL_OSSERVA_SEC = float(os.getenv("TENNIS_STALL_POST_REBUILD_OBSERVE_SEC", "900"))
+_T_STALL_ALERT_SEC = 300.0
+
+
+def _alert_stallo_tennis(level: str, msg: str) -> None:
+    """Alert su live_alerts (best-effort: mai fermare il worker)."""
+    try:
+        from .. import db as _db
+
+        _db.insert_alert(level, "TENNIS_STREAM", msg)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[tennis-runner] alert stallo KO: %s", str(e)[:120])
+
+
+def _tennis_blocker_uscita_stallo(flumine: Any, session: TennisLiveSession) -> Optional[str]:
+    """Guardia MONEY-CRITICAL dell'uscita per stallo: il processo nuovo parte con
+    un blotter VUOTO -> mai con disarm in corso, bot NON flat (stessa fonte del
+    restart: ``_hosted_not_flat``) o ordini vivi nel blotter. Un bot armato e
+    flat si riarma dalla sua riga come dopo un restart. In dubbio: resta."""
+    if session.stopping_deadline:
+        return "disarm in corso (chiusura flat da completare)"
+    non_flat = _hosted_not_flat(flumine, session)
+    if non_flat:
+        return "bot non flat: " + ", ".join(f"{bk}@{ev}" for ev, bk, _s in non_flat)
+    try:
+        for market in flumine.markets:
+            blotter = getattr(market, "blotter", None)
+            live = list(getattr(blotter, "live_orders", None) or []) if blotter is not None else []
+            if live:
+                return f"{len(live)} ordini vivi sul mercato {getattr(market, 'market_id', '?')}"
+    except Exception:  # noqa: BLE001
+        return "blotter non leggibile (prudenza: resto acceso)"
+    return None
+
+
+def stall_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
+    """Rilevamento dello stallo dello stream tennis (R-STREAM-1, 26/09)."""
+    try:
+        if session.shutdown_requested.is_set() or not session.market_meta:
+            return
+        now_mono = time.monotonic()
+        now_ms = time.time() * 1000.0
+        started = getattr(session, "stream_started_monotonic", None)
+        age_s = (now_mono - started) if started is not None else None
+        dati_ms = int(RAW_TEE.last_data_ms or 0)
+        data_stall_s = raw_stall_seconds(float(dati_ms), now_ms, age_s)
+        hb_stall_s = raw_stall_seconds(float(RAW_TEE.last_heartbeat_ms or 0), now_ms, age_s)
+        stall_s = effective_stall_seconds(data_stall_s, hb_stall_s, _T_STALL_HARD_CAP_SEC)
+        t0 = session.stallo_rebuild_mono
+        if t0 is not None:
+            verdetto = verdetto_post_ricostruzione(
+                stall_s, dati_ms > int(session.stallo_rebuild_dati_ms or 0),
+                now_mono - t0, _T_STALL_POST_REBUILD_SEC, _T_STALL_OSSERVA_SEC)
+            if verdetto == VERDETTO_ATTENDI:
+                return
+            if verdetto != VERDETTO_GUARITO:
+                _escala_stallo_tennis(flumine, session, stall_s, now_mono)
+                return
+            session.stallo_rebuild_mono = None
+            logger.info("[tennis-runner] ricostruzione per stallo riuscita: dati vivi.")
+        if not stall_restart_due(stall_s, _T_STALL_RESTART_SEC, session.stall_last_restart,
+                                 now_mono, _T_STALL_MIN_INTERVAL_SEC):
+            return
+        session.stall_last_restart = now_mono
+        logger.critical("[tennis-runner] stream MUTO da %.0fs con %d partite: ricostruisco "
+                        "la subscription.", stall_s or 0.0, len(session.market_meta))
+        _alert_stallo_tennis("CRITICAL", f"stream tennis MUTO da {stall_s or 0:.0f}s: "
+                             "ricostruisco la subscription (auto-recovery).")
+        dati_prima = dati_ms
+        if _request_restart(flumine, session, f"stall-recovery: stream muto {stall_s or 0:.0f}s",
+                            forza=False):
+            session.stallo_rebuild_mono = now_mono
+            session.stallo_rebuild_dati_ms = dati_prima
+    except Exception as e:  # noqa: BLE001 - telemetria best-effort, mai fermare il runner
+        logger.debug("[tennis-runner] stall_worker KO: %s", str(e)[:160])
+
+
+def _escala_stallo_tennis(flumine: Any, session: TennisLiveSession,
+                          stall_s: Optional[float], now_mono: float) -> None:
+    """Stream ancora fermo dopo la ricostruzione: processo nuovo (exit 75)."""
+    if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() != "1":
+        session.stallo_rebuild_mono = None   # senza watchdog: resta il ciclo di prima
+        logger.critical("[tennis-runner] stream fermo anche dopo la ricostruzione: senza "
+                        "watchdog il processo NON esce.")
+        return
+    blocker = _tennis_blocker_uscita_stallo(flumine, session)
+    if blocker is not None:
+        if now_mono - session.stallo_escala_alert_mono >= _T_STALL_ALERT_SEC:
+            session.stallo_escala_alert_mono = now_mono
+            logger.critical("[tennis-runner] riavvio per stream muto RINVIATO: %s.", blocker)
+            _alert_stallo_tennis("CRITICAL", "stream tennis MUTO anche dopo la ricostruzione "
+                                 f"ma riavvio del processo RINVIATO ({blocker}).")
+        return
+    logger.critical("[tennis-runner] stream MUTO (%.0fs) dopo la ricostruzione: esco con "
+                    "%d, il watchdog rilancia.", stall_s or 0.0, EXIT_PLANNED_RESTART)
+    _alert_stallo_tennis("CRITICAL", f"stream tennis ancora MUTO {stall_s or 0:.0f}s dopo la "
+                         "ricostruzione: riavvio del processo (il watchdog lo rilancia).")
+    session.planned_restart = True
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+
+
+# ---------------------------------------------------------------------------
 # 25/09 - ISCRIZIONE E ARMAMENTO A CALDO (``iscrizione_a_caldo``)
 # ---------------------------------------------------------------------------
 class ContestoCaldo:
@@ -2497,7 +2629,17 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
     try:
         while not interrupted:
             session.restart_requested.clear()
-            follows = tennis_db.list_pending_tennis_follows()
+            try:
+                follows = tennis_db.list_pending_tennis_follows()
+            except Exception as e:  # noqa: BLE001 - solo la rete: il resto si rilancia
+                # 26/09 (crash exit 1): una SELECT fallita per RETE (anche nel
+                # giro idle ogni 2 s) uccideva il processo; ora attesa e nuovo giro
+                if not e_errore_di_rete(e):
+                    raise
+                logger.warning("[tennis-runner] lettura follow KO per RETE (%s): riprovo "
+                               "tra 15s, il processo resta vivo.", str(e)[:160])
+                time.sleep(15.0)
+                continue
             if only_event:
                 follows = [f for f in follows if f["event_id"] == only_event]
             else:
@@ -2681,6 +2823,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             framework.add_worker(BackgroundWorker(
                 framework, function=lifecycle_worker, interval=60.0,
                 func_kwargs={"session": session}, name="tennis_lifecycle"))
+            # R-STREAM-1 (26/09): stallo dello stream (stessa cadenza del battito calcio)
+            framework.add_worker(BackgroundWorker(
+                framework, function=stall_worker, interval=10.0,
+                func_kwargs={"session": session}, name="tennis_stall"))
 
             for event_id in session.market_meta:
                 if event_id in session.comandi and not any(
@@ -2706,6 +2852,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 _motore.aggancia(framework, session)
                 if _aggancio is not None:
                     _aggancio.aggancia(framework)
+            session.stream_started_monotonic = time.monotonic()  # R-STREAM-1 (26/09)
             try:
                 framework.run()
             except KeyboardInterrupt:

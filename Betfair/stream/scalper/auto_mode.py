@@ -266,6 +266,14 @@ def motivo_esclusione(riga: Optional[Dict[str, Any]],
         return "in attesa di consenso bias"
     if st == "error":
         return "in errore"
+    # 26/09 (reperto e2e, freno delle 09:41Z): una sessione AUTOMATICA chiusa
+    # DAL FRENO non l'ha chiusa l'utente: al rilascio si riarma se la partita
+    # e' ancora idonea (feed, vita, follow). Il marcatore lo scrive la sessione.
+    # Solo 'stopped': ``Db.arma`` riscrive soltanto righe ferme ('done' = file
+    # STOP_SCALPER, che spegne anche il supervisore).
+    if (st == "stopped" and fermata_dal_freno(riga)
+            and origine_riga(riga) == ORIGINE_AUTO):
+        return None
     if st == "done":
         return "conclusa"
     if st == "stopped":
@@ -275,6 +283,23 @@ def motivo_esclusione(riga: Optional[Dict[str, Any]],
             return None
         return "chiusa a mano"
     return "stato sconosciuto (%s)" % (st or "vuoto")
+
+
+#: 26/09 - chiave in ``scalper_control.stats`` scritta dalla sessione quando la
+#: ferma il FRENO (non l'utente, non il feed): vale il motivo del freno
+CHIAVE_FERMATA_FRENO = "fermata_dal_freno"
+
+
+def fermata_dal_freno(riga: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Il motivo del freno che ha fermato questa riga, o None. Letto dalla
+    chiave in cima (select ``fermata_dal_freno:stats->fermata_dal_freno`` del
+    supervisore) o da ``stats`` (riga intera)."""
+    r = riga or {}
+    v = r.get(CHIAVE_FERMATA_FRENO)
+    if not v and isinstance(r.get("stats"), dict):
+        v = r["stats"].get(CHIAVE_FERMATA_FRENO)
+    v = str(v or "").strip()
+    return v or None
 
 
 def sessioni_con_processo(righe: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -362,6 +387,12 @@ MOTIVO_ORIGINE_ASSENTE = ("auto-mode spento: migrazione "
 MOTIVO_TETTO_ZERO = "auto-mode spento (tetto 0): solo le partite armate dalla card"
 
 
+def motivo_freno_testo(freno: str) -> str:
+    """26/09 (reperto e2e): a freno tirato l'auto-mode non arma e lo DICE."""
+    return ("freno tirato (%s): nessuna partita nuova si arma; le sessioni vive "
+            "chiudono flat" % str(freno))
+
+
 def motivo_conflitto(opposta: str) -> str:
     return ("sessioni in %s ancora attive: paper e live mai insieme, nessuna "
             "partita nuova finche' non si fermano"
@@ -371,12 +402,17 @@ def motivo_conflitto(opposta: str) -> str:
 def motivo_blocco(*, acceso: bool, bloccato: bool, feed_letto: bool,
                   feed_vivo: bool, partite_feed: int, origine_ok: bool,
                   tetto: int, sessioni: int, conflitto: Optional[str],
-                  armabili: int) -> Optional[str]:
+                  armabili: int, freno: Optional[str] = None) -> Optional[str]:
     """PERCHE' lo scalper acceso non sta lavorando su nessuna partita. ``None``
     = almeno una sessione con un processo, oppure spento. Mai un motivo con una
-    sessione viva: "acceso ma non apre" sarebbe falso."""
+    sessione viva: "acceso ma non apre" sarebbe falso.
+
+    26/09: il FRENO viene prima di tutto (anche con sessioni in piedi: quelle
+    stanno chiudendo flat e nessuna nuova parte)."""
     if not acceso:
         return None
+    if freno:
+        return motivo_freno_testo(freno)
     if bloccato:
         return MOTIVO_GUARDIA
     if sessioni > 0:

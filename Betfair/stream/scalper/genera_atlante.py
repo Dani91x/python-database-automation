@@ -559,7 +559,11 @@ def assembla_blocco_v4(stati: Dict[str, Dict[str, Any]], *, generated_at: str) -
     if not vista:
         return None
     from . import atlante_v4 as V4
-    rif = max(int(x) for v in vista.values() for x in v["stagioni"]) + 1
+    # O-4 (26/09): il riferimento S + 1 e' PER LEGA (S = la sua ultima stagione).
+    # Unico (max + 1 su tutto l'atlante) valeva 2028 per tutte perche' 3 leghe hanno
+    # gia' una stagione 2027: pesi per eta' spostati rispetto al validato per le altre.
+    # Emivita, BETA ed ETA invariati: cambia solo il riferimento.
+    rif = {lid: max(int(x) for x in v["stagioni"]) + 1 for lid, v in vista.items()}
     return V4.assembla_v4(vista, generated_at=generated_at, stagione_rif=rif)
 
 

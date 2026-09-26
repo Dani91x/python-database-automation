@@ -141,8 +141,11 @@ class Db:
         for i in range(0, len(event_ids), 100):
             blocco = event_ids[i:i + 100]
             try:
+                # 26/09: + il marcatore del freno (una riga fermata DAL FRENO
+                # non e' "chiusa a mano": si riarma al rilascio)
                 r = (self.sb.table("scalper_control")
-                     .select("event_id,status,requested_at,dry_run,origine")
+                     .select("event_id,status,requested_at,dry_run,origine,"
+                             "fermata_dal_freno:stats->fermata_dal_freno")
                      .in_("event_id", blocco).execute())
             except Exception as e:  # noqa: BLE001
                 if "origine" in str(e):
@@ -172,6 +175,10 @@ class Db:
             "event_id": p["event_id"], "home_name": p["home"], "away_name": p["away"],
             "open_date": p.get("open_date"), "league_name": p.get("competition"),
             "status": "PENDING", "updated_at": _now_iso(),
+            # 26/09 (reperto e2e): il follow lo apre l'auto-mode, non l'utente.
+            # Senza, il default della colonna ('manuale') lo mostrava seguito a
+            # mano e l'auto-follow del runner non lo poteva gestire.
+            "origine": "auto",
         }
         self.sb.table("live_follow").upsert(
             riga, on_conflict="event_id", ignore_duplicates=True).execute()
@@ -299,6 +306,8 @@ class StatoAuto:
         self.firma_stats: Optional[str] = None
         self.servizio: Optional[Dict[str, Any]] = None
         self.servizio_letto = False
+        #: 26/09 - ultimo freno visto: un cambio fa partire subito il giro
+        self.freno: Optional[str] = None
 
 
 def _firma_auto(auto: Dict[str, Any]) -> str:
@@ -328,9 +337,12 @@ def _pubblica(topic_chiave: str, res_o_riga: Any, *, e_riga: bool = False) -> No
 
 
 def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
-              ora: float, *, forza: bool = False) -> Dict[str, Any]:
+              ora: float, *, forza: bool = False,
+              freno: Optional[str] = None) -> Dict[str, Any]:
     """UN giro dell'auto-mode. ``righe_attive`` = le righe che il supervisore
     ha appena letto (``Db.controls``: requested/arming/running/stopping).
+    ``freno`` = il motivo del freno unico letto dal supervisore in QUESTO giro
+    (26/09: a freno tirato non si arma niente e ``motivo_blocco`` lo dice).
 
     Ritorna i fatti del giro (anche per i test). Non solleva: ogni lettura
     fallita ferma il giro SENZA dedurre niente (mai "spento" da un errore,
@@ -375,7 +387,9 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
         st.firma_servizio = firma
         _pubblica("scalper_stato", serv, e_riga=True)
     st.servizio = serv
-    if not (cambiato or forza or ora - st.ultimo_giro >= AUTO_GIRO_S):
+    freno_cambiato = (freno or None) != st.freno
+    st.freno = freno or None
+    if not (cambiato or forza or freno_cambiato or ora - st.ultimo_giro >= AUTO_GIRO_S):
         return esito
     st.ultimo_giro = ora
 
@@ -427,7 +441,8 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
     origine_ok = True
     armabili = 0
     posti = max(0, tetto - len(con_processo))
-    if not bloccato and not conflitto and tetto > 0 and posti > 0 and partite:
+    # 26/09 (reperto e2e 09:42Z): a freno tirato NESSUNA riga nuova
+    if not freno and not bloccato and not conflitto and tetto > 0 and posti > 0 and partite:
         vive = [p for p in partite if AM.ha_ancora_vita(p.get("open_date"), params, ora)]
         ids = [p["event_id"] for p in vive]
         per_ev = {p["event_id"]: p for p in vive}
@@ -494,7 +509,7 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
     motivo = AM.motivo_blocco(
         acceso=True, bloccato=bloccato, feed_letto=feed_letto, feed_vivo=feed_vivo,
         partite_feed=len(partite), origine_ok=origine_ok, tetto=tetto,
-        sessioni=sessioni, conflitto=conflitto, armabili=armabili)
+        sessioni=sessioni, conflitto=conflitto, armabili=armabili, freno=freno)
     esito["motivo"] = motivo
     pnl = 0.0
     vivi = 0
@@ -518,6 +533,7 @@ def giro_auto(db: Any, st: StatoAuto, righe_attive: List[Dict[str, Any]],
                               if AM.origine_riga(r) == AM.ORIGINE_AUTO]) + len(esito["armate"]),
         "armate_ora": esito["armate"], "fermate_ora": esito["fermate"],
         "motivo_blocco": motivo, "conflitto": conflitto,
+        "freno": freno or None,
         "pnl_lordo_bot": round(pnl, 2), "ordini_vivi": vivi,
         "feed": {"letto": feed_letto, "vivo": feed_vivo, "partite": len(partite),
                  "eta_scanner_s": None if eta is None else round(eta, 1),
@@ -741,13 +757,15 @@ def main() -> None:
             # 25/09 - le righe appena lette escono sul canale (se acceso) e
             # l'auto-mode decide su QUESTE (nessuna lettura in piu')
             pubblica_sessioni(db, righe_attive)
+            # R3 (25/09): il freno unico, UNA lettura per giro (cache ~2 s).
+            # 26/09 (reperto e2e): letto PRIMA dell'auto-mode, che a freno
+            # tirato non deve armare (prima armava e il freno fermava solo
+            # l'avvio del processo).
+            freno = freno_supervisore()
             try:
-                giro_auto(db, stato_auto, righe_attive, time.time())
+                giro_auto(db, stato_auto, righe_attive, time.time(), freno=freno)
             except Exception:  # noqa: BLE001 - l'auto-mode non ferma il supervisore
                 logger.exception("[scalper-svc] giro auto-mode KO")
-
-            # R3 (25/09): il freno unico, UNA lettura per giro (cache ~2 s)
-            freno = freno_supervisore()
             if freno and freno_detto.get("motivo") != freno:
                 logger.warning("[scalper-svc] FRENO TIRATO (%s): nessuna sessione nuova "
                                "si avvia; quelle vive chiudono flat da sole", freno)

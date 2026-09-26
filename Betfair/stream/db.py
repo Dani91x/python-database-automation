@@ -262,6 +262,11 @@ def get_fixture_prematch_lambdas(
                     return (float(lh), float(la), league_id)
             except (TypeError, ValueError):
                 pass
+    if con_squadre:
+        # R-FA-3 (26/09): riga trovata ma senza lambda -> lega e id squadra lo stesso
+        # (lambda None): senza, il dossier di Mike consultava l'atlante sul globale,
+        # senza lega ne' forza. Il default (tupla di 3 o None) resta invariato.
+        return (None, None, league_id, row.get("home_team_id"), row.get("away_team_id"))
     return None
 
 

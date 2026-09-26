@@ -236,6 +236,37 @@ class ControlloConcorrenza:
         return esito
 
 
+ATTESA_CONCORRENTI_MAX_MIN_DEFAULT = 90   # CATCHUP_ATTESA_CONCORRENTI_MAX_MINUTI
+ATTESA_CONCORRENTI_PASSO_SEC = 120
+
+
+def attendi_action_concorrenti(concorrenza: Any, attesa_max_min: int, stampa: Callable[[str], None] = print,
+                               dormi: Callable[[float], None] = time.sleep, orologio: Callable[[], float] = time.time,
+                               passo_sec: int = ATTESA_CONCORRENTI_PASSO_SEC) -> Optional[str]:
+    """R-CATCHUP-1 (26/09): il catchup del mattino parte dopo il mapper mentre il Retrain
+    (agganciato allo stesso Daily, ~55 min) e' in corso e si fermava alla prima lega con 0
+    chiamate. Prima di iniziare ASPETTA che le action esclusive finiscano (ricontrollo ogni
+    `passo_sec`), al massimo `attesa_max_min` minuti. None = via libera; altrimenti il motivo
+    ancora vero a fine attesa (esegui_catchup si fermera' come prima, dichiarato)."""
+    if concorrenza is None:
+        return None
+    t0 = orologio()
+    atteso = False
+    while True:
+        motivo = concorrenza.in_corso(forza=True)
+        minuti = (orologio() - t0) / 60.0
+        if not motivo:
+            if atteso:
+                stampa(f"[CATCHUP] ATTESA FINITA dopo {minuti:.0f} min: nessuna action concorrente, si parte")
+            return None
+        if minuti >= attesa_max_min:
+            stampa(f"[CATCHUP] ATTESA SCADUTA dopo {minuti:.0f}/{attesa_max_min} min: {motivo}")
+            return motivo
+        stampa(f"[CATCHUP] ATTESA: {motivo} (atteso {minuti:.0f}/{attesa_max_min} min, ricontrollo fra {passo_sec} s)")
+        atteso = True
+        dormi(passo_sec)
+
+
 # ---------------------------------------------------------------------------
 # Candidati e coda
 # ---------------------------------------------------------------------------
@@ -896,6 +927,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # riserva dinamica: piena finche' Daily/Today/Results di oggi non hanno finito, poi residua
     quota = GestoreQuota(sb=sb, api_key=API_FOOTBALL_KEY, client=client,
                          action_completate=getattr(concorrenza, "action_completate_oggi", None))
+    # R-CATCHUP-1 (26/09): prima si aspetta la fine di Retrain/Daily/Today/Results (niente quota spesa)
+    attendi_action_concorrenti(concorrenza, _env_int("CATCHUP_ATTESA_CONCORRENTI_MAX_MINUTI",
+                                                     ATTESA_CONCORRENTI_MAX_MIN_DEFAULT))
     try:
         ris = esegui_catchup(sb, client, quota, concorrenza)
     except (QuotaNonLeggibile, sg.MigrazioneMancante) as e:
