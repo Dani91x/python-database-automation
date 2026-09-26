@@ -341,7 +341,8 @@ def _mai_eseguito(a: Any) -> None:
 
 
 @pytest.mark.parametrize("modifica,codice", [
-    ({"side": "back"}, MO.M_PARAM),
+    # 26/09: 'back'/'lay' ammessi (forma della coda DB); una forma terza no
+    ({"side": "Back"}, MO.M_PARAM),
     ({"price": float("nan")}, MO.M_PARAM),
     ({"price": 1.0}, MO.M_PARAM),
     ({"size": True}, MO.M_PARAM),

@@ -569,18 +569,71 @@ def upsert_live_order(row: Dict[str, Any]) -> None:
 
     _lpub("order", payload)  # A7: fill realtime sul desktop
     _avvisa_osservatori(payload)  # 24/09 F3: eventi per attore del motore ordini
+    # 26/09 (R9): riga di un ordine nato da un COMANDO -> ``source`` = attore
+    # (solo nella riga del DB: publish ed eventi restano la riga di sempre).
+    src = _sorgente_di(payload)
+    riga_db = dict(payload, source=src) if src else payload
     scr = _SCRITTORE
     if scr is not None:
         # 24/09 F2: nessun IO DB sul thread PRINCIPALE di flumine (chi chiama e'
         # ``process_orders``): l'upsert idempotente va allo scrittore asincrono,
         # in ordine (FIFO, un solo thread) e con i suoi tentativi.
-        scr.accoda("specchio ordine", lambda sb: sb.table("betfair_live_orders").upsert(
-            payload, on_conflict="mode,client_order_ref").execute(), tentativi=5)
+        scr.accoda("specchio ordine", lambda sb: _upsert_specchio(
+            sb, riga_db, lambda q: q.execute()), tentativi=5)
         return
     sb = get_supabase_client()
-    _exec_retry(sb.table("betfair_live_orders").upsert(
-        payload, on_conflict="mode,client_order_ref"
-    ))
+    _upsert_specchio(sb, riga_db, _exec_retry)
+
+
+#: 26/09 - CHECK ``betfair_live_orders_source_check`` di oggi ('runner',
+#: 'account', 'scalper'): senza la migrazione ``betfair_live_orders_source_bot_
+#: 2026-09-26.sql`` la riga con la source del bot e' rifiutata.
+_VINCOLO_SOURCE = "betfair_live_orders_source_check"
+
+
+def _upsert_specchio(sb: Any, riga: Dict[str, Any], esegui: Any) -> Any:
+    """Upsert dello specchio. Se il DB rifiuta SOLO la ``source`` (migrazione
+    non ancora applicata) la riga si riscrive senza (DEFAULT 'runner'): lo
+    specchio di un ordine non si perde mai per l'etichetta."""
+    try:
+        return esegui(sb.table("betfair_live_orders").upsert(
+            riga, on_conflict="mode,client_order_ref"))
+    except Exception as ex:  # noqa: BLE001 - si ritenta solo il caso del vincolo
+        if "source" not in riga or _VINCOLO_SOURCE not in str(ex):
+            raise
+        logger.warning("[db] specchio: source %r non ammessa dal DB (migrazione "
+                       "betfair_live_orders_source_bot_2026-09-26 da applicare): riga "
+                       "scritta senza", riga.get("source"))
+        senza = {k: v for k, v in riga.items() if k != "source"}
+        return esegui(sb.table("betfair_live_orders").upsert(
+            senza, on_conflict="mode,client_order_ref"))
+
+
+_SORGENTI_ORDINI: List[Any] = []
+
+
+def aggiungi_sorgente_ordini(cb: Any) -> None:
+    """26/09 (R9): ``cb(riga) -> Optional[str]`` = la ``source`` della riga dello
+    specchio (il motore ordini: l'attore del comando). Solo RAM, velocissima."""
+    if cb not in _SORGENTI_ORDINI:
+        _SORGENTI_ORDINI.append(cb)
+
+
+def rimuovi_sorgente_ordini(cb: Any) -> None:
+    if cb in _SORGENTI_ORDINI:
+        _SORGENTI_ORDINI.remove(cb)
+
+
+def _sorgente_di(payload: Dict[str, Any]) -> Optional[str]:
+    for cb in list(_SORGENTI_ORDINI):
+        try:
+            src = cb(payload)
+        except Exception as ex:  # noqa: BLE001 - l'etichetta non ferma lo specchio
+            logger.warning("[db] sorgente ordini KO: %s", str(ex)[:160])
+            continue
+        if src:
+            return str(src)
+    return None
 
 
 # ----------------------------------------------------------------------------

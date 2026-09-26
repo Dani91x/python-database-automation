@@ -100,7 +100,7 @@ def test_dedup_e_rifiuti_come_dal_vivo(banco):
     primo = porta.invia(_cmd(1))
     secondo = porta.invia(_cmd(1, price=9.0))
     assert secondo == dict(primo, motivo=MO.MOTIVO_REF_GIA_VISTO)
-    rif = porta.invia(_cmd(2, side="back"))
+    rif = porta.invia(_cmd(2, side="Back"))
     assert rif["accettato"] is False and rif["motivo"].startswith(MO.M_PARAM)
     assert chiamate == ["place"] and len(market.calls) == 1
 

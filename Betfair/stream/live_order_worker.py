@@ -1139,7 +1139,11 @@ def _journal_scrivi(sb: Any, request_row: Dict[str, Any], mode_l: str,
                 "event_id": event_id,
                 "market_id": market_id,
                 "selection_id": selection_id,
-                "side": request_row.get("side"),
+                # 26/09 (alert 511): CHECK side IN ('back','lay'); difesa in
+                # profondita' (il motore normalizza gia' all'ingresso)
+                "side": (request_row.get("side").lower()
+                         if isinstance(request_row.get("side"), str)
+                         else request_row.get("side")),
                 "price": _f(request_row.get("price")),
                 "size": _f(request_row.get("size")),
                 "persistence": request_row.get("persistence"),
@@ -3084,7 +3088,20 @@ def _persist_submin_step(
 # ---------------------------------------------------------------------------
 import itertools as _itertools
 
-_LOCAL_RID = _itertools.count(9_000_000_000)  # id sintetici: mai in collisione col bigserial
+def _base_rid_avvio(ora_ms: Optional[int] = None) -> int:
+    """26/09 (R11, money-critical in LIVE): gli id sintetici dei comandi del
+    canale ripartivano da 9000000000 a OGNI avvio -> ``awlq9000000000`` di oggi
+    = riga LIVE del 10/07 nello specchio (upsert su mode+client_order_ref: in
+    live l'avrebbe sovrascritta; e ``local<rid>`` della coda, UNIQUE, rifiutato).
+    Base = istante d'avvio in ms x 1000: un avvio successivo parte oltre ogni id
+    del precedente finche' quello non emette 1000 comandi per ms di vita.
+    16 cifre (fino al 2286): > serie vecchia e bigserial, < 2**53 (intero
+    esatto in JSON/JS), ``awlq`` + rid + suffisso gamba entro i 32 caratteri."""
+    ms = int(time.time() * 1000) if ora_ms is None else int(ora_ms)
+    return ms * 1000
+
+
+_LOCAL_RID = _itertools.count(_base_rid_avvio())  # id sintetici univoci fra gli avvii
 _LOCAL_ACTIONS = frozenset(
     {"place", "cancel", "replace", "greenup", "dutch", "cashout_all", "cashout_event"}
 )  # place_submin ESCLUSO: la sua macchina a stati vive sulla coda DB

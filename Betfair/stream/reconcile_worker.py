@@ -785,6 +785,12 @@ def _fonte_di(tabella: str, extra: Dict[str, Any], order: Any) -> str:
     if tabella == "mike_trades":
         return "mike"
     src = str(extra.get("source") or "").strip().lower()
+    # 26/09 (R9): la riga dello specchio di un comando del motore porta
+    # l'ATTORE; se la riga del bot non e' stata trovata conta sotto la SUA voce
+    if src == "omega" or src == "mike":
+        return src
+    if src == "safe" or src == "safe_tennis":
+        return "safe_tennis" if (tennis or src == "safe_tennis") else "safe_calcio"
     if tabella == "tennis_live_orders":
         return "manuale_app" if src in ("", "manual") else "bot_tennis"
     # betfair_live_orders: 'runner' = terminale manuale dell'app;

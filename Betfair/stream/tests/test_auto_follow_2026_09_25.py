@@ -330,15 +330,18 @@ def test_cancel_non_aggancia(amb):
     assert _ack(amb, ws)["motivo"] is None and "1.888" not in auto.piano.mercati()
 
 
-def test_runner_fermo_rifiuta_ma_chiede_l_aggancio(amb):
+def test_runner_fermo_accetta_in_aggancio_e_chiede_l_aggancio(amb):
+    # 26/09 (riavvio 2, R12): prima rifiutato ``runner_non_agganciato``; ora
+    # accettato ``in_aggancio`` e servito quando il runner parte col mercato
     auto = _auto()
     _monta(amb, auto)
     amb.motore.sgancia()
     ws = amb.ch.collega("safe")
     _manda(amb, ws, _cmd(market_id="1.901"))
     ack = _ack(amb, ws)
-    assert ack["accettato"] is False and ack["motivo"].startswith(MO.M_AGGANCIO)
-    assert "aggancio richiesto" in ack["motivo"] and "1.901" in auto.piano.mercati()
+    assert ack["accettato"] is True and ack["motivo"].startswith(MO.M_IN_AGGANCIO)
+    assert "1.901" in auto.piano.mercati() and "safe-t1" in amb.motore._in_aggancio
+    assert amb.market.calls == []
 
 
 def test_latenza_logica_aggancio_sotto_i_20_ms(amb):

@@ -952,12 +952,18 @@ def _track_manual(session: Any, cust_ref: str, order: Any, mode: str,
     'live' hardcoded (altrimenti un fill PAPER finirebbe sotto 'live')."""
     if session is None:
         return
+    # 26/09 (R9, regola 25/09 "ordini flaggati col nome del bot"): un ordine
+    # nato da un comando del motore porta l'ATTORE (es. 'safe_tennis'); coda DB,
+    # /order del desktop e attore 'desktop' restano 'manual'.
+    from .. import live_order_worker as _low
+
+    attore = getattr(_low._CONTESTO, "strategy_ref", None)
     session.tracked_orders[cust_ref] = {
         "order": order,
         "trade": trade if trade is not None else _val(order, "trade"),
         "mode": str(mode or "paper").strip().lower(),
         "event_id": event_id,
-        "source": "manual",
+        "source": str(attore) if attore and attore != "desktop" else "manual",
         # generazione del framework al piazzamento (fix audit #8): dopo un restart
         # l'Order appartiene a un framework smontato e va chiuso/scartato, non
         # ri-specchiato per sempre come EXECUTABLE fantasma.
@@ -1299,7 +1305,15 @@ def _reject_cross_mode(rid: int, row: Dict[str, Any], runner_mode_l: str) -> Non
 
 import itertools as _itertools
 
-_LOCAL_SID = _itertools.count(9_000_000_000)
+def _base_sid_avvio(ora_ms: Optional[int] = None) -> int:
+    """26/09 (R11): come ``live_order_worker._base_rid_avvio`` del calcio (qui
+    senza importarlo al caricamento): ``awtq<sid>`` e ``cmd<sid>``/``local<sid>``
+    univoci fra un avvio e il successivo (prima ripartivano da 9000000000)."""
+    ms = int(time.time() * 1000) if ora_ms is None else int(ora_ms)
+    return ms * 1000
+
+
+_LOCAL_SID = _itertools.count(_base_sid_avvio())
 _LOCAL_TENNIS_ACTIONS = frozenset({"place", "cancel", "replace", "greenup"})
 # fix review HIGH: dedup per client_ref (mai doppia esecuzione su reinvio)
 _LOCAL_SEEN: Dict[str, tuple] = {}

@@ -289,7 +289,7 @@ def test_b_canale_47331_strada_canale(monkeypatch, caplog):
     _risposta_e_abbinamento(order, int(time.time() * 1000))
     _strategia_specchio(monkeypatch).process_orders(market, [order])
     (c,) = _righe(caplog)
-    assert c["strada"] == "canale" and c["ref"].startswith("awlq9")
+    assert c["strada"] == "canale" and c["ref"].startswith("awlq") and c["ref"][4:].isdigit()  # 26/09 R11: rid univoco fra gli avvii
     assert c["rif"] == "c0ffee00-0000-4000-8000-000000000001"
     # il desktop non porta l'istante del clic e LocalRequest non porta l'arrivo
     assert c["decisione_ms"] == "na" and c["ricezione_ms"] == "na"
@@ -397,7 +397,7 @@ def test_c_tennis_canale_e_coda_strada_tennis(monkeypatch, caplog):
     assert [(c["strada"], c["via"]) for c in righe] == [("tennis", "canale"),
                                                         ("tennis", "coda")]
     canale, coda = righe
-    assert canale["ref"].startswith("awtq9") and coda["ref"] == "awtq21"
+    assert canale["ref"].startswith("awtq") and canale["ref"][4:].isdigit() and coda["ref"] == "awtq21"
     assert canale["ricezione_ms"] == "na"
     assert 300 - 1 <= _num(coda, "ricezione_ms") and "ricezione:db/pc" in coda["orologi"]
     assert {_num(canale, "abbinato_ms"), _num(coda, "abbinato_ms")} == {400, 401}

@@ -113,10 +113,12 @@ M_TETTO = "tetto_mercati_pieno"
 #: cancel/replace/cashout lavorano su ordini gia' nel blotter (mercato seguito).
 AZIONI_CON_AGGANCIO = frozenset({"place", "greenup"})
 #: attesa massima del primo book dopo l'aggancio (ms), oltre: rifiuto dichiarato.
-#: Uguale al budget di trasporto di serie (MAX_ETA_DEFAULT_MS): la decisione del
-#: bot arriva a Betfair al piu' 2x3 s dopo, meno del bet delay in-play (5 s)
-#: che ogni ordine in gioco sconta comunque.
-AGGANCIO_MAX_MS_DEFAULT = 3000
+#: 26/09 (riavvio 2): 3000 ms non bastavano (omega-t124 scaduto; riusciti in
+#: 1113 e 2176 ms; runner tennis ancora senza framework all'accensione). 10 s,
+#: dimensionati sui tempi veri. L'eta' del comando (``max_eta_ms``) si misura
+#: all'ARRIVO (``ricevuto_ms``), mai sull'attesa dell'aggancio; il prezzo resta
+#: il limite del bot (Safe FOK, Omega limite): un book cambiato non abbina peggio.
+AGGANCIO_MAX_MS_DEFAULT = 10000
 # Estensione del coordinatore (24/09): ack a un ref gia' visto = ``accettato`` e
 # ``seq`` della PRIMA risposta, motivo questa costante.
 MOTIVO_REF_GIA_VISTO = "ref_gia_visto"
@@ -414,9 +416,13 @@ def valida_comando(attore: str, d: Dict[str, Any]) -> Dict[str, Any]:
     if azione == "place":
         riga["selection_id"] = _intero(d.get("selection_id"), "selection_id")
         lato = d.get("side")
-        if lato not in ("BACK", "LAY"):
+        if lato not in ("BACK", "LAY", "back", "lay"):
             raise Rifiuto(M_PARAM, f"side non ammesso: {lato!r}")
-        riga["side"] = lato
+        # 26/09 (riavvio 2, alert 511 JOURNAL KO): la riga del comando ha la
+        # forma della CODA DB (``side IN ('back','lay')``, come il REST del
+        # worker): journal, registrazione in coda e specchio la scrivono tale e
+        # quale. Normalizzata UNA volta qui; il bot puo' mandare l'una o l'altra.
+        riga["side"] = lato.lower()
         riga["price"] = _num(d.get("price"), "price", minimo=1.0)
         riga["size"] = _num(d.get("size"), "size", minimo=0.0)
         pers = d.get("persistence") or "LAPSE"
@@ -462,7 +468,9 @@ def riduce_esposizione(win: float, lose: float, side: str, price: float,
     posizione, il caso peggiore non peggiora e la distanza fra i due esiti non
     cresce. ``win``/``lose`` = profitto se la selezione vince/perde (blotter)."""
     eps = 1e-9
-    if side == "BACK":
+    # 26/09: il lato del comando e' minuscolo (forma della coda); mai un
+    # 'back' letto come LAY
+    if str(side).upper() == "BACK":
         nw, nl = win + size * (price - 1.0), lose - size
     else:
         nw, nl = win - size * (price - 1.0), lose + size
@@ -488,6 +496,12 @@ def fase_da_riga(riga: Dict[str, Any]) -> str:
             return "annullato"
         return "abbinato" if sm > 0 else "annullato"
     if st == "EXECUTABLE":
+        # 26/09 (R10, safe_tennis-t352): abbinato 3/3 pubblicato come
+        # 'abbinato_parziale'. Tutta la size abbinata = l'ordine non puo' fare
+        # altro: fase terminale 'abbinato', come a EXECUTION_COMPLETE.
+        size = float(riga.get("size") or 0.0)
+        if size > 0 and sm >= size - 1e-9:
+            return "abbinato"
         if sm > 0:
             return "abbinato_parziale"
         return "accettato_betfair" if riga.get("bet_id") else "inviato"
@@ -625,6 +639,7 @@ class MotoreOrdini:
 
         dbm.imposta_scrittore(self.scrittore)
         dbm.aggiungi_osservatore_ordini(self._su_riga_specchio)
+        dbm.aggiungi_sorgente_ordini(self.sorgente_ordine)  # 26/09 R9: source = attore
         LOW.imposta_drenaggio_esterno(True)
         if self.canale is not None:
             self.canale.set_su_comando(self.sveglia)
@@ -641,6 +656,7 @@ class MotoreOrdini:
             self.canale.set_su_comando(None)
         LOW.imposta_drenaggio_esterno(False)
         dbm.rimuovi_osservatore_ordini(self._su_riga_specchio)
+        dbm.rimuovi_sorgente_ordini(self.sorgente_ordine)
         dbm.imposta_scrittore(None)
         self._stop.set()
         self._evento.set()
@@ -726,6 +742,12 @@ class MotoreOrdini:
 
     # --------------------------------------------------------------- /comando
     def _prossimo_seq(self, attore: str) -> int:
+        """26/09 (riavvio 2, R-F2-19: stesso seq su omega-t124 e safe-t348): il
+        ``seq`` e' PER ATTORE per contratto e resta tale (scelta documentata). La
+        porta di ogni bot conta i buchi sul SUO seq contiguo (``MemoriaComandi.
+        _avanza_seq``) e ``da_seq`` risponde per attore: un seq globale aprirebbe
+        un "buco" a ogni messaggio di un altro bot. Identita' di un messaggio =
+        (attore, seq) o il ``ref``; mai il seq da solo fra bot diversi."""
         with self._lock_seq:
             s = self._seq.get(attore, self._base_seq) + 1
             self._seq[attore] = s
@@ -867,8 +889,16 @@ class MotoreOrdini:
                                                  motivo="comando a runner fermo")
                 except Exception as ex:  # noqa: BLE001
                     no = str(ex)[:120]
-                dettaglio += (": aggancio richiesto, il runner parte coi mercati dei bot"
-                              if no is None else f": aggancio non possibile ({no})")
+                if no is None:
+                    # 26/09 (riavvio 2, R12: omega-t124 e safe_tennis-t346 rifiutati
+                    # subito dopo l'accensione): aggancio preso in carico = comando
+                    # ACCETTATO ``in_aggancio`` e parcheggiato; le guardie (modo,
+                    # kill-switch, settings) si rifanno TUTTE in ``avanza_aggancio``
+                    # quando il framework c'e' e il mercato e' servibile. Oltre
+                    # ``aggancio_max_ms``: rifiuto certo, nessun ordine.
+                    piano["attende_runner"] = True
+                    return
+                dettaglio += f": aggancio non possibile ({no})"
             raise Rifiuto(M_AGGANCIO, dettaglio)
         mode = piano["mode"]
         # capacita' del processo (tetto .env): quali client esistono. Il modo
@@ -1068,6 +1098,10 @@ class MotoreOrdini:
         if ag is None or piano.get("azione") not in AZIONI_CON_AGGANCIO:
             return None
         mid = str(piano["riga"].get("market_id") or "")
+        if piano.pop("attende_runner", False):
+            # 26/09: runner senza framework, aggancio gia' chiesto da ``_controlla``
+            return (f"{M_IN_AGGANCIO}: runner senza framework, mercato {mid} chiesto al "
+                    f"runner (al piu' {self.aggancio_max_ms} ms)")
         # FIFO per mercato: dietro a un comando gia' in attesa si mette in fila
         in_fila = any(p["market_id"] == mid for p in self._in_aggancio.values())
         if not in_fila and ag.servibile(mid):
@@ -1300,17 +1334,45 @@ class MotoreOrdini:
         self.conti["order"] += 1
         self._memorizza_e_invia(attore, {"t": "order", "d": d})
 
+    def _rif_interno_di(self, cor: Any) -> Optional[str]:
+        """Il ref interno del comando (``awlq<rid>``/``awtq<rid>``) da un
+        ``client_order_ref`` dello specchio, gambe comprese (``...x1``, ``...d0``).
+        26/09 (R11): il rid non ha piu' 10 cifre fisse (e' univoco fra gli
+        avvii): si prendono TUTTE le cifre dopo il prefisso."""
+        # 25/09: il prefisso del ref interno e' quello dell'esecutore
+        # (calcio ``awlq``, tennis ``awtq``)
+        pref = self._low._cust_ref("")
+        if not isinstance(cor, str) or not cor.startswith(pref):
+            return None
+        n = len(pref)
+        while n < len(cor) and cor[n].isdigit():
+            n += 1
+        return cor[:n] if n > len(pref) else None
+
+    def sorgente_ordine(self, payload: Dict[str, Any]) -> Optional[str]:
+        """26/09 (R9, regola dell'utente 25/09 "ordini flaggati col nome del
+        bot"): la ``source`` della riga dello specchio di un ordine nato da un
+        COMANDO = l'attore (omega, safe, mike, ...). None = riga non nata da un
+        comando o del desktop (resta 'runner', il manuale dell'app). Solo RAM:
+        gira sul thread principale di flumine (``db.upsert_live_order``)."""
+        rif = self._rif_interno_di(payload.get("client_order_ref"))
+        if rif is None:
+            return None
+        with self._lock_seq:
+            info = self._rif_interni.get(rif)
+            if info is None or payload.get("mode") != info["mode"]:
+                return None
+            attore = info["attore"]
+        return None if attore == "desktop" else attore
+
     def _su_riga_specchio(self, payload: Dict[str, Any]) -> None:
         """Osservatore dello specchio (thread PRINCIPALE di flumine): SOLO un
         lookup in RAM e un invio. Righe non nate da un comando: ignorate."""
-        cor = payload.get("client_order_ref")
-        # 25/09: il prefisso del ref interno e' quello dell'esecutore
-        # (calcio ``awlq``, tennis ``awtq``), sempre seguito da 10 cifre
-        pref = self._low._cust_ref("")
-        if not isinstance(cor, str) or not cor.startswith(pref) or len(cor) < len(pref) + 10:
+        rif = self._rif_interno_di(payload.get("client_order_ref"))
+        if rif is None:
             return
         with self._lock_seq:
-            info = self._rif_interni.get(cor[:len(pref) + 10])
+            info = self._rif_interni.get(rif)
             if info is None or payload.get("mode") != info["mode"]:
                 return
             if not info["pronto"]:
