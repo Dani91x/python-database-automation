@@ -61,10 +61,11 @@ stessa catena sul runner TENNIS. Motore VERO con l'esecutore tennis
 client VERO ``PortaCanale`` con l'attore ``safe_tennis`` e ref
 ``safe_tennis-t<id>``, risoluzione VERA della riga Safe (strategia ``tennis``).
 Stessi scenari, con queste differenze DICHIARATE:
-  R8  sotto il minimo - il runner tennis NON ha il place-and-trim: l'apertura
-                        sotto il minimo e' rifiutata DICHIARANDOLO
-                        (``submin_non_percorribile``), nessun ordine, riga
-                        error (divergenza dalla REST di oggi: reperto);
+  R8  sotto il minimo - il runner tennis NON ha il place-and-trim: dal 28/09
+                        (decisione dell'utente) l'apertura sotto il minimo
+                        parte AL minimo (BACK 2,00) come place normale e
+                        l'evento lo dichiara (``portata_al_minimo``); prima
+                        era rifiutata ``submin_non_percorribile``;
   R10 famiglia        - l'aggancio e' ``AgganciaTennis`` di produzione
                         (priorita' COMANDO del piano ``iscrizione_a_caldo``);
                         al posto della risottoscrizione sulla connessione
@@ -1077,9 +1078,11 @@ def _motivo_esito_diario(b: BancoRapido, ref: str) -> str:
 
 
 def _r8_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
-    """Il runner tennis NON ha il place-and-trim: un'apertura sotto il minimo
-    non parte e lo si DICE (``submin_non_percorribile``). Divergenza dichiarata
-    dalla REST di oggi (place-and-trim REST): reperto per l'utente."""
+    """28/09 - DECISIONE DELL'UTENTE su R-1 ("porta al limite minimo
+    accettato"): il runner tennis non ha il place-and-trim e un'apertura sotto
+    il minimo NON si rifiuta piu': parte AL minimo (BACK 2,00) come place
+    normale, e l'evento lo DICE (``portata_al_minimo``). Prima: rifiuto
+    ``submin_non_percorribile``, nessun ordine."""
     sel, prezzo_b, _d = b.quota("back")
     size = 1.50                                 # BACK sotto il minimo .it (2,00)
     tid = A.riserva(side="back", price=prezzo_b, size=size)
@@ -1088,18 +1091,27 @@ def _r8_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, An
     A.invia(tid, selection_id=sel, side="back", price=prezzo_b, size=size)
     fase = _aspetta_terminale(b, ref, secondi=5.0)
     motivo = _motivo_esito_diario(b, ref)
-    e.controlla("evento terminale 'rifiutato' (mai in silenzio)", fase == "rifiutato", fase)
-    e.controlla("motivo dichiarato 'submin_non_percorribile' nel diario del runner",
-                motivo.startswith("submin_non_percorribile"), motivo[:160])
-    e.controlla("nessun ordine, nessun REST",
-                len(b.ordini_del_motore()) == ord0 and _conta_rest(b) == rest0,
-                (len(b.ordini_del_motore()) - ord0, b.rest[rest0:]))
+    e.controlla("evento terminale NON 'rifiutato' (l'apertura parte)",
+                fase is not None and fase != "rifiutato", fase)
+    e.controlla("nessun motivo di rifiuto nel diario del runner", motivo == "", motivo[:160])
+    eventi = list(b.pb.esiti(ref) or [])
+    primo = eventi[0] if eventi else {}
+    e.controlla("l'evento DICE che l'importo e' stato portato al minimo",
+                primo.get("portata_al_minimo") == {"chiesto": size, "piazzato": 2.0},
+                primo.get("portata_al_minimo"))
+    nuovi = b.ordini_del_motore()[ord0:]
+    e.controlla("UN ordine al minimo (2,00) alla quota chiesta, nessun REST",
+                len(nuovi) == 1 and _conta_rest(b) == rest0
+                and abs(float(nuovi[0].order_type.size) - 2.0) < 1e-9
+                and abs(float(nuovi[0].order_type.price) - prezzo_b) < 1e-6,
+                ([(o.order_type.size, o.order_type.price) for o in nuovi],
+                 b.rest[rest0:]))
     e.controlla("nessun place-and-trim appeso", not b.pb.motore._submin,
                 list(b.pb.motore._submin))
     riga = A.risolvi(tid)
-    e.controlla("riga 'error' (nessun fill inventato)", riga.get("status") == "error",
-                riga.get("status"))
-    stato["r8_tennis_motivo"] = motivo[:200]
+    e.controlla("riga non in errore (esito dall'ordine vero, nessun rifiuto inventato)",
+                riga.get("status") != "error", riga.get("status"))
+    stato["r8_tennis_portata_al_minimo"] = primo.get("portata_al_minimo")
 
 
 def _r10_tennis(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:

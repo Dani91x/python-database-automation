@@ -50,6 +50,8 @@ from .condotta_ordini import (
     ingresso_finito,
     ordini_vivi_su,
     registra_esito_manuale,
+    UsciteEsatte,
+    diretta_ok,
     size_legale,
     stato_ordine,
 )
@@ -222,6 +224,8 @@ class TennisProStrategy(BaseStrategy):
         # Betfair rifiuta e la gamba resta scoperta. Lo dichiara il runner
         # (`live_min_bet` > 0 solo in LIVE, `tennis_runner._instantiate_bot`).
         self.live: bool = float(c.get("live_min_bet", 0.0) or 0.0) > 0.0
+        # 28/09: le chiusure ESATTE (place-and-trim del resto), vedi `_place`
+        self._esatte = UsciteEsatte(self, self._emit)
         # freno dopo i rifiuti di Betfair (modulo condiviso coi quattro bot)
         self._freno = FrenoRifiuti()
         # D2 (24/09): il diario delle attese di riapertura (una riga per sospensione)
@@ -380,6 +384,21 @@ class TennisProStrategy(BaseStrategy):
         if self.dry_run:
             self._emit("dry_place", sel=sel, side=side, price=price, size=size)
             return None
+        # 28/09 - CHIUSURE ESATTE (regola permanente dell'utente: "le chiusure
+        # devono sempre essere perfette e spalmare il profitto o la loss su
+        # entrambe le selezioni"). Una copertura che Betfair non accetta
+        # DIRETTAMENTE (BACK sotto 2,00 o non multiplo di 0,50, LAY sotto 0,50)
+        # esce all'importo ESATTO: parte diretta con questo stesso `_place`
+        # (stesse guardie) + resto col place-and-trim (`UsciteEsatte`). Prima
+        # si gonfiava al gradino da 0,50 sopra (2,02 -> 2,50). Uguale in paper
+        # e in live (`self.live` vale per entrambi dal 28/09).
+        if copertura and self.live and not diretta_ok(size, side):
+            if guardia_flumine(market, self._attese, self._emit,
+                               sel=int(sel), side=side) is not None:
+                return None
+            return self._esatte.piazza(
+                market, sel, side, price, size,
+                lambda s: self._place(market, sel, side, price, s, copertura=True))
         # SIZE LEGALE DI GIURISDIZIONE (.it): sotto il minimo o non multipla di
         # 0,50 Betfair RIFIUTA e la gamba resta scoperta. Le coperture si
         # bumpano (meglio un over-hedge che una posizione nuda), gli ingressi no.
@@ -441,12 +460,8 @@ class TennisProStrategy(BaseStrategy):
             return None
 
     def _cancel(self, market: Any, order: Any) -> None:
-        if order is None:
-            return
-        try:
-            market.cancel_order(order)
-        except Exception:  # noqa: BLE001
-            pass
+        # 28/09: anche una chiusura esatta (parti vive + sequenza fermata)
+        self._esatte.annulla(market, order)
 
     def _close_at(self, market: Any, sel: int, price: float,
                   frac: float = 1.0) -> "Tuple[float, Optional[Any]]":
@@ -629,6 +644,8 @@ class TennisProStrategy(BaseStrategy):
         self._prev_sets[mid] = cur
 
     def process_market_book(self, market: Any, market_book: Any) -> None:
+        # 28/09: le chiusure esatte avanzano di UN passo a ogni book
+        self._esatte.avanza(market)
         mid = market_book.market_id
         s = self.score
         px: Dict[int, Dict[str, Any]] = {}

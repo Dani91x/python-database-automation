@@ -40,11 +40,16 @@ def test_scalper_gets_tennis_preset_not_calcio_defaults():
     assert bot.allow_inplay is True
 
 
-def test_scalper_paper_zeroes_it_stake_rules():
-    bot = _mk("PAPER")
-    # in simulazione i fill sono a size esatte: green-up esatti, cicli completi
-    assert bot.size_step == 0.0
-    assert bot.live_min_bet == 0.0
+def test_scalper_paper_ha_le_stesse_regole_it_del_live():
+    """28/09 (paper = SPECCHIO del live, ordine dell'utente): prima il PAPER
+    azzerava ``size_step``/``live_min_bet`` e piazzava size che il LIVE avrebbe
+    arrotondato o portato al minimo. Ora le stesse blindature; solo OFF (nessun
+    ordine possibile) resta senza."""
+    paper, live = _mk("PAPER"), _mk("LIVE")
+    assert (paper.size_step, paper.live_min_bet) == (live.size_step, live.live_min_bet) \
+        == (0.5, 2.0)
+    off = _mk("OFF")
+    assert (off.size_step, off.live_min_bet) == (0.0, 0.0)
 
 
 def test_scalper_live_keeps_it_stake_rules():

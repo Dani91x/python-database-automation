@@ -70,8 +70,12 @@ LIMITI DICHIARATI (stampati nel referto)
   2. LO SCANNER NON SERVE: lo scalper legge il MarketBook direttamente
      (par.6.2 non applicabile, dichiarato).
   3. PUNTEGGI: la sessione in modalita' maker non legge `live_now`; i watcher
-     di intervallo/sniper/theta non sono nel perimetro (sniper e theta sono
-     strategie separate, non certificate qui).
+     di intervallo e theta non sono nel perimetro. 28/09: lo SNIPER si'
+     (scenari `sniper`, `sniper-paper`, `sniper-uscite-auto`): la riga
+     `live_now` viene dal sidecar `.scores.jsonl`, la linea dalla funzione di
+     produzione `applica_linea_sniper` ogni 15 s di mercato (il thread
+     `sniper-line` non parte: dormirebbe sul turno dell'orologio); controlli
+     propri Z1-Z4 (`_Banco.controlli_sniper`).
   4. I PACCHETTI REPLACE (park-trim-replace dei submin) creano l'ordine nuovo
      dentro flumine: il guasto CP non li colpisce (limite del banco comune).
   5. SETTLEMENT: la sessione finisce a KO+10' (fine vita di produzione) e il
@@ -122,6 +126,11 @@ RITARDO_ESITO_IGNOTO_S = 20.0
 # prima di riarmare
 ATTESA_RIARMO_S = 60.0
 
+SCENARIO_SNIPER = "sniper"
+SCENARIO_SNIPER_PAPER = "sniper-paper"
+SCENARIO_SNIPER_AUTO = "sniper-uscite-auto"
+SCENARI_SNIPER = (SCENARIO_SNIPER, SCENARIO_SNIPER_PAPER, SCENARIO_SNIPER_AUTO)
+
 SCENARI_DESCRITTI: Dict[str, str] = {
     "base": ("come gira in produzione, sul percorso degli ordini VERI: il control "
              "che la UI scrive coi suoi default (maker, stake 25, missione "
@@ -151,6 +160,23 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                 "della vecchia deve essere governata o dichiarata (S7)"
                 % int(ATTESA_RIARMO_S)),
     CP.SCENARIO: "come `base`, ma " + CP.DESCRIZIONE,
+    # 28/09 (cantiere D2): lo SNIPER in gioco, acceso di default in produzione
+    # dal 25/09 e mai certificato sul banco. Sessione VERA con `sniper_mode`,
+    # vita della sessione di produzione (`auto_mode.vita_sessione_s`: KO+130'),
+    # linea Under (gol+1).5 dalla riga `live_now` ricostruita dal sidecar
+    # `.scores.jsonl` (gli stessi `score_home/score_away/minute` che il runner
+    # scrive in `live_now`) con la funzione di produzione
+    # `scalper_session.applica_linea_sniper` alla stessa cadenza (15 s di
+    # mercato). Interruttore uscite: quello di produzione (spento = manuali).
+    SCENARIO_SNIPER: ("come `base` (LIVE, dry_run=False) con lo SNIPER acceso "
+                      "(`sniper_mode`, stake 10) e le uscite come nascono in "
+                      "produzione (manuali): maker + sniper nella stessa "
+                      "sessione fino a KO+130'"),
+    SCENARIO_SNIPER_PAPER: ("come `sniper` con dry_run=True: client paper, "
+                            "stessa sessione (paper = live)"),
+    SCENARIO_SNIPER_AUTO: ("come `sniper` con le uscite AUTOMATICHE accese "
+                           "(interruttore della sessione): lo sniper prende "
+                           "profitto da solo"),
 }
 
 
@@ -171,9 +197,15 @@ def control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
     }
     if scenario == "senza-missione":
         params["one_green_per_phase"] = False
+    if scenario in SCENARI_SNIPER:
+        # 28/09: lo sniper acceso (il default di produzione dal 25/09)
+        params["sniper_mode"] = True
+        if scenario == SCENARIO_SNIPER_AUTO:
+            params["uscite_automatiche"] = True
     return {
         "event_id": str(event_id), "status": "requested", "mode": "maker",
-        "dry_run": scenario == "paper", "stake": 25, "params": params,
+        "dry_run": scenario in ("paper", SCENARIO_SNIPER_PAPER), "stake": 25,
+        "params": params,
         "bias": None, "bias_meta": None, "stats": None, "error": None,
         "requested_at": None, "started_at": None, "stopped_at": None,
         "heartbeat_at": None, "updated_at": None,
@@ -245,6 +277,72 @@ def catalogo_dal_raw(definizioni: Dict[str, Dict[str, Any]]) -> List[Any]:
     return out
 
 
+def righe_live_now(data_dir: str, event_id: str) -> List[Tuple[int, Dict[str, Any]]]:
+    """28/09 - [(ts_ms, riga live_now)] dal sidecar `<id>.scores.jsonl`: le
+    colonne `score_home`, `score_away`, `minute` sono quelle che il runner
+    scrive IDENTICHE in `live_now` (`runner.py`, `upsert_live_now(minute=
+    snap.minute, score_home=snap.score_home, score_away=snap.score_away)`) e
+    nella stessa riga del sidecar. Nessun numero ricostruito."""
+    p = os.path.join(data_dir, str(event_id), "%s.scores.jsonl" % event_id)
+    out: List[Tuple[int, Dict[str, Any]]] = []
+    if not os.path.exists(p):
+        return out
+    with io.open(p, "r", encoding="utf-8") as fh:
+        for riga in fh:
+            try:
+                d = json.loads(riga)
+            except ValueError:
+                continue
+            ts = d.get("ts_ms")
+            if ts is None:
+                continue
+            out.append((int(ts), {"score_home": d.get("score_home"),
+                                  "score_away": d.get("score_away"),
+                                  "minute": d.get("minute")}))
+    out.sort(key=lambda x: x[0])
+    return out
+
+
+def _vita_da_control(control: Dict[str, Any]) -> int:
+    from ..auto_mode import vita_sessione_s
+
+    p = control.get("params") or {}
+    return int(vita_sessione_s({"sniper_mode": bool(p.get("sniper_mode")),
+                                "theta_mode": bool(p.get("theta_mode")),
+                                "ht_mode": bool(p.get("ht_mode"))}))
+
+
+def SS_LINEA_OGNI_S() -> int:  # noqa: N802 - costante letta dal vero
+    from .. import scalper_session as _SS
+
+    return int(_SS.SNIPER_LINEA_OGNI_S)
+
+
+class _ThreadingSessione:
+    """Il modulo `threading` visto da `scalper_session` nel replay (28/09).
+
+    Tutto passa al vero, TRANNE il thread `sniper-line`: in produzione dorme
+    15 s col `time.sleep` della sessione, che nel banco e' il TURNO
+    dell'orologio (un solo thread di controllo alla volta). Il thread non
+    parte e la sua funzione (`scalper_session.applica_linea_sniper`) la chiama
+    il ponte del motore alla stessa cadenza di mercato (15 s)."""
+
+    def __init__(self, banco: "_Banco") -> None:
+        self._banco = banco
+
+    def Thread(self, *a: Any, **k: Any) -> Any:  # noqa: N802 - nome del vero
+        if k.get("name") == "sniper-line":
+            args = tuple(k.get("args") or ())
+            if args:
+                self._banco.sniper_linea = args[0]
+            return SimpleNamespace(start=lambda: None, join=lambda *_a, **_k: None,
+                                   is_alive=lambda: False, daemon=True)
+        return threading.Thread(*a, **k)
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(threading, nome)
+
+
 def qualita_registrazione(data_dir: str, event_id: str) -> str:
     try:
         from ...tools.validate_recordings import validate_event
@@ -306,13 +404,18 @@ class _Orologio:
         sessione) e' arrivato per almeno `soglia_ms`: il turno non poteva
         passare alla sessione piu' spesso di cosi', in un replay che avanza
         il tempo SOLO ai book (vedi il docstring del modulo, 'L'OROLOGIO')."""
-        out: List[Tuple[int, int]] = []
-        prima = None
-        for ms in self.libro_ms:
+        # 28/09: INCREMENTALE (stesso risultato). Prima si riscorreva TUTTO
+        # `libro_ms` a ogni giro dei controlli (1 s di mercato): con la vita
+        # della sessione sniper (KO+130', 60.000+ book) il banco diventava
+        # quadratico e rallentava fino a fermarsi (misurato: 120 min reali).
+        cache = self.__dict__.setdefault("_buchi_cache", {})
+        out, prima, fatti = cache.get(soglia_ms, ([], None, 0))
+        for ms in self.libro_ms[fatti:]:
             if prima is not None and ms - prima >= soglia_ms:
                 out.append((prima, ms))
             prima = ms
-        return out
+        cache[soglia_ms] = (out, prima, len(self.libro_ms))
+        return list(out)
 
     def ora_ms(self) -> int:
         return int(round(self.time() * 1000.0))
@@ -449,8 +552,12 @@ class _Tabella:
                 r["_ms"] = self._db.orologio.ora_ms()
                 dest.append(r)
             return _Risposta(righe)
-        # `live_now` (watcher di ht/sniper/theta) e `theta_confirm_requests`:
-        # nessuna riga, come un evento senza punteggio pubblicato
+        if self._nome == "live_now":
+            # 28/09: la riga `live_now` dell'ISTANTE di mercato, ricostruita dal
+            # sidecar (vuota se la registrazione non ha punteggi)
+            riga = self._db.live_now()
+            return _Risposta([riga] if riga else [])
+        # `theta_confirm_requests`: nessuna riga
         return _Risposta([])
 
 
@@ -480,6 +587,21 @@ class _DbFinto:
         self.tabelle: Dict[str, List[Dict[str, Any]]] = {}
         self.sb = _SbFinto(self)
         self.stati_visti: List[str] = []
+        # 28/09: [(ts_ms, {score_home, score_away, minute})] dal sidecar
+        self.punteggi_live_now: List[Tuple[int, Dict[str, Any]]] = []
+
+    def live_now(self) -> Optional[Dict[str, Any]]:
+        """La riga `live_now` (solo le colonne che la sessione legge) valida
+        ADESSO sull'orologio di mercato: l'ultima del sidecar con `ts_ms` gia'
+        raggiunto. Il `ts_ms` del sidecar e' l'istante in cui il runner l'ha
+        RICEVUTA dall'IPS (ritardo gia' dentro, `banco_comune` docstring)."""
+        ora = self.orologio.ora_ms()
+        riga = None
+        for ts, r in self.punteggi_live_now:
+            if ts > ora:
+                break
+            riga = r
+        return dict(riga) if riga is not None else None
 
     @staticmethod
     def _viola_check(campi: Dict[str, Any]) -> Optional[str]:
@@ -848,6 +970,17 @@ class _Banco:
         self.framework_creati: List[_FrameworkSessione] = []
         # il trading control dello scenario 'rifiuti-betfair' (None altrove)
         self.rifiuti: Any = None
+        # 28/09 - lo SNIPER della sessione (strategia COMPAGNA del maker, nello
+        # stesso framework): riceve i book dei mercati della sessione, i suoi
+        # controlli sono i suoi (`controlli_sniper`), quelli del maker restano
+        # sul maker. (fw, sniper, mercati)
+        self.compagne: List[Tuple[Any, Any, Tuple[str, ...]]] = []
+        self.attivita_sniper: List[Tuple[str, Dict[str, Any], int]] = []
+        self.chiusure_sniper: List[Dict[str, Any]] = []
+        self.sniper_linea: Any = None
+        self._linea_ms: Optional[int] = None
+        self.sniper_ultimo: Any = None
+        self.sniper_ordini_visti: set = set()
 
     # ------------------------------------------------------------ sessioni
     def strategia_corrente(self) -> Any:
@@ -860,6 +993,28 @@ class _Banco:
     def aggiungi_strategia(self, fw: _FrameworkSessione, s: Any) -> None:
         # la registrazione al posto dello stream (come il replay tennis)
         s.market_filter = {"markets": [self.raw]}
+        from ..sniper_bot import SniperStrategy
+
+        if isinstance(s, SniperStrategy):
+            # 28/09: lo sniper e' COMPAGNO del maker (stesso framework, stessi
+            # mercati del catalogo): non diventa la "strategia corrente" dei
+            # controlli del maker, ha i suoi
+            vero = getattr(s, "event_sink", None)
+            att, ora = self.attivita_sniper, self.orologio.ora_ms
+
+            def _tee(kind: str, payload: Dict[str, Any], _v: Any = vero) -> None:
+                # SOLO il tee dell'event_sink (sola lettura): lo sniper non ha
+                # gli slot del maker (`_on_cycle_closed` e' del maker)
+                att.append((str(kind), dict(payload or {}), ora()))
+                if _v is not None:
+                    _v(kind, payload)
+            s.event_sink = _tee
+            self.quadro.add_strategy(s)
+            self._stream_ids |= set(getattr(s, "stream_ids", set()) or set())
+            fw.strategie.append(s)
+            self.compagne.append((fw, s, tuple(self.mercati_catalogo)))
+            self.sniper_ultimo = s
+            return
         installa_osservatori(s, self.attivita, self.chiusure, self.orologio.ora_ms)
         self.quadro.add_strategy(s)
         self._stream_ids |= set(getattr(s, "stream_ids", set()) or set())
@@ -869,6 +1024,7 @@ class _Banco:
 
     def sessione_finita(self, fw: _FrameworkSessione) -> None:
         self.sessioni = [x for x in self.sessioni if x[0] is not fw]
+        self.compagne = [x for x in self.compagne if x[0] is not fw]
 
     def uccidi_sessione(self, fw: _FrameworkSessione) -> None:
         """Il processo e' morto: flumine non chiama piu' la strategia. Gli
@@ -877,6 +1033,7 @@ class _Banco:
             if x[0] is fw:
                 self.sessioni_morte.append((fw, x[1]))
         self.sessioni = [x for x in self.sessioni if x[0] is not fw]
+        self.compagne = [x for x in self.compagne if x[0] is not fw]
         fw.__dict__["_running"] = False
         fw.__dict__["causa_fine"] = "processo ucciso"
         fw.__dict__["_fine"].set()
@@ -1088,7 +1245,86 @@ class _Banco:
             self.fasi_viste.append(fase)
         return oss
 
+    def vita_ms(self) -> int:
+        """La vita della sessione (ms dal KO) con i parametri del control: la
+        funzione di produzione (`auto_mode.vita_sessione_s`)."""
+        from ..auto_mode import vita_sessione_s
+
+        p = self.db.control.get("params") or {}
+        return int(1000 * float(vita_sessione_s({
+            "sniper_mode": bool(p.get("sniper_mode")),
+            "theta_mode": bool(p.get("theta_mode")),
+            "ht_mode": bool(p.get("ht_mode"))})))
+
+    def controlli_sniper(self, ms: int, quando: str, fine: bool) -> None:
+        """28/09 - i controlli di condotta dello SNIPER (i controlli del maker
+        in `certificazione.py` leggono gli slot del maker, non si applicano).
+
+        Z1 ogni ordine NUOVO dello sniper e' legale su .it (prezzo nella ladder,
+           size multipla di 0,50 e non sotto il minimo del lato), tranne i
+           SOSTITUTI del place-and-trim (stessa regola di B3 del maker);
+        Z2 a fine sessione lo sniper e' piatto per la SUA misura (`is_flat`:
+           |se vince - se perde| entro 0,02 o entro il residuo che ha accettato
+           e dichiarato), oppure la sessione lo ha DICHIARATO non piatto;
+        Z3 a uscite MANUALI (default) lo sniper non prende MAI profitto da
+           solo: nessun `sniper_green` (la presa di profitto e' una proposta);
+        Z4 a uscite manuali ogni proposta porta le chiavi dello scalper
+           (`motivo, selection_id, entry_side, lato, prezzo, size, bloccabile`)."""
+        sn = self.sniper_ultimo
+        if sn is None:
+            return
+        ordini: List[Any] = []
+        for mid in self._mercati_sessione():
+            m = self.quadro.markets.markets.get(mid)
+            if m is None:
+                continue
+            try:
+                ordini.extend(list(m.blotter.strategy_orders(sn) or []))
+            except Exception:  # noqa: BLE001
+                continue
+        nuovi = [o for o in ordini if str(getattr(o, "id", "")) not in self.sniper_ordini_visti]
+        self.sniper_ordini_visti |= {str(getattr(o, "id", "")) for o in ordini}
+        sol = self.ref.sollecitati
+        for o in nuovi:
+            r = CERT.riga_ordine(o, True)
+            sol["Z1"] = sol.get("Z1", 0) + 1
+            if r.get("sostituto"):
+                continue
+            motivo = CERT._legale_it(r)
+            if motivo:
+                self.ref.violazioni.append(CERT.Violazione(
+                    "Z1", "ordine dello sniper legale su .it",
+                    "ordine %s %s @%s per %s: %s" % (r.get("order_id"), r.get("side"),
+                                                    r.get("price"), r.get("size"), motivo),
+                    quando))
+        manuali = not bool(getattr(sn, "uscite_automatiche", False))
+        eventi = [(k, p) for k, p, _t in self.attivita_sniper]
+        if fine and manuali:
+            sol["Z3"] = sol.get("Z3", 0) + 1
+            if any(k == "sniper_green" for k, _p in eventi):
+                self.ref.violazioni.append(CERT.Violazione(
+                    "Z3", "a uscite manuali lo sniper non prende profitto da solo",
+                    "sniper_green con l'interruttore spento", quando))
+            chiavi = {"motivo", "selection_id", "entry_side", "lato", "prezzo", "size",
+                      "bloccabile"}
+            for k, p in eventi:
+                if k == "uscita_proposta":
+                    sol["Z4"] = sol.get("Z4", 0) + 1
+                    if set(p) != chiavi:
+                        self.ref.violazioni.append(CERT.Violazione(
+                            "Z4", "proposta con le chiavi dello scalper",
+                            "chiavi %s" % sorted(p), quando))
+        if fine:
+            sol["Z2"] = sol.get("Z2", 0) + 1
+            dichiarato = any(CERT.messaggio_dichiara_non_flat(m) for m in self.db.messaggi())
+            if not sn.is_flat() and not dichiarato:
+                self.ref.violazioni.append(CERT.Violazione(
+                    "Z2", "a fine sessione lo sniper e' piatto o dichiarato",
+                    "sniper NON piatto e nessuna dichiarazione della sessione", quando))
+
     def giro(self, ms: int, quando: str, *, fine: bool = False) -> None:
+        if self.sniper_ultimo is not None:
+            self.controlli_sniper(ms, quando, fine)
         if not self.sessioni and not fine:
             return
         oss = self.osservazione(ms, quando, fine=fine)
@@ -1178,9 +1414,13 @@ class _Ponte:
         # FINE VITA della sessione maker: KO + 10' (`run_session`, `_life_s`
         # = 600 senza ht/sniper/theta; docstring del modulo: 'o KO+10''). E'
         # il confine che S2 usa per misurare quanto ci mette il force-flat.
-        if b.stop_ms is None and b.ko_ms is not None and ms >= b.ko_ms + 600 * 1000 \
+        # 28/09: la vita VERA della sessione (`auto_mode.vita_sessione_s`, la
+        # stessa che usa `run_session`): 600 s col solo maker, KO+130' con lo
+        # sniper. Prima qui c'era 600 fisso (sniper fuori perimetro).
+        vita_ms = b.vita_ms()
+        if b.stop_ms is None and b.ko_ms is not None and ms >= b.ko_ms + vita_ms \
                 and b.sessioni:
-            b.stop_ms, b.stop_causa = b.ko_ms + 600 * 1000, "fine-vita"
+            b.stop_ms, b.stop_causa = b.ko_ms + vita_ms, "fine-vita"
         b.evento_scenario(ms)
         mid = str(market.market_id)
         if bool(getattr(market_book, "inplay", False)) and mid not in b.in_gioco_ms \
@@ -1200,6 +1440,21 @@ class _Ponte:
             if (b.missione_ms is None and getattr(s, "one_green_per_phase", False)
                     and not b.in_gioco_ms and float(st.get("greens_prematch", 0) or 0) >= 1):
                 b.missione_ms = ms
+        # 28/09 - lo SNIPER compagno: la sua linea dalla riga live_now (stessa
+        # funzione e stessa cadenza del watcher di produzione), poi il book
+        if b.compagne and b.sniper_linea is not None and (
+                b._linea_ms is None or ms - b._linea_ms >= 1000 * SS_LINEA_OGNI_S()):
+            b._linea_ms = ms
+            riga = b.db.live_now()
+            if riga:
+                from .. import scalper_session as _SS
+
+                _SS.applica_linea_sniper(b.sniper_linea, riga)
+        for _fw, sn, mids in list(b.compagne):
+            if mid not in mids:
+                continue
+            if futils.call_strategy_error_handling(sn.check_market_book, market, market_book):
+                futils.call_strategy_error_handling(sn.process_market_book, market, market_book)
         if b.sessioni:
             b.gira_specchio(ms)
         if ms - b._ultimo_giro_ms >= b.cadenza_ms:
@@ -1315,6 +1570,8 @@ def _iniezioni(banco: _Banco, orologio: _Orologio, kill_file: str):
         _patch(st, STREAM_DB, "upsert_live_settled", lambda row: None)
         _patch(st, STREAM_DB, "find_live_order_ref", lambda mode, bet_id: None)
         _patch(st, _time_mod, "time", orologio.time)
+        # 28/09: il thread `sniper-line` non parte (vedi `_ThreadingSessione`)
+        _patch(st, SS, "threading", _ThreadingSessione(banco))
         yield
 
 
@@ -1440,7 +1697,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
     ref.note.append("limiti dichiarati: catalogo sintetizzato dai marketDefinition; "
                     "scanner non usato (lo scalper legge il book); orologio di "
                     "mercato per `time.time`; settlement non raggiunto (fine vita "
-                    "KO+10'); sniper/theta fuori perimetro")
+                    "della sessione); theta fuori perimetro%s"
+                    % ("" if scenario in SCENARI_SNIPER else "; sniper spento (scenari "
+                       "`sniper*` per lo sniper)"))
 
     orologio = _Orologio()
     primo = primo_publish_time_ms(raw)
@@ -1449,6 +1708,17 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         # del mercato (le scritture d'avvio portano quell'istante)
         orologio.ora_s = primo / 1000.0
     db = _DbFinto(orologio, control, follow)
+    if scenario in SCENARI_SNIPER:
+        db.punteggi_live_now = righe_live_now(data_dir, event_id)
+        ref.note.append("SNIPER: righe live_now dal sidecar %d (linea Under (gol+1).5 "
+                        "con `scalper_session.applica_linea_sniper` ogni %d s di "
+                        "mercato); vita della sessione KO+%d s"
+                        % (len(db.punteggi_live_now), SS_LINEA_OGNI_S(),
+                           _vita_da_control(control)))
+        if not db.punteggi_live_now:
+            ref.note.append("SNIPER: sidecar dei punteggi ASSENTE: la linea resta "
+                            "OVER_UNDER_15 (0-0) per tutta la partita - referto "
+                            "non valido per lo sniper")
     tmp = tempfile.mkdtemp(prefix="replay_scalper_")
     kill_file = os.path.join(tmp, "STOP_SCALPER")
     esiti: Dict[str, Any] = {}
@@ -1581,6 +1851,16 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
                     % (mot.book_in_ritardo, mot.lapse_al_fischio,
                        mot.lapse_alla_sospensione, len(banco.righe_specchio)))
     ref.note.append("fasi viste: %s" % ", ".join(banco.fasi_viste))
+    if banco.sniper_ultimo is not None:
+        sn = banco.sniper_ultimo
+        eventi: Dict[str, int] = {}
+        for k, _p, _t in banco.attivita_sniper:
+            eventi[k] = eventi.get(k, 0) + 1
+        ref.note.append("SNIPER: uscite %s; stats %s; eventi %s; piatto a fine sessione: %s"
+                        % ("automatiche" if getattr(sn, "uscite_automatiche", False)
+                           else "manuali",
+                           {k: v for k, v in dict(getattr(sn, "stats", {}) or {}).items()
+                            if v}, eventi, sn.is_flat()))
     mai = [s for s in sorted(CERT.STATI_SLOT) if "slot:%s" % s not in banco.stati_visti]
     if mai:
         ref.note.append("stati dello slot MAI visti: %s" % ", ".join(mai))

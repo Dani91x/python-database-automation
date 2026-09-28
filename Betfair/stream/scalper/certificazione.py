@@ -874,10 +874,61 @@ def _sovrapposizione_ms(a: int, b: int, c: int, d: int) -> int:
     return max(0, min(b, d) - max(a, c))
 
 
-def _buco_dentro_ms(buchi: Sequence[Tuple[int, int]], a: int, b: int) -> int:
+class _CoperturaBuchi:
+    """28/09 (cantiere D2) - la somma delle sovrapposizioni con i buchi, in
+    O(log n) per intervallo, IDENTICA a ``sum(_sovrapposizione_ms(a, b, ga,
+    gb))`` per QUALUNQUE insieme di buchi (anche sovrapposti o fuori ordine:
+    ``_Orologio.buchi`` segue l'ordine di arrivo dei book di mercati diversi).
+
+    somma_i |[a,b) intersezione [ga,gb)| = integrale su [a,b) del numero di buchi che
+    coprono t: si costruisce UNA volta per giro la funzione integrale F (a
+    tratti lineare, punti di rottura agli estremi dei buchi) e la risposta e'
+    F(b) - F(a). Prima S5 rifaceva la somma su TUTTI i buchi per OGNI coppia di
+    battiti a ogni giro: con la vita della sessione sniper (KO+130') il banco
+    passava il 99 % del tempo in ``_sovrapposizione_ms`` (misurato) e si
+    fermava."""
+
+    def __init__(self, buchi: Sequence[Tuple[int, int]]) -> None:
+        delta: Dict[int, int] = {}
+        for ga, gb in buchi:
+            if gb <= ga:
+                continue
+            delta[ga] = delta.get(ga, 0) + 1
+            delta[gb] = delta.get(gb, 0) - 1
+        self.xs: List[int] = sorted(delta)
+        self.F: List[int] = []       # integrale in xs[i]
+        self.c: List[int] = []       # copertura su [xs[i], xs[i+1])
+        area, cop, prima = 0, 0, None
+        for x in self.xs:
+            if prima is not None:
+                area += cop * (x - prima)
+            self.F.append(area)
+            cop += delta[x]
+            self.c.append(cop)
+            prima = x
+
+    def integrale(self, t: int) -> int:
+        import bisect
+
+        i = bisect.bisect_right(self.xs, t) - 1
+        if i < 0:
+            return 0
+        return self.F[i] + self.c[i] * (t - self.xs[i])
+
+    def dentro(self, a: int, b: int) -> int:
+        if b <= a or not self.xs:
+            return 0
+        return self.integrale(b) - self.integrale(a)
+
+
+def _buco_dentro_ms(buchi: Sequence[Tuple[int, int]], a: int, b: int,
+                    copertura: Optional["_CoperturaBuchi"] = None) -> int:
     """Somma dei ms di [a, b] in cui NESSUN book e' arrivato (silenzio della
     registrazione): il tempo che il replay non poteva far scorrere piu' in
-    fretta, qualunque sia la causa del silenzio."""
+    fretta, qualunque sia la causa del silenzio. Con ``copertura`` (costruita
+    una volta per giro, ``_CoperturaBuchi``) lo stesso numero in O(log n)."""
+    if copertura is not None:
+        return copertura.dentro(a, b)
     return sum(_sovrapposizione_ms(a, b, ga, gb) for ga, gb in buchi)
 
 
@@ -896,15 +947,16 @@ def _s5(o: Osservazione) -> Optional[str]:
     battiti = sorted(o.heartbeat_ms)
     massimo = int((o.heartbeat_cadenza_s + 1.0) * 1000)
     buchi = o.buchi_registrazione_ms or []
+    copertura = _CoperturaBuchi(buchi) if buchi else None
     for a, b in zip(battiti, battiti[1:]):
-        scarto = (b - a) - _buco_dentro_ms(buchi, a, b)
+        scarto = (b - a) - _buco_dentro_ms(buchi, a, b, copertura)
         if scarto > massimo:
             return ("heartbeat fermo per %d ms di mercato EFFETTIVO (fra %d e "
                     "%d, %d ms sono silenzio della registrazione), la cadenza "
                     "del servizio e' %.0f s"
                     % (scarto, a, b, (b - a) - scarto, o.heartbeat_cadenza_s))
     if (o.sessione_viva and o.stop_richiesto_ms is None and battiti):
-        scarto = (o.ms - battiti[-1]) - _buco_dentro_ms(buchi, battiti[-1], o.ms)
+        scarto = (o.ms - battiti[-1]) - _buco_dentro_ms(buchi, battiti[-1], o.ms, copertura)
         if scarto > massimo:
             return ("ultimo heartbeat %d ms fa di mercato EFFETTIVO, la "
                     "cadenza del servizio e' %.0f s" % (scarto, o.heartbeat_cadenza_s))

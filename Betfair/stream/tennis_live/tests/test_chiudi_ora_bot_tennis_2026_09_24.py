@@ -254,13 +254,22 @@ def _pulito(monkeypatch):
 # gli stessi gate che il banco apre in `gate-aperto` (numeri della UI): senza,
 # lo scalper col preset non entra in gioco e non esisterebbe un ingresso da
 # vedere nel controllo "nessun rientro"
+# 28/09 (cantiere D2): dal 28/09 il PAPER ha le blindature .it del LIVE
+# (``size_step`` 0,50, ``live_min_bet`` 2,00): la chiusura dell'abbinato da
+# 1,98/2,02 EUR diventerebbe 2,00/2,50 (over-hedge, regola delle coperture) e
+# il "chiudi ora" finirebbe "con residuo" dopo la grazia, come in LIVE. Questo
+# file prova il PROTOCOLLO del chiudi-ora sulla size ESATTA: le blindature si
+# spengono qui ESPLICITAMENTE (configurazione di ricerca, ``live=False``). La
+# granularita' .it in paper e' provata da
+# ``test_cantiere_d2_minimo_e_specchio_2026_09_28.py``.
+_SENZA_BLINDATURE_IT = {"live_min_bet": 0.0, "size_step": 0.0, "exact_exits": False}
 _PARAMS = {
     "tennis_scalper": {"min_size": 0.0, "price_min": 1.01, "price_max": 30.0,
                        "min_flow": 0.0, "warmup_ms": 0, "inplay_tick_enabled": True,
-                       "runner_filter": "all"},
-    "tennis_pro": {},
-    "tennis_flb": {},
-    "tennis_swing": {},
+                       "runner_filter": "all", **_SENZA_BLINDATURE_IT},
+    "tennis_pro": dict(_SENZA_BLINDATURE_IT),
+    "tennis_flb": dict(_SENZA_BLINDATURE_IT),
+    "tennis_swing": dict(_SENZA_BLINDATURE_IT),
 }
 
 

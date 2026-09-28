@@ -264,6 +264,28 @@ def place_min_size(jurisdiction: str, side: str) -> float:
     raise ValueError(f"giurisdizione sconosciuta: {jurisdiction!r}")
 
 
+def porta_al_minimo_apertura(jurisdiction: str, side: str, size: float) -> float:
+    """APERTURA sotto il minimo accettato -> portata AL minimo (28/09).
+
+    DECISIONE DELL'UTENTE per il TENNIS (28/09, testuale: "porta al limite
+    minimo accettato"): un'apertura il cui importo calcolato e' sotto il minimo
+    di piazzamento di Betfair NON si rifiuta e NON passa dal place-and-trim:
+    si piazza AL minimo del lato. Pura: nessuna rete, nessuno stato.
+
+    Minimo vero (documentazione ufficiale Betfair, "Betting On Italian
+    Exchange" -> "Italian Exchange Specific Bet Rules"): BACK >= 200 centesimi
+    (a multipli di 50), LAY tale che lo stake del back corrispondente sia
+    >= 50 centesimi, cioe' size LAY >= 0,50 EUR. Sono ``place_min_size``.
+
+    Solo verso l'ALTO e solo fino al minimo: una size gia' >= minimo torna
+    identica (le regole sopra il minimo restano quelle di sempre). Vale SOLO per
+    le aperture: una CHIUSURA non si gonfia mai (``reduces_liability``).
+    """
+    s = round(float(size), 2)
+    minimo = round(float(place_min_size(jurisdiction, side)), 2)
+    return minimo if s < minimo - _TOL else s
+
+
 def initial_place_price(side: str) -> float:
     """Quota NON abbinabile per lo step1: BACK→1000.0, LAY→1.01.
 

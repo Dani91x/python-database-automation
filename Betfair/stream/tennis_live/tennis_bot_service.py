@@ -602,6 +602,10 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                 def _escludi(ev: str, _bot: str = bot) -> bool:
                     if ev in seguite_a_mano or (ev, _bot) in in_chiusura:
                         return True     # a mano: l'ha gia' vista il giro sopra
+                    if ev in attive:
+                        # 28/09: armata nell'ALTRA modalita' (non conta nel
+                        # tetto, vedi sotto): la sua riga non si riscrive mai
+                        return True
                     if ev in finite:
                         return True     # 28/09: partita finita (CLOSED)
                     righe = _fermi_su(ev)
@@ -612,7 +616,13 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                     return any(str(r.get("bot_key")) == _bot
                                and str(r.get("status")) in _STATI_NON_RIARMABILI_AUTO
                                for r in righe)
-                gia = [ev for ev in attive if str(ev) not in seguite_a_mano]
+                # 28/09 (catalogo par.7.21, paper e live MAI sommati): il tetto
+                # del bot conta SOLO le partite armate nella SUA modalita'
+                # attuale. Prima contava anche le righe dell'altra modalita'
+                # (es. partite paper ancora vive dopo il passaggio a live):
+                # una partita paper occupava un posto del tetto live.
+                gia = [ev for ev, r in attive.items() if str(ev) not in seguite_a_mano
+                       and _modalita_dichiarata(r) == d["mode"]]
                 # 26/09 (R-FA-1): le armate VIVE fuori dal feed (non ancora
                 # finite) occupano un posto del tetto come quelle nel feed
                 vive_fuori = len([ev for ev in gia if str(ev) not in nel_feed])

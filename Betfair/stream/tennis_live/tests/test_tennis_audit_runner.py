@@ -112,9 +112,37 @@ def test_bot_control_restart_deferred_logged_once_per_episode(monkeypatch):
     assert activity.count("restart_deferred") == 1
 
 
-def test_restart_paper_forced_after_grace_with_stubborn_bot(monkeypatch):
-    """Fix controcheck 16/07: un bot SENZA force_flat (pro/flb/swing) non può
-    rinviare il restart all'infinito — in PAPER, scaduta la grazia, si forza."""
+def test_restart_paper_mai_forzato_come_il_live(monkeypatch):
+    """28/09 (paper = SPECCHIO del live): in PAPER, scaduta la grazia, il
+    restart NON si forza piu' (prima azzerava la posizione simulata mentre il
+    LIVE restava bloccato): stesso esito del LIVE, blocco VISIBILE (CRITICAL)."""
+    activity = []
+    monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
+                        lambda ev, bk, kind, payload: activity.append((kind, payload)))
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_wait_reason",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
+
+    session = _session_with_bot(_FakeStrategy(), bot_key="tennis_pro")
+    session.order_mode = "PAPER"
+    fl = _fake_flumine()
+    assert tennis_runner._request_restart(fl, session, "test") is False
+    session.restart_deferred_since -= tennis_runner._RESTART_GRACE_S + 1
+    assert tennis_runner._request_restart(fl, session, "test") is False
+    assert not session.restart_requested.is_set()
+    assert fl._running is True
+    kinds = [k for k, _ in activity]
+    assert "restart_forced" not in kinds and "restart_blocked" in kinds
+    blocked = [p for k, p in activity if k == "restart_blocked"]
+    assert blocked[0]["level"] == "CRITICAL" and "PAPER" in blocked[0]["note"]
+
+
+def test_restart_off_forced_after_grace_with_stubborn_bot(monkeypatch):
+    """Fix controcheck 16/07 (liveness): un bot SENZA force_flat non puo'
+    rinviare il restart all'infinito. Dal 28/09 si forza SOLO in OFF (nessun
+    ordine possibile: dry-run forzato); PAPER e LIVE restano bloccati."""
     activity = []
     monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
                         lambda ev, bk, kind, payload: activity.append(kind))
@@ -126,14 +154,14 @@ def test_restart_paper_forced_after_grace_with_stubborn_bot(monkeypatch):
     monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
 
     session = _session_with_bot(_FakeStrategy(), bot_key="tennis_pro")  # niente force_flat
-    session.order_mode = "PAPER"
+    session.order_mode = "OFF"
     fl = _fake_flumine()
 
     # primo giro: rinviato, episodio aperto
     assert tennis_runner._request_restart(fl, session, "test") is False
     assert not session.restart_requested.is_set()
     assert session.restart_deferred_since is not None
-    # grazia scaduta → il restart parte comunque (posizione SIMULATA) + attività
+    # grazia scaduta -> il restart parte comunque (OFF: nessun ordine) + attivita'
     session.restart_deferred_since -= tennis_runner._RESTART_GRACE_S + 1
     assert tennis_runner._request_restart(fl, session, "test") is True
     assert session.restart_requested.is_set()

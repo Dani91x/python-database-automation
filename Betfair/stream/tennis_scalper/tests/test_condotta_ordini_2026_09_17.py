@@ -10,7 +10,8 @@ Le regole, con il motivo MISURATO che le ha fatte nascere (referto d'audit
 
   1. `size_legale` — su .it Betfair rifiuta un BACK sotto 2,00 EUR o non
      multiplo di 0,50 e un LAY sotto 0,50: la gamba non parte e la posizione
-     resta SCOPERTA. Pro, FLB e Swing non avevano nessuna blindatura.
+     resta SCOPERTA. Pro, FLB e Swing non avevano nessuna blindatura. Dal 28/09
+     (decisione dell'utente) un INGRESSO sotto il minimo si porta al minimo.
   2. `FrenoRifiuti` — nel replay del 17/09, con Betfair che rifiutava ogni
      piazzamento, il FLB ha ritentato 8.132 volte e lo scalper 20.534 volte in
      UNA partita.
@@ -34,19 +35,38 @@ from Betfair.stream.tennis_scalper import condotta_ordini as CD
 # 1. la size legale di giurisdizione
 # ===========================================================================
 def test_fuori_dal_live_la_size_non_si_tocca():
-    """In simulazione la granularita' .it non esiste: arrotondare falserebbe il
-    confronto fra replay e paper."""
+    """`live=False` resta solo per gli strumenti di ricerca (backtest di
+    laboratorio): la size non si tocca. PAPER e LIVE di produzione passano
+    `live=True` dal 28/09 (paper = specchio del live)."""
     assert CD.size_legale(0.93, "LAY", live=False) == (0.93, None)
     assert CD.size_legale(2.03, "BACK", live=False) == (2.03, None)
 
 
-def test_live_ingresso_sotto_il_minimo_non_parte():
-    """Un INGRESSO non si gonfia: se non e' legale, non si piazza e si dice
-    perche'. Gonfiarlo vorrebbe dire mettere a mercato piu' soldi di quelli che
-    l'utente ha acceso."""
-    legale, motivo = CD.size_legale(1.50, "BACK", live=True)
-    assert legale is None
-    assert "minimo" in (motivo or "")
+@pytest.mark.parametrize("chiesto,lato,atteso", [
+    (1.50, "BACK", 2.0),    # sotto il minimo BACK -> portata a 2,00
+    (0.01, "BACK", 2.0),
+    (1.99, "BACK", 2.0),
+    (0.30, "LAY", 0.5),     # sotto il minimo LAY -> portata a 0,50
+    (0.49, "LAY", 0.5),
+])
+def test_ingresso_sotto_il_minimo_portato_al_minimo(chiesto, lato, atteso):
+    """28/09 - DECISIONE DELL'UTENTE ("porta al limite minimo accettato"): un
+    INGRESSO sotto il minimo di Betfair (.it: BACK 2,00, LAY 0,50) si porta AL
+    minimo e si piazza. Prima (17/09) si rifiutava."""
+    assert CD.size_legale(chiesto, lato, live=True) == (atteso, None)
+
+
+@pytest.mark.parametrize("chiesto,lato,atteso", [
+    (2.00, "BACK", 2.0),
+    (2.30, "BACK", 2.0),    # sopra il minimo: regola .it di sempre (per difetto)
+    (3.70, "BACK", 3.5),
+    (0.50, "LAY", 0.5),
+    (0.93, "LAY", 0.93),
+    (7.13, "LAY", 7.13),
+])
+def test_ingresso_sopra_il_minimo_non_si_gonfia(chiesto, lato, atteso):
+    """Il minimo si applica SOLO sotto il minimo: sopra, nessun importo sale."""
+    assert CD.size_legale(chiesto, lato, live=True) == (atteso, None)
 
 
 def test_live_ingresso_legale_passa_intatto():
@@ -54,25 +74,27 @@ def test_live_ingresso_legale_passa_intatto():
     assert CD.size_legale(0.93, "LAY", live=True) == (0.93, None)
 
 
-@pytest.mark.parametrize("chiesto,atteso", [
-    (0.93, 2.0),    # sotto il minimo BACK -> bumpata al minimo
-    (2.00, 2.0),    # gia' legale
-    (2.03, 2.5),    # non multipla di 0,50 -> al gradino SOPRA
-    (2.50, 2.5),    # gia' multipla: NON deve salire
-    (2.60, 3.0),
+@pytest.mark.parametrize("chiesto,lato,atteso", [
+    (2.00, "BACK", 2.0),    # diretta: passa identica
+    (2.50, "BACK", 2.5),
+    (0.93, "LAY", 0.93),    # LAY >= 0,50: diretta al centesimo
+    (0.50, "LAY", 0.5),
 ])
-def test_live_copertura_back_si_bumpa_al_gradino_sopra(chiesto, atteso):
-    """UNA COPERTURA DEVE PARTIRE: meglio un over-hedge di pochi centesimi che
-    una gamba scoperta. Verso il BASSO si tornerebbe sotto la copertura."""
-    assert CD.size_legale(chiesto, "BACK", live=True,
+def test_copertura_diretta_passa_identica(chiesto, lato, atteso):
+    """28/09 - regola permanente dell'utente: "le chiusure devono sempre essere
+    perfette". Una copertura che Betfair accetta cosi' com'e' passa IDENTICA."""
+    assert CD.size_legale(chiesto, lato, live=True,
                           riduce_liability=True) == (atteso, None)
 
 
-def test_live_copertura_lay_si_bumpa_al_minimo_di_lato():
-    assert CD.size_legale(0.10, "LAY", live=True,
-                          riduce_liability=True) == (0.5, None)
-    assert CD.size_legale(0.93, "LAY", live=True,
-                          riduce_liability=True) == (0.93, None)
+@pytest.mark.parametrize("chiesto,lato", [(0.93, "BACK"), (2.03, "BACK"),
+                                          (2.60, "BACK"), (0.10, "LAY")])
+def test_copertura_non_diretta_mai_gonfiata(chiesto, lato):
+    """Prima (17/09) si gonfiava al gradino da 0,50 sopra (2,03 -> 2,50): la
+    chiusura non era esatta. Ora `size_legale` la rifiuta e il bot la manda
+    all'uscita esatta (`UsciteEsatte`, place-and-trim del resto)."""
+    legale, motivo = CD.size_legale(chiesto, lato, live=True, riduce_liability=True)
+    assert legale is None and "mai gonfiata" in (motivo or "")
 
 
 def test_size_sotto_il_minimo_tecnico_non_passa_mai():

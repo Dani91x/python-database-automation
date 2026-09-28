@@ -191,7 +191,12 @@ _REGISTRO: Tuple[BotRegistrato, ...] = (
         moduli_produzione=("Betfair.stream.scalper.scalper_service",
                            "Betfair.stream.scalper.scalper_session",
                            "Betfair.stream.scalper.scalper_bot"),
-        mercati=("MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35"),
+        # 28/09 (cantiere D2): con lo SNIPER (scenari `sniper*`, acceso di
+        # default in produzione dal 25/09) servono TUTTE le linee Under/Over
+        # (la linea segue i gol: `SNIPER_MARKET_TYPES` della sessione)
+        mercati=("MATCH_ODDS", "OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25",
+                 "OVER_UNDER_35", "OVER_UNDER_45", "OVER_UNDER_55", "OVER_UNDER_65",
+                 "OVER_UNDER_75", "OVER_UNDER_85"),
         replay="Betfair.stream.scalper.tools.replay_registrazioni:certifica_scenario",
         scenari="Betfair.stream.scalper.tools.replay_registrazioni:SCENARI_DESCRITTI",
         controlli="Betfair.stream.scalper.certificazione",

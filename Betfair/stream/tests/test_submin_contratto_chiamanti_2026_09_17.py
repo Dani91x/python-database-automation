@@ -54,9 +54,17 @@ _CHIAMANTI_ATTESI = {
     # 25/09 (9ed1bbe, motore ordini tennis): l'esecutore tennis NON implementa il
     # place-and-trim: ``_find_submin_order``/``_advance_submin_row`` sono i punti
     # d'aggancio richiesti dal motore e sollevano ``submin_non_percorribile``
-    # (nessuna copia della macchina; il runner tennis rifiuta sotto il minimo,
-    # reperto R-1 per l'utente). Il test sotto lo verifica.
+    # (nessuna copia della macchina). 28/09, decisione dell'utente su R-1: le
+    # APERTURE tennis sotto il minimo si portano AL minimo
+    # (``esecutore_tennis._apertura_al_minimo``) e non arrivano mai qui. Il test
+    # sotto lo verifica.
     "Betfair/stream/tennis_live/esecutore_tennis.py",
+    # 28/09 (cantiere D2, regola permanente dell'utente "le chiusure devono
+    # sempre essere perfette"): le chiusure ESATTE di pro/FLB/swing
+    # (``condotta_ordini.UsciteEsatte``) usano la STESSA macchina
+    # (``SubminState`` + ``advance_submin`` + ``FlumineSubminOps``), come lo
+    # scalper tennis: nessuna copia della sequenza.
+    "Betfair/stream/tennis_scalper/condotta_ordini.py",
     # 28/09 (D1-bis): la porta PAPER di Mike (D1) NOMINA ``place_submin_live`` solo nel
     # docstring: non chiama la sequenza, passa il comando di ``execution`` intatto (niente
     # FOK sotto il minimo, importo e quota invariati) e il place-and-trim lo fa la macchina

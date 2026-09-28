@@ -8,7 +8,8 @@ Safe tennis). Qui si prova, con le classi VERE:
   esegue il ``_dispatch`` VERO di ``tennis_live_order_worker`` (capture della
   partita, client della modalita', ``_track_manual``), scrive il diario
   write-ahead con il customerOrderRef VERO, porta FOK e riduzione fino al
-  ``LimitOrder``, rifiuta DICHIARANDOLO cio' che il runner tennis non fa;
+  ``LimitOrder``, porta AL minimo un'apertura sotto il minimo (28/09),
+  rifiuta DICHIARANDOLO cio' che il runner tennis non fa;
 * lo specchio del worker tennis diventa eventi ``order`` per l'attore;
 * ``AgganciaTennis``: piano con priorita' COMANDO, tetto, libro nuovo;
 * il runner: la partita di un comando entra a caldo sulla STESSA connessione
@@ -188,15 +189,19 @@ def test_fok_e_riduzione_arrivano_al_limitorder(db, banchi, ambiente):
     assert o2.context.get("reduces_liability") is True
 
 
-def test_sotto_il_minimo_rifiuto_dichiarato_nessun_ordine(db, banchi, ambiente):
+def test_sotto_il_minimo_apertura_portata_al_minimo(db, banchi, ambiente):
+    """28/09 - DECISIONE DELL'UTENTE su R-1 (prima: rifiuto
+    ``submin_non_percorribile``, nessun ordine): l'APERTURA sotto il minimo si
+    porta AL minimo e parte come place normale, senza place-and-trim."""
     b = _banco(db, banchi, [_follow("101")])
     b.book("101")
     m = Motore(b, ambiente)
     cmd = m.manda(side="BACK", price=2.0, size=1.5)
-    assert m.fasi(cmd["ref"]) == ["rifiutato"]
+    assert m.fasi(cmd["ref"]) == ["inviato"]
     esito = [r for r in m.diario() if r["tipo"] == "esito"][-1]
-    assert esito["ok"] is False and esito["errore"].startswith("submin_non_percorribile")
-    assert _ordine_nel_blotter(b) == []
+    assert esito["ok"] is True and esito["errore"] is None
+    ordini = _ordine_nel_blotter(b)
+    assert len(ordini) == 1 and ordini[0].order_type.size == 2.0
     assert not m.motore._submin
 
 

@@ -325,11 +325,12 @@ def test_waiting_mark_cleared_when_restart_proceeds(monkeypatch, _db):
     assert session.restart_requested.is_set()
 
 
-def test_waiting_mark_cleared_on_forced_paper_restart(monkeypatch, _db):
-    """Anche il restart FORZATO (grazia scaduta, PAPER) ripulisce il motivo."""
+def test_waiting_mark_cleared_on_forced_off_restart(monkeypatch, _db):
+    """Anche il restart FORZATO (grazia scaduta) ripulisce il motivo. Dal 28/09
+    il restart si forza SOLO in OFF: in PAPER resta bloccato come in LIVE."""
     monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
     session = _session_with_blocker()
-    session.order_mode = "PAPER"
+    session.order_mode = "OFF"
     fl = _fake_flumine()
 
     assert tennis_runner._request_restart(fl, session, "test") is False

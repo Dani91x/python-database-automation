@@ -561,7 +561,9 @@ def test_f_runner_paper_ignora_la_modalita_della_riga(bot_key):
                          bot.max_selection_exposure, bot.max_order_exposure))
     assert len(set(impronte)) == 1
     assert impronte[0][0] is False                              # visibile sul ladder
-    assert impronte[0][1] in (0.0, None) and impronte[0][2] in (0.0, None)
+    # 28/09 (paper = specchio del live): le blindature .it del LIVE anche in
+    # PAPER (prima azzerate). Chi non le ha (attributo assente) resta None.
+    assert impronte[0][1] in (0.5, None) and impronte[0][2] in (2.0, None)
 
 
 def test_f_un_giro_in_paper_usa_il_solo_client_simulato(bot_che_entra):

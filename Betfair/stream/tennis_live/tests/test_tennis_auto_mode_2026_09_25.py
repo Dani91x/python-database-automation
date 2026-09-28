@@ -623,11 +623,26 @@ def test_paper_a_uscite_manuali_mai_restart_forzato(monkeypatch, runner_db):
     assert "restart_forced" not in kinds and "restart_blocked" in kinds
 
 
-def test_paper_a_uscite_automatiche_restart_forzato_come_prima(monkeypatch, runner_db):
-    """Il contrario: bot automatico in PAPER, grazia scaduta = restart forzato
-    (la liveness di prima)."""
+def test_paper_a_uscite_automatiche_mai_restart_forzato_come_il_live(monkeypatch,
+                                                                     runner_db):
+    """28/09 (paper = specchio del live): anche un bot AUTOMATICO in PAPER,
+    grazia scaduta, NON subisce il restart forzato (prima si': la posizione
+    simulata veniva azzerata mentre in LIVE restava). Blocco visibile."""
     s = _Strat(auto=True, ha_force_flat=False)
     sess = _Sess()
+    sess.restart_deferred_since = -1e9
+    monkeypatch.setattr(TR, "_hosted_not_flat", lambda fl, se: [("1", "tennis_flb", s)])
+    assert TR._request_restart(None, sess, "arm/disarm bot") is False
+    kinds = [k for (_e, _b, k, _p) in runner_db]
+    assert "restart_forced" not in kinds and "restart_blocked" in kinds
+
+
+def test_off_restart_forzato_come_prima(monkeypatch, runner_db):
+    """Il contrario: in OFF (nessun ordine possibile), grazia scaduta = restart
+    forzato (la liveness di prima)."""
+    s = _Strat(auto=True, ha_force_flat=False)
+    sess = _Sess()
+    sess.order_mode = "OFF"
     sess.restart_deferred_since = -1e9
     partito: List[bool] = []
 

@@ -479,6 +479,40 @@ def _sniper_profit_target(cp: Dict[str, Any]) -> float:
     return float(pt) if pt is not None else 0.01
 
 
+#: cadenza del watcher della linea sniper (secondi): quella di sempre
+SNIPER_LINEA_OGNI_S = 15
+
+
+def applica_linea_sniper(sniper_ref: Any, row: Dict[str, Any]) -> None:
+    """La linea dello sniper dalla riga di ``live_now`` (score_home,
+    score_away, minute): Under (gol totali + 1).5, piu' ``parallel_lines``
+    linee sopra; oltre 7 gol nessuna linea. 28/09: estratta TALE E QUALE dal
+    thread ``_sniper_line_watcher`` (nessun cambio di logica) perche' anche il
+    banco di replay la chiami dal suo orologio di mercato: una sola copia."""
+    h, a = row.get("score_home"), row.get("score_away")
+    if h is not None and a is not None:
+        tot = int(h) + int(a)
+        if tot > 7:
+            # oltre 8.5 non esistono linee: spegne il fuoco
+            sniper_ref.set_line("NONE")
+        else:
+            # F4a multi-linea: dinamica + N parallele sopra
+            # (parallel_lines=0 -> solo dinamica, S16 attuale)
+            lines = [f"OVER_UNDER_{tot + 1}5"]
+            extra = int(getattr(sniper_ref, "parallel_lines", 0) or 0)
+            for k in range(1, extra + 1):
+                if tot + 1 + k <= 8:
+                    lines.append(f"OVER_UNDER_{tot + 1 + k}5")
+            sniper_ref.set_lines(lines)
+    # clock REALE di partita per la telemetria (fix 11/07, conferma live
+    # 10/07 22:22: marketTime conta anche l'HT -> log "min 81.9" al minuto
+    # reale 59). SOLO telemetria: le finestre/gate validati S16 restano su
+    # elapsed KO.
+    mn = row.get("minute")
+    if mn is not None:
+        sniper_ref.live_minute = float(mn)
+
+
 def _theta_dry_run(db: Any, event_id: str, session_paper: bool) -> bool:
     """dry_run EFFETTIVO del theta: ordini SOLO dentro un client paper.
 
@@ -987,6 +1021,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     # FIX audit #5: 0 esplicito = NESSUN tetto profitto (F4), da
                     # preservare — mai `or 0.01` (coercizione falsy lo mangiava).
                     "profit_target": _sniper_profit_target(_cp),
+                    # 28/09 (R-F2-9): lo STESSO interruttore della sessione
+                    # (default False = uscite manuali), riletto a caldo sotto
+                    "uscite_automatiche": params.get("uscite_automatiche", False),
                 },
                 event_sink=sink,
                 # esposizione: BACK -> liability = stake (margine x3)
@@ -1238,32 +1275,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     r = db.sb.table("live_now").select(
                         "score_home,score_away,minute").eq("event_id", ev).execute()
                     row = (r.data or [None])[0] or {}
-                    h, a = row.get("score_home"), row.get("score_away")
-                    if h is not None and a is not None:
-                        tot = int(h) + int(a)
-                        if tot > 7:
-                            # oltre 8.5 non esistono linee: spegne il fuoco
-                            sniper_ref.set_line("NONE")
-                        else:
-                            # F4a multi-linea: dinamica + N parallele sopra
-                            # (parallel_lines=0 → solo dinamica, S16 attuale)
-                            lines = [f"OVER_UNDER_{tot + 1}5"]
-                            extra = int(getattr(
-                                sniper_ref, "parallel_lines", 0) or 0)
-                            for k in range(1, extra + 1):
-                                if tot + 1 + k <= 8:
-                                    lines.append(f"OVER_UNDER_{tot + 1 + k}5")
-                            sniper_ref.set_lines(lines)
-                    # clock REALE di partita per la telemetria (fix 11/07,
-                    # conferma live 10/07 22:22: marketTime conta anche l'HT
-                    # → log "min 81.9" al minuto reale 59). SOLO telemetria:
-                    # le finestre/gate validati S16 restano su elapsed KO.
-                    mn = row.get("minute")
-                    if mn is not None:
-                        sniper_ref.live_minute = float(mn)
+                    applica_linea_sniper(sniper_ref, row)
                 except Exception:  # noqa: BLE001 - il watcher non muore mai
                     pass
-                time.sleep(15)
+                time.sleep(SNIPER_LINEA_OGNI_S)
 
         if sniper is not None:
             threading.Thread(
@@ -1432,6 +1447,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # 25/09 - l'interruttore "uscite automatiche" letto A CALDO (stessa
             # lettura del battito): il cambio vale dal book successivo.
             applica_uscite_automatiche(db, ev, strategy, params_vivi)
+            # 28/09 (R-F2-9): lo sniper segue lo STESSO interruttore (prima
+            # l'attributo arrivava solo al maker e lo sniper chiudeva da solo)
+            if sniper is not None:
+                applica_uscite_automatiche(db, ev, sniper, params_vivi)
             # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
             # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
             # a tradare su una riga che il resto del sistema considera chiusa.

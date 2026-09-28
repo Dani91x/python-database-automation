@@ -926,25 +926,30 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     # `min_bet_validation=False`, quindi flumine non intercetta). I quattro bot
     # leggono `live_min_bet` per sapere se sono in LIVE e legalizzano le size
     # con `condotta_ordini.size_legale`.
-    if is_live:
+    # 28/09 (ordine dell'utente: il paper e' lo SPECCHIO del live per TUTTI i
+    # bot): le blindature valgono in PAPER come in LIVE. Prima in PAPER si
+    # azzeravano (``size_step=0``, ``live_min_bet=0``): un ingresso da 1,50 EUR
+    # o una copertura da 0,93 EUR venivano piazzati e riempiti nel paper,
+    # mentre in LIVE lo stesso ordine era rifiutato o portato al minimo. Il
+    # paper dichiarava posizioni che il live non avrebbe mai avuto.
+    # Solo OFF (nessun ordine possibile: dry-run forzato) resta senza.
+    if mode_u in ("LIVE", "PAPER"):
         params.setdefault("live_min_bet", 2.0)   # .it BACK
         params.setdefault("size_step", 0.5)      # .it granularità
-        # ⊘ USCITE A SIZE ESATTA (place-and-trim) — NON accese qui.
-        # Il park-trim-replace esiste in casa (`Betfair/stream/trading/submin.py`,
-        # usato da `_place_exact` dello scalper) e la regola dell'utente è che
-        # QUALSIASI importo è piazzabile fino a 0,01 €. Accenderlo però NON è una
-        # riga di configurazione: provato il 17/09 sul replay (35794049, scenario
-        # `live`) porta il referto da 4.087 a 8.566 violazioni, perché la
-        # sequenza park→trim→replace mette a mercato ordini che i controlli
-        # leggono come «sotto il minimo» (che è il punto della tecnica: si
-        # RIDUCE sotto il minimo, non si piazza sotto il minimo). Va certificato
-        # come cantiere suo, con i controlli che sanno distinguere un ordine
-        # PIAZZATO sotto il minimo da uno TRIMMATO. Finché non lo è, resta
-        # spento e dichiarato.
+        # 28/09 - USCITE A SIZE ESATTA (place-and-trim) ACCESE, paper e live.
+        # Regola permanente dell'utente: "le chiusure devono sempre essere
+        # perfette e spalmare il profitto o la loss su entrambe le selezioni".
+        # Lo scalper tennis usa `_place_exact` (parte diretta + resto via
+        # `trading/submin.py`); pro/FLB/swing usano `condotta_ordini.
+        # UsciteEsatte` (stessa macchina), accese da `self.live`. Il 17/09 era
+        # spento perche' il controllo B8 del banco leggeva il RIMPIAZZO del
+        # gradino 3 come "piazzato sotto il minimo": dal 28/09 B8 lo riconosce
+        # (`certificazione_bot.riga_ordine`, chiave `sostituto`, stessa regola
+        # del banco dello scalper calcio). Il comportamento di Betfair sul
+        # rimpiazzo in gioco e' un limite dichiarato (referto D2, par.11).
+        params.setdefault("exact_exits", True)
     else:
-        # PAPER/OFF: fill simulati a size ESATTE (mirror di run_tennis_scalper
-        # --paper): la granularità .it non esiste in simulazione → green-up esatti,
-        # e arrotondare falserebbe il confronto fra replay e paper.
+        # OFF: nessun ordine puo' partire (dry-run forzato qui sopra).
         params["size_step"] = 0.0
         params["live_min_bet"] = 0.0
     sup = None
@@ -1107,10 +1112,9 @@ _STOPPING_GRACE_S = 45.0
 # Finestra massima di un episodio di rinvio del restart (fix controcheck 16/07:
 # solo lo scalper ha force_flat — un bot pro/flb/swing non flat rinviava il
 # restart ALL'INFINITO bloccando arm/disarm e nuovi follow su TUTTI gli eventi).
-# Scaduta la grazia: PAPER/OFF → il restart parte comunque (posizione SIMULATA,
-# la liveness vince; i tracciati orfani li gestisce framework_gen → VOIDED);
-# LIVE → MAI forzato (posizione reale orfana), ma il blocco diventa VISIBILE
-# (activity CRITICAL per finestra) finché l'utente non chiude a mano.
+# Scaduta la grazia: OFF -> il restart parte comunque (nessun ordine possibile);
+# PAPER e LIVE (28/09, paper = specchio del live) -> MAI forzato, ma il blocco
+# diventa VISIBILE (activity CRITICAL per finestra) finche' l'utente non chiude a mano.
 _RESTART_GRACE_S = 180.0
 
 # Stati flumine di un ordine ancora VIVO sul book (tutto il resto è terminale).
@@ -1260,8 +1264,8 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str,
     'restart_deferred' per episodio.
 
     Fix controcheck 16/07 (liveness): il rinvio non è mai eterno. Oltre
-    ``_RESTART_GRACE_S``: PAPER/OFF → restart FORZATO (posizione simulata,
-    activity 'restart_forced'); LIVE → mai forzato, escalation 'restart_blocked'
+    ``_RESTART_GRACE_S``: OFF -> restart FORZATO (activity 'restart_forced');
+    PAPER e LIVE (28/09, specchio) -> mai forzato, escalation 'restart_blocked'
     CRITICAL una volta per finestra. Ritorna True se il restart è partito."""
     blockers = _hosted_not_flat(flumine, session)
     if not blockers:
@@ -1278,13 +1282,22 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str,
         since = now_mono
         session.restart_deferred_since = since
     grace_expired = (now_mono - since) > _RESTART_GRACE_S
-    is_live = (getattr(session, "order_mode", None) or "").upper() == "LIVE"
+    modo_ordini = (getattr(session, "order_mode", None) or "").upper()
+    is_live = modo_ordini == "LIVE"
     # 25/09: un bloccante a uscite MANUALI tiene una posizione che chiude
     # l'utente: in PAPER non si azzera, esattamente come in LIVE.
     manuale = any(getattr(s, "uscite_automatiche", True) is False
                   for _e, _b, s in blockers)
-    if grace_expired and not is_live and not manuale:
-        # PAPER/OFF: posizione SIMULATA — dopo la grazia la liveness vince.
+    # 28/09 (paper = SPECCHIO del live, ordine dell'utente): in PAPER il
+    # restart NON si forza piu'. Prima, scaduta la grazia, il PAPER azzerava la
+    # posizione simulata del bot (ordini VOIDED dalla generazione smontata)
+    # mentre il LIVE, con la stessa posizione, restava bloccato e lo diceva
+    # (CRITICAL): due esiti diversi per la stessa situazione. Ora PAPER e LIVE
+    # fanno la stessa cosa (blocco visibile, la posizione resta sorvegliata).
+    # Resta forzabile SOLO la modalita' senza ordini (OFF: dry-run forzato).
+    senza_ordini = modo_ordini not in ("LIVE", "PAPER")
+    if grace_expired and senza_ordini and not manuale:
+        # OFF: nessun ordine possibile - dopo la grazia la liveness vince.
         # Lo stato demo dei bot bloccanti riparte da zero (annunciato); gli
         # ordini tracciati della generazione smontata li chiude framework_gen.
         for ev, bot_key, _strat in blockers:
@@ -1320,8 +1333,9 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str,
                         {"reason": reason, "level": "CRITICAL",
                          "note": (("restart LIVE bloccato da posizione REALE non "
                                    if is_live else
-                                   "restart PAPER bloccato da posizione simulata "
-                                   "a USCITE MANUALI non ")
+                                   "restart PAPER bloccato da posizione simulata non "
+                                   if modo_ordini == "PAPER" else
+                                   "restart bloccato da posizione a USCITE MANUALI non ")
                                   + f"flat da oltre {int(_RESTART_GRACE_S)}s: "
                                   "chiudi la posizione a mano (ladder/Betfair) "
                                   "per sbloccare arm/disarm e nuovi follow")},

@@ -20,9 +20,12 @@ DOPO (tre pezzi, nessun processo nuovo):
    freschezza dei settings = le stesse funzioni che il worker tennis usa gia'
    (``guardie_tennis.kill_switch_attivo`` -> ``live_order_worker``); modo di
    processo = ``TENNIS_LIVE_ORDER_MODE``; ref interno ``awtq<id>`` dal contatore
-   del canale tennis. Cio' che il runner tennis NON fa, il motore lo rifiuta
-   dichiarandolo: place-and-trim sotto il minimo (``submin_non_percorribile``),
-   azioni fuori dal worker tennis (``cashout_event``/``cashout_all``).
+   del canale tennis. Un'APERTURA sotto il minimo di Betfair si porta AL
+   minimo e parte (``_apertura_al_minimo``, decisione dell'utente del 28/09;
+   prima: rifiuto ``submin_non_percorribile``). Cio' che il runner tennis NON
+   fa, il motore lo rifiuta dichiarandolo: place-and-trim (``place_submin``,
+   che dal 28/09 non nasce piu' per il tennis), azioni fuori dal worker tennis
+   (``cashout_event``/``cashout_all``).
 2. CANALE SOLO COMANDI (``CanaleSoloComandi``): il motore serve ``/comando/<attore>``;
    il ``/order`` del desktop resta al worker tennis come oggi (stesso percorso,
    stesse risposte): il motore non lo drena.
@@ -50,7 +53,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from .. import live_order_worker as _low
 from .. import tempi_ordine as _TEMPI  # noqa: F401 - nome letto dal motore
-from ..trading.submin import place_min_size
+from ..trading.submin import place_min_size, porta_al_minimo_apertura
 from . import iscrizione_a_caldo as _IAC
 from . import tennis_db
 from . import tennis_live_order_worker as _TW
@@ -113,7 +116,8 @@ _jurisdiction = _TW._jurisdiction
 #: azioni che il worker tennis sa eseguire (place/cancel/replace/greenup)
 AZIONI_TENNIS = _TW._LOCAL_TENNIS_ACTIONS
 MOTIVO_SUBMIN = ("submin_non_percorribile: il runner tennis non ha il place-and-trim "
-                 "(sotto il minimo di giurisdizione un'apertura non parte: rifiuto "
+                 "(dal 28/09 un'apertura sotto il minimo si porta AL minimo e parte "
+                 "come place normale; un place_submin qui e' un errore: rifiuto "
                  "dichiarato, nessun ordine)")
 
 
@@ -148,6 +152,20 @@ def _blocco_apertura_modo(row_mode: Any, action: str, params: Any) -> Optional[s
     tennis non lo applica ne' alla coda ne' al ``/order``): stessa regola qui.
     Il tetto e' ``TENNIS_LIVE_ORDER_MODE`` (``_servable_modes``)."""
     return None
+
+
+def _apertura_al_minimo(side: str, size: float) -> float:
+    """28/09 - DECISIONE DELL'UTENTE (R-1 del 25/09): un'APERTURA tennis sotto
+    il minimo accettato da Betfair si PORTA AL MINIMO e si piazza (prima era
+    rifiutata ``submin_non_percorribile``: il runner tennis non ha il
+    place-and-trim). Il motore la chiama SOLO sulle aperture (``place`` senza
+    ``reduces_liability``): una chiusura non si gonfia mai. Stessa regola in
+    paper e in live (e' il motore, non il client, a decidere l'importo).
+
+    Minimo (documentazione ufficiale Betfair, "Italian Exchange Specific Bet
+    Rules"): BACK 2,00 EUR, LAY 0,50 EUR (``trading.submin.place_min_size``,
+    giurisdizione ``TENNIS_LIVE_JURISDICTION``)."""
+    return porta_al_minimo_apertura(_jurisdiction(), str(side).lower(), float(size))
 
 
 def _sub_minimum_floor(side: str) -> float:

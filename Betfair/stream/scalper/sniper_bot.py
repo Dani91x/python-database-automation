@@ -71,6 +71,9 @@ class _Pos:
     # il conteggio 10/07 (+1.28€) e' con cap e cooldown PER LINEA, non globali
     shots: int = 0                   # colpi sparati su QUESTA linea
     last_cycle_end_ms: float = 0.0   # fine ultimo ciclo su QUESTA linea
+    # 28/09 (R-F2-9) - uscite manuali: il motivo dell'ultima proposta emessa su
+    # questo ciclo (una sola 'uscita_proposta' per motivo, come lo scalper)
+    proposta: Optional[str] = None
 
 
 class SniperStrategy(BaseStrategy):
@@ -139,6 +142,20 @@ class SniperStrategy(BaseStrategy):
         # in parte diretta + resto ESATTO via park-trim-replace → il profitto
         # del green resta spalmato al centesimo su entrambi gli esiti.
         self.exact_exits: bool = bool(c.get("exact_exits", False))
+        # 28/09 (R-F2-9) - USCITE AUTOMATICHE, STESSA SEMANTICA DELLO SCALPER
+        # (``scalper_bot.py``, 25/09, ordine dell'utente: "di default tutte le
+        # uscite le voglio spente"). Prima lo sniper non leggeva l'interruttore
+        # e chiudeva sempre da solo. False (DEFAULT) = l'uscita DISCREZIONALE
+        # (la chiusura a +target_ticks, cioe' la presa di profitto) NON parte:
+        # la posizione resta aperta senza chiusura e il bot emette
+        # 'uscita_proposta' (una volta per motivo e per ciclo). Restano SEMPRE
+        # automatiche le PROTEZIONI, come nello scalper: stop a N tick, timeout
+        # della posizione (``max_pos_s``, come il ``lock_ttl`` dello scalper),
+        # fine finestra, force-flat (freno/cap), flatten e divergenza dello
+        # specchio. Riacceso a caldo: al book dopo la chiusura la mette il bot.
+        # Solo un booleano vero conta: ogni altro valore = False.
+        _ua = c.get("uscite_automatiche", False)
+        self.uscite_automatiche: bool = _ua if isinstance(_ua, bool) else False
         self.force_flat: bool = False
         self._event_done: bool = False
         # clock REALE di partita (da live_now.minute, spinto dal watcher di
@@ -230,10 +247,17 @@ class SniperStrategy(BaseStrategy):
             for o in (*pos.entries, pos.close, *pos.flatten_orders):
                 if self._has_live(o):
                     return False
-            sb, _ob, sl, _ol = self._matched(
-                pos.entries + ([pos.close] if pos.close else [])
-                + pos.flatten_orders)
-            if abs(sb - sl) > 0.02:
+            # 28/09 (reperto e2e 26/09 "posizione NON flat dopo 30 s" con il
+            # micro-residuo sniper 0,085 EUR): qui si confrontavano le STAKE
+            # (|sb - sl| > 0,02), che non misurano la piattezza. Un green-up
+            # riuscito ha stake diverse (back 10 @3,0 + lay 12 @2,5 = +2 EUR su
+            # entrambi gli esiti) e risultava "non flat" per sempre: lo stop
+            # della sessione aspettava 30 s e dichiarava una posizione aperta
+            # che non c'era. Ora la STESSA misura che il bot usa per decidere
+            # (|se vince - se perde|, ``_real_net``/``_drive_flatten``) con la
+            # STESSA tolleranza (0,02, o il residuo che il bot ha accettato).
+            nw, nl = self._real_net(pos)
+            if abs(nw - nl) > max(0.02, pos.residual_accepted + 0.02):
                 return False
         return True
 
@@ -439,7 +463,19 @@ class SniperStrategy(BaseStrategy):
                             get_nearest_price(ob), -self.target_ticks)
                         if price and price > 1.0:
                             g = compute_green(nw, nl, price)
-                            if g is not None:
+                            if g is not None and not self.uscite_automatiche:
+                                # 28/09 (R-F2-9) - uscite MANUALI: la presa di
+                                # profitto a +target_ticks e' un'uscita
+                                # discrezionale, non parte: si DICHIARA e
+                                # decide l'utente. Stop, timeout e fine
+                                # finestra (protezioni) restano armati qui
+                                # sopra, come nello scalper.
+                                side, size, locked = g
+                                self._proponi_uscita(
+                                    pos, runner.selection_id, motivo="target",
+                                    lato=side, prezzo=price, size=size,
+                                    bloccabile=locked)
+                            elif g is not None:
                                 side, size, locked = g
                                 o = self._place(market, runner.selection_id,
                                                 side, price, size,
@@ -558,7 +594,30 @@ class SniperStrategy(BaseStrategy):
             return round(float(self.live_minute), 1)
         return round(el / 60.0, 1) if el else None
 
+    def _proponi_uscita(self, pos: _Pos, selection_id: Any, *, motivo: str, lato: Any,
+                        prezzo: Any, size: Any, bloccabile: Any) -> None:
+        """28/09 (R-F2-9) - uscita discrezionale NON eseguita (uscite manuali):
+        la si DICHIARA una volta per motivo e per ciclo ('uscita_proposta', le
+        STESSE chiavi dello scalper ``ScalperStrategy._proponi_uscita``), mai a
+        ogni book."""
+        if pos.proposta == motivo:
+            return
+        pos.proposta = motivo
+        self.stats["uscite_proposte"] = int(self.stats.get("uscite_proposte", 0) or 0) + 1
+        lato_ingresso = None
+        for o in pos.entries:
+            lato_ingresso = (getattr(o, "side", None) or lato_ingresso)
+        self._emit("uscita_proposta", motivo=motivo,
+                   selection_id=(int(selection_id) if selection_id is not None else None),
+                   entry_side=lato_ingresso, lato=lato,
+                   prezzo=(round(float(prezzo), 2) if prezzo else None),
+                   size=(round(float(size), 2) if size is not None else None),
+                   bloccabile=(round(float(bloccabile), 4) if bloccabile is not None else None))
+
     def _close_cycle_clock(self, pos: _Pos, now: Optional[float]) -> None:
+        # fine ciclo: la proposta del ciclo e' chiusa (il prossimo ciclo ne
+        # emettera' una sua, come ``_reset`` dello scalper)
+        pos.proposta = None
         if pos.entry_fill_pt is not None and now is not None:
             self.stats["pos_ms_total"] += max(0.0, now - pos.entry_fill_pt)
             self.stats["cycles"] += 1

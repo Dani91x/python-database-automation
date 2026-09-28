@@ -170,7 +170,10 @@ def test_timeout_flatten():
 
 # ------------------------------------------------------------------ 4. verde
 def test_verde_chiude_l_evento():
-    s = _strategy()
+    # 28/09 (R-F2-9): la presa di profitto e' un'uscita discrezionale, parte da
+    # sola SOLO a uscite automatiche accese (il default e' spento, come lo
+    # scalper): qui si prova il ramo acceso, esplicito.
+    s = _strategy(uscite_automatiche=True)
     mkt = _FakeMarket()
     pos = s._p("1.234", 1221385)
     pos.entries = [_FakeOrder("BACK", price=3.40, size_matched=10.0, avg=3.40)]

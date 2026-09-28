@@ -338,9 +338,25 @@ def _result(*, ok: bool, action: str, mode: str, cmd: Dict[str, Any],
         "price": snap.get("price") if snap.get("price") is not None else cmd.get("price"),
         "size": snap.get("size") if snap.get("size") is not None else cmd.get("size"),
         "customer_order_ref": cust_ref,
+        # 28/09 (R-2 del 25/09): il customerOrderRef che flumine manda DAVVERO a
+        # Betfair (``<name_hash><sep><order.id>``), diverso dal nostro ref
+        # interno ``awtq<id>``. Serve a chi deve ritrovare l'ordine su Betfair
+        # per ref (riconciliazione dell'attore). None = ordine non creato.
+        "cor_betfair": _cor_betfair(order),
         "error": (str(error)[:300] if error is not None else None),
         "detail": (str(detail)[:300] if detail is not None else None),
     }
+
+
+def _cor_betfair(order: Any) -> Optional[str]:
+    """``order.customer_order_ref`` di flumine, letto senza mai sollevare."""
+    if order is None:
+        return None
+    try:
+        cor = order.customer_order_ref
+    except Exception:  # noqa: BLE001 - ordine senza trade/strategia (finto)
+        return None
+    return str(cor) if isinstance(cor, str) and cor else None
 
 
 _SIGLA_BOT = {
@@ -1064,6 +1080,34 @@ def _modo_strategia(strat: Any, session: Any) -> str:
     return _session_mode(session)
 
 
+def _commissioni_per_ordine(orders: Any, aliquota: float) -> Dict[int, float]:
+    """28/09 - la commissione come la calcola BETFAIR, ripartita sugli ordini.
+
+    Regola ufficiale (Betfair, "Exchange: What is Commission and how is it
+    calculated?"): "Betfair charges a Commission on your net winnings on a
+    market. If you have a net loss on a market you do not pay commission";
+    Commission = Net Winnings x Market Base Rate. PRIMA il paper la calcolava
+    ORDINE PER ORDINE sul profitto positivo: un green-up (back +10,00, lay
+    -9,00) pagava 0,50 in paper contro 0,05 in live (netto +1,00): il paper era
+    piu' severo del live. Ora: commissione del mercato = max(0, somma dei P&L
+    regolati della strategia) x aliquota, ripartita sugli ordini in utile in
+    proporzione al loro utile (la somma delle quote = commissione del mercato,
+    a meno dell'arrotondamento al centesimo). Id dell'ordine -> quota."""
+    pnl: Dict[int, float] = {}
+    for o in orders or []:
+        if not _is_terminal(o):
+            continue
+        p = _pnl_ordine(o)
+        if p is not None:
+            pnl[id(o)] = float(p)
+    netto = sum(pnl.values())
+    utile = sum(max(0.0, p) for p in pnl.values())
+    totale = max(0.0, netto) * float(aliquota)
+    if totale <= 0.0 or utile <= 0.0:
+        return {k: 0.0 for k in pnl}
+    return {k: round(totale * max(0.0, p) / utile, 2) for k, p in pnl.items()}
+
+
 def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
     hosted = getattr(session, "hosted", None)
     if not hosted or flumine is None:
@@ -1094,6 +1138,8 @@ def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
         # scrive il loro P&L. `market.closed` e' di flumine, non una deduzione.
         chiuso = bool(_val(market, "closed"))
         commissione = _commissione_mercato(market) if chiuso else None
+        quote_comm = (_commissioni_per_ordine(orders or [], commissione)
+                      if chiuso and commissione is not None else {})
         for order in orders or []:
             # REF STABILE (non piu' `"bot:" + order.id`, che cambiava a ogni
             # rebuild del framework e duplicava le righe: referto §F.4)
@@ -1111,8 +1157,10 @@ def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
             quando = _now_iso() if regolato else None
             comm = None
             if regolato and commissione is not None and pnl is not None:
-                # la commissione si paga sul PROFITTO, non sulle perdite
-                comm = round(max(0.0, pnl) * commissione, 2)
+                # 28/09 (paper = specchio del live): la commissione di Betfair
+                # si paga sulle vincite NETTE del MERCATO, non ordine per
+                # ordine (quota di questo ordine: ``_commissioni_per_ordine``)
+                comm = quote_comm.get(id(order), 0.0)
             _mirror_order(mode, event_id, ref, order, {}, source=bot_key,
                           pnl=pnl, commission=comm, settled_at=quando)
             if _is_terminal(order) and not chiuso:

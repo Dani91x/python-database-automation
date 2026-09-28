@@ -1,0 +1,30 @@
+C1 spezza_esatta: parte diretta per ECCESSO (chiusura gonfiata)             -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_flb [ripristino OK, 13 s]
+C2 spezza_esatta: il resto si PERDE (chiusura mozzata)                      -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_flb [ripristino OK, 12 s]
+C3 size_legale: la copertura non diretta torna GONFIATA al minimo           -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_condotta_ordini_2026_09_17.py::test_copertura_non_diretta_mai_gonfiata[0.93-BACK] [ripristino OK, 9 s]
+C4 OrdineComposto.size_matched conta solo la parte diretta                  -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_flb [ripristino OK, 12 s]
+C5 anti-cascata tolta (sequenza sempre permessa)                            -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_anti_cascata_mai_definitiva_intervallo_crescente [ripristino OK, 22 s]
+C6 annulla non ferma la sequenza (rimpiazzo dopo l'annullo)                 -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_annullo_di_una_chiusura_esatta_ferma_la_sequenza [ripristino OK, 23 s]
+C7 diretta_ok: BACK non multiplo di 0,50 dato per diretto                   -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_condotta_ordini_2026_09_17.py::test_copertura_non_diretta_mai_gonfiata[2.03-BACK] [ripristino OK, 13 s]
+M1 motore: anche le CHIUSURE portate al minimo (prima delle due righe)      -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_minimo_e_specchio_2026_09_28.py::test_chiusura_sotto_il_minimo_non_si_gonfia_mai [ripristino OK, 24 s]
+M2 motore: l'apertura sotto il minimo NON viene portata al minimo           -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_minimo_e_specchio_2026_09_28.py::test_apertura_lay_sotto_il_minimo_parte_al_minimo_con_il_fok [ripristino OK, 19 s]
+S1 submin: porta_al_minimo gonfia anche sopra il minimo                     -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_condotta_ordini_2026_09_17.py::test_ingresso_sopra_il_minimo_non_si_gonfia[2.0-BACK-2.0] [ripristino OK, 19 s]
+P1 bot pro: la copertura non diretta torna sulla strada vecchia             -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_pro [ripristino OK, 18 s]
+P2 bot swing: le chiusure esatte non avanzano a ogni book                   -> SOPRAVVISSUTA (test verdi) | 142 passed in 23.42s [ripristino OK, 27 s]
+P3 bot flb: la copertura non diretta torna sulla strada vecchia             -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_flb [ripristino OK, 12 s]
+R1 runner: in PAPER le blindature tornano spente (paper diverso dal live)   -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_flb [ripristino OK, 19 s]
+R2 runner: chiusure esatte spente                                           -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_scalper_tennis_uscite_esatte_accese_in_paper_e_live [ripristino OK, 19 s]
+R3 runner: in PAPER il restart torna FORZATO dopo la grazia                 -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_tennis_audit_runner.py::test_restart_paper_mai_forzato_come_il_live [ripristino OK, 23 s]
+B1 servizio tennis: il tetto conta anche l'altra modalita'                  -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_minimo_e_specchio_2026_09_28.py::test_partita_paper_non_occupa_il_tetto_del_live [ripristino OK, 18 s]
+
+TOTALE 17 | rosse 16 | SOPRAVVISSUTE 1 | non applicate 0 | ripristini falliti 0
+P4 bot pro: le chiusure esatte non avanzano a ogni book                     -> SOPRAVVISSUTA (test verdi) | 142 passed in 19.32s [ripristino OK, 23 s]
+P5 bot flb: le chiusure esatte non avanzano a ogni book                     -> SOPRAVVISSUTA (test verdi) | 142 passed in 18.35s [ripristino OK, 21 s]
+P6 bot swing: l'annullo non passa dalle chiusure esatte                     -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_annullo_di_una_chiusura_esatta_ferma_la_sequenza [ripristino OK, 20 s]
+P7 bot swing: la copertura non diretta torna sulla strada vecchia           -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py::test_copertura_esatta_al_centesimo_nel_runner_paper[tennis_swi [ripristino OK, 14 s]
+
+TOTALE 4 | rosse 2 | SOPRAVVISSUTE 2 | non applicate 0 | ripristini falliti 0
+P4 bot pro: le chiusure esatte non avanzano a ogni book                     -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_via_bot_2026_09_28.py::test_chiusura_esatta_guidata_dai_book_del_bot[tennis_pro] [ripristino OK, 14 s]
+P5 bot flb: le chiusure esatte non avanzano a ogni book                     -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_via_bot_2026_09_28.py::test_chiusura_esatta_guidata_dai_book_del_bot[tennis_flb] [ripristino OK, 13 s]
+P2 bot swing: le chiusure esatte non avanzano a ogni book                   -> ROSSA | FAILED Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_via_bot_2026_09_28.py::test_chiusura_esatta_guidata_dai_book_del_bot[tennis_swing] [ripristino OK, 14 s]
+
+TOTALE 3 | rosse 3 | SOPRAVVISSUTE 0 | non applicate 0 | ripristini falliti 0

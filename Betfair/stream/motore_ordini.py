@@ -953,6 +953,25 @@ class MotoreOrdini:
                                           f"(> {self.max_eta_settings_s:.1f} s): kill-switch "
                                           f"e limiti del DB non verificabili")
         if azione == "place" and not riduce:
+            # 28/09 (TENNIS, decisione dell'utente "porta al limite minimo
+            # accettato"): se l'esecutore dello sport dichiara la regola
+            # ``_apertura_al_minimo`` (solo ``esecutore_tennis``), un'APERTURA
+            # sotto il minimo si porta AL minimo e parte come place normale
+            # (FOK compreso), in paper E in live. Il calcio non la dichiara:
+            # per lui nulla cambia (place-and-trim qui sotto).
+            al_minimo = getattr(LOW, "_apertura_al_minimo", None)
+            if al_minimo is not None:
+                try:
+                    chiesto = float(riga["size"])
+                    portata = float(al_minimo(str(riga["side"]).lower(), chiesto))
+                except Exception as ex:  # noqa: BLE001 - minimo ignoto: fail-closed
+                    raise Rifiuto(M_SUBMIN, f"minimo di giurisdizione non determinabile: "
+                                            f"{str(ex)[:120]}") from ex
+                if portata > chiesto + 1e-9:
+                    riga["size"] = portata
+                    piano["portata_al_minimo"] = {"chiesto": round(chiesto, 2),
+                                                  "piazzato": round(portata, 2)}
+        if azione == "place" and not riduce:
             # estensione 24/09 (3), decisione dell'utente: sotto il minimo di
             # Betfair il motore usa la STESSA macchina place-and-trim del worker
             # (``_start_submin`` + ``_advance_submin_row``), in paper E in live
@@ -1070,9 +1089,19 @@ class MotoreOrdini:
             fase = "inviato"
         else:
             fase = "errore" if str(errore or "").startswith("post_place:") else "rifiutato"
+        # 28/09: l'attore SA che l'importo e' stato portato al minimo (tennis)
+        extra: Dict[str, Any] = {}
+        if piano.get("portata_al_minimo"):
+            extra["portata_al_minimo"] = dict(piano["portata_al_minimo"])
+        # 28/09 (R-2): il customerOrderRef VERO di Betfair, quando l'esecutore
+        # lo da' (tennis: ``cor_betfair``). L'attore lo salva per ritrovare
+        # l'ordine su Betfair per ref (il suo ref non arriva mai a Betfair).
+        if isinstance(result, dict) and result.get("cor_betfair"):
+            extra["cor"] = str(result["cor_betfair"])
         with self._lock_seq:
             self._emetti(attore, ref, riga_specchio_da_esito(result, cust_ref=cust, rid=rid,
-                                                             mode=mode, riga=riga), fase)
+                                                             mode=mode, riga=riga), fase,
+                         extra=extra or None)
             info = self._rif_interni.get(cust)
             if info is not None:
                 info["pronto"] = True

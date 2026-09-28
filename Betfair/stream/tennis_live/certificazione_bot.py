@@ -194,6 +194,43 @@ def stato_ordine(ordine: Any) -> Optional[str]:
     return str(n) if n is not None else str(st)
 
 
+#: quote NON abbinabili del parcheggio del place-and-trim (percorso B,
+#: `trading/submin.initial_place_price`): BACK 1000, LAY 1.01
+_QUOTA_PARCHEGGIO = {"BACK": 1000.0, "LAY": 1.01}
+
+
+def sostituto_di_parcheggio(ordine: Any) -> bool:
+    """L'ordine e' il RIMPIAZZO del gradino 3 del place-and-trim, cioe' la
+    catena legittima (Betfair accetta la size sotto il minimo perche' e' una
+    riduzione, non un piazzamento):
+      * non e' il primo ordine del suo Trade, e l'ordine PRECEDENTE del Trade
+        (quello che ha sostituito)
+      * e' dello stesso lato,
+      * stava alla quota NON abbinabile del parcheggio (BACK 1000 / LAY 1.01),
+      * era piazzato ALMENO al minimo del lato ed e' stato RIDOTTO
+        (`size_cancelled` > 0).
+    Un ordine sotto il minimo dentro un Trade condiviso SENZA un parcheggio
+    ridotto prima e' un piazzamento sotto il minimo: B8 resta rosso."""
+    trade = getattr(ordine, "trade", None)
+    ordini = list(getattr(trade, "orders", None) or [])
+    idx = next((i for i, o in enumerate(ordini) if o is ordine), None)
+    if not idx:
+        return False
+    prima = ordini[idx - 1]
+    lato = str(getattr(prima, "side", "") or "").upper()
+    if lato != str(getattr(ordine, "side", "") or "").upper() or lato not in _QUOTA_PARCHEGGIO:
+        return False
+    ot = getattr(prima, "order_type", None)
+    try:
+        prezzo = float(getattr(ot, "price", 0.0) or 0.0)
+        size = float(getattr(ot, "size", 0.0) or 0.0)
+        ridotto = float(getattr(prima, "size_cancelled", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return (abs(prezzo - _QUOTA_PARCHEGGIO[lato]) < 1e-9
+            and size + EPS >= MINIMO_IT[lato] and ridotto > 1e-9)
+
+
 def riga_ordine(ordine: Any) -> Dict[str, Any]:
     """Un ordine di flumine -> le stesse chiavi snake_case che la produzione usa
     (`tennis_live_order_worker._order_snapshot`): cosi' un controllo che legge
@@ -201,7 +238,14 @@ def riga_ordine(ordine: Any) -> Dict[str, Any]:
     """
     ot = getattr(ordine, "order_type", None)
     side = getattr(ordine, "side", None)
+    # 28/09 (chiusure esatte): un ordine SOSTITUTO (replace di flumine: il
+    # gradino 3 del place-and-trim) nasce con la size residua dell'ordine che
+    # sostituisce; non e' un piazzamento nuovo sotto il minimo. Revisione 28/09
+    # sera: ancorato alla catena LEGITTIMA (`sostituto_di_parcheggio`), non al
+    # solo "non e' il primo del suo Trade".
+    sostituto = sostituto_di_parcheggio(ordine)
     return {
+        "sostituto": sostituto,
         "order_id": str(getattr(ordine, "id", "") or ""),
         "bet_id": getattr(ordine, "bet_id", None),
         "status": stato_ordine(ordine),
@@ -566,6 +610,8 @@ def _b8(oss: Osservazione) -> Optional[str]:
         s, side = r.get("size"), str(r.get("side") or "").upper()
         if s is None or side not in MINIMO_IT:
             continue
+        if r.get("sostituto"):
+            continue      # replace del place-and-trim: RIDOTTO, non piazzato (28/09)
         if s + EPS < MINIMO_IT[side]:
             return ("ordine %s %s per %s: sotto il minimo .it di %s -> "
                     "INVALID_BET_SIZE, gamba scoperta"
