@@ -4016,3 +4016,22 @@ In corso dalle 23:05, da un worktree dedicato ai replay (`scratchpad/verifica/N`
 principale resta libero per le integrazioni): `safe_base`, `safe_esatto`, `safe_punta` rapidi, trasporto entrambi, uno
 dopo l'altro (`scratchpad/replay/safe_*_rapidi_entrambi.out.txt`).
 N riallineato su `d407b59` senza conflitti (5469 test verdi dichiarati); aspetta D2 per il secondo merge e lo sniper.
+
+**Checkpoint 23:45 — replay rapidi di SAFE calcio su master `66a8672` (prima di P e J2): tutti OK**
+| Bot | Comando | Esito |
+|---|---|---|
+| safe_base | `certifica safe_base 35760084 --scenari rapidi --trasporto entrambi --worker 1` | 14 scenari OK, PARITA' coda/canale RAGGIUNTA, 2 min 45 s |
+| safe_esatto | idem `safe_esatto` | 14 scenari OK, PARITA' RAGGIUNTA, 2 min 58 s |
+| safe_punta | idem `safe_punta` | 14 scenari OK, PARITA' RAGGIUNTA, 3 min 22 s |
+Referti: `AUDIT_2026-09-28/replay/safe_*_rapidi_entrambi_35760084_2026-09-28.txt`. VANNO RILANCIATI dopo l'integrazione
+di P e di J2 (toccano `safe_strategy/`): questi valgono come riferimento «prima».
+- **P consegnato** (8 punti): patch applicata pulita su `c4a856e` senza `CRONOSTORIA.md` (fuori perimetro, tolto);
+  suite mia Safe + Omega + Mike + freno unico: **4358 verdi**, 0 rossi. RIMANDATO per un punto: il runner non
+  raggiungibile in paper consumava i 3 tentativi della partita (`_place_fail`) e la bruciava; chiesto che
+  `paper_senza_runner` non consumi tentativi. Revisore in sola lettura al lavoro; mutazioni mie da fare alla riconsegna.
+- **D2 terza consegna**: patch pulita su `c4a856e`, 1031 test mirati verdi da me; mutazioni mie: 18 rosse; le 3
+  sull'avanzamento a ogni book vanno rilanciate includendo il file nuovo `test_cantiere_d2_chiusure_via_bot_2026_09_28.py`
+  (il mio elenco di test non lo conteneva).
+- **D1-ter**: il caso «copertura sotto il minimo a quota abbinabile» richiede di toccare il motore sopra il codice di
+  D2: si fa DOPO D2 su master. In live il default vero e' `consenti_replace=True` (il documento INTERFACES.md diceva
+  False: da correggere).
