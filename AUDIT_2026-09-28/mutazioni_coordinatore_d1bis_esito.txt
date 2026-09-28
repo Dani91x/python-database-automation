@@ -1,0 +1,9 @@
+F1 lo stesso evento terminale riletto si conta due volte                    -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1bis_freno_coperture_runner_2026_09_28.py::test_lo_stesso_evento_terminale_riletto_non_si_conta_due_volte [ripristino OK, 23 s]
+F2 il ramo del runner conta solo 'rifiutato' (FOK ucciso non contato)       -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1bis_freno_coperture_runner_2026_09_28.py::test_fok_copertura_non_abbinato_sul_runner_conta_e_fa_scattare_il_fren [ripristino OK, 19 s]
+F3 il ramo del runner conta anche l'esito IGNOTO (fase errore)              -> SOPRAVVISSUTA (test verdi) | 1001 passed in 23.02s [ripristino OK, 31 s]
+F4 il ramo del runner conta anche la lay appoggiata scaduta                 -> SOPRAVVISSUTA (test verdi) | 1001 passed in 26.15s [ripristino OK, 34 s]
+F5 freno unico: in paper sul runner le aperture passano a freno tirato      -> ROSSA | FAILED Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py::test_mike_paper_apertura_ferma_col_freno[env] [ripristino OK, 27 s]
+F6 freno unico: a freno tirato si ferma anche la CHIUSURA                   -> ROSSA | FAILED Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py::test_mike_paper_chiusura_passa_col_freno [ripristino OK, 16 s]
+F7 il conteggio non arriva al motore (funzione comune senza registrazione)  -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1bis_freno_coperture_runner_2026_09_28.py::test_fok_copertura_non_abbinato_sul_runner_conta_e_fa_scattare_il_fren [ripristino OK, 23 s]
+
+TOTALE 7 | rosse 5 | SOPRAVVISSUTE 2 | non applicate 0 | ripristini falliti 0

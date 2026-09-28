@@ -807,11 +807,27 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
     # che il fill simulato non possa nascere (``paper_no_fill`` -> dichiarato
     # ``paper_senza_runner``). Il LIVE non cambia: REST FOK, ladder vuota.
     ladder_paper = ((0.0, 0.0),) if mode == "paper" else ()
-    out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
-                  selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
-                  best_size=avail_size, ladder=ladder_paper, client_ref=f"mike-t{trade_id}",
-                  trade_id=int(trade_id), meta=meta_exec, now=now, params=exec_params,
-                  **({"porta": porta_paper} if porta_paper is not None else {}))
+    # D1-bis (28/09) - IL FRENO UNICO (R3, ordine dell'utente 25/09) SULLA STRADA
+    # DEL RUNNER. ``execution.place`` manda il comando al canale PRIMA del punto
+    # in cui applica il freno paper (``_freno_aperture``): da D1 un'apertura
+    # paper di Mike a freno tirato partiva lo stesso e la fermava solo il motore
+    # del runner. Qui lo si rimette dove sta nel live (``_live_brake`` dentro
+    # ``execution.place``: riga gia' riservata, esito 'error' col motivo) e con
+    # lo stesso esito, cosi' il resto della funzione lo tratta come il live.
+    # SOLO sulle aperture: una chiusura passa sempre (stessa regola di
+    # ``execution``: ``cashout`` o ``closes_trade_id`` nel meta).
+    chiude_exec = bool(meta_exec.get("cashout") or meta_exec.get("closes_trade_id"))
+    blocco_paper = (_freno_aperture_rest()
+                    if porta_paper is not None and not chiude_exec else None)
+    if blocco_paper:
+        out = X.PlaceOutcome("error", None, 0.0, None, blocco_paper)
+    else:
+        out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
+                      selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
+                      best_size=avail_size, ladder=ladder_paper,
+                      client_ref=f"mike-t{trade_id}", trade_id=int(trade_id), meta=meta_exec,
+                      now=now, params=exec_params,
+                      **({"porta": porta_paper} if porta_paper is not None else {}))
     if mode == "paper" and out.status == "pending" and porta_paper is not None \
             and not str(out.fill_note or "").startswith("place_exception_reconciling"):
         # D1 (29/09): come il REST FOK del live, che risponde DOPO il bet delay
@@ -886,29 +902,59 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         db.update_trade(int(trade_id), status="error", meta={**row["meta"], "reason": out.fill_note})
     except Exception:  # noqa: BLE001
         pass
-    # C.12a — se Betfair ha dato un CODICE, si scrive col kind dedicato (lo
-    # stesso ``place_rifiutato`` gia' in uso per la lay appoggiata): un rifiuto
-    # per INSUFFICIENT_FUNDS e uno per INVALID_PROFIT_RATIO non sono la stessa
-    # cosa, e finora erano entrambi uno ``skip`` muto.
-    # ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL RIFIUTO DELLA COPERTURA SI
-    # CONTA. 104 rifiuti identici in un'ora, uno ogni ~5 s, e nessuno li contava:
-    # il conteggio per CODICE D'ERRORE e' quello che permette di fermarsi.
+    # conteggio del freno della copertura + righe di attivita': la STESSA
+    # funzione del ramo asincrono del runner (D1-bis)
+    _esito_rifiuto_mercato(db, ctx, leg, error_code=out.error_code,
+                           motivo=str(out.fill_note or ""), trade_id=trade_id,
+                           now_ts=now.timestamp(), params=params, event_id=info.event_id)
+    db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
+                    "error_code": out.error_code}, info.event_id)
+    return "cancelled"
+
+
+def _esito_rifiuto_mercato(db: Any, ctx: Optional[E.MatchCtx], leg: E.Leg, *,
+                           error_code: Optional[str], motivo: str, trade_id: Any,
+                           now_ts: float, params: Dict[str, Any],
+                           event_id: str) -> Optional[Dict[str, Any]]:
+    """Il NO DEFINITIVO del mercato a un taker: conta il rifiuto della copertura
+    e scrive le righe di attivita'. UNA funzione per le due strade.
+
+    ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL RIFIUTO DELLA COPERTURA SI
+    CONTA. 104 rifiuti identici in un'ora, uno ogni ~5 s, e nessuno li contava:
+    il conteggio per CODICE D'ERRORE e' quello che permette di fermarsi.
+
+    D1-bis (28/09) — prima questo blocco viveva SOLO nel ramo sincrono di
+    ``execute_place`` (live REST, esito nella risposta). Dal 29/09 il PAPER
+    passa dal runner e l'esito arriva DOPO, da ``_segui_ordini_paper_su_runner``,
+    che non contava niente: nel banco (35760084, ``copertura-rifiutata``, canale)
+    la copertura e' stata ripresentata 4 volte oltre la soglia e il freno non e'
+    mai scattato. Ora le due strade chiamano questa, con gli argomenti che
+    ciascuna ha dal mercato: il sincrono ``out.error_code``/``out.fill_note``,
+    il runner nessun codice (l'evento ``order`` non lo porta) e il motivo della
+    riga ``runner_<fase>``. Le soglie (``cover_rifiuti_max``) non si toccano.
+
+    Chi chiama garantisce che l'esito sia DEFINITIVO e contato UNA volta: mai
+    su un esito ignoto (li' comanda la riconciliazione)."""
     freno: Optional[Dict[str, Any]] = None
     if leg.role == "over_cover" and ctx is not None:
         freno = E.registra_rifiuto_copertura(
-            ctx, error_code=out.error_code, motivo=str(out.fill_note or ""),
-            ref=leg.ref, now=now.timestamp(), params=params)
-    if out.error_code:
+            ctx, error_code=error_code, motivo=str(motivo or ""),
+            ref=leg.ref, now=float(now_ts), params=params)
+    if error_code:
+        # C.12a — se Betfair ha dato un CODICE, si scrive col kind dedicato (lo
+        # stesso ``place_rifiutato`` gia' in uso per la lay appoggiata): un
+        # rifiuto per INSUFFICIENT_FUNDS e uno per INVALID_PROFIT_RATIO non sono
+        # la stessa cosa, e finora erano entrambi uno ``skip`` muto.
         db.log("place_rifiutato", {"leg": leg.ref, "trade_id": trade_id, "role": leg.role,
                                    "side": leg.side, "price": leg.price, "size": leg.size,
-                                   "error_code": out.error_code, "critical": True,
-                                   "reason": out.fill_note,
+                                   "error_code": error_code, "critical": True,
+                                   "reason": motivo,
                                    # il CONTEGGIO in chiaro: un rifiuto isolato e il
                                    # centesimo di fila non sono la stessa notizia
                                    "conteggio": (None if freno is None
                                                  else int(freno.get("conteggio") or 0)),
                                    "max": (None if freno is None
-                                           else int(freno.get("max") or 0))}, info.event_id)
+                                           else int(freno.get("max") or 0))}, event_id)
     if freno is not None and freno.get("bloccata"):
         # IL FRENO E' SCATTATO: da qui la copertura non si ritenta piu' finche'
         # non interviene l'utente («Riprendi») o finche' Betfair non risponde
@@ -921,12 +967,10 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                          "stato_freno": E.COVER_BLOCCATA, "critical": True,
                          "nota": "copertura Over 4.5 FERMATA dopo rifiuti identici "
                                  "ripetuti: serve un intervento (Riprendi) o un "
-                                 "codice d'errore diverso"}, info.event_id)
+                                 "codice d'errore diverso"}, event_id)
         logger.critical("[mike] %s: COPERTURA BLOCCATA dopo %s rifiuti '%s' (%s)",
-                        info.event_id, freno.get("conteggio"), freno.get("error_code"), leg.ref)
-    db.log("skip", {"leg": leg.ref, "trade_id": trade_id, "reason": out.fill_note,
-                    "error_code": out.error_code}, info.event_id)
-    return "cancelled"
+                        event_id, freno.get("conteggio"), freno.get("error_code"), leg.ref)
+    return freno
 
 
 # ---------------------------------------------------------------------------
@@ -1395,6 +1439,7 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
         campi = {"meta": meta}
         if bet_id:
             campi["bet_id"] = str(bet_id)
+        freno: Optional[Dict[str, Any]] = None
         if abbinato > 0:
             leg.status = "open"
             prezzo = float(medio) if medio else float(leg.price)
@@ -1405,11 +1450,27 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             leg.status = "cancelled"
             meta.update({"phase": "cancelled", "reason": f"runner_{fase}"})
             campi["status"] = "error"
+            no_definitivo = not appoggiata and fase in ("rifiutato", "annullato", "scaduto")
             if not appoggiata and fase == "rifiutato":
                 _rifiutata(ctx, leg, f"rifiutata dal runner ({fase})")
             elif not appoggiata and fase in ("annullato", "scaduto"):
                 # il FOK ucciso: il mercato ha detto no a questa richiesta
                 _rifiutata(ctx, leg, f"FOK non abbinato ({fase})")
+            if no_definitivo and seq > gia:
+                # D1-bis (28/09) - IL FRENO DELLA COPERTURA CONTA ANCHE QUI, con
+                # la stessa funzione del ramo sincrono. Argomenti = quelli che il
+                # runner da' davvero: l'evento ``order`` NON porta un codice
+                # d'errore (chiavi di ``motore_ordini.CHIAVI_SPECCHIO``), quindi
+                # ``error_code`` None e motivo ``runner_<fase>``, stabile fra un
+                # tentativo e l'altro come ``live_not_matched:EXPIRED`` in live.
+                # ``seq > gia``: lo STESSO evento terminale riletto (ctx ripreso
+                # da prima dell'esito) non si conta due volte - la riga ha gia'
+                # ``canale_seq`` = quel seq. Fase ``errore`` NON si conta: e'
+                # l'esito ``post_place:``/place-and-trim abbandonato, cioe' un
+                # ordine che potrebbe esistere (esito ignoto, mai contato).
+                freno = _esito_rifiuto_mercato(
+                    db, ctx, leg, error_code=None, motivo=f"runner_{fase}",
+                    trade_id=r.get("id"), now_ts=now_ts, params=params, event_id=eid)
         try:
             X.aggiorna_trade(db, int(r["id"]), campi=campi, consapevolezza=consap)
         except Exception as ex:  # noqa: BLE001
@@ -1421,9 +1482,14 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                     "note": f"runner_paper:{fase}", "size_requested": round(float(leg.size), 2),
                     "size_remaining": consap["size_remaining"]}, eid)
         else:
-            db.log("no_fill", {"leg": leg.ref, "role": leg.role, "size": leg.size,
-                               "wanted": leg.price, "side": leg.side, "fase_runner": fase,
-                               "reason": f"runner_{fase}"}, eid)
+            nf: Dict[str, Any] = {"leg": leg.ref, "role": leg.role, "size": leg.size,
+                                  "wanted": leg.price, "side": leg.side, "fase_runner": fase,
+                                  "reason": f"runner_{fase}"}
+            if freno is not None:
+                # il conteggio del freno in chiaro, come ``place_rifiutato``
+                nf.update({"conteggio": int(freno.get("conteggio") or 0),
+                           "max": int(freno.get("max") or 0)})
+            db.log("no_fill", nf, eid)
         n += 1
     return n
 

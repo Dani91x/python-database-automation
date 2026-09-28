@@ -149,16 +149,52 @@ def _info() -> MF.EventInfo:
                     (ME.MARKET_OU45, ME.SEL_OVER): 48900})
 
 
-def _mike(ruolo: str, side: str, price: float, closes=None) -> Tuple[str, DbMemoria]:
-    db = DbMemoria({"status": "running", "mode": "paper", "params": {}})
+@pytest.fixture
+def mike_strade(monkeypatch):
+    """D1-bis (28/09): dal 29/09 (D1) Mike in PAPER esegue sul RUNNER (canale di
+    comando), non piu' col fill «di casa» per cui questi test erano scritti.
+    Qui: il runner finto di Mike (``Betfair/mike/tests/runner_finto.py``: ack ed
+    eventi ``order`` del protocollo VERO, fase da ``motore_ordini.fase_da_riga``)
+    per il paper; per il live il mercato REST con ``place_order_live`` che
+    risponde un ``PlaceResult`` VERO di ``omega_market``. Il freno resta quello
+    VERO (``controls.motivo_kill_switch`` via fixture ``freno``); il modo ordini
+    (``LIVE_ORDER_MODE``/Control Room, che non e' il freno) e' aperto sul LIVE."""
+    from Betfair.mike import porta_ordini as MP
+    from Betfair.mike.tests.runner_finto import RunnerFinto
+    from Betfair.omega.omega_market import PlaceResult
+
+    runner = RunnerFinto(attore="mike")
+    MP.installa(runner)
+    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
+    monkeypatch.setattr(MO, "aggiorna_da_db", lambda *a, **k: None)
+    monkeypatch.setattr(MO, "kill_switch_db", lambda *a, **k: False)
+    monkeypatch.setattr(MO, "valore_db", lambda *a, **k: "LIVE")
+    monkeypatch.setattr(MS, "mike_live_abilitato", lambda: True)
+    live: List[Dict[str, Any]] = []
+
+    def place_order_live(**kw):
+        live.append(kw)
+        return PlaceResult(ok=True, order_status="EXECUTION_COMPLETE", bet_id="B77",
+                           size_matched=round(float(kw["size"]), 2),
+                           avg_price_matched=float(kw["price"]), raw={})
+    yield SimpleNamespace(runner=runner, live=live,
+                          mercato=SimpleNamespace(place_order_live=place_order_live))
+    MP.installa(None)
+
+
+def _mike(strade, ruolo: str, side: str, price: float, closes=None,
+          mode: str = "paper") -> Tuple[str, DbMemoria]:
+    db = DbMemoria({"status": "running", "mode": mode, "params": {}})
     leg = ME.Leg(role=ruolo, market=ME.MARKET_OU35, selection=ME.SEL_UNDER,
                  side=side, price=price, size=10.0, ref=f"{ruolo}-0-1")
     book = ME.Book(status="OPEN", best_back=1.76, back_size=500.0,
                    best_lay=1.78, lay_size=500.0, inplay=False)
-    esito = MS.execute_place(db=db, market=SimpleNamespace(), info=_info(), leg=leg,
-                             book=book, mode="paper", params=dict(MC.merge_params(None)),
+    esito = MS.execute_place(db=db, market=strade.mercato, info=_info(), leg=leg,
+                             book=book, mode=mode, params=dict(MC.merge_params(None)),
                              now=_ORA, dry=False, closes_trade_id=closes,
-                             ctx=ME.MatchCtx(state="PRE", cycle_no=0))
+                             # la gamba sta nel ctx come in produzione: e' li' che
+                             # il lettore degli esiti del runner la cerca
+                             ctx=ME.MatchCtx(state="PRE", cycle_no=0, legs=[leg]))
     return esito, db
 
 
@@ -166,27 +202,41 @@ def _righe_aperte(db: DbMemoria) -> List[Dict[str, Any]]:
     return [r for r in db.trades if r.get("status") == "open"]
 
 
+def _ordini_partiti(strade) -> int:
+    return (len([c for c in strade.runner.comandi if c.get("azione") == "place"])
+            + len(strade.live))
+
+
 @pytest.mark.parametrize("sorgente", ["env", "db"])
-def test_mike_paper_apertura_ferma_col_freno(freno, sorgente):
+def test_mike_paper_apertura_ferma_col_freno(freno, sorgente, mike_strade):
     freno(sorgente)
-    esito, db = _mike("under_entry", "back", 1.76)
-    assert esito == "cancelled"
-    assert _righe_aperte(db) == [], "nessuna posizione paper nasce a freno tirato"
-    skip = [p for k, p, _e in db.attivita if k == "skip"]
-    assert skip and skip[-1]["reason"] == _motivo(sorgente)
+    for mode in ("paper", "live"):          # parita': stesso freno, stesso esito
+        esito, db = _mike(mike_strade, "under_entry", "back", 1.76, mode=mode)
+        assert esito == "cancelled", mode
+        assert _righe_aperte(db) == [], "nessuna posizione nasce a freno tirato (%s)" % mode
+        assert _ordini_partiti(mike_strade) == 0, "ordine partito a freno tirato (%s)" % mode
+        skip = [p for k, p, _e in db.attivita if k == "skip"]
+        assert skip and skip[-1]["reason"] == _motivo(sorgente), mode
 
 
-def test_mike_paper_chiusura_passa_col_freno(freno):
+def test_mike_paper_chiusura_passa_col_freno(freno, mike_strade):
     freno("db")
-    esito, db = _mike("under_green", "lay", 1.78, closes=41)
+    esito, db = _mike(mike_strade, "under_green", "lay", 1.78, closes=41)
     assert esito == "open"
     assert len(_righe_aperte(db)) == 1
+    cmd = [c for c in mike_strade.runner.comandi if c.get("azione") == "place"]
+    assert len(cmd) == 1 and cmd[0]["reduces_liability"] is True, "la chiusura e' sul runner"
+    esito_l, db_l = _mike(mike_strade, "under_green", "lay", 1.78, closes=41, mode="live")
+    assert esito_l == "open" and len(_righe_aperte(db_l)) == 1 and len(mike_strade.live) == 1
 
 
-def test_mike_paper_freno_rilasciato_parita(freno):
+def test_mike_paper_freno_rilasciato_parita(freno, mike_strade):
     freno(None)
-    esito, db = _mike("under_entry", "back", 1.76)
+    esito, db = _mike(mike_strade, "under_entry", "back", 1.76)
     assert esito == "open" and len(_righe_aperte(db)) == 1
+    esito_l, db_l = _mike(mike_strade, "under_entry", "back", 1.76, mode="live")
+    assert esito_l == "open" and len(_righe_aperte(db_l)) == 1
+    assert _ordini_partiti(mike_strade) == 2
 
 
 def test_mike_resting_paper_di_apertura_ferma(freno):

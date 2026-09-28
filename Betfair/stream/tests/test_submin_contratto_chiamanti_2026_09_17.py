@@ -57,6 +57,11 @@ _CHIAMANTI_ATTESI = {
     # (nessuna copia della macchina; il runner tennis rifiuta sotto il minimo,
     # reperto R-1 per l'utente). Il test sotto lo verifica.
     "Betfair/stream/tennis_live/esecutore_tennis.py",
+    # 28/09 (D1-bis): la porta PAPER di Mike (D1) NOMINA ``place_submin_live`` solo nel
+    # docstring: non chiama la sequenza, passa il comando di ``execution`` intatto (niente
+    # FOK sotto il minimo, importo e quota invariati) e il place-and-trim lo fa la macchina
+    # del worker nel motore. Verificato da test_mike_d1bis_freno_coperture_runner_2026_09_28.
+    "Betfair/mike/porta_ordini.py",
     "Betfair/stream/trading/submin.py",
 }
 
