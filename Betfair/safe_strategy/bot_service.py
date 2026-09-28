@@ -49,7 +49,7 @@ import threading
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from Betfair.omega import omega_market as _omega_market
 from Betfair.safe_strategy import bot_db as _real_db
@@ -10024,6 +10024,20 @@ def _usa_timeout_bot(chi: str) -> None:
         logger.warning("[%s] timeout PostgREST bot non applicato: %s", chi, str(ex)[:160])
 
 
+def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[safe.bot]") -> None:
+    """CANTIERE K2 (28/09): il guscio del ciclo persistente. Controlla
+    l'arresto ORDINATO dell'app PRIMA di ogni giro; se richiesto esce SENZA
+    eseguire ``un_giro``. Altrimenti esegue ``un_giro()`` e ripete finche'
+    non ritorna False. Estratta da ``main()`` per poter provare che
+    l'arresto FA USCIRE DAVVERO il ciclo."""
+    while True:
+        if _AO.richiesto():
+            logger.info("%s ARRESTO ORDINATO richiesto dall'app: esco.", label)
+            return
+        if not un_giro():
+            return
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -10062,82 +10076,87 @@ def main() -> None:
     opp_mod = _import_opportunity_module()
     engine = model = None
     params_sig: Optional[str] = None
-    try:
-        while True:
-            interval = 2.0
-            _ULTIMO_GIRO["mono"] = time.monotonic()
-            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
-            # di arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
-            # `finally`: lock.close()), exit 0, il watchdog non rilancia.
-            if _AO.richiesto():
-                logger.info("[safe.bot] ARRESTO ORDINATO richiesto dall'app: esco.")
-                break
-            try:
-                # controllo d'avvio non concluso (DB muto): si riprova a ogni
-                # giro, e fino ad allora nessuna apertura.
-                if _GUARDIA_AVVIO.blocca_aperture:
-                    ferma_al_nuovo_avvio()
-                ctrl = _control_per_il_giro(_real_db)
-                params = resolve_params(ctrl.get("params"), engine_mod=engine_mod)
-                interval = float(params.get("poll_interval_s") or 2.0)
-                # M-30: "Salva" dei parametri → i MODELLI si ricostruiscono a
-                # caldo (prima OpportunityModel/TennisOpportunityModel nascevano
-                # una volta e ignoravano ogni modifica fino al riavvio).
-                sig = params_signature(params)
-                if params_sig is not None and sig != params_sig:
-                    logger.info("[safe.bot] parametri cambiati: ricostruisco i modelli")
-                    engine = model = None
-                    _EXIT_MODEL["model"] = None
-                    _OPPS_STATE.pop("tennis_model", None)
-                    _OPPS_STATE.pop("tennis_mod", None)
-                params_sig = sig
-                if engine is None:
-                    engine = _build_engine(engine_mod, params)
-                elif hasattr(engine, "update_params"):
-                    try:
-                        engine.update_params(params)
-                    except Exception as ex:  # noqa: BLE001
-                        logger.warning("[safe.bot] update_params KO: %s", str(ex)[:160])
-                if model is None:
-                    model = _build_model(opp_mod, params)
-                # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
-                # (lucchetto; contesto vuoto a interruttore spento).
-                with _esiti_ciclo():
-                    res = run_once(engine=engine, opp_model=model, opp_mod=opp_mod,
-                                   engine_mod=engine_mod)
-                if res.get("placed") or res.get("settled") or res.get("requests") \
-                        or res.get("exits"):
-                    logger.info("[safe.bot] ciclo: %s",
-                                {k: res[k] for k in ("placed", "settled", "requests", "exits")
-                                 if k in res})
-            except KeyboardInterrupt:
-                logger.info("[safe.bot] interrotto")
-                break
-            except Exception as ex:  # noqa: BLE001 — il loop non deve morire
-                logger.exception("[safe.bot] errore di ciclo: %s", str(ex)[:200])
+
+    def _un_giro() -> bool:
+        """Un giro del ciclo di Safe bot. True per continuare (dopo
+        l'attesa), False per fermarsi (KeyboardInterrupt). L'arresto
+        ORDINATO dell'app lo controlla il guscio (sotto), non qui."""
+        nonlocal engine, model, params_sig
+        interval = 2.0
+        _ULTIMO_GIRO["mono"] = time.monotonic()
+        try:
+            # controllo d'avvio non concluso (DB muto): si riprova a ogni
+            # giro, e fino ad allora nessuna apertura.
+            if _GUARDIA_AVVIO.blocca_aperture:
+                ferma_al_nuovo_avvio()
+            ctrl = _control_per_il_giro(_real_db)
+            params = resolve_params(ctrl.get("params"), engine_mod=engine_mod)
+            interval = float(params.get("poll_interval_s") or 2.0)
+            # M-30: "Salva" dei parametri → i MODELLI si ricostruiscono a
+            # caldo (prima OpportunityModel/TennisOpportunityModel nascevano
+            # una volta e ignoravano ogni modifica fino al riavvio).
+            sig = params_signature(params)
+            if params_sig is not None and sig != params_sig:
+                logger.info("[safe.bot] parametri cambiati: ricostruisco i modelli")
+                engine = model = None
+                _EXIT_MODEL["model"] = None
+                _OPPS_STATE.pop("tennis_model", None)
+                _OPPS_STATE.pop("tennis_mod", None)
+            params_sig = sig
+            if engine is None:
+                engine = _build_engine(engine_mod, params)
+            elif hasattr(engine, "update_params"):
                 try:
-                    _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200],
-                                           "critical": True})
-                except Exception:  # noqa: BLE001
-                    pass
-                # CERT. 13/09 — lo si DICE anche sul control. La colonna ``error``
-                # e lo stato 'error' esistono dallo schema iniziale e non venivano
-                # scritti da nessuno: un ciclo che esplodeva a ripetizione lasciava
-                # la dashboard con un tranquillo "in esecuzione". Chi guarda deve
-                # vedere che il servizio non sta lavorando.
-                _segnala_errore_di_ciclo(ex)
-            else:
-                _pulisci_errore_di_ciclo()
-            # l'attesa si interrompe appena il trader clicca: il ciclo dopo
-            # parte dalla corsia preferenziale delle chiusure.
-            sveglia = _SVEGLIA if _CONTI_SVEGLIA.get("installata") else None
-            # C6 a (23/09): con ``SAFE_BOT_GIRO_VELOCE`` acceso l'attesa fa
-            # anche i giri veloci (memoria, zero letture); spento, e' quella di
-            # oggi, riga per riga.
-            attesa = (_attesa_con_giro_veloce if _giro_veloce_acceso()
-                      else _attesa_interrompibile)
-            if attesa(max(interval, 1.0), _APERTE.get("n", 0), evento=sveglia):
-                logger.info("[safe.bot] richiesta in coda: ciclo anticipato")
+                    engine.update_params(params)
+                except Exception as ex:  # noqa: BLE001
+                    logger.warning("[safe.bot] update_params KO: %s", str(ex)[:160])
+            if model is None:
+                model = _build_model(opp_mod, params)
+            # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
+            # (lucchetto; contesto vuoto a interruttore spento).
+            with _esiti_ciclo():
+                res = run_once(engine=engine, opp_model=model, opp_mod=opp_mod,
+                               engine_mod=engine_mod)
+            if res.get("placed") or res.get("settled") or res.get("requests") \
+                    or res.get("exits"):
+                logger.info("[safe.bot] ciclo: %s",
+                            {k: res[k] for k in ("placed", "settled", "requests", "exits")
+                             if k in res})
+        except KeyboardInterrupt:
+            logger.info("[safe.bot] interrotto")
+            return False
+        except Exception as ex:  # noqa: BLE001 — il loop non deve morire
+            logger.exception("[safe.bot] errore di ciclo: %s", str(ex)[:200])
+            try:
+                _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200],
+                                       "critical": True})
+            except Exception:  # noqa: BLE001
+                pass
+            # CERT. 13/09 — lo si DICE anche sul control. La colonna ``error``
+            # e lo stato 'error' esistono dallo schema iniziale e non venivano
+            # scritti da nessuno: un ciclo che esplodeva a ripetizione lasciava
+            # la dashboard con un tranquillo "in esecuzione". Chi guarda deve
+            # vedere che il servizio non sta lavorando.
+            _segnala_errore_di_ciclo(ex)
+        else:
+            _pulisci_errore_di_ciclo()
+        # l'attesa si interrompe appena il trader clicca: il ciclo dopo
+        # parte dalla corsia preferenziale delle chiusure.
+        sveglia = _SVEGLIA if _CONTI_SVEGLIA.get("installata") else None
+        # C6 a (23/09): con ``SAFE_BOT_GIRO_VELOCE`` acceso l'attesa fa
+        # anche i giri veloci (memoria, zero letture); spento, e' quella di
+        # oggi, riga per riga.
+        attesa = (_attesa_con_giro_veloce if _giro_veloce_acceso()
+                  else _attesa_interrompibile)
+        if attesa(max(interval, 1.0), _APERTE.get("n", 0), evento=sveglia):
+            logger.info("[safe.bot] richiesta in coda: ciclo anticipato")
+        return True
+
+    try:
+        # 28/09 (cantiere K2): l'app chiede lo spegnimento ORDINATO (file di
+        # arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
+        # `finally`: lock.close()), exit 0, il watchdog non rilancia.
+        _ciclo_persistente(_un_giro, label="[safe.bot]")
     finally:
         try:
             lock.close()

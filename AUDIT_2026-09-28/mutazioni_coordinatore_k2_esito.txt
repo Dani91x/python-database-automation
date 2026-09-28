@@ -1,0 +1,15 @@
+K1 omega: il guscio non guarda l'arresto                                    -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_omega_ciclo_esce_entro_un_giro_con_arresto_fresco [ripristino OK, 29 s]
+K2 omega: main non usa il guscio (cablaggio)                                -> SOPRAVVISSUTA (test verdi) | 42 passed, 4 deselected in 9.55s [ripristino OK, 19 s]
+K3 mike: il guscio non guarda l'arresto                                     -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_mike_ciclo_esce_entro_un_giro_con_arresto_fresco [ripristino OK, 21 s]
+K4 mike: main spegne il controllo (cablaggio)                               -> SOPRAVVISSUTA (test verdi) | 42 passed, 4 deselected in 7.88s [ripristino OK, 21 s]
+K5 mike: l'arresto interrompe anche un --once                               -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_mike_ciclo_ignora_l_arresto_in_once [ripristino OK, 27 s]
+K6 scanner safe: il giro non guarda l'arresto                               -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_safe_scanner_ciclo_esce_entro_un_giro_con_arresto_fresco [ripristino OK, 45 s]
+K7 scanner safe: main non usa il ciclo (cablaggio)                          -> SOPRAVVISSUTA (test verdi) | 42 passed, 4 deselected in 7.99s [ripristino OK, 23 s]
+K8 bot safe: il guscio non guarda l'arresto                                 -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_safe_bot_ciclo_esce_entro_un_giro_con_arresto_fresco [ripristino OK, 26 s]
+K9 sessione scalper: non vede l'arresto                                     -> ROSSA | FAILED Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py::test_scalper_motivo_freno_vede_l_arresto_ordinato_dell_app [ripristino OK, 30 s]
+K10 supervisore scalper: solo il file, non l'arresto (cablaggio)            -> SOPRAVVISSUTA (test verdi) | 42 passed, 4 deselected in 9.92s [ripristino OK, 23 s]
+K11 supervisore scalper: chi resta non viene terminato                      -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_scalper_ferma_per_kill_switch_termina_solo_chi_non_esce_da_solo [ripristino OK, 30 s]
+K12 supervisore scalper: il giro parte anche col freno                      -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_scalper_ciclo_supervisore_ferma_e_non_esegue_un_giro [ripristino OK, 19 s]
+K13 servizio tennis: non vede l'arresto                                     -> ROSSA | FAILED Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py::test_ponte_tennis_ciclo_esce_entro_un_giro_con_arresto_fresco [ripristino OK, 14 s]
+
+TOTALE 13 | rosse 9 | SOPRAVVISSUTE 4 | non applicate 0 | ripristini falliti 0

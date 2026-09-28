@@ -2381,6 +2381,28 @@ class ScoreFeedWorker(threading.Thread):
             self._stop.wait(max(0.2, _SCORES_PERIOD_SEC - (time.monotonic() - started)))
 
 
+def _ciclo_una_volta(scan: "Scanner") -> bool:
+    """Un giro del ciclo persistente dello scanner: True per continuare,
+    False per fermarsi (arresto ORDINATO dell'app, CANTIERE K2 28/09). Il
+    controllo e' PRIMA di ``scan.tick()``: un giro non parte mai a meta'.
+    Estratta da ``main()`` per essere provata senza avviare il servizio."""
+    if _AO.richiesto():
+        logger.info("[safe-scan] ARRESTO ORDINATO richiesto dall'app: esco.")
+        return False
+    scan.tick()
+    return True
+
+
+def _ciclo_persistente(scan: "Scanner") -> None:
+    """Il ciclo persistente vero e proprio (``while True`` + dormita):
+    estratto per poter provare che l'arresto ordinato lo fa USCIRE DAVVERO
+    (non solo che la condizione e' vera in isolamento) — mutare la
+    condizione in ``main()`` non esisterebbe piu': e' qui, in un'unica
+    funzione mirata."""
+    while _ciclo_una_volta(scan):
+        time.sleep(0.5)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scanner Safe Strategy")
     parser.add_argument("--once", action="store_true", help="un ciclo e esce (collaudo)")
@@ -2460,15 +2482,7 @@ def main() -> None:
             _atl_sync.avvia_se_abilitato()
         except Exception as e:  # noqa: BLE001 - il feed non muore per l'atlante
             logger.warning("[safe-scan] sync atlante non avviato: %s", str(e)[:120])
-        while True:
-            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
-            # di arresto_ordinato) -> si esce dal ciclo, il `finally` sotto
-            # ferma lo score_worker, exit 0, il watchdog non rilancia.
-            if _AO.richiesto():
-                logger.info("[safe-scan] ARRESTO ORDINATO richiesto dall'app: esco.")
-                break
-            scan.tick()
-            time.sleep(0.5)
+        _ciclo_persistente(scan)
     finally:
         if scan.score_worker is not None:
             scan.score_worker.stop()

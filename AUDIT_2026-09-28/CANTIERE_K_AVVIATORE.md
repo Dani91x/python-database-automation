@@ -208,6 +208,179 @@ Modificati: `desktop/main.js`, `Betfair/stream/watchdog.py`, `Betfair/stream/net
 `Betfair/stream/tests/test_net_retry.py`.
 Nuovi: `Betfair/stream/tests/test_spegnimento_ordinato_2026_09_28.py` (riscritto durante il
 riallineamento: ora prova solo `deve_scrivere_battito`),
-`Betfair/stream/tests/test_arresto_ordinato_servizi_bot_2026_09_28.py`,
-`AUDIT_2026-09-28/verifica_spegnimento_ordinato.js`, questo referto,
+`Betfair/stream/tests/test_arresto_ordinato_servizi_bot_2026_09_28.py` (RIMOSSO nella seconda
+consegna, vedi sotto), `AUDIT_2026-09-28/verifica_spegnimento_ordinato.js`, questo referto,
 `AUDIT_2026-09-28/CANTIERE_K_su_master.patch`.
+
+---
+
+# SECONDA CONSEGNA (CANTIERE K2, 28/09 sera)
+
+La prima consegna e' stata **verificata e integrata su master** (patch pulita, 69 pytest, node
+verde, Mike+Omega 2375 e Safe 1913 verdi). Falsificazione del coordinatore: due mutazioni
+rosse (scalper-service, Mike `--once`), **una sopravvissuta** —
+`Betfair/safe_strategy/service.py`: `if _AO.richiesto():` → `if False and _AO.richiesto():`. Il
+mio test (`test_arresto_ordinato_servizi_bot_2026_09_28.py`) guardava il TESTO del sorgente
+(`inspect.getsource`), che contiene ancora la stringa `_AO.richiesto()` dopo la mutazione: un
+test di sorgente non vede un cambio di comportamento che lascia intatto il testo.
+
+Ripartito da `origin/master` (`git fetch` + `git merge`, tre volte durante la consegna: nessun
+conflitto, l'ultimo merge include il cantiere D1 che nel frattempo ha riscritto meta' di
+`Betfair/mike/service.py` e `Betfair/safe_strategy/bot_service.py` — auto-merge pulito,
+verificato che i miei controlli `_AO.richiesto()` fossero ancora al loro posto dopo il merge).
+
+## 1. Test di COMPORTAMENTO per gli 8 figli (non piu' di sorgente)
+
+**Causa radice della sopravvivenza**: un test che fa `"_AO.richiesto()" in inspect.getsource(...)`
+prova che quella STRINGA esiste nel file, non che il ramo che la contiene sia mai eseguito con
+effetto. Per provare il comportamento senza avviare i servizi (lock di singola istanza, DB,
+client Betfair, canali — vietato dal brief), ho **estratto il ciclo esterno di ciascun servizio
+in una funzione dedicata**, isolata dal resto (il lavoro pesante di un giro e' iniettato da
+fuori come funzione), sullo STESSO principio con cui il cantiere A aveva gia' isolato
+`arresto_worker` nei due runner:
+
+| file | funzione estratta | riga (contiene il vero `while`) |
+|---|---|---|
+| `Betfair/omega/omega_service.py` | `_ciclo_persistente(un_giro, label=...)` | 8250 |
+| `Betfair/mike/service.py` | `_ciclo_persistente(un_giro, label=..., controlla_arresto=...)` | 5592 |
+| `Betfair/safe_strategy/service.py` | `_ciclo_una_volta(scan)` + `_ciclo_persistente(scan)` | 2384 |
+| `Betfair/safe_strategy/bot_service.py` | `_ciclo_persistente(un_giro, label=...)` | 10027 |
+| `Betfair/stream/scalper/scalper_service.py` | `_ciclo_supervisore(deve_fermarsi, ferma, un_giro)` + `attendi_e_termina_flat(children, ...)` | 704, 723 |
+| `Betfair/stream/tennis_live/tennis_bot_service.py` | `_ensure_loop(stop)` | GIA' isolata (nessuna modifica) |
+
+Ogni test (`Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py`, 18 test)
+chiama la funzione VERA con un file `ARRESTO` VERO (scritto con `arresto_ordinato.richiedi()`,
+letto con la stessa `arresto_ordinato.richiesto()` che usa la produzione) e verifica:
+- **file fresco** (scritto dopo l'avvio): il giro NON parte MAI (0 chiamate al lavoro iniettato);
+- **file vecchio** (mtime di un'ora prima di `AVVIO_PROCESSO`, un resto di ieri): il ciclo
+  CONTINUA a girare (3 giri eseguiti, fermato solo da un limite del test, mai dalla produzione).
+
+**Rischio nuovo scoperto scrivendo questi test**: ogni funzione estratta contiene un VERO
+`while True`. Senza `pytest-timeout` (non installabile per ordine del brief) una mutazione reale
+avrebbe fatto restare APPESO il test invece di fallire — mi e' successo due volte scrivendoli
+(vedi §3). Ogni callable iniettato in un ciclo ha quindi un **tetto di sicurezza**: dopo poche
+chiamate solleva un errore leggibile invece di girare per sempre — un dettaglio SOLO del test,
+mai del comportamento provato (che resta l'assert sul numero di chiamate).
+
+Il vecchio file `test_arresto_ordinato_servizi_bot_2026_09_28.py` e' stato **rimosso**: dopo
+l'estrazione i cicli non sono piu' inline in `main()`, quindi i suoi controlli sul testo del
+sorgente non hanno piu' nemmeno un bersaglio corretto (sarebbero rossi per un motivo sbagliato).
+
+## 2. Falsificazione (8 servizi, ciascuno riportato al codice di prima e ripristinato)
+
+| servizio | mutazione | test che diventa rosso |
+|---|---|---|
+| Omega | `if False and _AO.richiesto():` | `test_omega_ciclo_esce_entro_un_giro_con_arresto_fresco` |
+| Mike | idem | `test_mike_ciclo_esce_entro_un_giro_con_arresto_fresco` |
+| Safe scanner | idem (**la mutazione ESATTA del coordinatore**) | `test_safe_scanner_ciclo_esce_entro_un_giro_con_arresto_fresco` + `test_safe_scanner_ciclo_NON_esce_con_arresto_vecchio` |
+| Safe bot | idem | `test_safe_bot_ciclo_esce_entro_un_giro_con_arresto_fresco` |
+| Ponte tennis | idem | `test_ponte_tennis_ciclo_esce_entro_un_giro_con_arresto_fresco` |
+| Scalper (guscio) | `if False and deve_fermarsi_kill_switch():` | entrambi i test `test_scalper_ciclo_supervisore_*` |
+| Scalper (attesa/terminate) | `for p in children.values(): pass` (terminate disattivato) | `test_scalper_ferma_per_kill_switch_termina_solo_chi_non_esce_da_solo` |
+| Runner calcio | `arresto_worker`: tolto `not _AO.richiesto()` dalla guardia | `test_runner_calcio_arresto_worker_ignora_file_vecchio` |
+| Runner tennis | idem | `test_runner_tennis_arresto_worker_ignora_file_vecchio` |
+
+Ogni mutazione: `git checkout -- <file>` per ripristinare (i file erano gia' committati sul mio
+ramo locale come checkpoint), verificato `grep -c MUTAZIONE` = 0 dopo ogni ripristino. Comando:
+`.venv/Scripts/python.exe -m pytest Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py -q -p no:cacheprovider`
+→ **18 passed in ~2-17s** (a seconda del carico). Rilanciata anche la suite del freno scalper
+(`test_r3_freno_unico_2026_09_25.py` + `test_scalper_freno_origine_2026_09_26.py`, 60 test) e un
+campione di Omega/Mike/Safe/tennis (137 test): tutti verdi tranne **4 preesistenti e non miei**
+(`test_mike_paper_*` in `test_r3_freno_unico_2026_09_25.py`) — falliscono IDENTICI anche
+togliendo ogni mia modifica (verificato con `git stash`/`git stash apply` sul solo
+`scalper_session.py`, poi ripristinato): sono del cantiere D1 (Mike "paper via motore vero"),
+non di mia competenza, li segnalo e basta.
+
+## 3. Le SESSIONI dello scalper (perimetro allargato da voi a questo solo file)
+
+**Cosa succede OGGI (prima di questa consegna) a una posizione scalper aperta quando l'utente
+chiude l'app**, con prova file:riga:
+
+1. `desktop/main.js` scrive il file `ARRESTO` condiviso.
+2. Il supervisore (`Betfair/stream/scalper/scalper_service.py:772`,
+   `if os.path.isfile(KILL_FILE) or _AO.richiesto():`) lo vede entro `POLL_S=3s` e passa al ramo
+   kill-switch: `attendi_e_termina_flat` (righe 704-720) aspetta FINO A 60s che le sessioni
+   figlie escano DA SOLE.
+3. **Ma la sessione (`scalper_session.py`) non sapeva nulla dell'arresto ordinato**: la sua
+   `motivo_freno()` (righe 124-141 PRIMA di questa consegna, ora 135-160) controllava SOLO il file
+   `STOP_SCALPER` — che pero' NON e' quello che main.js scrive (main.js scrive `ARRESTO`, un file
+   diverso, in una cartella diversa) — e il kill-switch condiviso del DB. Nessuno dei due si
+   accende quando main.js chiede l'arresto ordinato.
+4. Per tutta la finestra di attesa (fino a 60s) la sessione continua a lavorare come se niente
+   fosse. Allo scadere, `scalper_service.py:719-720` (dentro `attendi_e_termina_flat`) chiama
+   `p.terminate()` — `TerminateProcess` su Windows: la sessione MUORE SUBITO, **senza eseguire
+   NESSUN codice Python** (niente `finally`, niente force-flat, niente chiusura a mercato). Una
+   posizione aperta in quel momento **resta aperta sul mercato Betfair**, senza alcun processo
+   che la segua, fino al prossimo avvio dell'app.
+
+**Dopo questa consegna** (`scalper_session.py:132` costante `MOTIVO_ARRESTO`, `motivo_freno()`
+righe 135-160 con il terzo motivo): la sessione controlla ANCHE `arresto_ordinato.richiesto()`.
+Il controllo e' fatto in DUE punti, il piu' veloce vince:
+- il thread `sorveglia_freno` (righe 163-179, gia' esistente, `FRENO_POLL_S=2.0`): lo vede entro
+  2s e chiama SUBITO `_al_freno(motivo)` → `_force_flat_all()` (riga 1345: arma
+  `strategy.force_flat = True`, e per sniper/theta se attivi — la STESSA identica chiusura a
+  mercato gia' usata per il kill-switch di oggi, codice NON toccato);
+- il ciclo principale di `run_session` (riga 1389, `while runner.is_alive(): time.sleep(HEARTBEAT_S=5)`)
+  lo rilegge comunque al battito successivo, entro 5s.
+
+Quindi: **entro 2 secondi** dalla scrittura del file `ARRESTO`, la posizione scalper aperta
+riceve l'ordine di chiusura a mercato (stessa logica del kill-switch/STOP_SCALPER, "il
+kill-switch non va mai scavalcato": non ho cambiato COSA fa la chiusura, solo aggiunto un terzo
+modo di attivarla). Il ciclo attende fino a 30s che la chiusura sia DAVVERO flat
+(`_all_flat(timeout_s=30.0)`, riga 1352, codice esistente) prima di uscire — comunque dentro la
+finestra di 60s che il supervisore gia' concede. Il supervisore vede la sessione uscita DA SOLA
+e NON deve piu' forzarla con `terminate()`.
+
+**Non toccato**: `_force_flat_all`, `_all_flat`, la logica delle strategie che decide COME
+chiudere (size, prezzo, timing) — SOLO il motivo che fa scattare il force-flat e' cambiato.
+
+## 4. In parole semplici: quanto dura la chiusura dell'app, cosa vede l'utente
+
+- **Clic sulla X della finestra**: la finestra sparisce SUBITO (e' il comportamento normale di
+  Electron: la finestra si chiude appena l'utente lo chiede). L'ICONA dell'app nella barra delle
+  applicazioni e il processo `AlphaScore Trading.exe` **restano vivi in background** per il tempo
+  dello spegnimento ordinato: NON c'e' oggi un messaggio "sto chiudendo..." a schermo (la
+  finestra e' gia' sparita) — l'utente non vede nulla, ma il PC sta ancora lavorando.
+- **Quanto puo' durare** (nel caso peggiore, tutti gli 8 armati e occupati): il piu' lento decide,
+  ma le attese sono IN PARALLELO (non si sommano):
+  - runner calcio/tennis: fino a 25s (15s del ramo "nessun mercato" + chiusura follow + flush +
+    logout Betfair — dichiarato dal cantiere A);
+  - Omega/Safe scanner/Safe bot/Mike/ponte tennis: fino a 25s (margine di sicurezza mio, i loro
+    giri normali sono 2-20s: vedi §6 della prima consegna);
+  - **scalper-service: fino a 70s** (60s che il SUO kill-switch gia' si concedeva per chiudere le
+    posizioni flat, + margine) — e' il piu' lungo, quindi e' lui a decidere il caso peggiore.
+  - In pratica, con l'app SENZA posizioni aperte (il caso piu' comune: nessun bot armato, o bot
+    armati ma senza un trade in corso), tutti i figli escono da soli in **1-5 secondi** (lo
+    dichiara anche `SPEC_SPEGNIMENTO_ORDINATO.md` §2 per i due runner, e vale uguale per gli
+    altri: il controllo dell'arresto e' la PRIMA cosa che fanno a ogni giro, e i giri sono
+    brevi). I 70s sono un tetto per il caso raro (posizione scalper aperta proprio nel momento
+    della chiusura), non la norma.
+  - Se qualcosa non esce in tempo (bug, rete giu', servizio appeso): allo scadere del SUO tetto
+    (25s o 70s) viene comunque forzato (`taskkill /T /F`) — l'app si chiude SEMPRE, non resta mai
+    appesa oltre 70s.
+- **Cosa NON e' garantito**: mentre l'app aspetta, non c'e' alcun indicatore a schermo (la
+  finestra e' gia' chiusa). Un utente che riapre l'app SUBITO dopo aver cliccato la X, entro
+  quei 70s, potrebbe trovare il vecchio processo ancora vivo (lock di singola istanza: il nuovo
+  avvio dei servizi troverebbe la porta occupata e si fermerebbe da solo, per poi ripartire
+  correttamente quando il vecchio processo finisce di chiudersi — comportamento gia' esistente
+  del lock, non cambiato qui, ma vale la pena saperlo).
+- **Proposta (non implementata, fuori dal mio perimetro)**: se l'utente vuole un segnale a
+  schermo ("sto chiudendo in modo ordinato...") durante questi secondi, serve un piccolo dialogo
+  Electron che main.js mostra PRIMA di lasciar chiudere la finestra (oggi la finestra sparisce
+  subito e lo spegnimento avviene invisibile in background) — lo segnalo come possibile
+  miglioramento futuro, non l'ho fatto perche' non richiesto e tocca l'esperienza utente, non la
+  correttezza.
+
+## Elenco esatto dei file toccati/nuovi (seconda consegna)
+
+Modificati: `Betfair/omega/omega_service.py`, `Betfair/mike/service.py`,
+`Betfair/safe_strategy/service.py`, `Betfair/safe_strategy/bot_service.py`,
+`Betfair/stream/scalper/scalper_service.py`, `Betfair/stream/scalper/scalper_session.py`,
+`Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py` (3 test nuovi per `motivo_freno` e
+l'arresto ordinato).
+Nuovi: `Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py` (18 test).
+Rimosso: `Betfair/stream/tests/test_arresto_ordinato_servizi_bot_2026_09_28.py`.
+`desktop/main.js` e `Betfair/stream/watchdog.py`: **non toccati** in questa consegna (l'unico
+file gia' pronto per l'attesa a 70s/25s per figlio e' `desktop/main.js`, invariato dalla prima
+consegna: `shutdownGraceMs`, riga 283).
+Consegna: `AUDIT_2026-09-28/CANTIERE_K2_su_master.patch` (`git diff origin/master` dei file sopra).

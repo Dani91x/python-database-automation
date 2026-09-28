@@ -8247,6 +8247,22 @@ def _pubblica_stato(stats: dict, now_iso: str, control: Any = None) -> None:
         logger.debug("[omega] publish stato KO: %s", str(ex)[:120])
 
 
+def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[omega]") -> None:
+    """CANTIERE K2 (28/09): il guscio del ciclo persistente. Controlla
+    l'arresto ORDINATO dell'app PRIMA di ogni giro (mai a meta' di uno gia'
+    iniziato); se richiesto esce SENZA eseguire ``un_giro``. Altrimenti
+    esegue ``un_giro()`` e ripete finche' non ritorna False (KeyboardInterrupt).
+    Estratta da ``main()`` per poter provare che l'arresto FA USCIRE DAVVERO
+    il ciclo (non solo che la condizione e' vera in isolamento): mutare la
+    condizione qui dentro non esiste piu' fuori da questa singola funzione."""
+    while True:
+        if _AO.richiesto():
+            logger.info("%s ARRESTO ORDINATO richiesto dall'app: esco.", label)
+            return
+        if not un_giro():
+            return
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -8281,57 +8297,61 @@ def main() -> None:
     ferma_al_nuovo_avvio()
     score_lookup = _build_score_lookup()
     last_keepalive = float("-inf")  # primo ciclo: keepAlive subito (scalda la sessione)
-    try:
-        while True:
-            interval = 20
-            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
-            # di arresto_ordinato) -> si esce dal ciclo come un KeyboardInterrupt
-            # (stesso `finally`: lock.close()), exit 0, il watchdog non rilancia.
-            if _AO.richiesto():
-                logger.info("[omega] ARRESTO ORDINATO richiesto dall'app: esco.")
-                break
+
+    def _un_giro() -> bool:
+        """Un giro del ciclo di Omega. True per continuare (dopo la dormita
+        F5), False per fermarsi (KeyboardInterrupt, SENZA dormita — comportamento
+        INVARIATO dal 28/09). L'arresto ORDINATO dell'app lo controlla il
+        guscio del ciclo (``_ciclo_persistente``, sotto), non qui: un giro
+        iniziato finisce sempre."""
+        nonlocal last_keepalive
+        interval = 20
+        try:
+            # controllo d'avvio non concluso (DB muto): si riprova a ogni
+            # giro, e fino ad allora nessuna apertura.
+            if _GUARDIA_AVVIO.blocca_aperture:
+                ferma_al_nuovo_avvio()
+            last_keepalive = _maybe_keepalive(
+                _real_market, last_keepalive, now_ts=time.monotonic())
+            # §18 — ``run_once`` rilegge ``omega_control`` da sola: leggerlo
+            # anche qui voleva dire due select al giro sulla stessa riga, per
+            # avere gli stessi identici parametri. I parametri del giro
+            # PRECEDENTE bastano a decidere quanto aspettare; al primo giro,
+            # quando non ce ne sono ancora, valgono i default.
+            params = _ULTIMI_PARAMS or omega_config.resolve_params(None)
+            interval = int(params["poll_interval_s"])
+            # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
+            # (lucchetto; contesto vuoto a interruttore spento).
+            with esiti_ciclo():
+                result = run_once(score_lookup=score_lookup)
+            params = _ULTIMI_PARAMS or params
+            # RITMO ADATTIVO: il ciclo pieno solo quando qualcosa si muove da
+            # solo (posizione aperta, riconciliazione in sospeso, gamba ancora
+            # piazzabile oggi, missione seguita dall'utente, o qualcosa appena
+            # successo). A vuoto si rallenta: la notte sono migliaia di
+            # letture al database per rileggere cose ferme.
+            if not result.get("fretta"):
+                interval = max(interval, int(float(params.get("idle_cycle_s") or 0.0)))
+            if result.get("placed") or result.get("settled"):
+                logger.info("[omega] ciclo: %s", {k: result[k] for k in ("placed", "settled", "events") if k in result})
+        except KeyboardInterrupt:
+            logger.info("[omega] interrotto")
+            return False
+        except Exception as ex:  # noqa: BLE001 - il loop non deve morire
+            logger.exception("[omega] errore di ciclo: %s", str(ex)[:200])
             try:
-                # controllo d'avvio non concluso (DB muto): si riprova a ogni
-                # giro, e fino ad allora nessuna apertura.
-                if _GUARDIA_AVVIO.blocca_aperture:
-                    ferma_al_nuovo_avvio()
-                last_keepalive = _maybe_keepalive(
-                    _real_market, last_keepalive, now_ts=time.monotonic())
-                # §18 — ``run_once`` rilegge ``omega_control`` da sola: leggerlo
-                # anche qui voleva dire due select al giro sulla stessa riga, per
-                # avere gli stessi identici parametri. I parametri del giro
-                # PRECEDENTE bastano a decidere quanto aspettare; al primo giro,
-                # quando non ce ne sono ancora, valgono i default.
-                params = _ULTIMI_PARAMS or omega_config.resolve_params(None)
-                interval = int(params["poll_interval_s"])
-                # 23/09: l'applicatore degli esiti non lavora MAI dentro un giro
-                # (lucchetto; contesto vuoto a interruttore spento).
-                with esiti_ciclo():
-                    result = run_once(score_lookup=score_lookup)
-                params = _ULTIMI_PARAMS or params
-                # RITMO ADATTIVO: il ciclo pieno solo quando qualcosa si muove da
-                # solo (posizione aperta, riconciliazione in sospeso, gamba ancora
-                # piazzabile oggi, missione seguita dall'utente, o qualcosa appena
-                # successo). A vuoto si rallenta: la notte sono migliaia di
-                # letture al database per rileggere cose ferme.
-                if not result.get("fretta"):
-                    interval = max(interval, int(float(params.get("idle_cycle_s") or 0.0)))
-                if result.get("placed") or result.get("settled"):
-                    logger.info("[omega] ciclo: %s", {k: result[k] for k in ("placed", "settled", "events") if k in result})
-            except KeyboardInterrupt:
-                logger.info("[omega] interrotto")
-                break
-            except Exception as ex:  # noqa: BLE001 - il loop non deve morire
-                logger.exception("[omega] errore di ciclo: %s", str(ex)[:200])
-                try:
-                    _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
-                except Exception:  # noqa: BLE001
-                    pass
-            # F5: stessa dormita di oggi, ma svegliabile quando l'interruttore
-            # e' acceso. ``params`` e' quello del giro appena concluso: da li'
-            # esce il PAVIMENTO (``poll_interval_s``), cioe' la garanzia che i
-            # giri al minuto non superino quelli di oggi.
-            _dormi_o_sveglia(max(interval, 5), _ULTIMI_PARAMS)
+                _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
+            except Exception:  # noqa: BLE001
+                pass
+        # F5: stessa dormita di oggi, ma svegliabile quando l'interruttore
+        # e' acceso. ``params`` e' quello del giro appena concluso: da li'
+        # esce il PAVIMENTO (``poll_interval_s``), cioe' la garanzia che i
+        # giri al minuto non superino quelli di oggi.
+        _dormi_o_sveglia(max(interval, 5), _ULTIMI_PARAMS)
+        return True
+
+    try:
+        _ciclo_persistente(_un_giro, label="[omega]")
     finally:
         try:
             lock.close()  # rilascia esplicitamente il lock socket 47313

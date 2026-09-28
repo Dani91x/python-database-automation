@@ -32,7 +32,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .. import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from .. import avvio_app as AA
@@ -701,6 +701,42 @@ def orfane_giudicabili(db_sano_dal: Optional[float], adesso: float) -> bool:
     return db_sano_dal is not None and adesso - db_sano_dal >= ORPHAN_HEARTBEAT_S
 
 
+def attendi_e_termina_flat(children: Dict[str, subprocess.Popen], *,
+                           deadline_s: float = 60.0,
+                           sleep: Callable[[float], None] = time.sleep,
+                           now: Callable[[], float] = time.time) -> None:
+    """CANTIERE K2 (28/09): attende che le sessioni in ``children`` escano DA
+    SOLE (vedono il kill-file/l'arresto ordinato dalla stessa cwd) fino a
+    ``deadline_s`` (default 60s), poi termina (``Popen.terminate()``) chi
+    resta. Muta ``children`` in place (toglie chi e' uscito). Estratta dal
+    ramo kill-switch di ``main()`` per essere provata con Popen finti e
+    orologio iniettato, senza aspettare 60s per davvero."""
+    deadline = now() + deadline_s
+    while children and now() < deadline:
+        for ev in [e for e, p in children.items() if p.poll() is not None]:
+            children.pop(ev, None)
+        sleep(2)
+    for p in children.values():
+        p.terminate()
+
+
+def _ciclo_supervisore(deve_fermarsi_kill_switch: Callable[[], bool],
+                       ferma_per_kill_switch: Callable[[], None],
+                       un_giro: Callable[[], None]) -> None:
+    """CANTIERE K2 (28/09): il guscio del ciclo del supervisore scalper.
+    Controlla il kill-switch (file STOP_SCALPER o arresto ordinato
+    dell'app) PRIMA di ogni giro: se tirato chiama ``ferma_per_kill_switch``
+    (attesa flat + terminate) ed ESCE, senza eseguire ``un_giro``. Altrimenti
+    esegue ``un_giro()`` e ripete. Estratta per poter provare che il
+    kill-switch FA USCIRE DAVVERO il ciclo, non solo che la condizione e'
+    vera in isolamento."""
+    while True:
+        if deve_fermarsi_kill_switch():
+            ferma_per_kill_switch()
+            return
+        un_giro()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -762,25 +798,21 @@ def main() -> None:
     threading.Thread(target=_habitat_loop, daemon=True,
                      name="habitat-scan").start()
 
-    while True:
-        # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file di
-        # arresto_ordinato, SCRITTO DA main.js) -> STESSO percorso del
-        # kill-switch STOP_SCALPER: attende la chiusura flat delle sessioni
-        # figlie (fino a 60s) ed esce con 0 (il watchdog non rilancia). "Il
-        # kill-switch non va mai scavalcato" (SPEC_WATCHDOG_SCALPER_PONTE):
-        # qui non lo scavalca, gli aggiunge solo un secondo modo per attivarsi.
-        if os.path.isfile(KILL_FILE) or _AO.richiesto():
-            logger.warning("[scalper-svc] kill-switch: attendo la chiusura "
-                           "flat delle sessioni figlie e esco")
-            # i figli vedono il kill-file da soli (stessa cwd) e chiudono flat
-            deadline = time.time() + 60
-            while children and time.time() < deadline:
-                for ev in [e for e, p in children.items() if p.poll() is not None]:
-                    children.pop(ev, None)
-                time.sleep(2)
-            for p in children.values():
-                p.terminate()
-            return
+    def _deve_fermarsi_kill_switch() -> bool:
+        """CANTIERE K2 (28/09): file STOP_SCALPER (di sempre) OPPURE l'arresto
+        ORDINATO dell'app (arresto_ordinato, SCRITTO DA main.js) — STESSO
+        trattamento, "il kill-switch non va mai scavalcato" (SPEC_WATCHDOG_
+        SCALPER_PONTE): l'arresto ordinato non lo scavalca, gli aggiunge solo
+        un secondo modo per attivarsi."""
+        return os.path.isfile(KILL_FILE) or _AO.richiesto()
+
+    def _ferma_per_kill_switch() -> None:
+        logger.warning("[scalper-svc] kill-switch: attendo la chiusura "
+                       "flat delle sessioni figlie e esco")
+        attendi_e_termina_flat(children)
+
+    def _un_giro() -> None:
+        nonlocal avvio_concluso, db_sano_dal
         try:
             # figli terminati → rimuovi dal registro
             for ev in [e for e, p in children.items() if p.poll() is not None]:
@@ -840,6 +872,8 @@ def main() -> None:
             logger.exception("[scalper-svc] errore nel loop di polling")
             db_sano_dal = None   # FIX-C: il DB non e' "sano" finche' un giro non riesce
         time.sleep(POLL_S)
+
+    _ciclo_supervisore(_deve_fermarsi_kill_switch, _ferma_per_kill_switch, _un_giro)
 
 
 if __name__ == "__main__":

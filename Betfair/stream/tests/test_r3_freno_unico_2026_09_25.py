@@ -306,6 +306,59 @@ def test_scalper_motivo_freno_dal_db_senza_file(freno, tmp_path, monkeypatch):
     assert SS.motivo_freno() == SS.MOTIVO_FILE
 
 
+# ===========================================================================
+# CANTIERE K2 (28/09) — l'arresto ORDINATO dell'app e' un TERZO motivo di
+# freno per la sessione scalper (STESSO trattamento del file STOP_SCALPER:
+# force-flat + fine sessione — vedi il ciclo principale di run_session,
+# `motivo_freno()`). Prima di questa riga una posizione scalper aperta
+# restava aperta sul mercato, seguita da un processo che il supervisore
+# uccideva con TerminateProcess dopo l'attesa del suo kill-switch (fino a
+# 60s), MAI un force-flat: e' la sessione stessa che deve vedere il file.
+# ===========================================================================
+def test_scalper_motivo_freno_vede_l_arresto_ordinato_dell_app(freno, tmp_path, monkeypatch):
+    from Betfair.stream import arresto_ordinato as AO
+
+    monkeypatch.chdir(tmp_path)                  # nessun STOP_SCALPER qui
+    monkeypatch.setenv("APP_ARRESTO_DIR", str(tmp_path / "_arresto"))
+    freno(None)                                  # nessun freno DB/env
+    assert SS.motivo_freno() is None
+
+    AO.richiedi()
+    assert SS.motivo_freno() == SS.MOTIVO_ARRESTO
+
+    AO.cancella()
+    assert SS.motivo_freno() is None
+
+
+def test_scalper_motivo_freno_file_stop_scalper_vince_sull_arresto(freno, tmp_path, monkeypatch):
+    """Priorita' dichiarata in motivo_freno(): STOP_SCALPER controllato PRIMA
+    (e' il kill-switch di sempre, "non va mai scavalcato")."""
+    from Betfair.stream import arresto_ordinato as AO
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_ARRESTO_DIR", str(tmp_path / "_arresto"))
+    freno(None)
+    (tmp_path / SS.KILL_FILE).write_text("stop")
+    AO.richiedi()
+    assert SS.motivo_freno() == SS.MOTIVO_FILE
+
+
+def test_scalper_motivo_freno_arresto_vecchio_di_ieri_non_conta(freno, tmp_path, monkeypatch):
+    """Un file ARRESTO piu' vecchio dell'avvio del processo (import di
+    arresto_ordinato) e' il resto di uno spegnimento precedente: non deve
+    fermare una sessione appena nata (stessa regola per tutti i processi)."""
+    from Betfair.stream import arresto_ordinato as AO
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_ARRESTO_DIR", str(tmp_path / "_arresto"))
+    freno(None)
+    p = AO.richiedi()
+    vecchio = AO.AVVIO_PROCESSO - 3600
+    os.utime(p, (vecchio, vecchio))
+    assert SS.motivo_freno() is None
+    AO.cancella()
+
+
 def test_scalper_sessione_non_parte_col_freno(freno, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     freno("db")

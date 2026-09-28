@@ -119,18 +119,37 @@ HT_MINUTE_MAX = 48
 #: alla cache dei settings in ``controls``, nessuna lettura DB in piu'
 FRENO_POLL_S = 2.0
 MOTIVO_FILE = "file_STOP_SCALPER"
+#: CANTIERE K2 (28/09): l'arresto ORDINATO dell'app (file condiviso ARRESTO,
+#: Betfair/stream/arresto_ordinato.py, scritto da desktop/main.js) e' un
+#: terzo motivo di freno, STESSO trattamento del file STOP_SCALPER — vedi
+#: motivo_freno(). Prima di questa riga main.js scriveva ARRESTO, il
+#: supervisore (scalper_service.py) lo vedeva ed entrava nell'attesa del
+#: kill-switch (fino a 60s), ma NESSUNO lo diceva a QUESTA sessione: una
+#: posizione aperta restava aperta e monitorata da un processo che, scaduti
+#: i 60s, il supervisore uccideva con `Popen.terminate()` (TerminateProcess)
+#: SENZA che la sessione avesse mai tentato un force-flat — posizione aperta
+#: sul mercato, nessun processo piu' a seguirla, fino al prossimo avvio.
+MOTIVO_ARRESTO = "arresto_ordinato"
 
 
 def motivo_freno() -> Optional[str]:
     """Il motivo per cui lo scalper NON deve aprire, o None.
 
-    File ``STOP_SCALPER`` nella cwd (il freno di sempre) OPPURE il freno
+    File ``STOP_SCALPER`` nella cwd (il freno di sempre), l'arresto ORDINATO
+    dell'app (``arresto_ordinato.richiesto()``, CANTIERE K2) OPPURE il freno
     condiviso (env ``LIVE_KILL_SWITCH`` / ``betfair_live_settings.kill_switch``).
     Paper e live uguali. Freno non valutabile = tirato (fail-closed)."""
     try:
         if os.path.isfile(KILL_FILE):
             return MOTIVO_FILE
     except Exception:  # noqa: BLE001 - filesystem strano: il DB decide
+        pass
+    try:
+        from .. import arresto_ordinato as _AO
+
+        if _AO.richiesto():
+            return MOTIVO_ARRESTO
+    except Exception:  # noqa: BLE001 - il DB decide comunque sotto
         pass
     try:
         from ..trading import controls as _ctl

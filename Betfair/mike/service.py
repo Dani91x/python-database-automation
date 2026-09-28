@@ -26,7 +26,7 @@ from datetime import timedelta as _timedelta
 from datetime import timezone
 import re as _re
 import time as _time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from Betfair.safe_strategy import execution as X
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
@@ -5589,6 +5589,22 @@ def _pubblica_stato(control: Dict[str, Any], agg: Dict[str, Any],
         logger.debug("[mike] publish stato KO: %s", str(ex)[:120])
 
 
+def _ciclo_persistente(un_giro: Callable[[], bool], *, label: str = "[mike]",
+                       controlla_arresto: bool = True) -> None:
+    """CANTIERE K2 (28/09): il guscio del ciclo persistente. Controlla
+    l'arresto ORDINATO dell'app (``controlla_arresto=False`` per un
+    ``--once``: mai interrompere un giro singolo di collaudo) PRIMA di ogni
+    giro; se richiesto esce SENZA eseguire ``un_giro``. Altrimenti esegue
+    ``un_giro()`` e ripete finche' non ritorna False. Estratta da ``main()``
+    per poter provare che l'arresto FA USCIRE DAVVERO il ciclo."""
+    while True:
+        if controlla_arresto and _AO.richiesto():
+            logger.info("%s ARRESTO ORDINATO richiesto dall'app: esco.", label)
+            return
+        if not un_giro():
+            return
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -5636,57 +5652,62 @@ def main() -> None:
     _GUARDIA_AVVIO.attiva = True
     ferma_al_nuovo_avvio()
     atlas = D.load_atlas()
-    try:
-        while True:
-            interval = 2.0
-            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
-            # di arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
-            # `finally`: lock.close()), exit 0, il watchdog non rilancia.
-            # Mai in `--once`: e' un giro singolo, non il servizio lungo.
-            if not args.once and _AO.richiesto():
-                logger.info("[mike] ARRESTO ORDINATO richiesto dall'app: esco.")
-                break
+
+    def _un_giro() -> bool:
+        """Un giro del ciclo di Mike. True per continuare (dopo la dormita
+        F5), False per fermarsi (KeyboardInterrupt o fine di un `--once`).
+        L'arresto ORDINATO dell'app lo controlla il guscio (sotto), non qui."""
+        nonlocal atlas
+        interval = 2.0
+        try:
+            # controllo d'avvio non concluso (DB muto): si riprova a ogni
+            # giro, e fino ad allora nessuna apertura.
+            if _GUARDIA_AVVIO.blocca_aperture:
+                ferma_al_nuovo_avvio()
+            # ``run_once`` rilegge il control da sola: leggerlo anche qui
+            # voleva dire due query al secondo per lo stesso dato. I
+            # parametri del giro PRECEDENTE bastano a decidere quanto
+            # aspettare prima del prossimo.
+            params = _ULTIMI_PARAMS or C.merge_params(None)
+            interval = max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2)
+            # 24/09: l'atlante e' l'istanza CONDIVISA (hazard_atlas): la si
+            # richiede a ogni giro (costa un confronto, l'mtime si guarda al
+            # piu' una volta al minuto) cosi' un atlante rigenerato arriva a
+            # Mike senza riavvio. Se non c'e' piu', resta l'ultimo buono.
+            atlas = D.load_atlas() or atlas
+            res = run_once(atlas=atlas, dry=args.dry)
+            params = _ULTIMI_PARAMS or params
+            # RITMO ADATTIVO: col ciclo pieno solo quando qualcosa si muove
+            # da solo (partita in gioco, ordine vivo, richiesta dalla UI).
+            if not res.get("fretta") and not res.get("actions") and not res.get("settled"):
+                interval = max(interval, float(params.get("idle_cycle_s") or interval))
+            if res.get("new") or res.get("actions") or res.get("settled") or res.get("requests"):
+                logger.info("[mike] ciclo: %s", {k: res[k] for k in ("new", "actions", "settled", "requests")})
+            if args.once:
+                logger.info("[mike] --once: %s", res)
+                return False
+        except KeyboardInterrupt:
+            return False
+        except Exception as ex:  # noqa: BLE001 — il loop non deve morire
+            logger.exception("[mike] errore di ciclo: %s", str(ex)[:200])
             try:
-                # controllo d'avvio non concluso (DB muto): si riprova a ogni
-                # giro, e fino ad allora nessuna apertura.
-                if _GUARDIA_AVVIO.blocca_aperture:
-                    ferma_al_nuovo_avvio()
-                # ``run_once`` rilegge il control da sola: leggerlo anche qui
-                # voleva dire due query al secondo per lo stesso dato. I
-                # parametri del giro PRECEDENTE bastano a decidere quanto
-                # aspettare prima del prossimo.
-                params = _ULTIMI_PARAMS or C.merge_params(None)
-                interval = max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2)
-                # 24/09: l'atlante e' l'istanza CONDIVISA (hazard_atlas): la si
-                # richiede a ogni giro (costa un confronto, l'mtime si guarda al
-                # piu' una volta al minuto) cosi' un atlante rigenerato arriva a
-                # Mike senza riavvio. Se non c'e' piu', resta l'ultimo buono.
-                atlas = D.load_atlas() or atlas
-                res = run_once(atlas=atlas, dry=args.dry)
-                params = _ULTIMI_PARAMS or params
-                # RITMO ADATTIVO: col ciclo pieno solo quando qualcosa si muove
-                # da solo (partita in gioco, ordine vivo, richiesta dalla UI).
-                if not res.get("fretta") and not res.get("actions") and not res.get("settled"):
-                    interval = max(interval, float(params.get("idle_cycle_s") or interval))
-                if res.get("new") or res.get("actions") or res.get("settled") or res.get("requests"):
-                    logger.info("[mike] ciclo: %s", {k: res[k] for k in ("new", "actions", "settled", "requests")})
-                if args.once:
-                    logger.info("[mike] --once: %s", res)
-                    break
-            except KeyboardInterrupt:
-                break
-            except Exception as ex:  # noqa: BLE001 — il loop non deve morire
-                logger.exception("[mike] errore di ciclo: %s", str(ex)[:200])
-                try:
-                    _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
-                except Exception:  # noqa: BLE001
-                    pass
-                if args.once:
-                    break
-            # F5: stessa dormita di oggi, ma svegliabile a interruttore acceso.
-            # Il PAVIMENTO esce dai parametri dell'ultimo giro ed e' la cadenza
-            # attiva: la garanzia che i giri al minuto non crescano.
-            _dormi_o_sveglia(interval, _ULTIMI_PARAMS)
+                _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
+            except Exception:  # noqa: BLE001
+                pass
+            if args.once:
+                return False
+        # F5: stessa dormita di oggi, ma svegliabile a interruttore acceso.
+        # Il PAVIMENTO esce dai parametri dell'ultimo giro ed e' la cadenza
+        # attiva: la garanzia che i giri al minuto non crescano.
+        _dormi_o_sveglia(interval, _ULTIMI_PARAMS)
+        return True
+
+    try:
+        # 28/09 (cantiere K2): l'app chiede lo spegnimento ORDINATO (file di
+        # arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
+        # `finally`: lock.close()), exit 0, il watchdog non rilancia. Mai in
+        # `--once`: e' un giro singolo, non il servizio lungo.
+        _ciclo_persistente(_un_giro, label="[mike]", controlla_arresto=not args.once)
     finally:
         if lock is not None:
             try:
