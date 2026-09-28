@@ -578,6 +578,16 @@ class AutoFollow:
         self.conti = {"risottoscrizioni": 0, "agganci_comando": 0, "espulsi": 0,
                       "rifiuti_tetto": 0, "errori_sottoscrizione": 0}
         self.ultimo_errore: Optional[str] = None
+        # 28/09 (cantiere B): le partite idonee RIMASTE FUORI, con il perche'.
+        # Prima il rifiuto del tetto era un ``continue`` silenzioso.
+        self.fuori: Dict[str, Dict[str, Any]] = {}
+        # 28/09 (cantiere B, punto 1 del coordinatore): mercati "con soldi
+        # dentro" che il blotter di un framework NUOVO non conosce ancora
+        # (ricostruzione per stallo/relogin/nuove partite: blotter vuoto, ma
+        # posizioni e ordini esistono). Fissati dal runner a ogni costruzione;
+        # le voci che li portano sono PROTETTE (mai espulse).
+        self._con_soldi_esterni: Set[str] = set()
+        self._protetti_allo_sgancio: Set[str] = set()
 
     # ------------------------------------------------------------ runner
     def aggancia(self, framework: Any, mercati_iniziali: Iterable[str]) -> None:
@@ -602,6 +612,14 @@ class AutoFollow:
         self._sveglia.set()
 
     def sgancia(self) -> None:
+        # 28/09: prima di perdere il blotter, i mercati delle voci con ordini
+        # (per la prossima costruzione: vanno nel frammento 0)
+        try:
+            voci = self.piano.voci()
+            self._protetti_allo_sgancio = {m for k in self._protetti()
+                                           for m in (voci[k].mercati if k in voci else ())}
+        except Exception:  # noqa: BLE001 - lo sgancio non fallisce mai
+            pass
         with self._lock:
             self._framework = None
             self._applicati = set()
@@ -614,6 +632,23 @@ class AutoFollow:
         espulsi = self.piano.rientra(self._protetti())
         self._dopo_espulsioni(espulsi)
         return len(espulsi)
+
+    def imposta_con_soldi(self, mercati: Iterable[str]) -> None:
+        """28/09: i mercati con posizione/ordine vivo noti al runner alla
+        costruzione del framework (fonti: blotter del framework precedente,
+        specchio ordini/posizioni, voci di comando). Protetti fino alla
+        costruzione successiva."""
+        self._con_soldi_esterni = {str(m) for m in mercati if m}
+
+    def mercati_da_proteggere(self) -> Set[str]:
+        """28/09: mercati "con soldi dentro" noti all'auto-follow: voci con
+        ordini allo sgancio del framework precedente, voci di COMANDO (un bot
+        ci ha mandato un ordine), mercati fissati da ``imposta_con_soldi``."""
+        out = set(self._protetti_allo_sgancio) | set(self._con_soldi_esterni)
+        for v in self.piano.voci().values():
+            if v.priorita == PRI_COMANDO:
+                out |= v.mercati
+        return out
 
     def mercati_da_sottoscrivere(self) -> List[str]:
         return sorted(self.piano.mercati())
@@ -724,9 +759,12 @@ class AutoFollow:
         ordine e' in volo o in attesa del primo book."""
         out: Set[str] = set()
         ora = self._ora()
+        esterni = self._con_soldi_esterni
         for k, v in self.piano.voci().items():
             if v.priorita == PRI_COMANDO and ora - v.ultimo_uso < PROTEZIONE_COMANDO_S:
                 out.add(k)
+            elif esterni and (v.mercati & esterni):
+                out.add(k)                        # 28/09: soldi noti al runner
         for mid, m in list(self._mercati_flumine().items()):
             chiave = self.piano.chiave_di(mid)
             if chiave is None:
@@ -739,8 +777,18 @@ class AutoFollow:
                 out.add(chiave)
         return out
 
+    def _segna_fuori(self, chiave: str, info: Dict[str, Any], motivo: str) -> None:
+        """28/09: una partita idonea che non si segue, con il motivo (stato/UI)."""
+        prima = self.fuori.get(chiave)
+        nome = info.get("event_name") or " v ".join(
+            str(x) for x in (info.get("home"), info.get("away")) if x) or None
+        self.fuori[chiave] = {"event_id": chiave, "nome": nome, "motivo": motivo,
+                              "dal": prima["dal"] if prima else time.time()}
+
     def _dopo_espulsioni(self, espulsi: List[Voce]) -> None:
         for v in espulsi:
+            self._segna_fuori(v.chiave, v.info, "espulsa per far posto a una partita piu' "
+                              "prioritaria (tetto %d mercati)" % self.piano.tetto)
             self.conti["espulsi"] += 1
             logger.warning("[auto-follow] ESPULSO %s (%d mercati, priorita' %s, senza "
                            "ordini) per fare posto", v.chiave, len(v.mercati),
@@ -765,9 +813,42 @@ class AutoFollow:
         ora = self._ora()
         self._giro_feed(ora)
         self._pulisci(ora)
+        self._frammenti()
         self._applica(ora)
         self._rinomina_e_scrivi()
         self._annuncia()
+
+    def _frammenti(self) -> None:
+        """28/09 (cantiere B): con un sottoscrittore a FRAMMENTI
+        (``frammenti_mercato.GestoreFrammenti``: piu' connessioni di mercato)
+        * i mercati di un frammento chiuso (connessione rifiutata o muta)
+          escono dagli "applicati": ``_applica`` li ripiazza e ``servibile``
+          aspetta un book NUOVO;
+        * il tetto del piano segue la capacita' VERA (connessioni concesse x
+          mercati per connessione); se scende, le voci meno prioritarie e
+          senza ordini escono (``rientra``), dichiarate in ``fuori``.
+        Col ``SottoscrittoreStream`` di sempre (una connessione) non fa nulla."""
+        sott = self.sottoscrittore
+        fw = self._framework
+        man = getattr(sott, "manutenzione", None)
+        if callable(man) and fw is not None:
+            persi = set(man(fw) or ())
+            if persi:
+                with self._lock:
+                    if self._framework is fw:
+                        self._applicati -= persi
+                        for mid in persi:
+                            self._attesa_libro.pop(mid, None)
+                self._sveglia.set()
+        cap = getattr(sott, "capacita", None)
+        if callable(cap):
+            tetto = int(cap(fw))
+            if tetto > 0 and tetto != self.piano.tetto:
+                logger.warning("[auto-follow] capacita' della connessione di mercato: %d -> %d "
+                               "mercati", self.piano.tetto, tetto)
+                self.piano.tetto = tetto
+            if len(self.piano.mercati()) > self.piano.tetto:
+                self.rientra_nel_tetto()
 
     def _applica(self, ora: float) -> None:
         voluti = self.piano.mercati()
@@ -894,6 +975,7 @@ class AutoFollow:
         self.feed_info["attori"] = sorted(attivi)
         if not attivi:
             # nessun bot calcio sul canale: le candidate senza ordini si liberano
+            self.fuori.clear()
             protetti = self._protetti()
             for chiave, v in self.piano.voci().items():
                 if v.priorita == PRI_CANDIDATA and chiave not in protetti:
@@ -934,7 +1016,17 @@ class AutoFollow:
             if vv is not None:
                 vv.visto_feed = ora
             if not esito.ok:
-                continue                         # tetto: le altre restano fuori
+                # tetto: resta fuori, ma DICHIARATA (28/09: prima in silenzio).
+                # Criterio: in gioco prima, poi per orario d'inizio
+                # (``partite_dal_feed``); le posizioni vive non escono mai.
+                self._segna_fuori(ev, info, "capacita' esaurita: %s" % esito.motivo)
+                continue
+            self.fuori.pop(ev, None)
+        # fuori dal feed = non piu' idonea: non e' "fuori per capacita'"
+        for chiave in list(self.fuori):
+            if chiave not in nel_feed or self.piano.voce(chiave) is not None \
+                    or self.piano.e_manuale(chiave):
+                self.fuori.pop(chiave, None)
         self._sveglia.set()
 
     # ------------------------------------------------------------ stato
@@ -945,11 +1037,27 @@ class AutoFollow:
             n = NOMI_PRIORITA.get(v.priorita, str(v.priorita))
             per_pri[n] = per_pri.get(n, 0) + 1
         protetti = self._protetti()
+        # 28/09: le connessioni di mercato e i frammenti dal sottoscrittore
+        # (a frammenti: N connessioni; quello di sempre: 1)
+        frammenti: Optional[Dict[str, Any]] = None
+        st_fr = getattr(self.sottoscrittore, "stato", None)
+        if callable(st_fr):
+            try:
+                frammenti = st_fr(self._framework)
+            except Exception as e:  # noqa: BLE001 - lo stato non ferma nulla
+                frammenti = {"errore": str(e)[:160]}
+        fuori = sorted(self.fuori.values(), key=lambda x: (x.get("dal") or 0, x["event_id"]))
         return {
             "acceso": True,
             "tetto_mercati": self.piano.tetto,
             "limite_betfair_per_connessione": LIMITE_BETFAIR_MERCATI,
-            "connessioni_di_mercato": 1,
+            "connessioni_di_mercato": (frammenti or {}).get("connessioni_di_mercato", 1),
+            "frammenti": frammenti,
+            "partite_fuori_n": len(fuori),
+            "partite_fuori": fuori[:50],
+            "criterio_fuori": ("capacita' esaurita: restano dentro le posizioni vive, poi i "
+                               "comandi dei bot, poi le partite del feed in gioco e per orario "
+                               "d'inizio; le altre sono elencate qui"),
             "mercati_seguiti": len(self.piano.mercati()),
             "mercati_manuali": len(self.piano.mercati_manuali()),
             "mercati_auto": len(self.mercati_auto()),
@@ -968,10 +1076,16 @@ class AutoFollow:
         s = self.stato()
         firma = (s["eventi_auto"], s["mercati_seguiti"], s["mercati_sottoscritti"],
                  s["eventi_auto_con_posizioni"], s["conti"]["espulsi"],
-                 s["conti"]["rifiuti_tetto"], s["feed"].get("partite"))
+                 s["conti"]["rifiuti_tetto"], s["feed"].get("partite"),
+                 s["connessioni_di_mercato"], s["tetto_mercati"], s["partite_fuori_n"])
         if firma == self._firma_stato:
             return
         self._firma_stato = firma
+        if s["partite_fuori_n"]:
+            logger.warning("[auto-follow] %d partite idonee NON seguite (capacita' %d mercati, "
+                           "%s connessioni): %s", s["partite_fuori_n"], s["tetto_mercati"],
+                           s["connessioni_di_mercato"],
+                           ", ".join(str(x["event_id"]) for x in s["partite_fuori"][:10]))
         logger.info("[auto-follow] seguiti da soli %d eventi (%d mercati) + manuali %d "
                     "mercati = %d/%d sulla connessione di mercato (limite Betfair %d); "
                     "con posizioni %d; feed %s partite (%s); espulsi %d, rifiuti tetto %d",

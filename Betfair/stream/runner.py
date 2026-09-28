@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import betfairlightweight
 from betfairlightweight.filters import streaming_market_data_filter, streaming_market_filter
@@ -98,6 +98,7 @@ from .live_order_worker import live_order_worker
 from . import live_order_worker as _LOW
 from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
 from . import auto_follow as _AF  # 25/09: i bot seguono da soli le partite
+from . import frammenti_mercato as _FR  # 28/09: piu' connessioni di mercato (cantiere B)
 from . import arresto_ordinato as _AO  # 28/09: spegnimento ordinato dell'app
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
@@ -1947,14 +1948,19 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
                 logger.warning("[runner] nessun mercato per %s (non ancora pubblicati?)", event_id)
             continue
         prospective = len(session.market_to_event) + len(markets)
-        verdict = limits.check_market_budget(prospective, SAFE_MARKET_THRESHOLD, HARD_MARKET_CAP)
+        # 28/09 (cantiere B): il tetto e' la capacita' di TUTTE le connessioni
+        # di mercato (frammenti), non piu' di una sola; soglia d'allerta in
+        # proporzione (150/180 di sempre)
+        cap = _capacita_mercati()
+        soglia = max(1, cap * SAFE_MARKET_THRESHOLD // max(1, HARD_MARKET_CAP))
+        verdict = limits.check_market_budget(prospective, soglia, cap)
         if verdict == "REFUSE":
-            msg = limits.budget_message(verdict, prospective, SAFE_MARKET_THRESHOLD, HARD_MARKET_CAP)
+            msg = limits.budget_message(verdict, prospective, soglia, cap)
             logger.error("[runner] %s", msg)
             db.insert_alert("CRITICAL", "MARKET_CAP", msg, event_id)
             continue  # lascia PENDING: niente ban
         if verdict == "WARN":
-            msg = limits.budget_message(verdict, prospective, SAFE_MARKET_THRESHOLD, HARD_MARKET_CAP)
+            msg = limits.budget_message(verdict, prospective, soglia, cap)
             logger.warning("[runner] %s", msg)
             db.insert_alert("WARN", "MARKET_NEAR_CAP", msg, event_id)
 
@@ -2227,8 +2233,91 @@ def _costruisci_auto_follow(ch: Any) -> Any:
         ch.set_hello(auto_follow=stato)
         _lc.publish("auto_follow", stato)
 
-    return _AF.AutoFollow(follow_db=_AF.FollowDb(), feed=_feed,
+    # 28/09 (cantiere B): la connessione di mercato a FRAMMENTI (piu'
+    # connessioni, ognuna <= HARD_MARKET_CAP mercati): il tetto del piano e'
+    # la capacita' vera (connessioni concesse x mercati per connessione)
+    gestore = _FR.GestoreFrammenti.da_ambiente()
+    return _AF.AutoFollow(piano=_AF.PianoFollow(gestore.capacita(None)),
+                          sottoscrittore=gestore, follow_db=_AF.FollowDb(), feed=_feed,
                           attori_collegati=ch.attori_comando, pubblica=_pubblica)
+
+
+def _capacita_mercati() -> int:
+    """28/09: i mercati che la connessione di mercato del runner puo' portare.
+    Con l'auto-follow (frammenti): il tetto del suo piano; senza: una sola
+    connessione, ``HARD_MARKET_CAP`` come sempre."""
+    auto = _auto_attivo()
+    tetto = getattr(getattr(auto, "piano", None), "tetto", None)
+    return int(tetto) if isinstance(tetto, int) and tetto > 0 else int(HARD_MARKET_CAP)
+
+
+def _mercati_con_soldi_dallo_specchio(candidati: List[str]) -> Set[str]:
+    """28/09 (cantiere B): fra i mercati che si stanno per sottoscrivere, quelli
+    con soldi dentro secondo lo SPECCHIO che il runner stesso scrive, paper e
+    live. Serve dopo un riavvio del PROCESSO (blotter perso): e' la sola
+    memoria dei soldi senza chiamare Betfair. Le regole sono quelle della
+    guardia «soldi dentro» del cantiere A (``db.mercati_con_soldi`` usa gli
+    stessi ``STATI_ORDINE_VIVO``, ``esposizione_aperta`` e l'esclusione dei
+    regolati di ``db.soldi_sull_evento``). Qui e' una PRIORITA', non una
+    guardia: illeggibile -> insieme vuoto e avviso (restano blotter precedente
+    e comandi), la costruzione prosegue."""
+    try:
+        return {str(m) for m in db.mercati_con_soldi(list(candidati))}
+    except Exception as ex:  # noqa: BLE001 - priorita', mai un blocco dell'avvio
+        logger.warning("[runner] specchio ordini/posizioni non letto per il frammento 0 "
+                       "(restano blotter precedente e comandi): %s", str(ex)[:200])
+        return set()
+
+
+def _mercati_con_soldi(prec: Set[str], auto: Any, candidati: List[str],
+                       specchio: Any = None) -> "Tuple[Set[str], Dict[str, int]]":
+    """28/09 (cantiere B, punto 1 del coordinatore): i mercati con soldi dentro
+    alla (ri)costruzione del framework, dalle fonti che il runner ha GIA' (mai
+    una chiamata Betfair): blotter del framework precedente (``prec``, stesso
+    processo), auto-follow (voci con ordini allo sgancio e voci di comando),
+    specchio ordini/posizioni (``specchio``, di serie il DB). Ritorna
+    (mercati fra i candidati, conteggio per fonte)."""
+    cand = {str(m) for m in candidati}
+    da_auto: Set[str] = set()
+    try:
+        da_auto = set(auto.mercati_da_proteggere()) if auto is not None else set()
+    except Exception:  # noqa: BLE001
+        da_auto = set()
+    lettore = specchio or _mercati_con_soldi_dallo_specchio
+    da_specchio = set(lettore(sorted(cand)))
+    fonti = {"blotter_precedente": len(set(prec) & cand), "auto_follow": len(da_auto & cand),
+             "specchio_db": len(da_specchio & cand)}
+    return (set(prec) | da_auto | da_specchio) & cand, fonti
+
+
+def _frammento0(market_ids: List[str], manuali: List[str], auto: Any,
+                con_soldi: Set[str], fonti: Dict[str, int]) -> List[str]:
+    """28/09 (cantiere B): i mercati della connessione che nasce col framework.
+    Ordine: con soldi dentro, manuali, il resto (``primo_frammento``). Se i
+    mercati con soldi superano da soli un frammento, quelli in eccesso vanno
+    sui frammenti aperti a caldo dall'auto-follow appena lo stream gira (pochi
+    secondi; i loro comandi aspettano un book nuovo, ``servibile``): lo si
+    DICHIARA (stato ``frammenti.costruzione``, log, alert CRITICAL).
+    Senza auto-follow: tutti i mercati (una connessione, budget di sempre)."""
+    gestore = getattr(auto, "sottoscrittore", None) if auto is not None else None
+    if not isinstance(gestore, _FR.GestoreFrammenti):
+        return list(market_ids)
+    ids0 = _FR.primo_frammento(market_ids, manuali, gestore.per_conn, con_soldi)
+    c = gestore.segna_costruzione(set(con_soldi) & set(market_ids), ids0, fonti)
+    if c["oltre_frammento0"]:
+        msg = ("%d mercati con posizioni/ordini vivi, piu' di un frammento (%d): %d attendono "
+               "la connessione aperta a caldo (%s)" % (c["con_soldi"], gestore.per_conn,
+                                                       c["oltre_frammento0"],
+                                                       ", ".join(c["oltre_frammento0_mercati"][:10])))
+        logger.error("[runner] %s", msg)
+        try:
+            db.insert_alert("CRITICAL", "SOLDI_OLTRE_FRAMMENTO0", msg)
+        except Exception as ex:  # noqa: BLE001 - l'alert non blocca la costruzione
+            logger.warning("[runner] alert frammento 0 KO: %s", str(ex)[:160])
+    elif c["con_soldi"]:
+        logger.info("[runner] frammento 0: %d mercati con soldi dentro davanti a tutti (%s)",
+                    c["con_soldi"], fonti)
+    return ids0
 
 
 def _lista_ordini_ripresa(customer_order_refs: List[str]) -> Any:
@@ -2456,6 +2545,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                          "del worker della coda", str(ex)[:200])
             _MOTORE["motore"] = None
     interrupted = False
+    # 28/09 (cantiere B): mercati con ordini nel blotter del framework
+    # precedente (stesso processo), per il frammento 0 della ricostruzione
+    mercati_con_ordini_prec: Set[str] = set()
 
     # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
     # I restart F3 ricostruiscono il framework ma non ri-annunciano (niente spam alert).
@@ -2595,6 +2687,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             # risottoscrivono alla ricostruzione (prima restavano nella
             # sottoscrizione per tutta la vita del processo)
             market_ids = mercati_manuali_da_sottoscrivere(session)
+            con_soldi: Set[str] = set()
+            fonti_soldi: Dict[str, int] = {}
             if auto is not None:
                 # 25/09: sottoscrizione = manuali + automatici, dentro il tetto
                 # della connessione (le automatiche meno prioritarie escono se i
@@ -2602,6 +2696,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 auto.imposta_manuali({
                     ev: ms for ev, ms in session.event_markets.items()
                     if ev not in session.finished_events})
+                # 28/09 (cantiere B): i mercati con soldi dentro PRIMA del
+                # rientro nel tetto (le loro voci sono protette) e davanti a tutti
+                # nel frammento 0
+                con_soldi, fonti_soldi = _mercati_con_soldi(
+                    mercati_con_ordini_prec, auto,
+                    sorted(set(market_ids) | set(auto.mercati_da_sottoscrivere())))
+                auto.imposta_con_soldi(con_soldi)
                 auto.rientra_nel_tetto()
                 market_ids = sorted(set(market_ids) | set(auto.mercati_da_sottoscrivere()))
             if not market_ids:
@@ -2615,13 +2716,25 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 logger.warning("[runner] nessun mercato sottoscrivibile (budget?).")
                 break
 
+            # 28/09 (cantiere B): il framework nasce col FRAMMENTO 0 (<= un
+            # frammento di mercati, prima le partite seguite a mano); gli altri
+            # frammenti (connessioni in piu') li apre l'auto-follow a caldo appena
+            # lo stream gira: flumine all'avvio aspetta OGNI stream connesso e una
+            # connessione rifiutata bloccherebbe tutto il runner. Senza
+            # auto-follow il budget resta una connessione (``_capacita_mercati``).
+            # 28/09 (A+B): i "manuali" davanti sono quelli VIVI (le partite
+            # finite non si risottoscrivono, ``mercati_manuali_da_sottoscrivere``)
+            mercati_frammento0 = _frammento0(market_ids, mercati_manuali_da_sottoscrivere(session),
+                                             auto, con_soldi, fonti_soldi)
             recorder = MarketRecorderStrategy(
-                market_filter=streaming_market_filter(market_ids=market_ids),
+                market_filter=streaming_market_filter(market_ids=mercati_frammento0),
                 market_data_filter=streaming_market_data_filter(
                     fields=list(STREAM_FIELDS), ladder_levels=LADDER_DEPTH
                 ),
                 conflate_ms=STREAM_CONFLATE_MS or None,
-                stream_class=RawTeeMarketStream,  # F1: tee del raw nativo
+                # F1: tee del raw nativo; 28/09: + battito per connessione e
+                # nessuna riconnessione dopo la chiusura (frammenti_mercato)
+                stream_class=_FR.FrammentoMarketStream,
                 context={
                     "data_dir": DATA_DIR,
                     "market_to_event": session.market_to_event,
@@ -2685,8 +2798,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 # degli ordini. NB: process_orders è comunque dispatchato per OGNI mercato in cui
                 # la strategia ha ordini nel blotter (baseflumine._process_current_orders itera
                 # tutte le strategie a prescindere dal filtro) → lo specchio funziona sempre.
+                # 28/09 (cantiere B): STESSO stream del recorder. Col solo
+                # market_filter flumine apriva una SECONDA connessione di mercato
+                # (market_data_filter di serie != quello del recorder), sulla quale
+                # i mercati dell'auto-follow non arrivavano mai
+                # (``frammenti_mercato.kwargs_stream_condiviso``).
                 live_strategy = LiveTradingStrategy(
-                    market_filter=streaming_market_filter(market_ids=market_ids),
+                    **_FR.kwargs_stream_condiviso(recorder),
                     session=session, mode=modo_client.lower())
                 framework.add_strategy(live_strategy)
                 # F0: una strategy PER MODALITA'. In flumine il blotter e' per-strategia
@@ -2701,7 +2819,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 strategies_by_mode = {modo_client.lower(): live_strategy}
                 if paper_companion is not None:
                     paper_strategy = LiveTradingStrategy(
-                        market_filter=streaming_market_filter(market_ids=market_ids),
+                        **_FR.kwargs_stream_condiviso(recorder),
                         session=session, mode="paper", name="LiveTradingStrategyPaper")
                     framework.add_strategy(paper_strategy)
                     strategies_by_mode["paper"] = paper_strategy
@@ -2820,7 +2938,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             if motore is not None and orders_enabled:
                 motore.aggancia(framework, strategies_by_mode)
             if auto is not None:
-                auto.aggancia(framework, market_ids)
+                # 28/09: gli "applicati" sono i mercati del frammento 0; il resto
+                # lo sottoscrive l'auto-follow sui frammenti in piu'
+                auto.aggancia(framework, mercati_frammento0)
             try:
                 framework.run()
             except KeyboardInterrupt:
@@ -2838,6 +2958,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     time.sleep(delay)
                     continue  # ricostruisce e ritenta (multi-match)
             finally:
+                # 28/09 (cantiere B): prima che il blotter si perda
+                mercati_con_ordini_prec = _FR.mercati_con_ordini(framework)
                 if motore is not None:
                     motore.sgancia()
                 if auto is not None:

@@ -1,0 +1,170 @@
+{
+  "_nota": "stato VERO di auto_follow.AutoFollow.stato() (topic 'auto_follow' e hello.auto_follow del runner calcio 47331), generato da AUDIT_2026-09-28/genera_fixture_auto_follow.py; chiavi verificate da test_frammenti_mercato_2026_09_28.py::test_fixture_ui_ha_le_chiavi_vere",
+  "capacita_esaurita": {
+    "acceso": true,
+    "tetto_mercati": 180,
+    "limite_betfair_per_connessione": 200,
+    "connessioni_di_mercato": 1,
+    "frammenti": {
+      "connessioni_di_mercato": 1,
+      "connessioni_massime": 1,
+      "connessioni_concesse_adesso": 1,
+      "mercati_per_connessione": 180,
+      "capacita_mercati": 180,
+      "riserva_connessioni": 1,
+      "connessioni_disponibili_betfair": 8,
+      "in_pausa_dopo_rifiuto": false,
+      "motivo_limite": "tetto configurato: 1 connessioni x 180 mercati (RUNNER_CALCIO_STREAM_CONNS)",
+      "costruzione": null,
+      "ultimo_rifiuto": null,
+      "ultimo_evento": null,
+      "conti": {
+        "aperture": 0,
+        "chiusure": 0,
+        "rifiuti": 0,
+        "muti": 0,
+        "risottoscrizioni": 1
+      },
+      "frammenti": [
+        {
+          "i": 0,
+          "stream_id": 20002,
+          "mercati": 180,
+          "connesso": true,
+          "eta_msg_s": 0.0,
+          "eta_dati_s": null,
+          "riconnessioni": 0,
+          "errore": null
+        }
+      ]
+    },
+    "partite_fuori_n": 5,
+    "partite_fuori": [
+      {
+        "event_id": "35000045",
+        "nome": "Casa45 v Ospite45",
+        "motivo": "capacita' esaurita: 180 mercati seguiti su 180, ne servono 4",
+        "dal": 1790604239.7444568
+      },
+      {
+        "event_id": "35000046",
+        "nome": "Casa46 v Ospite46",
+        "motivo": "capacita' esaurita: 180 mercati seguiti su 180, ne servono 4",
+        "dal": 1790604239.7445097
+      },
+      {
+        "event_id": "35000047",
+        "nome": "Casa47 v Ospite47",
+        "motivo": "capacita' esaurita: 180 mercati seguiti su 180, ne servono 4",
+        "dal": 1790604239.7445395
+      }
+    ],
+    "criterio_fuori": "capacita' esaurita: restano dentro le posizioni vive, poi i comandi dei bot, poi le partite del feed in gioco e per orario d'inizio; le altre sono elencate qui",
+    "mercati_seguiti": 180,
+    "mercati_manuali": 0,
+    "mercati_auto": 180,
+    "mercati_sottoscritti": 180,
+    "eventi_auto": 45,
+    "eventi_auto_con_posizioni": 0,
+    "per_priorita": {
+      "candidata": 45
+    },
+    "righe_db": null,
+    "feed": {
+      "letto": true,
+      "partite": 50,
+      "fonte": "db",
+      "attori": [
+        "omega"
+      ],
+      "ts": 1790604239.7431872
+    },
+    "conti": {
+      "risottoscrizioni": 1,
+      "agganci_comando": 0,
+      "espulsi": 0,
+      "rifiuti_tetto": 0,
+      "errori_sottoscrizione": 0
+    },
+    "ultimo_errore": null
+  },
+  "tutte_seguite": {
+    "acceso": true,
+    "tetto_mercati": 540,
+    "limite_betfair_per_connessione": 200,
+    "connessioni_di_mercato": 2,
+    "frammenti": {
+      "connessioni_di_mercato": 2,
+      "connessioni_massime": 3,
+      "connessioni_concesse_adesso": 3,
+      "mercati_per_connessione": 180,
+      "capacita_mercati": 540,
+      "riserva_connessioni": 1,
+      "connessioni_disponibili_betfair": 8,
+      "in_pausa_dopo_rifiuto": false,
+      "motivo_limite": "tetto configurato: 3 connessioni x 180 mercati (RUNNER_CALCIO_STREAM_CONNS)",
+      "costruzione": null,
+      "ultimo_rifiuto": null,
+      "ultimo_evento": "aperto frammento 30000 (88 mercati)",
+      "conti": {
+        "aperture": 1,
+        "chiusure": 0,
+        "rifiuti": 0,
+        "muti": 0,
+        "risottoscrizioni": 1
+      },
+      "frammenti": [
+        {
+          "i": 0,
+          "stream_id": 20002,
+          "mercati": 180,
+          "connesso": true,
+          "eta_msg_s": 0.0,
+          "eta_dati_s": null,
+          "riconnessioni": 0,
+          "errore": null
+        },
+        {
+          "i": 1,
+          "stream_id": 30001,
+          "mercati": 88,
+          "connesso": true,
+          "eta_msg_s": 0.0,
+          "eta_dati_s": null,
+          "riconnessioni": 0,
+          "errore": null
+        }
+      ]
+    },
+    "partite_fuori_n": 0,
+    "partite_fuori": [],
+    "criterio_fuori": "capacita' esaurita: restano dentro le posizioni vive, poi i comandi dei bot, poi le partite del feed in gioco e per orario d'inizio; le altre sono elencate qui",
+    "mercati_seguiti": 268,
+    "mercati_manuali": 0,
+    "mercati_auto": 268,
+    "mercati_sottoscritti": 268,
+    "eventi_auto": 67,
+    "eventi_auto_con_posizioni": 0,
+    "per_priorita": {
+      "candidata": 67
+    },
+    "righe_db": null,
+    "feed": {
+      "letto": true,
+      "partite": 67,
+      "fonte": "db",
+      "attori": [
+        "omega"
+      ],
+      "ts": 1790604239.7541766
+    },
+    "conti": {
+      "risottoscrizioni": 1,
+      "agganci_comando": 0,
+      "espulsi": 0,
+      "rifiuti_tetto": 0,
+      "errori_sottoscrizione": 0
+    },
+    "ultimo_errore": null
+  }
+}

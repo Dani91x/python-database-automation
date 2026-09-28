@@ -387,6 +387,55 @@ def mercati_evento(event_id: str) -> List[str]:
                    if isinstance(x, dict) and x.get("market_id")})
 
 
+#: colonne di ``betfair_live_positions`` lette da ``esposizione_aperta``
+_COLONNE_POSIZIONE = ("mode,market_id,matched_if_win,matched_if_lose,"
+                      "unmatched_back_exposure,unmatched_lay_exposure")
+
+
+def _posizioni_aperte_non_regolate(sb: Any, righe: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Righe di ``betfair_live_positions`` con esposizione aperta
+    (``esposizione_aperta``) su un mercato che NON ha ancora la regolazione
+    nella stessa modalita' (``betfair_live_settled``). UNA regola per la
+    guardia del catalogo vuoto (``soldi_sull_evento``, cantiere A) e per il
+    frammento 0 dei mercati con soldi (``mercati_con_soldi``, cantiere B)."""
+    aperte = [p for p in righe if esposizione_aperta(p)]
+    if not aperte:
+        return []
+    mids = sorted({str(p.get("market_id")) for p in aperte})
+    reg = (sb.table("betfair_live_settled").select("mode,market_id")
+           .in_("market_id", mids).execute())
+    regolati = {(str(s.get("mode")), str(s.get("market_id")))
+                for s in (getattr(reg, "data", None) or [])}
+    return [p for p in aperte
+            if (str(p.get("mode")), str(p.get("market_id"))) not in regolati]
+
+
+def mercati_con_soldi(market_ids: List[str]) -> set:
+    """28/09 (cantiere B, frammento 0 alla ricostruzione): fra ``market_ids``,
+    quelli con denaro in gioco secondo lo specchio, paper O live, con le
+    STESSE regole di ``soldi_sull_evento`` (cantiere A): ordine in uno stato
+    VIVO (``STATI_ORDINE_VIVO``) o posizione aperta non regolata
+    (``_posizioni_aperte_non_regolate``). Sola lettura, a blocchi di 150 id.
+    Un errore di lettura SOLLEVA (il chiamante decide)."""
+    ids = sorted({str(m) for m in market_ids if m})
+    out: set = set()
+    if not ids:
+        return out
+    sb = get_supabase_client()
+    for i in range(0, len(ids), 150):
+        blocco = ids[i:i + 150]
+        ordini = (sb.table("betfair_live_orders").select("mode,market_id,status")
+                  .in_("market_id", blocco).execute())
+        out |= {str(o.get("market_id")) for o in (getattr(ordini, "data", None) or [])
+                if _stato_ordine(o.get("status")) in STATI_ORDINE_VIVO}
+        pos = (sb.table("betfair_live_positions").select(_COLONNE_POSIZIONE)
+               .in_("market_id", blocco).execute())
+        out |= {str(p.get("market_id")) for p in
+                _posizioni_aperte_non_regolate(sb, getattr(pos, "data", None) or [])}
+    out.discard("None")
+    return out
+
+
 def soldi_sull_evento(event_id: str, mercati: Optional[List[str]] = None) -> Optional[str]:
     """28/09 (cantiere A, guardia MONEY-CRITICAL del catalogo vuoto): c'e'
     denaro in gioco sull'evento, paper O live? Ritorna il motivo (testo) o
@@ -413,18 +462,10 @@ def soldi_sull_evento(event_id: str, mercati: Optional[List[str]] = None) -> Opt
            .select("mode,market_id,matched_if_win,matched_if_lose,"
                    "unmatched_back_exposure,unmatched_lay_exposure")
            .eq("event_id", ev).execute())
-    aperte = [p for p in (getattr(pos, "data", None) or []) if esposizione_aperta(p)]
+    aperte = _posizioni_aperte_non_regolate(sb, getattr(pos, "data", None) or [])
     if aperte:
-        mids = sorted({str(p.get("market_id")) for p in aperte})
-        reg = (sb.table("betfair_live_settled").select("mode,market_id")
-               .in_("market_id", mids).execute())
-        regolati = {(str(s.get("mode")), str(s.get("market_id")))
-                    for s in (getattr(reg, "data", None) or [])}
-        aperte = [p for p in aperte
-                  if (str(p.get("mode")), str(p.get("market_id"))) not in regolati]
-        if aperte:
-            return "%d posizioni aperte non regolate sull'evento (%s)" % (
-                len(aperte), ", ".join(sorted({str(p.get("mode")) for p in aperte})))
+        return "%d posizioni aperte non regolate sull'evento (%s)" % (
+            len(aperte), ", ".join(sorted({str(p.get("mode")) for p in aperte})))
     mids_ev = list(mercati) if mercati is not None else mercati_evento(ev)
     if mids_ev:
         req = (sb.table("betfair_live_order_requests").select("id,market_id,status")
