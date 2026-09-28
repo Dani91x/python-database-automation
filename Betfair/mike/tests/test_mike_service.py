@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from Betfair.mike import service as S
 from Betfair.mike.tests.test_mike_feed import KO_IN_FINESTRA, payload, row
 
@@ -148,28 +150,73 @@ def legs(db):
 
 
 # ---------------------------------------------------------------------------
-def test_prematch_cycle_entry_and_green_resting():
-    """Default: lay a 2 tick APPOGGIATA subito dopo il fill; si abbina solo se il
-    mercato scambia SOTTO il suo prezzo (best back < 1.48), mai prima."""
+def test_prematch_cycle_entry_and_green_resting(runner):
+    """Default: ingresso BACK Under 3.5 e lay a 2 tick APPOGGIATA subito dopo il
+    fill. D1 (29/09): in paper ENTRAMBI gli ordini li esegue il RUNNER (canale di
+    comando), col tipo d'ordine del live: il back taker FOK, la lay appoggiata
+    senza FOK e LAPSE. L'abbinamento della lay lo dice il runner (qui prima in
+    parte, poi per intero), non piu' il prezzo del feed letto in casa."""
     db = FakeDB(params={"stake": 10})
     mk = FakeMarket()
     run(db, mk, NOW, [row(payload())])
     assert state(db) == "PRE_ENTRY_PENDING" and legs(db)[0]["status"] == "open"
+    back = runner.comandi[0]
+    assert back["side"] == "BACK" and back["time_in_force"] == "FILL_OR_KILL"
+    assert db.trades[0]["status"] == "open" and db.trades[0]["bet_id"]
     run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
     assert state(db) == "PRE_OPEN"
     green = [l for l in legs(db) if l["role"] == "under_green"][0]
     assert green["status"] == "pending" and green["price"] == 1.48 and "place_resting" in db.kinds()
     assert db.trades[-1]["strategy"] == "under_green" and db.trades[-1]["status"] == "pending"
-    # best back 1.48 (allo stesso livello): NON abbinata
-    run(db, mk, NOW + timedelta(seconds=4), [row(payload(u35=(1.48, 1.50, 30.0, 25.0)))])
+    lay = runner.comandi[-1]
+    assert lay["side"] == "LAY" and lay["price"] == 1.48
+    assert lay["time_in_force"] is None and lay["persistence"] == "LAPSE"
+    assert lay["reduces_liability"] is True
+    ref = lay["ref"]
+    # il runner non l'ha abbinata: resta appoggiata, qualunque cosa dica il feed
+    run(db, mk, NOW + timedelta(seconds=4), [row(payload(u35=(1.47, 1.49, 30.0, 25.0)))])
     assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
-    # best back 1.47 (scambiato sotto): abbinata al suo prezzo 1.48
-    run(db, mk, NOW + timedelta(seconds=6), [row(payload(u35=(1.47, 1.49, 30.0, 25.0)))])
+    # il runner abbina IN PARTE: la gamba lo sa (abbinato vero), resta viva
+    runner.abbina(ref, size=4.0)
+    run(db, mk, NOW + timedelta(seconds=6), [row(payload())])
+    green = [l for l in legs(db) if l["role"] == "under_green"][0]
+    assert green["status"] == "pending" and green["matched"] == pytest.approx(4.0)
+    assert db.trades[-1]["size_matched"] == pytest.approx(4.0)
+    # poi per intero: posizione chiusa in green
+    runner.abbina(ref)
+    run(db, mk, NOW + timedelta(seconds=8), [row(payload())])
     green = [l for l in legs(db) if l["role"] == "under_green"][0]
     assert green["status"] == "open" and green["avg_price"] == 1.48 and "fill_resting" in db.kinds()
     assert db.trades[-1]["status"] == "open"
-    run(db, mk, NOW + timedelta(seconds=8), [row(payload(u35=(1.47, 1.49, 30.0, 25.0)))])
+    run(db, mk, NOW + timedelta(seconds=10), [row(payload())])
     assert state(db) == "WATCH" and db.events["E1"]["cycle_no"] == 1
+
+
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_lay_appoggiata_su_feed_stantio_non_parte_in_nessun_modo(runner, monkeypatch, mode):
+    """D1 (29/09): prezzi non vivi = nessun ordine, anche per la lay appoggiata
+    e anche in live (decisione dell'utente del 28/09)."""
+    from Betfair.mike import service as SV
+    piazzate = []
+    monkeypatch.setattr(SV, "_piazza_resting_live", lambda **kw: piazzate.append(kw))
+    monkeypatch.setattr(SV, "_piazza_resting_paper", lambda **kw: piazzate.append(kw))
+    db = FakeDB(params={"stake": 10}, mode=mode)
+    mk = FakeMarket()
+    if mode == "live":
+        from Betfair.omega.omega_market import PlaceResult
+        from Betfair.safe_strategy import execution as XX
+        monkeypatch.setattr(XX, "_live_brake", lambda: None)
+        mk.place_order_live = lambda **kw: PlaceResult(
+            ok=True, order_status="EXECUTION_COMPLETE", bet_id="B1", size_matched=kw["size"],
+            avg_price_matched=kw["price"], raw={})
+    run(db, mk, NOW, [row(payload())])
+    assert legs(db)[0]["status"] == "open", "precondizione: ingresso abbinato"
+    vecchio = NOW - timedelta(minutes=10)
+    db.scanner = {"updated_at": vecchio.isoformat(), "payload": {}}
+    run(db, mk, NOW + timedelta(seconds=2), [row(payload(), updated=vecchio)])
+    assert piazzate == [], "lay appoggiata inviata su prezzi non vivi"
+    assert any(k == "no_fill" and p.get("reason") == "feed_stantio" and p.get("resting")
+               for k, p, _ in db.activity)
 
 
 def test_last_entry_cancels_resting_green_in_loss():
@@ -228,11 +275,8 @@ def test_bot_stopped_makes_no_new_entries_but_keeps_protections():
     assert res["new"] == 0 and db.events == {}
 
 
-def test_inplay_cover_is_deferred_by_bet_delay_in_paper():
-    db = FakeDB(params={"stake": 10, "cover_policy": "immediate"})
-    mk = FakeMarket()
-    # posizione Under gia' aperta e partita in corso con betDelay 5
-    db.events["E1"] = {
+def _evento_scoperto():
+    return {
         "event_id": "E1", "event_name": "Roma v Lazio", "state": "LIVE_UNCOVERED", "cycle_no": 1,
         "entry_price_initial": 1.5, "markets": {"OU35": {"market_id": "1.35"}, "OU45": {"market_id": "1.45"}},
         "positions": [{"role": "under_last", "market": "OU35", "selection": "UNDER", "side": "back",
@@ -241,51 +285,42 @@ def test_inplay_cover_is_deferred_by_bet_delay_in_paper():
                        "final": False, "archived": False}],
         "dossier": {}, "live": {}, "ctx": {}, "mode": "paper", "ko_at": (NOW - timedelta(minutes=5)).isoformat(),
     }
+
+
+def test_inplay_cover_in_paper_va_al_runner_senza_differita_in_casa(runner):
+    """D1 (29/09): prima la copertura paper in gioco veniva DIFFERITA da Mike
+    di ``bet_delay`` secondi e poi riempita in casa. Ora va SUBITO al runner,
+    che il bet delay lo applica da se' (difetto 12 del catalogo: mai sommato
+    a un ritardo in casa). L'esito arriva dal runner."""
+    db = FakeDB(params={"stake": 10, "cover_policy": "immediate"})
+    mk = FakeMarket()
+    db.events["E1"] = _evento_scoperto()
     p = payload(inplay=True, minute=5, sh=0, sa=0, bet_delay=5, ko=NOW - timedelta(minutes=5))
     run(db, mk, NOW, [row(p)])
-    assert state(db) == "LIVE_COVER_PENDING"
-    cover = [l for l in legs(db) if l["role"] == "over_cover"][0]
-    assert cover["status"] == "pending"                       # differita
-    # H2 (audit 11/09): la posizione Under del fixture non aveva la riga mirror
-    # → la riconciliazione la RICOSTRUISCE (mai una posizione invisibile). La
-    # copertura differita, invece, non ha ancora nessuna riga.
-    assert "place_deferred" in db.kinds()
-    assert [t["signal_key"] for t in db.trades] == ["under_last-1-1"]
-    assert "reconcile_fix" in db.kinds()
-    # 3 secondi dopo: ancora in attesa
-    run(db, mk, NOW + timedelta(seconds=3), [row(p)])
-    assert [l for l in legs(db) if l["role"] == "over_cover"][0]["status"] == "pending"
-    # dopo il betDelay: fill al prezzo ancora disponibile
-    run(db, mk, NOW + timedelta(seconds=6), [row(p)])
+    assert "place_deferred" not in db.kinds()
+    cop = [c for c in runner.comandi if c["azione"] == "place" and c["side"] == "BACK"]
+    assert len(cop) == 1 and cop[0]["time_in_force"] == "FILL_OR_KILL"
     cover = [l for l in legs(db) if l["role"] == "over_cover"][0]
     assert cover["status"] == "open" and cover["matched"] == cover["size"]
     assert db.trades[-1]["strategy"] == "over_cover" and db.trades[-1]["status"] == "open"
-    run(db, mk, NOW + timedelta(seconds=8), [row(p)])
+    assert "reconcile_fix" in db.kinds()        # H2: la riga dell'Under ricostruita
+    run(db, mk, NOW + timedelta(seconds=2), [row(p)])
     assert state(db) == "LIVE_COVERED"
 
 
-def test_deferred_cover_cancelled_if_price_worsens():
+def test_cover_FOK_non_abbinato_dal_runner_torna_scoperto(runner):
+    """Il runner non abbina la copertura (FOK ucciso dopo il bet delay): nessuna
+    posizione, ``no_fill``, e la partita torna scoperta come in live."""
     db = FakeDB(params={"stake": 10, "cover_policy": "immediate"})
     mk = FakeMarket()
-    db.events["E1"] = {
-        "event_id": "E1", "event_name": "Roma v Lazio", "state": "LIVE_UNCOVERED", "cycle_no": 1,
-        "entry_price_initial": 1.5, "markets": {"OU35": {"market_id": "1.35"}, "OU45": {"market_id": "1.45"}},
-        "positions": [{"role": "under_last", "market": "OU35", "selection": "UNDER", "side": "back",
-                       "price": 1.5, "size": 10.0, "matched": 10.0, "avg_price": 1.5, "ref": "under_last-1-1",
-                       "status": "open", "placed_at": 0.0, "persistence": "PERSIST", "cycle_no": 1,
-                       "final": False, "archived": False}],
-        "dossier": {}, "live": {}, "ctx": {}, "mode": "paper", "ko_at": (NOW - timedelta(minutes=5)).isoformat(),
-    }
+    db.events["E1"] = _evento_scoperto()
     p = payload(inplay=True, minute=5, sh=0, sa=0, bet_delay=5, ko=NOW - timedelta(minutes=5))
+    runner.rifiuta_fok = True
     run(db, mk, NOW, [row(p)])
-    # durante il ritardo il prezzo dell'Over 4.5 scende sotto quello richiesto
-    p2 = payload(inplay=True, minute=5, sh=0, sa=0, bet_delay=5, ko=NOW - timedelta(minutes=5),
-                 o45=(5.0, 5.2, 12.0, 9.0))
-    run(db, mk, NOW + timedelta(seconds=6), [row(p2)])
     cover = [l for l in legs(db) if l["role"] == "over_cover"][0]
-    assert cover["status"] == "cancelled" and "no_fill" in db.kinds()
-    # il ciclo dopo torna scoperto e ripiazza al nuovo prezzo
-    run(db, mk, NOW + timedelta(seconds=8), [row(p2)])
+    assert cover["status"] == "cancelled" and cover["matched"] == 0.0
+    assert "no_fill" in db.kinds()
+    run(db, mk, NOW + timedelta(seconds=8), [row(p)])
     assert state(db) in ("LIVE_UNCOVERED", "LIVE_COVER_PENDING")
 
 

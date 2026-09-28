@@ -58,17 +58,17 @@ ATTORI: Dict[str, tuple] = {
     # 25/09 (F8): Safe tennis sul canale 47332 del runner TENNIS (motore con
     # l'esecutore tennis, ``porta_banco.PortaBanco(sport="tennis")``)
     "safe_tennis": ("safe_tennis", "SAFE_TENNIS_ORDINI_VIA_CANALE"),
+    # D1 (29/09): Mike PAPER passa SEMPRE dal runner (nessun interruttore):
+    # sul canale il replay lo fa girare in paper (``replay_registrazioni.modo_del_banco``)
+    "mike": ("mike", None),
 }
 
 #: lo sport del runner di ogni attore (quale motore, quale porta del bot)
 SPORT_ATTORE: Dict[str, str] = {"safe": "calcio", "omega": "calcio",
-                                "safe_tennis": "tennis"}
+                                "safe_tennis": "tennis", "mike": "calcio"}
 
 #: perche' gli altri bot non hanno ancora il canale (F7/F8 dell'audit)
-SENZA_CANALE: Dict[str, str] = {
-    "mike": "F7 non fatta: Mike piazza sempre in REST (execute_place, lay appoggiate, "
-            "submin sincrono); nessuna porta a comandi nel suo codice",
-}
+SENZA_CANALE: Dict[str, str] = {}
 
 _STATO: Optional[Dict[str, Any]] = None
 
@@ -196,6 +196,14 @@ def _monta_canale(st: Dict[str, Any], motore: Any, strategia: Any) -> None:
                                       connetti=pb.connetti, token_fn=lambda: TOKEN_BANCO)
         st["_ripristina"] = ("omega", OPO._PORTA)
         OPO._PORTA = client
+    elif st["attore"] == "mike":
+        # D1 (29/09): la porta VERA di Mike (``PortaCanaleMike``) sul WsBanco
+        from ...mike import porta_ordini as MPO
+
+        client = MPO.PortaCanaleMike(porta_ws=0, attore="mike", sport="calcio",
+                                     connetti=pb.connetti, token_fn=lambda: TOKEN_BANCO)
+        st["_ripristina"] = ("mike", MPO.porta_esistente())
+        MPO.installa(client)
     else:
         from ...safe_strategy import porta_ordini as SPO
 
@@ -263,6 +271,10 @@ def _smonta(st: Dict[str, Any]) -> None:
             from ...omega import porta_ordini as OPO
 
             OPO._PORTA = prima
+        elif chi == "mike":
+            from ...mike import porta_ordini as MPO
+
+            MPO.installa(prima)
         else:
             from ...safe_strategy import porta_ordini as SPO
 

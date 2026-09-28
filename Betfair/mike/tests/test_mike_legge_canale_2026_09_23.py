@@ -25,7 +25,9 @@ from typing import Any, Dict, List
 
 import pytest
 
+from Betfair.mike import porta_ordini as MP
 from Betfair.mike import service as S
+from Betfair.mike.tests.runner_finto import RunnerFinto
 from Betfair.mike.tests.test_mike_feed import payload, row
 from Betfair.mike.tests.test_mike_service import NOW, FakeDB, FakeMarket
 from Betfair.safe_strategy import canale_scan as CS
@@ -140,6 +142,8 @@ def test_1_interruttore_spento_chiamate_identiche_a_prima(monkeypatch, valore):
     else:
         monkeypatch.setenv(ENV, valore)
     S.svuota_le_cache()
+    # D1 (29/09): ogni corsa col SUO runner (bet_id dal runner, confrontati)
+    MP.installa(RunnerFinto())
     assert S.avvia_client_scan() is False
     dopo = _sequenza(FakeDB(params=dict(params)))
     assert dopo[0] == prima[0], "le chiamate al DB sono cambiate a interruttore spento"
@@ -193,6 +197,8 @@ def test_2_canale_fresco_nessuna_lettura_scan_e_decisioni_identiche(monkeypatch,
 
     # CANALE: il DB resta fermo a r0, il prezzo nuovo arriva SOLO dal canale
     S.svuota_le_cache()
+    # D1 (29/09): ogni corsa col SUO runner (bet_id dal runner, confrontati)
+    MP.installa(RunnerFinto())
     assert S.avvia_client_scan() is True
     db_finto = FakeDB(params=dict(params))
     db_finto.scan_rows = [json.loads(json.dumps(r0))]

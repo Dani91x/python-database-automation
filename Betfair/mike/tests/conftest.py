@@ -24,6 +24,21 @@ _CACHE_KEYS = ("feed_cache_s", "events_reload_s", "aggregates_cache_s", "reconci
 
 
 @pytest.fixture(autouse=True)
+def runner():
+    """D1 (29/09): in paper Mike passa dal RUNNER (canale di comando). Ogni test
+    ha il suo runner finto, che parla il protocollo vero (``runner_finto``)."""
+    from Betfair.mike import porta_ordini as MP
+    from Betfair.mike.tests.runner_finto import RunnerFinto
+
+    r = RunnerFinto()
+    MP.installa(r)
+    try:
+        yield r
+    finally:
+        MP.installa(None)
+
+
+@pytest.fixture(autouse=True)
 def _servizio_senza_memoria():
     originali = {k: C.DEFAULTS[k] for k in _CACHE_KEYS if k in C.DEFAULTS}
     for k in originali:

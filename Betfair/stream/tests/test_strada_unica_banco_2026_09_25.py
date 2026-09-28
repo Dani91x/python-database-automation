@@ -357,12 +357,20 @@ def test_contesto_accende_e_rimette_l_interruttore(monkeypatch):
 
 def test_bot_senza_porta_non_passa_dal_canale():
     # 25/09 (F8): safe_tennis HA la porta a comandi (runner tennis col motore,
-    # ``TRA.ATTORI``); resta senza solo Mike
-    for bot in ("mike",):
+    # ``TRA.ATTORI``). D1 (29/09): anche Mike (paper sempre sul runner, nessun
+    # interruttore da accendere); un bot non registrato resta fuori.
+    for bot in ("bot_sconosciuto",):
         with pytest.raises(ValueError):
             with TRA.contesto(bot, "canale"):
                 pass
     assert TRA.attore_di("safe_tennis") == "safe_tennis"
+    assert TRA.attore_di("mike") == "mike"
+    with TRA.contesto("mike", "canale") as st:
+        assert st["attore"] == "mike" and "MIKE_ORDINI_VIA_CANALE" not in os.environ
+        from Betfair.mike.tools import replay_registrazioni as MR
+        assert MR.modo_del_banco() == "paper"
+    from Betfair.mike.tools import replay_registrazioni as MR
+    assert MR.modo_del_banco() == "live"
     # fuori dal contesto l'aggancio del replay e' nullo
     assert TRA.su_esegui(object(), object()) is None
 

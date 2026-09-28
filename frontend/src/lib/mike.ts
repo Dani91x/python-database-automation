@@ -1183,7 +1183,9 @@ export function pnlByTotalCells(
 // ------------------------------------------------------------ attività bot
 /** TUTTI i kind scritti dal servizio Mike (COSTITUZIONE §8 + audit L5). */
 export const MIKE_ACTIVITY_KINDS = [
-    'armed', 'state', 'place', 'place_pending', 'place_deferred', 'place_resting', 'fill_resting',
+    // 29/09 (D1): place_deferred non si scrive piu' (in paper il bet delay lo
+    // applica il runner); le righe storiche restano leggibili (mikeActivityLine).
+    'armed', 'state', 'place', 'place_pending', 'place_resting', 'fill_resting',
     // 15/09: un piazzamento RIFIUTATO dal freno anti-duplicato. Deve essere
     // visibile: dice che il bot ha evitato di ripetere una gamba gia' in volo.
     'place_saltato',

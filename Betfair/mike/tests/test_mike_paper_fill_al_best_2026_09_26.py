@@ -1,16 +1,16 @@
-"""26/09/2026 - R7: il PAPER di Mike riempie AL BEST del feed, non al prezzo limite.
+"""Mike PAPER: chi esegue l'ordine (26/09 R7, riscritto il 29/09 da D1).
 
-Reperto del test e2e (AUDIT_2026-09-25/e2e_fase2/ADMIN26_ORDINI_SCHEDE.md, R7):
-trade 5073 back limite 5,5 col best back 5,8 -> paper registrava 5,5; 5074
-2,84 vs 2,9; 5075 1,88 vs 1,9. In LIVE un back a limite 5,5 col best 5,8 si
-abbina a 5,8 (miglioramento di prezzo): il paper era pessimista di 2-3 tick.
-Causa: ``service.execute_place`` passava ``ladder=()`` a ``execution.place``,
-che senza ladder riempie a ``best_price=price`` (il limite).
+26/09 (R7): il paper di Mike riempiva IN CASA al best del feed (ladder passata a
+``execution.place``). 29/09 (D1, ordine dell'utente «il paper deve essere lo
+specchio del live per tutti i bot»): il fill in casa NON esiste piu'. L'ordine
+paper di Mike va al RUNNER sul canale di comando (``Betfair/mike/porta_ordini``):
+stesso limite, stesso lato, stessa size (cappata alla liquidita' come il live),
+FOK come il REST del live; l'abbinamento (e il suo prezzo, anche migliore del
+limite) lo dice il runner. Runner giu' = non eseguito, mai un fill in casa.
 
-Si prova con le funzioni VERE (``execute_place`` -> ``execution.place`` ->
-``omega_engine.paper_fill``), il DB in memoria del banco comune e l'EventInfo
-vera. Il live NON cambia: stesso limite, nessuna ladder (spia su ``X.place``).
-ASCII-only.
+Funzioni VERE: ``execute_place`` -> ``execution.place`` ->
+``execution._place_via_canale`` -> ``VistaMike`` -> runner finto che valida col
+``motore_ordini.valida_comando`` di produzione (``tests/runner_finto.py``).
 """
 from __future__ import annotations
 
@@ -29,6 +29,12 @@ from Betfair.safe_strategy import execution as X
 ORA = datetime(2026, 9, 26, 9, 30, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _freni_aperti(monkeypatch):
+    monkeypatch.setattr(X, "_freno_aperture", lambda: None)
+    monkeypatch.setattr(X, "_live_brake", lambda: None)
+
+
 def _params() -> Dict[str, Any]:
     return dict(C.merge_params(None))
 
@@ -45,49 +51,70 @@ def _gamba(side: str, price: float, size: float, role: str = "over_cover") -> E.
                  price=price, size=size, ref="t-r7")
 
 
-def _esegui(leg: E.Leg, book: E.Book, mode: str = "paper") -> str:
-    return S.execute_place(db=db_vuoto(), market=SimpleNamespace(), info=info_vera(),
-                           leg=leg, book=book, mode=mode, params=_params(), now=ORA,
-                           dry=False, minute=60, score="1-1", feed_fresh=True)
+def _esegui(leg: E.Leg, book: E.Book, mode: str = "paper", db: Any = None) -> str:
+    return S.execute_place(db=db if db is not None else db_vuoto(), market=SimpleNamespace(),
+                           info=info_vera(), leg=leg, book=book, mode=mode,
+                           params=_params(), now=ORA, dry=False, minute=60, score="1-1",
+                           feed_fresh=True)
 
 
-def test_back_paper_al_best_migliore_del_limite() -> None:
-    # 5073: limite 5,5, best back 5,8 -> abbinato a 5,8 come in live
-    leg = _gamba("back", 5.5, 2.0)
-    assert _esegui(leg, _book(best_back=5.8)) == "open"
-    assert leg.avg_price == pytest.approx(5.8)
-    assert leg.matched == pytest.approx(2.0)
-
-
-@pytest.mark.parametrize("limite,best", [(2.84, 2.9), (1.88, 1.9)])
-def test_back_paper_casi_5074_5075(limite: float, best: float) -> None:
-    leg = _gamba("back", limite, 3.0)
-    assert _esegui(leg, _book(best_back=best, best_lay=best + 0.1)) == "open"
-    assert leg.avg_price == pytest.approx(best)
-
-
-def test_lay_paper_al_best_migliore_del_limite() -> None:
-    # lay limite 3,0 col best lay 2,9 -> abbinato a 2,9
-    leg = _gamba("lay", 3.0, 2.0, role="over_close")
-    assert _esegui(leg, _book(best_back=2.86, best_lay=2.9)) == "open"
-    assert leg.avg_price == pytest.approx(2.9)
-
-
-def test_best_peggiore_del_limite_nessun_fill() -> None:
-    # back limite 6,0 col best back 5,8: in live non si abbina (resta/lapse)
-    leg = _gamba("back", 6.0, 2.0)
-    assert _esegui(leg, _book(best_back=5.8)) == "cancelled"
-    assert leg.matched == 0.0
-
-
-def test_liquidita_del_livello_cappa_la_size() -> None:
+def test_il_comando_paper_e_quello_del_live(runner) -> None:
     leg = _gamba("back", 5.5, 10.0)
     assert _esegui(leg, _book(best_back=5.8, back_size=3.0)) == "open"
-    assert leg.matched == pytest.approx(3.0)
-    assert leg.avg_price == pytest.approx(5.8)
+    c = runner.comandi[-1]
+    assert c["attore"] == "mike" and c["strategy_ref"] == "mike" and c["mode"] == "paper"
+    assert c["azione"] == "place" and c["side"] == "BACK" and c["price"] == 5.5
+    assert c["size"] == 3.0, "size cappata alla liquidita' come il live"
+    assert c["time_in_force"] == "FILL_OR_KILL" and c["persistence"] == "LAPSE"
+    assert c["ref"].startswith("mike-t") and c["origine"]["tabella"] == "mike_trades"
 
 
-def test_live_invariato_limite_e_nessuna_ladder(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_il_prezzo_lo_dice_il_RUNNER(runner) -> None:
+    # 5073: limite 5,5, il runner abbina a 5,8 (miglioramento di prezzo)
+    runner.prezzo_taker = 5.8
+    leg = _gamba("back", 5.5, 2.0)
+    assert _esegui(leg, _book(best_back=5.8)) == "open"
+    assert leg.avg_price == pytest.approx(5.8) and leg.matched == pytest.approx(2.0)
+
+
+def test_best_peggiore_del_limite_nessun_ordine(runner) -> None:
+    leg = _gamba("back", 6.0, 2.0)
+    assert _esegui(leg, _book(best_back=5.8)) == "cancelled"
+    assert runner.comandi == []
+
+
+def test_FOK_ucciso_dal_runner_nessuna_posizione(runner) -> None:
+    runner.rifiuta_fok = True
+    db = db_vuoto()
+    leg = _gamba("back", 5.5, 2.0)
+    assert _esegui(leg, _book(), db=db) == "cancelled"
+    assert leg.matched == 0.0
+    righe = db.trades_for_event(info_vera().event_id)
+    assert righe[-1]["status"] == "error"
+
+
+def test_runner_giu_NESSUN_fill_in_casa_e_nessuna_riga(runner) -> None:
+    runner.collegato = False
+    db = db_vuoto()
+    leg = _gamba("back", 5.5, 2.0)
+    assert _esegui(leg, _book(), db=db) == "cancelled"
+    assert db.trades_for_event(info_vera().event_id) == []
+    assert runner.comandi == []
+
+
+def test_chiusura_con_canale_caduto_all_invio_NESSUN_fill_in_casa(runner) -> None:
+    """La finestra di corsa: disponibile al controllo, invio non uscito. Per una
+    CHIUSURA ``execution`` ripiega sul percorso di sempre: la ladder a
+    liquidita' zero impedisce il fill in casa -> dichiarato non eseguito."""
+    runner.perdi_invio = True
+    db = db_vuoto()
+    leg = _gamba("lay", 3.0, 2.0, role="over_close")
+    assert _esegui(leg, _book(best_back=2.86, best_lay=2.9), db=db) == "cancelled"
+    assert leg.matched == 0.0
+    assert db.trades_for_event(info_vera().event_id)[-1]["status"] == "error"
+
+
+def test_live_invariato_limite_nessuna_ladder_nessuna_porta(monkeypatch: pytest.MonkeyPatch) -> None:
     chiamate: List[Dict[str, Any]] = []
 
     def spia(**kw: Any) -> X.PlaceOutcome:
@@ -97,10 +124,10 @@ def test_live_invariato_limite_e_nessuna_ladder(monkeypatch: pytest.MonkeyPatch)
     _esegui(_gamba("back", 5.5, 2.0), _book(best_back=5.8), mode="live")
     assert len(chiamate) == 1
     assert chiamate[0]["price"] == 5.5 and chiamate[0]["ladder"] == ()
-    assert chiamate[0]["best_size"] == 100.0
+    assert chiamate[0]["best_size"] == 100.0 and "porta" not in chiamate[0]
 
 
-def test_paper_passa_il_livello_del_feed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_paper_porta_del_runner_e_ladder_senza_liquidita(monkeypatch: pytest.MonkeyPatch) -> None:
     chiamate: List[Dict[str, Any]] = []
 
     def spia(**kw: Any) -> X.PlaceOutcome:
@@ -108,5 +135,7 @@ def test_paper_passa_il_livello_del_feed(monkeypatch: pytest.MonkeyPatch) -> Non
         return X.PlaceOutcome("error", None, 0.0, None, "spia")
     monkeypatch.setattr(X, "place", spia)
     _esegui(_gamba("back", 5.5, 2.0), _book(best_back=5.8, back_size=40.0))
-    assert chiamate[0]["price"] == 5.5                      # il limite resta il limite
-    assert chiamate[0]["ladder"] == ((5.8, 40.0),)          # il best del feed
+    assert chiamate[0]["price"] == 5.5
+    assert chiamate[0]["ladder"] == ((0.0, 0.0),), "nessuna liquidita' in casa"
+    assert getattr(chiamate[0]["porta"], "via_canale", False) is True
+    assert chiamate[0]["porta"].attore == "mike"

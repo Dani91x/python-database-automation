@@ -39,6 +39,7 @@ from . import db as _real_db
 from . import dossier as D
 from . import engine as E
 from . import feed as F
+from . import porta_ordini as MP
 
 logger = logging.getLogger("mike")
 
@@ -686,10 +687,14 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                         "stato_mercato": E.stato_mercato(book),
                         "market": leg.market}, info.event_id)
         return "cancelled"
-    if mode == "paper" and not feed_fresh:
+    if not feed_fresh:
+        # D1 (29/09) - PREZZI NON VIVI = NESSUN ORDINE, in paper E IN LIVE.
+        # Decisione dell'utente del 28/09: nessun bot opera su prezzi non vivi.
+        # Prima valeva solo in paper; in live l'ordine partiva col prezzo del
+        # feed fermo e decideva Betfair. Ora e' identico nei due modi.
         leg.status = "cancelled"
         db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "feed_stantio",
-                           "wanted": leg.price, "side": leg.side}, info.event_id)
+                           "wanted": leg.price, "side": leg.side, "mode": mode}, info.event_id)
         return "cancelled"
     if leg.side == "back":
         avail_price, avail_size = book.best_back, book.back_size
@@ -727,6 +732,17 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         legal, _ = E.legalize_back_size(leg.size, str(params.get("cover_rounding", "ceil")))
         db.log("size_legalized", {"leg": leg.ref, "from": leg.size, "to": legal}, info.event_id)
         leg.size = legal
+    porta_paper = None
+    if mode == "paper":
+        # D1 (29/09) - IN PAPER L'ORDINE LO ESEGUE IL RUNNER (canale di comando,
+        # come Safe e Omega): bet delay, coda, parziali, LAPSE del matching di
+        # flumine. Runner non raggiungibile = ordine NON eseguito, dichiarato,
+        # PRIMA della riserva (nessuna riga, nessun fill in casa).
+        porta_paper = _porta_paper(appoggiata=False)
+        if porta_paper is None:
+            leg.status = "cancelled"
+            _senza_runner(db, info.event_id, leg)
+            return "cancelled"
     row = _trade_row(info, leg, mode, params, minute, score, closes_trade_id, close_reason,
                      approvazione_id=approvazione_id)
     try:
@@ -783,18 +799,44 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         # suo esito. Se la risposta non arrivasse mai, il prossimo giro deve
         # comunque aspettare ``cover_retry_min_s``.
         E.segna_tentativo_copertura(ctx, now.timestamp())
-    # 26/09 (R7, reperto e2e 5073-5075): in PAPER il livello del feed si passa
-    # come ladder, cosi' il fill simulato avviene al BEST (back: best >= limite;
-    # lay: best <= limite) come l'abbinamento vero di Betfair, e non al prezzo
-    # limite della gamba (paper pessimista di 2-3 tick). Il LIVE non cambia:
-    # stesso limite, ladder vuota come prima.
-    ladder_paper = (((float(avail_price), float(avail_size)),)
-                    if mode == "paper" and avail_price is not None and avail_size
-                    else ())
+    # D1 (29/09): in PAPER l'ordine va al RUNNER (``porta``). Il fill IN CASA
+    # (26/09 R7: livello del feed passato come ladder) NON esiste piu': se il
+    # canale cade fra il controllo e l'invio di una CHIUSURA, ``execution``
+    # ripiega sul percorso di sempre, e li' la ladder a LIQUIDITA' ZERO fa si'
+    # che il fill simulato non possa nascere (``paper_no_fill`` -> dichiarato
+    # ``paper_senza_runner``). Il LIVE non cambia: REST FOK, ladder vuota.
+    ladder_paper = ((0.0, 0.0),) if mode == "paper" else ()
     out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
                   selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
                   best_size=avail_size, ladder=ladder_paper, client_ref=f"mike-t{trade_id}",
-                  trade_id=int(trade_id), meta=meta_exec, now=now, params=exec_params)
+                  trade_id=int(trade_id), meta=meta_exec, now=now, params=exec_params,
+                  **({"porta": porta_paper} if porta_paper is not None else {}))
+    if mode == "paper" and out.status == "pending" and porta_paper is not None \
+            and not str(out.fill_note or "").startswith("place_exception_reconciling"):
+        # D1 (29/09): come il REST FOK del live, che risponde DOPO il bet delay
+        # nello stesso giro, si aspetta l'esito terminale del runner (bet delay
+        # + 3 s al massimo) e lo si applica subito alla gamba. Senza esito entro
+        # l'attesa la gamba resta 'pending' e la chiude il giro dopo.
+        attesa = min(ATTESA_ESITO_TAKER_MAX_S,
+                     float(getattr(book, "bet_delay", 0) or 0.0) + 3.0)
+        _attendi_terminale(porta_paper, f"mike-t{int(trade_id)}", attesa)
+        _segui_ordini_paper_su_runner(db=db, ctx=ctx if ctx is not None else E.MatchCtx(legs=[leg]),
+                                      ev={"event_id": info.event_id}, now_ts=now.timestamp(),
+                                      params=params, market=market)
+        if leg.status == "open":
+            return "open"
+        if leg.status == "cancelled":
+            return "cancelled"
+    if mode == "paper" and out.status == "error" and _nota_senza_runner(out.fill_note):
+        leg.status = "cancelled"
+        try:
+            db.update_trade(int(trade_id), status="error",
+                            meta={**row["meta"], "reason": "paper_senza_runner",
+                                  "dettaglio": str(out.fill_note or "")[:120]})
+        except Exception:  # noqa: BLE001
+            pass
+        _senza_runner(db, info.event_id, leg, dettaglio=str(out.fill_note or ""))
+        return "cancelled"
     if out.status == "open":
         leg.matched = float(out.size)
         leg.avg_price = float(out.price or leg.price)
@@ -1189,6 +1231,262 @@ def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
             continue
         return r
     return None
+
+
+# ---------------------------------------------------------------------------
+# D1 (29/09) - MIKE PAPER SUL RUNNER (canale di comando, ``porta_ordini``)
+# ---------------------------------------------------------------------------
+#: una gamba taker paper senza NESSUN evento dal runner oltre questo tempo non
+#: e' stata eseguita (il FOK si decide entro il bet delay, pochi secondi)
+_SCADENZA_TAKER_PAPER_S = 60.0
+#: attesa massima (tempo vero) dell'esito di un taker paper dopo l'invio. Nel
+#: banco di replay vale 0: li' l'esito arriva col book successivo (il tempo del
+#: replay non scorre mentre il bot aspetta), e la riga si chiude al giro dopo.
+ATTESA_ESITO_TAKER_MAX_S = 15.0
+#: log del «runner non raggiungibile»: una volta ogni tanto per partita
+_SENZA_RUNNER_LOG_S = 60.0
+_SENZA_RUNNER_LOGGATO: Dict[str, float] = {}
+_NOTE_SENZA_RUNNER = ("canale_giu", "paper_no_fill", "canale_premarcatura_fallita",
+                      "canale_senza_trade_id", "paper_senza_runner")
+
+
+def _porta_paper(*, appoggiata: bool) -> Optional[Any]:
+    """La vista della porta di Mike, o None se il runner non e' raggiungibile
+    (il client del canale gira gia'; senza collegamento non si invia)."""
+    try:
+        v = MP.vista(appoggiata=appoggiata)
+    except Exception as ex:  # noqa: BLE001 - porta non costruibile: niente invio
+        logger.warning("[mike] porta del runner non disponibile: %s", str(ex)[:120])
+        return None
+    return v if v.disponibile() else None
+
+
+def _attendi_terminale(porta: Any, ref: str, timeout_s: float) -> Optional[Dict[str, Any]]:
+    """L'evento TERMINALE del runner per ``ref`` entro ``timeout_s`` (None se non
+    arriva). Legge la memoria della porta, nessuna chiamata in piu'."""
+    mem = getattr(porta, "memoria", None)
+    if mem is None or not hasattr(mem, "attendi"):
+        e = porta.esiti(ref)
+        return e if MP.terminale(e) else None
+    return mem.attendi(lambda: (lambda e: e if MP.terminale(e) else None)(
+        mem._eventi.get(str(ref))), max(0.0, float(timeout_s)))
+
+
+def _nota_senza_runner(nota: Any) -> bool:
+    return any(str(nota or "").startswith(p) for p in _NOTE_SENZA_RUNNER)
+
+
+def _senza_runner(db: Any, event_id: str, leg: E.Leg, dettaglio: str = "canale_giu") -> None:
+    """Runner giu' in paper: l'ordine NON e' eseguito. Non e' un rifiuto del
+    mercato (nessun ``_rifiutata``): il motore ripropone al giro dopo."""
+    now = time.time()
+    chiave = str(event_id)
+    if now - float(_SENZA_RUNNER_LOGGATO.get(chiave) or 0.0) >= _SENZA_RUNNER_LOG_S:
+        _SENZA_RUNNER_LOGGATO[chiave] = now
+        db.log("skip", {"leg": leg.ref, "role": leg.role, "reason": "paper_senza_runner",
+                        "dettaglio": str(dettaglio)[:120], "critical": True,
+                        "nota": "paper: il runner non e' raggiungibile sul canale di "
+                                "comando, l'ordine NON e' eseguito (mai un fill in casa)"},
+               event_id)
+    logger.warning("[mike] %s: %s NON eseguito in paper, runner non raggiungibile (%s)",
+                   event_id, leg.ref, str(dettaglio)[:80])
+
+
+def _num_evento(e: Dict[str, Any], chiave: str) -> float:
+    try:
+        return float(e.get(chiave) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
+                                  now_ts: float, params: Dict[str, Any], market: Any = None,
+                                  cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> int:
+    """D1 (29/09) - gamba <- riga <- RUNNER, per ogni ordine PAPER di Mike.
+
+    E' il gemello paper di ``_segui_resting_live`` / ``_reconcile_unknown``:
+    l'esito non si deduce dal prezzo, lo dice chi ha eseguito l'ordine (gli
+    eventi ``order`` del canale: ``size_matched``, ``average_price_matched``,
+    ``bet_id``, fase del protocollo). Per ogni gamba viva o a esito ignoto con
+    riga paper mandata sul canale (``meta.canale_ref``):
+      * abbinato (anche in parte) -> ``matched``/``avg_price`` VERI sulla gamba e
+        sulla riga (colonne di consapevolezza), ``bet_id`` salvato;
+      * terminale con abbinato -> gamba 'open', riga 'open' con size abbinata;
+      * terminale senza abbinato -> gamba 'cancelled', riga 'error' col motivo
+        del runner; per un taker e' un NO del mercato (``_rifiutata``, come il
+        FOK ucciso in live), per la lay appoggiata e' una scadenza;
+      * nessun evento oltre ``_SCADENZA_TAKER_PAPER_S`` su un taker: NON
+        eseguito (mai un fill inventato).
+    Una gamba con annullo richiesto (``meta.annullo_richiesto``) e ordine
+    ancora vivo sul runner: si annulla appena il ``bet_id`` e' noto.
+    Ritorna quante gambe ha cambiato."""
+    porta = MP.porta_esistente()
+    eid = str(ev["event_id"])
+    n = 0
+    for leg in ctx.legs:
+        if not (leg.is_live or leg.needs_reconcile):
+            continue
+        r = _trade_row_for_leg(db, eid, leg, cache)
+        if r is None or str(r.get("mode") or "") != "paper":
+            continue
+        meta = dict(r.get("meta") or {})
+        ref = str(meta.get("canale_ref") or "")
+        if not ref:
+            continue
+        e = porta.esiti(ref) if porta is not None else None
+        if e is not None and str(e.get("mode") or "paper") != "paper":
+            e = None                      # paper e live MAI mischiati
+        appoggiata = _is_resting_leg(leg, params)
+        if e is None:
+            inviato = F.parse_iso_epoch(meta.get("canale_inviato_at")) or float(leg.placed_at or 0.0)
+            if not appoggiata and now_ts - float(inviato) > _SCADENZA_TAKER_PAPER_S:
+                leg.status = "cancelled"
+                meta.update({"phase": "cancelled", "reason": "runner_senza_esito"})
+                meta.pop("err", None)
+                try:
+                    X.aggiorna_trade(db, int(r["id"]), campi={"status": "error", "meta": meta},
+                                     consapevolezza={"size_matched": 0.0, "size_remaining": 0.0})
+                except Exception as ex:  # noqa: BLE001
+                    logger.warning("[mike] chiusura %s senza esito KO: %s", leg.ref, str(ex)[:120])
+                db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "runner_senza_esito",
+                                   "wanted": leg.price, "side": leg.side, "critical": True}, eid)
+                n += 1
+            continue
+        abbinato = _num_evento(e, "size_matched")
+        medio = _num_evento(e, "average_price_matched") or None
+        bet_id = e.get("bet_id")
+        fase = str(e.get("fase") or "")
+        seq = int(e.get("seq") or 0)
+        gia = int(meta.get("canale_seq") or 0)
+        if abbinato > float(leg.matched or 0.0) + 1e-9:
+            leg.matched = abbinato
+            leg.avg_price = float(medio) if medio else float(leg.price)
+        consap = {"size_requested": round(float(leg.size), 2),
+                  "size_matched": round(abbinato, 2),
+                  "size_remaining": round(_num_evento(e, "size_remaining"), 2),
+                  "avg_price_matched": medio,
+                  "betfair_updated_at": e.get("matched_at") or e.get("updated_at")}
+        if not MP.terminale(e):
+            if seq > gia:
+                meta.update({"canale_fase": fase, "canale_seq": seq})
+                meta.pop("reason", None)
+                meta.pop("err", None)
+                campi: Dict[str, Any] = {"meta": meta}
+                if bet_id and not r.get("bet_id"):
+                    campi["bet_id"] = str(bet_id)
+                try:
+                    X.aggiorna_trade(db, int(r["id"]), campi=campi, consapevolezza=consap)
+                    r.update(campi)
+                except Exception as ex:  # noqa: BLE001
+                    logger.warning("[mike] esito runner %s non scritto: %s", leg.ref, str(ex)[:120])
+                if leg.needs_reconcile:
+                    leg.status = "pending"   # l'ordine c'e' ed e' vivo: si segue
+                n += 1
+            if meta.get("annullo_richiesto") and bet_id:
+                _mark_trade_cancelled(db, eid, leg, str(meta.get("annullo_richiesto")),
+                                      cache, market=market)
+            continue
+        # -- terminale ---------------------------------------------------------
+        meta.update({"canale_fase": fase, "canale_seq": seq})
+        meta.pop("reason", None)
+        meta.pop("err", None)
+        meta.pop("annullo_richiesto", None)
+        campi = {"meta": meta}
+        if bet_id:
+            campi["bet_id"] = str(bet_id)
+        if abbinato > 0:
+            leg.status = "open"
+            prezzo = float(medio) if medio else float(leg.price)
+            meta.update({"phase": "open", "fill": f"runner_paper:{fase}"})
+            campi.update({"status": "open", "size": round(abbinato, 2), "price": prezzo,
+                          "liability": X.liability_of(leg.side, abbinato, prezzo)})
+        else:
+            leg.status = "cancelled"
+            meta.update({"phase": "cancelled", "reason": f"runner_{fase}"})
+            campi["status"] = "error"
+            if not appoggiata and fase == "rifiutato":
+                _rifiutata(ctx, leg, f"rifiutata dal runner ({fase})")
+            elif not appoggiata and fase in ("annullato", "scaduto"):
+                # il FOK ucciso: il mercato ha detto no a questa richiesta
+                _rifiutata(ctx, leg, f"FOK non abbinato ({fase})")
+        try:
+            X.aggiorna_trade(db, int(r["id"]), campi=campi, consapevolezza=consap)
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[mike] esito runner %s non scritto: %s", leg.ref, str(ex)[:120])
+        if abbinato > 0:
+            db.log("fill_resting" if appoggiata else "place",
+                   {"leg": leg.ref, "trade_id": r.get("id"), "role": leg.role, "side": leg.side,
+                    "price": leg.fill_price, "size": round(abbinato, 2), "mode": "paper",
+                    "note": f"runner_paper:{fase}", "size_requested": round(float(leg.size), 2),
+                    "size_remaining": consap["size_remaining"]}, eid)
+        else:
+            db.log("no_fill", {"leg": leg.ref, "role": leg.role, "size": leg.size,
+                               "wanted": leg.price, "side": leg.side, "fase_runner": fase,
+                               "reason": f"runner_{fase}"}, eid)
+        n += 1
+    return n
+
+
+def _piazza_resting_paper(*, db: Any, market: Any, info: Any, leg: E.Leg,
+                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
+                          chiude: Optional[int], motivo: Optional[str], ev: Dict[str, Any],
+                          now: datetime, ctx: Optional[E.MatchCtx] = None,
+                          approvazione_id: Optional[int] = None) -> None:
+    """D1 (29/09) - la lay APPOGGIATA paper sul RUNNER, gemella di
+    ``_piazza_resting_live``: stessa selezione, lato, prezzo e size; stesso tipo
+    d'ordine del live (nessun FOK, ``LAPSE``). Riserva PRIMA dell'ordine; runner
+    giu' = nessuna riga, nessun ordine; rifiuto del runner = riga chiusa e
+    ``_rifiutata`` come il rifiuto di Betfair in live."""
+    eid = str(ev["event_id"])
+    porta = _porta_paper(appoggiata=True)
+    if porta is None:
+        leg.status = "cancelled"
+        _senza_runner(db, eid, leg)
+        return
+    riga = _trade_row(info, leg, "paper", params, minuto, score, chiude, motivo,
+                      approvazione_id=approvazione_id)
+    try:
+        trade_id = _insert_trade_row(db, riga, eid)
+        if trade_id is None:
+            raise RuntimeError("riserva senza id")
+    except Exception as ex:  # noqa: BLE001 - riserva fallita: nessun ordine
+        leg.status = "cancelled"
+        db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, eid)
+        return
+    meta_exec: Dict[str, Any] = dict(riga["meta"])
+    if _resting_e_chiusura(leg, chiude):
+        meta_exec["closes_trade_id"] = int(chiude) if chiude is not None else -1
+    out = X.place(db=db, market=market, mode="paper", event_id=eid,
+                  market_id=info.market_id(leg.market),
+                  selection_id=int(info.selection_id(leg.market, leg.selection)),
+                  side="lay", price=float(leg.price), size=float(leg.size), best_size=None,
+                  ladder=((0.0, 0.0),), client_ref=f"mike-t{int(trade_id)}",
+                  trade_id=int(trade_id), meta=meta_exec, now=now,
+                  params={**params, "execution_mode": "rest"}, porta=porta)
+    if out.status == "pending":
+        db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
+                                 "size": leg.size, "matched": 0.0, "live": False,
+                                 "via": "runner", "note": out.fill_note,
+                                 "size_requested": round(float(leg.size), 2),
+                                 "size_remaining": round(float(leg.size), 2)}, eid)
+        return
+    leg.status = "cancelled"
+    if _nota_senza_runner(out.fill_note):
+        try:
+            db.update_trade(int(trade_id), status="error",
+                            meta={**meta_exec, "reason": "paper_senza_runner",
+                                  "dettaglio": str(out.fill_note or "")[:120]})
+        except Exception:  # noqa: BLE001
+            pass
+        _senza_runner(db, eid, leg, dettaglio=str(out.fill_note or ""))
+        return
+    db.log("place_rifiutato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                               "reason": "resting_rifiutata", "error_code": out.error_code,
+                               "price": leg.price, "size": leg.size, "note": out.fill_note,
+                               "nota": "la copertura NON e' sul book del runner: la riga si "
+                                       "chiude e il motore la ripropone"}, eid)
+    _mark_trade_cancelled(db, eid, leg, "resting_rifiutata")
+    _rifiutata(ctx, leg, f"resting rifiutata ({out.error_code or out.fill_note})")
 
 
 def _freno_gia_appoggiata(db: Any, event_id: str, leg: E.Leg) -> bool:
@@ -2314,6 +2612,29 @@ def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Sna
             # STESSA reazione del live (``_applica_esito_riapertura``, esito
             # «scaduto»). Una gamba gia' abbinata dalla simulazione non arriva
             # qui (non e' piu' viva).
+            r_p = _trade_row_for_leg(db, eid, leg, cache)
+            if r_p is not None and (r_p.get("meta") or {}).get("canale_ref"):
+                # D1 (29/09): la lay e' sul book del RUNNER. Se l'avesse fatta
+                # scadere, ``_segui_ordini_paper_su_runner`` l'avrebbe gia'
+                # chiusa (qui non arriverebbe viva). Viva sul runner = la regola
+                # di Betfair non e' stata applicata dal simulatore: si ANNULLA sul
+                # runner e si legge l'esito vero (abbinato nel frattempo resta
+                # una posizione; annullo non confermato = riconciliazione).
+                fine = _mark_trade_cancelled(db, eid, leg, "lapsed_alla_sospensione",
+                                             cache, market=market)
+                esiti[ref] = {"open": _ESITO_ABBINATO, "cancelled": _ESITO_SCADUTO}.get(
+                    fine, _ESITO_IGNOTO)
+                db.log("rilettura_alla_riapertura",
+                       {"leg": leg.ref, "role": leg.role, "esito": esiti[ref],
+                        "fonte": "runner_paper", "matched": round(float(leg.matched or 0.0), 2)},
+                       eid)
+                if esiti[ref] == _ESITO_SCADUTO:
+                    db.log("ordine_scaduto_alla_sospensione",
+                           {"leg": leg.ref, "role": leg.role, "esito": _ESITO_SCADUTO,
+                            "critical": True, "fonte": "runner_paper",
+                            "nota": "lay appoggiata annullata alla sospensione, come fa "
+                                    "Betfair (LAPSE, evento materiale)"}, eid)
+                continue
             esiti[ref] = _ESITO_SCADUTO
             _applica_esito_riapertura(db=db, event_id=eid, leg=leg, esito=_ESITO_SCADUTO,
                                       numeri={"size_matched": float(leg.matched or 0.0),
@@ -2377,15 +2698,6 @@ def _sorveglia_mercato_copertura(*, db: Any, ctx: E.MatchCtx, snap: E.Snapshot,
                     "nota": "mercato della copertura Over 4.5 di nuovo aperto: "
                             "la copertura riprende da dove era rimasta"},
            str(ev["event_id"]))
-
-
-def _resting_filled(leg: E.Leg, book: Optional[E.Book]) -> bool:
-    """Simulazione CONSERVATIVA della lay appoggiata a ``leg.price``: si considera
-    abbinata SOLO quando il mercato ha scambiato SOTTO il suo prezzo (best back
-    strettamente minore), mai perche' qualcuno laya allo stesso livello."""
-    if book is None or book.status != "OPEN" or book.best_back is None:
-        return False
-    return float(book.best_back) < float(leg.price) - 1e-9
 
 
 def _result(code: str, message: str, **extra: Any) -> Dict[str, Any]:
@@ -3615,6 +3927,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # PRIMA della decisione, sempre: a mercato riaperto dopo una sospensione le
     # lay appoggiate possono essere state fatte scadere da Betfair, e il motore
     # non deve mai decidere su una gamba data per viva senza averla riletta.
+    # D1 (29/09): in PAPER gli esiti degli ordini li dice il RUNNER; si leggono
+    # PRIMA di tutto il resto, come il live rilegge Betfair (gamba <- riga <- runner).
+    if mode == "paper":
+        _segui_ordini_paper_su_runner(db=db, ctx=ctx, ev=ev, now_ts=now_ts, cache=cache,
+                                      params=params, market=market)
     _sorveglia_sospensione(db=db, market=market, ctx=ctx, snap=snap, params=params,
                            mode=mode, now_ts=now_ts, ev=ev, cache=cache)
 
@@ -3686,27 +4003,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                     rilettura_in_corso=bool(
                                         ctx.riapertura and not ctx.riapertura.get("letto")))
                 continue
-            book = snap.book(leg.market, leg.selection)
-            if not snap.order_fresh:
-                # M7: feed stantio = nessun fill simulato. Qui la soglia stretta
-                # e' PIU' importante che in live: un fill inventato su un prezzo
-                # che non esiste piu' gonfia un risultato simulato, e su quel
-                # risultato si decide se passare ai soldi veri.
-                continue
-            if _resting_filled(leg, book):
-                leg.matched = float(leg.size)
-                leg.avg_price = float(leg.price)
-                leg.status = "open"
-                r = _trade_row_for_leg(db, ev["event_id"], leg)
-                if r is not None:
-                    try:
-                        db.update_trade(int(r["id"]), status="open", price=leg.price, size=leg.size,
-                                        meta={**(r.get("meta") or {}), "phase": "open", "fill": "paper_resting"})
-                    except Exception as ex:  # noqa: BLE001
-                        logger.warning("[mike] conferma resting %s KO: %s", leg.ref, str(ex)[:120])
-                db.log("fill_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price, "size": leg.size,
-                                        "best_back": book.best_back if book else None}, ev["event_id"])
-                n_actions += 1
+            # D1 (29/09): in PAPER la lay appoggiata sta sul book del RUNNER
+            # (matching di flumine, coda, parziali): l'abbinamento lo legge
+            # ``_segui_ordini_paper_su_runner`` qui sopra. Il fill «simulato in
+            # casa» quando il best back scendeva sotto il prezzo non esiste piu'.
+            continue
 
     # -- azioni differite (paper + in-play: betDelay) -------------------------------
     # H5: gli id delle righe servono SOLO per collegare una chiusura alla sua
@@ -3782,10 +4083,19 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     new_legs = E.apply_decision(ctx, d, now_ts)
     for leg in new_legs:
         book = snap.book(leg.market, leg.selection)
-        delay = int(book.bet_delay) if (book and snap.inplay) else 0
         if _is_resting_leg(leg, params):
-            # lay appoggiata: resta 'pending' sul book (riga riservata in mike_trades)
-            # finche' il mercato non scambia sotto il suo prezzo (vedi _resting_filled)
+            # lay appoggiata: resta 'pending' sul book (del runner in paper, di
+            # Betfair in live) finche' non si abbina o scade
+            if not dry and not snap.feed_fresh:
+                # D1 (29/09): prezzi non vivi = nessun ordine, paper e live
+                # (stessa regola di ``execute_place``). Non e' un rifiuto del
+                # mercato: il motore ripropone quando il feed torna vivo.
+                leg.status = "cancelled"
+                db.log("no_fill", {"leg": leg.ref, "role": leg.role, "reason": "feed_stantio",
+                                   "wanted": leg.price, "side": leg.side, "mode": mode,
+                                   "resting": True}, ev["event_id"])
+                n_actions += 1
+                continue
             if not dry and _resting_in_attesa(db, ev["event_id"], leg, book):
                 # D2 (24/09): mercato non operabile -> nessun ordine, nessuna
                 # riga di riserva, NESSUN `_rifiutata` (non e' un rifiuto): la
@@ -3817,30 +4127,24 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 # (``_piazza_resting_live``): paper specchio del live.
                 pass
             else:
-                try:
-                    _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,
-                                                     closes_id(leg), ctx.close_reason,
-                                                     approvazione_id=_chiave_gamba(approvazione_id, leg)),
-                                      ev["event_id"])
-                    db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
-                                             "size": leg.size}, ev["event_id"])
-                except Exception as ex:  # noqa: BLE001 — riserva fallita: nessun ordine
-                    leg.status = "cancelled"
-                    db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, ev["event_id"])
+                # D1 (29/09): la lay appoggiata PAPER va sul book del RUNNER
+                # (prima: solo una riga, «abbinata» in casa da ``_resting_filled``)
+                _piazza_resting_paper(db=db, market=market, info=info, leg=leg, params=params,
+                                      minuto=snap.minute, score=score_str,
+                                      chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev,
+                                      now=now, ctx=ctx,
+                                      approvazione_id=_chiave_gamba(approvazione_id, leg))
             n_actions += 1
             continue
-        if mode == "paper" and delay > 0:
-            aid = _chiave_gamba(approvazione_id, leg)
-            extra["deferred"].append({"ref": leg.ref, "earliest_at": now_ts + delay,
-                                      **({"approvazione_id": aid} if aid is not None else {})})
-            db.log("place_deferred", {"leg": leg.ref, "role": leg.role, "bet_delay": delay,
-                                      "price": leg.price, "size": leg.size}, ev["event_id"])
-        else:
-            execute_place(db=db, market=market, info=info, leg=leg, book=book, mode=mode, params=params,
-                          now=now, dry=dry, minute=snap.minute, score=score_str,
-                          feed_fresh=snap.feed_fresh, close_reason=ctx.close_reason,
-                          closes_trade_id=closes_id(leg), ctx=ctx,
-                          approvazione_id=_chiave_gamba(approvazione_id, leg))
+        # D1 (29/09): la differita paper del bet delay NON c'e' piu': l'ordine
+        # paper lo esegue il runner, che il bet delay lo applica da se' (sommarlo
+        # qui sarebbe il difetto 12 del catalogo). Le voci differite gia' in
+        # memoria prima di questa versione si esauriscono nel ciclo di sopra.
+        execute_place(db=db, market=market, info=info, leg=leg, book=book, mode=mode, params=params,
+                      now=now, dry=dry, minute=snap.minute, score=score_str,
+                      feed_fresh=snap.feed_fresh, close_reason=ctx.close_reason,
+                      closes_trade_id=closes_id(leg), ctx=ctx,
+                      approvazione_id=_chiave_gamba(approvazione_id, leg))
         n_actions += 1
     tele_appr = d.telemetry.get("uscita_eseguita_su_approvazione") \
         if isinstance(d.telemetry, dict) else None
@@ -4335,6 +4639,10 @@ def _reconcile_unknown(db: Any, market: Any, event_id: str, ctx: E.MatchCtx, mod
         if r is None:
             continue
         if mode == "paper":
+            if (r.get("meta") or {}).get("canale_ref"):
+                # D1 (29/09): l'ordine paper e' sul RUNNER: l'esito lo legge
+                # ``_segui_ordini_paper_su_runner`` dagli eventi, mai per deduzione
+                continue
             dec = {"action": "free"}
         else:
             o_cur = _ordine_della_riga(current, r)
@@ -4418,12 +4726,34 @@ def _mark_trade_cancelled(db: Any, event_id: str, leg: E.Leg, reason: str,
     bet_id = r.get("bet_id")
     e_live = str(r.get("mode") or "") == "live"
     quando_betfair: Optional[str] = None
-    if e_live and bet_id:
+    # D1 (29/09): una riga PAPER mandata al RUNNER ha un ordine vero sul book
+    # simulato: si annulla LI', con la stessa regola del live (prima si annulla,
+    # poi si scrive; esito non confermato = riconciliazione).
+    meta_r = r.get("meta") or {}
+    sul_runner = (str(r.get("mode") or "") == "paper" and bool(meta_r.get("canale_ref")))
+    if sul_runner and not bet_id:
+        e_run = MP.porta_esistente().esiti(str(meta_r["canale_ref"])) \
+            if MP.porta_esistente() is not None else None
+        bet_id = (e_run or {}).get("bet_id")
+        if not bet_id:
+            # il runner non ha ancora detto quale ordine e': si annulla appena lo
+            # dice (``_segui_ordini_paper_su_runner``). Fino ad allora la gamba
+            # NON e' annullata: riconciliazione, mai «cancelled» su un ordine vivo.
+            try:
+                db.update_trade(int(r["id"]), meta={**meta_r, "annullo_richiesto": reason})
+            except Exception:  # noqa: BLE001
+                pass
+            leg.status = E.STATUS_RECONCILE
+            return E.STATUS_RECONCILE
+    if (e_live or sul_runner) and bet_id:
         db.log("cancel_richiesto", {"leg": leg.ref, "role": leg.role, "reason": reason,
                                     "bet_id": str(bet_id), "trade_id": r.get("id"),
                                     "critical": True}, event_id)
+        porta_kw: Dict[str, Any] = {}
+        if sul_runner:
+            porta_kw = {"porta": MP.vista(), "mode": "paper"}
         ann = X.annulla_su_betfair(market, bet_id=str(bet_id),
-                                   market_id=r.get("market_id"))
+                                   market_id=r.get("market_id"), **porta_kw)
         confermato = bool(ann is not None and getattr(ann, "ok", False)
                           and getattr(ann, "riletto", False))
         db.log("cancel_esito", {

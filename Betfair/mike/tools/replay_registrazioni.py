@@ -375,6 +375,25 @@ def confronta_payload(a_mano: Dict[str, Any], vero: Dict[str, Any]) -> List[str]
 # ---------------------------------------------------------------------------
 # la strategia flumine: raccoglie i book, fa decidere Mike, certifica
 # ---------------------------------------------------------------------------
+def modo_del_banco() -> str:
+    """D1 (29/09) - la modalita' in cui il replay fa girare Mike.
+
+    ``live`` (il riferimento di sempre): gli ordini escono da ``place_order_live``
+    servito da ``MercatoFlumine``. Con ``certifica mike --trasporto canale`` Mike
+    gira in ``paper``: e' la strada paper di produzione, che passa dal RUNNER sul
+    canale di comando (``Betfair/mike/porta_ordini``), qui il ``MotoreOrdini``
+    VERO del banco (``trasporto._monta_canale`` -> ``PortaBanco``)."""
+    try:
+        from Betfair.stream.backtest import trasporto as TRA
+
+        st = TRA.attivo()
+    except Exception:  # noqa: BLE001 - senza banco: il riferimento di sempre
+        return "live"
+    if st and st.get("trasporto") == "canale" and st.get("attore") == "mike":
+        return "paper"
+    return "live"
+
+
 def _crea_strategia():
     from flumine import BaseStrategy
 
@@ -429,7 +448,13 @@ def _crea_strategia():
             # giro lo fa `service._run_event`, cioe' il bot INTERO — cervello
             # e mani. Le gambe non le tiene piu' questo file: stanno nel `ctx`
             # dell'evento, esattamente come in produzione.
-            self.db = DbMemoria({"status": "running", "mode": "live", "params": params})
+            # D1 (29/09): ``live`` di riferimento, ``paper`` sul canale (vedi
+            # ``modo_del_banco``). Sul canale il bot non aspetta in tempo vero
+            # l'esito di un taker: nel replay arriva col book successivo.
+            self.mode = modo_del_banco()
+            if self.mode == "paper":
+                S.ATTESA_ESITO_TAKER_MAX_S = 0.0
+            self.db = DbMemoria({"status": "running", "mode": self.mode, "params": params})
             self.mercato = MercatoFlumine(self)
             self.referto = CERT.Referto(event_id=str(event_id))
             self._ultimo_ms: int = 0
@@ -557,7 +582,7 @@ def _crea_strategia():
             ev = self.db.events.get(self.event_id) or {
                 "event_id": self.event_id,
                 "event_name": ((row or {}).get("payload") or {}).get("event_name") or self.nome,
-                "state": "WATCH", "mode": "live", "ctx": {},
+                "state": "WATCH", "mode": self.mode, "ctx": {},
             }
             # I MERCATI SULLA RIGA DELL'EVENTO, come in produzione.
             # In produzione la riga la crea `service.run_once` quando arma la
@@ -583,7 +608,7 @@ def _crea_strategia():
             try:
                 azioni, _settled = S._run_event(
                     db=self.db, market=self.mercato, ev=self.db.events[self.event_id],
-                    row=row, params=self.params, mode="live",
+                    row=row, params=self.params, mode=self.mode,
                     now=datetime.fromtimestamp(now, tz=timezone.utc),
                     # lo scanner e' vecchio quanto la riga: e' l'altra meta'
                     # della regola del feed stantio
