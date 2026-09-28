@@ -3896,3 +3896,14 @@ verificata da me sul DB in sola lettura (transazione READ ONLY con ruolo di serv
 chiavi come `get_omega_aggregates()`; senza ruolo risponde «non autorizzato (owner-only)» come deve.
 DECISIONE DELL'UTENTE (28/09 sera): l'app si accende SOLO a lavori finiti e SOLO dopo le sue decisioni e le sue
 migrazioni. Nessun avvio prima dell'elenco finale.
+
+**Checkpoint 20:40 — G2 (campi solo-live) CHIUSO**, referto `AUDIT_2026-09-28/CANTIERE_G2_CAMPI_SOLO_LIVE.md`.
+Verifica mia: nessun file tracciato toccato (`git status` pulito sui tracciati; le sonde stanno in
+`frontend/e2e_fase3_admin26/`, NON tracciata, con `out/` da 107 MB: MAI nel repo); numeri del referto ricontrollati
+sul DB in sola lettura (mike_trades 1127/283 live, safe_strategy_trades 349/29 live, `safe_strategy_status` fermo al
+26/09 17:40:17 → «2903 min» a schermo torna). Esito: 20 campi OK, 11 NON verificabili ad app spenta (serve una
+partita in streaming: U0234, U0247, U0248, U0250, U0255, U0263, U0264, U0302, U0312, U0337, U0344) → passano al
+protocollo della prova dal vivo del 29/09. Sospetto di G2 su Safe (attivita' paper e live nella stessa lista) CHIUSO
+da me sul codice: `get_safe_state` non filtra l'attivita' per modalita', MA `ActivityFeed.tsx:204-231` disegna il
+cartellino della modalita' su OGNI riga e attenua quelle di un'altra modalita' (`data-other-mode`): nessuna riga di
+prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcoli a mano, non test automatici.
