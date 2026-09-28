@@ -3889,3 +3889,10 @@ Delegati AL LAVORO alle 20:10 (chi riprende NON li rilancia: legge il worktree e
 3) replay rapidi UNO per bot: safe_base, safe_esatto, safe_punta, safe_tennis (dopo P e D2), i 4 bot tennis e
 scalper_calcio (dopo D2 e N); 4) suite intere UNA volta, `npx tsc`, vitest, `npm run build`; 5) elenco finale
 all'utente (cose da fare e da decidere); 6) pulizia dei worktree e, per ultima, storia git.
+
+**Checkpoint 20:25** — migrazione `omega_aggregati_servizio_per_modalita_2026-09-28.sql` APPLICATA dall'utente e
+verificata da me sul DB in sola lettura (transazione READ ONLY con ruolo di servizio): la funzione esiste, e'
+`SECURITY DEFINER`, `anon` non la puo' eseguire; `paper` → `mode=paper`, `live` → `mode=live` (anche `' LIVE '`), 19
+chiavi come `get_omega_aggregates()`; senza ruolo risponde «non autorizzato (owner-only)» come deve.
+DECISIONE DELL'UTENTE (28/09 sera): l'app si accende SOLO a lavori finiti e SOLO dopo le sue decisioni e le sue
+migrazioni. Nessun avvio prima dell'elenco finale.
