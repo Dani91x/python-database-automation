@@ -365,6 +365,42 @@ def _session_bet_ids(framework: Any) -> List[str]:
     return ids
 
 
+def _mercato_chiuso_in_flumine(markets: Dict[str, Any], market_id: str) -> Optional[bool]:
+    """True = chiuso (``closed`` di flumine o ultimo book CLOSED), False =
+    aperto, None = mercato mai arrivato (niente da dire)."""
+    m = markets.get(str(market_id))
+    if m is None:
+        return None
+    if getattr(m, "closed", False) is True:
+        return True
+    stato = str(getattr(getattr(m, "market_book", None), "status", "") or "")
+    return stato.upper() == "CLOSED"
+
+
+def partita_finita(framework: Any, mo_market_id: Optional[str],
+                   market_ids: Optional[List[str]]) -> bool:
+    """28/09 (cantiere A): la partita della sessione e' FINITA per Betfair?
+
+    Regola (documentazione Betfair, MarketStatus: "CLOSED - The market has
+    been settled and is no longer available for betting"): il MATCH_ODDS e'
+    CLOSED, oppure TUTTI i mercati della sessione arrivati allo stream sono
+    CLOSED (almeno uno arrivato). Un mercato SUSPENDED (gol, VAR, pioggia) NON
+    e' una fine. flumine tiene il mercato chiuso in ``markets`` (``closed``)
+    per un'ora (``baseflumine._process_close_market``): la sessione lo vede al
+    battito successivo. Nel dubbio (framework illeggibile) False."""
+    try:
+        markets = framework.markets.markets
+    except Exception:  # noqa: BLE001
+        return False
+    if not isinstance(markets, dict):
+        return False
+    if mo_market_id and _mercato_chiuso_in_flumine(markets, mo_market_id) is True:
+        return True
+    stati = [_mercato_chiuso_in_flumine(markets, mid) for mid in (market_ids or [])]
+    visti = [s for s in stati if s is not None]
+    return bool(visti) and len(visti) == len(stati) and all(visti)
+
+
 def _sweep_cancel(trading: Any, market_ids: List[str],
                   own_bet_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """SWEEP CANCEL di emergenza degli ordini unmatched della SESSIONE via REST
@@ -1412,6 +1448,22 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             _life_s = vita_sessione_s({"sniper_mode": sniper_mode,
                                        "theta_mode": theta_mode,
                                        "ht_mode": ht_mode})
+            # 28/09 (cantiere A, ordine dell'utente: "le partite TERMINATE [...]
+            # non devono piu' essere seguite"): Betfair ha CHIUSO il MATCH_ODDS
+            # (o tutti i mercati della sessione) = partita finita. Prima la
+            # sessione restava accesa fino a KO+vita (130' con lo sniper, o per
+            # sempre senza KO) su mercati regolati, tenendo una connessione e un
+            # posto del tetto delle sessioni. Stessa uscita del fine-vita.
+            if partita_finita(framework, getattr(mo, "market_id", None), market_ids):
+                _force_flat_all()
+                db.log(ev, "info", {"msg": "partita finita (mercato Betfair CLOSED): "
+                                           "fine sessione"})
+                if not _all_flat(timeout_s=30.0):
+                    db.log(ev, "error",
+                           {"msg": "fine sessione: posizione NON flat dopo 30s"})
+                    non_flat_30s = dichiarazione_stop_non_flat(framework)
+                clean_break = True
+                break
             if ko_ts is not None and time.time() > ko_ts + _life_s:
                 # fix 10/07: anche il fine-vita passa dal force-flat (in
                 # ht_mode un ciclo intervallo ancora aperto restava vivo

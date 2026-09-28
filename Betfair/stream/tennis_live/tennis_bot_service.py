@@ -169,11 +169,20 @@ def ensure_follows_for_bots() -> List[str]:
     if not controls:
         return []
     followed = _followed_event_ids()
+    # 28/09 (cantiere A): una partita FINITA (tennis_live_now CLOSED) non si
+    # riapre per una riga armata rimasta indietro (la ferma il ponte). Non
+    # letto = come prima.
+    senza = sorted({str(c.get("event_id")) for c in controls
+                    if c.get("event_id") and c.get("event_id") not in followed})
+    stato = _stato_now(tennis_db, set(senza)) if senza else {}
+    finite = {ev for ev, st in (stato or {}).items() if str(st).upper() == "CLOSED"}
     sb = tennis_db.get_tennis_client()
     created: List[str] = []
     for c in controls:
         event_id = c.get("event_id")
         if not event_id or event_id in followed:
+            continue
+        if str(event_id) in finite:
             continue
         mrow = _market_row_for(sb, event_id)
         if not mrow or not mrow.get("market_id"):
@@ -473,10 +482,27 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     nel_feed = set(candidate)
     per_evento = {p["event_id"]: p for p in feed["partite"]}
     origine_ok = not _origine_assente_ora(ora)
+    # 28/09 (cantiere A, ordine dell'utente: "le partite TERMINATE sia calcio
+    # che tennis non devono piu' essere seguite"): le partite FINITE, cioe'
+    # ``tennis_live_now.status='CLOSED'`` scritto dal runner quando Betfair
+    # chiude il MATCH_ODDS (segnale CERTO, dallo stream), a mano O dal feed,
+    # a scanner vivo O fermo. Nessun bot vi si arma, le armate vanno in
+    # chiusura, il follow si chiude quando nessuna riga lo occupa. UNA lettura
+    # per giro (anche per le righe armate su partite senza follow attivo).
+    # None = non letto: non si chiude niente.
+    try:
+        _ev_righe_attive = {str(r.get("event_id")) for r in (db.list_tennis_bot_controls(
+            statuses=list(_ACTIVE_STATUSES)) or []) if r.get("event_id")}
+    except Exception as e:  # noqa: BLE001 - una select KO non ferma il giro
+        logger.warning("[tennis-bot-svc] righe attive KO: %s", str(e)[:160])
+        _ev_righe_attive = set()
+    stato_now = _stato_now(db, seguite_a_mano | auto_seguite | _ev_righe_attive)
+    finite = ({ev for ev, st in stato_now.items() if str(st or "").upper() == "CLOSED"}
+              if stato_now is not None else set())
     # le righe che OCCUPANO una partita (attive o in chiusura): servono a non
     # riarmare dentro la finestra di disarm e a non chiudere un follow vivo
     occupate: Optional[List[Dict[str, Any]]] = None
-    if auto_seguite or feed["vivo"]:
+    if auto_seguite or feed["vivo"] or finite:
         try:
             occupate = [r for r in (db.list_tennis_bot_controls(
                 statuses=_STATI_OCCUPATI) or [])
@@ -487,7 +513,7 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     in_chiusura = {(str(r.get("event_id")), str(r.get("bot_key")))
                    for r in (occupate or []) if r.get("status") == "stopping"}
     bersagli: set = set()
-    stato_mercato: Dict[str, Any] = {}
+    seguite = seguite_a_mano | auto_seguite
 
     # 26/09 (R-FA-1): da quando ogni partita automatica e' fuori dal feed
     # (memoria del ponte, solo a feed VIVO: a scanner fermo l'assenza non
@@ -503,11 +529,8 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
         mercato NON ``OPEN`` (SUSPENDED, riga assente): prima solo CLOSED, che
         il runner non scriveva mai, e 7 partite finite restavano armate per
         ore. Un mercato OPEN non si chiude mai da qui."""
-        if "letto" not in stato_mercato:
-            fuori = sorted(ev2 for ev2 in auto_seguite if ev2 not in nel_feed)
-            fn = getattr(db, "list_tennis_now_status", None)
-            stato_mercato["letto"] = fn(fuori) if callable(fn) else None
-        m = stato_mercato["letto"]
+        # 28/09: la lettura e' quella UNICA del giro (``stato_now``)
+        m = stato_now
         if m is None:
             return False        # non letto: non si chiude niente
         st = str(m.get(ev) or "").upper()
@@ -528,10 +551,28 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
         tetto = _AM.tetto_partite(d["params"])
         params_bot = _AM.params_per_strategia(d["params"])
         nuove_armate: List[str] = []
+        # 28/09 (cantiere A): le righe attive su una partita FINITA vanno in
+        # chiusura (bot acceso o spento, a mano o dal feed). Con il follow ancora
+        # attivo il runner la ospita: 'stopping' (la porta a 'stopped' a flat
+        # verificato; a mercato chiuso il flat e' immediato). Senza follow attivo
+        # nessun runner la ospita e 'stopping' resterebbe per sempre: 'stopped'.
+        for ev in list(attive):
+            ev_s = str(ev)
+            if ev_s not in finite:
+                continue
+            if ev_s in seguite:
+                db.set_tennis_bot_status(ev_s, bot, "stopping")
+            else:
+                db.set_tennis_bot_status(ev_s, bot, "stopped", stopped=True,
+                                         error=MOTIVO_PARTITA_FINITA)
+            attive.pop(ev, None)
+            fermati += 1
         if d["acceso"] and not bloccato:
             for ev in eventi:
                 if ev in attive:
                     continue
+                if ev in finite:
+                    continue        # 28/09: partita finita, niente da armare
                 chiusi_utente = _chiusi_su(ev)
                 if chiusi_utente is None:
                     # non letto: questa partita non si arma in questo giro (ma
@@ -560,6 +601,8 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
                 def _escludi(ev: str, _bot: str = bot) -> bool:
                     if ev in seguite_a_mano or (ev, _bot) in in_chiusura:
                         return True     # a mano: l'ha gia' vista il giro sopra
+                    if ev in finite:
+                        return True     # 28/09: partita finita (CLOSED)
                     righe = _fermi_su(ev)
                     if righe is None:
                         return True     # non lette: fail-closed, niente armamento
@@ -629,7 +672,11 @@ def riconcilia_interruttori(db: Any = tennis_db) -> Dict[str, Any]:
     chiusi_follow = 0
     if occupate is not None:
         occupati = {str(r.get("event_id")) for r in occupate}
-        for ev in sorted(auto_seguite - bersagli - occupati - seguite_a_mano):
+        # 28/09 (cantiere A): anche le partite FINITE (a mano comprese) si
+        # chiudono, appena nessuna riga le occupa piu'
+        da_chiudere = ((auto_seguite - bersagli - occupati - seguite_a_mano)
+                       | ((finite & seguite) - occupati))
+        for ev in sorted(da_chiudere):
             try:
                 db.set_tennis_follow_status(ev, "CLOSED")
                 chiusi_follow += 1
@@ -663,6 +710,30 @@ _ORIGINE_ASSENTE: Dict[str, Optional[float]] = {"dal": None}
 _FINE_FUORI_FEED_DEFAULT_S = 600.0
 #: event_id -> epoch da cui e' fuori dal feed (solo partite automatiche)
 _FUORI_FEED_DAL: Dict[str, float] = {}
+
+
+#: 28/09 (cantiere A) - il motivo scritto sulla riga di un bot fermato perche'
+#: la sua partita e' FINITA (``tennis_live_now.status='CLOSED'``)
+MOTIVO_PARTITA_FINITA = ("partita finita (mercato Betfair CLOSED): bot fermato, "
+                         "la partita non si segue piu'")
+
+
+def _stato_now(db: Any, eventi: set) -> Optional[Dict[str, str]]:
+    """``{event_id: status}`` di ``tennis_live_now`` per queste partite (UNA
+    lettura). ``None`` = non letto (db senza la funzione, o KO). Nessuna
+    partita = ``{}`` senza leggere."""
+    ids = sorted(str(e) for e in eventi if e)
+    if not ids:
+        return {}
+    fn = getattr(db, "list_tennis_now_status", None)
+    if not callable(fn):
+        return None
+    try:
+        out = fn(ids)
+    except Exception as e:  # noqa: BLE001 - non letto: non si chiude niente
+        logger.warning("[tennis-bot-svc] stato delle partite KO: %s", str(e)[:160])
+        return None
+    return None if out is None else {str(k): str(v or "") for k, v in out.items()}
 
 
 def _fine_fuori_feed_s() -> float:

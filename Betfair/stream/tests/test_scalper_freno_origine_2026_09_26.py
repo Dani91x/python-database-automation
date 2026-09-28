@@ -235,7 +235,9 @@ def test_la_sessione_scrive_error_e_stats_nella_riga_finale() -> None:
     che la scrittura finale la porti in ``error`` e ``stats`` (il replay del
     banco, ``certifica scalper``, esercita il ciclo vero)."""
     src = inspect.getsource(SS.run_session)
-    assert src.count("non_flat_30s = dichiarazione_stop_non_flat(framework)") == 2
+    # 28/09 (cantiere A): TRE rami ora - stop, fine partita (mercato CLOSED),
+    # fine vita - e tutti e tre dichiarano il NON flat
+    assert src.count("non_flat_30s = dichiarazione_stop_non_flat(framework)") == 3
     fin = src[src.index("_final_stats = dichiara_stato_finale("):]
     assert "[non_flat_30s] if non_flat_30s else []" in fin
     assert 'error=("; ".join(_errori) or None)' in fin

@@ -98,6 +98,7 @@ from .live_order_worker import live_order_worker
 from . import live_order_worker as _LOW
 from . import motore_ordini as _MOT  # 24/09: _MO e' modo_ordini (master)
 from . import auto_follow as _AF  # 25/09: i bot seguono da soli le partite
+from . import arresto_ordinato as _AO  # 28/09: spegnimento ordinato dell'app
 from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
@@ -350,8 +351,11 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
         state = session.build_live_state(event_id)
         # un solo snapshot della cache (evita N acquisizioni di lock per evento)
         latest = session.recorder.latest_books() if session.recorder else {}
+        # 28/09 (cantiere A): un mercato CHIUSO non e' in gioco (l'ultimo book
+        # porta ancora inplay=true: la riga direbbe "in gioco" fino al finalize)
         inplay = any(
             (latest.get(m["market_id"], {}) or {}).get("inplay")
+            and str((latest.get(m["market_id"], {}) or {}).get("status") or "") != "CLOSED"
             for m in session.markets_by_event.get(event_id, [])
         )
         # cattura cronologia eventi Betfair (gol/cartellini/kickoff col minuto)
@@ -359,6 +363,10 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
         # arricchisci live_now con statistiche live (corner/cartellini) + eventi recenti
         state["stats"] = snap.stats if snap is not None else {}
         state["events"] = session._recent_events.get(event_id, [])
+        if event_id in session.finished_events:
+            # 28/09 (cantiere A): finalizzata mentre questo giro leggeva il
+            # punteggio: non si riscrive "in gioco" sopra la riga CLOSED
+            continue
 
         if snap is not None:
             try:
@@ -754,6 +762,10 @@ def finalize_worker(context: dict, flumine: Flumine, session: LiveSession) -> No
             continue
         _finalize_event(event_id, session)
         time.sleep(FINALIZE_SPACING_SEC)  # distanzia gli upload (anti-stress DB)
+    # 28/09 (cantiere A): un mercato di una partita gia' finita che chiude DOPO
+    # (es. "To Qualify" ai supplementari) esce dal tetto al giro dopo
+    if session.finished_events:
+        _rilascia_mercati_finiti(session)
     # auto-exit (modalità --event): a partita finita ferma il framework → il
     # processo esce e notifica. In multi-match il supervisore continua a girare.
     if finished and getattr(session, "only_event", None):
@@ -772,6 +784,12 @@ def _finalize_event(event_id: str, session: LiveSession) -> None:
     # primo-aggancio — il set non cresce senza bound per tutta la vita.
     getattr(session, "attach_attempted", set()).discard(event_id)
     _safe_set_status(event_id, "CLOSED")
+    # 28/09 (cantiere A, fine evento): anche la riga live_now smette di dire
+    # "in gioco" (il 26/09: 48 righe inplay=true mai ripulite dal 26/06) e i
+    # mercati CHIUSI della partita escono dal tetto dell'auto-follow (e dalla
+    # sottoscrizione, alla prossima risottoscrizione a caldo).
+    _chiudi_live_now_sicuro(event_id)
+    _rilascia_mercati_finiti(session)
     # REGISTRAZIONE OPT-IN (17/07): l'upload nel Replay avviene SOLO se la
     # partita era in registrazione ("Segui live", live_follow.record=true).
     # La verita' si legge dal DB al momento del finalize (mai da set in memoria:
@@ -803,6 +821,126 @@ def _finalize_event(event_id: str, session: LiveSession) -> None:
             fh.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _chiudi_live_now_sicuro(event_id: str) -> None:
+    """``live_now`` della partita finita a CLOSED (best-effort: mai fermare il
+    finalize per la riga di vetrina)."""
+    try:
+        db.chiudi_live_now(event_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[finalize] live_now CLOSED di %s KO: %s", event_id, str(e)[:160])
+
+
+def mercati_manuali_vivi(session: Any) -> Dict[str, set]:
+    """28/09 (cantiere A): i mercati delle partite seguite A MANO che il runner
+    deve ancora tenere nella sottoscrizione (e nel tetto dell'auto-follow).
+
+    * partita non finita: tutti i suoi mercati (come prima);
+    * partita FINITA (``finished_events``: MATCH_ODDS chiuso o tutti i mercati
+      chiusi, oppure follow ritirato): solo i mercati NON ancora chiusi
+      secondo il recorder (es. un "To Qualify" che continua ai supplementari).
+      Quelli chiusi escono: Betfair li ha regolati, non c'e' piu' niente da
+      vedere ne' da tradare, e occupavano il tetto dei 180 fino alla
+      ricostruzione successiva (che puo' non arrivare mai)."""
+    finite = set(getattr(session, "finished_events", None) or ())
+    rec = getattr(session, "recorder", None)
+    out: Dict[str, set] = {}
+    for ev, ms in list((getattr(session, "event_markets", None) or {}).items()):
+        tenuti = {str(m) for m in (ms or ())}
+        if ev in finite:
+            chiusi: set = set()
+            if rec is not None and hasattr(rec, "mercati_chiusi"):
+                try:
+                    chiusi = {str(m) for m in rec.mercati_chiusi(ev)}
+                except Exception:  # noqa: BLE001 - illeggibile: si tiene tutto
+                    chiusi = set()
+            tenuti -= chiusi
+        if tenuti:
+            out[str(ev)] = tenuti
+    return out
+
+
+def mercati_manuali_da_sottoscrivere(session: Any) -> List[str]:
+    """28/09 (cantiere A): i mercati dei follow MANUALI da mettere nella
+    sottoscrizione a ogni ricostruzione: quelli delle partite NON finite.
+    Prima ``session.all_market_ids()`` (tutti, finite comprese): i mercati di
+    una partita finita restavano sottoscritti per tutta la vita del processo."""
+    finite = set(getattr(session, "finished_events", None) or ())
+    return sorted(str(mid) for mid, ev in list(session.market_to_event.items())
+                  if ev not in finite)
+
+
+def _chiudi_live_now_orfani_all_avvio() -> int:
+    """All'avvio: ``db.chiudi_live_now_orfani`` best-effort (mai bloccare il
+    runner per la vetrina). Ritorna le righe chiuse (0 su errore)."""
+    try:
+        n = db.chiudi_live_now_orfani()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[runner] pulizia live_now orfane KO (ignorata): %s", str(e)[:160])
+        return 0
+    if n:
+        logger.info("[runner] %d righe live_now di partite non piu' seguite portate a "
+                    "CLOSED.", n)
+    return n
+
+
+def _rilascia_mercati_finiti(session: Any) -> None:
+    """Il piano dell'auto-follow riceve i mercati manuali ancora vivi: i
+    mercati chiusi delle partite finite escono dal tetto e, al giro dopo del
+    thread dell'auto-follow, dalla sottoscrizione (risottoscrizione A CALDO
+    sulla stessa connessione, blotter intatto). Senza auto-follow: niente (la
+    ricostruzione successiva li esclude comunque, vedi ``setup_and_run``)."""
+    auto = _auto_attivo()
+    if auto is None:
+        return
+    try:
+        auto.imposta_manuali(mercati_manuali_vivi(session))
+    except Exception as e:  # noqa: BLE001 - mai fermare il finalize
+        logger.warning("[finalize] rilascio mercati finiti KO: %s", str(e)[:160])
+
+
+def chiudi_alla_uscita(session: Any) -> Dict[str, List[str]]:
+    """28/09 (cantiere A, R-28-3 + "il finally del riavvio ordinato chiude i
+    follow manuali"): cosa succede ai follow quando il processo del runner
+    esce in modo ordinato (vita massima, riavvio per stallo, Ctrl+C, idle).
+
+    * partite FINITE (il recorder ha visto la chiusura, anche se il
+      finalize_worker non l'ha ancora drenata): finalizzate come sempre
+      (CLOSED, live_now CLOSED, Replay se in registrazione);
+    * partite NON finite (in corso o future): tornano ``PENDING``. Nessun
+      processo le segue piu' (mai una riga STREAMING senza chi la segue) e il
+      prossimo runner le riaggancia da solo (``list_pending_follows`` legge
+      PENDING e STREAMING). PRIMA si finalizzavano tutte: CLOSED = partita
+      dell'utente persa a ogni ricambio del processo, Replay caricato a meta'.
+
+    Ritorna ``{"finalizzati": [...], "in_attesa": [...]}``."""
+    finiti: List[str] = []
+    rec = getattr(session, "recorder", None)
+    if rec is not None:
+        try:
+            finiti = [str(e) for e in rec.drain_finished()]
+        except Exception:  # noqa: BLE001
+            finiti = []
+    out: Dict[str, List[str]] = {"finalizzati": [], "in_attesa": []}
+    for event_id in finiti:
+        if event_id not in session.finished_events:
+            _finalize_event(event_id, session)
+            out["finalizzati"].append(event_id)
+    fine = getattr(session, "fine_evento", None) or {}
+    # anche le partite col catalogo vuoto in conferma o trattenute per soldi:
+    # nessuno le streamma, la riga non puo' restare STREAMING
+    in_fine = set(fine.get("vuoto_dal") or ()) | set(fine.get("trattenute") or ())
+    for event_id in sorted(set(getattr(session, "cataloged_events", None) or ()) | in_fine):
+        if event_id in session.finished_events:
+            continue
+        _safe_set_status(event_id, "PENDING")
+        out["in_attesa"].append(event_id)
+    if out["finalizzati"] or out["in_attesa"]:
+        logger.info("[runner] uscita ordinata: %d partite finite chiuse, %d partite "
+                    "ancora vive rimesse in attesa (il prossimo runner le riaggancia).",
+                    len(out["finalizzati"]), len(out["in_attesa"]))
+    return out
 
 
 def _sync_record_events(session: Any, follows: List[Dict[str, Any]]) -> None:
@@ -868,6 +1006,11 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         _sync_record_events(session, follows)
     except Exception as e:  # noqa: BLE001 - il gating non deve rompere il worker
         logger.warning("[sub-worker] sync record opt-in KO (ignorato): %s", e)
+    # 28/09 (cantiere A): catalogo vuoto in conferma / trattenute per soldi
+    try:
+        _ricontrolla_fine(rest, session, follows)
+    except Exception as e:  # noqa: BLE001 - mai fermare il worker
+        logger.warning("[sub-worker] ricontrollo fine partita KO: %s", str(e)[:160])
     new_events = _nuovi_follow_manuali(follows, session, _auto_attivo())
     if not new_events:
         session.sub_restart_deferred_since = None
@@ -972,9 +1115,15 @@ def _nuovi_follow_manuali(follows: List[Dict[str, Any]], session: Any,
     col blotter vuoto azzererebbe le posizioni. Un clic dell'utente la porta a
     PENDING e torna un follow manuale come sempre."""
     out = []
+    fine = getattr(session, "fine_evento", None) or {}
+    in_fine = set(fine.get("vuoto_dal") or ()) | set(fine.get("trattenute") or ())
     for f in follows:
         ev = f["event_id"]
         if ev in session.cataloged_events or ev in session.finished_events:
+            continue
+        if ev in in_fine:
+            # 28/09 (cantiere A): catalogo vuoto in conferma o trattenuta per
+            # soldi: la rilegge ``_ricontrolla_fine`` senza ricostruire lo stream
             continue
         if (auto is not None and str(f.get("status") or "") == "STREAMING"
                 and auto.segue_auto(ev)):
@@ -1489,6 +1638,21 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         pass
 
 
+def arresto_worker(context: dict, flumine: Any, session: Any) -> None:  # noqa: ARG001
+    """28/09 (cantiere A): l'app chiede lo spegnimento ORDINATO (file di
+    ``arresto_ordinato``) -> il framework si ferma, ``setup_and_run`` esce dal
+    ciclo col ``finally`` (follow: finite CLOSED, vive PENDING, righe
+    automatiche CLOSED) ed exit 0 (il watchdog non rilancia). Nessuna guardia
+    sugli ordini: l'app sta chiudendo comunque, e un'uscita ordinata e' meglio
+    del taskkill che arriva dopo."""
+    if session.shutdown_requested.is_set() or not _AO.richiesto():
+        return
+    logger.warning("[runner] ARRESTO ORDINATO richiesto dall'app: fermo lo stream.")
+    session.planned_restart = False
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+
+
 def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
     """Spegne il runner quando non serve più (mai più 'martellare Betfair' per giorni).
 
@@ -1589,24 +1753,194 @@ def _is_finished_stale(follow: Dict[str, Any]) -> bool:
     return datetime.now(timezone.utc) - dt > _FOLLOW_STALE_AFTER
 
 
+def _finito_senza_mercati(follow: Dict[str, Any]) -> bool:
+    """28/09 (cantiere A): catalogo REST VUOTO + partita gia' iniziata =
+    partita FINITA.
+
+    Documentazione Betfair (listMarketCatalogue): "Returns a list of
+    information about published (ACTIVE/SUSPENDED) markets [...]
+    listMarketCatalogue does not return markets that are CLOSED". Un evento
+    iniziato i cui mercati non sono piu' in catalogo ha quindi tutti i mercati
+    CLOSED (regolati o annullati): e' la regola dell'utente, "quando i mercati
+    per quella partita sono tutti chiusi l'evento e' terminato". Un errore di
+    rete NON arriva qui (``betting_rpc`` solleva, mai una lista vuota).
+    Prima si aspettavano 3 ore dal calcio d'inizio: la partita finita restava
+    PENDING/STREAMING e ogni giro del sub-worker la ricontava come nuova
+    (ricostruzione dello stream a ogni intervallo) fino alla soglia.
+
+    Evento futuro (open_date nel futuro) o open_date illeggibile/assente: NON
+    finito (i mercati possono non essere ancora pubblicati)."""
+    open_date = follow.get("open_date")
+    if not open_date:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(open_date).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= dt
+
+
+#: 28/09 (cantiere A, guardia di CONFERMA richiesta dal coordinatore): una
+#: partita si ritira per catalogo vuoto solo alla SECONDA lettura vuota fatta
+#: almeno tanti secondi dopo la prima. 120 s: (1) Betfair regola il MATCH_ODDS
+#: ~5 minuti dopo la fine, quindi una fine vera resta vuota per sempre e 2
+#: minuti in piu' non costano niente (lo stream, se il mercato e' sottoscritto,
+#: chiude comunque da solo col CLOSED); (2) una risposta vuota anomala e
+#: isolata (ripubblicazione del catalogo, nodo REST in ritardo) non si ripete
+#: due volte a 2 minuti; (3) e' il tempo che il sub-worker impiega comunque a
+#: ripassare (2 s) senza riaprire ricostruzioni: la rilettura e' mirata.
+FINE_CONFERMA_S = float(os.getenv("LIVE_FINE_CONFERMA_S", "120") or 120.0) or 120.0
+#: partita col catalogo vuoto ma con SOLDI dentro: si ricontrolla ogni tanto
+#: (catalogo + soldi), mai a ogni giro (una lettura REST e 3 SELECT).
+FINE_RIVERIFICA_SOLDI_S = float(os.getenv("LIVE_FINE_RIVERIFICA_SOLDI_S", "300") or 300.0) or 300.0
+
+
+def _stato_fine(session: Any) -> Dict[str, Dict[str, float]]:
+    """``{"vuoto_dal": {ev: mono}, "trattenute": {ev: mono ultimo controllo}}``
+    (memoria di processo; una sessione finta senza attributi la riceve qui)."""
+    st = getattr(session, "fine_evento", None)
+    if st is None:
+        st = {"vuoto_dal": {}, "trattenute": {}}
+        try:
+            session.fine_evento = st
+        except Exception:  # noqa: BLE001
+            pass
+    return st
+
+
+def _fine_dimentica(session: Any, event_id: str) -> None:
+    st = _stato_fine(session)
+    st["vuoto_dal"].pop(str(event_id), None)
+    st["trattenute"].pop(str(event_id), None)
+
+
+def _fine_da_rileggere(session: Any, event_id: str, ora: float) -> bool:
+    """Il catalogo dell'evento va riletto adesso? Mai visto vuoto: si'. In
+    conferma: solo dopo FINE_CONFERMA_S dalla prima lettura vuota. Trattenuto
+    per soldi: ogni FINE_RIVERIFICA_SOLDI_S."""
+    st = _stato_fine(session)
+    ev = str(event_id)
+    if ev in st["trattenute"]:
+        return ora - st["trattenute"][ev] >= FINE_RIVERIFICA_SOLDI_S
+    if ev in st["vuoto_dal"]:
+        return ora - st["vuoto_dal"][ev] >= FINE_CONFERMA_S
+    return True
+
+
+def _soldi_sull_evento(session: Any, event_id: str) -> Optional[str]:
+    """Denaro in gioco sull'evento (paper o live): specchio e coda dal DB
+    (``db.soldi_sull_evento``) e comandi PARCHEGGIATI nel motore ordini (RAM)
+    su un suo mercato. Illeggibile = soldi presunti (mai al buio)."""
+    try:
+        mercati = db.mercati_evento(event_id)
+        motivo = db.soldi_sull_evento(event_id, mercati)
+    except Exception as e:  # noqa: BLE001
+        return "denaro non verificabile (%s)" % str(e)[:120]
+    if motivo:
+        return motivo
+    mot = _motore_attivo()
+    parcheggiati = getattr(mot, "_in_aggancio", None) if mot is not None else None
+    if isinstance(parcheggiati, dict) and mercati:
+        sul_evento = [r for r in list(parcheggiati.values())
+                      if str((r or {}).get("market_id")) in set(mercati)]
+        if sul_evento:
+            return "%d comandi in volo nel motore sull'evento" % len(sul_evento)
+    return None
+
+
+def _valuta_catalogo_vuoto(session: Any, event_id: str, ora: float) -> str:
+    """Partita INIZIATA col catalogo vuoto: ``in_conferma`` | ``trattenuta`` |
+    ``finita``. Solo ``finita`` ritira la partita (``_finalize_event``).
+
+    * prima lettura vuota: si annota l'orario, niente altro (guardia CONFERMA);
+    * lettura vuota dopo FINE_CONFERMA_S: se c'e' denaro sull'evento la partita
+      NON si ritira (guardia SOLDI DENTRO): resta seguita com'e', alert
+      CRITICAL una volta, ricontrollo ogni FINE_RIVERIFICA_SOLDI_S finche' la
+      posizione non e' regolata o chiusa;
+    * senza denaro: finita."""
+    st = _stato_fine(session)
+    ev = str(event_id)
+    dal = st["vuoto_dal"].setdefault(ev, ora)
+    if ora - dal < FINE_CONFERMA_S:
+        logger.info("[runner] %s: partita iniziata e catalogo vuoto (prima lettura): "
+                    "riletto fra %.0fs prima di ritirarla.", ev, FINE_CONFERMA_S)
+        return "in_conferma"
+    motivo = _soldi_sull_evento(session, ev)
+    if motivo:
+        prima_volta = ev not in st["trattenute"]
+        st["trattenute"][ev] = ora
+        if prima_volta:
+            logger.critical("[runner] %s: catalogo vuoto (partita finita?) ma %s: NON "
+                            "ritirata, resta seguita.", ev, motivo)
+            try:
+                db.insert_alert(
+                    "CRITICAL", "FINE_PARTITA_CON_SOLDI",
+                    f"partita {ev}: nessun mercato piu' in catalogo (finita?) ma {motivo}. "
+                    "Non la ritiro: resta seguita finche' la posizione non e' regolata "
+                    "o chiusa. Verifica a mano.", ev)
+            except Exception:  # noqa: BLE001 - l'alert non decide niente
+                pass
+        return "trattenuta"
+    logger.info("[runner] follow %s: partita iniziata e nessun mercato in catalogo "
+                "(tutti CLOSED, confermato dopo %.0fs, nessun denaro) -> finita, "
+                "ritiro e carico nel Replay.", ev, ora - dal)
+    _fine_dimentica(session, ev)
+    _finalize_event(ev, session)
+    return "finita"
+
+
+def _ricontrolla_fine(rest: Any, session: Any, follows: List[Dict[str, Any]]) -> None:
+    """Dal sub-worker (2 s): rilegge il catalogo SOLO degli eventi in conferma o
+    trattenuti per soldi arrivati al loro momento. Nessuna ricostruzione dello
+    stream: mercati tornati -> l'evento esce dalla memoria e il giro normale lo
+    aggancia; ancora vuoto -> ``_valuta_catalogo_vuoto``."""
+    st = _stato_fine(session)
+    if not st["vuoto_dal"] and not st["trattenute"]:
+        return
+    ora = time.monotonic()
+    for f in follows:
+        ev = str(f.get("event_id"))
+        if ev not in st["vuoto_dal"] and ev not in st["trattenute"]:
+            continue
+        if ev in session.finished_events or not _fine_da_rileggere(session, ev, ora):
+            continue
+        try:
+            markets = fetch_event_markets(rest, ev)
+        except Exception as e:  # noqa: BLE001 - si riprova al momento dopo
+            logger.warning("[sub-worker] catalogo di %s KO: %s", ev, str(e)[:120])
+            continue
+        if markets:
+            _fine_dimentica(session, ev)
+        elif _finito_senza_mercati(f):
+            _valuta_catalogo_vuoto(session, ev, ora)
+
+
 def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dict[str, Any]]) -> None:
     """Scarica il catalogo dei nuovi eventi, applica il budget mercati (F5)."""
     for f in follows:
         event_id = f["event_id"]
         if event_id in session.cataloged_events or event_id in session.finished_events:
             continue
+        if not _fine_da_rileggere(session, event_id, time.monotonic()):
+            continue        # 28/09: in conferma o trattenuta, non ancora il momento
         markets = fetch_event_markets(rest, event_id)
+        if markets:
+            _fine_dimentica(session, event_id)   # mercati di nuovo in catalogo
         if not markets:
-            if _is_finished_stale(f):
+            if _finito_senza_mercati(f):
                 # Partita finita/rimossa dal catalogo. NON lasciarla PENDING:
                 # altrimenti subscription_worker la riconta come "nuova" ad ogni
                 # poll e riavvia lo stream all'infinito (loop F3, bug 07/07).
                 # _finalize_event la CARICA nel Replay (se ci sono dati grezzi),
                 # porta lo status a terminale e la mette in finished_events così
                 # non viene più ritentata. → "le vecchie caricate, le nuove seguite".
-                logger.info("[runner] follow stantio %s: nessun mercato + iniziato da "
-                            ">%s → ritiro e carico nel Replay.", event_id, _FOLLOW_STALE_AFTER)
-                _finalize_event(event_id, session)
+                # 28/09: iniziata + catalogo vuoto (mercati CLOSED, vedi
+                # _finito_senza_mercati), con le due guardie di
+                # _valuta_catalogo_vuoto: CONFERMA (seconda lettura vuota dopo
+                # FINE_CONFERMA_S) e SOLDI DENTRO (mai ritirata con denaro in gioco).
+                _valuta_catalogo_vuoto(session, event_id, time.monotonic())
             else:
                 # Evento futuro: mercati non ancora pubblicati. Lascia PENDING,
                 # verrà catalogato al prossimo giro quando i mercati escono.
@@ -2072,6 +2406,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     session = LiveSession()
     session.context_api_client = api_client  # type: ignore[attr-defined]
     session.only_event = only_event  # type: ignore[attr-defined]
+    # 28/09 (cantiere A): righe live_now "in gioco" di partite non piu' seguite
+    # (follow CLOSED/UPLOADED/ERROR) -> CLOSED, una volta per processo
+    _chiudi_live_now_orfani_all_avvio()
     # A7 — canale LOCALE per l'app desktop (bind SOLO 127.0.0.1). Best-effort:
     # se la porta è occupata il runner vive comunque (path DB invariato).
     # 23/09 - modalita' ordini letta ADESSO (live_order_mode, come il worker), non
@@ -2144,6 +2481,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     try:
         while not interrupted:
             session.restart_requested.clear()
+            # 28/09 (cantiere A): arresto ORDINATO chiesto dall'app (file
+            # ``arresto_ordinato``): anche parcheggiati in attesa si esce dal
+            # ciclo e il ``finally`` chiude i follow come da specifica
+            if _AO.richiesto():
+                logger.warning("[runner] ARRESTO ORDINATO richiesto dall'app: esco.")
+                session.planned_restart = False
+                break
 
             if not only_event:
                 # throttle ~15s (fix 17/07): il loop idle ora gira ogni
@@ -2247,7 +2591,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             except Exception as e:  # noqa: BLE001 - solo la rete: il resto si rilancia
                 _attendi_se_rete("catalogo mercati (REST)", e)  # 26/09 crash exit 1
                 continue
-            market_ids = session.all_market_ids()
+            # 28/09 (cantiere A): i mercati delle partite FINITE non si
+            # risottoscrivono alla ricostruzione (prima restavano nella
+            # sottoscrizione per tutta la vita del processo)
+            market_ids = mercati_manuali_da_sottoscrivere(session)
             if auto is not None:
                 # 25/09: sottoscrizione = manuali + automatici, dentro il tetto
                 # della connessione (le automatiche meno prioritarie escono se i
@@ -2449,6 +2796,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=lifecycle_worker, interval=60.0,
                 func_kwargs={"session": session}, name="lifecycle_worker"))
+            # 28/09 (cantiere A): arresto ordinato dall'app (una stat al secondo)
+            framework.add_worker(BackgroundWorker(
+                framework, function=arresto_worker, interval=1.0,
+                func_kwargs={"session": session}, name="arresto_worker"))
             if auto_subscribe and not only_event:
                 # interval BASSO (fix 17/07): il giro del worker è una SELECT
                 # leggera su live_follow — la parte REST (resolve watchlist) è
@@ -2500,15 +2851,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 continue
             break
     finally:
-        # finalize di sicurezza: ogni evento ancora attivo non finalizzato.
-        # R-STREAM-1 (26/09): NON all'uscita per stream muto -- e' un ricambio
-        # del processo, le partite seguite restano PENDING/STREAMING e il
-        # processo nuovo le riaggancia (chiuderle = perdere i follow scelti).
-        _eventi_da_chiudere = ([] if getattr(session, "riavvio_per_stallo", False)
-                               else list(session.cataloged_events))
-        for event_id in _eventi_da_chiudere:
-            if event_id not in session.finished_events:
-                _finalize_event(event_id, session)
+        # 28/09 (cantiere A): all'uscita ordinata si chiudono SOLO le partite
+        # FINITE; quelle ancora vive tornano PENDING e il prossimo runner le
+        # riaggancia da solo. Prima si finalizzavano TUTTE (CLOSED): ogni
+        # ricambio del processo (vita massima) perdeva i follow dell'utente.
+        # R-STREAM-1 (26/09, uscita per stallo) e' ora lo stesso caso generale.
+        try:
+            chiudi_alla_uscita(session)
+        except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
+            logger.exception("[runner] chiusura dei follow all'uscita KO")
         session.close_score_files()
         close_raw()
         auto = _auto_attivo()
@@ -2517,6 +2868,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 auto.ferma()
             except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
                 logger.exception("[runner] arresto dell'auto-follow KO")
+            # R-28-3 (28/09): nessuna riga automatica resta STREAMING senza un
+            # processo che la segue (il prossimo runner le riapre dal feed)
+            try:
+                auto.chiudi_righe()
+            except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
+                logger.exception("[runner] chiusura delle righe auto-follow KO")
             _MOTORE["auto"] = None
         motore = _motore_attivo()
         if motore is not None:

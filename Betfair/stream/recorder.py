@@ -150,6 +150,13 @@ class MarketRecorderStrategy(BaseStrategy):
             self._finished_queue.clear()
             return out
 
+    def mercati_chiusi(self, event_id: str) -> set:
+        """28/09 (cantiere A, fine evento): i mercati dell'evento gia' CHIUSI
+        (visti in ``process_closed_market``). Copia: il chiamante non tocca lo
+        stato interno."""
+        with self._lock:
+            return set(self._closed_markets.get(str(event_id), set()))
+
     def _file_for(self, event_id: str) -> Any:
         fh = self._files.get(event_id)
         if fh is None:

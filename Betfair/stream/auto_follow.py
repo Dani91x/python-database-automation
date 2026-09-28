@@ -581,11 +581,24 @@ class AutoFollow:
 
     # ------------------------------------------------------------ runner
     def aggancia(self, framework: Any, mercati_iniziali: Iterable[str]) -> None:
-        """Il framework corrente e la sottoscrizione con cui e' NATO."""
+        """Il framework corrente e la sottoscrizione con cui e' NATO.
+
+        28/09 (cantiere A): l'orario d'invio dei mercati iniziali riparte da
+        ADESSO. Prima restava quello della sottoscrizione a caldo di un
+        framework precedente (o mancava per i mercati nati con la build):
+        subito dopo una ricostruzione, con flumine che non ha ancora ricevuto
+        l'immagine, ``_pulisci`` dichiarava "mai arrivato" ogni mercato
+        automatico sottoscritto da oltre ``MAI_ARRIVATO_S`` e buttava fuori
+        partite vive (follow CLOSED e riaperto al giro del feed); e un mercato
+        della build che non arriva mai (chiuso da ore: Betfair non lo manda
+        piu') restava nel tetto per sempre."""
+        ora = self._ora()
         with self._lock:
             self._framework = framework
             self._applicati = {str(m) for m in mercati_iniziali}
             self._attesa_libro = {}
+            for mid in self._applicati:
+                self._inviato_ts[mid] = ora
         self._sveglia.set()
 
     def sgancia(self) -> None:
@@ -627,6 +640,21 @@ class AutoFollow:
         self._sveglia.set()
         if self._thread is not None:
             self._thread.join(timeout)
+
+    def chiudi_righe(self) -> int:
+        """R-28-3 (28/09): all'uscita ORDINATA del runner le righe
+        ``live_follow`` scritte da QUESTO auto-follow passano a CLOSED: nessun
+        processo le segue piu'. Solo le sue (``_scritti``): le righe
+        automatiche di altri (lo scalper) non si toccano da qui. Il prossimo
+        runner le riapre dal feed o dal comando di un bot. Ritorna quante."""
+        if self.follow_db is None:
+            return 0
+        n = 0
+        for ev in sorted(self._scritti):
+            if self.follow_db.chiudi(ev):
+                n += 1
+        self._scritti.clear()
+        return n
 
     # ------------------------------------------------------------ motore
     def _mercati_flumine(self) -> Dict[str, Any]:

@@ -328,6 +328,148 @@ def update_live_now(
     _exec_retry(sb.table("live_now").upsert(row, on_conflict="event_id"))
 
 
+def chiudi_live_now(event_id: str) -> Optional[Dict[str, Any]]:
+    """28/09 (cantiere A, fine evento): la riga ``live_now`` di una partita
+    FINITA passa a ``inplay=false``, ``status='CLOSED'``.
+
+    UPDATE, non upsert: punteggio, minuto e ``state`` restano quelli
+    dell'ultimo giro (la UI mostra il risultato finale) e una partita mai
+    scritta non riceve una riga nuova. La riga aggiornata va anche sul canale
+    locale (``now``), come ogni scrittura di ``live_now``. Ritorna la riga
+    aggiornata, o None (nessuna riga)."""
+    sb = get_supabase_client()
+    resp = _exec_retry(
+        sb.table("live_now")
+        .update({"inplay": False, "status": "CLOSED", "updated_at": _now_iso()})
+        .eq("event_id", str(event_id)))
+    righe = [r for r in (getattr(resp, "data", None) or []) if isinstance(r, dict)]
+    if not righe:
+        return None
+    from .local_channel import publish as _lpub
+
+    _lpub("now", righe[0])
+    return righe[0]
+
+
+#: stati di ``live_follow`` con cui il runner segue davvero la partita
+STATI_FOLLOW_ATTIVI = ("PENDING", "STREAMING")
+#: stati di ``live_follow`` (CHECK di live_stream.sql:42) con cui il follow e' finito
+STATI_FOLLOW_TERMINALI = ("CLOSED", "UPLOADED", "ERROR")
+
+#: stati flumine (nome dell'Enum, come li scrive lo specchio) di un ordine VIVO
+STATI_ORDINE_VIVO = frozenset({"PENDING", "EXECUTABLE", "CANCELLING", "UPDATING",
+                               "REPLACING"})
+
+
+def _stato_ordine(v: Any) -> str:
+    """'EXECUTABLE' / 'Executable' / 'Execution complete' -> forma dell'Enum."""
+    return str(v or "").strip().upper().replace(" ", "_")
+
+
+def esposizione_aperta(riga: Dict[str, Any]) -> bool:
+    """Riga di ``betfair_live_positions``/``tennis_live_positions``: esposizione
+    ABBINATA non pareggiata (vinci != perdi) o esposizione non abbinata."""
+    def _f(k: str) -> float:
+        try:
+            return float(riga.get(k) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+    return (abs(_f("matched_if_win") - _f("matched_if_lose")) >= 0.01
+            or _f("unmatched_back_exposure") > 0.0 or _f("unmatched_lay_exposure") > 0.0)
+
+
+def mercati_evento(event_id: str) -> List[str]:
+    """I mercati dell'evento dal catalogo salvato (``live_markets``)."""
+    sb = get_supabase_client()
+    r = (sb.table("live_markets").select("market_id")
+         .eq("event_id", str(event_id)).execute())
+    return sorted({str(x.get("market_id")) for x in (getattr(r, "data", None) or [])
+                   if isinstance(x, dict) and x.get("market_id")})
+
+
+def soldi_sull_evento(event_id: str, mercati: Optional[List[str]] = None) -> Optional[str]:
+    """28/09 (cantiere A, guardia MONEY-CRITICAL del catalogo vuoto): c'e'
+    denaro in gioco sull'evento, paper O live? Ritorna il motivo (testo) o
+    None. Fonti (lo specchio che il runner scrive e la coda dei comandi):
+
+    * ``betfair_live_orders``: ordini dell'evento in uno stato VIVO;
+    * ``betfair_live_positions``: esposizione aperta su un mercato che NON ha
+      ancora la regolazione nella stessa modalita' (``betfair_live_settled``);
+    * ``betfair_live_order_requests``: comandi ``pending``/``processing`` su un
+      mercato dell'evento (``mercati`` o ``live_markets``).
+
+    Un errore di lettura SOLLEVA: il chiamante lo tratta come "non
+    verificabile" = soldi presunti (mai ritirare una partita al buio)."""
+    sb = get_supabase_client()
+    ev = str(event_id)
+    ordini = (sb.table("betfair_live_orders").select("mode,market_id,status")
+              .eq("event_id", ev).execute())
+    vivi = [o for o in (getattr(ordini, "data", None) or [])
+            if _stato_ordine(o.get("status")) in STATI_ORDINE_VIVO]
+    if vivi:
+        return "%d ordini vivi sull'evento (%s)" % (
+            len(vivi), ", ".join(sorted({str(o.get("mode")) for o in vivi})))
+    pos = (sb.table("betfair_live_positions")
+           .select("mode,market_id,matched_if_win,matched_if_lose,"
+                   "unmatched_back_exposure,unmatched_lay_exposure")
+           .eq("event_id", ev).execute())
+    aperte = [p for p in (getattr(pos, "data", None) or []) if esposizione_aperta(p)]
+    if aperte:
+        mids = sorted({str(p.get("market_id")) for p in aperte})
+        reg = (sb.table("betfair_live_settled").select("mode,market_id")
+               .in_("market_id", mids).execute())
+        regolati = {(str(s.get("mode")), str(s.get("market_id")))
+                    for s in (getattr(reg, "data", None) or [])}
+        aperte = [p for p in aperte
+                  if (str(p.get("mode")), str(p.get("market_id"))) not in regolati]
+        if aperte:
+            return "%d posizioni aperte non regolate sull'evento (%s)" % (
+                len(aperte), ", ".join(sorted({str(p.get("mode")) for p in aperte})))
+    mids_ev = list(mercati) if mercati is not None else mercati_evento(ev)
+    if mids_ev:
+        req = (sb.table("betfair_live_order_requests").select("id,market_id,status")
+               .in_("market_id", mids_ev).in_("status", ["pending", "processing"])
+               .execute())
+        in_coda = getattr(req, "data", None) or []
+        if in_coda:
+            return "%d comandi in coda sull'evento" % len(in_coda)
+    return None
+
+
+def chiudi_live_now_orfani() -> int:
+    """28/09 (cantiere A): all'avvio del runner, le righe ``live_now`` ancora
+    "vive" (``inplay=true`` o ``status`` diverso da CLOSED) di partite il cui
+    follow NON e' piu' attivo (CLOSED/UPLOADED/ERROR) passano a CLOSED.
+
+    Il 26/09: 48 righe in gioco mai ripulite dal 26/06 (nessuno scriveva la
+    chiusura su ``live_now``). Le righe dei follow ancora attivi NON si
+    toccano: le segue (o le finalizza) il runner. Si chiudono SOLO le righe con
+    un follow in stato TERMINALE letto: ``live_now.event_id`` e' FK su
+    ``live_follow`` (``migrations/live_stream.sql:60``), una riga senza follow
+    non puo' esistere, e se la lettura non la trova non si tocca. Ritorna
+    quante ne ha chiuse."""
+    sb = get_supabase_client()
+    vive = (sb.table("live_now").select("event_id,inplay,status")
+            .or_("inplay.eq.true,status.neq.CLOSED").execute())
+    ids = sorted({str(r.get("event_id")) for r in (getattr(vive, "data", None) or [])
+                  if isinstance(r, dict) and r.get("event_id")})
+    if not ids:
+        return 0
+    terminali: set = set()
+    for i in range(0, len(ids), 100):
+        r = (sb.table("live_follow").select("event_id,status")
+             .in_("event_id", ids[i:i + 100]).execute())
+        for f in getattr(r, "data", None) or []:
+            if str(f.get("status") or "") in STATI_FOLLOW_TERMINALI:
+                terminali.add(str(f.get("event_id")))
+    da_chiudere = [e for e in ids if e in terminali]
+    for i in range(0, len(da_chiudere), 100):
+        (sb.table("live_now")
+         .update({"inplay": False, "status": "CLOSED", "updated_at": _now_iso()})
+         .in_("event_id", da_chiudere[i:i + 100]).execute())
+    return len(da_chiudere)
+
+
 # ----------------------------------------------------------------------------
 # snapshot + timeline (post-match, delete+insert per idempotenza)
 # ----------------------------------------------------------------------------

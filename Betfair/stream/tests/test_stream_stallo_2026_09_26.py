@@ -396,8 +396,12 @@ def test_cablaggio_calcio() -> None:
     assert "session.stream_market_count = len(market_ids)" in src
     assert '_attendi_se_rete("lettura dei follow", e)' in src
     assert '_attendi_se_rete("catalogo mercati (REST)", e)' in src
-    # uscita per stallo = ricambio del processo: i follow NON si chiudono nel finally
-    assert 'if getattr(session, "riavvio_per_stallo", False)' in src
+    # uscita per stallo = ricambio del processo: i follow NON si chiudono nel
+    # finally. 28/09 (cantiere A): regola generale di ogni uscita ordinata,
+    # ``chiudi_alla_uscita`` (partite vive -> PENDING, solo le finite CLOSED),
+    # provata in ``test_fine_evento_2026_09_28.py``
+    assert "chiudi_alla_uscita(session)" in src
+    assert "_finalize_event(event_id, session)" not in src.split("finally:")[-1]
 
 
 def test_cablaggio_tennis() -> None:

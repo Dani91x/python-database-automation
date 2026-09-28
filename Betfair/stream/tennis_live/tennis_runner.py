@@ -55,6 +55,7 @@ from .. import ladder_canale as _lcad
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from .. import valuta as _valuta
+from .. import arresto_ordinato as _AO  # 28/09: spegnimento ordinato dell'app
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
 from ..runner_lifecycle import (
     VERDETTO_ATTENDI,
@@ -577,6 +578,121 @@ class TennisLiveSession:
 # ---------------------------------------------------------------------------
 # Risoluzione mercato MATCH_ODDS + mappa nomi (come run_tennis_pro._resolve)
 # ---------------------------------------------------------------------------
+class MercatoNonInCatalogo(ValueError):
+    """28/09 (cantiere A): ``listMarketCatalogue`` ha RISPOSTO senza il
+    mercato. Da documentazione Betfair il catalogo restituisce solo i mercati
+    pubblicati (ACTIVE/SUSPENDED): "listMarketCatalogue does not return
+    markets that are CLOSED". Non e' un errore di rete (quello solleva altro).
+    Sottoclasse di ValueError: chi catturava il ValueError di prima non cambia."""
+
+
+def _partita_iniziata(follow: Dict[str, Any]) -> bool:
+    """``open_date`` del follow nel passato (o adesso). Assente/illeggibile =
+    False: nel dubbio la partita NON si dichiara finita."""
+    od = (follow or {}).get("open_date")
+    if not od:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(od).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= dt
+
+
+def _chiudi_follow_finito(event_id: str) -> None:
+    """Follow di una partita FINITA (mercato non piu' in catalogo a partita
+    iniziata): follow CLOSED e ``tennis_live_now`` CLOSED (riga minima se non
+    c'era), cosi' il ponte non la riapre e ferma i bot armati. Best-effort."""
+    try:
+        tennis_db.set_tennis_follow_status(
+            event_id, "CLOSED", "partita finita: mercato chiuso (non piu' in catalogo Betfair)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-runner] follow %s CLOSED KO: %s", event_id, str(e)[:160])
+    try:
+        tennis_db.chiudi_tennis_now(event_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[tennis-runner] tennis_live_now %s CLOSED KO: %s", event_id, str(e)[:160])
+
+
+#: 28/09 (cantiere A): stessa guardia di CONFERMA del calcio
+#: (``runner.FINE_CONFERMA_S``, motivazione li'): seconda lettura vuota dopo
+#: almeno tanti secondi, mai alla prima.
+FINE_CONFERMA_S = float(os.getenv("TENNIS_FINE_CONFERMA_S", "120") or 120.0) or 120.0
+#: partita col catalogo vuoto ma con SOLDI dentro: ricontrollo ogni tanto
+FINE_RIVERIFICA_SOLDI_S = float(os.getenv("TENNIS_FINE_RIVERIFICA_SOLDI_S", "300")
+                                or 300.0) or 300.0
+
+
+def _stato_fine(session: Any) -> Dict[str, Dict[str, float]]:
+    st = getattr(session, "fine_evento", None)
+    if st is None:
+        st = {"vuoto_dal": {}, "trattenute": {}}
+        try:
+            session.fine_evento = st
+        except Exception:  # noqa: BLE001
+            pass
+    return st
+
+
+def _fine_dimentica(session: Any, event_id: str) -> None:
+    st = _stato_fine(session)
+    st["vuoto_dal"].pop(str(event_id), None)
+    st["trattenute"].pop(str(event_id), None)
+
+
+def fine_da_rileggere(session: Any, event_id: str, ora: float) -> bool:
+    """Il catalogo va riletto adesso? Mai visto vuoto: si'. In conferma: dopo
+    FINE_CONFERMA_S dalla prima lettura vuota. Trattenuto per soldi: ogni
+    FINE_RIVERIFICA_SOLDI_S."""
+    st = _stato_fine(session)
+    ev = str(event_id)
+    if ev in st["trattenute"]:
+        return ora - st["trattenute"][ev] >= FINE_RIVERIFICA_SOLDI_S
+    if ev in st["vuoto_dal"]:
+        return ora - st["vuoto_dal"][ev] >= FINE_CONFERMA_S
+    return True
+
+
+def _valuta_catalogo_vuoto_tennis(session: Any, follow: Dict[str, Any], ora: float) -> str:
+    """Partita INIZIATA col MATCH_ODDS non in catalogo: ``in_conferma`` |
+    ``trattenuta`` | ``finita`` (solo quest'ultima chiude follow e
+    ``tennis_live_now``). Il follow resta com'era (PENDING/STREAMING) negli
+    altri due casi: la partita resta seguita."""
+    st = _stato_fine(session)
+    ev = str(follow["event_id"])
+    dal = st["vuoto_dal"].setdefault(ev, ora)
+    if ora - dal < FINE_CONFERMA_S:
+        logger.info("[tennis-runner] %s: partita iniziata e mercato non in catalogo "
+                    "(prima lettura): riletto fra %.0fs.", ev, FINE_CONFERMA_S)
+        return "in_conferma"
+    try:
+        motivo = tennis_db.soldi_sull_evento_tennis(ev, follow.get("market_id"))
+    except Exception as e:  # noqa: BLE001 - illeggibile = soldi presunti
+        motivo = "denaro non verificabile (%s)" % str(e)[:120]
+    if motivo:
+        prima_volta = ev not in st["trattenute"]
+        st["trattenute"][ev] = ora
+        if prima_volta:
+            logger.critical("[tennis-runner] %s: mercato non in catalogo (finita?) ma %s: "
+                            "NON chiusa, resta seguita.", ev, motivo)
+            try:
+                from ..db import insert_alert
+                insert_alert("CRITICAL", "FINE_PARTITA_CON_SOLDI",
+                             f"tennis {ev}: mercato non piu' in catalogo (finita?) ma "
+                             f"{motivo}. Non la chiudo: resta seguita finche' la "
+                             "posizione non e' chiusa. Verifica a mano.", ev)
+            except Exception:  # noqa: BLE001
+                pass
+        return "trattenuta"
+    logger.info("[tennis-runner] %s: mercato non in catalogo (CLOSED, confermato dopo "
+                "%.0fs, nessun denaro) -> finita, follow chiuso.", ev, ora - dal)
+    _fine_dimentica(session, ev)
+    _chiudi_follow_finito(ev)
+    return "finita"
+
+
 def _resolve_market(trading: Any, market_id: Optional[str], event_id: Optional[str],
                     solo_match_odds: bool = False) -> Dict[str, Any]:
     from betfairlightweight import filters
@@ -600,7 +716,7 @@ def _resolve_market(trading: Any, market_id: Optional[str], event_id: Optional[s
         sort="MAXIMUM_TRADED", max_results=5,
     )
     if not cat:
-        raise ValueError("nessun mercato MATCH_ODDS trovato")
+        raise MercatoNonInCatalogo("nessun mercato MATCH_ODDS trovato")
     mo = cat[0]
     name_to_sel = {r.runner_name: r.selection_id for r in (mo.runners or [])}
     selection_names = {str(r.selection_id): r.runner_name for r in (mo.runners or [])}
@@ -636,8 +752,22 @@ def _risolvi_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> Optio
     gia = _ET.meta_da_catalogo(follow.get("_meta"))
     if gia is not None:
         return _con_competizione(gia, follow)
+    if not fine_da_rileggere(session, event_id, time.monotonic()):
+        return None     # 28/09: in conferma o trattenuta, non ancora il momento
     try:
-        meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
+        try:
+            meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
+            _fine_dimentica(session, event_id)
+        except MercatoNonInCatalogo:
+            if not _partita_iniziata(follow):
+                raise           # partita futura: la strada di sempre (relogin, ERROR)
+            # 28/09 (cantiere A): partita iniziata e mercato non piu' in
+            # catalogo = mercato CLOSED = partita FINITA (tipicamente finita
+            # ad app spenta). Prima: relogin (una chiamata di login per partita
+            # finita a ogni avvio) e follow in ERROR, che il ponte ricreava.
+            # Due guardie (coordinatore 28/09): CONFERMA e SOLDI DENTRO.
+            _valuta_catalogo_vuoto_tennis(session, follow, time.monotonic())
+            return None
     except Exception as e:  # noqa: BLE001
         # SESSIONE SCADUTA (INVALID_SESSION dopo inattività .it): UN relogin e
         # retry prima di marcare ERROR — altrimenti ogni primo follow dopo un
@@ -1823,6 +1953,57 @@ def _tennis_lifecycle_blockers(flumine: Any, session: TennisLiveSession) -> Opti
     return None
 
 
+def arresto_worker(context: dict, flumine: Any, session: Any) -> None:  # noqa: ARG001
+    """28/09 (cantiere A): l'app chiede lo spegnimento ORDINATO (file di
+    ``arresto_ordinato``) -> framework fermo, uscita dal ciclo, ``finally``
+    (``chiudi_alla_uscita_tennis``) ed exit 0 (il watchdog non rilancia)."""
+    if session.shutdown_requested.is_set() or not _AO.richiesto():
+        return
+    logger.warning("[tennis-runner] ARRESTO ORDINATO richiesto dall'app: fermo lo stream.")
+    session.planned_restart = False
+    session.arresto_ordinato = True
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+
+
+def chiudi_alla_uscita_tennis(session: Any) -> Dict[str, List[str]]:
+    """28/09 (cantiere A): i follow di QUESTO runner quando esce in modo
+    ordinato (arresto dell'app, vita massima, stallo, Ctrl+C).
+
+    * partita FINITA (``now_chiusi``: CLOSED gia' scritto): follow CLOSED;
+    * arresto ORDINATO dell'app e follow AUTOMATICO: CLOSED (al prossimo avvio
+      il ponte lo riapre dal feed se serve; i bot ripartono solo dall'utente);
+    * tutte le altre: PENDING (nessuno le segue piu', il prossimo runner le
+      riaggancia da solo). Mai una riga STREAMING senza un processo dietro.
+    Solo le partite che il runner aveva portato a STREAMING (``market_meta``)
+    e che hanno una riga di follow (non le partite di un comando).
+    Ritorna ``{"chiusi": [...], "in_attesa": [...]}``."""
+    righe = {str(f.get("event_id")): f for f in (getattr(session, "ultimi_follows", None) or [])
+             if isinstance(f, dict) and f.get("event_id")}
+    finiti = set(getattr(session, "now_chiusi", None) or ())
+    arresto = bool(getattr(session, "arresto_ordinato", False))
+    out: Dict[str, List[str]] = {"chiusi": [], "in_attesa": []}
+    for ev in sorted(str(e) for e in (getattr(session, "market_meta", None) or {})):
+        f = righe.get(ev)
+        if f is None or _ET.e_comando(f):
+            continue
+        if ev in finiti or (arresto and _AM.origine_follow(f) == _AM.ORIGINE_AUTO):
+            stato = "CLOSED"
+        else:
+            stato = "PENDING"
+        try:
+            tennis_db.set_tennis_follow_status(ev, stato)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[tennis-runner] follow %s -> %s all'uscita KO: %s", ev, stato,
+                           str(e)[:160])
+            continue
+        out["chiusi" if stato == "CLOSED" else "in_attesa"].append(ev)
+    if out["chiusi"] or out["in_attesa"]:
+        logger.info("[tennis-runner] uscita ordinata: %d follow chiusi, %d in attesa.",
+                    len(out["chiusi"]), len(out["in_attesa"]))
+    return out
+
+
 def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     """Spegne il runner tennis quando non serve più (vita massima o inattività).
 
@@ -2407,7 +2588,11 @@ def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
         with session.caldo_lock:
             _allinea_follow_a_caldo(flumine, session, caldo, follows)
         return
-    new = [f for f in follows if f["event_id"] not in session.market_meta]
+    # 28/09 (cantiere A): una partita col catalogo vuoto in conferma o
+    # trattenuta per soldi non chiede una ricostruzione a ogni giro
+    _ora_fine = time.monotonic()
+    new = [f for f in follows if f["event_id"] not in session.market_meta
+           and fine_da_rileggere(session, f["event_id"], _ora_fine)]
     if new:
         logger.info("[tennis-follow] %d nuovi eventi → ricostruzione stream.", len(new))
         # fix audit #1: anche il follow nuovo NON può riavviare con bot non flat
@@ -2673,6 +2858,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
         except Exception as e:  # noqa: BLE001 — mai bloccare l'avvio del runner
             logger.warning("[tennis-runner] controllo d'avvio bot KO (ignorato): %s", e)
     _cleanup_orphan_bot_controls()  # mai bot 'running' fantasma dopo un riavvio
+    # 28/09 (cantiere A): righe tennis_live_now "vive" di partite non piu'
+    # seguite (follow CLOSED/UPLOADED/ERROR) -> CLOSED, una volta per processo
+    try:
+        _n_orfani = tennis_db.chiudi_tennis_now_orfani()
+        if _n_orfani:
+            logger.info("[tennis-runner] %d righe tennis_live_now di partite non piu' "
+                        "seguite portate a CLOSED.", _n_orfani)
+    except Exception as e:  # noqa: BLE001 - la vetrina non blocca mai l'avvio
+        logger.warning("[tennis-runner] pulizia tennis_live_now orfane KO: %s", str(e)[:160])
     # A7 — canale LOCALE desktop (bind SOLO 127.0.0.1); best-effort come il calcio.
     from .. import local_channel as _lc
     _ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
@@ -2694,6 +2888,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
     try:
         while not interrupted:
             session.restart_requested.clear()
+            # 28/09 (cantiere A): arresto ORDINATO chiesto dall'app
+            if _AO.richiesto():
+                logger.warning("[tennis-runner] ARRESTO ORDINATO richiesto dall'app: esco.")
+                session.planned_restart = False
+                session.arresto_ordinato = True
+                break
             try:
                 follows = tennis_db.list_pending_tennis_follows()
             except Exception as e:  # noqa: BLE001 - solo la rete: il resto si rilancia
@@ -2890,6 +3090,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             framework.add_worker(BackgroundWorker(
                 framework, function=lifecycle_worker, interval=60.0,
                 func_kwargs={"session": session}, name="tennis_lifecycle"))
+            # 28/09 (cantiere A): arresto ordinato dall'app (una stat al secondo)
+            framework.add_worker(BackgroundWorker(
+                framework, function=arresto_worker, interval=1.0,
+                func_kwargs={"session": session}, name="tennis_arresto"))
             # R-STREAM-1 (26/09): stallo dello stream (stessa cadenza del battito calcio)
             framework.add_worker(BackgroundWorker(
                 framework, function=stall_worker, interval=10.0,
@@ -2946,6 +3150,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 continue
             break
     finally:
+        # 28/09 (cantiere A): nessun follow resta STREAMING senza chi lo segue
+        try:
+            chiudi_alla_uscita_tennis(session)
+        except Exception:  # noqa: BLE001 - uscita: best-effort dichiarato
+            logger.exception("[tennis-runner] chiusura dei follow all'uscita KO")
         _smonta_motore_tennis()          # 25/09 (F8): no-op se non montato
         try:
             RAW_TEE.close()  # chiusura pulita dei file di registrazione (best-effort)

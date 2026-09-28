@@ -154,6 +154,8 @@ def _tennis_fino_al_sonno(monkeypatch, follows: List[Dict[str, Any]]) -> _Canale
     monkeypatch.setattr(TR, "build_client", lambda login=True: object())
     monkeypatch.setattr(TBS, "ferma_bot_al_nuovo_avvio", lambda *a, **k: None)
     monkeypatch.setattr(TR, "_cleanup_orphan_bot_controls", lambda: None)
+    # 28/09 (cantiere A): la pulizia di tennis_live_now all'avvio scrive sul DB
+    monkeypatch.setattr(TR.tennis_db, "chiudi_tennis_now_orfani", lambda: 0)
     monkeypatch.setattr(TR, "_avvia_sveglia_armamento", lambda s: None)
     monkeypatch.setattr(TR, "_announce_order_mode", lambda m: None)
     monkeypatch.setattr(TR, "_catalog_follow", lambda s, f: None)

@@ -455,9 +455,17 @@ def test_ponte_rete_soglia_da_env(orologio, monkeypatch):
     assert db.stati == [(EV, "tennis_flb", "stopping")]
 
 
-def test_ponte_la_seguita_a_mano_non_si_chiude(orologio):
+def test_ponte_la_seguita_a_mano_sospesa_fuori_dal_feed_non_si_chiude(orologio):
+    """La rete dei 600 s (fuori dal feed a mercato non OPEN) vale SOLO per le
+    automatiche: una partita a mano SOSPESA (pioggia) resta seguita.
+
+    28/09 (cantiere A): prima questo test era con ``CLOSED`` e diceva "a mano
+    non si chiude mai"; l'ordine dell'utente del 28/09 ("le partite TERMINATE
+    sia calcio che tennis non devono piu' essere seguite") lo ha cambiato: il
+    caso CLOSED e' ``test_ponte_la_seguita_a_mano_FINITA_si_chiude`` nel file
+    ``test_fine_evento_tennis_2026_09_28.py``."""
     db = _Db([_servizio()], controls=[_control(EV)], follows=[_follow(EV, "manuale")],
-             feed_ev=[], now_status={EV: "CLOSED"}, clock=orologio)
+             feed_ev=[], now_status={EV: "SUSPENDED"}, clock=orologio)
     S.riconcilia_interruttori(db)
     orologio.t += 3600
     S.riconcilia_interruttori(db)

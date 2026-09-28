@@ -190,6 +190,8 @@ def _finalize_env(monkeypatch, record_flag):
     monkeypatch.setattr(R.db, "set_follow_status",
                         lambda ev, st, detail=None: statuses.append((ev, st)))
     monkeypatch.setattr(R.db, "get_follow_record", lambda ev: record_flag)
+    # 28/09 (cantiere A): il finalize chiude anche live_now (scrittura DB)
+    monkeypatch.setattr(R.db, "chiudi_live_now", lambda ev: None)
     monkeypatch.setattr(R.uploader, "upload_event",
                         lambda ev: uploads.append(ev) or {"event_id": ev})
     session = SimpleNamespace(

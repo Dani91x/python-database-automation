@@ -373,9 +373,17 @@ def test_scanner_fermo_niente_dal_feed():
 
 
 def test_scanner_fermo_non_chiude_niente_e_non_ferma_niente():
+    """A scanner fermo l'ASSENZA dal feed non dice niente: una partita
+    automatica a mercato non chiuso non si tocca.
+
+    28/09 (cantiere A): prima il caso era ``CLOSED`` e diceva che nemmeno una
+    partita FINITA si chiudeva a scanner fermo. Il CLOSED lo scrive il runner
+    dallo stream (non dallo scanner): e' certo anche a scanner fermo, e
+    l'ordine dell'utente del 28/09 vuole le partite finite non piu' seguite
+    (``test_fine_evento_tennis_2026_09_28.py::test_ponte_finita_si_chiude_anche_a_scanner_fermo``)."""
     db = _Db([_servizio()], controls=[_control("1")],
              follows=[_follow("1", origine="auto")], feed=[], scanner_eta_s=None,
-             now_status={"1": "CLOSED"})
+             now_status={"1": "SUSPENDED"})
     S.riconcilia_interruttori(db)
     assert db.stati == [] and db.follow_status == []
 

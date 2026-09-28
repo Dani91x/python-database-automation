@@ -292,6 +292,101 @@ def upsert_tennis_now(
     _exec_retry(sb.table("tennis_live_now").upsert(row, on_conflict="event_id"))
 
 
+def chiudi_tennis_now(event_id: str) -> Optional[Dict[str, Any]]:
+    """28/09 (cantiere A, fine evento): ``tennis_live_now`` della partita
+    FINITA a ``inplay=false``, ``status='CLOSED'``.
+
+    Riga esistente: UPDATE (punteggio, punti e ``state`` dell'ultimo giro
+    restano: la UI mostra il risultato). Riga assente (partita finita mentre
+    l'app era spenta, mai scritta): INSERT minima CLOSED, cosi' il ponte e
+    ``ensure_follows_for_bots`` sanno che e' finita e non la riaprono. La riga
+    va anche sul canale locale (``now``). Ritorna la riga, o None."""
+    sb = get_tennis_client()
+    ora = _now_iso()
+    resp = _exec_retry(sb.table("tennis_live_now")
+                       .update({"inplay": False, "status": "CLOSED", "updated_at": ora})
+                       .eq("event_id", str(event_id)))
+    righe = [r for r in (getattr(resp, "data", None) or []) if isinstance(r, dict)]
+    if not righe:
+        riga = {"event_id": str(event_id), "inplay": False, "status": "CLOSED",
+                "state": {"markets": []}, "updated_at": ora}
+        resp = _exec_retry(sb.table("tennis_live_now").upsert(
+            riga, on_conflict="event_id", ignore_duplicates=True))
+        righe = [r for r in (getattr(resp, "data", None) or []) if isinstance(r, dict)] \
+            or [riga]
+    from ..local_channel import publish as _lpub
+
+    _lpub("now", righe[0])
+    return righe[0]
+
+
+def soldi_sull_evento_tennis(event_id: str, market_id: Optional[str] = None) -> Optional[str]:
+    """28/09 (cantiere A, guardia MONEY-CRITICAL del catalogo vuoto): denaro in
+    gioco sulla partita tennis, paper O live? Motivo (testo) o None. Fonti:
+    ``tennis_live_orders`` (ordini VIVI), ``tennis_live_positions`` (esposizione
+    aperta), ``tennis_live_order_queue`` (comandi ``pending``/``processing`` sul
+    suo mercato). Un errore di lettura SOLLEVA (il chiamante presume i soldi).
+    Il tennis non ha una tabella di regolazione: un'esposizione rimasta sullo
+    specchio vale "aperta" finche' lo specchio non la azzera."""
+    from ..db import STATI_ORDINE_VIVO, _stato_ordine, esposizione_aperta
+
+    sb = get_tennis_client()
+    ev = str(event_id)
+    ordini = (sb.table("tennis_live_orders").select("mode,market_id,status")
+              .eq("event_id", ev).execute())
+    vivi = [o for o in (getattr(ordini, "data", None) or [])
+            if _stato_ordine(o.get("status")) in STATI_ORDINE_VIVO]
+    if vivi:
+        return "%d ordini vivi sulla partita (%s)" % (
+            len(vivi), ", ".join(sorted({str(o.get("mode")) for o in vivi})))
+    pos = (sb.table("tennis_live_positions")
+           .select("mode,market_id,matched_if_win,matched_if_lose,"
+                   "unmatched_back_exposure,unmatched_lay_exposure")
+           .eq("event_id", ev).execute())
+    aperte = [p for p in (getattr(pos, "data", None) or []) if esposizione_aperta(p)]
+    if aperte:
+        return "%d posizioni aperte sulla partita (%s)" % (
+            len(aperte), ", ".join(sorted({str(p.get("mode")) for p in aperte})))
+    if market_id:
+        q = (sb.table(_ORDER_TABLE).select("id,payload,status")
+             .in_("status", ["pending", "processing"]).execute())
+        in_coda = [r for r in (getattr(q, "data", None) or [])
+                   if str(((r or {}).get("payload") or {}).get("market_id")) == str(market_id)]
+        if in_coda:
+            return "%d comandi in coda sulla partita" % len(in_coda)
+    return None
+
+
+def chiudi_tennis_now_orfani() -> int:
+    """28/09 (cantiere A): all'avvio del runner tennis, le righe
+    ``tennis_live_now`` ancora "vive" (``inplay=true`` o ``status`` non CLOSED)
+    di partite il cui follow NON e' piu' attivo (CLOSED/UPLOADED/ERROR)
+    passano a CLOSED. Quelle dei follow attivi le segue il runner. Solo righe
+    con un follow TERMINALE letto (``tennis_live_now.event_id`` e' FK su
+    ``tennis_live_follow``, ``migrations/tennis_live.sql:57-58``). Ritorna
+    quante ne ha chiuse."""
+    sb = get_tennis_client()
+    vive = (sb.table("tennis_live_now").select("event_id,inplay,status")
+            .or_("inplay.eq.true,status.neq.CLOSED").execute())
+    ids = sorted({str(r.get("event_id")) for r in (getattr(vive, "data", None) or [])
+                  if isinstance(r, dict) and r.get("event_id")})
+    if not ids:
+        return 0
+    terminali: set = set()
+    for i in range(0, len(ids), 100):
+        r = (sb.table("tennis_live_follow").select("event_id,status")
+             .in_("event_id", ids[i:i + 100]).execute())
+        for f in getattr(r, "data", None) or []:
+            if str(f.get("status") or "") in ("CLOSED", "UPLOADED", "ERROR"):
+                terminali.add(str(f.get("event_id")))
+    da_chiudere = [e for e in ids if e in terminali]
+    for i in range(0, len(da_chiudere), 100):
+        (sb.table("tennis_live_now")
+         .update({"inplay": False, "status": "CLOSED", "updated_at": _now_iso()})
+         .in_("event_id", da_chiudere[i:i + 100]).execute())
+    return len(da_chiudere)
+
+
 # ---------------------------------------------------------------------------
 # tennis_bot_control / tennis_bot_activity — hosting dei bot armati
 # ---------------------------------------------------------------------------
