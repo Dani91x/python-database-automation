@@ -273,13 +273,20 @@ def test_la_riga_chiusa_a_mano_non_riceve_piu_gambe_figlie():
     assert S._exit_candidates([dopo]) == []
 
 
-def test_un_uscita_del_BOT_approvata_dall_utente_non_e_una_sua_chiusura():
+def test_un_uscita_del_BOT_approvata_dall_utente_non_e_una_sua_chiusura(monkeypatch):
     """Il cancelletto del TENNIS manda una richiesta `cashout` identica a
     quella del bottone «Cash out»: la differenza e' che quella chiusura l'ha
     DECISA IL BOT (`_proponi_chiusura` scrive `exit_kind` nel payload) e
     l'utente ha solo dato l'ok. Marcarla come chiusura dell'utente spegnerebbe
     il bot su una partita che sta gestendo lui — il replay tennis
-    `approvata-subito` lo ha fatto vedere al primo giro."""
+    `approvata-subito` lo ha fatto vedere al primo giro.
+
+    D1 (28/09): dal 28/09 un'approvazione si esegue solo se la condizione
+    d'uscita vale ANCORA (``_proposta_non_piu_valida``, provata in
+    ``test_d1_proposte_uscita_2026_09_28.py``). Il feed di questo test non fa
+    scattare nessuna regola: l'oggetto qui e' il MARCATORE, quindi la
+    condizione si dichiara valida per costruzione."""
+    monkeypatch.setattr(S, "_proposta_non_piu_valida", lambda *a, **k: None)
     db = FakeDB(mode="live")
     riga = _riga(db, sport="tennis", strategy="tennis")
     res = S._request_cashout(

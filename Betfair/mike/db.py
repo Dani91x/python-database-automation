@@ -83,14 +83,33 @@ def log(kind: str, payload: Optional[dict[str, Any]] = None, event_id: Optional[
 # ---------------------------------------------------------------------------
 # Events (stato per partita: macchina a stati + gambe + dossier)
 # ---------------------------------------------------------------------------
+# D1 (28/09): stati TERMINALI di ``engine.TERMINAL_STATES`` (copia: il modulo
+# db non importa l'engine; un test ne verifica l'uguaglianza).
+STATI_TERMINALI = ("SETTLED", "ERROR", "SKIPPED")
+
+
+def filtro_finestra_eventi(since_iso: str) -> str:
+    """Il filtro PostgREST ``or`` della finestra: aggiornate da ``since_iso`` OPPURE
+    non terminali. Il timestamp va fra virgolette doppie (contiene ``:`` e ``.``,
+    riservati nella sintassi ``or`` di PostgREST)."""
+    return (f'updated_at.gte."{since_iso}",'
+            f'state.not.in.({",".join(STATI_TERMINALI)})')
+
+
 def list_events(states: Optional[list[str]] = None, since_iso: Optional[str] = None) -> list[dict[str, Any]]:
     """Partite seguite; ``since_iso`` limita alle righe aggiornate di recente
-    (le terminali vecchie escono dal ciclo ma restano nello storico)."""
+    (le terminali vecchie escono dal ciclo ma restano nello storico).
+
+    D1 (28/09) - la finestra vale SOLO per le terminali: una partita NON
+    terminale torna SEMPRE, di qualunque eta', nella stessa lettura. Ad app
+    spenta la scheda non si aggiorna: con la sola finestra su ``updated_at``
+    una partita con posizione aperta finita a servizio fermo spariva dal ciclo
+    dopo 48 ore e non si regolava MAI (5 righe paper del 26/09)."""
     q = _sb().table(T_EVENTS).select("*")
     if states:
         q = q.in_("state", list(states))
     if since_iso:
-        q = q.gte("updated_at", str(since_iso))
+        q = q.or_(filtro_finestra_eventi(str(since_iso)))
     return q.execute().data or []
 
 
@@ -323,32 +342,59 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
     }
 
 
-def aggregates(now: Optional[datetime] = None) -> dict[str, Any]:
+_ERRORI_RPC_ASSENTE = ("pgrst202", "42883", "could not find the function",
+                       "does not exist")
+
+
+def _rpc_assente(ex: Exception) -> bool:
+    """D1 (28/09): la RPC MANCA (migrazione non applicata) e non «ha fallito
+    una volta». Un timeout o una rete giu' NON la spengono per sempre."""
+    msg = str(ex).lower()
+    return any(m in msg for m in _ERRORI_RPC_ASSENTE)
+
+
+def aggregates(now: Optional[datetime] = None, mode: Optional[str] = None) -> dict[str, Any]:
     """Aggregati per le stats. Prima prova la RPC SQL (una query, nessuna
     paginazione: H5), poi ripiega sulla lettura incrementale + funzione pura —
-    cosi' il servizio funziona anche a migrazione ``mike_bot_v2.sql`` non applicata."""
+    cosi' il servizio funziona anche a migrazione ``mike_bot_v2.sql`` non applicata.
+
+    D1 (28/09) - ``mode``: gli aggregati entrano nelle DECISIONI (stop di
+    giornata) e devono contare SOLO la modalita' in cui il bot opera. La RPC
+    (``mike_aggregati_per_modalita_2026-09-13.sql``) la riceve esplicita; il
+    ripiego filtra le righe per modalita' (prima sommava paper e live). E una
+    RPC in timeout non passa piu' al ripiego per tutta la vita del processo:
+    solo l'errore di schema la dichiara assente."""
     from Betfair.safe_strategy import risk as _risk
 
+    m = str(mode).lower() if mode in ("paper", "live") else None
     if not _AGG_RPC.get("missing"):
         try:
-            res = _sb().rpc("get_mike_aggregates", {}).execute()
+            res = _sb().rpc("get_mike_aggregates", {"p_mode": m} if m else {}).execute()
             data = getattr(res, "data", None)
             if isinstance(data, dict) and data:
                 return data
-        except Exception as ex:  # noqa: BLE001 — migrazione non applicata: fallback
-            # una volta sola: niente errore a raffica a ogni ciclo
-            _AGG_RPC["missing"] = True
-            logger.warning("[mike.db] get_mike_aggregates non disponibile (migrazione "
-                           "mike_bot_v2.sql non applicata): %s", str(ex)[:120])
+        except Exception as ex:  # noqa: BLE001
+            if _rpc_assente(ex):
+                # migrazione non applicata: una volta sola, niente errore a raffica
+                _AGG_RPC["missing"] = True
+                logger.warning("[mike.db] get_mike_aggregates non disponibile (migrazione "
+                               "mike_bot_v2.sql non applicata): %s", str(ex)[:120])
+            else:
+                raise      # guasto transitorio: il chiamante riusa l'ultimo valore buono
     # Fallback (migrazione non applicata): H5 — finestra INCREMENTALE per tutto
     # cio' che riguarda la giornata e le posizioni aperte; i CUMULATIVI di sempre
     # (realized_total, won, lost) da una scansione completa rinfrescata al
     # massimo ogni _TOTALS_TTL_S. Prima era una lettura paginata integrale di
     # mike_trades 1-2 volte per ciclo.
     day_start = _risk.operating_day_start(now)
-    agg = aggregate_rows(live_trades(day_start.isoformat()), day_start)
+    righe = live_trades(day_start.isoformat())
+    if m:
+        righe = [r for r in righe if str(r.get("mode") or "paper").lower() == m]
+    agg = aggregate_rows(righe, day_start)
     agg.update(_cumulative_totals(day_start))
     agg["totals_from"] = "full_scan_cache"
+    if m:
+        agg["mode"] = m
     return agg
 
 

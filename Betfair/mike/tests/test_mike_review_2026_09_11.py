@@ -40,6 +40,15 @@ def _boom(*_a, **_k):
     raise RuntimeError("Supabase giu'")
 
 
+def _rpc_mancante(*_a, **_k):
+    """D1 (28/09): la RPC ASSENTE come la dice PostgREST (migrazione non
+    applicata). Prima questi test usavano ``_boom`` («Supabase giu'»): un
+    guasto qualunque spegneva la RPC per tutta la vita del processo e il
+    ripiego sommava paper e live."""
+    raise RuntimeError("{'code': 'PGRST202', 'message': 'Could not find the function "
+                       "public.get_mike_aggregates(p_mode) in the schema cache'}")
+
+
 # ===========================================================================
 # C-1 — lettura righe FALLITA != nessuna riga (mai righe doppie)
 # ===========================================================================
@@ -359,7 +368,7 @@ def test_h3_fallback_aggregati_non_scansiona_tutto_a_ogni_ciclo(monkeypatch):
         return []
     monkeypatch.setattr(MDB, "all_trades", fake_all)
     monkeypatch.setattr(MDB, "live_trades", fake_live)
-    monkeypatch.setattr(MDB, "_sb", _boom)
+    monkeypatch.setattr(MDB, "_sb", _rpc_mancante)
     for i in range(5):
         MDB.aggregates(NOW + timedelta(seconds=i))
     assert calls["live"] == 5
@@ -370,7 +379,7 @@ def test_h3_fallback_aggregati_non_scansiona_tutto_a_ogni_ciclo(monkeypatch):
 def test_h3_live_trades_e_usata_dal_fallback(monkeypatch):
     rows = [{"id": 1, "event_id": "A", "status": "won", "pnl": 1.0,
              "placed_at": NOW.isoformat(), "settled_at": NOW.isoformat()}]
-    monkeypatch.setattr(MDB, "_sb", _boom)
+    monkeypatch.setattr(MDB, "_sb", _rpc_mancante)
     monkeypatch.setattr(MDB, "live_trades", lambda since=None: list(rows))
     monkeypatch.setattr(MDB, "all_trades", lambda *a, **k: list(rows))
     agg = MDB.aggregates(NOW)

@@ -681,6 +681,37 @@ def chiudi_proposta(trade_id: int, motivo: str) -> None:
         _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
 
 
+def proposte_di_chiusura_vive(limit: int = 200) -> list[dict[str, Any]]:
+    """D1 (28/09) - TUTTE le proposte d'uscita ('cashout') ancora in attesa di
+    firma, di qualunque eta'. Una SELECT sola: la usa lo spazzino delle
+    proposte non piu' eseguibili (``bot_service._decadi_proposte_non_eseguibili``)."""
+    return (
+        _sb().table("safe_strategy_requests").select("id,kind,status,payload,created_at,result")
+        .eq("kind", "cashout").eq("status", "proposed")
+        .order("created_at", desc=False).limit(int(limit)).execute().data or []
+    )
+
+
+def chiudi_proposta_per_id(req_id: int, motivo: str,
+                           dettaglio: Optional[dict[str, Any]] = None) -> bool:
+    """D1 (28/09) - fa DECADERE una proposta d'uscita per id, con la stessa
+    marca di ``chiudi_proposta`` ('rejected' + ``result.decaduta`` + motivo).
+    Il filtro ``status='proposed'`` rende l'UPDATE atomico contro un'approvazione
+    arrivata nello stesso istante: una proposta gia' firmata non si tocca.
+    Ritorna True se la riga e' stata davvero chiusa."""
+    res = (
+        _sb().table("safe_strategy_requests")
+        .update({"status": "rejected",
+                 "result": {**(dettaglio or {}), "decaduta": True,
+                            "motivo": str(motivo)[:200]},
+                 "updated_at": _now_iso()})
+        .eq("id", int(req_id)).eq("status", "proposed").execute()
+    )
+    if _CANALE_ACCESO:          # F3: la proposta decaduta sparisce anche a video
+        _cb.pubblica_scritte(_cb.TOPIC["safe_proposta"], res)
+    return bool(getattr(res, "data", None))
+
+
 # ---------------------------------------------------------------------------
 # PROPOSTE DI OPPORTUNITA' DI MODELLO (17/09) — stessa coda, stesso cancelletto
 #

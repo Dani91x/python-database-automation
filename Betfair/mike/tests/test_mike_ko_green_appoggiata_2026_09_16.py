@@ -418,8 +418,13 @@ def test_se_betfair_non_risponde_la_rilettura_NON_e_avvenuta():
 
 
 def test_in_paper_non_si_chiede_niente_a_betfair():
-    """In paper nessun ordine reale esiste: la simulazione lo tiene sul book, e
-    lo si DICHIARA invece di fingere una lettura."""
+    """In paper nessun ordine reale esiste: non si legge niente da Betfair.
+
+    D1 (28/09): prima questo test FISSAVA la divergenza («la simulazione lo
+    tiene sul book», esito 'paper'), catalogo §7 punto 28. Il live piazza la
+    lay con LAPSE e Betfair cancella i non abbinati alla sospensione in gioco:
+    il paper applica la stessa regola, esito 'scaduto', gamba chiusa come in
+    live (``_applica_esito_riapertura``)."""
     leg = gamba_uscita()
     ctx = ctx_in_uscita(gambe=[leg])
     mk = MercatoFinto()
@@ -431,7 +436,34 @@ def test_in_paper_non_si_chiede_niente_a_betfair():
     S._sorveglia_sospensione(db=db, market=mk, ctx=ctx, snap=snap(KO + 105.0),
                              params=PAR, mode="paper", now_ts=KO + 105.0, ev=ev)
     assert mk.letture == []
-    assert ctx.riapertura["esiti"]["ko_green-0-3"] == "paper"
+    assert ctx.riapertura["esiti"]["ko_green-0-3"] == "scaduto"
+    assert leg.status == "cancelled"
+    assert "ordine_scaduto_alla_sospensione" in db.kinds()
+
+
+def test_paper_e_live_stessa_reazione_alla_riapertura_con_ordine_scaduto():
+    """Parita' campo per campo: live con Betfair che dice «scaduto», paper con
+    la regola LAPSE. Stesso esito, stessa gamba, stesse attivita'."""
+    def gira(mode):
+        leg = gamba_uscita()
+        ctx = ctx_in_uscita(gambe=[leg])
+        mk = MercatoFinto(correnti=[ordine_betfair(stato="EXECUTION_COMPLETE",
+                                                   residuo=0.0, scaduto=10.14)],
+                          per_bet_id={"B1": {"found": True, "size_matched": 0.0,
+                                             "avg_price_matched": None,
+                                             "size_remaining": 0.0,
+                                             "matched_date": None, "placed_date": None}})
+        db = DbFinto()
+        ev = {"event_id": "E1"}
+        S._sorveglia_sospensione(db=db, market=mk, ctx=ctx,
+                                 snap=snap(KO + 100.0, u35=book(1.50, status="SUSPENDED")),
+                                 params=PAR, mode=mode, now_ts=KO + 100.0, ev=ev)
+        S._sorveglia_sospensione(db=db, market=mk, ctx=ctx, snap=snap(KO + 105.0),
+                                 params=PAR, mode=mode, now_ts=KO + 105.0, ev=ev)
+        return (ctx.riapertura["esiti"]["ko_green-0-3"], leg.status, leg.matched,
+                [k for k in db.kinds() if k in ("rilettura_alla_riapertura",
+                                                "ordine_scaduto_alla_sospensione")])
+    assert gira("paper") == gira("live")
 
 
 # ===========================================================================

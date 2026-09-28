@@ -731,6 +731,11 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                      approvazione_id=approvazione_id)
     try:
         trade_id = _insert_trade_row(db, row, info.event_id)
+        if trade_id is None:
+            # D1 (28/09): senza l'id non esiste il ref ``mike-t<id>``: nessun
+            # ordine. Se la riga e' stata scritta lo stesso, la aggancia la
+            # riconciliazione (``_aggancia_riserve_orfane``).
+            raise RuntimeError("riserva senza id")
     except Exception as ex:  # noqa: BLE001 — riserva fallita: nessun ordine
         leg.status = "cancelled"
         db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, info.event_id)
@@ -974,38 +979,52 @@ _LAST_AGG: Dict[str, Any] = {}
 
 
 def _aggregates_cached(db: Any, now: datetime, params: Dict[str, Any],
-                       forza: bool = False) -> Dict[str, Any]:
+                       forza: bool = False, mode: Optional[str] = None) -> Dict[str, Any]:
     """Gli aggregati, ricalcolati al massimo ogni ``aggregates_cache_s``.
 
     Governano lo stop giornaliero e i numeri in cima alla pagina: nessuno dei
     due e' una decisione al secondo, e la RPC che li calcola scorre l'intera
     ``mike_trades``. ``forza=True`` dopo un'azione: se qualcosa e' appena
     cambiato il numero va rifatto subito.
-    """
+
+    D1 (28/09): ``mode`` = modalita' in cui il bot opera. La copia in memoria
+    vale solo per QUELLA modalita': cambiata la modalita' si rilegge (mai lo
+    stop del live calcolato sui numeri del paper, o viceversa)."""
     ora = now.timestamp()
     ttl = float(params.get("aggregates_cache_s") or 0.0)
-    if not forza and _CACHE_AGGREGATI.fresco(ora, ttl):
+    stesso_modo = _LAST_AGG.get("cache_mode") == (mode or "*")
+    if not forza and stesso_modo and _CACHE_AGGREGATI.fresco(ora, ttl):
         return _CACHE_AGGREGATI.valore
-    return _CACHE_AGGREGATI.metti(_aggregates(db, now), ora)
+    _LAST_AGG["cache_mode"] = mode or "*"
+    return _CACHE_AGGREGATI.metti(_aggregates(db, now, mode=mode), ora)
 
 
-def _aggregates(db: Any, now: datetime) -> Dict[str, Any]:
+def _aggregates(db: Any, now: datetime, mode: Optional[str] = None) -> Dict[str, Any]:
     """Aggregati con MEMORIA dell'ultima lettura buona.
 
     Una lettura fallita non deve valere "zero": con ``{}`` lo STOP GIORNALIERO
     si spegneva (``realized_today`` = 0 → il bot continuava ad aprire dopo aver
     gia' perso il massimo) e i KPI della UI (P&L, posizioni aperte, V/P)
     lampeggiavano a zero. Si riusa l'ultimo valore noto e si logga il guasto.
+
+    D1 (28/09): la memoria e' PER MODALITA', e ``mode`` arriva al database
+    (``db.aggregates(now, mode=...)``): i numeri che decidono contano solo la
+    modalita' in cui il bot opera. Un accessor senza il parametro (vecchio o
+    finto) viene chiamato come prima.
     """
+    chiave = f"v:{mode or '*'}"
     try:
-        agg = db.aggregates(now)
+        try:
+            agg = db.aggregates(now, mode=mode) if mode else db.aggregates(now)
+        except TypeError:
+            agg = db.aggregates(now)
         if isinstance(agg, dict) and agg:
-            _LAST_AGG["v"] = dict(agg)
+            _LAST_AGG[chiave] = dict(agg)
             return agg
         raise ValueError("aggregati vuoti")
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
-        last = _LAST_AGG.get("v")
+        last = _LAST_AGG.get(chiave)
         return dict(last) if isinstance(last, dict) else {}
 
 
@@ -1172,6 +1191,30 @@ def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
     return None
 
 
+def _freno_gia_appoggiata(db: Any, event_id: str, leg: E.Leg) -> bool:
+    """IL FRENO della lay appoggiata (15/09), UNO per paper e live.
+
+    True = c'e' gia' una gamba con lo stesso ruolo, ciclo e lato in attesa: la
+    gamba nuova si annulla, nessuna riga e nessun ordine.
+
+    D1 (28/09) - prima il freno stava solo sulla strada LIVE
+    (``_piazza_resting_live``): in PAPER, con una riga gia' in attesa, nasceva
+    una SECONDA riga dello stesso ruolo e ciclo, che il live non avrebbe mai
+    avuto. Il paper e' lo specchio del live: stessa domanda, stessa risposta."""
+    doppia = _gia_appoggiata(db, event_id, leg)
+    if doppia is None:
+        return False
+    leg.status = "cancelled"
+    db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                             "reason": "gamba_gia_appoggiata",
+                             "gia_in_volo": doppia.get("id"),
+                             "nota": "una gamba con lo stesso ruolo e ciclo e' gia' "
+                                     "in attesa: non se ne piazza una seconda"}, event_id)
+    logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
+                    "ciclo e' gia' pending", event_id, leg.ref, doppia.get("id"))
+    return True
+
+
 def _resting_e_chiusura(leg: E.Leg, chiude: Optional[int]) -> bool:
     """La lay appoggiata RIDUCE una posizione? (coperture ``*_green`` o una
     gamba che dichiara quale riga chiude)."""
@@ -1272,16 +1315,7 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
     eid = str(ev["event_id"])
 
     # ⚠️ IL FRENO (15/09): mai due gambe protettive identiche in volo.
-    doppia = _gia_appoggiata(db, eid, leg)
-    if doppia is not None:
-        leg.status = "cancelled"
-        db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
-                                 "reason": "gamba_gia_appoggiata",
-                                 "gia_in_volo": doppia.get("id"),
-                                 "nota": "una gamba con lo stesso ruolo e ciclo e' gia' "
-                                         "in attesa: non se ne piazza una seconda"}, eid)
-        logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
-                        "ciclo e' gia' pending", eid, leg.ref, doppia.get("id"))
+    if _freno_gia_appoggiata(db, eid, leg):
         return
 
     # O1 (24/09): kill-switch condiviso (env + DB) anche su questa strada REST,
@@ -1304,6 +1338,12 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         trade_id = _insert_trade_row(
             db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo,
                            approvazione_id=approvazione_id), eid)
+        if trade_id is None:
+            # D1 (28/09): senza id niente ``mike-t<id>``, e un ordine col ref
+            # ``leg.ref`` e' proprio quello che la riconciliazione non ritrova
+            # (15/09). Nessun ordine: l'eventuale riga la aggancia la
+            # riconciliazione (``_aggancia_riserve_orfane``).
+            raise RuntimeError("riserva senza id")
     except Exception as ex:  # noqa: BLE001 — riserva fallita: NESSUN ordine reale
         leg.status = "cancelled"
         db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, eid)
@@ -2263,9 +2303,23 @@ def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Sna
             esiti[ref] = "gamba_non_piu_viva"
             continue
         if str(mode) == "paper":
-            # in paper non esiste nessun ordine su Betfair da far scadere: la
-            # simulazione lo tiene sul book. Lo si DICHIARA, non lo si finge.
-            esiti[ref] = "paper"
+            # D1 (28/09) - PAPER = LIVE. Prima: «la simulazione lo tiene sul
+            # book», cioe' il paper teneva viva una lay che in live Betfair
+            # cancella. Il live la piazza sempre ``persistenceType: LAPSE``
+            # (``omega_market.place_order_live``), e le regole di Betfair
+            # dicono che a ogni sospensione in gioco per un evento materiale
+            # (gol, rigore, espulsione) gli ordini NON abbinati si cancellano
+            # (e con LAPSE anche all'inizio dell'evento). In paper non c'e'
+            # niente da rileggere: si applica la regola del mercato, con la
+            # STESSA reazione del live (``_applica_esito_riapertura``, esito
+            # «scaduto»). Una gamba gia' abbinata dalla simulazione non arriva
+            # qui (non e' piu' viva).
+            esiti[ref] = _ESITO_SCADUTO
+            _applica_esito_riapertura(db=db, event_id=eid, leg=leg, esito=_ESITO_SCADUTO,
+                                      numeri={"size_matched": float(leg.matched or 0.0),
+                                              "avg_price_matched": leg.avg_price,
+                                              "size_remaining": 0.0,
+                                              "fonte": "paper_regola_lapse"})
             continue
         letto = _rileggi_ordine_appoggiato(db=db, market=market, leg=leg, ev=ev, cache=cache)
         if letto is None:
@@ -2806,6 +2860,11 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     else:
         try:
             since = datetime.fromtimestamp(now_ts - 48 * 3600, tz=timezone.utc).isoformat()
+            # D1 (28/09): ``since_iso`` = finestra delle 48 ore PER LE TERMINALI;
+            # le partite NON terminali tornano sempre, di qualunque eta', nella
+            # STESSA lettura (``mike/db.list_events``). Ad app spenta la scheda
+            # non si aggiorna: senza, una partita con posizione aperta finita a
+            # servizio fermo usciva dalla finestra e non si regolava MAI.
             letti = {str(e["event_id"]): e for e in (db.list_events(since_iso=since) or [])}
         except Exception as ex:  # noqa: BLE001
             db.log("error", {"reason": "events_failed", "err": str(ex)[:160]})
@@ -2828,7 +2887,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # PIAZZAMENTO — M6) = REGOLATO + BLOCCATO. Il bloccato sono i cicli già
     # chiusi/greenati non ancora pagati dal mercato: prima erano invisibili allo
     # stop e il bot continuava ad aprire dopo aver già perso il massimo.
-    agg = _aggregates_cached(db, now, params)
+    agg = _aggregates_cached(db, now, params, mode=mode)
     day_start_ts = _operating_day_start_ts(now)
     locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     realized_today = float(agg.get("realized_today", 0.0))
@@ -2867,8 +2926,13 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     if running and not daily_stop:
         # tetto = partite con POSIZIONE (o ordini): quelle solo osservate (WATCH) o
         # in-play senza posizione (IDLE_LIVE) non bloccano le nuove candidate
+        # D1 (28/09): SOLO le partite della modalita' in cui il bot opera ADESSO
+        # (catalogo §7.21). Prima contava paper e live insieme: partite paper
+        # ancora vive toglievano posti al live appena acceso (e viceversa).
         active = sum(1 for e in tracked.values()
-                     if e.get("state") not in E.TERMINAL_STATES and e.get("state") not in ("WATCH", "IDLE_LIVE"))
+                     if str(e.get("mode") or mode) == str(mode)
+                     and e.get("state") not in E.TERMINAL_STATES
+                     and e.get("state") not in ("WATCH", "IDLE_LIVE"))
         for eid, row in rows_by_event.items():
             if eid in tracked or active >= int(params["max_open_matches"]):
                 continue
@@ -2961,7 +3025,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         status = "stopped"
 
     if n_actions or n_settled or n_requests:
-        agg = _aggregates_cached(db, now, params, forza=True)   # qualcosa e' cambiato
+        agg = _aggregates_cached(db, now, params, forza=True, mode=mode)   # qualcosa e' cambiato
         locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     by_state: Dict[str, int] = {}
     for e in tracked.values():
@@ -3748,6 +3812,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 # con la STESSA regola del live (``_piazza_resting_live``): solo
                 # un'apertura si ferma, le coperture/chiusure passano sempre.
                 pass
+            elif _freno_gia_appoggiata(db, ev["event_id"], leg):
+                # D1 (28/09): lo STESSO freno anti-doppione del live
+                # (``_piazza_resting_live``): paper specchio del live.
+                pass
             else:
                 try:
                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,
@@ -4012,7 +4080,111 @@ def _mirror_is_aligned(ctx: E.MatchCtx, open_refs: Optional[Dict[str, set]], eve
     expected = {l.ref for l in ctx.legs
                 if not l.archived and (float(l.matched) > 0 or l.needs_reconcile)}
     all_refs = {l.ref for l in ctx.legs}
-    return not (expected - idx) and not (idx - all_refs)
+    # D1 (28/09): una riga NON terminale la cui gamba e' annullata senza
+    # abbinato e' una candidata RISERVA ORFANA: lo specchio non combacia, si
+    # leggono le righe (vedi ``_aggancia_riserve_orfane``).
+    annullate = {l.ref for l in ctx.legs
+                 if str(l.status) == "cancelled" and float(l.matched) <= 0}
+    return not (expected - idx) and not (idx - all_refs) and not (idx & annullate)
+
+
+def _gamba_dalla_riga(r: Dict[str, Any], info: Optional[F.EventInfo]) -> Optional[E.Leg]:
+    """Gamba A ESITO IGNOTO ricostruita da una riga ``mike_trades`` rimasta senza
+    gamba (potata da ``prune_dead_legs`` o persa in un crash). ``None`` se la
+    riga non dice abbastanza (mercato o selezione illeggibili): allora resta la
+    regola storica della riga orfana."""
+    mt = str(r.get("market_type") or "")
+    mercato = E.MARKET_OU35 if mt == C.OU35 else E.MARKET_OU45 if mt == C.OU45 else None
+    if mercato is None or not r.get("signal_key"):
+        return None
+    sel: Optional[str] = None
+    sid = r.get("selection_id")
+    if info is not None and sid is not None:
+        for s in (E.SEL_UNDER, E.SEL_OVER):
+            try:
+                if info.selection_id(mercato, s) == int(sid):
+                    sel = s
+            except (TypeError, ValueError):
+                continue
+    if sel is None:
+        nome = str(r.get("selection_name") or "").strip().lower()
+        sel = E.SEL_UNDER if nome.startswith("under") else (
+            E.SEL_OVER if nome.startswith("over") else None)
+    lato = str(r.get("side") or "")
+    if sel is None or lato not in ("back", "lay"):
+        return None
+    try:
+        return E.Leg(role=str(r.get("role") or r.get("strategy") or ""), market=mercato,
+                     selection=sel, side=lato, price=float(r.get("price") or 0.0),
+                     size=float(r.get("size") or 0.0), ref=str(r["signal_key"]),
+                     status=E.STATUS_RECONCILE,
+                     placed_at=float(F.parse_iso_epoch(r.get("placed_at")) or 0.0),
+                     persistence=str(r.get("persistence") or "LAPSE"),
+                     cycle_no=int(r.get("cycle_no") or 0),
+                     closes_ref=((r.get("meta") or {}).get("closes_ref") or None))
+    except (TypeError, ValueError):
+        return None
+
+
+def _aggancia_riserve_orfane(db: Any, event_id: str, ctx: E.MatchCtx,
+                             rows: List[Dict[str, Any]], info: Optional[F.EventInfo]) -> int:
+    """D1 (28/09) - LA RISERVA CON LA RISPOSTA PERSA.
+
+    ``_insert_trade_row`` puo' sollevare DOPO che il server ha scritto la riga
+    (timeout sulla risposta): la gamba viene annullata ("reserve_failed"), la
+    riga 'pending' resta nel database e nessuno la chiude piu'. ``_gia_appoggiata``
+    la vede come «gamba gia' in volo» e blocca PER SEMPRE (fail-closed) la
+    copertura o il green-up dello stesso ruolo e ciclo; e quando la gamba
+    viene potata la riga diventa un'orfana che in live resta 'pending' a vita.
+
+    Regola: una riga 'pending' la cui gamba e' annullata con abbinato zero, o
+    che una gamba non ce l'ha piu', NON si chiude per deduzione. Si AGGANCIA
+    alla riconciliazione degli esiti ignoti (gamba in ``pending_reconcile``,
+    riga marcata ``place_exception_reconciling``) e decide la fonte vera
+    dell'ordine in ``_reconcile_unknown``, lo stesso codice in paper e in live:
+    PAPER nessun ordine simulato puo' esistere senza gamba viva -> chiusa come
+    non eseguita; LIVE si cerca su Betfair (bet_id, ``mike-t<id>``, ref storico
+    a mercato concorde): trovata abbinata -> confermata, viva -> si aspetta,
+    assente -> chiusa come non eseguita. In tutti i casi il ruolo torna libero
+    o la posizione vera torna visibile: mai doppia copertura, mai bloccata.
+    Nessuna chiamata a Betfair qui: e' ``_reconcile_unknown``, col suo ritmo.
+    """
+    per_ref = {l.ref: l for l in ctx.legs}
+    n = 0
+    for r in rows:
+        if str(r.get("status") or "") != "pending" or not r.get("signal_key"):
+            continue
+        ref = str(r["signal_key"])
+        leg = per_ref.get(ref)
+        if leg is not None:
+            if not (str(leg.status) == "cancelled" and float(leg.matched) <= 0):
+                continue
+            leg.status = E.STATUS_RECONCILE
+            come = "gamba_annullata"
+        else:
+            leg = _gamba_dalla_riga(r, info)
+            if leg is None:
+                continue                    # regola storica della riga orfana, sotto
+            ctx.legs.append(leg)
+            per_ref[ref] = leg
+            come = "gamba_ricostruita"
+        meta = {**(r.get("meta") or {}), "reason": "place_exception_reconciling",
+                "riserva_orfana": come}
+        try:
+            db.update_trade(int(r["id"]), meta=meta)
+            r["meta"] = meta
+        except Exception as ex:  # noqa: BLE001 - la gamba e' gia' in riconciliazione
+            logger.warning("[mike] marcatura riserva orfana %s KO: %s", ref, str(ex)[:120])
+        logger.critical("[mike] %s: riga #%s (%s) pending senza gamba viva -> "
+                        "riconciliazione con la fonte dell'ordine", event_id, r.get("id"), ref)
+        db.log("reconcile_pending", {"leg": ref, "trade_id": r.get("id"), "role": leg.role,
+                                     "reason": "riserva_orfana", "come": come,
+                                     "critical": True,
+                                     "nota": "riga pending senza gamba viva: si decide "
+                                             "con la fonte vera dell'ordine, non per "
+                                             "deduzione"}, event_id)
+        n += 1
+    return n
 
 
 def _reconcile_trades(db: Any, event_id: str, ctx: E.MatchCtx, info: Optional[F.EventInfo],
@@ -4070,6 +4242,8 @@ def _reconcile_trades(db: Any, event_id: str, ctx: E.MatchCtx, info: Optional[F.
                                      "status": row["status"], "critical": True}, event_id)
         except Exception as ex:  # noqa: BLE001
             logger.warning("[mike] reconcile insert %s KO: %s", leg.ref, str(ex)[:120])
+    # D1 (28/09): righe 'pending' senza gamba viva -> riconciliazione (vedi sopra)
+    fixed += _aggancia_riserve_orfane(db, event_id, ctx, rows, info)
     refs = {l.ref for l in ctx.legs}
     for ref, r in by_ref.items():
         # M9: riferimento alla riga di apertura rimasto in meta perche' la colonna
@@ -5096,6 +5270,16 @@ def main() -> None:
     if not args.once:
         lock = acquire_single_instance_lock(_LOCK_PORT, "mike")
     logger.info("[mike] servizio avviato (lock %s, dry=%s)", _LOCK_PORT, args.dry)
+    # D1 (28/09): timeout PostgREST del profilo bot per TUTTO il processo
+    # (connessione 5 s, lettura 20 s; la libreria ne dava 120 a ogni fase): con
+    # la rete «a buco nero» un giro non resta piu' appeso minuti. Il database
+    # uccide comunque ogni query oltre 8 s (``authenticator``).
+    try:
+        import db_client as _dbc
+
+        logger.info("[mike] timeout PostgREST del profilo bot: %s", _dbc.usa_timeout_bot())
+    except Exception as ex:  # noqa: BLE001 - mai un crash: resta il default
+        logger.warning("[mike] timeout PostgREST bot non applicato: %s", str(ex)[:160])
     # CANALE LOCALE verso l'app desktop (14/09): quote, P&L e stato viaggiano su
     # 127.0.0.1 invece che passare dal disco. Se la porta e' occupata o il
     # modulo non parte, ``start_channel`` torna None e il servizio continua

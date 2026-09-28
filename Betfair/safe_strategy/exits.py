@@ -583,6 +583,16 @@ def market_open(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> Opt
     ``ou``) porta il proprio ``status``; solo il Match Odds usa ``mo_status``.
     Il blocco si riconosce per ``market_id`` quando il trade lo ha (una linea
     O/U non e' l'altra), altrimenti per market_type."""
+    st = market_status(trade, payload)
+    return None if st is None else st == "OPEN"
+
+
+def market_status(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> Optional[str]:
+    """Lo ``status`` GREZZO (maiuscolo) del mercato della posizione dal feed:
+    'OPEN' / 'SUSPENDED' / 'CLOSED' / ..., None = ignoto. Stessa ricerca del
+    blocco di ``market_open``. D1 (28/09): serve a distinguere il mercato
+    CHIUSO (la proposta d'uscita non e' piu' eseguibile) dal SOSPESO (puo'
+    riaprire)."""
     if not isinstance(payload, dict):
         return None
     mt = str(trade.get("market_type") or "").upper()
@@ -610,7 +620,7 @@ def market_open(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> Opt
         if blk.get("status") is not None:
             st = blk.get("status")
             break
-    return None if st is None else str(st).upper() == "OPEN"
+    return None if st is None else str(st).upper()
 
 
 # ---------------------------------------------------------------------------

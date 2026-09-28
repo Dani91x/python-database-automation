@@ -153,6 +153,20 @@ class FakeDB:
             viva["status"] = "rejected"
             viva["result"] = {**(viva.get("result") or {}), "decaduta": True, "motivo": motivo}
 
+    # D1 (28/09): stesse firme e semantica di ``bot_db`` (kind 'cashout',
+    # status 'proposed'; la decadenza per id tocca SOLO una 'proposed').
+    def proposte_di_chiusura_vive(self, limit=200):
+        return [r for r in self.requests
+                if r.get("kind") == "cashout" and r.get("status") == "proposed"][:int(limit)]
+
+    def chiudi_proposta_per_id(self, req_id, motivo, dettaglio=None):
+        for r in self.requests:
+            if r.get("id") == int(req_id) and r.get("status") == "proposed":
+                r["status"] = "rejected"
+                r["result"] = {**(dettaglio or {}), "decaduta": True, "motivo": str(motivo)[:200]}
+                return True
+        return False
+
     # --- proposte di OPPORTUNITA' (17/09): stessa coda, kind='place',
     #     riconosciute da payload.opp_key. Stesse chiavi del vero
     #     (``bot_db.proposte_opportunita`` e compagne).
@@ -2114,6 +2128,7 @@ def _reset_module_state():
     S._MARKET_MISSING.clear()
     S._FEED_BLIND_LOG.clear()
     S._SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
+    S._SPAZZINO_PROPOSTE["ts"] = 0.0     # D1 (28/09): ritmo dello spazzino proposte
 
 
 def _skips(db, reason=None):

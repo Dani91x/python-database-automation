@@ -41,7 +41,7 @@ from Betfair.stream.trading.greenup import GreenupPlan, compute_greenup
 
 logger = logging.getLogger("safe.execution")
 
-# sentinella: esito enqueue IGNOTO in LIVE (mai il place REST subito).
+# sentinella: esito enqueue IGNOTO, paper e live (mai un secondo percorso subito).
 ENQUEUE_UNKNOWN = -1
 
 # Pavimento ASSOLUTO dell'exchange: sotto questo non esiste ordine Betfair, in
@@ -1047,8 +1047,9 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
     muore in mezzo il pending resta riconoscibile e il recovery lo adotta per
     ref), ``time_in_force=FILL_OR_KILL`` in live (il FOK vero lo esegue Betfair),
     ``mode`` derivato SOLO dal trade. Ritorna l'id di coda, ``ENQUEUE_UNKNOWN``
-    se l'esito live è ignoto (riserva in attesa, MAI place REST), None se
-    l'enqueue non è mai avvenuto (il chiamante ripiega sul legacy).
+    se l'esito è ignoto, in paper come in live (riserva in attesa, MAI un
+    secondo percorso: né place REST né fill simulato), None se l'enqueue non è
+    certamente avvenuto (il chiamante ripiega sul legacy).
     """
     mode = str(mode)
     if mode not in ("paper", "live"):  # INVARIANTE SUPREMO
@@ -1140,9 +1141,20 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
             except Exception:  # noqa: BLE001 — recovery al prossimo poll (client_ref)
                 pass
             return int(req["id"])
-        if mode == "live" and lookup_failed:
-            logger.warning("[safe.exec] enqueue LIVE esito IGNOTO (trade %s): riserva "
-                           "in attesa di recovery, NESSUN place REST", trade_id)
+        if lookup_failed:
+            # D1 (28/09) - PAPER = LIVE ANCHE QUI. Fino a oggi la regola valeva
+            # solo in live: in PAPER, con l'accodamento andato in errore E la
+            # ricerca per ref fallita, si tornava None e ``place`` ripiegava sul
+            # fill simulato in casa. Ma la richiesta poteva essere GIA' in coda
+            # (risposta persa): il runner la eseguiva col suo matching e la riga
+            # riceveva DUE esecuzioni dello stesso ordine. In dubbio non si
+            # esegue una seconda volta: la riga resta 'pending' col marcatore
+            # ``flumine_client_ref`` e la risolve ``poll_flumine_pending``
+            # (``_recover_flumine_orphan``: adotta la richiesta per ref, o chiude
+            # come non eseguito se non esiste). Identico in paper e in live.
+            logger.warning("[safe.exec] enqueue %s esito IGNOTO (trade %s): riserva "
+                           "in attesa di recovery per ref, NESSUN secondo percorso",
+                           mode.upper(), trade_id)
             return ENQUEUE_UNKNOWN
         try:
             db.update_trade(trade_id, meta=dict(base_meta or {}))

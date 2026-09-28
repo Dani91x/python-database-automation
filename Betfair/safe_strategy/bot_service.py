@@ -2041,6 +2041,7 @@ def _read_markets_batch(market, trades: list[dict[str, Any]],
     if float(st.get("cycle_ts") or 0.0) != now_ts:
         st["cycle_ts"] = now_ts
         st["used"] = 0
+        st["singoli"] = 0
     last: dict = st.setdefault("last", {})
     due = [mid for mid in by_mid
            if last.get(mid) is None or now_ts - float(last[mid]) >= REST_MIN_INTERVAL_S]
@@ -2061,7 +2062,38 @@ def _read_markets_batch(market, trades: list[dict[str, Any]],
         for mid in chunk:
             if mid in res:
                 out[mid] = res[mid]
+        # D1 (28/09) - MERCATI CHIUSI IN UN BLOCCO MISTO. Documentazione Betfair
+        # di ``listMarketBook``: «Requests that include both OPEN & CLOSED markets
+        # will only return those markets that are OPEN». In un blocco con anche
+        # un solo mercato aperto, i CHIUSI mancano dalla risposta e
+        # ``read_markets`` li dice None: qui diventavano «mercato sparito»
+        # (``_market_missing``) e la posizione non si regolava MAI finche' un'altra
+        # posizione aperta restava in lettura (al riavvio dopo giorni: posizioni
+        # 'open' su partite finite). Chi manca da un blocco di piu' mercati si
+        # rilegge DA SOLO (una richiesta con soli chiusi li restituisce), al
+        # massimo ``_CHIUSI_SINGOLI_PER_CICLO`` per ciclo; gli altri al giro dopo.
+        if len(chunk) > 1:
+            for mid in [m for m in chunk if m in out and out[m] is None]:
+                if int(st.get("singoli") or 0) >= _CHIUSI_SINGOLI_PER_CICLO:
+                    del out[mid]             # non deciso: si rilegge, mai «sparito»
+                    last.pop(mid, None)
+                    continue
+                st["singoli"] = int(st.get("singoli") or 0) + 1
+                try:
+                    uno = batch([_cs_of(by_mid[mid])]) or {}
+                except Exception as ex:  # noqa: BLE001 - non deciso: si rilegge
+                    logger.warning("[safe.bot] read_markets singolo KO %s: %s", mid, str(ex)[:120])
+                    del out[mid]
+                    continue
+                if mid in uno:
+                    out[mid] = uno[mid]
+                else:
+                    del out[mid]
     return out
+
+
+# D1 (28/09): riletture singole dei mercati assenti da un blocco misto, per ciclo
+_CHIUSI_SINGOLI_PER_CICLO = 4
 
 
 def _commission_rate(value: Any, fallback: float) -> float:
@@ -2586,6 +2618,21 @@ def _stato_grezzo(trade: dict[str, Any], payload: Any) -> str:
     return _SM.SOSPESO
 
 
+def _ctx_della_modalita(db, now: datetime, params: dict, risk_ctx: Optional[dict],
+                        control_mode: str, mode: str) -> dict:
+    """D1 (28/09) - il contesto di rischio della modalita' DELL'ORDINE.
+
+    Il contesto che ``process_requests`` passa e' quello del CICLO, costruito
+    sulla modalita' del servizio (``control_mode``). Con ``strategy_modes`` un
+    ordine puo' essere dell'altra modalita' (una proposta di modello paper a
+    servizio live): confrontarlo con esposizione e liability giornaliera
+    dell'altra modalita' mescolava paper e live nei cap (catalogo §7.21). Se le
+    modalita' coincidono si riusa quello del ciclo (nessuna lettura in piu')."""
+    if risk_ctx is not None and str(control_mode or "").lower() == str(mode).lower():
+        return risk_ctx
+    return build_risk_ctx(db, now, params, mode=mode)
+
+
 def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
                    now: datetime, risk_ctx: Optional[dict] = None,
                    control_mode: str = "") -> dict:
@@ -2810,7 +2857,7 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     cap = float(params.get("max_liability_per_trade") or 0.0)
     if cap > 0 and liability > cap:
         return {"error": "max_liability_per_trade_superato", "liability": liability}
-    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params, mode=mode)
+    risk_ctx = _ctx_della_modalita(db, now, params, risk_ctx, control_mode, mode)
     blocked = _risk_gate(db, now, params, risk_ctx,
                          {"event_id": event_id, "market_type": market_type,
                           "liability": liability,
@@ -3055,7 +3102,7 @@ def _request_place_combo(*, db, market, rows_by_event, payload: dict, params: di
                               "liability": round(liability, 2)})
     mt_combo = _combo_market_type(legs_validate, [l["size"] for l in legs_validate])
     total_liab = round(sum(l["liability"] for l in legs_validate), 2)
-    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params, mode=mode)
+    risk_ctx = _ctx_della_modalita(db, now, params, risk_ctx, control_mode, mode)
     blocked = _risk_gate(db, now, params, risk_ctx,
                          {"event_id": event_id, "market_type": mt_combo,
                           "liability": total_liab, "strategy": "model"},
@@ -3232,6 +3279,19 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
     if isinstance(payload_feed, dict) and XE.market_open(trade, payload_feed) is False:
         return {"rejected": "mercato sospeso", "trade_id": int(tid),
                 "message": "rifiutato: mercato sospeso, riprova appena riapre"}
+    # D1 (28/09): l'APPROVAZIONE di un'uscita decisa dal bot si esegue solo se
+    # la condizione d'uscita vale ANCORA adesso (i prezzi, qui sotto, sono gia'
+    # quelli di adesso: mai ``price_at_decision``).
+    invalida = _proposta_non_piu_valida(trade, payload, row, params, now)
+    if invalida is not None:
+        _log(db, "skip", {"reason": "proposta_uscita_non_piu_valida", "origin": "manual",
+                          "trade_id": int(tid), "event_id": trade.get("event_id"),
+                          "mode": trade.get("mode"), "motivo": invalida,
+                          "exit_kind": payload.get("exit_kind")})
+        return {"rejected": "condizione_uscita_non_valida", "trade_id": int(tid),
+                "decaduta": True, "motivo": invalida,
+                "message": f"rifiutato: {invalida}. Nessun ordine: se la condizione "
+                           f"torna, il bot la ripropone con i dati di adesso"}
     feed_ok = isinstance(row, dict) and XE.feed_is_fresh(row, now.timestamp(),
                                                          _scanner_ts(db, now.timestamp()))
     source = "feed"
@@ -3485,6 +3545,161 @@ def _uscita_del_bot_approvata(payload: dict[str, Any]) -> bool:
     Un «Cash out» premuto sulla scheda non ne ha nessuno."""
     return bool(payload.get("approved_at") or payload.get("exit_kind")
                 or payload.get("approvata_da"))
+
+
+# D1 (28/09) - VITA DI UNA PROPOSTA D'USCITA.
+# Finche' la condizione regge, ``_proponi_chiusura`` riconferma la proposta
+# (marcatore ``meta.exit_proposal.ts`` sulla riga) almeno ogni
+# ``_RICONTROLLO_PROPOSTA_S``. Una proposta che il bot non riconferma da
+# ``_PROPOSTA_SENZA_CONFERMA_S`` non descrive piu' il mercato: la posizione e'
+# chiusa o regolata, la partita e' finita, il feed non la mostra piu', il bot
+# era spento. Resta approvabile in scheda al prezzo e alla situazione di allora:
+# e' la bugia che il 26/09 ha lasciato sei proposte vive per due giorni.
+_PROPOSTA_SENZA_CONFERMA_S = 120.0
+# ogni quanto lo spazzino rilegge le proposte vive (una SELECT)
+_SPAZZINO_PROPOSTE_S = 30.0
+_SPAZZINO_PROPOSTE: dict[str, float] = {"ts": 0.0}
+# le proposte di COPERTURA delle gambe manuali (B25) hanno un ciclo di vita loro
+# (``gestisci_coperture_combo``): nessuna riconferma a ritmo, valgono finche' la
+# gamba e' aperta e scoperta.
+_MOTIVO_PROPOSTA_COPERTURA = "copertura_combo_incompleta"
+
+
+def _eta_marcatore_proposta(trade: dict[str, Any], now: datetime,
+                            request_id: Optional[int] = None) -> Optional[float]:
+    """Secondi dall'ultima riconferma del bot, None se la riga non porta il
+    marcatore (o porta quello di un'ALTRA proposta, se ``request_id`` e' dato)."""
+    mk = (trade.get("meta") or {}).get(PROPOSTA_KEY)
+    if not isinstance(mk, dict):
+        return None
+    if request_id is not None and int(mk.get("request_id") or 0) != int(request_id):
+        return None
+    ts = XE.parse_ts(mk.get("ts"))
+    return None if ts is None else max(0.0, now.timestamp() - ts)
+
+
+def _proposta_non_piu_valida(trade: dict[str, Any], payload: dict[str, Any],
+                             row: Optional[dict[str, Any]], params: dict[str, Any],
+                             now: datetime) -> Optional[str]:
+    """D1 (28/09) - il motivo per cui l'APPROVAZIONE di un'uscita decisa dal bot
+    NON va eseguita adesso, oppure None.
+
+    Riguarda solo le approvazioni di proposte d'uscita del bot (``exit_kind``
+    nel payload): il «Cash out» della scheda e' una decisione dell'utente e non
+    passa di qui, e la copertura di una gamba manuale ha le sue guardie. NON
+    cambia QUANDO o PERCHE' la proposta nasce: dice solo che una firma su un
+    dato superato non manda un ordine.
+      · regole (base/esatto/punta/tennis): la STESSA ``exits.decide`` del ciclo,
+        sul feed di adesso, deve dare la STESSA uscita (``exit_kind``);
+      · modello: la regola vive sui prezzi e sul modello, e qui si verifica che
+        il bot l'abbia riconfermata da poco (marcatore della proposta)."""
+    kind = payload.get("exit_kind")
+    if not kind or str(payload.get("motivo") or "") == _MOTIVO_PROPOSTA_COPERTURA:
+        return None
+    strategy = str(trade.get("strategy") or "")
+    if strategy in XE.EXIT_STRATEGIES:
+        feed = (row or {}).get("payload") if isinstance(row, dict) else None
+        if not isinstance(feed, dict):
+            return "condizione d'uscita non verificabile: la partita non e' piu' nel feed"
+        now_ts = now.timestamp()
+        meta_ora = XE.track(trade, feed, now_ts)
+        d = XE.decide(trade, feed, meta_ora, now_ts, XE.exit_params(params))
+        if d is None:
+            return "la condizione d'uscita non vale piu'"
+        if str(d.kind) != str(kind):
+            return f"la condizione d'uscita e' cambiata ({kind} -> {d.kind})"
+        return None
+    eta = _eta_marcatore_proposta(trade, now)
+    if eta is None or eta > _PROPOSTA_SENZA_CONFERMA_S:
+        return ("il bot non riconferma questa uscita da "
+                + ("sempre" if eta is None else f"{int(eta)} s"))
+    return None
+
+
+def _decadi_proposte_non_eseguibili(db, *, now: datetime,
+                                    open_rows: Optional[list[dict[str, Any]]],
+                                    rows_by_event: dict[str, dict]) -> int:
+    """D1 (28/09) - le proposte d'uscita ('cashout') che non si possono piu'
+    eseguire DECADONO, con la marca di sempre ('rejected' + ``decaduta``).
+
+    Prima decadevano solo dentro ``_process_exit_one``, cioe' solo per le
+    posizioni che il ciclo delle uscite guardava ancora: una posizione chiusa,
+    regolata, uscita dal feed, o una partita finita a servizio spento lasciava
+    la proposta 'proposed' per sempre (sei del 26/09 ancora approvabili due
+    giorni dopo). Qui si guardano TUTTE le proposte vive, una SELECT ogni
+    ``_SPAZZINO_PROPOSTE_S``, contro le posizioni gia' lette dal ciclo:
+      · posizione non piu' 'open' (chiusa, coperta, regolata, sparita);
+      · mercato della posizione CHIUSO nel feed (partita finita);
+      · uscita del bot non riconfermata da ``_PROPOSTA_SENZA_CONFERMA_S``.
+    Senza posizioni lette (``open_rows`` None) non si decide niente.
+    Stesso codice per calcio e tennis, paper e live. Ritorna quante ne ha chiuse."""
+    if open_rows is None:
+        return 0
+    if now.timestamp() - float(_SPAZZINO_PROPOSTE.get("ts") or 0.0) < _SPAZZINO_PROPOSTE_S:
+        return 0
+    leggi = getattr(db, "proposte_di_chiusura_vive", None)
+    chiudi = getattr(db, "chiudi_proposta_per_id", None)
+    if not (callable(leggi) and callable(chiudi)):
+        return 0
+    try:
+        vive = list(leggi() or [])
+    except Exception as ex:  # noqa: BLE001 - si riprova al giro dopo
+        logger.warning("[safe.bot] lettura proposte vive KO: %s", str(ex)[:120])
+        return 0
+    _SPAZZINO_PROPOSTE["ts"] = now.timestamp()
+    per_id = {}
+    for t in open_rows:
+        try:
+            per_id[int(t["id"])] = t
+        except (KeyError, TypeError, ValueError):
+            continue
+    n = 0
+    for p in vive:
+        corpo = p.get("payload") if isinstance(p.get("payload"), dict) else {}
+        try:
+            rid, tid = int(p["id"]), int(corpo.get("trade_id"))
+        except (KeyError, TypeError, ValueError):
+            continue
+        trade = per_id.get(tid)
+        motivo: Optional[str] = None
+        if trade is None or str(trade.get("status") or "") != "open":
+            stato = "sparita" if trade is None else str(trade.get("status") or "")
+            motivo = f"posizione non piu' aperta ({stato}): nulla da chiudere"
+        else:
+            riga = rows_by_event.get(str(trade.get("event_id")))
+            feed = (riga or {}).get("payload") if isinstance(riga, dict) else None
+            if XE.market_status(trade, feed) == "CLOSED":
+                motivo = "mercato chiuso: partita finita"
+            elif str(corpo.get("motivo") or "") != _MOTIVO_PROPOSTA_COPERTURA:
+                eta = _eta_marcatore_proposta(trade, now, request_id=rid)
+                if eta is None or eta > _PROPOSTA_SENZA_CONFERMA_S:
+                    motivo = ("uscita non riconfermata dal bot da "
+                              + ("sempre" if eta is None else f"{int(eta)} s")
+                              + ": dati della proposta superati")
+        if motivo is None:
+            continue
+        try:
+            chiusa = chiudi(rid, motivo, {"spazzino": True, "trade_id": tid})
+        except Exception as ex:  # noqa: BLE001 - si riprova al giro dopo
+            logger.warning("[safe.bot] decadenza proposta %s KO: %s", rid, str(ex)[:120])
+            continue
+        if not chiusa:
+            continue            # nel frattempo firmata o chiusa da altri: non si tocca
+        n += 1
+        if trade is not None and isinstance((trade.get("meta") or {}).get(PROPOSTA_KEY), dict):
+            # il marcatore va via con la proposta: se la condizione torna, nasce
+            # una proposta NUOVA coi dati di allora (non «ignorata dall'utente»)
+            nuovo = {k: v for k, v in (trade.get("meta") or {}).items() if k != PROPOSTA_KEY}
+            try:
+                db.update_trade(tid, meta=nuovo)
+                trade["meta"] = nuovo
+            except Exception as ex:  # noqa: BLE001
+                logger.warning("[safe.bot] marcatore proposta %s KO: %s", tid, str(ex)[:120])
+        _log(db, "exit_hold", {"reason": "proposta_decaduta", "trade_id": tid,
+                               "request_id": rid, "motivo": motivo,
+                               "event_id": corpo.get("event_id"), "mode": corpo.get("mode"),
+                               "exit_kind": corpo.get("exit_kind")})
+    return n
 
 
 def _book_prices(*, market, trade: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -9214,6 +9429,14 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
                             # filtro voleva chiudere.
                             open_rows=risk_ctx.get("open_all")
                             if not risk_ctx.get("unavailable") else None)
+    # (c-ter) D1 (28/09): proposte d'uscita non piu' eseguibili -> decadono.
+    # DOPO le uscite: una proposta che regge e' appena stata riconfermata.
+    try:
+        _decadi_proposte_non_eseguibili(
+            db, now=now, rows_by_event=rows_by_event,
+            open_rows=risk_ctx.get("open_all") if not risk_ctx.get("unavailable") else None)
+    except Exception as ex:  # noqa: BLE001 - una proposta non ferma il ciclo
+        _log(db, "error", {"reason": "decadenza_proposte_failed", "err": str(ex)[:160]})
 
     if status == "stopping":
         try:
@@ -9787,6 +10010,19 @@ def _control_per_il_giro(db: Any) -> dict:
         return dict(noto)
 
 
+def _usa_timeout_bot(chi: str) -> None:
+    """D1 (28/09): timeout PostgREST del profilo bot per tutto il processo
+    (``db_client.usa_timeout_bot``: connessione 5 s, lettura 20 s, contro i
+    120 s della libreria). Mai un crash: se non si applica resta il default."""
+    try:
+        import db_client as _dbc
+
+        t = _dbc.usa_timeout_bot()
+        logger.info("[%s] timeout PostgREST del profilo bot: %s", chi, t)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[%s] timeout PostgREST bot non applicato: %s", chi, str(ex)[:160])
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -9796,6 +10032,7 @@ def main() -> None:
     )
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
+    _usa_timeout_bot("safe.bot")
     _avvia_canale()
     # 23/09: saldo del conto riletto dopo ogni ordine reale / regolazione nuova
     # (una chiamata per evento, nessun polling; vedi stream/saldo_evento.py).
@@ -9953,6 +10190,8 @@ def svuota_le_cache() -> None:
     _SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
     _EXIT_MODEL.clear()
     _EXIT_MODEL.update({"model": None, "mod": None})
+    _SPAZZINO_PROPOSTE.clear()          # D1 (28/09): ritmo dello spazzino proposte
+    _SPAZZINO_PROPOSTE.update({"ts": 0.0})
     _LETTURA_FEED.clear()
     _LETTURA_FEED.update({"ms": 0.0})
     _PLACE_SEED.clear()
