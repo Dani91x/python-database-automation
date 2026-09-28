@@ -1,0 +1,12 @@
+J1 mike: col flusso fermo una APERTURA parte coi prezzi del ripiego REST -> ROSSA | FAILED Betfair/mike/tests/test_mike_flusso_cantiere_j2_2026_09_28.py::test_regola_unica_mike_execute_place_rifiuta_un_apertura_sui_prezzi_rest [ripristino OK, 54 s]
+J2 flusso: il giro dello scanner bloccato non conta (stato vecchio = viv -> ROSSA | FAILED Betfair/safe_strategy/tests/test_flusso_interrotto_cantiere_j_2026_09_28.py::test_stato_porta_il_flusso_e_il_giro_bloccato_ferma_tutti [ripristino OK, 27 s]
+J3 flusso: riga senza il blocco dichiarato data per viva anche con lo sc -> ROSSA | FAILED Betfair/safe_strategy/tests/test_flusso_interrotto_cantiere_j_bis_2026_09_28.py::test_riga_senza_chiave_con_scanner_nuovo_non_e_viva [ripristino OK, 41 s]
+J4 flusso: un mercato fermo della decisione non ferma niente             -> ROSSA | FAILED Betfair/safe_strategy/tests/test_flusso_interrotto_cantiere_j_2026_09_28.py::test_linea_ferma_con_match_odds_vivo_va_in_mercati_fermi [ripristino OK, 47 s]
+J5 safe: combo approvata con una gamba su mercato fermo accettata        -> ROSSA | FAILED Betfair/safe_strategy/tests/test_flusso_su_master_cantiere_j2_2026_09_28.py::test_combo_approvata_con_una_gamba_su_linea_ferma_nessuna_gamba [ripristino OK, 38 s]
+P1 safe: il runner spento consuma i tentativi della partita              -> ROSSA | FAILED Betfair/safe_strategy/tests/test_p_nessun_fill_di_casa_2026_09_28.py::test_apertura_paper_senza_runner_non_eseguita_e_NON_consuma_il_tentativo [ripristino OK, 117 s]
+P2 safe: runner spento, il segnale diventa definitivo                    -> ROSSA | FAILED Betfair/safe_strategy/tests/test_p_nessun_fill_di_casa_2026_09_28.py::test_apertura_paper_senza_runner_non_eseguita_e_NON_consuma_il_tentativo [ripristino OK, 91 s]
+P3 esecuzione: la riconciliazione ignora il riferimento del canale       -> NON APPLICATA (ancora non trovata) [ripristino OK, 0 s]
+P4 esecuzione: una chiusura paper con execution_mode rest non va al runn -> ROSSA | FAILED Betfair/safe_strategy/tests/test_p_nessun_fill_di_casa_2026_09_28.py::test_chiusura_paper_con_rest_va_comunque_al_runner [ripristino OK, 85 s]
+P5 omega: il green-up confermato non porta lo stato a done               -> ROSSA | FAILED Betfair/omega/test_omega_audit_2026_09_11.py::test_h04_greenup_riuscito_scrive_state_done_e_exit_kind_greenup [ripristino OK, 45 s]
+
+TOTALE 10 | rosse 9 | SOPRAVVISSUTE 0 | non applicate 1 | ripristini falliti 0

@@ -4208,3 +4208,28 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   connessioni di mercato; atlante (scrivere solo la filigrana?); 4 difetti minori del report giornaliero.
 - 9 righe paper ancora `open` nel DB dal 26/09 (Mike 5, Safe 4): primo controllo della prova dal vivo.
 - L'app si accende SOLO dopo l'elenco finale (decisione dell'utente del 28/09).
+
+**Checkpoint 23:00 — scalper tennis con le chiusure esatte RIACCESE su master; giro di replay dal ramo di prova LANCIATO**
+- SU MASTER (master = origin = `82239df` + cronostoria): **T blocco 2, seconda versione** (scalper tennis: i sostituti del
+  rimpiazzo si agganciano a ogni book, parcheggio orfano ritirato, pausa sull'orologio del mercato; ripiego TOLTO,
+  `exact_exits` di nuovo acceso). Replay PRIMA dell'integrazione: 4 OK, 0 violazioni, azioni 1/309/309/1 (prima di D2
+  228; col difetto 16.613). 858 test tennis verdi. Il debito sulle chiusure esatte dello scalper tennis e' CHIUSO.
+- RAMO LOCALE `staging-2026-09-28` = `prova-tutto-2026-09-28` = `02d4c30`: master `82239df` + D1-ter 1-5 + N + N3 punti 1 e 2
+  + J2 blocchi 1-4 e banco + P. Tutto sommato SENZA conflitti. Sul sommato: tsc 0 errori; suite Python intera (giro
+  precedente, senza J2 2-4) 8110 verdi e 1 rosso; test tennis 901 verdi e lo stesso rosso.
+- QUEL ROSSO e' di P (`test_profilo_rapido_safe_tennis_sulla_registrazione_vera`, R8): con D2 e P insieme l'apertura tennis
+  sotto il minimo viene alzata in `execution` PRIMA del motore e l'evento non dichiara piu' `portata_al_minimo`. P
+  rimandato (`CANTIERE_P_correzione_minimo.patch` in arrivo).
+- MUTAZIONI MIE su J2 blocco 1 e su P, sul codice sommato: 10, 9 ROSSE, 0 sopravvissute, 1 non applicata (ancora non
+  trovata: `refs_di_riconciliazione`). Esiti in `AUDIT_2026-09-28/mutazioni_coordinatore/`.
+- REPERTI DEL REVISORE su J2 blocchi 2-4 e N3 punto 2, rimandati ai delegati: (N) il controllo Z3 del banco confronta i
+  CONTEGGI e non le chiavi (allentato); (J2) a stream muto l'ordine appoggiato del chase resta a un prezzo non
+  sorvegliato: le aperture appoggiate vanno RITIRATE; soglia dello stream muto da calcolare dall'heartbeat vero; status
+  diversi da 503; banner che sparisce se cade il canale locale.
+- **GIRO DI REPLAY LANCIATO dal ramo di prova `02d4c30`** (worktree `scratchpad/verifica/staging`, uno alla volta,
+  uscite in `scratchpad/replay/giro/<bot>.out.txt`), nell'ordine: tennis_scalper, tennis_pro, tennis_flb, tennis_swing
+  (scenari base, live, gate-aperto, parziali, uscite-manuali, uscite-manuali-firmate), omega rapidi entrambi, safe_base,
+  safe_esatto, safe_punta rapidi entrambi, mike copertura-rifiutata entrambi, mike «tutti» canale, scalper_calcio
+  35797769, sniper. Se la sessione cade: rilanciare dal bot che non ha il referto completo (riga `real` in fondo).
+- A GIRO VERDE: portare `staging-2026-09-28` su master a percorsi espliciti, poi le tre correzioni piccole in arrivo
+  (P minimo, N3 Z3, J2 correzioni) ciascuna col replay del solo bot che tocca.
