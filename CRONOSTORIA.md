@@ -3750,7 +3750,96 @@ sui nuovi ordini, Safe per modalità, Analytics < 8 s); (2) log dell'action catc
   calcio e tennis; `arresto_ordinato.py` + `arresto_worker` nei runner; SPEC dello spegnimento; note per il rebase di
   B): da verificare. **CANTIERE E rifinitura ARRIVATA** (blocco adattivo, parte da 7 coppie): da verificare.
 
-### PUNTO DI RIPRESA IN CASO DI INTERRUZIONE (28/09)
-Ondata 1 in corso: i delegati lavorano nei worktree `.claude/worktrees/agent-*` creati oggi (lavoro NON committato: non
-toccarli con `checkout`/`remove`); referti attesi in `<worktree>/AUDIT_2026-09-28/CANTIERE_*.md` (A-F) e nel checkout
-principale per H e I. Nulla e' integrato su master. Alla ripresa: leggere i referti presenti, verificare, integrare.
+### ★★★ PUNTO ESATTO DI RIPRESA — CHECKPOINT DEL 28/09 SERA (ordine tassativo dell'utente: «voglio riprendere esattamente da dove ci fermiamo senza ricominciare da 0») ★★★
+
+**Regola per chi riprende**: NON rifare nulla di cio' che qui sotto e' «SU MASTER» o «CERTIFICATO». Il lavoro dei
+delegati e' SU DISCO nei worktree `.claude/worktrees/agent-*` (mai `checkout`/`reset`/`remove` li' dentro); una copia
+di sicurezza (patch + file nuovi per worktree) e' in `_checkpoint_2026-09-28/` (non tracciata, puo' essere
+incompleta se la connessione e' caduta a meta': fanno fede i worktree). Le fotografie delle prime consegne di D1, D2 e
+J sono anche in `%TEMP%\claude\C--Users-Admin\718cbcd2-a29d-44dc-b459-c4590da8e624\scratchpad\snap\`.
+
+**1. SU MASTER E PUSHATO (master = origin = `92264f2` + il commit di questa cronostoria)**
+| Cantiere | Commit | Stato |
+|---|---|---|
+| I sanatorie SQL | `150bd46` (file) | applicata dall'utente, verificata sul DB (0 residui) |
+| H registro NC + protocollo dal vivo, L report e app | `150bd46` | chiusi (198 controlli: 55 chiusi, 146 dal vivo, 1 eliminato) |
+| E catchup 57014 + blocco adattivo | `0ffc3c6`, `49dea7e` | certificato; migrazione `season_gaps_perf` APPLICATA e verificata |
+| F atlante HTTP 500 | `3134f9f` | certificato; migrazione `hazard_atlas_rpc_scrittura` APPLICATA e verificata |
+| A fine evento (calcio, tennis, scalper, arresto ordinato lato Python) | `7a83206` | certificato (3053 test verdi su Betfair/stream) |
+| D1 prima consegna (Safe, Mike) | `92264f2` | certificato (Mike 952, Safe 1913, Omega 1362 verdi) |
+Test rosso PREESISTENTE (non dovuto a oggi, verificato togliendo la patch):
+`Betfair/safe_strategy/tests/test_selezione_esatto_2026_09_16.py::test_hint_coppia_presente_nellatlante_vero`
+(1,492 contro 1,446: dipende dall'atlante locale). Da assegnare.
+
+**2. CERTIFICATO DA ME, DA INTEGRARE (prossimo passo)**
+- **B capacita' mercati** (worktree `agent-af1ef180da338e7f9`, ramo locale `4fd3286` + merge `203fc56`): consegna
+  riallineata `AUDIT_2026-09-28/CANTIERE_B_su_master.patch` (18 file, contro `512db64`). La seconda consegna l'ho
+  certificata io (40 test, 8 mutazioni mie rosse); il RIALLINEAMENTO (46 test, incrocio con A, funzione unica
+  `db._posizioni_aperte_non_regolate`) e' ANCORA DA VERIFICARE da me: `git apply --check` su master, test di B e di A,
+  2-3 mutazioni mie sull'incrocio, poi commit a percorsi espliciti. Test di latenza instabile anche su HEAD:
+  `test_latenza_logica_aggancio_sotto_i_20_ms` (cantiere M).
+
+**3. CONSEGNATI, DA VERIFICARE (nell'ordine)**
+- **C Omega, seconda consegna** (worktree `agent-a946824ef51067fea`, commit locale `14d5bd5` + merge):
+  `AUDIT_2026-09-28/CANTIERE_C_su_master.patch`; suite Omega 1421 verdi (interruttori a 0); 22 mutazioni; la mia
+  sopravvissuta ora rossa (M16). Migrazione NUOVA da far applicare all'utente DOPO l'integrazione:
+  `migrations/omega_aggregati_servizio_per_modalita_2026-09-28.sql` (il codice funziona anche prima). Poi replay
+  `certifica omega` (mio).
+- **D1 seconda consegna: MIKE IN PAPER SUL RUNNER** (worktree `agent-ae168c1f19f739518`, referto
+  `AUDIT_2026-09-28/CANTIERE_D1_SECONDA_CONSEGNA.md`): porta `Betfair/mike/porta_ordini.py`, canale `/comando/mike`,
+  tolti differita e `_resting_filled`, feed stantio vietato anche in live; 982 test, 24 mutazioni. DA FARE: verifica
+  mia, poi `certifica mike --trasporto canale` (o `entrambi`), poi integrazione, poi `npm run build`. Restano da
+  assegnare a un delegato NUOVO (partendo da master): Safe e chiusure Omega senza fill di casa a gate chiuso
+  (`execution.py:737-790`), timeout DB per Omega e scanner, apertura tennis al minimo anche sul REST di Safe, R-2 lato
+  Safe (`meta.canale_cor`).
+- **J flusso interrotto, seconda consegna** (worktree `agent-ab47a4c326f664618`, commit locale `8e5dafe` fatto
+  SALTANDO gli hook, poi lavoro non committato): punti 1-3 e badge in Control Room fatti (43 test, 33 mutazioni; la
+  mia sopravvissuta ora rossa); modulo `Betfair/stream/stream_muto.py` fatto ma NON collegato a scalper e runner;
+  riserva dei runner (punto 5) NON iniziata (aspetta B su master). RIALLINEAMENTO BLOCCATO dai permessi (fetch/merge
+  negati al delegato): lo faccio io o un delegato nuovo partendo dal suo worktree. Prima consegna fotografata e
+  verificata da me su copia separata.
+- **G pagine** (worktree `agent-ade46c5c274d06f56`, referto `CANTIERE_G_PAGINE.md`): voci 1, 3, 4 fatte (pulsante
+  «avvia» Safe, lista partite col giorno di Roma, Match Replay in EUR); voce 5 gia' corretta su master; voce 2 (avvio
+  tennis che AGGIUNGE invece di sostituire) INVERTE un ordine esplicito dell'utente del 15/09 («parte solo lui») →
+  NON integrare la voce 2 senza la conferma dell'utente; voci 6-7: fatte 2 verifiche su 36, le altre 34 elencate nel
+  referto. 215 test, tsc 0.
+- **N pulsante uscite, blocco 1** (worktree `agent-a29743622286cd394`, patch
+  `AUDIT_2026-09-28/cantiere_n/blocco1_riavvio_manuale.patch` contro `512db64`): a ogni avvio NUOVO dell'app le uscite
+  tornano MANUALI per tutti i bot; 235 test, 8 mutazioni. AUDIT: nessun bot conforme alla regola del pulsante
+  (scalper, sniper e bot tennis non hanno nessun «approva»; stop e timeout chiudono da soli in manuale; Omega e Safe
+  approvavano senza ricontrollare). In corso: pulsante unico, approvazione con ricontrollo, poi bot per bot.
+  Nota del delegato: `test_omega_avvio_app_2026_09_16.py::test_b` e `::test_d` rossi anche sulla base.
+
+**4. IN LAVORAZIONE quando e' stato scritto il checkpoint**
+- **D2 tennis e scalper** (worktree `agent-aa4ee030442dc331f`): prima consegna ACCETTATA da me (non integrata);
+  seconda in corso: chiusure tennis ESATTE al centesimo, scenario sniper del banco, comandi dei replay,
+  riallineamento a master (`CANTIERE_D2_su_master.patch`).
+- **K avviatore** (worktree `agent-a5fd58f2bfd692331`): watchdog per scalper-service e ponte tennis, spegnimento
+  ordinato in `desktop/main.js` secondo `AUDIT_2026-09-28/SPEC_SPEGNIMENTO_ORDINATO.md`, arresto anche dei servizi.
+- **M test e ambiente** (worktree `agent-ae51c3b125167769d`): suite indipendente dal `.env` (111 rossi in Omega con
+  le porte accese), test di latenza instabile.
+
+**5. ORDINE DEI PROSSIMI PASSI**
+1) integrare B → avvisare J che B e' su master; 2) verificare e integrare C → migrazione Omega all'utente;
+3) verificare D1-seconda (Mike sul runner) → replay Mike → integrare; 4) N blocco 1 e successivi; 5) D2 alla
+consegna → replay tennis e scalper; 6) J riallineato, poi punto 5 (riserva dei runner); 7) G (senza la voce 2 finche'
+l'utente non conferma), K, M; 8) delegato nuovo per i residui di D1; 9) suite intere UNA volta, replay rapidi UNO per
+bot (`--worker 1`), `npm run build`, 7.9.3.B per lega; 10) pulizia dei worktree (junction con `cmd /c rmdir`, mai
+`--force`) e, per ultima, storia git (170 MB).
+**Come comandare i test** (finche' M non consegna): mettere a `0` nell'ambiente i 20 interruttori dei canali (elenco
+`INTERRUTTORI` in `.claude/worktrees/agent-a946824ef51067fea/AUDIT_2026-09-28/cantiere_c/falsifica_c.py`) e
+`SUPABASE_URL=http://127.0.0.1:9` con chiavi finte.
+
+**6. PIANO DELL'UTENTE**: oggi si finisce; 29/09 dal mattino PAPER per tutta la giornata (protocollo
+`AUDIT_2026-09-28/PROTOCOLLO_PROVA_DAL_VIVO.md`) con modifiche leggere ai bot; poi il live. Mike in paper si accende
+SOLO quando D1-seconda e' certificata e integrata (mai col simulatore vecchio).
+
+**7. DA PORTARE ALL'UTENTE (decisioni vere, non ancora chieste o non risposte)**
+- Mike: la Costituzione vuole l'ultimo ingresso (KO-10') con PERSIST valido in gioco; il live lo manda FOK con
+  LAPSE dal primo commit (11/09). Esempio: back 10 € a 1,50 con 6 € sul book: con PERSIST 6 abbinati e 4 a riposo
+  fino a KO+120 s; col FOK ordine ucciso per intero.
+- Safe: «avvia» dalla scheda tennis: aggiunge il tennis (proposta di oggi) oppure «parte solo lui» (ordine del 15/09)?
+- Capacita': tetto di 3 connessioni di mercato (circa 150 partite); per salire: 4 connessioni o richiesta a Betfair.
+- Atlante: col modo «domanda» nessuno legge la riga da 14 MB: scrivere solo la filigrana?
+- Report giornaliero: 4 difetti minori (proposte, nessuna modifica fatta).
+- Scalper e sniper a uscite manuali: rischio mentre l'utente non risponde (lo dira' il cantiere N con gli esempi).
