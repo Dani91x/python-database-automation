@@ -57,6 +57,7 @@ from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
 from Betfair.safe_strategy import proposte_opportunita as PO
 from Betfair.safe_strategy import risk as RK
+from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
 from Betfair.stream.trading import stato_mercato as _SM
 
@@ -10065,6 +10066,12 @@ def main() -> None:
         while True:
             interval = 2.0
             _ULTIMO_GIRO["mono"] = time.monotonic()
+            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
+            # di arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
+            # `finally`: lock.close()), exit 0, il watchdog non rilancia.
+            if _AO.richiesto():
+                logger.info("[safe.bot] ARRESTO ORDINATO richiesto dall'app: esco.")
+                break
             try:
                 # controllo d'avvio non concluso (DB muto): si riprova a ogni
                 # giro, e fino ad allora nessuna apertura.

@@ -8,7 +8,9 @@
 //       il python del .venv del progetto. Nessun doppio avvio: il lock porta dei
 //       runner protegge già, e il watchdog esce da solo se già attivo;
 //   (c) BrowserWindow 1600x900 → http://127.0.0.1:47330/board.
-// Alla chiusura: taskkill /T /F sui figli (tree-kill) — MAI processi orfani.
+// Alla chiusura (28/09, K-SPEGNIMENTO-ORDINATO): file ARRESTO condiviso, poi
+// fino al tempo massimo dichiarato per figlio (shutdownGraceMs), poi
+// taskkill /T /F (tree-kill) su chi resta vivo — MAI processi orfani.
 // ============================================================================
 'use strict';
 
@@ -227,6 +229,63 @@ const CHILD_LOG_STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 let childLogDir = null;               // null = log su file spento (solo console)
 const childLogStreams = new Map();    // label -> WriteStream | null
 
+// >>> K-SPEGNIMENTO-ORDINATO (28/09) -----------------------------------------
+// Prima del 28/09 la chiusura era SEMPRE `taskkill /T /F` (TerminateProcess):
+// nessun `finally` Python girava — ad app spenta restavano righe `live_follow`
+// STREAMING e posizioni paper `open` mai regolate (verificato il 28/09: 29
+// `live_follow` + 4 `tennis_live_follow`). SPEC_SPEGNIMENTO_ORDINATO.md
+// (cantiere A, lato Python GIA' pronto su master): UN file, ``ARRESTO``, che
+// ogni processo legge da SOLO (nessun segnale: su Windows un python senza
+// console non riceve CTRL_C/CTRL_BREAK in modo affidabile, e fra main.js e i
+// runner c'e' il watchdog in mezzo). Stessa cartella/nome del modulo Python
+// ``Betfair/stream/arresto_ordinato.py`` (``cartella()``/``percorso()``):
+// env APP_ARRESTO_DIR se valorizzata, altrimenti <DATA_DIR>/_arresto, dove
+// DATA_DIR = LIVE_STREAM_DATA_DIR o <repo>/_live_raw (``config_stream.py``).
+//
+// CANTIERE K (28/09): oltre ai due runner (gia' del cantiere A), lo stesso
+// controllo e' stato aggiunto (righe minime nel solo ciclo esterno, MAI nella
+// logica) anche ai servizi bot: omega-service, safe-strategy-service,
+// safe-strategy-bot, mike-service, tennis-bot-service (ponte), scalper-
+// service (qui SOLO in OR col suo kill-switch STOP_SCALPER esistente: "il
+// kill-switch non va mai scavalcato"). ``tennis-odds`` (job breve, periodico)
+// NON lo controlla: resta chiuso dal taskkill come sempre, non serve altro.
+function arrestoCartella(root) {
+    const espl = (process.env.APP_ARRESTO_DIR || '').trim();
+    if (espl) return espl;
+    const dataDir = (process.env.LIVE_STREAM_DATA_DIR || '').trim() || path.join(root, '_live_raw');
+    return path.join(dataDir, '_arresto');
+}
+
+function arrestoPercorso(root) {
+    return path.join(arrestoCartella(root), 'ARRESTO');
+}
+
+// all'avvio (PRIMA di spawnRunner): un file rimasto da uno spegnimento
+// precedente non deve fermare l'app appena riaperta.
+function cancellaArrestoAllAvvio(root) {
+    try { fs.unlinkSync(arrestoPercorso(root)); } catch (_) { /* assente: ok */ }
+}
+
+// tempo massimo dichiarato di attesa PRIMA di forzare (taskkill), SOLO per i
+// figli che leggono il file (elenco sotto): lo scalper aspetta fino a 60s la
+// chiusura flat delle sue sessioni (scalper_service.py, kill-switch) + un
+// margine; i due runner 25s per la specifica del cantiere A (ramo peggiore
+// 15s di attesa "nessun mercato" + chiusura follow + flush + logout Betfair);
+// gli altri servizi rispondono in pochi secondi al loro giro (2-20s): stesso
+// tetto dei runner come margine di sicurezza uniforme. Chi non e' in elenco
+// (es. tennis-odds) non viene atteso: resta il solo taskkill di sempre.
+const ARRESTO_ORDINATO_LABELS = new Set([
+    'runner-calcio', 'runner-tennis',
+    'omega-service', 'safe-strategy-service', 'safe-strategy-bot', 'mike-service',
+    'tennis-bot-service', 'scalper-service',
+]);
+
+function shutdownGraceMs(label) {
+    if (label === 'scalper-service') return 70_000;
+    return 25_000;
+}
+// <<< K-SPEGNIMENTO-ORDINATO --------------------------------------------------
+
 function childLogFileName(label, stamp) {
     return `${String(label).replace(/[^A-Za-z0-9_.-]/g, '_')}_${stamp}.log`;
 }
@@ -327,6 +386,9 @@ function spawnRunner(label, args) {
         windowsHide: true,
     });
     children.push(child);
+    // K-SPEGNIMENTO-ORDINATO: orderedShutdown() legge questa proprieta' per
+    // sapere CHI e', per loggare e per decidere quanto aspettarlo (vedi sopra).
+    child._label = label;
     console.log(`[desktop] ${label} avviato (pid ${child.pid}): ${PYTHON} ${args.join(' ')}`);
     writeChildLog(label, 'desktop', `avviato (pid ${child.pid}): ${args.join(' ')}`);
     // log dei figli su console (prefissati per capire chi parla) E su file
@@ -366,13 +428,21 @@ function startRunners() {
     spawnRunner('runner-tennis', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.tennis_live.tennis_runner']);
     // SERVIZI BOT: senza di loro i bot non si armano. NON avviare anche i .bat
     // a mano: l'app avvia già tutto.
-    spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service']);
+    // CANTIERE K (28/09, SPEC_WATCHDOG_SCALPER_PONTE_2026-09-26.md): prima non
+    // aveva watchdog — se moriva, niente auto-mode/supervisione delle sessioni
+    // e nessun avviso; le sessioni già vive restavano sole. Ora sotto watchdog
+    // come tutti gli altri: crash → alert CRITICAL + riavvio con backoff.
+    spawnRunner('scalper-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.scalper.scalper_service']);
     // PONTE bot→follow tennis in sola modalità ponte (audit 09/09): l'hosting dei
     // bot lo fa il runner tennis sotto watchdog (sopra). Senza --bridge-only i
     // due processi si contendevano il lock 47312 e, a seconda di chi vinceva, il
     // tennis restava senza sentinella o il ponte girava a vuoto. Le "Partite del
     // Giorno" tennis (tennis_markets) le popola il job betfair_tennis_odds sotto.
-    spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service', '--bridge-only']);
+    // CANTIERE K (28/09): idem sopra — prima senza watchdog, se moriva lo
+    // «ferma» della UI non diventava più `stopping` e il battito invecchiava.
+    // `--bridge-only` arriva al ponte perché il watchdog passa TUTTO cio' che
+    // segue il modulo (`Betfair.stream.watchdog._parse_argv`).
+    spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.tennis_live.tennis_bot_service', '--bridge-only']);
     // SAFE STRATEGY: scanner AUTONOMO degli eventi in-play (calcio+tennis).
     // REST leggero a cadenze adattive, scrive i fatti su safe_strategy_scan;
     // single-instance lock su 127.0.0.1:47315. Nessun ordine, mai.
@@ -413,7 +483,9 @@ function startRunners() {
     setInterval(runTennisOdds, 30 * 60 * 1000);
 }
 
-// tree-kill via taskkill /T /F: termina il watchdog E i runner figli — mai orfani.
+// tree-kill via taskkill /T /F: termina il watchdog E i runner figli — mai
+// orfani. Cintura+bretelle: e' il FORZATO finale, chiamato SOLO su chi resta
+// vivo dopo che orderedShutdown() ha gia' provato a chiederglielo per bene.
 function killChildren() {
     for (const child of children) {
         if (child.pid == null || child.exitCode !== null) continue;
@@ -425,6 +497,81 @@ function killChildren() {
     }
     children.length = 0;
 }
+
+// >>> K-SPEGNIMENTO-ORDINATO (28/09), seguito -------------------------------
+// risolve quando il figlio esce DA SOLO entro timeoutMs, altrimenti quando il
+// tempo scade (senza mai lanciare): orderedShutdown() decide dopo cosa fare.
+function waitForExit(child, timeoutMs) {
+    if (child.pid == null || child.exitCode !== null) return Promise.resolve(true);
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (esito) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            child.removeListener('exit', onExit);
+            resolve(esito);
+        };
+        const onExit = () => finish(true);
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        child.once('exit', onExit);
+    });
+}
+
+// Scrive il file ARRESTO (UNA volta, condiviso: lo leggono tutti i figli
+// consapevoli, vedi ARRESTO_ORDINATO_LABELS sopra), aspetta ciascuno di loro
+// per il proprio tempo massimo dichiarato (shutdownGraceMs), logga chi e'
+// uscito da solo e chi no, poi forza (killChildren) chi resta vivo — MAI
+// processi orfani, come da sempre, ma ora dopo aver dato una possibilita'
+// al `finally`/ai context manager Python di girare per davvero.
+async function orderedShutdown() {
+    const targets = children.filter((c) => c.pid != null && c.exitCode === null);
+    if (targets.length === 0) return;
+    console.log(`[desktop] arresto ordinato: chiedo lo stop (file ARRESTO) a ${targets.length} figli...`);
+    try {
+        const p = arrestoPercorso(repoRoot);
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, `arresto ${Date.now()}`);
+    } catch (err) {
+        console.warn(`[desktop] file ARRESTO non scritto (${err && err.message}): nessun arresto ordinato, solo taskkill.`);
+    }
+    const risultati = await Promise.all(targets.map(async (child) => {
+        const label = child._label || '?';
+        if (!ARRESTO_ORDINATO_LABELS.has(label)) {
+            // non legge il file (es. il job breve tennis-odds): nessuna
+            // richiesta ordinata possibile da qui, resta il taskkill finale.
+            return { label, consapevole: false, uscitoDaSolo: child.exitCode !== null };
+        }
+        const uscitoDaSolo = await waitForExit(child, shutdownGraceMs(label));
+        return { label, consapevole: true, uscitoDaSolo };
+    }));
+    for (const r of risultati) {
+        const riga = !r.consapevole
+            ? 'non legge il file ARRESTO: niente arresto ordinato da qui'
+            : (r.uscitoDaSolo ? 'arresto ordinato: uscito da solo' : `arresto ordinato: NON uscito entro ${shutdownGraceMs(r.label)}ms, forzo`);
+        console.log(`[desktop] ${r.label}: ${riga}`);
+        writeChildLog(r.label, 'desktop', riga);
+    }
+    // cintura+bretelle: chi resta vivo (non ha risposto in tempo, o non legge
+    // il file) viene forzato — mai orfani.
+    killChildren();
+}
+
+let shutdownStarted = false;
+// Un solo punto d'uscita, idempotente: sia "chiudo la finestra" sia qualunque
+// altro percorso di quit (Cmd+Q, logout, ecc.) passano da qui UNA volta sola.
+async function shutdownAndQuit() {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    try {
+        await orderedShutdown();
+    } catch (err) {
+        console.error(`[desktop] arresto ordinato KO (${err && err.message}): forzo comunque.`);
+        killChildren();
+    }
+    app.exit(0); // MAI app.quit(): rilancerebbe 'before-quit' e farebbe un loop
+}
+// <<< K-SPEGNIMENTO-ORDINATO --------------------------------------------------
 
 // ------------------------------------------------------- SSO web Betfair
 // Le finestre "📺 Video" / "📊 Stats" aprono pagine betfair.it(.com) che
@@ -767,6 +914,9 @@ app.whenReady().then(async () => {
     console.log(`[desktop] repo: ${repoRoot}`);
     // K2 (26/09): console dei figli anche su file, prima di lanciare i runner
     childLogDir = prepareChildLogs(repoRoot);
+    // K-SPEGNIMENTO-ORDINATO (28/09): un file di uno spegnimento PRECEDENTE
+    // non deve fermare l'app appena riaperta — PRIMA di spawnRunner.
+    cancellaArrestoAllAvvio(repoRoot);
     ensureFreshUi();  // l'exe serve SEMPRE l'ultima versione della UI (17/07)
     try {
         await startStaticServer();
@@ -785,10 +935,17 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-    killChildren();
-    app.quit();
+    void shutdownAndQuit();
 });
 
-// cintura+bretelle: anche su quit anomalo, mai figli orfani.
-app.on('before-quit', killChildren);
+// cintura+bretelle: anche su quit anomalo (Cmd+Q, logout, kill_switch UI, ecc.)
+// mai figli orfani — e ora con l'arresto ORDINATO prima del taskkill (28/09).
+// event.preventDefault() ferma la chiusura immediata: shutdownAndQuit() la
+// completa da sé con app.exit(0) a lavoro fatto; se shutdownAndQuit() è già
+// partito da window-all-closed non c'è nulla da fermare, si lascia proseguire.
+app.on('before-quit', (event) => {
+    if (shutdownStarted) return;
+    event.preventDefault();
+    void shutdownAndQuit();
+});
 process.on('exit', killChildren);

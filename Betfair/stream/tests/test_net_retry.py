@@ -39,6 +39,29 @@ def test_timeout_and_reset_strings_are_transient():
     assert is_transient(Exception("[WinError 10035] A non-blocking socket operation could not be completed")) is True
 
 
+def test_socket_gaierror_nudo_e_transient():
+    """CANTIERE K (28/09), referto FIX_C_RESILIENZA_RETE_2026-09-26.md §7 punto 8:
+    un ``socket.gaierror`` NUDO (non avvolto in httpx/requests) sfuggiva — una
+    caduta di rete fa fallire la risoluzione DNS PRIMA di qualunque connessione,
+    quindi e' il caso piu' comune di rete giu', non un'eccezione esotica."""
+    import socket
+
+    # Windows: "[Errno 11001] getaddrinfo failed"; POSIX: "[Errno -3] Temporary
+    # failure in name resolution" — nessuno dei due contiene i marker testuali
+    # esistenti (timeout/reset/refused/...): deve riconoscerlo dal TIPO.
+    exc = socket.gaierror(11001, "getaddrinfo failed")
+    assert is_transient(exc) is True
+
+
+def test_socket_gaierror_avvolto_in_causa_e_transient():
+    import socket
+
+    inner = socket.gaierror(-3, "Temporary failure in name resolution")
+    outer = RuntimeError("richiesta fallita")
+    outer.__cause__ = inner
+    assert is_transient(outer) is True
+
+
 def test_nested_cause_is_walked():
     inner = _win_oserror(10035)
     outer = RuntimeError("scrittura fallita")

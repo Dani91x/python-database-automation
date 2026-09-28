@@ -29,6 +29,7 @@ import time as _time
 from typing import Any, Dict, List, Optional
 
 from Betfair.safe_strategy import execution as X
+from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
@@ -5638,6 +5639,13 @@ def main() -> None:
     try:
         while True:
             interval = 2.0
+            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
+            # di arresto_ordinato) -> si esce come un KeyboardInterrupt (stesso
+            # `finally`: lock.close()), exit 0, il watchdog non rilancia.
+            # Mai in `--once`: e' un giro singolo, non il servizio lungo.
+            if not args.once and _AO.richiesto():
+                logger.info("[mike] ARRESTO ORDINATO richiesto dall'app: esco.")
+                break
             try:
                 # controllo d'avvio non concluso (DB muto): si riprova a ogni
                 # giro, e fino ad allora nessuna apertura.

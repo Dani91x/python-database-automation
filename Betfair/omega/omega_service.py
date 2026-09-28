@@ -25,6 +25,7 @@ from Betfair.omega import omega_v3 as V3
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.omega import porta_ordini as _PO
+from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import esiti_ordini_canale as _EO
 from Betfair.stream import local_channel as _lc
@@ -8283,6 +8284,12 @@ def main() -> None:
     try:
         while True:
             interval = 20
+            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
+            # di arresto_ordinato) -> si esce dal ciclo come un KeyboardInterrupt
+            # (stesso `finally`: lock.close()), exit 0, il watchdog non rilancia.
+            if _AO.richiesto():
+                logger.info("[omega] ARRESTO ORDINATO richiesto dall'app: esco.")
+                break
             try:
                 # controllo d'avvio non concluso (DB muto): si riprova a ogni
                 # giro, e fino ad allora nessuna apertura.

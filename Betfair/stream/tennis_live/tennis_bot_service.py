@@ -28,6 +28,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from .. import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from .. import avvio_app as AA
 from .. import canale_bot as _cb
 from .. import local_channel as _lc
@@ -1014,6 +1015,13 @@ def arma_guardia_ponte() -> None:
 
 def _ensure_loop(stop: threading.Event) -> None:
     while not stop.is_set():
+        # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file di
+        # arresto_ordinato) -> il ponte esce dal ciclo, exit 0, il watchdog
+        # non rilancia. Nessun ordine e nessuna sessione Betfair nel ponte
+        # (SPEC_WATCHDOG_SCALPER_PONTE_2026-09-26.md §4): niente da chiudere.
+        if _AO.richiesto():
+            logger.info("[tennis-bot-svc] ARRESTO ORDINATO richiesto dall'app: esco (ponte).")
+            break
         if _GUARDIA_AVVIO.blocca_aperture:
             # T2: controllo d'avvio non ancora riuscito -> si riprova; finche'
             # fallisce niente follow nuovi (riporterebbero sullo stream i bot di

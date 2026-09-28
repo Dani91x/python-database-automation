@@ -60,8 +60,14 @@ def is_transient(exc: Optional[BaseException]) -> bool:
         if any(marker in text for marker in _TRANSIENT_MARKERS):
             return True
         # nome classe (httpx.ReadTimeout / ConnectError / RemoteProtocolError, ecc.)
+        # CANTIERE K (28/09): socket.gaierror NUDO (risoluzione DNS fallita) non
+        # aveva marker testuali propri ("getaddrinfo failed" / "Temporary failure
+        # in name resolution" non contengono "timeout"/"reset"/...) e sfuggiva
+        # (FIX_C_RESILIENZA_RETE_2026-09-26.md §7 punto 8): è il primo sintomo di
+        # una caduta di rete, prima ancora che si apra qualunque connessione.
         name = type(current).__name__.lower()
-        if "timeout" in name or "connecterror" in name or "connectionerror" in name:
+        if ("timeout" in name or "connecterror" in name or "connectionerror" in name
+                or "gaierror" in name):
             return True
         nxt = current.__cause__ if current.__cause__ is not None else current.__context__
         current = nxt if nxt is not current else None

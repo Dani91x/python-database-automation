@@ -34,6 +34,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from .. import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from .. import avvio_app as AA
 
 logger = logging.getLogger(__name__)
@@ -762,7 +763,13 @@ def main() -> None:
                      name="habitat-scan").start()
 
     while True:
-        if os.path.isfile(KILL_FILE):
+        # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file di
+        # arresto_ordinato, SCRITTO DA main.js) -> STESSO percorso del
+        # kill-switch STOP_SCALPER: attende la chiusura flat delle sessioni
+        # figlie (fino a 60s) ed esce con 0 (il watchdog non rilancia). "Il
+        # kill-switch non va mai scavalcato" (SPEC_WATCHDOG_SCALPER_PONTE):
+        # qui non lo scavalca, gli aggiunge solo un secondo modo per attivarsi.
+        if os.path.isfile(KILL_FILE) or _AO.richiesto():
             logger.warning("[scalper-svc] kill-switch: attendo la chiusura "
                            "flat delle sessioni figlie e esco")
             # i figli vedono il kill-file da soli (stessa cwd) e chiudono flat

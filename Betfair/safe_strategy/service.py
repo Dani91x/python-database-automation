@@ -54,6 +54,7 @@ from collections import deque
 from contextlib import contextmanager
 from typing import Any, Deque, Dict, List, Optional, Sequence
 
+from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream.auth import build_client, keep_alive, safe_logout
 from Betfair.stream.auth import CustodeSessione
 from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
@@ -2460,6 +2461,12 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001 - il feed non muore per l'atlante
             logger.warning("[safe-scan] sync atlante non avviato: %s", str(e)[:120])
         while True:
+            # 28/09 (cantiere K): l'app chiede lo spegnimento ORDINATO (file
+            # di arresto_ordinato) -> si esce dal ciclo, il `finally` sotto
+            # ferma lo score_worker, exit 0, il watchdog non rilancia.
+            if _AO.richiesto():
+                logger.info("[safe-scan] ARRESTO ORDINATO richiesto dall'app: esco.")
+                break
             scan.tick()
             time.sleep(0.5)
     finally:

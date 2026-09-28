@@ -10,9 +10,15 @@ Il watchdog lancia il runner come processo FIGLIO e lo sorveglia. Alla morte
 del figlio classifica l'uscita (``classify_exit``):
 
   * PULITA (exit code 0 — auto-spegnimento lifecycle 18h/idle, fine naturale
-    dei follow o Ctrl+C) → alert INFO e il watchdog SI FERMA. MAI riavvio in
-    questo caso (decisione utente: niente h24 automatico — il runner ha
-    deciso di spegnersi e va rispettato).
+    dei follow, arresto ORDINATO dell'app o Ctrl+C) → alert INFO e il
+    watchdog SI FERMA. MAI riavvio in questo caso (decisione utente: niente
+    h24 automatico — il runner ha deciso di spegnersi e va rispettato).
+    CANTIERE K (28/09): l'arresto ordinato dell'app (file di
+    ``Betfair/stream/arresto_ordinato.py``, scritto da ``desktop/main.js``)
+    e' letto DAL FIGLIO stesso (runner, servizi bot, ponte tennis,
+    scalper-service: vedi ciascun modulo), che esce con 0 — non da questo
+    watchdog, che non ha bisogno di sapere nulla in piu': rc 0 e' gia'
+    'clean' com'e' sempre stato.
   * GIÀ ATTIVO (exit code != 0 con uptime sotto ``WATCHDOG_LOCK_GRACE_SEC``:
     il lock di singola istanza — porta localhost, vedi single_instance.py —
     solleva SystemExit immediato) → alert WARN e il watchdog SI FERMA:
@@ -24,11 +30,13 @@ del figlio classifica l'uscita (``classify_exit``):
 
 Mentre il figlio gira, ogni ``WATCHDOG_HEARTBEAT_SEC`` il watchdog scrive il
 proprio heartbeat (``db.upsert_live_heartbeat(runner=False, ...)`` → colonne
-watchdog_ts/watchdog_pid di ``betfair_live_heartbeat``).
+watchdog_ts/watchdog_pid di ``betfair_live_heartbeat``) — SOLO per il target
+di default (vedi ``deve_scrivere_battito``, CANTIERE K 28/09 §5).
 
 Config via env: WATCHDOG_MAX_RESTARTS_PER_HOUR (5), WATCHDOG_BACKOFF_BASE_SEC
 (10), WATCHDOG_BACKOFF_CAP_SEC (300), WATCHDOG_LOCK_GRACE_SEC (5),
-WATCHDOG_HEARTBEAT_SEC (30).
+WATCHDOG_HEARTBEAT_SEC (30), WATCHDOG_BATTITO (override esplicito del
+battito, vedi ``deve_scrivere_battito``).
 
 MONEY-CRITICAL:
   * il watchdog NON deve MAI morire perché DB/Telegram sono giù: alert,
@@ -109,6 +117,25 @@ def messaggio_crash(target: str, returncode: int, uptime_sec: float) -> str:
     sotto watchdog); il 26/09 tre crash in un giorno non erano attribuibili."""
     return (f"RUNNER CRASHATO [{target}]: exit code {returncode}, "
             f"uptime {uptime_sec:.0f}s.")
+
+
+def deve_scrivere_battito(target: str, override: Optional[str] = None) -> bool:
+    """K-HEARTBEAT (SPEC_WATCHDOG_SCALPER_PONTE_2026-09-26.md §5): il battito
+    watchdog_ts/watchdog_pid e' UNA riga sola (``betfair_live_heartbeat``)
+    condivisa da OGNI watchdog attivo. Con scalper-service e ponte tennis
+    ora sotto watchdog (28/09, otto istanze possibili) quella riga smette di
+    dire qualunque cosa sul watchdog del runner: di default scrive SOLO il
+    target di default (``Betfair.stream.runner``). ``WATCHDOG_BATTITO``
+    (env, letto dal chiamante) forza esplicitamente acceso ("1"/"true"/"si"/
+    "on") o spento ("0"/"false"/"no"/"off") per qualunque target; un valore
+    non riconosciuto o assente lascia il default per target."""
+    if override is not None:
+        raw = override.strip().lower()
+        if raw in ("1", "true", "si", "s", "yes", "on"):
+            return True
+        if raw in ("0", "false", "no", "n", "off"):
+            return False
+    return target == _DEFAULT_TARGET
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +250,10 @@ def run_watchdog(
     backoff_cap = _env_float("WATCHDOG_BACKOFF_CAP_SEC", 300.0)
     lock_grace = _env_float("WATCHDOG_LOCK_GRACE_SEC", 5.0)
     hb_sec = _env_float("WATCHDOG_HEARTBEAT_SEC", 30.0) or 30.0
+    # K-HEARTBEAT (28/09, §5 della spec): con piu' watchdog attivi (scalper-
+    # service e ponte tennis inclusi) il battito condiviso smetteva di dire
+    # qualcosa sul runner di default: si scrive SOLO per lui, salvo override.
+    scrive_battito = deve_scrivere_battito(target, os.getenv("WATCHDOG_BATTITO"))
 
     consecutive_crashes = 0
     restart_ts: List[float] = []  # timestamp monotonic dei riavvii (finestra 1h)
@@ -246,7 +277,8 @@ def run_watchdog(
 
         # attesa: heartbeat del watchdog a ogni giro finché il figlio è vivo
         while proc.poll() is None:
-            _safe(heartbeat, what="heartbeat")
+            if scrive_battito:
+                _safe(heartbeat, what="heartbeat")
             sleep(hb_sec)
 
         uptime = max(0.0, now() - started)
@@ -256,7 +288,8 @@ def run_watchdog(
 
         if esito == "clean":
             # decisione utente: MAI h24 automatico — l'auto-spegnimento del
-            # runner (lifecycle 18h/idle, fine naturale, Ctrl+C) va rispettato.
+            # runner (lifecycle 18h/idle, fine naturale, arresto ORDINATO
+            # dell'app o Ctrl+C) va rispettato.
             _safe(alert, "INFO",
                   f"Runner terminato in modo pulito (uptime {uptime:.0f}s) — "
                   "il watchdog si ferma.", what="alert")
