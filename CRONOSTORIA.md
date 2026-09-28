@@ -4050,3 +4050,10 @@ di P e di J2 (toccano `safe_strategy/`): questi valgono come riferimento «prima
   usano il valore di serie della classe.
 - DA FARE dopo i replay tennis: `scalper_calcio` (base, paper, sniper), `safe_tennis`, poi Omega e Mike «tutti» a
   integrazioni finite.
+
+**CORREZIONE DEGLI ORARI (scritta alle 21:43 dell'orologio del PC, letto con `date`)** — gli orari nei titoli dei
+checkpoint di stasera da «20:10» a «00:00» li avevo STIMATI e sono sbagliati (in avanti, fino a oltre due ore). Fanno
+fede gli orari dei commit (`git log --date`): K2 `ef71543`, D1-bis `d407b59`, D2 `8ada778` sono tutti entrati fra le
+21:00 e le 21:40. L'ordine dei fatti e i contenuti dei checkpoint sono giusti. L'ordine dell'utente «tutto certificato
+e testato entro 2 ore» e' arrivato verso le 21:20: la scadenza e' verso le 23:20. Da qui in poi ogni checkpoint porta
+l'ora letta dall'orologio.
