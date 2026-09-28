@@ -1,0 +1,132 @@
+CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-2)
+WARNING:flumine.strategy.runnercontext:Trade '37174b8c-9313-4c7b-acb4-4673f48d9bf5' not present in RunnerContext live_trades on reset
+ERROR:Betfair.stream.motore_ordini:[motore] place-and-trim mike-t5: ritiro del residuo KO
+Traceback (most recent call last):
+  File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\Betfair\stream\motore_ordini.py", line 1283, in _abbandona_submin
+    .cancel_order(ordine)
+     ~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\markets\market.py", line 104, in cancel_order
+    return t.cancel_order(order, size_reduction, force)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\execution\transaction.py", line 119, in cancel_order
+    order.cancel(size_reduction)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\.venv\Lib\site-packages\flumine\order\order.py", line 362, in cancel
+    raise OrderUpdateError("Order does not currently have a betId")
+flumine.exceptions.OrderUpdateError: Order does not currently have a betId
+BOT: mike | spec: Betfair/mike/COSTITUZIONE_MIKE.md | registrazioni: 1 in C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\_live_raw
+controlli attivi: 37 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot 12fa729cc355 (2 file)
+comando: python -m Betfair.stream.backtest.certifica mike 35760084 --scenari copertura-rifiutata
+qualita' delle registrazioni: COMPLETE x1
+
+OK  35760084 [copertura-rifiutata] <coda>  tick= 54804 decisioni= 5648 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED,FLAT [COMPLETE]
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: ht_ft_rows: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi la tabella empirica del dossier resta assente
+      nota: ordini rifiutati: 1 (es. CANCELLED_NOT_PLACED (rifiuto provocato))
+      nota: ordini reali piazzati: 1 | righe mike_trades scritte: 2
+      nota: attivita' del servizio: cover x1912, uscita_proposta x18, uscita_proposta_decaduta x17, state x9, skip x5, mercato_sospeso x5, loss_exit_deciso x3, place_rifiutato x2, place x1, veto_under_calibrata x1, error x1
+      nota: righe per stato: {'open': 1, 'error': 1}
+      nota: motivi dichiarati: mercato_riaperto x4 | copertura_bloccata x1 | live_not_matched:EXPIRED:CANCELLED_NOT_PLACED x1
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 1 abbinamenti su 1 ordini per 3.0 EUR (prezzi [1.7])
+      nota: P&L del replay: lordo -3.00 | commissione 0.00 (5.0%) | NETTO -3.00 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 19 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 0
+      nota: chiamate di LETTURA a Betfair: 618 (0.11 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 74.2 s di tempo di mercato consumati, 17026 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2411 | giri senza riga nel feed: 19
+      motivo x1911: copertura FERMATA dal freno: 1 rifiuti con lo stesso codice (CANCELLED_NOT_PLACED) — serve
+      motivo x1115: flat
+      motivo x717: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x334: tengo
+      motivo x259: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.48) vale 
+      motivo x223: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-2.47) vale 
+KO  35760084 [copertura-rifiutata] <canale>  tick= 56229 decisioni= 5866 azioni=   7 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,HOLD,LIVE_KO_GREEN,LIVE_UNCOVERED,LIVE_COVER_PENDING,LIVE_COVERED [COMPLETE]
+      nota: ordini reali piazzati: 8 | righe mike_trades scritte: 6
+      nota: attivita' del servizio: cover x346, uscita_proposta x17, state x15, uscita_proposta_decaduta x15, reconcile_pending x10, canale_inviato x6, place_pending x6, no_fill x4, mercato_sospeso x3, skip x3, loss_exit_deciso x3, place x2, veto_under_calibrata x1, cancel x1
+      nota: righe per stato: {'open': 2, 'error': 4}
+      nota: motivi dichiarati:  x10 | runner_annullato x3 | mercato_riaperto x3 | runner_scaduto x1
+      nota: riapertura dopo una sospensione (§15.6): riletture nessuna | ordini dichiarati SCADUTI alla sospensione (ramo b): 0
+      nota: stato TERMINALE: la partita non ci e' mai arrivata in questo scenario, quindi A2 non ha avuto nemmeno un giro da guardare
+      nota: fill: 4 abbinamenti su 4 ordini per 7.52 EUR (prezzi [1.7, 2.6, 4.0, 4.1])
+      nota: P&L del replay: lordo -7.52 | commissione 0.00 (5.0%) | NETTO -7.52 EUR (non e' il metro della certificazione: il metro e' la condotta)
+      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book arrivati in ritardo (orologio fermo): 560388 | ordini appoggiati uccisi dal passaggio in gioco (LAPSE): 0 | uccisi dalla SOSPENSIONE in gioco (gol/rigore/rosso): 2
+      nota: chiamate di LETTURA a Betfair: 0 (0.00 per giro) | latenza ASSUNTA 120 ms per chiamata (non misurata: `storia_operazioni.py` ha solo la catena del piazzamento) -> 0.0 s di tempo di mercato consumati, 0 book passati
+      nota: righe di scan scritte dallo SCANNER VERO: 2444 | giri senza riga nel feed: 19
+      motivo x2016: tengo
+      motivo x788: uscita proposta all'utente (uscite manuali): green resting appoggiata
+      motivo x335: copertura Over 4.5 (ordine a esito ignoto: nessuna apertura)
+      motivo x223: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-1.23) vale 
+      motivo x213: in perdita pre-KO: tengo fino al live
+      motivo x181: uscita proposta all'utente (uscite manuali): uscita a modello (2t): chiudere (-1.24) vale 
+      S3 x4: dopo `cover_rifiuti_max` coperture RIFIUTATE dal mercato il bot non ne piazza altre: il freno deve SCATTARE (17/09, reperto 25)
+           es. 1 coperture gia' RIFIUTATE dal mercato (soglia 1) e il bot ne piazza un'altra: il freno non e' scattato
+
+TRASPORTO 35760084 [copertura-rifiutata]:
+  PARITA' coda/canale: NON RAGGIUNTA | ordini coda=2 canale=6 | righe coda=2 canale=6 | REST sul canale=0
+     tempi (canale - coda, s di mercato): {'max': 0.0, 'min': 0.0, 'n': 2} | durata replay s: {'coda': 118.6, 'canale': 142.0}
+     client: {'da_seq': 0, 'buchi': 0, 'connessioni': 1} | motore: {'comandi': 6, 'accettati': 6, 'rifiutati': 0, 'order': 30} | costo del banco sul canale: 16.2 s su 504571 book
+     primo scarto all'ordine #1: coda={'azione': 'place', 'ref': 'mike-t2', 'market_id': '1.259475534', 'selection_id': 1222346, 'side': 'BACK', 'price': 3.9, 'size': 1.26, 'fok': True, 't_mercato': '2026-06-30T16:03:32.382000+00:00'} | canale={'azione': 'place', 'ref': 'mike-t2', 'market_id': '1.259475534', 'selection_id': 1222346, 'side': 'BACK', 'price': 3.9, 'size': 1.26, 'fok': False, 't_mercato': '2026-06-30T16:03:32.382000+00:00', 'accettato': True, 'motivo': None}
+     riga 1 diversa: coda={'id': 1, 'status': 'open', 'side': 'back', 'market_id': '1.259475537', 'selection_id': 1222344, 'price': 1.7, 'size': 3.0, 'mode': 'live'} | canale={'id': 1, 'status': 'open', 'side': 'back', 'market_id': '1.259475537', 'selection_id': 1222344, 'price': 1.7, 'size': 3.0, 'mode': 'paper'}
+     riga 2 diversa: coda={'id': 2, 'status': 'error', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 3.9, 'size': 1.26, 'mode': 'live'} | canale={'id': 2, 'status': 'error', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 3.9, 'size': 1.26, 'mode': 'paper'}
+     riga 3 diversa: coda=None | canale={'id': 3, 'status': 'error', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 3.95, 'size': 1.22, 'mode': 'paper'}
+     riga 4 diversa: coda=None | canale={'id': 4, 'status': 'error', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 3.9, 'size': 1.26, 'mode': 'paper'}
+     riga 5 diversa: coda=None | canale={'id': 5, 'status': 'error', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 3.9, 'size': 1.26, 'mode': 'paper'}
+     riga 6 diversa: coda=None | canale={'id': 6, 'status': 'open', 'side': 'back', 'market_id': '1.259475534', 'selection_id': 1222346, 'price': 2.6, 'size': 2.0, 'mode': 'paper'}
+
+!! PARITA' coda/canale NON RAGGIUNTA su 1 coppie scenario x registrazione (exit code 1)
+ESITO: 1 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+       4 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+     A1  x11514   lo stato prodotto deve essere uno stato dichiarato (§3)
+  ?? A2  x0       da uno stato TERMINALE non esce nessuna azione (§3)
+     A3  x9       ogni decisione dichiara un motivo leggibile (§8)
+     B1  x6       Mike non entra MAI in-play da zero: l'unico ingresso live e' il re
+  ?? B2  x0       feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+     B3  x350     ordine a esito IGNOTO: via le APERTURE, restano le riduzioni di ri
+     B4  x2       ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+     B5  x2       i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+     C1  x8       ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+     C2  x8       Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+     C3  x8       nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+  ?? D1  x0       le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+  ?? D2  x0       pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+     E1  x5204    con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+     E2  x6       la copertura si dimensiona con X = factor*S/((Po-1)(1-c)) (§4.3)
+  ?? F1  x0       `max_liability_per_match` e' un tetto DENTRO il motore (§4.9)
+  ?? F2  x0       a bot fermo / stop giornaliero non si apre niente (§5, §11)
+  ?? G1  x0       l'uscita in perdita esiste solo con 2, 3 o 4 gol totali (§3 Fase 5
+  ?? H1  x0       il re-ingresso live avviene UNA volta sola per partita (§3 Fase 6)
+  ?? H2  x0       il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo (§3 Fase 6
+     J1  x385     mai due gambe IN VOLO con lo stesso ruolo, ciclo e lato (freno ant
+  ?? J2  x0       non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+     J3  x11512   ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+     J4  x351     una gamba a esito IGNOTO non viene mai data per annullata, ne' sos
+  ?? J5  x0       MAI due lay VIVE o IN VOLO sullo stesso mercato/selezione: se si a
+     J6  x391     MAI SOVRACOPERTURA: mai due back di copertura VIVI o IN VOLO sull'
+  ?? R3  x0       se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+  ?? R2  x0       dopo un cash-out globale dell'utente il bot NON apre piu' niente s
+  ?? R1  x0       dopo una sospensione con la lay appoggiata VIVA, alla riapertura l
+     S1  x4582    a freno scattato (cover_rifiuti_max rifiuti con lo stesso codice) 
+     S2  x44      nessun piazzamento di copertura mentre il mercato Over 4.5 non e' 
+     S3  x9286    dopo `cover_rifiuti_max` coperture RIFIUTATE dal mercato il bot no
+     S4  x6       fra due tentativi di copertura passa almeno `cover_retry_min_s` (b
+     K1  x11550   cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+     K2  x11550   una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+     K3  x11550   il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+     K4  x11550   ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+
+?? MAI SOLLECITATI: 14 controlli su 37. Su questi il referto NON dice «sano», dice «non lo so»:
+     A2: da uno stato TERMINALE non esce nessuna azione (§3)
+     B2: feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+     D1: le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba di green non supera l'abbinato (§4.1)
+     D2: pre-match non si chiude mai in perdita: il green e' a quota MIGLIORE dell'ingresso (§3 Fase 1)
+     F1: `max_liability_per_match` e' un tetto DENTRO il motore (§4.9)
+     F2: a bot fermo / stop giornaliero non si apre niente (§5, §11)
+     G1: l'uscita in perdita esiste solo con 2, 3 o 4 gol totali (§3 Fase 5)
+     H1: il re-ingresso live avviene UNA volta sola per partita (§3 Fase 6)
+     H2: il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo (§3 Fase 6)
+     J2: non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO con lo stesso ruolo e ciclo (15/09)
+     J5: MAI due lay VIVE o IN VOLO sullo stesso mercato/selezione: se si abbinano entrambe la posizione si ribalta e resta SCOPERTA (ordine dell'utente 16/09 h16:15)
+     R3: se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non emette PIU' NESSUNA azione su quella partita (ordine dell'utente 16/09 sera)
+     R2: dopo un cash-out globale dell'utente il bot NON apre piu' niente su quella partita: la gestisce l'utente (ordine 16/09 h18:20)
+     R1: dopo una sospensione con la lay appoggiata VIVA, alla riapertura l'ordine si RILEGGE da Betfair prima di decidere (§15.6)

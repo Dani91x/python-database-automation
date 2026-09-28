@@ -3907,3 +3907,39 @@ protocollo della prova dal vivo del 29/09. Sospetto di G2 su Safe (attivita' pap
 da me sul codice: `get_safe_state` non filtra l'attivita' per modalita', MA `ActivityFeed.tsx:204-231` disegna il
 cartellino della modalita' su OGNI riga e attenua quelle di un'altra modalita' (`data-other-mode`): nessuna riga di
 prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcoli a mano, non test automatici.
+
+**Checkpoint 21:05 — REPLAY MIKE «TUTTI» FINITO: 14 scenari OK, 1 KO (REPERTO MONEY-CRITICAL, regressione di D1-seconda)**
+- `certifica mike 35760084 --scenari tutti --trasporto canale --worker 1` (29 min 32 s): OK base, taker, cap-stretto,
+  bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce,
+  cashout-globale, chiuso-fuori-app, rifiuti-betfair, chiusura-abbinata-in-parte. **KO `copertura-rifiutata`: S3 x4**
+  («il freno non e' scattato», S1 x0). 14 controlli su 37 mai sollecitati (A2, D1, D2, G1, H1, H2, J5, R3, R1, S1,
+  CP1-CP4). Referto: `AUDIT_2026-09-28/replay/mike_tutti_canale_35760084_2026-09-28.txt`.
+- Controprova mia sullo stesso scenario con `--trasporto entrambi`: CODA OK (1 ordine, 2 righe, S1 x4582), CANALE KO
+  (8 ordini, 6 righe), **PARITA' coda/canale NON RAGGIUNTA**. Referto:
+  `AUDIT_2026-09-28/replay/mike_copertura_rifiutata_entrambi_35760084_2026-09-28.txt`.
+- CAUSA RADICE (letta da me sul codice): `Betfair/mike/service.py`, il ramo sincrono (dopo il piazzamento) chiama
+  `E.registra_rifiuto_copertura`; il ramo asincrono nuovo `_segui_ordini_paper_su_runner` (D1-seconda), nel caso
+  «terminale senza abbinato», chiama solo `_rifiutata` e scrive `no_fill`: il rifiuto della copertura NON si conta,
+  il freno non scatta, il bot ripropone (e' il loop del 17/09, reperto 25). In piu' nel replay:
+  `OrderUpdateError: Order does not currently have a betId` da `motore_ordini.py:1283` (`_abbandona_submin`).
+- ERRORE MIO: il 28/09 ho certificato D1-seconda col replay del SOLO scenario base. Regola: un passaggio di trasporto
+  si certifica con `--scenari tutti`, non col base.
+- In piu', rosso su master lasciato da D1-seconda: `test_submin_contratto_chiamanti_2026_09_17.py`
+  (`Betfair/mike/porta_ordini.py` non censito fra i chiamanti del place-and-trim).
+- **DELEGATO D1-bis LANCIATO** (Opus, worktree suo, agente `af0e83caa1c852875`): freno delle coperture sul ramo del
+  runner (paper e live), censimento di `porta_ordini.py` con verifica del contratto, analisi dell'eccezione del motore.
+  Criterio di accettazione: parita' coda/canale sullo scenario, replay rilanciato da me.
+- **MIKE NON E' CERTIFICATO PER IL PAPER finche' D1-bis non e' integrato e il replay «tutti» non e' a 0 violazioni.**
+
+**Checkpoint 21:05 — CONSEGNATI D2 e N, IN VERIFICA (non integrati)**
+- D2: `CANTIERE_D2_su_master.patch` (27 file modificati + 5 test nuovi, +1239/-190) si applica PULITA su `03e484d`
+  (worktree di verifica `scratchpad/verifica/D2`). Test mirati rilanciati da me: tutti verdi tranne il rosso di master
+  qui sopra. In corso: 17 mutazioni mie (`scratchpad/int/D2/mutazioni_coordinatore_d2.py`) e un revisore in sola lettura.
+- N: `cantiere_n_blocchi_1_2.patch` + `cantiere_n_blocco_3.patch` si applicano pulite su `03e484d` (worktree
+  `scratchpad/verifica/N`); 189 test nuovi e modificati rilanciati da me, verdi; revisore in sola lettura al lavoro.
+  Reperti miei gia' scritti: la migrazione `uscite_approva_bot_flusso_2026-09-28.sql` ha caratteri non ASCII nei
+  commenti; `uscite_proposte.py` itera dizionari che un altro thread scrive (`tieni_solo`, `chiudi_posizione`);
+  `stats["uscite_proposte"]` cambia tipo (da contatore a elenco).
+- D2 e N toccano 7 FILE IN COMUNE (scalper_session, tennis_bot_service, tennis_runner, flb, pro, swing e un test): le
+  due patch NON si sommano. ORDINE DECISO: prima D2 (e' la base dello sniper), poi N si riallinea su master e completa
+  lo sniper.
