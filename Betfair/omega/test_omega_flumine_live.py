@@ -158,22 +158,29 @@ def test_manuale_live_gate_ok_accoda_fok():
 # INVARIANTE SUPREMO — cross-mode MAI (paper→mai live, live→mai paper)
 # ---------------------------------------------------------------------------
 def test_invariante_paper_mai_richieste_live():
-    """Un trade paper non produce MAI una richiesta mode='live' (né FOK)."""
+    """Un trade paper non produce MAI una richiesta mode='live'.
+
+    CANTIERE C (28/09, R8): il FOK invece SI' anche in paper - prima questo
+    test asseriva il difetto (``time_in_force`` assente = ordine paper che
+    lavora il book per il TTL mentre il live e' ucciso subito da Betfair)."""
     db = FakeQueueDB(_control(mode="paper"))            # runner PAPER, gate paper ok
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
     assert len(db.queue) == 1
     payload = db.queue[1]["payload"]
     assert payload["mode"] == "paper"
-    assert "time_in_force" not in payload               # il FOK vero è SOLO live
+    assert payload["time_in_force"] == "FILL_OR_KILL"   # stesso ordine del live
 
 def test_invariante_paper_su_runner_live_niente_coda():
-    # omega paper + runner in LIVE: gate chiuso → fill legacy, coda MAI toccata
+    # omega paper + runner in LIVE: gate chiuso, coda MAI toccata. CANTIERE C
+    # (28/09): niente piu' fill di casa, l'apertura paper e' NON eseguita
     db = FakeQueueDB(_control(mode="paper"), hb_mode="LIVE")
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
     assert len(db.queue) == 0
-    assert db.trades[0]["status"] == "open"             # fill legacy paper INVARIATO
+    assert not [t for t in db.trades if t.get("status") in ("open", "pending")]
+    assert any(k == "skip" and p.get("reason") == "paper_runner_non_disponibile"
+               and p.get("motivo_runner") == "runner_mode_non_paper" for k, p in db.activity)
 
 
 def test_invariante_live_su_runner_paper_rest_legacy():

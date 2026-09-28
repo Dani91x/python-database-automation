@@ -353,7 +353,8 @@ def test_spento_parita_apertura_paper_coda(spento):
     assert t["meta"]["phase"] == "flumine_wait" and "canale_ref" not in t["meta"]
     payload = db.queue[t["meta"]["flumine_request_id"]]["payload"]
     assert payload["client_ref"] == "omega-t%d" % t["id"]
-    assert payload["mode"] == "paper" and "time_in_force" not in payload
+    # CANTIERE C (28/09, R8): anche sulla coda il paper porta il FOK del live
+    assert payload["mode"] == "paper" and payload["time_in_force"] == "FILL_OR_KILL"
     assert market.placed == []
 
 
@@ -416,7 +417,10 @@ def test_apertura_paper_comando_giusto_e_conferma_da_evento(motore):
     assert (cmd["market_id"], cmd["selection_id"], cmd["side"]) == \
         (t["market_id"], t["selection_id"], "LAY")
     assert (cmd["price"], cmd["size"], cmd["persistence"]) == (t["price"], t["size"], "LAPSE")
-    assert cmd["time_in_force"] is None                     # paper: TTL come la coda
+    # CANTIERE C (28/09, R8): qui si asseriva il difetto (``None`` in paper,
+    # l'ordine lavorava il book per il TTL mentre il live e' FOK). Paper =
+    # specchio del live: lo stesso comando, FOK compreso.
+    assert cmd["time_in_force"] == "FILL_OR_KILL"
     assert cmd["reduces_liability"] is False
     assert cmd["origine"] == {"tabella": "omega_trades", "id": t["id"]}
     porta = PO.porta_esistente()

@@ -26,6 +26,23 @@ from Betfair.omega import omega_empirical as EMP
 from Betfair.omega import omega_engine as E
 from Betfair.omega import omega_model as M
 from Betfair.omega import omega_service as S
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, conferma, gira  # cantiere C 28/09
+
+
+@pytest.fixture(autouse=True)
+def _canale_ordini_spento(monkeypatch):
+    """Cantiere C (28/09): questi test collaudano la coda/il runner paper, non la
+    porta del canale. Il ``.env`` VERO (letto da ``load_dotenv``) accende gli
+    interruttori dal 26/09: qui si spengono apposta, o il percorso provato non
+    sarebbe quello dichiarato."""
+    from Betfair.omega import porta_ordini as _PO_TEST
+
+    for nome in ("OMEGA_ORDINI_VIA_CANALE", "ESITI_ORDINI_CANALE", "OMEGA_LEGGE_CANALE",
+                 "PUNTEGGI_CANALE"):
+        monkeypatch.setenv(nome, "0")
+    _PO_TEST.azzera()
+    yield
+    _PO_TEST.azzera()
 
 NOW = datetime(2026, 9, 11, 14, 0, tzinfo=timezone.utc)          # 16:00 Europe/Rome
 DAY = E.day_start_utc(NOW)                                        # 11/09 00:00 Rome
@@ -387,10 +404,14 @@ def _clean_caches(monkeypatch):
 
 def _run(db, market, ev, params, minute, sh, sa, legs=None, goal=10.0):
     agg = {"realized_today": 0.0, "matches_traded_today": 0, "open_liability": 0.0}
-    return S.scan_and_place_legs(
+    # cantiere C (28/09): l'apertura paper passa dal runner; il poll VERO la conferma
+    attiva_runner_paper(db)
+    n = S.scan_and_place_legs(
         control={"daily_goal": goal, "mode": "paper"}, params=params, events=[ev],
         traded_ids=set(), traded_legs=legs if legs is not None else set(), aggregates=agg,
         market=market, db=db, now=NOW, score_lookup=_lookup(minute, sh, sa))
+    conferma(db, market, params, NOW)
+    return n
 
 
 def test_lambda_catena_evento_persistito_e_hint_dal_trade_1t():
@@ -423,7 +444,7 @@ def test_lambda_da_over_under_live_solo_con_stato_e_parametro():
 def test_gamba_2t_piazzata_senza_fixture_ne_pre_ko_grazie_al_mercato_ou(monkeypatch):
     """Caso 10/09: 746 skip 'no_model_lambdas' sulla 2T. Ora la gamba parte."""
     ev = SimpleNamespace(event_id="e5", name="Teleoptik v Proleter", open_date=NOW - timedelta(minutes=70))
-    db = _DB({"daily_goal": 10.0, "mode": "paper"}, events={"e5": {"league_id": None}})
+    db = attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"}, events={"e5": {"league_id": None}}))
     market = _Market(_books("e5"))
     payload = {"minute": 60, "score_home": 1, "score_away": 0, "inplay": True,
                "ou": [_ou(3.5, 5.5, 1.2)], "score_raw": {"matchStatus": "SecondHalf", "score": {}}}
@@ -440,8 +461,8 @@ def test_gamba_2t_piazzata_senza_fixture_ne_pre_ko_grazie_al_mercato_ou(monkeypa
 def test_target_per_gamba_spalmato_sulle_gambe_residue(monkeypatch):
     ev = SimpleNamespace(event_id="e6", name="A v B", open_date=NOW - timedelta(minutes=31))
     ev2 = SimpleNamespace(event_id="e7", name="C v D", open_date=NOW + timedelta(minutes=120))   # 2 gambe future
-    db = _DB({"daily_goal": 30.0, "mode": "paper"},
-             events={"e6": {"league_id": 135, "model": {"lambda_pre": [1.6, 1.1], "lambda_source": "saved"}}})
+    db = attiva_runner_paper(_DB({"daily_goal": 30.0, "mode": "paper"},  # cantiere C: runner paper
+             events={"e6": {"league_id": 135, "model": {"lambda_pre": [1.6, 1.1], "lambda_source": "saved"}}}))
     market = _Market(_books("e6"))
     monkeypatch.setattr(S, "_feed_state", lambda market_, eid: None)
     agg = {"realized_today": 0.0, "matches_traded_today": 0, "open_liability": 0.0}
@@ -470,7 +491,7 @@ def test_veto_empirico_sulla_gamba_2t(monkeypatch):
     assert db.trades[0]["runner_name"] == "4 - 1"
     assert m["ht_score"] == "1-0" and m["empirical"] == pytest.approx(EMP.p_upper(20, 9970), abs=1e-6) and m["p_selected"] >= m["p_model"]
     # con model_empirical='off' i dati non contano
-    db2 = _DB({"daily_goal": 10.0, "mode": "paper"}, events=db.events, transitions=rows)
+    db2 = attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"}, events=db.events, transitions=rows))
     S._LAMBDA_CACHE.clear()
     assert _run(db2, _Market(_books("e8")), ev, _params(model_p_max_pct=1.0, model_empirical="off"), minute=60, sh=1, sa=0) == 1
     assert db2.trades[0]["meta"]["model"]["p_data"] is None
@@ -541,8 +562,8 @@ def test_legs_remaining_cap_max_events_non_tocca_le_seconde_gambe():
 
 def test_scan_legs_con_cap_raggiunto_piazza_comunque_la_2t(monkeypatch):
     ev = SimpleNamespace(event_id="e11", name="A v B", open_date=NOW - timedelta(minutes=70))
-    db = _DB({"daily_goal": 10.0, "mode": "paper"},
-             events={"e11": {"league_id": 135, "model": {"lambda_pre": [1.5, 1.0], "lambda_source": "saved"}}})
+    db = attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"},  # cantiere C: runner paper
+             events={"e11": {"league_id": 135, "model": {"lambda_pre": [1.5, 1.0], "lambda_source": "saved"}}}))
     market = _Market(_books("e11"))
     monkeypatch.setattr(S, "_feed_state", lambda market_, eid: None)
     agg = {"realized_today": 0.0, "matches_traded_today": 1, "open_liability": 0.0}

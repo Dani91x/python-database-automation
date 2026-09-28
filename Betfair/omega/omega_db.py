@@ -774,16 +774,18 @@ def market_frequency(league_id: int, market: str, selection: str) -> Optional[di
     return res.data or None
 
 
-def aggregates(day_start=None) -> dict[str, float]:
+def aggregates(day_start=None, mode: Optional[str] = None) -> dict[str, float]:
     """I TOTALI DI PAGINA (tutto, anche le operazioni manuali dell'utente).
 
-    Firma e semantica INVARIATE: chi vuole anche i numeri con cui il bot decide
-    usa ``aggregates_coppia`` (una sola lettura per entrambi).
+    Chi vuole anche i numeri con cui il bot decide usa ``aggregates_coppia``
+    (una sola lettura per entrambi). ``mode`` (cantiere C, 28/09): i soli numeri
+    di quella modalita'; ``None`` = tutte (comportamento di prima).
     """
-    return aggregates_coppia(day_start)[0]
+    return aggregates_coppia(day_start, mode=mode)[0]
 
 
-def aggregates_coppia(day_start=None) -> "tuple[dict[str, float], dict[str, float]]":
+def aggregates_coppia(day_start=None, mode: Optional[str] = None
+                      ) -> "tuple[dict[str, float], dict[str, float]]":
     """``(totali_di_pagina, numeri_con_cui_il_bot_decide)`` in UNA lettura.
 
     ORDINE DELL'UTENTE, 16/09 h18 (reperto R6): il bot deve decidere sui SUOI
@@ -796,8 +798,57 @@ def aggregates_coppia(day_start=None) -> "tuple[dict[str, float], dict[str, floa
     dentro lo stesso payload; senza quella migrazione il percorso legacy legge
     le righe una volta e calcola tutti e due gli aggregati in casa. In nessuno
     dei due casi il database viene scandito due volte per giro (§18).
+
+    CANTIERE C (28/09, D4 - catalogo 7.21): ``mode`` = 'paper'|'live' -> i numeri
+    della SOLA modalita' in cui il bot opera. Paper e live non si sommano MAI nelle
+    decisioni (stop giornaliero, tetti, obiettivo). Con la migrazione
+    ``omega_aggregati_servizio_per_modalita_2026-09-28.sql`` li calcola il DB
+    (RPC ``get_omega_aggregates_modalita``); PRIMA della migrazione si calcolano
+    in casa dalle righe filtrate per modalita' (piu' IO, stesso risultato) e lo
+    si dichiara nel log, una volta per processo.
     """
+    m = str(mode or "").strip().lower()
+    if m in ("paper", "live"):
+        return _aggregati_modalita(day_start, m)
     return _aggregati(day_start)
+
+
+_AVVISO_MIGRAZIONE_MODALITA = {"dato": False}
+
+
+def _aggregati_modalita(day_start, mode: str) -> "tuple[dict[str, float], dict[str, float]]":
+    """Aggregati del SERVIZIO per UNA modalita' (vedi ``aggregates_coppia``)."""
+    if day_start is not None:
+        try:
+            res = _sb().rpc("get_omega_aggregates_modalita", {"p_mode": mode}).execute()
+            data = getattr(res, "data", None)
+            blocco = data.get("auto") if isinstance(data, dict) else None
+            if isinstance(data, dict) and isinstance(blocco, dict):
+                from Betfair.omega import omega_engine as E
+
+                # nessuna riga di quella modalita': la RPC torna oggetti vuoti ->
+                # zeri con le chiavi vere (mai un ripiego a tutta la tabella)
+                vuoto = E.aggregate_trades([], day_start)
+                completi = {**vuoto, **{k: (float(v) if _is_money_key(k) else int(v))
+                                        for k, v in data.items()
+                                        if v is not None and k not in ("auto", "mode")}}
+                solo_bot = {**vuoto, **{k: (float(v) if _is_money_key(k) else int(v))
+                                        for k, v in blocco.items()
+                                        if v is not None and k != "mode"}}
+                return completi, solo_bot
+        except Exception as ex:  # noqa: BLE001 - migrazione non applicata o DB KO
+            if not _AVVISO_MIGRAZIONE_MODALITA["dato"]:
+                _AVVISO_MIGRAZIONE_MODALITA["dato"] = True
+                logger.warning(
+                    "[omega.db] get_omega_aggregates_modalita non disponibile (%s): "
+                    "aggregati per modalita' calcolati IN CASA dalle righe. Applicare "
+                    "migrations/omega_aggregati_servizio_per_modalita_2026-09-28.sql",
+                    str(ex)[:120])
+    from Betfair.omega import omega_engine as E
+
+    rows = E.righe_della_modalita(_righe_per_aggregati(), mode)
+    return (E.aggregate_trades(rows, day_start),
+            E.aggregate_trades(rows, day_start, solo_auto=True))
 
 
 def _aggregati(day_start=None) -> "tuple[dict[str, float], dict[str, float]]":

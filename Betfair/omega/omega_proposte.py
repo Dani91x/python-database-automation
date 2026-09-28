@@ -213,7 +213,7 @@ def cap_di_gamba_scattato(tr: dict[str, Any], params: dict[str, Any]) -> Optiona
 
 
 def cap_globale_scattato(*, db: Any, params: dict[str, Any],
-                         now: datetime) -> Optional[str]:
+                         now: datetime, mode: Optional[str] = None) -> Optional[str]:
     """Il nome del tetto GLOBALE scattato (perdita giornaliera, capitale
     impegnato), o None.
 
@@ -228,7 +228,9 @@ def cap_globale_scattato(*, db: Any, params: dict[str, Any],
     if not attivi:
         return None
     try:
-        _pagina, del_bot = S._aggregati_cached(db, E.day_start_utc(now), now.timestamp())
+        # cantiere C (28/09, D4): i tetti della modalita' della posizione
+        _pagina, del_bot = S._aggregati_cached(db, E.day_start_utc(now), now.timestamp(),
+                                               mode=mode)
     except Exception as ex:  # noqa: BLE001 — senza aggregati non si INVENTA un cap
         logger.warning("[omega.proposte] aggregati non letti: nessun cap valutato (%s)",
                        str(ex)[:120])
@@ -296,13 +298,19 @@ def process_proposte_uscita(*, params: dict[str, Any], market: Any, db: Any,
         return 0
     if feed is None:
         feed = lambda eid: S._feed_state_bounded(market, eid, S.GREENUP_MAX_AGE_S)  # noqa: E731
-    cap_globale = cap_globale_scattato(db=db, params=params, now=now)
+    # cantiere C (28/09, D4): tetti globali per MODALITA' (paper e live non si
+    # sommano), letti una volta per modalita' presente fra i candidati
+    cap_per_modo: dict[str, Optional[str]] = {}
     scritte = 0
     for tr in candidati:
         try:
+            modo = str(tr.get("mode") or "paper")
+            if modo not in cap_per_modo:
+                cap_per_modo[modo] = cap_globale_scattato(db=db, params=params, now=now,
+                                                          mode=modo)
             payload = feed(str(tr.get("event_id") or ""))
             if _una_gamba(tr=tr, params=params, market=market, db=db, now=now,
-                          payload=payload, cap_globale=cap_globale):
+                          payload=payload, cap_globale=cap_per_modo[modo]):
                 scritte += 1
         except Exception as ex:  # noqa: BLE001 — una posizione rotta non blocca le altre
             db.log("error", {"reason": "proposta_failed", "trade_id": tr.get("id"),
@@ -747,11 +755,20 @@ def _esegui_da_solo(*, db: Any, market: Any, tr: dict[str, Any], meta: dict[str,
         if tr.get("phase"):
             extra["phase"] = tr.get("phase")
         try:
+            # CANTIERE C (28/09): la chiusura automatica passa dalla STESSA
+            # porta degli ordini delle altre due chiusure di Omega (green-up e
+            # cash-out manuale, F6 24/09): prima qui mancava e, a interruttore
+            # ``OMEGA_ORDINI_VIA_CANALE`` acceso, questa sola chiusura aggirava
+            # la strada unica (coda o, in paper, fill istantaneo del simulatore
+            # senza bet delay). ``{}`` a interruttore spento: chiamata identica.
+            modo_riga = str(tr.get("mode") or "paper")
             res = X.close_trade(db=db, market=market, trade=tr, prices=prezzi_ordine,
                                 amount=None, fraction=1.0,
-                                mode=str(tr.get("mode") or "paper"), now=now,
+                                mode=modo_riga, now=now,
                                 params=params, origin="auto", table_prefix="omega",
-                                extra_row=extra)
+                                extra_row=extra,
+                                **S._porta_kw_chiusura(params, modo_riga))
+            S.ricorda_chiusura_paper(tr, res, now)
         except Exception as ex:  # noqa: BLE001
             res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")

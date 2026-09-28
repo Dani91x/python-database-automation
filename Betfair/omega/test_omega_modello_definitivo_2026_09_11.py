@@ -28,6 +28,23 @@ from Betfair.omega import omega_model as M
 from Betfair.omega import omega_service as S
 from Betfair.omega import omega_validate as V
 from Betfair.omega.test_omega_giornata_gambe_2026_09_11 import _DB, _Market, _books, _ou, _params, _lookup
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, conferma, gira  # cantiere C 28/09
+
+
+@pytest.fixture(autouse=True)
+def _canale_ordini_spento(monkeypatch):
+    """Cantiere C (28/09): questi test collaudano la coda/il runner paper, non la
+    porta del canale. Il ``.env`` VERO (letto da ``load_dotenv``) accende gli
+    interruttori dal 26/09: qui si spengono apposta, o il percorso provato non
+    sarebbe quello dichiarato."""
+    from Betfair.omega import porta_ordini as _PO_TEST
+
+    for nome in ("OMEGA_ORDINI_VIA_CANALE", "ESITI_ORDINI_CANALE", "OMEGA_LEGGE_CANALE",
+                 "PUNTEGGI_CANALE"):
+        monkeypatch.setenv(nome, "0")
+    _PO_TEST.azzera()
+    yield
+    _PO_TEST.azzera()
 
 NOW = datetime(2026, 9, 11, 14, 0, tzinfo=timezone.utc)
 
@@ -167,9 +184,13 @@ class _DBMinute(_DB):
 
 def _run(db, market, ev, params, minute, sh, sa, legs=None):
     agg = {"realized_today": 0.0, "matches_traded_today": 0, "open_liability": 0.0}
-    return S.scan_and_place_legs(control={"daily_goal": 10.0, "mode": "paper"}, params=params, events=[ev],
-                                 traded_ids=set(), traded_legs=legs or set(), aggregates=agg,
-                                 market=market, db=db, now=NOW, score_lookup=_lookup(minute, sh, sa))
+    # cantiere C (28/09): l'apertura paper passa dal runner; il poll VERO la conferma
+    attiva_runner_paper(db)
+    n = S.scan_and_place_legs(control={"daily_goal": 10.0, "mode": "paper"}, params=params, events=[ev],
+                              traded_ids=set(), traded_legs=legs or set(), aggregates=agg,
+                              market=market, db=db, now=NOW, score_lookup=_lookup(minute, sh, sa))
+    conferma(db, market, params, NOW)
+    return n
 
 
 def test_servizio_usa_la_tabella_per_minuto_su_entrambe_le_gambe(monkeypatch):

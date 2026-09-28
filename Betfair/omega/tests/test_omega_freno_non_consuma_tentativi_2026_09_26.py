@@ -67,6 +67,11 @@ def test_freno_ripetuto_non_brucia_la_gamba(freno, modo):
     assert all(S._leg_attempts("1.100", ph)[0] == 0 for ph in ("ht_cs", "ft_cs", ""))
     # freno rilasciato: la gamba si apre al giro dopo
     freno(False)
+    if modo == "paper":
+        # cantiere C (28/09): in paper l'apertura passa SOLO dal runner (niente
+        # piu' fill di casa); il runner torna disponibile insieme al freno
+        from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper
+        attiva_runner_paper(db)
     res = _giro(db, market, S.LEG_RETRY_MAX + 2)
     assert res["placed"] == 1, "rilasciato il freno la gamba deve essere ancora tentabile"
 

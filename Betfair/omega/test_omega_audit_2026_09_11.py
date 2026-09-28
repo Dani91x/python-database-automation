@@ -17,6 +17,7 @@ from Betfair.omega import omega_db
 from Betfair.omega import omega_engine as E
 from Betfair.omega import omega_service as S
 from Betfair.omega.test_omega_service import NOW, FakeDB, FakeMarket, _control, _cs, _event, _open_snapshot
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
 
 
 # ===========================================================================
@@ -396,9 +397,9 @@ def test_l01_hedging_falso_a_copertura_completa():
 
 
 def test_l02_commissione_fissata_sul_trade():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     t = db.trades[0]
     assert t["commission"] == pytest.approx(0.05)
     assert t["meta"]["commission"] == pytest.approx(0.05)   # leggibile anche dalla UI
@@ -410,8 +411,12 @@ def test_l02_commissione_fissata_sul_trade():
 # ===========================================================================
 def test_m11_riserva_senza_fill_non_confermata_dal_reconcile():
     class _NoDelete(FakeDB):
+        rotto = True
+
         def delete_trade(self, trade_id):
-            raise RuntimeError("DB KO")
+            if self.rotto:
+                raise RuntimeError("DB KO")
+            super().delete_trade(trade_id)
 
     db = _NoDelete(_control())
     market = FakeMarket([_event()], _cs(), _open_snapshot())
@@ -422,21 +427,31 @@ def test_m11_riserva_senza_fill_non_confermata_dal_reconcile():
     S._leg_certain_failure(db, tid, "1.100", None, NOW, "paper_no_fill")
     tr = next(t for t in db.trades if t["id"] == tid)
     assert tr["meta"]["leg_failed"] is True
-    # ora il reconcile paper NON deve aprirla
+    # ora il reconcile paper NON deve aprirla. CANTIERE C (28/09): la regola
+    # e' quella del live (``reconcile_decision``): nessun ordine nella fonte
+    # (il simulatore non l'ha eseguito) -> dentro la grazia si aspetta, poi la
+    # riserva si libera. Mai 'open'.
     S.reconcile_pending(market=market, db=db, now=NOW)
     tr = next(t for t in db.trades if t["id"] == tid)
-    assert tr["status"] == "error"
-    assert tr["meta"].get("error_final") is True
-    assert any(k == "reconciled_error" for k, _ in db.activity)
+    assert tr["status"] == "pending"               # dentro la grazia: come il live
+    tardi = NOW + timedelta(seconds=S.E.RECON_GRACE_S + 1)
+    db.rotto = False                                # il DB torna: il delete riesce
+    S.reconcile_pending(market=market, db=db, now=tardi)
+    assert not any(t["id"] == tid for t in db.trades)   # liberata, mai confermata
+    assert any(k == "reconciled_free" for k, _ in db.activity)
 
 
 def test_m11_reconcile_paper_conferma_e_logga_una_riserva_normale():
+    """CANTIERE C (28/09): una riserva paper orfana si conferma solo se il
+    simulatore l'ha eseguita (fonte vera), coi numeri del fill."""
     db = FakeDB(_control())
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     tid = db.insert_trade({"event_id": "E-ok", "market_id": "m", "selection_id": 9,
                            "side": "lay", "mode": "paper", "origin": "auto",
                            "status": "pending", "price": 50.0, "size": 1.0,
                            "liability": 49.0, "pnl": 0.0, "meta": {"phase": "reserved"}})
+    S._ricorda_ordine_paper(tid, market_id="m", selection_id=9, side="lay",
+                            size=1.0, price=50.0, now=NOW)
     S.reconcile_pending(market=market, db=db, now=NOW)
     tr = next(t for t in db.trades if t["id"] == tid)
     assert tr["status"] == "open"

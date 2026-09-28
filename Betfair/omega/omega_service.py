@@ -285,8 +285,13 @@ def svuota_le_cache() -> None:
     except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
         pass
     _CACHE_AGGREGATI.svuota()
+    _CACHE_AGGREGATI_MODO.clear()
     _CACHE_INSIEMI.clear()
     _FASE_ESEGUITA_A.clear()
+    # 28/09 (cantiere C): memoria di PROCESSO come un riavvio la perde davvero:
+    # gli ordini del simulatore paper legacy e l'ultimo controllo valido.
+    _ORDINI_PAPER_SIMULATI.clear()
+    _ULTIMO_CONTROLLO.clear()
     # 16/09 (R8): anche la memoria degli eventi chiusi dall'utente e' di
     # PROCESSO. Dopo un riavvio la verita' e' il database — ed e' esattamente
     # per questo che il marker va nella colonna, non nella RAM (difetto 19).
@@ -355,7 +360,8 @@ def _insieme_cached(nome: str, ora: float, ttl: float, leggi, db: Any = None) ->
 
 
 def _aggregati_cached(db: Any, day_start: Any, ora: float,
-                      *, forza: bool = False) -> "tuple[dict[str, Any], dict[str, Any]]":
+                      *, forza: bool = False,
+                      mode: Optional[str] = None) -> "tuple[dict[str, Any], dict[str, Any]]":
     """Gli aggregati, ricalcolati al massimo ogni ``aggregates_cache_s``.
 
     Governano lo stop giornaliero, il cap di perdita e i numeri in cima alla
@@ -371,17 +377,54 @@ def _aggregati_cached(db: Any, day_start: Any, ora: float,
     (``omega_db.aggregates_coppia``); un lettore che non sa fare la coppia (un
     finto dei test, un DB storico) torna due volte lo stesso dizionario e il
     comportamento e' quello di prima — dichiarato, non nascosto.
+
+    ``mode`` (cantiere C, 28/09, D4): i numeri della SOLA modalita' in cui il bot
+    opera. Paper e live non si sommano mai in stop giornaliero, tetti, obiettivo.
     """
-    if not forza and _CACHE_AGGREGATI.fresco(ora, _cadenza("aggregates_cache_s")):
-        return _CACHE_AGGREGATI.valore
+    m = str(mode or "").strip().lower()
+    cache = _CACHE_AGGREGATI if m not in ("paper", "live") \
+        else _CACHE_AGGREGATI_MODO.setdefault(m, _Cache())
+    if not forza and cache.fresco(ora, _cadenza("aggregates_cache_s")):
+        return cache.valore
     coppia = getattr(db, "aggregates_coppia", None)
     if callable(coppia):
-        completi, del_bot = coppia(day_start)
+        completi, del_bot = _con_modalita(coppia, day_start, m)
         valore = (dict(completi or {}), dict(del_bot or {}))
     else:
-        uno = dict(db.aggregates(day_start) or {})
+        uno = dict(_con_modalita(db.aggregates, day_start, m) or {})
         valore = (uno, uno)
-    return _CACHE_AGGREGATI.metti(valore, ora)
+    return cache.metti(valore, ora)
+
+
+#: CANTIERE C (28/09, D4): una cache per modalita' (mai un numero paper
+#: riusato per una decisione live o viceversa)
+_CACHE_AGGREGATI_MODO: dict[str, Any] = {}
+
+
+def _con_modalita(fn: Any, day_start: Any, mode: str) -> Any:
+    """Chiama il lettore degli aggregati con la modalita' se la sa gestire.
+    Un lettore che non accetta ``mode`` (DB storico) NON separa paper e live:
+    lo si dice (CRITICAL, una volta) invece di farlo in silenzio."""
+    if mode not in ("paper", "live"):
+        return fn(day_start)
+    try:
+        import inspect
+
+        parametri = inspect.signature(fn).parameters
+        sa_modo = "mode" in parametri or any(
+            p.kind == p.VAR_KEYWORD for p in parametri.values())
+    except (TypeError, ValueError):
+        sa_modo = False
+    if sa_modo:
+        return fn(day_start, mode=mode)
+    if not _AVVISO_AGGREGATI_SENZA_MODO["dato"]:
+        _AVVISO_AGGREGATI_SENZA_MODO["dato"] = True
+        logger.critical("[omega] il lettore degli aggregati non separa le modalita': "
+                        "paper e live SOMMATI nelle decisioni (catalogo 7.21)")
+    return fn(day_start)
+
+
+_AVVISO_AGGREGATI_SENZA_MODO = {"dato": False}
 
 
 def _feed_riga_cached(cache: Any, event_id: str) -> Any:
@@ -2574,11 +2617,16 @@ def _place_one(
                 getattr(out, "error_code", None) if out is not None else None))
         return 0
     if mode == "paper":
-        # DEMO=LIVE: se il gate flumine passa, il fill NON è istantaneo — si
-        # accoda sulla coda del runner e la riserva resta 'pending' (conferma
-        # dal fill reale simulato via poll_flumine_paper). Gate/enqueue KO →
-        # percorso legacy INVARIATO qui sotto + log 'paper_fill_fallback'.
+        # CANTIERE C (28/09, D1 - ordine dell'utente): in PAPER NON esiste un
+        # simulatore "di casa". Il paper passa dal RUNNER (canale, sopra, o coda
+        # qui: flumine con bet delay, coda al prezzo, FOK, parziali veri) oppure
+        # l'apertura e' dichiarata NON ESEGUITA col motivo, come il canale giu'.
+        # Prima, a gate KO, un fill istantaneo sul book dell'istante (senza bet
+        # delay, senza coda): il paper piu' generoso del live (catalogo 7.14).
+        # ``execution_mode='rest'`` in paper usa comunque il runner (il REST di
+        # Betfair non esiste per un ordine simulato): lo si dice in attivita'.
         req_size = requested_size if requested_size is not None else size
+        _avvisa_rest_in_paper(db, params or {}, ev.event_id)
         use_flumine, gate_reason = _flumine_paper_gate(
             ev.event_id, db=db, mode=mode, params=params or {}, now=now)
         if use_flumine:
@@ -2590,12 +2638,7 @@ def _place_one(
             if rid:
                 return 1  # riserva in attesa del fill flumine (mai posizioni nude: poll di ciclo)
             gate_reason = "enqueue_failed"
-        if str((params or {}).get("execution_mode", "auto")) == "auto":
-            db.log("paper_fill_fallback", {"event_id": ev.event_id,
-                                           "trade_id": trade_id, "reason": gate_reason})
-        # R3 (25/09): il freno unico ferma anche il fill PAPER, nello STESSO
-        # punto del live (dopo il gate, prima dell'esecuzione) e con lo STESSO
-        # esito certo: paper = specchio del live anche a freno tirato.
+        # R3 (25/09): il freno unico vale anche qui, nello STESSO punto del live
         blocco = _freno_rest_aperture()
         if blocco:
             logger.warning("[omega] apertura PAPER FERMATA dal freno (%s): trade %s, "
@@ -2605,41 +2648,18 @@ def _place_one(
                                  base_meta={**keep_meta, "requested_size": req_size},
                                  consuma_tentativo=False)
             return 0
-        # cert. 12/09: ``paper_fill`` non regala piu' fill senza controparte
-        # DICHIARATA. Quando il book non espone la ladder completa (solo i best,
-        # p.es. una lettura ridotta) si passa esplicitamente la size al best:
-        # la controparte simulata resta quella REALE del book, mai infinita.
-        best_size = float(getattr(runner, "lay_size", 0.0) or 0.0) if runner else float(sel.lay_size_available or 0.0)
-        fill = E.paper_fill(size, best_price=price, lay_ladder=ladder, limit_price=price,
-                            side="lay", best_size=best_size)
-        if fill is None or fill.matched_size <= 0:
-            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "paper_no_fill",
-                                 base_meta={**keep_meta, "requested_size": req_size})
-            return 0
-        final_price, final_size = fill.avg_price, fill.matched_size
-        # R-J6 (17/09): il fill istantaneo (paper legacy, snapshot del book) puo'
-        # essere PARZIALE (``fill.fully_matched=False``) senza mai passare dal
-        # ramo LIVE che sotto logga ``place_parziale`` — qui non scattava mai,
-        # il trader restava senza vedere il residuo. Nessun ordine resta vivo
-        # (fill istantaneo su snapshot, non un ordine a mercato): il residuo
-        # non piazzato e' PERSO, non "in attesa" — dichiarato con 0.0 in
-        # ``size_remaining`` (nessun residuo VIVO sul book, coerente con C1).
-        if not fill.fully_matched and float(final_size) + 0.005 < float(size):
-            residuo_paper = round(float(size) - float(final_size), 2)
-            db.log("place_parziale", {
-                "event_id": ev.event_id, "trade_id": trade_id, "critical": True,
-                "size_requested": round(float(size), 2),
-                "size_matched": round(float(final_size), 2),
-                "size_remaining": 0.0, "avg_price_matched": final_price,
-                "nota": (f"parziale paper {float(final_size):.2f} su {float(size):.2f}, "
-                         f"residuo {residuo_paper:.2f} mai piazzato (fill istantaneo "
-                         f"su snapshot, nessun ordine resta a mercato)")})
-        meta = {"fully_matched": fill.fully_matched,
-                "requested_size": requested_size if requested_size is not None else size,
-                # C.12a/R-C1: nessun ordine reale resta vivo su un fill istantaneo
-                # simulato: il residuo e' 0.0 DICHIARATO (mai None).
-                "size_remaining": 0.0}
-        bet_id = None
+        # runner non disponibile: apertura NON eseguita, esito certo, nessun
+        # ordine esiste. Il tentativo non si consuma (rifiuto prima del mercato,
+        # come il canale giu' e il freno): si riprova al giro dopo.
+        _leg_certain_failure(db, trade_id, ev.event_id, phase, now,
+                             "paper_runner_non_disponibile",
+                             {"percorso": "paper", "motivo_runner": gate_reason,
+                              "nota": ("apertura paper NON eseguita: il paper passa solo "
+                                       "dal runner (canale o coda); nessun fill simulato "
+                                       "in casa")},
+                             base_meta={**keep_meta, "requested_size": req_size},
+                             consuma_tentativo=False)
+        return 0
     else:  # live — soldi veri
         # LIVE=DEMO (§6-bis v2): se il gate live passa, il place va sulla coda
         # flumine con FOK VERO (timeInForce=FILL_OR_KILL, lo esegue Betfair) e
@@ -2848,13 +2868,31 @@ def _flumine_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
         return False, f"gate_error:{str(ex)[:80]}"
 
 
+def _avvisa_rest_in_paper(db, params: dict[str, Any], event_id: Any) -> None:
+    """``execution_mode='rest'`` scelto dal pannello: in paper l'ordine passa
+    COMUNQUE dal runner. Lo si scrive (una riga per evento ogni tanto) cosi'
+    l'utente vede che la scelta vale solo per il live."""
+    if str((params or {}).get("execution_mode", "auto")) == "auto":
+        return
+    _log_dedup(db, (str(event_id), "rest_in_paper"), "execution_mode_rest_in_paper",
+               {"event_id": str(event_id),
+                "nota": ("execution_mode='rest' vale solo per il live: in paper "
+                         "l'ordine passa dal runner (canale o coda)")})
+
+
 def _flumine_paper_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
                         now: datetime) -> tuple[bool, str]:
     """(nome storico, v1) gate SOLO-PAPER: delega al gate unificato; qualunque
-    mode != 'paper' resta chiuso qui con il motivo storico ``mode_non_paper``."""
+    mode != 'paper' resta chiuso qui con il motivo storico ``mode_non_paper``.
+
+    Cantiere C (28/09): per le aperture PAPER di Omega ``execution_mode='rest'``
+    non chiude il runner (il REST di Betfair non esiste per un ordine
+    simulato). Solo qui, non nel gate unificato: quello lo usano anche Safe e
+    Mike tramite ``execution._gate`` e resta invariato."""
     if str(mode) != "paper":
         return False, "mode_non_paper"
-    return _flumine_gate(event_id, db=db, mode="paper", params=params, now=now)
+    return _flumine_gate(event_id, db=db, mode="paper",
+                         params={**(params or {}), "execution_mode": "auto"}, now=now)
 
 
 def _live_flumine_expected(params: dict[str, Any]) -> bool:
@@ -2889,8 +2927,10 @@ def _porta_ordini() -> Any:
 
 
 def _porta_per(params: dict[str, Any], mode: str) -> Any:
-    """La porta per un ORDINE (apertura o chiusura) di questa modalita', o None."""
-    if str(params.get("execution_mode", "auto")) != "auto":
+    """La porta per un ORDINE (apertura o chiusura) di questa modalita', o None.
+    Cantiere C (28/09): ``execution_mode='rest'`` vale solo per il LIVE; in paper
+    il runner resta l'unica strada."""
+    if str(mode) == "live" and str(params.get("execution_mode", "auto")) != "auto":
         return None
     if str(mode) == "live" and not params.get(
             "omega_live_via_flumine", omega_config.DEFAULTS["omega_live_via_flumine"]):
@@ -2935,13 +2975,20 @@ def _place_via_canale(porta: Any, *, db, trade_id: int, market_id: Any, selectio
     ``execution._place_via_canale`` (lo stesso punto di Safe: marcatore
     ``canale_ref`` scritto PRIMA dell'invio, ack rifiutato = errore certo col
     motivo, nessun ack = ESITO IGNOTO e riga 'pending', canale giu' = apertura
-    NON inviata). FOK dove oggi Omega usa il FOK: in LIVE (la coda lo mette
-    solo in live); in PAPER l'ordine lavora il book fino al TTL e poi si
-    annulla il residuo (``_risolvi_via_canale``), come sulla coda."""
+    NON inviata).
+
+    FOK IN PAPER E IN LIVE (cantiere C, 28/09, R8). Prima il FOK partiva solo
+    in live e in paper l'ordine restava a lavorare il book fino al TTL
+    (``paper_fill_ttl_s``, 45 s): il paper poteva abbinarsi a quote che il
+    live, col FOK ucciso da Betfair all'istante, non avrebbe mai avuto. Era
+    il difetto 14 del catalogo (paper piu' generoso del live). Ora lo stesso
+    ordine, con lo stesso tipo, in entrambe le modalita': il motore del runner
+    lo passa a flumine, che in paper simula il FOK (``simulatedorder.py``: o
+    tutta la size al prezzo, o niente) come Betfair lo esegue in live. Il
+    ramo TTL di ``_risolvi_via_canale`` resta come rete di sicurezza."""
     from Betfair.safe_strategy import execution as X
 
-    vista = _PO.VistaOmega(porta, time_in_force=(_PO.FOK if str(mode) == "live" else None),
-                           riduce=False)
+    vista = _PO.VistaOmega(porta, time_in_force=_PO.FOK, riduce=False)
     return X._place_via_canale(
         vista, db=db, mode=str(mode), market_id=str(market_id),
         selection_id=int(selection_id), side=str(side), price=float(price),
@@ -3218,9 +3265,10 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
                            mode: str = "paper") -> Optional[int]:
     """Accoda il place sulla coda del runner e marca la riserva in attesa
     (meta.phase='flumine_wait'). ``mode`` è SEMPRE il mode del trade (invariante
-    supremo: mai una richiesta 'live' da un trade paper o viceversa); in LIVE la
-    richiesta porta ``time_in_force='FILL_OR_KILL'`` (il FOK vero lo esegue
-    Betfair). Best-effort: errore ACCERTATO → None e il chiamante fa fallback al
+    supremo: mai una richiesta 'live' da un trade paper o viceversa); la
+    richiesta porta ``time_in_force='FILL_OR_KILL'`` in LIVE (il FOK vero lo
+    esegue Betfair) e, dal 28/09, anche in PAPER (lo simula flumine con la
+    stessa regola). Best-effort: errore ACCERTATO -> None e il chiamante fa fallback al
     percorso legacy (mai bloccati); esito enqueue IGNOTO in LIVE →
     ``_ENQUEUE_UNKNOWN`` (la riserva resta pending col marker: MAI il place REST
     subito, la richiesta potrebbe esistere → doppio ordine reale).
@@ -3256,10 +3304,13 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
         "persistence": "LAPSE",
         "params": {"source": "omega", "trade_id": int(trade_id)},
     }
-    if mode == "live":
-        # FOK VERO: è Betfair a uccidere il residuo non matchato — NIENTE TTL
-        # software che lavora il book coi soldi veri (quello resta solo paper).
-        payload["time_in_force"] = "FILL_OR_KILL"
+    # FOK VERO in LIVE e in PAPER (cantiere C, 28/09, R8): in live e' Betfair a
+    # uccidere il residuo non matchato; in paper lo stesso campo arriva al
+    # client simulato di flumine, che applica la stessa regola (tutto o
+    # niente). Prima il paper non lo aveva e il suo ordine lavorava il book
+    # fino al TTL: abbinamenti che il live non avrebbe mai avuto. Stessa
+    # correzione gia' fatta per Safe (``execution.enqueue_place``).
+    payload["time_in_force"] = "FILL_OR_KILL"
     try:
         rid = db.enqueue_live_order(payload)
         if not rid:
@@ -3545,6 +3596,22 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
             return 0
         if not hard_deadline:
             return 0  # bet_id non ancora specchiato / enqueue KO: ritenta
+        # CANTIERE C (28/09): richiesta MAI presa in carico dal runner (ancora
+        # 'pending', nessuno specchio): si REVOCA come in live
+        # (``_poll_one_flumine_live_trade``), altrimenti un runner tornato vivo
+        # dopo eseguirebbe un ordine paper stantio che nessuna riga segue.
+        # Revoca persa (corsa col claim del worker) o DB muto: si riprova.
+        if str(req.get("status")) == "pending" and mirror is None and matched <= 0:
+            revoca = getattr(db, "revoke_live_order_request", None)
+            if callable(revoca):
+                try:
+                    revocata = bool(revoca(rid))
+                except Exception:  # noqa: BLE001 - al buio non si chiude
+                    revocata = False
+                if not revocata:
+                    return 0
+                return _flumine_no_fill_error(tr, db=db, now=now,
+                                              reason="paper_revoked_deadline")
         # oltre la hard deadline senza poter cancellare (runner giù / specchio muto)
         if matched > 0:
             return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
@@ -3893,14 +3960,105 @@ def _ordine_ancora_vivo(market, tr: dict[str, Any], *, db, now: datetime,
     return vivo
 
 
+# ---------------------------------------------------------------------------
+# CANTIERE C (28/09) - LA FONTE VERA DEGLI ORDINI PAPER DEL PERCORSO LEGACY.
+# In LIVE la riconciliazione di un 'pending' orfano chiede a Betfair se
+# l'ordine esiste (``listCurrentOrders``/``listClearedOrders``). In PAPER,
+# sul percorso legacy (fill istantaneo del simulatore di Omega, quando ne'
+# canale ne' coda sono disponibili), l'ordine "esiste" solo se il simulatore
+# di QUESTO processo lo ha eseguito. Prima ``reconcile_pending`` confermava
+# QUALSIASI riga paper orfana coi dati della riserva: una riserva scritta sul
+# server con la risposta persa (nessun ordine mai partito) diventava una
+# posizione aperta, cioe' un fill inventato (FIX-C 26/09, par. 7 punto 2).
+# Ora il simulatore scrive qui l'ordine eseguito, con la FORMA di un ordine
+# corrente di Betfair normalizzato da ``omega_market._riga_corrente`` (lo
+# stesso normalizzatore del live), e la riconciliazione paper applica la
+# STESSA decisione del live (``omega_engine.reconcile_decision``) su questa
+# fonte: trovato -> confermato coi numeri veri del fill; non trovato ->
+# 'keep' dentro la grazia, poi liberato (o 'error' se vecchio), come in live.
+# Limite dichiarato: e' memoria di processo. Un riavvio fra il fill paper
+# legacy e la sua conferma fallita la perde e la riga si chiude come NON
+# eseguita (in live l'ordine resterebbe su Betfair e verrebbe ritrovato).
+# ---------------------------------------------------------------------------
+_ORDINI_PAPER_SIMULATI: dict[int, dict[str, Any]] = {}
+_ORDINI_PAPER_TTL_S = 24 * 3600.0
+
+
+def _ricorda_ordine_paper(trade_id: Any, *, market_id: Any, selection_id: Any, side: str,
+                          size: float, price: float, now: datetime,
+                          ref: Optional[str] = None) -> None:
+    """Registra l'ordine eseguito dal simulatore paper legacy (FOK pieno)."""
+    try:
+        tid = int(trade_id)
+        quando = now.isoformat()
+        grezzo = {"betId": None, "marketId": str(market_id), "selectionId": int(selection_id),
+                  "side": "BACK" if str(side).lower() == "back" else "LAY",
+                  "status": "EXECUTION_COMPLETE", "sizeMatched": round(float(size), 2),
+                  "sizeRemaining": 0.0, "averagePriceMatched": float(price),
+                  "customerOrderRef": ref or E.customer_ref_for(tid),
+                  "sizeCancelled": 0.0, "sizeLapsed": 0.0, "sizeVoided": 0.0,
+                  "matchedDate": quando, "placedDate": quando,
+                  "priceSize": {"price": float(price), "size": round(float(size), 2)}}
+        _ORDINI_PAPER_SIMULATI[tid] = {"ordine": _real_market._riga_corrente(grezzo),
+                                       "ts": now.timestamp()}
+        if len(_ORDINI_PAPER_SIMULATI) > 2000:
+            limite = now.timestamp() - _ORDINI_PAPER_TTL_S
+            for k in [k for k, v in _ORDINI_PAPER_SIMULATI.items() if v["ts"] < limite]:
+                _ORDINI_PAPER_SIMULATI.pop(k, None)
+    except Exception as ex:  # noqa: BLE001 - mai far fallire un piazzamento per il registro
+        logger.warning("[omega] registro ordini paper KO (trade %s): %s", trade_id, str(ex)[:120])
+
+
+def ricorda_chiusura_paper(tr: dict[str, Any], res: dict[str, Any], now: datetime) -> None:
+    """Gamba di CHIUSURA paper eseguita subito dal simulatore legacy di
+    ``execution.close_trade`` (esito ``open``, non ``pending_fill``): la si
+    registra come fonte vera, cosi' se la sua conferma sul DB e' fallita la
+    riconciliazione la ritrova (come in live la ritroverebbe su Betfair)."""
+    try:
+        if str(tr.get("mode") or "") != "paper" or not isinstance(res, dict):
+            return
+        if res.get("error") or res.get("pending_fill") or not res.get("closing_trade_id"):
+            return
+        size = float(res.get("size") or 0.0)
+        price = float(res.get("price") or 0.0)
+        if size <= 0 or price <= 1.0:
+            return
+        _ricorda_ordine_paper(res["closing_trade_id"], market_id=tr.get("market_id"),
+                              selection_id=tr.get("selection_id"),
+                              side=str(res.get("side") or ""), size=size, price=price, now=now)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] registro chiusura paper KO: %s", str(ex)[:120])
+
+
+def _ordini_paper_per(tr: dict[str, Any]) -> list[dict[str, Any]]:
+    """Gli ordini del simulatore per QUESTA riga: stesso id, stesso mercato e
+    stessa selezione (mai un ordine di un'altra riga con lo stesso id)."""
+    try:
+        voce = _ORDINI_PAPER_SIMULATI.get(int(tr.get("id")))
+    except (TypeError, ValueError):
+        return []
+    if voce is None:
+        return []
+    o = voce["ordine"]
+    try:
+        stessa = (str(o.get("market_id")) == str(tr.get("market_id"))
+                  and int(o.get("selection_id")) == int(tr.get("selection_id")))
+    except (TypeError, ValueError):
+        stessa = False
+    return [dict(o)] if stessa else []
+
+
 def reconcile_pending(*, market, db, now: datetime) -> int:
     """Riallinea i trade 'pending' ORFANI con la realtà (I3). Ritorna n. riconciliati.
 
     Un 'pending' resta solo se la conferma DB è fallita DOPO l'esecuzione (o il
-    processo è morto a metà). PAPER: nessun ordine reale → conferma con i dati
-    riservati. LIVE: interroga Betfair (listCurrentOrders/listClearedOrders) e
+    processo e' morto a meta', o la riserva e' stata scritta con la risposta
+    persa). LIVE: interroga Betfair (listCurrentOrders/listClearedOrders) e
     apre (fill reale) / lascia in attesa / libera (mai piazzato, recente) / marca
     error (vecchio e non trovato). Così NESSUN ordine reale resta non tracciato.
+    PAPER (cantiere C, 28/09): la STESSA decisione, sulla fonte vera del paper
+    legacy (``_ORDINI_PAPER_SIMULATI``): mai piu' un fill inventato coi dati
+    della riserva.
     """
     pendings = db.list_trades("pending")
     if not pendings:
@@ -3929,50 +4087,26 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                       if str(t.get("mode")) == "paper" and not _is_flumine(t)]
     live = [t for t in pendings
             if str(t.get("mode")) != "paper" and not _is_flumine(t)]
-    # PAPER: nessun ordine reale a mercato → conferma con i dati della riserva.
-    for tr in paper_pendings:
-        meta_tr = tr.get("meta") or {}
-        if meta_tr.get("leg_failed"):
-            # AUDIT 11/09 (M-11): esito CERTO negativo già deciso (paper senza fill,
-            # FOK ucciso) la cui cancellazione è fallita: confermarla qui sarebbe un
-            # FILL INVENTATO. Si chiude come terminale.
-            db.update_trade(tr["id"], status="error",
-                            meta={**meta_tr, "error_final": True,
-                                  "error_at": now.isoformat(),
-                                  "reconciled": "paper_no_fill"}, pnl=0.0)
-            db.log("reconciled_error", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
-                                        "reason": str(meta_tr.get("reason") or "leg_failed")})
-            n += 1
-            continue
-        size = float(tr.get("size") or 0.0)
-        price = float(tr.get("price") or 0.0)
-        _confirm_open_trade(
-            db, tr["id"], event_id=tr["event_id"], price=price, size=size,
-            liability=float(tr.get("liability") or _back_liability(size, tr.get("side", "lay"), price)),
-            # cert. 12/09: 'reserved' è la fase della RISERVA, non di una posizione
-            # aperta (gli altri percorsi di conferma la tolgono: qui restava)
-            bet_id=None, meta={**{k: v for k, v in meta_tr.items() if k != "phase"},
-                               "reconciled": "paper"}, mode="paper",
-            # R-C1 (17/09): la riserva PAPER orfana si conferma coi dati suoi
-            # (nessun ordine reale a mercato) — il residuo e' 0.0 DICHIARATO
-            # (nessuna gamba resta "vivo sul book" di un mercato che non
-            # esiste), l'istante e' quello di QUESTA riconciliazione (non
-            # c'e' un "istante di Betfair" per un fill mai stato reale).
-            extra_meta={"size_remaining": 0.0, "betfair_updated_at": now.isoformat()},
-        )
-        # L-06: la conferma PAPER non era loggata da nessuna parte (attività muta)
-        db.log("reconciled_paper", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
-                                    "price": price, "size": size})
-        n += 1
-    if not live:
-        return n
-    try:
-        current = market.list_current_orders()
-        cleared = market.list_cleared_orders()
-    except Exception as ex:  # noqa: BLE001 — senza dati NON decidere (si ritenta al prossimo ciclo)
-        db.log("reconcile_error", {"reason": "fetch_failed", "err": str(ex)[:160]})
-        return n
-    for tr in live:
+    # CANTIERE C (28/09): PAPER e LIVE passano dalla STESSA decisione
+    # (``reconcile_decision``); cambia solo la fonte dell'ordine: Betfair in
+    # live, il simulatore di questo processo in paper. Prima la riga paper
+    # orfana si confermava SEMPRE coi dati della riserva (fill inventato: una
+    # riserva scritta con la risposta persa diventava una posizione). Anche la
+    # regola M-11 (``leg_failed`` -> 'error') non serve piu' come ramo a parte:
+    # un esito certo negativo non ha ordine nella fonte, e la decisione comune
+    # lo tratta come il live (attesa della grazia, poi liberato).
+    lavori: list[tuple[dict[str, Any], list, list]] = [
+        (tr, _ordini_paper_per(tr), []) for tr in paper_pendings]
+    if live:
+        try:
+            current = market.list_current_orders()
+            cleared = market.list_cleared_orders()
+        except Exception as ex:  # noqa: BLE001 — senza dati NON decidere (si ritenta al prossimo ciclo)
+            db.log("reconcile_error", {"reason": "fetch_failed", "err": str(ex)[:160]})
+        else:
+            lavori.extend((tr, current, cleared) for tr in live)
+    for tr, current, cleared in lavori:
+        modo = "paper" if str(tr.get("mode")) == "paper" else "live"
         try:
             d = E.reconcile_decision(tr, current, cleared, now.isoformat())
             act = d.get("action")
@@ -3984,7 +4118,7 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                     liability=_back_liability(size, tr.get("side", "lay"), price),
                     bet_id=d.get("bet_id"),
                     meta={**{k: v for k, v in (tr.get("meta") or {}).items() if k != "phase"},
-                          "reconciled": "live"}, mode="live",
+                          "reconciled": modo}, mode=modo,
                     # R-C1 (17/09): residuo e istante DELL'ORDINE VERO, letti
                     # da Betfair via ``reconcile_decision`` — prima si
                     # perdevano qui (mai passati a ``_confirm_open_trade``,
@@ -3992,11 +4126,15 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                     extra_meta={"size_remaining": d.get("size_remaining"),
                                "betfair_updated_at": d.get("betfair_updated_at")},
                 )
-                db.log("reconciled_open", {"trade_id": tr["id"], "event_id": tr["event_id"], "bet_id": d.get("bet_id")})
+                db.log("reconciled_open" if modo == "live" else "reconciled_paper",
+                       {"trade_id": tr["id"], "event_id": tr["event_id"],
+                        "bet_id": d.get("bet_id"), "price": price, "size": size,
+                        "mode": modo})
                 n += 1
             elif act == "free":
                 db.delete_trade(tr["id"])
-                db.log("reconciled_free", {"trade_id": tr["id"], "event_id": tr["event_id"]})
+                db.log("reconciled_free", {"trade_id": tr["id"], "event_id": tr["event_id"],
+                                           "mode": modo})
                 n += 1
             elif act == "error":
                 # ⚠️ C.12a — PRIMA DI DICHIARARLA MORTA, SI PROVA AD AMMAZZARLA.
@@ -4008,7 +4146,10 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 # — resta pending, che e' l'unico modo onesto di trattare un
                 # ordine vivo. Fail-closed: mai «annullato» su un ordine che
                 # puo' abbinarsi cinque minuti dopo.
-                if _ordine_ancora_vivo(market, tr, db=db, now=now):
+                # PAPER: nessun annullamento su Betfair per una riga simulata
+                # (il suo ordine, se c'e', e' nella fonte paper e sarebbe gia'
+                # stato trovato sopra).
+                if modo == "live" and _ordine_ancora_vivo(market, tr, db=db, now=now):
                     continue
                 # AUDIT 11/09 (M-14 + M-05): il meta si AGGIORNA, non si sovrascrive
                 # (prima si perdevano model/runners/requested_size: audit del trade
@@ -4035,45 +4176,61 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
 ORPHAN_GONE_MAX_H = 48
 
 
-def _maybe_void_orphan(tr: dict[str, Any], *, db, now: datetime) -> bool:
-    """Gestisce un trade 'open' orfano di mercato (read_market → None).
+def _maybe_void_orphan(tr: dict[str, Any], *, db, now: datetime) -> Optional[Any]:
+    """Gestisce un trade 'open' orfano di mercato (read_market -> None).
 
-    1° avvistamento: marca meta.market_gone_since e basta. Dopo ORPHAN_GONE_MAX_H
-    di sparizione continua: PAPER → void pnl=0 (nessun soldo vero, sblocca la
-    contabilità e l'auto-close missione); LIVE → MAI void automatico (l'esito
-    vero — vinto/perso — è su Betfair: registrare pnl=0 corromperebbe aggregati,
-    daily_loss_cap e curva equity) → alert CRITICAL una sola volta, resta open
-    per verifica manuale. Il marker si azzera se il mercato torna leggibile."""
+    1o avvistamento: marca meta.market_gone_since e basta. Dopo ORPHAN_GONE_MAX_H
+    di sparizione continua: LIVE -> MAI un esito inventato (quello vero e' su
+    Betfair) -> allarme CRITICAL una sola volta, resta open per verifica.
+    PAPER (cantiere C, 28/09) -> prima si chiudeva a 0 (void inventato: paper
+    diverso dal live, P&L falso). Ora si regola col RISULTATO VERO della partita
+    (``meta.result_ht``/``result_ft``, scritti da ``track_event_results`` dal
+    feed unico o dal settlement: nessuna chiamata in piu') tramite un
+    ``MarketSnapshot`` CHIUSO col vincitore dedotto: il chiamante lo regola con
+    la STESSA strada di un mercato chiuso. Risultato assente o non
+    determinabile -> allarme e resta open, come in live.
+    Ritorna quello snapshot, oppure None (niente da regolare ora).
+    Il marker si azzera se il mercato torna leggibile."""
     try:
         meta = dict(tr.get("meta") or {})
         gone_since = _parse_iso_dt(meta.get("market_gone_since"))
         if gone_since is None:
             meta["market_gone_since"] = now.isoformat()
             db.update_trade(tr["id"], meta=meta)
-            return False
+            return None
         if (now - gone_since).total_seconds() < ORPHAN_GONE_MAX_H * 3600:
-            return False
-        if str(tr.get("mode")) == "live":
-            if not meta.get("orphan_alerted"):
-                meta["orphan_alerted"] = True
-                db.update_trade(tr["id"], meta=meta)
-                logger.critical(
-                    "[omega] trade LIVE %s orfano di mercato da %sh: VERIFICARE SU BETFAIR "
-                    "(nessun void automatico sui soldi veri)", tr.get("id"), ORPHAN_GONE_MAX_H)
-                db.log("orphan_live_alert", {
+            return None
+        if str(tr.get("mode")) == "paper":
+            chiave = E.result_key_for_trade(tr)
+            risultato = meta.get(chiave) if chiave else None
+            vince = E.vince_col_risultato(tr.get("runner_name"), risultato,
+                                          meta.get("runners"))
+            if vince is not None:
+                db.log("settle_orphan", {
                     "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
-                    "market_id": tr.get("market_id"), "bet_id": tr.get("bet_id"),
-                })
-            return False
-        db.update_trade(tr["id"], status="void", pnl=0.0, settled_at=now.isoformat(), meta=meta)
-        db.log("settle_orphan", {
-            "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
-            "reason": f"market_gone_{ORPHAN_GONE_MAX_H}h_consecutive", "mode": tr.get("mode"),
-        })
-        return True
+                    "reason": f"market_gone_{ORPHAN_GONE_MAX_H}h_consecutive",
+                    "mode": "paper", "regolato_con": chiave, "risultato": risultato,
+                    "vince_il_runner": vince})
+                return _real_market.MarketSnapshot(
+                    status="CLOSED", inplay=False, runners=[], closed=True,
+                    # il vincitore conta solo come "e' il nostro runner o no"
+                    winner_selection_id=(int(tr["selection_id"]) if vince else -1),
+                    voided=False, void_reason=None)
+        if not meta.get("orphan_alerted"):
+            meta["orphan_alerted"] = True
+            db.update_trade(tr["id"], meta=meta)
+            logger.critical(
+                "[omega] trade %s %s orfano di mercato da %sh: VERIFICARE (nessun esito "
+                "inventato)", str(tr.get("mode")).upper(), tr.get("id"), ORPHAN_GONE_MAX_H)
+            db.log("orphan_live_alert", {
+                "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                "market_id": tr.get("market_id"), "bet_id": tr.get("bet_id"),
+                "mode": tr.get("mode"),
+            })
+        return None
     except Exception as ex:  # noqa: BLE001
         db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
-        return False
+        return None
 
 
 STALE_OPEN_MAX_H = 8      # una partita dura ~2 h: oltre 8 h il mercato è anomalo
@@ -4576,10 +4733,12 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
                 )
                 snap = market.read_market(cs)
             if snap is None:
-                # mercato sparito da Betfair (evento rimosso/void)
-                if _maybe_void_orphan(tr, db=db, now=now):
-                    settled += 1
-                continue
+                # mercato sparito da Betfair (evento rimosso/void). Cantiere C:
+                # in paper, dopo 48 h, uno snapshot CHIUSO dal risultato vero
+                # (mai un void a 0 inventato); altrimenti si aspetta.
+                snap = _maybe_void_orphan(tr, db=db, now=now)
+                if snap is None:
+                    continue
             # mercato di nuovo leggibile: azzera l'eventuale marker di sparizione
             if (tr.get("meta") or {}).get("market_gone_since"):
                 meta = dict(tr.get("meta") or {})
@@ -4728,9 +4887,9 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime,
             snap = market.read_market(cs)
             if snap is None:
                 # mercato sparito (review M7): stessa macchina delle aperture nude
-                if _maybe_void_orphan(tr, db=db, now=now):
-                    n += 1
-                continue
+                snap = _maybe_void_orphan(tr, db=db, now=now)
+                if snap is None:
+                    continue
             if not snap.closed:
                 # review M2: anche una posizione CHIUSA a mercato su un mercato che
                 # non si regola mai va segnalata (il P&L bloccato resta incassabile
@@ -5182,7 +5341,8 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         # capitale impegnato include le perdite già BLOCCATE non incassate; e
         # aggregati della giornata (RPC, una query) invece della lettura legacy
         # di tutta la tabella a ogni ordine manuale
-        agg = db.aggregates(E.day_start_utc(now))
+        # cantiere C (28/09, D4): il tetto si misura sulla modalita' DELL'ORDINE
+        agg = _con_modalita(db.aggregates, E.day_start_utc(now), mode)
         if E.open_liability_effective(agg) + liability > cap_open:
             return {"error": "max_open_liability_superato"}
 
@@ -5341,8 +5501,9 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
             meta={**manual_meta, "order_status": res.order_status}, mode="live",
         )
     else:  # paper
-        # DEMO=LIVE: gate flumine come per il path automatico — se passa, il
-        # fill arriva dal runner (riserva 'pending' fino alla conferma del poll).
+        # CANTIERE C (28/09, D1): nessun simulatore "di casa" anche nel
+        # manuale: runner (coda) o ordine NON eseguito col motivo.
+        _avvisa_rest_in_paper(db, params, event_id)
         use_flumine, gate_reason = _flumine_paper_gate(
             event_id, db=db, mode=mode, params=params, now=now)
         if use_flumine:
@@ -5357,57 +5518,25 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
                 return {"ok": True, "trade_id": trade_id, "pending_fill": True,
                         "flumine_request_id": rid}
             gate_reason = "enqueue_failed"
-        if str(params.get("execution_mode", "auto")) == "auto":
-            db.log("paper_fill_fallback", {"event_id": event_id, "trade_id": trade_id,
-                                           "reason": gate_reason})
         # R3 (25/09): il freno unico ferma anche il manuale PAPER, nello
         # STESSO punto e con la STESSA riga terminale del live REST qui sopra.
         blocco = _freno_rest_aperture()
+        motivo = "kill_switch" if blocco else "paper_runner_non_disponibile"
         if blocco:
             logger.warning("[omega] ordine manuale PAPER FERMATO dal freno (%s): trade %s",
                            blocco, trade_id)
-            db.update_trade(trade_id, status="error", pnl=0.0,
-                            meta={**manual_meta, "reason": "kill_switch",
-                                  "motivo": blocco, "percorso": "paper",
-                                  "leg_failed": True, "error_final": True,
-                                  "error_at": now.isoformat()})
-            db.log("manual_place_exception", {
-                "trade_id": trade_id, "event_id": event_id, "side": side,
-                "price": price, "size": size, "mode": mode,
-                "reason": "kill_switch", "motivo": blocco})
-            return {"error": blocco, "trade_id": trade_id}
-        # CERTIFICAZIONE 12/09 — PAPER = LIVE senza soldi, anche nel MANUALE.
-        # Prima questo ramo confermava il fill al prezzo scelto dall'utente
-        # senza guardare il book: (a) la liquidita' del BEST veniva spesa come
-        # se fosse disponibile a un prezzo diverso; (b) un prezzo non abbinabile
-        # (lay sotto il best lay, back sopra il best back) riempiva lo stesso,
-        # mentre in live il FOK lo avrebbe ucciso. Ora si passa dallo stesso
-        # simulatore del path automatico: ladder se c'e', altrimenti il solo
-        # livello (best, size del best), e MAI oltre il prezzo limite scelto.
-        ladder = tuple(runner.get("lay_ladder") or ()) if side == "lay" else ()
-        fill = E.paper_fill(size, best_price=float(best_price), lay_ladder=ladder,
-                            limit_price=price, side=side,
-                            best_size=(float(avail) if avail else None))
-        if fill is None or fill.matched_size <= 0:
-            # esito CERTO di non abbinamento: stessa riga terminale del live
-            # (nessun ordine vive), cosi' la tabella per partita non la tiene
-            # "in corso per sempre".
-            db.update_trade(trade_id, status="error", pnl=0.0,
-                            meta={**manual_meta, "reason": "paper_not_matched",
-                                  "leg_failed": True, "error_final": True,
-                                  "error_at": now.isoformat()})
-            db.log("manual_place_exception", {
-                "trade_id": trade_id, "event_id": event_id, "side": side,
-                "price": price, "size": size, "mode": mode,
-                "reason": "paper_not_matched"})
-            return {"error": "paper_non_abbinabile", "trade_id": trade_id}
-        avg = float(fill.avg_price)
-        _confirm_open_trade(
-            db, trade_id, event_id=event_id, price=avg, size=fill.matched_size,
-            liability=_back_liability(fill.matched_size, side, avg), bet_id=None,
-            meta={**manual_meta, "fill": "paper_at_price",
-                  "fully_matched": fill.fully_matched}, mode="paper",
-        )
+        db.update_trade(trade_id, status="error", pnl=0.0,
+                        meta={**manual_meta, "reason": motivo,
+                              **({"motivo": blocco} if blocco else
+                                 {"motivo_runner": gate_reason}),
+                              "percorso": "paper",
+                              "leg_failed": True, "error_final": True,
+                              "error_at": now.isoformat()})
+        db.log("manual_place_exception", {
+            "trade_id": trade_id, "event_id": event_id, "side": side,
+            "price": price, "size": size, "mode": mode, "reason": motivo,
+            **({"motivo": blocco} if blocco else {"motivo_runner": gate_reason})})
+        return {"error": blocco or "paper_runner_non_disponibile", "trade_id": trade_id}
     db.log("manual_place", {"trade_id": trade_id, "event_id": event_id, "side": side,
                             "price": price, "size": size, "mode": mode})
     return {"ok": True, "trade_id": trade_id}
@@ -5633,6 +5762,7 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
         # F6 (24/09): ``{}`` a interruttore spento (chiamata identica a prima)
         **_porta_kw_chiusura(params, str(tr.get("mode") or "paper")),
     )
+    ricorda_chiusura_paper(tr, res, now)   # fonte vera del paper legacy (cantiere C)
     if res.get("error"):
         # CORREZIONE 23/09 (reperto banco: G1 su 35797769 e 35777617, scenario
         # 'chiusura-abbinata-in-parte'). Prima di questa riga la funzione
@@ -6494,6 +6624,7 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
                             params=params, origin="auto", table_prefix="omega", extra_row=extra,
                             # F6 (24/09): ``{}`` a interruttore spento
                             **_porta_kw_chiusura(params, str(tr.get("mode") or "paper")))
+        ricorda_chiusura_paper(tr, res, now)   # fonte vera del paper legacy (cantiere C)
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")
@@ -7010,9 +7141,12 @@ def _process_one_mission(m: dict, snap: Any, *, market, db, now: datetime,
     # LIVE conta come vivo ANCHE senza bet_id persistito (conferma DB fallita:
     # l'ordine reale può esistere — mai riaprire l'evento all'automatico
     # chiudendo la missione prima della riconciliazione) — review 15/07.
-    alive = any(t.get("status") in ("open",) or
-                (t.get("status") == "pending" and
-                 (t.get("bet_id") or str(t.get("mode")) == "live"))
+    # CANTIERE C (28/09): la stessa regola anche in PAPER. Prima un 'pending'
+    # paper senza bet_id (ordine in volo sul canale o sulla coda, o riga
+    # orfana in riconciliazione) non contava come vivo e la missione si
+    # chiudeva mentre il suo ordine simulato era ancora in corso: in live lo
+    # stesso stato la tiene aperta. Paper = specchio del live.
+    alive = any(t.get("status") in ("open", "pending")
                 for t in trades if t.get("phase"))
     if phase == "finita" and not alive:
         # la verifica clock-only è già stata fatta in testa (M6): se siamo qui
@@ -7218,7 +7352,8 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
         # niente: questi numeri servono solo a non far mentire la pagina.
         # a bot fermo la pagina mostra i TOTALI DI CONTO (il primo della coppia):
         # il trader vuole vedere tutto quello che c'e', comprese le sue manuali
-        agg = dict(_aggregati_cached(db, E.day_start_utc(now), now.timestamp())[0] or {})
+        agg = dict(_aggregati_cached(db, E.day_start_utc(now), now.timestamp(),
+                                     mode=str(control.get("mode") or "paper"))[0] or {})
     except Exception as ex:  # noqa: BLE001 — si tengono i valori precedenti
         logger.debug("[omega] aggregati a bot fermo KO: %s", str(ex)[:100])
     def _v(key: str, default: Any = 0) -> Any:
@@ -7283,19 +7418,28 @@ def _c_e_fretta(stats: Optional[dict[str, Any]], mossa: bool) -> bool:
     # (totali di pagina, numeri del bot): qui serve il ritmo, quindi valgono i
     # totali di pagina — una posizione manuale aperta e' comunque qualcosa che
     # si muove da solo e che il servizio deve guardare.
-    letto = _CACHE_AGGREGATI.valore
-    if isinstance(letto, tuple):
-        letto = letto[0] if letto else {}
-    s = stats if isinstance(stats, dict) else (letto or {})
+    # cantiere C (28/09, D4): gli aggregati stanno in una cache PER MODALITA';
+    # per il ritmo conta qualunque modalita' (una posizione paper o live aperta
+    # si muove da sola in entrambi i casi)
+    if isinstance(stats, dict):
+        letti = [stats]
+    else:
+        letti = []
+        for c in (_CACHE_AGGREGATI, *_CACHE_AGGREGATI_MODO.values()):
+            v = getattr(c, "valore", None)
+            if isinstance(v, tuple):
+                v = v[0] if v else {}
+            if isinstance(v, dict):
+                letti.append(v)
 
-    def _n(chiave: str) -> float:
+    def _n(s: dict, chiave: str) -> float:
         try:
             return float(s.get(chiave) or 0.0)
         except (TypeError, ValueError):
             return 0.0
 
-    return bool(_n("matches_open") or _n("live_now") or _n("reconciling_liability")
-                or _n("legs_remaining") or _n("open_liability"))
+    return any(_n(s, "matches_open") or _n(s, "live_now") or _n(s, "reconciling_liability")
+               or _n(s, "legs_remaining") or _n(s, "open_liability") for s in letti)
 
 
 def _degraded_heartbeat(db, control: dict[str, Any], now: datetime, reason: str) -> None:
@@ -7341,32 +7485,48 @@ def ferma_al_nuovo_avvio(db=_real_db, now: Optional[datetime] = None) -> Optiona
         return None
 
 
-def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None,
-             score_lookup: Any = None, greenup_feed: Any = None) -> dict[str, Any]:
-    now = now or _now()
-    control = db.read_control()
-    if control is None:
-        return {"skipped": "no_control"}
+# ---------------------------------------------------------------------------
+# CANTIERE C (28/09) - ``read_control`` IN ERRORE NON LASCIA LE POSIZIONI SOLE.
+# Prima ``run_once`` leggeva ``omega_control`` senza protezione: un buco di
+# rete (o un timeout del DB) faceva saltare il giro INTERO, riconciliazione,
+# coda, settlement e uscite comprese, per tutta la durata del buco (FIX-C
+# 26/09, par. 7 punto 6). Ora: un ritentativo breve; se fallisce ancora, un giro
+# DEGRADATO che fa SOLO la gestione di cio' che esiste gia' (riconciliazione,
+# esiti della coda, settlement, uscite, risultati) con l'ULTIMO controllo
+# valido letto da questo processo. Mai aperture (ne' automatiche ne' manuali),
+# mai missioni, mai cambi di stato: il controllo vecchio NON autorizza nulla
+# di nuovo. Senza un controllo valido in memoria (processo appena partito)
+# gira la sola riconciliazione, che non dipende dai parametri.
+# ---------------------------------------------------------------------------
+_ULTIMO_CONTROLLO: dict[str, Any] = {}
+#: pause fra i tentativi di lettura del controllo (il primo e' immediato)
+_PAUSE_LETTURA_CONTROLLO_S: tuple[float, ...] = (0.0, 0.5)
+#: eta' massima dell'ultimo controllo valido per guidare la GESTIONE (uscite,
+#: coda, settlement) nel giro degradato: oltre, sola riconciliazione. Cinque
+#: minuti = il tempo oltre il quale una scelta dell'utente (bot fermato, uscite
+#: cambiate) fatta durante il buco non puo' piu' essere ignorata.
+_ULTIMO_CONTROLLO_MAX_ETA_S = 300.0
 
-    status = control.get("status")
-    # FASE A — finche' il controllo d'avvio non si e' concluso (database muto in
-    # avvio) Omega non apre: non sapere da quale avvio si viene e' il caso in cui
-    # si sta fermi. Le fasi di protezione qui sotto girano comunque, come a bot
-    # fermo. Lo stato 'stopping' resta intatto: deve poter arrivare a 'stopped'.
-    if _GUARDIA_AVVIO.blocca_aperture and status == "running":
-        status = "stopped"
-    params = omega_config.resolve_params(control.get("params"))
-    # §18 — le cadenze del giro valgono anche per le funzioni in fondo alla
-    # catena che ``params`` non lo ricevono (il feed e' letto da dieci posti
-    # diversi), e per il loop, che cosi' non rilegge ``omega_control`` una
-    # seconda volta solo per sapere quanto aspettare.
-    global _ULTIMI_PARAMS
-    _ULTIMI_PARAMS = params
-    # 23/09: i conti della fonte del feed ripartono a ogni giro (vuoti e
-    # inutilizzati a interruttore ``OMEGA_LEGGE_CANALE`` spento).
-    _CACHE_FONTE_SCAN.clear()
-    ora_ts = now.timestamp()
 
+def _leggi_controllo(db) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """(controllo, None) se letto (anche ``None`` = riga assente), altrimenti
+    (None, errore) dopo i tentativi."""
+    errore: Optional[str] = None
+    for pausa in _PAUSE_LETTURA_CONTROLLO_S:
+        if pausa:
+            time.sleep(pausa)
+        try:
+            return db.read_control(), None
+        except Exception as ex:  # noqa: BLE001 - si ritenta, poi giro degradato
+            errore = str(ex)[:160]
+    return None, errore or "read_control_ko"
+
+
+def _fasi_di_gestione(*, params: dict[str, Any], market, db, now: datetime,
+                      greenup_feed: Any, ora_ts: float) -> dict[str, int]:
+    """Le fasi che gestiscono cio' che ESISTE GIA' (riconciliazione, coda,
+    settlement, uscite, risultati): girano SEMPRE, anche a bot fermo e anche
+    nel giro degradato. Nessuna di queste apre una posizione nuova."""
     # 0) RICONCILIAZIONE dei 'pending' orfani con la realtà Betfair (I3) — SEMPRE e
     #    per prima: un ordine reale non deve mai restare non tracciato (kill a metà
     #    piazzamento / conferma DB fallita). Toglie il gate LIVE.
@@ -7433,6 +7593,90 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
             track_event_results(db=db, market=market, now=now, feed=greenup_feed)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "results_phase_failed", "err": str(ex)[:160]})
+    return {"reconciled": n_reconciled, "settled": n_settled, "greenup": n_greenup,
+            "proposte": n_proposte}
+
+
+def _giro_senza_controllo(*, market, db, now: datetime, errore: str,
+                          greenup_feed: Any) -> dict[str, Any]:
+    """Il giro DEGRADATO (``read_control`` KO): solo gestione, mai aperture."""
+    logger.warning("[omega] read_control KO (%s): giro di sola gestione delle posizioni",
+                   errore)
+    try:
+        db.log("error", {"reason": "read_control_failed", "err": errore,
+                         "degradato": True,
+                         "nota": "giro di sola gestione: nessuna apertura"})
+    except Exception:  # noqa: BLE001 - il DB e' probabilmente giu' anche per il log
+        pass
+    ultimo = _ULTIMO_CONTROLLO.get("control")
+    ora_ts = now.timestamp()
+    eta = ora_ts - float(_ULTIMO_CONTROLLO.get("ts") or ora_ts)
+    scaduto = ultimo is not None and eta > _ULTIMO_CONTROLLO_MAX_ETA_S
+    if ultimo is None or scaduto:
+        # nessun controllo valido in memoria, o troppo vecchio (l'utente nel
+        # frattempo puo' aver fermato il bot o cambiato le uscite): i parametri
+        # dell'utente non si conoscono, si fa SOLO cio' che non ne dipende (la
+        # riconciliazione, che non piazza e non chiude nulla)
+        try:
+            n_rec = reconcile_pending(market=market, db=db, now=now)
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[omega] riconciliazione nel giro degradato KO: %s", str(ex)[:120])
+            n_rec = 0
+        return {"skipped": "read_control_failed", "degradato": True,
+                "controllo": "scaduto" if scaduto else "assente", "reconciled": n_rec,
+                "fretta": _c_e_fretta(None, False)}
+    params = omega_config.resolve_params(ultimo.get("params"))
+    conti = _fasi_di_gestione(params=params, market=market, db=db, now=now,
+                              greenup_feed=greenup_feed, ora_ts=ora_ts)
+    _degraded_heartbeat(db, ultimo, now, "read_control_failed")
+    return {"skipped": "read_control_failed", "degradato": True,
+            "controllo": "ultimo_valido",
+            "controllo_eta_s": round(ora_ts - float(_ULTIMO_CONTROLLO.get("ts") or ora_ts), 1),
+            **conti,
+            "fretta": _c_e_fretta(None, bool(conti["settled"] or conti["greenup"]))}
+
+
+def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None,
+             score_lookup: Any = None, greenup_feed: Any = None) -> dict[str, Any]:
+    now = now or _now()
+    control, errore_controllo = _leggi_controllo(db)
+    if errore_controllo is not None:
+        return _giro_senza_controllo(market=market, db=db, now=now,
+                                     errore=errore_controllo, greenup_feed=greenup_feed)
+    if control is None:
+        return {"skipped": "no_control"}
+    _ULTIMO_CONTROLLO["control"] = dict(control)
+    _ULTIMO_CONTROLLO["ts"] = now.timestamp()
+
+    status = control.get("status")
+    # FASE A — finche' il controllo d'avvio non si e' concluso (database muto in
+    # avvio) Omega non apre: non sapere da quale avvio si viene e' il caso in cui
+    # si sta fermi. Le fasi di protezione qui sotto girano comunque, come a bot
+    # fermo. Lo stato 'stopping' resta intatto: deve poter arrivare a 'stopped'.
+    if _GUARDIA_AVVIO.blocca_aperture and status == "running":
+        status = "stopped"
+    params = omega_config.resolve_params(control.get("params"))
+    # §18 — le cadenze del giro valgono anche per le funzioni in fondo alla
+    # catena che ``params`` non lo ricevono (il feed e' letto da dieci posti
+    # diversi), e per il loop, che cosi' non rilegge ``omega_control`` una
+    # seconda volta solo per sapere quanto aspettare.
+    global _ULTIMI_PARAMS
+    _ULTIMI_PARAMS = params
+    # 23/09: i conti della fonte del feed ripartono a ogni giro (vuoti e
+    # inutilizzati a interruttore ``OMEGA_LEGGE_CANALE`` spento).
+    _CACHE_FONTE_SCAN.clear()
+    ora_ts = now.timestamp()
+
+    # 0)..1-ter) LA GESTIONE DI CIO' CHE ESISTE GIA' (riconciliazione, coda,
+    #    settlement, uscite, risultati) - SEMPRE, anche a bot fermo. Estratta
+    #    il 28/09 (cantiere C) in ``_fasi_di_gestione`` per girare IDENTICA
+    #    anche nel giro degradato senza ``read_control``.
+    conti = _fasi_di_gestione(params=params, market=market, db=db, now=now,
+                              greenup_feed=greenup_feed, ora_ts=ora_ts)
+    n_reconciled = conti["reconciled"]
+    n_settled = conti["settled"]
+    n_greenup = conti["greenup"]
+    n_proposte = conti["proposte"]
 
     # 2) MODALITÀ MANUALE — SEMPRE (indipendente dallo stato dell'automatico):
     #    esegue le richieste della UI (refresh eventi, carica mercati/quote, piazza).
@@ -7534,7 +7778,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         # R6 (16/09): DUE numeri diversi, una lettura sola. ``agg_pagina`` e'
         # quello che il trader legge (tutto); ``agg`` e' quello con cui il bot
         # DECIDE (senza le operazioni manuali dell'utente).
-        agg_pagina, agg = _aggregati_cached(db, day_start, ora_ts)
+        # cantiere C (28/09, D4): i numeri della SOLA modalita' in cui il bot opera
+        agg_pagina, agg = _aggregati_cached(db, day_start, ora_ts,
+                                            mode=str(control.get("mode") or "paper"))
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "aggregates_failed", "err": str(ex)[:160]})
         _degraded_heartbeat(db, control, now, "aggregates_failed")
@@ -7642,7 +7888,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         # che c'e' sul conto, comprese le sue operazioni manuali (R6)
         agg2, agg_bot = _aggregati_cached(
             db, day_start, ora_ts,
-            forza=bool(n_placed or n_settled or n_greenup or n_manual))
+            forza=bool(n_placed or n_settled or n_greenup or n_manual),
+            mode=str(control.get("mode") or "paper"))
     except Exception as ex:  # noqa: BLE001 — L-06: si riusa l'aggregato di inizio ciclo
         logger.warning("[omega] aggregati per le stats KO: %s", str(ex)[:120])
         agg2, agg_bot = agg_pagina, agg

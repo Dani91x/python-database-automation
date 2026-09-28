@@ -12,6 +12,7 @@ import pytest
 from Betfair.omega import omega_engine as E
 from Betfair.omega import omega_market as M
 from Betfair.omega import omega_service as S
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
 
 NOW = datetime(2026, 7, 12, 15, 42, tzinfo=timezone.utc)
 
@@ -241,8 +242,10 @@ class FakeDB:
         # come omega_db: gli esiti CERTI negativi (meta.leg_failed) non bruciano l'evento
         return {t["event_id"] for t in self.trades if not (t.get("meta") or {}).get("leg_failed")}
 
-    def aggregates(self, day_start=None):
-        return E.aggregate_trades(self.trades, day_start)  # stessa logica pura del backend reale
+    def aggregates(self, day_start=None, mode=None):
+        # stessa logica pura del backend reale; ``mode`` come ``omega_db.aggregates``
+        # (cantiere C, 28/09: i numeri della sola modalita' in cui il bot opera)
+        return E.aggregate_trades(E.righe_della_modalita(self.trades, mode), day_start)
 
     # --- missioni ---
     def active_missions(self):
@@ -270,9 +273,9 @@ def _control(status="running", mode="paper", goal=250, params=None):
 # Test
 # ---------------------------------------------------------------------------
 def test_piazza_un_lay_su_match_in_finestra():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["placed"] == 1
     assert len(db.trades) == 1
     t = db.trades[0]
@@ -284,10 +287,10 @@ def test_piazza_un_lay_su_match_in_finestra():
 
 
 def test_idempotenza_un_solo_trade_per_match():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
-    S.run_once(market=market, db=db, now=NOW)  # secondo ciclo
+    gira(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)  # secondo ciclo
     assert len(db.trades) == 1  # I1 rispettato
 
 
@@ -317,12 +320,12 @@ def test_nessun_runner_nel_range_salta():
 
 
 def test_settlement_won_quando_risultato_non_esce():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     # ora il mercato chiude con vincitore = "0 - 0" (id 1), NON il nostro "3 - 2" (id 4)
     market._snapshot = _closed_snapshot(winner_id=1)
-    res = S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    res = gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert res["settled"] == 1
     t = db.trades[0]
     assert t["status"] == "won"
@@ -330,24 +333,24 @@ def test_settlement_won_quando_risultato_non_esce():
 
 
 def test_settlement_lost_quando_risultato_esce():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     t = db.trades[0]
     liability = t["liability"]
     # il mercato chiude con vincitore = il NOSTRO "3 - 2" (id 4)
     market._snapshot = _closed_snapshot(winner_id=4)
-    S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert db.trades[0]["status"] == "lost"
     assert db.trades[0]["pnl"] == pytest.approx(-liability, abs=0.01)
 
 
 def test_settlement_void():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     market._snapshot = _closed_snapshot(winner_id=None)  # abbandonata
-    S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert db.trades[0]["status"] == "void"
     assert db.trades[0]["pnl"] == 0
 
@@ -362,13 +365,13 @@ def test_stop_transizione():
 
 def test_settlement_continua_anche_a_bot_fermo():
     # piazza (running), poi FERMA il bot: i trade aperti devono comunque regolarsi
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert db.trades[0]["status"] == "open"
     db.control["status"] = "stopped"          # bot fermato
     market._snapshot = _closed_snapshot(winner_id=1)  # match finito, non il nostro
-    res = S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    res = gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert res.get("settled") == 1
     assert db.trades[0]["status"] == "won"     # regolato nonostante il bot fermo
 
@@ -392,9 +395,9 @@ def test_modalita_live_chiama_place_lay_live():
 
 
 def test_stats_aggiornate_nel_control():
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     stats = db.control.get("stats")
     assert stats is not None
     assert stats["events_total"] == 1
@@ -421,15 +424,15 @@ def test_daily_loss_cap_ferma_nuovi_ingressi():
 
 def test_commissione_fissata_al_piazzamento():
     # piazza con comm 5%, poi l'utente cambia a 10%: il settlement usa il 5% del trade
-    db = FakeDB(_control(params={"commission_pct": 5}))
+    db = attiva_runner_paper(FakeDB(_control(params={"commission_pct": 5})))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     t = db.trades[0]
     assert t["commission"] == 0.05
     size = t["size"]
     db.control["params"] = {"commission_pct": 10}  # cambio a caldo
     market._snapshot = _closed_snapshot(winner_id=1)  # non il nostro → won
-    S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert db.trades[0]["status"] == "won"
     # pnl con 5% (fissato), NON 10%
     assert db.trades[0]["pnl"] == pytest.approx(size * 0.95, abs=0.02)
@@ -437,9 +440,9 @@ def test_commissione_fissata_al_piazzamento():
 
 def test_reserve_poi_conferma_open():
     # la riga passa da 'pending' (riservata) a 'open' (confermata) — reserve-first
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert db.trades[0]["status"] == "open"
     assert db.trades[0]["commission"] == 0.05
 
@@ -490,14 +493,14 @@ def test_build_score_lookup_legge_live_now():
 
 def test_manuale_piazza_lay_da_richiesta():
     # richiesta manuale 'place' → reserve-first → trade open, origin=manual
-    db = FakeDB(_control(status="idle"))  # anche a bot fermo il manuale funziona
+    db = attiva_runner_paper(FakeDB(_control(status="idle")))  # anche a bot fermo il manuale funziona
     db.manual_reqs = [{
         "id": 1, "kind": "place", "status": "pending",
         "payload": {"event_id": "1.100", "market_id": "m-1.100", "selection_id": 4,
                     "runner_name": "3 - 2", "side": "lay", "mode": "paper", "target": 8},
     }]
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["manual"] == 1
     assert db.manual_reqs[0]["status"] == "done"
     assert len(db.trades) == 1
@@ -649,10 +652,15 @@ def _pending_row(mode="live", **over):
 
 
 def test_reconcile_paper_pending_confermato():
+    # CANTIERE C (28/09): paper confermato dalla SUA fonte vera (il simulatore
+    # legacy che l'ha eseguito), come il live da Betfair; mai coi dati della
+    # riserva a scatola chiusa.
     db = FakeDB(_control())
     db.trades = [_pending_row(mode="paper")]
     db._id = 1
     market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S._ricorda_ordine_paper(1, market_id="m1", selection_id=4, side="lay",
+                            size=5.0, price=110.0, now=NOW)
     n = S.reconcile_pending(market=market, db=db, now=NOW)
     assert n == 1
     assert db.trades[0]["status"] == "open"      # paper: confermato senza Betfair
@@ -746,9 +754,9 @@ def test_reconcile_non_confonde_ordine_di_altro_trade():
 def test_due_eventi_stesso_ciclo_piazzano_entrambi():
     # regressione del bug 'contatore cumulativo': 2 eventi in finestra → 2 trade distinti
     events = [_event("1.100", 42), _event("1.200", 42)]
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket(events, _cs(), _open_snapshot())
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["placed"] == 2
     assert len(db.trades) == 2
     assert {t["market_id"] for t in db.trades} == {"m-1.100", "m-1.200"}
@@ -757,14 +765,14 @@ def test_due_eventi_stesso_ciclo_piazzano_entrambi():
 
 def test_auto_poi_manuale_stesso_evento_altro_mercato_consentito():
     # I1 auto NON deve bloccare un manuale legittimo sullo stesso evento (altro mercato)
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)          # auto piazza su 1.100 / m-1.100 / sel 4
+    gira(market=market, db=db, now=NOW)          # auto piazza su 1.100 / m-1.100 / sel 4
     assert len(db.trades) == 1 and db.trades[0]["origin"] == "auto"
     db.control["status"] = "idle"                       # spengo l'auto
     db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-altro",
                                   "selection_id": 3, "side": "lay", "mode": "paper", "size": 2})
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert len(db.trades) == 2                          # manuale CONSENTITO
     assert db.trades[1]["origin"] == "manual"
     assert db.manual_reqs[0]["status"] == "done"
@@ -785,9 +793,9 @@ def test_manuale_cap_sotto_minimo_rifiutato():
 def test_target_dinamico_scala_con_piu_eventi():
     # 50 eventi, solo 1 in finestra → target del piazzato ~ 250/50 = 5
     events = [_event("1.100", 42)] + [_event(f"1.{200+i}", -30) for i in range(49)]
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket(events, _cs("1.100"), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert len(db.trades) == 1
     assert db.trades[0]["target"] == pytest.approx(5.0, abs=0.2)
 
@@ -800,7 +808,7 @@ def test_giornata_operativa_profitto_di_ieri_non_blocca_oggi():
     # CRITICAL fix: +255 regolati IERI con stop_on_goal=true NON devono
     # bloccare i piazzamenti di OGGI (prima erano cumulativi a vita).
     yesterday = (NOW - timedelta(days=2)).isoformat()
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     db.trades.append({
         "id": 98, "event_id": "old-event", "status": "won", "pnl": 255.0,
         "liability": 100, "selection_id": 1, "price": 50, "size": 10,
@@ -808,7 +816,7 @@ def test_giornata_operativa_profitto_di_ieri_non_blocca_oggi():
     })
     db._id = 98
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["placed"] == 1                       # oggi si riparte da zero
     stats = db.control["stats"]
     assert stats["realized_today"] == 0.0           # R di oggi, non il cumulato
@@ -832,7 +840,7 @@ def test_giornata_operativa_profitto_di_oggi_blocca():
 
 def test_loss_di_ieri_non_fa_scattare_il_cap_oggi():
     yesterday = (NOW - timedelta(days=2)).isoformat()
-    db = FakeDB(_control(params={"daily_loss_cap": 10}))
+    db = attiva_runner_paper(FakeDB(_control(params={"daily_loss_cap": 10})))
     db.trades.append({
         "id": 97, "event_id": "old-loss", "status": "lost", "pnl": -500.0,
         "liability": 500, "selection_id": 1, "price": 50, "size": 10,
@@ -840,7 +848,7 @@ def test_loss_di_ieri_non_fa_scattare_il_cap_oggi():
     })
     db._id = 97
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["placed"] == 1                       # il cap è GIORNALIERO
 
 
@@ -929,9 +937,9 @@ def test_size_ridotta_da_liquidita_loggata():
         runners=[E.ScoreRunner(4, "3 - 2", lay_price=110.0, lay_size=10.0,
                                lay_ladder=((110.0, 10.0),))],
     )
-    db = FakeDB(_control(goal=25000))               # target alto → size >> liquidità (10€)
+    db = attiva_runner_paper(FakeDB(_control(goal=25000)))  # target alto -> size >> liquidita' (10 EUR)
     market = FakeMarket([_event()], _cs(), snap)
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert any(k == "size_reduced" for k, _ in db.activity)
     t = db.trades[0]
     assert t["meta"]["requested_size"] > t["size"]  # audit: pre-taglio > effettiva
@@ -1033,16 +1041,16 @@ def test_manuale_rifiuta_selezione_rimossa_o_assente():
 
 def test_gamba_in_error_e_ripiazzabile():
     # audit H1: FOK fallito → riga error → il RETRY della stessa gamba passa
-    db = FakeDB(_control(status="idle"))
+    db = attiva_runner_paper(FakeDB(_control(status="idle")))
     payload = {"event_id": "1.100", "market_id": "m-1.100", "selection_id": 4,
                "side": "lay", "mode": "paper", "price": 110, "size": 10}
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     db.manual_reqs = _manual_req(payload)
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert db.trades[0]["status"] == "open"
     db.trades[0]["status"] = "error"          # simula esito FOK live_not_matched
     db.manual_reqs = _manual_req(payload)
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     ok = [t for t in db.trades if t["status"] == "open"]
     assert len(ok) == 1 and len(db.trades) == 2  # nuova riga, la error resta storia
 
@@ -1060,8 +1068,11 @@ def test_settle_open_orfano_paper_void_dopo_sparizione_consecutiva():
                   "meta": {"market_gone_since": gone}}]
     market = FakeMarket([_event()], _cs(), None)   # read_market → None (mercato sparito)
     n = S.settle_open(params=S.omega_config.resolve_params({}), market=market, db=db, now=NOW)
-    assert n == 1 and db.trades[0]["status"] == "void" and db.trades[0]["pnl"] == 0.0
-    assert any(k == "settle_orphan" for k, _ in db.activity)
+    # CANTIERE C (28/09): questo test ASSERIVA il void a 0 in paper (P&L inventato,
+    # paper diverso dal live). Senza risultato vero la posizione resta aperta con
+    # l'allarme, come in live; col risultato si regola (test_cantiere_c_...).
+    assert n == 0 and db.trades[0]["status"] == "open"
+    assert any(k == "orphan_live_alert" and p.get("mode") == "paper" for k, p in db.activity)
 
 
 def test_settle_open_orfano_primo_avvistamento_solo_marker():
@@ -1133,38 +1144,41 @@ def test_manuale_live_exception_resta_pending_per_riconciliazione():
 
 
 # ===========================================================================
-# CERTIFICAZIONE 12/09 — PAPER = LIVE anche nel piazzamento MANUALE.
-# Prima il fallback legacy confermava il fill al prezzo scelto dall'utente
-# senza guardare il book: la liquidita' del BEST veniva spesa a un prezzo
-# diverso e un prezzo NON abbinabile riempiva lo stesso (in live il FOK lo
-# avrebbe ucciso). Ora passa dallo stesso simulatore del path automatico.
+# CERTIFICAZIONE 12/09 -> CANTIERE C 28/09: PAPER = LIVE nel piazzamento MANUALE.
+# Il 12/09 il fallback paper passava dal simulatore "di casa" del path
+# automatico; dal 28/09 (ordine dell'utente) in paper il simulatore di casa non
+# esiste piu': l'ordine va al RUNNER (qui il finto di ``runner_paper_finto``,
+# stesso contratto di coda/specchio di omega_db) con lo STESSO ordine del live
+# (prezzo, size cappata alla liquidita' del book, FOK) e l'esito lo decide il
+# runner. Il matching vero e' di flumine (banco, trasporto_rapido R1/R3).
 # ===========================================================================
-def test_manuale_paper_prezzo_non_abbinabile_non_riempie():
-    """LAY a 60 quando il best lay e' 110: in live non si abbina, in paper neppure."""
-    db = FakeDB(_control(status="idle"))
+def _manuale_paper(price, size, esito="abbinato"):
+    db = attiva_runner_paper(FakeDB(_control(status="idle")), esito=esito)
     db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
                                   "selection_id": 4, "side": "lay", "mode": "paper",
-                                  "price": 60, "size": 5})
+                                  "price": price, "size": size})
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
+    return db
+
+
+def test_manuale_paper_prezzo_non_abbinabile_non_riempie():
+    """LAY a 60 quando il best lay e' 110: il runner riceve il FOK a 60 e lo
+    uccide (in live Betfair fa lo stesso); nessuna posizione."""
+    db = _manuale_paper(60, 5, esito="ucciso")
+    payload = db.coda_runner[1]["payload"]
+    assert (payload["price"], payload["size"], payload["time_in_force"]) == \
+        (60.0, 5.0, "FILL_OR_KILL")
     t = db.trades[0]
     assert t["status"] == "error", t
-    assert t["meta"]["reason"] == "paper_not_matched"
     assert t["meta"]["leg_failed"] is True and t["meta"]["error_final"] is True
-    # la richiesta manuale risulta FALLITA all'utente (non "eseguita"): il
-    # motivo e' leggibile, cosi' il trader sa che l'ordine non e' mai entrato
-    assert db.manual_reqs[0]["status"] == "error"
-    assert "paper_non_abbinabile" in str(db.manual_reqs[0].get("result"))
 
 
 def test_manuale_paper_size_oltre_la_liquidita_riempie_solo_il_disponibile():
-    """Il book ha 40 EUR sul lay a 110: una size da 100 non puo' riempirsi tutta."""
-    db = FakeDB(_control(status="idle"))
-    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
-                                  "selection_id": 4, "side": "lay", "mode": "paper",
-                                  "price": 110, "size": 100})
-    market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    """Il book ha 40 EUR sul lay a 110: la size da 100 e' cappata a 40 PRIMA
+    dell'ordine (stessa regola del live), e l'ordine al runner e' da 40."""
+    db = _manuale_paper(110, 100)
+    assert db.coda_runner[1]["payload"]["size"] == 40.0
     t = db.trades[0]
     assert t["status"] == "open"
     assert t["size"] == 40.0            # cappata alla liquidita' REALE del book
@@ -1173,16 +1187,11 @@ def test_manuale_paper_size_oltre_la_liquidita_riempie_solo_il_disponibile():
 
 
 def test_manuale_paper_abbinabile_resta_invariato():
-    """Caso normale: prezzo al best e size disponibile -> fill pieno, come prima."""
-    db = FakeDB(_control(status="idle"))
-    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
-                                  "selection_id": 4, "side": "lay", "mode": "paper",
-                                  "price": 110, "size": 10})
-    market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    """Caso normale: prezzo al best e size disponibile -> fill pieno dal runner."""
+    db = _manuale_paper(110, 10)
     t = db.trades[0]
     assert t["status"] == "open" and t["size"] == 10.0 and t["price"] == 110.0
-    assert t["meta"]["fully_matched"] is True
+    assert t["meta"]["fill"] == "flumine_paper"
 
 
 # ===========================================================================

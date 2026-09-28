@@ -1,0 +1,27 @@
+﻿M1 canale: FOK solo live                   ROSSO          3 failed, 1 passed in 29.24s
+M2 coda: FOK solo live                     ROSSO          3 failed in 15.63s
+M5 reconcile paper: fill dalla riserva     ROSSO          3 failed in 9.33s
+M7 chiusura in volo registrata             ROSSO          1 failed, 2 passed in 20.20s
+M8 cash-out manuale non registra           ROSSO          1 failed in 19.72s
+M9 read_control senza protezione           ROSSO          3 failed in 17.19s
+M10 controllo vecchio usato per aprire     ROSSO          2 failed in 12.87s
+M11 nessun ritentativo                     ROSSO          1 failed in 16.60s
+M12 senza controllo valido gira tutto      ROSSO          1 failed in 21.75s
+M13 proposte: chiusura senza porta         ROSSO          1 failed in 30.55s
+M14 missione: pending paper non vivo       ROSSO          1 failed, 1 passed in 13.00s
+M15 paper: richiesta stantia non revocata  ROSSO          2 failed, 1 passed in 19.86s
+M16 (coordinatore) ordine di un'altra riga accettato ROSSO          2 failed in 16.27s
+M17 controllo vecchio senza eta' massima   ROSSO          1 failed in 11.43s
+M18 D1: torna il fill di casa (automatico) ROSSO          3 failed, 2 warnings in 16.44s
+M19 D1: 'rest' chiude il runner in paper   ROSSO          2 failed, 2 warnings in 10.64s
+M20 D1: torna il fill di casa (manuale)    ROSSO          2 failed in 13.56s
+M21 D3: orfano paper non regolato col risultato ROSSO          2 failed in 5.44s
+M22 D3: esito dedotto anche in live        ROSSO          1 failed, 1 passed in 10.59s
+M23 D4: il servizio somma le modalita'     ROSSO          2 failed, 2 passed in 11.52s
+M24 D4: DB in casa senza filtro            ROSSO          1 failed in 11.02s
+M25 D3/engine: Any Other senza punteggi quotati ROSSO          2 failed, 9 passed in 17.80s
+hash invariato MUTAZIONE=0 omega_service.py
+hash invariato MUTAZIONE=0 omega_proposte.py
+hash invariato MUTAZIONE=0 omega_db.py
+hash invariato MUTAZIONE=0 omega_engine.py
+hash invariato MUTAZIONE=0 trasporto_rapido.py

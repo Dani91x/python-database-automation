@@ -368,6 +368,27 @@ def posizione_manuale(rows: list[dict]) -> set:
     return fuori
 
 
+def righe_della_modalita(rows: list[dict], mode: Optional[str]) -> list[dict]:
+    """Le sole righe della modalita' ``mode`` ('paper'|'live'); ``None`` = tutte.
+    PURA. Una gamba di chiusura vale la modalita' della sua APERTURA (come
+    ``omega_aggregates_sql(boolean, text)``: ``coalesce(p.mode, o.mode)``).
+
+    CANTIERE C (28/09, D4): paper e live non si sommano MAI nei numeri con cui
+    il bot decide (stop giornaliero, tetti, obiettivo)."""
+    m = str(mode or "").strip().lower()
+    if not m:
+        return list(rows or [])
+    per_id = {r.get("id"): r for r in rows or [] if r.get("id") is not None}
+
+    def _modo(r: dict) -> str:
+        # ``omega_trades.mode`` e' NOT NULL DEFAULT 'paper' (migrations/omega_bot.sql):
+        # una riga senza modalita' vale quella di default del database
+        padre = per_id.get(r.get("closes_trade_id")) if r.get("closes_trade_id") else None
+        return str((padre or r).get("mode") or r.get("mode") or "paper").strip().lower()
+
+    return [r for r in rows or [] if _modo(r) == m]
+
+
 def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None,
                      *, solo_auto: bool = False) -> dict:
     """Aggrega le righe ``omega_trades`` → totali. PURA e testabile (money-critical).
@@ -1095,6 +1116,43 @@ def winner_scoreline(meta: Optional[dict], winner_selection_id: Optional[int]) -
         return None
     parsed = parse_scoreline(str(names.get(str(int(winner_selection_id))) or ""))
     return None if parsed is None else f"{parsed[0]}-{parsed[1]}"
+
+
+def vince_col_risultato(runner_name: Optional[str], risultato: Optional[str],
+                        runners: Optional[dict]) -> Optional[bool]:
+    """Il runner ``runner_name`` VINCE col risultato vero ``risultato`` ('H-A')?
+    PURA. ``runners`` = ``meta.runners`` del trade ({sel: 'H - A'}): i punteggi
+    QUOTATI del mercato, necessari per le voci 'Any Other ...'/'Any Unquoted'.
+    None = non determinabile (nessuna deduzione azzardata: chi chiama non regola).
+
+    CANTIERE C (28/09): serve al paper per regolare una posizione il cui mercato
+    e' sparito col risultato VERO invece di un P&L 0 inventato."""
+    try:
+        h, a = (int(x) for x in str(risultato or "").split("-"))
+    except (TypeError, ValueError):
+        return None
+    nostro = parse_scoreline(str(runner_name or ""))
+    if nostro is not None:
+        return nostro == (h, a)
+    nome = str(runner_name or "").lower()
+    if "any other" not in nome and "unquoted" not in nome:
+        return None
+    if not isinstance(runners, dict) or not runners:
+        return None
+    quotati = {parse_scoreline(str(v)) for v in runners.values()} - {None}
+    if not quotati:
+        return None
+    if (h, a) in quotati:
+        return False
+    if "unquoted" in nome:
+        return True
+    if "home" in nome:
+        return h > a
+    if "away" in nome:
+        return a > h
+    if "draw" in nome:
+        return h == a
+    return None
 
 
 def result_key_for_trade(trade: dict) -> Optional[str]:

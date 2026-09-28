@@ -46,6 +46,23 @@ from Betfair.omega import omega_v3 as V3
 from Betfair.omega.test_omega_v2_2026_09_09 import (  # noqa: F401 — `lambdas` e' una fixture
     NOW, _DB, _Market, _runner, lambdas,
 )
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
+
+
+@pytest.fixture(autouse=True)
+def _canale_ordini_spento(monkeypatch):
+    """Cantiere C (28/09): questi test collaudano la coda/il runner paper, non la
+    porta del canale. Il ``.env`` VERO (letto da ``load_dotenv``) accende gli
+    interruttori dal 26/09: qui si spengono apposta, o il percorso provato non
+    sarebbe quello dichiarato."""
+    from Betfair.omega import porta_ordini as _PO_TEST
+
+    for nome in ("OMEGA_ORDINI_VIA_CANALE", "ESITI_ORDINI_CANALE", "OMEGA_LEGGE_CANALE",
+                 "PUNTEGGI_CANALE"):
+        monkeypatch.setenv(nome, "0")
+    _PO_TEST.azzera()
+    yield
+    _PO_TEST.azzera()
 
 # LE CELLE. Con lambda (1,6 · 1,1) e griglia FINALE:
 #   al 30' sullo 0-0  "1 - 3" vale 1,367 % -> a lay 55 il margine e' 1,26x
@@ -90,11 +107,16 @@ def _giro(db, market, ev, params, *, minute, sh=0, sa=0, goal=10.0,
           aggregates=None, legs=None):
     agg = aggregates if aggregates is not None else {
         "realized_today": 0.0, "matches_traded_today": 0, "open_liability": 0.0}
-    return S.scan_and_place_legs(
+    n = S.scan_and_place_legs(
         control={"daily_goal": goal, "mode": "paper"}, params=params, events=[ev],
         traded_ids=set(), traded_legs=legs if legs is not None else set(),
         aggregates=agg, market=market, db=db, now=NOW,
         score_lookup=_lookup(minute, sh, sa))
+    # cantiere C (28/09): l'apertura paper passa dal runner; il poll VERO della
+    # coda (la prima fase del giro dopo) la conferma
+    if callable(getattr(db, "enqueue_live_order", None)):
+        S.poll_flumine_pending(db=db, params=params, now=NOW, market=market)
+    return n
 
 
 def _evento(eid="v3a", minuti_fa=70):
@@ -103,8 +125,9 @@ def _evento(eid="v3a", minuti_fa=70):
 
 
 def _db(eid="v3a"):
-    return _DB({"daily_goal": 10.0, "mode": "paper"},
-               events={eid: {"fixture_id": 7, "league_id": 135}})
+    # cantiere C (28/09): runner paper (canale/coda) al posto del vecchio fill di casa
+    return attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"},
+                                   events={eid: {"fixture_id": 7, "league_id": 135}}))
 
 
 def _motivi(db, kind="skip"):
@@ -207,8 +230,9 @@ def test_le_due_gambe_sono_due_celle_diverse_dello_stesso_mercato(lambdas):
         def trades_for_event(self, event_id):
             return [dict(r, closes_trade_id=None, origin="auto") for r in self.trades]
 
-    db = _DBConEsposto({"daily_goal": 10.0, "mode": "paper"},
-                       events={"v3due": {"fixture_id": 7, "league_id": 135}})
+    db = attiva_runner_paper(_DBConEsposto({"daily_goal": 10.0, "mode": "paper"},
+                                           events={"v3due": {"fixture_id": 7,
+                                                             "league_id": 135}}))
     market = _Market(_books_v3("v3due"))
     gambe: set = set()
     assert _giro(db, market, _evento("v3due", minuti_fa=30), _par_v3(),

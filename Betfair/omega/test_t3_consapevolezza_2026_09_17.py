@@ -160,14 +160,21 @@ def test_r_c1_reconcile_live_cleared_parziale_residuo_dichiarato_zero():
 
 
 def test_r_c1_reconcile_paper_size_remaining_e_istante_dichiarati():
+    """CANTIERE C (28/09): la riga paper orfana si conferma SOLO se il
+    simulatore l'ha eseguita (fonte vera del paper legacy), coi numeri e
+    l'istante del FILL simulato. Prima si confermava sempre coi dati della
+    riserva e l'istante della riconciliazione (fill inventato, FIX-C par. 7.2)."""
     db = FakeDB()
     db.trades = [_pending(mode="paper")]
     market = FakeMarket()
+    eseguito_a = NOW - timedelta(seconds=3)
+    S._ricorda_ordine_paper(1, market_id="m1", selection_id=4, side="lay",
+                            size=5.0, price=110.0, now=eseguito_a)
     S.reconcile_pending(market=market, db=db, now=NOW)
     t = db.trades[0]
     assert t["status"] == "open"
     assert t["size_remaining"] == 0.0
-    assert t["betfair_updated_at"] == NOW.isoformat()
+    assert t["betfair_updated_at"] == eseguito_a.isoformat()   # istante del fill, non ora
 
 
 def test_r_c1_mirror_fill_porta_residuo_e_istante():
@@ -230,57 +237,56 @@ def test_r_j6_flumine_confirm_pieno_non_logga_place_parziale():
     assert not db.attivita("place_parziale")
 
 
-def test_r_j6_paper_legacy_place_one_parziale_logga_place_parziale():
-    """Fill istantaneo paper (nessuna coda flumine configurata: gate chiuso di
-    default, percorso legacy) con ladder SOTTO la size chiesta: il residuo
-    (mai piazzato, nessun ordine resta a mercato) va dichiarato."""
-    ev = M.EventInfo("1.200", "Casa vs Ospite", NOW - timedelta(minutes=40))
-    cs = M.CorrectScoreMarket(market_id="m-1.200", event_id="1.200",
+def _lay_paper_75(eid, ladder, size, db):
+    ev = M.EventInfo(eid, "Casa vs Ospite", NOW - timedelta(minutes=40))
+    cs = M.CorrectScoreMarket(market_id="m-" + eid, event_id=eid,
                               event_name="Casa vs Ospite",
                               market_start_time=NOW - timedelta(minutes=40),
                               runner_names={3: "2 - 1"})
     sel = E.Selection(selection_id=3, name="2 - 1", price=75.0, lay_size_available=50.0)
-    runner = E.ScoreRunner(3, "2 - 1", lay_price=75.0, lay_size=50.0,
-                           lay_ladder=((75.0, 3.0),))          # SOLO 3.0 disponibili in ladder
+    runner = E.ScoreRunner(3, "2 - 1", lay_price=75.0, lay_size=50.0, lay_ladder=ladder)
     snapshot = M.MarketSnapshot(status="OPEN", inplay=True, closed=False,
                                 winner_selection_id=None, voided=False,
                                 runners=[runner])
-    db = FakeDB()
-    did = S._place_one(ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=7.01,
-                       price=75.0, target=7.01, minute=10, score_str="2 - 1",
-                       mode="paper", commission=0.05, market=FakeMarket(), db=db,
-                       now=NOW, requested_size=7.01,
-                       params={"execution_mode": "auto"})
-    assert did == 1
-    t = db.trades[0]
-    assert t["status"] == "open"
-    assert t["size"] == 3.0                       # abbinato = ladder disponibile
-    parziali = db.attivita("place_parziale")
-    assert len(parziali) == 1, "R-J6: place_parziale non loggato sul fill paper legacy parziale"
-    assert parziali[0]["size_requested"] == 7.01
-    assert parziali[0]["size_matched"] == 3.0
-    assert t["meta"]["size_remaining"] == 0.0     # nessun ordine resta vivo
+    return S._place_one(ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size,
+                        price=75.0, target=size, minute=10, score_str="2 - 1",
+                        mode="paper", commission=0.05, market=FakeMarket(), db=db,
+                        now=NOW, requested_size=size,
+                        params={"execution_mode": "auto"})
 
 
-def test_r_j6_paper_legacy_place_one_pieno_non_logga_place_parziale():
-    ev = M.EventInfo("1.201", "Casa vs Ospite", NOW - timedelta(minutes=40))
-    cs = M.CorrectScoreMarket(market_id="m-1.201", event_id="1.201",
-                              event_name="Casa vs Ospite",
-                              market_start_time=NOW - timedelta(minutes=40),
-                              runner_names={3: "2 - 1"})
-    sel = E.Selection(selection_id=3, name="2 - 1", price=75.0, lay_size_available=50.0)
-    runner = E.ScoreRunner(3, "2 - 1", lay_price=75.0, lay_size=50.0,
-                           lay_ladder=((75.0, 50.0),))
-    snapshot = M.MarketSnapshot(status="OPEN", inplay=True, closed=False,
-                                winner_selection_id=None, voided=False,
-                                runners=[runner])
+def test_r_j6_paper_senza_runner_nessun_fill_ne_parziale(monkeypatch):
+    """Fino al 28/09 qui si provava il fill istantaneo del simulatore 'di casa'
+    (prima accettava il parziale 3,00 su 7,01, poi lo uccideva come il FOK).
+    CANTIERE C (28/09, ordine dell'utente): in paper quel simulatore non esiste
+    piu'. Senza runner (canale spento, nessuna coda) l'apertura e' NON
+    eseguita: nessuna posizione, nessun parziale, motivo leggibile."""
+    from Betfair.omega import porta_ordini as PO
+
+    monkeypatch.setenv(PO.ENV_CANALE, "0")
+    PO.azzera()
     db = FakeDB()
-    did = S._place_one(ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=5.0,
-                       price=75.0, target=5.0, minute=10, score_str="2 - 1",
-                       mode="paper", commission=0.05, market=FakeMarket(), db=db,
-                       now=NOW, requested_size=5.0,
-                       params={"execution_mode": "auto"})
-    assert did == 1
+    assert _lay_paper_75("1.200", ((75.0, 3.0),), 7.01, db) == 0
+    assert not [t for t in db.trades if t.get("status") in ("open", "pending")]
+    assert not db.attivita("place_parziale")
+    motivi = [p for p in db.attivita("skip") if p.get("reason") == "paper_runner_non_disponibile"]
+    assert len(motivi) == 1 and motivi[0]["tentativo_consumato"] is False
+
+
+def test_r_j6_paper_dal_runner_pieno_non_logga_place_parziale(monkeypatch):
+    """Col runner l'ordine paper va in coda (FOK) e il poll VERO lo conferma
+    pieno: nessun ``place_parziale``, residuo 0 dichiarato."""
+    from Betfair.omega import omega_config
+    from Betfair.omega import porta_ordini as PO
+    from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper
+
+    monkeypatch.setenv(PO.ENV_CANALE, "0")
+    PO.azzera()
+    db = attiva_runner_paper(FakeDB())
+    assert _lay_paper_75("1.201", ((75.0, 50.0),), 5.0, db) == 1
+    S.poll_flumine_pending(db=db, params=omega_config.resolve_params({}), now=NOW,
+                           market=FakeMarket())
+    assert db.trades[0]["status"] == "open" and db.trades[0]["size"] == 5.0
     assert not db.attivita("place_parziale")
     assert db.trades[0]["meta"]["size_remaining"] == 0.0
 

@@ -24,6 +24,22 @@ from Betfair.omega.test_omega_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _canale_ordini_spento(monkeypatch):
+    """Cantiere C (28/09): questi test collaudano la coda/il runner paper, non la
+    porta del canale. Il ``.env`` VERO (letto da ``load_dotenv``) accende gli
+    interruttori dal 26/09: qui si spengono apposta, o il percorso provato non
+    sarebbe quello dichiarato."""
+    from Betfair.omega import porta_ordini as _PO_TEST
+
+    for nome in ("OMEGA_ORDINI_VIA_CANALE", "ESITI_ORDINI_CANALE", "OMEGA_LEGGE_CANALE",
+                 "PUNTEGGI_CANALE"):
+        monkeypatch.setenv(nome, "0")
+    _PO_TEST.azzera()
+    yield
+    _PO_TEST.azzera()
+
+
 # ---------------------------------------------------------------------------
 # Fake con coda flumine (contratto di betfair_live_order_queue.sql)
 # ---------------------------------------------------------------------------
@@ -129,7 +145,6 @@ def test_gate_ok():
 
 @pytest.mark.parametrize("kw,mode,params,expected", [
     ({}, "live", {}, "mode_non_paper"),                                  # LIVE mai in coda
-    ({}, "paper", {"execution_mode": "rest"}, "execution_mode_rest"),    # forza legacy
     ({"follow_status": None}, "paper", {}, "follow_assente"),            # evento non seguito
     ({"follow_status": "PENDING"}, "paper", {}, "follow_pending"),       # non STREAMING
     ({"hb_mode": "LIVE"}, "paper", {}, "runner_mode_non_paper"),         # runner in LIVE
@@ -142,6 +157,26 @@ def test_gate_combinazioni_ko(kw, mode, params, expected):
     ok, reason = S._flumine_paper_gate("1.100", db=db, mode=mode,
                                        params=_params(**params), now=NOW)
     assert not ok and reason == expected
+
+
+def test_gate_paper_ignora_execution_mode_rest():
+    """CANTIERE C (28/09): 'rest' e' una scelta del LIVE (il REST di Betfair);
+    per l'apertura paper di Omega il runner resta l'unica strada."""
+    db = FakeQueueDB(_control())
+    ok, reason = S._flumine_paper_gate("1.100", db=db, mode="paper",
+                                       params=_params(execution_mode="rest"), now=NOW)
+    assert ok and reason == "ok"
+
+
+def _non_eseguita(db, motivo_runner):
+    """CANTIERE C (28/09): senza runner l'apertura paper NON e' eseguita (esito
+    certo, nessun ordine esiste, tentativo non consumato); mai un fill di casa."""
+    assert not [t for t in db.trades if t.get("status") in ("open", "pending")]
+    skip = [p for k, p in db.activity
+            if k == "skip" and p.get("reason") == "paper_runner_non_disponibile"]
+    assert skip and skip[0]["motivo_runner"] == motivo_runner
+    assert skip[0]["tentativo_consumato"] is False
+    assert not any(k == "paper_fill_fallback" for k, _ in db.activity)
 
 
 def test_gate_db_senza_coda_fallback():
@@ -215,38 +250,40 @@ def test_manuale_paper_gate_ok_accoda():
 # ---------------------------------------------------------------------------
 # Fallback legacy (gate KO / enqueue KO / execution_mode='rest')
 # ---------------------------------------------------------------------------
-def test_gate_ko_runner_giu_fallback_legacy():
+def test_gate_ko_runner_giu_apertura_non_eseguita():
+    # CANTIERE C (28/09): prima qui il paper riempiva in casa (fill legacy)
     db = FakeQueueDB(_control(), hb_age_s=300)          # runner morto
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     res = S.run_once(market=market, db=db, now=NOW)
-    assert res["placed"] == 1
-    assert db.trades[0]["status"] == "open"             # fill legacy INVARIATO
+    assert res["placed"] == 0
     assert len(db.queue) == 0                           # niente in coda
-    reasons = [p.get("reason") for k, p in db.activity if k == "paper_fill_fallback"]
-    assert "runner_heartbeat_stantio" in reasons
+    _non_eseguita(db, "runner_heartbeat_stantio")
 
 
-def test_enqueue_ko_fallback_legacy():
+def test_enqueue_ko_apertura_non_eseguita():
     db = FakeQueueDB(_control())
     db.enqueue_raises = True
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
-    assert db.trades[0]["status"] == "open"
-    reasons = [p.get("reason") for k, p in db.activity if k == "paper_fill_fallback"]
-    assert "enqueue_failed" in reasons
+    _non_eseguita(db, "enqueue_failed")
 
 
-def test_execution_mode_rest_forza_legacy():
-    # runner PERFETTO ma execution_mode='rest' → legacy, coda vuota, nessun log fallback
+def test_execution_mode_rest_in_paper_usa_comunque_il_runner():
+    # CANTIERE C (28/09): runner PERFETTO e execution_mode='rest' -> in paper
+    # l'ordine va comunque al runner (il REST di Betfair non esiste per un
+    # ordine simulato) e l'attivita' lo dice all'utente
     db = FakeQueueDB(_control(params={"execution_mode": "rest"}))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
-    assert db.trades[0]["status"] == "open"
-    assert len(db.queue) == 0
+    assert db.trades[0]["status"] == "pending"
+    assert db.trades[0]["meta"]["phase"] == "flumine_wait"
+    assert len(db.queue) == 1 and db.queue[1]["payload"]["time_in_force"] == "FILL_OR_KILL"
+    assert any(k == "execution_mode_rest_in_paper" for k, _ in db.activity)
     assert not any(k == "paper_fill_fallback" for k, _ in db.activity)
 
 
-def test_manuale_gate_ko_fallback_paper_at_price():
+def test_manuale_gate_ko_ordine_non_eseguito():
+    # CANTIERE C (28/09): prima il manuale paper riempiva in casa (paper_at_price)
     db = FakeQueueDB(_control(status="idle"), follow_status=None)
     db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
                                   "selection_id": 4, "side": "lay", "mode": "paper",
@@ -254,9 +291,11 @@ def test_manuale_gate_ko_fallback_paper_at_price():
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
     t = db.trades[0]
-    assert t["status"] == "open" and t["meta"]["fill"] == "paper_at_price"
+    assert t["status"] == "error" and t["meta"]["reason"] == "paper_runner_non_disponibile"
+    assert t["meta"]["motivo_runner"] == "follow_assente" and t["meta"]["leg_failed"] is True
+    assert db.manual_reqs[0]["result"]["error"] == "paper_runner_non_disponibile"
     assert len(db.queue) == 0
-    assert any(k == "paper_fill_fallback" for k, _ in db.activity)
+    assert not any(k == "paper_fill_fallback" for k, _ in db.activity)
 
 
 # ---------------------------------------------------------------------------
@@ -410,14 +449,18 @@ def test_reconcile_pending_non_conferma_i_flumine_wait():
     assert db.trades[0]["status"] == "pending"          # NON confermato dai dati riserva
 
 
-def test_reconcile_pending_paper_legacy_ancora_confermato():
-    # regressione: i pending paper SENZA flumine_request_id seguono il percorso storico
+def test_reconcile_pending_paper_legacy_confermato_solo_se_eseguito():
+    # i pending paper SENZA flumine_request_id restano del reconcile. CANTIERE C
+    # (28/09): si confermano SOLO se il simulatore legacy li ha eseguiti (fonte
+    # vera del paper, come Betfair per il live); prima si confermavano sempre.
     db = FakeQueueDB(_control())
     db.trades = [{"id": 1, "event_id": "1.100", "market_id": "m1", "selection_id": 4,
                   "side": "lay", "mode": "paper", "price": 110, "size": 5,
                   "liability": 545, "status": "pending", "placed_at": NOW.isoformat()}]
     db._id = 1
     market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S._ricorda_ordine_paper(1, market_id="m1", selection_id=4, side="lay",
+                            size=5.0, price=110.0, now=NOW)
     n = S.reconcile_pending(market=market, db=db, now=NOW)
     assert n == 1 and db.trades[0]["status"] == "open"
 
@@ -470,16 +513,17 @@ def test_f1_marker_persistito_prima_dell_enqueue():
     assert db.marker_at_enqueue == f"omega-t{db.trades[0]['id']}"
 
 
-def test_f1_enqueue_ko_ripristina_meta_e_fallback_legacy():
-    """Enqueue KO e richiesta MAI creata: il marker viene rimosso e il
-    chiamante conferma col fill legacy (nessun ordine simulato esiste)."""
+def test_f1_enqueue_ko_ripristina_meta_e_non_esegue():
+    """Enqueue KO e richiesta MAI creata: nessun ordine simulato esiste.
+    CANTIERE C (28/09): prima il chiamante confermava col fill legacy; ora
+    l'apertura e' NON eseguita e la riserva si chiude (nessun marker resta)."""
     db = FakeQueueDB(_control())
     db.enqueue_raises = True
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     S.run_once(market=market, db=db, now=NOW)
-    t = db.trades[0]
-    assert t["status"] == "open"                       # fallback legacy
-    assert "flumine_client_ref" not in (t.get("meta") or {})
+    assert not [t for t in db.trades if "flumine_client_ref" in (t.get("meta") or {})
+                and t.get("status") == "pending"]
+    _non_eseguita(db, "enqueue_failed")
 
 
 def test_f1_enqueue_ko_ma_richiesta_gia_creata_viene_adottata():

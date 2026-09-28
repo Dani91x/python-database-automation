@@ -23,6 +23,7 @@ from Betfair.omega.test_omega_service import (
 )
 from Betfair.stream import avvio_app as AA
 from Betfair.stream.tests.test_avvio_app_2026_09_16 import riga_control
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
 
 
 @pytest.fixture(autouse=True)
@@ -86,11 +87,11 @@ def test_b_stesso_boot_id_non_scrive_niente(monkeypatch):
 
 def test_b_il_bot_acceso_dall_utente_continua_a_piazzare(monkeypatch):
     monkeypatch.setenv(AA.ENV_BOOT_ID, "OGGI")
-    db = _db(status="running", mode="paper", stats={"boot_id": "OGGI"})
+    db = attiva_runner_paper(_db(status="running", mode="paper", stats={"boot_id": "OGGI"}))
     S._GUARDIA_AVVIO.attiva = True              # come in ``main()``
     S.ferma_al_nuovo_avvio(db=db, now=NOW)
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    assert S.run_once(market=market, db=db, now=NOW)["placed"] == 1
+    assert gira(market=market, db=db, now=NOW)["placed"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +112,9 @@ def test_d_a_bot_fermo_dall_avvio_il_settlement_gira(monkeypatch):
     """Fermare Omega blocca i NUOVI ingressi, non la regolazione dei lay gia'
     piazzati: il trade aperto prima dello spegnimento arriva al settlement."""
     monkeypatch.setenv(AA.ENV_BOOT_ID, "OGGI")
-    db = _db(status="running", mode="paper", stats={"boot_id": "OGGI"})
+    db = attiva_runner_paper(_db(status="running", mode="paper", stats={"boot_id": "OGGI"}))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert len(db.trades) == 1 and db.trades[0]["status"] == "open"
 
     # l'app viene riaperta: nuovo avvio, il bot si ferma
@@ -124,7 +125,7 @@ def test_d_a_bot_fermo_dall_avvio_il_settlement_gira(monkeypatch):
 
     # il mercato chiude: il settlement DEVE girare comunque
     market._snapshot = _closed_snapshot(winner_id=1)
-    res = S.run_once(market=market, db=db, now=NOW + timedelta(hours=2))
+    res = gira(market=market, db=db, now=NOW + timedelta(hours=2))
     assert res.get("settled") == 1
     assert db.trades[0]["status"] == "won"
 

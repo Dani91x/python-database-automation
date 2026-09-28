@@ -33,6 +33,23 @@ from Betfair.omega.test_omega_service import NOW, FakeDB, FakeMarket, _control, 
 from Betfair.omega.test_omega_giornata_gambe_2026_09_11 import _DB, _Market, _books, _params, _run
 from Betfair.omega import test_omega_greenup_2026_09_10 as G
 from Betfair.omega.test_omega_greenup_2026_09_10 import lambdas  # noqa: F401 (fixture)
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
+
+
+@pytest.fixture(autouse=True)
+def _canale_ordini_spento(monkeypatch):
+    """Cantiere C (28/09): questi test collaudano la coda/il runner paper, non la
+    porta del canale. Il ``.env`` VERO (letto da ``load_dotenv``) accende gli
+    interruttori dal 26/09: qui si spengono apposta, o il percorso provato non
+    sarebbe quello dichiarato."""
+    from Betfair.omega import porta_ordini as _PO_TEST
+
+    for nome in ("OMEGA_ORDINI_VIA_CANALE", "ESITI_ORDINI_CANALE", "OMEGA_LEGGE_CANALE",
+                 "PUNTEGGI_CANALE"):
+        monkeypatch.setenv(nome, "0")
+    _PO_TEST.azzera()
+    yield
+    _PO_TEST.azzera()
 
 
 @pytest.fixture(autouse=True)
@@ -151,8 +168,8 @@ def test_h7_posizione_viva_senza_feed_allarme_una_volta(lambdas):
 # ---------------------------------------------------------------- M1 cap per partita
 def test_m1_cap_max_events_conta_le_partite_non_le_gambe():
     ev = SimpleNamespace(event_id="e1", name="A v B", open_date=NOW - timedelta(minutes=30))
-    db = _DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
-        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}})
+    db = attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
+        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}}))
     market = _Market(_books("e1"))
     p = _params(max_events=2)
     # 4 gambe fatte su 2 partite (events_today=2) → cap raggiunto: nessuna partita nuova
@@ -194,6 +211,10 @@ def test_m5_reconcile_paper_conserva_il_blocco_modello():
                            "side": "lay", "mode": "paper", "origin": "auto", "price": 75.0, "size": 2.0,
                            "liability": 148.0, "status": "pending", "phase": "ft_cs",
                            "meta": {"model": {"p_model": 0.004, "lambda_source": "fixture"}, "runners": {"3": "2 - 1"}}})
+    # CANTIERE C (28/09): la riga paper orfana si conferma solo se il simulatore
+    # l'ha eseguita (fonte vera del paper legacy), come il live su Betfair
+    S._ricorda_ordine_paper(tid, market_id="m", selection_id=3, side="lay",
+                            size=2.0, price=75.0, now=NOW)
     assert S.reconcile_pending(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW) == 1
     t = next(x for x in db.trades if x["id"] == tid)
     assert t["status"] == "open" and t["meta"]["reconciled"] == "paper"
@@ -202,11 +223,11 @@ def test_m5_reconcile_paper_conserva_il_blocco_modello():
 
 # ---------------------------------------------------------------- M10 fasi protette
 def test_m10_reconcile_o_settle_ko_non_fermano_il_ciclo(monkeypatch):
-    db = FakeDB(_control())
+    db = attiva_runner_paper(FakeDB(_control()))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     monkeypatch.setattr(S, "reconcile_pending", lambda **kw: 1 / 0)
     monkeypatch.setattr(S, "settle_open", lambda **kw: 1 / 0)
-    res = S.run_once(market=market, db=db, now=NOW)
+    res = gira(market=market, db=db, now=NOW)
     assert res["placed"] == 1                                   # il ciclo è andato avanti
     reasons = {p.get("reason") for k, p in db.activity if k == "error"}
     assert {"reconcile_phase_failed", "settle_phase_failed"} <= reasons
@@ -393,8 +414,8 @@ def test_2p_f2_mercato_sospeso_non_si_entra():
 def test_2p_f5_un_evento_rotto_non_ferma_gli_altri(monkeypatch):
     ev1 = SimpleNamespace(event_id="bad", name="X v Y", open_date=NOW - timedelta(minutes=30))
     ev2 = SimpleNamespace(event_id="e1", name="A v B", open_date=NOW - timedelta(minutes=30))
-    db = _DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
-        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}})
+    db = attiva_runner_paper(_DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
+        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}}))
     real = S._leg_market
 
     def boom(market, ev, mtype, payload):

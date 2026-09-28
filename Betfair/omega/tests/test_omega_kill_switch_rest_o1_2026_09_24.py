@@ -21,6 +21,7 @@ from Betfair.omega.test_omega_service import (
     NOW, FakeDB, FakeMarket, _control, _cs, _event, _open_snapshot,
 )
 from Betfair.stream.trading import controls as CTL
+from Betfair.omega.tests.runner_paper_finto import attiva_runner_paper, gira  # cantiere C 28/09
 
 
 @pytest.fixture
@@ -91,9 +92,11 @@ def test_automatico_paper_col_freno_non_apre(kill, sorgente):
 
 def test_automatico_paper_freno_rilasciato_parita(kill):
     kill(None)
-    db = FakeDB(_control(mode="paper"))
+    # cantiere C (28/09): il paper passa dal runner (non esiste piu' il fill di casa)
+    db = attiva_runner_paper(FakeDB(_control(mode="paper")))
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    assert S.run_once(market=market, db=db, now=NOW)["placed"] == 1
+    assert gira(market=market, db=db, now=NOW)["placed"] == 1
+    assert db.trades[0]["status"] == "open"
 
 
 @pytest.mark.parametrize("sorgente", ["env", "db"])
@@ -117,10 +120,11 @@ def test_manuale_paper_col_freno_non_apre(kill, sorgente):
 
 def test_manuale_paper_freno_rilasciato_parita(kill):
     kill(None)
-    db = FakeDB(_control(status="idle"))
+    # cantiere C (28/09): il paper passa dal runner (non esiste piu' il fill di casa)
+    db = attiva_runner_paper(FakeDB(_control(status="idle")))
     _manuale(db, mode="paper")
     market = FakeMarket([_event()], _cs(), _open_snapshot())
-    S.run_once(market=market, db=db, now=NOW)
+    gira(market=market, db=db, now=NOW)
     assert db.trades[0]["status"] == "open"
     assert db.manual_reqs[0]["result"]["ok"] is True
 

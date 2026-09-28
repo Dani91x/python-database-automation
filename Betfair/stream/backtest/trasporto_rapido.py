@@ -27,9 +27,11 @@ GLI SCENARI (ognuno con i suoi controlli; «N/A» detto col motivo):
   R2 freno            - ordine non abbinabile (quota 1,01, FOK): ucciso, riga
                         'error', nessun abbinato; e a mercato SOSPESO (primo
                         book sospeso della registrazione): nessun abbinato;
-  R3 parziale         - Safe/Omega live sono FOK: la parte non coperta si
-                        uccide tutta (0 abbinato); Omega PAPER (senza FOK):
-                        abbinato in parte, riga NON chiusa, numeri sulla riga;
+  R3 parziale         - Safe e Omega sono FOK in live E in paper (Omega paper
+                        dal 28/09, cantiere C: prima lavorava il book fino al
+                        TTL): la parte non coperta si uccide tutta (0 abbinato),
+                        riga 'error', nessun residuo vivo, in entrambe le
+                        modalita';
   R4 canale giu'      - regola D5: apertura NON inviata e MAI in REST; chiusura
                         sul REST di oggi (ripiego dichiarato);
   R5 duplicato        - stesso ref due volte: una sola esecuzione;
@@ -604,31 +606,24 @@ def _r3(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> 
     riga = A.risolvi(tid)
     e.controlla("riga 'error'", riga.get("status") == "error", riga.get("status"))
     if A.nome != "omega":
-        e.controlli.append(("PAPER senza FOK: N/A per Safe (FOK anche in paper)", True, ""))
+        e.controlli.append(("PAPER: N/A per Safe (stesso FOK del live, gia' provato)", True, ""))
         return
-    # Omega PAPER: senza FOK l'ordine lavora il book -> parziale
+    # Omega PAPER (cantiere C, 28/09): lo STESSO ordine del live, FOK compreso.
+    # Prima qui si pretendeva il parziale (il difetto R8): ora il paper deve
+    # uscire identico al live dello stesso scenario.
     tid2 = A.riserva(side="lay", price=prezzo, size=size, mode="paper")
     ref2 = "%s%d" % (pref, tid2)
     A.invia(tid2, selection_id=sel, side="lay", price=prezzo, size=size, mode="paper")
-    b.pompa(2.0)
+    fase2 = _aspetta_terminale(b, ref2)
     ev2 = b.client.esiti(ref2) or {}
-    abb = float(ev2.get("size_matched") or 0.0)
-    e.controlla("PAPER senza FOK: abbinato in parte, residuo vivo",
-                0 < abb < size and float(ev2.get("size_remaining") or 0) > 0,
-                (ev2.get("fase"), abb, ev2.get("size_remaining")))
-    e.controlla("evento intermedio (non terminale)", ev2.get("fase") == "abbinato_parziale",
-                ev2.get("fase"))
+    e.controlla("PAPER FOK oltre la liquidita': ucciso, 0 abbinato (come il live)",
+                fase2 in ("annullato", "scaduto")
+                and float(ev2.get("size_matched") or 0) == 0
+                and float(ev2.get("size_remaining") or 0) == 0,
+                (fase2, ev2.get("size_matched"), ev2.get("size_remaining")))
     riga2 = A.risolvi(tid2)
-    e.controlla("riga ancora 'pending' con l'abbinato vero sulla riga (C.12a)",
-                riga2.get("status") == "pending"
-                and abs(float(riga2.get("size_matched") or 0) - abb) < 0.01,
-                {k: riga2.get(k) for k in ("status", "size_matched", "size_remaining")})
-    # si annulla il residuo per non lasciare un ordine vivo agli scenari dopo
-    from ...safe_strategy import execution as X
-    from ...omega import porta_ordini as OPO
-
-    X.annulla_su_betfair(None, bet_id=str(ev2.get("bet_id")), market_id=b.market_id,
-                         porta=OPO.VistaOmega(b.client), mode="paper")
+    e.controlla("PAPER riga 'error' (come il live)", riga2.get("status") == "error",
+                riga2.get("status"))
 
 
 def _r4(b: BancoRapido, A: Any, pref: str, e: _Esito, stato: Dict[str, Any]) -> None:
