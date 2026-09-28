@@ -1787,6 +1787,12 @@ class TennisScalperStrategy(BaseStrategy):
             close = slot.close
             c_match = float(getattr(close, "size_matched", 0.0) or 0.0) if close else 0.0
             if close is not None and c_match > 0 and not self._has_live(close):
+                # CANTIERE T (28/09, K6): il ciclo non si chiude finche' uno
+                # degli ordini qui sopra e' ancora vivo (es. un parcheggio
+                # PENDING senza bet_id, il cui cancel fallisce): il cancel si
+                # ritenta al book dopo, e solo a ordini morti si decide.
+                if any(self._has_live(o) for o in slot.flatten_orders):
+                    return
                 # roundtrip completato: se resta un residuo direzionale (es.
                 # cattura spread con size uguali), GREEN garantito -> il
                 # profitto e' bloccato qualunque sia l'esito della partita.
@@ -2005,6 +2011,18 @@ class TennisScalperStrategy(BaseStrategy):
         # in FLATTENING per sempre (ping-pong di ordini da centesimi, cicli MAI
         # contabilizzati: la missione non poteva completarsi in paper).
         if abs(net_win - net_lose) <= 0.02:
+            # CANTIERE T (28/09, K6): piatta, ma un ordine dello slot ancora
+            # vivo (es. il parcheggio di una sequenza ABORTITA, che lo stale
+            # qui sotto salta per design) potrebbe abbinarsi DOPO la chiusura
+            # dichiarata. Si ritira e si dichiara chiusa solo a ordini morti.
+            vivi = [o for o in slot.flatten_orders if self._has_live(o)]
+            if vivi or slot.submins:
+                # anche le sequenze: a posizione piatta un loro rimpiazzo la
+                # ROVESCEREBBE; si chiudono qui (ordini ritirati, voci tolte)
+                self._cancel_submins(market, slot)
+                for o in vivi:
+                    self._cancel_if_live(market, o)
+                return
             locked = min(net_win, net_lose)
             slot.status = DONE
             self.stats["flattens"] += 1
@@ -2027,6 +2045,7 @@ class TennisScalperStrategy(BaseStrategy):
             return
         # un flatten vivo ma STANTIO (il book si e' allontanato: non fillera')
         # va cancellato e ripiazzato piu' aggressivo al giro dopo
+        in_seq = self._ordini_in_sequenza(slot)
         for o in slot.flatten_orders:
             if not self._has_live(o):
                 continue
@@ -2035,7 +2054,16 @@ class TennisScalperStrategy(BaseStrategy):
             # imabbinabili PER DESIGN: non sono flatten stantii, NON vanno
             # cancellati qui (il 03/07 questo li uccideva ogni 1.5s e la
             # sequenza park-trim-replace non completava mai → churn di txn)
-            if p >= 999.0 or p <= 1.011:
+            # CANTIERE T (28/09): ma SOLO quelli di una sequenza IN CORSO. Un
+            # parcheggio ORFANO (sequenza finita/abortita, cancel fallito su un
+            # ordine ancora PENDING senza bet_id) non lo governa piu' nessuno:
+            # si ritira qui, a ogni giro, finche' non e' morto. Prima il flatten
+            # lo aspettava per sempre (`any(_has_live)` qui sotto).
+            # (Un parcheggio in REPLACING ha il rimpiazzo in volo: lo governa
+            # flumine, il sostituto nasce al book in cui il replace e' eseguito.)
+            if (p >= 999.0 or p <= 1.011) and (
+                    id(o) in in_seq
+                    or getattr(o, "status", None) == OrderStatus.REPLACING):
                 continue
             side = (getattr(o, "side", "") or "").upper()
             stale = (
@@ -2062,6 +2090,14 @@ class TennisScalperStrategy(BaseStrategy):
         slot.flat_tries += 1
         if fo is not None:
             slot.flatten_orders.append(fo)
+            if now is not None:
+                slot.t_last_flat = int(now)
+        elif slot.submins:
+            # CANTIERE T (28/09): `_place_exact` torna None quando la chiusura
+            # e' TUTTA sotto il minimo ma ha AVVIATO la sequenza del resto: non
+            # e' un residuo da accettare, e' una chiusura in corso: lo slot resta
+            # FLATTENING (niente DONE col parcheggio vivo, controllo K6) e ai
+            # book successivi il parcheggio tracciato fa aspettare il flatten.
             if now is not None:
                 slot.t_last_flat = int(now)
         else:
@@ -2377,6 +2413,20 @@ class TennisScalperStrategy(BaseStrategy):
     # ricreava la sequenza ogni 5s pur con l'ordine gia' a riposo al target)
     _SUBMIN_MAX_PER_CYCLE = 5
 
+    @staticmethod
+    def _ordini_in_sequenza(slot: _Slot) -> set:
+        """id() degli ordini delle sequenze place-and-trim IN CORSO dello slot
+        (parcheggio e sostituti: tutti gli ordini del loro Trade)."""
+        ids: set = set()
+        for entry in slot.submins:
+            o = entry.get("order") or getattr(entry.get("ops"), "last_order", None)
+            if o is None:
+                continue
+            ids.add(id(o))
+            for x in list(getattr(getattr(o, "trade", None), "orders", None) or []):
+                ids.add(id(x))
+        return ids
+
     def _cancel_submins(self, market: Any, slot: _Slot) -> None:
         """Cancella le sequenze exact dello slot (ordini gia' tracciati)."""
         for entry in list(slot.submins):
@@ -2414,24 +2464,35 @@ class TennisScalperStrategy(BaseStrategy):
         if main >= smin - _EPS:
             main_order = self._place(market, selection_id, side, price, main,
                                      floor_min=False, slot=None)  # diretto
+        # CANTIERE T (28/09): il motivo del salto si scrive UNA volta per
+        # (selezione, lato, size), non a ogni book. Il flatten ritenta a ogni
+        # book e ogni ritentativo scriveva un `min_bet_skip`: nel replay del
+        # banco (35794049, live) le azioni sono passate da 228 a 16.613.
         if rest < 0.05:
-            if rest >= 0.01:
+            if rest >= 0.01 and self._residuo_non_piazzabile_detto(
+                    selection_id, side, rest):
                 self._emit("min_bet_skip", selection_id=int(selection_id),
                            side=side, size=rest)
             return main_order
 
-        import time as _t
-        now_ms = int(_t.time() * 1000)
+        # CANTIERE T (28/09): la pausa fra due sequenze si misura
+        # sull'OROLOGIO DEL MERCATO del bot (`publish_time`), come il tetto
+        # transazioni (17/09) e come `UsciteEsatte` di pro/FLB/swing. Prima era
+        # `time.time()`: in replay e in paper accelerato l'orologio del PC non
+        # e' quello del mercato. Soglia (30 s) e tetto (5) INVARIATI.
+        now_ms = int(self._orologio_s() * 1000)
         rate_ok = now_ms - (slot.t_last_submin or 0) >= self._SUBMIN_MIN_INTERVAL_MS
         # tetto per ciclo: oltre, il residuo (comunque <=0.25 di rischio) si
         # accetta come micro e si smette di creare sequenze
         if getattr(slot, "submin_count", 0) >= self._SUBMIN_MAX_PER_CYCLE:
-            self._emit("min_bet_skip", selection_id=int(selection_id),
-                       side=side, size=rest)
+            if self._residuo_non_piazzabile_detto(selection_id, side, rest):
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest)
             return main_order
         if (slot.status == FLATTENING and main_order is not None) or not rate_ok:
-            self._emit("min_bet_skip", selection_id=int(selection_id),
-                       side=side, size=rest)
+            if self._residuo_non_piazzabile_detto(selection_id, side, rest):
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest)
             return main_order
         if slot.submins:
             for entry in slot.submins:
@@ -2477,6 +2538,19 @@ class TennisScalperStrategy(BaseStrategy):
 
     def _drive_submins(self, market: Any, slot: _Slot, now: int) -> None:
         """Avanza le sequenze park-trim-replace dello slot (idempotente)."""
+        # CANTIERE T (28/09, K5 del banco): il SOSTITUTO del rimpiazzo nasce
+        # quando flumine esegue il replace, cioe' DOPO che la sequenza e' gia'
+        # passata a DONE ed e' uscita da `slot.submins` (con la latenza vera,
+        # piu' book dopo). Prima nessuno lo agganciava: abbinato a mercato ma
+        # fuori da `_net_position`, il bot si credeva ancora scoperto e ripiazzava
+        # la chiusura -> posizione ROVESCIATA (replay 35794049: se vince -0,16,
+        # se perde 1,31). Si agganciano a ogni book tutti gli ordini dei Trade
+        # gia' tracciati (il Trade di un parcheggio contiene solo parcheggio e
+        # sostituti; gli altri Trade del bot hanno un solo ordine).
+        for o in list(slot.flatten_orders):
+            tr = getattr(o, "trade", None)
+            for x in list(getattr(tr, "orders", None) or []):
+                self._track(slot, x)
         if not slot.submins:
             return
         from ..trading.submin import SubminStep, advance_submin
@@ -2522,6 +2596,26 @@ class TennisScalperStrategy(BaseStrategy):
                 slot.submins.remove(entry)
             elif new_state.step == SubminStep.ABORTED:
                 self._emit("submin_abort", note=new_state.note[:200])
+                # (CANTIERE T: il suo parcheggio, se ancora vivo, e' ORFANO e lo
+                # ritira `_drive_flatten` a ogni giro finche' non e' morto)
+                slot.submins.remove(entry)
+            elif (
+                new_state.step in (SubminStep.PLACED, SubminStep.TRIMMED)
+                and entry.get("order") is not None
+                and getattr(entry["order"], "status", None) is not None
+                and getattr(entry["order"], "status", None) not in _LIVE_ORDER_STATUSES
+            ):
+                # CANTIERE T (28/09, K5 del banco): il parcheggio e' MORTO prima
+                # del rimpiazzo (ritirato da un'altra via: sorveglianza LOCKING,
+                # fine finestra, chiusura a posizione piatta) e `advance_submin`
+                # in PLACED senza taglio richiesto ASPETTA PER SEMPRE. La
+                # sequenza restava in `slot.submins` e lo slot DONE saltava la
+                # sorveglianza (`if slot.submins: continue`): replay 35794049,
+                # 7.981 tick DONE con 1,47 EUR di sbilancio. La sequenza finisce
+                # qui, dichiarata; la chiusura la rifanno flatten e sorveglianza.
+                self._emit("submin_abort",
+                           note="parcheggio non piu' vivo prima del rimpiazzo: "
+                                "sequenza chiusa, la chiusura si rifa'")
                 slot.submins.remove(entry)
 
     @staticmethod

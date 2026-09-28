@@ -162,8 +162,8 @@ def test_scalper_tennis_uscite_esatte_accese_in_paper_e_live():
             "tennis_scalper", {"stake": 2.0, "dry_run": False, "params": {},
                                "mode": mode.lower()},
             "1.100", {}, lambda *a, **k: None, df, mode)
-        # CANTIERE T RIPIEGO: spente per il solo scalper tennis (debito dichiarato)
-        assert s.exact_exits is False, mode
+        # CANTIERE T: riaccese dopo la correzione vera (ripiego chiuso)
+        assert s.exact_exits is True, mode
 
 
 # ---------------------------------------------------------------------------
