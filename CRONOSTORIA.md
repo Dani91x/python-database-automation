@@ -3986,3 +3986,21 @@ prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcol
 - Reperti del revisore su D2 mandati al delegato (rinuncia definitiva dopo 5 sequenze fallite = gamba scoperta fino a
   1,99 EUR, non 0,30 come dice il referto; `OrdineComposto.status`; controllo B8 del banco; timeout dello sniper che
   chiude da solo in manuale, da passare a N).
+
+**Checkpoint 22:50 — K2 e D1-bis SU MASTER (master = origin = `d407b59`); ordine dell'utente: «tutto certificato e testato entro 2 ore»**
+| Cantiere | Commit | Verifica mia |
+|---|---|---|
+| K2 arresto ordinato sul comportamento, sessione scalper compresa | `ef71543` | diff riletto per intero; analisi statica mia delle variabili fra `main` e le funzioni estratte (nessuna variabile persa); 13 mutazioni, 9 rosse, 4 SOPRAVVISSUTE sul solo collegamento in `main` (test mancante, codice corretto): `AUDIT_2026-09-28/mutazioni_coordinatore_k2_esito.txt` |
+| D1-bis freno coperture di Mike sul ramo del runner + freno unico sulle aperture paper + censimento porta | `d407b59` | 1026 test verdi (Mike + freno unico + contratto place-and-trim); 7 mutazioni, 5 rosse, 2 SOPRAVVISSUTE (mancano i test negativi su esito ignoto e lay appoggiata): `AUDIT_2026-09-28/mutazioni_coordinatore_d1bis_esito.txt` |
+- Suite intera `Betfair/stream` su master `8c3ce13` (prima di K2 e D1-bis): 3340 verdi, 5 rossi, tutti e 5 chiusi da D1-bis.
+- Replay di controllo LANCIATO alle 22:45: `certifica mike 35760084 --scenari copertura-rifiutata --trasporto entrambi`
+  (uscita `scratchpad/replay/mike_cover_rifiutata_dopo_d1bis.out.txt`). Poi va rilanciato `--scenari tutti`.
+- **D1-ter LANCIATO** (Opus, worktree suo): (1) Mike, copertura sotto il minimo: in live rifiuto e zero ordini, in paper
+  place-and-trim vero (paper diverso dal live = bug); (2) fase `errore` del runner data per annullata (esito ignoto) +
+  i due test negativi mancanti; (3) motore, `_abbandona_submin`: annullo senza `bet_id` = parcheggio orfano.
+- **N**: reperti A-I chiusi dal delegato (5244 test, i miei 3 test rossi ora verdi). CAMBIO D'ORDINE per la scadenza: N
+  entra PRIMA di D2; lo sniper diventa una consegna successiva (N2) dopo D2. N sta riallineando su `d407b59`.
+- **J2 blocco 1** rimandato: riallineare su K2 + chiusure e protezioni col ripiego REST a flusso fermo (oggi Safe e Mike
+  bloccano anche le chiusure, Omega ripiega sul REST: tre condotte diverse) + scenario «flusso-interrotto» nel banco.
+- **P**: chiesto stato e consegna a blocchi entro 45 minuti.
+- ORDINE AGGIORNATO: N → J2 blocco 1 → D1-ter → D2 → P → N2 (sniper) → replay rapidi uno per bot → suite intere → build.
