@@ -131,9 +131,11 @@ describe('paramsSoloTennis — non porta via niente', () => {
 });
 
 describe('differenzeSoloTennis — si dice PRIMA del clic', () => {
-    it('elenca il calcio che si spegne e lo stake', () => {
+    it('28/09 — NON annuncia piu\' un «in prova» per base/esatto: il gesto non li tocca', () => {
+        // CORRENTI: base ed esatto sono in LIVE. Il gesto reale
+        // (`comandiBot.ts::soloTennis`) li lascia esattamente come sono.
         const d = differenzeSoloTennis(CORRENTI, 'live').join(' · ');
-        expect(d).toMatch(/base, esatto/);
+        expect(d).not.toMatch(/in prova/);
         expect(d).toMatch(/3,00/);
     });
 
@@ -152,9 +154,17 @@ describe('differenzeSoloTennis — si dice PRIMA del clic', () => {
         expect(differenzeSoloTennis(gia, 'paper')).toEqual([]);
     });
 
-    it('DICE quali strategie spegne: «solo lui» adesso e’ letterale', () => {
-        expect(differenzeSoloTennis(CORRENTI, 'paper').join(' · '))
-            .toMatch(/base, esatto, punta → spente/);
+    it('28/09 — NON dice piu\' che spegne le altre strategie: non le spegne', () => {
+        // reperto CRONOSTORIA 26/09 h11:25: «avvia in prova» dalla scheda
+        // tennis spegneva base/esatto/punta gia' accese. Ordine dell'utente:
+        // il gesto AGGIUNGE il tennis, spegnere resta un gesto esplicito.
+        expect(differenzeSoloTennis(CORRENTI, 'paper').join(' · ')).not.toMatch(/spent/);
+    });
+
+    it('se il tennis non e\' fra le abilitate ad aprire lo dice', () => {
+        const d = differenzeSoloTennis({ ...CORRENTI, variants: ['base', 'esatto', 'punta'] }, 'paper')
+            .join(' · ');
+        expect(d).toMatch(/tennis → abilitato ad aprire/);
     });
 
     it('parametri non letti: nessuna promessa', () => {

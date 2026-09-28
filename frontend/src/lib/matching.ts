@@ -12,7 +12,11 @@
 //              ordinata best-first = prezzo DECRESCENTE (il best back è il più alto).
 //   - `lay`  = available-to-lay  (offerte di chi BANCA): ci si abbina LAYANDO (lay).
 //              ordinata best-first = prezzo CRESCENTE (il best lay è il più basso).
-//   La `size` è in STAKE del backer (£) → si somma direttamente come stake piazzabile.
+//   La `size` è in STAKE del backer, nella valuta del CONTO (EUR: l'utente piazza
+//   in euro, mai in sterline — CANTIERE G voce 4, 28/09) → si somma direttamente
+//   come stake piazzabile. I frame che arrivano da Match Replay sono già
+//   convertiti alla fonte (`live.ts::convertiFrameEur`): questo modulo non sa
+//   e non deve sapere di GBP/EUR, riceve solo numeri già nella valuta giusta.
 //
 // MODELLO DI MATCHING (due fasi, come Betfair):
 //   1. TAKER (marketable) al momento dell'invio: l'ordine consuma la liquidità
@@ -44,7 +48,10 @@ const SIZE_EPS = 1e-9;
 
 // Ritardo in-play Betfair (1–8s, ~5s calcio): default 5s.
 export const DEFAULT_DELAY_MS = 5000;
-// Stake minimo Betfair Exchange (GBP).
+// Stake minimo Betfair Exchange nella valuta del conto (EUR per questo utente:
+// il NOME resta `MIN_STAKE_GBP` per un diff minimo — un solo punto di
+// chiamata, `MatchReplay.tsx:837` — il valore vale 2,00 in qualunque valuta
+// del conto, Betfair lo esprime cosi' in ogni valuta supportata).
 export const MIN_STAKE_GBP = 2;
 // Frazione del volume tradato-attraverso ACCREDITATA alla nostra coda maker.
 // ALLINEATA A FLUMINE (motore certificato paper+backtest, simulatedorder.py:
@@ -131,7 +138,7 @@ export interface BookSnapshot {
 
 export interface Fill {
     price: number;   // quota dell'abbinamento
-    size: number;    // stake abbinato (£)
+    size: number;    // stake abbinato (valuta del conto: EUR)
     ts: number;      // istante dell'abbinamento (ms)
     taker: boolean;  // true = abbinato consumando il book (taker); false = a riposo (maker)
 }
@@ -140,7 +147,7 @@ export interface Fill {
 export interface OrderRequest {
     side: OrderSide;
     limitPrice: number;     // quota limite (prezzo cliccato)
-    stake: number;          // stake richiesto (£)
+    stake: number;          // stake richiesto (valuta del conto: EUR)
     placedTs: number;       // istante di piazzamento (ms)
     inPlay: boolean;        // true → si applica il ritardo
     delayMs?: number;       // override ritardo (default DEFAULT_DELAY_MS se inPlay)

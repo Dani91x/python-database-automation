@@ -89,3 +89,68 @@ export function orarioPartita(iso: string | number | Date | null | undefined, og
     const giorno = `${p.y}-${p.m}-${p.g}`;
     return giorno === oggi ? `${p.hh}:${p.mm}` : `${p.g}/${p.m} ${p.hh}:${p.mm}`;
 }
+
+/**
+ * Scarto Roma-UTC (minuti) all'istante dato: +60 (CET) o +120 (CEST).
+ * `Intl` con `timeZoneName: 'shortOffset'` legge il cambio ora legale VERO
+ * (niente tabelle di date a mano, che invecchiano).
+ */
+function offsetMinutiRoma(istante: Date): number {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: TZ, timeZoneName: 'shortOffset',
+        }).formatToParts(istante);
+        const tz = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+1';
+        const m = /GMT([+-]\d+)(?::(\d+))?/.exec(tz);
+        if (!m) return 60;
+        const h = Number(m[1]);
+        const mm = Number(m[2] ?? 0);
+        return h * 60 + (h < 0 ? -mm : mm);
+    } catch {
+        return 60;
+    }
+}
+
+/**
+ * Mezzanotte di Roma del giorno civile (y, mo1-12, d), come istante UTC in ms.
+ * Due passate: la mezzanotte di Roma e' 1-2 ore PRIMA della mezzanotte UTC
+ * nominale dello stesso giorno di calendario; si legge l'offset li' e si
+ * corregge, poi si rilegge l'offset all'istante corretto (copre anche il
+ * giorno del cambio ora, che a Roma scatta all'1:00/2:00 locali, mai a
+ * mezzanotte).
+ */
+function mezzanotteRomaUTC(y: number, mo: number, d: number): number {
+    const nominale = Date.UTC(y, mo - 1, d, 0, 0, 0);
+    const primoGiro = nominale - offsetMinutiRoma(new Date(nominale)) * 60_000;
+    return nominale - offsetMinutiRoma(new Date(primoGiro)) * 60_000;
+}
+
+/**
+ * CANTIERE G, voce 3 (28/09) — i confini del giorno DI ROMA `day`
+ * ("aaaa-mm-gg"), come istanti UTC per filtrare `fixture_date` (`timestamptz`)
+ * senza tagliare la fascia 00:00-02:00 locale.
+ *
+ * Il difetto che questa funzione chiude: `MatchesList.tsx` filtrava con
+ * `fixture_date >= '${oggi}T00:00:00Z'` (mezzanotte UTC, non di Roma) E SENZA
+ * limite superiore — quindi la lista "di oggi" perdeva le partite delle
+ * 00:00-02:00 di Roma (22:00-23:59 UTC del giorno precedente, ancora fuori
+ * dal confine) e mostrava anche le partite di TUTTI i giorni successivi
+ * (nessun `.lt`). Referto: `AUDIT_2026-09-25/E2E_FASE3_PAGINE_SESSIONE_B_2026-09-26.md`
+ * U0008 (1186 "match di oggi") e U0011 (fuso).
+ *
+ * Ritorna `[inizio, fine)`: `inizio` = mezzanotte di Roma di `day` in UTC,
+ * `fine` = mezzanotte di Roma del giorno DOPO (limite ESCLUSIVO). `fine` si
+ * ricalcola sul giorno civile successivo, NON `inizio + 24h`: nei due giorni
+ * l'anno del cambio ora il giorno di Roma dura 23 o 25 ore, mai esattamente 24.
+ */
+export function confiniGiornoRoma(day: string): { inizio: string; fine: string } {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+    if (!m) throw new Error(`giorno non valido: ${day}`);
+    const [, ys, ms, ds] = m;
+    const y = Number(ys); const mo = Number(ms); const d = Number(ds);
+    const inizioMs = mezzanotteRomaUTC(y, mo, d);
+    // Date.UTC gestisce da solo il riporto di mese/anno per d+1 (es. 31 -> 1 del mese dopo)
+    const domani = new Date(Date.UTC(y, mo - 1, d + 1, 0, 0, 0));
+    const fineMs = mezzanotteRomaUTC(domani.getUTCFullYear(), domani.getUTCMonth() + 1, domani.getUTCDate());
+    return { inizio: new Date(inizioMs).toISOString(), fine: new Date(fineMs).toISOString() };
+}

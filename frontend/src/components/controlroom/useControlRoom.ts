@@ -2210,10 +2210,17 @@ export function useControlRoom(): ControlRoomVM {
     );
 
     const bots = useMemo<StatoBot[]>(() => {
-        const varianti = leggiVarianti(safe?.control?.params, safe?.params_effective as Record<string, unknown> | null);
+        // R-E2E-1/R-F2-17 — subito dopo un'accensione il servizio non ha
+        // ancora pubblicato un battito: gli effettivi sono di PRIMA di questo
+        // clic, si leggono solo i parametri appena scritti.
+        const stantii = effettiviStantii(safe?.control);
+        const varianti = leggiVarianti(
+            safe?.control?.params, safe?.params_effective as Record<string, unknown> | null, stantii,
+        );
         const modi = leggiModiStrategia(
             safe?.control?.stats?.params_effective as Record<string, unknown> | null | undefined,
             safe?.control?.params,
+            stantii,
         );
         const riga = (
             bot: Bot, modalita: Modalita | null, inCorsa: boolean, battitoAt: string | null,
@@ -3676,16 +3683,53 @@ export function leggiBool(params: Record<string, unknown> | null | undefined, ch
 }
 
 /**
+ * 28/09 — GLI EFFETTIVI POSSONO ESSERE PIU' VECCHI DELL'ACCENSIONE APPENA
+ * FATTA (R-E2E-1 / R-F2-17: «pulsante avvia assente al primo clic»).
+ *
+ * `heartbeat_at` lo scrive SOLO il loop del servizio, insieme a `stats`
+ * (quindi a `params_effective`): vedi `bot_service.py` (`db.set_control(
+ * stats=..., heartbeat_at=now())`). `started_at` lo scrive SOLO `safe_activate`
+ * (la RPC dell'accensione/cambio modalita'), e il loop non lo tocca mai
+ * (`migrations/safe_strategy_bot.sql`).
+ *
+ * Se il servizio non ha ancora pubblicato un battito DOPO questa accensione
+ * (`heartbeat_at` assente o piu' vecchio di `started_at`), gli effettivi in
+ * `stats` sono ancora quelli della SESSIONE PRECEDENTE — non di questa. In
+ * quella finestra (tipicamente pochi secondi, «pochi minuti» nel reperto)
+ * si preferiscono i parametri appena SCRITTI (`control.params`, la stessa
+ * RPC che ha appena eseguito l'accensione) agli effettivi stantii, invece di
+ * lasciare che una riga gia' spenta risulti ancora accesa (o viceversa) e
+ * nasconda il pulsante «avvia».
+ */
+export function effettiviStantii(
+    control: { started_at?: string | null; heartbeat_at?: string | null } | null | undefined,
+): boolean {
+    const avviatoA = control?.started_at ?? null;
+    if (avviatoA == null) return false; // mai acceso: niente da confrontare
+    const battitoA = control?.heartbeat_at ?? null;
+    if (battitoA == null) return true; // nessun battito mai arrivato
+    const avviato = Date.parse(avviatoA);
+    const battito = Date.parse(battitoA);
+    if (!Number.isFinite(avviato) || !Number.isFinite(battito)) return false;
+    return battito < avviato;
+}
+
+/**
  * `strategy_modes`: con che soldi opera ogni strategia. Si legge dai parametri
  * EFFETTIVI del servizio — sono quelli con cui il bot gira davvero — e solo in
  * ripiego da quelli salvati. Una voce illeggibile si scarta invece di
  * indovinarla: al denaro vero si arriva solo scrivendolo.
+ *
+ * `effettiviStantii` (28/09) — quando `true` gli effettivi si SALTANO del
+ * tutto: sono di una sessione precedente, si legge solo quanto appena scritto.
  */
 export function leggiModiStrategia(
     effettivi: Record<string, unknown> | null | undefined,
     params: Record<string, unknown> | null | undefined,
+    effettiviStantiiFlag = false,
 ): Record<string, 'paper' | 'live'> | null {
-    for (const src of [effettivi, params]) {
+    const sorgenti = effettiviStantiiFlag ? [params] : [effettivi, params];
+    for (const src of sorgenti) {
         const v = src?.strategy_modes;
         if (v && typeof v === 'object' && !Array.isArray(v)) {
             const out: Record<string, 'paper' | 'live'> = {};
@@ -3778,8 +3822,10 @@ function latoDi(v: unknown): 'back' | 'lay' | null {
 export function leggiVarianti(
     params: Record<string, unknown> | null | undefined,
     effettivi: Record<string, unknown> | null | undefined,
+    effettiviStantiiFlag = false,
 ): string[] | null {
-    for (const src of [effettivi, params]) {
+    const sorgenti = effettiviStantiiFlag ? [params] : [effettivi, params];
+    for (const src of sorgenti) {
         const v = src?.variants;
         if (Array.isArray(v)) {
             const out = v.map((x) => String(x)).filter(Boolean);

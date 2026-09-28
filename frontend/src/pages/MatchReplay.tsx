@@ -51,7 +51,7 @@ interface SimOrder {
     marketName: string;
     side: BetSide;
     limitPrice: number;      // quota cliccata (limite)
-    requested: number;       // stake richiesto (£)
+    requested: number;       // stake richiesto (€)
     placedTs: number;        // ms epoch di piazzamento
     inPlay: boolean;         // true → ritardo Betfair applicato dal motore
     minute: number | null;
@@ -832,7 +832,7 @@ export default function MatchReplay() {
     const placeBet = (m: { market_id: string; market_name: string | null; market_type: string | null }) =>
         (selectionId: number, selectionName: string, side: BetSide, price: number) => {
             const requested = getStake(m.market_id);
-            // minimo Betfair £2: sotto, il piazzamento reale verrebbe rifiutato →
+            // minimo Betfair €2: sotto, il piazzamento reale verrebbe rifiutato →
             // il simulatore fa lo stesso (fedeltà, mai fill impossibili live).
             if (requested < MIN_STAKE_GBP || price <= 1) return;
             // in-play dal FRAME di mercato (inplay flag Betfair), non dal minuto
@@ -869,7 +869,7 @@ export default function MatchReplay() {
         if (bets.filter(b => b.marketId === marketId && !b.closed && b.stake > 1e-9).length === 0) return;
         const ev = marketEval(m);
         // mercato SOSPESO/CHIUSO e esito NON deciso → su Betfair non si può chiudere:
-        // qui il book è vuoto e il "cash out" bloccherebbe £0 distruggendo la posizione.
+        // qui il book è vuoto e il "cash out" bloccherebbe €0 distruggendo la posizione.
         const st = (currentStatus(marketId) ?? 'OPEN').toUpperCase();
         if (!ev.settled && st !== 'OPEN') return;
         const locked = ev.value;

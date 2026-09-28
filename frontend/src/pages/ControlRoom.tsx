@@ -616,15 +616,16 @@ export default function ControlRoom() {
                         {/* al FUTURO, perché è quello che il pulsante farà: al
                             presente sarebbe una promessa su uno stato che qui
                             non si controlla. */}
-                        <strong className="text-white/80">Avviando da qui</strong> parte solo la
-                        strategia tennis a <strong className="text-white/80">{fmtMoney(STAKE_TENNIS)}</strong> con
-                        entrate automatiche, e tutte le altre strategie di Safe (calcio,
-                        opportunità di modello, ordini manuali) <strong className="text-white/80">vengono
-                        messe in prova</strong>. Mike e Omega non si toccano. Lo stake torna
-                        a {fmtMoney(STAKE_TENNIS)} a ogni avvio da qui.
+                        <strong className="text-white/80">Avviando da qui</strong> si
+                        AGGIUNGE la strategia tennis a <strong className="text-white/80">{fmtMoney(STAKE_TENNIS)}</strong> con
+                        entrate automatiche, senza toccare le strategie di calcio già accese (base,
+                        esatto, punta restano esattamente come sono ADESSO); opportunità di modello e
+                        ordini manuali <strong className="text-white/80">vengono messi in prova</strong>. Mike
+                        e Omega non si toccano. Lo stake torna a {fmtMoney(STAKE_TENNIS)} a ogni avvio da qui.
                         <span className="block mt-0.5 text-white/35">
-                            «Ferma» invece spegne le aperture di <strong>tutto Safe</strong>, calcio in
-                            prova compreso: il servizio è uno solo.
+                            «Ferma» invece spegne le aperture di <strong>tutto Safe</strong>, calcio
+                            compreso: il servizio è uno solo. Per spegnere solo una strategia di
+                            calcio usa la sua riga nella scheda calcio.
                         </span>
                         {cambiTennis.length > 0 && (
                             <span className="block mt-0.5 text-amber-300/90">

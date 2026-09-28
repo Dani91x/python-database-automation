@@ -120,28 +120,58 @@ describe('la pagina del bot e la Control Room producono LO STESSO payload', () =
 });
 
 describe('la scheda tennis: l UNICA differenza, e dichiarata', () => {
-    it('da li «avvia» accende il tennis e SPEGNE le altre tre', async () => {
+    it('28/09 — da li «avvia» AGGIUNGE il tennis, NON spegne le altre tre gia\' accese', async () => {
+        // CORRENTI ha gia' base/esatto/punta/tennis accese (tennis in live):
+        // e' esattamente lo scenario del reperto CRONOSTORIA 26/09 h11:25
+        // («avvia in prova» dalla scheda tennis con Safe calcio gia' acceso).
         await creaComandiControlRoom(sorgente(), vi.fn(), 'tennis').accendi('safe-tennis', 'live');
         // il servizio e' gia' armato in live per il tennis: non si riattiva, si
         // riscrivono i parametri (niente `started_at` azzerato a meta' giornata)
         expect(mUpdSafe).toHaveBeenCalledTimes(1);
         expect(mActSafe).not.toHaveBeenCalled();
         const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
-        expect(p.variants).toEqual(['tennis']);
+        // base/esatto/punta NON spengono: restano accese come CORRENTI le aveva
+        expect(p.variants).toEqual(['base', 'esatto', 'punta', 'tennis']);
         expect(p.strategy_modes).toEqual({
             base: 'paper', esatto: 'paper', punta: 'paper',
             tennis: 'live', model: 'paper', manual: 'paper',
         });
         // le cose che quel gesto AGGIUNGE, chieste dall'utente il 15/09: solo
-        // le accensioni (variants/strategy_modes) e lo stake. ⚠️ REPERTO 17/09
-        // sera — `auto_trade_tennis` NON e' fra queste: e' il SECONDO motore
-        // (opportunita' di modello tennis), non le entrate della Strategia S,
-        // e la scheda «solo tennis» non lo tocca piu': resta come nei CORRENTI.
+        // lo stake del tennis. ⚠️ REPERTO 17/09 sera — `auto_trade_tennis` NON
+        // e' fra queste: e' il SECONDO motore (opportunita' di modello tennis),
+        // non le entrate della Strategia S, e la scheda «solo tennis» non lo
+        // tocca piu': resta come nei CORRENTI.
         expect((p.stake as Record<string, unknown>).per_strategia)
             .toEqual({ tennis: STAKE_TENNIS });
         expect(p.auto_trade_tennis).toBe(false);
         // e non porta via niente
         expect(p.tennis_exit_approval).toBe(true);
+    });
+
+    it('28/09 — accendere il tennis da SOLO (calcio spento) non riaccende il calcio', async () => {
+        // partenza: SOLO base acceso (paper), calcio non ancora toccato
+        const soloBase: Record<string, unknown> = {
+            variants: ['base'],
+            strategy_modes: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper' },
+            stake: { laySize: 2, backSize: 5 },
+        };
+        mFetchSafeState.mockResolvedValue({
+            control: { status: 'running', mode: 'paper', params: soloBase },
+        } as never);
+        const sorgenteSoloBase: SorgenteInterruttori = {
+            params: (b: Bot) => (b === 'safe' ? soloBase : { stake: 10 }),
+            servizio: (b: Bot) => (b === 'safe'
+                ? {
+                    inCorsa: true, modalita: 'paper', varianti: ['base'],
+                    modiStrategia: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper' },
+                }
+                : { inCorsa: false, modalita: null }),
+            obiettivoOmega: () => 250,
+        };
+        await creaComandiControlRoom(sorgenteSoloBase, vi.fn(), 'tennis').accendi('safe-tennis', 'paper');
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        // «base» resta accesa esattamente com'era, il tennis si AGGIUNGE
+        expect(p.variants).toEqual(['base', 'tennis']);
     });
 
     it('fuori dalla scheda tennis lo stesso gesto tocca SOLO il tennis', async () => {
@@ -289,5 +319,47 @@ describe('Reperto A — due comandi ravvicinati su righe DIVERSE di Safe', () =>
         // LA RIGA VERA (il database finto), non lo snapshot React congelato:
         // deve avere ENTRAMBE le strategie, non solo l'ultima cliccata.
         expect(db.variants).toEqual(expect.arrayContaining(['base', 'esatto']));
+    });
+
+    it('28/09 (CANTIERE G, indipendenza) — Safe calcio GIA\' acceso, clic «avvia» dalla scheda TENNIS: il calcio non sparisce', async () => {
+        // IL REPERTO ESATTO (CRONOSTORIA 26/09 h11:25): Safe calcio gia' acceso
+        // (base, paper) PRIMA del clic sulla scheda tennis. Un database vuoto
+        // in partenza non falsificherebbe niente (non c'e' nulla da spegnere):
+        // qui si parte da uno stato con base gia' attiva, come sul campo.
+        let db: Record<string, unknown> = {
+            variants: ['base'],
+            strategy_modes: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper', model: 'paper', manual: 'paper' },
+        };
+        let dbStatus: 'stopped' | 'running' = 'running';
+        let dbMode: 'paper' | 'live' | null = 'paper';
+
+        mActSafe.mockImplementation(async (mode, params) => {
+            dbStatus = 'running'; dbMode = mode as 'paper' | 'live';
+            db = { ...db, ...(params as Record<string, unknown>) };
+            return {} as never;
+        });
+        mUpdSafe.mockImplementation(async (params) => {
+            db = { ...db, ...(params as Record<string, unknown>) };
+            return {} as never;
+        });
+        mFetchSafeState.mockImplementation(async () => ({
+            control: { status: dbStatus, mode: dbMode, params: db },
+        } as never));
+
+        const congelato: SorgenteInterruttori = {
+            params: () => null, servizio: () => null, obiettivoOmega: () => 250,
+        };
+        await creaComandiControlRoom(congelato, vi.fn(), 'tennis').accendi('safe-tennis', 'live');
+
+        expect(db.variants).toEqual(expect.arrayContaining(['base', 'tennis']));
+        const modi = db.strategy_modes as Record<string, string>;
+        expect(modi.base).toBe('paper');   // il calcio non si spegne ne' cambia modalita'
+        expect(modi.tennis).toBe('live');
+
+        // e un secondo clic, subito dopo, dalla scheda CALCIO: base resta
+        // esattamente come l'ha lasciata l'operatore (nessuno dei due si cancella).
+        await creaComandiControlRoom(congelato, vi.fn(), 'calcio').accendi('safe-esatto', 'paper');
+        expect(db.variants).toEqual(expect.arrayContaining(['base', 'esatto', 'tennis']));
+        expect((db.strategy_modes as Record<string, string>).tennis).toBe('live');
     });
 });

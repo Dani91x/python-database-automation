@@ -1185,12 +1185,16 @@ describe('scheda tennis: una plancia sola, e quella giusta', () => {
         expect(s.getByTestId('cr-bot-riga-safe-tennis').textContent).toMatch(/TENNIS/i);
     });
 
-    it('dice PRIMA del clic che parte solo il tennis, a 3,00 €', () => {
+    it('28/09 (CANTIERE G, voce 2) — dice PRIMA del clic che AGGIUNGE il tennis, a 3,00 €, senza spegnere il calcio', () => {
+        // reperto CRONOSTORIA 26/09 h11:25: «avvia in prova» dalla scheda tennis
+        // spegneva base/esatto/punta gia' accese. Il gesto oggi AGGIUNGE il
+        // tennis, non le tocca: la nota deve dirlo prima del clic.
         mVm.mockReturnValue(vmConSafe());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
         const nota = s.getByTestId('cr-pannello-bot-nota').textContent ?? '';
-        expect(nota).toMatch(/solo la strategia tennis/i);
+        expect(nota).toMatch(/AGGIUNGE la strategia tennis/);
+        expect(nota).toMatch(/senza toccare le strategie di calcio/i);
         expect(nota).toMatch(/3,00/);
         expect(nota).toMatch(/Mike e Omega/);
     });

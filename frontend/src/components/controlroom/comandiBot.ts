@@ -14,17 +14,18 @@
 // scheda tennis, dove «avvia» ha un significato in piu' che l'utente ha
 // chiesto per nome il 15/09 — «deve partire solo lui, come ieri, a 3 euro».
 // Anche quello, pero', passa dalle funzioni condivise: e' un caso particolare
-// del modello per strategia (tennis acceso, le altre tre spente), non un
-// percorso a parte.
+// del modello per strategia (tennis acceso A 3 EURO), non un percorso a parte.
+//
+// ⚠️ 28/09 — «acceso, le altre tre spente» non vale piu': accendere il tennis
+// da questa scheda AGGIUNGE il tennis alle accensioni correnti, senza toccare
+// base/esatto/punta gia' accese (vedi il commento su `soloTennis`, sotto).
 // ============================================================================
 import {
-    creaInterruttori, interruttoreDi,
+    creaInterruttori, interruttoreDi, accensioniCorrenti,
     type ComandiInterruttori, type InterruttoreId, type Modalita,
-    type SorgenteInterruttori, type StatoServizio,
+    type SorgenteInterruttori, type StatoServizio, type Accensioni,
 } from '@/lib/interruttori';
-import {
-    accensioniSoloTennis, extraSoloTennis,
-} from '@/components/controlroom/soloTennis';
+import { extraSoloTennis } from '@/components/controlroom/soloTennis';
 import { fetchSafeState } from '@/lib/safeBot';
 
 // ============================================================================
@@ -88,8 +89,9 @@ export type {
 /**
  * I comandi della Control Room. `sport` cambia UNA cosa sola, e la cambia in
  * modo dichiarato: nella scheda tennis accendere `safe-tennis` (o portarlo a
- * soldi veri) vuol dire «accendi il tennis e spegni il resto», con lo stake a
- * 3,00 € e le entrate automatiche accese.
+ * soldi veri) vuol dire «aggiungi il tennis alle strategie gia' accese», con
+ * lo stake a 3,00 €. Spegnere una variante e' sempre un gesto esplicito (il
+ * pulsante «spegni» di quella riga): il tennis non lo fa per nessuno.
  *
  * PERCHE' NON UN FLAG DENTRO `creaInterruttori`: qui cambia il SIGNIFICATO del
  * pulsante, non un dettaglio. Due significati nello stesso nome, distinti da
@@ -111,12 +113,29 @@ export function creaComandiControlRoom(
     const base = creaInterruttori(sorgenteConRilettura, dopo);
     if (sport !== 'tennis') return base;
 
-    /** `puoAccendere`: solo il gesto di ACCENSIONE puo' portare il servizio da
-     *  fermo a in corsa. Un cambio di modalita' non accende mai niente. */
-    const soloTennis = (modalita: Modalita, puoAccendere: boolean) =>
-        base.scriviAccensioni(accensioniSoloTennis(modalita), {
-            altre: 'prova', extra: extraSoloTennis, puoAccendere,
-        });
+    /**
+     * 28/09 — AGGIUNGE il tennis alle accensioni CORRENTI di Safe: non spegne
+     * piu' base/esatto/punta gia' accese (reperto CRONOSTORIA 26/09, h11:25:
+     * «avvia in prova» dalla scheda tennis con Safe calcio gia' acceso
+     * riscriveva `variants=["tennis"]` e spegneva il calcio per 3 minuti).
+     * Ordine dell'utente: calcio e tennis sono distinti, i bot li accende e
+     * li spegne SOLO lui — spegnere una variante resta un gesto esplicito
+     * (il pulsante «spegni» di quella riga, non un effetto collaterale
+     * dell'accensione del tennis). `puoAccendere`: solo il gesto di
+     * ACCENSIONE puo' portare il servizio da fermo a in corsa; un cambio di
+     * modalita' non accende mai niente.
+     *
+     * ⚠️ Fino al 28/09 questo gesto era SOSTITUTIVO (`accensioniSoloTennis`):
+     * spegneva sempre base/esatto/punta, per un ordine del 15/09 («deve
+     * partire solo lui, come ieri»). I due ordini si contraddicono: questa
+     * correzione applica il piu' recente (28/09, Cantiere G). Vedi il
+     * referto per la decisione da riconfermare con l'utente.
+     */
+    const soloTennis = async (modalita: Modalita, puoAccendere: boolean) => {
+        const fresco = await sorgenteConRilettura.rileggiSafe!();
+        const acc: Accensioni = { ...accensioniCorrenti(fresco.servizio), tennis: modalita };
+        return base.scriviAccensioni(acc, { altre: 'prova', extra: extraSoloTennis, puoAccendere });
+    };
 
     return {
         ...base,

@@ -32,6 +32,18 @@
 // Strategia S) e ha creduto a 3 ingressi della stessa strategia. Da qui in poi
 // la scheda «solo tennis» NON tocca piu' `auto_trade_tennis`: lo lascia
 // esattamente come lo trova.
+//
+// ⚠️ 28/09 — IL GESTO NON SPEGNE PIU' BASE/ESATTO/PUNTA. Reperto CRONOSTORIA
+// 26/09 h11:25: con Safe calcio gia' acceso, «avvia in prova» dalla scheda
+// tennis riscriveva `variants=["tennis"]` e spegneva il calcio per 3 minuti,
+// finche' l'operatore non se n'e' accorto e l'ha riacceso dalla sua scheda —
+// una «trappola d'uso» segnalata dal coordinatore. Ordine dell'utente:
+// calcio e tennis sono distinti, i bot li accende e li spegne SOLO lui. Il
+// gesto oggi (`comandiBot.ts::soloTennis`) AGGIUNGE il tennis alle
+// accensioni CORRENTI di Safe: le funzioni di questo file
+// (`accensioniSoloTennis`, `paramsSoloTennis`) restano per compatibilita' con
+// chi le importa ancora, ma NON descrivono piu' il comportamento vero della
+// Control Room — leggi `comandiBot.ts` per quello.
 // ============================================================================
 import { fmtMoney } from '@/lib/format';
 import {
@@ -64,7 +76,18 @@ export const STRATEGIA_TENNIS = 'tennis';
 /** Tutte le strategie che Safe conosce. Una sola lista, in `lib/interruttori`. */
 export const STRATEGIE_SAFE = STRATEGIE_SAFE_TUTTE;
 
-/** Le accensioni del gesto «solo tennis»: lui acceso, le altre tre spente. */
+/**
+ * Le accensioni del vecchio gesto «solo tennis»: lui acceso, le altre tre
+ * spente.
+ *
+ * ⚠️ 28/09 — NON PIU' USATA da `comandiBot.ts` (reperto CRONOSTORIA 26/09,
+ * h11:25: «avvia in prova» dalla scheda tennis con Safe calcio gia' acceso
+ * spegneva il calcio per 3 minuti, senza un gesto esplicito dell'operatore).
+ * Il gesto vero oggi AGGIUNGE il tennis alle accensioni correnti
+ * (`accensioniCorrenti(...) + tennis`), non le sostituisce: vedi
+ * `comandiBot.ts::soloTennis`. Resta qui solo per chi la importa ancora nei
+ * test/retrocompatibilita'; non e' piu' nel percorso della Control Room.
+ */
 export function accensioniSoloTennis(modalita: Modalita): Accensioni {
     return { base: null, esatto: null, punta: null, tennis: modalita };
 }
@@ -118,12 +141,11 @@ export function differenzeSoloTennis(
     if (correnti == null || Object.keys(correnti).length === 0) return [];
     const fuori: string[] = [];
 
-    const modi = (correnti.strategy_modes && typeof correnti.strategy_modes === 'object')
-        ? (correnti.strategy_modes as Record<string, unknown>) : {};
-    const inLive = Object.entries(modi)
-        .filter(([n, m]) => n !== STRATEGIA_TENNIS && String(m ?? '').toLowerCase() === 'live')
-        .map(([n]) => n);
-    if (inLive.length) fuori.push(`${inLive.join(', ')} → in prova`);
+    // ⚠️ 28/09 — QUI PRIMA C'ERA L'ELENCO DI CHI VA «IN PROVA». Il gesto oggi
+    // AGGIUNGE il tennis (`comandiBot.ts::soloTennis`, `accensioniCorrenti` +
+    // tennis): base/esatto/punta mantengono la LORO modalita' corrente, live
+    // compresa. Annunciare un «in prova» che non avviene piu' sarebbe una
+    // promessa falsa, peggio di nessuna promessa (reperto CRONOSTORIA 26/09).
 
     const stakeOra = stakeTennisEffettivo(correnti);
     if (typeof stakeOra !== 'number' || Math.abs(stakeOra - STAKE_TENNIS) > 0.0001) {
@@ -133,11 +155,11 @@ export function differenzeSoloTennis(
         fuori.push(`stake → ${fmtMoney(STAKE_TENNIS)}`);
     }
 
-    // ⚠️ 16/09 — `variants` adesso dice CHI E' ACCESO, quindi «solo tennis»
-    // SPEGNE base, esatto e punta. Va detto prima del clic, non scoperto dopo.
+    // ⚠️ 28/09 — il gesto AGGIUNGE il tennis alle varianti correnti: non
+    // spegne piu' base/esatto/punta (erano il reperto del 26/09, h11:25).
+    // L'unica cosa da dire prima del clic e' se il tennis stesso non e' gia'
+    // fra le abilitate ad aprire.
     const varianti = Array.isArray(correnti.variants) ? correnti.variants.map(String) : [];
-    const spente = varianti.filter((v) => v !== STRATEGIA_TENNIS);
-    if (spente.length) fuori.push(`${spente.join(', ')} → spente`);
     if (varianti.length && !varianti.includes(STRATEGIA_TENNIS)) fuori.push('tennis → abilitato ad aprire');
 
     if (modalita === 'live') fuori.push('tennis → soldi veri');

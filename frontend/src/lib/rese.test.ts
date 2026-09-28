@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     golPrevisto, mediaPerPartita, serieMinuti, minutiTuttiAssenti, fmtDataRoma, giornoRoma, orarioPartita,
+    confiniGiornoRoma,
 } from './rese';
 
 describe('golPrevisto (U0022)', () => {
@@ -58,5 +59,37 @@ describe('date di Roma (U0056, U0011)', () => {
         expect(orarioPartita('2026-09-26T22:00:00+00:00', '2026-09-26')).toBe('27/09 00:00');
         expect(orarioPartita('2026-09-26T23:00:00+00:00', '2026-09-26')).toBe('27/09 01:00');
         expect(orarioPartita(null, '2026-09-26')).toBe('—');
+    });
+});
+
+describe('confiniGiornoRoma — CANTIERE G voce 3 (28/09), lista partite 00:00-02:00 di Roma', () => {
+    it('26/09/2026 (CEST, +2h): mezzanotte di Roma e\' 22:00Z del giorno prima', () => {
+        const { inizio, fine } = confiniGiornoRoma('2026-09-26');
+        expect(inizio).toBe('2026-09-25T22:00:00.000Z');
+        expect(fine).toBe('2026-09-26T22:00:00.000Z');
+    });
+
+    it('15/01/2026 (CET, +1h): mezzanotte di Roma e\' 23:00Z del giorno prima', () => {
+        const { inizio, fine } = confiniGiornoRoma('2026-01-15');
+        expect(inizio).toBe('2026-01-14T23:00:00.000Z');
+        expect(fine).toBe('2026-01-15T23:00:00.000Z');
+    });
+
+    it('una partita delle 00:30 di Roma (22:30Z del giorno prima) CADE dentro il giorno, non fuori', () => {
+        const { inizio, fine } = confiniGiornoRoma('2026-09-26');
+        const partita = new Date('2026-09-25T22:30:00Z').getTime();
+        expect(partita >= new Date(inizio).getTime()).toBe(true);
+        expect(partita < new Date(fine).getTime()).toBe(true);
+    });
+
+    it('una partita del giorno DOPO (22:00Z, = 00:00 di Roma del 27/09) resta FUORI (limite superiore)', () => {
+        const { fine } = confiniGiornoRoma('2026-09-26');
+        const partitaDomani = new Date('2026-09-26T22:00:00Z').getTime();
+        expect(partitaDomani >= new Date(fine).getTime()).toBe(true); // esclusa da .lt(fine)
+    });
+
+    it('il giorno dura ESATTAMENTE 24h fuori dai due giorni del cambio ora', () => {
+        const { inizio, fine } = confiniGiornoRoma('2026-09-26');
+        expect(new Date(fine).getTime() - new Date(inizio).getTime()).toBe(24 * 3_600_000);
     });
 });

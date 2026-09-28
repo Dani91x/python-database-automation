@@ -5,7 +5,7 @@
 //   • badge colorato per RISCHIO (VERDE arb "Rischio ~zero", GIALLO low
 //     "Rischio basso", ARANCIO directional "Direzionale");
 //   • una riga di ISTRUZIONE in italiano semplice (BANCA/PUNTA … → guadagno …);
-//   • profitto in £ e %, barra di confidenza;
+//   • profitto in € e %, barra di confidenza;
 //   • "Dettagli" espandibile: tabella gambe + spiegazione + piano d'uscita.
 // Ordina gli arbitraggi per primi. Vuoto → messaggio chiaro.
 // ============================================================================

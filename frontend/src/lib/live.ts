@@ -210,6 +210,82 @@ export interface Frame {
     status: string;
     ladder: Ladder;
 }
+
+// ============================================================================
+// CANTIERE G, voce 4 (28/09) — Match Replay trattava le size come sterline.
+//
+// Dal 26/09 (`Betfair/stream/valuta.py`, referto
+// `AUDIT_2026-09-26/FIX_K1_VALUTA_GBP_EUR.md`) le size dello STREAM sono
+// convertite in EUR ALLA FONTE, prima di ogni consumatore: il recorder marca
+// ogni riga del file curato `<event>.jsonl` con `valuta:'EUR'` SOLO se il book
+// e' passato dalla conversione (`recorder.py::serialize_book`); una riga senza
+// marcatore e' un file STORICO, in sterline.
+//
+// Verificato sul DB (SOLA LETTURA, 28/09): `live_market_snapshots` — la
+// tabella da cui `get_replay*` legge — ha `max(created_at) = 2026-09-22`,
+// PRIMA del fix K1: OGGI ogni riga registrata e' in GBP, nessuna porta ancora
+// il marcatore (l'importatore che porta il file curato in questa tabella non
+// e' stato ancora toccato: e' Python, fuori dal perimetro di questo cantiere).
+// Il marcatore, se un domani l'importatore lo scrivesse dentro la colonna
+// JSONB `ladder`, arriverebbe qui SENZA bisogno di toccare le RPC
+// (`get_replay`/`get_replay_meta`/`get_replay_frames` restituiscono `s.ladder`
+// COSI' COM'E', vedi `pg_get_functiondef` letto in sola lettura): per questo si
+// legge il marcatore runtime da un oggetto `unknown`, mai dal tipo `Ladder`.
+//
+// Il cambio: STESSA costante di ripiego del backend (non una nuova, per
+// referti riproducibili) — nessuna registrazione porta il cambio del giorno.
+// ============================================================================
+
+/** EUR per 1 GBP, di ripiego — IDENTICO a `Betfair/stream/valuta.py::CAMBIO_RIPIEGO`
+ *  (23/09/2026, fonte del referto K1). Non e' il cambio VERO del giorno della
+ *  registrazione (nessun file lo porta): e' un'approssimazione dichiarata. */
+export const CAMBIO_RIPIEGO_GBP_EUR = 1.164687;
+
+/** Il marcatore di valuta di un frame, letto SENZA fidarsi del tipo `Ladder`:
+ *  la colonna JSONB puo' portare chiavi che il tipo TS non conosce. */
+function valutaFrame(ladder: unknown): 'EUR' | null {
+    if (ladder != null && typeof ladder === 'object' && 'valuta' in (ladder as Record<string, unknown>)) {
+        return (ladder as Record<string, unknown>).valuta === 'EUR' ? 'EUR' : null;
+    }
+    return null;
+}
+
+function convertiLivelli(l: readonly (readonly [number, number])[] | undefined, cambio: number): [number, number][] {
+    return (l ?? []).map(([p, s]) => [p, s * cambio]);
+}
+
+/**
+ * Converte le SIZE (mai i prezzi: sono quote, non denaro) di un frame da GBP a
+ * EUR. Un frame gia' marcato `valuta:'EUR'` non viene ri-moltiplicato —
+ * idempotente per costruzione, mai una doppia conversione — ma il marcatore
+ * viene comunque tolto dalla mappa: non e' una selezione, e un consumatore
+ * che iterasse `ladder` per selezione (LadderView, opportunities/*) non deve
+ * incontrare una chiave stringa spuria in mezzo agli id numerici.
+ */
+export function convertiFrameEur(frame: Frame, cambio: number = CAMBIO_RIPIEGO_GBP_EUR): Frame {
+    const giaEur = valutaFrame(frame.ladder) === 'EUR';
+    const ladder: Ladder = {};
+    for (const [sid, e] of Object.entries(frame.ladder)) {
+        if (sid === 'valuta') continue; // il marcatore non e' una selezione
+        const fattore = giaEur ? 1 : cambio;
+        ladder[sid] = {
+            back: convertiLivelli(e?.back, fattore),
+            lay: convertiLivelli(e?.lay, fattore),
+            ltp: e?.ltp ?? null,
+            tv: typeof e?.tv === 'number' && Number.isFinite(e.tv) ? e.tv * fattore : null,
+            trd: e?.trd ? convertiLivelli(e.trd, fattore) : undefined,
+        };
+    }
+    return { ...frame, ladder };
+}
+
+/** Applica `convertiFrameEur` a un elenco di frame: il punto UNICO da cui i
+ *  frame del replay entrano nell'app (vedi `fetchReplay`/`fetchReplayChunked`
+ *  sotto), cosi' ogni consumatore a valle (matching.ts, replay-pnl.ts,
+ *  LadderView, opportunities/*) vede sempre EUR, senza saperlo. */
+export function convertiFramesEur(frames: readonly Frame[], cambio: number = CAMBIO_RIPIEGO_GBP_EUR): Frame[] {
+    return frames.map((f) => convertiFrameEur(f, cambio));
+}
 export interface ScoreEvent {
     ts: string;
     minute: number | null;
@@ -243,7 +319,9 @@ export interface ReplayData {
 export async function fetchReplay(eventId: string): Promise<ReplayData> {
     const { data, error } = await supabase.rpc('get_replay', { p_event_id: eventId });
     if (error) throw new Error(error.message);
-    return data as ReplayData;
+    const parsed = data as ReplayData;
+    // CANTIERE G, voce 4: converte alla fonte, come lo stream live (vedi sopra).
+    return { ...parsed, frames: convertiFramesEur(parsed.frames ?? []) };
 }
 
 // --- caricamento a FINESTRE TEMPORALI (fix timeout eventi grandi) ---
@@ -370,7 +448,8 @@ export async function fetchReplayChunked(
     for (let i = 0; i < windows.length; i++) {
         const w = windows[i];
         const part = await fetchReplayFramesWindow(eventId, w.from, w.to, w.bucket);
-        frames.push(...part);
+        // CANTIERE G, voce 4: converte alla fonte, come lo stream live (vedi sopra).
+        frames.push(...convertiFramesEur(part));
         onProgress?.({ done: i + 1, total: windows.length, frames: frames.length });
     }
     return { ...base, frames };

@@ -94,7 +94,7 @@ export function ValidationCard({ report }: { report: Report }) {
                     {/* distribuzione profitto */}
                     {report.profit.count > 0 && (
                         <div className="text-[11px] text-muted-foreground">
-                            Profitto (£): min {report.profit.min.toFixed(2)} · mediana {report.profit.median.toFixed(2)} · max {report.profit.max.toFixed(2)}
+                            Profitto (€): min {report.profit.min.toFixed(2)} · mediana {report.profit.median.toFixed(2)} · max {report.profit.max.toFixed(2)}
                         </div>
                     )}
                 </div>

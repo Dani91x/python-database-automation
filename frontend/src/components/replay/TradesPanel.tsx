@@ -59,7 +59,7 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                     status === 'PENDING' ? 'in ritardo…'
                                         : status === 'CANCELLED' ? 'annullato'
                                             : status === 'LAPSED' ? 'annullato (sospensione)'
-                                                : hasRemaining ? `£${remaining.toLocaleString('it', { maximumFractionDigits: 2 })} in coda`
+                                                : hasRemaining ? `€${remaining.toLocaleString('it', { maximumFractionDigits: 2 })} in coda`
                                                     : unfilledGone ? 'resto annullato'
                                                         : null;
                                 const canCancel = !closed && (hasRemaining || status === 'PENDING');
@@ -93,7 +93,7 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                                 <>
                                                     {formatGbp(b.stake)}
                                                     {stateLabel && (
-                                                        <span className="block text-[9px] text-amber-400" title={`Su £${b.requestedStake ?? b.stake} richiesti`}>
+                                                        <span className="block text-[9px] text-amber-400" title={`Su €${b.requestedStake ?? b.stake} richiesti`}>
                                                             + {stateLabel}
                                                         </span>
                                                     )}

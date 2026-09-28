@@ -358,6 +358,81 @@ describe('accendi / spegni una strategia di Safe — payload campo per campo', (
         expect(mUpdSafe).not.toHaveBeenCalled();
         expect(mStopSafe).not.toHaveBeenCalled();
     });
+
+    // ========================================================================
+    // CANTIERE G — INDIPENDENZA DI OGNI BOT (28/09 sera), ordine dell'utente:
+    // «OGNI BOT DEVE ESSERE INDIPENDENTE... se decido di accenderne solo 1,
+    // parte solo quello... posso scegliere io quali bot attivare, 1, 2, 3 ecc
+    // oppure tutti insieme». Le 4 strategie di Safe condividono UNA riga
+    // (`safe_strategy_control`, verificato oggi con `pg_get_functiondef`: sia
+    // `safe_activate` che `safe_update_params` fanno `UPDATE ... WHERE id=1`,
+    // colonna intera): la loro indipendenza NON e' strutturale (righe separate,
+    // come Omega/Mike/i 4 bot tennis), dipende DAL CODICE che compone la
+    // scrittura leggendo sempre lo stato FRESCO prima di scrivere. Qui si
+    // prova che regge anche a due gesti ravvicinati, non solo a chiamate isolate.
+    // ========================================================================
+    it('due accensioni ravvicinate su strategie DIVERSE, in modalita DIVERSE: nessuna sovrascrive l\'altra', async () => {
+        // il "database" finto: MUTABILE (come il Reperto A in comandiBot.test.ts),
+        // rappresenta la riga vera su cui le RPC scrivono davvero.
+        let corrente: Record<string, unknown> = {
+            variants: [],
+            strategy_modes: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper', model: 'paper', manual: 'paper' },
+            stake: { laySize: 2, backSize: 3 },
+        };
+        let stato: StatoServizio = { inCorsa: false, modalita: null, varianti: null, modiStrategia: null };
+        mActSafe.mockImplementation(async (mode, params) => {
+            corrente = { ...corrente, ...(params as Record<string, unknown>) };
+            stato = {
+                inCorsa: true, modalita: mode as StatoServizio['modalita'],
+                varianti: corrente.variants as string[],
+                modiStrategia: corrente.strategy_modes as Record<string, 'paper' | 'live'>,
+            };
+            return {} as never;
+        });
+        mUpdSafe.mockImplementation(async (params) => {
+            corrente = { ...corrente, ...(params as Record<string, unknown>) };
+            stato = {
+                ...stato,
+                varianti: corrente.variants as string[],
+                modiStrategia: corrente.strategy_modes as Record<string, 'paper' | 'live'>,
+            };
+            return {} as never;
+        });
+        // `creaInterruttori` senza `rileggiSafe` (il caso delle pagine dei
+        // singoli bot, non della Control Room) rilegge `params('safe')`/
+        // `servizio('safe')` a OGNI chiamata: se questi chiudono sullo stato
+        // mutabile sopra, ogni comando vede l'effetto del precedente — la
+        // STESSA garanzia del Reperto A, qui sulla MODALITA', non solo su chi
+        // e' acceso.
+        const src: SorgenteInterruttori = {
+            params: (b) => (b === 'safe' ? corrente : null),
+            servizio: (b) => (b === 'safe' ? stato : { inCorsa: false, modalita: null }),
+            obiettivoOmega: () => 250,
+        };
+        const c = creaInterruttori(src, vi.fn());
+        await c.accendi('safe-base', 'live');    // base -> LIVE, arma il servizio
+        await c.accendi('safe-esatto', 'paper'); // esatto -> paper, subito dopo
+
+        expect(corrente.variants).toEqual(expect.arrayContaining(['base', 'esatto']));
+        const modi = corrente.strategy_modes as Record<string, string>;
+        expect(modi.base).toBe('live');    // NON retrocessa dal secondo comando
+        expect(modi.esatto).toBe('paper'); // NON promossa dal primo comando
+    });
+
+    it('accendere una strategia non riaccende un\'altra che l\'operatore ha spento apposta', async () => {
+        const src = sorgente({
+            servizioSafe: {
+                inCorsa: true, modalita: 'paper', varianti: ['base'],
+                modiStrategia: { base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper' },
+            },
+        });
+        const c = creaInterruttori(src, vi.fn());
+        await c.accendi('safe-punta', 'paper');
+        const p = mUpdSafe.mock.calls[0][0] as Record<string, unknown>;
+        expect(p.variants).toEqual(['base', 'punta']);
+        expect(p.variants).not.toContain('esatto'); // spenta, resta spenta
+        expect(p.variants).not.toContain('tennis');  // spenta, resta spenta
+    });
 });
 
 // ---------------------------------------------------------------- Omega e Mike

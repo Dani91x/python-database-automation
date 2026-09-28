@@ -3771,7 +3771,23 @@ Test rosso PREESISTENTE (non dovuto a oggi, verificato togliendo la patch):
 `Betfair/safe_strategy/tests/test_selezione_esatto_2026_09_16.py::test_hint_coppia_presente_nellatlante_vero`
 (1,492 contro 1,446: dipende dall'atlante locale). Da assegnare.
 
-**2. CERTIFICATO DA ME, DA INTEGRARE (prossimo passo)**
+**AGGIORNAMENTO DEL CHECKPOINT (28/09 sera, dopo la ripresa; master = `4461227`)** — integrati e pushati, ognuno
+verificato da me sul codice integrato:
+| Cantiere | Commit | Verifica mia |
+|---|---|---|
+| M test e ambiente | `ebcd1e7` | Omega col `.env` vero 1362 verdi; fixture disattivata → tornano i 111 rossi |
+| B capacita' mercati (riallineato su A) | `45fcd11` | 92 test B+A, 3109 su Betfair/stream, tsc 0, vitest riga «Mercati» 5/5; mutazione mia sull'incrocio rossa |
+| C Omega parita' | `cf7f53b` | Omega 1407 verdi; mutazione mia «controllo vecchio di ore» rossa; mutazione «aggregati live che leggono il paper» SOPRAVVISSUTA → test mio `test_coordinatore_aggregati_modalita_2026_09_28.py` (rosso con la mutazione) |
+| D1 seconda: MIKE IN PAPER SUL MOTORE VERO | `4461227` | Mike 982 verdi; 3 mutazioni mie rosse; replay `certifica mike 35760084 --trasporto canale --worker 1`: 2 ordini dal motore, 2 abbinamenti, 0 violazioni, 1 min 41 s (18 controlli su 37 non sollecitati dallo scenario base: da coprire con gli altri scenari nel giro dei replay) |
+MIGRAZIONE DA FAR APPLICARE ALL'UTENTE: `migrations/omega_aggregati_servizio_per_modalita_2026-09-28.sql`.
+Da qui i suite si lanciano SENZA preparare l'ambiente (ci pensa la fixture di M). Report giornaliero dell'utente:
+finito alle 16:21 «Job completato con successo».
+Consegnati nel frattempo e DA VERIFICARE: K (`CANTIERE_K_su_master.patch`), N blocchi 1-2
+(`cantiere_n/cantiere_n_cumulativo.patch`, blocco 3 in corso), G seconda consegna (ramo riallineato `5fe2183`).
+Decisione dell'utente (28/09): OGNI BOT E' INDIPENDENTE → la voce 2 di G (avvio tennis che non tocca il calcio) e'
+confermata e si integra.
+
+**2. CERTIFICATO DA ME, DA INTEGRARE (prossimo passo)** *(voce B: FATTA, vedi aggiornamento sopra)*
 - **B capacita' mercati** (worktree `agent-af1ef180da338e7f9`, ramo locale `4fd3286` + merge `203fc56`): consegna
   riallineata `AUDIT_2026-09-28/CANTIERE_B_su_master.patch` (18 file, contro `512db64`). La seconda consegna l'ho
   certificata io (40 test, 8 mutazioni mie rosse); il RIALLINEAMENTO (46 test, incrocio con A, funzione unica

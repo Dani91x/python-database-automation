@@ -228,9 +228,14 @@ export function overallSettled(markets: MarketSettleEval[], ctx: SettleCtx): num
 }
 
 // ----------------------------------------------------------------- formatting
-// Importi in sterline: £12.31 / £-12.31.
+// CANTIERE G, voce 4 (28/09) — il conto e' in EUR (l'utente piazza gli stake
+// del replay in euro, mai in sterline): il simbolo £ era un'etichetta
+// sbagliata fin da prima del fix K1, non solo un problema di conversione
+// delle size. Il NOME resta `formatGbp` (5 punti di chiamata: MatchReplay.tsx,
+// TradesPanel/OpportunitaPanel/MarketPanel) per un diff minimo; il simbolo e'
+// quello vero.
 export function formatGbp(v: number | null | undefined, decimals = 2): string {
-    if (v == null || !Number.isFinite(v)) return '£0.00';
+    if (v == null || !Number.isFinite(v)) return '€0.00';
     const sign = v < 0 ? '-' : '';
-    return `${sign}£${Math.abs(v).toFixed(decimals)}`;
+    return `${sign}€${Math.abs(v).toFixed(decimals)}`;
 }

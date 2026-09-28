@@ -28,11 +28,11 @@ export interface MarketPanelProps {
 }
 
 export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlaceBet, onCashOut, marketValue, settled, winnerId, status }: MarketPanelProps) {
-    const fmtStake = (n: number) => `£${n.toLocaleString('it', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtStake = (n: number) => `€${n.toLocaleString('it', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const isSuspended = status === 'SUSPENDED';
     const isClosed = status === 'CLOSED';
     const noBet = isSuspended || isClosed; // niente nuove giocate quando sospeso/chiuso
-    // minimo Betfair £2: sotto, il piazzamento verrebbe rifiutato → bottoni spenti
+    // minimo Betfair €2: sotto, il piazzamento verrebbe rifiutato → bottoni spenti
     // (feedback esplicito invece del click che non fa nulla).
     const stakeTooLow = stake < 2;
 
@@ -64,14 +64,14 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                         id={`stake-${market.market_id}`}
                         type="number" min={2} step={1} value={stake}
                         onChange={e => onStakeChange(Math.max(0, Number(e.target.value)))}
-                        title="Minimo Betfair £2"
+                        title="Minimo Betfair €2"
                         className="w-20 bg-black/60 border border-white/10 rounded-md px-2 py-1 text-xs text-white tabular-nums focus:outline-none focus:border-primary/60"
                     />
                     <button
                         onClick={onCashOut}
                         // non cliccabile se: niente abbinato, o mercato SOSPESO/CHIUSO con
                         // esito NON deciso (su Betfair non si chiude durante la sospensione;
-                        // qui il book vuoto bloccherebbe £0 distruggendo la posizione).
+                        // qui il book vuoto bloccherebbe €0 distruggendo la posizione).
                         disabled={bets.every(b => (b.stake ?? 0) <= 1e-9) || (noBet && !settled)}
                         className={`px-2.5 py-1 rounded-md text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
                             settled
@@ -118,7 +118,7 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                                     <td className="px-2 py-1.5">
                                         <button
                                             disabled={back == null || noBet || stakeTooLow}
-                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (£2)' : undefined}
+                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (€2)' : undefined}
                                             onClick={() => back != null && !noBet && !stakeTooLow && onPlaceBet(s.selection_id, s.name, 'back', back)}
                                             className="w-full rounded-md px-2 py-1.5 text-center text-xs font-bold tabular-nums bg-blue-500/15 text-blue-200 hover:bg-blue-500/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                         >
@@ -128,7 +128,7 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                                     <td className="px-2 py-1.5">
                                         <button
                                             disabled={lay == null || noBet || stakeTooLow}
-                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (£2)' : undefined}
+                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (€2)' : undefined}
                                             onClick={() => lay != null && !noBet && !stakeTooLow && onPlaceBet(s.selection_id, s.name, 'lay', lay)}
                                             className="w-full rounded-md px-2 py-1.5 text-center text-xs font-bold tabular-nums bg-pink-500/15 text-pink-200 hover:bg-pink-500/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                         >

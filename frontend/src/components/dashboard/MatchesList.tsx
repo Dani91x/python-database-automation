@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { addToWatchlist } from '@/lib/watchlist';
-import { orarioPartita, giornoRoma } from '@/lib/rese';
+import { orarioPartita, giornoRoma, confiniGiornoRoma } from '@/lib/rese';
 import {
     Accordion,
     AccordionContent,
@@ -125,7 +125,11 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
         setLoading(true);
 
         try {
-            const today = format(new Date(), 'yyyy-MM-dd');
+            // CANTIERE G, voce 3 (28/09) — «oggi» e' il giorno CIVILE di Roma
+            // (`giornoRoma`), non quello del fuso del sistema operativo del PC:
+            // sono sempre coincisi finora, ma la data non deve dipendere da
+            // un'impostazione esterna all'app.
+            const today = giornoRoma(new Date()) ?? format(new Date(), 'yyyy-MM-dd');
             let all: BetfairFixtureRow[] = [];
 
             if (betfair) {
@@ -137,6 +141,15 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
             } else {
                 // Scarica TUTTE le righe del giorno a blocchi (no cap a 100): ogni lega
                 // deve mostrare l'elenco completo, anche le partite serali.
+                //
+                // ⚠️ 28/09 — QUI MANCAVA IL LIMITE SUPERIORE (`.lt`): il filtro era
+                // solo `>= oggiT00:00:00Z`, quindi la lista "di oggi" tornava OGNI
+                // partita futura (1186 righe misurate il 26/09, U0008), non solo
+                // quelle di oggi — e il confine era la mezzanotte UTC, non quella
+                // di ROMA: le partite delle 00:00-02:00 locali (22:00-23:59 UTC del
+                // giorno prima) restavano fuori (U0011). `confiniGiornoRoma` calcola
+                // i due estremi giusti, DST compresa.
+                const { inizio, fine } = confiniGiornoRoma(today);
                 let offset = 0;
                 // Guardia anti-loop infinito (backstop: 50 blocchi).
                 for (let guard = 0; guard < 50; guard++) {
@@ -144,7 +157,8 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                         .from('fixture_predictions')
                         .select('fixture_id, fixture_date, home_team_name, away_team_name, home_team_id, away_team_id, league_name, league_id, status')
                         .eq('status', 'ok')
-                        .gte('fixture_date', `${today}T00:00:00Z`)
+                        .gte('fixture_date', inizio)
+                        .lt('fixture_date', fine)
                         .order('fixture_date', { ascending: true })
                         .range(offset, offset + BATCH - 1);
 
@@ -170,9 +184,11 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                 }
             }
 
-            // FIX-B 26/09 (U0011): la lista "di oggi" contiene anche partite che a Roma sono gia'
-            // del giorno dopo (22:00-23:59 UTC): l'orario le etichetta con la data ("27/09 00:00").
-            const oggiRoma = giornoRoma(new Date()) ?? today;
+            // FIX-B 26/09 (U0011) + CANTIERE G 28/09: da quando la query e' gia'
+            // filtrata sul giorno DI ROMA (`confiniGiornoRoma`, sopra), ogni riga
+            // qui dentro appartiene per costruzione a `oggiRoma` — questa resta
+            // comunque la stessa lettura usata dalla query, per una sola verita'.
+            const oggiRoma = today;
             const mapped: MatchPreview[] = all.map((row) => {
                 try {
                     const dateObj = new Date(row.fixture_date);
