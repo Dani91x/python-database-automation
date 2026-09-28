@@ -3465,3 +3465,227 @@ la PROPOSTA posizione fantasma 14265 resta da decidere). Utente: «domani contro
 ancora da eseguire (da chiedere domani). PUNTO DI RIPRESA DOMANI: (1) verificare a DB l'effetto delle migrazioni (source = nome bot
 sui nuovi ordini, Safe per modalità, Analytics < 8 s); (2) log dell'action catchup del mattino («ATTESA… ATTESA FINITA», chiamate > 0);
 (3) ritmo di mike_activity dopo cf22d37; (4) sanatorie SQL; (5) decisioni sugli aperti del consolidato h19:40; (6) 7.9.3.B per lega.
+
+## 2026-09-28 — Ripresa (coordinatore Fable 5.1; Opus 5.5 / Sonnet 5 delegati)
+
+### Stato di partenza (verificato di persona dal coordinatore, sola lettura)
+- **Git**: master locale `2742cf7`, indice vuoto, solo file non tracciati; origin/master AVANTI di 1 commit automatico
+  (`2eb3c1d` github-actions, 28/09 10:17Z, «aggiornamento settimanale Poisson»: `Betfair/money_management.py`,
+  `dc_rho_by_league.json`, `dynamic_cal.json`) → serve `git pull --ff-only` prima di qualunque lavoro. 9 worktree dei
+  delegati del 26/09 ancora presenti (pulizia con `cmd /c rmdir` sulle junction, mai `--force`).
+- **App**: SPENTA (0 processi python, 0 porte 47330-47338). Ultima scrittura dei log dei figli `_logs/` 26/09 19:40:28 PC;
+  ultima riga `mike_activity` 17:35:15Z. Nessuna sessione di bot dopo il 26/09.
+- **DB**: `order_mode=paper`, `kill_switch=false`, tetto `live` (solo tetto). Nessun ordine live. Funzioni delle
+  migrazioni del 26/09 presenti (`get_safe_state(p_mode)`, `safe_aggregates_sql(p_mode)`, `refresh_analytics_riepilogo()`).
+- **Punto 1 della ripresa (effetto migrazioni)**: Analytics MISURATO: `get_analytics_filters()` 10 ms (era 37,8 s),
+  `get_league_seasons(667)` 3,3 s (era 21,8 s) → sotto gli 8 s di `authenticated`. `source` = nome del bot NON
+  VERIFICABILE: gli unici 2 ordini dopo le 17:00Z del 26/09 sono delle 17:23-17:25Z (prima della migrazione, `source='runner'`),
+  poi l'app e' stata spenta → si verifica al prossimo avvio in paper.
+- **Punto 2 (catchup del mattino)**: VERIFICATO sui log delle action 36301939261 (27/09) e 36390583106 (28/09): «ATTESA…» poi
+  «ATTESA FINITA dopo 35 min», quota 2051/7500, coda 1318 lega-stagioni → R-CATCHUP-1 chiuso dal vivo.
+- **Punto 3 (ritmo mike_activity)**: dopo il ricarico delle 17:35:05Z UNA riga `loss_exit_deciso` (17:35:15Z), poi app spenta
+  ~5 min dopo: finestra troppo corta, da riverificare al prossimo avvio.
+- **REPERTI NUOVI (aperti, nessuna correzione fatta)**:
+  - R-28-1: action «Seasons Catchup» del CRON serale FALLITA due volte (26/09 17:24Z run 36258896621, 27/09 17:56Z run
+    36338805869) con `57014 statement timeout` in `season_gaps.py:237` (`riepilogo_lacune` → RPC `season_gaps_summary`),
+    chiamata da `seasons_catchup.py:590`. Le corse del mattino (workflow_run) passano.
+  - R-28-2: action «Hazard Atlas» del 28/09 07:13Z (run 36390445058) FALLITA: `HTTP Error 500` nel passo «Rigenera l'atlante
+    hazard (incrementale per lega)»; il 27/09 era verde.
+  - R-28-3: 29 righe `live_follow` origine='auto' ancora `STREAMING` ad app spenta (il riavvio ordinato non le chiude);
+    posizione fantasma 14265 ancora presente (decisione utente).
+- **Ancora da fare dal punto di ripresa del 26/09**: (4) sanatorie SQL dei referti; (5) decisioni dell'utente del consolidato
+  h19:40; (6) 7.9.3.B per lega (O-4); NC di fase 3 (86) e fase 2 (9); freno certificato su Omega/Safe/Mike/tennis.
+
+### ORDINI E DECISIONI DELL'UTENTE (28/09, testuali)
+- Stop ai due delegati di diagnosi lanciati di mia iniziativa (interrotti subito; nessun residuo su disco).
+- «QUESTI PUNTI DEVONO ESSERE FATTI TUTTI… ISTRUISCI GLI AGENTI UNA VOLTA PER TUTTE A FINIRE IL LAVORO CON LA MASSIMA
+  QUALITA' E NEL MINOR TEMPO POSSIBILE» = autorizzazione esplicita a correggere (strategie intoccabili).
+- Paper = SPECCHIO del live per TUTTI i bot («gia' ripetuto infinite volte»): R8 FOK Omega in paper DECISO (va messo).
+- Un errore trovato si corregge subito, non si aspettano giorni di paper.
+- Freno: va provato su TUTTI i bot. NC: «chiudili». Caduta di rete vera: ok.
+- Si usa SOLO l'app desktop: nessun controllo sul login/uso dal browser (voce eliminata).
+- Partite TERMINATE (calcio e tennis) non devono piu' essere seguite; regola da verificare sulla documentazione
+  (ipotesi utente: tutti i mercati dell'evento chiusi = evento finito).
+- Tetto 180 mercati: «va risolto… non possiamo lasciare eventi fuori, noi lavoriamo sul volume».
+- Doppio fill Safe paper: «fixa». Aperture tennis sotto il minimo: «porta al limite minimo accettato».
+- Posizione 14265 e sanatorie: «controlla». Action fallite e resto: «FIXA OGNI COSA». Pulizie: «fai tutto il necessario».
+- DA SPIEGARE ALL'UTENTE (ha chiesto «che significa?»): quote ferme non viste dai veti; riserva Omega/Mike con
+  risposta persa. «Quote ferme» resta DECISIONE APERTA (tocca il cancello decisionale): nessun cantiere lanciato.
+
+### Checkpoint del 28/09
+- `git pull --ff-only` fatto: master locale `2eb3c1d` = origin. Nessun'altra sessione Claude attiva sul PC (ListAgents).
+- **`BRIEF_STANDARD_DELEGATI.md`** (radice, nuovo, non committato): regole permanenti per ogni delegato (condizioni
+  dell'utente, divieti, metodo TDD + falsificazione, consegna). Ogni brief di cantiere lo richiama.
+- **ONDATA 1 LANCIATA (9 delegati, referti in `AUDIT_2026-09-28/`)**, carico misurato prima: CPU 29 %, RAM libera 4 GB:
+  - A (Opus, worktree) FINE EVENTO calcio+tennis: regola da documentazione, follow chiusi, spegnimento/riavvio (R-28-3).
+  - B (Opus, worktree) CAPACITA' MERCATI: limiti veri dello stream, bilancio connessioni, runner calcio a frammenti.
+  - C (Opus, worktree) OMEGA parita': FOK in paper, parziale del ripiego, riserva con risposta persa, `run_once`.
+  - D1 (Opus, worktree) SAFE+MIKE parita': doppio fill Safe, riserva Mike pending, timeout PostgREST.
+  - D2 (Opus, worktree) TENNIS+SCALPER: apertura sotto minimo portata al minimo, parita', debiti del banco.
+  - E (Sonnet, worktree) catchup serale 57014. F (Sonnet, worktree) Hazard Atlas HTTP 500.
+  - H (Sonnet, sola lettura) registro dei NC + chiusure ad app spenta + tempi ordini dai `_logs/` + PROTOCOLLO DAL VIVO.
+  - I (Sonnet, sola lettura) sanatorie SQL verificate in `migrations/sanatorie_2026-09-28.sql` + posizione 14265.
+- **ONDATA 2 (da lanciare alle prime consegne, per non saturare il PC)**: G UI (pulsante «avvia» Safe al primo clic,
+  lista partite 00:00-02:00 Roma, Match Replay in GBP, trappola «solo tennis»); resilienza residua (watchdog
+  scalper-service/ponte tennis in `main.js`, `net_retry.is_transient`, canale_fase NULL, EX_TRADED_VOL scanner).
+- **Poi, a integrazione finita (coordinatore, in sequenza)**: verifica mia di ogni cantiere (diff, test, mutazioni mie),
+  integrazione a percorsi espliciti, suite intere UNA volta, replay del banco UNO per bot (`--worker 1`), 7.9.3.B per
+  lega; pulizia dei 9 worktree del 26/09 (`cmd /c rmdir` sulle junction); riscrittura della storia git (170 MB) per
+  ULTIMA, a cantieri chiusi e worktree rimossi.
+- **Serve l'utente**: applicare `migrations/sanatorie_2026-09-28.sql` e le migrazioni dei cantieri quando pronte;
+  accendere app e bot in PAPER per il protocollo dal vivo; decidere «quote ferme».
+
+- **Seconde risposte dell'utente**: replay «veloci e rapidi, non voglio perdere giorni» (profili rapidi del banco);
+  QUOTE FERME = DECISO («gravissimo, il bot deve sapere se il flusso dati e' interrotto») + domanda «il pool di backup
+  c'e'? funziona?»; riserva con risposta persa: confermato; chiusure «sempre perfette e spalmare profitto o loss su
+  entrambe le selezioni» (solo le APERTURE sotto minimo salgono al minimo). Brief standard aggiornato (§2 punti 10-12).
+- **Cantiere J lanciato** (Opus, worktree) FLUSSO DATI INTERROTTO: segnale per mercato, veto in TUTTI i bot, audit e
+  completamento della riserva quando cade lo stream, UI.
+- **MIGRAZIONI VERIFICATE DA ME SUL DB (sola lettura)**: le 5 del 26/09 sono APPLICATE (`trading_daily_history` con
+  FIX-A; `omega_aggregates_sql(boolean,text)` + `get_omega_state` con `aggregates_by_mode`; `get_live_positions_all`
+  con `betfair_live_settled`; tabelle `analytics_riepilogo_*` piene, ultimo refresh 28/09 11:30Z, 5 indici presenti,
+  autovacuum di `matches` impostato; CHECK `betfair_live_orders_source_check` con i nomi dei bot). MANCANO: (a) la
+  CORREZIONE dei kickoff: `analytics_signals_kickoff_pulizia_2026-09-26.sql` e' una PROPOSTA con gli UPDATE commentati,
+  eseguirla ha lanciato solo la diagnosi; oggi 778 partite / 33.251 righe in `analytics_signals` e 402 / 6.278 in
+  `analytics_decisions` con kickoff diverso da `matches.fixture_date` (erano 255 / 14.034 e 511 il 26/09: CRESCE →
+  verificare che il fix a monte di `merge_engine_signals.py`/`build_analytics_signals.py` sia in produzione); (b) i 5
+  indici facoltativi di `detail_fixture_idx_2026-09-25_SOLO_SE_MANCANO.sql` (i 4 di `aggregati_idx` ci sono);
+  (c) PROPOSTA posizione 14265 (riga ancora presente). Tutto confluisce nel file unico del cantiere I.
+
+- **Cantiere I (sanatorie SQL) CONSEGNATO e RIMANDATO INDIETRO** dopo la mia verifica indipendente sul DB (sola
+  lettura): confermate 8 sezioni su 9 (14265 unica e senza FK; 9 follow scalper; 29 follow auto STREAMING = tutte le
+  STREAMING esistenti; 50 `live_now` in-play; 4 follow tennis; `mike_trades` None-None 407 paper + 49 live; 17 proposte
+  Safe `place`; kickoff 778/33.251 e 402/6.278 con stabilita' provata: 84.535 righe create dal 27/09, 0 sporche; indici
+  equivalenti gia' presenti → nessun indice da creare). DIFETTO: sez.6 `tennis_live_now` attende 31 righe, sono 30
+  (3 CLOSED + 24 ERROR + 3 STREAMING) → la sezione andrebbe in eccezione. Chiesto anche: guardie a TETTO (non a
+  conteggio esatto), sezione per le 6 proposte `cashout` scadute (id 311, 315, 318-321, tutte paper, partite finite),
+  prova che `status='CLOSED'` in `live_now`/`tennis_live_now` sia gestito dai lettori. File NON ancora da applicare.
+  Difetto di codice aperto: Safe fa decadere solo le proposte `place`, non le `cashout` (→ cantiere Safe).
+
+- **Cantiere H (registro NC + protocollo dal vivo) CONSEGNATO e RIMANDATO INDIETRO in parte.** Accettati:
+  `AUDIT_2026-09-28/PROTOCOLLO_PROVA_DAL_VIVO.md` (7 passi, 90-110 min: freno su tutti i bot con tentativo vero, rete
+  60 s e 5 min, riavvio con posizioni aperte, verifica a schermo, verifiche a meta', controlli residui); F0 dai
+  `_logs/` del riavvio 3 (comando 106-114 ms, bet delay 5,7-6,1 s, 0 Traceback; Mike non strumentato); chiusure §5.
+  Numeri del registro: 197 controlli, 1 eliminato (browser), ~46 chiusi OK, ~128 per il dal vivo, ~7 non applicabili in
+  paper. NON accettati: ~15 «chiusi perche' non eseguiti per volume» + ~35 campi statistici non ricalcolati + 3 blocchi
+  «chiusi per coerenza» → rimandati con l'ordine di verificarli uno per uno e di dare numeri esatti.
+- **REPERTI NUOVI dal cantiere H, verificati da me:**
+  - R-F2-9 SNIPER: `sniper_bot.py` non legge mai `uscite_automatiche` (grep 0), chiude da solo su timeout/stop mentre
+    `scalper_bot.py:446-447` rispetta l'interruttore → passato al cantiere D2 (allineare allo scalper, protezioni
+    money-critical sempre automatiche; eventuale effetto sulla strategia = decisione utente).
+  - R-28-4 `engine_signals` NON e' automatico: lo scrive solo `aggiorna_report.bat` (fase 12 di
+    `betfair_report_manager`), lanciato a mano dall'utente: righe per 23, 25, 26/09, NESSUNA per 24, 27, 28/09.
+    Decisione utente: automatizzarlo (serve un processo/pianificazione nuova) o lasciarlo manuale.
+  - Safe: le proposte `cashout` non decadono mai (solo le `place`) → passato al cantiere D1.
+  - `hazard_atlas_leghe.league_name` vuoto su 185 righe (cosmetico, aperto).
+
+- **CANTIERE I CERTIFICATO DA ME** (seconda consegna): `migrations/sanatorie_2026-09-28.sql`, 10 sezioni, 10
+  BEGIN/COMMIT, ASCII, guardie a tetto, sez.6 corretta a 30, sez.4 non tocca piu' `live_now.status` (il runner calcio
+  scrive solo OPEN/SUSPENDED: `runner.py:368,392`; il tennis scrive davvero CLOSED: `tennis_runner.py:416-431`),
+  sez.9 nuova per le 6 proposte cashout (verificate da me: 311 e 315 trade regolati; 318-321 trade ancora `open`,
+  follow STREAMING che la sez.3 chiude → la sez.9 va DOPO la 3). DA APPLICARE DALL'UTENTE ad app spenta, nell'ordine
+  del file; la sez.10 (kickoff, 33.251 + 6.278 righe) puo' richiedere qualche minuto.
+- **REPERTO R-28-5 (mio, DB)**: posizioni PAPER ancora `open` su partite finite da 2 giorni: Safe 4 (trade 359, 361,
+  362, 363) e Mike 5 (26/09 15:18-17:21Z) → passato al cantiere D1 (regolazione al riavvio dopo app spenta).
+- **Cantiere F (Hazard Atlas) CONSEGNATO e RIMANDATO**: diff riletto, 13 test nuovi + 34 esistenti verdi rilanciati da
+  me; mutazioni mie: «4xx ritentati» rossa, «versione globale KO taciuta» rossa, «pulizia versioni vecchie KO fa
+  fallire» SOPRAVVISSUTA. Causa radice non chiusa: la riga unica `hazard_atlas.payload` pesa 14,4 MB di JSON (3,67 MB
+  compressi) con limite di 8 s (`authenticator`): i soli ritentativi non bastano quando cresce. Chiesti: test mancante,
+  RPC dedicata con limite proprio (migrazione non applicata + ripiego), chi legge il payload.
+- **Cantiere E (catchup 57014) CONSEGNATO e RIMANDATO**: 94 test verdi rilanciati da me; mutazioni mie: «seconda meta'
+  non ritentata» rossa, «lega degradata trattata come verificata» SOPRAVVISSUTA, «ogni errore = timeout»
+  SOPRAVVISSUTA. Il referto dichiara un limite di 2 minuti senza prova: a DB il limite dei ruoli e' 8 s
+  (`authenticator`/`authenticated`), `service_role` senza impostazioni → chiesta la prova e la misura vera; le
+  lega-stagioni «degradate» non possono restare mute per sempre (avviso dopo N giri); stessa gestione su
+  `season_aggregates`.
+
+- **`migrations/sanatorie_2026-09-28.sql` APPLICATA dall'utente e VERIFICATA da me sul DB (sola lettura)**: 14265
+  assente; `live_follow` STREAMING 0 (calcio e tennis); `live_now` e `tennis_live_now` in-play 0 (30 righe tennis ora
+  CLOSED); `mike_trades` None-None 0; proposte Safe `proposed` oltre 12 h: 0 (23 decadute con la marca della
+  sanatoria = 17 place + 6 cashout); kickoff sporchi 0 e 0; riepilogo analytics rinfrescato 28/09 13:30Z.
+
+- **DECISIONE UTENTE (28/09) su R-28-4**: `aggiorna_report.bat` «per ora deve restare manuale». Nessuna
+  automazione. Da sapere: il report fa un login Betfair proprio (`betfair_report_manager.py:149`,
+  `betfair_full_odds.py:147`); il 26/09 e' stato lanciato alle 16:42:59 PC e i runner sono crashati alle 16:46:15
+  (calcio) e 17:04:20 (tennis): coincidenza NON provata, verifica del doppio login in attesa dell'ok dell'utente.
+  Va lanciato dalla RADICE del repo, mai dalla copia dentro un worktree.
+
+- **CANTIERE H ACCETTATO (terza consegna)**, controlli a campione miei sul DB concordi (`omega_missions` 23 righe
+  tutte `closed`, ultima 01/09; `personal_trades`/`personal_trade_legs` 0/0; le 30 righe tennis CLOSED hanno tutte lo
+  stesso `updated_at` 28/09 13:28:48Z = sanatoria, non il runner). NUMERI ESATTI (registro §8.1): 198 controlli
+  enumerati (197 a referto, +1 di scarto dichiarato su Control Room); 1 eliminato (browser); **55 chiusi**; **146
+  restano per il dal vivo** (pulsanti che scrivono, badge dei canali, ladder/WOM/EV vivi, rail comando). NON fatti e
+  dichiarati: U0134, U0135, U0508 e 11 campi Control Room non ricalcolati (U0226, U0230, U0231, U0234, U0238,
+  U0246-U0248, U0250, U0251, U0266). ATTENZIONE PRE-LIVE: 22 campi «stato non presente oggi» (18 Control Room + 4
+  Segui Live) esistono solo con righe `mode=live`: chiusi come «non difetto» in paper ma MAI verificati → da provare
+  su banco con righe live finte identiche al vero (ondata 2, cantiere UI).
+- **ONDATA 2 RINVIATA per carico**: misurato CPU 100 %, RAM libera 2 GB (12 processi python dei delegati). Parte alle
+  prossime consegne: G (UI: pulsante «avvia» Safe, lista 00:00-02:00, Match Replay GBP, «solo tennis» che spegne il
+  calcio, filtro Mode tennis in Live P&L, campi solo-live su banco) e K (watchdog scalper-service/ponte tennis in
+  `desktop/main.js` secondo `AUDIT_2026-09-25/SPEC_WATCHDOG_SCALPER_PONTE_2026-09-26.md`, `net_retry.is_transient`).
+- **Utente**: lancia ORA `aggiorna_report.bat` (app spenta); abitudine concordata: report PRIMA di accendere l'app.
+
+- **Utente: report LANCIATO (sta girando, app spenta); ok alla verifica del doppio login, «non fare casini»** →
+  **Cantiere L lanciato** (Sonnet, SOLA LETTURA, nessuna esecuzione, nessuna chiamata Betfair, vietato toccare i
+  processi del report): sessioni Betfair e logout, token condiviso, limiti di richiesta, cronologia al secondo del
+  26/09; referto `AUDIT_2026-09-28/CANTIERE_L_REPORT_E_APP.md` con verdetto PROVATO / ESCLUSO / NON DIMOSTRABILE.
+- Cantiere C (Omega): fermo in attesa di un suo lavoro in background, referto non ancora consegnato.
+
+- **CANTIERE E (catchup 57014) CERTIFICATO DA ME** (seconda consegna, worktree `agent-afc61df7a8e98907d`, NON
+  integrato): 103 test verdi rilanciati da me; le mie M2 e M3 ora ROSSE (1 e 4 test); limite vero = 8 s
+  (`authenticator`, doc Supabase); contatore `stats_json.degradato_57014` + «DEGRADATA PERSISTENTE» con uscita 1;
+  stessa gestione in `season_aggregates.py`. Migrazione `migrations/season_gaps_perf_2026-09-28.sql` (riscrive solo
+  `season_detail_gaps`): EQUIVALENZA VERIFICATA DA ME sul DB, corpo nuovo eseguito come SELECT contro la funzione
+  viva su 6 lega-stagioni (135/2025, 78/2024, 2/2025, 140/2026, 61/2023, 667/2026): 28 righe contro 28, 0
+  differenze, elenchi di partite compresi. Misura del delegato: 1.142 ms → 102 ms sul blocco che faceva fallire.
+- **CANTIERE F (Hazard Atlas) CERTIFICATO DA ME** (seconda consegna, worktree `agent-a74fd1ceae0bed485`, NON
+  integrato): 51 test verdi; la mia mutazione sopravvissuta ora ROSSA (2 test); RPC
+  `hazard_atlas_salva_versione` (SECURITY DEFINER, timeout 120 s solo sulla funzione, solo `service_role`) in
+  `migrations/hazard_atlas_rpc_scrittura_2026-09-28.sql`, codice con ripiego sulla POST se la RPC manca (404).
+  Da verificare alla prossima corsa notturna. Proposta aperta: col modo `domanda` nessuno legge il payload da 14 MB.
+- **CANTIERE B (capacita' mercati) CONSEGNATO e RIMANDATO**: diff riletto, 28 test verdi, 6 mutazioni mie tutte
+  rosse. Reperto R-B1 del delegato: il runner apriva DUE connessioni di mercato con gli stessi mercati e i mercati
+  agganciati a caldo non arrivavano alle strategie degli ordini (P&L non registrato in `betfair_live_settled`).
+  Chiesto: alla ricostruzione i mercati con posizione/ordine vivo PRIMA nel frammento 0 (oggi solo i manuali); test
+  che esegue davvero il thread della connessione aperta a caldo (finto server locale); prova di concorrenza.
+- **CANTIERE C (Omega parita') CONSEGNATO e RIMANDATO** (worktree `agent-a946824ef51067fea`): referto letto, 21 test
+  nuovi e suite Omega 1380 verdi rilanciati da me (20 interruttori a 0). Corretti: FOK in paper (canale e coda),
+  parziale del ripiego ucciso, riserva con risposta persa (riconciliazione unica sulla fonte del simulatore),
+  `read_control` KO (giro di sola gestione), chiusura automatica delle proposte fuori dalla porta, missione chiusa con
+  ordine in volo, richiesta paper stantia non revocata. Mutazioni mie: 2 rosse, 1 SOPRAVVISSUTA (`_ordini_paper_per`
+  accetta l'ordine di un'altra selezione). Rimandati come BUG (non decisioni): D1 ripiego paper senza bet delay, D3
+  mercato sparito 48 h chiuso a 0, D4 AGGREGATI DEL SERVIZIO CHE SOMMANO PAPER E LIVE (stop giornaliero e tetti:
+  money-critical prima del live); banco `trasporto_rapido.py` R3 da allineare; eta' massima del controllo nel giro
+  degradato. Reperto: con il `.env` vero la suite Omega ha 111 rossi gia' sulla base (suite inquinata dall'ambiente).
+  Stessa verifica §7.21 e «niente fill di casa» passata a D1 e D2.
+- **CANTIERE A (fine evento) CONSEGNATO e RIMANDATO** (worktree `agent-af90c02a50154f8d0`): regola dalla
+  documentazione (MATCH_ODDS CLOSED oppure tutti i mercati seguiti CLOSED; fuori dallo stream catalogo vuoto a partita
+  iniziata; SUSPENDED mai fine); 29 test verdi rilanciati da me, 3 mutazioni mie rosse. Reperto del delegato A6:
+  dopo ogni ricostruzione l'auto-follow espelleva le partite automatiche sottoscritte da oltre 120 s. Chiesto: doppia
+  conferma e guardia «soldi dentro» sul catalogo vuoto (la whitelist dei tipi di mercato puo' dare vuoto con mercati
+  ancora aperti), test sul ramo «recorder illeggibile», prova su `live_now` senza follow, SPEC dello spegnimento
+  ordinato (`main.js` usa `taskkill /T /F`: il `finally` non gira), note per il rebase di B.
+- **CANTIERE L (report e app) ACCETTATO**: sospetto del doppio login ESCLUSO. Controlli miei: nessun `logout` nel
+  codice del report, nessun token scritto su disco o DB, il 26/09 il report ha chiamato Betfair solo fra 16:43:25 e
+  16:44:15 PC (crash calcio 16:46:15, tennis 17:04:20 su un runner nato dopo il riavvio). Il report lavora come
+  progettato con 4 difetti minori (passo 1/4 del `.bat` vuoto; login fallito = uscita silenziosa con codice 0; fasi
+  12-13 non bloccanti e mute; `.bat` lanciato da una copia esegue il codice di quella copia). Corsa di oggi: alle
+  16:02 PC ferma alla fase 11 dalle 15:54 (PC saturo), nessun errore nel log. Correzione a un mio dato:
+  `betfair_full_odds.py` scrive solo `betfair_market_odds`, non `fixture_predictions`.
+- **Migrazioni certificate copiate in `migrations/` del checkout principale** (file nuovi, identici agli originali):
+  `season_gaps_perf_2026-09-28.sql`, `hazard_atlas_rpc_scrittura_2026-09-28.sql`. Applicabili subito dall'utente
+  (la prima sostituisce una funzione con una equivalente, la seconda aggiunge una funzione non ancora usata).
+
+- **ORDINE DELL'UTENTE (28/09, testuale): «certo procedi al push, voglio il codice perfetto in ogni sua parte, pusha
+  e procedi con i cantieri, voglio finire tutto»** = autorizzazione a integrare su master e pushare ogni cantiere
+  CERTIFICATO, a percorsi espliciti, uno alla volta.
+- **INTEGRATI SU MASTER (patch identiche ai worktree, verificate con cmp; test rilanciati da me sul codice integrato)**:
+  `0ffc3c6` cantiere E (catchup 57014: 129 test verdi sui moduli collegati); `3134f9f` cantiere F (atlante: 115 test
+  verdi). Migrazioni relative DA APPLICARE dall'utente: `season_gaps_perf_2026-09-28.sql`,
+  `hazard_atlas_rpc_scrittura_2026-09-28.sql`. Da controllare alle prossime corse: catchup serale 13:47Z/17-18Z e
+  Hazard Atlas del mattino (righe «ritento tra…», riga nuova in `hazard_atlas`).
+
+### PUNTO DI RIPRESA IN CASO DI INTERRUZIONE (28/09)
+Ondata 1 in corso: i delegati lavorano nei worktree `.claude/worktrees/agent-*` creati oggi (lavoro NON committato: non
+toccarli con `checkout`/`remove`); referti attesi in `<worktree>/AUDIT_2026-09-28/CANTIERE_*.md` (A-F) e nel checkout
+principale per H e I. Nulla e' integrato su master. Alla ripresa: leggere i referti presenti, verificare, integrare.
