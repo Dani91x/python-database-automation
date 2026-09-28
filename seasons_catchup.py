@@ -540,6 +540,12 @@ class Risultato:
     p4_chiamate: Dict[Tuple[int, int], int] = field(default_factory=dict)
     p4_non_partita: Optional[str] = None
     p4_pavimento: int = P4_PAVIMENTO_DEFAULT
+    # R-CATCHUP-2 (28/09): lega-stagioni non verificate questo giro per 57014 persistente
+    degradate_timeout: List[Tuple[int, int]] = field(default_factory=list)
+    # R-CATCHUP-3 (28/09): giorni CONSECUTIVI di degrado per 57014 (solo le degradate di oggi)
+    degradate_consecutivi: Dict[Tuple[int, int], int] = field(default_factory=dict)
+    # R-CATCHUP-2 esteso agli aggregati (season_aggregates_summary, stesso difetto)
+    degradate_aggregati: List[Tuple[int, int]] = field(default_factory=list)
 
 
 def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
@@ -587,12 +593,26 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
            f"(non verificate stanotte: {conti['passate_non_verificate']}, "
            f"passate mai caricate: {conti['passate_mai_caricate']})")
     righe_per_k = {(int(r["league_id"]), int(r["season_year"])): r for r in vive + passate}
-    lacune = sg.riepilogo_lacune(sb, list(righe_per_k))
+    lacune, ris.degradate_timeout = sg.riepilogo_lacune(sb, list(righe_per_k), stampa=stampa)
+    if ris.degradate_timeout:
+        degradate_str = ", ".join(f"lega {k[0]} stagione {k[1]}" for k in ris.degradate_timeout[:10])
+        stampa(f"[CATCHUP] AVVISO: {len(ris.degradate_timeout)} lega-stagioni DEGRADATE (57014 persistente sul "
+               f"riepilogo lacune, non e' un errore ne' un buco): non verificate questo giro, stato precedente "
+               f"conservato, si riprova al prossimo giro. Prime: {degradate_str}")
+        # R-CATCHUP-3 (28/09): una degradata non puo' restare muta per sempre. Contatore
+        # SOLO in stats_json.degradato_57014 (nessun altro campo toccato, vedi segna_degradato_57014).
+        for k in ris.degradate_timeout:
+            consecutivi = sg.segna_degradato_57014(sb, k[0], k[1], oggi, stampa)
+            if consecutivi is not None:
+                ris.degradate_consecutivi[k] = consecutivi
+    degradate_set = set(ris.degradate_timeout)
     # aggregati di TUTTE le stagioni verificate (vive ogni giorno, per cadenza): il Daily non li fa
-    sa.attacca(sb, lacune, righe_per_k, stati, sa.adesso())
+    ris.degradate_aggregati = sa.attacca(sb, lacune, righe_per_k, stati, sa.adesso(), stampa=stampa)
     voci: List[Voce] = []
     stati_da_scrivere: List[Dict[str, Any]] = []
     for k, row in righe_per_k.items():
+        if k in degradate_set:
+            continue                                     # 57014: nessuna decisione oggi, nessuno stato falso scritto
         lac = lacune[k]
         viva = sg.e_corrente_o_recente(row, oggi)
         if viva and lac.ft_totali == 0:
@@ -667,8 +687,12 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             if k not in ris.fatte:
                 ris.rimaste.append(k)
 
-    # 3b) P4: stagioni mai caricate, solo con il margine che avanza dopo P1-P3
-    esegui_p4(sb, client, quota, ris, coperture, stati, lacune, prioritarie, env, oggi, stampa,
+    # 3b) P4: stagioni mai caricate, solo con il margine che avanza dopo P1-P3.
+    # R-CATCHUP-2: le degradate per 57014 vanno ESCLUSE dal dizionario passato alla P4
+    # (un Lacune vuoto placeholder, mai popolato, avrebbe partite_totali == 0 e verrebbe
+    # scambiato per "mai caricata": seleziona_p4 ricade allora su stati/prior, corretto).
+    lacune_per_p4 = {k: v for k, v in lacune.items() if k not in degradate_set}
+    esegui_p4(sb, client, quota, ris, coperture, stati, lacune_per_p4, prioritarie, env, oggi, stampa,
               deve_fermarsi, concorrenza, lambda: (orologio() - t0) / 60.0 >= max_min, max_min, fine_giornata)
 
     # 4) referto e codice d'uscita
@@ -886,6 +910,18 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                + "   (flag_false = coverage False: NON chiamato; vuoto_api = l'API non ha dati: dichiarato)")
     stampa(f"Chiamate fatte stanotte: {ris.chiamate}. Lega-stagioni lavorate: {len(ris.fatte)}, "
            f"rimaste in coda: {len(ris.rimaste)}. Quota: {quota.stato.riga() if quota.stato else '?'}")
+    degradate_persistenti: List[str] = []
+    if ris.degradate_timeout:
+        stampa(f"DEGRADATE per 57014 (non verificate questo giro, NON e' un errore): "
+              f"{len(ris.degradate_timeout)} lega-stagioni, si riprova al prossimo giro.")
+        for k in ris.degradate_timeout:
+            consecutivi = ris.degradate_consecutivi.get(k)
+            if consecutivi is not None and consecutivi > max_giorni:
+                degradate_persistenti.append(f"lega {k[0]} stagione {k[1]}: degradata per 57014 da "
+                                             f"{consecutivi} giorni CONSECUTIVI (> {max_giorni})")
+    if ris.degradate_aggregati:
+        stampa(f"AGGREGATI DEGRADATI per 57014 (non verificati questo giro, NON e' un errore): "
+              f"{len(ris.degradate_aggregati)} lega-stagioni.")
     if ris.fermato_per:
         stampa(f"Fermato per: {ris.fermato_per} (NON e' un errore: si riprende al prossimo giro da cio' che manca).")
     stampa(f"Vuoti definitivi dell'API (non buchi, l'API non ha il dato): {vuoti_def} partite-tabella.")
@@ -903,12 +939,14 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
         stampa(f"ERRORE: {e}")
     for f in falliti:
         stampa(f"BUCO VECCHIO: {f}")
+    for d in degradate_persistenti:
+        stampa(f"DEGRADATA PERSISTENTE (> {max_giorni} giorni consecutivi, non piu' muta): {d}")
     referto_p4(ris, stampa, margine_medio)
     if aperte == 0:
         stampa("DB SENZA BUCHI")
     else:
         stampa(f"BUCHI APERTI: {aperte} lega-stagioni, ~{costo_tot} chiamate, il piu' vecchio da {piu_vecchio} giorni")
-    return 1 if (ris.errori or falliti) else 0
+    return 1 if (ris.errori or falliti or degradate_persistenti) else 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

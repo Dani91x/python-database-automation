@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 MIGRAZIONE = "migrations/season_gaps_2026-09-25.sql"
 FT_STATUSES = ("FT", "AET", "PEN")
@@ -71,6 +71,14 @@ def _e_funzione_mancante(err: Exception) -> bool:
     return ("PGRST202" in msg or "Could not find the function" in msg
             or "PGRST205" in msg or "fixture_detail_checks" in msg and "does not exist" in msg
             or "42883" in msg or "42P01" in msg)
+
+
+def _e_statement_timeout(err: Exception) -> bool:
+    """57014 = 'canceling statement due to statement timeout' (Postgres/PostgREST).
+    Cantiere 28/09/2026: season_gaps_summary puo' finire in timeout (2 min sul
+    progetto) sotto carico (vedi AUDIT_2026-09-28/CANTIERE_E_CATCHUP_57014.md)."""
+    msg = str(err)
+    return "57014" in msg or "statement timeout" in msg.lower()
 
 
 def _oggi() -> date:
@@ -226,12 +234,26 @@ def lacune_stagione(sb: Any, league_id: int, season_year: int,
     return l
 
 
-def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 20) -> Dict[Tuple[int, int], Lacune]:
-    """Solo conteggi, a blocchi di `blocco` lega-stagioni per RPC."""
+def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 20,
+                     stampa: Callable[[str], None] = print
+                     ) -> Tuple[Dict[Tuple[int, int], Lacune], List[Tuple[int, int]]]:
+    """Solo conteggi, a blocchi di `blocco` lega-stagioni per RPC.
+
+    R-CATCHUP-2 (28/09, AUDIT_2026-09-28/CANTIERE_E_CATCHUP_57014.md): un blocco
+    che va in 57014 (statement_timeout, misurato 2 min sul progetto) NON abbatte
+    piu' l'intera run (prima: eccezione non gestita -> traceback -> catchup
+    morto, exit diverso da 0/1/2 dichiarati). Ora: si dimezza il blocco e si
+    ritenta; se anche UNA SOLA lega-stagione va in 57014 da sola viene
+    DEGRADATA (non verificata questo giro) invece di essere trattata come
+    "zero buchi" (sarebbe una bugia: scriverebbe uno stato falso). Il
+    chiamante (seasons_catchup.esegui_catchup) NON scrive stato per le
+    lega-stagioni degradate: restano come erano, si riverificano al giro dopo.
+    -> (lacune delle coppie verificate, lega-stagioni degradate per 57014
+    persistente anche a blocco 1)."""
     out: Dict[Tuple[int, int], Lacune] = {(int(a), int(b)): Lacune(int(a), int(b)) for a, b in coppie}
-    lista = list(out)
-    for i in range(0, len(lista), blocco):
-        pezzo = lista[i:i + blocco]
+    degradate: List[Tuple[int, int]] = []
+
+    def elabora(pezzo: List[Tuple[int, int]]) -> None:
         try:
             resp = sb.rpc("season_gaps_summary", {"p_league_ids": [p[0] for p in pezzo],
                                                   "p_season_years": [p[1] for p in pezzo]}).execute()
@@ -239,6 +261,19 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 2
             if _e_funzione_mancante(e):
                 raise MigrazioneMancante(
                     f"RPC season_gaps_summary assente: applica {MIGRAZIONE} (errore: {e})") from e
+            if _e_statement_timeout(e):
+                if len(pezzo) > 1:
+                    meta = len(pezzo) // 2
+                    stampa(f"[LACUNE] 57014 (statement timeout) su blocco di {len(pezzo)} lega-stagioni: "
+                          f"dimezzo e ritento ({meta} + {len(pezzo) - meta})")
+                    elabora(pezzo[:meta])
+                    elabora(pezzo[meta:])
+                    return
+                k = pezzo[0]
+                stampa(f"[LACUNE] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
+                      f"(non verificata questo giro, nessuno stato scritto, si riprova al prossimo giro)")
+                degradate.append(k)
+                return
             raise
         per_coppia: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
         for r in _righe_rpc(resp):
@@ -246,7 +281,11 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 2
         for k, righe in per_coppia.items():
             if k in out:
                 _applica_righe(out[k], righe, con_id=False)
-    return out
+
+    lista = list(out)
+    for i in range(0, len(lista), blocco):
+        elabora(lista[i:i + blocco])
+    return out, degradate
 
 
 def verifica_migrazione(sb: Any) -> None:
@@ -349,6 +388,37 @@ def scrivi_stati(sb: Any, righe: List[Dict[str, Any]], blocco: int = 200) -> Non
     for i in range(0, len(righe), blocco):
         pezzo = [{**r, "last_run_at": adesso} for r in righe[i:i + blocco]]
         sb.table("season_backfill_state").upsert(pezzo, on_conflict="league_id,season_year").execute()
+
+
+def segna_degradato_57014(sb: Any, league_id: int, season_year: int, oggi: date,
+                          stampa: Callable[[str], None] = print) -> Optional[int]:
+    """R-CATCHUP-3 (28/09, ordine dell'utente: le degradate NON possono restare mute).
+    Scrive/aggiorna SOLO `stats_json.degradato_57014` (letto/riscritto senza toccare
+    `status` ne' nessun altro campo dello stato vero: stessa tecnica gia' usata da
+    `_salva_verifica_current` in seasons_catchup.py per non alterare uno stato che
+    quel giro NON e' stato ricalcolato). -> giorni consecutivi di degrado (>= 1), o
+    None se la scrittura non e' riuscita (avviso, non fail-loud: e' solo un contatore
+    di osservabilita', non deve MAI far morire il catchup)."""
+    k = (int(league_id), int(season_year))
+    try:
+        resp = (sb.table("season_backfill_state").select("status,stats_json")
+                .eq("league_id", k[0]).eq("season_year", k[1]).limit(1).execute())
+        righe = list(getattr(resp, "data", None) or [])
+        riga = righe[0] if righe else None
+        sj = dict((riga or {}).get("stats_json") or {})
+        prec = sj.get("degradato_57014") or {}
+        primo_at = prec.get("primo_at") or oggi.isoformat()
+        consecutivi = int(prec.get("consecutivi") or 0) + 1
+        sj["degradato_57014"] = {"consecutivi": consecutivi, "primo_at": primo_at, "ultimo_at": oggi.isoformat()}
+        sb.table("season_backfill_state").upsert({
+            "league_id": k[0], "season_year": k[1],
+            "status": (riga or {}).get("status") or "in_progress",
+            "last_run_at": datetime.now(timezone.utc).isoformat(), "stats_json": sj,
+        }, on_conflict="league_id,season_year").execute()
+        return consecutivi
+    except Exception as e:
+        stampa(f"[CATCHUP] AVVISO: contatore 'degradato_57014' per lega {k[0]} stagione {k[1]} non scritto ({e}).")
+        return None
 
 
 def leggi_stati(sb: Any, league_id: Optional[int] = None, pagina: int = 1000) -> Dict[Tuple[int, int], Dict[str, Any]]:

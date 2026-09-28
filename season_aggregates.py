@@ -109,13 +109,21 @@ def calcola(riga_cov: Dict[str, Any], info: Dict[str, Any], tentativi: Dict[str,
     return out
 
 
-def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 150) -> Dict[Tuple[int, int], Dict[str, Any]]:
-    """RPC season_aggregates_summary a blocchi (<= 150 coppie x 6 righe < 1000 righe PostgREST)."""
-    from season_gaps import MigrazioneMancante, _e_funzione_mancante
+def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 150,
+               stampa: Callable[[str], None] = print
+               ) -> Tuple[Dict[Tuple[int, int], Dict[str, Any]], List[Tuple[int, int]]]:
+    """RPC season_aggregates_summary a blocchi (<= 150 coppie x 6 righe < 1000 righe PostgREST).
+
+    R-CATCHUP-2 (28/09, stesso difetto di season_gaps.riepilogo_lacune, perimetro
+    allargato dal coordinatore): un blocco in 57014 (statement_timeout) NON abbatte
+    piu' la run: si dimezza e si ritenta; una lega-stagione sola ancora in 57014 viene
+    DEGRADATA (nessuna info scritta, `calcola()` non la tocca: vedi `attacca`).
+    -> (info per lega-stagione, lega-stagioni degradate per 57014 persistente)."""
+    from season_gaps import MigrazioneMancante, _e_funzione_mancante, _e_statement_timeout
     out: Dict[Tuple[int, int], Dict[str, Any]] = {(int(a), int(b)): {} for a, b in coppie}
-    lista = list(out)
-    for i in range(0, len(lista), blocco):
-        pezzo = lista[i:i + blocco]
+    degradate: List[Tuple[int, int]] = []
+
+    def elabora(pezzo: List[Tuple[int, int]]) -> None:
         try:
             resp = sb.rpc("season_aggregates_summary", {"p_league_ids": [p[0] for p in pezzo],
                                                         "p_season_years": [p[1] for p in pezzo]}).execute()
@@ -123,6 +131,19 @@ def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 150) ->
             if _e_funzione_mancante(e):
                 raise MigrazioneMancante(
                     f"RPC season_aggregates_summary assente: applica {MIGRAZIONE_AGG} (errore: {e})") from e
+            if _e_statement_timeout(e):
+                if len(pezzo) > 1:
+                    meta = len(pezzo) // 2
+                    stampa(f"[AGGREGATI] 57014 (statement timeout) su blocco di {len(pezzo)} lega-stagioni: "
+                          f"dimezzo e ritento ({meta} + {len(pezzo) - meta})")
+                    elabora(pezzo[:meta])
+                    elabora(pezzo[meta:])
+                    return
+                k = pezzo[0]
+                stampa(f"[AGGREGATI] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
+                      f"(aggregati non verificati questo giro, si riprova al prossimo)")
+                degradate.append(k)
+                return
             raise
         for r in list(getattr(resp, "data", None) or []):
             k = (int(r["league_id"]), int(r["season_year"]))
@@ -132,7 +153,11 @@ def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 150) ->
                 out[k]["_ft"] = r.get("ultimo")
             else:
                 out[k][r["tabella"]] = {"n": int(r.get("n") or 0), "ultimo": r.get("ultimo")}
-    return out
+
+    lista = list(out)
+    for i in range(0, len(lista), blocco):
+        elabora(lista[i:i + blocco])
+    return out, degradate
 
 
 # ---------------------------------------------------------------------------
@@ -192,16 +217,24 @@ def esegui_aggregato(sb: Any, client: Any, nome: str, league_id: int, season_yea
 
 
 def attacca(sb: Any, lacune: Dict[Tuple[int, int], Any], righe_cov: Dict[Tuple[int, int], Dict[str, Any]],
-            stati: Dict[Tuple[int, int], Dict[str, Any]], adesso: Optional[datetime] = None) -> None:
-    """Calcola lo stato degli aggregati di ogni lega-stagione e lo mette in Lacune.aggregati."""
+            stati: Dict[Tuple[int, int], Dict[str, Any]], adesso: Optional[datetime] = None,
+            stampa: Callable[[str], None] = print) -> List[Tuple[int, int]]:
+    """Calcola lo stato degli aggregati di ogni lega-stagione e lo mette in Lacune.aggregati.
+    Le lega-stagioni degradate per 57014 (vedi leggi_info) NON vengono toccate: `lac.aggregati`
+    resta vuoto ({}), MAI scambiato per "tutto mancante" (sarebbe una bugia: richiamerebbe
+    l'API per dati magari gia' presenti). -> lega-stagioni degradate (per chi vuole dichiararle)."""
     import season_gaps as sg
     ora = adesso or datetime.now(timezone.utc)
-    info = leggi_info(sb, list(lacune))
+    info, degradate = leggi_info(sb, list(lacune), stampa=stampa)
+    degradate_set = set(degradate)
     for k, lac in lacune.items():
+        if k in degradate_set:
+            continue
         riga = righe_cov[k]
         tentativi = (((stati.get(k) or {}).get("stats_json") or {}).get("aggregati_tentativi")) or {}
         lac.aggregati = calcola(riga, info.get(k) or {}, tentativi,
                                 sg.e_corrente_o_recente(riga, ora.date()), ora)
+    return degradate
 
 
 def verifica_migrazione(sb: Any) -> None:
