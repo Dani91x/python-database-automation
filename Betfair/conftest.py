@@ -91,3 +91,81 @@ def _kill_switch_del_db_senza_rete(monkeypatch):
         monkeypatch.setitem(ctl._SETTINGS_CACHE, "data", {})
         monkeypatch.setitem(ctl._SETTINGS_CACHE, "ts", float("inf"))
     yield
+
+
+# ---------------------------------------------------------------------------
+# CANTIERE M (28/09) — la suite non dipende da cosa c'e' nel .env VERO del PC
+# ---------------------------------------------------------------------------
+#: i 20 interruttori di produzione che oggi (dal 26/09) il ``.env`` vero del
+#: checkout principale accende (``=1``). Stessa lista usata dal cantiere C per
+#: falsificare Omega (``AUDIT_2026-09-28/cantiere_c/falsifica_c.py``,
+#: ``INTERRUTTORI``). ``load_dotenv()`` in produzione risale le cartelle e
+#: trova quel ``.env`` anche da un worktree: senza questa fixture, il
+#: verde/rosso della suite dipende da cosa e' scritto li' — reperto del 28/09,
+#: vedi ``AUDIT_2026-09-28/CANTIERE_M_TEST_E_AMBIENTE.md``: con gli
+#: interruttori accesi 111 test di Omega erano rossi sulla base (tutti e soli
+#: dipendenti da ``OMEGA_ORDINI_VIA_CANALE``).
+INTERRUTTORI_CANALE = (
+    "SAFE_SCAN_CANALE", "MIKE_CANALE_POSIZIONI", "OMEGA_CANALE_POSIZIONI",
+    "SAFE_CANALE_POSIZIONI", "TENNIS_BOT_CANALE", "SAFE_BOT_LEGGE_CANALE",
+    "SAFE_BOT_SVEGLIA_CANALE", "OMEGA_SVEGLIA_CANALE", "MIKE_SVEGLIA_CANALE",
+    "TENNIS_BOT_SVEGLIA_CANALE", "MIKE_LEGGE_CANALE", "OMEGA_LEGGE_CANALE",
+    "PUNTEGGI_CANALE", "ESITI_ORDINI_CANALE", "MOTORE_ORDINI_CANALE", "SCALPER_CANALE",
+    "SAFE_ORDINI_VIA_CANALE", "OMEGA_ORDINI_VIA_CANALE", "MOTORE_ORDINI_CANALE_TENNIS",
+    "SAFE_TENNIS_ORDINI_VIA_CANALE",
+)
+
+#: chiavi Supabase finte: STESSA chiave, STESSO valore in ogni test, cosi' un
+#: test che se le scambia per errore fallisce in modo riconoscibile (non un
+#: 403 casuale contro un progetto vero). Mai una sotto-stringa di una chiave
+#: vera: sono lette da chi certifica per riconoscerle a colpo d'occhio.
+SUPABASE_URL_FINTO = "https://finto-non-esiste.invalid"
+SUPABASE_KEY_FINTA = "finta-chiave-di-test-mai-una-chiave-vera"
+
+
+@pytest.fixture(autouse=True)
+def _ambiente_neutro_canali_e_db(monkeypatch):
+    """Ogni test parte da un ambiente NEUTRO e DICHIARATO, qualunque cosa dica
+    il ``.env`` vero del PC:
+
+    1) i 20 interruttori dei canali di produzione SPENTI di serie (``=0``: il
+       ``VALORI_ACCESI`` di ``Betfair/safe_strategy/porta_ordini.py`` accetta
+       solo ``1``/``true``/``si``/``yes``, quindi ``0`` e' spento per
+       costruzione). Il test che vuole un interruttore acceso lo accende da
+       se' con ``monkeypatch.setenv(nome, "1")`` DOPO questa fixture (l'ultima
+       scrittura vince: l'ordine dei fixture autouse non conta, l'ordine di
+       ESECUZIONE si', e il corpo del test gira sempre dopo il setup).
+
+    2) le chiavi Supabase finte di serie (``SUPABASE_URL``,
+       ``SUPABASE_SERVICE_ROLE_KEY``, ``SUPABASE_KEY``): nessun test puo' piu'
+       raggiungere il DB vero per via del ``.env`` risalito da
+       ``load_dotenv()``. Non basta l'``env``: ``config.py`` legge
+       ``SUPABASE_URL``/``SUPABASE_SERVICE_ROLE_KEY`` all'IMPORT
+       (``SUPABASE_URL = os.getenv(...)``) e diversi moduli le importano con
+       ``from config import SUPABASE_URL, ...`` — un binding di modulo
+       COPIATO all'import, che un ``monkeypatch.setenv`` fatto dopo non
+       raggiunge piu' (``db_client.py``, ``api_client.py``,
+       ``Betfair/client.py``, ``Betfair/stream/auth.py``,
+       ``Betfair/stream/tennis_live/tennis_db.py`` e altri: la lista cresce,
+       quindi si ripassano TUTTI i moduli gia' importati, non un elenco fisso
+       che invecchia). Per ogni modulo gia' in ``sys.modules`` con questi nomi
+       come attributo, si sovrascrive anche l'attributo. I due test che oggi
+       usano il DB vero SE raggiungibile (``test_analytics_market_stats.py::
+       test_cert_delay_shift_vs_rpc`` e ``test_cert_freq_shift_vs_rpc``, via
+       ``_try_db()``) degradano da soli: ``sb is None`` -> ``return`` senza
+       asserzioni, restano verdi."""
+    for _nome in INTERRUTTORI_CANALE:
+        monkeypatch.setenv(_nome, "0")
+
+    monkeypatch.setenv("SUPABASE_URL", SUPABASE_URL_FINTO)
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_KEY_FINTA)
+    monkeypatch.setenv("SUPABASE_KEY", SUPABASE_KEY_FINTA)
+    for _modulo in list(sys.modules.values()):
+        if _modulo is None:
+            continue
+        if getattr(_modulo, "SUPABASE_URL", None):
+            monkeypatch.setattr(_modulo, "SUPABASE_URL", SUPABASE_URL_FINTO, raising=False)
+        for _chiave in ("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY"):
+            if getattr(_modulo, _chiave, None):
+                monkeypatch.setattr(_modulo, _chiave, SUPABASE_KEY_FINTA, raising=False)
+    yield

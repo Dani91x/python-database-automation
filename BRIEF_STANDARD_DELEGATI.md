@@ -26,6 +26,9 @@ Comunica in italiano. Codice ASCII-only, commenti in italiano, stile del file ch
 3. Paper e live non si sommano mai. Calcio e tennis non si mischiano.
 4. All'avvio dell'app nessun bot opera; i bot li accende solo l'utente. Aiuti statistici
    ACCESI di default.
+4-ter. **OGNI BOT E' INDIPENDENTE** (28/09): l'utente accende quelli che vuole, uno, alcuni o
+   tutti, calcio o tennis. Accendere o spegnere un bot (o una variante) tocca SOLO quello: non
+   spegne, non accende e non cambia modalita' o parametri a nessun altro.
 4-bis. **USCITE: OGNI BOT, NESSUNO ESCLUSO, HA UN PULSANTE** (ribadito il 28/09, gia' detto il
    17/09 e il 25/09: NON richiederlo MAI all'utente). Due posizioni: MANUALE = l'uscita, in
    profitto o in perdita, diventa una proposta che l'utente approva; AUTOMATICO = il bot

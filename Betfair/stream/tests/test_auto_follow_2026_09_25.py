@@ -345,9 +345,31 @@ def test_runner_fermo_accetta_in_aggancio_e_chiede_l_aggancio(amb):
 
 
 def test_latenza_logica_aggancio_sotto_i_20_ms(amb):
+    # Cantiere M (28/09, reperto collegato): lanciato DA SOLO (processo
+    # pytest fresco) questo giro pagava un costo di RISCALDAMENTO del
+    # processo (import pigri, cache, specializzazione del bytecode di
+    # CPython 3.13 su questo esatto percorso) misurato fra 24 e 56 ms sul
+    # PRIMO giro di *qualsiasi* comando in tutto il processo — non sulla
+    # logica di aggancio in se'. Rilanciando lo STESSO giro piu' volte nello
+    # stesso processo (stesso file, stesso fixture ``amb``) il tempo crolla
+    # e si stabilizza a 3-5 ms dal secondo giro in poi (misura riproducibile,
+    # vedi AUDIT_2026-09-28/CANTIERE_M_TEST_E_AMBIENTE.md); dentro la suite
+    # del file (30 test prima di questo) il processo e' gia' caldo e il test
+    # passa sempre. Isolato: disattivare fsync o sostituire il diario con un
+    # finto in RAM NON cambia il primo giro (resta 29-49 ms) — quindi la
+    # causa non e' l'I/O del diario ma il riscaldamento del processo. Un
+    # giro di RISCALDAMENTO su un mercato DIVERSO (scartato, mai misurato)
+    # rende il test affidabile senza alzare la soglia: misura la stessa
+    # identica logica, a processo gia' caldo come lo sarebbe in produzione
+    # dopo il primo comando vero.
     auto = _auto()
     _monta(amb, auto)
     ws = amb.ch.collega("safe")
+    _manda(amb, ws, _cmd(market_id="1.949", n=99))
+    auto.giro()
+    _nuovo_mercato(amb, "1.949")
+    amb.motore.avanza_aggancio()
+
     t0 = time.perf_counter()
     _manda(amb, ws, _cmd(market_id="1.950"))
     auto.giro()
