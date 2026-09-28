@@ -3943,3 +3943,21 @@ prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcol
 - D2 e N toccano 7 FILE IN COMUNE (scalper_session, tennis_bot_service, tennis_runner, flb, pro, swing e un test): le
   due patch NON si sommano. ORDINE DECISO: prima D2 (e' la base dello sniper), poi N si riallinea su master e completa
   lo sniper.
+
+**Checkpoint 21:35 — D2 e N RIMANDATI AI DELEGATI (nessuno dei due integrato); master = `ef75920`**
+- **D2**: 21 mutazioni mie (`scratchpad/int/D2/mutazioni_coordinatore_d2.py` e `_bis.py`), 18 ROSSE, 3 SOPRAVVISSUTE:
+  in `tennis_swing_bot.py`, `tennis_pro_bot.py`, `tennis_flb_bot.py` togliere `self._esatte.avanza(market)` da
+  `process_market_book` lascia i test verdi (134 passed). Senza l'avanzamento resta a mercato il parcheggio da 2,00
+  EUR e il resto della chiusura non parte. Chiesto: test che passano SOLO dal bot vero, per i tre bot e per lo scalper
+  tennis; numeri su cio' che resta scoperto con l'anti-cascata; riga critica quando la chiusura rinuncia. Ripristini
+  verificati (md5 del diff identico prima e dopo). Revisore in sola lettura ancora al lavoro.
+- **N**: due file di test MIEI, 3 test ROSSI sul codice consegnato (restano nel worktree `scratchpad/verifica/N`):
+  `Betfair/stream/tests/test_coordinatore_cancello_uscite_2026_09_28.py` (firma che sopravvive alla proposta decaduta:
+  scalper, stop firmato a -1,88 eseguito a -6,50) e
+  `Betfair/mike/tests/test_coordinatore_firma_dopo_decadenza_2026_09_28.py` (Mike: firma su chiusura in profitto che
+  esegue una chiusura in perdita; `_stessa_uscita_firmata` risponde True senza proposta). Rimandato con i punti A-I
+  (firme, Omega e Safe stesso difetto, pulsante mancante su Safe `model`, messaggio falso nel runner tennis,
+  migrazione non ASCII, concorrenza, tipo di `stats.uscite_proposte`, chiave dopo il riavvio, referto parte B vuota).
+  N riallinea e completa lo sniper SOLO dopo il mio avviso «D2 e' su master».
+- MIGRAZIONE di N `uscite_approva_bot_flusso_2026-09-28.sql`: NON ancora da applicare (va corretta).
+- Delegati al lavoro: D1-bis (freno coperture Mike), D2 (terza consegna), N (correzioni), J2, P, K2, revisore D2.
