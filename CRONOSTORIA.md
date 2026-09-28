@@ -4103,3 +4103,18 @@ REPLAY IN CORSO DA STAGING (uno dopo l'altro): tennis_scalper, tennis_pro, tenni
 NOTA DI N SULLA CONFRONTABILITA': prima di N il «manuale» dei bot di flusso tratteneva solo le prese di profitto (stop e
 time-stop partivano da soli); i referti vecchi sono di quel mondo. I referti nuovi, in automatico dichiarato, diventano
 il riferimento da qui in poi.
+
+**Checkpoint 22:24 — il replay BOCCIA la correzione vera dello scalper tennis; D1-ter blocchi 4-5 verdi nei test**
+- **T blocco 2 (chiusure esatte riaccese sullo scalper tennis con 5 correzioni)**: patch pulita su `314c142`, 845 test
+  verdi, ma REPLAY KO: live e gate-aperto **K5 x7981** (sbilancio abbinato di 1,47 EUR col bot che si crede DONE), azioni
+  121. K6 e cascata spariti, ma la chiusura non avviene. NON INTEGRATO. Su master resta il ripiego `90414b6`.
+  Referto: `AUDIT_2026-09-28/replay/tennis_scalper_T_blocco2_BOCCIATO_*`. T rimandato: prima K5 del tennis pro, poi lo scalper.
+  E' la prova che il metodo «replay prima di master» serve: test e mutazioni erano verdi.
+- **D1-ter blocchi 4 e 5** (caso B: FOK sotto il minimo sul canale = sequenza del live con residuo ritirato; ramo
+  `_advance_submin_row` del motore; banco: `mode` fuori dal confronto di parita' SOLO per Mike): applicati in sequenza
+  sopra i blocchi 1-3 nel worktree `scratchpad/verifica/D1ter`, **1448 test verdi**. Da sommare a staging appena il
+  worktree di staging e' libero dai replay; criterio di accettazione: `certifica mike 35760084 --scenari tutti
+  --trasporto entrambi` a 0 violazioni e parita' raggiunta.
+- Replay dello sniper su master (9 combinazioni) in corso dalle 22:10; il giro di replay da staging parte appena finisce.
+- DEBITI APERTI DICHIARATI: chiusure esatte dello scalper tennis (spente); K5 del tennis pro (preesistente); test
+  mancanti sul collegamento in `main` (K2), sulla scadenza della firma (N), sul ritentativo del ritiro (D1-ter).
