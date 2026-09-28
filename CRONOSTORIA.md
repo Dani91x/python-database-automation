@@ -4004,3 +4004,15 @@ prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcol
   bloccano anche le chiusure, Omega ripiega sul REST: tre condotte diverse) + scenario «flusso-interrotto» nel banco.
 - **P**: chiesto stato e consegna a blocchi entro 45 minuti.
 - ORDINE AGGIORNATO: N → J2 blocco 1 → D1-ter → D2 → P → N2 (sniper) → replay rapidi uno per bot → suite intere → build.
+
+**Checkpoint 23:05 — replay di controllo di Mike dopo D1-bis (master `d407b59`)**
+`certifica mike 35760084 --scenari copertura-rifiutata --trasporto entrambi`: CODA OK e CANALE OK, **0 violazioni**, il
+freno scatta in entrambi (S1 x9286, S3 x9286 senza violazioni), ordini 2 e 2, righe 2 e 2. Prima della correzione il
+canale aveva 8 ordini e S3 x4. Referto: `AUDIT_2026-09-28/replay/mike_copertura_rifiutata_dopo_d1bis_35760084_2026-09-28.txt`.
+PARITA' ancora «non raggiunta» per due scarti: (a) la copertura sotto il minimo parte con FOK sulla coda e senza FOK sul
+canale (e' il blocco 1 di D1-ter); (b) le righe differiscono solo per `mode` live/paper (confronto del banco).
+MIKE resta NON certificato per il paper finche' D1-ter non entra e `--scenari tutti` non e' a 0 violazioni.
+In corso dalle 23:05, da un worktree dedicato ai replay (`scratchpad/verifica/N` su `66a8672`, cosi' il checkout
+principale resta libero per le integrazioni): `safe_base`, `safe_esatto`, `safe_punta` rapidi, trasporto entrambi, uno
+dopo l'altro (`scratchpad/replay/safe_*_rapidi_entrambi.out.txt`).
+N riallineato su `d407b59` senza conflitti (5469 test verdi dichiarati); aspetta D2 per il secondo merge e lo sniper.
