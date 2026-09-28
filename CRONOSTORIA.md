@@ -4057,3 +4057,21 @@ fede gli orari dei commit (`git log --date`): K2 `ef71543`, D1-bis `d407b59`, D2
 21:00 e le 21:40. L'ordine dei fatti e i contenuti dei checkpoint sono giusti. L'ordine dell'utente «tutto certificato
 e testato entro 2 ore» e' arrivato verso le 21:20: la scadenza e' verso le 23:20. Da qui in poi ogni checkpoint porta
 l'ora letta dall'orologio.
+
+**Checkpoint 21:51 — REPLAY TENNIS SU D2: DUE BOT KO. UNA REGRESSIONE DI D2 E' SU MASTER (errore mio di processo)**
+Comando per tutti: `certifica <bot> 35794049 --data-dir C:/Users/Admin/Desktop/tennis_rec/20260707 --scenari base,live,gate-aperto,parziali --worker 1`.
+| Bot | Con D2 (`8ada778`) | Prima di D2 (`61d4185`) | Giudizio |
+|---|---|---|---|
+| tennis_swing | 4 OK, 0 violazioni, 0 azioni (16 controlli su 19 mai sollecitati) | in corso | non certificabile: il bot non ha mai agito |
+| tennis_flb | 4 OK, 0 violazioni, 1 azione | non rilanciato | OK |
+| tennis_pro | 3 KO: K5 «posizione fantasma» base x1, live x1258, gate-aperto x1258 (sbilancio abbinato di 0,02 EUR) | 2 KO: K5 base x2638, live x50 | difetto PREESISTENTE, D2 non l'ha chiuso |
+| tennis_scalper | 2 KO: K6 x10 (parcheggio da 2,00 ancora vivo a posizione chiusa), azioni 16.613 | 4 OK, azioni 228 e 245 | **REGRESSIONE DI D2** (chiusure esatte accese sullo scalper tennis: cascata di sequenze) |
+Referti: `AUDIT_2026-09-28/replay/tennis_*_con_d2_*` e `*_prima_di_d2_*`.
+- ERRORE MIO: ho integrato D2 con test e mutazioni ma SENZA replay (fretta per la scadenza). Il processo standard dice
+  replay PRIMA. REGOLA DA QUI IN POI: ogni patch che tocca un bot (N, P, J2, D1-ter, T) si integra SOLO dopo il replay
+  del bot lanciato dal worktree di verifica con la patch applicata, confrontato col referto «prima».
+- **DELEGATO T LANCIATO** (Opus, worktree suo, agente `ad1cc251cd88ed8c8`): prima la cascata dello scalper tennis (con
+  ripiego: chiusure esatte spente per il solo scalper tennis, dichiarato come debito), poi K5 del pro.
+- STATO DEI BOT TENNIS PER IL PAPER: flb certificato; swing non esercitato; pro e scalper NON certificati.
+- DB (sola lettura): 9 righe paper ancora `open` dal 26/09 (Mike 5, Safe 4), nessuna riga live aperta: al prossimo
+  avvio devono regolarsi da sole, primo controllo della prova dal vivo.
