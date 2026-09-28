@@ -4118,3 +4118,93 @@ il riferimento da qui in poi.
 - Replay dello sniper su master (9 combinazioni) in corso dalle 22:10; il giro di replay da staging parte appena finisce.
 - DEBITI APERTI DICHIARATI: chiusure esatte dello scalper tennis (spente); K5 del tennis pro (preesistente); test
   mancanti sul collegamento in `main` (K2), sulla scadenza della firma (N), sul ritentativo del ritiro (D1-ter).
+
+### ★★★ PUNTO ESATTO DI RIPRESA — CHECKPOINT DELLE 22:40 DEL 28/09 (ordine dell'utente: «checkpoint per connessione, ora») ★★★
+
+**Regola per chi riprende**: NON rifare cio' che e' «SU MASTER». NON rilanciare i delegati: il loro lavoro e' su disco nei
+worktree `.claude/worktrees/agent-*` e le patch consegnate sono copiate in `_checkpoint_2026-09-28/sera/int/` (cartella
+non tracciata, 3,5 MB) oltre che nello scratchpad della sessione; i referti dei replay in
+`_checkpoint_2026-09-28/sera/replay/`. Due rami LOCALI (non pushati, stanno nel `.git` del repo):
+`staging-2026-09-28` (`2ac2803`) e `prova-staging-j2-p-2026-09-28` (`34dbe4d`).
+
+**1. SU MASTER E PUSHATO (master = origin = `b206b1c` + i commit di sola cronostoria)** — ognuno verificato da me:
+| Commit | Cantiere | Replay |
+|---|---|---|
+| `ef71543` | K2 arresto ordinato sul comportamento | — |
+| `d407b59` | D1-bis freno coperture di Mike + freno unico sulle aperture paper | scenario copertura-rifiutata: 0 violazioni sui due trasporti |
+| `8ada778` | D2 chiusure esatte tennis, aperture al minimo, sniper sul banco | integrato SENZA replay (errore mio): ha portato la regressione dello scalper tennis |
+| `90414b6` | T ripiego: chiusure esatte spente per il solo scalper tennis | replay PRIMA: 4 OK, 0 violazioni, azioni 1/228/228/1 |
+| `30ef40d` | whitelist mercati con OVER_UNDER_85 | — |
+| `b206b1c` | T blocco 1: tennis pro, sbilancio al centesimo (K5) | replay PRIMA: 4 OK, 0 violazioni |
+
+**2. RAMO `staging-2026-09-28` (`2ac2803`) = master `b206b1c` + consegne VERIFICATE da me (test + mutazioni), NON ancora su master perche' manca il replay:**
+- D1-ter blocchi 1-5 (Mike: copertura sotto il minimo come il live, casi A e B; fase `errore` = esito ignoto; motore: ritiro
+  pendente; banco: `mode` fuori dal confronto per il solo Mike): 1448 test verdi, mutazioni mie 7 rosse su 8.
+- N (pulsante uscite manuali/automatiche su OGNI bot, sniper compreso; una firma cade con la sua proposta): 7786 test
+  verdi, mutazioni mie 17 rosse su 18. MIGRAZIONE DA FAR APPLICARE ALL'UTENTE DOPO l'integrazione:
+  `migrations/uscite_approva_bot_flusso_2026-09-28.sql` (sta nella patch di N, non ancora su master).
+- N3 punto 1 (banco: uscite automatiche DICHIARATE negli scenari dei bot di flusso): 65 test verdi.
+
+**3. RAMO `prova-staging-j2-p-2026-09-28` (`34dbe4d`) = staging + J2 blocco 1 + P (si sommano SENZA conflitti):**
+- J2 blocco 1 (flusso dati interrotto: nessuna apertura; chiusure, coperture e protezioni col ripiego REST; riga critica
+  1/min se anche il REST e' muto): consegnato riallineato; suite del delegato Safe 1970, Mike 1003, Omega 1415; mutazioni
+  MIE ancora da fare.
+- P (Safe e Omega senza fill di casa in paper; il runner spento non consuma tentativi; green-up Omega P-O1 corretto;
+  chiusura a runner giu' con riga critica; `canale_cor` aggiornato; timeout DB): consegnato riallineato; suite del
+  delegato 4531 verdi; mutazioni MIE ancora da fare.
+- IN CORSO alle 22:40: suite Python INTERA su `34dbe4d` dal worktree `scratchpad/verifica/D2` (uscita
+  `scratchpad/int/suite_sommato.txt`). Se la sessione cade: rilanciarla (`python -m pytest Betfair -q -p no:cacheprovider`
+  da un worktree su quel ramo).
+
+**4. CONSEGNATO ALLE 22:39, DA VERIFICARE:** N3 punto 2 (`cantiere_n3_banco_punto2.patch` nel worktree
+`agent-a29743622286cd394`, `git diff staging-2026-09-28`): scenari del banco `uscite-manuali` e `uscite-manuali-firmate`
+per tennis x4 e scalper calcio, controlli UM1-UM4 e UF1-UF3, test sulla scadenza della firma a 120 s (la mia mutazione
+sopravvissuta), correzione dei controlli Z3/Z4 del banco scalper.
+
+**5. DELEGATI ANCORA AL LAVORO (non rilanciarli, leggere worktree e referto):**
+| Sigla | Cosa resta | Worktree |
+|---|---|---|
+| T | correzione VERA delle chiusure esatte dello scalper tennis (la prima e' stata BOCCIATA dal replay: K5 x7981, sbilancio 1,47) | `agent-ad1cc251cd88ed8c8` |
+| J2 | blocchi 2-4 (stream muto scalper/runner/tennis, riserva dei runner, Segui Live e ladder) + scenario «flusso-interrotto» del banco | `agent-ab0194ff88b5ea082` |
+
+**6. REPLAY — stato bot per bot (uno alla volta, `--worker 1`, ambiente neutro; referti in `AUDIT_2026-09-28/replay/`):**
+| Bot | Ultimo replay valido | Su quale codice | Certificato per il paper? |
+|---|---|---|---|
+| Omega | rapidi entrambi OK, parita' | master di prima di K2 | NO: da rifare su staging + J2 + P |
+| Safe base, esatto, punta | rapidi entrambi OK, parita' | master `66a8672` | NO: da rifare su staging + J2 + P |
+| Safe tennis | rapidi entrambi OK, parita' | master con D2 | NO: da rifare dopo P |
+| Mike | copertura-rifiutata OK dopo D1-bis; «tutti» aveva 1 KO PRIMA di D1-bis | master `d407b59` | NO: serve «tutti» + entrambi su staging |
+| Tennis FLB | 4 OK | master con D2 | si' sul codice di master; da rifare dopo N |
+| Tennis pro | 4 OK dopo T blocco 1 | master `b206b1c` | si' sul codice di master; da rifare dopo N |
+| Scalper tennis | 4 OK col ripiego | master `90414b6` | si' con chiusure esatte SPENTE (debito); da rifare dopo N |
+| Tennis swing | 4 OK ma 0 AZIONI | master con D2 | NON PROVATO: il bot non entra su quella registrazione |
+| Scalper calcio | 2 OK ma 0 AZIONI su 35760084 | master con D2 | NON PROVATO: usare 35797769 |
+| Sniper | in corso dalle 22:10 (pid 21248) | master `0e637c2` | da leggere: `scratchpad/replay/scalper_sniper_master.out.txt` |
+Processo ancora vivo che NON ho ucciso (chiesto all'utente, nessuna risposta): pid 6140, replay di confronto dello
+scalper calcio sul codice di PRIMA di D2, partito alle 21:54; non serve piu'. Ho fermato solo tre ATTESE in coda mie
+(nessun replay sotto): il giro da staging e i due replay in attesa, da rilanciare a staging definitivo.
+
+**7. ORDINE DEI PROSSIMI PASSI:**
+1) leggere la suite intera su `34dbe4d`; 2) mutazioni mie su J2 e su P (ancore gia' trovate: `mike/service.py:696` apertura
+col ripiego REST; `bot_service.py:5994` `X.e_senza_runner`; `execution.refs_di_riconciliazione`; `flusso_prezzi.py:205`);
+3) verificare N3 punto 2 e sommarlo; 4) portare il ramo `staging-2026-09-28` a `34dbe4d` + N3 punto 2;
+5) GIRO DI REPLAY DA STAGING, uno alla volta: tennis_scalper, tennis_pro, tennis_flb, tennis_swing (35794049) negli scenari
+`base,live,gate-aperto,parziali,uscite-manuali,uscite-manuali-firmate`; scalper_calcio 35797769 `base,paper` + 35760084
+`uscite-manuali,uscite-manuali-firmate`; sniper; omega rapidi entrambi; safe_base/esatto/punta rapidi entrambi;
+safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
+6) a replay verdi: staging su master a percorsi espliciti e push; 7) suite intere, `npx tsc`, vitest, `npm run build`;
+8) elenco finale all'utente.
+
+**8. DA DIRE/CHIEDERE ALL'UTENTE A LAVORI FINITI:**
+- MIGRAZIONE da applicare dopo l'integrazione di N: `uscite_approva_bot_flusso_2026-09-28.sql` (senza, «approva» di
+  tennis e scalper risponde errore e non parte niente).
+- Tutto in manuale: se l'utente non risponde, stop e tempo massimo NON scattano (scalper 25 EUR a 2,22: -1,88 a 2,40,
+  -6,50 a 3,00; tennis: fino all'intero stake; Omega: il tetto `cap` resta proposta). Restano automatici freno, fine
+  finestra, chiusura forzata. Tabella bot per bot nel referto N par. G.
+- Chiusura dell'app: lo scalper chiude A MERCATO le posizioni aperte (K2); la chiusura puo' durare fino a 70 s.
+- Flusso fermo: Omega non apre piu' nemmeno col REST; la copertura Over 4.5 di Mike parte col ripiego REST (J2).
+- Debito: chiusure esatte dello scalper tennis spente finche' T non consegna una correzione che passa il replay.
+- Decisioni aperte dal mattino: Mike ultimo ingresso PERSIST (Costituzione) contro FOK/LAPSE (codice); tetto di 3
+  connessioni di mercato; atlante (scrivere solo la filigrana?); 4 difetti minori del report giornaliero.
+- 9 righe paper ancora `open` nel DB dal 26/09 (Mike 5, Safe 4): primo controllo della prova dal vivo.
+- L'app si accende SOLO dopo l'elenco finale (decisione dell'utente del 28/09).
