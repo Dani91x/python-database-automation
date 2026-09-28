@@ -1,0 +1,10 @@
+T1 motore: terminale emesso anche a ordine vivo                          -> ROSSA | FAILED Betfair/stream/tests/test_motore_ritiro_pendente_d1ter_2026_09_28.py::test_timeout_senza_bet_id_non_emette_il_terminale_e_ritenta [ripristino OK, 31 s]
+T2 motore: il ritiro pendente non si ritenta                             -> SOPRAVVISSUTA (test verdi) | 1020 passed, 1 xfailed in 53.90s [ripristino OK, 70 s]
+T3 motore: ordine senza bet_id dato per morto                            -> ROSSA | FAILED Betfair/stream/tests/test_motore_ritiro_pendente_d1ter_2026_09_28.py::test_timeout_senza_bet_id_non_emette_il_terminale_e_ritenta [ripristino OK, 40 s]
+T4 mike: fase errore torna 'annullata' (esito ignoto dato per morto)     -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1ter_esito_ignoto_runner_2026_09_28.py::test_fase_errore_va_in_riconciliazione_non_annullata [ripristino OK, 49 s]
+T5 mike: la lay appoggiata scaduta fa avanzare il freno                  -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1ter_esito_ignoto_runner_2026_09_28.py::test_scadenza_della_lay_appoggiata_non_chiama_il_contatore [ripristino OK, 61 s]
+T6 mike: un esito ignoto poi morto fa avanzare il freno                  -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1ter_esito_ignoto_runner_2026_09_28.py::test_si_risolve_col_terminale_definitivo_senza_contare[annullato-cancelle [ripristino OK, 54 s]
+T7 porta di Mike: il taker non dichiara il FOK sotto il minimo           -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1ter_submin_fok_parita_2026_09_28.py::test_parita_taker_fok_sotto_minimo_quota_non_abbinabile[back-4.0-1.26-3.9-3 [ripristino OK, 69 s]
+T8 esecuzione: il piano del live non viene mai consultato in paper       -> ROSSA | FAILED Betfair/mike/tests/test_mike_d1ter_submin_fok_parita_2026_09_28.py::test_parita_taker_fok_sotto_minimo_quota_non_abbinabile[back-4.0-1.26-3.9-3 [ripristino OK, 61 s]
+
+TOTALE 8 | rosse 7 | SOPRAVVISSUTE 1 | non applicate 0 | ripristini falliti 0

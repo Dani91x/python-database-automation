@@ -4075,3 +4075,31 @@ Referti: `AUDIT_2026-09-28/replay/tennis_*_con_d2_*` e `*_prima_di_d2_*`.
 - STATO DEI BOT TENNIS PER IL PAPER: flb certificato; swing non esercitato; pro e scalper NON certificati.
 - DB (sola lettura): 9 righe paper ancora `open` dal 26/09 (Mike 5, Safe 4), nessuna riga live aperta: al prossimo
   avvio devono regolarsi da sole, primo controllo della prova dal vivo.
+
+**Checkpoint 22:14 (ora letta dall'orologio, uguale a quella del DB) — master = origin = `30ef40d`; RAMO DI PROVA LOCALE `staging-2026-09-28`**
+Su master da ultimo checkpoint:
+| Commit | Cosa | Verifica mia |
+|---|---|---|
+| `90414b6` | ripiego T: chiusure esatte spente per il SOLO scalper tennis | REPLAY PRIMA dell'integrazione: 4 scenari OK, 0 violazioni, azioni 1/228/228/1 (`AUDIT_2026-09-28/replay/tennis_scalper_ripiego_T_*`); 53 test verdi |
+| `30ef40d` | whitelist proposta dei mercati con OVER_UNDER_85 (la legge lo sniper dal 10/07) | test rosso su master dopo D2 tornato verde + test nuovo; 7 verdi |
+Replay su master: `safe_tennis 35795993 --scenari rapidi --trasporto entrambi`: 14 scenari OK, PARITA' RAGGIUNTA.
+Replay `scalper_calcio 35760084 --scenari base,paper` con D2: OK ma 0 AZIONI (il bot su quella partita non entra: non
+prova niente; va usata 35797769). Il confronto sul codice di prima di D2 (pid 6140, partito 21:54) e' ANCORA IN CORSO
+dopo 18 minuti (il banco vecchio aveva il controllo S5 lento, corretto da D2): NON l'ho ucciso (regola), gira da solo.
+**METODO NUOVO (dopo l'errore su D2): ramo locale `staging-2026-09-28`, NON pushato**, worktree
+`scratchpad/verifica/staging`. Ci sommo le consegne verificate (test + mutazioni mie), lancio i replay DA LI', e solo a
+replay verdi porto su master. Contenuto alle 22:14 (`c05bbdf`): master `30ef40d` + D1-ter blocchi 1-3 + N + N3 punto 1.
+| Consegna | Test miei | Mutazioni mie | Stato |
+|---|---|---|---|
+| D1-ter blocchi 1-3 (Mike sotto minimo caso A, esito ignoto, ritiro pendente del motore) | 1274 verdi | 8: 7 rosse, 1 sopravvissuta (il ramo che RITENTA il ritiro non ha test) | su staging; caso B + banco in lavorazione |
+| N pulsante uscite su ogni bot, sniper compreso | 7786 verdi, 2 rossi non suoi | 18: 17 rosse, 1 sopravvissuta (scadenza della firma a 120 s senza test) | su staging; N3 punto 2 (scenari manuali del banco) in lavorazione |
+| N3 punto 1 (banco: uscite automatiche DICHIARATE negli scenari dei bot di flusso) | 65 verdi | del delegato | su staging |
+| J2 blocco 1 rifatto (flusso interrotto + ripiego REST per chiusure e protezioni) | da fare | da fare | conflitto su `mike/service.py`: J2 riallinea su staging |
+| P (8 punti) | 4358 verdi | da fare | rimandato: tentativi a runner spento, P-O1, chiusura a runner giu', `canale_cor`; riallinea su staging |
+| T (cascata scalper tennis: correzione vera; K5 del tennis pro) | — | — | in lavorazione |
+Esiti delle mutazioni: `AUDIT_2026-09-28/mutazioni_coordinatore/`.
+REPLAY IN CORSO DA STAGING (uno dopo l'altro): tennis_scalper, tennis_pro, tennis_flb, tennis_swing (35794049), scalper_calcio
+35797769 base+paper, sniper (35674515 35768297 35797538), omega rapidi entrambi. Uscite in `scratchpad/replay/staging_*.out.txt`.
+NOTA DI N SULLA CONFRONTABILITA': prima di N il «manuale» dei bot di flusso tratteneva solo le prese di profitto (stop e
+time-stop partivano da soli); i referti vecchi sono di quel mondo. I referti nuovi, in automatico dichiarato, diventano
+il riferimento da qui in poi.

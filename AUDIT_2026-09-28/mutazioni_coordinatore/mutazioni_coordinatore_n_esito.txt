@@ -1,0 +1,21 @@
+N1 cancello: la firma senza proposta viva viene accettata                -> ROSSA | FAILED Betfair/stream/tests/test_scalper_uscite_automatiche_2026_09_25.py::test_firma_data_prima_di_un_riavvio_cade_e_non_esegue_su_altre_posizioni [ripristino OK, 24 s]
+N2 cancello: la proposta decade ma la firma resta                        -> ROSSA | FAILED Betfair/stream/tests/test_coordinatore_cancello_uscite_2026_09_28.py::test_firma_su_proposta_decaduta_non_esegue_quando_la_condizione_torna [ripristino OK, 16 s]
+N3 cancello: una firma non scade mai (TTL tolto)                         -> SOPRAVVISSUTA (test verdi) | 419 passed in 11.00s [ripristino OK, 23 s]
+N4 cancello: la firma usata resta valida (due uscite con una firma)      -> ROSSA | FAILED Betfair/stream/tests/test_coordinatore_cancello_uscite_2026_09_28.py::test_una_firma_vale_una_sola_uscita_anche_se_riletta [ripristino OK, 16 s]
+N5 cancello: in manuale esce lo stesso (il cancello dice sempre si')     -> ROSSA | FAILED Betfair/stream/tests/test_coordinatore_cancello_uscite_2026_09_28.py::test_firma_su_proposta_decaduta_non_esegue_quando_la_condizione_torna [ripristino OK, 27 s]
+N6 mike: firma senza proposta esegue                                     -> ROSSA | FAILED Betfair/mike/tests/test_mike_firma_stesso_motivo_2026_09_28.py::test_firma_senza_proposta_non_esegue_niente [ripristino OK, 48 s]
+N7 mike: la proposta decade ma la firma resta                            -> ROSSA | FAILED Betfair/mike/tests/test_coordinatore_firma_dopo_decadenza_2026_09_28.py::test_la_decadenza_della_proposta_porta_via_la_firma [ripristino OK, 27 s]
+N8 mike: firma su un motivo esegue un altro motivo                       -> ROSSA | FAILED Betfair/mike/tests/test_mike_firma_stesso_motivo_2026_09_28.py::test_firma_in_profitto_non_esegue_un_uscita_in_perdita [ripristino OK, 47 s]
+N9 sniper: sempre automatico (l'interruttore non conta)                  -> ROSSA | FAILED Betfair/stream/tests/test_sniper_uscite_automatiche_2026_09_28.py::test_spento_la_presa_di_profitto_non_parte_e_si_propone [ripristino OK, 36 s]
+N10 scalper calcio: sempre automatico                                    -> ROSSA | FAILED Betfair/stream/tests/test_scalper_uscite_automatiche_2026_09_25.py::test_spento_il_maker_ritira_la_gamba_opposta_e_propone [ripristino OK, 30 s]
+N11 tennis pro: sempre automatico                                        -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_uscite_manuali_bot_tennis_2026_09_25.py::test_pro_manuale_niente_scaglione [ripristino OK, 36 s]
+N12 tennis swing: sempre automatico                                      -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_uscite_manuali_bot_tennis_2026_09_25.py::test_swing_manuale_NON_prende_il_target [ripristino OK, 29 s]
+N13 tennis flb: sempre automatico                                        -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_uscite_manuali_bot_tennis_2026_09_25.py::test_flb_manuale_NON_greena [ripristino OK, 31 s]
+N14 scalper tennis: sempre automatico                                    -> ROSSA | FAILED Betfair/stream/tennis_scalper/tests/test_uscite_proposte_bot_tennis_2026_09_28.py::test_scalper_tennis_manuale_target_e_stop_sono_proposte [ripristino OK, 23 s]
+N15 riavvio: Mike resta in automatico dopo un avvio nuovo                -> ROSSA | FAILED Betfair/stream/tests/test_uscite_manuali_al_nuovo_avvio_2026_09_28.py::test_riporta_a_manuali_la_chiave_del_bot[mike-params0-atteso0] [ripristino OK, 26 s]
+N16 riavvio: Omega resta in automatico dopo un avvio nuovo               -> ROSSA | FAILED Betfair/stream/tests/test_uscite_manuali_al_nuovo_avvio_2026_09_28.py::test_riporta_a_manuali_la_chiave_del_bot[omega-params2-atteso2] [ripristino OK, 24 s]
+N17 riavvio: Safe resta in automatico dopo un avvio nuovo                -> ROSSA | FAILED Betfair/stream/tests/test_uscite_manuali_al_nuovo_avvio_2026_09_28.py::test_safe_tutte_le_strategie_e_il_cancelletto_del_tennis [ripristino OK, 30 s]
+N18 omega: l'approvazione non ricontrolla la condizione                  -> ROSSA | FAILED Betfair/omega/tests/test_omega_approvazione_ricontrolla_2026_09_28.py::test_firma_su_condizione_caduta_non_chiude [ripristino OK, 55 s]
+
+TOTALE 18 | rosse 17 | SOPRAVVISSUTE 1 | non applicate 0 | ripristini falliti 0
+10ab16ed40a016a6eecd87239c7c2cda *-
