@@ -3961,3 +3961,28 @@ prova puo' passare per vera. Limite dichiarato: le verifiche di G2 sono ricalcol
   N riallinea e completa lo sniper SOLO dopo il mio avviso «D2 e' su master».
 - MIGRAZIONE di N `uscite_approva_bot_flusso_2026-09-28.sql`: NON ancora da applicare (va corretta).
 - Delegati al lavoro: D1-bis (freno coperture Mike), D2 (terza consegna), N (correzioni), J2, P, K2, revisore D2.
+
+**Checkpoint 22:00 — consegnati K2 e J2 blocco 1, IN VERIFICA; altri rossi su master lasciati da D1-seconda**
+- **K2** (arresto ordinato provato sul comportamento): `AUDIT_2026-09-28/CANTIERE_K2_su_master.patch` nel worktree
+  `agent-a5fd58f2bfd692331`, copia in `scratchpad/int/K2/`; 9 file; si applica pulita su `8c3ce13`. Test nuovi verdi,
+  suite Mike 965 verdi col codice di K2. NOVITA' DI COMPORTAMENTO da dire all'utente: alla chiusura dell'app la
+  sessione dello scalper chiude A MERCATO le posizioni aperte (stessa strada del kill-switch), prima restavano aperte
+  e il processo veniva ucciso dopo 60 s. Mutazioni mie in corso (`scratchpad/int/K2/mutazioni_coordinatore_k2.py`).
+- **J2 blocco 1** (flusso interrotto: segnale e veto su master): `CANTIERE_J2_blocco1.patch` (30 file) nel worktree
+  `agent-ab0194ff88b5ea082`, copia in `scratchpad/int/J2/`; si applica pulita su `8c3ce13` (worktree di verifica
+  `scratchpad/verifica/D2`, il nome e' storico). Revisore in sola lettura al lavoro. Blocchi 2-4 di J2 in corso
+  (stream muto, riserva dei runner, Segui Live e ladder).
+- **ROSSI SU MASTER scoperti oggi, tutti lasciati da D1-seconda (Mike in paper sul runner), tutti assegnati a D1-bis**:
+  `Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py` 4 test (`test_mike_paper_apertura_ferma_col_freno[env]`,
+  `[db]`, `test_mike_paper_chiusura_passa_col_freno`, `test_mike_paper_freno_rilasciato_parita`) e
+  `test_submin_contratto_chiamanti_2026_09_17.py` 1 test. ERRORE MIO: all'integrazione di D1-seconda ho rilanciato
+  solo `Betfair/mike`; i test di Mike vivono anche in `Betfair/stream/tests`. Regola: dopo un'integrazione si rilancia
+  la suite di OGNI cartella che importa il modulo toccato. Suite intera `Betfair/stream` su master in corso
+  (`scratchpad/int/suite_master_stream.txt`) per avere l'elenco completo dei rossi.
+- **FILE IN COMUNE fra le consegne in coda** (l'integrazione va in SERIE, chi viene dopo si riallinea):
+  K2/J2: mike/service, omega_service, safe bot_service, safe service; K2/N: gli stessi tre + scalper_service e
+  scalper_session; K2/D2: scalper_session; J2/N: mike/service, omega_service, safe bot_service, frontend lib/omega.ts;
+  D2/N: 7 file (vedi sopra); J2/D2: nessuno. ORDINE PREVISTO: K2 → J2 blocco 1 → D1-bis → D2 → N → P.
+- Reperti del revisore su D2 mandati al delegato (rinuncia definitiva dopo 5 sequenze fallite = gamba scoperta fino a
+  1,99 EUR, non 0,30 come dice il referto; `OrdineComposto.status`; controllo B8 del banco; timeout dello sniper che
+  chiude da solo in manuale, da passare a N).
