@@ -4035,3 +4035,18 @@ di P e di J2 (toccano `safe_strategy/`): questi valgono come riferimento «prima
 - **D1-ter**: il caso «copertura sotto il minimo a quota abbinabile» richiede di toccare il motore sopra il codice di
   D2: si fa DOPO D2 su master. In live il default vero e' `consenti_replace=True` (il documento INTERFACES.md diceva
   False: da correggere).
+
+**Checkpoint 00:00 (notte 28→29/09) — D2 SU MASTER (master = origin = `8ada778`)**
+| Cantiere | Commit | Verifica mia |
+|---|---|---|
+| D2 tennis e scalper: chiusure esatte, aperture al minimo, paper specchio, sniper sul banco | `8ada778` | patch (33 file) applicata pulita; 1031 test mirati verdi; **21 mutazioni mie su 21 ROSSE** (le 3 sull'avanzamento a ogni book sono rosse col file nuovo `test_cantiere_d2_chiusure_via_bot_2026_09_28.py`); ripristini verificati (md5 del diff identico); esiti in `AUDIT_2026-09-28/cantiere_d2/mutazioni_coordinatore_esito.txt` |
+- Avvisati N (secondo merge + sniper + patch unica) e D1-ter (via libera al caso B nel motore, sopra D2).
+- D1-ter blocco 1 (caso A) dichiarato verde dal delegato, NON ancora consegnato come patch; tabella bot x modo nel suo
+  messaggio: Safe a interruttore spento ha ancora una divergenza paper/live nel ripiego (la chiude P).
+- REPLAY IN CORSO dal worktree dei replay (`scratchpad/verifica/N` su `8ada778`), uno dopo l'altro:
+  `certifica tennis_swing|tennis_pro|tennis_flb|tennis_scalper 35794049 --data-dir C:/Users/Admin/Desktop/tennis_rec/20260707
+  --scenari base,live,gate-aperto,parziali --worker 1` (uscite in `scratchpad/replay/tennis_*_d2.out.txt`).
+  ATTENZIONE (nota di N): il banco non passa `uscite_automatiche`; finche' N non e' su master i bot tennis nel replay
+  usano il valore di serie della classe.
+- DA FARE dopo i replay tennis: `scalper_calcio` (base, paper, sniper), `safe_tennis`, poi Omega e Mike «tutti» a
+  integrazioni finite.
