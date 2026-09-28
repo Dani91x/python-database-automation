@@ -439,3 +439,174 @@ def test_season_aggregates_attacca_non_tocca_gli_aggregati_della_degradata():
     assert degradate == [MALEDETTA]
     assert lac_maledetta.aggregati == {}                    # intoccato
     assert lac_buona.aggregati != {}                         # la buona e' stata calcolata normalmente
+
+
+# ===========================================================================
+# Parte F - rifinitura 28/09: blocco ADATTIVO (coordinatore, dopo la misura sul DB con
+# la funzione riscritta: un blocco di 20 coppie di campionati MAGGIORI a cache FREDDA
+# impiega 17.048 ms, oltre il doppio del limite reale di 8 s). esegui_a_blocchi_adattivo
+# e' il motore comune (season_gaps.riepilogo_lacune E season_aggregates.leggi_info).
+# ===========================================================================
+class OrologioFinto:
+    """Orologio finto per esegui_a_blocchi_adattivo: ogni blocco chiama orologio() due
+    volte (t0 poi t0+durata). Le durate si consumano in ordine dalla lista data; esaurita
+    la lista, ogni blocco successivo dura 0,01 s (veloce, cache calda), cosi' un test puo'
+    specificare solo l'inizio dello scenario e lasciare il resto crescere liberamente."""
+
+    def __init__(self, durate: List[float]) -> None:
+        self.durate = list(durate)
+        self.t = 0.0
+        self._prossima: Optional[float] = None
+
+    def __call__(self) -> float:
+        if self._prossima is None:
+            self._prossima = self.durate.pop(0) if self.durate else 0.01
+            return self.t
+        self.t += self._prossima
+        self._prossima = None
+        return self.t
+
+
+def test_blocco_iniziale_adattivo_dai_tempi_misurati_dal_coordinatore():
+    """0,85 s/coppia a freddo (17.048 ms / 20 coppie di campionati maggiori, misura del
+    coordinatore) e soglia sicura 6,0 s (sotto il limite reale di 8 s) -> 7 coppie."""
+    assert sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT == 0.85
+    assert sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT == 6.0
+    dimensioni: List[int] = []
+    sg.esegui_a_blocchi_adattivo([(1, 2026)], lambda p: (dimensioni.append(len(p)), False)[1],
+                                 None, sg.BLOCCO_MASSIMO_DEFAULT, sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
+                                 sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT, lambda s: None, OrologioFinto([0.01]), "T")
+    assert dimensioni == [1]           # 1 sola coppia disponibile: il blocco non puo' superarla
+    # con piu' coppie disponibili il PRIMO blocco usa davvero la stima iniziale
+    lista = [(i, 2026) for i in range(1, 20)]
+    dimensioni2: List[int] = []
+    sg.esegui_a_blocchi_adattivo(lista, lambda p: (dimensioni2.append(len(p)), False)[1],
+                                 None, sg.BLOCCO_MASSIMO_DEFAULT, sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
+                                 sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT, lambda s: None, OrologioFinto([8.5]), "T")
+    assert dimensioni2[0] == 7
+
+
+def test_blocco_cresce_quando_risponde_in_fretta_scende_su_57014_tetto_mai_superato():
+    """Scenario misto su 300 coppie: 3 blocchi veloci (crescita), poi un blocco che
+    incontra un 57014 (discesa), poi tutto veloce fino al tetto (che non deve mai essere
+    superato). Verifica anche la COPERTURA ESATTA: nessuna coppia saltata o doppia."""
+    lista = [(i, 2026) for i in range(1, 301)]
+    dimensioni: List[int] = []
+    pezzi: List[List[Tuple[int, int]]] = []
+    INDICE_57014 = 3     # il 4o blocco (indice 3) "incontra" un 57014
+
+    def elabora_pezzo(pezzo: List[Tuple[int, int]]) -> bool:
+        dimensioni.append(len(pezzo))
+        pezzi.append(list(pezzo))
+        return len(dimensioni) - 1 == INDICE_57014
+
+    orologio = OrologioFinto([0.1, 0.1, 0.1, 8.5])   # poi tutto 0,01 s (veloce)
+    sg.esegui_a_blocchi_adattivo(lista, elabora_pezzo, None, sg.BLOCCO_MASSIMO_DEFAULT,
+                                 sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT, sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT,
+                                 lambda s: None, orologio, "T")
+
+    # copertura esatta: concatenando i pezzi si riottiene la lista originale, in ordine,
+    # ogni coppia esattamente una volta (nessuna saltata, nessuna doppia)
+    ricostruita = [c for pezzo in pezzi for c in pezzo]
+    assert ricostruita == lista
+    assert len(set(ricostruita)) == len(lista)
+
+    # crescita: i primi blocchi (risposta rapida) crescono
+    assert dimensioni[0] == 7
+    assert dimensioni[1] > dimensioni[0]
+    assert dimensioni[2] > dimensioni[1]
+    # discesa: il blocco DOPO quello che ha incontrato 57014 e' piu' piccolo di quello prima
+    assert dimensioni[INDICE_57014 + 1] < dimensioni[INDICE_57014]
+    assert dimensioni[INDICE_57014 + 1] == max(1, dimensioni[INDICE_57014] // 2)
+    # tetto: mai superato, e raggiunto (con tutti blocchi veloci dopo, deve arrivarci)
+    assert max(dimensioni) == sg.BLOCCO_MASSIMO_DEFAULT
+    assert all(d <= sg.BLOCCO_MASSIMO_DEFAULT for d in dimensioni)
+
+
+def test_blocco_tetto_massimo_mai_superato_con_tetto_basso_dedicato():
+    """Controprova dedicata e minimale sul tetto, con un blocco_massimo piccolo (5) per
+    renderlo raggiungibile in poche iterazioni e la verifica inequivocabile."""
+    lista = [(i, 2026) for i in range(1, 101)]
+    dimensioni: List[int] = []
+    orologio = OrologioFinto([])   # sempre veloce (0,01s): deve salire fino al tetto e fermarsi
+    sg.esegui_a_blocchi_adattivo(lista, lambda p: (dimensioni.append(len(p)), False)[1],
+                                 None, 5, 1.0, 6.0, lambda s: None, orologio, "T")
+    assert max(dimensioni) == 5
+    assert dimensioni[-2:] == [5, 5]     # resta al tetto, non oscilla oltre
+
+
+def test_blocco_lento_ma_senza_57014_non_cresce_resta_uguale():
+    """Verifica del coordinatore 28/09 (mutazione `elif durata < soglia_sicura_sec / 2:`
+    -> `elif True:` sopravvissuta a 20/20): caso di MEZZO mancante. Un blocco che NON
+    incontra 57014 ma risponde LENTO (durata fra meta' soglia e la soglia intera: ne'
+    abbastanza veloce da meritare la crescita, ne' un timeout da cui scendere) deve
+    lasciare la dimensione INVARIATA, non farla crescere (crescere mentre il DB e' gia'
+    lento spingerebbe il blocco successivo ancora piu' vicino al limite reale di 8 s)."""
+    # 28 = 4 blocchi ESATTI da 7 (la stima iniziale): nessun resto che tagli l'ultimo
+    # blocco (un resto piu' piccolo sarebbe un artefatto del test, non una crescita).
+    lista = [(i, 2026) for i in range(1, 29)]
+    dimensioni: List[int] = []
+    # soglia_sicura_sec=6.0 di default -> meta'=3.0: 4.0s e' "lento" (>= meta') ma non un
+    # 57014; ripetuto piu' volte per essere certi che la dimensione non cresca MAI, solo
+    # perche' e' rimasta ferma per caso a un valore che coincide col tetto.
+    orologio = OrologioFinto([4.0, 4.0, 4.0, 4.0])
+    sg.esegui_a_blocchi_adattivo(lista, lambda p: (dimensioni.append(len(p)), False)[1],
+                                 None, sg.BLOCCO_MASSIMO_DEFAULT, sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
+                                 sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT, lambda s: None, orologio, "T")
+    assert dimensioni[0] == 7          # stima iniziale, invariata
+    assert dimensioni == [7] * len(dimensioni)   # MAI cresciuta: sempre lo stesso valore
+    assert len(dimensioni) > 1         # la lista di coppie e' abbastanza lunga da provarlo davvero
+
+
+def test_blocco_durata_esattamente_meta_soglia_non_cresce():
+    """Caso limite: durata == soglia_sicura_sec / 2 ESATTAMENTE. La condizione di
+    crescita e' `durata < soglia_sicura_sec / 2` (minore stretto): al confine la
+    dimensione NON deve crescere (solo un valore STRETTAMENTE sotto la meta' soglia
+    conta come 'veloce')."""
+    # 21 = 3 blocchi ESATTI da 7: nessun resto che tagli l'ultimo blocco.
+    lista = [(i, 2026) for i in range(1, 22)]
+    dimensioni: List[int] = []
+    orologio = OrologioFinto([3.0, 3.0, 3.0])   # soglia 6.0 -> meta' = 3.0 esatto
+    sg.esegui_a_blocchi_adattivo(lista, lambda p: (dimensioni.append(len(p)), False)[1],
+                                 None, sg.BLOCCO_MASSIMO_DEFAULT, sg.COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
+                                 sg.BLOCCO_SOGLIA_SICURA_SEC_DEFAULT, lambda s: None, orologio, "T")
+    assert dimensioni == [7] * len(dimensioni)   # al confine esatto: NON cresce
+
+
+def test_blocco_fisso_retrocompatibile_nessuna_crescita_ne_discesa():
+    """blocco=<intero esplicito> disattiva l'adattivita' (usato dai test esistenti e da
+    chi vuole un comportamento deterministico): stessa dimensione per ogni blocco."""
+    lista = [(i, 2026) for i in range(1, 21)]
+    dimensioni: List[int] = []
+    orologio = OrologioFinto([])       # veloce: con adattivita' attiva crescerebbe
+    sg.esegui_a_blocchi_adattivo(lista, lambda p: (dimensioni.append(len(p)), False)[1],
+                                 5, 20, 0.85, 6.0, lambda s: None, orologio, "T")
+    assert dimensioni == [5, 5, 5, 5]  # 20/5, MAI cresciuta
+
+
+def test_riepilogo_lacune_usa_il_blocco_adattivo_di_default():
+    """Wiring: riepilogo_lacune senza `blocco` esplicito (come lo chiama seasons_catchup)
+    usa la dimensione adattiva, non piu' 20 fisso."""
+    coppie = [(i, 2026) for i in range(1, 20)]
+    righe = {c: _righe_semplici(1) for c in coppie}
+    sb = SbSolo57014(set(), righe)
+    sg.riepilogo_lacune(sb, coppie, stampa=lambda s: None, orologio=OrologioFinto([8.5]))
+    assert len(sb.chiamate[0]) == 7     # primo blocco = stima adattiva, non 20
+
+
+def test_season_aggregates_leggi_info_adattivo_di_default_tetto_150_invariato():
+    """season_aggregates.leggi_info senza `blocco` esplicito e' adattivo anch'esso
+    (stima NON misurata, dichiarata: 0,10 s/coppia); il tetto resta 150 (vincolo
+    PostgREST, invariato dalla rifinitura)."""
+    assert sa.BLOCCO_MASSIMO_AGGREGATI == 150
+    coppie = [(i, 2026) for i in range(1, 5)]
+    sb = SbAggregati57014(set())
+    dimensioni: List[int] = []
+    sb_rpc_originale = sb.rpc
+
+    def rpc_tracciata(nome: str, params: Dict[str, Any]) -> Any:
+        dimensioni.append(len(params["p_league_ids"]))
+        return sb_rpc_originale(nome, params)
+    sb.rpc = rpc_tracciata
+    sa.leggi_info(sb, coppie, stampa=lambda s: None, orologio=OrologioFinto([0.01]))
+    assert dimensioni == [4]           # solo 4 coppie disponibili: un blocco solo, <= 60 stimati

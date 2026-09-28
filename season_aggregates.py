@@ -30,6 +30,7 @@ insert), e un insert fallito a meta' e' 'parziale' -> rifatto al giro dopo.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -109,54 +110,79 @@ def calcola(riga_cov: Dict[str, Any], info: Dict[str, Any], tentativi: Dict[str,
     return out
 
 
-def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 150,
-               stampa: Callable[[str], None] = print
+# R-CATCHUP-4 (28/09, rifinitura): stessa idea di season_gaps (blocco adattivo), ma qui
+# NESSUNA misura reale (il coordinatore ha misurato solo season_gaps_summary sui
+# campionati maggiori): season_aggregates_summary conta righe di tabelle piccole
+# (standings/injuries/top_*, poche migliaia di righe totali) per lega-stagione, un
+# ordine di grandezza piu' leggero. 0,10 s/coppia e' una stima PRUDENTE non misurata
+# (dichiarato: vedi referto §6); il tetto resta 150 (vincolo PostgREST < 1000 righe di
+# risposta con 6 righe/coppia, non una scelta di prestazioni: invariato).
+COSTO_STIMATO_SEC_PER_COPPIA_AGGREGATI = 0.10   # NON misurato, stima prudente
+BLOCCO_MASSIMO_AGGREGATI = 150                  # vincolo PostgREST (< 1000 righe), invariato
+BLOCCO_SOGLIA_SICURA_SEC_AGGREGATI = 6.0        # stesso margine di season_gaps
+
+
+def leggi_info(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: Optional[int] = None,
+               blocco_massimo: int = BLOCCO_MASSIMO_AGGREGATI,
+               costo_stimato_per_coppia: float = COSTO_STIMATO_SEC_PER_COPPIA_AGGREGATI,
+               soglia_sicura_sec: float = BLOCCO_SOGLIA_SICURA_SEC_AGGREGATI,
+               stampa: Callable[[str], None] = print, orologio: Callable[[], float] = time.time
                ) -> Tuple[Dict[Tuple[int, int], Dict[str, Any]], List[Tuple[int, int]]]:
-    """RPC season_aggregates_summary a blocchi (<= 150 coppie x 6 righe < 1000 righe PostgREST).
+    """RPC season_aggregates_summary a blocchi (<= 150 coppie x 6 righe < 1000 righe
+    PostgREST: tetto invariato). Dimensione ADATTIVA di default (blocco=None, vedi
+    season_gaps.esegui_a_blocchi_adattivo); un intero esplicito la rende fissa
+    (retrocompatibile con i test esistenti).
 
     R-CATCHUP-2 (28/09, stesso difetto di season_gaps.riepilogo_lacune, perimetro
     allargato dal coordinatore): un blocco in 57014 (statement_timeout) NON abbatte
     piu' la run: si dimezza e si ritenta; una lega-stagione sola ancora in 57014 viene
     DEGRADATA (nessuna info scritta, `calcola()` non la tocca: vedi `attacca`).
     -> (info per lega-stagione, lega-stagioni degradate per 57014 persistente)."""
-    from season_gaps import MigrazioneMancante, _e_funzione_mancante, _e_statement_timeout
+    from season_gaps import MigrazioneMancante, _e_funzione_mancante, _e_statement_timeout, esegui_a_blocchi_adattivo
     out: Dict[Tuple[int, int], Dict[str, Any]] = {(int(a), int(b)): {} for a, b in coppie}
     degradate: List[Tuple[int, int]] = []
 
-    def elabora(pezzo: List[Tuple[int, int]]) -> None:
-        try:
-            resp = sb.rpc("season_aggregates_summary", {"p_league_ids": [p[0] for p in pezzo],
-                                                        "p_season_years": [p[1] for p in pezzo]}).execute()
-        except Exception as e:
-            if _e_funzione_mancante(e):
-                raise MigrazioneMancante(
-                    f"RPC season_aggregates_summary assente: applica {MIGRAZIONE_AGG} (errore: {e})") from e
-            if _e_statement_timeout(e):
-                if len(pezzo) > 1:
-                    meta = len(pezzo) // 2
-                    stampa(f"[AGGREGATI] 57014 (statement timeout) su blocco di {len(pezzo)} lega-stagioni: "
-                          f"dimezzo e ritento ({meta} + {len(pezzo) - meta})")
-                    elabora(pezzo[:meta])
-                    elabora(pezzo[meta:])
-                    return
-                k = pezzo[0]
-                stampa(f"[AGGREGATI] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
-                      f"(aggregati non verificati questo giro, si riprova al prossimo)")
-                degradate.append(k)
-                return
-            raise
-        for r in list(getattr(resp, "data", None) or []):
-            k = (int(r["league_id"]), int(r["season_year"]))
-            if k not in out:
-                continue
-            if r.get("tabella") == "_ft":
-                out[k]["_ft"] = r.get("ultimo")
-            else:
-                out[k][r["tabella"]] = {"n": int(r.get("n") or 0), "ultimo": r.get("ultimo")}
+    def elabora(pezzo: List[Tuple[int, int]]) -> bool:
+        ebbe_57014 = False
 
-    lista = list(out)
-    for i in range(0, len(lista), blocco):
-        elabora(lista[i:i + blocco])
+        def _tenta(sotto_pezzo: List[Tuple[int, int]]) -> None:
+            nonlocal ebbe_57014
+            try:
+                resp = sb.rpc("season_aggregates_summary", {"p_league_ids": [p[0] for p in sotto_pezzo],
+                                                            "p_season_years": [p[1] for p in sotto_pezzo]}).execute()
+            except Exception as e:
+                if _e_funzione_mancante(e):
+                    raise MigrazioneMancante(
+                        f"RPC season_aggregates_summary assente: applica {MIGRAZIONE_AGG} (errore: {e})") from e
+                if _e_statement_timeout(e):
+                    ebbe_57014 = True
+                    if len(sotto_pezzo) > 1:
+                        meta = len(sotto_pezzo) // 2
+                        stampa(f"[AGGREGATI] 57014 (statement timeout) su blocco di {len(sotto_pezzo)} "
+                              f"lega-stagioni: dimezzo e ritento ({meta} + {len(sotto_pezzo) - meta})")
+                        _tenta(sotto_pezzo[:meta])
+                        _tenta(sotto_pezzo[meta:])
+                        return
+                    k = sotto_pezzo[0]
+                    stampa(f"[AGGREGATI] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
+                          f"(aggregati non verificati questo giro, si riprova al prossimo)")
+                    degradate.append(k)
+                    return
+                raise
+            for r in list(getattr(resp, "data", None) or []):
+                k = (int(r["league_id"]), int(r["season_year"]))
+                if k not in out:
+                    continue
+                if r.get("tabella") == "_ft":
+                    out[k]["_ft"] = r.get("ultimo")
+                else:
+                    out[k][r["tabella"]] = {"n": int(r.get("n") or 0), "ultimo": r.get("ultimo")}
+
+        _tenta(pezzo)
+        return ebbe_57014
+
+    esegui_a_blocchi_adattivo(list(out), elabora, blocco, blocco_massimo, costo_stimato_per_coppia,
+                              soglia_sicura_sec, stampa, orologio, "AGGREGATI")
     return out, degradate
 
 

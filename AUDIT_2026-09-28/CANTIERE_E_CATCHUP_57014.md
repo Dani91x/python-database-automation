@@ -352,3 +352,183 @@ Nessuna tocca una strategia di trading (questo cantiere e' infrastruttura dati, 
   piu' muta) - controllo, `gh run view <id> --log`, cercare la stringa.
 - **Dopo l'eventuale applicazione della migrazione**: il numero di 57014 nei log delle
   corse serali dovrebbe calare sensibilmente (non azzerarsi: il limite resta stretto, 8s).
+
+## 9. Rifinitura 28/09 - blocco ADATTIVO (cantiere certificato, integrato su master `0ffc3c6`, migrazione applicata dall'utente)
+
+Il coordinatore ha integrato il cantiere su master e l'utente ha applicato
+`season_gaps_perf_2026-09-28.sql` (verificato dal coordinatore: la funzione viva usa
+`NOT EXISTS`, non piu' `VALUES`). Il coordinatore ha poi misurato la funzione NUOVA sul
+DB vero (`EXPLAIN ANALYZE`, sola lettura):
+- blocco di 20 coppie leghe 1 e 2 (internazionali, leggere): a FREDDO 2.227 ms (1.579
+  letture da disco), a CALDO 112 ms;
+- blocco di 20 coppie di CAMPIONATI MAGGIORI (leghe 39, 140, 135, 78, 61, 94, 88, 144,
+  203, 71, stagioni 2025-2026): a FREDDO **17.048 ms** (13.719 letture da disco, 225.270
+  da cache) - **oltre il doppio del limite reale di 8 s** (§0.3), anche con la funzione
+  riscritta.
+
+**Conseguenza**: un blocco di 20 coppie "pesanti" a cache fredda va comunque in timeout.
+Il dimezzamento di `riepilogo_lacune` lo salva (degrada solo cio' che serve, la run non
+muore), ma ogni 57014 costa 8 secondi buttati prima di dimezzare, e il PRIMO blocco di
+ogni corsa serale (cache quasi certamente fredda, dopo ore di inattivita' del catchup)
+fallirebbe quasi sempre se contenesse campionati maggiori nelle prime posizioni
+(`league_id` piccoli: 39=Premier League, 61=Ligue 1, 71=Serie A Brasile, 78=Bundesliga,
+88=Eredivisie, ecc. - tutti fra i primi ~200 `league_id`, quindi tipicamente nei primi
+blocchi in ordine `league_id,season_year`).
+
+### 9.1 Correzione: dimensione del blocco ADATTIVA
+
+Nuova funzione condivisa `season_gaps.esegui_a_blocchi_adattivo` (motore comune,
+riusata sia da `season_gaps.riepilogo_lacune` sia da `season_aggregates.leggi_info`):
+
+- **Blocco iniziale**: `soglia_sicura_sec / costo_freddo_per_coppia`, mai oltre il
+  tetto. Per `season_gaps_summary`: soglia sicura **6,0 s** (margine sotto gli 8 s reali
+  per rete/parsing/variabilita', non tutto il budget) e costo **0,85 s/coppia**
+  (17.048 ms / 20 coppie, la misura del coordinatore sui campionati maggiori a freddo:
+  il caso PEGGIORE misurato, non quello leggero delle leghe 1/2, apposta per essere
+  prudenti anche quando il primo blocco reale capita su campionati pesanti) ->
+  **7 coppie** (6,0 / 0,85 = 7,05, troncato). 7 coppie pesanti a freddo: 7 x 0,85 = 5,95 s,
+  sotto il limite di 8 s con margine.
+- **Crescita**: dopo un blocco che risponde in MENO della meta' della soglia sicura
+  (< 3,0 s: segno di cache calda o lega-stagioni leggere), la dimensione del blocco
+  SUCCESSIVO cresce (+50%, minimo +1), mai oltre il tetto (20, invariato).
+- **Discesa**: se un blocco incontra ALMENO un 57014 (anche se poi risolto dimezzando
+  internamente: e' comunque il segno che il DB e' lento IN QUESTO MOMENTO), la
+  dimensione del blocco SUCCESSIVO si dimezza (minimo 1). Il dimezzamento INTERNO di
+  `riepilogo_lacune` sul singolo blocco lento (gia' esistente, §2) resta INVARIATO: la
+  novita' e' che la run "impara" e i blocchi successivi partono piu' piccoli, invece di
+  ritentare 20 coppie pesanti ogni volta.
+- **Tetto**: 20 (default storico), mai superato - imposto in DUE punti (la crescita
+  stessa e il calcolo della dimensione realmente usata a ogni iterazione): ridondanza
+  intenzionale, verificata dalla falsificazione (§9.3).
+- **Log**: ogni blocco stampa la propria dimensione e la durata reale
+  (`[LACUNE] blocco di N coppie in D.DDs`), piu' un avviso all'avvio con la stima
+  iniziale e i parametri usati.
+- **Retrocompatibilita'**: un `blocco=<intero>` esplicito (come nei test gia' scritti
+  per il cantiere principale) disattiva la crescita/discesa: dimensione FISSA, stesso
+  comportamento di prima (il dimezzamento su 57014 dentro `elabora` resta invariato).
+  `seasons_catchup.esegui_catchup` NON passa piu' `blocco` esplicito: usa l'adattivo di
+  default (nessuna modifica a `seasons_catchup.py` in questa rifinitura: gia' chiamava
+  `sg.riepilogo_lacune(sb, list(righe_per_k), stampa=stampa)` senza l'argomento).
+
+**Estensione a `season_aggregates.leggi_info`** (stesso motore, stesso meccanismo):
+tetto invariato a **150** (vincolo PostgREST: 150 coppie x 6 righe < 1000 righe di
+risposta, non una scelta di prestazioni - NON toccato). Costo per coppia: **0,10
+s/coppia, NON misurato** (il coordinatore ha misurato solo `season_gaps_summary`;
+`season_aggregates_summary` conta righe di tabelle piccole - standings/injuries/top_* -
+un ordine di grandezza piu' leggero per costruzione, ma questa non e' una misura reale:
+dichiarato, vedi §6 aggiornato). Blocco iniziale risultante: 6,0/0,10 = 60 coppie.
+
+### 9.2 Test (RED -> GREEN, falsificati) - aggiornato dopo la 2a verifica del coordinatore (§9.5)
+
+8 test nuovi in `test_catchup_57014_2026_09_28.py` (ora 22 in totale nel file; i 2 del
+caso di mezzo, `..._lento_ma_senza_57014_non_cresce_resta_uguale` e
+`..._durata_esattamente_meta_soglia_non_cresce`, sono nati dalla 2a verifica del
+coordinatore, §9.5):
+- `test_blocco_iniziale_adattivo_dai_tempi_misurati_dal_coordinatore`: le costanti
+  (0,85 s/coppia, soglia 6,0 s) e il calcolo (7 coppie) sono quelli dichiarati.
+- `test_blocco_cresce_quando_risponde_in_fretta_scende_su_57014_tetto_mai_superato`:
+  scenario misto su 300 coppie (crescita nei primi blocchi veloci, discesa dopo un
+  57014, tetto raggiunto e mai superato) PIU' la verifica di copertura esatta
+  (concatenando tutti i pezzi si riottiene la lista originale, in ordine, ogni coppia
+  esattamente una volta: nessuna saltata, nessuna doppia).
+- `test_blocco_tetto_massimo_mai_superato_con_tetto_basso_dedicato`: controprova
+  dedicata col tetto a 5 (raggiungibile in poche iterazioni, verifica inequivocabile).
+- `test_blocco_fisso_retrocompatibile_nessuna_crescita_ne_discesa`: `blocco=<intero>`
+  esplicito disattiva l'adattivita' (comportamento di prima, invariato).
+- `test_riepilogo_lacune_usa_il_blocco_adattivo_di_default`: wiring end-to-end (senza
+  `blocco` esplicito, il primo blocco reale e' 7, non piu' 20).
+- `test_season_aggregates_leggi_info_adattivo_di_default_tetto_150_invariato`: stesso
+  wiring per gli aggregati, tetto 150 confermato invariato.
+- `test_blocco_lento_ma_senza_57014_non_cresce_resta_uguale` (§9.5): un blocco SENZA
+  57014 ma con durata fra la meta' della soglia sicura e la soglia intera (4,0s, con
+  soglia 6,0s) NON cresce, resta uguale (28 coppie = 4 blocchi ESATTI da 7, nessun resto
+  a tagliare l'ultimo blocco per caso).
+- `test_blocco_durata_esattamente_meta_soglia_non_cresce` (§9.5): caso limite, durata
+  ESATTAMENTE uguale a meta' soglia (3,0s): la condizione e' `durata < soglia/2`
+  (minore stretto), quindi al confine NON cresce (21 coppie = 3 blocchi esatti da 7).
+
+Comando: `python -m pytest test_catchup_57014_2026_09_28.py test_backfill_automatico_
+2026_09_25.py test_catchup_p4_2026_09_25.py test_catchup_attesa_concorrenti_2026_09_26.py
+test_riserva_dinamica_2026_09_25.py -q -p no:cacheprovider` -> **111 passed** (22 + 89,
+nessuna regressione sui test gia' esistenti, inclusi quelli con `blocco` fisso esplicito).
+
+**Falsificazione** (mutazioni sul codice vero, patch salvata prima con `git diff --
+season_gaps.py season_aggregates.py seasons_catchup.py > patch_rifinitura_28_09.diff`,
+ripristino con `git checkout -- season_gaps.py` + `git apply --include='season_gaps.py'
+<patch>`, verificato `grep -c MUTAZIONE` = 0 e diff byte per byte identico dopo OGNI
+mutazione):
+
+| Mutazione | Test rossi | Nota |
+|---|---|---|
+| Tolto il tetto SOLO dalla formula di crescita (`dimensione = min(blocco_massimo, ...)` -> senza `min`) | 1/20 (`..._tetto_mai_superato`, ma per un valore di dimezzamento diverso, non per sfondamento diretto del tetto: il secondo punto di enforcement, `n = min(dimensione, blocco_massimo, ...)`, maschera la sfondata) | rivela la ridondanza intenzionale: un solo punto mutato non basta |
+| Tolto il tetto da ENTRAMBI i punti (formula di crescita + calcolo di `n` usato) | 2/20 (`..._tetto_mai_superato` con prova diretta `max(dimensioni) == 20` fallita a 81; `..._tetto_basso_dedicato` con `max(dimensioni)==5` fallito a 33) | falsificazione pulita del tetto |
+| `if ebbe_57014:` -> `if False and ebbe_57014:` (mai scende) | 1/20 (`..._tetto_mai_superato`, prova diretta `20 < 20` fallita: nessuna discesa dopo il 57014) | falsificazione pulita della discesa |
+| `i += len(pezzo)` -> `i += max(1, len(pezzo) - 2)` (avanzamento sbagliato, sovrappone) | 8/20 (compresi test del cantiere principale che riusano il motore con `blocco` fisso: la corruzione e' larga, non solo nei test dedicati alla rifinitura) | falsificazione della copertura esatta (nessuna coppia saltata/doppia) |
+| **`elif durata < soglia_sicura_sec / 2:` -> `elif True:` (mutazione del coordinatore, 2a verifica, §9.5)** | **2/22** (`..._lento_ma_senza_57014_non_cresce_resta_uguale`: `[7,10,11] != [7,7,7]`; `..._durata_esattamente_meta_soglia_non_cresce`: `[7,10,4] != [7,7,7]`) | falsificazione pulita del caso di mezzo (lento ma non in timeout: non deve crescere) |
+
+Tutte le mutazioni ripristinate e verificate byte per byte identiche prima di procedere
+alla successiva; suite rilanciata dopo l'ultimo ripristino: 111/111 verdi.
+
+### 9.3 File
+
+`season_gaps.py` (nuova `esegui_a_blocchi_adattivo` + `riepilogo_lacune` riscritta per
+usarla, stesso contratto esterno `(lacune, degradate)`), `season_aggregates.py`
+(`leggi_info` riscritta per usare lo stesso motore, stesso contratto). `seasons_catchup.py`
+NON toccato (il call site non passava gia' `blocco` esplicito). `test_catchup_57014_
+2026_09_28.py` (+8 test, Parte F/G, dopo la 2a verifica). Nessuna migrazione nuova
+(nessuna modifica al DB).
+
+Consegna (rigenerata dopo la 2a verifica, §9.5): `AUDIT_2026-09-28/CANTIERE_E_
+rifinitura.patch` = `git diff 512db64 -- season_gaps.py season_aggregates.py
+test_catchup_57014_2026_09_28.py` (master avanzato da `150bd46` a `512db64` fra le due
+verifiche del coordinatore: confermato che i 3 file di questo cantiere non hanno
+divergenze estranee nel frattempo, la patch contiene SOLO le modifiche della
+rifinitura). File non tracciati nel branch locale del worktree ma gia' committati su
+master (dalla prima integrazione): patch generata con `git add` temporaneo dei 3 file +
+`git diff 512db64 -- ...` + `git restore --staged` (solo indice, nessuna modifica al
+working tree, nessun `checkout`/`reset` distruttivo) per far riconoscere correttamente
+il confronto a git; verificata riproducibile (rigenerata una seconda volta con lo stesso
+metodo, `diff` fra le due esecuzioni: nessuna differenza).
+
+### 9.5 Seconda verifica del coordinatore: mutazione sopravvissuta (crescita anche da lento)
+
+Il coordinatore ha riletto il codice del blocco adattivo e applicato una mutazione
+propria: `elif durata < soglia_sicura_sec / 2:` -> `elif True:` (il blocco cresce
+SEMPRE quando non c'e' un 57014, anche quando il DB ha risposto LENTO ma non ancora in
+timeout). Risultato: 20/20 test verdi - un buco reale nella copertura, non un falso
+positivo: mancava il caso di MEZZO (ne' abbastanza veloce da meritare la crescita, ne'
+un 57014 da cui scendere), in cui la dimensione deve restare INVARIATA. Crescere mentre
+il DB e' gia' lento spingerebbe il blocco successivo ancora piu' vicino al limite reale
+di 8 s, vanificando in parte lo scopo della rifinitura.
+
+Aggiunti i 2 test mancanti (§9.2): il caso generale (durata 4,0s, fra meta' soglia 3,0s
+e soglia intera 6,0s) e il caso limite esatto (durata == meta' soglia, 3,0s: la
+condizione e' "minore stretto", quindi al confine NON deve crescere). Falsificati con
+la mutazione ESATTA del coordinatore: **2/22 test rossi**, entrambi i nuovi, con prova
+diretta (`[7,10,11] != [7,7,7]` e `[7,10,4] != [7,7,7]`: la dimensione cresce da 7 a 10
+al secondo blocco anche se lento, invece di restare a 7). Mutazione applicata sul
+codice vero, verificata rossa, ripristinata e confrontata byte per byte con la patch
+salvata prima (`diff` senza output = identico). Suite rilanciata dopo il ripristino:
+111/111 verdi (§9.2).
+
+Nessuna modifica al comportamento del codice in questa 2a verifica (la logica era gia'
+corretta: `elif durata < soglia_sicura_sec / 2:` esisteva gia' cosi' nel codice
+consegnato la prima volta): SOLO test aggiunti. Patch rigenerata contro il nuovo master
+`512db64` (vedi §9.3) con i 2 test in piu'.
+
+### 9.4 Cosa NON ho potuto verificare (rifinitura)
+
+- **Il costo di `season_aggregates_summary` (0,10 s/coppia) non e' misurato**, e' una
+  stima prudente dichiarata come tale (§9.1): non ho eseguito `EXPLAIN ANALYZE` su
+  quella RPC (fuori dal perimetro di lettura concesso, limitato a `season_gaps_summary`
+  nel brief originale; non ri-autorizzato esplicitamente per gli aggregati in questa
+  rifinitura). Se il costo reale fosse molto piu' alto, il blocco iniziale di 60 per gli
+  aggregati potrebbe essere troppo ottimistico: il meccanismo di discesa lo correggerebbe
+  comunque al primo 57014, ma con lo stesso "primo colpo perso" descritto per
+  `season_gaps_summary` prima di questa rifinitura.
+- **Non ho una misura reale di quanto la crescita "+50%" sia la scelta ottimale** (contro
+  es. "+1 fisso" o raddoppio): e' una scelta ragionevole (esponenziale ma non aggressiva)
+  non validata con dati di produzione, dichiarato.
+- **Non ho rieseguito la misura del coordinatore** (17.048 ms sul blocco pesante): l'ho
+  presa come dato fornito e verificato solo l'aritmetica (17.048/20 = 852,4 ms ~= 0,85
+  s/coppia), non ho ripetuto l'`EXPLAIN ANALYZE` sul DB vero in questa rifinitura.

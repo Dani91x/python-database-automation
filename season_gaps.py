@@ -35,6 +35,7 @@ blocchi di lega-stagioni): nessuna lettura riga-per-riga delle tabelle enormi
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -234,17 +235,85 @@ def lacune_stagione(sb: Any, league_id: int, season_year: int,
     return l
 
 
-def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 20,
-                     stampa: Callable[[str], None] = print
+# ---------------------------------------------------------------------------
+# R-CATCHUP-4 (28/09, rifinitura): blocco ADATTIVO per le RPC a blocchi
+# (season_gaps_summary, e gemella season_aggregates_summary in season_aggregates.py).
+# ---------------------------------------------------------------------------
+# Limite REALE misurato dal coordinatore (28/09, dopo l'applicazione della migrazione
+# season_gaps_perf_2026-09-28.sql): statement_timeout via PostgREST/service_role = 8 s
+# (non 2 min: vedi AUDIT_2026-09-28/CANTIERE_E_CATCHUP_57014.md §0.3). Anche con la
+# funzione riscritta, un blocco di 20 coppie di CAMPIONATI MAGGIORI a cache FREDDA
+# (leghe 39/140/135/78/61/94/88/144/203/71, stagioni 2025-2026) misura 17.048 ms
+# (13.719 letture da disco): oltre il doppio del limite. 17.048 ms / 20 coppie =
+# 0,85 s/coppia a freddo: e' la base della stima prudente del blocco iniziale.
+COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT = 0.85   # misurato (campionati maggiori, cache fredda)
+BLOCCO_MASSIMO_DEFAULT = 20                  # tetto storico, mai superato
+BLOCCO_SOGLIA_SICURA_SEC_DEFAULT = 6.0       # margine sotto gli 8 s reali (rete/parsing compresi)
+BLOCCO_MINIMO = 1
+
+
+def esegui_a_blocchi_adattivo(lista: List[Tuple[int, int]],
+                              elabora_pezzo: Callable[[List[Tuple[int, int]]], bool],
+                              blocco: Optional[int], blocco_massimo: int,
+                              costo_freddo_per_coppia: float, soglia_sicura_sec: float,
+                              stampa: Callable[[str], None], orologio: Callable[[], float],
+                              etichetta: str) -> None:
+    """Motore comune a season_gaps.riepilogo_lacune e season_aggregates.leggi_info:
+    avanza su `lista` a blocchi di dimensione VARIABILE.
+
+    blocco=None (ADATTIVO, uso di produzione): il PRIMO blocco parte da una stima
+    prudente (soglia_sicura_sec / costo_freddo_per_coppia, mai oltre blocco_massimo:
+    coi valori di default, 6.0/0.85 ~= 7 coppie, ben sotto le 20 che a freddo sui
+    campionati maggiori sforerebbero il limite reale). Dopo ogni blocco: se
+    elabora_pezzo ha incontrato ALMENO un 57014 (anche risolto dimezzando: e' comunque
+    il segno che il DB e' lento ORA) la dimensione SCENDE (dimezzata, minimo 1); se il
+    blocco ha risposto in meno della META' della soglia sicura (cache calda / blocco
+    leggero) la dimensione CRESCE (+50%, minimo +1), mai oltre blocco_massimo.
+    blocco=<intero> (retrocompatibile, usato dai test): dimensione FISSA, nessuna
+    crescita ne' discesa qui (elabora_pezzo gestisce comunque il proprio dimezzamento
+    interno sul 57014, invariato).
+    Invariante: ogni elemento di `lista` viene passato a elabora_pezzo esattamente UNA
+    volta, in ordine, senza buchi ne' sovrapposizioni (avanzamento i += len(pezzo))."""
+    adattivo = blocco is None
+    dimensione = blocco if blocco is not None else max(
+        BLOCCO_MINIMO, min(blocco_massimo, int(soglia_sicura_sec / costo_freddo_per_coppia)))
+    if adattivo:
+        stampa(f"[{etichetta}] blocco iniziale ADATTIVO: {dimensione} coppie (soglia sicura "
+              f"{soglia_sicura_sec:.1f}s / {costo_freddo_per_coppia:.2f}s a coppia a freddo, "
+              f"tetto {blocco_massimo})")
+    i = 0
+    while i < len(lista):
+        n = max(BLOCCO_MINIMO, min(dimensione, blocco_massimo, len(lista) - i))
+        pezzo = lista[i:i + n]
+        t0 = orologio()
+        ebbe_57014 = elabora_pezzo(pezzo)
+        durata = orologio() - t0
+        stampa(f"[{etichetta}] blocco di {len(pezzo)} coppie in {durata:.2f}s"
+              + (" (57014 incontrato dentro il blocco)" if ebbe_57014 else ""))
+        i += len(pezzo)
+        if adattivo:
+            if ebbe_57014:
+                dimensione = max(BLOCCO_MINIMO, dimensione // 2)
+            elif durata < soglia_sicura_sec / 2:
+                dimensione = min(blocco_massimo, max(dimensione + 1, int(dimensione * 1.5)))
+
+
+def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: Optional[int] = None,
+                     blocco_massimo: int = BLOCCO_MASSIMO_DEFAULT,
+                     costo_freddo_per_coppia: float = COSTO_FREDDO_SEC_PER_COPPIA_DEFAULT,
+                     soglia_sicura_sec: float = BLOCCO_SOGLIA_SICURA_SEC_DEFAULT,
+                     stampa: Callable[[str], None] = print,
+                     orologio: Callable[[], float] = time.time
                      ) -> Tuple[Dict[Tuple[int, int], Lacune], List[Tuple[int, int]]]:
-    """Solo conteggi, a blocchi di `blocco` lega-stagioni per RPC.
+    """RPC season_gaps_summary a blocchi (vedi esegui_a_blocchi_adattivo per la
+    dimensione, ADATTIVA di default: blocco=None).
 
     R-CATCHUP-2 (28/09, AUDIT_2026-09-28/CANTIERE_E_CATCHUP_57014.md): un blocco
-    che va in 57014 (statement_timeout, misurato 2 min sul progetto) NON abbatte
-    piu' l'intera run (prima: eccezione non gestita -> traceback -> catchup
-    morto, exit diverso da 0/1/2 dichiarati). Ora: si dimezza il blocco e si
-    ritenta; se anche UNA SOLA lega-stagione va in 57014 da sola viene
-    DEGRADATA (non verificata questo giro) invece di essere trattata come
+    che va in 57014 (statement_timeout, limite reale 8 s via PostgREST/service_role,
+    vedi §0.3 del referto) NON abbatte piu' l'intera run (prima: eccezione non
+    gestita -> traceback -> catchup morto, exit diverso da 0/1/2 dichiarati). Ora: si
+    dimezza il blocco e si ritenta; se anche UNA SOLA lega-stagione va in 57014 da
+    sola viene DEGRADATA (non verificata questo giro) invece di essere trattata come
     "zero buchi" (sarebbe una bugia: scriverebbe uno stato falso). Il
     chiamante (seasons_catchup.esegui_catchup) NON scrive stato per le
     lega-stagioni degradate: restano come erano, si riverificano al giro dopo.
@@ -253,38 +322,45 @@ def riepilogo_lacune(sb: Any, coppie: Sequence[Tuple[int, int]], blocco: int = 2
     out: Dict[Tuple[int, int], Lacune] = {(int(a), int(b)): Lacune(int(a), int(b)) for a, b in coppie}
     degradate: List[Tuple[int, int]] = []
 
-    def elabora(pezzo: List[Tuple[int, int]]) -> None:
-        try:
-            resp = sb.rpc("season_gaps_summary", {"p_league_ids": [p[0] for p in pezzo],
-                                                  "p_season_years": [p[1] for p in pezzo]}).execute()
-        except Exception as e:
-            if _e_funzione_mancante(e):
-                raise MigrazioneMancante(
-                    f"RPC season_gaps_summary assente: applica {MIGRAZIONE} (errore: {e})") from e
-            if _e_statement_timeout(e):
-                if len(pezzo) > 1:
-                    meta = len(pezzo) // 2
-                    stampa(f"[LACUNE] 57014 (statement timeout) su blocco di {len(pezzo)} lega-stagioni: "
-                          f"dimezzo e ritento ({meta} + {len(pezzo) - meta})")
-                    elabora(pezzo[:meta])
-                    elabora(pezzo[meta:])
-                    return
-                k = pezzo[0]
-                stampa(f"[LACUNE] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
-                      f"(non verificata questo giro, nessuno stato scritto, si riprova al prossimo giro)")
-                degradate.append(k)
-                return
-            raise
-        per_coppia: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-        for r in _righe_rpc(resp):
-            per_coppia.setdefault((int(r["league_id"]), int(r["season_year"])), []).append(r)
-        for k, righe in per_coppia.items():
-            if k in out:
-                _applica_righe(out[k], righe, con_id=False)
+    def elabora(pezzo: List[Tuple[int, int]]) -> bool:
+        ebbe_57014 = False
 
-    lista = list(out)
-    for i in range(0, len(lista), blocco):
-        elabora(lista[i:i + blocco])
+        def _tenta(sotto_pezzo: List[Tuple[int, int]]) -> None:
+            nonlocal ebbe_57014
+            try:
+                resp = sb.rpc("season_gaps_summary", {"p_league_ids": [p[0] for p in sotto_pezzo],
+                                                      "p_season_years": [p[1] for p in sotto_pezzo]}).execute()
+            except Exception as e:
+                if _e_funzione_mancante(e):
+                    raise MigrazioneMancante(
+                        f"RPC season_gaps_summary assente: applica {MIGRAZIONE} (errore: {e})") from e
+                if _e_statement_timeout(e):
+                    ebbe_57014 = True
+                    if len(sotto_pezzo) > 1:
+                        meta = len(sotto_pezzo) // 2
+                        stampa(f"[LACUNE] 57014 (statement timeout) su blocco di {len(sotto_pezzo)} "
+                              f"lega-stagioni: dimezzo e ritento ({meta} + {len(sotto_pezzo) - meta})")
+                        _tenta(sotto_pezzo[:meta])
+                        _tenta(sotto_pezzo[meta:])
+                        return
+                    k = sotto_pezzo[0]
+                    stampa(f"[LACUNE] 57014 anche su lega {k[0]} stagione {k[1]} DA SOLA: DEGRADATA "
+                          f"(non verificata questo giro, nessuno stato scritto, si riprova al prossimo giro)")
+                    degradate.append(k)
+                    return
+                raise
+            per_coppia: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+            for r in _righe_rpc(resp):
+                per_coppia.setdefault((int(r["league_id"]), int(r["season_year"])), []).append(r)
+            for k, righe in per_coppia.items():
+                if k in out:
+                    _applica_righe(out[k], righe, con_id=False)
+
+        _tenta(pezzo)
+        return ebbe_57014
+
+    esegui_a_blocchi_adattivo(list(out), elabora, blocco, blocco_massimo, costo_freddo_per_coppia,
+                              soglia_sicura_sec, stampa, orologio, "LACUNE")
     return out, degradate
 
 
