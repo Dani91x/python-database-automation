@@ -62,6 +62,9 @@ logger = logging.getLogger(__name__)
 
 MIN_STAKE = 2.0
 _EPS = 1e-9
+# CANTIERE T (28/09): chiusura PERFETTA = "se vince" e "se perde" entro il
+# centesimo (regola dell'utente; controllo K5 del banco, EPS 0,011)
+_TOLL_CHIUSA = 0.01 + 1e-6
 
 # CLOSING (fix audit #7): dopo il green/stop finale la posizione va SORVEGLIATA
 # finche' il blotter non e' pari — mai un FLAT dichiarato col solo hedge piazzato.
@@ -862,6 +865,31 @@ class TennisProStrategy(BaseStrategy):
         trade["close_wait"] = 0
         self._trade[market.market_id] = trade
 
+    @staticmethod
+    def _centesimo_migliora(nw: float, nl: float, d: Optional[Dict[str, Any]],
+                            lato_trade: Any) -> bool:
+        """True se la ri-copertura della sorveglianza (stessa quota di
+        `_surveil_closing`: best-lay per un trade BACK, best-back per un LAY,
+        size di `compute_green` al centesimo come la piazza `_place`) porta lo
+        sbilancio entro `_TOLL_CHIUSA` migliorandolo."""
+        if not d:
+            return False
+        p = d.get("bl") if lato_trade == "BACK" else d.get("bb")
+        if p is None or p <= 1.0:
+            return False
+        g = compute_green(nw, nl, p)
+        if g is None:
+            return False
+        side, size, _l = g
+        s = round(float(size), 2)
+        if s < 0.01:
+            return False
+        if side == "LAY":
+            nw2, nl2 = nw - s * (p - 1.0), nl + s
+        else:
+            nw2, nl2 = nw + s * (p - 1.0), nl - s
+        return abs(nw2 - nl2) <= _TOLL_CHIUSA and abs(nw2 - nl2) < abs(nw - nl)
+
     def _surveil_closing(self, market: Any, trade: Dict[str, Any],
                          px: Dict[int, Dict[str, Any]]) -> None:
         """Sorveglianza dello stato CLOSING (fix audit #7).
@@ -879,7 +907,27 @@ class TennisProStrategy(BaseStrategy):
         self._cancel(market, trade.get("staged_order"))
         b, ba, l, la = self._position(market, sel)
         nw, nl = self._net(b, ba, l, la)
-        if self._blotter_letto and ((b + l) <= _EPS or abs(nw - nl) < 0.02):
+        pari = (b + l) <= _EPS or abs(nw - nl) < 0.02
+        # CANTIERE T (28/09, controllo K5 del banco): "pari" era |nw-nl| < 0,02,
+        # cioe' si dichiarava FLAT con fino a 0,0199 EUR di sbilancio (replay
+        # 35794049: se vince -0,09 / se perde -0,11) e il bot, dimenticata la
+        # selezione, la lasciava senza padrone. Regola dell'utente: chiusura
+        # PERFETTA al centesimo. Fra 0,01 e 0,02 la posizione NON e' pari se un
+        # ordine al centesimo al touch la porta entro 0,01: si continua a
+        # governarla (ri-copertura della sorveglianza, place-and-trim). Resta
+        # pari solo se nessun importo al centesimo la migliora (limite della
+        # granularita' di Betfair: una size di 0,01 sposta lo sbilancio di
+        # 0,01 x quota), e lo si DICHIARA una volta.
+        if pari and (b + l) > _EPS and abs(nw - nl) > _TOLL_CHIUSA:
+            if self._centesimo_migliora(nw, nl, px.get(sel), trade.get("side")):
+                pari = False
+            elif trade.get("_residuo_detto") != round(nw - nl, 4):
+                trade["_residuo_detto"] = round(nw - nl, 4)
+                self._emit("residuo_centesimi", sel=sel, se_vince=round(nw, 4),
+                           se_perde=round(nl, 4),
+                           note=("sbilancio sotto 0,02 che nessun importo al "
+                                 "centesimo riduce entro 0,01 alla quota corrente"))
+        if self._blotter_letto and pari:
             # blotter pari: cancella il residuo dell'hedge (un fill tardivo
             # ROVESCEREBBE la posizione appena chiusa) e chiudi davvero.
             # ⚠️ `self._blotter_letto`: un'esposizione che non si e' potuta

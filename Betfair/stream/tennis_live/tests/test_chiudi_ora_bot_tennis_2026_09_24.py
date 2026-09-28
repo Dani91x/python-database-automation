@@ -586,6 +586,11 @@ def test_chiudi_ora_posizione_non_pari_dopo_la_grazia_e_error_mai_stopped(caso, 
     assert len(m.piazzati) == 1
     chiusura = m.piazzati[0]
     abbinata = 1.98 if caso == "blotter_illeggibile" else 1.99   # 1.99: residuo 0,0198
+    # CANTIERE T (28/09): il PRO dichiara pari un residuo fra 0,01 e 0,02 SOLO
+    # se nessun importo al centesimo lo riduce (altrimenti continua a
+    # governarlo). Qui serve il caso "pari per il PRO, non pari per il
+    # runner": residuo dichiarato non riducibile.
+    monkeypatch.setattr(strat, "_centesimo_migliora", lambda *a, **k: False)
     chiusura.responses.current_order = types.SimpleNamespace(
         size_matched=abbinata, size_remaining=0.0,
         average_price_matched=float(chiusura.order_type.price))
