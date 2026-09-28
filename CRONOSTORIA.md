@@ -3685,6 +3685,71 @@ sui nuovi ordini, Safe per modalità, Analytics < 8 s); (2) log dell'action catc
   `hazard_atlas_rpc_scrittura_2026-09-28.sql`. Da controllare alle prossime corse: catchup serale 13:47Z/17-18Z e
   Hazard Atlas del mattino (righe «ritento tra…», riga nuova in `hazard_atlas`).
 
+- **PUSH FATTO**: master `150bd46` = origin (commit `0ffc3c6` E, `3134f9f` F, `150bd46` documenti), indice vuoto,
+  commit a percorsi espliciti.
+- **ONDATA 2 LANCIATA** (carico misurato: CPU 68 %, RAM libera 3,1 GB), tre delegati Sonnet in worktree:
+  - G PAGINE: pulsante «avvia» Safe al primo clic; avvio tennis che spegne il calcio; lista partite 00:00-02:00
+    Roma; Match Replay in GBP; filtro Mode tennis in Live P&L; 22 campi solo-live su banco con righe live finte; 14
+    controlli ad app spenta lasciati da H. Referto `CANTIERE_G_PAGINE.md`.
+  - K AVVIATORE: watchdog per scalper-service e ponte tennis; spegnimento ordinato al posto di `taskkill /T /F`;
+    watchdog che propaga l'arresto; `net_retry.is_transient`. Referto `CANTIERE_K_AVVIATORE.md`.
+  - M TEST E AMBIENTE: la suite non deve dipendere dal `.env` vero (111 rossi in Omega con gli interruttori accesi);
+    fixture autouse in `Betfair/conftest.py`; nessun test verso DB vero o Betfair. Referto
+    `CANTIERE_M_TEST_E_AMBIENTE.md`.
+- Report giornaliero dell'utente: fermo alla fase 11 (foglio Analytics) dalle 15:54:27 PC, nessuna riga nuova nel
+  log; non toccato.
+
+- **MIGRAZIONI DEI CANTIERI E ED F APPLICATE dall'utente e VERIFICATE da me sul DB**: `season_detail_gaps` viva usa
+  NOT EXISTS (niente piu' VALUES); `hazard_atlas_salva_versione` presente, SECURITY DEFINER,
+  `statement_timeout=120s`, eseguibile solo da `service_role` (anon e authenticated: no). MISURA MIA con la funzione
+  nuova: blocco di 20 coppie leghe 1-2 a freddo 2.227 ms, a caldo 112 ms; blocco di 20 coppie dei campionati maggiori
+  (stagioni 2025-2026) a FREDDO 17.048 ms (13.719 letture da disco) = oltre il limite di 8 s → il dimezzamento del
+  codice lo salva, ma serve un blocco iniziale piu' piccolo e adattivo: rifinitura chiesta al delegato E.
+
+- **PIANO DECISO DALL'UTENTE (28/09, testuale in sostanza)**: OGGI si finiscono tutti i cantieri («massima qualita'
+  possibile e massima velocita'»); DOMANI 29/09 dal mattino prova in PAPER per tutta la giornata, con alcune
+  modifiche leggere ai bot; POI il live. Promemoria dovuto per domani: ogni modifica a un bot passa dal replay rapido
+  del banco prima di tornare in paper; il live solo dopo che il paper ha confermato.
+
+- **ORDINE DELL'UTENTE RIBADITO (28/09, testuale): «TUTTI I BOT DEVONO AVERE LA POSSIBILITA' DI USCITE MANUALI,
+  OVVERO APPROVATE DA ME, OPPURE TOTALMENTE AUTOMATICHE! SERVE UN PULSANTE… OGNI BOT, PER ORA, DEVE PASSARE DA ME»**.
+  ERRORE MIO: gli avevo riproposto come decisione le uscite dello sniper (consigliando l'automatico). Regola ora nel
+  brief standard §2 punto 4-bis e in memoria; l'eccezione «scalper tennis sempre automatico» del 25/09 e' SUPERATA.
+  **Cantiere N lanciato** (Opus, worktree): audit bot per bot dell'interruttore e del pulsante, correzioni, test.
+- **CANTIERE D2 (tennis e scalper) prima consegna ACCETTATA** (worktree `agent-aa4ee030442dc331f`, fotografata in
+  scratchpad): minimo .it da documentazione (BACK 2,00 a passi di 0,50; LAY 0,50); apertura tennis sotto il minimo
+  portata al minimo (canale Safe tennis e 4 bot); paper tennis con le stesse regole di size del live; niente restart
+  forzato in paper; commissione paper sul netto di mercato; `is_flat` dello sniper corretto; sniper che legge
+  l'interruttore; tetto auto-mode tennis per modalita'. 50 test nuovi verdi rilanciati da me, 3 mutazioni mie rosse.
+  In lavorazione (seconda consegna): chiusure tennis ESATTE al centesimo (oggi arrotondate al gradino da 0,50: viola
+  la regola dell'utente), comandi dei replay, scenario sniper del banco.
+- **CANTIERE D1 (Safe e Mike) prima consegna ARRIVATA** (worktree `agent-ae168c1f19f739518`, fotografata; DA
+  VERIFICARE): doppio fill Safe, riserva orfana Mike, timeout DB 5 s/20 s per Safe e Mike, decadenza e riconferma
+  delle proposte d'uscita, regolazione delle posizioni su partite finite, aggregati per modalita', lay appoggiata alla
+  sospensione. REPERTO GRAVE: **Mike in paper esegue con un simulatore di casa (nessun bet delay, coda, parziali)**:
+  non e' specchio del live. Seconda consegna avviata: Mike sul CANALE del runner; stima del delegato 5-7 ore.
+- **CANTIERE J (flusso interrotto) prima consegna ARRIVATA** (worktree `agent-ab47a4c326f664618`, fotografata; DA
+  VERIFICARE): segnale `payload.flusso` per mercato nello scanner, veto in Safe, Mike e Omega, modulo
+  `Betfair/stream/flusso_prezzi.py`. Non fatto: riserva di prezzi e segnale di stream muto per i runner, UI.
+- **CANTIERE B (capacita' mercati) CERTIFICATO DA ME** (seconda consegna): 40 test verdi (3 con connessione TLS vera
+  su 127.0.0.1), mercati con soldi in testa al frammento 0, liste sostituite e non modificate sul posto; 8 mutazioni
+  mie in tutto rosse. Da integrare DOPO il cantiere A (stessi punti di `runner.py` e `auto_follow.py`).
+
+- **DOMANDA DELL'UTENTE: «perche' Mike e' stato montato sul motore sbagliato?»** Ricostruzione dai fatti: 11/09 Mike
+  costruito col simulatore paper di allora (come Omega e Safe); 24/09 h09:45 l'utente decide «Mike su coda come gli
+  altri», piano F5 Safe → F6 Omega → F7 Mike → F8 Safe tennis; F7 resta «in attesa che scenda il carico» (righe
+  ~2541 e ~2570) e NON viene mai lanciato ne' riscritto fra gli aperti; il 26/09 ho certificato la strada unica
+  guardando solo Omega e Safe e su Mike ho corretto il prezzo del simulatore (R7) invece del percorso. ERRORI MIEI:
+  lavoro rimandato sparito dal punto di ripresa; regola generale certificata su 2 bot. REGOLA: ogni lavoro rimandato
+  resta scritto nel punto di ripresa finche' non e' chiuso; una regola «per tutti i bot» si certifica bot per bot.
+- **CANTIERE J verifica mia sulla copia separata** (`scratchpad/verifica/J`): 22 test nuovi verdi; mutazioni mie:
+  «stato dello scanner vecchio ignorato» rossa, «Mike ordina a flusso fermo» rossa, «Safe guarda solo il
+  MATCH_ODDS e non il mercato del segnale» SOPRAVVISSUTA; due non applicate (Omega decisione, Safe uscita). Da
+  rimandare.
+- **CANTIERE A seconda consegna ARRIVATA** (doppia conferma a 120 s e guardia «soldi dentro» sul catalogo vuoto,
+  calcio e tennis; `arresto_ordinato.py` + `arresto_worker` nei runner; SPEC dello spegnimento; note per il rebase di
+  B): da verificare. **CANTIERE E rifinitura ARRIVATA** (blocco adattivo, parte da 7 coppie): da verificare.
+
 ### PUNTO DI RIPRESA IN CASO DI INTERRUZIONE (28/09)
 Ondata 1 in corso: i delegati lavorano nei worktree `.claude/worktrees/agent-*` creati oggi (lavoro NON committato: non
 toccarli con `checkout`/`remove`); referti attesi in `<worktree>/AUDIT_2026-09-28/CANTIERE_*.md` (A-F) e nel checkout

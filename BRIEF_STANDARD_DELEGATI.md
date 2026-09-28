@@ -24,8 +24,14 @@ Comunica in italiano. Codice ASCII-only, commenti in italiano, stile del file ch
    stessi rifiuti. L'unica differenza ammessa: i soldi sono finti. Ogni ramo `paper` che si
    comporta diversamente dal live e' un BUG da correggere, non una scelta.
 3. Paper e live non si sommano mai. Calcio e tennis non si mischiano.
-4. All'avvio dell'app nessun bot opera; i bot li accende solo l'utente. Uscite automatiche
-   SPENTE di default; aiuti statistici ACCESI di default.
+4. All'avvio dell'app nessun bot opera; i bot li accende solo l'utente. Aiuti statistici
+   ACCESI di default.
+4-bis. **USCITE: OGNI BOT, NESSUNO ESCLUSO, HA UN PULSANTE** (ribadito il 28/09, gia' detto il
+   17/09 e il 25/09: NON richiederlo MAI all'utente). Due posizioni: MANUALE = l'uscita, in
+   profitto o in perdita, diventa una proposta che l'utente approva; AUTOMATICO = il bot
+   chiude da solo. Di serie e dopo ogni riavvio: MANUALE. Nessuna eccezione «per strategia»
+   (nemmeno scalper, sniper, scalper tennis). Restano automatiche solo le protezioni di
+   sicurezza (freno, chiusura forzata a fine finestra, divergenza dello specchio, tetti).
 5. UN canale dati per tutti i bot, nessuna chiamata Betfair duplicata; tutto passa dai canali
    al millisecondo, il DB a 30 s e' solo ripiego.
 6. **Resilienza**: dopo una caduta di rete o un riavvio ogni componente torna a funzionare da
