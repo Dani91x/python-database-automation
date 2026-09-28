@@ -3859,3 +3859,33 @@ SOLO quando D1-seconda e' certificata e integrata (mai col simulatore vecchio).
 - Atlante: col modo «domanda» nessuno legge la riga da 14 MB: scrivere solo la filigrana?
 - Report giornaliero: 4 difetti minori (proposte, nessuna modifica fatta).
 - Scalper e sniper a uscite manuali: rischio mentre l'utente non risponde (lo dira' il cantiere N con gli esempi).
+
+**SECONDO AGGIORNAMENTO DEL CHECKPOINT (28/09, ore 20:10; master = origin = `369a523`)** — cio' che segue
+SOSTITUISCE le voci 3, 4 e 5 qui sopra per K, G, J e per i residui di D1.
+| Cantiere | Commit | Verifica mia |
+|---|---|---|
+| K avviatore (watchdog di tutti i figli, spegnimento ordinato, file ARRESTO) | `3e96c82` | diff riletto, test dell'avviatore rilanciati; una mutazione mia sullo scanner SOPRAVVISSUTA → rimandata (K2) |
+| G pagine (ogni bot indipendente, «avvia» di Safe, giorno di Roma, Replay in EUR) | `369a523` | test delle pagine e tsc rilanciati; la voce 2 e' integrata perche' l'utente ha deciso «OGNI BOT E' INDIPENDENTE» |
+
+Replay rieseguiti da me (banco comune, `--worker 1`, ambiente neutro):
+- `certifica omega 35760084 --scenari rapidi --trasporto entrambi`: tutti gli scenari OK, PARITA' coda/canale
+  RAGGIUNTA, 3 min 11 s. Referto: `AUDIT_2026-09-28/replay/omega_rapidi_35760084_2026-09-28.txt`.
+- `certifica mike 35760084 --scenari tutti --trasporto canale`: LANCIATO alle 20:03, in corso (uscita in
+  `scratchpad/replay/mike_tutti_canale.out.txt`). Se la sessione cade: RILANCIARLO, non e' certificato finche' non
+  c'e' il referto in `AUDIT_2026-09-28/replay/`.
+
+Delegati AL LAVORO alle 20:10 (chi riprende NON li rilancia: legge il worktree e il referto):
+| Sigla | Compito | Dove |
+|---|---|---|
+| D2 | chiusure tennis esatte, scenario sniper del banco, patch su master | worktree `agent-aa4ee030442dc331f` |
+| N | pulsante uscite su OGNI bot; patch da rigenerare su master (`cantiere_n_blocchi_1_2.patch`, `cantiere_n_blocco_3.patch`); schede parametri Omega/Mike | worktree `agent-a29743622286cd394` |
+| J2 | flusso interrotto portato su master (parte dal lavoro di J), stream muto collegato, riserva dei runner, UI | agente `ab0194ff88b5ea082` |
+| P | residui di D1: Safe senza fill di casa, place-and-trim, timeout DB Omega/scanner, R-2 Safe, minimo tennis sul REST, test rosso preesistente dell'atlante | agente `aa22788f6dc13aca9` |
+| K2 | test di COMPORTAMENTO dell'arresto (la mutazione sopravvissuta), sessioni scalper | worktree `agent-a5fd58f2bfd692331` |
+| G2 | 33 campi solo-live verificati sul banco (sola lettura, nessun worktree) | agente `a655cb078831f5739` |
+
+**ORDINE DEI PROSSIMI PASSI (aggiornato)**: 1) esito del replay Mike «tutti» → referto in `AUDIT_2026-09-28/replay/`;
+2) a ogni consegna: diff riletto, test rilanciati, mutazioni mie, integrazione a percorsi espliciti, push;
+3) replay rapidi UNO per bot: safe_base, safe_esatto, safe_punta, safe_tennis (dopo P e D2), i 4 bot tennis e
+scalper_calcio (dopo D2 e N); 4) suite intere UNA volta, `npx tsc`, vitest, `npm run build`; 5) elenco finale
+all'utente (cose da fare e da decidere); 6) pulizia dei worktree e, per ultima, storia git.
