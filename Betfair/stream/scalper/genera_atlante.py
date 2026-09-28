@@ -892,35 +892,107 @@ def carica_fixtures(lettore: LettoreDB, stati: Dict[str, Dict[str, Any]], leghe:
             stati[l]["fixtures"] = []
 
 
+class ScritturaLegheParziale(RuntimeError):
+    """R-28-2: ``salva_leghe`` tenta TUTTI i blocchi anche se uno resta KO;
+    se alla fine qualcosa non e' stato scritto alza questa (sottoclasse di
+    RuntimeError: chi la cattura con ``except Exception`` non deve cambiare
+    nulla), con l'elenco preciso in ``non_scritte``."""
+
+    def __init__(self, msg: str, *, non_scritte: List[str], scritte: int) -> None:
+        super().__init__(msg)
+        self.non_scritte = non_scritte
+        self.scritte = scritte
+
+
 class _Scrittore:
     """SCRITTURA su DB: solo la action notturna (``--scrivi-db``). Upsert dello
     stato delle SOLE leghe toccate + una riga nuova in ``hazard_atlas``;
-    tiene le ultime ``tieni`` versioni."""
+    tiene le ultime ``tieni`` versioni.
 
-    def __init__(self, url: str, key: str) -> None:
+    R-28-2 (28/09): la scrittura andava in HTTP 500 (statement_timeout 57014
+    del ruolo ``authenticator``, che vale anche per ``service_role`` via
+    PostgREST perche' resta il login della sessione, sotto il carico delle
+    action concorrenti sullo stesso Daily) e faceva ROSSA l'intera run anche
+    quando la maggior parte delle leghe era gia' stata scritta con successo.
+    Ritentativi su 5xx/rete con attese crescenti, STESSA POLITICA di
+    ``LettoreDB`` (un errore del DB non vuol dire che il dato e' sbagliato);
+    un 4xx e' deterministico e si propaga subito. Un blocco di leghe che
+    resta KO dopo i ritentativi NON ferma i blocchi successivi; la versione
+    globale si tenta comunque (fa avanzare la filigrana anche se qualche
+    lega e' rimasta KO); la pulizia delle versioni vecchie non fa mai
+    fallire la scrittura buona appena fatta."""
+
+    def __init__(self, url: str, key: str, *, attese: Tuple[float, ...] = (5, 30, 120, 300),
+                 timeout: float = 300.0, sleep: Callable[[float], None] = time.sleep) -> None:
         self.url = url.rstrip("/")
         self.key = key
+        self.attese = attese
+        self.timeout = timeout
+        self.sleep = sleep
 
     def _req(self, metodo: str, path: str, corpo: Any = None, prefer: str = "") -> None:
+        """POST/DELETE con ritentativi su 5xx/rete (attese crescenti, come
+        ``LettoreDB.get``). Un 4xx e' un dato/richiesta invalidi (deterministico):
+        si propaga SUBITO, senza ritentare a vuoto."""
         data = json.dumps(corpo).encode("utf-8") if corpo is not None else None
-        req = urllib.request.Request(f"{self.url}/rest/v1/{path}", data=data, method=metodo)
-        req.add_header("apikey", self.key)
-        req.add_header("Authorization", "Bearer " + self.key)
-        req.add_header("Content-Type", "application/json")
-        if prefer:
-            req.add_header("Prefer", prefer)
-        with urllib.request.urlopen(req, timeout=300) as r:
-            r.read()
+        for tent in range(len(self.attese) + 1):
+            req = urllib.request.Request(f"{self.url}/rest/v1/{path}", data=data, method=metodo)
+            req.add_header("apikey", self.key)
+            req.add_header("Authorization", "Bearer " + self.key)
+            req.add_header("Content-Type", "application/json")
+            if prefer:
+                req.add_header("Prefer", prefer)
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    r.read()
+                return
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as ex:
+                code = getattr(ex, "code", None)
+                dettaglio = ""
+                if isinstance(ex, urllib.error.HTTPError):
+                    try:
+                        dettaglio = ex.read().decode("utf-8", "replace")[:500]
+                    except Exception:  # noqa: BLE001
+                        dettaglio = ""
+                if code is not None and code < 500:
+                    raise
+                if tent >= len(self.attese):
+                    raise
+                logger.warning("[atlante] scrittura %s KO (%s) %s, ritento tra %ss",
+                               path, code or ex, dettaglio, self.attese[tent])
+                self.sleep(self.attese[tent])
+        raise RuntimeError("irraggiungibile")
 
     def salva(self, stati: Dict[str, Dict[str, Any]], toccate: List[str],
-              atlas: Dict[str, Any], tieni: int = 7) -> None:
-        self.salva_leghe(stati, toccate)
-        self.salva_versione(atlas, tieni)
+              atlas: Dict[str, Any], tieni: int = 7) -> List[str]:
+        """Ritorna gli elementi rimasti NON scritti dopo i ritentativi (vuoto
+        = tutto scritto). Una lega/blocco KO non ferma le altre (tutti i
+        blocchi si tentano comunque); la versione globale si tenta anche se
+        qualche lega e' rimasta KO."""
+        non_scritte: List[str] = []
+        try:
+            self.salva_leghe(stati, toccate)
+        except ScritturaLegheParziale as ex:
+            non_scritte.extend(ex.non_scritte)
+        try:
+            self.salva_versione(atlas, tieni)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as ex:
+            logger.error("[atlante] versione globale (hazard_atlas) NON scritta dopo i "
+                        "ritentativi: %s", ex)
+            non_scritte.append("versione_globale")
+        return non_scritte
 
     def salva_leghe(self, stati: Dict[str, Dict[str, Any]], toccate: List[str]) -> int:
         """Upsert per ``league_id`` dello stato grezzo delle leghe indicate
-        (solo quelle con la lista dei contati caricata). Ritorna le righe."""
+        (solo quelle con la lista dei contati caricata). Ritorna le righe
+        scritte con successo. Un blocco di 20 che resta KO dopo i
+        ritentativi NON ferma i blocchi successivi (si tentano TUTTI); se
+        alla fine qualcosa e' rimasto KO si alza ``ScritturaLegheParziale``
+        (stessa firma/contratto di prima per chi la cattura con
+        ``except Exception``: vedi ``atlante_a_domanda.py``), con l'elenco
+        preciso delle leghe non scritte in ``.non_scritte``."""
         righe = []
+        id_riga = []
         for l in toccate:
             s = stati.get(l)
             if s is None or s.get("fixtures") is None:
@@ -931,24 +1003,86 @@ class _Scrittore:
                           "updated_at": s.get("updated_at"),
                           "stato": {k: v for k, v in s.items() if k != "fixtures"},
                           "fixtures": s["fixtures"]})
+            id_riga.append(l)
+        scritte = 0
+        non_scritte: List[str] = []
         for i in range(0, len(righe), 20):
-            self._req("POST", "hazard_atlas_leghe?on_conflict=league_id", righe[i:i + 20],
-                      "resolution=merge-duplicates,return=minimal")
-        return len(righe)
+            blocco_id = id_riga[i:i + 20]
+            try:
+                self._req("POST", "hazard_atlas_leghe?on_conflict=league_id", righe[i:i + 20],
+                          "resolution=merge-duplicates,return=minimal")
+                scritte += len(blocco_id)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as ex:
+                logger.error("[atlante] leghe NON scritte dopo i ritentativi (%s): %s",
+                            ",".join(blocco_id), ex)
+                non_scritte.extend(blocco_id)
+        if non_scritte:
+            raise ScritturaLegheParziale(
+                f"{len(non_scritte)} lega/leghe non scritte dopo i ritentativi: "
+                f"{','.join(non_scritte)}", non_scritte=non_scritte, scritte=scritte)
+        return scritte
+
+    def _scrivi_riga(self, generated_at: str, n_leghe: int, n_partite: int,
+                     watermark_event_id: int, atlas: Dict[str, Any]) -> None:
+        """R-28-2 punto 2 (coordinatore, 28/09): la POST diretta manda l'atlante
+        come TESTO JSON, non la dimensione compressa su disco: la riga del
+        27/09 (188 leghe) pesa 14.465.171 byte come corpo della richiesta
+        (misura del coordinatore), quella del 26/09 (21 leghe) 1.961.888 —
+        una crescita marginale di ~75 KB/lega, con 1.244 leghe osservate in
+        `matches` (oggi 185 nello stato: c'e' ancora molta strada). Sotto lo
+        statement_timeout di 8 s di ``authenticator`` (la doc Supabase conferma:
+        "service_role: none (defaults to the authenticator role's 8s timeout
+        if unset)"), la sola POST diretta finira' per sforare SEMPRE, con
+        qualunque numero di ritentativi, quando la riga sara' abbastanza
+        grande da non stare mai sotto 8 s (indipendentemente dal carico).
+
+        Si usa quindi PRIMA la RPC dedicata ``hazard_atlas_salva_versione``
+        (``migrations/hazard_atlas_rpc_scrittura_2026-09-28.sql``, NON
+        applicata: la applica l'utente), che alza il timeout SOLO per questa
+        scrittura (``SET statement_timeout`` sulla funzione, permesso solo a
+        ``service_role``: niente ``ALTER ROLE``, che cambierebbe il limite di
+        tutto il progetto). Se la RPC non esiste ancora (42883/PGRST202 ->
+        404: migrazione non applicata), si ripiega SUBITO sulla POST diretta
+        di oggi (stessa `_req`, stessi ritentativi): il codice puo' andare su
+        master prima che la migrazione sia applicata, senza run rosse nel
+        frattempo."""
+        corpo = {"generated_at": generated_at, "n_leghe": n_leghe, "n_partite": n_partite,
+                "watermark_event_id": watermark_event_id, "payload": atlas}
+        try:
+            self._req("POST", "rpc/hazard_atlas_salva_versione", {
+                "p_generated_at": generated_at, "p_n_leghe": n_leghe, "p_n_partite": n_partite,
+                "p_watermark_event_id": watermark_event_id, "p_payload": atlas}, "return=minimal")
+            return
+        except urllib.error.HTTPError as ex:
+            if ex.code != 404:
+                raise
+            logger.warning("[atlante] RPC hazard_atlas_salva_versione assente (migrazione "
+                           "migrations/hazard_atlas_rpc_scrittura_2026-09-28.sql non ancora "
+                           "applicata?): ripiego sulla POST diretta su hazard_atlas.")
+        self._req("POST", "hazard_atlas", corpo, "return=minimal")
 
     def salva_versione(self, atlas: Dict[str, Any], tieni: int = 7) -> None:
         """Una riga nuova in ``hazard_atlas`` (atlante assemblato + filigrana);
-        tiene le ultime ``tieni``."""
+        tiene le ultime ``tieni``. La pulizia delle versioni vecchie e' solo
+        manutenzione: se resta KO dopo i ritentativi si dichiara e si
+        continua, non deve far sparire la scrittura buona appena fatta."""
         meta = atlas["meta"]
-        self._req("POST", "hazard_atlas", {
-            "generated_at": meta["generated_at"], "n_leghe": meta["n_leagues"],
-            "n_partite": meta["n_fixtures_used"], "watermark_event_id": meta["watermark_event_id"],
-            "payload": atlas}, "return=minimal")
-        vecchie = LettoreDB(self.url, self.key).get(
-            "hazard_atlas", {"select": "id", "order": "generated_at.desc",
-                             "offset": str(tieni), "limit": "100"})
+        self._scrivi_riga(meta["generated_at"], int(meta["n_leagues"]), int(meta["n_fixtures_used"]),
+                          int(meta["watermark_event_id"]), atlas)
+        try:
+            vecchie = LettoreDB(self.url, self.key, attese=self.attese, timeout=self.timeout,
+                                sleep=self.sleep, pausa=0.0).get(
+                "hazard_atlas", {"select": "id", "order": "generated_at.desc",
+                                 "offset": str(tieni), "limit": "100"})
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as ex:
+            logger.warning("[atlante] lettura versioni vecchie da potare KO (non blocca): %s", ex)
+            return
         for r in vecchie:
-            self._req("DELETE", f"hazard_atlas?id=eq.{int(r['id'])}")
+            try:
+                self._req("DELETE", f"hazard_atlas?id=eq.{int(r['id'])}")
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as ex:
+                logger.warning("[atlante] pulizia versione vecchia id=%s KO (non blocca): %s",
+                               r["id"], ex)
 
 
 # ---------------------------------------------------------------------------
@@ -1129,16 +1263,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         scrivi_json_atomico(args.stato_file, {"watermark_event_id": wm, "leghe": stati})
     if args.json:
         scrivi_json_atomico(args.json, atlas)
+    non_scritte: List[str] = []
     if args.scrivi_db:
-        _Scrittore(url, key).salva(stati, sorted(toccate, key=int), atlas)
+        non_scritte = _Scrittore(url, key).salva(stati, sorted(toccate, key=int), atlas)
     riepilogo = {k: atlas["meta"][k] for k in ("generated_at", "n_leagues", "n_fixtures_used",
                                                  "n_goals", "n_teams", "n_h2h_pairs",
                                                  "watermark_event_id")}
     riepilogo["run"] = atlas["meta"]["run"]
+    riepilogo["leghe_non_scritte"] = non_scritte
     if args.confronta and os.path.exists(args.confronta):
         with open(args.confronta, encoding="utf-8") as fh:
             riepilogo["confronto"] = confronta(json.load(fh), atlas)
     print(json.dumps(riepilogo, ensure_ascii=True, indent=1, default=str)[:20000])
+    if non_scritte:
+        # R-28-2: rosso SOLO se dopo tutti i ritentativi resta davvero
+        # qualcosa di non aggiornato; l'elenco e' sopra in "leghe_non_scritte"
+        # (gia' nel log: nessuna lettura extra per chi certifica il run).
+        logger.error("[atlante] SCRITTURA INCOMPLETA: %d elemento/i non aggiornato/i dopo i "
+                    "ritentativi: %s", len(non_scritte), ",".join(non_scritte))
+        return 1
     return 0
 
 

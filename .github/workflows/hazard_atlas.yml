@@ -23,6 +23,16 @@ name: Hazard Atlas (notturno, dopo il Daily)
 #      e il globale parte dal seme v3 finche' le leghe affidabili sono poche.
 # Lo step "Prerequisiti" controlla le tabelle e, se mancano, lo DICE con un
 # errore chiaro (run rossa) invece di un traceback 404.
+#
+# 28/09/2026 - R-28-2: la scrittura finale (genera_atlante._Scrittore) ora
+# ritenta su 5xx/rete con attese crescenti (5, 30, 120, 300 s) per blocco;
+# nella notte del reperto (run 36390445058, HTTP 500 sulla POST unica di
+# hazard_atlas per statement_timeout 57014 del ruolo authenticator, sotto il
+# carico di Retrain ML Models + Monthly Leagues Mapping sullo stesso Daily) un
+# blocco sfortunato può restare in ritentativo per alcuni minuti: timeout del
+# job alzato da 30 a 60 min per lasciare spazio ai ritentativi senza far
+# scadere l'intero step a meta' (che sarebbe un rosso "muto", senza l'elenco
+# di cosa e' rimasto non scritto).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -41,7 +51,7 @@ jobs:
     # backfill fallisce (si aggiorna con quello che c'e'), mai se e' stato annullato.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
