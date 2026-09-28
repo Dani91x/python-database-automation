@@ -947,7 +947,12 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
         # (`certificazione_bot.riga_ordine`, chiave `sostituto`, stessa regola
         # del banco dello scalper calcio). Il comportamento di Betfair sul
         # rimpiazzo in gioco e' un limite dichiarato (referto D2, par.11).
-        params.setdefault("exact_exits", True)
+        # CANTIERE T (28/09) RIPIEGO: per il SOLO scalper tennis le uscite
+        # esatte tornano SPENTE (condotta certificata di prima di D2). Con
+        # `exact_exits=True` il replay del banco (35794049, live/gate-aperto)
+        # dava K6 x10 e 16.613 azioni contro 228/245: debito DICHIARATO verso
+        # la regola delle chiusure esatte, da chiudere con la correzione vera.
+        params.setdefault("exact_exits", bot_key != "tennis_scalper")
     else:
         # OFF: nessun ordine puo' partire (dry-run forzato qui sopra).
         params["size_step"] = 0.0

@@ -105,7 +105,8 @@ def test_scalper_tennis_chiusura_esatta_guidata_dai_book_del_bot(db, banchi,
     `_drive_submins` chiamato SOLO dalla sua `process_market_book`. Ingressi
     spenti coi soli numeri della UI (liquidita' minima irraggiungibile)."""
     b, strat, market, size = _prepara(
-        db, banchi, "tennis_scalper", params={"min_size": 1e12, "min_flow": 1e12})
+        db, banchi, "tennis_scalper", params={"min_size": 1e12, "min_flow": 1e12,
+                                              "exact_exits": True})
     assert strat.exact_exits is True
     slot = strat._slot("1.101", 11)
     o = strat._place(market, 11, "BACK", 2.0, size, floor_min=False, slot=slot)
