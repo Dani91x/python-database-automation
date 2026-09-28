@@ -172,13 +172,18 @@ HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "180"))
 # scanner Safe condiviso, opportunity/anomaly) piu' le due gambe Omega:
 #   MATCH_ODDS, CORRECT_SCORE, HALF_TIME_SCORE, HALF_TIME, BOTH_TEAMS_TO_SCORE,
 #   OVER_UNDER_05, OVER_UNDER_15, OVER_UNDER_25, OVER_UNDER_35, OVER_UNDER_45,
-#   OVER_UNDER_55, OVER_UNDER_65, OVER_UNDER_75  (13 tipi)
+#   OVER_UNDER_55, OVER_UNDER_65, OVER_UNDER_75, OVER_UNDER_85  (14 tipi)
+# 28/09 (cantiere D2): OVER_UNDER_85 aggiunta. Lo SNIPER dello scalper calcio la
+# legge davvero: `scalper_session.SNIPER_MARKET_TYPES` (OU05..OU85, dal 10/07)
+# e `applica_linea_sniper` (linea 8.5 a 7 gol, o come linea parallela). Senza,
+# con la whitelist attiva il raw non la registrerebbe e il banco dello sniper
+# resterebbe cieco oltre i 7 gol. La misura -39% sotto e' del 25/09 (13 tipi).
 # Misura sulle registrazioni _live_raw/* (40 eventi con dati, script del
 # referto): media 19,8 mercati/evento SENZA whitelist, 12,0 CON questa lista
 # (-39%). ATTENZIONE (decisione dell'utente, non presa qui): attivarla riduce
 # anche la registrazione raw per il Replay (niente piu' DOUBLE_CHANCE,
 # HALF_TIME_FULL_TIME, FIRST_HALF_GOALS_*, TO_QUALIFY, FIRST_GOAL_SCORER,
-# EXTRA_TIME, OVER_UNDER_85 nelle registrazioni future: nessun bot li legge
+# EXTRA_TIME nelle registrazioni future: nessun bot li legge
 # oggi, ma un bot futuro che li usasse non li troverebbe piu' nel raw). Il
 # valore va impostato nel .env del checkout principale (LIVE_MARKET_TYPES=...),
 # non qui: la costante resta vuota (tutti i mercati) finche' l'utente non
@@ -188,7 +193,7 @@ HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "180"))
 LIVE_MARKET_TYPES_PROPOSTA: frozenset = frozenset({
     "MATCH_ODDS", "CORRECT_SCORE", "HALF_TIME_SCORE", "HALF_TIME", "BOTH_TEAMS_TO_SCORE",
     "OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45",
-    "OVER_UNDER_55", "OVER_UNDER_65", "OVER_UNDER_75",
+    "OVER_UNDER_55", "OVER_UNDER_65", "OVER_UNDER_75", "OVER_UNDER_85",
 })
 LIVE_MARKET_TYPES: frozenset = frozenset(
     t.strip().upper() for t in os.getenv("LIVE_MARKET_TYPES", "").split(",") if t.strip()
