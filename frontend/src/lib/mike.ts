@@ -493,6 +493,8 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cover_max_goals', label: 'Nessuna copertura oltre (gol)', kind: 'number', step: 1, min: 0, max: 4, hint: 'con più gol la gestione passa al cash-out / HT', group: 'cover' },
     { key: 'cover_rounding', label: 'Arrotondamento (se non esatto)', kind: 'choice', choices: ['ceil', 'floor', 'nearest'], hint: 'usato solo con importi esatti OFF', group: 'cover' },
     { key: 'cover_max_overshoot_pct', label: 'Sovracopertura max %', kind: 'number', step: 5, min: 0, max: 200, hint: 'oltre: si logga cover_overshoot', group: 'cover' },
+    // P5 (29/09, M3.1): la forma della copertura. Specchio di config.py PARAM_SPEC['cover_form'].
+    { key: 'cover_form', label: 'Forma della copertura', kind: 'choice', choices: ['lay_under45', 'back_over45'], hint: 'la strategia e’ la stessa, cambia solo l’ordine con cui Mike si copre. lay_under45 = banca Under 4,5 (importo sempre piazzabile, minimo 0,50 EUR); back_over45 = punta Over 4,5, la forma di prima (minimo 2,00 EUR a passi di 0,50)', group: 'cover' },
     { key: 'exact_sizes', label: 'Importi esatti al centesimo', kind: 'bool', hint: 'on = 3,61 € reali (place-and-trim); off = legalizza a 0,50', group: 'cover' },
     // 17/09 (ordine dell'utente, reperto 25): il freno sui rifiuti ripetuti della
     // copertura. Specchio di Betfair/mike/config.py PARAM_SPEC.
@@ -581,7 +583,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_enabled: true, cover_profit_factor: 1.2, cover_policy: 'auto', cover_wait_hazard_max: 0.06,
     cover_wait_max_min: 10, cover_wait_p4_max: 0.16, cover_good_price: 7, cover_wait_min_gain_pct: 8,
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
-    cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
+    cover_rounding: 'ceil', cover_max_overshoot_pct: 30, cover_form: 'back_over45', exact_sizes: true,
     cover_rifiuti_max: 3, cover_retry_min_s: 15,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
     uscite_automatiche: false,

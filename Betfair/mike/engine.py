@@ -66,6 +66,12 @@ EXIT_KINDS = ("greenup", "profit", "loss", "time", "forced", "manual", "other")
 
 IT_BACK_MIN = 2.0
 IT_BACK_STEP = 0.5
+# 29/09 (M3.1): minimo di una BANCATA sul listino italiano (poi al centesimo).
+# Stesso valore di ``safe_strategy.execution._min_size_live`` per il lato lay.
+IT_LAY_MIN = 0.50
+# forme della copertura (parametro ``cover_form``, M3.1)
+COVER_LAY_U45 = "lay_under45"
+COVER_BACK_O45 = "back_over45"
 # Floor ASSOLUTO di un ordine, col place-and-trim: un centesimo. Sotto il minimo
 # di PIAZZAMENTO (IT_BACK_MIN) l'ordine esiste comunque — si parcheggia il minimo
 # a una quota non abbinabile, si taglia e si riprezza. Vedi
@@ -392,6 +398,10 @@ class CashoutValue:
     # prezzo e non rendono il cash-out incompleto (C2)
     decided: Tuple[Tuple[str, str], ...] = ()
     per_selection_net: Dict[Tuple[str, str], float] = field(default_factory=dict)
+    # 29/09 (M3.3): chiusura scritta sull'ALTRA selezione (selezione, piano) quando
+    # la banca che chiude la copertura-banca sarebbe sotto 0,50 e la puntata
+    # equivalente e' un importo piazzabile diretto (multiplo di 0,50 da 2,00)
+    ripieghi: Dict[Tuple[str, str], Tuple[str, GreenupPlan]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -433,6 +443,25 @@ def cover_residual(liability_under: float, price_over: float, commission: float,
     target = float(factor) * float(liability_under)
     residual = (target - float(already)) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
     return max(0.0, residual)
+
+
+def cover_residual_lay(liability_under: float, commission: float, factor: float,
+                       already: float) -> float:
+    """Importo RESIDUO della copertura come BANCA Under 4,5 (M3.1, lettura A).
+
+    La banca Under 4,5 incassa con 5+ gol il suo importo X, netto commissione
+    X*(1-c). Stesso obiettivo di ``cover_residual``: netto con 5+ gol pari a
+    factor * perdita dell'Under 3,5, meno ``already`` (netto a 5 gol gia'
+    garantito dalle gambe del mercato 4,5). NON dipende dalla quota: la quota
+    decide solo il rischio, X*(q-1). Esempio: 10 x 1,2 / 0,95 = 12,63. Mai negativo."""
+    target = float(factor) * float(liability_under)
+    return max(0.0, (target - float(already)) / (1.0 - float(commission)))
+
+
+def cover_form(params: Dict[str, Any]) -> str:
+    """Forma della copertura scelta (``cover_form``); ignoto = forma di prima."""
+    v = str(params.get("cover_form") or COVER_BACK_O45)
+    return v if v in (COVER_LAY_U45, COVER_BACK_O45) else COVER_BACK_O45
 
 
 def cover_size_residual(stake_under: float, price_over: float, commission: float, factor: float, *,
@@ -483,7 +512,7 @@ def legalize_back_size(size: float, rounding: str = "ceil",
     return (legal, round(overshoot, 4))
 
 
-def cover_legal_size(x: float, params: Dict[str, Any]) -> Tuple[float, float]:
+def cover_legal_size(x: float, params: Dict[str, Any], side: str = "back") -> Tuple[float, float]:
     """Size effettiva della copertura: ESATTA al centesimo (``exact_sizes``, il
     default) oppure legalizzata .it (min 2.00 / passo 0.50) se si sceglie cosi'.
     Ritorna (size, overshoot %).
@@ -501,7 +530,9 @@ def cover_legal_size(x: float, params: Dict[str, Any]) -> Tuple[float, float]:
     sovracopertura pagata.
     """
     x = float(x)
-    if params.get("exact_sizes", True):
+    # 29/09 (M3.1): una BANCATA non ha passi (minimo 0,50, poi al centesimo):
+    # mai legalizzarla come una puntata, nemmeno con ``exact_sizes`` spento.
+    if side == "lay" or params.get("exact_sizes", True):
         return (round(x, 2), 0.0)
     return legalize_back_size(x, str(params.get("cover_rounding", "ceil")))
 
@@ -692,6 +723,46 @@ def selezioni_con_gambe(legs: List[Leg], market: str) -> List[str]:
     return [s for s in (SEL_UNDER, SEL_OVER) if s in presenti]
 
 
+def tolleranza_piatto_ou45(legs: List[Leg]) -> float:
+    """Sotto quale sbilancio il mercato 4,5 e' PIATTO (difetto gia' presente,
+    corretto il 29/09 con P5, decisione del coordinatore).
+
+    Una chiusura si dimensiona al centesimo: banca s = D/p arrotondata, quindi
+    lascia uno sbilancio fino a 0,005 x p (a quota 21 circa 0,10). Prima quel
+    resto, >= 0,01, teneva la selezione "aperta" con una chiusura da 0,00 non
+    eseguibile: partita ferma in LIVE_COVERED "prezzi incompleti" fino al
+    regolamento, rientro impossibile. Regola: piatto se la chiusura che servirebbe,
+    al prezzo dell'ULTIMA chiusura abbinata del mercato, arrotondata al centesimo
+    vale 0,00, cioe' |D| < 0,005 x p. Senza chiusure abbinate resta ``_FLAT_EPS``.
+    Il resto non si perde: e' dentro il risultato bloccato (``locked_pnl``) e la
+    decisione lo scrive (``residuo_non_piazzabile``)."""
+    chiusure = [l for l in legs if l.market == MARKET_OU45 and l.role in CLOSING_ROLES
+                and float(l.matched) > 0 and not l.archived]
+    if not chiusure:
+        return _FLAT_EPS
+    return max(_FLAT_EPS, 0.005 * float(chiusure[-1].fill_price))
+
+
+def residuo_non_piazzabile(legs: List[Leg]) -> Optional[Dict[str, Any]]:
+    """Il resto di arrotondamento del mercato 4,5 considerato piatto, o None se
+    non ce n'e' (sbilancio sotto il centesimo) o se il mercato non e' piatto."""
+    w, l = exposure(legs, MARKET_OU45, SEL_UNDER)
+    d = abs(w - l)
+    tol = tolleranza_piatto_ou45(legs)
+    if d < _FLAT_EPS or d >= tol:
+        return None
+    return {"mercato": MARKET_OU45, "sbilancio": round(d, 4), "tolleranza": round(tol, 4),
+            "se_vince_under": round(w, 2), "se_vince_over": round(l, 2),
+            "nota": "chiusura che servirebbe arrotondata al centesimo = 0,00: resta nel "
+                    "risultato bloccato"}
+
+
+def _tele_residuo(legs: List[Leg]) -> Dict[str, Any]:
+    """Telemetria ``residuo_non_piazzabile`` (vuota se non c'e' resto)."""
+    r = residuo_non_piazzabile(legs)
+    return {"residuo_non_piazzabile": r} if r is not None else {}
+
+
 def _chiave_ou45(legs: List[Leg]) -> Optional[Tuple[str, str]]:
     """La selezione che RAPPRESENTA la posizione sul mercato 4,5 (M3.4), o None
     se il mercato e' piatto.
@@ -710,10 +781,13 @@ def _chiave_ou45(legs: List[Leg]) -> Optional[Tuple[str, str]]:
     sels = selezioni_con_gambe(legs, MARKET_OU45)
     if not sels:
         return None
+    # piatto: sotto il centesimo, o sotto il resto di arrotondamento dell'ultima
+    # chiusura (``tolleranza_piatto_ou45``, correzione del 29/09)
+    tol = tolleranza_piatto_ou45(legs)
     if len(sels) == 1:
         sel = sels[0]
         w, l = exposure(legs, MARKET_OU45, sel)
-        if abs(w - l) < _FLAT_EPS:
+        if abs(w - l) < tol:
             return None
         if (w - l) < 0 and any(g.market == MARKET_OU45 and g.selection == sel
                                and g.side == "lay" and g.role in OPENING_ROLES
@@ -721,7 +795,7 @@ def _chiave_ou45(legs: List[Leg]) -> Optional[Tuple[str, str]]:
             return (MARKET_OU45, SEL_OVER if sel == SEL_UNDER else SEL_UNDER)
         return (MARKET_OU45, sel)
     w, l = exposure(legs, MARKET_OU45, SEL_UNDER)
-    if abs(w - l) < _FLAT_EPS:
+    if abs(w - l) < tol:
         return None
     return (MARKET_OU45, SEL_UNDER if (w - l) > 0 else SEL_OVER)
 
@@ -820,6 +894,42 @@ def net_pnl_by_total(legs: List[Leg], commission: float, max_total: int = 8) -> 
     return out
 
 
+def _banca_di_apertura(legs: List[Leg], market: str) -> bool:
+    """Sul mercato c'e' una BANCA di apertura abbinata (la copertura-banca, M3.1)?"""
+    return any(l.market == market and l.side == "lay" and l.role in OPENING_ROLES
+               and float(l.matched) > 0 and not l.archived for l in legs)
+
+
+def ripiego_chiusura_sotto_minimo(legs: List[Leg], key: Tuple[str, str], plan: GreenupPlan,
+                                  books: Dict[Tuple[str, str], Book],
+                                  place_at_ticks: int = 0) -> Optional[Tuple[str, GreenupPlan]]:
+    """M3.3 (decisione dell'utente 29/09): la copertura-banca si annulla BANCANDO
+    l'Over 4,5; se quella banca e' sotto 0,50 si usa la PUNTATA sull'Under 4,5
+    quando l'importo e' un multiplo di 0,50 da almeno 2,00 (piazzabile diretto);
+    altrimenti resta la banca, diretta come oggi (le chiusure riducono il rischio).
+
+    Vale SOLO per il mercato 4,5 con una banca di apertura (forma nuova): nella
+    forma di oggi nessuna chiusura cambia. Ritorna (selezione, piano) o None."""
+    if key[0] != MARKET_OU45 or plan.side != "lay" or plan.size is None:
+        return None
+    if float(plan.size) >= IT_LAY_MIN - _EPS or not _banca_di_apertura(legs, key[0]):
+        return None
+    altra = SEL_UNDER if key[1] == SEL_OVER else SEL_OVER
+    bk = books.get((key[0], altra))
+    if bk is None:
+        return None
+    w, l = exposure(legs, key[0], altra)
+    alt = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
+                          best_lay_price=bk.best_lay, fraction=1.0,
+                          place_at_ticks=int(place_at_ticks))
+    if not alt.actionable or alt.side != "back":
+        return None
+    s = round(float(alt.size), 2)
+    if s < IT_BACK_MIN - _EPS or abs(round(s / IT_BACK_STEP) * IT_BACK_STEP - s) > 0.005:
+        return None
+    return (altra, alt)
+
+
 def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commission: float,
                   place_at_ticks: int = 0, goals: Optional[int] = None) -> CashoutValue:
     """Valore di cash-out globale: somma dei P&L bloccati chiudendo OGNI selezione ora.
@@ -837,6 +947,7 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
     gross = 0.0
     gross_market: Dict[str, float] = {}
     pos_market: Dict[str, float] = {}
+    ripieghi: Dict[Tuple[str, str], Tuple[str, GreenupPlan]] = {}
     for key in open_selections(legs):
         w, l = exposure(legs, *key)
         won = selection_decided(key[0], key[1], goals)
@@ -855,6 +966,9 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
             if not plan.actionable:
                 complete = False
                 continue
+            alt = ripiego_chiusura_sotto_minimo(legs, key, plan, books, int(place_at_ticks))
+            if alt is not None:
+                ripieghi[key] = alt
             locked = float(min(plan.expected_if_win, plan.expected_if_lose))
         per[key] = round(locked, 2)
         gross += locked
@@ -888,7 +1002,7 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
             per_net[pesante] = round(per_net[pesante] + scarto, 2)
     return CashoutValue(net=net, gross=round(gross, 2), per_selection=per,
                         plans=plans, complete=complete, decided=tuple(decided),
-                        per_selection_net=per_net)
+                        per_selection_net=per_net, ripieghi=ripieghi)
 
 
 # Quante gambe ANNULLATE e mai abbinate si tengono per ruolo nello stato
@@ -1206,7 +1320,12 @@ def smart_cashout(*, cv_net: float, base: float, legs: List[Leg], books: Dict[Tu
     tele.update({"floor": round(floor, 2), "near": near, "hazard": hazard, "pressure": round(float(pressure), 3)})
     if cv_net < floor - _EPS:
         return False, "", tele
-    g = int(goals or 0)
+    if goals is None:
+        # 29/09 (piano Mike M8.4): punteggio ASSENTE non vale zero gol: nessuna
+        # decisione che dipende dai gol
+        tele["punteggio_assente"] = True
+        return False, "", tele
+    g = int(goals)
     if g >= int(params["cashout_smart_goals_hot"]):
         tele["trigger"] = "goals_hot"
         return True, f"punteggio caldo ({g} gol) sopra il profitto minimo", tele
@@ -1332,7 +1451,9 @@ def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optiona
     Ogni dato mancante = si copre (mai attesa al buio). Dopo un gol: attesa del
     solo riprezzo (cover_postgoal_delay_s), poi copertura.
     """
-    g = int(goals or 0)
+    if goals is None:
+        return "wait"           # 29/09 (M8.4): punteggio ASSENTE: si aspetta, mai zero gol
+    g = int(goals)
     if g > int(params["cover_max_goals"]):
         return "skip"
     policy = params.get("cover_policy", "auto")
@@ -1832,6 +1953,24 @@ def cover_place_price(best_back: Optional[float], params: Dict[str, Any]) -> Opt
     return cand if (price_ok(cand) and cand > 1.0) else float(best_back)
 
 
+def cover_place_price_lay(best_lay: Optional[float], params: Dict[str, Any]) -> Optional[float]:
+    """Prezzo LIMITE della copertura come BANCA Under 4,5 (M3.2): il cuscinetto si
+    rovescia, ``cover_place_at_ticks`` tick SOPRA il miglior prezzo lay (si accetta
+    di rischiare un po' di piu' per essere abbinati; Betfair abbina comunque al
+    miglior prezzo disponibile). 1,18 -> 1,20. La size NON si ridimensiona sul
+    limite: l'importo della banca non dipende dalla quota."""
+    if best_lay is None or not price_ok(best_lay):
+        return None
+    n = int(params.get("cover_place_at_ticks") or 0)
+    if n <= 0:
+        return float(best_lay)
+    try:
+        cand = float(ticks_away(float(best_lay), +n))
+    except Exception:  # noqa: BLE001 - prezzo fuori scala: si resta al best
+        return float(best_lay)
+    return cand if price_ok(cand) else float(best_lay)
+
+
 def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
     """Capitale ancora piazzabile sulla partita sotto ``max_liability_per_match``
     (0 = nessun tetto → inf). Clamp DIFENSIVO dentro l'engine: vale anche se il
@@ -1919,8 +2058,11 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
         for viva in ordini_vivi_su(ctx, key[0], key[1], escludi=(role_map[key],)):
             acts.append(Action(kind="cancel", ref=viva.ref, role=viva.role,
                                market=viva.market, selection=viva.selection))
-        acts.append(_place(role_map[key], key[0], key[1], plan.side, plan.price, plan.size,
-                           note=plan.note))
+        # 29/09 (M3.3): banca sotto 0,50 -> puntata equivalente sull'altra
+        # selezione se piazzabile diretta (``ripiego_chiusura_sotto_minimo``)
+        sel_ordine, piano = cv.ripieghi.get(key, (key[1], plan))
+        acts.append(_place(role_map[key], key[0], sel_ordine, piano.side, piano.price, piano.size,
+                           note=piano.note))
     return acts
 
 
@@ -3506,6 +3648,9 @@ def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[flo
     if x_pieno is None:
         return (f, False)
     piu_piccola_piazzabile = SUBMIN_FLOOR if params.get("exact_sizes", True) else IT_BACK_MIN
+    if cover_form(params) == COVER_LAY_U45:
+        # 29/09 (M3.1): una tranche di BANCA sotto 0,50 non e' piazzabile diretta
+        piu_piccola_piazzabile = IT_LAY_MIN
     if float(x_pieno) * f >= piu_piccola_piazzabile - 0.0005:
         return (f, False)
     return (1.0, True)
@@ -3532,6 +3677,10 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                             "prima tranche fra %d s (attesa dal gol)" % int(manca),
                             telemetry={"cover_staged": {"stage": 1, "manca_s": manca,
                                                         "minuto": snap.minute}})
+    if cover_form(params) == COVER_LAY_U45:
+        # 29/09 (M3.1): copertura come BANCA Under 4,5 (stessi controlli, stesso
+        # obiettivo, altro ordine). La forma di prima resta qui sotto, intatta.
+        return _copertura_banca(ctx, snap, params, c, acts, stage)
     # §4.1 — la copertura si dimensiona sull'esposizione NETTA: se una lay di green
     # e' stata abbinata (anche solo in parte) la liability Under e' minore dello
     # stake e coprire lo stake intero comprerebbe Over di troppo (perdita maggiore
@@ -3567,7 +3716,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     # tecnica di mercato, non una valutazione da rifare.
     dopo_gol = (snap.last_goal_ts is not None
                 and snap.now - float(snap.last_goal_ts) < float(params["cover_postgoal_delay_s"]))
-    if timing == "wait" and ctx.cover_forced and not dopo_gol:
+    if timing == "wait" and ctx.cover_forced and not dopo_gol and snap.goals is not None:
         timing = "cover"
     x_pieno = None
     if price_over is not None:
@@ -3603,7 +3752,8 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                                "p4_market": snap.p4_market, "price_over": price_over,
                                "max_min": int(params["cover_wait_max_min"]),
                                "x_now": x_now}}
-        return Decision("LIVE_UNCOVERED", acts, "attendo per coprire", telemetry=tele)
+        return Decision("LIVE_UNCOVERED", acts, "attendo per coprire" if snap.goals is not None
+                        else "copertura: punteggio assente, attendo", telemetry=tele)
     if not size_ok(x_now):
         return Decision("LIVE_COVERED", acts, "copertura gia' sufficiente",
                         updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
@@ -3653,6 +3803,129 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                                          "split_declassato": split_declassato}})
 
 
+def _copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float,
+                     acts: List[Action], stage: int) -> Decision:
+    """La copertura come BANCA Under 4,5 (piano Mike M3.1, M3.2, M3.5).
+
+    ORDINE DELL'UTENTE 29/09: "invece che OVER 4.5 BACK ... DEVE FARE LAY UNDER
+    4.5 ... LA STRATEGIA NON CAMBIA, CAMBIAMO SOLO IL MERCATO". Stesso momento,
+    stesse attese, stesse tranche, stesso freno, stesso ``cover_max_goals``,
+    stesso obiettivo (``cover_profit_factor`` volte la perdita dell'Under 3,5,
+    netto commissione, meno cio' che e' gia' coperto). Cambia l'ordine:
+      * importo = ``cover_residual_lay`` (non dipende dalla quota);
+      * limite = miglior prezzo lay + ``cover_place_at_ticks`` tick (M3.2);
+      * liquidita': TUTTO l'importo al miglior prezzo lay (regola di oggi);
+      * tetto per partita: conta il RISCHIO al prezzo limite, X x (q_lim - 1);
+      * M3.5: UN ordine per l'importo intero; se resta da coprire meno di 0,50
+        (minimo di una bancata) NON si manda un secondo ordine: la posizione si
+        considera coperta e lo si scrive.
+    Libro Under 4,5 assente o senza prezzo lay: si aspetta, col motivo.
+    """
+    liab = under_liability(ctx.legs)
+    already = cover_matched_value(ctx.legs, c)
+    bk = snap.book(MARKET_OU45, SEL_UNDER)
+    q_best = bk.best_lay if (bk is not None and price_ok(bk.best_lay)) else None
+    q_lim = cover_place_price_lay(q_best, params)
+    n_buf = int(params.get("cover_place_at_ticks") or 0)
+    # la quota Over serve solo all'attesa intelligente (``cover_good_price``):
+    # si legge come prima; se manca, l'equivalente della banca Under q/(q-1)
+    bko = snap.book(MARKET_OU45, SEL_OVER)
+    price_over = bko.best_back if (bko is not None and price_ok(bko.best_back)) else None
+    if price_over is None and q_best is not None:
+        price_over = round(float(q_best) / (float(q_best) - 1.0), 4)
+    timing = cover_timing(goals=snap.goals, minute=snap.minute, hazard=snap.hazard,
+                          p4_market=snap.p4_market, last_goal_ts=snap.last_goal_ts,
+                          now=snap.now, params=params, price_over=price_over,
+                          cover_gain_pct=snap.cover_gain_pct)
+    dopo_gol = (snap.last_goal_ts is not None
+                and snap.now - float(snap.last_goal_ts) < float(params["cover_postgoal_delay_s"]))
+    # M8.4 (P2-bis): punteggio ASSENTE non vale zero gol: l'ordine del flusso non
+    # scavalca l'attesa (stessa guardia del ramo della forma di prima)
+    if timing == "wait" and ctx.cover_forced and not dopo_gol and snap.goals is not None:
+        timing = "cover"
+    x_pieno = cover_residual_lay(liab, c, float(params["cover_profit_factor"]), already)
+    frazione, split_declassato = frazione_copertura(stage, params, x_pieno)
+    if split_declassato:
+        stage = 0
+    x_now = float(x_pieno) * frazione
+    base_tele = {"minute": snap.minute, "goals": snap.goals, "x_now": x_now,
+                 "form": COVER_LAY_U45}
+    if timing == "skip":
+        return Decision("LIVE_COVERED", acts, "copertura saltata: troppi gol",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
+    if liab <= 0.0:
+        return Decision("LIVE_COVERED", acts, "nessuna liability Under da coprire",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
+    if bk is None:
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura: libro Under 4.5 assente, si aspetta",
+                        telemetry={"cover_wait": {**base_tele, "reason": "libro_under45_assente"}})
+    if not operabile(bk):
+        return Decision("LIVE_UNCOVERED", acts,
+                        "copertura: mercato Under 4.5 %s, si aspetta la riapertura"
+                        % stato_mercato(bk),
+                        telemetry={"cover_wait": {**base_tele, "reason": "mercato_non_aperto",
+                                                  "stato_mercato": stato_mercato(bk)}})
+    if timing == "wait" or q_best is None or q_lim is None:
+        tele = {"cover_wait": {**base_tele, "hazard": snap.hazard, "p4_market": snap.p4_market,
+                               "price_over": price_over, "price_lay_u45": q_best,
+                               "max_min": int(params["cover_wait_max_min"])}}
+        if q_best is None and timing != "wait":
+            tele["cover_wait"]["reason"] = "nessun_prezzo_lay_under45"
+            return Decision("LIVE_UNCOVERED", acts,
+                            "copertura: nessun prezzo di banca sull'Under 4.5, si aspetta",
+                            telemetry=tele)
+        return Decision("LIVE_UNCOVERED", acts, "attendo per coprire" if snap.goals is not None
+                        else "copertura: punteggio assente, attendo", telemetry=tele)
+    if not size_ok(x_now):
+        return Decision("LIVE_COVERED", acts, "copertura gia' sufficiente",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
+    size, _over = cover_legal_size(x_now, params, side="lay")
+    if size < IT_LAY_MIN - _EPS:
+        # M3.5 - "non voglio operazioni doppie": il resto sotto il minimo di una
+        # bancata non si rincorre con un secondo ordine. Coperta, e lo si dice.
+        return Decision("LIVE_COVERED", acts,
+                        "copertura: resta da coprire %.2f, sotto il minimo di 0,50: "
+                        "si considera coperta (nessun secondo ordine)" % size,
+                        updates={"cover_stage": 0, "cover_forced": False},
+                        telemetry={"cover_resto_sotto_minimo": {**base_tele, "resto": size,
+                                                                "minimo": IT_LAY_MIN}})
+    room = liability_room(ctx, params)
+    if room < 0.01:
+        return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
+    rischio = size * (float(q_lim) - 1.0)
+    if rischio > room + _EPS:
+        # il tetto conta il RISCHIO al prezzo limite (peggior caso), non l'importo
+        size = math.floor(room / (float(q_lim) - 1.0) * 100.0 + _EPS) / 100.0
+        if size < IT_LAY_MIN - _EPS:
+            return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
+                            updates={"cover_skipped": True, "cover_stage": 0,
+                                     "cover_forced": False})
+    if float(bk.lay_size) + _EPS < size:
+        return Decision("LIVE_UNCOVERED", acts,
+                        f"copertura: liquidita {bk.lay_size:.2f} < {size:.2f} al miglior prezzo di banca",
+                        telemetry={"cover_wait": {**base_tele, "reason": "liquidita"}})
+    acts.append(_place("over_cover", MARKET_OU45, SEL_UNDER, "lay", q_lim, size,
+                       note=f"BANCA U4.5 X={x_now:.2f} best={q_best} lim={q_lim} buf={n_buf}t"))
+    etichetta = {1: "copertura banca Under 4.5: prima tranche",
+                 3: "copertura banca Under 4.5: seconda tranche (residuo)"}.get(
+                     stage, "copertura banca Under 4.5")
+    if split_declassato:
+        etichetta = "copertura banca Under 4.5 in una volta (la tranche sarebbe sotto il minimo)"
+    return Decision("LIVE_COVER_PENDING", acts, etichetta,
+                    updates={"cover_stage": stage},
+                    telemetry={"cover": {"x": round(x_now, 2), "size": size, "overshoot_pct": 0.0,
+                                         "price": q_best, "price_limite": q_lim,
+                                         "rischio_al_limite": round(size * (float(q_lim) - 1.0), 2),
+                                         "price_over_equivalente": price_over,
+                                         "liability": liab, "form": COVER_LAY_U45,
+                                         "already": round(already, 2), "minute": snap.minute,
+                                         "stage": stage, "frazione": round(frazione, 3),
+                                         "x_pieno": round(x_pieno, 2),
+                                         "split_declassato": split_declassato}})
+
+
 def _late_persist_cancel(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> List[Action]:
     acts = []
     for leg in ctx.legs:
@@ -3695,6 +3968,10 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
             return Decision("LIVE_COVERED", [], "prima tranche di copertura abbinata", updates=upd)
         upd["cover_stage"] = 0
         return Decision("LIVE_COVERED", [], "copertura abbinata", updates=upd)
+    if leg.is_live and snap.now - leg.placed_at >= float(params["close_retry_s"]) and \
+            ctx.attempts < int(params["close_max_attempts"]) and \
+            cover_form(params) == COVER_LAY_U45:
+        return _riprezzo_copertura_banca(ctx, snap, params, c, leg)
     if leg.is_live and snap.now - leg.placed_at >= float(params["close_retry_s"]) and \
             ctx.attempts < int(params["close_max_attempts"]):
         bk = snap.book(MARKET_OU45, SEL_OVER)
@@ -3739,6 +4016,44 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     return Decision("LIVE_COVER_PENDING", [], "attesa fill copertura")
 
 
+def _riprezzo_copertura_banca(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                              c: float, leg: Leg) -> Decision:
+    """Riprezzo della copertura come BANCA Under 4,5 (M3.1, M3.5): stesso ramo di
+    prima (annulla + ripiazza sul RESIDUO, dimensionato su tutto cio' che e' gia'
+    abbinato sul mercato 4,5), letto sul libro dell'Under 4,5. Il piazzamento
+    nuovo arriva dopo l'annullamento CONFERMATO (``_mai_sovracopertura``). Se la
+    gamba viva e' una punta Over della forma di prima, la stessa guardia fa
+    uscire solo l'annullamento: la banca parte al giro dopo, sul residuo vero.
+    Resto sotto 0,50: si annulla e si considera coperta (nessun secondo ordine)."""
+    bk = snap.book(MARKET_OU45, SEL_UNDER)
+    if bk is not None and not operabile(bk):
+        return Decision("LIVE_COVER_PENDING", [],
+                        "copertura: mercato Under 4.5 %s, nessun riprezzo" % stato_mercato(bk))
+    q_lim = cover_place_price_lay(bk.best_lay if bk is not None else None, params)
+    if bk is None or q_lim is None or leg.remaining <= 0:
+        return Decision("LIVE_COVER_PENDING", [], "attesa fill copertura")
+    liab = under_liability(ctx.legs)
+    already = cover_matched_value(ctx.legs, c)
+    x = cover_residual_lay(liab, c, float(params["cover_profit_factor"]), already)
+    frazione, _declassato = frazione_copertura(int(ctx.cover_stage or 0), params, x)
+    x = round(float(x) * frazione, 4)
+    annulla = Action(kind="cancel", ref=leg.ref, role=leg.role)
+    if not size_ok(x):
+        return Decision("LIVE_COVERED", [annulla], "copertura sufficiente", updates={"attempts": 0})
+    size, _ = cover_legal_size(x, params, side="lay")
+    if size < IT_LAY_MIN - _EPS:
+        return Decision("LIVE_COVERED", [annulla],
+                        "copertura: resta da coprire %.2f, sotto il minimo di 0,50: si "
+                        "considera coperta (nessun secondo ordine)" % size,
+                        updates={"attempts": 0, "cover_stage": 0, "cover_forced": False},
+                        telemetry={"cover_resto_sotto_minimo": {"resto": size,
+                                                                "minimo": IT_LAY_MIN,
+                                                                "form": COVER_LAY_U45}})
+    return Decision("LIVE_COVER_PENDING",
+                    [annulla, _place("over_cover", MARKET_OU45, SEL_UNDER, "lay", q_lim, size)],
+                    "copertura: riprezzo", updates={"attempts": ctx.attempts + 1})
+
+
 def _loss_rule(snap: Snapshot, params: Dict[str, Any]) -> Optional[Tuple[float, str]]:
     """(pct, etichetta) della regola di perdita tollerata applicabile ora, o None."""
     if snap.ht_active and params["ht_loss_exit_enabled"]:
@@ -3751,7 +4066,8 @@ def _loss_rule(snap: Snapshot, params: Dict[str, Any]) -> Optional[Tuple[float, 
 
 def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     if not live_open_selections(ctx.legs, snap.goals):
-        return Decision("FLAT", [], "nessuna esposizione gestibile")
+        return Decision("FLAT", [], "nessuna esposizione gestibile",
+                        telemetry=_tele_residuo(ctx.legs))
     acts = _late_persist_cancel(ctx, snap, params)
     cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]), goals=snap.goals)
     base = _cashout_base(ctx, params)
@@ -3863,7 +4179,8 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
                 return Decision("LIVE_CLOSING", acts, "chiusura residuo",
                                 updates={"attempts": ctx.attempts + 1})
         upd = {"reentry_allowed": ctx.close_reason == "profit", "attempts": 0}
-        return Decision("FLAT", [], f"chiuso ({ctx.close_reason})", updates=upd)
+        return Decision("FLAT", [], f"chiuso ({ctx.close_reason})", updates=upd,
+                        telemetry=_tele_residuo(ctx.legs))
     acts: List[Action] = []
     if ctx.attempts >= int(params["close_max_attempts"]):
         # tentativi esauriti: si resta in attesa (chiusura naturale a fine
@@ -3882,10 +4199,29 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
         plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                best_lay_price=bk.best_lay, fraction=1.0,
                                place_at_ticks=int(params["cashout_place_at_ticks"]))
+        sel_ordine = leg.selection
+        if leg.market == MARKET_OU45 and _banca_di_apertura(ctx.legs, MARKET_OU45):
+            # 29/09 (M3.3): con la copertura-banca la chiusura si riprezza sulla
+            # chiave del MERCATO (banca sulla selezione lunga), col ripiego della
+            # puntata equivalente sotto 0,50. Forma di oggi: ramo non toccato.
+            chiave = _chiave_ou45(ctx.legs)
+            bk_k = snap.book(*chiave) if chiave is not None else None
+            if chiave is not None and bk_k is not None:
+                wk, lk = exposure(ctx.legs, *chiave)
+                plan = compute_greenup(matched_if_win=wk, matched_if_lose=lk,
+                                       best_back_price=bk_k.best_back,
+                                       best_lay_price=bk_k.best_lay, fraction=1.0,
+                                       place_at_ticks=int(params["cashout_place_at_ticks"]))
+                sel_ordine = chiave[1]
+                alt = (ripiego_chiusura_sotto_minimo(
+                    ctx.legs, chiave, plan, snap.books, int(params["cashout_place_at_ticks"]))
+                    if plan.actionable else None)
+                if alt is not None:
+                    sel_ordine, plan = alt
         acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                            selection=leg.selection))
         if plan.actionable:
-            acts.append(_place(leg.role, leg.market, leg.selection, plan.side, plan.price, plan.size))
+            acts.append(_place(leg.role, leg.market, sel_ordine, plan.side, plan.price, plan.size))
     if acts:
         return Decision("LIVE_CLOSING", acts, "chiusura: riprezzo", updates={"attempts": ctx.attempts + 1})
     return Decision("LIVE_CLOSING", [], "attesa fill chiusura")
@@ -3983,9 +4319,9 @@ def _decide_reentry_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
 def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     green = _last(ctx, "reentry_green")
     w, l = exposure(ctx.legs, MARKET_OU45, SEL_UNDER)
-    if abs(w - l) < _FLAT_EPS:
+    if abs(w - l) < tolleranza_piatto_ou45(ctx.legs):
         return Decision("FLAT", _cancel_live(ctx, ("reentry_green",)), "re-ingresso chiuso",
-                        updates={"reentry_done": True})
+                        updates={"reentry_done": True}, telemetry=_tele_residuo(ctx.legs))
     # (green abbinata SOLO in parte e non piu' viva → esposizione non piatta → si
     #  riappoggia una lay per il residuo, sotto)
     bk = snap.book(MARKET_OU45, SEL_UNDER)
@@ -4030,8 +4366,10 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
 def _decide_reentry_green_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     green = _last(ctx, "reentry_green")
     w, l = exposure(ctx.legs, MARKET_OU45, SEL_UNDER)
-    if abs(w - l) < _FLAT_EPS or (green is not None and green.filled and not green.is_live):
-        return Decision("FLAT", [], "re-ingresso chiuso", updates={"reentry_done": True})
+    if abs(w - l) < tolleranza_piatto_ou45(ctx.legs) or (
+            green is not None and green.filled and not green.is_live):
+        return Decision("FLAT", [], "re-ingresso chiuso", updates={"reentry_done": True},
+                        telemetry=_tele_residuo(ctx.legs))
     if green is not None and not green.is_live and green.matched <= 0:
         return Decision("REENTRY_OPEN", [], "chiusura re-ingresso non abbinata")
     if green is not None and green.is_live and snap.now - green.placed_at >= float(params["close_retry_s"]) \

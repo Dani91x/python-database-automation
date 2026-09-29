@@ -201,6 +201,15 @@ PARAM_SPEC: dict[str, Spec] = {
     "cover_max_goals": (2, int, 0, 4, None),
     "cover_rounding": ("ceil", str, None, None, ("ceil", "floor", "nearest")),
     "cover_max_overshoot_pct": (30.0, float, 0.0, 200.0, None),
+    # 29/09 (piano Mike M3.1, pacchetto P5) - FORMA della copertura. La strategia
+    # non cambia (stesso momento, stesso margine, stesse tranche): cambia solo
+    # come si scrive l'ordine. ``lay_under45`` = BANCA Under 4,5 per
+    # perdita Under 3,5 x cover_profit_factor / (1 - commissione), meno cio' che
+    # e' gia' coperto (importo sempre piazzabile, minimo 0,50); ``back_over45`` =
+    # PUNTA Over 4,5 (la forma di prima, soggetta a minimo 2,00 e passi 0,50).
+    # Interruttore di sicurezza: si torna alla forma vecchia dall'app, dal giro
+    # successivo.
+    "cover_form": ("back_over45", str, None, None, ("lay_under45", "back_over45")),
     # importi ESATTI al centesimo (copertura 3.61, stake 1.23): sotto-minimo / fuori passo via
     # Betfair/stream/trading/submin.py (place-and-trim, come Bet Angel/Fairbot). False = legalizza .it
     "exact_sizes": (True, bool, None, None, None),

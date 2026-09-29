@@ -37,6 +37,10 @@ Uso:
     python -m Betfair.mike.tools.synth_mike --caso tutti
     python -m Betfair.stream.backtest.certifica mike _synth_mike_reingresso --scenari base
     python -m Betfair.stream.backtest.certifica mike _synth_mike_prezzo_migliore --scenari base
+    (29/09) casi `reingresso_2gol` (rientro con 2 gol, H1/H2) e `ultimo_ingresso`
+    (ultimo ingresso al segno dei 10 minuti, B6):
+    python -m Betfair.mike.tools.synth_mike --caso reingresso_2gol
+    python -m Betfair.mike.tools.synth_mike --caso ultimo_ingresso
 
 ASCII-only nel codice; i commenti sono in italiano.
 """
@@ -275,7 +279,9 @@ def _quattro(back: float, back_size: float, lay: float, lay_size: float):
 
 def caso_reingresso(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str, Any],
                     cartella: str, event_id: str,
-                    lay_alla_riapertura: float = 1.48) -> Dict[str, Any]:
+                    lay_alla_riapertura: float = 1.48,
+                    primo_gol_min: int = 20,
+                    secondo_gol_min: Optional[int] = None) -> Dict[str, Any]:
     """RE-INGRESSO (§3 Fase 6, controlli H1 e H2) — e insieme lo STATO TERMINALE (A2).
 
     La storia, scritta apposta perche' sui dati veri non e' mai capitata:
@@ -345,7 +351,7 @@ def caso_reingresso(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str,
         pt += PASSO_MS
 
     # ---- 3) IL GOL al 20': sospensione, poi Under 4.5 a 1,60 --------------
-    gol = ko + 20 * 60 * 1000
+    gol = ko + primo_gol_min * 60 * 1000
     while pt < gol:
         istante(pt, u35=u35_live, u45=u45_live, inplay=True, bet_delay=5)
         pt += PASSO_MS
@@ -354,7 +360,23 @@ def caso_reingresso(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str,
     # dopo il gol: Under 3.5 scende, Under 4.5 sale SOPRA il prezzo d'ingresso
     u35_gol = {1: _quattro(1.90, 300, 1.95, 300), 2: _quattro(2.05, 300, 2.10, 300)}
     u45_gol = {1: _quattro(1.60, 300, 1.62, 300), 2: _quattro(2.50, 300, 2.60, 300)}
-    pt = gol + PASSO_MS
+    gol2 = None
+    if secondo_gol_min is not None:
+        # 29/09 (piano Mike M6.1, caso `reingresso_2gol`): dopo il PRIMO gol
+        # l'Under 4.5 resta SOTTO il prezzo d'ingresso (1,40 <= 1,50): il rientro
+        # non scatta con 1 gol; scatta dopo il SECONDO, con l'Under 4.5 a 1,60
+        u45_uno = {1: _quattro(1.40, 300, 1.42, 300), 2: _quattro(3.20, 300, 3.30, 300)}
+        gol2 = ko + int(secondo_gol_min) * 60 * 1000
+        pt = gol + PASSO_MS
+        primo = True
+        while pt < gol2:
+            istante(pt, u35=u35_gol, u45=u45_uno, inplay=True, bet_delay=5,
+                    definizione=primo)
+            primo = False
+            pt += PASSO_MS
+        istante(gol2, u35=u35_gol, u45=u45_uno, status="SUSPENDED", inplay=True,
+                bet_delay=5, definizione=True)
+    pt = (gol2 if gol2 is not None else gol) + PASSO_MS
     fine_primo = ko + 45 * 60 * 1000
     primo = True
     while pt < fine_primo:
@@ -370,7 +392,7 @@ def caso_reingresso(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str,
         pt += PASSO_MS
     istante(fine, u35=u35_gol, u45=u45_gol, status="SUSPENDED", inplay=True,
             bet_delay=5, definizione=True)
-    # 1-0: Under 3.5 VINCE, Under 4.5 VINCE (sortPriority 1 = Under)
+    # 1-0 (o 2-0): Under 3.5 VINCE, Under 4.5 VINCE (sortPriority 1 = Under)
     vinc = {}
     for tipo in (ou35, ou45):
         per = _sel_per_priorita(modelli[tipo]["market_definition"])
@@ -399,11 +421,19 @@ def caso_reingresso(modelli: Dict[str, Dict[str, Any]], modello_score: Dict[str,
         tp += 60_000
     # il ritardo vero dell'IPS: il gol arriva sul tabellone 3 s dopo che il
     # mercato si e' sospeso (§6.1 del processo: stesso ritardo della produzione)
-    punti.append((gol + 3_000, 20, 1, 0))
-    minuto = 21
+    punti.append((gol + 3_000, primo_gol_min, 1, 0))
+    minuto = primo_gol_min + 1
     tp = gol + 63_000
+    casa = 1
     while tp < fine:
-        punti.append((tp, minuto, 1, 0))
+        if gol2 is not None and casa == 1 and tp >= gol2 + 3_000:
+            # il secondo gol, con lo stesso ritardo IPS di 3 s
+            punti.append((gol2 + 3_000, int(secondo_gol_min), 2, 0))
+            casa = 2
+            minuto = int(secondo_gol_min) + 1
+            tp = gol2 + 63_000
+            continue
+        punti.append((tp, minuto, casa, 0))
         minuto += 1
         tp += 60_000
     scores = scrivi_punteggi(cartella, event_id, modello_score, punti)
@@ -428,7 +458,120 @@ def caso_prezzo_migliore(modelli: Dict[str, Dict[str, Any]],
                            lay_alla_riapertura=1.44)
 
 
-CASI = {"reingresso": caso_reingresso, "prezzo_migliore": caso_prezzo_migliore}
+def caso_reingresso_2gol(modelli: Dict[str, Dict[str, Any]],
+                         modello_score: Dict[str, Any], cartella: str,
+                         event_id: str) -> Dict[str, Any]:
+    """RIENTRO CON DUE GOL (29/09, piano Mike M6.1, controlli H1 e H2).
+
+    Come `reingresso`, ma i gol del primo tempo sono DUE (15' e 25'): dopo il
+    primo l'Under 4.5 resta a 1,40, sotto il prezzo d'ingresso (1,50), quindi
+    il rientro NON scatta con 1 gol; dopo il secondo sale a 1,60 e Mike rientra
+    con 2 gol segnati. Finisce 2-0.
+    """
+    return caso_reingresso(modelli, modello_score, cartella, event_id,
+                           primo_gol_min=15, secondo_gol_min=25)
+
+
+def caso_ultimo_ingresso(modelli: Dict[str, Dict[str, Any]],
+                         modello_score: Dict[str, Any], cartella: str,
+                         event_id: str) -> Dict[str, Any]:
+    """L'ULTIMO INGRESSO (29/09, piano Mike M2.4, controllo B6).
+
+    La storia:
+      1. 40' prima del fischio Mike entra (Under 3,5 a 1,50) e appoggia la banca
+         a 1,48;
+      2. a 25' dal fischio il mercato scambia a 1,48: la banca si abbina, giro
+         chiuso in profitto, Mike e' PIATTO;
+      3. da 24' a 10' dal fischio i mercati sono SOSPESI: il controllo
+         d'ingresso ferma ogni giro nuovo (mercato non aperto). Si usa una
+         sospensione e non uno spread largo perche' la prima decisione dopo il
+         segno puo' vedere ancora il book di prima: con lo spread largo l'ultimo
+         ingresso verrebbe valutato (e scartato) su quel book; col mercato
+         sospeso Mike ASPETTA la riapertura (regola del motore, 15/09);
+      4. al segno dei 10 minuti i mercati riaprono a 1,50 / 1,52: Mike e' piatto
+         e fa l'ULTIMO INGRESSO, con la banca subito a 1,48, che NON si abbina;
+      5. al fischio Betfair cancella la banca (LAPSE); Mike legge e porta in
+         gioco l'Under 3,5 abbinato; nessun gol, finisce 0-0.
+    """
+    mo, ou35, ou45 = "MATCH_ODDS", "OVER_UNDER_35", "OVER_UNDER_45"
+    t0 = 1_800_000_000_000
+    ko = t0 + 40 * 60 * 1000
+    c = Costruttore(event_id, modelli, t0, ko)
+    mo_prezzi = {1: _quattro(1.80, 200, 1.82, 200),
+                 2: _quattro(4.00, 200, 4.10, 200),
+                 3: _quattro(3.60, 200, 3.70, 200)}
+
+    def istante(pt: int, *, u35, u45, status="OPEN", inplay=False, bet_delay=0,
+                scambiato=None, vincitori=None, definizione=False) -> None:
+        c.tick(pt, status=status, inplay=inplay, bet_delay=bet_delay,
+               prezzi={mo: mo_prezzi, ou35: u35, ou45: u45},
+               scambiato=scambiato, vincitori=vincitori, con_definizione=definizione)
+
+    u35_pre = {1: _quattro(1.50, 300, 1.52, 300), 2: _quattro(2.90, 300, 3.00, 300)}
+    # la banca si abbina con lo SCAMBIATO a 1,48 (trd), senza spostare il book:
+    # i messaggi `rc` sono DELTA, un livello `atl` a 1,48 resterebbe nel ladder
+    # anche dopo (servirebbe mandarlo a size 0) e il book diventerebbe incrociato
+    u35_giu = u35_pre
+    u45_pre = {1: _quattro(1.20, 300, 1.22, 300), 2: _quattro(5.40, 300, 5.60, 300)}
+
+    pt = t0
+    abbina = ko - 25 * 60 * 1000
+    while pt < abbina:                                   # 1) ingresso e banca
+        istante(pt, u35=u35_pre, u45=u45_pre, definizione=(pt == t0))
+        pt += PASSO_MS
+    fine_abbina = abbina + 60 * 1000
+    while pt < fine_abbina:                              # 2) la banca si abbina
+        istante(pt, u35=u35_giu, u45=u45_pre, scambiato={ou35: {1: (1.48, 200.0)}})
+        pt += PASSO_MS
+    segno = ko - 10 * 60 * 1000
+    primo = True
+    while pt < segno:                                    # 3) mercati sospesi
+        istante(pt, u35=u35_pre, u45=u45_pre, status="SUSPENDED", definizione=primo)
+        primo = False
+        pt += PASSO_MS
+    primo = True
+    while pt < ko:                                       # 4) l'ultimo ingresso
+        istante(pt, u35=u35_pre, u45=u45_pre, definizione=primo)
+        primo = False
+        pt += PASSO_MS
+    # 5) il fischio: in gioco, sospensione tecnica, riapertura senza scambi a 1,48
+    istante(ko, u35=u35_pre, u45=u45_pre, inplay=True, bet_delay=5, definizione=True)
+    istante(ko + PASSO_MS, u35=u35_pre, u45=u45_pre, status="SUSPENDED",
+            inplay=True, bet_delay=5, definizione=True)
+    u35_live = {1: _quattro(1.45, 300, 1.47, 300), 2: _quattro(3.20, 300, 3.30, 300)}
+    u45_live = {1: _quattro(1.18, 300, 1.20, 300), 2: _quattro(5.80, 300, 6.00, 300)}
+    pt = ko + 2 * PASSO_MS
+    fine = ko + 95 * 60 * 1000
+    primo = True
+    while pt < fine:
+        istante(pt, u35=u35_live, u45=u45_live, inplay=True, bet_delay=5, definizione=primo)
+        primo = False
+        pt += PASSO_MS
+    istante(fine, u35=u35_live, u45=u45_live, status="SUSPENDED", inplay=True,
+            bet_delay=5, definizione=True)
+    vinc = {}
+    for tipo in (ou35, ou45):                            # 0-0: vincono gli Under
+        per = _sel_per_priorita(modelli[tipo]["market_definition"])
+        vinc[tipo] = {per[1]: "WINNER", per[2]: "LOSER"}
+    per_mo = _sel_per_priorita(modelli[mo]["market_definition"])
+    vinc[mo] = {per_mo[1]: "LOSER", per_mo[2]: "LOSER", per_mo[3]: "WINNER"}
+    istante(fine + PASSO_MS, u35=u35_live, u45=u45_live, status="CLOSED", inplay=True,
+            bet_delay=5, vincitori=vinc, definizione=True)
+    raw = c.scrivi(cartella)
+    punti: List[Tuple[int, Optional[int], int, int]] = [(t0 + 60_000, None, 0, 0)]
+    minuto = 1
+    tp = ko + 60_000
+    while tp < fine:
+        punti.append((tp, minuto, 0, 0))
+        minuto += 1
+        tp += 60_000
+    scores = scrivi_punteggi(cartella, event_id, modello_score, punti)
+    return {"raw": raw, "scores": scores, "messaggi": len(c.righe),
+            "punteggi": len(punti), "ko_ms": ko}
+
+
+CASI = {"reingresso": caso_reingresso, "prezzo_migliore": caso_prezzo_migliore,
+        "reingresso_2gol": caso_reingresso_2gol, "ultimo_ingresso": caso_ultimo_ingresso}
 
 
 def genera(caso: str, data_dir: Optional[str] = None) -> Dict[str, Any]:
