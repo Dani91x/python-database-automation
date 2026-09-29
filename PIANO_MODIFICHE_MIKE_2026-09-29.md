@@ -10,7 +10,7 @@ file si aggiorna e basta.
 Per ogni punto: cosa vuole l'utente, cosa fa il codice oggi, cosa va cambiato, cosa resta da
 chiarire. I riferimenti al codice servono a chi fara' la modifica.
 
-Stato: **IN RACCOLTA** (nessuna modifica eseguita).
+Stato: **IN RACCOLTA** (nessuna modifica eseguita). Pre-partita: CHIUSO e confermato dall'utente il 29/09. Prossimo capitolo: dal fischio d'inizio.
 
 ---
 
@@ -157,10 +157,18 @@ piatto, col profitto del giro chiuso.
     rivisti gli stati `PRE_GREEN_PENDING` (finale), `PRE_LAST_ENTRY_PENDING`, `HOLD` e il ritiro del
     residuo dopo il fischio (`_late_persist_cancel`, `cancel_unmatched_after_ko_s`).
 
-Ipotesi mie, scritte all'utente per conferma (se non le corregge valgono cosi'):
-- l'ultimo ingresso passa dagli stessi controlli d'ingresso degli altri giri;
+CONFERMATO dall'utente (29/09):
+- l'ultimo ingresso passa dagli stessi controlli d'ingresso degli altri giri. Parole sue: «OVVIO,
+  le logiche e i filtri di ingresso devono restare! Qui stiamo solo ottimizzando la strategia, non
+  i gate e i parametri»;
 - l'ultimo ingresso si valuta al segno dei 10 minuti; dopo, nessun altro ingresso fino al fischio
-  (anche se la banca viene abbinata negli ultimi 10 minuti).
+  (anche se la banca viene abbinata negli ultimi 10 minuti);
+- al fischio Mike VERIFICA se la banca si e' abbinata (profitto chiuso) oppure no (resta solo
+  l'Under 3,5): e' la modifica M2.3.
+
+**REGOLA GENERALE DI QUESTA REVISIONE (utente, 29/09): si cambia la condotta della strategia, NON
+i controlli d'ingresso ne' i parametri.** Tutti i 13 controlli d'ingresso e i valori dei parametri
+restano quelli di oggi, salvo ordine esplicito.
 
 ### Rimandato al capitolo «dal fischio d'inizio»
 - La modalita' «al mercato» della banca.
