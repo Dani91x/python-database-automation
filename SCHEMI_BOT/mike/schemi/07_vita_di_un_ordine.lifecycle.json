@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Mike - la vita di un ordine",
+    "viewBox": [
+      1030,
+      700
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "percorso-buono",
+        "label": "1. Il percorso buono",
+        "focus": [
+          "deciso",
+          "controlli",
+          "inviato",
+          "abbinato",
+          "conti"
+        ],
+        "note": "Mike decide, controlla prezzi e freni, prenota la riga, invia. Abbinato = posizione presa, poi regolata a fine partita."
+      },
+      {
+        "id": "banca-in-coda",
+        "label": "2. La banca in coda",
+        "focus": [
+          "inviato",
+          "in-coda",
+          "abbinato",
+          "in-parte",
+          "ritirato"
+        ],
+        "note": "La banca d'uscita resta sul libro: si abbina tutta, in parte, oppure viene ritirata o scade alla sospensione."
+      },
+      {
+        "id": "rifiuti-e-dubbi",
+        "label": "3. Rifiuti e dubbi",
+        "focus": [
+          "controlli",
+          "freno",
+          "inviato",
+          "rifiutato",
+          "ignoto",
+          "riconciliazione",
+          "ritirato"
+        ],
+        "note": "Un freno ferma prima dell'invio. Il mercato puo' dire no. Senza risposta certa si chiede a Betfair: niente aperture nuove."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Percorso principale"
+    },
+    {
+      "id": "in-gioco",
+      "label": "Sul mercato"
+    },
+    {
+      "id": "terminal",
+      "label": "Fermato prima"
+    }
+  ],
+  "states": [
+    {
+      "id": "deciso",
+      "type": "start",
+      "label": "Ordine deciso",
+      "sublabel": "ruolo, quota, importo",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "motore"
+    },
+    {
+      "id": "controlli",
+      "type": "decision",
+      "label": "Controlli",
+      "sublabel": "prezzi, freni, modo",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "prima dell'invio"
+    },
+    {
+      "id": "inviato",
+      "type": "active",
+      "label": "Inviato",
+      "sublabel": "riga prenotata prima",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "Betfair o simulatore"
+    },
+    {
+      "id": "abbinato",
+      "type": "success",
+      "label": "Abbinato",
+      "sublabel": "posizione presa",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "riga aperta"
+    },
+    {
+      "id": "conti",
+      "type": "success",
+      "label": "Chiuso nei conti",
+      "sublabel": "regolato a fine gara",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "profitto o perdita",
+      "width": 132
+    },
+    {
+      "id": "ignoto",
+      "type": "failure",
+      "label": "Esito ignoto",
+      "sublabel": "nessuna risposta certa",
+      "lane": "in-gioco",
+      "col": 0,
+      "tag": "niente aperture",
+      "step": "06"
+    },
+    {
+      "id": "in-coda",
+      "type": "waiting",
+      "label": "In coda",
+      "sublabel": "banca appoggiata",
+      "lane": "in-gioco",
+      "col": 1,
+      "tag": "resta sul libro",
+      "width": 104,
+      "step": "08"
+    },
+    {
+      "id": "in-parte",
+      "type": "active",
+      "label": "Abbinato in parte",
+      "sublabel": "resto vivo o tolto",
+      "lane": "in-gioco",
+      "col": 2,
+      "tag": "vale l'abbinato",
+      "width": 124,
+      "step": "09"
+    },
+    {
+      "id": "riconciliazione",
+      "type": "waiting",
+      "label": "Verifica",
+      "sublabel": "rilegge l'ordine",
+      "lane": "in-gioco",
+      "col": 0,
+      "yOffset": 96,
+      "tag": "ogni 60 s",
+      "width": 104,
+      "step": "07"
+    },
+    {
+      "id": "ritirato",
+      "type": "neutral",
+      "label": "Ritirato o scaduto",
+      "sublabel": "riga chiusa a zero",
+      "lane": "in-gioco",
+      "col": 1,
+      "yOffset": 96,
+      "tag": "niente in mano",
+      "width": 124,
+      "step": "10"
+    },
+    {
+      "id": "rifiutato",
+      "type": "failure",
+      "label": "Rifiutato",
+      "sublabel": "il mercato dice no",
+      "lane": "in-gioco",
+      "col": 2,
+      "yOffset": 96,
+      "tag": "non si ripete uguale",
+      "step": "11"
+    },
+    {
+      "id": "freno",
+      "type": "failure",
+      "label": "Fermato da un freno",
+      "sublabel": "nessun ordine parte",
+      "lane": "terminal",
+      "col": 0,
+      "yOffset": 40,
+      "tag": "vedi capitolo 8",
+      "width": 132,
+      "step": "12"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-ignoto",
+      "from": "inviato",
+      "to": "ignoto",
+      "label": "risposta persa",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "security",
+      "via": [
+        [
+          392,
+          188
+        ],
+        [
+          392,
+          278
+        ]
+      ],
+      "labelAt": [
+        346,
+        254
+      ]
+    },
+    {
+      "id": "t-verifica",
+      "from": "ignoto",
+      "to": "riconciliazione",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "t-mai",
+      "from": "riconciliazione",
+      "to": "ritirato",
+      "label": "mai piazzato",
+      "labelAt": [
+        472,
+        356
+      ]
+    },
+    {
+      "id": "t-coda",
+      "from": "inviato",
+      "to": "in-coda",
+      "label": "banca d'uscita",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          412,
+          188
+        ],
+        [
+          412,
+          233
+        ],
+        [
+          546,
+          233
+        ],
+        [
+          546,
+          278
+        ]
+      ],
+      "labelAt": [
+        479,
+        221
+      ]
+    },
+    {
+      "id": "t-coda-tutta",
+      "from": "in-coda",
+      "to": "abbinato",
+      "label": "tutta",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "variant": "emphasis",
+      "via": [
+        [
+          566,
+          278
+        ],
+        [
+          566,
+          188
+        ]
+      ]
+    },
+    {
+      "id": "t-coda-parte",
+      "from": "in-coda",
+      "to": "in-parte",
+      "label": "in parte",
+      "labelAt": [
+        633,
+        264
+      ]
+    },
+    {
+      "id": "t-parte-conti",
+      "from": "in-parte",
+      "to": "conti",
+      "route": "straight",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "t-coda-ritirata",
+      "from": "in-coda",
+      "to": "ritirato",
+      "label": "ritirata o sospesa",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed",
+      "labelAt": [
+        556,
+        356
+      ]
+    },
+    {
+      "id": "t-freno",
+      "from": "controlli",
+      "to": "freno",
+      "label": "un freno dice no",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "variant": "security"
+    },
+    {
+      "id": "t-rifiuto",
+      "from": "inviato",
+      "to": "rifiutato",
+      "label": "il mercato dice no",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [
+        [
+          402,
+          92
+        ],
+        [
+          830,
+          92
+        ],
+        [
+          830,
+          403
+        ]
+      ],
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Come parte un ordine",
+      "items": [
+        "Mike prima scrive la riga dell'ordine, poi lo manda",
+        "Ogni ordine a mercato e' tutto o niente: il non abbinato sparisce subito",
+        "Solo la banca d'uscita resta in coda sul libro"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Paper e live",
+      "items": [
+        "Paper: l'ordine lo esegue il simulatore con ritardo, coda e parziali",
+        "Live: l'ordine va a Betfair; parte solo con l'interruttore soldi veri acceso"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "L'ultimo ingresso parte tutto o niente e cade al fischio, anche se la regola dice che resta in gioco",
+        "In live una banca scaduta alla sospensione finisce sempre in verifica"
+      ]
+    }
+  ]
+}

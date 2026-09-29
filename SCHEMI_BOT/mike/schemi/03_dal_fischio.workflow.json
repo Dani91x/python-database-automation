@@ -1,0 +1,359 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - dal fischio alla copertura",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "backend": {
+          "label": "Profitto bloccato"
+        },
+        "external": {
+          "label": "Fermo, fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "uscita-normale",
+        "label": "1. L'uscita al fischio",
+        "focus": [
+          "fischio",
+          "mercato",
+          "appoggia",
+          "giro",
+          "scaduta",
+          "copertura"
+        ],
+        "note": "Al fischio banca l'Under 3,5 2 tick sotto la media. Se in 3 minuti non si abbina, passa alla copertura Over 4,5."
+      },
+      {
+        "id": "esiti",
+        "label": "2. Abbinata o gol",
+        "focus": [
+          "giro",
+          "abbinata",
+          "gol",
+          "seconda",
+          "copertura"
+        ],
+        "note": "Abbinata: profitto bloccato. Gol: ritira l'uscita e punta altri 5 euro. Abbinata in parte: copre il residuo."
+      },
+      {
+        "id": "attese",
+        "label": "3. Attese e casi a parte",
+        "focus": [
+          "fischio",
+          "senza",
+          "mercato",
+          "attesa",
+          "appoggia",
+          "residuo"
+        ],
+        "note": "Senza posizione si ferma. Mercato sospeso: aspetta. Dopo 120 s ritira il resto dell'ultimo ingresso."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "buoni",
+      "label": "Esito buono"
+    },
+    {
+      "id": "principale",
+      "label": "Percorso principale"
+    },
+    {
+      "id": "casi",
+      "label": "Attese e casi a parte",
+      "variant": "exception"
+    },
+    {
+      "id": "dopogol",
+      "label": "Dopo un gol"
+    }
+  ],
+  "phases": [
+    {
+      "id": "f-fischio",
+      "label": "Fischio",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "f-uscita",
+      "label": "Uscita per 3 minuti",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-copertura",
+      "label": "Copertura",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "fischio",
+    "mercato",
+    "appoggia",
+    "giro",
+    "scaduta",
+    "copertura"
+  ],
+  "nodes": [
+    {
+      "id": "fischio",
+      "lane": "principale",
+      "col": 0,
+      "type": "frontend",
+      "label": "Fischio d'inizio",
+      "sublabel": "ritira gli ordini",
+      "width": 120
+    },
+    {
+      "id": "mercato",
+      "lane": "principale",
+      "col": 1,
+      "type": "database",
+      "label": "Mercato pronto?",
+      "sublabel": "aperto e in gioco",
+      "width": 120
+    },
+    {
+      "id": "appoggia",
+      "lane": "principale",
+      "col": 2,
+      "type": "frontend",
+      "label": "Appoggia l'uscita",
+      "sublabel": "banca 2 tick sotto",
+      "width": 120
+    },
+    {
+      "id": "giro",
+      "lane": "principale",
+      "col": 3,
+      "type": "database",
+      "label": "Controllo del giro",
+      "sublabel": "abbinata, gol, tempo",
+      "width": 120
+    },
+    {
+      "id": "scaduta",
+      "lane": "principale",
+      "col": 4,
+      "type": "database",
+      "label": "Finestra scaduta",
+      "sublabel": "3 minuti senza esito",
+      "width": 120
+    },
+    {
+      "id": "copertura",
+      "lane": "principale",
+      "col": 5,
+      "type": "frontend",
+      "label": "Verso la copertura",
+      "sublabel": "Over 4,5: schema 04",
+      "width": 120
+    },
+    {
+      "id": "abbinata",
+      "lane": "buoni",
+      "col": 4,
+      "type": "backend",
+      "label": "Uscita abbinata",
+      "sublabel": "profitto bloccato",
+      "width": 120
+    },
+    {
+      "id": "gol",
+      "lane": "dopogol",
+      "col": 3,
+      "type": "frontend",
+      "label": "Gol precoce",
+      "sublabel": "gol: ritira l'uscita",
+      "width": 120
+    },
+    {
+      "id": "seconda",
+      "lane": "dopogol",
+      "col": 4,
+      "type": "frontend",
+      "label": "Seconda puntata",
+      "sublabel": "5 euro Under 3,5",
+      "width": 120
+    },
+    {
+      "id": "senza",
+      "lane": "casi",
+      "col": 0,
+      "type": "external",
+      "label": "Senza posizione",
+      "sublabel": "fischio senza Under",
+      "width": 120
+    },
+    {
+      "id": "attesa",
+      "lane": "casi",
+      "col": 1,
+      "type": "cloud",
+      "label": "Aspetta",
+      "sublabel": "mercato sospeso",
+      "width": 120
+    },
+    {
+      "id": "residuo",
+      "lane": "casi",
+      "col": 2,
+      "type": "frontend",
+      "label": "Ritira il residuo",
+      "sublabel": "120 s dopo il fischio",
+      "width": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-fischio-mercato",
+      "from": "fischio",
+      "to": "mercato",
+      "label": "Under in mano",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-mercato-appoggia",
+      "from": "mercato",
+      "to": "appoggia",
+      "label": "si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-appoggia-giro",
+      "from": "appoggia",
+      "to": "giro",
+      "label": "ogni giro",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-giro-scaduta",
+      "from": "giro",
+      "to": "scaduta",
+      "label": "niente",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-scaduta-copertura",
+      "from": "scaduta",
+      "to": "copertura",
+      "label": "180 s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-fischio-senza",
+      "from": "fischio",
+      "to": "senza",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-mercato-attesa",
+      "from": "mercato",
+      "to": "attesa",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-appoggia-residuo",
+      "from": "appoggia",
+      "to": "residuo",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-giro-abbinata",
+      "from": "giro",
+      "to": "abbinata",
+      "label": "abbinata",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-abbinata-copertura",
+      "from": "abbinata",
+      "to": "copertura",
+      "label": "solo in parte",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-giro-gol",
+      "from": "giro",
+      "to": "gol",
+      "variant": "security",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-gol-seconda",
+      "from": "gol",
+      "to": "seconda",
+      "label": "prima volta",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-seconda-copertura",
+      "from": "seconda",
+      "to": "copertura",
+      "label": "abbinata o 120 s",
+      "variant": "default",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cosa fa Mike al fischio",
+      "items": [
+        "Ritira gli ordini non abbinati e banca l'Under 3,5 2 tick sotto la media",
+        "Tiene l'uscita sul book per 3 minuti di gioco",
+        "Abbinata per intero: profitto bloccato, niente copertura"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cosa decidi tu",
+      "items": [
+        "Uscite manuali di serie: l'uscita al fischio e' una proposta da approvare",
+        "Mentre non approvi, l'orologio dei 3 minuti corre lo stesso"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "I 3 minuti contano anche il tempo a mercato sospeso",
+        "Uscita abbinata in parte: Mike copre il resto, non la rimette",
+        "Ultimo ingresso non abbinato al fischio: resta vivo senza posizione"
+      ]
+    }
+  ]
+}

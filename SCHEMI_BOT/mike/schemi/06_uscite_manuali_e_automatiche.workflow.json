@@ -1,0 +1,328 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - uscite manuali e automatiche",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Pulsante dell'utente"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "firma",
+        "label": "1. Proposta e firma",
+        "focus": [
+          "vuole",
+          "interruttore",
+          "incorso",
+          "proposta",
+          "approvi",
+          "firma",
+          "esegue"
+        ],
+        "note": "Di serie manuale: Mike propone, tu approvi con un clic, al giro dopo Mike esce ai prezzi di quel momento."
+      },
+      {
+        "id": "senza-cancello",
+        "label": "2. Sempre automatiche",
+        "focus": [
+          "vuole",
+          "sempre",
+          "interruttore",
+          "incorso",
+          "esegue"
+        ],
+        "note": "Copertura, tetto di perdita, ritiri d'ingresso e regolamento non chiedono firma. Nemmeno i riprezzi di un'uscita partita."
+      },
+      {
+        "id": "nessuna-risposta",
+        "label": "3. Se non rispondi",
+        "focus": [
+          "proposta",
+          "attesa",
+          "decade",
+          "chiudi"
+        ],
+        "note": "Nessun ordine parte: la proposta resta finche' Mike vuole uscire, poi sparisce. Chiudi e Cash out restano sempre."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "mike",
+      "label": "Mike decide"
+    },
+    {
+      "id": "cancello",
+      "label": "Il cancello delle uscite"
+    },
+    {
+      "id": "utente",
+      "label": "Tu, nell'app"
+    },
+    {
+      "id": "attesa",
+      "label": "Se non rispondi",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "vuole",
+    "interruttore",
+    "incorso",
+    "proposta",
+    "approvi",
+    "firma",
+    "esegue"
+  ],
+  "nodes": [
+    {
+      "id": "vuole",
+      "lane": "mike",
+      "col": 0,
+      "type": "database",
+      "label": "Mike vuole uscire",
+      "sublabel": "5 tipi di uscita",
+      "tag": "riquadro 01",
+      "width": 124
+    },
+    {
+      "id": "sempre",
+      "lane": "mike",
+      "col": 2,
+      "type": "frontend",
+      "label": "Sempre automatiche",
+      "sublabel": "copertura, tetto, ritiri",
+      "tag": "riquadro 02",
+      "width": 140
+    },
+    {
+      "id": "interruttore",
+      "lane": "cancello",
+      "col": 1,
+      "type": "database",
+      "label": "Interruttore",
+      "sublabel": "di serie manuale",
+      "tag": "riquadro 03",
+      "width": 124
+    },
+    {
+      "id": "incorso",
+      "lane": "cancello",
+      "col": 2,
+      "type": "database",
+      "label": "Gia' partita?",
+      "sublabel": "riprezzi, residui",
+      "tag": "riquadro 04",
+      "width": 124
+    },
+    {
+      "id": "firma",
+      "lane": "cancello",
+      "col": 4,
+      "type": "database",
+      "label": "Firma valida?",
+      "sublabel": "stessa uscita, 120 s",
+      "tag": "riquadro 07",
+      "width": 132
+    },
+    {
+      "id": "esegue",
+      "lane": "cancello",
+      "col": 5,
+      "type": "frontend",
+      "label": "Mike esegue",
+      "sublabel": "prezzi di adesso",
+      "tag": "riquadro 08",
+      "width": 124
+    },
+    {
+      "id": "proposta",
+      "lane": "utente",
+      "col": 3,
+      "type": "cloud",
+      "label": "Proposta a video",
+      "sublabel": "motivo e cifre",
+      "tag": "riquadro 05",
+      "width": 124
+    },
+    {
+      "id": "approvi",
+      "lane": "utente",
+      "col": 4,
+      "type": "external",
+      "label": "Approvi",
+      "sublabel": "un clic, la firma",
+      "tag": "riquadro 06",
+      "width": 124
+    },
+    {
+      "id": "chiudi",
+      "lane": "utente",
+      "col": 5,
+      "type": "external",
+      "label": "Chiudi o Cash out",
+      "sublabel": "tutta la partita",
+      "tag": "riquadro 11",
+      "width": 132
+    },
+    {
+      "id": "attesa",
+      "lane": "attesa",
+      "col": 3,
+      "type": "security",
+      "label": "Nessuna risposta",
+      "sublabel": "nessun ordine parte",
+      "tag": "riquadro 09",
+      "width": 132
+    },
+    {
+      "id": "decade",
+      "lane": "attesa",
+      "col": 4,
+      "type": "cloud",
+      "label": "Proposta decade",
+      "sublabel": "sparisce, firma cade",
+      "tag": "riquadro 10",
+      "width": 132
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-cancello",
+      "from": "vuole",
+      "to": "interruttore",
+      "label": "green, fischio, cash out",
+      "role": "main"
+    },
+    {
+      "id": "e-sempre",
+      "from": "vuole",
+      "to": "sempre",
+      "label": "nessuna firma",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-manuale",
+      "from": "interruttore",
+      "to": "incorso",
+      "label": "manuale",
+      "role": "main"
+    },
+    {
+      "id": "e-nuova",
+      "from": "incorso",
+      "to": "proposta",
+      "label": "uscita nuova",
+      "role": "main"
+    },
+    {
+      "id": "e-clic",
+      "from": "proposta",
+      "to": "approvi",
+      "label": "approvi",
+      "role": "main"
+    },
+    {
+      "id": "e-giro",
+      "from": "approvi",
+      "to": "firma",
+      "label": "giro dopo",
+      "role": "main"
+    },
+    {
+      "id": "e-passa",
+      "from": "firma",
+      "to": "esegue",
+      "label": "si'",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "e-auto",
+      "from": "interruttore",
+      "to": "esegue",
+      "label": "automatico",
+      "variant": "dashed",
+      "role": "branch",
+      "route": "up-channel",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "e-partita",
+      "from": "incorso",
+      "to": "esegue",
+      "label": "gia' partita",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-niente",
+      "from": "proposta",
+      "to": "attesa",
+      "label": "nessun clic",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-cade",
+      "from": "attesa",
+      "to": "decade",
+      "label": "condizione caduta",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-chiudi",
+      "from": "chiudi",
+      "to": "esegue",
+      "label": "subito",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Chiedono la tua firma",
+      "items": [
+        "Green prima del fischio, uscita al fischio, cash out in profitto",
+        "Uscite in perdita all'intervallo e nel secondo tempo, green del rientro"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Sempre automatiche",
+      "items": [
+        "Copertura Over 4,5, tetto di perdita della partita, ritiro degli ordini d'ingresso",
+        "Regolamento a fine partita, riprezzi di un'uscita gia' partita"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Attenzione",
+      "items": [
+        "In manuale, se non rispondi, le uscite in perdita non scattano",
+        "La firma vale una volta sola e solo per l'uscita che hai visto"
+      ]
+    }
+  ]
+}

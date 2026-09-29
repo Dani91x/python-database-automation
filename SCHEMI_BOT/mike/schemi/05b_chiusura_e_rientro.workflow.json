@@ -1,0 +1,303 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike 05b - piatto, rientro e regolamento",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "backend": {
+          "label": "Profitto bloccato"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Fermo, fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "rientro",
+        "label": "1. Il rientro sull'Under 4,5",
+        "focus": [
+          "piatto",
+          "residuo",
+          "permesso",
+          "condizioni",
+          "punta",
+          "green"
+        ],
+        "note": "Dopo una chiusura in profitto, con 1 gol entro il 45', Mike punta 10 euro sull'Under 4,5 e banca 2 tick sotto."
+      },
+      {
+        "id": "residui",
+        "label": "2. Residui e ritorni",
+        "focus": [
+          "residuo",
+          "uscite",
+          "piccolo"
+        ],
+        "note": "Se resta rischio chiudibile si torna alle uscite (05a). Un residuo sotto 0,01 euro si porta al regolamento."
+      },
+      {
+        "id": "fine",
+        "label": "3. Fine partita",
+        "focus": [
+          "fermo",
+          "green",
+          "tempo",
+          "regola"
+        ],
+        "note": "A mercato chiuso Mike ritira ogni ordine vivo e calcola il risultato col punteggio finale. Sempre automatico."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "rientro",
+      "label": "Dopo la chiusura"
+    },
+    {
+      "id": "fine",
+      "label": "Fermo e regolamento"
+    },
+    {
+      "id": "ritorni",
+      "label": "Ritorni e casi rari",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "piatto",
+    "residuo",
+    "permesso",
+    "condizioni",
+    "punta",
+    "green"
+  ],
+  "nodes": [
+    {
+      "id": "piatto",
+      "lane": "rientro",
+      "col": 0,
+      "type": "cloud",
+      "label": "Piatto",
+      "sublabel": "posizione chiusa",
+      "width": 126
+    },
+    {
+      "id": "residuo",
+      "lane": "rientro",
+      "col": 1,
+      "type": "database",
+      "label": "Tutto chiuso?",
+      "sublabel": "rischio ancora in gioco",
+      "width": 126
+    },
+    {
+      "id": "permesso",
+      "lane": "rientro",
+      "col": 2,
+      "type": "database",
+      "label": "Rientro permesso?",
+      "sublabel": "chiusa in profitto",
+      "width": 126
+    },
+    {
+      "id": "condizioni",
+      "lane": "rientro",
+      "col": 3,
+      "type": "database",
+      "label": "Condizioni",
+      "sublabel": "1 gol entro il 45'",
+      "width": 126
+    },
+    {
+      "id": "punta",
+      "lane": "rientro",
+      "col": 4,
+      "type": "frontend",
+      "label": "Punta Under 4,5",
+      "sublabel": "10 euro, attesa 60 s",
+      "tag": "automatica",
+      "width": 126
+    },
+    {
+      "id": "green",
+      "lane": "rientro",
+      "col": 5,
+      "type": "backend",
+      "label": "Green appoggiata",
+      "sublabel": "banca 2 tick sotto",
+      "tag": "manuale",
+      "width": 126
+    },
+    {
+      "id": "fermo",
+      "lane": "fine",
+      "col": 3,
+      "type": "external",
+      "label": "Resta piatto",
+      "sublabel": "niente altro da fare",
+      "width": 126
+    },
+    {
+      "id": "regola",
+      "lane": "fine",
+      "col": 5,
+      "type": "external",
+      "label": "Regolamento",
+      "sublabel": "mercato chiuso",
+      "tag": "automatico",
+      "width": 126
+    },
+    {
+      "id": "uscite",
+      "lane": "ritorni",
+      "col": 1,
+      "type": "cloud",
+      "label": "Torna alle uscite",
+      "sublabel": "capitolo 05a",
+      "width": 126
+    },
+    {
+      "id": "piccolo",
+      "lane": "ritorni",
+      "col": 2,
+      "type": "external",
+      "label": "Residuo minimo",
+      "sublabel": "sotto 0,01 euro",
+      "width": 126
+    },
+    {
+      "id": "tempo",
+      "lane": "ritorni",
+      "col": 5,
+      "type": "frontend",
+      "label": "Chiusura a tempo",
+      "sublabel": "spenta di serie",
+      "tag": "manuale",
+      "width": 126
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-controlla",
+      "from": "piatto",
+      "to": "residuo",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-chiuso",
+      "from": "residuo",
+      "to": "permesso",
+      "label": "si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-permesso",
+      "from": "permesso",
+      "to": "condizioni",
+      "label": "si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-condizioni",
+      "from": "condizioni",
+      "to": "punta",
+      "label": "tutte si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-abbinata",
+      "from": "punta",
+      "to": "green",
+      "label": "abbinata",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-no-permesso",
+      "from": "permesso",
+      "to": "fermo",
+      "label": "no",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-no-condizioni",
+      "from": "condizioni",
+      "to": "fermo",
+      "label": "no",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-fine",
+      "from": "green",
+      "to": "regola",
+      "label": "fischio finale"
+    },
+    {
+      "id": "e-fermo-fine",
+      "from": "fermo",
+      "to": "regola",
+      "label": "fischio finale"
+    },
+    {
+      "id": "e-residuo",
+      "from": "residuo",
+      "to": "uscite",
+      "label": "chiudibile",
+      "variant": "security"
+    },
+    {
+      "id": "e-piccolo",
+      "from": "residuo",
+      "to": "piccolo",
+      "label": "sotto 0,01",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-tempo",
+      "from": "green",
+      "to": "tempo",
+      "label": "minuto limite",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cosa fa Mike",
+      "items": [
+        "A posizione chiusa controlla che non resti rischio in gioco",
+        "Dopo un profitto puo' rientrare una volta sull'Under 4,5"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cosa decidi tu",
+      "items": [
+        "La banca di green del rientro e' una proposta da approvare",
+        "La puntata di rientro e il regolamento partono da soli"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Sul rientro Mike non compra copertura e non fa cash out",
+        "La sospensione si legge dall'Under 3,5 anche per l'Under 4,5"
+      ]
+    }
+  ]
+}

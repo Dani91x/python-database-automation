@@ -1,0 +1,334 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - dati e conti",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "Azione di Mike"
+        },
+        "messagebus": {
+          "label": "Attesa"
+        },
+        "security": {
+          "label": "Controllo o blocco"
+        },
+        "database": {
+          "label": "Dati letti o salvati"
+        },
+        "external": {
+          "label": "Mercato Betfair"
+        },
+        "frontend": {
+          "label": "Cosa vedi nell'app"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "fonti",
+        "label": "1. Da dove arrivano i dati",
+        "focus": [
+          "scanner",
+          "canale",
+          "dossier",
+          "betfair",
+          "freschezza",
+          "fotografia"
+        ],
+        "note": "Prezzi e punteggi dallo scanner. Scartati oltre 45 s per decidere, 20 s per ordinare, sempre oltre 180 s."
+      },
+      {
+        "id": "mancanti",
+        "label": "2. Dati mancanti o vecchi",
+        "focus": [
+          "fotografia",
+          "mancanti",
+          "betfair",
+          "regola"
+        ],
+        "note": "Flusso fermo con posizione: Mike legge Betfair ogni 10 s solo per chiudere. Riga assente 10 minuti: regolamento."
+      },
+      {
+        "id": "conti",
+        "label": "3. I conti del giorno",
+        "focus": [
+          "regola",
+          "stop",
+          "posti",
+          "tabelle"
+        ],
+        "note": "Giornata da mezzanotte di Roma. Stop a -50 euro fra realizzato e bloccato. Tetto 10 partite, paper e live a parte."
+      },
+      {
+        "id": "riavvio",
+        "label": "4. Cosa resta al riavvio",
+        "focus": [
+          "tabelle",
+          "riavvio"
+        ],
+        "note": "Tutto e' salvato nel database. Al riavvio Mike rilegge partite, gambe e righe; perde solo gli orologi interni."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "fonti",
+      "label": "Fonti dei dati"
+    },
+    {
+      "id": "controlli",
+      "label": "Controlli sui dati"
+    },
+    {
+      "id": "conti",
+      "label": "Conti e tetti"
+    },
+    {
+      "id": "salva",
+      "label": "Cosa si salva"
+    },
+    {
+      "id": "guasti",
+      "label": "Dati mancanti",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "scanner",
+    "freschezza",
+    "fotografia",
+    "regola",
+    "stop",
+    "posti"
+  ],
+  "nodes": [
+    {
+      "id": "scanner",
+      "lane": "fonti",
+      "col": 0,
+      "type": "database",
+      "label": "Scanner",
+      "sublabel": "riletto ogni 4 s",
+      "tag": "01",
+      "width": 108
+    },
+    {
+      "id": "canale",
+      "lane": "fonti",
+      "col": 1,
+      "type": "messagebus",
+      "label": "Canale veloce",
+      "sublabel": "spento di serie",
+      "tag": "02",
+      "width": 108
+    },
+    {
+      "id": "betfair",
+      "lane": "fonti",
+      "col": 2,
+      "type": "external",
+      "label": "Betfair diretto",
+      "sublabel": "solo ripiego",
+      "tag": "03",
+      "width": 108
+    },
+    {
+      "id": "dossier",
+      "lane": "fonti",
+      "col": 3,
+      "type": "database",
+      "label": "Dossier",
+      "sublabel": "gol attesi",
+      "tag": "04",
+      "width": 108
+    },
+    {
+      "id": "freschezza",
+      "lane": "controlli",
+      "col": 1,
+      "type": "security",
+      "label": "Freschezza",
+      "sublabel": "45 s, 20 s, 180 s",
+      "tag": "05",
+      "width": 108
+    },
+    {
+      "id": "fotografia",
+      "lane": "controlli",
+      "col": 2,
+      "type": "backend",
+      "label": "Fotografia",
+      "sublabel": "quote vive",
+      "tag": "06",
+      "width": 108
+    },
+    {
+      "id": "mancanti",
+      "lane": "guasti",
+      "col": 2,
+      "type": "security",
+      "label": "Linea assente",
+      "sublabel": "niente ordini",
+      "tag": "07",
+      "width": 108
+    },
+    {
+      "id": "regola",
+      "lane": "conti",
+      "col": 3,
+      "type": "backend",
+      "label": "Regolamento",
+      "sublabel": "vincitori da Betfair",
+      "tag": "08",
+      "width": 108
+    },
+    {
+      "id": "stop",
+      "lane": "conti",
+      "col": 4,
+      "type": "security",
+      "label": "Stop del giorno",
+      "sublabel": "-50 euro",
+      "tag": "09",
+      "width": 108
+    },
+    {
+      "id": "posti",
+      "lane": "conti",
+      "col": 5,
+      "type": "security",
+      "label": "Posti",
+      "sublabel": "10 partite",
+      "tag": "10",
+      "width": 108
+    },
+    {
+      "id": "tabelle",
+      "lane": "salva",
+      "col": 3,
+      "type": "database",
+      "label": "Database",
+      "sublabel": "5 tabelle",
+      "tag": "11",
+      "width": 108
+    },
+    {
+      "id": "riavvio",
+      "lane": "salva",
+      "col": 5,
+      "type": "frontend",
+      "label": "Riavvio",
+      "sublabel": "cosa si rilegge",
+      "tag": "12",
+      "width": 108
+    }
+  ],
+  "edges": [
+    {
+      "id": "d-scanner-fresc",
+      "from": "scanner",
+      "to": "freschezza",
+      "label": "righe",
+      "variant": "emphasis"
+    },
+    {
+      "id": "d-canale-fresc",
+      "from": "canale",
+      "to": "freschezza",
+      "label": "entro 5 s",
+      "variant": "dashed"
+    },
+    {
+      "id": "d-fresc-foto",
+      "from": "freschezza",
+      "to": "fotografia",
+      "label": "fresca",
+      "variant": "emphasis"
+    },
+    {
+      "id": "d-dossier-foto",
+      "from": "dossier",
+      "to": "fotografia",
+      "label": "modello"
+    },
+    {
+      "id": "d-betfair-foto",
+      "from": "betfair",
+      "to": "fotografia",
+      "label": "flusso fermo",
+      "variant": "dashed"
+    },
+    {
+      "id": "d-foto-manc",
+      "from": "fotografia",
+      "to": "mancanti",
+      "label": "linea vecchia",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "d-foto-regola",
+      "from": "fotografia",
+      "to": "regola",
+      "label": "mercato chiuso",
+      "variant": "emphasis"
+    },
+    {
+      "id": "d-regola-stop",
+      "from": "regola",
+      "to": "stop",
+      "label": "realizzato",
+      "variant": "emphasis"
+    },
+    {
+      "id": "d-stop-posti",
+      "from": "stop",
+      "to": "posti",
+      "label": "sotto -50",
+      "variant": "emphasis"
+    },
+    {
+      "id": "d-regola-tab",
+      "from": "regola",
+      "to": "tabelle",
+      "label": "esito righe"
+    },
+    {
+      "id": "d-tab-riavvio",
+      "from": "tabelle",
+      "to": "riavvio",
+      "label": "riletto",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "I conti",
+      "items": [
+        "Giornata da mezzanotte di Roma, per giorno di piazzamento",
+        "Stop a -50 euro fra realizzato e profitto bloccato",
+        "Regolamento con la commissione scritta sulle righe (5%)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Paper e live",
+      "items": [
+        "Stop, tetto, rischio e bloccato contati a parte",
+        "Ogni riga salvata porta la sua modalita'"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Scanner illeggibile = nessuna riga: dopo 10 minuti le partite vanno in regolamento",
+        "Partita regolata senza aggiornare le righe in un caso raro"
+      ]
+    }
+  ]
+}

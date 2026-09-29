@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - il giro del servizio",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "Azione di Mike"
+        },
+        "messagebus": {
+          "label": "Attesa"
+        },
+        "security": {
+          "label": "Controllo o blocco"
+        },
+        "database": {
+          "label": "Dati letti o salvati"
+        },
+        "external": {
+          "label": "Mercato Betfair"
+        },
+        "frontend": {
+          "label": "Cosa vedi nell'app"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "accensione",
+        "label": "1. Accensione e arresto",
+        "focus": [
+          "avvio",
+          "fermo",
+          "dormita",
+          "arresto"
+        ],
+        "note": "Una sola copia di Mike. All'apertura dell'app Mike riparte fermo e in paper. L'arresto aspetta la fine del giro."
+      },
+      {
+        "id": "giro",
+        "label": "2. Il giro, ogni 1-5 secondi",
+        "focus": [
+          "comandi",
+          "dati",
+          "scelta",
+          "partita",
+          "battito",
+          "dormita"
+        ],
+        "note": "Comandi, prezzi, partite nuove, giro di ogni partita, testata. Poi dorme 1 s se c'e' movimento, 5 s se no."
+      },
+      {
+        "id": "partita",
+        "label": "3. Dentro ogni partita",
+        "focus": [
+          "partita",
+          "ordini",
+          "regola"
+        ],
+        "note": "Mercato chiuso: regolamento. Altrimenti fotografia, decisione, ordini, ritiri dopo 120 s, specchio ogni 30 s."
+      },
+      {
+        "id": "guasti",
+        "label": "4. Quando qualcosa va storto",
+        "focus": [
+          "comandi",
+          "saltato",
+          "dati"
+        ],
+        "note": "Database muto: il giro salta tutto, anche le protezioni. Una partita rotta non ferma le altre."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "servizio",
+      "label": "Accensione e ritmo"
+    },
+    {
+      "id": "giro",
+      "label": "Il giro di Mike"
+    },
+    {
+      "id": "partite",
+      "label": "Partita per partita"
+    },
+    {
+      "id": "guasti",
+      "label": "Se qualcosa va storto",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "f-avvio",
+      "label": "Avvio",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "f-giro",
+      "label": "Un giro",
+      "fromCol": 1,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-attesa",
+      "label": "Attesa",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "avvio",
+    "comandi",
+    "dati",
+    "scelta",
+    "partita",
+    "battito",
+    "dormita"
+  ],
+  "nodes": [
+    {
+      "id": "avvio",
+      "lane": "servizio",
+      "col": 0,
+      "type": "backend",
+      "label": "Accensione",
+      "sublabel": "una copia sola",
+      "tag": "01",
+      "width": 108
+    },
+    {
+      "id": "fermo",
+      "lane": "servizio",
+      "col": 1,
+      "type": "security",
+      "label": "App riaperta",
+      "sublabel": "fermo e paper",
+      "tag": "02",
+      "width": 108
+    },
+    {
+      "id": "comandi",
+      "lane": "giro",
+      "col": 1,
+      "type": "database",
+      "label": "Comandi",
+      "sublabel": "acceso, paper o live",
+      "tag": "03",
+      "width": 108
+    },
+    {
+      "id": "dati",
+      "lane": "giro",
+      "col": 2,
+      "type": "database",
+      "label": "Prezzi",
+      "sublabel": "feed ogni 4 s",
+      "tag": "04",
+      "width": 108
+    },
+    {
+      "id": "scelta",
+      "lane": "giro",
+      "col": 3,
+      "type": "security",
+      "label": "Partite nuove",
+      "sublabel": "tetto e stop",
+      "tag": "05",
+      "width": 108
+    },
+    {
+      "id": "partita",
+      "lane": "partite",
+      "col": 3,
+      "type": "backend",
+      "label": "Giro partita",
+      "sublabel": "una alla volta",
+      "tag": "06",
+      "width": 108
+    },
+    {
+      "id": "ordini",
+      "lane": "partite",
+      "col": 4,
+      "type": "external",
+      "label": "Ordini",
+      "sublabel": "piazza e segue",
+      "tag": "07",
+      "width": 108
+    },
+    {
+      "id": "regola",
+      "lane": "partite",
+      "col": 5,
+      "type": "backend",
+      "label": "Regolamento",
+      "sublabel": "mercato chiuso",
+      "tag": "08",
+      "width": 108
+    },
+    {
+      "id": "battito",
+      "lane": "giro",
+      "col": 4,
+      "type": "frontend",
+      "label": "Battito",
+      "sublabel": "testata dell'app",
+      "tag": "09",
+      "width": 108
+    },
+    {
+      "id": "dormita",
+      "lane": "servizio",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Dormita",
+      "sublabel": "1 s o 5 s",
+      "tag": "10",
+      "width": 108
+    },
+    {
+      "id": "arresto",
+      "lane": "servizio",
+      "col": 5,
+      "type": "security",
+      "label": "Arresto",
+      "sublabel": "chiesto dall'app",
+      "tag": "11",
+      "width": 108
+    },
+    {
+      "id": "saltato",
+      "lane": "guasti",
+      "col": 1,
+      "type": "security",
+      "label": "Giro saltato",
+      "sublabel": "database muto",
+      "tag": "12",
+      "width": 108
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-avvio-fermo",
+      "from": "avvio",
+      "to": "fermo",
+      "label": "apertura nuova",
+      "variant": "security"
+    },
+    {
+      "id": "e-avvio-comandi",
+      "from": "avvio",
+      "to": "comandi",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-comandi-dati",
+      "from": "comandi",
+      "to": "dati",
+      "label": "letti",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-comandi-saltato",
+      "from": "comandi",
+      "to": "saltato",
+      "label": "non leggibili",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e-dati-scelta",
+      "from": "dati",
+      "to": "scelta",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-scelta-partita",
+      "from": "scelta",
+      "to": "partita",
+      "label": "per ogni partita",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-partita-ordini",
+      "from": "partita",
+      "to": "ordini",
+      "label": "piazza o annulla"
+    },
+    {
+      "id": "e-ordini-regola",
+      "from": "ordini",
+      "to": "regola",
+      "label": "mercato chiuso",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-partita-battito",
+      "from": "partita",
+      "to": "battito",
+      "label": "tutte fatte",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-battito-dormita",
+      "from": "battito",
+      "to": "dormita",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-dormita-arresto",
+      "from": "dormita",
+      "to": "arresto",
+      "label": "l'app chiude",
+      "variant": "security"
+    },
+    {
+      "id": "e-dormita-comandi",
+      "from": "dormita",
+      "to": "comandi",
+      "label": "giro dopo",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e-saltato-comandi",
+      "from": "saltato",
+      "to": "comandi",
+      "label": "riprova fra 1-5 s",
+      "variant": "dashed",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Il ritmo",
+      "items": [
+        "Giro ogni 1 s se c'e' una partita in gioco, un ordine vivo o una richiesta",
+        "Giro ogni 5 s se non succede niente",
+        "Battito verso l'app al massimo ogni 10 s, almeno ogni 20 s"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Paper e live",
+      "items": [
+        "Ogni partita tiene la modalita' con cui e' entrata",
+        "Tetto partite e stop giornaliero contati a parte per paper e live"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Database muto: il giro salta anche le protezioni",
+        "Riga del feed assente meno di 10 minuti: nessuna sorveglianza della partita"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,358 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - il percorso di una partita",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "backend": {
+          "label": "Profitto bloccato"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Fermo, fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "percorso-buono",
+        "label": "1. Il percorso buono",
+        "focus": [
+          "osserva",
+          "giri",
+          "uscita",
+          "piatto",
+          "conti"
+        ],
+        "note": "Giri prima del fischio, uscita 2 tick sotto abbinata nei primi 3 minuti, posizione piatta, conti chiusi."
+      },
+      {
+        "id": "copertura",
+        "label": "2. Gol o nessun abbinamento",
+        "focus": [
+          "uscita",
+          "seconda",
+          "copertura",
+          "coperta",
+          "chiusura",
+          "piatto"
+        ],
+        "note": "Con un gol punta altri 5 euro; dopo 3 minuti senza uscita copre con Over 4,5, poi chiude."
+      },
+      {
+        "id": "casi-a-parte",
+        "label": "3. Rientro e senza posizione",
+        "focus": [
+          "piatto",
+          "rientro",
+          "conti",
+          "osserva",
+          "senza"
+        ],
+        "note": "Dopo un profitto puo' rientrare una volta sull'Under 4,5. Senza posizione al fischio aspetta i conti."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "pre",
+      "label": "Prima del fischio"
+    },
+    {
+      "id": "esito",
+      "label": "Uscita al fischio e conti"
+    },
+    {
+      "id": "protezione",
+      "label": "Protezione dopo il fischio",
+      "variant": "exception"
+    },
+    {
+      "id": "gioco",
+      "label": "In gioco fino alla fine"
+    }
+  ],
+  "mainPath": [
+    "osserva",
+    "giri",
+    "uscita",
+    "piatto",
+    "conti"
+  ],
+  "nodes": [
+    {
+      "id": "osserva",
+      "lane": "pre",
+      "col": 0,
+      "type": "cloud",
+      "label": "Osserva",
+      "sublabel": "aspetta l'occasione",
+      "tag": "da 1 ora prima",
+      "width": 112
+    },
+    {
+      "id": "giri",
+      "lane": "pre",
+      "col": 1,
+      "type": "frontend",
+      "label": "Giri pre-partita",
+      "sublabel": "punta Under 3,5",
+      "tag": "fino a 10 giri",
+      "width": 112
+    },
+    {
+      "id": "uscita",
+      "lane": "esito",
+      "col": 2,
+      "type": "database",
+      "label": "Uscita al fischio",
+      "sublabel": "banca 2 tick sotto",
+      "tag": "per 3 minuti",
+      "width": 112
+    },
+    {
+      "id": "piatto",
+      "lane": "esito",
+      "col": 3,
+      "type": "backend",
+      "label": "Piatto",
+      "sublabel": "niente esposizione",
+      "tag": "profitto bloccato",
+      "width": 112
+    },
+    {
+      "id": "rientro",
+      "lane": "esito",
+      "col": 4,
+      "type": "frontend",
+      "label": "Rientro Under 4,5",
+      "sublabel": "punta e banca",
+      "tag": "una volta sola",
+      "width": 112
+    },
+    {
+      "id": "conti",
+      "lane": "esito",
+      "col": 5,
+      "type": "external",
+      "label": "Conti chiusi",
+      "sublabel": "mercato regolato",
+      "tag": "fine",
+      "width": 112
+    },
+    {
+      "id": "seconda",
+      "lane": "protezione",
+      "col": 1,
+      "type": "frontend",
+      "label": "Seconda puntata",
+      "sublabel": "5 euro sull'Under",
+      "tag": "dopo un gol",
+      "width": 112
+    },
+    {
+      "id": "copertura",
+      "lane": "protezione",
+      "col": 2,
+      "type": "frontend",
+      "label": "Copertura",
+      "sublabel": "punta Over 4,5",
+      "tag": "sempre automatica",
+      "width": 112
+    },
+    {
+      "id": "senza",
+      "lane": "gioco",
+      "col": 5,
+      "type": "external",
+      "label": "Senza posizione",
+      "sublabel": "niente in mano",
+      "tag": "in gioco",
+      "width": 112
+    },
+    {
+      "id": "coperta",
+      "lane": "gioco",
+      "col": 2,
+      "type": "cloud",
+      "label": "Posizione coperta",
+      "sublabel": "aspetta un'uscita",
+      "tag": "in gioco",
+      "width": 112
+    },
+    {
+      "id": "chiusura",
+      "lane": "gioco",
+      "col": 3,
+      "type": "security",
+      "label": "Chiusura",
+      "sublabel": "banca ogni selezione",
+      "tag": "profitto o perdita",
+      "width": 112
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-entra",
+      "from": "osserva",
+      "to": "giri",
+      "label": "controlli superati",
+      "role": "main",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e-fischio",
+      "from": "giri",
+      "to": "uscita",
+      "label": "fischio con posizione",
+      "role": "main",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "e-abbinata",
+      "from": "uscita",
+      "to": "piatto",
+      "label": "abbinata",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "e-regola",
+      "from": "piatto",
+      "to": "conti",
+      "label": "mercato chiuso",
+      "role": "main",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "up-channel"
+    },
+    {
+      "id": "e-rientra",
+      "from": "piatto",
+      "to": "rientro",
+      "label": "1 gol entro il 45'",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-rientro-fine",
+      "from": "rientro",
+      "to": "conti",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "e-gol",
+      "from": "uscita",
+      "to": "seconda",
+      "label": "gol",
+      "variant": "security",
+      "role": "branch",
+      "fromSide": "left",
+      "toSide": "top"
+    },
+    {
+      "id": "e-tempo",
+      "from": "uscita",
+      "to": "copertura",
+      "label": "3 minuti",
+      "variant": "security",
+      "role": "branch",
+      "route": "straight",
+      "labelDy": 20
+    },
+    {
+      "id": "e-seconda",
+      "from": "seconda",
+      "to": "copertura",
+      "label": "abbinata o 2 min",
+      "role": "branch"
+    },
+    {
+      "id": "e-coperta",
+      "from": "copertura",
+      "to": "coperta",
+      "label": "abbinata",
+      "role": "branch",
+      "route": "straight",
+      "labelDy": 20
+    },
+    {
+      "id": "e-esce",
+      "from": "coperta",
+      "to": "chiusura",
+      "label": "profitto o perdita",
+      "role": "branch"
+    },
+    {
+      "id": "e-chiusa",
+      "from": "chiusura",
+      "to": "piatto",
+      "label": "tutto chiuso",
+      "role": "branch"
+    },
+    {
+      "id": "e-vuoto",
+      "from": "giri",
+      "to": "senza",
+      "label": "fischio senza posizione",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "right",
+      "toSide": "right",
+      "route": "outside-right"
+    },
+    {
+      "id": "e-vuoto-fine",
+      "from": "senza",
+      "to": "conti",
+      "label": "mercato chiuso",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cosa fa Mike",
+      "items": [
+        "Prima del fischio punta Under 3,5 per 10 euro e banca 2 tick sotto, fino a 10 giri",
+        "Al fischio prova a uscire 2 tick sotto per 3 minuti; se no copre con Over 4,5",
+        "Dopo un profitto puo' rientrare una volta sull'Under 4,5"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cosa decidi tu",
+      "items": [
+        "Le uscite sono manuali di serie: Mike propone, tu approvi",
+        "Restano automatiche la copertura e il tetto di perdita della partita"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Ultimo ingresso non abbinato al fischio: Mike non lo ritira",
+        "I 3 minuti dell'uscita contano anche il tempo a mercato sospeso"
+      ]
+    }
+  ]
+}

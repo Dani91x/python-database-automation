@@ -1,0 +1,306 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - le uscite calcolate e il giro di decisione",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "giro",
+        "label": "1. Il giro di decisione",
+        "focus": [
+          "giro",
+          "fase",
+          "guardie",
+          "cancello"
+        ],
+        "note": "A ogni giro: fase finita? chiusura manuale? Poi la regola della fase, le guardie (08) e il cancello (06)."
+      },
+      {
+        "id": "copertura",
+        "label": "2. Quando coprire",
+        "focus": [
+          "fase",
+          "quando"
+        ],
+        "note": "Copre subito, aspetta o salta: gol, minuto, probabilita' di gol, quota Over e risparmio atteso."
+      },
+      {
+        "id": "uscite",
+        "label": "3. Le uscite in fila",
+        "focus": [
+          "soglia",
+          "intelligente",
+          "perdita",
+          "tetto",
+          "tengo",
+          "chiude"
+        ],
+        "note": "Con la copertura in piedi: soglia 5%, cash out intelligente, perdita a modello, tetto di perdita, poi tiene."
+      }
+    ],
+    "legend": {
+      "entries": {
+        "messagebus": {
+          "label": "decisione si'/no"
+        },
+        "cloud": {
+          "label": "attesa"
+        },
+        "security": {
+          "label": "perdita o blocco"
+        },
+        "backend": {
+          "label": "azione"
+        },
+        "external": {
+          "label": "rimando ad altro schema"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "l-giro",
+      "label": "Il giro"
+    },
+    {
+      "id": "l-copertura",
+      "label": "Copertura Over 4,5"
+    },
+    {
+      "id": "l-uscite",
+      "label": "Uscite calcolate (coperti)"
+    },
+    {
+      "id": "l-dopo",
+      "label": "Chiusura e controlli finali",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "giro",
+    "fase",
+    "soglia",
+    "intelligente",
+    "perdita",
+    "tetto",
+    "tengo"
+  ],
+  "nodes": [
+    {
+      "id": "giro",
+      "lane": "l-giro",
+      "col": 0,
+      "type": "messagebus",
+      "label": "Ogni giro",
+      "sublabel": "fase finita? manuale?",
+      "width": 132
+    },
+    {
+      "id": "fase",
+      "lane": "l-giro",
+      "col": 1,
+      "type": "messagebus",
+      "label": "Regola della fase",
+      "sublabel": "una per fase",
+      "width": 132
+    },
+    {
+      "id": "quando",
+      "lane": "l-copertura",
+      "col": 2,
+      "type": "cloud",
+      "label": "Quando coprire",
+      "sublabel": "copre, aspetta, salta",
+      "width": 132
+    },
+    {
+      "id": "soglia",
+      "lane": "l-uscite",
+      "col": 1,
+      "type": "messagebus",
+      "label": "Soglia 5%",
+      "sublabel": "se chiudo ora >= 5%?",
+      "width": 132
+    },
+    {
+      "id": "intelligente",
+      "lane": "l-uscite",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Cash out intelligente",
+      "sublabel": "fra 2% e 5%",
+      "width": 150
+    },
+    {
+      "id": "perdita",
+      "lane": "l-uscite",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Perdita a modello",
+      "sublabel": "3-4 gol, HT o 2T",
+      "width": 132
+    },
+    {
+      "id": "tetto",
+      "lane": "l-uscite",
+      "col": 4,
+      "type": "security",
+      "label": "Tetto di perdita",
+      "sublabel": "-100% della base",
+      "width": 132
+    },
+    {
+      "id": "tengo",
+      "lane": "l-uscite",
+      "col": 5,
+      "type": "cloud",
+      "label": "Tiene",
+      "sublabel": "o seconda tranche",
+      "width": 132
+    },
+    {
+      "id": "chiude",
+      "lane": "l-dopo",
+      "col": 3,
+      "type": "backend",
+      "label": "Chiude tutto",
+      "sublabel": "banca/punta ogni selezione",
+      "width": 140
+    },
+    {
+      "id": "guardie",
+      "lane": "l-dopo",
+      "col": 4,
+      "type": "security",
+      "label": "Guardie e freni",
+      "sublabel": "vedi schema 08",
+      "width": 132
+    },
+    {
+      "id": "cancello",
+      "lane": "l-dopo",
+      "col": 5,
+      "type": "external",
+      "label": "Cancello uscite",
+      "sublabel": "vedi schema 06",
+      "width": 132
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-giro-fase",
+      "from": "giro",
+      "to": "fase",
+      "label": "si opera",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-fase-quando",
+      "from": "fase",
+      "to": "quando",
+      "label": "Under scoperto",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-fase-soglia",
+      "from": "fase",
+      "to": "soglia",
+      "label": "coperti",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-soglia-int",
+      "from": "soglia",
+      "to": "intelligente",
+      "label": "no",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-int-perdita",
+      "from": "intelligente",
+      "to": "perdita",
+      "label": "no",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-perdita-tetto",
+      "from": "perdita",
+      "to": "tetto",
+      "label": "no",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-tetto-tengo",
+      "from": "tetto",
+      "to": "tengo",
+      "label": "no",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-soglia-chiude",
+      "from": "soglia",
+      "to": "chiude",
+      "label": "si'",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-int-chiude",
+      "from": "intelligente",
+      "to": "chiude",
+      "label": "si'",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-perdita-chiude",
+      "from": "perdita",
+      "to": "chiude",
+      "label": "si'",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-tetto-chiude",
+      "from": "tetto",
+      "to": "chiude",
+      "label": "si'",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-chiude-guardie",
+      "from": "chiude",
+      "to": "guardie",
+      "variant": "default"
+    },
+    {
+      "id": "e-guardie-cancello",
+      "from": "guardie",
+      "to": "cancello",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "Ordine dei controlli",
+      "items": [
+        "Soglia piena, poi cash out intelligente",
+        "Poi uscita in perdita (modello o regola fissa)",
+        "Poi tetto di perdita: sempre automatico"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Dopo ogni regola",
+      "items": [
+        "Ogni decisione, anche la copertura, passa dalle guardie (schema 08)",
+        "Le uscite passano dal cancello manuale/automatico (schema 06)"
+      ]
+    }
+  ]
+}

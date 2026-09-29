@@ -1,0 +1,334 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - la copertura sull'Over 4,5",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "copertura-piena",
+        "label": "1. Copertura in una volta",
+        "focus": [
+          "serve",
+          "attesa",
+          "quanto",
+          "ordine",
+          "book",
+          "coperto"
+        ],
+        "note": "Punta Over 4,5 2 tick sotto il miglior prezzo, per 1,2 volte il rischio netto di commissione."
+      },
+      {
+        "id": "tranche",
+        "label": "2. Dopo un gol: due tranche",
+        "focus": [
+          "attesa",
+          "quanto",
+          "coperto",
+          "seconda"
+        ],
+        "note": "Prima meta' 120 s dopo il gol, il resto 180 s dopo che la prima si e' abbinata."
+      },
+      {
+        "id": "freni",
+        "label": "3. Rinunce, attese e freni",
+        "focus": [
+          "serve",
+          "niente",
+          "sospeso",
+          "ordine",
+          "freno",
+          "book",
+          "riprezzo"
+        ],
+        "note": "3+ gol: niente copertura. Over sospeso: aspetta. Ferma 10 s: riprezza. 3 rifiuti uguali: si blocca."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "tranche",
+      "label": "Seconda tranche"
+    },
+    {
+      "id": "principale",
+      "label": "Percorso principale"
+    },
+    {
+      "id": "casi",
+      "label": "Rinunce, attese e freni",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "f-decide",
+      "label": "Decide",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "f-compra",
+      "label": "Compra",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-coperto",
+      "label": "Coperto",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "serve",
+    "attesa",
+    "quanto",
+    "ordine",
+    "book",
+    "coperto"
+  ],
+  "nodes": [
+    {
+      "id": "serve",
+      "lane": "principale",
+      "col": 0,
+      "type": "database",
+      "label": "Serve coprire?",
+      "sublabel": "rischio Under > 0",
+      "width": 120
+    },
+    {
+      "id": "attesa",
+      "lane": "principale",
+      "col": 1,
+      "type": "cloud",
+      "label": "Attesa dal gol",
+      "sublabel": "45 s o 120 s",
+      "width": 120
+    },
+    {
+      "id": "quanto",
+      "lane": "principale",
+      "col": 2,
+      "type": "database",
+      "label": "Quanto comprare",
+      "sublabel": "tutta o meta'",
+      "width": 120
+    },
+    {
+      "id": "ordine",
+      "lane": "principale",
+      "col": 3,
+      "type": "frontend",
+      "label": "Punta Over 4,5",
+      "sublabel": "2 tick sotto",
+      "width": 120
+    },
+    {
+      "id": "book",
+      "lane": "principale",
+      "col": 4,
+      "type": "cloud",
+      "label": "Sul book",
+      "sublabel": "attesa 10 s",
+      "width": 120
+    },
+    {
+      "id": "coperto",
+      "lane": "principale",
+      "col": 5,
+      "type": "cloud",
+      "label": "Posizione coperta",
+      "sublabel": "schema 05",
+      "width": 120
+    },
+    {
+      "id": "seconda",
+      "lane": "tranche",
+      "col": 5,
+      "type": "cloud",
+      "label": "Seconda tranche",
+      "sublabel": "dopo 180 s",
+      "width": 120
+    },
+    {
+      "id": "niente",
+      "lane": "casi",
+      "col": 0,
+      "type": "security",
+      "label": "Niente copertura",
+      "sublabel": "3+ gol o spenta",
+      "width": 120
+    },
+    {
+      "id": "sospeso",
+      "lane": "casi",
+      "col": 1,
+      "type": "cloud",
+      "label": "Aspetta",
+      "sublabel": "Over 4,5 sospeso",
+      "width": 120
+    },
+    {
+      "id": "freno",
+      "lane": "casi",
+      "col": 3,
+      "type": "security",
+      "label": "Freno rifiuti",
+      "sublabel": "3 uguali: bloccata",
+      "width": 120
+    },
+    {
+      "id": "riprezzo",
+      "lane": "casi",
+      "col": 4,
+      "type": "frontend",
+      "label": "Riprezzo",
+      "sublabel": "ricalcola il resto",
+      "width": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-serve-attesa",
+      "from": "serve",
+      "to": "attesa",
+      "label": "si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-attesa-quanto",
+      "from": "attesa",
+      "to": "quanto",
+      "label": "passata",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-quanto-ordine",
+      "from": "quanto",
+      "to": "ordine",
+      "label": "importo",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-ordine-book",
+      "from": "ordine",
+      "to": "book",
+      "label": "piazzata",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-book-coperto",
+      "from": "book",
+      "to": "coperto",
+      "label": "abbinata",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-serve-niente",
+      "from": "serve",
+      "to": "niente",
+      "variant": "security",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-attesa-sospeso",
+      "from": "attesa",
+      "to": "sospeso",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-ordine-freno",
+      "from": "ordine",
+      "to": "freno",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-book-riprezzo",
+      "from": "book",
+      "to": "riprezzo",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-coperto-seconda",
+      "from": "coperto",
+      "to": "seconda",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e-riprezzo-ordine",
+      "from": "riprezzo",
+      "to": "ordine",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e-seconda-quanto",
+      "from": "seconda",
+      "to": "quanto",
+      "variant": "dashed",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cosa fa Mike",
+      "items": [
+        "Punta Over 4,5 per coprire 1,2 volte la perdita dell'Under, netto commissione 5%",
+        "Quota limite 2 tick sotto il miglior prezzo; se non si abbina in 10 s riprezza",
+        "Dopo un gol precoce copre in due meta': 120 s dal gol e 180 s dopo la prima"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cosa decidi tu",
+      "items": [
+        "La copertura e' sempre automatica, anche con le uscite manuali",
+        "Dopo 3 rifiuti uguali la copertura si ferma: la riaccendi con Riprendi"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Con 3 o piu' gol Mike non copre",
+        "Un freno di sicurezza puo' contare come rifiuto e bloccare la copertura",
+        "Con prezzi non vivi non parte nessuna copertura"
+      ]
+    }
+  ]
+}

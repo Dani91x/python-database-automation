@@ -1,0 +1,329 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - nella Control Room",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa: guardi"
+        },
+        "frontend": {
+          "label": "Azione: premi"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Fermo o fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "plancia",
+        "label": "1. La plancia dei bot",
+        "focus": [
+          "ordini",
+          "freno",
+          "riga",
+          "avvia",
+          "legge"
+        ],
+        "note": "Ordini reali e Freno valgono per tutti i bot. Poi la riga di Mike: avvia in prova o con soldi veri."
+      },
+      {
+        "id": "impostazioni",
+        "label": "2. Uscite e parametri",
+        "focus": [
+          "riga",
+          "uscite",
+          "parametri",
+          "avvisi",
+          "legge"
+        ],
+        "note": "Stesso interruttore uscite e stesso pannello parametri della pagina di Mike. Mike li legge al giro dopo."
+      },
+      {
+        "id": "partite",
+        "label": "3. Partite e chiusure",
+        "focus": [
+          "scheda",
+          "proposta",
+          "chiudi",
+          "legge",
+          "chiuse"
+        ],
+        "note": "Riquadro di Mike in sola lettura, proposta da approvare, Chiudi sulla riga: chiude tutta la partita."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "plancia",
+      "label": "Comando dei bot"
+    },
+    {
+      "id": "mike",
+      "label": "Database e Mike"
+    },
+    {
+      "id": "partite",
+      "label": "Partite in gioco"
+    },
+    {
+      "id": "dopo",
+      "label": "Sola lettura",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "ordini",
+    "freno",
+    "riga",
+    "avvia",
+    "legge",
+    "chiuse"
+  ],
+  "nodes": [
+    {
+      "id": "ordini",
+      "lane": "plancia",
+      "col": 0,
+      "type": "database",
+      "label": "Ordini reali",
+      "sublabel": "OFF, PAPER, LIVE",
+      "tag": "riquadro 01",
+      "width": 108
+    },
+    {
+      "id": "freno",
+      "lane": "plancia",
+      "col": 1,
+      "type": "security",
+      "label": "Freno",
+      "sublabel": "stop aperture",
+      "tag": "riquadro 02",
+      "width": 108
+    },
+    {
+      "id": "riga",
+      "lane": "plancia",
+      "col": 2,
+      "type": "cloud",
+      "label": "Riga di Mike",
+      "sublabel": "stato, P&L, stake",
+      "tag": "riquadro 03",
+      "width": 108
+    },
+    {
+      "id": "avvia",
+      "lane": "plancia",
+      "col": 3,
+      "type": "frontend",
+      "label": "Avvia, Ferma",
+      "sublabel": "soldi veri: 2 clic",
+      "tag": "riquadro 04",
+      "width": 108
+    },
+    {
+      "id": "uscite",
+      "lane": "plancia",
+      "col": 4,
+      "type": "database",
+      "label": "Uscite",
+      "sublabel": "di serie manuali",
+      "tag": "riquadro 05",
+      "width": 108
+    },
+    {
+      "id": "parametri",
+      "lane": "plancia",
+      "col": 5,
+      "type": "frontend",
+      "label": "Parametri",
+      "sublabel": "stesso pannello",
+      "tag": "riquadro 06",
+      "width": 108
+    },
+    {
+      "id": "legge",
+      "lane": "mike",
+      "col": 4,
+      "type": "frontend",
+      "label": "Mike legge",
+      "sublabel": "al giro dopo",
+      "tag": "riquadro 07",
+      "width": 108
+    },
+    {
+      "id": "scheda",
+      "lane": "partite",
+      "col": 2,
+      "type": "cloud",
+      "label": "Riquadro Mike",
+      "sublabel": "modello e cifre",
+      "tag": "riquadro 08",
+      "width": 108
+    },
+    {
+      "id": "proposta",
+      "lane": "partite",
+      "col": 3,
+      "type": "database",
+      "label": "Proposta uscita",
+      "sublabel": "approvi: 1 clic",
+      "tag": "riquadro 09",
+      "width": 108
+    },
+    {
+      "id": "chiudi",
+      "lane": "partite",
+      "col": 4,
+      "type": "security",
+      "label": "Chiudi riga",
+      "sublabel": "tutta la partita",
+      "tag": "riquadro 10",
+      "width": 108
+    },
+    {
+      "id": "avvisi",
+      "lane": "dopo",
+      "col": 2,
+      "type": "cloud",
+      "label": "Avvisi e saldo",
+      "sublabel": "fonte, saldo",
+      "tag": "riquadro 11",
+      "width": 108
+    },
+    {
+      "id": "chiuse",
+      "lane": "dopo",
+      "col": 5,
+      "type": "external",
+      "label": "Posizioni chiuse",
+      "sublabel": "filtro Mike",
+      "tag": "riquadro 12",
+      "width": 108
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-tetto",
+      "from": "ordini",
+      "to": "freno",
+      "label": "tetto",
+      "role": "main"
+    },
+    {
+      "id": "e-rilascio",
+      "from": "freno",
+      "to": "riga",
+      "label": "rilasciato",
+      "role": "main"
+    },
+    {
+      "id": "e-comandi",
+      "from": "riga",
+      "to": "avvia",
+      "role": "main"
+    },
+    {
+      "id": "e-acceso",
+      "from": "avvia",
+      "to": "legge",
+      "label": "acceso",
+      "role": "main"
+    },
+    {
+      "id": "e-regolata",
+      "from": "legge",
+      "to": "chiuse",
+      "label": "regolata",
+      "role": "main"
+    },
+    {
+      "id": "e-interr",
+      "from": "uscite",
+      "to": "parametri",
+      "label": "stesso",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-scrive",
+      "from": "uscite",
+      "to": "legge",
+      "label": "scrive",
+      "role": "branch"
+    },
+    {
+      "id": "e-partite",
+      "from": "riga",
+      "to": "scheda",
+      "label": "in gioco",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-propone",
+      "from": "scheda",
+      "to": "proposta",
+      "label": "propone",
+      "role": "branch"
+    },
+    {
+      "id": "e-oppure",
+      "from": "proposta",
+      "to": "chiudi",
+      "label": "oppure",
+      "role": "branch"
+    },
+    {
+      "id": "e-chiudi",
+      "from": "chiudi",
+      "to": "legge",
+      "label": "scrive",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "e-avvisi",
+      "from": "scheda",
+      "to": "avvisi",
+      "label": "diagnostica",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Sopra tutti i bot",
+      "items": [
+        "Ordini reali OFF/PAPER/LIVE: il tetto del .env vince sempre",
+        "Freno: un clic lo tira, due conferme lo rilasciano; le chiusure restano servite"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "La riga di Mike",
+      "items": [
+        "Avvia con soldi veri: un clic arma, 0,4 s di blocco, poi conferma",
+        "Ferma e Passa a prova: un clic, nessuna domanda"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Chiudi di una riga",
+      "items": [
+        "Per Mike chiude tutta la partita, un solo clic",
+        "Senza esito in 3 minuti la riga scrive esito ignoto"
+      ]
+    }
+  ]
+}

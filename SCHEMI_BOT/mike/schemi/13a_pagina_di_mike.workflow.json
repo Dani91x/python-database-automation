@@ -1,0 +1,335 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - la pagina di Mike: cosa vedi e cosa premi",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa: guardi"
+        },
+        "frontend": {
+          "label": "Azione: premi"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Fermo o fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "accendi",
+        "label": "1. Prima di accendere",
+        "focus": [
+          "pagina",
+          "modo",
+          "parametri",
+          "uscite",
+          "avvia",
+          "database",
+          "legge"
+        ],
+        "note": "Scegli paper o live, controlli i parametri e l'interruttore uscite, premi Avvia. Mike legge al giro dopo."
+      },
+      {
+        "id": "partita",
+        "label": "2. Durante la partita",
+        "focus": [
+          "scheda",
+          "proposta",
+          "chiudi",
+          "riprendi",
+          "database",
+          "legge"
+        ],
+        "note": "Sulla scheda approvi una proposta, chiudi la partita o la riprendi. Ogni pulsante scrive una richiesta."
+      },
+      {
+        "id": "conti",
+        "label": "3. Conti e storico",
+        "focus": [
+          "pagina",
+          "legge",
+          "storico"
+        ],
+        "note": "Caselle, Operazioni e Storico contano solo la modalita' attiva: paper e live mai sommati."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "prima",
+      "label": "Testata: comandi del bot"
+    },
+    {
+      "id": "mike",
+      "label": "Database e Mike"
+    },
+    {
+      "id": "partita",
+      "label": "La scheda di una partita"
+    },
+    {
+      "id": "dopo",
+      "label": "Conti per modalita'",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "pagina",
+    "modo",
+    "parametri",
+    "uscite",
+    "avvia",
+    "legge",
+    "storico"
+  ],
+  "nodes": [
+    {
+      "id": "pagina",
+      "lane": "prima",
+      "col": 0,
+      "type": "cloud",
+      "label": "Pagina di Mike",
+      "sublabel": "testata, caselle",
+      "tag": "riquadro 01",
+      "width": 108
+    },
+    {
+      "id": "modo",
+      "lane": "prima",
+      "col": 1,
+      "type": "database",
+      "label": "Paper o live",
+      "sublabel": "live: conferma",
+      "tag": "riquadro 02",
+      "width": 108
+    },
+    {
+      "id": "parametri",
+      "lane": "prima",
+      "col": 2,
+      "type": "frontend",
+      "label": "Parametri",
+      "sublabel": "106 valori",
+      "tag": "riquadro 03",
+      "width": 108
+    },
+    {
+      "id": "uscite",
+      "lane": "prima",
+      "col": 3,
+      "type": "database",
+      "label": "Uscite",
+      "sublabel": "di serie manuali",
+      "tag": "riquadro 04",
+      "width": 108
+    },
+    {
+      "id": "avvia",
+      "lane": "prima",
+      "col": 4,
+      "type": "frontend",
+      "label": "Avvia o Ferma",
+      "sublabel": "accende, spegne",
+      "tag": "riquadro 05",
+      "width": 108
+    },
+    {
+      "id": "database",
+      "lane": "mike",
+      "col": 4,
+      "type": "cloud",
+      "label": "Richiesta",
+      "sublabel": "nel database",
+      "tag": "riquadro 10",
+      "width": 108
+    },
+    {
+      "id": "legge",
+      "lane": "mike",
+      "col": 5,
+      "type": "frontend",
+      "label": "Mike legge",
+      "sublabel": "al giro dopo",
+      "tag": "riquadro 11",
+      "width": 108
+    },
+    {
+      "id": "scheda",
+      "lane": "partita",
+      "col": 1,
+      "type": "cloud",
+      "label": "Scheda partita",
+      "sublabel": "quote e cifre",
+      "tag": "riquadro 06",
+      "width": 108
+    },
+    {
+      "id": "proposta",
+      "lane": "partita",
+      "col": 2,
+      "type": "database",
+      "label": "Proposta uscita",
+      "sublabel": "approvi: 1 clic",
+      "tag": "riquadro 07",
+      "width": 108
+    },
+    {
+      "id": "chiudi",
+      "lane": "partita",
+      "col": 3,
+      "type": "security",
+      "label": "Cash out, Chiudi",
+      "sublabel": "tutta la partita",
+      "tag": "riquadro 08",
+      "width": 108
+    },
+    {
+      "id": "riprendi",
+      "lane": "partita",
+      "col": 4,
+      "type": "frontend",
+      "label": "Salta, Riprendi",
+      "sublabel": "e Annulla ordini",
+      "tag": "riquadro 09",
+      "width": 108
+    },
+    {
+      "id": "storico",
+      "lane": "dopo",
+      "col": 5,
+      "type": "external",
+      "label": "Storico e conti",
+      "sublabel": "paper, live a parte",
+      "tag": "riquadro 12",
+      "width": 108
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-modo",
+      "from": "pagina",
+      "to": "modo",
+      "label": "scegli",
+      "role": "main"
+    },
+    {
+      "id": "e-param",
+      "from": "modo",
+      "to": "parametri",
+      "label": "controlli",
+      "role": "main"
+    },
+    {
+      "id": "e-uscite",
+      "from": "parametri",
+      "to": "uscite",
+      "role": "main"
+    },
+    {
+      "id": "e-avvia",
+      "from": "uscite",
+      "to": "avvia",
+      "role": "main"
+    },
+    {
+      "id": "e-acceso",
+      "from": "avvia",
+      "to": "legge",
+      "label": "acceso",
+      "role": "main"
+    },
+    {
+      "id": "e-conti",
+      "from": "legge",
+      "to": "storico",
+      "label": "regolata",
+      "role": "main",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e-scheda",
+      "from": "pagina",
+      "to": "scheda",
+      "label": "Partite",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "e-propone",
+      "from": "scheda",
+      "to": "proposta",
+      "label": "propone",
+      "role": "branch"
+    },
+    {
+      "id": "e-oppure",
+      "from": "proposta",
+      "to": "chiudi",
+      "label": "oppure",
+      "role": "branch"
+    },
+    {
+      "id": "e-rientro",
+      "from": "chiudi",
+      "to": "riprendi",
+      "label": "no rientro",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-coda",
+      "from": "riprendi",
+      "to": "database",
+      "label": "scrive",
+      "role": "branch",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e-giro",
+      "from": "database",
+      "to": "legge",
+      "label": "giro dopo",
+      "variant": "emphasis",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Cosa comandi da qui",
+      "items": [
+        "Paper o live, parametri, uscite manuali o automatiche, Avvia e Ferma",
+        "Su ogni partita: approva uscita, Cash out, Chiudi a mercato, Annulla ordini, Salta, Riprendi"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Come arriva a Mike",
+      "items": [
+        "L'app scrive nel database, Mike legge al giro dopo: di solito 2 secondi",
+        "Lo schermo si riaggiorna entro 1,5 secondi, o comunque ogni 15 secondi"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Attenzione",
+      "items": [
+        "Il toggle paper/live non cambia le partite gia' armate nell'altra modalita'",
+        "Cash out e Chiudi in live chiedono due clic entro 10 secondi"
+      ]
+    }
+  ]
+}

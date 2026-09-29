@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Mike - i conti: posizione, profitto, copertura",
+    "viewBox": [
+      1080,
+      730
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "posizione",
+        "label": "1. Posizione e green",
+        "focus": [
+          "quote",
+          "scommesse",
+          "green",
+          "esposizione"
+        ],
+        "note": "Dalle scommesse abbinate: se vince / se perde per selezione, e la quota del green 2 tick sotto l'ingresso."
+      },
+      {
+        "id": "valori",
+        "label": "2. Quanto vale la partita",
+        "focus": [
+          "esposizione",
+          "gol",
+          "tabella",
+          "cashout",
+          "rischio",
+          "regolamento"
+        ],
+        "note": "Risultato per ogni numero di gol, valore se chiudo ora al netto del 5%, rischio vero, regolamento finale."
+      },
+      {
+        "id": "copertura",
+        "label": "3. Importo della copertura",
+        "focus": [
+          "esposizione",
+          "perdita",
+          "copertura",
+          "legale"
+        ],
+        "note": "Perdita netta dell'Under x 1,2 meno quanto gia' coperto, diviso la quota Over. Arrotondato al centesimo."
+      }
+    ],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "percorso principale"
+        },
+        "security": {
+          "label": "perdita e protezione"
+        },
+        "dashed": {
+          "label": "dato di supporto"
+        },
+        "default": {
+          "label": "altro dato"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Dati di partenza"
+    },
+    {
+      "label": "Posizione"
+    },
+    {
+      "label": "Valori"
+    },
+    {
+      "label": "Copertura"
+    },
+    {
+      "label": "Importo e esito"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "quote",
+      "type": "database",
+      "label": "Quote e mercato",
+      "sublabel": "punta, banca, stato",
+      "stage": 0,
+      "row": 0,
+      "width": 140
+    },
+    {
+      "id": "scommesse",
+      "type": "database",
+      "label": "Scommesse abbinate",
+      "sublabel": "solo l'abbinato conta",
+      "stage": 0,
+      "row": 2,
+      "width": 140
+    },
+    {
+      "id": "gol",
+      "type": "database",
+      "label": "Gol e commissione",
+      "sublabel": "minuto, gol, 5%",
+      "stage": 0,
+      "row": 4,
+      "width": 140
+    },
+    {
+      "id": "green",
+      "type": "backend",
+      "label": "Quota del green",
+      "sublabel": "2 tick sotto l'ingresso",
+      "stage": 1,
+      "row": 0,
+      "width": 140
+    },
+    {
+      "id": "esposizione",
+      "type": "backend",
+      "label": "Se vince / se perde",
+      "sublabel": "per ogni selezione",
+      "stage": 1,
+      "row": 2,
+      "width": 140
+    },
+    {
+      "id": "cashout",
+      "type": "frontend",
+      "label": "Se chiudo ora",
+      "sublabel": "netto commissione",
+      "stage": 2,
+      "row": 0,
+      "width": 140
+    },
+    {
+      "id": "tabella",
+      "type": "backend",
+      "label": "Conto per gol",
+      "sublabel": "da 0 a 8 gol finali",
+      "stage": 2,
+      "row": 2,
+      "width": 140
+    },
+    {
+      "id": "perdita",
+      "type": "security",
+      "label": "Perdita dell'Under",
+      "sublabel": "se l'Under perde",
+      "stage": 2,
+      "row": 4,
+      "width": 140
+    },
+    {
+      "id": "rischio",
+      "type": "security",
+      "label": "Rischio e bloccato",
+      "sublabel": "peggior caso, gia' certo",
+      "stage": 3,
+      "row": 2,
+      "width": 140
+    },
+    {
+      "id": "copertura",
+      "type": "backend",
+      "label": "Importo copertura",
+      "sublabel": "Over 4,5 per 5+ gol",
+      "stage": 3,
+      "row": 4,
+      "width": 140
+    },
+    {
+      "id": "regolamento",
+      "type": "external",
+      "label": "Regolamento",
+      "sublabel": "col punteggio finale",
+      "stage": 4,
+      "row": 2,
+      "width": 140
+    },
+    {
+      "id": "legale",
+      "type": "backend",
+      "label": "Importo piazzabile",
+      "sublabel": "centesimo o 2,00 euro",
+      "stage": 4,
+      "row": 4,
+      "width": 140
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-espo",
+      "from": "scommesse",
+      "to": "esposizione",
+      "label": "importi",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "f-green",
+      "from": "esposizione",
+      "to": "green",
+      "label": "quota media",
+      "variant": "default",
+      "route": "straight",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "f-cash-quote",
+      "from": "quote",
+      "to": "cashout",
+      "label": "miglior quota",
+      "variant": "default",
+      "route": "top-channel"
+    },
+    {
+      "id": "f-cash-espo",
+      "from": "esposizione",
+      "to": "cashout",
+      "label": "posizione",
+      "variant": "emphasis"
+    },
+    {
+      "id": "f-tab",
+      "from": "esposizione",
+      "to": "tabella",
+      "label": "gambe",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        403,
+        401
+      ]
+    },
+    {
+      "id": "f-perdita",
+      "from": "esposizione",
+      "to": "perdita",
+      "label": "Under",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          315,
+          613
+        ]
+      ]
+    },
+    {
+      "id": "f-comm",
+      "from": "gol",
+      "to": "copertura",
+      "label": "commissione 5%",
+      "variant": "dashed",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "f-rischio",
+      "from": "tabella",
+      "to": "rischio",
+      "label": "minimo",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "f-reg",
+      "from": "rischio",
+      "to": "regolamento",
+      "label": "finale",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "f-cop",
+      "from": "perdita",
+      "to": "copertura",
+      "label": "x 1,2",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "f-legale",
+      "from": "copertura",
+      "to": "legale",
+      "label": "arrotonda",
+      "variant": "emphasis",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Da dove parte",
+      "items": [
+        "Quote migliori e stato del mercato",
+        "Solo gli importi ABBINATI, mai quelli chiesti",
+        "Gol, minuto e commissione del 5%"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Esempio unico delle schede",
+      "items": [
+        "Punta Under 3,5: 10,00 euro a 1,50",
+        "Copertura Over 4,5: 2,26 euro a 6,60",
+        "0-3 gol +2,49; 4 gol -12,26; 5+ gol +2,02"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Da decidere",
+      "items": [
+        "Importo copertura sulla quota migliore, ordine 2 tick sotto",
+        "Tetto per partita misura il puntato, non la perdita"
+      ]
+    }
+  ]
+}

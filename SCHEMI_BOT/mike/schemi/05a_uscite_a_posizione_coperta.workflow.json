@@ -1,0 +1,329 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike 05a - le uscite a posizione coperta",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "backend": {
+          "label": "Profitto bloccato"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Pulsante dell'utente"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "controlli",
+        "label": "1. I controlli a ogni giro",
+        "focus": [
+          "coperta",
+          "esposizione",
+          "cashout",
+          "perdita",
+          "tetto",
+          "tengo"
+        ],
+        "note": "A ogni giro Mike controlla in fila: rischio, profitto, perdita tollerata, tetto. Se nessuno scatta, tiene."
+      },
+      {
+        "id": "firma",
+        "label": "2. Chi decide l'uscita",
+        "focus": [
+          "cashout",
+          "perdita",
+          "proposta",
+          "tetto",
+          "chiusura"
+        ],
+        "note": "Cash out e perdita tollerata sono proposte da firmare. Il tetto di perdita chiude sempre da solo."
+      },
+      {
+        "id": "chiusura",
+        "label": "3. La chiusura in corso",
+        "focus": [
+          "chiusura",
+          "esauriti",
+          "piatto"
+        ],
+        "note": "Banca al miglior prezzo, riprezza ogni 10 secondi, al massimo 20 tentativi. Tutto chiuso: piatto."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "controlli",
+      "label": "Controlli a ogni giro"
+    },
+    {
+      "id": "attese",
+      "label": "Attese e ritorni",
+      "variant": "exception"
+    },
+    {
+      "id": "firma",
+      "label": "La tua firma"
+    },
+    {
+      "id": "ordini",
+      "label": "Ordini di chiusura"
+    },
+    {
+      "id": "blocchi",
+      "label": "Blocco",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "coperta",
+    "esposizione",
+    "cashout",
+    "perdita",
+    "tetto",
+    "tengo"
+  ],
+  "nodes": [
+    {
+      "id": "coperta",
+      "lane": "controlli",
+      "col": 0,
+      "type": "cloud",
+      "label": "Posizione coperta",
+      "sublabel": "Under 3,5 + Over 4,5",
+      "width": 126
+    },
+    {
+      "id": "esposizione",
+      "lane": "controlli",
+      "col": 1,
+      "type": "database",
+      "label": "Resta rischio?",
+      "sublabel": "esposizione e prezzi",
+      "width": 126
+    },
+    {
+      "id": "cashout",
+      "lane": "controlli",
+      "col": 2,
+      "type": "backend",
+      "label": "Cash out profitto",
+      "sublabel": "5 % o intelligente",
+      "tag": "manuale",
+      "width": 126
+    },
+    {
+      "id": "perdita",
+      "lane": "controlli",
+      "col": 3,
+      "type": "security",
+      "label": "Uscita in perdita",
+      "sublabel": "3-4 gol, HT o 46'-85'",
+      "tag": "manuale",
+      "width": 126
+    },
+    {
+      "id": "tetto",
+      "lane": "controlli",
+      "col": 4,
+      "type": "security",
+      "label": "Tetto perdita",
+      "sublabel": "100 % della base",
+      "tag": "automatica",
+      "width": 126
+    },
+    {
+      "id": "tengo",
+      "lane": "controlli",
+      "col": 5,
+      "type": "cloud",
+      "label": "Tengo",
+      "sublabel": "ricontrolla al giro dopo",
+      "width": 126
+    },
+    {
+      "id": "proposta",
+      "lane": "firma",
+      "col": 3,
+      "type": "external",
+      "label": "Proposta a te",
+      "sublabel": "firma valida 120 s",
+      "width": 126
+    },
+    {
+      "id": "chiusura",
+      "lane": "ordini",
+      "col": 4,
+      "type": "frontend",
+      "label": "Chiusura in corso",
+      "sublabel": "riprezzo ogni 10 s",
+      "tag": "automatica",
+      "width": 126
+    },
+    {
+      "id": "piatto",
+      "lane": "ordini",
+      "col": 5,
+      "type": "cloud",
+      "label": "Piatto",
+      "sublabel": "segue il capitolo 05b",
+      "width": 126
+    },
+    {
+      "id": "prezzi",
+      "lane": "attese",
+      "col": 1,
+      "type": "cloud",
+      "label": "Prezzi incompleti",
+      "sublabel": "aspetta, nessun ordine",
+      "width": 126
+    },
+    {
+      "id": "esauriti",
+      "lane": "blocchi",
+      "col": 4,
+      "type": "security",
+      "label": "Tentativi finiti",
+      "sublabel": "resta aperta",
+      "width": 126
+    },
+    {
+      "id": "tranche",
+      "lane": "attese",
+      "col": 5,
+      "type": "frontend",
+      "label": "Seconda tranche",
+      "sublabel": "torna a coprire",
+      "width": 126
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-guarda",
+      "from": "coperta",
+      "to": "esposizione",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-prezzi-ok",
+      "from": "esposizione",
+      "to": "cashout",
+      "label": "si'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-sotto-soglia",
+      "from": "cashout",
+      "to": "perdita",
+      "label": "no"
+    },
+    {
+      "id": "e-non-conviene",
+      "from": "perdita",
+      "to": "tetto",
+      "label": "no"
+    },
+    {
+      "id": "e-sopra-tetto",
+      "from": "tetto",
+      "to": "tengo",
+      "label": "no"
+    },
+    {
+      "id": "e-manca-prezzo",
+      "from": "esposizione",
+      "to": "prezzi",
+      "label": "manca un prezzo",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-cash",
+      "from": "cashout",
+      "to": "proposta",
+      "label": "netto >= 5 %",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-perdita",
+      "from": "perdita",
+      "to": "proposta",
+      "label": "chiudere conviene",
+      "variant": "security"
+    },
+    {
+      "id": "e-firma",
+      "from": "proposta",
+      "to": "chiusura",
+      "label": "approvi",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-tetto",
+      "from": "tetto",
+      "to": "chiusura",
+      "label": "sempre",
+      "variant": "security"
+    },
+    {
+      "id": "e-chiuso",
+      "from": "chiusura",
+      "to": "piatto",
+      "label": "tutto chiuso",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-esauriti",
+      "from": "chiusura",
+      "to": "esauriti",
+      "label": "20 tentativi",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e-tranche",
+      "from": "tengo",
+      "to": "tranche",
+      "label": "180 s dalla 1a",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cosa fa Mike",
+      "items": [
+        "Controlla in fila: rischio, profitto, perdita tollerata, tetto",
+        "La prima uscita che scatta chiude tutte le selezioni al miglior prezzo"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Cosa decidi tu",
+      "items": [
+        "Cash out e uscite in perdita sono proposte: le approvi tu",
+        "Il tetto di perdita e i riprezzi della chiusura partono da soli"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Punti da guardare",
+      "items": [
+        "Il tetto al 100 % della base non scatta quasi mai",
+        "Con prezzi non vivi non parte nessun ordine, chiusure comprese"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - freni e protezioni",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "security": {
+          "label": "Freno o controllo"
+        },
+        "backend": {
+          "label": "Chiusura del bot"
+        },
+        "external": {
+          "label": "Pulsante dell'utente"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "bot-e-giornata",
+        "label": "1. Bot e giornata",
+        "focus": [
+          "bot",
+          "stop",
+          "posto"
+        ],
+        "note": "Bot fermo, app appena aperta o stop di giornata: niente aperture nuove. Coperture e uscite continuano."
+      },
+      {
+        "id": "partita",
+        "label": "2. La partita",
+        "focus": [
+          "ignoto",
+          "ferme",
+          "frenocop",
+          "banca",
+          "riprendi"
+        ],
+        "note": "Un ordine a esito ignoto o un freno precedente tolgono le aperture. La copertura ha un suo freno: 3 rifiuti, 15 s."
+      },
+      {
+        "id": "invio",
+        "label": "3. Al momento dell'invio",
+        "focus": [
+          "prezzi",
+          "frenounico",
+          "soldi"
+        ],
+        "note": "Prezzi non vivi: nessun ordine. Freno unico e modo ordini fermano le aperture. In live serve l'interruttore soldi veri."
+      },
+      {
+        "id": "chiusure",
+        "label": "4. Chiusure protette",
+        "focus": [
+          "protezioni",
+          "banca",
+          "prezzi",
+          "soldi"
+        ],
+        "note": "Tetto di perdita e cash out chiudono sempre: saltano i freni d'apertura, non i prezzi vivi e l'interruttore live."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "giornata",
+      "label": "Il bot e la giornata"
+    },
+    {
+      "id": "partita",
+      "label": "La partita"
+    },
+    {
+      "id": "copertura",
+      "label": "Copertura e banca"
+    },
+    {
+      "id": "posti",
+      "label": "Posti e prezzi"
+    },
+    {
+      "id": "invio",
+      "label": "Invio dell'ordine"
+    }
+  ],
+  "mainPath": [
+    "bot",
+    "stop",
+    "ignoto",
+    "ferme",
+    "frenocop",
+    "banca",
+    "posto",
+    "prezzi",
+    "frenounico",
+    "soldi"
+  ],
+  "nodes": [
+    {
+      "id": "bot",
+      "lane": "giornata",
+      "col": 0,
+      "type": "security",
+      "label": "Bot in marcia?",
+      "sublabel": "Avvia, Ferma, app",
+      "width": 132,
+      "tag": "riquadro 01"
+    },
+    {
+      "id": "stop",
+      "lane": "giornata",
+      "col": 1,
+      "type": "security",
+      "label": "Stop giornaliero",
+      "sublabel": "perdita 50 euro",
+      "width": 132,
+      "tag": "riquadro 02"
+    },
+    {
+      "id": "protezioni",
+      "lane": "giornata",
+      "col": 3,
+      "type": "backend",
+      "label": "Chiusure protette",
+      "sublabel": "tetto, cash out",
+      "width": 132,
+      "tag": "riquadro 11"
+    },
+    {
+      "id": "ignoto",
+      "lane": "partita",
+      "col": 1,
+      "type": "security",
+      "label": "Esito ignoto?",
+      "sublabel": "ordine dubbio",
+      "width": 132,
+      "tag": "riquadro 03"
+    },
+    {
+      "id": "ferme",
+      "lane": "partita",
+      "col": 2,
+      "type": "security",
+      "label": "Aperture ferme?",
+      "sublabel": "dopo un freno",
+      "width": 132,
+      "tag": "riquadro 04"
+    },
+    {
+      "id": "riprendi",
+      "lane": "copertura",
+      "col": 1,
+      "type": "external",
+      "label": "Riprendi",
+      "sublabel": "pulsante utente",
+      "width": 132,
+      "tag": "riquadro 12"
+    },
+    {
+      "id": "frenocop",
+      "lane": "copertura",
+      "col": 2,
+      "type": "security",
+      "label": "Freno coperture",
+      "sublabel": "3 rifiuti, 15 s",
+      "width": 132,
+      "tag": "riquadro 05"
+    },
+    {
+      "id": "banca",
+      "lane": "copertura",
+      "col": 3,
+      "type": "security",
+      "label": "Una banca sola",
+      "sublabel": "mai sovracopertura",
+      "width": 132,
+      "tag": "riquadro 06"
+    },
+    {
+      "id": "posto",
+      "lane": "posti",
+      "col": 3,
+      "type": "security",
+      "label": "Posto libero?",
+      "sublabel": "10 partite per modo",
+      "width": 132,
+      "tag": "riquadro 07"
+    },
+    {
+      "id": "prezzi",
+      "lane": "posti",
+      "col": 4,
+      "type": "security",
+      "label": "Prezzi vivi?",
+      "sublabel": "feed e flusso",
+      "width": 132,
+      "tag": "riquadro 08"
+    },
+    {
+      "id": "frenounico",
+      "lane": "invio",
+      "col": 4,
+      "type": "security",
+      "label": "Freno unico",
+      "sublabel": "e modo ordini",
+      "width": 132,
+      "tag": "riquadro 09"
+    },
+    {
+      "id": "soldi",
+      "lane": "invio",
+      "col": 5,
+      "type": "security",
+      "label": "Soldi veri?",
+      "sublabel": "solo in live",
+      "width": 132,
+      "tag": "riquadro 10"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-bot",
+      "from": "bot",
+      "to": "stop",
+      "label": "in marcia",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-stop",
+      "from": "stop",
+      "to": "ignoto",
+      "label": "non scattato",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        350.8,
+        181
+      ]
+    },
+    {
+      "id": "e-ignoto",
+      "from": "ignoto",
+      "to": "ferme",
+      "label": "nessun dubbio",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-ferme",
+      "from": "ferme",
+      "to": "frenocop",
+      "label": "nessun blocco",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        566.0,
+        305
+      ]
+    },
+    {
+      "id": "e-frenocop",
+      "from": "frenocop",
+      "to": "banca",
+      "label": "freno spento",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-banca",
+      "from": "banca",
+      "to": "posto",
+      "label": "nessun doppione",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        779.2,
+        429
+      ]
+    },
+    {
+      "id": "e-posto",
+      "from": "posto",
+      "to": "prezzi",
+      "label": "posto c'e'",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-prezzi",
+      "from": "prezzi",
+      "to": "frenounico",
+      "label": "prezzi vivi",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        966.0,
+        553
+      ]
+    },
+    {
+      "id": "e-frenounico",
+      "from": "frenounico",
+      "to": "soldi",
+      "label": "freno spento",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-riprendi",
+      "from": "riprendi",
+      "to": "frenocop",
+      "label": "azzera",
+      "variant": "dashed"
+    },
+    {
+      "id": "e-protezioni",
+      "from": "protezioni",
+      "to": "banca",
+      "label": "chiusure",
+      "variant": "dashed",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        759.6,
+        305
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Cosa fermano i freni",
+      "items": [
+        "Quasi tutti i freni tolgono solo le APERTURE: ingresso, ultimo ingresso, seconda puntata, copertura, rientro",
+        "Prezzi non vivi e interruttore soldi veri spento fermano OGNI ordine, chiusure comprese"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Cosa resta sempre permesso",
+      "items": [
+        "Ritirare ordini, chiudere, regolare i conti",
+        "Tetto di perdita della partita e cash out partono anche con le uscite manuali"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Come si riparte",
+      "items": [
+        "Da soli: quando la causa sparisce (freno spento, prezzi vivi, ordine chiarito, nuovo giorno)",
+        "Con Riprendi: freno coperture e divieto di rientro dopo un cash out"
+      ]
+    }
+  ]
+}

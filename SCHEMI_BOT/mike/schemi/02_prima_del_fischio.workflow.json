@@ -1,0 +1,327 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - prima del fischio",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": {
+          "label": "Attesa"
+        },
+        "frontend": {
+          "label": "Azione: ordine"
+        },
+        "database": {
+          "label": "Decisione"
+        },
+        "backend": {
+          "label": "Profitto bloccato"
+        },
+        "security": {
+          "label": "Perdita o blocco"
+        },
+        "external": {
+          "label": "Fermo, fine"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "giro",
+        "label": "1. Un giro",
+        "focus": [
+          "osserva",
+          "controlli",
+          "punta",
+          "banca",
+          "giro"
+        ],
+        "note": "13 controlli, punta 10 euro sull'Under 3,5, banca 2 tick sotto, giro chiuso, 60 secondi di pausa."
+      },
+      {
+        "id": "dieci-minuti",
+        "label": "2. A 10 minuti dal fischio",
+        "focus": [
+          "banca",
+          "dieci",
+          "finale",
+          "ultimo",
+          "veto",
+          "fischio"
+        ],
+        "note": "In profitto chiude e rientra; in perdita tiene fino al fischio, o chiude in perdita se scatta il veto."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "profitto",
+      "label": "In profitto a 10 minuti"
+    },
+    {
+      "id": "giri",
+      "label": "Giri prima del fischio"
+    },
+    {
+      "id": "chiusi",
+      "label": "Giro chiuso o veto",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "osserva",
+    "controlli",
+    "punta",
+    "banca",
+    "dieci",
+    "fischio"
+  ],
+  "nodes": [
+    {
+      "id": "osserva",
+      "lane": "giri",
+      "col": 0,
+      "type": "cloud",
+      "label": "Osserva",
+      "sublabel": "nessuna posizione",
+      "tag": "da 1 ora prima",
+      "width": 112
+    },
+    {
+      "id": "controlli",
+      "lane": "giri",
+      "col": 1,
+      "type": "database",
+      "label": "13 controlli",
+      "sublabel": "orario, giri, quota",
+      "tag": "tutti si'?",
+      "width": 112
+    },
+    {
+      "id": "punta",
+      "lane": "giri",
+      "col": 2,
+      "type": "frontend",
+      "label": "Punta Under 3,5",
+      "sublabel": "10 euro",
+      "tag": "attesa 60 s",
+      "width": 112
+    },
+    {
+      "id": "banca",
+      "lane": "giri",
+      "col": 3,
+      "type": "frontend",
+      "label": "Banca appoggiata",
+      "sublabel": "2 tick sotto",
+      "tag": "posizione aperta",
+      "width": 112
+    },
+    {
+      "id": "dieci",
+      "lane": "giri",
+      "col": 4,
+      "type": "database",
+      "label": "10' dal fischio",
+      "sublabel": "chiudere rende?",
+      "tag": "ultima mossa",
+      "width": 112
+    },
+    {
+      "id": "fischio",
+      "lane": "giri",
+      "col": 5,
+      "type": "external",
+      "label": "Fischio",
+      "sublabel": "ritira il resto",
+      "tag": "vedi schema 01",
+      "width": 112
+    },
+    {
+      "id": "finale",
+      "lane": "profitto",
+      "col": 4,
+      "type": "backend",
+      "label": "Chiusura finale",
+      "sublabel": "banca al mercato",
+      "tag": "profitto bloccato",
+      "width": 112
+    },
+    {
+      "id": "ultimo",
+      "lane": "profitto",
+      "col": 5,
+      "type": "frontend",
+      "label": "Ultimo ingresso",
+      "sublabel": "punta 10 euro",
+      "tag": "entra in gioco",
+      "width": 112
+    },
+    {
+      "id": "giro",
+      "lane": "chiusi",
+      "col": 3,
+      "type": "backend",
+      "label": "Giro chiuso",
+      "sublabel": "circa +0,14 euro",
+      "tag": "pausa 60 s",
+      "width": 112
+    },
+    {
+      "id": "veto",
+      "lane": "chiusi",
+      "col": 4,
+      "type": "security",
+      "label": "Veto Under 3,5",
+      "sublabel": "chiude in perdita",
+      "tag": "niente rientro",
+      "width": 112
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-guarda",
+      "from": "osserva",
+      "to": "controlli",
+      "role": "main"
+    },
+    {
+      "id": "e-si",
+      "from": "controlli",
+      "to": "punta",
+      "label": "tutti si'",
+      "role": "main"
+    },
+    {
+      "id": "e-no",
+      "from": "controlli",
+      "to": "osserva",
+      "label": "un no",
+      "variant": "dashed",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "up-channel"
+    },
+    {
+      "id": "e-abbinata",
+      "from": "punta",
+      "to": "banca",
+      "label": "abbinata",
+      "role": "main"
+    },
+    {
+      "id": "e-scaduta",
+      "from": "punta",
+      "to": "osserva",
+      "label": "niente in 60 s",
+      "variant": "dashed",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "up-channel"
+    },
+    {
+      "id": "e-dieci",
+      "from": "banca",
+      "to": "dieci",
+      "label": "10' dal fischio",
+      "role": "main"
+    },
+    {
+      "id": "e-green",
+      "from": "banca",
+      "to": "giro",
+      "label": "abbinata",
+      "variant": "emphasis",
+      "role": "branch",
+      "labelDy": 20,
+      "route": "straight"
+    },
+    {
+      "id": "e-pausa",
+      "from": "giro",
+      "to": "osserva",
+      "label": "dopo 60 s",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e-tengo",
+      "from": "dieci",
+      "to": "fischio",
+      "label": "in perdita: tengo",
+      "variant": "security",
+      "role": "main"
+    },
+    {
+      "id": "e-profitto",
+      "from": "dieci",
+      "to": "finale",
+      "label": "in profitto",
+      "variant": "emphasis",
+      "role": "branch",
+      "labelDy": -20,
+      "route": "straight"
+    },
+    {
+      "id": "e-rientra",
+      "from": "finale",
+      "to": "ultimo",
+      "label": "abbinata",
+      "role": "branch"
+    },
+    {
+      "id": "e-ultimo",
+      "from": "ultimo",
+      "to": "fischio",
+      "role": "branch",
+      "route": "straight"
+    },
+    {
+      "id": "e-veto",
+      "from": "dieci",
+      "to": "veto",
+      "label": "veto",
+      "variant": "security",
+      "role": "error",
+      "labelDy": 20,
+      "route": "straight"
+    },
+    {
+      "id": "e-veto-fischio",
+      "from": "veto",
+      "to": "fischio",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Un giro",
+      "items": [
+        "Punta 10 euro sull'Under 3,5 fra quota 1,30 e 3,00",
+        "Banca 2 tick sotto: se si abbina blocca circa 0,14 euro",
+        "Fino a 10 giri, da 1 ora a 10 minuti dal fischio"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "A 10 minuti dal fischio",
+      "items": [
+        "In profitto: chiude al mercato e rientra con l'ultimo ingresso",
+        "In perdita: tiene fino al fischio, salvo veto"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Da confermare",
+      "items": [
+        "Gli ordini veri partono tutto o niente e cadono al fischio",
+        "Quindi l'attesa di 60 s e l'ultimo ingresso in gioco sono solo sulla carta"
+      ]
+    }
+  ]
+}
