@@ -4335,3 +4335,22 @@ safe_tennis; mike copertura-rifiutata entrambi; mike «tutti» canale (30 min);
   leggere i replay di scalper_calcio e sniper (`scratchpad/replay/giro2/` e `giro3/`) e la suite finale.
 
 **Checkpoint 07:54 del 29/09** — suite Python INTERA dal checkout principale su `304a8e1`: **8319 verdi, 0 rossi** (5 min 57 s). Sniper (35674515, scenari sniper e sniper-paper) su `2f53bb0`: 2 OK, 0 violazioni ma 0 AZIONI (lo sniper su quella partita non spara): NON PROVATO. Scalper calcio 35797769: replay ancora in corso. PUSH di master fatto ora come copia di sicurezza: scalper calcio, sniper e tennis swing restano NON CERTIFICATI finche' non hanno un replay in cui il bot opera.
+
+**Checkpoint 09:06 del 29/09 — migrazione applicata e verificata; SCALPER CALCIO KO AL REPLAY; shell ripulite**
+- MIGRAZIONE `uscite_approva_bot_flusso_2026-09-28.sql` APPLICATA dall'utente e verificata da me sul DB in sola lettura:
+  `tennis_bot_approva_uscita(text, text, text)` e `scalper_approva_uscita(text, text)` esistono, `SECURITY DEFINER`,
+  `search_path` fissato, `anon` NON puo' eseguirle, `authenticated` e `service_role` si'; controllano il proprietario e
+  scrivono in `params.uscite_approvate`. Nessuna firma presente nelle tabelle (0 righe con firme).
+- **SCALPER CALCIO NON CERTIFICATO**: `certifica scalper_calcio 35797769` sul codice finale: [base] KO e [paper] KO con
+  **B2 x1 e K5 x1**: al fischio resta una posizione abbinata sbilanciata di 4,44 EUR (se vince +2,44, se perde -2,00) e il
+  bot la crede DONE. [uscite-manuali] OK. Sul commit `02d4c30` anche [uscite-manuali-firmate] KO (stesse B2/K5 + UF2 x14:
+  uscita a target firmata, proposta 24,42, ordini nuovi 0,00). Il 24/09 lo stesso replay aveva solo un residuo di
+  -0,20/+0,40. Referto: `AUDIT_2026-09-28/replay/certificazione_29_09/scalper_calcio_KO_02d4c30.txt`.
+  DELEGATO S LANCIATO (Opus, worktree suo, agente `a33555648dadfee29`): causa radice con un replay con diario,
+  correzione, test dal bot vero. Replay di confronto MIO in corso sul codice di ieri (`82239df`, poi `61d4185`), scenario
+  base, uscite in `scratchpad/replay/confronto/`.
+- SHELL IN BACKGROUND (l'utente ha chiesto di fermare quelle inutili): FERMATE tre code superate (giro dal commit
+  `02d4c30`; attesa del replay di Mike sullo stesso commit; coda sul commit `a739a59`, gia' sostituita). RESTANO: il
+  replay dello scalper calcio sul codice finale (ultimo scenario) e il replay di confronto.
+- STATO PER IL PAPER: accendibili Mike, Omega, Safe base/esatto/punta, Safe tennis, tennis pro, tennis FLB, scalper
+  tennis. NON accendere: scalper calcio (KO), sniper e tennis swing (non provati: 0 azioni sulle registrazioni usate).
