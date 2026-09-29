@@ -94,6 +94,11 @@ Comunica in italiano. Codice ASCII-only, commenti in italiano, stile del file ch
    documentazione e da decisione dell'utente scritta nel brief.
 8. Consegna parziale ma verificata batte consegna completa in ritardo: se il cantiere e'
    grande consegna a blocchi e scrivi `STATO_RIPRESA.md` con cio' che resta.
+9. **Replay veloci (ordine dell'utente, 29/09/2026; `PROCESSO_STANDARD_BOT.md` par. 6.9)**:
+   la certificazione completa di un bot sta in 5 minuti, tetto 10. Se il tuo lavoro aggiunge
+   un controllo o uno scenario al banco, misura il tempo prima e dopo e scrivilo nel referto.
+   Un replay sopra il tetto e' un difetto del banco: segnalalo, non aspettarlo. Mai
+   guadagnare tempo controllando meno (book saltati, controlli spenti, cadenza cambiata).
 
 ## 5. Consegna (referto in `AUDIT_<data>/<NOME_CANTIERE>.md`)
 

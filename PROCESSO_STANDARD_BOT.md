@@ -186,6 +186,26 @@ mai silenziosamente.
 - Il banco gira anche nella suite (`pytest -m cert`, campione ridotto) così che una
   modifica al bot rilanci la certificazione **di default**.
 
+### 6.9 Velocità del banco (ordine dell'utente, 29/09/2026)
+Un backtest che dura ore non serve: il replay deve essere **rapido e affidabile insieme**.
+- **Traguardo**: la certificazione completa di un bot (tutti i suoi scenari, una
+  registrazione, `--worker 1`) sta in **5 minuti**. **Tetto massimo: 10 minuti.** Vale per
+  ogni bot, presente e futuro.
+- **Più veloce non vuol dire controllare meno.** Vietato, per guadagnare tempo: saltare
+  book, saltare giri di verifica, spegnere o diradare controlli, cambiare la cadenza del
+  servizio, accorciare la partita. Un'ottimizzazione del banco si accetta solo se il referto
+  esce **identico numero per numero** a quello di prima (confronto dei due referti, tolte le
+  sole righe dei tempi) e se ogni struttura resa incrementale o messa in memoria ha un test
+  di equivalenza con la versione lenta.
+- **Il referto dichiara i tempi**: secondi e tick al secondo per scenario, totale in coda,
+  riga `LENTO` se il totale supera il tetto. Un replay sopra il tetto è un **difetto del
+  banco** da correggere, non un'attesa da sopportare.
+- **Nessun costo che cresce con la durata della partita**: un controllo non ricostruisce a
+  ogni giro una struttura su tutta la storia (difetto del 29/09: metà del tempo dello
+  scalper calcio era un solo controllo che rifaceva i conti da capo a ogni giro).
+- **Si misura prima di ottimizzare**: profilo del replay (cProfile), poi il punto caldo.
+- Un bot nuovo o un controllo nuovo entrano nel banco solo se il tempo resta sotto il tetto.
+
 ---
 
 ## 7. CATALOGO DEGLI ERRORI GIÀ VISTI — ognuno è un controllo, un test o una falsificazione
