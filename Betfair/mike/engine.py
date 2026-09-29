@@ -2093,6 +2093,19 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
     if cancels:
         return Decision(ctx.state, cancels, "chiusura manuale: annullo gli ordini vivi",
                         updates={"close_reason": "manual"})
+    # 29/09 (replay del pacchetto P1, controllo J5): «mai due lay a mercato»
+    # vale anche qui. Una lay di un altro ruolo ancora IN VOLO sulla selezione da
+    # chiudere (es. la banca pre-partita il cui annullamento non e' confermato:
+    # esito ignoto) puo' essere viva su Betfair: si aspetta il suo esito.
+    altra = next((l for l in ctx.legs
+                  if (l.is_live or l.needs_reconcile) and l.side == "lay"
+                  and l.role != "manual_close"
+                  and any(c.market == l.market and c.selection == l.selection for c in closes)),
+                 None)
+    if altra is not None:
+        return Decision(ctx.state, [], "chiusura manuale: attendo l'esito della lay '%s' "
+                                       "(mai due lay a mercato)" % altra.ref,
+                        updates={"close_reason": "manual"})
     working = [l for l in ctx.legs if l.is_live and l.role == "manual_close"]
     if working:
         stale = [l for l in working
@@ -2266,6 +2279,24 @@ def chiave_uscita(ctx: MatchCtx, categoria: str) -> str:
     return f"{categoria}|c{int(ctx.cycle_no)}"
 
 
+def uscita_in_perdita(d: Decision) -> bool:
+    """29/09 (piano Mike M1.1, M4.1-M4.4, decisioni 13 e 16 dell'utente): l'uscita
+    di questa decisione puo' chiudere IN PERDITA? Solo queste restano una
+    proposta da firmare a interruttore manuale; quelle che bloccano un PROFITTO
+    (green pre-partita, banca al fischio, cash out a soglia e intelligente, green
+    del rientro) le esegue il bot.
+
+    In perdita: uscita a modello / tollerata (``close_reason`` ``loss_*``), la
+    chiusura a tempo del rientro (``reentry_time``: al mercato a un minuto fisso,
+    puo' essere in perdita) e la chiusura del veto pre-partita (nota
+    ``VETO_U35_NOTE``). Il seguito di un'uscita gia' partita (riprezzo, residuo:
+    la decisione non riscrive il motivo) passa comunque, come prima."""
+    motivo = str(d.updates.get("close_reason") or "")
+    if motivo.startswith("loss") or motivo == "reentry_time":
+        return True
+    return any(a.kind == "place" and a.note == VETO_U35_NOTE for a in d.actions)
+
+
 def _uscita_gia_in_corso(ctx: MatchCtx, d: Decision) -> bool:
     """L'uscita di questa decisione e' il SEGUITO di un'uscita gia' partita
     (approvata, o partita prima che l'utente spegnesse l'interruttore)?
@@ -2280,6 +2311,11 @@ def _uscita_gia_in_corso(ctx: MatchCtx, d: Decision) -> bool:
     """
     if ctx.state in STATI_USCITA_IN_CORSO:
         return True
+    # 29/09 (piano Mike M8.1): un'uscita IN PERDITA chiede SEMPRE la sua firma.
+    # Una gamba d'uscita gia' esistente nel ciclo (resto di un'uscita
+    # precedente, anche firmata) non la autorizza.
+    if uscita_in_perdita(d):
+        return False
     ruoli = {a.role for a in d.actions if a.kind == "place" and a.role in USCITE_DISCREZIONALI}
     return any(l.role in ruoli and not l.archived and int(l.cycle_no) == int(ctx.cycle_no)
                for l in ctx.legs)
@@ -2344,6 +2380,9 @@ def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, An
       PROTEZIONI (``MOTIVI_PROTEZIONE``), un'uscita GIA' IN CORSO (riprezzo o
       residuo), e l'uscita che l'utente ha APPROVATO (stessa chiave, entro
       ``APPROVAZIONE_TTL_S``: l'approvazione si consuma all'uso).
+      Dal 29/09 (piano Mike) passa SEMPRE anche l'uscita in PROFITTO
+      (``uscita_in_perdita`` falso): a interruttore spento si propone solo
+      l'uscita che puo' chiudere in perdita, e ognuna chiede la sua firma.
 
     I timer della strategia NON si fermano: quando la decisione e' un'"uscita
     appoggiata" (lo stato resta di posizione aperta: PRE_OPEN, LIVE_KO_GREEN,
@@ -2360,6 +2399,10 @@ def gate_uscite(ctx: MatchCtx, d: Decision, snap: Snapshot, params: Dict[str, An
         return _decadi(ctx, d, "la strategia non vuole piu' uscire: %s" % d.reason)
     if str(d.updates.get("close_reason") or "") in MOTIVI_PROTEZIONE:
         return _decadi(ctx, d, "protezione (cap perdita partita): esegue il bot")
+    if not uscita_in_perdita(d):
+        # 29/09 (M1.1, M4.1-M4.4): un'uscita che blocca un PROFITTO la esegue il
+        # bot anche a interruttore manuale; una proposta rimasta viva decade
+        return _decadi(ctx, d, "uscita in profitto: la esegue il bot")
     if _uscita_gia_in_corso(ctx, d):
         return d
     chiave = chiave_uscita(ctx, cat)
@@ -3576,11 +3619,10 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
             return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                             f"loss tollerata ({label}): {cv.net:.2f} entro {pct}% di {base:.2f}",
                             updates={"close_reason": f"loss_{label}", "attempts": 0}, telemetry=tele)
-    cap = float(params["event_loss_cap_pct"])
-    if cap > 0 and base > 0 and cv.net <= -base * cap / 100.0:
-        return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
-                        f"cap perdita evento: {cv.net:.2f}",
-                        updates={"close_reason": "loss_cap", "attempts": 0}, telemetry=tele)
+    # 29/09 (piano Mike M4.5, decisione 18 dell'utente: "toglilo"): il tetto di
+    # perdita della partita (``event_loss_cap_pct``, motivo ``loss_cap``) non
+    # chiude piu': Mike non chiude mai in perdita da solo. L'unica chiusura in
+    # perdita e' l'uscita qui sopra, proposta e firmata dall'utente.
     # SECONDA TRANCHE — le uscite globali qui sopra hanno la precedenza: se la
     # posizione si chiude non c'e' piu' niente da coprire. Solo se si tiene, e
     # solo quando l'attesa e' finita, si completa la copertura sul RESIDUO, che

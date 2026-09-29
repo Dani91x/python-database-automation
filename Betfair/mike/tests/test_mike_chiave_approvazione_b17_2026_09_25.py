@@ -31,23 +31,26 @@ def _fino_alla_proposta():
     return db, mk
 
 
-def test_la_green_approvata_porta_la_chiave_della_richiesta():
-    db, mk = _fino_alla_proposta()
-    ingresso = [t for t in db.trades if t["role"] != "under_green"]
-    assert ingresso and all("approvazione_id" not in (t.get("meta") or {}) for t in ingresso)
+def test_l_uscita_approvata_porta_la_chiave_della_richiesta():
+    # 29/09 (P1): il green pre-partita ora parte da solo (niente firma): il
+    # veicolo e' l'uscita IN PERDITA, l'unica che resta da firmare
+    from Betfair.mike.tests.test_mike_uscite_automatiche_2026_09_25 import (
+        _payload_perdita, _servizio_con_proposta_in_perdita)
+    db, mk = _servizio_con_proposta_in_perdita()
+    prima = list(db.trades)
+    assert prima and all("approvazione_id" not in (t.get("meta") or {}) for t in prima)
     chiave = db.events["E1"]["ctx"]["uscita_proposta"]["chiave"]
     db.requests.append({"id": 7, "kind": "approva_uscita", "status": "pending",
                         "payload": {"event_id": "E1", "chiave": chiave,
-                                    "contesto": {"prezzo_visto": 1.48, "fonte": "canale"}}})
-    run(db, mk, NOW + timedelta(seconds=4), [row(payload())])
+                                    "contesto": {"prezzo_visto": 2.24, "fonte": "canale"}}})
+    run(db, mk, NOW + timedelta(seconds=2), [row(_payload_perdita())])
     assert db.requests[0]["status"] == "done", db.requests[0]["result"]
-    assert len([l for l in legs(db) if l["role"] == "under_green"]) == 1
-    green = [t for t in db.trades if t["role"] == "under_green"]
-    assert len(green) == 1
-    assert green[0]["meta"]["approvazione_id"] == 7
+    uscita = [t for t in db.trades if t["role"] in ("under_close", "over_close")]
+    assert sorted(t["role"] for t in uscita) == ["over_close", "under_close"]
+    assert all(t["meta"]["approvazione_id"] == 7 for t in uscita)
     # le righe che NON sono l'uscita approvata non la portano
     for t in db.trades:
-        if t["role"] != "under_green":
+        if t["role"] not in ("under_close", "over_close"):
             assert "approvazione_id" not in (t.get("meta") or {})
     # l'attivita' dice QUALE richiesta e' stata eseguita
     eseguita = [p for k, p, _ in db.activity if k == "uscita_eseguita_su_approvazione"]

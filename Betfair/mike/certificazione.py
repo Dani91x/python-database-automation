@@ -426,6 +426,66 @@ def _g1(ctx, snap, d, params):
     return None
 
 
+# 29/09 (PIANO_MODIFICHE_MIKE, pacchetto P1): il cancello delle uscite. Le
+# uscite che bloccano un PROFITTO partono da sole; resta da firmare SOLO
+# l'uscita che puo' chiudere IN PERDITA (motivo ``loss_*``, chiusura a tempo del
+# rientro ``reentry_time``, chiusura del veto pre-partita), e ognuna chiede la
+# SUA firma (M8.1). Il tetto di perdita partita (``loss_cap``) non esiste piu'
+# (M4.5). Regola letta dal piano, non dal cancello del motore.
+def _motivo_perdita(d: E.Decision) -> str:
+    motivo = str(d.updates.get("close_reason") or "")
+    if motivo.startswith("loss") or motivo == "reentry_time":
+        return motivo
+    if any(a.note == E.VETO_U35_NOTE for a in _piazzamenti(d)):
+        return "veto_u35"
+    return ""
+
+
+def _nasce_uscita_in_perdita(ctx, d) -> bool:
+    """Un'uscita in perdita NASCE in questa decisione: ordini piazzati col
+    motivo di perdita, partendo da uno stato che non e' gia' una chiusura in
+    corso (il riprezzo/residuo di un'uscita firmata e' la stessa uscita)."""
+    return (bool(_piazzamenti(d)) and bool(_motivo_perdita(d))
+            and ctx.state not in E.STATI_USCITA_IN_CORSO)
+
+
+@_controllo("G2", "a uscite MANUALI nessuna uscita IN PERDITA parte senza la SUA firma "
+                  "dell'utente, e il tetto di perdita partita non chiude mai "
+                  "(piano Mike 29/09, M4.5, M8.1)",
+            quando=lambda ctx, snap, d, p: _nasce_uscita_in_perdita(ctx, d))
+def _g2(ctx, snap, d, params):
+    if not _nasce_uscita_in_perdita(ctx, d):
+        return None
+    motivo = _motivo_perdita(d)
+    if motivo == "loss_cap":
+        return "chiusura per tetto di perdita partita: tolto il 29/09 (M4.5)"
+    if params.get("uscite_automatiche") is True:
+        return None
+    prop = ctx.uscita_proposta if isinstance(ctx.uscita_proposta, dict) else None
+    firma = ctx.uscita_approvata if isinstance(ctx.uscita_approvata, dict) else None
+    if (prop is None or firma is None or firma.get("chiave") != prop.get("chiave")
+            or str(prop.get("close_reason") or "") != str(d.updates.get("close_reason") or "")):
+        return (f"uscita in perdita ({motivo}) partita senza la sua firma: "
+                f"{[a.role for a in _piazzamenti(d)]}")
+    return None
+
+
+@_controllo("G3", "un'uscita in PROFITTO non resta mai una proposta: la esegue il bot "
+                  "anche a uscite manuali (piano Mike 29/09, M1.1, M4.1-M4.4)",
+            quando=lambda ctx, snap, d, p: isinstance(d.updates.get("uscita_proposta"), dict))
+def _g3(ctx, snap, d, params):
+    prop = d.updates.get("uscita_proposta")
+    if not isinstance(prop, dict):
+        return None
+    motivo = str(prop.get("close_reason") or "")
+    if motivo.startswith("loss") or motivo == "reentry_time":
+        return None
+    if isinstance(d.updates.get("veto_u35"), dict):
+        return None                      # chiusura del veto pre-partita: in perdita
+    return (f"uscita in profitto ({prop.get('categoria')}, motivo {motivo or '-'}) lasciata "
+            f"come proposta: {prop.get('motivo')}")
+
+
 # ===========================================================================
 # H. IL RE-INGRESSO (§3 Fase 6)
 # ===========================================================================

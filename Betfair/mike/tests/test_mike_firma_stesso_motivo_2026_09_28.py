@@ -45,8 +45,10 @@ def _ctx_firmato(close_reason_firmato: str) -> E.MatchCtx:
 
 
 def test_firma_sulla_stessa_uscita_passa():
+    # 29/09 (P1): un'uscita "profit" ora passa da sola; la firma si prova
+    # sull'uscita in perdita, l'unica che resta da firmare
     p = params(uscite_automatiche=False)
-    d = E.gate_uscite(_ctx_firmato("profit"), _chiusura("profit"), _snap(), p)
+    d = E.gate_uscite(_ctx_firmato("loss_ht"), _chiusura("loss_ht"), _snap(), p)
     assert [a.role for a in d.actions if a.kind == "place"] == ["under_close"]
     assert d.updates["uscita_approvata"] is None
 
@@ -68,7 +70,8 @@ def test_firma_senza_proposta_non_esegue_niente():
     ctx.state = "LIVE_COVERED"
     ctx.uscita_proposta = None
     ctx.uscita_approvata = {"chiave": E.chiave_uscita(ctx, "chiusura"), "at": NOW - 5}
-    d = E.gate_uscite(ctx, _chiusura("profit"), _snap(), p)
+    # 29/09 (P1): veicolo "loss_ht" (un'uscita "profit" ora passa da sola)
+    d = E.gate_uscite(ctx, _chiusura("loss_ht"), _snap(), p)
     assert [a for a in d.actions if a.kind == "place"] == []
-    assert d.updates["uscita_proposta"]["close_reason"] == "profit"
+    assert d.updates["uscita_proposta"]["close_reason"] == "loss_ht"
     assert d.updates["uscita_approvata"] is None

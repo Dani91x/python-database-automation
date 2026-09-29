@@ -1,0 +1,11 @@
+BASE (senza mutazioni): VERDE  1050 passed in 41.59s
+X1 l'uscita in perdita a modello parte da sola                 rossa  1 failed in 20.65s
+X2 la chiusura a tempo del rientro parte da sola               rossa  1 failed, 813 passed in 57.93s
+X3 le uscite in profitto tornano proposte                      rossa  1 failed, 803 passed in 40.96s
+X4 una gamba vecchia autorizza una nuova uscita in perdita     rossa  1 failed, 812 passed in 37.74s
+X5 la chiusura del veto pre-partita parte da sola              rossa  1 failed, 812 passed in 36.64s
+X6 chiusura manuale: la lay a esito ignoto non ferma           rossa  1 failed, 826 passed in 35.86s
+X7 chiusura manuale: si ferma sulla sua stessa lay             rossa  1 failed, 534 passed in 28.56s
+X8 chiusura manuale: si ferma per una lay di un'altra selezione SOPRAVVISSUTA  1050 passed in 39.06s
+X9 il tetto di perdita torna a chiudere                        rossa  1 failed, 814 passed in 43.15s
+mutazioni sopravvissute o non valide: 1 su 9

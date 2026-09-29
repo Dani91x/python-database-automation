@@ -303,7 +303,10 @@ def test_blend_totals_normalizza_sempre_a_uno():
 def test_selezione_decisa_non_pretende_prezzo_e_non_congela():
     """Dopo il 4o gol la linea 3.5 sparisce dal feed: l'Under 3.5 vale -stake
     senza prezzo, il cash-out resta ``complete`` e l'engine continua a decidere."""
-    p = params(event_loss_cap_pct=10.0, cashout_smart_enabled=False)
+    # 29/09 (piano Mike M4.5): il cap di perdita partita non chiude piu'; la
+    # chiusura che mette alla prova la selezione decisa e' l'uscita in perdita
+    # del 2T (regola fissa al 50 %: -8,75 su 24 di base)
+    p = params(loss_exit_mode="fixed", h2_loss_pct=50.0, cashout_smart_enabled=False)
     ctx = E.MatchCtx(state="LIVE_COVERED")
     ctx.legs.append(under_back(20.0, 1.50, ref="e1"))
     ctx.legs.append(leg("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 8.0, 4.0, ref="c1"))
