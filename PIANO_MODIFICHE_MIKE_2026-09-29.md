@@ -10,7 +10,7 @@ file si aggiorna e basta.
 Per ogni punto: cosa vuole l'utente, cosa fa il codice oggi, cosa va cambiato, cosa resta da
 chiarire. I riferimenti al codice servono a chi fara' la modifica.
 
-Stato: **IN RACCOLTA** (nessuna modifica eseguita). Pre-partita: CHIUSO e confermato dall'utente il 29/09. Prossimo capitolo: dal fischio d'inizio.
+Stato: **IN IMPLEMENTAZIONE dal pomeriggio del 29/09, su ordine esplicito dell utente** (punto 8). Revisione chiusa su: pre-partita, fischio, copertura, posizione coperta, rientro, firma, difetti. Ordine dei pacchetti: punto 9.
 
 ---
 
@@ -203,6 +203,8 @@ restano quelli di oggi, salvo ordine esplicito.
 | 20 | 29/09 | Rientro sull'Under 4,5: si fa con 1 o 2 gol (non piu' solo con 1); tutte le altre condizioni invariate | confermata, da implementare (M6.1) |
 | 21 | 29/09 | Mike deve sapere sempre se una sua banca e' abbinata o no, e se una sospensione ha cancellato un suo ordine LAPSE | regola permanente; correzioni M6.2-M6.3 |
 | 22 | 29/09 | Le cifre della proposta si aggiornano in tempo reale; fra clic e ordine si accetta il movimento del mercato; dopo la chiusura la scheda dice che e' stata fatta e che non resta esposizione | confermata, da implementare (M7.1, M7.2) |
+| 23 | 29/09 | Difetti D1-D12: risposte dell utente nel punto 8 (D5 aperto; D10 criterio scelto dal coordinatore, da confermare) | da implementare (M8.1-M8.12) |
+| 24 | 29/09 | ORDINE: implementare tutto col massimo dell attenzione, senza rompere niente, fino ai replay veloci con le prestazioni | in corso |
 
 ---
 
@@ -565,3 +567,50 @@ quell'evento non abbiamo altra esposizione.»
 - Per il tecnico: `frontend/src/components/controlroom/PropostaUscitaMike.tsx`, `SchedaMike.tsx`,
   `trovaEsitoUscita.ts`, `certezzaChiusura.ts`, `pages/Mike.tsx`; bot: `gate_uscite`
   (`Betfair/mike/engine.py:2337`), pubblicazione delle proposte, `_decide_closing` 3606.
+
+---
+
+## Punto 8 - Difetti trovati leggendo il codice: risposte dell'utente (29/09)
+
+| # | Difetto di oggi | Risposta dell'utente | Cosa si fa |
+|---|---|---|---|
+| D1 | Dopo la prima uscita firmata, un'uscita successiva dello stesso tipo puo' partire senza nuova firma (`Betfair/mike/engine.py:2269-2285`) | «ASSOLUTAMENTE NO. Il bot deve essere informato di ogni cosa, interna o esterna all'app; se chiudiamo un evento non deve fare altro» | **M8.1** ogni uscita in perdita chiede la SUA firma; **M8.2** una partita chiusa (dal bot, dall'utente nell'app, o fuori dall'app sul sito) e' chiusa: Mike non fa piu' niente su quella partita |
+| D2 | Un ordine fermato da un NOSTRO interruttore di sicurezza (interruttore generale, modo ordini spento, freno) viene contato come «rifiutato da Betfair»; dopo 3 la copertura resta bloccata fino a «Riprendi» anche a interruttore riacceso (`Betfair/mike/service.py:927-942`) | ha chiesto spiegazione | **M8.3** (proposta del coordinatore): un fermo nostro NON conta fra i rifiuti del mercato; tolto il fermo la copertura riparte da sola |
+| D3 | Senza punteggio Mike conta i gol come zero | «I punteggi ci sono! E Mike deve saperli SEMPRE, con freschezza del dato» | **M8.4** Mike legge sempre il punteggio con la sua eta'; un punteggio mancante o vecchio NON vale zero: si dichiara, si avvisa, e non si decide su un dato che non c'e' |
+| D4 | Se manca una quota nessuna uscita scatta | «Vanno controllate, a volte spariscono poi ritornano» | **M8.5** la quota mancante si ricontrolla a ogni giro; se torna si procede; se manca oltre un tempo breve si avvisa |
+| D5 | «Chiudi» in Control Room chiude con un clic anche in live; nella pagina di Mike ne servono due | nessuna risposta | APERTO |
+| D6 | Una partita puo' risultare regolata lasciando le sue righe aperte (`service.py:4143-4161`) | «No, se e' regolata e' regolata» | **M8.6** quando la partita e' regolata TUTTE le sue righe risultano regolate |
+| D7 | Lettura dei dati fallita per oltre 10 minuti = partite trattate come sparite e mandate al regolamento (`Betfair/mike/db.py:513-515`, `service.py:5891`) | «No, deve ritentare; l'unico motivo per cui smette di seguire e' perche' l'evento e' chiuso» | **M8.7** una lettura fallita non e' una partita sparita: Mike ritenta e avvisa; smette di seguire una partita SOLO quando il mercato e' chiuso |
+| D8 | Riga assente o dati incompleti = nessuna sorveglianza su quella partita (`service.py:4052-4055`, `4186-4207`) | «Assolutamente no, deve sapere ogni cosa» | **M8.8** la sorveglianza degli ordini (ordini fermi, esiti incerti, sospensioni, banche appoggiate) gira SEMPRE, anche con dati incompleti |
+| D9 | In un ripiego i totali sommano paper e live (`db.py:394-411`) | «No, divisi sempre» | **M8.9** paper e live separati anche nel ripiego |
+| D10 | Posizioni chiuse per giorno del regolamento, storico per giorno della puntata | «Uniformare» | **M8.10** stesso criterio nei due punti. Scelta del coordinatore (da confermare): giorno del REGOLAMENTO, come gia' fa la Control Room per tutti i bot |
+| D11 | In paper dopo ogni ordine il giro aspetta fino a 15 s | «Perche' si ferma?» | NON e' un difetto: e' il paper che fa lo specchio del live. In live l'ordine in gioco risponde dopo il ritardo di Betfair (fino a 12 s); il paper aspetta lo stesso tempo piu' 3 s, massimo 15 (`service.py:855-862`). **M8.11** far misurare la stessa attesa anche al replay |
+| D12 | In paper un ordine senza risposta per 60 s e' dato per «non eseguito» (`service.py:1494-1508`) | «Va verificato» | **M8.12** verificare; un ordine senza risposta va in verifica (riconciliazione), non dato per non eseguito |
+
+### ORDINE DELL'UTENTE (29/09, pomeriggio): SI IMPLEMENTA
+«Le modifiche che ti sto chiedendo NON VANNO A CAMBIARE LA LOGICA DELLA STRATEGIA, sono solo
+miglioramenti. Quello che devi fare ora e' implementare il tutto con il massimo livello di effort e
+di attenzione a NON ROMPERE NIENTE, non voglio ricominciare da capo. ATTENZIONE TOTALE AI DETTAGLI,
+AL CODICE, AD ALTRI COLLEGAMENTI. IL BOT DEVE ESSERE INFORMATO DI OGNI COSA E DI OGNI STATO; nel
+caso documentati ancora su come fanno i competitor. PROCEDI FINO AI REPLAY (che devono essere
+veloci e voglio sapere le performance).»
+
+## Punto 9 - Ordine di implementazione (deciso dal coordinatore)
+
+Regole: un pacchetto alla volta sugli stessi file; ogni pacchetto entra su master SOLO dopo test,
+mutazioni del coordinatore e replay di Mike a 0 violazioni; i controlli del banco che descrivono
+il comportamento vecchio si aggiornano NELLO STESSO pacchetto e si dichiarano; nessuna soglia e
+nessun controllo d'ingresso cambia, salvo `reentry_max_goals` (ordine dell'utente).
+
+| Pacchetto | Contenuto | File principali |
+|---|---|---|
+| P1 - Cancello delle uscite | M1.1, M4.1-M4.4 (uscite in profitto da sole), M4.5 (tetto di perdita tolto), M8.1 (ogni uscita in perdita la sua firma), M8.2 (partita chiusa = ferma) | `Betfair/mike/engine.py` (cancello), banco, test |
+| P2 - Pre-partita | M2.1 (banca fino al fischio), M2.2 (mai in perdita, veto non chiude), M2.3 (lettura al fischio), M2.4 (ultimo ingresso) | `engine.py` (`_decide_prematch` e dintorni) |
+| P3 - Rientro | M6.1 (1 o 2 gol) | `config.py`, pannello |
+| P4 - Ordini e dati | M6.2, M6.3, M8.3-M8.9, M8.11, M8.12 | `Betfair/mike/service.py`, `feed.py`, `db.py`, banco |
+| P5 - Copertura | M3.1-M3.3 (banca Under 4,5, chiusura banca Over 4,5, cuscinetto, capitale impegnato), ruoli, regolamento, migrazione SQL (la applica l'utente) | `engine.py`, `service.py`, `migrations/`, banco |
+| P6 - App | M7.1, M7.2 (cifre vive, esito della chiusura nella scheda), M8.10, etichette della copertura nuova | `frontend/src/...` |
+
+Riferimento di partenza per i confronti: replay di Mike del giro finale del 29/09, 15 scenari, 0
+violazioni, 446 s con tre processi
+(`AUDIT_2026-09-28/replay/giro_finale_29_09/mike_tutti_9048238.txt`).
