@@ -1,0 +1,133 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - partita 35760084: prima del fischio",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": { "label": "Attesa" },
+        "frontend": { "label": "Azione: ordine" },
+        "database": { "label": "Decisione" },
+        "backend": { "label": "Profitto bloccato" },
+        "security": { "label": "Perdita o blocco" },
+        "external": { "label": "Fermo, fine" }
+      }
+    }
+  },
+  "lanes": [
+    { "id": "pre", "label": "Pre-partita, ore 17:08-18:01" }
+  ],
+  "mainPath": ["osserva", "punta", "banca", "dieci", "fischio"],
+  "nodes": [
+    {
+      "id": "osserva",
+      "lane": "pre",
+      "col": 0,
+      "type": "cloud",
+      "label": "Mike vede la partita",
+      "sublabel": "primo giro utile",
+      "tag": "17:08:09",
+      "width": 150
+    },
+    {
+      "id": "punta",
+      "lane": "pre",
+      "col": 1,
+      "type": "frontend",
+      "label": "Punta Under 3,5",
+      "sublabel": "10,00 EUR a quota 1,71",
+      "tag": "abbinata per intero",
+      "width": 118
+    },
+    {
+      "id": "banca",
+      "lane": "pre",
+      "col": 2,
+      "type": "frontend",
+      "label": "Banca appoggiata",
+      "sublabel": "10,12 EUR a quota 1,69",
+      "tag": "2 tick sotto, resta li'",
+      "width": 118
+    },
+    {
+      "id": "dieci",
+      "lane": "pre",
+      "col": 3,
+      "type": "database",
+      "label": "10' dal fischio",
+      "sublabel": "nessuna mossa nuova",
+      "tag": "regola aggiornata 29/09",
+      "width": 118
+    },
+    {
+      "id": "fischio",
+      "lane": "pre",
+      "col": 4,
+      "type": "external",
+      "label": "Fischio d'inizio",
+      "sublabel": "banca non abbinata",
+      "tag": "Betfair la cancella",
+      "width": 118
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-vede-punta",
+      "from": "osserva",
+      "to": "punta",
+      "label": "controlli d'ingresso tutti superati",
+      "role": "main"
+    },
+    {
+      "id": "e-punta-banca",
+      "from": "punta",
+      "to": "banca",
+      "label": "ingresso abbinato subito",
+      "role": "main"
+    },
+    {
+      "id": "e-banca-dieci",
+      "from": "banca",
+      "to": "dieci",
+      "label": "nessun abbinamento nel frattempo",
+      "role": "main"
+    },
+    {
+      "id": "e-dieci-fischio",
+      "from": "dieci",
+      "to": "fischio",
+      "label": "la banca resta li' (regola 29/09)",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "La puntata",
+      "items": [
+        "Importo di serie: 10,00 EUR su ogni ingresso",
+        "Quota d'ingresso: 1,71 (dentro la banda 1,30-3,00)",
+        "Mike e' entrato al primo giro utile: nessun altro tentativo prima"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "La banca appoggiata",
+      "items": [
+        "2 tick sotto il prezzo medio: 1,71 -> 1,69",
+        "Importo 10,12 EUR: chiude tutta l'esposizione, in profitto in entrambi gli esiti",
+        "Ordine \"fino al fischio\" (LAPSE): se nessuno la prende, Betfair la cancella al calcio d'inizio"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Perche' non si e' abbinata",
+      "items": [
+        "Nessun avversario e' sceso a quota 1,69 prima del fischio",
+        "Dal 29/09 la regola e' cambiata: la banca NON si ritira e non si chiude piu' in perdita a 10 minuti; resta li' fino al fischio",
+        "Per questo a 10 minuti dal fischio non e' successo nulla di nuovo"
+      ]
+    }
+  ]
+}

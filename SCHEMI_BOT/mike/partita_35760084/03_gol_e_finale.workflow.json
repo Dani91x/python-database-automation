@@ -1,0 +1,194 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - partita 35760084: i gol e il finale",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": { "label": "Attesa" },
+        "frontend": { "label": "Azione: ordine" },
+        "database": { "label": "Decisione" },
+        "backend": { "label": "Profitto bloccato" },
+        "security": { "label": "Perdita o blocco" },
+        "external": { "label": "Fermo, fine" }
+      }
+    }
+  },
+  "lanes": [
+    { "id": "partita", "label": "Partita in gioco, dal 7' al 90'" },
+    { "id": "difetto", "label": "Difetto trovato", "variant": "exception" }
+  ],
+  "mainPath": ["gol1", "gol2", "gol3", "proposte", "gol4", "finale"],
+  "nodes": [
+    {
+      "id": "gol1",
+      "lane": "partita",
+      "col": 0,
+      "type": "cloud",
+      "label": "Gol 1: minuto 7",
+      "sublabel": "1-0, nessuna azione",
+      "tag": "gia' coperto",
+      "width": 118
+    },
+    {
+      "id": "gol2",
+      "lane": "partita",
+      "col": 1,
+      "type": "cloud",
+      "label": "Gol 2: minuto 27",
+      "sublabel": "2-0, nessuna azione",
+      "tag": "quote Under piu' lunghe",
+      "width": 118
+    },
+    {
+      "id": "gol3",
+      "lane": "partita",
+      "col": 2,
+      "type": "database",
+      "label": "Gol 3: minuto 45",
+      "sublabel": "3-0, primo conto rosso",
+      "tag": "prima proposta: -2,50",
+      "width": 150
+    },
+    {
+      "id": "proposte",
+      "lane": "partita",
+      "col": 3,
+      "type": "security",
+      "label": "17 proposte in perdita",
+      "sublabel": "dal minuto 45 al 79",
+      "tag": "nessuna firmata: decadono",
+      "width": 150
+    },
+    {
+      "id": "gol4",
+      "lane": "partita",
+      "col": 4,
+      "type": "security",
+      "label": "Gol 4: minuto 62",
+      "sublabel": "4-0, risultato fissato",
+      "tag": "perse entrambe le gambe",
+      "width": 150
+    },
+    {
+      "id": "finale",
+      "lane": "partita",
+      "col": 5,
+      "type": "external",
+      "label": "Fine mercato",
+      "sublabel": "totale -14,00 EUR",
+      "tag": "nessuna firma mai arrivata",
+      "width": 150
+    },
+    {
+      "id": "difetto",
+      "lane": "difetto",
+      "col": 4,
+      "type": "security",
+      "label": "DIFETTO TROVATO",
+      "sublabel": "chiusura bloccata sull'Over 4,5",
+      "tag": "-11,46 EUR se firmata",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-gol1-gol2",
+      "from": "gol1",
+      "to": "gol2",
+      "label": "fuori dai 3 minuti: niente seconda puntata",
+      "role": "main"
+    },
+    {
+      "id": "e-gol2-gol3",
+      "from": "gol2",
+      "to": "gol3",
+      "label": "Mike aspetta, coperto",
+      "role": "main"
+    },
+    {
+      "id": "e-gol3-proposte",
+      "from": "gol3",
+      "to": "proposte",
+      "label": "il modello vede il conto in rosso: propone di chiudere",
+      "role": "main"
+    },
+    {
+      "id": "e-proposte-gol4",
+      "from": "proposte",
+      "to": "gol4",
+      "label": "l'utente non firma: la proposta decade e si ripete",
+      "role": "main"
+    },
+    {
+      "id": "e-gol4-finale",
+      "from": "gol4",
+      "to": "finale",
+      "label": "4 gol esatti: perdono entrambe le gambe",
+      "role": "main"
+    },
+    {
+      "id": "e-gol4-difetto",
+      "from": "gol4",
+      "to": "difetto",
+      "label": "il 3,5 chiuso viene scambiato per fermo",
+      "variant": "dashed",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Le proposte decadute",
+      "items": [
+        "17 proposte in ordine di orario reale, dalle 18:48 alle 19:41, cifre da -2,48 a -6,28 EUR",
+        "15 decadono per iscritto (12 volte \"tengo\", 3 volte \"prezzi incompleti\"); le prime 2 (18:48 e 19:03) sono sostituite subito dalla proposta dopo, senza una riga di decadenza a parte; anche le ULTIME due (19:41) decadono, non restano aperte",
+        "Il quarto gol (19:23:59) NON e' un guasto sul mercato: Betfair CHIUDE e REGOLA il 3,5 alle 19:25:25 (Under 3,5 perdente), come fa con ogni linea appena superata (0,5 alle 18:09:10, 1,5 alle 18:29:42, 2,5 alle 18:47:57)",
+        "Il conto di Mike resta giusto anche dopo: Under 3,5 = -10,00 certo, piu' l'incasso dell'Over 4,5 al prezzo VIVO (proposta n.12, 19:25:33: banca Over 4,5 a 1,35 -> -2,54)",
+        "Le proposte si fermano dalle 19:41:47: per il modello chiudere vale ormai MENO di tenere (chiudere scende da -6,12 a -10,75, la soglia scende meno, da -6,29 a -8,66); dal minuto 86 la finestra delle uscite in perdita del secondo tempo (46'-85') e' chiusa",
+        "Con le uscite manuali di serie, senza la firma dell'utente nessuna di queste e' mai partita - e per le proposte nate DOPO il quarto gol (n.12-17) la firma non sarebbe bastata comunque: vedi \"DIFETTO TROVATO\""
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Il risultato vero (4,00 EUR davvero abbinati)",
+      "items": [
+        "Punta Under 3,5: 10,00 EUR a 1,71, persa (4 gol): -10,00 EUR",
+        "Copertura Over 4,5: 4,00 EUR a 4,00, persa (servivano 5 gol): -4,00 EUR",
+        "Totale: -14,00 EUR, commissione 0,00 EUR (nessuna vincita da tassare)"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Se l'utente avesse firmato: dipende da PRIMA o DOPO il 4o gol",
+      "items": [
+        "PRIMA del quarto gol (proposte 1-11, mercato 3,5 ancora aperto): la firma sarebbe partita regolarmente. Esempio provato: firma alle 19:20:22 -> chiusura eseguita, risultato -3,45 (invece di -14,00)",
+        "Al minuto 45 (proposta delle 19:03:38, finestra ht): chiudere costava -2,50 EUR - sarebbe stato il risultato",
+        "DOPO il quarto gol (proposte 12-17, mercato 3,5 chiuso e regolato): la firma NON sarebbe bastata per il difetto sotto - provato con la proposta n.12 (19:25:33, -2,54): 21 tentativi rifiutati, risultato comunque -14,00",
+        "Nel replay nessuno firma mai: sono ipotesi, non cio' che e' successo"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "DIFETTO TROVATO (accertato, non ancora corretto)",
+      "items": [
+        "Dopo il gol che decide una linea (qui: il quarto, sul 3,5), Mike scambia il mercato CHIUSO e REGOLATO da Betfair per \"flusso prezzi fermo\" e blocca OGNI ordine sulla partita, anche la chiusura sull'Over 4,5 che ha prezzi VIVI",
+        "Provato nella sonda con la firma vera di produzione sulla proposta n.12 (19:25:33, -2,54): 21 tentativi rifiutati (no_fill feed_stantio), poi tentativi esauriti, risultato comunque -14,00",
+        "Controllo: la STESSA firma prima del quarto gol (19:20:22, flusso vivo) fa partire la chiusura, risultato -3,45",
+        "Danno in questa partita: 11,46 EUR (fra -2,54 firmabile e -14,00 davvero incassato); con la copertura nuova come banca Under 4,5: 12,03 EUR",
+        "Stato: difetto ACCERTATO e RIPRODOTTO da un test dedicato (Betfair/mike/tests/test_mike_indagine_mercato_deciso_2026_09_29.py, non committato); correzione minima PROPOSTA (Betfair/mike/feed.py:107-116) e NON ANCORA APPLICATA: decide l'utente",
+        "Fonte: AUDIT_2026-09-29/INDAGINE_MIKE_MERCATO_DECISO.md (indagine dedicata del 29/09)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Perche' il referto cita -2,34 e -2,38 e la tabella no",
+      "items": [
+        "Il referto conta le righe di scansione: ogni 0,5-2 secondi Mike riscrive il motivo \"chiudere ora costa X\" con il prezzo del momento (223 volte -2,34, 159 volte -2,38 su 2464 righe totali)",
+        "Questa tabella elenca invece solo le 17 volte in cui quel motivo e' diventato una PROPOSTA VERA scritta nell'attivita' (mike_activity), con un freno che evita di riproporla per piccoli movimenti",
+        "-2,34 e -2,38 sono quindi valori intermedi, visti dal mercato ma mai promossi a proposta: il minuto esatto in cui sono comparsi non e' catturato da questa sonda (serve leggere le righe della scansione, non l'attivita' del servizio)"
+      ]
+    }
+  ]
+}

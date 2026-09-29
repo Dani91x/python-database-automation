@@ -1,0 +1,190 @@
+diff --git a/Betfair/mike/tests/test_mike_indagine_mercato_deciso_2026_09_29.py b/Betfair/mike/tests/test_mike_indagine_mercato_deciso_2026_09_29.py
+new file mode 100644
+index 0000000..e504589
+--- /dev/null
++++ b/Betfair/mike/tests/test_mike_indagine_mercato_deciso_2026_09_29.py
+@@ -0,0 +1,184 @@
++"""INDAGINE 29/09/2026 - Mike dopo il gol che DECIDE l'Under/Over 3,5.
++
++Caso vero (replay della partita 35760084, 4-0): dopo il quarto gol Betfair
++sospende e poi CHIUDE il mercato Over/Under 3,5 (registrazione grezza: CLOSED
++alle 17:25:25 UTC, Under LOSER / Over WINNER). L'Under 3,5 e' perso di sicuro
++(-10,00) e l'unica gamba ancora chiudibile e' la copertura Over 4,5, il cui
++mercato resta vivo fino al fischio finale.
++
++DIFETTO: lo scanner mette il 3,5 (deciso, senza prezzi) fra i ``mercati_fermi``
++della riga; ``feed.flusso_esito`` guarda TUTTE e due le linee di Mike, quindi
++dichiara "flusso fermo" l'intera partita; lo snapshot esce con
++``feed_fresh=False`` e ``execute_place`` rifiuta QUALSIASI ordine (anche la
++chiusura dell'Over 4,5, che ha prezzi vivi) con ``no_fill feed_stantio``.
++Nel replay: firma dell'utente alle 17:25:34 UTC su "chiudendo ora -2,54",
++21 tentativi di chiusura rifiutati, partita finita -14,00.
++
++Secondo ramo (produzione): se la riga porta il blocco 3,5 con stato CLOSED (lo
++scanner vero lo scrive dal book vuoto, ``safe_strategy/service.py``
++``_apply_opp_book``), il servizio di Mike prende la strada del REGOLAMENTO
++(``status_closed``) e a ogni giro esce prima di decidere: nessuna chiusura
++dell'Over 4,5 fino alla chiusura dell'altro mercato.
++
++I test ROSSI qui fissano il comportamento giusto; i test di CONTROLLO (verdi
++oggi) fissano i confini: una linea ANCORA IN GIOCO col flusso fermo deve
++continuare a bloccare gli ordini. Finti: ``payload``/``row`` di
++``test_mike_feed`` e ``FakeDB``/``FakeMarket`` di ``test_mike_service`` (chiavi
++e tipi dello scanner e di ``mike/db.py``), runner finto sul protocollo vero.
++ASCII-only.
++"""
++from __future__ import annotations
++
++from datetime import timedelta
++from typing import Any, Dict, List
++
++from Betfair.mike import config as C
++from Betfair.mike import engine as E
++from Betfair.mike import feed as F
++from Betfair.mike.tests.test_mike_feed import payload, row
++from Betfair.mike.tests.test_mike_service import NOW, FakeDB, FakeMarket, run
++
++KO = NOW - timedelta(minutes=64)
++OU35, OU45 = "1.35", "1.45"
++SEL_U35, SEL_O35, SEL_U45, SEL_O45 = 1222344, 1222345, 1222347, 1222346
++
++
++def _ms(dt) -> int:
++    return int(dt.timestamp() * 1000)
++
++
++def _payload(fermi: List[str], gol_casa: int = 4, stato35: str = "SUSPENDED") -> Dict[str, Any]:
++    """La riga dello scanner al 64' con i prezzi VERI del replay alle 17:25:33
++    UTC: Over 4,5 1,27/1,35, Under 4,5 3,85/4,8; il 3,5 sospeso e vuoto (resta
++    solo una banca a 1,5 sull'Over, come nella riga vera)."""
++    p = payload(ko=KO, inplay=True, minute=64, sh=gol_casa, sa=0,
++                o45=(1.27, 1.35, 60.0, 40.0), u45=(3.85, 4.8, 20.0, 15.0))
++    b35 = p["ou"][0]
++    b35["status"] = stato35
++    b35["selections"][0].update({"back": None, "lay": None, "back_size": None, "lay_size": None})
++    b35["selections"][1].update({"back": None, "lay": 1.5, "back_size": None, "lay_size": 3.0})
++    p["flusso"] = {"vivo": True, "motivo": None, "dal_ms": _ms(NOW) - 1000,
++                   "mercati_fermi": list(fermi)}
++    return p
++
++
++def _snap(p):
++    info = F.event_info("E1", p)
++    return F.snapshot_from_row(row(p), info, now=NOW.timestamp(),
++                               params=C.merge_params(None), scanner_age_s=5.0)
++
++
++# ---------------------------------------------------------------------------
++# 1) la fotografia del mercato su cui si decide e si ordina
++# ---------------------------------------------------------------------------
++def test_rosso_3_5_deciso_e_fermo_non_rende_stantia_la_linea_4_5_viva():
++    """4 gol: il 3,5 e' DECISO (nessun ordine gli serve piu'), il 4,5 ha
++    prezzi vivi. La partita NON deve risultare col flusso fermo."""
++    s = _snap(_payload([OU35]))
++    assert s.goals == 4
++    assert s.book(E.MARKET_OU45, E.SEL_OVER) is not None
++    assert E.selection_decided(E.MARKET_OU35, E.SEL_UNDER, s.goals) is False
++    assert s.feed_fresh is True, "linea 4,5 viva dichiarata stantia per colpa del 3,5 DECISO"
++    assert s.order_fresh is True
++
++
++def test_controllo_con_la_linea_4_5_ferma_la_partita_resta_ferma():
++    """Confine: se e' ferma la linea ANCORA IN GIOCO, nessun ordine (regola
++    del 28/09, cantiere J). Verde oggi, deve restarlo dopo la correzione."""
++    s = _snap(_payload([OU45]))
++    assert s.feed_fresh is False and s.order_fresh is False
++
++
++def test_controllo_con_3_gol_il_3_5_fermo_blocca_ancora():
++    """Confine: con 3 gol il 3,5 NON e' deciso (l'Under puo' ancora vincere):
++    se il suo flusso e' fermo la partita resta ferma. Verde oggi, deve
++    restarlo dopo la correzione."""
++    s = _snap(_payload([OU35], gol_casa=3))
++    assert s.goals == 3
++    assert s.feed_fresh is False and s.order_fresh is False
++
++
++# ---------------------------------------------------------------------------
++# 2) il ciclo VERO del servizio: la chiusura dell'Over 4,5 arriva al mercato?
++# ---------------------------------------------------------------------------
++def _evento_coperto(db: FakeDB) -> None:
++    """La posizione del replay: punta Under 3,5 10,00 a 1,71 + copertura punta
++    Over 4,5 4,00 a 4,00, stato LIVE_COVERED (forma delle righe di
++    ``test_mike_service.test_settlement_when_row_disappears``)."""
++    db.events["E1"] = {
++        "event_id": "E1", "event_name": "Roma v Lazio", "state": "LIVE_COVERED", "cycle_no": 0,
++        "entry_price_initial": 1.71,
++        "markets": {"OU35": {"market_id": OU35}, "OU45": {"market_id": OU45}},
++        "positions": [
++            {"role": "under_entry", "market": "OU35", "selection": "UNDER", "side": "back",
++             "price": 1.71, "size": 10.0, "matched": 10.0, "avg_price": 1.71,
++             "ref": "under_entry-0-1", "status": "open", "placed_at": 0.0,
++             "persistence": "LAPSE", "cycle_no": 0, "final": False, "archived": False},
++            {"role": "over_cover", "market": "OU45", "selection": "OVER", "side": "back",
++             "price": 4.0, "size": 4.0, "matched": 4.0, "avg_price": 4.0,
++             "ref": "over_cover-0-5", "status": "open", "placed_at": 0.0,
++             "persistence": "LAPSE", "cycle_no": 0, "final": False, "archived": False},
++        ],
++        "dossier": {}, "live": {}, "mode": "paper", "ko_at": KO.isoformat(),
++        "ctx": {"seen_inplay": True, "last_goals": 4,
++                "selections": {"OU35|UNDER": SEL_U35, "OU35|OVER": SEL_O35,
++                               "OU45|UNDER": SEL_U45, "OU45|OVER": SEL_O45}},
++    }
++    db.trades = [
++        {"id": 1, "event_id": "E1", "signal_key": "under_entry-0-1", "status": "open", "pnl": 0},
++        {"id": 5, "event_id": "E1", "signal_key": "over_cover-0-5", "status": "open", "pnl": 0},
++    ]
++
++
++def _chiusure_over45(runner) -> List[Dict[str, Any]]:
++    return [c for c in runner.comandi if c.get("azione") == "place"
++            and str(c.get("market_id")) == OU45 and int(c.get("selection_id")) == SEL_O45
++            and c.get("side") == "LAY"]
++
++
++def _rifiuti_feed_stantio(db: FakeDB) -> List[Dict[str, Any]]:
++    return [p for k, p, _e in db.activity if k == "no_fill" and p.get("reason") == "feed_stantio"]
++
++
++def test_controllo_senza_marcatura_fermo_la_chiusura_over_4_5_parte(runner):
++    """Controllo del banco di prova: stessa posizione, stessi prezzi, 3,5
++    deciso ma NON dichiarato fermo -> la chiusura (banca Over 4,5) arriva al
++    runner. Verde oggi: prova che il test sotto puo' diventare verde."""
++    db = FakeDB(params={"stake": 10})
++    _evento_coperto(db)
++    run(db, FakeMarket(), NOW, [row(_payload([]))])
++    assert _chiusure_over45(runner), (runner.comandi, db.kinds())
++    assert _rifiuti_feed_stantio(db) == []
++
++
++def test_rosso_dopo_il_quarto_gol_la_chiusura_over_4_5_arriva_al_mercato(runner):
++    """Il caso del replay: 3,5 deciso E dichiarato fermo dallo scanner. La
++    chiusura dell'Over 4,5 (prezzi vivi) deve partire; oggi viene rifiutata
++    con ``no_fill feed_stantio`` e la posizione resta aperta fino al fischio."""
++    db = FakeDB(params={"stake": 10})
++    _evento_coperto(db)
++    run(db, FakeMarket(), NOW, [row(_payload([OU35]))])
++    assert _rifiuti_feed_stantio(db) == [], _rifiuti_feed_stantio(db)
++    assert _chiusure_over45(runner), (runner.comandi, db.kinds())
++
++
++def test_rosso_3_5_chiuso_da_betfair_mike_resta_padrone_dell_over_4_5(runner):
++    """Strada di PRODUZIONE: Betfair CHIUDE il 3,5 appena superata la linea
++    (registrazione grezza 35760084: CLOSED alle 17:25:25 UTC, Over WINNER) e
++    lo scanner vero scrive lo stato CLOSED nel blocco (non piu' fra i fermi).
++    Il 4,5 e' aperto: Mike deve continuare a gestire l'Over 4,5, non fermarsi
++    in attesa del regolamento della partita."""
++    db = FakeDB(params={"stake": 10})
++    _evento_coperto(db)
++    mk = FakeMarket()
++    mk.books[OU35] = {"market_id": OU35, "status": "CLOSED", "inplay": True,
++                      "runners": [{"selection_id": SEL_U35, "status": "LOSER"},
++                                  {"selection_id": SEL_O35, "status": "WINNER"}]}
++    mk.books[OU45] = {"market_id": OU45, "status": "OPEN", "inplay": True, "runners": [
++        {"selection_id": SEL_U45, "name": "Under 4.5 Goals", "status": "ACTIVE",
++         "back_price": 3.85, "back_size": 20.0, "lay_price": 4.8, "lay_size": 15.0},
++        {"selection_id": SEL_O45, "name": "Over 4.5 Goals", "status": "ACTIVE",
++         "back_price": 1.27, "back_size": 60.0, "lay_price": 1.35, "lay_size": 40.0}]}
++    run(db, mk, NOW, [row(_payload([], stato35="CLOSED"))])
++    assert db.events["E1"]["state"] not in E.TERMINAL_STATES
++    assert _chiusure_over45(runner), (runner.comandi, db.kinds())

@@ -1,0 +1,132 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - partita 35760084: dal fischio alla copertura",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": { "label": "Attesa" },
+        "frontend": { "label": "Azione: ordine" },
+        "database": { "label": "Decisione" },
+        "backend": { "label": "Profitto bloccato" },
+        "security": { "label": "Perdita o blocco" },
+        "external": { "label": "Fermo, fine" }
+      }
+    }
+  },
+  "lanes": [
+    { "id": "gioco", "label": "In gioco, primi 3 minuti" }
+  ],
+  "mainPath": ["fischio", "prova", "scaduta", "copertura", "coperta"],
+  "nodes": [
+    {
+      "id": "fischio",
+      "lane": "gioco",
+      "col": 0,
+      "type": "cloud",
+      "label": "Fischio d'inizio",
+      "sublabel": "gol al fischio: 0",
+      "tag": "circa 18:01",
+      "width": 118
+    },
+    {
+      "id": "prova",
+      "lane": "gioco",
+      "col": 1,
+      "type": "frontend",
+      "label": "Prova uscita +2 tick",
+      "sublabel": "banca a 1,69, due tentativi",
+      "tag": "nessuno abbinato",
+      "width": 150
+    },
+    {
+      "id": "scaduta",
+      "lane": "gioco",
+      "col": 2,
+      "type": "database",
+      "label": "Finestra 3' scaduta",
+      "sublabel": "nessun gol, nessun abbinamento",
+      "tag": "via alla copertura",
+      "width": 140
+    },
+    {
+      "id": "copertura",
+      "lane": "gioco",
+      "col": 3,
+      "type": "frontend",
+      "label": "Copertura Over 4,5",
+      "sublabel": "4,21 EUR chiesti a quota 4,00",
+      "tag": "minuto 2, punteggio 0-0",
+      "width": 118
+    },
+    {
+      "id": "coperta",
+      "lane": "gioco",
+      "col": 4,
+      "type": "cloud",
+      "label": "Posizione coperta",
+      "sublabel": "esposizione ferma: 14,00 EUR",
+      "tag": "Mike osserva i gol",
+      "width": 118
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-fischio-prova",
+      "from": "fischio",
+      "to": "prova",
+      "label": "in gioco: provo l'uscita a +2 tick",
+      "role": "main"
+    },
+    {
+      "id": "e-prova-scaduta",
+      "from": "prova",
+      "to": "scaduta",
+      "label": "1a scaduta, 2a annullata (non confermata)",
+      "role": "main"
+    },
+    {
+      "id": "e-scaduta-copertura",
+      "from": "scaduta",
+      "to": "copertura",
+      "label": "180 secondi passati senza gol",
+      "role": "main"
+    },
+    {
+      "id": "e-copertura-coperta",
+      "from": "copertura",
+      "to": "coperta",
+      "label": "4,00 EUR abbinati su 4,21 chiesti",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "I due tentativi di banca in gioco",
+      "items": [
+        "1o tentativo (scommessa 100000000003): resta 3 minuti sul book a 1,69, nessuno la prende, scade",
+        "2o tentativo (scommessa 100000000004): Mike stesso lo ritira; Betfair non conferma l'annullamento, la riga resta in riconciliazione",
+        "Risultato: nessuna delle due banche si abbina, la puntata Under 3,5 resta scoperta"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Il conto della copertura",
+      "items": [
+        "Obiettivo: se i gol arrivano a 5 o piu', l'Over 4,5 deve rendere 1,2 volte il rischio Under (12,00 EUR netti)",
+        "Al minuto 2, miglior quota Over 4,5 disponibile: 4,00",
+        "Importo pieno = 12,00 / ((4,00-1) x 0,95) = 4,21 EUR"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Non abbinata tutta",
+      "items": [
+        "Richiesti 4,21 EUR, abbinati 4,00 EUR: 0,21 EUR sono rimasti scoperti",
+        "E' la regola di oggi con le impostazioni di serie: la banca sull'Under 4,5 (M3.1) esiste gia' nel codice ma dietro un interruttore spento di serie, provato solo in certificazione; su questa partita, con la banca accesa e abbinata per intero, il risultato sarebbe stato diverso (vedi \"Cosa cambia con le modifiche del 29/09\")"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Mike - partita 35760084: lo scenario del guasto dei dati",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "cloud": { "label": "Attesa" },
+        "frontend": { "label": "Azione: ordine" },
+        "database": { "label": "Decisione" },
+        "backend": { "label": "Profitto bloccato" },
+        "security": { "label": "Perdita o blocco" },
+        "external": { "label": "Fermo, fine" }
+      }
+    }
+  },
+  "lanes": [
+    { "id": "guasto", "label": "Scenario a parte: lettura-dati-ko" }
+  ],
+  "mainPath": ["fischio", "ko", "ripresa", "copertura", "proposte", "finale"],
+  "nodes": [
+    {
+      "id": "fischio",
+      "lane": "guasto",
+      "col": 0,
+      "type": "cloud",
+      "label": "Fischio d'inizio",
+      "sublabel": "Mike entra in gioco",
+      "tag": "18:00 circa",
+      "width": 140
+    },
+    {
+      "id": "ko",
+      "lane": "guasto",
+      "col": 1,
+      "type": "security",
+      "label": "Lettura dati caduta",
+      "sublabel": "12 minuti senza dati",
+      "tag": "18:00-18:12",
+      "width": 140
+    },
+    {
+      "id": "ripresa",
+      "lane": "guasto",
+      "col": 2,
+      "type": "frontend",
+      "label": "Un tentativo",
+      "sublabel": "banca 1,69, non abbinata",
+      "tag": "18:12",
+      "width": 140
+    },
+    {
+      "id": "copertura",
+      "lane": "guasto",
+      "col": 3,
+      "type": "frontend",
+      "label": "Copertura Over 4,5",
+      "sublabel": "7,50 EUR a 2,64",
+      "tag": "minuto 14",
+      "width": 140
+    },
+    {
+      "id": "proposte",
+      "lane": "guasto",
+      "col": 4,
+      "type": "security",
+      "label": "10 proposte",
+      "sublabel": "8 decadute, mai firmate",
+      "tag": "minuto 47-79",
+      "width": 140
+    },
+    {
+      "id": "finale",
+      "lane": "guasto",
+      "col": 5,
+      "type": "external",
+      "label": "Fine mercato",
+      "sublabel": "totale -17,50 EUR",
+      "tag": "stessi 4 gol",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-fischio-ko",
+      "from": "fischio",
+      "to": "ko",
+      "label": "la lettura dei dati smette di funzionare",
+      "role": "main"
+    },
+    {
+      "id": "e-ko-ripresa",
+      "from": "ko",
+      "to": "ripresa",
+      "label": "720,7 secondi dopo: nessuna partita data per sparita",
+      "role": "main"
+    },
+    {
+      "id": "e-ripresa-copertura",
+      "from": "ripresa",
+      "to": "copertura",
+      "label": "banca non abbinata: Mike copre",
+      "role": "main"
+    },
+    {
+      "id": "e-copertura-proposte",
+      "from": "copertura",
+      "to": "proposte",
+      "label": "col passare dei gol il conto peggiora",
+      "role": "main"
+    },
+    {
+      "id": "e-proposte-finale",
+      "from": "proposte",
+      "to": "finale",
+      "label": "l'utente non firma mai: 4 gol esatti",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Il guasto",
+      "items": [
+        "La lettura dei dati (safe_strategy_scan) fallisce dal fischio: da 18:00:30 a 18:12:31 (12,0 minuti = 720,7 secondi)",
+        "Mike ritenta a ogni giro con l'ultima lista buona: nessuna partita viene data per sparita, nessun ordine parte su prezzi vecchi",
+        "Alla ripresa, Mike si ritrova gia' con l'ingresso pre-partita abbinato (10,00 EUR a 1,71) e la banca pre-partita gia' cancellata da Betfair al fischio, come nello scenario reale"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Un solo tentativo di banca in gioco",
+      "items": [
+        "Con meno tempo utile per via del guasto, Mike appoggia UNA sola banca a 1,69 alle 18:12:32 (invece dei due tentativi dello scenario reale)",
+        "Mike stesso la ritira (cancelled_by_engine); Betfair non conferma l'annullamento in tempo (riga in riconciliazione), motivo finale runner_annullato"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "La copertura",
+      "items": [
+        "Copertura Over 4,5 al minuto 14 (punteggio gia' 1-0: il primo gol era arrivato durante il guasto)",
+        "Stesso conto della partita reale: rischio Under 10,00 EUR, obiettivo netto con 5+ gol 12,00 EUR, quota Over 4,5 al minuto 14 = 2,64",
+        "Importo pieno = 12,00 / ((2,64-1) x 0,95) = 7,70 EUR chiesti; abbinati 7,50 EUR"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Le 10 proposte",
+      "items": [
+        "Stesso schema dello scenario reale: 10 proposte di chiusura in perdita dal minuto 47 al minuto 79, 8 decadute per iscritto",
+        "Nessuna firmata dall'utente: nessuna e' mai partita"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Il risultato",
+      "items": [
+        "Under 3,5 persa: -10,00 EUR. Copertura Over 4,5 persa (7,50 EUR a 2,64): -7,50 EUR. Totale -17,50 EUR",
+        "Stesso finale a 4 gol esatti dello scenario reale, ma la perdita e' piu' alta perche' il guasto ha ritardato la copertura e alzato il rischio da assicurare"
+      ]
+    }
+  ]
+}
